@@ -22,7 +22,10 @@ const FRAMES = 6;
 const addressOf = (bytes: Uint8Array) =>
 	URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'model/gltf-binary' }));
 
-export default defineSketch(async ({ scene, geometry, materials, assets, page, time }) => {
+export default defineSketch(async ({ scene, geometry, materials, assets, page, time, quality }) => {
+	// Both engines draw with the same settings whatever the machine's load: a moving render scale
+	// would draw the same geometry at another resolution, and the two pictures would differ.
+	quality.set({ governor: false, minRenderScale: 1, maxRenderScale: 1 });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({ position: [0, 3, 14], target: [0, 1, 0] });
 	scene.setActiveCamera(camera);

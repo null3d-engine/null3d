@@ -93,7 +93,7 @@ const git = (cwd: string, ...args: string[]) =>
  */
 async function withLock<T>(cache: string, work: () => Promise<T>): Promise<T> {
 	mkdirSync(cache, { recursive: true });
-	const release = acquireLock(join(cache, 'builder.lock'));
+	const release = acquireLock(join(cache, 'builder.lock'), { freesSlot: true });
 	try {
 		return await work();
 	} finally {

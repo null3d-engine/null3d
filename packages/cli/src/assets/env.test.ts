@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it, setDefaultTimeout, spyOn } from 'bun:te
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { samplePath } from '../../../../tools/lib/samples.ts';
 import { BUILTIN_ENVIRONMENTS } from '../../../engine/src/scene/builtin-environments.ts';
 import { main } from '../cli.js';
@@ -9,7 +10,7 @@ import { parseEnvArgs, readEnvironment } from './env.js';
 import { environmentMap } from './formats.js';
 
 // A built-in environment takes a few seconds on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 const work = mkdtempSync(join(tmpdir(), 'null3d-env-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));

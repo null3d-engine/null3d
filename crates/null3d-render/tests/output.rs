@@ -130,13 +130,16 @@ fn check_hdr_frame<B: FrameBuilder>(world: &mut World<B>, device: &mut MockBacke
     );
 
     // The final pass binds its settings, the resolved color, a blank color grading table with
-    // its sampler, the blank outline texture in place of the mask, and the automatic exposure's
-    // blank texel, and draws one triangle.
+    // its sampler, the blank outline texture in place of the mask, the blank grading table, and the
+    // automatic exposure's blank texel, and draws one triangle.
     let groups = operands(&commands, Op::CreateBindGroup);
     let group = groups.iter().find(|o| o[1] == layout::FINAL).unwrap();
-    assert_eq!(group[2], 6);
+    assert_eq!(group[2], 7);
     assert_eq!(group[4], resource_kind::BUFFER);
     assert_eq!((group[9], group[10]), (resource_kind::TEXTURE, resolved));
+    // The grading table's entry follows the outline mask's, at the binding its shader reads.
+    assert_eq!(group[28], 13);
+    assert_eq!(group[29], resource_kind::TEXTURE);
     let draws = operands(&commands, Op::Draw);
     assert_eq!(draws, [vec![3, 1, 0, 0]]);
     let settings = group[5];

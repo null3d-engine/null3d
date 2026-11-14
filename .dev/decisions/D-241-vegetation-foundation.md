@@ -1,0 +1,1203 @@
+# D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
+
+Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-323](D-323-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Far-tree impostors (M3-V9) are built. Branch poses (M3-V10) were measured and removed on the owner's ruling for wind per vertex, and Creek moved to the add-on (M3-V11). Settled by the owner: the wind moves the trees per vertex, where branch poses were measured and set aside. The generated leaves are judged: the owner found them at least as good as the painted set, and ruled his sample stands for the catalogue. Tasks: M3-V1 to M3-V17.
+
+Summary: Vegetation is the eleventh foundation add-on, `@null3d/vegetation`, which grows plants at first use and places them by ecological rules. It draws grass on the GPU, sways plants in the wind add-on's field and hands far trees to impostors. Creek drops its 3.1 MB of Blender plants for it, and custom materials, whose vertex offsets carry the wind, gain the standard material's cut-out features.
+
+## Question
+
+Creek dresses about 5% of its valley, with three tree kinds in fixed counts, and only its grass moves. The owner wants complex, varied trees, shrubs and grass over the whole landscape, in Creek and in every other plant demo. Where does that work live, does GPU grass come back, and do Creek's Blender plants stay? How does wind reach masked leaf cards without losing their edges, fades and shadows?
+
+## Rule
+
+- Each feature lives in one place, and add-ons reach the engine only through public entry points (AGENTS.md rules 11 and 12, [D-173](D-173-addon-hooks.md)).
+- A later add-on is a foundation when other add-ons or many kinds of project build on it (D-173 ruling 4).
+- Built-in assets are generated in the browser at first use, and both GPU paths draw the same scene, or the docs state the fallback.
+
+## Data
+
+A research session read the literature, shipped games, other engines and null3D's own code.
+
+**Creek and the other demos.**
+
+- Creek has 17 trees (oaks, beeches and birches) and about 200 ferns, hostas, shrubs and flower clumps. A Blender script builds them into about 3.1 MB of files, in the same counts on every preset.
+- Its grass is 3,000 to 27,000 tufts of 13 blades in a strip about 44 m long, about 5% of the 160 m land.
+- Only the grass and the water move.
+- On an M5 Max at Medium, WebGL2 draws 7.1 to 7.6 million triangles a frame. Every tuft draws at full detail at every distance ([examples.md, Creek](../examples.md#creek)).
+- About a dozen demos write their own plants: at least five pine or fir generators, three grass versions and three leaf meshes. The only shared plant code is `examples/lib/pines.ts`.
+
+**Why custom materials lose their cut-out features.** Custom materials build into the standard material's lit template (`crates/null3d-shaders/shaders.toml`, `[shaders.lit]`), but they leave out several of its builds:
+
+- The template has `ALPHA_COVERAGE`, `SAMPLE_MASK`, `ALPHA_HASH` and `LOD_FADE` builds, and custom materials build none of them. Their levels and distance bands switch at once, and `materials.shader` refuses `alphaToCoverage` and the `'hash'` mode with E1217.
+- A custom material's shadow caster builds (`caster_variant` in `crates/null3d-shaders/src/material.rs`) have no fragment stage, so a masked custom material casts its whole shape. Its motion builds cut no holes either ([D-140](D-140-motion-vectors.md)).
+- `ROW_VALUES` is kept apart from `ALPHA_COVERAGE` and `ALPHA_HASH` (`APART` in `crates/null3d-gpu/src/drawlist.rs`). A batch with row colors or values therefore tests a plain cutoff, for the standard material too.
+- A vertex offset's `VertexInput` holds the position, the normal, two sets of texture coordinates and the row, but not the vertex color.
+
+**Other engines and shipped games.**
+
+- **Horizon Zero Dawn** placed more than 100,000 objects of more than 500 types by rules on the GPU. This took about 250 µs a frame on a PS4.
+- **What the best games share:** Horizon, Ghost of Tsushima and Far Cry 5 use a few good species and rule-based placement. Their plants thin with distance, light passes through their leaves, and everything moves in the wind.
+- **Unreal 5.7 and 5.8** drive Nanite Foliage's wind with bones, at about 100,000 bones in about 0.1 ms. Epic's reason is tight cluster bounds and the fixed-function rasterizer, which world-position offset loses under Nanite.
+- **Unreal's cached shadows:** Epic's virtual shadow map docs say that cached pages redraw every frame under geometry that moves. Skeletal animation and world-position offset both cause it.
+
+## Decision
+
+The owner ruled:
+
+1. **An official foundation add-on.** Vegetation is the eleventh foundation, its own npm package, `@null3d/vegetation`. It passes ruling 4's test: many kinds of project use plants, and other developers' style packs build on it.
+   - **What it holds:** the species generator, the texture baker, the scatter and the grass. It also holds the leaf material, the wind on the plants, the hand-off to far-tree impostors and a small built-in set of species. Each species is a short record of numbers.
+   - **What other developers make:** themed species packs, such as tropical, autumn or stylized plants. They are content, the "vegetation styles" that D-173 leaves to other developers.
+   - **Reuse:** it reuses the terrain and impostors foundations and copies neither.
+2. **GPU grass returns.** Creek's hills are the "vegetation-heavy ground" that [D-179](D-179-technique-rulings.md), ruling 20, names as the trigger. GPU grass is built in M3, inside the vegetation add-on, not as a separate content pack.
+   - **WebGPU:** a compute pass makes and culls the blades, and H2 draws them in the main view and the shadow views.
+   - **WebGL2:** the CPU builds grass tiles of instance batches, which the engine culls in groups of 64 rows, with distance bands.
+3. **Generated plants replace Creek's Blender models.** Creek's trees, ferns, hostas, shrubs and flowers come from the add-on's generator at first use. The Blender script, its manifest entries and its files go. The other plant demos move to the add-on after Creek.
+4. **Wind on custom materials, which keep their cut-out features.** Wind stays a custom material's vertex offset, as [D-117](D-117-showcase-features-before-1-0.md) has it. Custom materials gain:
+   - alpha to coverage and the alpha hash;
+   - fades between levels and at the edges of distance bands;
+   - a masked shadow caster that runs the material's alpha;
+   - motion builds that cut the material's holes.
+
+   Batches with row values may also take alpha to coverage and the hash. `VertexInput` gains the vertex color for wind data. The coverage and hash builds go only to WGSL that sets or reads the surface's alpha, as transmission's builds do. This holds build time and size. The task measures build time and shader file size with and without them.
+
+## The choices the design left open
+
+The owner settled the design's open questions, all as the design recommended, so the tasks start without asking again.
+
+- **The package.** `@null3d/vegetation` holds the built-in species set, as well as the generator, the scatter, the grass, the materials and the impostor hand-off. The species set is the smallest thing that makes the package useful on its own.
+- **Where the leaf-card level rule lives.** The generator builds its own levels from its skeleton, and one shared test holds the rule. The command-line tool's thinner is not importable by an add-on, and a generator that knows its skeleton keeps the crown full.
+- **Repeat visits.** A page bakes its atlases and impostors and keeps them for that visit only. It keeps them across visits only if the bake measures over about a second on the slowest device.
+- **How far Creek's dress goes.** The whole 160-meter valley, not the stream strip alone. Distance falloff, wider blades far off and impostors soften the edge.
+- **Variety.** Six variants for each species and one impostor for each species. Ten variants would exceed the batch and memory limits.
+- **The trees' wind method.** Per-vertex wind ships first, and M3-V10's figures decide whether a preset switches. The vertex format stays the same for both methods, so a switch costs one redraw of the references.
+- **Which demos move.** All nine move to the add-on, one at a time after Creek meets the quality bar. A demo whose style the generator cannot match gets a recorded exception, never a second generator.
+- **A themed species pack.** One small example comes after the other demos move, if time allows. It is not on Creek's critical path.
+- **Wind in Creek.** The owner requires the Creek showcase to show wind on its plants. The trees sway, the grass and shrubs move, and the floating leaves ride the same wind field. A still valley does not meet the bar. Per-vertex wind is the default, and M3-V10's figures decide whether a preset switches to branch poses.
+
+## Wind by bones
+
+This section says what wind driven by bones takes in null3D, and whether it is better.
+
+**What it is.** Each tree has a skeleton of branches. A pass computes each branch's pose once per frame, and each vertex follows its branch.
+
+**What null3D needs.** The core needs no skinning of instance batches. The add-on runs an H1 compute pass ([D-240](D-240-compute-passes.md)), with its fragment form on WebGL2. The pass writes each near tree's branch poses into a texture, for this frame and the last. The leaf and bark materials' vertex offsets then read their branch's pose with `textureLoad`. Three engine changes make this sound, and M3-V3 builds them:
+
+- A vertex offset reads a compute pass's output in every build that runs it: the main, shadow caster, motion and pick builds.
+- The render graph orders such a pass before every pass that draws the material, the shadow views included. No shadow then shows the last frame's pose.
+- The motion builds' call for the last frame can tell that it is that call (`lastFrame`), so it reads the last frame's poses. D-140 counts uniforms and row values as unchanged since the last frame, so they cannot tell it.
+
+**What it gains.**
+
+- **Less vertex work:** the sway is computed once per branch, not once per vertex in each pass that draws the tree. Those passes are the main view, the motion pass (which runs the offset twice), each shadow cascade and the reflections.
+- **Branches that react:** branches can hold state, so they spring back after a gust and give way to a character.
+
+**What it does not gain.**
+
+- Shadows of moving trees still redraw every frame, as Epic's docs say for Unreal.
+- Unreal's main reasons, cluster bounds and its rasterizer, do not apply to null3D's renderer.
+- Leaf flutter, grass and small plants stay per vertex in either design.
+
+No source gives phone figures for either method on the web. So M3-V10 builds branch poses beside the per-vertex wind of M3-V7 and measures both on the Mac, the iPad and an S24-class phone. The owner then picks the trees' default from the figures.
+
+## Wind by branch poses, built and measured
+
+M3-V10 built the pass that "Wind by bones" asks for, measured it beside the per-vertex sway, and
+removed it on the owner's ruling.
+
+**What a page gave it.** A page made the pass for a variant with `plantPoses`, which this change
+removes. It gave the pass the copies of that variant that the scene places. It also gives the most of them that stand within
+the sway distance at once. In each frame the page chooses a slot for each copy inside the distance. It also
+sends the pass the trees' places and normal matrices. The pass writes an instance header, the
+field's settings and one row of pose texels for each slot. The leaf and bark offsets read the turn
+of their own branch, from the row of their copy's slot. A copy without a slot therefore stands
+still. A device that keeps no 16-bit float target draws no poses, and the plants keep the
+per-vertex sway.
+
+**The spring.** A branch's turn follows the steady sway through a spring, whose rate grows with the
+branch's level. The pass keeps its state across runs, as the wind grid's pass does. A branch
+therefore reads the turn and the speed of the run before. A gust leaves the branch lagging and
+overshooting, and the branch settles after the air stops. The pose table keeps two states too, so
+the motion pass reads the frame before's pose and a leaf keeps its motion data.
+
+**What stays per vertex.** The trunk's cantilever bend and the leaves' flutter stay in the offset in
+either method. The two methods therefore differ only in the branch turns. The pass reads the air
+once at the tree's base and turns the whole tree from it. The per-vertex method reads the air at
+each vertex.
+
+**What it does not gain.** Moving branches redraw their shadows every frame, as they do per vertex.
+Leaf flutter, grass and small plants stay per vertex. The pass adds a compute dispatch and a small
+upload in the frame. A page pays those beside the vertex work that it saves.
+
+**The pictures.** Four tests draw the pose method on WebGPU, compatibility mode and WebGL2: the
+grove through the pose materials at two hold times, its motion view, and a still that borrows the
+per-vertex method's reference. The nine reference pictures pass in all 12 runs of
+`CI=1 bun run test:images -g "vegetation-poses"`. The spring test also reads the pose pass live, so
+it shows a branch turning on after the air stops and settling back. The owner's ruling removes the
+pass, so these four tests and their nine references are deleted with it.
+
+**The owner's ruling.** The owner ruled that wind per vertex is the trees' default, with no
+preset switch, and that the branch-pose path is removed. The figures below measure
+both methods on the same grove, and they are the comparison that led to the ruling. A preset may
+switch only when its figure holds D-241's frame ceiling.
+
+**Guides from a loaded machine.** These single runs were taken while other sessions used the Mac, so
+they direct the work and are not the record's figures. The grove was dense, as the page's measurement
+places it. The quarter-scale rows drew with the sun's shadows off.
+
+| Device, path, preset | Frame, per vertex (ms) | Frame, poses (ms) | Vertex view, per vertex (ms) | Vertex view, poses (ms) |
+| --- | --- | --- | --- | --- |
+| Mac, WebGPU, High | 6.75 | 6.62 | 3.87 | 2.85 |
+| Mac, WebGL2, Medium | 15.05 | 17.71 | - | - |
+| iPad, WebGPU, Low | 6.14 | 6.62 | 4.49 | 5.56 |
+| iPad, WebGPU, Medium | 33.91 | 34.93 | 6.24 | 6.30 |
+| iPad, WebGPU, High | 43.36 | 44.68 | 6.48 | 6.18 |
+| iPad, compatibility, Low | 6.40 | 6.38 | - | - |
+| iPad, compatibility, Medium | 38.01 | 51.74 | - | - |
+
+The Mac's vertex view is where the method saves the most, at High: 3.87 ms against 2.85 ms. Its
+opaque pass reads 2.92 against 1.41 ms. At Low on the iPad, few trees stand inside the eight meter
+sway distance. The pass's own work then costs more than the branches save, so the pose method is
+slower. The compatibility mode rows at Medium came from unpaired pages of the cancelled first plan.
+They are guides only, and the record's runs place the methods in turns.
+
+**The record's runs.** The Mac, the iPad Pro 13 and the Galaxy S25 ran both methods in turns at each
+preset and path. The Galaxy S25 stands in for the S24 class, by the owner's ruling. WebGL2 and
+compatibility mode cap the preset at Medium, so their rows stop there. Each figure is the median GPU
+time per frame over five seconds, after a three second settle. The vertex view is the same page at a
+quarter of the render scale with the sun's shadows off. Its frame then follows the vertex work that
+the two methods differ in. The Mac ran with the machine to itself. The iPad and the S25 are cloud
+sessions, whose heat and refresh rate are not controlled. Their rows are close comparisons in turns,
+not tight budgets. The run files are [the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261031-021631-vegetation-poses.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261031-020718-vegetation-poses.md) and
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261031-020718-vegetation-poses.md).
+
+| Device and path | Preset | Frame, per vertex (ms) | Frame, poses (ms) | Vertex view, per vertex (ms) | Vertex view, poses (ms) |
+| --- | --- | --- | --- | --- | --- |
+| Mac, WebGPU | Low | 4.52 | 4.13 | 3.41 | 3.80 |
+| Mac, WebGPU | Medium | 4.33 | 4.52 | 3.74 | 4.13 |
+| Mac, WebGPU | High | 4.72 | 5.11 | 4.00 | 3.87 |
+| Mac, WebGPU | Ultra | 4.85 | 5.18 | 4.13 | 4.13 |
+| Mac, compatibility | Low | 4.33 | 4.46 | - | - |
+| Mac, compatibility | Medium | 4.46 | 4.46 | - | - |
+| Mac, WebGL2 | Low | 7.82 | 10.47 | 2.41 | 3.95 |
+| Mac, WebGL2 | Medium | 14.44 | 16.84 | 2.60 | 6.71 |
+| iPad, WebGPU | Low | 6.14 | 6.62 | 4.49 | 5.56 |
+| iPad, WebGPU | Medium | 33.91 | 34.93 | 6.24 | 6.30 |
+| iPad, WebGPU | High | 43.36 | 44.68 | 6.48 | 6.18 |
+| iPad, WebGPU | Ultra | 43.90 | 47.54 | 5.95 | 6.22 |
+| iPad, compatibility | Low | 6.56 | 6.89 | - | - |
+| iPad, compatibility | Medium | 37.98 | 38.69 | - | - |
+| Galaxy S25, WebGPU | Low | 25.69 | 25.89 | 13.96 | 14.71 |
+| Galaxy S25, WebGPU | Medium | 328.53 | 335.15 | 26.61 | 26.87 |
+| Galaxy S25, WebGPU | High | 379.06 | 508.56 | 26.97 | 25.46 |
+| Galaxy S25, WebGPU | Ultra | 405.93 | 548.08 | 26.21 | 25.40 |
+| Galaxy S25, compatibility | Low | 25.76 | 25.85 | - | - |
+| Galaxy S25, compatibility | Medium | 406.06 | 372.97 | - | - |
+
+The S25's frames at Low sit near its 30 Hz display's period, and the higher presets run far past
+it, so the runner marks its timings unreliable; its rows compare the methods in turns only, and the
+pick does not rest on them.
+
+The iPad's and the S25's WebGL2 pages give the CPU time of the busiest thread instead of a GPU time.
+It does not separate the methods: 1.24 to 3.47 ms on the iPad and 0.71 to 0.99 ms on the S25, across
+both methods and both presets. The Mac's WebGL2 timer gives the answer there.
+
+**What the figures say.** The pose method wins in some cells and loses in others, and the figures do
+not support a preset switch. On the Mac's WebGPU at Low its frame is 4.13 ms against 4.52 ms, 8.7
+per cent faster, while its vertex view is 11.5 per cent slower. At High its vertex view is 3.87 ms
+against 4.00 ms, 3.3 per cent faster, while its frame is 8.3 per cent slower. Its frame is 4.6 to
+8.3 per cent slower at the Mac's other WebGPU presets. On the iPad its frames are 1.9 to 8.3 per
+cent slower, and its vertex view is 23.9 and 1.0 per cent slower at Low and Medium, 4.6 per cent
+faster at High and 4.6 per cent slower at Ultra. The S25's rows are marked unreliable, and they
+show no more: its vertex view is 5.4 and 1.0 per cent slower at Low and Medium, and 5.6 and 3.1
+per cent faster at High and Ultra. The compatibility mode rows in the Mac's run read the same
+figure twice, within its timer's steps. On WebGL2 the pose method is clearly slower: 34 and 16.6
+per cent on the frame, and 63.6 and 158 per cent in the vertex view.
+
+The WebGL2 form explains its own cost. It draws one fragment for every pose texel. Each of the two
+texels that hold a branch's turn recomputes the whole ancestor chain, with a spring step at each
+ancestor. A branch of depth four therefore pays eight integrations and its texture reads for each of
+the two texels. The grove's four variants then cost the 1.3 to 2.6 ms that the WebGL2 vertex views
+show. A history pass also keeps three copies of the table on WebGL2 and copies one state in each
+run. That is small beside the fragment work.
+
+**Why the posing lost.** The look review found the pose method's motion better: boughs bend and
+spring instead of the canopy sliding. Its cost and its softening did not carry the pick. Its two
+wins sit inside the noise of the devices it was measured on, and its cost is clear wherever many
+trees stand near the camera or the WebGL2 form runs. Its pictures also carried about a quarter less
+leaf-edge energy at both holds, and its WebGL2 grove moved about a quarter as much a frame as the
+other two paths. The branch-pose pass, its two shaders, its plan, its spring test and its picture
+tests and references are removed with this change, so the per-vertex offset is the trees' only path,
+and the trees' own figures above are the ceiling that each preset keeps.
+
+**What the demos' pages need.** Four demos draw groves on the software GPU, and their pages pay for
+the plants' setup, so a page time sets each page's limit. These times were taken with one test at a
+time on this Mac, and each is the whole test, so it includes opening the page and its hold. The
+limit is the one that the commit carried.
+
+| Demo | Limit (s) | In CI run 41158902325 | Here, one at a time at `58e8e982f` (s) |
+| --- | --- | --- | --- |
+| demo-atmosphere | 60 | all three tiers timed out | compatibility 41, WebGL2 132, WebGPU 132 |
+| demo-contact-shadows | 60 | none; it drew, and the picture differs by 5.3 per cent | WebGPU 40, compatibility 37, WebGL2 42 |
+| demo-light-shafts | 300 | WebGPU and compatibility timed out; WebGL2 drew, 7.120 per cent different | WebGPU 38, compatibility 37, WebGL2 48 |
+| demo-impostors | 120 | WebGPU timed out | WebGPU 17, compatibility 16, WebGL2 15 |
+
+All four rows come from a run at the branch's rebased tree, head `58e8e982f` on the landing's
+`acf926cdc`, after that tree's own core was built, so each page drew the branch's code. The pages'
+limits were raised locally for the measurement only, so that a page could finish; the limit column
+is the one the head carries, and the time column is what the page needed. An earlier set measured at
+`83d1d71a9` and the first at `fc8775f4c` are replaced by this one. The branch raises only the
+light-shafts limit, to five minutes. The other three keep their limits: each needs a measurement on
+the commit that draws it, and a limit lifted without one would hide how long the page takes.
+
+The pictures behind two of the rows also differ on this tree, not only in CI:
+demo-contact-shadows differs by 5.286 to 5.384 per cent and demo-light-shafts by 6.892 to 46.826
+per cent, measured at `58e8e982f`, with the same percentages at `83d1d71a9` and `fc8775f4c`. Those
+are changes to the pictures, and they need their own record; a page limit cannot hide them.
+
+## Options rejected
+
+- **Creek-only vegetation.** It is the fastest path to a better Creek. But it would make a sixth pine generator, a fourth grass and a fourth leaf mesh, where rule 11 asks for one place.
+- **An example add-on that is never published.** Its interface could change freely. But versions before 1.0 allow that anyway, and other developers are meant to build plant packs on it.
+- **A vertex-offset hook on the standard material.**
+  - It would be a second API for what custom materials' vertex offsets already do.
+  - Leaves need custom shading anyway: crown-bent normals, crown occlusion and a tint per leaf.
+  - The row-value exclusion would still take alpha to coverage away from batched trees.
+- **Skinning of instance batches in the core.** Each row of a batch would get its own joint palette, through the skin, caster, motion, fade and row-value builds of both paths. It is a large core change for what an H1 pass and a vertex offset give.
+- **One sine sway for each tree.** It loops visibly, and viewers judge wind by its frequencies and amplitudes.
+- **The wind field inside the vegetation add-on.** A page with flags and smoke but no plants would then need the vegetation add-on for its wind. [Fluid wind is an add-on of its own](#fluid-wind-is-an-add-on-of-its-own) gives the reasons.
+
+## Consequences
+
+- AGENTS.md rule 13 lists vegetation among the foundation add-ons.
+- [D-173](D-173-addon-hooks.md) and [D-179](D-179-technique-rulings.md) point here. D-117's rule that wind is a recipe on vertex offsets holds, and the recipe lives in one place, the vegetation add-on.
+- `.dev/examples.md` records the planned move of Creek's plants and the showcase rule on plant models.
+- M3 holds this work as tasks M3-V1 to M3-V17. M3-E9's GPU-written draws must also work in the shadow views, because near grass casts shadows. The impostors' bake helper is in M3 for the far trees, which are baked at first use.
+
+## The four devices' figures, and the budgets they set
+
+M3-V1 measured Creek and the forest demo on four cloud devices. They are the iPhone 17, the iPad
+Pro 13 2025, the Galaxy S24 and the Galaxy Tab A9 Plus. The Galaxy S25 measured Creek's WebGPU path
+and the package's generator in runs of their own. Each page fixed its GPU path and its preset.
+It also set the quality governor's target at 1 frame a second, so the render scale stayed at 1. The
+figures are in [tested devices](../tested-devices.md#vegetation-on-the-five-cloud-devices).
+Three rules shape them.
+
+- WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../../packages/engine/src/quality/chooser.ts)).
+  So High and Ultra ran on core WebGPU only.
+- Creek at Low on WebGPU stalls an Apple device's page after its first frame
+  ([Driver bug reports](../driver-bugs.md)). Creek therefore has WebGL2 figures on the iPhone and
+  the iPad, and no WebGPU figure there. The Galaxy S25 draws Creek on core WebGPU at every preset,
+  and the owner ruled that this phone stands in for the S24 class.
+- The Galaxy Tab A9 Plus reports no compatibility mode. Its compatibility pages were skipped.
+
+**Frame time.** The figures below are the frame interval in milliseconds. They are the ceiling that
+every vegetation task must keep the demo within, at the same device, path and preset.
+
+| Demo and preset | iPhone 17 | iPad Pro 13 | Galaxy S24 | Tab A9 Plus |
+| --- | --- | --- | --- | --- |
+| Creek Low, WebGL2 | 15.7 | 30.8 | 33.3 (30 Hz display) | 1,268.5 |
+| Creek Medium, WebGL2 | 43.9 | 90.8 | 33.3 (30 Hz display) | no frame in 5.5 s |
+| Forest Low, WebGPU | 15.6 | 15.6 | no WebGPU | no WebGPU |
+| Forest Low, compatibility | 15.6 | 15.6 | no WebGPU | no compatibility mode |
+| Forest Low, WebGL2 | 15.5 | 15.5 | 33.3 (30 Hz display) | 385.2 |
+| Forest Medium, WebGPU | 62.1 | 54.8 | no WebGPU | no WebGPU |
+| Forest Medium, WebGL2 | 60.6 | 46.6 | 33.3 (30 Hz display) | 1,820.8 |
+| Forest High, WebGPU | 62.5 | 67.1 | no WebGPU | no WebGPU |
+| Forest Ultra, WebGPU | 99.0 | 71.1 | no WebGPU | no WebGPU |
+
+**Two cells that a later reader must read carefully.** The iPad's Creek Low cell reads 30.8 ms, and
+the milestone head `fcafb9cd7` reads 31.06 ms on it with no wind reader in the scene at all
+([the head's run](../tested-devices/ipad-pro-13-safari/20261101-091901-vegetation.md)). The cell is
+therefore at or just over its own ceiling before any wind work. A later miss of a fraction of a
+millisecond there is the scene's, and it is not the wind's.
+
+These forest cells come from a scene with no wind reader. The vegetation branch's own forest rows
+at Medium and above read 9 to 19 per cent over them. The forest was not measured at `fcafb9cd7` on
+the same rows, so whether the wind's share sits inside those ceilings is open. It needs that head
+run before anyone reads those rows as the wind's cost or as headroom.
+
+**Creek on WebGPU.** The Galaxy S25 draws Creek on core WebGPU, which the Apple devices cannot. The
+owner ruled that this phone stands in for the S24 class, whose own device has no WebGPU adapter and
+no WebGL2 GPU timer. The figures come from one run of the plan.
+
+| Preset | Frame ms | GPU ms | Busiest pass | Its ms | Triangles | Draws |
+| --- | --- | --- | --- | --- | --- | --- |
+| Low | 33.3 | 26.28 | opaque | 20.38 | 1,524,500 | 182 |
+| Medium | 166.6 | 149.88 | opaque | 141.16 | 4,387,400 | 174 |
+| High | 208.3 | 213.61 | ambient occlusion 1 | 164.72 | 6,798,700 | 288 |
+| Ultra | 499.8 | 468.19 | ambient occlusion 1 | 279.38 | 11,100,000 | 303 |
+
+**The S25-class Ultra ceiling is 511 ms.** The owner ruled that a class ceiling includes the wind's
+share, because a ceiling is a measured frame and the wind is part of the frame that a page draws.
+This cell is therefore the only ceiling here that is not a measured frame alone: it is the run's
+499.8 ms plus the wind's modelled 11.08 ms, which doubles the measured 5.243 ms of the volume's 40
+steps and adds the advection and projection floor, because the 30 Hz display owes two field cycles
+a frame. The table above keeps the measured 499.8 ms as the run gives it. D-283 records the ruling
+and the two alternatives that the owner declined.
+
+The pages ran from a worktree at `6a0a3215f`, and its engine build was made from that commit's
+sources. The engine's start check accepted the build on the device. Chrome on Android reports no
+WebGL2 GPU timer, so this phone gives no WebGL2 figure. Its WebGPU times come from the GPU's timer.
+The display ran at 30 Hz, and every frame interval except Low is longer than that cap. So those
+frames are the device's own. The run files are [the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261029-200013-vegetation.md)
+and, for the earlier whole-frame figures, [its 27 October run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002402-vegetation.md).
+
+**GPU time per pass.** Only the WebGPU path times its passes. Forest Low spends 6.6 to 6.9 ms of
+GPU time on the iPad and the iPhone. That is 7 render passes, and the first is a copy. Forest
+Medium spends 45.4 ms on the iPad, High 58.3 ms and Ultra 63.2 ms. The last render pass takes most
+of it at High and Ultra, because it draws the far cards. WebGL2 on a phone offers no timer, so its
+rows give the CPU time of the busiest thread instead.
+
+Creek on the S25 spends most of each frame in one pass. At Low the opaque pass takes 20.38 ms of the
+whole 26.28, and at Medium 141.16 of 149.88. High and Ultra turn on ambient occlusion, which splits
+the depth prepass from the opaque pass. The prepass takes 45.74 and 182.19 ms there, and the pass
+that draws with ambient occlusion 164.72 and 279.38. The two shadow cascades and the copies stay
+under 3 ms at every preset.
+
+**Triangles.** Forest Low draws 3.5 to 13.8 million triangles, depending on the path. Medium draws
+23 to 111 million, High 61.6 to 297.1 million, and Ultra 29.0 to 107.5 million. Each preset picks
+its own levels, so High draws more than Ultra on both Apple devices.
+
+**Memory.** Creek at Low takes 60.8 MiB of GPU textures on the iPhone and 120.6 MiB on the iPad. At
+Medium it takes 163.9 and 537.5 MiB. Forest Low on WebGPU takes 30.9 to 57.4 MiB of textures and
+34.4 MiB of buffers, and its WebAssembly memory grows to 328.8 MiB. At Ultra it reaches 864 MiB.
+
+**Tree generation.** A worker built a stand-in parametric tree in the style of Weber and Penn. It ran at
+each preset's detail, for four species and six seeds each. The set of 24 variants took 14 to 23 ms
+on the iPhone and the iPad. It took 33 to 47 ms on the S24, and 49 to 94 ms on the tablet. The arrays take
+7.0 MB at Low and 22.7 MB at Ultra, and the triangles run from 123,876 to 474,096. The slowest
+single variant was an oak at Ultra on the tablet: 5.42 ms for 27,090 triangles. M3-V4's generator
+replaces the stand-in, and the stand-in's figures set the shape of the budget.
+
+The package's own generator ran on the S25, at 78 variants for each preset. Before the leaf morph
+data, the set took 163.0 ms at Low, 137.9 at Medium, 156.9 at High and 148.9 at Ultra ([its run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002251-tree-generation.md)).
+With that data it takes 198.6, 164.9, 161.9 and 172.4 ms on a second run after the phone cooled
+([its run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261030-021612-tree-generation.md)), inside
+the 200 ms line at Low by 0.7 per cent. The first run with that data read 213.4 ms at Low while the
+cloud reported the phone hot, and it is discarded as an upper bound
+([its run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261030-015719-tree-generation.md)). The
+same generator ran on the iPad Pro 13, where the set took 77.6 to 105.2 ms and the arrays take 20.5
+and 24.5 MB ([its run](../tested-devices/ipad-pro-13-safari/20261030-014425-tree-generation.md)).
+The page draws nothing and asks for no GPU path, so these are the JavaScript engine's and the
+worker's figures, not a GPU's.
+
+**The budgets that every later V task takes, by preset.** The frame and generation figures come
+from measured rows above. The add-on's own GPU time keeps room beside the scene. A later task states
+its budget per preset from this table.
+
+| Preset | Frame ceiling, iPhone 17 and iPad Pro 13 | Frame ceiling, S24 class | Frame ceiling, Tab A9 Plus | The add-on's GPU time, Apple |
+| --- | --- | --- | --- | --- |
+| Low | 15.5 to 30.8 | 33.3 | 1,268.5 | 5 |
+| Medium | 43.9 to 90.8 | 166.6 | 1,820.8 | 12 |
+| High | 62.5 to 67.1 | 208.3 | no row | 49.0 |
+| Ultra | 71.1 to 99.0 | 499.8 | no row | 62.5 |
+
+The S24's own frame interval reads 33.3 ms at Low and Medium, which is its display's cap rather
+than its work. The class's Medium ceiling is the S25's, which is the only real figure there.
+
+Two figures are owed by a device rather than left out by choice. No run gives Creek on WebGPU on
+the iPhone or the iPad, because its Low page stalls there, which is a recorded driver fault
+([Driver bug reports](../driver-bugs.md)). The Galaxy Tab A9 Plus has no High or Ultra row, because
+those presets draw on core WebGPU only, and the tablet offered no WebGPU adapter when the table was
+set. The tablet's own run reports the WebGPU tier at all four presets, so the reason no longer holds and a ceiling for its High and Ultra rows is owed; until then those figures have no
+budget to compare. The rows still do not draw: Creek at High fails one custom material's pipeline
+with E1404 and VK_ERROR_UNKNOWN on that device, on this build and on the commit before the reflection
+landing ([Driver bug reports](../driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vkerrorunknown-at-creeks-density)), so the ceiling waits on that fault.
+
+- **Frame time:** the dressed Creek and forest must stay within the frame interval of the same
+  preset, device and path. A preset that falls to a lower one at the same page fails.
+- **The add-on's own GPU time:** at most 5 ms at Low and 12 ms at Medium on the Apple devices. These
+  two are chosen allowances inside the measured draw; the forest's whole WebGPU draw takes 6.6 to
+  6.9 ms at Low and 45.4 to 53.7 at Medium, both above the allowance beside them. At High and Ultra
+  the figure is measured: the far cards' pass takes 43.5 to 49.0 and 49.2 to 62.5 ms, and each
+  budget takes the larger Apple figure.
+- **Generation:** a preset's set of variants must build at an average under 250 ms a variant on the
+  reference Mac, the M3 Max this repository develops on. The budget is the set's average, and
+  individual species may sit above it: each run's record states how many and by how much. The Mac's
+  Low set averages 172.79 ms, with its beech, oak and alder above 250, so the line was never a
+  ceiling on every species. It was first
+  set for a whole variant set on the slowest measured device, while the stand-in carried about 4,300
+  triangles a variant. The catalogue's species carry 50,718 to 887,750, so a preset's set grew about
+  sixty times past that line's reach, and the owner restated the line per variant. On phones and
+  tablets the six costly broadleaves and the holm oak grow a sparse form, and the owner ruled that
+  lighter set for those devices: it measures 110.6 ms a variant on the iPad Pro 13 and 141.7 on the
+  S25, both inside the line, where the full set measured 213.8 on the phone, and the iPad's run has
+  the beech above the figure while the S25's has the beech and the oak. The stand-in's 78
+  variants took 77.6 to 105.2 ms on the iPad Pro 13 and 161.9 to 198.6 ms on the S25, inside the old
+  whole-set figure; a first S25 run read 213.4 ms at Low on a hot phone and is discarded as an upper
+  bound.
+- **Memory:** the budget is 25 MB at Low and Medium and 30 MB at High and Ultra, a fifth above the
+  measured arrays. The owner raised it, because every leaf vertex carries the next level's place for
+  the material's morph, and the margin leaves room for a later field of leaf data. The
+  stand-in took 7.0 to 22.7 MB. The GPU textures must stay within the measured figures for the same
+  demo and preset, which the add-on shares with the scene. Creek's 3.1 MB of Blender models leave,
+  and the arrays replace them.
+
+### M3-V7's cost per preset, on the Mac
+
+M3-V7's look is a grove of grown oaks in the wind add-on's field, with the leaf and bark materials
+swaying and the sun's shadows following. Its page is `tests/pages/vegetation-cost.html`, run with
+the governor's target at one frame a second so the render scale stays at 1. The page and the grove's
+four pictures no longer exist, so the figures below record a run that cannot be repeated. The Mac's Chrome drew
+it at 1280 by 720 at each preset and path
+([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-1700-vegetation-wind.md)). The
+machine was shared and the load sat between 4 and 7, so a row within about a millisecond of its
+neighbour is not a separate cost.
+
+| GPU path | Preset drawn | Whole frame (ms) | Shadow cascades (ms) | Ambient occlusion (ms) | Draw calls |
+| --- | --- | --- | --- | --- | --- |
+| WebGPU | Low | 6.29 | 3.21 | 0 | 26 |
+| WebGPU | Medium | 7.37 | 2.82 | 0 | 26 |
+| WebGPU | High | 7.44 | 2.39 | 10.55 | 38 |
+| WebGPU | Ultra | 6.55 | 2.13 | 6.39 | 42 |
+| compatibility | Low | 6.46 | 3.28 | 0 | 26 |
+| compatibility | Medium | 8.22 | 2.88 | 0 | 25 |
+| WebGL2 | Low | 11.48 | no timer | no timer | 53 |
+| WebGL2 | Medium | 15.40 | no timer | no timer | 56 |
+
+These are whole-frame figures: they carry the ground, the sky and the final pass as well as the
+plants. D-241's 5, 12, 49.0 and 62.5 ms are the add-on's own GPU time, which the benchmark isolates
+with `bun run bench:gpu-check`. The frame stays under every preset's ceiling here, and the highest
+reading, WebGL2 at Medium, is 15.4 ms against that preset's 43.9 to 90.8. The sway's distance grows
+with the preset, so a heavier preset draws more of the grove: 26 calls a frame at Low and Medium on
+WebGPU, 38 at High and 42 at Ultra. The number of plants is small next to Creek's valley, so these
+are the look's cost on one screenful, not the dressed valley's.
+
+## The generator's shape
+
+M3-V4 builds the add-on as `@null3d/vegetation`. The generator follows this record's look and
+settles four questions that the record leaves to the build.
+
+- **The leaf-card level rule lives in the generator, as Q2's option A had it.** The asset tool keeps
+  its own step for meshes from files. One test holds both to the rule (`tests/lib/leaf-card-rule.test.ts`):
+  the cards take a space-filling order through their middles. Every second card of the level above
+  is kept, and each kept card grows about its middle by the square root of that step. The largest
+  dropped card is the level's error. The generator's curve key is coarser than the tool's, which
+  orders the same way and costs less at grow time.
+- **A rosette thins its leaves the same way and widens a kept leaf.** Lengthening it would move the
+  tip past the crown's bounds, and the design requires that a level switch never moves the bounds.
+- **A plant keeps at most 255 branches.** A vertex names its branch's wind record with eight bits.
+  A species record whose counts would exceed that stops growing, and the built-in records stay well
+  under it.
+- **A conifer's needle card stands for a spray of needles.** A card 0.05 m wide and 0.3 m tall is
+  less than half a pixel wide at the picture's framing. The tree then reads as a bare trunk with a
+  few specks. The card is 0.9 m wide and 1.8 m tall, with 20 to a twig, and the needle cell paints
+  72 needles inside it. The branch record is the same for both sizes, so the crown keeps its taper.
+  The wide cards bring the conifer's asset to 627 KB, against 498 KB with the narrow ones, and the
+  denser species' share of it is in the look section of this record.
+- **The asset is one merged mesh for each part at each level, not a set of shared twig modules.**
+  The shared-twig idea from the research would need one draw for each module. A scene's 256 batches
+  cannot hold the tree variants beside the grass and the impostor cards. The merged parts keep the
+  measured memory. A tree takes about 0.3 to 0.5 MB over its levels, and the add-on's 78 variants
+  take about 18 MB.
+
+The built-in set holds thirteen species and six variants each. It grows on the calling thread or in
+one of the engine's job workers, with the same asset either way. Every choice comes from the
+integer hash that the shaders' `pcg` also computes.
+
+## Addendum: how custom materials cut their shape
+
+M3-V2 built ruling 4's cut-out features. The owner's focus holds the build time and the shader
+files' sizes. So the work keeps a custom material's builds as few as it can. These
+are the choices the task left open, and the reasons for them.
+
+- **The alpha in the WGSL gates the builds.** The compiler of custom materials looks for `.alpha` in
+  a material's tokens. Only such a material builds alpha to coverage, the alpha hash, their sample
+  mask, and a shadow caster that runs the surface's alpha. A material with a vertex offset gains a
+  motion build that runs it too; one without an offset has no motion build, so the motion pass cuts
+  no holes of its own. A coverage-only material that moves by its object's transform therefore
+  writes motion in its holes: the generic motion build tests no coverage function, since the motion
+  pass has no light to give it. A material whose WGSL never names the alpha keeps the builds it had,
+  plus the fading level of detail's. A development build refuses `alphaToCoverage` and the `hash`
+  mode for such a material with E1217; a production build does not, and draws it at the cutoff,
+  with the `hash` mode as the mask mode and no alpha to coverage. This mirrors the rule for
+  `transmission`, whose builds only WGSL that sets it has.
+- **A coverage function stays the caster's own hook.** A material that declares `fn coverage` casts
+  that function's shape, which reads the light's view. The two hooks agree: the feature that marks
+  a material for the renderer is set by either, and the coverage wins where both exist. The
+  impostor cards declare both, and their coverage samples the crown from the side that the light
+  sees.
+- **The caster and the motion test the cutoff.** A shadow map holds one depth for each pixel, and
+  the motion target holds one value. Neither can hold a share of them. A masked custom material's
+  caster and motion therefore test the surface's alpha against the material's cutoff, and against
+  the alpha hash where the material tests it. Alpha to coverage keeps its fade in the camera's view
+  alone. Those builds bind no copy of the camera's depth, so a surface that reads the depth with
+  `sceneDepth` or `sceneDistance` reads the stand-in there, 0 and the far plane, and cuts another
+  shape in its shadow.
+- **One feature marks the material for the renderer.** `feature::CASTER_COVERAGE` is set from the
+  compiled WGSL, for the surface's alpha or for a coverage function, and the frame builders read it
+  before they choose a custom caster or a custom motion build. The feature word's 32 bits are all
+  taken, so the surface's alpha does not add a bit of its own: the coverage flag already says that
+  the caster and the motion cut their shape, and this task widens what sets it. A material without
+  it casts its mesh's whole shape, as it did before.
+- **WebGPU runs the caster's fragment stage.** The custom template takes `depthFragment` for a
+  material that names the alpha or a coverage. The engine's masked caster templates do the same. Its
+  prepass keeps no fragment stage, since a prepass that drops pixels is no prepass. WebGL2 needed no
+  change: its depth pass always compiled the template's fragment shader.
+- **The depth and motion layouts reach the fragment stage.** A masked custom material's caster
+  and its motion build run the surface function in a fragment stage, and that function reads the
+  material's custom values, the table that holds its uniforms and its texture layers. The depth
+  layout and the motion layout showed that texture to the vertex stage alone, because only a
+  vertex offset had read it. A textured or a uniform-driven material therefore failed to build
+  its caster's pipeline with E1408 on WebGPU, while a leaf of plain values built. Both layouts
+  show the texture to the fragment stage too, where the bind group already held it.
+- **The masked builds give the surface the same inputs.** A masked custom material's caster, and
+  its motion build where it has a vertex offset, run the surface function, so they give it the
+  inputs that
+  [Surface functions](../../docs/shaders/surface-functions.md#cut-out-shapes) documents. Several
+  faults broke that. The caster wrote no object matrices into `object`, though its vertex stage
+  passed them. It placed the fragment in the shadow map's pixels, where the surface reads the
+  camera's. The motion build passed the mesh's normal, not the world's. And the motion build never
+  set `frontFacing`. Both also read the light where the surface reads the camera's `viewDirection`.
+  The built-in `camera` and `frame.resolution` were the shadow view's and the shadow map's.
+  The surface now sees the scene camera's view-projection, view, projection, near and far, target
+  size and eye in light views, carried in the shadow frame. The frame's uniform data grows by 96
+  bytes, and `FRAME_UNIFORM_BYTES` rises from 992 to 1,088. The caster fills the object's matrices,
+  places the fragment in the camera's pixel, and reads the camera's place for `viewDirection`. The
+  motion build passes the world normal and the face it draws. A surface that reads any of them
+  therefore cuts the same holes in its shadow and its motion as where it shades. The
+  `custom-surface-inputs` test compares a card whose alpha reads all of them against the same card
+  without them, in the shadow and in the motion view. A shadow caster draws the triangles that face
+  away from the light, so `frontFacing` and the side that `normal` faces can be the caster's own, as
+  the surface docs say. A caster and a motion build bind no copy of the camera's depth, so a surface
+  that reads `sceneDepth` or `sceneDistance` still cuts another shape there, as the docs now say.
+- **Row values keep the mask's own test.** `ROW_VALUES` is no longer kept apart from
+  `ALPHA_COVERAGE` or `ALPHA_HASH` in `APART`. The frame builder also stops exempting a batch's
+  rows from the mask's own test. So a batch's rows test a mask by the cutoff, by coverage or by the
+  hash, for every material. A tree drawn in a batch now takes alpha to coverage, which the
+  vegetation add-on needs.
+- **`VertexInput.colors` costs one attribute.** A vertex offset reads the mesh's vertex color, which
+  the compiler grants only to WGSL that names it. The material then needs a mesh with colors, and
+  nothing else pays for it. The field is `colors`, so it does not read as the surface input's
+  `vertexColor`, whose value the row color multiplies.
+
+The cost of the work, measured on this branch:
+
+- **The engine's start and feature files.** `surface_place` builds the surface input's code for a
+  custom material's masked caster and motion builds, under the custom def alone, so an engine lit
+  build carries none of it. The start's files still grow, for the material gating that reads the
+  compiled WGSL and the custom template's depth stage. The engine's own builds rose too: a batch
+  whose rows bring values now takes its mask's own test, so the lit templates build each mask
+  family over the row bit. The shader build budget rises with them
+  ([Implementation notes](../implementation-notes.md#the-count-the-manifest-may-not-pass)).
+- **A custom material's builds.** A material that names the alpha gains the builds of coverage, the
+  hash and the sample mask, each of which picks up the template's other bits, and the masking of
+  its caster and motion. The Vite plugin's build time and the page's module grow for such a
+  material, and not for one that never cuts its shape.
+
+### Measured
+
+The Vite plugin's build time is the time its shader compiler takes for one custom material,
+measured through `compileWgsl`, 5 runs after a warm-up:
+
+| Material | Before | After |
+| --- | --- | --- |
+| a surface function that never names the alpha | 4,071 ms, 144 builds | 6,531 ms, 240 builds |
+| a leaf: vertex offset, surface with alpha (and the vertex color after) | 4,999 ms, 177 builds | 18,178 ms, 625 builds |
+
+The build counts do not depend on the machine's load: the landing's compiler builds the same 240 and 625 variants. A compile of the same two materials took 9,113 ms and 22,719 ms in a busy window there, so the times follow the load. Two things raise a material's builds. The
+fading level of detail's builds double every material's shading builds, because they load with the
+material's first use. Alpha to coverage, the alpha hash and their sample mask then multiply the
+builds of a material that names the alpha, and its caster and motion gain the mask's test. The
+figures for the manifest's count and the start's files sit in
+[Implementation notes](../implementation-notes.md#the-count-the-manifest-may-not-pass) and
+[D-14](D-14-js-budget.md).
+
+## Addendum: how the scatter places plants
+
+M3-V6 built the placement half of the add-on. The record above named what it must do; this addendum
+records the choices that the build made, and the figures that shaped them.
+
+**What it does.** `groundMaps` reads the ground once into flat grids: height above the water,
+distance to the water, slope, aspect, northness and eastness, curvature, wetness from the water's
+flow and from the hollows, and the shares that paths, rocks and cave mouths cover. A rule holds one
+tolerance curve for each input and scores a place by the lowest curve, the `EcoBrush` rule that the
+research recommended. `scatterVegetation` places six layers in order, canopy first and dead wood
+last, and returns flat arrays of nine floats for each point.
+
+**The choices, and why.**
+
+- **The placement path uses no transcendental function.** Position, rotation, scale, variant,
+  tint and lichen all come from the integer hash, and the rotation is stored as a share of a whole
+  turn rather than an angle in radians. A point list therefore matches bit for bit on every device,
+  with no tolerance to argue about. A strict comparison across devices needs this: `Math.sin` and
+  `Math.atan2` are allowed to differ in their last bit between engines. A position built from them
+  would not compare equal.
+- **The tiles cannot change the result.** A candidate's cell is indexed over the whole square. It
+  is not indexed over a tile. The build walks the cells of the tiles added in one row-by-row order.
+  The first plant to claim a place keeps it. Both the order that the tiles arrive in and the tile size
+  therefore leave the points identical, and the test checks all three. A walk of the tiles one
+  after another would place each tile band's rows before the next tile band's, so a larger tile
+  would win other shared places.
+- **The occupancy grid records the layer, and a rule names the layers it must avoid.** The default
+  is every layer. A sapling names only its own layer, so it stands under the crown that shelters
+  it; ground cover and shrubs do the same. Without this the young layer places 12 plants in Creek's
+  valley, because every sapling stands inside its parent's crown radius.
+- **Wetness is normalized at the flow's 95th percentile, not its maximum.** Flow gathers by a power
+  law, so one channel holds most of it, and the maximum leaves the rest of the ground at 0.06. The
+  percentile gives the channels 1 and the slopes near 0, which is what a species' curve can use.
+- **The curves fit Creek's measured ground.** The built-in rules follow the measured percentiles
+  of each input over the valley. Curves written from the general shape of a valley place 57 plants
+  in Creek, with nothing in the ground layer. Their bounds are narrower than the ground's own
+  bands. A scene on other terrain moves the numbers that differ.
+
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,020 points**
+now that the waterline rules refuse ground at or below the water. The checksum of that placement is
+**2006477110**, read from the exact bytes of every float, so a page compares its point list with
+another device's and any difference at all shows. Before the waterline rules the shipped reference
+was **1,245 points** with checksum **2493806866**: 101 canopy trees, 170 saplings, 956 ground plants
+and 18 dead wood. The earlier figure of 956 points and checksum 3358570449 came before the scatter's
+own changes moved the placement. The Galaxy S25's run of 10 November reached the 1,245 reference on both GPU paths,
+recorded at
+[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md);
+the run of 11 November, below, reaches the current one on every device. The ground maps hold their samples as 32-bit floats, which is what keeps the
+samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
+last bits that an engine may round another way do not survive the narrowing. A height function that
+answers other samples on another engine would move the points that it places.
+
+The species records set the room that each plant keeps, so the placement follows a change to one.
+The conifer's whorled tiers and the cards of many small leaves moved it twice after the linked runs
+below were measured. The run of 11 November reaches the shipped reference on every device and both
+GPU paths, which is what the table below holds; the earlier rows, taken against 956 and 1,245, are
+kept in M3-V6's evidence for the size of each move.
+
+**The budget.** The placement runs once, after the ground maps and before the first plant draws, so
+it holds a one-time line rather than a frame ceiling: 250 ms on the reference Mac, the line that
+M3-V4 sets for a tree variant. Every measured placement sits well inside it. The ground
+maps are timed apart from it and take 26 to 86 ms once. The placement starts no engine and reads no
+GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this size: 1.6 MB for
+the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.
+
+The `vegetation-scatter` plan ran at `396cab7df` on two cloud phones, a cloud iPad and the Mac, two
+pages on each device, and every page compared against the shipped reference. The Mac, the S25 and
+the iPad start both GPU paths; the S24 has no WebGPU adapter, so its second page is a WebGL2 drawing.
+The placement is the middle of three timed runs; the ground maps are read once.
+
+| Device | Plants | Checksum | Placement | Ground maps | Display |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S24, Chrome, WebGL2 page | 1,020 | 2006477110 | 11.30 ms | 82.70 ms | 30 Hz |
+| Galaxy S24, Chrome, second page, drawn on WebGL2 | 1,020 | 2006477110 | 9.33 ms | 69.05 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.77 ms | 46.61 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 1,020 | 2006477110 | 6.35 ms | 46.35 ms | 30 Hz |
+| iPad Pro 13, Safari, WebGL2 page | 1,020 | 2006477110 | 5.10 ms | 36.02 ms | 59 Hz |
+| iPad Pro 13, Safari, WebGPU page | 1,020 | 2006477110 | 5.22 ms | 40.30 ms | 59 Hz |
+| MacBook Pro M3 Max, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.89 ms | 24.58 ms | 60 Hz |
+| MacBook Pro M3 Max, Chrome, WebGPU page | 1,020 | 2006477110 | 6.15 ms | 24.17 ms | 60 Hz |
+
+Both phones reported a 30 Hz display where 60 was expected, so their frame timing is unreliable and
+no frame rate is claimed from them; the placement and ground-map times are the pages' own timers.
+
+The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
+The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both phone
+displays ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds.
+Safari on iPadOS runs WebKit and JavaScriptCore, so that row places the points on the second
+JavaScript engine beside Chrome's V8. The run files are
+[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261111-034601-vegetation-scatter.md),
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261111-034402-vegetation-scatter.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261111-034748-vegetation-scatter.md) and
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261111-034314-vegetation-scatter.md).
+
+**Options rejected.**
+
+- **Float noise for the point source.** It draws other plants on other GPUs, which hard rule 29
+  already refuses for shaders.
+- **A hard cutoff instead of a score.** A tolerance curve that accepts or refuses a place outright
+  gives hard band edges, where the density jumps from one species to none. The score as the chance
+  that a candidate grows fades each species into its neighbor's ground.
+- **Occupancy resolved per tile.** A tile that arrived after another would see that tile's plants
+  and refuse its own, so the result would follow the streaming order.
+
+## The bark and leaf atlases, and why the browser paints them
+
+M3-V5 builds the atlases that give a plant its bark and its leaves. `bakePlantAtlases` paints four
+textures from integer hashes in the browser, the first time a page asks for them, and `plantMaterial`
+draws a trunk or a crown from them. The plan asks for the atlas to be painted on the GPU and kept.
+The need to keep it is what decides where it is painted.
+
+**What the atlases hold.** The bark block is 768 by 512 in six cells of 256, one for each painted bark family; each cell tiles
+around and along a branch:
+stretched Voronoi plates, warped by fractal noise, with cracks between them and fibers up the trunk.
+The leaf block is 1536 by 512 texels, in twelve cells of 256: seven leaf clusters (a lobed oak, a
+smooth entire oval, a small-toothed birch, a long narrow willow, a wavy beech, a small round aspen
+and a palmately lobed maple), a spruce's needle shoot, a pine's fascicle spray, a frond, a blade
+and a broad leaf. Its cells rose from 128 texels to 256 when the conifer needles arrived: a
+conifer's needles are a small share of a card, and at 128 texels they could not be drawn as needles
+without turning into blades. Its color and surface maps are 3.0 MB each before mips and about 4.0 MB
+each with them, so the pair costs about 8 MB, 6 MB more than the 128-texel block it replaced. The bark block is 1024 by 512 in eight cells, seven of them painted families: a seventh cell joined
+for a holm oak's small dark plates, because a furrowed live-oak bark is the wrong figure for it.
+2.1 MB a map before mips and about 2.8 MB with them, so the pair costs about 5.6 MB against 0.35 MB
+for the one block it replaced. A species names its cell; a species that shares one says so in its record, and a leaf shape
+that no cell suits waits for a new cell rather than borrowing a neighbour's. A leaf comes from an outline with veins written into a height field,
+and the gradient of that field gives the normal map. Each atlas has a color map, in sRGB, whose
+values multiply the species' own color, and a linear surface map: the normal in red and green, the
+leaf's coverage or the bark's roughness in blue, and the leaf's thickness in alpha.
+
+**A pass texture keeps no image once its pass stops drawing.** A full-screen pass that paints the
+atlas once and then waits, through `every` or through `render.setPassEnabled(pass, false)`, leaves
+the materials that sample its texture with nothing: every picture comes out black. The engine's
+documentation promises that a pass keeps its last image, and the render graph keeps the same
+resource, so it is the image that is lost rather than the binding. Painting the atlas in every frame
+that a plant draws is the only way a pass texture would hold it, and that is far too slow: on
+CI's software GPU the vegetation pages then take more than sixty seconds and time out.
+
+**A pass texture keeps no alpha either.** A fragment shader's alpha does not reach a material that
+samples the pass's texture: a leaf's cut-out draws as a filled square. Even the per-frame route
+would need the coverage moved into a color channel.
+
+**The alpha half, and its fix in M3-V13.** The HDR path packs the scene color into 11, 11 and 10
+bits, with no alpha, and a full-screen pass's target took that format, so the shader's alpha had
+nowhere to go and every sampled alpha read 1. A full-screen pass's target now takes rgba16float
+there, whose fourth channel holds the alpha, and a Rust test fails when the packed format comes
+back. The 8-bit path's target already had one, so compatibility mode and WebGL2 never have the
+packed target and cannot show the fault; the page check proves it on the WebGPU HDR path, where the
+old format reads a coverage of 234. The compute pass keeps its alpha in its own rgba16float target.
+
+**The image half.** The new cases stop a full-screen pass and a compute pass, and keep their image
+and their zero coverage on all three GPU paths; a case added late that paints once keeps its image
+too. They do not reproduce M3-V5's own route, so this record fixes the alpha half and shows the
+image holds on the routes it tests. It does not name a cause for M3-V5's lost image.
+
+**So the browser paints, and the engine keeps.** The pixels come from the same integer hashes that
+the shaders would use, so every device paints the same atlas and no file is downloaded. The engine
+makes each texture's mip levels, whose average alpha is the leaf's coverage, and a masked material
+fades its cut edges with alpha to coverage. That keeps a shrinking card's coverage without a
+pyramid of levels painted by hand. A test holds the property: three leaf cards of one square of the
+atlas, at 12, 24 and 48 meters from one camera, cover the same share of their own boxes.
+`tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
+`vegetation-coverage` picture shows the same for three crowns at three distances.
+
+**The owner's judgment is given.** On 10 November 2026 he judged the generated leaf and bark files
+of the pedunculate oak and the common ash, from review sheets that write both faces of the leaf, its
+relief, the mature bark tiled and one corner at full size, and the young wood, each beside a note of
+what a wrong one would look like. He judged them at least as good as the painted set they replace.
+Asked in two parts, he answered yes that those two species' sheets stand as the sample for every
+species the add-on generates, and yes that he wants the other species shown as well. <!-- outside date -->
+
+The ruling's scope is the approach, not each file. It answers whether the generated atlases are at
+least as good as the painted set they replace; it does not certify that any one species' files are
+right. A fault found in a species' sheet is a finding against that species' work, the painter's when
+the fault is shared and that species' record when it is local, and this ruling never dissolves one.
+Showing him the remaining species' sheets is an obligation this record carries until they are drawn
+and read.
+
+**Owed.** The paint's time on each device, which the device record keeps.
+
+## What each leaf cell holds
+
+A leaf cell must hold many leaves that differ in tone, shape and edge, as Creek's painted oak does.
+One smooth outline repeated along a twig passes the coverage test, yet a crown of such cards reads
+as a pale tiled slab. That gap is what M3-V5's judgment asks about.
+
+**Each leaf's width follows its aspect.** The painter multiplies a leaf's half width by the leaf's
+aspect. Without that, every leaf paints between three and twenty times too wide for the shape its
+family describes. A single cell still looks like a leaf, because a leaf that is too wide is still a
+leaf. A crown does not: its cards merge into slabs, and no outline can be seen. Whoever changes a
+painter should check it on a repeated card as well as on one cell, since one cell hides this fault.
+A unit test holds each cluster cell's cover between 0.35 and 0.8 of its square, which a painter of
+too-wide leaves cannot reach.
+
+**What a cell holds.** A cluster cell carries 60 to 64 leaves, so a card presents many small leaves
+over most of its square, and the card's outline breaks into leaf edges rather than one smooth lobe.
+The owner's first look at the plants asked for that, and a count is what buys it: the leaves are
+smaller than the card they sit on, so a card of 0.8 meters shows leaves of about 0.2 meters. A
+family sets each leaf's outline. That outline has a width profile along
+the midrib and teeth along the edges. A family may also give the lobes of an oak or a hosta, and the
+veins. Each leaf of a card then draws its own numbers from its seed. These cover its profile and
+aspect, and its tooth count and depth. They also cover its lobe depth, vein count and strength, a bow
+of its midrib and a narrower side. Its brightness and its lean to yellow come from them too. One leaf
+in five has a round bite out of an edge, so a crown never reads as a pattern. The cells keep their
+eight kinds. Four are broadleaf sprays: an oak's lobes, a beech's fine teeth, a birch's small teeth
+and a willow's narrow blade. The fifth is a conifer spray of needle pairs, and the sixth a fern's
+frond of lobed pinnae. The seventh is a clump of eleven grass blades. The eighth is a broad hosta
+leaf, with a smaller one behind it.
+
+**The color map.** A leaf runs from darker at its base to lighter at its tip. A slow blotch mottles
+its blade, its veins take a line of shade or light, and its rim darkens a little over its last
+seventh. That rim lets two overlapping leaves read apart, as a painted card's dark edges do. A
+deeper rim was tried first, at more than half, and it turned every edge of a distant crown into a
+dotted black fringe, because at that size a leaf is a few pixels and its rim is most of them. A leaf
+also darkens where another leaf lies over it, as a pile of leaves shades itself. The channels are scaled so that the brightest
+one stays under white. A warm leaf then shows its hue instead of clipping to a pale pink or blue.
+Across a cell, the green channel spreads with a standard deviation of 21 to 25 of 255. The darkest
+leaf lies near 150, since the shallower rim no longer carries a leaf's cover down to 128.
+
+**What takes no leaf.** A texel that no leaf covers takes its cell's mean leaf color and mean height.
+Mip levels average color without weighting by alpha. A background of its own would therefore pull a
+distant crown's hue toward it. A height of its own would bend the normal at every silhouette.
+
+**A cell fades at its edge.** A leaf that grows past its cell is cut where the cell ends, and a cut
+of that kind is a straight line that a crown shows as a seam along the card's border. The cell's
+coverage falls to nothing over its last two per cent, so a cut leaf tapers instead.
+
+**A card's fill is what closes a crown.** At a fill of 0.34 of a card's square, the
+`vegetation-versus-creek` picture shows cards of leaf with sky between them. A crown then reads as
+several bunches rather than one crown. The card count is not the cause. The oak generator places 960
+cards of 0.8 by 0.72 meters for the crown. Creek's painted oak holds about 4,550 leaf quads over a
+crown of 9 by 7 by 10 meters. In leaf area the generated crown carries more than the painted one. At
+a fill of 0.46, with 20 to 24 leaves of their own size in each cell, the same crown closes. A fill of
+0.62 closes it no further, and it costs the leaves their own shapes. Leaves grown until they near the
+card's rim make each card read as one huge leaf, which is the same fault at another scale. So the
+fill comes from more leaves, never from longer ones.
+
+**The coverage property holds.** A cluster cell covers 0.44 to 0.45 of its square, and the conifer's
+needle cell 0.37. The coverage test reads the share of a card's box at 12, 24 and 48 meters, on all
+three GPU paths, and a card keeps its share as it shrinks.
+
+**The bake's time.** `paintLeaf` takes about 230 ms, and `paintBark` about 160 ms, on an Apple M5 Max
+laptop under load. A check on an Apple M3 Max reads 244 ms for the leaves and 144 ms for the bark,
+389 ms together. It ran in Bun, beside the machine's other jobs, and the total
+stays inside the one-second line that keeps an atlas across visits. Each leaf rejects a texel outside
+a box around its outline before it works out the outline. That holds down the cost of a cell of many
+leaves.
+
+A cell of twice the leaves would otherwise cost twice the paint. It does not, because the spray
+sorts its leaves into 16 by 16 tiles of the cell and a texel tests the leaves of its own tile alone;
+a leaf's box puts it in the tiles it can reach, and a leaf outside one of them could not be nearer
+than the one already found. With 60 to 64 leaves a cluster cell, and 72 needles the conifer's, the
+M3 Max painted the leaves in 160 to 238 ms over three runs, and the bark in 125 to 133 ms, at a load
+of 30: less than the 244 ms that the 20-to-24-leaf cells took before the tiling, and well inside the
+one-second line.
+
+The `atlas-paint` plan measures the same two painters on a device, three rounds each in turn. On the
+M3 Max in Chrome 156, on a free machine, it read 70.6 ms for the bark and 115.2 ms for the leaf
+([run](../tested-devices/macbook-pro-m3-max-chrome/20261031-104246-atlas-paint.md)). The same plan on
+the iPad Pro 13 in Safari 26.6.1 read 36.7 ms for the bark and 78.3 for the leaf, and on the
+Galaxy S25 in Chrome 152, standing in for the S24 class, 56.0 and 104.1
+([run](../tested-devices/ipad-pro-13-safari/20261031-110416-atlas-paint.md) and
+[run](../tested-devices/galaxy-s25-sm-s931b-chrome/20261031-110416-atlas-paint.md)). Both devices
+paint faster than the Mac does. A Mac measures the same page
+without a cloud run with `NULL3D_ATLAS_PAINT_COST=1 bun run test:browser -- atlas-paint-cost.spec.ts`,
+which prints the machine's load beside the figures.
+
+**What the pictures show.** The `vegetation-atlas` picture's leaf card is a twig of lobed leaves that
+fills its square. The `vegetation-versus-creek` picture shows the generated oak beside Creek's
+painted one, and the leaves there have outlines, veins and tones of their own. That picture shows a
+gap: the generated crown is paler and flatter than Creek's. The atlas is a map that multiplies a
+species' color. The crown is lit by one uniform light with no crown occlusion, so the leaves differ
+by their own paint alone. Creek's texture carries painted shadowing as well. The rest of that gap
+belongs to M3-V7, not to the atlas. That task adds the leaf material with crown-bent normals, a tint
+for each tree and crown occlusion.
+
+**The painted comparison is gone.** M3-V11 deleted Creek's Blender models, and with them the
+`vegetation-versus-creek` picture and the painted oak that it drew beside the generated one. The
+generated leaves are judged against Creek's own dressed valley now, and the owner's look review of
+it stands among M3-V11's owed items.
+
+**The leaf's normals.** M3-V7 lights a leaf's diffuse and ambient light by a normal of its own,
+`s.diffuseNormal`, and keeps the leaf's own normal for its gloss and the light through it. The
+crown's normal is radial from the crown's center. An ellipsoid normal would bend it by the crown's
+shape instead, but it needs two more numbers in the plant material's uniforms, and that row has no
+room: a custom material holds 32 numbers less one for each of its six textures. The wind field's
+twelve steady numbers do not fit it either, so they travel in the second row of the branch records
+texture, and the frame's newest layer takes the row's one spare number. The research report lists a
+normal from the crown's center as a valid crown normal. The second normal itself costs
+no uniform: it is a field of the shader's Surface record, so a material that never names it keeps the
+template's single-normal path.
+
+## The plants' look, after the owner's first review
+
+The owner looked at the demos' plants as M3-V12 moved them to the add-on, and ruled that the species
+looked wrong. A separate reviewer then read the pictures and rejected all three of its tests. Its
+list was the light-shaft frame's light, a crown of many small leaves at varied angles, a conifer that
+tapers to a point, colour kept in the shade, the garden skyline and its foreground plants, no black
+fringe, and bent trunks. The changes below answer that list, and the figures that hold them.
+
+**The boughs attached a tenth of the way up the trunk.** A branch's children start where the
+*child's* level record says, not where the parent's does. The conifer's bough level asked for 0.1, so
+its crown grew from 1.7 meters and its lowest boughs reached the ground. That is what made the light
+shafts demo's wood a dark mass: the crowns filled the frame, so the low sun never reached the air
+between the trunks. The bough level now asks for 0.48 and runs to 1, so the trunk stands bare below
+the crown and the crown carries foliage to its point.
+
+**The conifer is a cone.** Its crown's outline is `conical` with a spread of 0.5, which narrows a
+bough quickly as it climbs, and the boughs now run to the trunk's tip. Its limbs are thick enough to
+carry a tree: the bough, the branchlet and the twig end at 0.03, 0.02 and 0.012 meters, so the trunk
+measures 0.35 meters in radius at its foot, with its flare, rather than reading as a pole. Each
+needle card is 0.9 by 1.8 meters and 20 of them grow along a twig, and the needle cell paints 72
+needles so the card shows a spray rather than a row of teeth. The card's size is what closed the
+crown at the species picture's framing, where a whole tree stands about fifty pixels tall and a card
+of a third that size drew as a wisp: a card's size costs no vertex, and the count does. The crown's
+shade keeps a share of the sky (below), and the trunk's bark color is a pine's pale plate rather
+than near black.
+
+**The cards are short, and the skyline keeps its skirt.** The pines above the stone garden's wall grow from the garden's own record. Their boughs leave the trunk at a fifth of its height, and the whorls' boughs lengthen toward the foot. The crown tapers to a point, so the part above the wall is a layered spruce skirt. On the Mac at 1280 by 720, that crown widens from 66 pixels at its top to 143 at its base. The built-in record held 81 to 88 throughout. Its top stands six pixels lower, clear of the frame's edge. The light-shafts wood's needle cards are 0.44 by 0.62 meters and 22 to a twig. They were 0.7 by 1 meter and 10 to a twig. The low sun then falls through the crowns as fine dapple, not broad panels. The crown area under 0.18 luminance falls from 34.1 to 24.6 per cent of the upper frame. That wood's sun draws a 1,024-texel map, so a dappled edge blurs over a penumbra instead of reading as the map's cells. Its fog keeps 0.02 density with the volumetric sun at 3, so the ranks of trunks stand apart. The middle band's column means spread from 0.555 to 0.572. A garden pine at the demo's seed and variant is 11,657 triangles at level 0, against the built-in conifer's 10,821 at that same seed and variant.
+
+**A crown keeps its shade.** Crown occlusion used to take the ambient light to nothing at the crown's
+axis, and the sun does not reach inside a crown, so the shade side was flat black. The material now
+keeps `CROWN_SHADE`, 0.55, of the ambient at the deepest point and loses it smoothly from the
+surface, so a shaded leaf stays green and the crown shows a fall of tone. The leaves also keep more
+of their own normal in the direct light, `crownBend` at 0.35, so a sunlit crown shows leaves rather
+than one even sheet.
+
+**The trunk bends, and its bark shows plates.** The conifer's trunk curves 12 degrees over its
+length, and the broadleaf's 18, so a trunk leans rather than standing as a pole. A bark plate's tone
+spread wider across the atlas, and the leaf atlas's dark rim fell from more than half to 0.22 over a
+leaf's last seventh.
+
+**What it costs.** The built-in set generates 29.75 MiB of arrays, 31,192,082 bytes, against the 30 MB ceiling at High
+and Ultra, with the denser conifer and broadleaf taking the room that the ceiling left. The
+conifer's level 0 takes 4.7 MB of it. A conifer is 10,821 triangles at the demo's seed and variant, level 0, against
+the 6,400 of the hand-built pines the demos used to carry.
+
+**The demos' frames.** The figures below were measured before this change doubled the wood's needle
+cards and thinned its fog, so they describe the plants before it and a run at this head is owed. On
+this Mac at 1600 by 900 on core WebGPU with the governor on, the stone
+garden holds the display's 16.67 ms at every preset, and the light-shafts wood reads 33.3 ms at
+Low, 50.0 at Medium and High, and 116.7 at Ultra. Its cost is the volumetric fog and the 150 trees'
+shadows, not the plants alone. The run file is
+[the demos' run](../tested-devices/macbook-pro-m3-max-chrome/20261031-0122-v12-demos.md), and the
+wood's High sits under the forest's High ceilings of 62.5 ms on the iPhone 17 and 67.1 on the iPad
+Pro 13.
+
+## Fluid wind is an add-on of its own
+
+The M3 plan measures fluid-simulation wind, settable by preset and adjusted by the governor. The
+owner ruled that the wind is an add-on of its own, which the plants read. The reasons:
+
+- Plants are not the wind's only readers. The plan also gives the field to dust, smoke and rain in
+  the particles add-on (M3-V17), and to flags and water surfaces, which M3-V14 times. The battle
+  demo's flags read it too, because M3-V12 moves each demo's own wind formula to the field. So do
+  Creek's floating leaves.
+- It passes [D-173](D-173-addon-hooks.md) ruling 4's test, because other add-ons build on it.
+- A page pays nothing for a feature that it does not use ([D-54](D-54-addon-modules.md)). A game
+  with flags and smoke but no plants must not need the vegetation add-on to get wind.
+- A split before the API freezes in M4 breaks no page. The same split after the freeze
+  would.
+
+The cost is one more package to publish, version and document. Vegetation is also the first add-on
+that depends on another add-on. [D-173](D-173-addon-hooks.md) gives the rule for that.
+
+| The wind add-on, `@null3d/wind` | The vegetation add-on |
+| --- | --- |
+| The analytic field of place and time. It is the whole field on the lowest tier, and the far field and the grid's inflow on every tier | Wind per vertex (M3-V7), and branch poses with their springs (M3-V10) |
+| The grid that follows the camera, the solver and the fixed step | The grass's compute pass, which reads the field (M3-V8) |
+| The base wind, gusts and pushes at a point | The wind bytes in each plant's vertex colors, and the branch records |
+| The one sampling function, in the wind add-on's own WGSL namespace (M3-D8) | The scatter's grid of canopy cover, which it gives the wind as a drag input |
+| Its feature's settings, budgets, governor steps and overlay row. Its budget is its own, not a share of the vegetation add-on's | The falling and drifting leaves, which ride the field (M3-V17) |
+
+- Vegetation lists the wind add-on as a dependency, so one install still gives plants that move.
+- Other readers take a plain input in the plan: the wind texture and its box. Examples are the
+  particles add-on (M3-V17), water ripples and a flag. The page connects the two. A sample
+  is one texture read through the box, so they need no code from the wind add-on and no dependency
+  on it. M3-V14 times that read.
+- The engine changes stay engine hooks that any add-on may use, such as M3-V13's compute passes that
+  keep their state between frames.
+- M3-V15 builds the wind add-on, and M3-V16 declares the wind's feature in it.
+
+## The shadow's level
+
+A plant's shadow needs far less detail than the crown that casts it. `shadowLevel` on the species
+record names the detail level whose meshes cast the shadow, and `shadowCasterLevel` answers with it:
+the level the record names, the coarsest level when it names none, and the finest level for a plant
+under four thousand triangles, because a sapling's shadow is a blob at a coarse level and its
+silhouette is all that shadow says.
+
+**What it saves, twenty trees, governor off, on the GPU's own clock at Medium.** The pine falls from
+27.72 to 14.48 milliseconds, 44.8 to 59.8 frames a second. The spruce falls from 26.61 to 15.73,
+48.3 to 59.6. The triangles of the whole stand fall with them, 2.35 M to 1.42 M on the pine and
+2.77 M to 1.81 M on the spruce.
+
+**What it costs.** The caster level is already generated for the crown's own level of detail, so no
+new arrays are built. Its meshes are uploaded besides the visible ones, which is the cost to record.
+The pine's caster is 10,493 triangles and 1,024 KiB of vertex arrays against 39,865 and 4,226 KiB for
+the level the crown draws. The spruce's caster is 21,598 triangles and 2,114 KiB. On both, the caster
+is about a quarter of the finest level's arrays.
+
+The change moves the cast shadow, so every picture with a shadow on the ground or on the tree itself
+moves with it. The crown, the leaf cards and the bark do not move: their geometry and their materials
+are untouched. A reviewer scoring a row from a cast shadow should know which arrangement drew it.
+
+## The wind add-on's cost and budget
+
+The wind's own cost at each preset, and the rows and the budget that each preset proposes, are in
+[D-283](D-283-fluid-wind-cost.md). That record is the plan's addendum for the fluid wind: it gives
+the field's cost on the Mac, the iPhone 17 and the Galaxy S24, the readers on the grove, and what
+each figure is, whether measured, modelled from measured parts or a bound. It also names the rows
+that M3-V16 declares, and what the look runs and the owner's ruling still owe.
+
+## The grass's two halves
+
+M3-V8's first slice builds the CPU half of the plan's two paths: `createGrass` places tufts on a
+height function by integer hash and draws the hill in one instance batch for each tuft shape. A
+preset draws its share: 0.35, 0.6, 1 or 1.25. The engine culls each batch's rows in groups. The
+blades read the wind add-on's field at their roots, so one field moves the grass and the leaves
+together. The field's steady-air and sampling blocks are copied verbatim from the leaf material's
+`plant.wgsl`, and a test fails when one copy is edited alone. The material takes the field's newest
+layer each frame through `grass.setWindLayer`, which the page calls in its update.
+
+**The far band's first build thinned, and a look review rejected it.** That build placed a quarter of
+the near band's tufts past the first edge, gave their blades a single segment and widened them by
+two. The review measured the crest's blade-green pixels at 36.2 to 18.3 per cent on WebGPU, 26.1 to
+14.4 in compatibility mode and 20.9 to 11.6 on WebGL2, and saw wide sticks, a dotted lattice and a
+density arc where the bands met. The arithmetic is why. A band's cover is its blades per area times
+its blade width, so a band with a quarter of the tufts needs blades four times as wide, not twice;
+the square root that the plan's line implies holds only when a blade grows in both its width and its
+length, and only the width grew. The widening also lands where the ground hides it: a blade of one
+segment is a triangle that tapers to a point, so its extra width sits at its root. The lattice is
+the same two faults: single-segment blades are sub-pixel at the crest and rasterize as single
+pixels, and every far row began to draw at one distance, so the engine's ordered fade dither fell in
+one ring.
+
+**The second build looked right and saved nothing, so the split left the code.** That build placed
+every band's tufts at the same blade width and took the saving from the segments alone, 39 triangles
+a tuft past the first edge against 65. It drew the hill at 3.54 ms at High on the Mac, a little
+above the 3.47 ms of one band, because the far rows fell only to 60 per cent of the triangles while
+the second batch and its band test cost the frame their own share. The review's rule was that a
+saving which cannot hold the hill's look at its price is not taken, and this one cannot hold its
+price at all. So the distance bands were removed rather than shipped unused: no page asked for them,
+and a picture of the split would have recorded the rejected look as expected output. The record of
+both attempts stays, because the arithmetic is the value that the work produced.
+
+**What it costs.** The default hill holds 20,000 tufts at the High count, and Chrome on the Mac drew
+it at 960 by 540 drawing pixels at each preset and path that its tier offers
+([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-131312-vegetation-grass.md)).
+WebGPU took 1.38, 2.36, 3.47 and 4.19 ms a frame from Low to Ultra at the median, with the wind
+add-on's compute pass 0.07 to 0.13 ms of that, and the opaque pass at High carried about 1.3 million
+triangles. The split hill's own runs are the two above, 2.59 ms for the rejected thinning and
+3.54 ms for the look-preserving split, with their rows allocated once for Ultra's share: 43,750 rows
+of 64 bytes. The default's High reading sits inside the add-on's 49.0 ms budget on the Apple
+devices. The iPad, the S24 class and the Tab A9 Plus rows are owed. The picture holds the air still,
+so its blades stand straight, and its references hold the three tiers of both sets.
+`createGrass` draws on WebGL2 too, where the field's grid costs extra draws.
+
+**The compute half.** On WebGPU and compatibility mode a compute pass builds the blade list and
+writes its count. `createGrass` keeps the CPU's integer-hash placement, so both paths place the same
+tufts, and uploads the placed tufts in a data texture of two texels each: the place rounded to whole
+meters with the turn, then the rest of the place with the size. One workgroup of the pass loops over
+the preset's share, writes each tuft's world matrix and ids into the draw's instance buffer, and
+adds each one to the count word. The engine copies that word into the main view's indirect entry and
+every drawn shadow view's (M3-E9), so the near cascades draw the same list and count as the camera's
+view. The draw casts and receives shadows on both paths, and the blades' sway fades to nothing at
+the distance that the page gives, so a far cascade that only the grass reaches keeps its cached
+layer. The blades' tint comes from a hash of the tuft's root place on both paths, not from row
+values, so one shader serves the compute draw and the batch alike. WebGL2 keeps the instance batch,
+which the CPU fills.
+
+**The view cull and the distance bands.** The pass culls each 4 meter tile against the camera's
+frustum. It keeps a share of the far tufts from their roots' hashes. The fade reaches its floor at 24.31
+meters, shortened from the authored 45: under 10 meters from the camera it keeps all of them; at 10
+to 20 meters, 71 per cent; at 20 to 30, 28; and past 30, 25. A kept far tuft's blades widen by the
+inverse of its share, so the cover stays the same. The shortening removes 36.9 per cent of the drawn
+tufts, and it costs 0.768 per cent of the hill crest's pixels and 0.085 per cent of the demo's
+horizon against the pictures at the authored distance. The draw shader holds
+the same block, so WebGL2's batch collapses the tufts that the share leaves out. Both paths then draw
+one hill. On the hill of 20,000 tufts at High the share keeps 8,452.
+
+Each view then culls the kept list to its own box in the draw shader, from the frame's own matrix. The
+camera's view draws its frustum. A light's view draws its cascade, whose box reaches toward the light
+over the casters, so the near cascades no longer draw the whole kept list. A tuft's root and a point a
+tuft's reach away go through the view's matrix, so the margin that a blade crossing the edge needs comes
+from the view's own scale. The list stays the one that the compute pass writes; no second list and no
+second count.
+
+**The stress hill and the rows that compare.** The 20,000 tuft hill is a stress case: 17.3 tufts on
+each square meter, and its rows hold no ceiling. On the Tab A9 Plus its High row is 961.54 ms with
+the near shadows and 283.97 without. The rows that D-241's ceilings compare draw the hill at Creek's
+own density. On the same tablet, 2,312 tufts, its valley's 2.0 on each square meter, take 306.09 ms
+with the view cull and the far share and 318.77 without. 6,820 tufts, its bank strip's 5.9, take
+490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
+Neither row reached 208.3, the S24 class's High ceiling, which these rows were measured against as a
+target because the tablet has no row above Medium. The same page with the grass switched off
+measures 179.18 ms, which is 29.12 ms inside that target, so the base scene does not break it: the
+grass at the valley's density adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
+the sun's contact shadows and the bounce light off, the scene measures 143.49 ms and the timer names the
+opaque pass at 138.94. The timer times the frame's first seven passes one by one and adds every pass after them to
+the last of those, so the 176.36 ms that it gave ambient occlusion's denoise was the opaque pass
+and the rest of the frame in that slot. The three ambient
+occlusion passes, which the contact shadows and the bounce light keep, cost about 43 ms: the same
+scene measures 186.25 with the contact shadows on. The pictures show that neither effect changes what
+the hill looks like: the four drawings, with either effect off and with both, are pixel for pixel the
+same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the target, so the
+effects' 43 ms does not close the gap either. The grass's fixed cost, its shadow pass and draw
+setup, adds about 33 ms on top of the per-tuft cost. The owner ruled that the demo draws without the
+two effects: their pictures are the same at Low, Medium and High, and the Creek sketch pins the
+settings so a preset change does not bring them back. The far cover then closed the gap: at 24.31
+meters the row measures 209.72 and 196.02 ms, mean 202.87, while 25.59 meters gives 217.45 and
+216.60. The base page bracketed that block at 162.27 and 156.30, so the machine drifted about 6 ms
+within it, and the 208.3 target sits inside the row's spread at the chosen distance rather than outside it.
+The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
+fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
+not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
+kept list to its own box, the cascades among them, so a shadow view draws only the tufts inside its
+cascade. It reads the frame's own matrix and the one count that the compute pass writes. On the
+tablet the cull takes little back, because the cascades were never the large part: three runs at
+2,312 tufts measure 288.75, 294.98 and 298.22 ms against 306.09 before, 3 to 6 per cent, and at
+6,820 they straddle the earlier 490.73 at 466.35 to 497.68. The three cascade passes together time
+at 2.1 to 2.2 ms a frame at the valley's density and 6.3 at the strip's. The row still misses that
+target by about 87 ms, and the two places that could close it stand unchanged.
+Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
+low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
+rows past it.
+## Addendum: the demos that keep their own plants
+
+The owner ruled on 9 November 2026 that the forest demo is not an exception and that the
+translucency demo is. <!-- outside date -->
+
+The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
+much sparser setting that this record's foundation section defines, and the forest then swaps its
+56,000 trees of four kinds to the add-on. The owner confirmed the swap on 10 November 2026, when the
+sparse setting existed and the choice was between swapping and keeping a measured stand-in. His own
+stand costs 240,000 to 496,000 triangles at the demo's count, against 24,600,000 through the add-on,
+which is why the swap waits for the sparse form rather than happening at the dense one.
+<!-- outside date --> Its three fir kinds take variants of the Scots pine, which
+is revived to the species bar, rather than the add-on's built-in conifer.
+
+The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
+translucency are the subject the demo exists to show, so no species record replaces them: the garden
+draws ninety-six leaves for 21,504 triangles, where one grown plant for each of the twelve clumps
+would cost 36,948 through the add-on and would not draw the cupped, drooping leaf.
+
+The impostor forest keeps its own pine. The owner ruled on 10 November 2026 that the stand-in
+stays, with its figures beside it: 40 triangles and 1.4 KB at its coarsest level, against the
+add-on conifer's 3,079 and 205 KB, where drawing that demo's forest through the add-on measures
+180.22 ms at Low against 4.33, with 24,600,000 triangles against 240,000 to 496,000 and 248.8 MiB
+of wasm against 51.8. <!-- outside date --> Watching it, he also reported that trees disappear and
+reappear as the camera moves. That is a fault of the demo's own drawing rather than a reason to
+swap the generator, and it is traced as a defect of its own.
+
+The campfire glade keeps its own vegetation. The owner ruled on 10 November 2026 that the birches
+and cone firs it builds in `examples/particles/glade.ts` stay as they are. <!-- outside date -->
+
+The battle demo keeps its own trees. The owner confirmed the same day that `pineTree` in
+`examples/compare/battle/shapes.ts` keeps building the woods that `scene.ts` plants, which records
+the exception that until now was asserted only in a task note. <!-- outside date -->
+
+M3-V12 asks that no demo keeps a plant generator of its own. Four of the five demos that keep one
+have the owner's answer beside them: the translucency garden, the impostor forest, the campfire
+glade and the battle demo. The forest is not one of them. Its own generator stays only until the
+sparse tree lands, and then it draws through the add-on, so the task does not close on these
+rulings. It closes when the forest swaps.
+
+## Addendum: the owner's completeness ruling
+
+The owner ruled: "We're going to take the current state of the vegetation add-on as complete so that
+we can go ahead and complete all the milestone tasks." The add-on as it stands on the milestone is
+what the milestone ships, and the species batch's remaining rows are not a gate on anything here.
+
+What the ruling closes, by task:
+- M3-V4: its generation clause closes on the shipped set. The measured figures are an upper bound for
+  the form shipped now, because the floors are the ruling's and the shared coarseness and the species
+  work since make the sparse mesh cheaper, never dearer.
+- M3-V5: the bake-time clause closes on the shipped path. The files ship; there is no runtime bake to
+  measure.
+- M3-V12: the forest's own generator closes the task, as the paragraph above says, and the ruling's
+  line is drawn at the add-on's current state rather than at the sparse tree.
+
+What it does not do: it does not settle any species' pictures, which follow the shipped records and
+are redrawn when a record moves; and it does not open the milestone to the vegetation session's
+branches, which wait for the owner's word before they merge.
+
+## Addendum: the valley's species line, revised
+
+Creek's design named a valley with maple and hemlock on north faces and pine on the dry south
+faces. The valley grew none of the three: its scatter rules place rush, sedge, weeping willow,
+common alder, pedunculate oak, European beech, silver birch, Norway spruce, bracken, hosta,
+wildflower and hawthorn, and no hemlock record exists. The scatter does favour a north face: the
+oak, the beech and the Norway spruce each carry a northness curve, so the gap was the species and
+not the aspect rule.
+
+The owner revised the line instead of growing the three. <!-- outside date --> The valley's species
+are the ones the add-on dresses it with, and the design's three names are withdrawn as a
+requirement. A species added later is a new record and a new picture set, not a promise this line
+holds open.

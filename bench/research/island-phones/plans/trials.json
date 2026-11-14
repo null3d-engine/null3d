@@ -1,0 +1,34 @@
+[
+	{
+		"name": "trials-low-576x1248",
+		"query": "preset=low&w=576&h=1248&warm=20&seconds=3&steps=base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:grass80,base,try:grassdark,base,try:reflect4,base,reflection,base,cards.casters,base"
+	},
+	{
+		"name": "trials-medium-384x832",
+		"query": "preset=medium&w=384&h=832&warm=20&seconds=3&steps=base,try:cards1,base,casters,base,try:shadow300,base,try:shadow150,base,try:grass80,base,try:grassdark,base,try:reflect4,base,reflection,base,cards.casters,base"
+	},
+	{
+		"name": "start-low-mt1-a",
+		"query": "preset=low&w=576&h=1248&warm=20&seconds=3&steps=base,base,base,base,base,base"
+	},
+	{
+		"name": "start-low-mt0-a",
+		"query": "preset=low&w=576&h=1248&mt=0&warm=20&seconds=3&steps=base,base,base,base,base,base"
+	},
+	{
+		"name": "start-low-prepass1-a",
+		"query": "preset=low&w=576&h=1248&prepass=1&warm=20&seconds=3&steps=base,base,base,base,base,base"
+	},
+	{
+		"name": "start-low-mt1-b",
+		"query": "preset=low&w=576&h=1248&warm=20&seconds=3&steps=base,base,base,base,base,base"
+	},
+	{
+		"name": "start-low-mt0-b",
+		"query": "preset=low&w=576&h=1248&mt=0&warm=20&seconds=3&steps=base,base,base,base,base,base"
+	},
+	{
+		"name": "start-low-prepass1-b",
+		"query": "preset=low&w=576&h=1248&prepass=1&warm=20&seconds=3&steps=base,base,base,base,base,base"
+	}
+]

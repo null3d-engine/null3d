@@ -41,6 +41,14 @@
 			"null3d-source": "./src/page/early-core.ts",
 			"default": "./lib/page/early-core.js"
 		},
+		"./levels-planner": {
+			"types": "./levels/planner.d.ts",
+			"default": "./levels/planner.js"
+		},
+		"./pieces-planner": {
+			"types": "./levels/pieces.d.ts",
+			"default": "./levels/pieces.js"
+		},
 		"./wasm/*": "./dist/wasm/*",
 		"./package.json": "./package.json"
 	},
@@ -52,6 +60,7 @@
 		"dist/wasm/*/*.js",
 		"dist/wasm/*/*.wasm",
 		"vendor",
+		"levels",
 		"docs",
 		"LICENSE-MIT",
 		"LICENSE-APACHE",

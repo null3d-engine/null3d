@@ -1,7 +1,9 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
-// the WebGPU render path before the core records these lists itself. It draws the 8-bit path, whose
-// shaders encode their colors for the 8-bit target themselves.
+// the WebGPU render path before the core records these lists itself. It draws no ambient occlusion
+// and nothing samples that texture, so the pass proves the frame group's types and the pipeline's
+// build, not correct occlusion sampling. It draws the 8-bit path, whose shaders encode their colors
+// for the 8-bit target themselves.
 import { loadWgslShaders, readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
 import * as C from '../../packages/engine/src/generated/core';
 import * as G from '../../packages/engine/src/generated/gpu';
@@ -82,10 +84,14 @@ run('replay', async () => {
 	bucketFloats[2] = Math.sqrt(3) * (BOX / 2);
 	bucketInfo.set([capacity[0] as number, 1, 0, 1, 1], words);
 	bucketFloats[words + 2] = Math.sqrt(3) * (BOX / 2);
+	// The last word of a record holds the copies that its slice holds.
+	bucketInfo[words - 1] = capacity[0] as number;
+	bucketInfo[2 * words - 1] = capacity[1] as number;
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
-	// The frame's values. The fog's and the light grid's stay 0: no fog, and no point or spot light.
+	// The frame's values. The fill directional lights, the fog's values and the light grid's stay
+	// 0: no fill light, no fog, and no point or spot light.
 	const frame = new Float32Array(G.SIZE_FRAME_UNIFORM_BYTES / 4);
 	frame.set(viewProj, 0);
 	frame.set([0, 6, 10, 1], 16);
@@ -93,25 +99,33 @@ run('replay', async () => {
 	const length = Math.hypot(...sun);
 	frame.set([sun[0]! / length, sun[1]! / length, sun[2]! / length, 0], 20);
 	frame.set([3, 3, 3, 0], 24);
-	frame.set([0.4, 0.4, 0.4, 0], 28);
+	// The fill directional lights' three direction slots and three color slots lie from index 28,
+	// so the ambient light follows them. Their count is the sun color's fourth float, which stays 0.
+	frame.set([0.4, 0.4, 0.4, 0], 52);
 	// The output settings: an exposure of 1 and no tone mapping, so the 8-bit target holds the lit
 	// colors encoded as sRGB.
-	frame[32] = 1;
-	new Uint32Array(frame.buffer)[33] = C.TONE_MAPPING_NONE;
+	frame[56] = 1;
+	new Uint32Array(frame.buffer)[57] = C.TONE_MAPPING_NONE;
 	// Two rows of the material table, each starting with its color and opacity. The shader reads
 	// nothing else of them.
 	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);
 	materials.set([0.8, 0.1, 0.1, 1], 0);
 	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
-	// The planes, the instance count, the view's layers, the run count and the view's row of the
-	// cell offsets texture, the level choice's inputs, then the runs of the cell order, then room
-	// for the occlusion phases' values, which this view leaves unset. Every instance here lies in
-	// cell 0, whose zero offset in row 0 keeps the positions in world space, and no run is listed,
-	// so thread i culls instance i. A level factor of 0 draws each bucket as it is.
-	const cull = new Float32Array(32 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
+	// The culling parameters at the engine's own size: the header, which starts with the planes,
+	// the instance count, the view's layers, the run count and the view's row of the cell offsets
+	// texture, then the runs of the cell order, then room for the occlusion phases' values, which
+	// this view leaves unset. Every instance here lies in cell 0, whose zero offset in row 0 keeps
+	// the positions in world space, and no run is listed, so thread i culls instance i. The rest of
+	// the header stays zero: a level factor of 0 draws each bucket as it is, the view measures
+	// errors from the camera, and a zero debug word writes no level codes.
+	const cull = new Float32Array(G.SIZE_CULL_PARAMS_BYTES / 4);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
+	// The start and the end distance of each source, which the culling group reads: no band here,
+	// so every source holds 0 and infinity.
+	const ranges = new Float32Array(positions.length * 4);
+	for (let i = 1; i < ranges.length; i += 4) ranges[i] = Number.POSITIVE_INFINITY;
 	const mesh = boxMesh(BOX);
 
 	const memory = new TestMemory(1 << 20, 4096);
@@ -126,6 +140,7 @@ run('replay', async () => {
 		buckets: memory.put(bucketInfo),
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
+		ranges: memory.put(ranges),
 		// Three.js's table of the split-sum terms of specular light, which the frame group binds in
 		// the materials' custom values: every entry holds the scale and bias of a smooth surface
 		// seen head on, which keeps the specular light finite at every roughness and view angle.
@@ -264,8 +279,8 @@ run('replay', async () => {
 	);
 	// The materials' custom values, with three.js's table of the split-sum terms of specular light
 	// in the columns from the materials' own texels, as the engine keeps it. No material here has
-	// custom values, so the texture reads as zero except the table. Ambient occlusion's texture and
-	// the row values of instance batches bind it too, and nothing here reads them.
+	// custom values, so the texture reads as zero except the table. The row values of instance
+	// batches bind it too, and nothing here reads them.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
 		5,
@@ -362,6 +377,52 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D,
 	);
+	// The distances between which each source draws, which the culling group binds: one texel for
+	// each source, holding the start and the end. This view sets no band, so each source holds 0
+	// and infinity, as a source without a band does. A zero end would hide every source.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		22,
+		positions.length,
+		1,
+		1,
+		G.FORMAT_RGBA32_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		1,
+		1,
+		G.VIEW_2D,
+	);
+	memory.push(
+		G.OP_WRITE_TEXTURE,
+		22,
+		0,
+		0,
+		0,
+		0,
+		positions.length,
+		1,
+		1,
+		blobs.ranges,
+		positions.length * 16,
+	);
+	// Ambient occlusion's texture, which the frame group binds as a 2D array: the first layer holds
+	// the occlusion and the second the bounce light. This view draws neither, so one texel of each
+	// layer is enough; the shader reads them only while the strength is above 0. Unlike the engine's
+	// blank, this texture takes no copy usage and nothing uploads it, so its texels read as zero,
+	// where the engine's first layer holds the sun's light in full. The difference stays harmless
+	// only while no build reads the texture.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		21,
+		1,
+		1,
+		2,
+		G.FORMAT_RGBA16_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D_ARRAY,
+	);
 	// The blank array of reflection probes, one texel, which the frame group binds at binding 3
 	// while the view lists no probe.
 	memory.push(
@@ -407,8 +468,9 @@ run('replay', async () => {
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
 		// The light probe grid, which only shaders built to read it do.
 		...[10, G.RESOURCE_TEXTURE, 11, 0, 0],
-		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
-		...[11, G.RESOURCE_TEXTURE, 5, 0, 0],
+		// Ambient occlusion's texture, an array of the occlusion's layer and the bounce light's,
+		// which the shader reads only while the strength is above 0.
+		...[11, G.RESOURCE_TEXTURE, 21, 0, 0],
 		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
 		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 		...[14, G.RESOURCE_SAMPLER, 3, 0, 0],
@@ -424,7 +486,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		11,
+		12,
 		...[10, 5, 6, 7, 8, 9, 11, 12, 17].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
@@ -434,8 +496,10 @@ run('replay', async () => {
 		]),
 		...[9, G.RESOURCE_TEXTURE, 7, 0, 0],
 		// The first joint of each source of a shared skinned bucket. This view draws no skinned
-		// object, but the culling group's last binding must still be filled.
+		// object, but the culling group's bindings must all be filled.
 		...[10, G.RESOURCE_TEXTURE, 9, 0, 0],
+		// The distance band of each source, which every row outside hides in.
+		...[11, G.RESOURCE_TEXTURE, 22, 0, 0],
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);

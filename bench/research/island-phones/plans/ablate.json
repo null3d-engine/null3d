@@ -1,0 +1,34 @@
+[
+	{
+		"name": "medium-384x832-msaa-mt",
+		"query": "preset=medium&w=384&h=832&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	},
+	{
+		"name": "medium-384x832-msaa-nomt",
+		"query": "preset=medium&w=384&h=832&mt=0&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	},
+	{
+		"name": "medium-384x832-fxaa-mt",
+		"query": "preset=medium&w=384&h=832&aa=fxaa&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	},
+	{
+		"name": "low-384x832",
+		"query": "preset=low&w=384&h=832&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	},
+	{
+		"name": "low-576x1248",
+		"query": "preset=low&w=576&h=1248&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	},
+	{
+		"name": "low-576x1248-scale05",
+		"query": "preset=low&w=576&h=1248&scale=0.5&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	},
+	{
+		"name": "medium-768x1664",
+		"query": "preset=medium&w=768&h=1664&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	},
+	{
+		"name": "high-1920x1080",
+		"query": "preset=high&w=1920&h=1080&warm=20&seconds=3&steps=base,town,base,trees.shrubs.cypress,base,cards,base,grass,base,ground,base,water.reflection,base,reflection,base,shadows,base,set:{\"fogSlices\":0},set:{\"ssrScale\":0},set:{\"lodFade\":false},set:{\"physicalSky\":false},set:{\"lodThreshold\":4}"
+	}
+]

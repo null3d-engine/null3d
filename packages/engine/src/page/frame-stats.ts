@@ -3,6 +3,8 @@
 
 import { messageOf } from '../errors/message';
 import { CORE_NOT_COUNTED } from '../generated/core';
+import { PASS_ROLE_NAMES, PASS_ROLE_PLACE_SHIFT, PASS_ROLE_PLACES } from '../generated/gpu';
+import { commonStep, stepMs } from '../shared/gpu-clock';
 import {
 	COUNTER_NAMES,
 	Counter,
@@ -42,12 +44,67 @@ export interface ThreadStats {
  */
 export interface GpuPassStats {
 	/**
-	 * The part: `copies` for the copies before the frame's first pass, a pass by its kind and its
-	 * place among the passes of that kind, such as `compute 1` or `render 2`, or `between passes`.
+	 * The part: `copies` for the copies before the frame's first pass, a pass by what it draws for
+	 * and its place among the passes of that role, such as `shadow cascade 1`, `opaque` or
+	 * `shadow hero`, or `between passes`.
 	 */
 	name: string;
 	/** GPU time per frame of the part. */
 	ms: Percentiles;
+}
+
+/**
+ * What a measurement reports beyond its own figures, when the page asks for it.
+ *
+ * @category api/debug
+ */
+export interface MeasureOptions {
+	/**
+	 * A frame interval in milliseconds. Every frame that breaks it comes back in
+	 * `FrameMetrics.slow`, with its own GPU parts.
+	 */
+	slowMs?: number;
+}
+
+/**
+ * A frame whose interval broke a threshold, with the frame's own GPU parts rather than an average
+ * over frames. A page that hunts one long frame reads these.
+ *
+ * @category api/debug
+ */
+export interface SlowFrame {
+	/** The frame's index among the frames that the renderer drew. */
+	frame: number;
+	/** Milliseconds from the start of the measurement to the frame's presentation. */
+	atMs: number;
+	/** The interval that broke the threshold: from the presentation before it to this one. */
+	intervalMs: number;
+	/** The interval of the frame before, or null where the measurement holds none. */
+	beforeMs: number | null;
+	/** The interval of the frame after, or null where the measurement holds none. */
+	afterMs: number | null;
+	/** Whether this is the first frame of the measurement. */
+	first: boolean;
+	/** The GPU's time for the frame, or null where the timer did not time it. */
+	gpuMs: number | null;
+	/** The frame's own GPU parts, named as `gpuPassMs` names them, or null where it went untimed. */
+	parts: { name: string; ms: number }[] | null;
+	/** The CPU time of each engine thread in the frame, and the phases that it spent the time in. */
+	threads: SlowFrameThread[];
+}
+
+/**
+ * One engine thread's CPU time in a slow frame, and the phases that it spent the time in.
+ *
+ * @category api/debug
+ */
+export interface SlowFrameThread {
+	/** The thread's name, as `FrameSummary.threads` names it. */
+	name: string;
+	/** The thread's busy time in the frame. */
+	busyMs: number;
+	/** The phases that took time, in the order the engine's phases run. */
+	phases: { name: PhaseName; ms: number }[];
 }
 
 /**
@@ -73,9 +130,10 @@ export interface FrameSummary {
 	/** Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. */
 	threads: Record<string, ThreadStats>;
 	/**
-	 * GPU time per frame, where the device has timestamp queries: from the frame's first command to
-	 * the end of its last pass. Where the browser cannot time the commands before the first pass,
-	 * the time starts at the first pass. On WebGL2 it needs the timer queries of
+	 * GPU time per frame, where the device has timestamp queries: the latest pass end less the
+	 * earliest pass begin. A tile GPU overlaps the passes, so a sum of their own times would count
+	 * the overlap again. Where the browser cannot time the commands before the first pass, the span
+	 * starts at the first pass. On WebGL2 it needs the timer queries of
 	 * `EXT_disjoint_timer_query_webgl2`, which most desktop browsers offer and most phones do not,
 	 * and covers the frame's commands as a whole. The engine times one frame in eleven, which keeps
 	 * the cost of measuring small and takes in every turn of the far shadow cascades.
@@ -84,14 +142,19 @@ export interface FrameSummary {
 	/**
 	 * The parts of the GPU time per frame, in the order the frame runs them: the copies before the
 	 * first pass, where the browser times them, each pass that the browser times, and the time
-	 * between passes in frames where it times every pass. In a frame with more passes than the
-	 * engine times one by one, the last pass it times also counts the passes after it. Null where
-	 * `gpuMs` is. On WebGL2 the frame has no parts, so the list is empty.
+	 * between passes in frames where it times every pass. Each pass is named by what it draws for,
+	 * such as `shadow cascade 1` or `final`, with its place among the passes of that role where the
+	 * role has one. A pass that names no role, as a list built by hand may not, keeps its kind and
+	 * its place among the passes of that kind, such as `render 1`. In a frame with more passes than
+	 * the engine times one by one, the last pass it times also counts the passes after it. Null
+	 * where `gpuMs` is. On WebGL2 the frame has no parts, so the list is empty.
 	 */
 	gpuPassMs: GpuPassStats[] | null;
 	/**
-	 * The step between GPU times when the browser rounds its timestamps, or null when they look exact.
-	 * Chrome rounds them unless its WebGPU developer features are turned on.
+	 * The step between GPU times when the browser rounds its timestamps, or null when they look
+	 * exact. It is the greatest common divisor of the offsets that the timer reads back, not a
+	 * constant of the device. Chrome rounds its timestamps to a privacy grid unless a timing run
+	 * turns the rounding off.
 	 */
 	gpuStepMs: number | null;
 	/** Time between presented frames. */
@@ -116,6 +179,8 @@ export interface FrameSummary {
 	uploadBytes: Percentiles;
 	/** Draw calls per frame. */
 	drawCalls: Percentiles;
+	/** Triangles that the frame's draws drew, over every pass. */
+	triangles: Percentiles;
 	/**
 	 * Entries per frame in the list of visible objects on WebGL2, where the job workers cull. Each
 	 * visible object or instance row is one entry. So is each visible group of 64 rows in a static
@@ -124,9 +189,11 @@ export interface FrameSummary {
 	 */
 	visibleEntries: Percentiles | null;
 	/**
-	 * Entries per frame that software occlusion culling took out of the list of visible objects on
-	 * WebGL2: objects, instance rows and groups of rows inside the camera's view that lie wholly
-	 * behind blockers. Null on WebGPU, where the GPU culls.
+	 * Entries per frame that occlusion culling hid inside the camera's view. On WebGL2, the objects,
+	 * instance rows and groups of rows that software occlusion culling took out of the list of
+	 * visible objects. On WebGPU, the objects and rows that GPU occlusion culling hid in the newest
+	 * frame whose counts the GPU sent back, and 0 while its check keeps the passes off. Null where
+	 * neither runs.
 	 */
 	occludedEntries: Percentiles | null;
 	/**
@@ -214,6 +281,12 @@ export interface FrameMetrics extends FrameSummary {
 		firstDrawMs: number | null;
 		/** GPU pipelines that the first frame built, or null before the first frame. */
 		firstFramePipelines: number | null;
+		/**
+		 * The quality preset in force when the first frame was drawn: the one the engine starts with.
+		 * It can differ from the preset the page ends on, because the engine's own preset check may
+		 * step down afterwards, and the frame's pipelines are the ones its own preset builds.
+		 */
+		firstFramePreset: string;
 	};
 	/**
 	 * Times the browser took the GPU away since the engine started, and the engine carried on with a
@@ -235,6 +308,11 @@ export interface FrameMetrics extends FrameSummary {
 	 * here when and for how long the rate fell, which the rates of the whole measurement hide.
 	 */
 	perSecond: SecondRates[];
+	/**
+	 * Frames whose interval broke the `slowMs` that the page asked for, each with its own GPU parts,
+	 * or absent when the page asked for none.
+	 */
+	slow?: SlowFrame[];
 }
 
 /**
@@ -270,6 +348,8 @@ const NO_RECORDS: RingRecords = {
 	intervals: [],
 	phases: PHASE_NAMES.map(() => []),
 	counters: COUNTER_NAMES.map(() => []),
+	passRoles: Array.from({ length: GPU_TIMED_PASSES }, () => []),
+	later: [],
 };
 
 /** The sum of a counter's values over the frames. */
@@ -279,11 +359,30 @@ function sumOf(values: readonly number[] = []): number {
 	return sum;
 }
 
-/** Joins the records of every role by frame and summarizes them per frame and per thread. */
+/** The records of one ring for one frame alone, or none when the ring has no record of it. */
+function onlyFrame(ring: RingRecords, frame: number): RingRecords {
+	const at = ring.frames.indexOf(frame);
+	if (at < 0) return NO_RECORDS;
+	return {
+		frames: [frame],
+		busy: [ring.busy[at] as number],
+		intervals: [ring.intervals[at] as number],
+		phases: ring.phases.map((values) => [values[at] as number]),
+		counters: ring.counters.map((values) => [values[at] as number]),
+		passRoles: ring.passRoles.map((values) => [values[at] as number]),
+		later: [ring.later[at] ?? UNTIMED],
+	};
+}
+
+/** Joins the records of every role by frame and summarizes them per frame and per thread. With
+ * `only`, it summarizes that frame alone, such as the held frame of a run that drew a settle frame
+ * after it too. */
 export function summarizeFrames(
 	records: readonly RingRecords[],
 	threads: ReadonlyMap<string, readonly number[]>,
+	only?: number,
 ): FrameSummary {
+	if (only !== undefined) records = records.map((ring) => onlyFrame(ring, only));
 	const ring = (role: number) => records[role] ?? NO_RECORDS;
 	const indexes = records.map((r) => new Map(r.frames.map((frame, i) => [frame, i])));
 	const drawn = indexes[Role.Render] ?? new Map<number, number>();
@@ -322,7 +421,8 @@ export function summarizeFrames(
 		(sketch.counters[counter] ?? []).filter((entries) => entries !== CORE_NOT_COUNTED);
 	const visible = counted(Counter.VisibleEntries);
 	const occluded = counted(Counter.OccludedEntries);
-	const gpu = ring(Role.Gpu).busy;
+	const gpuRing = ring(Role.Gpu);
+	const gpu = gpuRing.busy;
 	const completion = ring(Role.Completion);
 	const intervals = render.intervals.filter((ms) => ms > 0);
 	// A frame whose update failed still presented, so the ramp must not count its interval. The
@@ -345,14 +445,15 @@ export function summarizeFrames(
 		cpuMsAllThreads: percentiles(total),
 		threads: threadStats,
 		gpuMs: gpu.length > 0 ? percentiles(gpu) : null,
-		gpuPassMs: gpuPassStats(ring(Role.Gpu)),
-		gpuStepMs: timerStep(gpu),
+		gpuPassMs: gpuPassStats(gpuRing),
+		gpuStepMs: timerStep(gpuRing.counters[GpuCounter.Tick]),
 		intervalMs: percentiles(intervals),
 		presentedFps: ratePerSecond(intervals) ?? 0,
 		completedFps: ratePerSecond(completion.intervals),
 		gpuLatencyMs: completion.busy.length > 0 ? percentiles(completion.busy) : null,
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
+		triangles: percentiles(render.counters[Counter.Triangles] ?? []),
 		visibleEntries: visible.length > 0 ? percentiles(visible) : null,
 		occludedEntries: occluded.length > 0 ? percentiles(occluded) : null,
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
@@ -382,58 +483,159 @@ export function secondRates(records: readonly RingRecords[]): SecondRates[] {
 }
 
 /**
- * The parts of the GPU records' frames by name, in the order the frames run them: the copies before
- * the first pass, each pass by its kind and its place among the passes of that kind, and the time
- * between passes where a frame has more than one. Null without GPU records.
+ * One GPU record's parts by name, in the order the frame runs them: the copies before the first
+ * pass, each pass by what it draws for, and the time between passes where the frame has more than
+ * one. A pass without a label keeps its kind and its place among the passes of that kind. A pass
+ * that the GPU left untimed has no time of its own, and leaves the time between passes out.
+ */
+function frameParts(records: RingRecords, r: number): { name: string; ms: number }[] {
+	const passes = records.counters[GpuCounter.Passes]?.[r] ?? 0;
+	const renderPasses = records.counters[GpuCounter.RenderPasses]?.[r] ?? 0;
+	const slot = (index: number) => records.phases[index]?.[r] ?? 0;
+	const parts: { name: string; ms: number }[] = [];
+	const copies = slot(0);
+	let parted = 0;
+	if (copies !== UNTIMED) {
+		parts.push({ name: 'copies', ms: copies });
+		parted = copies;
+	}
+	const kinds = { render: 0, compute: 0 };
+	let whole = true;
+	for (let pass = 0; pass < Math.min(passes, GPU_TIMED_PASSES); pass++) {
+		const kind = (renderPasses >>> pass) & 1 ? 'render' : 'compute';
+		const place = ++kinds[kind];
+		const label = records.passRoles[pass]?.[r] ?? 0;
+		const name = passRoleName(label) ?? `${kind} ${place}`;
+		const ms = slot(1 + pass);
+		if (ms === UNTIMED) {
+			whole = false;
+			continue;
+		}
+		parts.push({ name, ms });
+		parted += ms;
+	}
+	// The passes after the seven share one span, so the seventh keeps its own time and the rest
+	// have a part that names no step.
+	if (passes > GPU_TIMED_PASSES) {
+		const later = records.later[r] ?? UNTIMED;
+		if (later === UNTIMED) whole = false;
+		else {
+			parts.push({ name: 'later passes', ms: later });
+			parted += later;
+		}
+	}
+	if (passes > 1 && whole)
+		parts.push({ name: 'between passes', ms: Math.max(0, (records.busy[r] ?? 0) - parted) });
+	return parts;
+}
+
+/**
+ * The parts of the GPU records' frames by name and their percentiles, in the order the frames run
+ * them. Null without GPU records.
  */
 export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
 	if (records.busy.length === 0) return null;
 	const parts = new Map<string, number[]>();
-	const add = (name: string, ms: number) => {
-		const values = parts.get(name);
-		if (values) values.push(ms);
-		else parts.set(name, [ms]);
-	};
-	const slot = (index: number, record: number) => records.phases[index]?.[record] ?? 0;
-	records.busy.forEach((frameMs, r) => {
-		const passes = records.counters[GpuCounter.Passes]?.[r] ?? 0;
-		const renderPasses = records.counters[GpuCounter.RenderPasses]?.[r] ?? 0;
-		const copies = slot(0, r);
-		let parted = 0;
-		if (copies !== UNTIMED) {
-			add('copies', copies);
-			parted = copies;
+	records.busy.forEach((_, r) => {
+		for (const part of frameParts(records, r)) {
+			const values = parts.get(part.name);
+			if (values) values.push(part.ms);
+			else parts.set(part.name, [part.ms]);
 		}
-		const kinds = { render: 0, compute: 0 };
-		let whole = true;
-		for (let pass = 0; pass < Math.min(passes, GPU_TIMED_PASSES); pass++) {
-			const kind = (renderPasses >>> pass) & 1 ? 'render' : 'compute';
-			const name = `${kind} ${++kinds[kind]}`;
-			const ms = slot(1 + pass, r);
-			// A pass that the GPU left untimed has no time of its own, and the time between passes
-			// would hold it.
-			if (ms === UNTIMED) {
-				whole = false;
-				continue;
-			}
-			add(name, ms);
-			parted += ms;
-		}
-		if (passes > 1 && whole) add('between passes', Math.max(0, frameMs - parted));
 	});
 	return Array.from(parts, ([name, values]) => ({ name, ms: percentiles(values) }));
 }
 
-/** Below this, a step between GPU times is timer precision, not rounding. */
-const MIN_ROUNDING_STEP_MS = 0.01;
+/** One frame's CPU time on each engine thread, by phase. */
+function frameThreads(
+	records: readonly RingRecords[],
+	threads: ReadonlyMap<string, readonly number[]>,
+	frame: number,
+): SlowFrameThread[] {
+	const out: SlowFrameThread[] = [];
+	for (const [name, roles] of threads) {
+		let busyMs = 0;
+		const phases = PHASE_NAMES.map((phase) => ({ name: phase, ms: 0 }));
+		let found = false;
+		for (const role of roles) {
+			const ring = records[role] ?? NO_RECORDS;
+			const at = ring.frames.indexOf(frame);
+			if (at < 0) continue;
+			found = true;
+			busyMs += ring.busy[at] ?? 0;
+			phases.forEach((entry, p) => {
+				entry.ms += ring.phases[p]?.[at] ?? 0;
+			});
+		}
+		if (!found) continue;
+		out.push({ name, busyMs, phases: phases.filter((entry) => entry.ms > 0) });
+	}
+	return out;
+}
 
-/** The smallest GPU time, when every other time is a whole multiple of it. */
-export function timerStep(times: readonly number[]): number | null {
-	let step = Number.POSITIVE_INFINITY;
-	for (const ms of times) if (ms > 0 && ms < step) step = ms;
-	if (!Number.isFinite(step) || step < MIN_ROUNDING_STEP_MS) return null;
-	const whole = times.every((ms) => Math.abs(ms / step - Math.round(ms / step)) < 1e-3);
-	return whole ? step : null;
+/**
+ * The frames whose interval broke a threshold, each with its own GPU parts, so a page names the
+ * pass that stalled rather than an average over frames. With the timer set to time every frame, the
+ * parts belong to the frame that broke the threshold. A frame that the timer did not time keeps a
+ * null `gpuMs`.
+ */
+export function slowFrames(
+	records: readonly RingRecords[],
+	thresholdMs: number,
+	threads: ReadonlyMap<string, readonly number[]>,
+): SlowFrame[] {
+	const render = records[Role.Render] ?? NO_RECORDS;
+	const gpu = records[Role.Gpu] ?? NO_RECORDS;
+	const gpuAt = new Map(gpu.frames.map((frame, i) => [frame, i]));
+	const slow: SlowFrame[] = [];
+	/** The interval of a neighbouring frame, or null where none ended or the frame rested. */
+	const neighbour = (i: number) => {
+		const ms = render.intervals[i];
+		return ms !== undefined && ms > 0 ? ms : null;
+	};
+	let atMs = 0;
+	render.frames.forEach((frame, i) => {
+		const intervalMs = render.intervals[i] ?? 0;
+		atMs += intervalMs;
+		if (!(intervalMs > thresholdMs)) return;
+		const at = gpuAt.get(frame);
+		slow.push({
+			frame,
+			atMs,
+			intervalMs,
+			beforeMs: neighbour(i - 1),
+			afterMs: neighbour(i + 1),
+			first: i === 0,
+			gpuMs: at === undefined ? null : (gpu.busy[at] ?? null),
+			parts: at === undefined ? null : frameParts(gpu, at),
+			threads: frameThreads(records, threads, frame),
+		});
+	});
+	return slow;
+}
+
+/** The bits of a pass label that hold the role; the rest hold the place. */
+const ROLE_MASK = 0xffff;
+
+/**
+ * A pass label's name, with its place where the role prints one, or null for a pass that names no
+ * role.
+ */
+function passRoleName(label: number): string | null {
+	const name = PASS_ROLE_NAMES[label & ROLE_MASK];
+	if (!name) return null;
+	const place = label >>> PASS_ROLE_PLACE_SHIFT;
+	const prints = PASS_ROLE_PLACES[label & ROLE_MASK];
+	return prints === 1 || (prints === 2 && place > 0) ? `${name} ${place}` : name;
+}
+
+/**
+ * The step between the GPU's timestamps, from the per-frame steps that its records hold: their
+ * greatest common divisor, which is the divisor of every offset that the timer read back. Null when
+ * the timestamps look exact, or where the timer recorded no step.
+ */
+export function timerStep(ticksNs: readonly number[] | undefined): number | null {
+	return ticksNs ? stepMs(commonStep(ticksNs)) : null;
 }
 
 interface MemoryMeasurement {

@@ -92,6 +92,12 @@ A hit has these fields:
 | `normal` | The unit normal of the hit triangle in world space, on the side that faces the ray's origin |
 | `distance` | The distance from the origin to the point, in meters |
 | `triangle` | The index of the hit triangle in its mesh, as three.js's `faceIndex`. -1 for a sprite, a point or a line |
+| `uv` | Where on the surface the ray hit, in the mesh's first texture coordinates, as three.js's `intersection.uv`. Give an array of two numbers, as you give `point`, and every raycast fills it. Read `hasUv` first |
+| `hasUv` | True when the hit triangle's mesh has a first texture coordinate set, so `uv` gives where on the surface the ray hit. False for a hit on a sprite, a point or a line, and for a mesh with no such coordinates |
+
+`uv` holds where the ray crossed the surface. It blends the three corners' texture coordinates,
+weighted by how much of each corner the point lies under. A decal uses it to place itself, and an
+in-world screen turns a click into a pixel of its image.
 
 `raycast` sets `hit.object` to `null` after a miss, and leaves the other fields as they were. `raycastAll` fills the first entries of `hits` and returns how many it filled. When the array is too short, it adds hit objects to it. It leaves the entries after the hits as they were, so read only the first ones.
 
@@ -134,9 +140,17 @@ Each ray's result is the closest hit that `raycast` gives for it. Use a batch fo
 ```ts
 // In a click handler: the answer arrives one or more frames later.
 scene.pick(240, 180).then((hit) => {
-  if (hit) console.log(hit.object, hit.instance);
+  if (!hit) return;
+  const uv = hit.hasUv ? hit.uv : undefined;
+  console.log(hit.object, hit.instance, uv);
 });
 ```
+
+A hit carries `uv` and `hasUv`, as a raycast's hit does. `uv` holds where on the surface the pixel landed, in the mesh's first texture coordinates. It blends them across the hit triangle's three corners. `hasUv` says whether the surface has such coordinates. Read `hasUv` first: `uv` holds nothing to read when it is false.
+
+The coordinates stay the mesh's own. A repeated texture reports values past 1, and a material's `uvTransform` does not move them. A ray through the same point finds them, from the camera of the frame that recorded the pick. So a pick and a raycast on one point give one answer. A ray that names another object than the pixel did leaves `hasUv` false. The pick then keeps the object that the pixel showed.
+
+A skinned or morphed character draws a different shape than the mesh that the ray tests. So does a custom material that moves its vertices in its shader. Their coordinates can therefore differ from the pose that the frame drew.
 
 The point is tested at the pixel that the camera draws, not at a projected triangle. A surface thinner than a pixel picks where its pixels are. A material with `alphaMode: 'mask'` picks by its mask. So a ray through a cut-out hole finds what lies behind the hole. The frame that records the pick draws it, so the camera of that frame answers. A camera that moves meanwhile can differ from the frame that the click saw.
 
@@ -151,7 +165,9 @@ A scene with a source that the pick's id target cannot hold answers the whole pi
 
 A pick before the first frame answers `null`. The engine has not drawn the camera yet, so no pixel of a frame shows anything.
 
-A pick costs one more draw of the camera's opaque objects and one read of four bytes. Picks wait in a queue of their own. Each answers in a frame after the one that records it. A hidden object, an object off the camera's layers, and a pixel that no object covers answer `null`.
+A pick costs one more draw of the camera's opaque objects, one read of four bytes, and one raycast for the texture coordinates. Picks wait in a queue of their own. Each answers in a frame after the one that records it. A hidden object, an object off the camera's layers, and a pixel that no object covers answer `null`.
+
+A pick that waits for its read when the browser takes the GPU away is rejected with [E1436](../errors/E1436.md). The engine starts a new device, but the frame that recorded the pick drew on the lost one, so the read never lands. Ask for the pick again: the new device answers a new pick. A pick still queued behind it goes to the new device in its turn.
 
 ## Overlap queries
 
@@ -261,6 +277,7 @@ The trees give the same hits as testing every triangle of every object in turn. 
 | `raycaster.camera`, for sprites and `Line2` | The active camera, or the camera of the frame on screen at a pointer event |
 | `intersection.instanceId` | `hit.instance` |
 | `intersection.faceIndex` | `hit.triangle` |
+| `intersection.uv` | `hit.uv`, which `hit.hasUv` says whether to read |
 | `three-mesh-bvh` | Built in: delete its setup |
 | three.js has no pixel pick: its `Raycaster` tests triangles | `scene.pick(x, y)` tests the pixel that the image shows, through the GPU, and returns a promise |
 

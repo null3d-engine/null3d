@@ -31,6 +31,7 @@ use std::ops::Range;
 
 use null3d_core::cells::MAX_CELLS;
 use null3d_core::culling::Frustum;
+use null3d_core::memory::{MemoryUse, vec_bytes};
 use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_core::world::SphereArrays;
 
@@ -58,6 +59,14 @@ pub(crate) struct CellOrder {
 }
 
 impl CellOrder {
+    /// The bytes that the order's arrays hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        use_.add(vec_bytes(&self.order));
+        use_.add(vec_bytes(&self.starts));
+        use_
+    }
+
     /// Makes room for `sources` sources. Room only grows.
     pub(crate) fn try_reserve(&mut self, sources: usize) -> Result<(), TryReserveError> {
         grow(&mut self.order, sources, 0)?;
@@ -272,6 +281,26 @@ pub(crate) struct CellCulling {
 }
 
 impl CellCulling {
+    /// The bytes that the order, the classification and the still spheres hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            vec_bytes(&self.kinds),
+            vec_bytes(&self.placed),
+            vec_bytes(&self.positions),
+            self.scene.memory_use(),
+            vec_bytes(&self.copy[0]),
+            vec_bytes(&self.copy[1]),
+            vec_bytes(&self.copy[2]),
+            vec_bytes(&self.copy[3]),
+            vec_bytes(&self.chain),
+            vec_bytes(&self.bounds.boxes),
+        ] {
+            use_.add(array);
+        }
+        use_
+    }
+
     /// Cell culling for a builder, or none when `enabled` is false. With `copies`, the builder
     /// culls still scene objects from [`CellCulling::still_spheres`].
     pub(crate) fn new(enabled: bool, copies: bool) -> Self {

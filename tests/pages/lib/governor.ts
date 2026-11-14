@@ -84,6 +84,11 @@ export const GOVERNOR = {
 	 * 5 seconds after it settles.
 	 */
 	heldSecondsShare: 0.7,
+	/**
+	 * The most times the render scale may change direction in the last seconds, so that it does not
+	 * flap. A step up that the GPU cannot hold comes back down: that is one change of direction.
+	 */
+	flapReversals: 2,
 	/** The highest target rate, as the governor's. */
 	maxTargetHz: 60,
 } as const;
@@ -275,6 +280,26 @@ function holdProblems(result: GovernorResult): string[] {
 	const problems: string[] = [];
 	const lowest = Math.min(...result.states.map((state) => state.renderScale));
 	if (!(lowest < 1)) problems.push('the render scale never dropped');
+	// The scale settles below the point where the frames fall behind: a setting that holds must not
+	// swing back and forth with the next one. The walk down is one direction, however many steps it
+	// takes, so only a change of direction counts as a flap.
+	const recent = result.states.filter(
+		(state) => state.at >= result.perSecond.length - GOVERNOR.heldSeconds,
+	);
+	let direction = 0;
+	let reversals = 0;
+	for (let k = 1; k < recent.length; k++) {
+		const step =
+			(recent[k] as GovernorState).renderScale - (recent[k - 1] as GovernorState).renderScale;
+		if (step === 0) continue;
+		const sign = step > 0 ? 1 : -1;
+		if (direction !== 0 && sign !== direction) reversals++;
+		direction = sign;
+	}
+	if (reversals > GOVERNOR.flapReversals)
+		problems.push(
+			`the render scale changed direction ${reversals} times in the last ${GOVERNOR.heldSeconds} s`,
+		);
 	const last = result.perSecond.slice(-GOVERNOR.heldSeconds);
 	const held = last.filter(
 		(second) =>

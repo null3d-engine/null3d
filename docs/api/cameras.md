@@ -146,7 +146,8 @@ A scene can have several cameras, and `setActiveCamera` switches between them. T
 
 ## Related pages
 
-- [Scene](scene.md): creating cameras and picking the active one.
+- [Scene](scene.md): creating cameras and picking the active one, and `scene.createView` for a second camera in a rectangle of the canvas.
+- [Multiple views](../guides/multiple-views.md): split screens and picture in picture.
 - [Objects and transforms](objects.md): the calls that cameras share with other objects.
 - [Render layers](../concepts/render-layers.md): which objects a camera draws.
 - [Input](input.md): the pointer and touches whose positions `screenToRay` takes.

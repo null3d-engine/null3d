@@ -15,7 +15,15 @@ function glue(coreSources?: string, without?: string): LoadedGlue {
 
 describe('the check of a generated core module', () => {
 	test('passes a core built from the sources that the dev server gives', () => {
-		expect(glueMismatch('threaded', glue('0123456789abcdef'), '0123456789abcdef')).toBeUndefined();
+		expect(
+			glueMismatch('threaded', glue('0123456789abcdef'), ['0123456789abcdef']),
+		).toBeUndefined();
+	});
+
+	test('passes a core that carries an earlier stamp for the same sources', () => {
+		expect(
+			glueMismatch('threaded', glue('0123456789abcdef'), ['fedcba9876543210', '0123456789abcdef']),
+		).toBeUndefined();
 	});
 
 	test('passes any built core when no dev server gives a stamp', () => {
@@ -25,11 +33,11 @@ describe('the check of a generated core module', () => {
 
 	test('fails with E1402 for a core built from other sources, or with no stamp', () => {
 		const message = 'the threaded engine core was built from other Rust sources';
-		const other = glueMismatch('threaded', glue('fedcba9876543210'), '0123456789abcdef');
+		const other = glueMismatch('threaded', glue('fedcba9876543210'), ['0123456789abcdef']);
 		expect(other?.code).toBe('E1402');
 		expect(other?.message).toContain(message);
 		// A core built before the builds wrote a stamp.
-		expect(glueMismatch('threaded', glue(), '0123456789abcdef')?.message).toContain(message);
+		expect(glueMismatch('threaded', glue(), ['0123456789abcdef'])?.message).toContain(message);
 	});
 
 	test('fails with E1402 for a core that lacks a function', () => {

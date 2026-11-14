@@ -20,7 +20,7 @@ flowchart LR
 
 The `@null3d/particles` package makes particle systems: sparks, fire, smoke, dust, rain, falling leaves, fireflies and magic. A system is an emitter and a buffer of particles. The emitter decides where and when particles are born. The GPU moves each particle, turns it and changes its color and size over its life.
 
-The GPU works out each particle in closed form, from its birth and its age. The CPU writes a particle's record once, when the particle is born, and no pass simulates the particles. So a system of a million particles costs the CPU only its births, and it draws the same on WebGPU and WebGL2. A held frame at a given time is the same whatever frames came before it.
+The GPU works out each particle in closed form, from its birth and its age. The engine's core writes each particle's record once, when the particle is born. The sketch starts the frame and reads settings, but runs no loop over the births. No pass simulates the particles. So a system of a million particles costs the CPU one call in a frame, and it draws the same on WebGPU and WebGL2. A held frame at a given time is the same whatever frames came before it.
 
 ```sh
 bun add @null3d/particles
@@ -110,9 +110,39 @@ The GPU moves each particle in closed form. Every vector is in the space of the 
 | Option | What it does |
 | --- | --- |
 | `gravity` | An acceleration, in meters per second squared. |
-| `drag`, `wind` | How fast, per second, particles take on the wind's velocity. Smoke and leaves drift with it. |
+| `drag`, `wind` | How fast, per second, particles take on the wind's velocity. Smoke and leaves drift with it. `wind` is one velocity for the whole system; `windField` gives the fluid wind instead. |
 | `turbulence` | How far simplex noise moves each particle from its path, in meters. `turbulenceScale` sets the swirls' size, and `turbulenceSpeed` how fast they change. |
 | `groundHeight`, `groundMode` | A ground plane where particles `bounce` (up to twice, with `restitution` and `friction`), `stick` or `kill`. |
+
+### Wind
+
+A system can read the wind add-on's field, so dust, motes, smoke and rain move with the same gusts as the plants around them. Give the field as `windField`, and call the wind's `update()` before the system's `update()` in each frame.
+
+```ts
+import { createWind } from '@null3d/wind';
+
+const camera = scene.createPerspectiveCamera({ position: [0, 2, 6], target: [0, 1, 0] });
+scene.setActiveCamera(camera);
+const wind = createWind(ctx, { camera });
+const smoke = await createParticles(ctx, {
+  ...particleTextures.smoke(textures),
+  rate: 30,
+  lifetime: 4,
+  drag: 0.6,
+  windField: wind.field,
+});
+
+return {
+  onLateUpdate() {
+    wind.update();
+    smoke.update();
+  },
+};
+```
+
+The particle shader samples the field once for each particle at the place where the particle passes. That air replaces `wind`, so the system's fixed wind stands aside while a field is given. A particle takes the air's own displacement over its age, which costs one texture read in the vertex shader. It cannot ride a gust along its path, because it keeps no speed of its own; the field's air pushes it where it is. A system without a field costs no read.
+
+The field's box follows the camera. Its newest state changes in every frame. So the add-on gives the field to the core in every frame. A page that drives a particle buffer itself calls `buffer.setWind(field, time.now)` after `wind.update()`, and `buffer.setWind(undefined, time.now)` to remove the field. Give the sketch time, which the field's gust and swirl read.
 
 ## Look
 
@@ -152,11 +182,13 @@ A system is one scene object, with one draw of all its particles. It sorts among
 
 The system keeps its object's culling sphere around its live particles, from where they were born and how far they can move. Particles do not cast shadows, and lights do not light them. Fog fades them as it fades other surfaces. Additive particles fade out in fog, and others take on its color.
 
+A system draws its quads from its own records, not from a mesh, so it has no levels of detail.
+
 `system.set(values)` changes the motion and the look at any time. `system.destroy()` removes the system and its particles.
 
 ## Speed
 
-Each live particle costs the GPU one quad, whose vertex shader works out its state. The CPU writes 32 bytes per birth, and uploads only the records born in the frame. A system with a large capacity costs vertex work for every record, live or not, so size `capacity` for the particles you need.
+Each live particle costs the GPU one quad, whose vertex shader works out its state. The core writes 32 bytes per birth, and the engine uploads only the records born in the frame. A system with a large capacity costs vertex work for every record, live or not, so size `capacity` for the particles you need.
 
 The GPU keeps birth times as 32-bit floats. So every 1,024 seconds, a system moves the time that its birth times count from. It rewrites the records' birth times 16,384 at a time, one share per frame, so even a system of a million particles adds no long frame. A system with sub-emitters keeps a table of the events to come, 80 bytes per event. It starts small and doubles while the system warms up, up to one event per sub-emitter for each particle.
 
@@ -174,6 +206,7 @@ three.js has no particle system of its own. Projects build one from `THREE.Point
 
 ## Related pages
 
+- [The particle buffer](../concepts/particle-buffer.md): the engine table that holds a system's particles, for emitters that you write yourself.
 - [Sprites](sprites.md): quads that the sketch moves itself, one per row.
 - [Points](points.md): squares of one size.
 - [Materials](materials.md): blending and depth writes.

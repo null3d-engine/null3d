@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'bun:test';
 import {
 	bestWeights,
-	groupTests,
+	fillWeights,
 	type ListedTest,
 	medianTimes,
+	parseTestGroups,
 	parseTestList,
 	parseTestTimes,
-	runsInParallel,
 	shardSeconds,
 	splitByWeights,
 	type TestGroup,
+	timedGroups,
 } from './shard-weights';
 
 const key = (project: string, file: string, title: string) => `${project}\t${file}\t${title}`;
@@ -90,41 +91,40 @@ describe('parseTestList', () => {
 	});
 });
 
-describe('runsInParallel', () => {
-	it("finds the file's own parallel mode, not a describe block's", () => {
-		expect(runsInParallel("import x;\ntest.describe.configure({ mode: 'parallel' });\n")).toBe(
-			true,
+describe('parseTestGroups', () => {
+	it("reads the reporter's groups in order, each with its tests", () => {
+		const groups = parseTestGroups(
+			[
+				'#group',
+				'  [p] › a.spec.ts:9:1 › one',
+				'  [p] › a.spec.ts:12:1 › two',
+				'#group',
+				'#group',
+				'  [p] › images.spec.ts:78:3 › canvas-texture on webgpu',
+			].join('\n'),
 		);
-		expect(
-			runsInParallel(
-				"test.describe('a', () => {\n\ttest.describe.configure({ mode: 'parallel' });\n});",
-			),
-		).toBe(false);
+		expect(groups).toEqual([
+			[test('p', 'a.spec.ts', 'one'), test('p', 'a.spec.ts', 'two')],
+			[test('p', 'images.spec.ts', 'canvas-texture on webgpu')],
+		]);
 	});
 });
 
-describe('groupTests', () => {
-	it('makes a file one group in each project, and each test of a parallel file its own', () => {
-		const tests = [
-			test('p', 'a.spec.ts', '1'),
-			test('p', 'a.spec.ts', '2'),
-			test('q', 'a.spec.ts', '1'),
-			test('p', 'images.spec.ts', 'x'),
-			test('p', 'images.spec.ts', 'y'),
+describe('timedGroups', () => {
+	it("keeps the groups and their order, with each test's time", () => {
+		const listed = [
+			[test('q', 'b.spec.ts', '1')],
+			[test('p', 'a.spec.ts', '1'), test('p', 'a.spec.ts', '2')],
 		];
 		const times = new Map([
 			[key('p', 'a.spec.ts', '1'), 1],
 			[key('p', 'a.spec.ts', '2'), 2],
-			[key('q', 'a.spec.ts', '1'), 3],
-			[key('p', 'images.spec.ts', 'x'), 4],
-			[key('p', 'images.spec.ts', 'y'), 5],
+			[key('q', 'b.spec.ts', '1'), 3],
 		]);
-		const { groups, missing } = groupTests(tests, times, new Set(['images.spec.ts']));
+		const { groups, missing } = timedGroups(listed, times);
 		expect(groups.map((g) => [g.project, g.file, g.seconds])).toEqual([
+			['q', 'b.spec.ts', [3]],
 			['p', 'a.spec.ts', [1, 2]],
-			['q', 'a.spec.ts', [3]],
-			['p', 'images.spec.ts', [4]],
-			['p', 'images.spec.ts', [5]],
 		]);
 		expect(missing).toBe(0);
 	});
@@ -135,13 +135,11 @@ describe('groupTests', () => {
 			[key('p', 'a.spec.ts', '2'), 4],
 			[key('p', 'b.spec.ts', '1'), 10],
 		]);
-		const tests = [
-			test('p', 'a.spec.ts', '1'),
-			test('p', 'a.spec.ts', '2'),
-			test('p', 'a.spec.ts', 'new'),
-			test('p', 'c.spec.ts', 'new'),
+		const listed = [
+			[test('p', 'a.spec.ts', '1'), test('p', 'a.spec.ts', '2'), test('p', 'a.spec.ts', 'new')],
+			[test('p', 'c.spec.ts', 'new')],
 		];
-		const { groups, missing } = groupTests(tests, times, new Set());
+		const { groups, missing } = timedGroups(listed, times);
 		expect(groups.map((g) => g.seconds)).toEqual([[2, 4, 3], [4]]);
 		expect(missing).toBe(2);
 	});
@@ -192,5 +190,25 @@ describe('bestWeights', () => {
 			expect(Math.max(...times)).toBe(11);
 		}
 		expect(weights).toEqual([2, 2]);
+	});
+});
+
+describe('fillWeights', () => {
+	it('fills each shard up to the limit, and gives a group longer than the limit a shard of its own', () => {
+		const groups = [group('a', 3), group('b', 3), group('c', 3), group('d', 9), group('e', 3)];
+		const weights = fillWeights([groups], 1, 6);
+		expect(weights).toEqual([2, 1, 1, 1]);
+		const times = splitByWeights(groups, weights).map((part) => shardSeconds(part, 1));
+		expect(times).toEqual([6, 3, 9, 3]);
+	});
+
+	it('keeps each shard within the limit in every run', () => {
+		const first = [group('a', 1), group('b', 1), group('c', 4), group('d', 1)];
+		const second = [group('a', 4), group('b', 1), group('c', 1), group('d', 1)];
+		const weights = fillWeights([first, second], 1, 5);
+		for (const run of [first, second]) {
+			const times = splitByWeights(run, weights).map((part) => shardSeconds(part, 1));
+			expect(Math.max(...times)).toBeLessThanOrEqual(5);
+		}
 	});
 });

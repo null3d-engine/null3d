@@ -31,11 +31,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type Browser, errors } from '@playwright/test';
-import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { defaultEnvironment } from '../packages/cli/src/browser.js';
 import { watchConsole } from '../packages/cli/src/page.js';
 import { featureImagePath } from '../tests/image/manifest.ts';
+import { launchRepoBrowser } from '../tests/lib/chrome-for-testing.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	BASELINE_PAIR,
 	type Comparison,
@@ -121,7 +123,8 @@ async function loadFrame(
 ): Promise<HoldFrame | string> {
 	const path = source.path(kind);
 	if (path === null) return `${kind}: no page of this kind draws ${source.name}`;
-	const page = await browser.newPage();
+	// The dev server serves the local certificate, which this browser has not been told to trust.
+	const page = await browser.newPage({ ignoreHTTPSErrors: true });
 	const { errors: pageErrors } = watchConsole(page);
 	try {
 		const response = await page.goto(`${baseUrl}${path}`);
@@ -187,6 +190,7 @@ function saveBaselines(measured: StoredBaselines): void {
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The parity check');
 	const options = parseParityArgs(process.argv.slice(2));
 	// Each run starts with an empty folder, so no image from an earlier run can pass for this one.
 	rmSync(OUTPUT_DIR, { recursive: true, force: true });
@@ -196,7 +200,7 @@ async function main(): Promise<void> {
 	let total = 0;
 	const measured: StoredBaselines = {};
 	try {
-		const browser = await launchBrowser(defaultEnvironment());
+		const browser = await launchRepoBrowser(defaultEnvironment());
 		try {
 			for (const scene of options.scenes) {
 				const source = sourceOf(scene, options.switches);

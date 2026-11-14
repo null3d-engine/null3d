@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="data:," />
+		<title>Desert: three.js</title>
+		<style>
+			body { margin: 0; background: #101418; color: #e8e8e8; font: 12px monospace; }
+			#status { margin: 0; padding: 4px 8px; background: #000; white-space: pre-wrap; }
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/three/build/three.webgpu.js",
+					"three/webgpu": "/three/build/three.webgpu.js",
+					"three/tsl": "/three/build/three.tsl.js",
+					"three/addons/": "/three/examples/jsm/"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<pre id="status">loading</pre>
+		<script type="module">
+			// The three.js r187 side: WebGPURenderer with MSAA at a pixel ratio of 1, the raw glTF files,
+			// and either the meshlet drawing pipeline (the default) or the standard one
+			// (`?pipeline=standard`). `?minScreenRadius=` hides objects whose bounds cover fewer pixels.
+			import * as THREE from 'three/webgpu';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { MeshletDrawingPipeline } from 'three/addons/pipelines/MeshletDrawingPipeline.js';
+			import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
+			import { cameraAt, FAR, FOV_DEGREES, MATERIALS, NEAR, placements, SHADOWS, SKY, SUN } from './desert.js';
+			import { CANVAS, makeCanvas, options, run, summary } from './measure.js';
+			import { BISTRO_SCALE, BISTRO_VIEWS } from './bistro-views.js';
+
+			const linear = (c) => new THREE.Color().setRGB(c[0], c[1], c[2], THREE.LinearSRGBColorSpace);
+
+			run(async () => {
+				const started = performance.now();
+				// The meshlet pipeline sizes its culling buffers up to the largest storage binding. This scene's
+				// occlusion records pass the default 128 MB, so the page asks for the adapter's own limits
+				// unless `?limits=default`.
+				const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+				const requiredLimits =
+					options.params.get('limits') === 'default'
+						? {}
+						: {
+								maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+								maxBufferSize: adapter.limits.maxBufferSize,
+							};
+				const renderer = new THREE.WebGPURenderer({
+					canvas: makeCanvas(),
+					antialias: true,
+					trackTimestamp: true,
+					powerPreference: 'high-performance',
+					requiredLimits,
+				});
+				await renderer.init();
+				if (!renderer.backend.isWebGPUBackend) throw new Error('three.js fell back to WebGL 2');
+				renderer.setPixelRatio(1);
+				renderer.setSize(CANVAS.width, CANVAS.height, false);
+				renderer.toneMapping = THREE.NoToneMapping;
+				renderer.shadowMap.enabled = options.shadows;
+				const meshlets = options.params.get('pipeline') !== 'standard';
+				let pipeline = null;
+				if (meshlets) {
+					pipeline = new MeshletDrawingPipeline({
+						minScreenRadius: Number(options.params.get('minScreenRadius') ?? 0),
+						occlusionCulling: options.params.get('occlusion') !== '0',
+					});
+					renderer.drawingPipeline = pipeline;
+				}
+
+				const scene = new THREE.Scene();
+				scene.background = linear(SKY.color);
+				const sun = new THREE.DirectionalLight(linear(SUN.color), SUN.intensity);
+				const [dx, dy, dz] = SUN.direction;
+				sun.position.set(-dx * 300, -dy * 300, -dz * 300);
+				sun.castShadow = options.shadows;
+				// Cascades as null3D draws them, or with `?csm=0` one map that covers the shadow distance around
+				// the camera and holds as many texels as the cascades together.
+				const cascaded = options.shadows && options.params.get('csm') !== '0';
+				if (cascaded) {
+					sun.shadow.mapSize.set(SHADOWS.mapSize, SHADOWS.mapSize);
+					sun.shadow.shadowNode = new CSMShadowNode(sun, { cascades: SHADOWS.cascades, maxFar: SHADOWS.distance });
+				} else if (options.shadows) {
+					sun.shadow.mapSize.set(SHADOWS.mapSize * 2, SHADOWS.mapSize * 2);
+					Object.assign(sun.shadow.camera, { left: -SHADOWS.distance, right: SHADOWS.distance, top: SHADOWS.distance, bottom: -SHADOWS.distance, near: 1, far: 800 });
+					sun.shadow.camera.updateProjectionMatrix();
+				}
+				scene.add(sun, sun.target, new THREE.AmbientLight(0xffffff, SKY.ambient));
+				const camera = new THREE.PerspectiveCamera(FOV_DEGREES, CANVAS.width / CANVAS.height, NEAR, FAR);
+				if (cascaded) sun.shadow.shadowNode.camera = camera;
+
+				const materials = Object.fromEntries(
+					Object.entries(MATERIALS).map(([name, { color, roughness }]) => [
+						name,
+						new THREE.MeshStandardNodeMaterial({ color: linear(color), roughness, metalness: 0 }),
+					]),
+				);
+				const loader = new GLTFLoader();
+				let copies = 0;
+				// `?scene=bistro` draws the Bistro street scene as the asset tool converted it, every mesh once,
+				// scaled to meters, with a front-sided standard material of each mesh's own color.
+				const bistro = options.params.get('scene') === 'bistro';
+				if (bistro) {
+					const file = await loader.loadAsync('/models/bistro/raw/bistro.glb');
+					const own = new Map();
+					file.scene.traverse((node) => {
+						if (!node.isMesh) return;
+						const source = node.material;
+						let material = own.get(source);
+						if (!material) {
+							material = new THREE.MeshStandardNodeMaterial({ color: source.color ?? 0xffffff, roughness: 0.8, metalness: 0 });
+							own.set(source, material);
+						}
+						node.material = material;
+						node.castShadow = node.receiveShadow = options.shadows;
+						copies++;
+					});
+					file.scene.scale.setScalar(BISTRO_SCALE);
+					scene.add(file.scene);
+				} else {
+					const files = await Promise.all(
+						['ground', 'props'].map((name) => loader.loadAsync(`/models/raw/${name}/${name}.glb`)),
+					);
+					const find = (name) => {
+						for (const file of files) {
+							let found = null;
+							file.scene.traverse((node) => {
+								// The loader gives a node a suffix when the file's scene has the same name.
+								if (!found && node.isMesh && (node.name === name || node.name === `${name}_1`)) found = node;
+							});
+							if (found) return found;
+						}
+						const names = [];
+						for (const file of files) file.scene.traverse((node) => names.push(`${node.type}:${node.name}`));
+						throw new Error(`no mesh named ${name} among ${names.join(', ')}`);
+					};
+					const materialOf = (mesh) => materials[mesh.material.name] ?? materials.sand;
+					// `?only=` draws only the meshes whose names start with one of its comma-separated values,
+					// as the null3D page's switch does, to count some kinds' triangles.
+					const only = options.params.get('only');
+					const drawn = (name) => only === null || only.split(',').some((prefix) => name.startsWith(prefix));
+
+					const groundSource = find('ground');
+					const ground = new THREE.Mesh(groundSource.geometry, materialOf(groundSource));
+					ground.castShadow = ground.receiveShadow = options.shadows;
+					if (drawn('ground')) scene.add(ground);
+
+					const matrix = new THREE.Matrix4();
+					const position = new THREE.Vector3();
+					const rotation = new THREE.Quaternion();
+					const scale = new THREE.Vector3();
+					for (const [name, list] of Object.entries(placements())) {
+						if (!drawn(name)) continue;
+						const source = find(name);
+						const count = list.length / 8;
+						copies += count;
+						const batch = new THREE.InstancedMesh(source.geometry, materialOf(source), count);
+						for (let i = 0; i < count; i++) {
+							const o = i * 8;
+							position.set(list[o], list[o + 1], list[o + 2]);
+							rotation.set(list[o + 3], list[o + 4], list[o + 5], list[o + 6]);
+							scale.setScalar(list[o + 7]);
+							batch.setMatrixAt(i, matrix.compose(position, rotation, scale));
+						}
+						batch.instanceMatrix.needsUpdate = true;
+						batch.computeBoundingSphere();
+						batch.castShadow = batch.receiveShadow = options.shadows;
+						scene.add(batch);
+					}
+
+				}
+
+				const hold = options.params.has('hold') ? Number(options.params.get('hold')) : null;
+				const place = (seconds) => {
+					const { position: p, target: t } = bistro ? BISTRO_VIEWS[options.view] : cameraAt(options.view, hold ?? seconds);
+					camera.position.set(p[0], p[1], p[2]);
+					camera.lookAt(t[0], t[1], t[2]);
+					if (options.shadows && !cascaded) {
+						sun.target.position.set(p[0], p[1], p[2]);
+						sun.position.set(p[0] - dx * 400, p[1] - dy * 400, p[2] - dz * 400);
+						sun.target.updateMatrixWorld();
+					}
+				};
+				place(0);
+				// The meshlet pipeline builds each geometry's clusters and levels as it prepares it.
+				await renderer.compileAsync(scene, camera);
+				renderer.render(scene, camera);
+				await renderer.resolveTimestampsAsync('render');
+				const firstFrameMs = performance.now() - started;
+				globalThis.__ready = true;
+
+				const interval = [];
+				const cpu = [];
+				const gpuRender = [];
+				const gpuCompute = [];
+				const triangles = [];
+				return new Promise((resolve, reject) => {
+					let first = -1;
+					let previous = -1;
+					let frames = 0;
+					const warm = options.warmupSeconds * 1000;
+					const end = warm + options.measureSeconds * 1000;
+					const tick = (now) => {
+						try {
+							if (first < 0) first = now;
+							const elapsed = now - first;
+							if (elapsed >= end) {
+								resolve({
+									engine: 'three.js r187',
+									pipeline: meshlets ? 'meshlet' : 'standard',
+									view: options.view,
+									switches: location.search,
+									copies,
+									firstFrameMs,
+									frames,
+									presentedFps: frames / options.measureSeconds,
+									intervalMs: summary(interval),
+									gpuMs: summary(gpuRender.map((r, i) => r + (gpuCompute[i] ?? 0))),
+									gpuRenderMs: summary(gpuRender),
+									gpuComputeMs: summary(gpuCompute),
+									cpuMs: summary(cpu),
+									triangles: summary(triangles),
+									clusters: pipeline?.info.clusters ?? null,
+									// The drawing buffer's size in device pixels, which both pages report.
+									drawn: { width: renderer.domElement.width, height: renderer.domElement.height },
+									userAgent: navigator.userAgent,
+								});
+								return;
+							}
+							const measuring = elapsed >= warm;
+							const start = performance.now();
+							place(elapsed / 1000);
+							renderer.render(scene, camera);
+							if (measuring) {
+								cpu.push(performance.now() - start);
+								if (previous >= 0) interval.push(now - previous);
+								frames++;
+								triangles.push(meshlets ? pipeline.info.triangles : renderer.info.render.triangles);
+								renderer.resolveTimestampsAsync('render').then((ms) => ms != null && gpuRender.push(ms));
+								renderer.resolveTimestampsAsync('compute').then((ms) => gpuCompute.push(ms ?? 0));
+							}
+							previous = now;
+							requestAnimationFrame(tick);
+						} catch (error) {
+							reject(error);
+						}
+					};
+					requestAnimationFrame(tick);
+				});
+			});
+		</script>
+	</body>
+</html>

@@ -4,7 +4,9 @@
 //! A view that keeps its camera draws the same scene every frame. Drawing each frame with the
 //! camera's projection moved by a different fraction of a pixel, and averaging the frames, is a
 //! form of supersampling: edges and fine detail converge on a sharper image than any one frame, and
-//! the cost is one frame's work for each sample.
+//! the cost is one frame's work for each sample. A view that sharpens its picture never accumulates:
+//! the sharpening draws in the moving frame's second step, so the history would not hold it
+//! (`frame_graph.rs`'s `still_eligible`).
 //!
 //! The jitter cycles through the Halton sequence of bases 2 and 3, whose samples spread evenly over
 //! the pixel, so the average converges quickly. Sample 0 is no offset: the first frame of a still
@@ -18,6 +20,8 @@
 //! frame that blends therefore compares equal to the frame before the view became still.
 
 use std::ops::Range;
+
+use null3d_core::memory::{MemoryUse, vec_bytes};
 
 /// The bases of the jitter sequence's two axes: Halton(2, 3).
 const HALTON_X: u32 = 2;
@@ -124,6 +128,14 @@ pub(crate) struct Snapshot {
 }
 
 impl Snapshot {
+    /// The bytes that the frame it kept holds.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        use_.add(vec_bytes(&self.words));
+        use_.add(vec_bytes(&self.bytes));
+        use_
+    }
+
     /// True when `words` outside `word_marks`, and `bytes` outside `byte_marks`, are the same as
     /// the frame this snapshot kept, and then keeps this frame in its place. The first frame of a
     /// parity, and the first after [`Snapshot::forget`], have nothing to compare with, so they read

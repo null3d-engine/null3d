@@ -51,7 +51,7 @@ export default defineSketch(async (ctx) => {
 			color,
 			roughness: 0.5,
 			doubleSided: true,
-			diffuseTransmission: 0.85,
+			diffuseTransmission: 0.35,
 			diffuseTransmissionColor: through,
 			diffuseTransmissionMap: vein,
 		});

@@ -55,6 +55,29 @@ export function grownFiles(changes: readonly SizeChange[]): SizeChange[] {
 	return changes.filter(overLimit);
 }
 
+/**
+ * The bytes after Brotli by which two machines' builds of one commit can differ in a file. Each file
+ * names others by hashed names, and the threaded core's bytes, and so its hash, differ between a
+ * Mac and CI's Linux runners. Measured, the page files differ by 2 to 45 bytes.
+ */
+export const MACHINE_MARGIN_BYTES = 64;
+
+/** The size after Brotli at which a file of `base` bytes first fails the check. */
+export function failingSize(base: number): number {
+	return Math.max(Math.floor(base * (1 + MAX_GROWTH)) + 1, base + MIN_GROWTH_BYTES);
+}
+
+/**
+ * True when a file grew by more than the machines' margin and stopped under the limit by no more
+ * than that margin, so another machine's build of the same commit can fail it. A small file, whose
+ * limit is the byte floor, cannot grow by the margin and stay under it, so it never counts.
+ */
+export function nearLimit(change: SizeChange): boolean {
+	const { base, head } = change;
+	if (base === undefined || head === undefined || overLimit(change)) return false;
+	return head - base > MACHINE_MARGIN_BYTES && failingSize(base) - head <= MACHINE_MARGIN_BYTES;
+}
+
 /** The commit that the size check compares with, before git resolves it. */
 export type BaseChoice =
 	/** A commit that git can name, such as a branch, a tag or `HEAD^`. */
@@ -66,32 +89,23 @@ export type BaseChoice =
  * The base of the size check. `--base <ref>` names it. A push to main compares with the commit that
  * main pointed to before the push, which CI passes as `PUSH_BEFORE`: work lands by a merge of main
  * into a branch and a push (D-157), so the commit before (HEAD^) is the branch's own, and the push's
- * growth and trailers are those of every commit after main's old tip. A push with no such commit,
- * such as a branch's first, compares with the commit before. A merge queue run
- * compares with the commit that its group builds on, which holds the pull requests ahead of it in
- * the queue: the queue squashes each pull request into one commit on top of that commit, so it is
- * the commit before too. Otherwise the base is HEAD's merge base with main, or with the branch that
- * a pull request targets. CI builds a pull request as GitHub's merge of it into that branch, so
- * there the merge base is the branch's commit that the pull request was merged into.
+ * growth and trailers are those of every commit after main's old tip. A push to main with no such
+ * commit compares with the commit before. Every other run compares with HEAD's merge base with
+ * main: a push to a milestone branch judges the whole milestone, as its pull request did, since a
+ * newer push can drop a waiting run, and a check of each push alone would then miss that one.
  */
 export function chooseBase(
 	ref: string | undefined,
 	env: Readonly<Record<string, string | undefined>>,
 ): BaseChoice {
 	if (ref) return { ref, why: 'the commit that --base names' };
-	if (env.GITHUB_EVENT_NAME === 'push') {
+	if (env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF === 'refs/heads/main') {
 		const before = env.PUSH_BEFORE ?? '';
 		if (before && !/^0+$/.test(before))
 			return { ref: before, why: "main's commit before this push" };
 		return { ref: 'HEAD^', why: 'the commit before on the branch, as the push names none' };
 	}
-	if (env.GITHUB_EVENT_NAME === 'merge_group')
-		return {
-			ref: 'HEAD^',
-			why: 'the commit that the merge group builds on, with the pull requests ahead of it',
-		};
-	const branch = env.GITHUB_BASE_REF || 'main';
-	return { branch, why: `the merge base with origin/${branch}` };
+	return { branch: 'main', why: 'the merge base with origin/main' };
 }
 
 const bytes = (n: number | undefined) => (n === undefined ? '-' : n.toLocaleString('en-US'));
@@ -157,13 +171,31 @@ export function growthSummary(
 }
 
 /**
- * True when a new file loads only on the first use of a feature: one of the shader families' tables
- * or combination loaders. Such a file adds nothing to a page's start download, and its own budget
- * caps it, so it needs no Size-Growth trailer that names it.
+ * True for a file that loads only on the first use of a feature: one of the shader families' tables
+ * or combination loaders. Such a file is absent from a page's start download whether it is new or
+ * grows, because the feature that names it asks for it, and its own budget caps it. It therefore
+ * needs no Size-Growth trailer, and one change to a shared shader library moves thousands of them.
  */
 function firstUseShaderFile(file: string): boolean {
 	const name = file.startsWith('js/') ? file.slice(3) : file;
 	return isFirstUseShaderPart(name) || isCombosPart(name);
+}
+
+/**
+ * A warning for each file near the limit with no trailer to explain it: it passes here, and CI's
+ * build of the same commit can fail it.
+ */
+export function nearLimitWarnings(
+	changes: readonly SizeChange[],
+	explainedBy: ReadonlyMap<string, string>,
+): string[] {
+	return changes
+		.filter(nearLimit)
+		.filter((change) => !explainedBy.has(change.file) && !firstUseShaderFile(change.file))
+		.map(
+			(change) =>
+				`${change.file} grew ${growthText(change)} after Brotli, to ${bytes(change.head)} bytes, ${failingSize(change.base as number) - (change.head as number)} under the limit, and another machine's build can differ by up to ${MACHINE_MARGIN_BYTES}: CI may fail it unless a Size-Growth trailer names it`,
+		);
 }
 
 /** A problem for each file that grew past the limit with no trailer to explain it. */
@@ -173,10 +205,24 @@ export function growthProblems(
 ): string[] {
 	return grownFiles(changes)
 		.filter((change) => !explainedBy.has(change.file))
-		.filter((change) => !(change.base === undefined && firstUseShaderFile(change.file)))
+		.filter((change) => !firstUseShaderFile(change.file))
 		.map((change) =>
 			change.base === undefined
 				? `${change.file} is new, ${bytes(change.head)} bytes after Brotli, and no Size-Growth trailer names it`
 				: `${change.file} grew ${growthText(change)} after Brotli, from ${bytes(change.base)} to ${bytes(change.head)} bytes, and no Size-Growth trailer names it`,
 		);
+}
+
+/**
+ * A warning of the size check as the log prints it. Under GitHub Actions it is an annotation, which
+ * the run's page shows, since a line in a long log goes unread; the annotation's text escapes `%`
+ * and line breaks.
+ */
+export function warningLine(
+	warning: string,
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+	if (!env.GITHUB_ACTIONS) return `warning: ${warning}`;
+	const text = warning.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+	return `::warning title=Size check::${text}`;
 }

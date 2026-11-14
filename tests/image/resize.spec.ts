@@ -8,6 +8,11 @@ import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
+// A test resizes six times, and each resize makes the frame's targets again. In parallel on a
+// software renderer, Playwright's default sixty seconds cuts them, where the same file run in order
+// takes about fourteen minutes for twenty-nine tests.
+test.describe.configure({ mode: 'parallel', timeout: 180_000 });
+
 /** A pixel ratio cap below the screen's. */
 const CAPPED_RATIO = 1.5;
 /**
@@ -22,6 +27,13 @@ const WINDOW_SIZES = [
 
 /** Runs in the page: the canvas's CSS size and the size of its drawing buffer. */
 const canvasSize = () => (globalThis as { canvasSize?: () => Promise<unknown> }).canvasSize?.();
+
+/**
+ * Runs in the page: the same two sizes, as a captured frame reads them. A capture draws a frame and
+ * reads it back, so a poll that used it would spend a GPU round trip on each attempt.
+ */
+const capturedSize = () =>
+	(globalThis as { capturedSize?: () => Promise<unknown> }).capturedSize?.();
 
 /** Runs in the page: the sketch changes its pixel ratio cap, and the page waits until it has. */
 const setMaxPixelRatio = (ratio: number) =>
@@ -45,23 +57,39 @@ async function openPage(page: Page, query: string): Promise<number> {
 
 /**
  * How long a new size may take to reach the drawing buffer. Each new size makes the frame's HDR
- * targets again, which SwiftShader on CI's machines takes a second or two to do. On 20 October 2026
- * a high-density shard held the old size for the whole wait, so the wait doubles.
+ * targets again, which SwiftShader on CI's machines takes a second or two to do. A high-density
+ * shard can keep the previous size for half of this wait.
  */
 const RESIZE_TIMEOUT_MS = 30_000;
+/**
+ * How long a test that resizes may run. Its poll reads the buffer's size at once, but the thread
+ * that draws still makes the frame's targets again at each size: on the Mac's software renderer at
+ * twice the density, a new size reaches an engine that draws on a worker in 0.14 to 1.55 s, and
+ * CI's software renderer is about ten times slower. A test of the pixel ratio cap sets two caps and
+ * walks three window sizes under each, so its six resizes and the start outlast the default limit
+ * of a minute even while every resize is well inside its own wait. That limit cuts all five webgpu
+ * modes of that test at 59.9 s, where the resize beside it takes 55.0 s at most, so this limit
+ * allows a run twice as slow as that.
+ */
+const RESIZE_TEST_TIMEOUT_MS = 120_000;
 
 /** Sets each window size, and waits until the drawing buffer is the canvas's CSS size times `ratio`. */
 async function expectBuffers(page: Page, ratio: number): Promise<void> {
-	for (const size of WINDOW_SIZES) {
-		await page.setViewportSize(size);
+	const wanted = WINDOW_SIZES.map((size) => {
 		const css = { width: size.width / 2, height: size.height / 2 };
+		return {
+			css,
+			buffer: { width: Math.round(css.width * ratio), height: Math.round(css.height * ratio) },
+		};
+	});
+	for (const [at, size] of WINDOW_SIZES.entries()) {
+		await page.setViewportSize(size);
 		await expect
 			.poll(() => page.evaluate(canvasSize), { timeout: RESIZE_TIMEOUT_MS })
-			.toEqual({
-				css,
-				buffer: { width: Math.round(css.width * ratio), height: Math.round(css.height * ratio) },
-			});
+			.toEqual(wanted[at]);
 	}
+	// The engine's own capture reads the size it draws at, which one capture a pass proves.
+	await expect(page.evaluate(capturedSize)).resolves.toEqual(wanted[wanted.length - 1]);
 }
 
 /** The default size of a canvas's drawing buffer, which is its CSS size when no CSS sizes it. */
@@ -106,6 +134,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 
 	for (const mode of ENGINE_MODES) {
 		test(`a resized canvas stays sharp on ${gpu}, ${mode.name}`, async ({ page }) => {
+			test.setTimeout(RESIZE_TEST_TIMEOUT_MS);
 			const ratio = await openPage(page, `gpu=${gpu}&${mode.query}`);
 			await expectBuffers(page, ratio);
 		});
@@ -120,6 +149,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		test(`a sketch changes the pixel ratio cap during play on ${gpu}, ${mode.name}`, async ({
 			page,
 		}) => {
+			test.setTimeout(RESIZE_TEST_TIMEOUT_MS);
 			const ratio = await openPage(page, `gpu=${gpu}&${mode.query}`);
 			await page.evaluate(setMaxPixelRatio, CAPPED_RATIO);
 			await expectBuffers(page, CAPPED_RATIO);

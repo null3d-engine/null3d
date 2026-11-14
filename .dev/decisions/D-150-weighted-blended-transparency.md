@@ -1,8 +1,8 @@
 # D-150: Weighted blended transparency
 
-Status: decided by the helper of M2-EX33 on 12 October 2026, for the owner's review. Built: the weighted blending is on main (`21ac1bf03`). The owner's review is pending. Date: 2026-10-12. Task: M2-EX33.
+Status: decided by the helper of M2-EX33, for the owner's review. Built: the weighted blending is on main (`21ac1bf03`). Not built yet: weighted builds for custom materials and for the particles add-on. The owner's review is pending. Task: M2-EX33.
 
-Summary: A material with `blending: 'weighted'` blends with the other such surfaces in any order. The method is McGuire and Bavoil's weighted blended order-independent transparency, with three.js's default weight (the paper's equation 9). After its transparent pass, the camera's view draws them into two one-sample targets: a color sum and a coverage sum. A full-screen step then blends them over the scene. The coverage adds `-log2(1 - alpha)`, so both targets blend alike. Compatibility mode and WebGL2 then draw the layer in one pass with no extension. Nothing runs or downloads until a material asks for it.
+Summary: A material with `blending: 'weighted'` blends with other such surfaces in any order, by McGuire and Bavoil's method with three.js's default weight. After the transparent pass they draw into a color sum and a coverage sum of `-log2(1 - alpha)`, so every GPU path needs one pass. A full-screen step blends them over the scene, and nothing runs or downloads until a material asks for it.
 
 ## Question
 
@@ -48,7 +48,7 @@ The paper's coverage target multiplies `1 - alpha` into itself: blend factors ze
 | B: two passes on compatibility mode and WebGL2, one per target | Rejected. The surfaces' vertex work runs twice, which smoke of many sprites feels |
 | C: one RGBA16F target with the coverage in its alpha, and no depth weight | Rejected. Without the weight the result is a plain average, which loses McGuire's near-over-far ordering, the reason for the method |
 
-Alpha is held below 0.9995, so a fully opaque fragment adds a finite 10.97. The sum lives in a 16-bit float (`format::R16_FLOAT`, new), which every path draws and blends at one sample.
+Alpha is held below 0.9995, so a fully opaque fragment adds a finite 10.97. The sum lives in a 16-bit float (`format::R16_FLOAT`), which every path draws and blends at one sample.
 
 ### The weight
 
@@ -63,7 +63,7 @@ The layer draws at one sample on every path:
 
 The weighted pass tests the scene's depth and writes none. A one-sample scene lends its own depth. A multisampled scene's weighted pass creates a one-sample depth target. Its first draw copies the first sample of each pixel's depth into it (template `WEIGHTED_DEPTH`, which writes `frag_depth`). WebGPU reads the multisampled depth as unfilterable floats, which compatibility mode allows. WebGL2's backend hands the copy its one-sample blit, as it does for ambient occlusion. MSAA therefore does not smooth the edges of weighted surfaces. three.js's pass matches the scene's samples on WebGPU and turns MSAA off on WebGL2.
 
-The copy first was a pass of its own. The render graph joined it to the weighted pass, since its one target is a subset of that pass's targets. The frame graph's test caught the mismatch of formats. The copy now draws first in the weighted pass by design, which saves a render pass. Its pipeline names both color targets of the pass and writes no color (`template::draws_two_targets`).
+The copy draws first in the weighted pass, which saves a render pass. As a pass of its own, its one target would be a subset of the weighted pass's targets, so the render graph would join the two, and their formats would not match. Its pipeline names both color targets of the pass and writes no color (`template::draws_two_targets`).
 
 ### Where the layer draws
 
@@ -85,7 +85,7 @@ Each weighted sorted bucket keeps the pipeline of its normal blending beside its
 
 ### Numbers
 
-Permutation bit `WEIGHTED` (1 << 31) is the last free bit of the 32-bit word. Later features that need a shader variant use shader entries of their own, as decals do, or widen the word. Material feature 524288, templates 64 and 65, bind layouts 41 and 42, format 25 and capability 1 << 16, as `m1-claims.md` records.
+Permutation bit `WEIGHTED` (1 << 31) takes the last bit of the 32-bit word. Later features that need a shader variant use shader entries of their own, as decals do, or widen the word. Material feature 524288, templates 64 and 65, bind layouts 41 and 42, format 25 and capability 1 << 16, as `m1-claims.md` records.
 
 ## Data
 
@@ -93,16 +93,11 @@ The allocation check drew the production S1 page at 100,000 instances, with its 
 
 | Place | Budget | S1 without weighted surfaces | S1 with them, WebGPU | S1 with them, WebGL2 |
 | --- | ---: | ---: | ---: | ---: |
-| sketch worker | 240 | pass | 250.0 | 219.5 |
-| render worker | 320 | 160.1 | 797.1 | 170.7 |
+| sketch worker | 240 | pass | 228.2 | 219.5 |
+| render worker, the draw list's replay | 320 | | 168.6 | |
+| render worker, in all | 320 a place | 160.1 | 550.9 | 170.7 |
 
-Without a weighted material the frame stays inside every budget on both paths. With the smoke, the WebGPU render worker's replay of the draw list allocates about 410 bytes a frame against its 320-byte budget. The same run with the browser's inlining off names the real places: `replay webgpu/backend.ts`, and the sketch worker's own smoke code (`onUpdate`, `visibleEntries`, `occludedEntries`) beside `endPhase` and `slotChange`. The smoke puffs are the benchmark page's code. The engine replay's share needs its cause found and a fix, and it is recorded here as a known cost of a weighted scene on WebGPU.
-
-### Addendum, 17 October 2026: the replay is inside its budget
-
-`bun run bench:allocation --weighted --gpu webgpu` passes on the Mac at 100,000 instances. It took two samples of 5 s after 30 s, over 1,209 frames. The render worker's replay of the draw list took 168.6 bytes a frame against its 320-byte budget, down from the 410 in the table above. The whole render worker took 550.9 bytes a frame, with every place inside its budget, and the sketch worker took 228.2.
-
-Two changes landed after that table's run. The first stopped the WebGPU pass setup boxing clear colors, in `27126d489`. The second gave the staging write an allowance of 32 bytes in `WEIGHTED_BUDGETS`, from a measurement of 15 October 2026. The table above keeps the 12 October figures as the record of what the feature cost then.
+How the data was produced: the WebGPU column comes from `bun run bench:allocation --weighted --gpu webgpu`, two samples of 5 s after 30 s, over 1,209 frames. Every place of the render worker is inside its budget. That run includes `27126d489`, so the WebGPU pass setup boxes no clear colors, and an allowance of 32 bytes for the staging write in `WEIGHTED_BUDGETS`. Without those two, the replay allocates about 410 bytes a frame. The other columns come from a run of `bun run bench:allocation --weighted` without them. Run with the browser's inlining off, the check names the real places of a frame's bytes. The smoke puffs' code (`onUpdate`, `visibleEntries`, `occludedEntries`) is the benchmark page's own.
 
 The size check: the `WEIGHTED` builds and the sets they share with skinning, sprites, transmission and texcoords add 45 first-use shader files of 3 KB to 20 KB after Brotli each, all inside the 32 KB budget of a first-use file. None of them loads at a page's start. A page downloads the weighted layer's two steps and its templates' `WEIGHTED` builds only when its first weighted material draws, so a scene without one downloads and runs none of it.
 
@@ -118,4 +113,4 @@ Options A throughout: weighted blended OIT per material, both targets additive, 
 - Docs: `api/materials` (Weighted blending), `api/sprites`, `api/points`, `api/lines`, `concepts/materials`, the E1217 page, and the mapping entries `oit-pass` and `mat-flags`.
 - Skills: the develop skill's quick reference, and the port skill's materials notes.
 - Tests: the frame graph's test of the layer and the first-use download test. The image tests are `weighted`, `weighted-reverse` (the same images in the reverse order) and the demo `weighted-transparency`.
-- Later: weighted builds for custom materials on request, and the particles add-on's weighted build (M2-EX20: whichever of the two merges second adds it). A half-size layer can become a step of the quality governor if a scene needs it.
+- Pending: weighted builds for custom materials on request, and a weighted build of the particles add-on (M2-EX20). A half-size layer can become a step of the quality governor if a scene needs it.

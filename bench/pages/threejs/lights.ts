@@ -1,12 +1,14 @@
 // The three.js twin of the point, spot and hemisphere light scenes (bench/scenes/lights.ts), which
 // null3D's image tests draw. ?lights=N lights the floor with N point lights in a square grid,
-// ?scene=spot with three spot lights instead, ?scene=hemisphere with a hemisphere light, and
+// ?scene=spot with three spot lights instead, ?scene=fills with three directional lights,
+// ?scene=hemisphere with a hemisphere light, and
 // ?scene=rect with three RectAreaLights, whose tables each renderer's library sets up. A
 // null3D light's range is a three.js light's distance. It draws the scene once into an offscreen
 // target of the image's size, and publishes the pixels as the hold pages do. `?renderer=webgl`
 // draws with WebGLRenderer, and `?renderer=webgpu` with WebGPURenderer.
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import {
+	FILL_LIGHTS,
 	HEMISPHERE_LIGHT,
 	LIGHTS_AMBIENT,
 	LIGHTS_BACKGROUND,
@@ -58,7 +60,14 @@ run('hold', async () => {
 	}
 
 	const lights = params.get('scene');
-	if (lights === 'spot') {
+	if (lights === 'fills') {
+		for (const { direction, color, intensity } of FILL_LIGHTS) {
+			const light = new three.DirectionalLight(color, intensity);
+			// three.js points a directional light from its position toward its target at the origin.
+			light.position.set(-direction[0], -direction[1], -direction[2]);
+			scene.add(light, light.target);
+		}
+	} else if (lights === 'spot') {
 		for (const {
 			position,
 			target,

@@ -6,6 +6,7 @@
 // wisp; without it, the wisp drifts over the ring.
 import { defineSketch, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { reportLoading } from '../lib/progress';
 import { sampleUrl } from '../lib/samples';
 import { courtyard, flicker } from './courtyard';
 
@@ -27,6 +28,7 @@ const GOLD = '#ffc46b';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, time } = ctx;
+	reportLoading(ctx);
 	// Dusk: the sun sits low behind the walls, the sky's blue fills the yard, and the torches and
 	// the wisp's warm light pick out the knights.
 	const day = timeOfDay(19.1, { heading: 2.6 });
@@ -53,6 +55,14 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	const limits = { maxPolarAngle: Math.PI * 0.42, minDistance: 4, maxDistance: 18 };
 	const view = interact(ctx, camera, { target: TARGET, ...limits, groundY: 1.4, bounds: BOUNDS });
+	// A second view close to the ring, on a knight's face, so the head that the look-at turns shows
+	// where the wide camera cannot see it. Its rectangle is the canvas's top-right corner.
+	const close = scene.createPerspectiveCamera({
+		fov: 50,
+		position: [0.05, 1.6, 1.15],
+		target: [0.6, 1.55, 2.9],
+	});
+	scene.createView({ camera: close, rect: [0.69, 0.02, 0.29, 0.32] });
 
 	// The courtyard, and a round dais of worn stone in its middle where the knights stand.
 	const torches = courtyard(ctx);

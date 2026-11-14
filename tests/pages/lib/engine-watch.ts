@@ -22,6 +22,7 @@ const COUNTERS: readonly (readonly [string, number])[] = [
 	['presented', Slot.FramePresented],
 	['images', Slot.ImagesArrived],
 	['pipelines built', Slot.PipelinesBuilt],
+	['frames skipped', Slot.FramesSkipped],
 	['GPU epoch', Slot.GpuEpoch],
 	['paused', Slot.Paused],
 	['running', Slot.Running],

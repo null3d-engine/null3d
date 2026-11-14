@@ -10,25 +10,39 @@ interface OcclusionResult {
 	error?: string;
 	tier: string;
 	occlusion: { off: boolean; on: boolean };
+	levels: { off: number; on: number };
+	directDraws: boolean;
 	views: number;
 	differingPixels: number[];
 	failures: string[];
 }
 
+// A view drawn without the culling's passes matches by default, so the page holds them on in every
+// frame: the check of what the culling saves can turn them off. It also keeps the indirect draws,
+// since the direct-draw path, which a start-up probe picks where indirect draws measure slower,
+// culls on the CPU and runs no GPU occlusion culling.
 const TIERS = [
-	{ tier: 'webgpu', query: 'gpu=webgpu' },
-	{ tier: 'webgpu-compat', query: 'gpu=compat' },
+	{ tier: 'webgpu', query: 'gpu=webgpu&occlusion-check=off&direct=off' },
+	{ tier: 'webgpu-compat', query: 'gpu=compat&occlusion-check=off&direct=off' },
 ] as const;
 
 for (const { tier, query } of TIERS)
 	test(`GPU occlusion culling draws what culling without it draws on ${tier}`, async ({ page }) => {
-		test.setTimeout(150_000);
+		// CI's software GPU drew this room in 90 to 96 seconds on the webgpu tier, and its
+		// compatibility tier published nothing in 120 on two runs. The waits allow a run twice as
+		// slow as the webgpu tier's, and the test's limit clears them.
+		test.setTimeout(270_000);
 		await page.goto(`gpu-occlusion.html?${query}`);
-		const result = await pageResult<OcclusionResult>(page, 120_000);
+		const result = await pageResult<OcclusionResult>(page, 240_000);
 		console.log(`occlusion on ${tier}: ${JSON.stringify(result)}`);
 		expect(result.error).toBeUndefined();
 		expect(result.tier).toBe(tier);
 		expect(result.failures).toEqual([]);
 		expect(result.occlusion).toEqual({ off: false, on: true });
+		expect(result.directDraws).toBe(false);
+		// Both engines draw the spheres at the same planned levels, so a level that the culling
+		// picks wrong shows in the image, and a level that arrives late does not.
+		expect(result.levels.on).toBeGreaterThan(0);
+		expect(result.levels.off).toBe(result.levels.on);
 		expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
 	});

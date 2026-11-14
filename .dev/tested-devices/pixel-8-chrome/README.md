@@ -9,4 +9,4 @@
 
 ## Known issues
 
-Mali's GLSL compiler rejected one fragment shader of the shader library: "no default precision defined for variable 'vec3[9]'" ([#224](https://github.com/null3d-engine/null3d/pull/224))
+Mali's GLSL compiler rejects a fragment shader of the shader library whose `vec3[9]` has no default precision: "no default precision defined for variable 'vec3[9]'" ([#224](https://github.com/null3d-engine/null3d/pull/224)).

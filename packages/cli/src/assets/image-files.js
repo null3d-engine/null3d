@@ -1,7 +1,7 @@
 // Image files that the asset commands read besides the encoder's: the type of a file by its first
 // bytes, Truevision TGA files, which glTF does not take and models from other tools often name,
 // and height maps at their full depth.
-import { decode } from 'fast-png';
+import { decodePngFile } from '../png.js';
 import { decodeImage } from './images.js';
 
 /** @import { Pixels } from './images.js' */
@@ -148,7 +148,7 @@ export function decodeTga(bytes) {
  */
 export function readHeights(bytes, name) {
 	if (imageType(bytes, name) === 'image/png') {
-		const png = decode(bytes);
+		const png = decodePngFile(bytes);
 		if (png.depth === 16 && !png.palette) {
 			const { width, height, channels } = png;
 			const data = new Float32Array(width * height);

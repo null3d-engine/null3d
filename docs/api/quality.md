@@ -45,7 +45,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `targetFps: 'display'` or a whole number | The frame rate that the preset check and the governor defend. Without it, the display's refresh rate, at most 60. `'display'` defends the display's full rate, and a number caps the target at that rate: [The target frame rate](../concepts/quality-presets.md#the-target-frame-rate). |
 | `maxPixelRatio` | Replaces the preset's pixel ratio cap. |
 | `antialias: 'msaa'`, `'fxaa'` or `'none'` | Replaces the preset's anti-aliasing mode. |
-| `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows`, `depthPrepass`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
+| `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `heroTileSize`, `pointLightShadows`, `depthPrepass`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
 | `softwareOcclusion`, `textureMemoryMiB` | Replace the preset's values of these settings. A sketch can change them during play. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
 | `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes and checks no preset. |
@@ -57,13 +57,17 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 
 Most settings change during play. The preset tables' "Changes" column names the ones that stay fixed from the start, which the page's `createEngine` options set.
 
+### Moment transparency
+
+`momentTransparency` blends the blended surfaces in a layer that needs no sort, and it keeps more of each surface's own color than `blending: 'weighted'` does. The setting is fixed at the start, so it goes in `createEngine`'s options or in the `?moments=` switch. Every preset leaves it off. Its cost is in [Quality presets](../concepts/quality-presets.md#moment-transparency). [Moment transparency](materials.md#moment-transparency) describes the layer and the surfaces that it draws.
+
 [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
 
 `quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play, applies them from the next frame on, and returns a promise that resolves at once. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a `minRenderScale` above `maxRenderScale`, an option of `createEngine` with a value that its setting does not take, and a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call.
 
 ## Switching presets
 
-`quality.setPreset(preset)` switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting that changes during play takes the new preset's value, apart from those that the page's options give. The values that `set` gave end with the switch too. The settings fixed at the start, such as `antialias`, keep their values. The preset check is different: when it lowers the preset after the setup, the settings that the setup changed with `set` keep their values. The GPU path caps the preset: `setPreset('ultra')` on WebGL2 runs Medium.
+`quality.setPreset(preset)` switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting that changes during play takes the new preset's value, apart from those that the page's options give. The values that `set` gave end with the switch too. The settings fixed at the start, such as `antialias`, keep their values. The preset check is different: when it lowers the preset after the setup, the settings that the setup changed with `set` keep their values. The GPU path caps the preset: `setPreset('ultra')` on WebGL2 runs Medium. `quality.highest` names that cap, so a menu shows the presets above it as unavailable.
 
 ```ts
 export default defineSketch(({ quality, page }) => {
@@ -90,7 +94,7 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers the render scale first. Then it lowers the levels of detail, the live shadow settings, bloom's size, ambient occlusion's scale and the scale of screen-space reflections. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order of the steps and the rules that drive them. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now. [`QualityGovernor`](reference/quality.md#qualitygovernor) lists each of its members with the step that changes it.
+When frames take too long, the engine lowers a sketch's budgets and the render scale in turn, a budget's step first, until the render scale reaches its lowest. Then it lowers the levels of detail, the live shadow settings, bloom's size, ambient occlusion's scale and the scale of screen-space reflections. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order of the steps and the rules that drive them. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now. [`QualityGovernor`](reference/quality.md#qualitygovernor) lists each of its members with the step that changes it.
 
 The `quality.onChange` handlers run after each of these steps. So a sketch can lighten its own work with the engine's:
 

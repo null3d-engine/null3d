@@ -43,20 +43,28 @@ fn vs(@builtin(vertex_index) vertex: u32) -> SkyOut {
 @fragment
 fn fs(in: SkyOut) -> @location(0) vec4f {
     let whole = SkyWhole(in.sun_direction, in.beta_r, in.beta_m, in.sun);
-    let settings =
-        SkySettings(backdrop.sun, backdrop.scattering, backdrop.clouds, backdrop.cloud_place);
+    // The volumetric tier draws its clouds in its own pass, so the flat layer stays out of the sky:
+    // its step count sits in the background's spare layer value.
+    let clouds = vec4f(
+        backdrop.clouds.x,
+        backdrop.clouds.y,
+        select(backdrop.clouds.z, 0.0, backdrop.layer.y > 0.0),
+        backdrop.clouds.w,
+    );
+    let settings = SkySettings(backdrop.sun, backdrop.scattering, clouds, backdrop.cloud_place);
     let direction = normalize(in.direction);
-    var color = sky_light(direction, whole, settings, backdrop.sun.w);
+    var color = sky_light(direction, whole, settings, backdrop.sun.w * backdrop.layer.x);
     // A second sky, of a second sun, adds its light at its weight.
     let second_sky_weight = backdrop.params.w;
     if second_sky_weight > 0.0 {
         let second = sky_whole(second_sun(backdrop.cloud_place), backdrop.scattering);
-        color += second_sky_weight * sky_light(direction, second, settings, backdrop.sun.w);
+        color += second_sky_weight * sky_light(direction, second, settings, backdrop.sun.w * backdrop.layer.x);
     }
     let scale = backdrop.params.x * frame.output.exposure;
     return null3d::tonemap::finish(
         color * scale,
         in.clip.xy,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,

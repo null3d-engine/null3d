@@ -1772,7 +1772,7 @@ fn a_start_time_wraps_into_a_repeating_clip_and_holds_in_one_that_plays_once() {
     }
 }
 
-// The review's findings: each test failed before its fix.
+// The review's findings: each test fails without its fix.
 
 #[test]
 fn an_additive_play_keeps_the_base_clips_and_a_base_play_keeps_the_additive_ones() {

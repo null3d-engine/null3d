@@ -12,16 +12,18 @@
 import { checkLayers, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
-import type { Vec3Like } from '../math/types';
+import type { Vec2Like, Vec3Like } from '../math/types';
 import type { Ray } from './frame-cameras';
 import type { LineBatch } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
 import {
 	EVENT_DISTANCE,
+	EVENT_HAS_UV,
 	EVENT_NORMAL,
 	EVENT_POINT,
 	EVENT_ROW,
 	EVENT_TRIANGLE,
+	EVENT_UV,
 } from './pointer-events';
 import type { InstanceBatch, Object3D } from './scene';
 import type { PointBatch, SpriteBatch } from './sprites';
@@ -105,6 +107,19 @@ export interface RaycastHit extends OverlapHit {
 	 * point or a line.
 	 */
 	triangle: number;
+	/**
+	 * Where on the surface the ray hit, as the first texture coordinates of the hit triangle
+	 * blended across its three corners, as three.js's `intersection.uv`. Give the hit object an
+	 * array of two numbers, as it has arrays for `point` and `normal`, and every raycast fills it.
+	 * Read `hasUv` first: the numbers mean nothing when it is false.
+	 */
+	uv?: Vec2Like;
+	/**
+	 * True when the raycast found a triangle with a first texture coordinate set, so `uv` holds
+	 * where on the surface the ray hit. False for a hit on a sprite, a point or a line, and for a
+	 * mesh that has no such coordinates. Every raycast writes it.
+	 */
+	hasUv?: boolean;
 }
 
 /**
@@ -249,6 +264,8 @@ function newHit(): RaycastHit {
 		instance: -1,
 		point: [0, 0, 0],
 		normal: [0, 0, 0],
+		uv: [0, 0],
+		hasUv: false,
 		distance: 0,
 		triangle: -1,
 	};
@@ -320,6 +337,8 @@ export class SceneQueries implements ViewHolder {
 		input[C.QUERY_INPUT_LIMIT] = options?.maxDistance ?? Infinity;
 		input[C.QUERY_INPUT_POINT_THRESHOLD] = options?.pointThreshold ?? -1;
 		input[C.QUERY_INPUT_LINE_THRESHOLD] = options?.lineThreshold ?? -1;
+		// Only a bake asks for both faces, and it sets the flag again after this call.
+		input[C.QUERY_INPUT_ALL_FACES] = 0;
 		if (fromEvent) this.targets.writeRayCamera(input);
 		else this.targets.writeCamera(input);
 	}
@@ -371,6 +390,16 @@ export class SceneQueries implements ViewHolder {
 			point[k] = r[at + C.QUERY_HIT_POINT + k] as number;
 			normal[k] = r[at + C.QUERY_HIT_NORMAL + k] as number;
 		}
+		out.hasUv = (r[at + C.QUERY_HIT_HAS_UV] as number) !== 0;
+		// The array is made on the first hit that lands in an object without one, as a hit object
+		// itself is, so a caller that reuses its objects allocates nothing.
+		let uv = out.uv;
+		if (uv === undefined) {
+			uv = [0, 0];
+			out.uv = uv;
+		}
+		uv[0] = r[at + C.QUERY_HIT_UV] as number;
+		uv[1] = r[at + C.QUERY_HIT_UV + 1] as number;
 	}
 
 	/** Fills `out` with the first `count` hit records, adding hit objects where it is too short. */
@@ -423,6 +452,9 @@ export class SceneQueries implements ViewHolder {
 			out[EVENT_POINT + k] = r[C.QUERY_HIT_POINT + k] as number;
 			out[EVENT_NORMAL + k] = r[C.QUERY_HIT_NORMAL + k] as number;
 		}
+		out[EVENT_HAS_UV] = r[C.QUERY_HIT_HAS_UV] as number;
+		out[EVENT_UV] = r[C.QUERY_HIT_UV] as number;
+		out[EVENT_UV + 1] = r[C.QUERY_HIT_UV + 1] as number;
 		return this.targetAt(0);
 	}
 
@@ -450,7 +482,40 @@ export class SceneQueries implements ViewHolder {
 		options: RaycastOptions | undefined,
 		out: RaycastBatchHits,
 	): number {
-		const call = 'raycastBatch';
+		return this.batch('raycastBatch', rays, options, out);
+	}
+
+	/**
+	 * Casts many rays as `raycastBatch` does, but tests both faces of every triangle whatever its
+	 * material's side says, and writes 1 for each ray that met the back of a surface and 0 for one
+	 * that met the front. A light probe bake reads it to find the probes that lie inside geometry,
+	 * whose rays meet the backs of the walls that enclose them.
+	 *
+	 * @internal
+	 */
+	raycastBatchFaces(
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+		backFacing: Uint8Array,
+	): number {
+		checkLength(
+			'raycastBatchFaces',
+			'backFacing',
+			backFacing.length,
+			rays.length / C.QUERY_RAY_FLOATS,
+		);
+		return this.batch('raycastBatchFaces', rays, options, out, backFacing);
+	}
+
+	/** The batch of rays that `raycastBatch` and `raycastBatchFaces` run. */
+	private batch(
+		call: string,
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+		backFacing?: Uint8Array,
+	): number {
 		const count = rays.length / C.QUERY_RAY_FLOATS;
 		if (!Number.isInteger(count))
 			throw new EngineError(
@@ -466,13 +531,14 @@ export class SceneQueries implements ViewHolder {
 		if (out.normals) checkLength(call, 'normals', out.normals.length, count * 3);
 		const { core } = this;
 		if (count > this.rayCapacity) {
-			core.checkGrowth(core.glue.reserveRays(count), 'raycastBatch', undefined, true);
+			core.checkGrowth(core.glue.reserveRays(count), call, undefined, true);
 			this.rayCapacity = count;
 			this.generation = -1;
 		}
 		this.writeOptions(options);
+		if (backFacing) this.input[C.QUERY_INPUT_ALL_FACES] = 1;
 		this.rays.set(rays);
-		const found = this.finish(core.glue.raycastBatch(count, layersOf(options)), 'raycastBatch');
+		const found = this.finish(core.glue.raycastBatch(count, layersOf(options)), call);
 		const r = this.hits;
 		const { distances, objects, instances, points, normals } = out;
 		for (let i = 0; i < count; i++) {
@@ -480,6 +546,7 @@ export class SceneQueries implements ViewHolder {
 			distances[i] = r[at + C.QUERY_HIT_DISTANCE] as number;
 			if (objects) objects[i] = this.targetAt(at);
 			if (instances) instances[i] = r[at + C.QUERY_HIT_ROW] as number;
+			if (backFacing) backFacing[i] = r[at + C.QUERY_HIT_BACK_FACING] as number;
 			for (let k = 0; k < 3; k++) {
 				if (points) points[i * 3 + k] = r[at + C.QUERY_HIT_POINT + k] as number;
 				if (normals) normals[i * 3 + k] = r[at + C.QUERY_HIT_NORMAL + k] as number;

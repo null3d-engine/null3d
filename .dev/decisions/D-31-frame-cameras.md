@@ -1,8 +1,8 @@
 # D-31: Rays and screen points from the frame on screen
 
-Status: decided. Date: 2026-10-03. Task: M2-D3.
+Status: decided and built. Task: M2-D3.
 
-Summary: The sketch thread keeps the cameras of the last four frames. A ray through the pointer's or a finger's position uses the frame on screen at that event; other points and `worldToScreen` use the camera of the frame that last ran. Orthographic rays start on the near plane, where three.js starts them on the camera's plane. World matrices reach TypeScript through the core's memory, with no allocation.
+Summary: The sketch thread keeps the cameras of the last four frames, so a ray through the pointer's or a finger's position uses the frame on screen at that event. Other points and `worldToScreen` use the camera of the frame that last ran. Orthographic rays start on the near plane, where three.js starts them on the camera's plane, and world matrices reach TypeScript with no allocation.
 
 ## Question
 
@@ -31,9 +31,9 @@ The question has four parts:
 | `worldToScreen` against three.js's `Vector3.project`, both lenses | Equal to 1e-7 pixels; the ray through the result passes within 1e-9 of the point | Same tests |
 | `worldToScreen` 6,378 km from the origin, a point 1 cm off the axis | Within 1e-6 pixels of the exact place | Same tests |
 | 8 clicks during a pan of 0.05 radians a frame, Chrome on the Mac | The three pipelined modes: every click named the frame 2 before the one being computed, so the current camera would have been a whole step off, about 8 pixels at the canvas's center. Low latency and single-threaded: every click named the frame before. The ray's turn matched the frame on screen within 1.2e-7 radians in all five modes | `tests/image/screen-rays.spec.ts`, 2026-10-03 |
-| The browser test on SwiftShader, 10 runs in each thread mode, with Chrome's CPU slowed six times | Before the fix, 3 of 50 runs failed, all drawing on the main thread. In each, the click came while a setup frame was on screen and sketch frame 2 read it. The ray took the camera as it stood, one frame's turn (0.05 radians) off. After the fix, 50 of 50 passed: 6 clicks named a setup frame, and each ray matched the setup's camera. In 320 clicks of the low latency and single-threaded modes, one named the frame two before the frame that read it | `tests/image/screen-rays.spec.ts`, 2026-10-04 |
-| The browser test after the fix, without the slowdown | SwiftShader: 50 of 50 runs passed alone, and 50 of 50 with four tests at once. Mac GPU: 25 of 25 | Same test, 2026-10-04 |
-| Core calls that copy an array through wasm-bindgen | One allocation in the core and two new typed arrays in JavaScript per call; none after the change | The generated glue (`passArrayF64ToWasm0` and `__wbindgen_copy_to_typed_array`) |
+| The browser test on SwiftShader, 10 runs in each thread mode, with Chrome's CPU slowed six times | 50 of 50 runs passed: 6 clicks named a setup frame, and each ray matched the setup's camera. In 320 clicks of the low latency and single-threaded modes, one named the frame two before the frame that read it. A ring without the setup's camera failed 3 of 50 runs, all drawing on the main thread | `tests/image/screen-rays.spec.ts`, 2026-10-04 |
+| The browser test without the slowdown | SwiftShader: 50 of 50 runs passed alone, and 50 of 50 with four tests at once. Mac GPU: 25 of 25 | Same test, 2026-10-04 |
+| Core calls that copy an array through wasm-bindgen | One allocation in the core and two new typed arrays in JavaScript per call. A read through a view of the core's memory makes none | The generated glue (`passArrayF64ToWasm0` and `__wbindgen_copy_to_typed_array`) |
 
 ## Decision
 
@@ -60,7 +60,7 @@ The page writes the presented frame's number with each pointer event into the in
 
 Input names frames in the engine's own count, the number that the thread that draws presents. That count includes the frames that run no sketch code: the setup's warm-ups and the preset check. A click can come while one of them is on screen. The sketch's first frames record while the thread that draws still shows the setup's last frame, and a slow GPU makes that window longer. A setup can also turn its camera between two of its frames, so each of them keeps its own camera. Frame 0 means that no frame was on screen yet, and `frameAt` answers -1 when no event is at the point.
 
-The rejected option was the sketch's count, which `time.frame` gives. It leaves out the frames that run no sketch code, so each of them is frame 0. The ring then keeps only the last of them. A click on an earlier frame of a setup that turned its camera took the later camera. The browser test of pointer events showed this on 4 October 2026. In all five thread modes, a click on the setup's first frame hit nothing, through pointer events and `screenToRay` alike.
+The rejected option was the sketch's count, which `time.frame` gives. It leaves out the frames that run no sketch code, so each of them is frame 0. The ring then keeps only the last of them. A click on an earlier frame of a setup that turned its camera takes the later camera. In all five thread modes, a click on the setup's first frame then hits nothing, through pointer events and `screenToRay` alike.
 
 The rejected option was a fourth argument that names a frame, or a call that takes the pointer object. Both need a public frame number. And a sketch that passes `input.pointer.x` would still get the current camera, the mistake this call exists to prevent. Matching the position needs no new API, and a point at the pointer's position is the pointer's point whichever variable holds it. The positions come from the same 32-bit floats of the input ring, so the comparison is exact.
 
@@ -72,18 +72,16 @@ A perspective ray starts at the camera, as in three.js, so a hit's distance is i
 
 ### No allocation
 
-The core's `worldMatrix` took an array. The generated glue copied it in through the core's general allocator. It copied it back through two new typed arrays on every call. The core now writes the matrix into 12 numbers of its own. TypeScript copies them out through a view in `CoreMemory.readWorldMatrix`, made again only when the memory grows. The world getters (`getWorldPosition`, `getWorldQuaternion`, `getWorldMatrix`) and the debug drawing's object shapes use the same read.
+For a core call that takes an array, the generated glue copies it in through the core's general allocator. It copies it back through two new typed arrays on every call. So the core writes the world matrix into 12 numbers of its own. TypeScript copies them out through a view in `CoreMemory.readWorldMatrix`, made again only when the memory grows. The world getters (`getWorldPosition`, `getWorldQuaternion`, `getWorldMatrix`) and the debug drawing's object shapes use the same read.
 
-## Faults after the merge
+## What the browser test allows
 
-The first version used 0 both for "no event at this point" and for a click on a setup frame. It kept no camera for the setup's frames. On 3 October 2026, after the merge, the browser test failed in CI on SwiftShader in eight runs:
+SwiftShader builds pipelines slowly and draws the first frames late, so it opens two windows far more often than a GPU does.
 
-| Runs | Thread mode | What failed | Cause |
-| --- | --- | --- | --- |
-| The merge queue's runs of #263, #264 and #266; main after #262; the pull request runs of #263 and #267 | Pipelined, drawing on the main thread, or sketch on the main thread | A click's ray was one frame's turn (0.05 radians) off the frame on screen | The engine: the click came in sketch frame 2 while a setup frame was on screen. Its frame 0 read as "no event", so the ray took the camera as it stood |
-| Main, twice | Single-threaded | One click of eight named the frame two before the one that read it | The test: it required the frame just before. A frame that records and then waits for its pipelines leaves the frame before it on screen. A click then names that older frame, and the frame after the waiting one reads it. The ray matched that frame, so the engine was right |
+- A click can come in sketch frame 2 while a setup frame is on screen. The ring keeps the setup's cameras, and input names frames in the engine's own count, so the ray takes the setup's camera. A ring that used 0 both for "no event at this point" and for a setup frame would fail here. Its ray would take the camera as it stood, one frame's turn (0.05 radians) off.
+- A frame that records and then waits for its pipelines leaves the frame before it on screen. A click then names that older frame, and the frame after the waiting one reads it. The ray matches that frame, so the engine is right.
 
-SwiftShader builds pipelines slowly and draws the first frames late, so it opens both windows far more often than a GPU does. The fix kept the setup's camera as frame 0. Pointer events on objects later moved the count to the engine's own, as "Which frame a point names" says. The test now lets a click in the modes that draw each frame as they record it name either of the two frames before. In pipelined modes it still allows the four frames that the ring keeps. Each click's ray must still match the turn of the frame that the click names, so a ray from the wrong frame still fails.
+So the test lets a click in the modes that draw each frame as they record it name either of the two frames before. In pipelined modes it allows the four frames that the ring keeps. Each click's ray must still match the turn of the frame that the click names, so a ray from the wrong frame still fails.
 
 ## Consequences
 

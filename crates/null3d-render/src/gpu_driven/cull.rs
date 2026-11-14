@@ -38,58 +38,61 @@
 //! Its late dispatch, after the pyramid, tests every source against the pyramid, writes the
 //! history, and counts the visible sources in a second set of indirect draws, after the first,
 //! which its opaque pass draws. Its parameters hold what the late dispatch reads: the
-//! view-projection matrix, the render size and the pyramid's levels.
+//! view-projection matrix, the render size and the pyramid's levels. After the history come four
+//! words that the late dispatch counts into: the sources in view that would draw, and those that
+//! the pyramid hides, then the frame that the counts belong to, which each frame writes as it
+//! resets them, so a readback of them names its frame (see [`super::occlusion_check`]).
 
 use null3d_core::cells::MAX_CELLS;
 use null3d_core::scene::SceneStorage;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, permutation, resource_kind,
-    sizes, template, texture_usage, view,
+    CullHeader, DrawList, Op, buffer_usage as usage, format, layout as bind_layout, permutation,
+    resource_kind, sizes, template, texture_usage, view,
 };
 
 use super::ids;
 use super::layout::Layout;
 use super::pyramid::Levels;
 use crate::cells::{CellCulling, CellMask};
-use crate::frame::{CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes};
+use crate::frame::{
+    CellOffsets, RecordError, UploadArena, grown_size, grown_size_within, unbound_buffer_bytes,
+    words_as_bytes,
+};
 use crate::view::{MAX_VIEW_IDS, ViewFrame, ViewId};
 use null3d_core::levels::LevelRule;
 
-/// Bytes of the culling planes: six planes, the source count, the view's layer mask, the count of
-/// runs of the cell order, the view's row of the cell offsets texture, and the level choice's
-/// inputs (see [`LevelRule::uniform`]).
-const CULL_PLANES_BYTES: u32 = 128;
-/// The words of the culling planes that hold the source count, the view's layer mask, the count
-/// of runs and the view's row of offsets.
-const SOURCES_WORD: usize = 24;
-const LAYERS_WORD: usize = 25;
-const RANGES_WORD: usize = 26;
-const OFFSETS_ROW_WORD: usize = 27;
-const LEVELS_WORD: usize = 28;
-/// Where the runs of the cell order start in the culling parameters: after the planes.
-const RANGES_OFFSET: u32 = CULL_PLANES_BYTES;
-/// Bytes of one run of the cell order: its first position, its end, its first workgroup, and
-/// padding.
-const RANGE_BYTES: u32 = 16;
-/// Where the occlusion phases' values start in the culling parameters: after the runs of the cell
-/// order.
-const OCCLUSION_OFFSET: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES * RANGE_BYTES;
 /// Words of the occlusion phases' values: the view-projection matrix, the render size, the
 /// pyramid's levels, the first set's draws, where the history starts and an occluder's least span.
 /// The shader works out each level's shape from the render size.
 const OCCLUSION_WORDS: usize = 16 + 4 + 4;
-/// Bytes of the culling parameters: the planes, the runs of the cell order, then the occlusion
-/// phases' values.
-pub(super) const CULL_PARAMS_BYTES: u32 = OCCLUSION_OFFSET + sizes::CULL_OCCLUSION_BYTES;
 
 const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES);
+/// Bytes at the end of a view's indirect draws where the culling shader counts the copies that its
+/// slice's guard drops, which no draw or history reaches.
+const DROPPED_COPIES_BYTES: u32 = 4;
+/// Bytes of a view's counts: the sources in view that would draw, the sources that the pyramid
+/// hides, the frame that they belong to, and a spare word. A view that culls in one phase keeps
+/// them too, so the check of what pieces cull can stamp and read the frame of its counts.
+pub(super) const COUNTS_BYTES: u32 = 16;
+
+/// Where a view's counts start in its indirect draws' buffer, in bytes. In a view that culls in
+/// `two_phases`, they follow both sets of draws and the history of every source of `layout`; in
+/// another, they follow its one set of draws.
+pub(super) fn counts_offset(layout: &Layout, two_phases: bool) -> u32 {
+    let draws = layout.draws.len() as u32 * sizes::INDIRECT_WORDS;
+    if two_phases {
+        (2 * draws + layout.sources) * 4
+    } else {
+        draws * 4
+    }
+}
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 /// The buffers of the culling pass's bind group, one per binding, the last the depth pyramid, then
-/// the cell offsets texture and the skin firsts texture. Eight storage buffers is what every device
-/// allows a shader stage, so the history shares the indirect draws' buffer, and the cell offsets
-/// and the first joints sit in textures.
-const CULL_BINDINGS: usize = 11;
+/// the cell offsets texture, the skin firsts texture and the distance ranges texture. Eight storage
+/// buffers is what every device allows a shader stage, so the history shares the indirect draws'
+/// buffer, and the cell offsets, the first joints and the ranges sit in textures.
+const CULL_BINDINGS: usize = 12;
 /// Words of the culling pass's bind group entries, the largest group that binds the cell offsets
 /// texture: three for the group, five per entry.
 const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
@@ -99,6 +102,7 @@ const NO_PYRAMID_BYTES: u32 = 16;
 // Runs of the cell order that follow each other join, so a view's runs are at most one per pair
 // of cells, and one for the moving sources.
 const _: () = assert!(sizes::MAX_CULL_RANGES == MAX_CELLS / 2 + 1);
+const _: () = assert!(size_of::<[u32; 4]>() as u32 == sizes::CULL_RANGE_BYTES);
 
 /// A view's culling buffers that grow with the layout: their sizes, 0 before they exist. And the
 /// workgroups of its culling dispatch in the frame being recorded.
@@ -212,6 +216,14 @@ pub(super) const fn motion_group(parity: usize) -> u32 {
     }
 }
 
+/// True for a view whose instances lie relative to its own eye, so that the pieces of its copies
+/// may take the cone test: the camera's own view. Shadow views place their instances relative to
+/// the camera, not their light, and mirrors and probes keep other eyes, so they test the frustum
+/// alone. The shader also skips the test for an orthographic lens.
+pub(super) fn view_takes_cones(view: ViewId) -> bool {
+    view == ViewId::CAMERA
+}
+
 /// The part of the render size's larger side that an occluder's bounds span at least. Smaller
 /// objects hide few others, and drawing their depth would cost more than it saves.
 const OCCLUDER_SPAN_DIVISOR: u32 = 16;
@@ -293,7 +305,7 @@ impl Culling {
             Op::CreateBuffer,
             &[
                 ids::cull_params(view),
-                CULL_PARAMS_BYTES,
+                sizes::CULL_PARAMS_BYTES,
                 usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
@@ -309,7 +321,9 @@ impl Culling {
     /// one of its own, or one that `shared_recreated` names, of the layouts or the pyramid. The
     /// group binds the layout's bucket tables beside the scene's matrices and layer table. With
     /// `occlusion`, the view culls in two phases: it has twice the indirect draws with its history
-    /// after them, and a group of the occlusion layout, which binds its pyramid too.
+    /// after them, and a group of the occlusion layout, which binds its pyramid too. Returns true
+    /// when the view's compacted instances or indirect draws are new, which other groups that bind
+    /// them must then bind again.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
@@ -318,8 +332,8 @@ impl Culling {
         shared_recreated: bool,
         binding_bytes: u32,
         occlusion: bool,
-    ) -> Result<(), RecordError> {
-        let recreated = self.size_buffers(
+    ) -> Result<bool, RecordError> {
+        let (recreated, made) = self.size_buffers(
             list,
             view,
             layout,
@@ -339,7 +353,7 @@ impl Culling {
                 ids::cull_group(view),
                 bind_layout::CULL,
                 &buffers,
-                &[ids::SKIN_FIRSTS],
+                &[ids::SKIN_FIRSTS, ids::INSTANCE_RANGES],
             )?;
             if self.index_instances {
                 push_offsets_group(
@@ -351,7 +365,7 @@ impl Culling {
                 )?;
             }
         }
-        Ok(())
+        Ok(made)
     }
 
     /// Sizes the motion view's buffers for the motion layout, as [`Self::apply`] sizes a view's,
@@ -367,7 +381,7 @@ impl Culling {
         last: [u32; 2],
     ) -> Result<(), RecordError> {
         let view = ViewId::MOTION;
-        let recreated =
+        let (recreated, _) =
             self.size_buffers(list, view, layout, shared_recreated, binding_bytes, false)?;
         if recreated {
             for (parity, last) in last.into_iter().enumerate() {
@@ -377,7 +391,7 @@ impl Culling {
                     motion_group(parity),
                     bind_layout::CULL,
                     &buffers,
-                    &[ids::SKIN_FIRSTS],
+                    &[ids::SKIN_FIRSTS, ids::INSTANCE_RANGES],
                 )?;
             }
         }
@@ -401,8 +415,9 @@ impl Culling {
     }
 
     /// Sizes a view's compacted instance and indirect buffers for the layout, at most
-    /// `binding_bytes` each. Returns true when its culling group must be made again: a buffer of
-    /// its own is new, or one that `shared_recreated` names, or its phases changed.
+    /// `binding_bytes` each. Returns whether its culling group must be made again, because a
+    /// buffer of its own is new, or one that `shared_recreated` names, or its phases changed; and
+    /// whether a buffer of its own is new.
     fn size_buffers(
         &mut self,
         list: &mut DrawList,
@@ -411,18 +426,19 @@ impl Culling {
         shared_recreated: bool,
         binding_bytes: u32,
         occlusion: bool,
-    ) -> Result<bool, RecordError> {
+    ) -> Result<(bool, bool), RecordError> {
         let buffers = self.views[view.index()]
             .as_mut()
             .expect("a view's buffers exist before it culls");
         let (phases, history) = if occlusion {
-            (2, layout.sources)
+            (2, layout.sources * 4 + COUNTS_BYTES)
         } else {
-            (1, 0)
+            (1, COUNTS_BYTES)
         };
         let draws = layout.draws.len() as u32 * phases;
-        let mut recreated = shared_recreated || buffers.occlusion != occlusion;
+        let rebind = shared_recreated || buffers.occlusion != occlusion;
         buffers.occlusion = occlusion;
+        let mut made_any = false;
         let needed = [
             (
                 ids::visible(view),
@@ -433,23 +449,26 @@ impl Culling {
             (
                 ids::indirect(view),
                 &mut buffers.indirect,
-                draws.max(1) * INDIRECT_BYTES + history * 4,
-                usage::INDIRECT | usage::STORAGE | usage::COPY_DST,
+                draws.max(1) * INDIRECT_BYTES + history + DROPPED_COPIES_BYTES,
+                usage::INDIRECT | usage::STORAGE | usage::COPY_DST | usage::DROP_COUNTED,
             ),
         ];
         for (id, made, size, flags) in needed {
             if *made < size {
-                *made = grown_size(size, binding_bytes);
+                *made = grown_size(size, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 list.push(Op::CreateBuffer, &[id, *made, flags])?;
-                recreated = true;
+                made_any = true;
             }
         }
-        Ok(recreated)
+        Ok((rebind || made_any, made_any))
     }
 
     /// Sizes a view's compacted instance buffer for the layout on the direct-draw path, which
     /// fills it from the CPU. The buffer also takes uploads, and binds no group: no culling
-    /// dispatches read or write it.
+    /// dispatches read or write it, so only the device's largest buffer bounds it, not the
+    /// largest storage binding.
     pub(super) fn apply_direct(
         &mut self,
         list: &mut DrawList,
@@ -462,7 +481,8 @@ impl Culling {
             .expect("a view's buffers exist before it culls");
         let size = layout.compacted_bytes();
         if buffers.visible < size {
-            buffers.visible = grown_size(size, binding_bytes);
+            let limit = unbound_buffer_bytes(Some(binding_bytes));
+            buffers.visible = grown_size_within(size, limit)?;
             list.push(
                 Op::CreateBuffer,
                 &[
@@ -497,20 +517,6 @@ impl Culling {
         pyramid: Option<&Levels>,
         detail: &LevelRule,
     ) -> Result<(), RecordError> {
-        let mut params = [0u32; (CULL_PLANES_BYTES / 4) as usize];
-        for (word, value) in params[LEVELS_WORD..LEVELS_WORD + 4]
-            .iter_mut()
-            .zip(detail.uniform())
-        {
-            *word = value.to_bits();
-        }
-        for (plane, out) in frame.frustum.planes().iter().zip(params.chunks_mut(4)) {
-            for (value, word) in plane.iter().zip(out) {
-                *word = value.to_bits();
-            }
-        }
-        params[SOURCES_WORD] = sources.sources;
-        params[LAYERS_WORD] = frame.layers;
         self.offsets.update(scene, &frame.camera);
         let buffers = self.views[view.index()]
             .as_mut()
@@ -521,12 +527,25 @@ impl Culling {
         } else {
             (0, sources.sources.div_ceil(sizes::CULL_WORKGROUP_SIZE))
         };
-        params[RANGES_WORD] = ranges as u32;
-        params[OFFSETS_ROW_WORD] = view.index() as u32;
         (buffers.groups, buffers.range_count) = (groups, ranges);
-        let (at, planes) = arena.push(words_as_bytes(&params))?;
+        let header = CullHeader {
+            planes: *frame.frustum.planes(),
+            instance_count: sources.sources,
+            layers: frame.layers,
+            range_count: ranges as u32,
+            offsets_row: view.index() as u32,
+            levels: detail.uniform(),
+            measure: detail.measure_uniform(),
+            debug: [
+                u32::from(drawn.codes),
+                u32::from(view_takes_cones(view)),
+                0,
+                0,
+            ],
+        };
+        let (at, bytes) = arena.push(words_as_bytes(header.as_words()))?;
         let params_id = ids::cull_params(view);
-        list.push(Op::WriteBuffer, &[params_id, 0, at, planes])?;
+        list.push(Op::WriteBuffer, &[params_id, 0, at, bytes])?;
         let cells = self.offsets.as_slice().len() as u32;
         if cells > 0 {
             let (at, bytes) = arena.push(self.offsets.as_bytes())?;
@@ -549,12 +568,18 @@ impl Culling {
         if ranges > 0 {
             let words = buffers.ranges[..ranges].as_flattened();
             let (at, bytes) = arena.push(words_as_bytes(words))?;
-            list.push(Op::WriteBuffer, &[params_id, RANGES_OFFSET, at, bytes])?;
+            list.push(
+                Op::WriteBuffer,
+                &[params_id, sizes::CULL_HEADER_BYTES, at, bytes],
+            )?;
         }
         if let (Some(levels), true) = (pyramid, buffers.occlusion) {
             let words = occlusion_words(frame, levels, drawn.draws.len() as u32);
             let (at, bytes) = arena.push(words_as_bytes(&words))?;
-            list.push(Op::WriteBuffer, &[params_id, OCCLUSION_OFFSET, at, bytes])?;
+            list.push(
+                Op::WriteBuffer,
+                &[params_id, sizes::CULL_OCCLUSION_OFFSET, at, bytes],
+            )?;
         }
         if !drawn.draws.is_empty() {
             let (at, bytes) = arena.push(words_as_bytes(&drawn.indirect_template))?;
@@ -563,6 +588,25 @@ impl Culling {
                 list.push(Op::WriteBuffer, &[ids::indirect(view), bytes, at, bytes])?;
             }
         }
+        Ok(())
+    }
+
+    /// Resets a view's counts for frame `frame`, which they then name, after the view's other
+    /// uploads of the frame, where a view that culls in `two_phases` or not keeps them. The
+    /// still-camera accumulation's comparison skips the frame's number, which every frame changes,
+    /// so a view that holds still with the culling on comes to rest.
+    pub(super) fn reset_counts(
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        view: ViewId,
+        layout: &Layout,
+        frame: u32,
+        two_phases: bool,
+    ) -> Result<(), RecordError> {
+        const FRAME_BYTES: std::ops::Range<usize> = 8..12;
+        let (at, bytes) = arena.push_masked(words_as_bytes(&[0, 0, frame, 0]), &[FRAME_BYTES])?;
+        let offset = counts_offset(layout, two_phases);
+        list.push(Op::WriteBuffer, &[ids::indirect(view), offset, at, bytes])?;
         Ok(())
     }
 
@@ -615,5 +659,97 @@ impl Culling {
         self.views.clear();
         self.placeholder = false;
         self.offsets_made = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use null3d_gpu::drawlist::decode;
+
+    /// The sizes that a frame's list made the view's instance buffer with.
+    fn made(list: &DrawList, view: ViewId) -> Vec<u32> {
+        decode(list.words())
+            .filter_map(|command| {
+                let command = command.expect("the buffer commands decode");
+                (command.op == Op::CreateBuffer && command.operands[0] == ids::visible(view))
+                    .then_some(command.operands[1])
+            })
+            .collect()
+    }
+
+    /// A view's indirect draws hold its counts whether it culls in one phase or two, before the
+    /// last word, which counts the dropped copies: the check of what pieces cull stamps and reads
+    /// the counts' frame in either.
+    #[test]
+    fn a_view_keeps_its_counts_inside_its_indirect_draws_in_either_phase() {
+        let mut layout = Layout::with_copies(4);
+        layout.draws = (0..3)
+            .map(|_| super::super::layout::Draw {
+                page: 0,
+                index_count: 3,
+                first_index: 0,
+                base_vertex: 0,
+                vertices: None,
+            })
+            .collect();
+        for two_phases in [false, true] {
+            let mut culling = Culling::default();
+            let mut list = DrawList::with_capacity(256);
+            let view = ViewId::CAMERA;
+            culling
+                .add_view(&mut list, view)
+                .expect("the view's buffers");
+            culling
+                .apply(&mut list, view, &layout, false, u32::MAX, two_phases)
+                .expect("the view's culling group");
+            assert_eq!(culling.occludes(view), two_phases);
+            let made: Vec<u32> = decode(list.words())
+                .filter_map(|command| {
+                    let command = command.expect("the buffer commands decode");
+                    (command.op == Op::CreateBuffer && command.operands[0] == ids::indirect(view))
+                        .then_some(command.operands[1])
+                })
+                .collect();
+            let size = *made.last().expect("the indirect draws' buffer");
+            let end = counts_offset(&layout, two_phases) + COUNTS_BYTES;
+            assert!(
+                end + DROPPED_COPIES_BYTES <= size,
+                "the counts end at {end} in a buffer of {size} bytes, two phases: {two_phases}"
+            );
+            let draws = layout.draws.len() as u32 * INDIRECT_BYTES;
+            assert!(counts_offset(&layout, two_phases) >= draws * if two_phases { 2 } else { 1 });
+        }
+    }
+
+    /// The direct path's instance buffer holds a layout that fills the largest buffer of its path,
+    /// and a layout one copy past that buffer fails the frame instead of asking for one.
+    #[test]
+    fn a_direct_layout_past_the_largest_buffer_is_refused() {
+        let binding = sizes::PORTABLE_STORAGE_BINDING_BYTES;
+        let limit = unbound_buffer_bytes(Some(binding));
+        // The buffer holds one copy past the last, so this many copies take the limit's bytes.
+        let copies = limit / sizes::INSTANCE_STRIDE;
+        let record = |copied: u32| {
+            let mut culling = Culling::default();
+            let mut list = DrawList::with_capacity(64);
+            culling
+                .add_view(&mut list, ViewId::CAMERA)
+                .expect("the view's buffers");
+            let layout = Layout::with_copies(copied);
+            let outcome = culling.apply_direct(&mut list, ViewId::CAMERA, &layout, binding);
+            (outcome, made(&list, ViewId::CAMERA))
+        };
+        // A layout whose copies take the largest buffer exactly fits it.
+        let (outcome, sizes_made) = record(copies - 1);
+        outcome.expect("the layout fits the largest buffer");
+        assert_eq!(sizes_made, [limit]);
+        // One copy more passes the largest buffer, so the frame fails and names the limit.
+        let (outcome, sizes_made) = record(copies);
+        assert_eq!(outcome, Err(RecordError::BufferFull { bytes: limit }));
+        assert!(
+            sizes_made.is_empty(),
+            "a buffer was made past the limit: {sizes_made:?}"
+        );
     }
 }

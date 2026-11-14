@@ -1,6 +1,6 @@
 // The browser tests that run alone. Each checks a frame rate, a time limit, the frames or the work
-// that come in a fixed time, or that a loop allocates nothing. On CI's two-core runners a heavy test
-// on the other worker, such as one that filters an environment map with SwiftShader, can slow such a
+// that come in a fixed time, or that a loop allocates nothing. On CI's runners, two workers share
+// four cores, so a heavy test on the other worker, such as one that filters an environment map with SwiftShader, can slow such a
 // test past its limit, whatever the engine does. So these tests carry a tag. The Playwright projects
 // that take the tag run one test at a time, the other projects leave them out, and CI runs them in a
 // job of their own with no other test beside them.

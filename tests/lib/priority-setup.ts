@@ -6,17 +6,19 @@
 import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { refuseBackgroundPriority } from './app-window.ts';
 
-/** The variables that turn on the specs that time an effect's cost on the computer's own GPU. */
-export const COST_VARIABLES = [
-	'NULL3D_CONTACT_COST',
-	'NULL3D_FOG_COST',
-	'NULL3D_LOD_COST',
-	'NULL3D_RELIEF_COST',
-] as const;
+/**
+ * The name of a variable that turns on a spec that times an effect's cost on the computer's own GPU:
+ * NULL3D_<EFFECT>_COST. A new cost spec names its switch so, and the guard knows it with no list to
+ * keep: a list misses the switch of a new spec.
+ */
+export const COST_VARIABLE = /^NULL3D_\w+_COST$/;
 
 /** True for a run that times frames: one on the real GPU, or one that a cost variable turns on. */
 export function timesFrames(env: Readonly<Record<string, string | undefined>>): boolean {
-	return defaultEnvironment(env) === 'chrome-real-gpu' || COST_VARIABLES.some((name) => env[name]);
+	return (
+		defaultEnvironment(env) === 'chrome-real-gpu' ||
+		Object.entries(env).some(([name, value]) => COST_VARIABLE.test(name) && value)
+	);
 }
 
 export default function globalSetup(): void {

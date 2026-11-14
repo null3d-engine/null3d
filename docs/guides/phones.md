@@ -70,11 +70,11 @@ A phone closes a tab that uses too much memory, with no warning. The engine's ta
 | 11-inch iPad Pro, Safari, WebGL2 | 2,528 MiB | 2,496 MiB |
 | Galaxy S24+, Chrome, WebGL2 | 7,296 MiB | 7,616 MiB |
 
-No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. On the iPad's WebGPU path, an earlier run stopped answering at 512 MiB of GPU buffers, but that stall did not come back in a rerun on 17 October 2026. Keep a scene's GPU buffers under half the point in the table.
+No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. The iPad's WebGPU path can stop answering at 512 MiB of GPU buffers, though not in every run. Keep a scene's GPU buffers under half the point in the table.
 
 On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
 
-To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use.
+To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use. [Performance: memory peak](performance.md#memory-peak) shows how to read a scene's distance from its limit.
 
 Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. When the textures pass their budget, the engine drops the largest mip levels of textures from files, and loads them again once room returns. The sketch reads the memory and the dropped levels in `quality.textureMemory`, and [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order. A texture that the sketch makes from an image or from data keeps its levels, so free one that the scene no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
 
@@ -88,7 +88,7 @@ When the tab crashes during a start, the next start of the sketch runs one prese
 
 ## Heat
 
-A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion. The `quality.onChange` handlers run after each step that follows the render scale, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
+A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers a sketch's budgets and the render scale in turn, a budget's step first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion. The `quality.onChange` handlers run after each step that follows the render scale, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
 
 ## Power
 
@@ -100,7 +100,7 @@ The engine reads touches as it reads the mouse: the first finger presses `Mouse0
 
 ## Networks and repeat visits
 
-Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in the browser's Cache Storage, so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
+Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in its [cache of derived data](../api/assets.md#the-cache-of-derived-data), so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
 
 ## Browsers on iPhone and iPad
 
@@ -108,9 +108,11 @@ Every browser on iPhone and iPad runs Safari's WebKit engine. null3D needs Safar
 
 ## Testing on real devices
 
+Check every rendering mode and the whole camera path, with repeats, as [Testing your sketch](testing.md#check-every-rendering-mode) describes.
+
 Desktop browsers that emulate a phone show neither its GPU nor its heat, so test on the phones and tablets that your audience uses.
 
-- Serve the page over HTTPS, or reach it as `localhost` over USB. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.
+- Serve the page over HTTPS, or reach it as `localhost` over USB. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. On a network address over plain HTTP, the engine silently falls back to WebGL2 at Medium. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.
 - Check the preset that the engine chose in `engine.mode.preset`. The capability report in `engine.report` holds the facts that it chose from: `coarsePointer`, `screenMinEdge` and `deviceMemoryGB`.
 - Add `?preset=low`, `?preset=medium`, `?preset=high` or `?preset=ultra` to the page's address to test each preset on one device. The GPU path still caps the preset.
 - Add `?gpu=webgl2` to test the WebGL2 path, which many phones use.

@@ -75,8 +75,17 @@ describe("a sky map's draws", () => {
 			'prefilter 5 0+6',
 			'',
 		]);
-		// The core counts the stages that the sketch's side tells it.
+		// The core counts the stages that the sketch's side tells it, and captures the map's light at
+		// the stage that the page names: after the chain is whole, and early enough that the read
+		// lands before the last stage publishes the levels.
 		expect(stages.length).toBe(SKY_MAP.stages);
+		const pipelineOf = (stage: number) => stages[stage]?.map((part) => steps[part.step]?.pipeline);
+		expect(pipelineOf(SKY_MAP.capture)).not.toContain('sky');
+		expect(pipelineOf(SKY_MAP.capture - 1)).toBeDefined();
+		expect(
+			stages.findLastIndex((parts) => parts.some((p) => steps[p.step]?.pipeline === 'sky')),
+		).toBeLessThan(SKY_MAP.capture);
+		expect(SKY_MAP.capture).toBeLessThanOrEqual(SKY_MAP.stages - 2);
 		// Every face of every draw runs once.
 		const runs = stages
 			.flat()

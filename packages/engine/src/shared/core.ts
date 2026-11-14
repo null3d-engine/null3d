@@ -41,6 +41,7 @@ export interface CoreGlue extends CoreErrors {
 		transparent: boolean,
 		cellCulling: boolean,
 		depthPrepass: boolean,
+		prepassColor: number,
 		skinning: number,
 		indexInstances: boolean,
 		largeWorld: boolean,
@@ -156,10 +157,17 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	visibleEntries(frame: number): number;
 	/**
-	 * The sources inside the camera's frustum that software occlusion culling hid in a recorded
-	 * frame, where the path culls on the CPU, or `CORE_NOT_COUNTED` where the GPU culls.
+	 * The sources inside the camera's frustum that occlusion culling hid: in a recorded frame, where
+	 * the path culls on the CPU, or in the newest frame whose counts the GPU sent back, where GPU
+	 * occlusion culling runs. `CORE_NOT_COUNTED` where neither runs.
 	 */
 	occludedEntries(frame: number): number;
+	/**
+	 * The ranges of cluster-tree patches that a recorded frame's camera view draws, where the path
+	 * walks the trees, or `CORE_NOT_COUNTED` where the GPU picks the patches itself. Zero where
+	 * the view draws the trees' whole levels.
+	 */
+	patchRanges(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	/** True when the last recorded frame's still view has accumulated enough frames to rest. */
@@ -172,6 +180,18 @@ export interface CoreGlue extends CoreErrors {
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
+	/**
+	 * Fills the memory register with what each table and allocator holds, and returns the address
+	 * of three numbers per area: the bytes that it reserves, uses and has used at most. A
+	 * development build asks for a report while the stats overlay shows its card.
+	 */
+	updateMemoryRegister(): number;
+	/** The number of memory areas that `updateMemoryRegister` reports. */
+	/** Notes the shared memory's declared maximum in MiB, ahead of `initEngine`. */
+	setMemoryMaximum(mib: number): void;
+	/** For a test: fills the heap until only its reserve's reach is left. */
+	fillHeapForTest(): void;
+	memoryAreas(): number;
 	/**
 	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
 	 * frame. The arrays can move, so their addresses must be read again.
@@ -248,11 +268,42 @@ export interface CoreGlue extends CoreErrors {
 	setBatchOrigin(batch: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/** Keeps every row of a batch whatever a view's frustum says, or culls its rows again. */
+	setBatchUnculled(batch: number, unculled: boolean): number;
+	/** Gives every row of a batch a bounding sphere of `radius` meters around its own origin. */
+	/** Sets a batch's own bounding radius, which the next frame reads from the call values. */
+	setBatchBounds(batch: number): number;
+	/**
+	 * Sets the distances between which every row of a batch draws, from the first two call values:
+	 * its start distance and its end distance.
+	 */
+	setBatchDrawRange(batch: number): number;
+	/**
+	 * Makes a batch's array of row distance ranges, two floats per row, if it has none, and
+	 * returns its address. The rows start with the batch's range.
+	 */
+	reserveBatchRanges(batch: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
 	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
 	setBatchShadows(batch: number, bits: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
+	/** Makes room for `slots` chunk places in a cloud of the chunked row table. */
+	splatChunksReserve(cloud: number, slots: number): number;
+	/** Stores `count` rows at a chunk of a cloud, replacing what the slot held. */
+	splatChunkPrepare(cloud: number, slot: number, count: number): number;
+	/** The address of one of a chunk's arrays, or 0 for a slot or field that holds none. */
+	splatChunkField(cloud: number, slot: number, field: number): number;
+	/** Forgets a chunk, so its slot draws nothing. */
+	splatChunkDestroy(cloud: number, slot: number): number;
+	/** Forgets every chunk of a cloud. */
+	splatChunksDrop(cloud: number): number;
+	/** Makes room for `slots` chosen counts of the pack's plan and returns their address. */
+	splatPackPlan(slots: number): number;
+	/** Packs a cloud's chosen prefixes into a batch's rows, in the core's memory. */
+	splatPack(batch: number, cloud: number, slots: number): number;
+	/** The number of rows that the last pack wrote. */
+	splatPackedCount(): number;
 	memoryEpoch(): number;
 	/**
 	 * The address of a query array (`QUERY_INPUT`, `QUERY_HITS` or `QUERY_RAYS`), or with
@@ -284,6 +335,33 @@ export interface CoreGlue extends CoreErrors {
 	pickResultAddress(): number;
 	/** True when GPU picking finds every source that the scene draws. */
 	pickCoversScene(): number;
+	/**
+	 * The engine frame that recorded the landed pick, or -1 when no pick has landed. A ray from that
+	 * frame's camera finds the texture coordinates of its pixel.
+	 */
+	pickFrame(): number;
+	/**
+	 * Asks the next recorded frame to copy a region of the compute pass at view place `place` back
+	 * into engine memory: `x` and `y` texels from the texture's stored first row, `width` and
+	 * `height` its size, `layer` its array layer, `ring` the read of the readback ring, and `slot`
+	 * the control slot that rises once the bytes land. Returns 0 when another read waits, the
+	 * target's format code plus one when the frame copies the region, or -1 as a 32-bit number when
+	 * the pass or the region cannot be read.
+	 */
+	requestPassRead(
+		place: number,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		layer: number,
+		ring: number,
+		slot: number,
+	): number;
+	/** The address in engine memory of the readback ring's regions, one after another. */
+	passReadAddress(): number;
+	/** The bytes of one readback ring region. */
+	passReadStride(): number;
 	/** The object or batch id that a pick's source key names, or 0 for a key that names nothing. */
 	pickTargetId(key: number): number;
 	/** The instance row that a pick's source key names, or 0 for an object of the scene. */
@@ -323,6 +401,46 @@ export interface CoreGlue extends CoreErrors {
 		morph: number,
 	): number;
 	/**
+	 * A mesh that draws the live mesh `base`'s vertices with the `indices` triangles at `meshArrays`'s
+	 * address, which the call frees. Returns the mesh id, or 0 when the base cannot share its
+	 * vertices: it is split into parts, or joints or morph targets pose them.
+	 */
+	createLevelMesh(base: number, indices: number): number;
+	/**
+	 * A level of the live mesh `base` that holds its own copy of the vertices that the `indices`
+	 * triangles at `meshArrays`'s address name, which the call frees: the level of a split base,
+	 * which cannot share its vertices. Returns the mesh id, or 0 on failure.
+	 */
+	createLevelCopy(base: number, indices: number): number;
+	/**
+	 * A level of the live mesh `base`, which is split into parts, that draws the base's own
+	 * vertices from triangles at `meshArrays`'s address, which the call frees, and copies only the
+	 * vertices of the triangles that span the parts' seams. The words hold the level's `count`
+	 * pieces and `groups` groups, as `setMeshPieces` lays them out, then its `indices` indices. A
+	 * level with pieces
+	 * keeps its triangles' order, which must come part by part as the parts draw them; one whose
+	 * triangles do not draws them part by part, without pieces. Returns the mesh id, or 0 on
+	 * failure.
+	 */
+	createSplitLevel(base: number, count: number, groups: number, indices: number): number;
+	/**
+	 * Writes part `part` of the live mesh `mesh`'s vertices and triangles as the level planner
+	 * reads them, and returns their address, or 0 for a mesh or part that does not exist: the
+	 * mesh's part count, vertex count, index count and vertex format, the part's vertex and index
+	 * counts, the mesh vertex that each of the part's vertices holds, then the floats of the
+	 * position, the normal, the first and second texture coordinates, the tangent and the color
+	 * where the format has them, attribute after attribute, then the part's indices in the mesh's
+	 * numbering. The next call that uses the same words overwrites them.
+	 */
+	meshPlanningPart(mesh: number, part: number): number;
+	/**
+	 * Gives the live mesh `mesh` the `indices` triangles at `meshArrays`'s address in place of the
+	 * ones it draws, which the call frees. 0 when the mesh takes them. A mesh that is split into
+	 * parts, morphed, a level of its own or drawn as lines returns its fault code, and keeps the
+	 * triangles it had.
+	 */
+	replaceMeshIndices(mesh: number, indices: number): number;
+	/**
 	 * Gives a mesh the tree over its triangles that a model file stores, from the first `bytes`
 	 * bytes at `meshArrays`'s address. 1 when the mesh takes it, 0 when the tree does not fit the
 	 * mesh, which then gets a tree of its own on the first query.
@@ -333,11 +451,54 @@ export interface CoreGlue extends CoreErrors {
 	 * floats, then `indices` indices, at `meshArrays`'s address. 1 when the mesh takes it.
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
+	/**
+	 * Gives a mesh the tree of cluster patches that a model file stores: `patches` records of
+	 * eight words each, four floats of a bounding sphere and four integers of a run of indices,
+	 * a parent and an error, then `indices` indices, at `meshArrays`'s address. `root` names the
+	 * patch that the walk starts at. 1 when the mesh takes the tree, 0 when the tree does not
+	 * cover the mesh's vertices.
+	 */
+	setMeshPatches(mesh: number, patches: number, indices: number, root: number): number;
+	/**
+	 * Gives a mesh `count` pieces of its triangle list, at `meshArrays`'s address: nine words each,
+	 * the piece's triangles, then four floats of its bounding sphere and four of its cone of
+	 * facings. The pieces follow the list's order. `groups` groups of the pieces follow them, nine
+	 * words each in the same layout, in the list's order, and the groups of each piece hold its
+	 * triangles and no other. 1 when the mesh takes them, 0 when they do not fit its list, which
+	 * then draws whole. Groups that do not split the pieces leave the pieces without groups.
+	 */
+	setMeshPieces(mesh: number, count: number, groups: number): number;
+	/**
+	 * Gives a mesh `count` pieces over a triangle list of their own: the pieces and their `groups`
+	 * groups as `setMeshPieces` lays them out, then `indices` indices that hold the mesh's
+	 * triangles in piece order, at
+	 * `meshArrays`'s address. The mesh keeps its own list. A mesh of several parts takes a list
+	 * whose triangles come part by part, as `createSplitLevel` draws them. A list that the mesh held
+	 * before goes, with its pieces. 1 when the mesh takes them, 0 when it cannot: a list in another
+	 * order.
+	 */
+	setMeshPieceList(mesh: number, count: number, groups: number, indices: number): number;
+	/**
+	 * Appends one band to a mesh's tree of cluster patches: `patches` records of eight words each,
+	 * four floats of a bounding sphere and four integers of a run of indices, a parent and an
+	 * error, then `indices` indices, at `meshArrays`'s address. A run's first index counts from the
+	 * band's own indices, and a parent names a patch that the tree already holds. 1 when the mesh
+	 * takes the band, 0 when it has no tree, and the code of the rule that refused it otherwise.
+	 */
+	appendMeshPatches(mesh: number, patches: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/** One axis of a mesh's bounding center, 0 for x, 1 for y and 2 for z, or 0 for an unknown mesh. */
+	meshCenter(mesh: number, axis: number): number;
 	/** A mesh's vertex count, or 0 for an unknown mesh. */
 	meshVertexCount(mesh: number): number;
 	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
 	meshFormat(mesh: number): number;
+	/**
+	 * Turns a rectangle's rows over in place, so that its last row comes first, at `address` in the
+	 * engine's memory: a canvas counts rows from its top, and a texture from the bottom. Each row is
+	 * `rowBytes` long and there are `height` of them. The caller writes the rectangle first.
+	 */
+	turnRows(address: number, rowBytes: number, height: number): void;
 	/**
 	 * Writes new values of the attribute at vertex shader `location` into vertices `start` to
 	 * `start + count` of a mesh, from `meshArrays`'s words: `components` values per vertex in the
@@ -356,17 +517,47 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	destroyMeshes(count: number): number;
 	/**
-	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose errors as 32-bit
-	 * floats, `meshArrays`'s words hold, from the most detailed down. `fades` lets two levels hand
-	 * over in a fading band. With `count` 0 the mesh loses its levels. 0 for success.
+	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose switch values as
+	 * 32-bit floats, then whose switch measures, `meshArrays`'s words hold, from the most detailed
+	 * down. The low 16 bits of `flags`, from the base level, mark the levels that hand over in a
+	 * fading band, and the high 16 bits the levels whose switch is a measured error. With `count`
+	 * 0 the mesh loses its levels. 0 for success.
 	 */
-	setMeshLevels(base: number, count: number, fades: boolean): number;
+	setMeshLevels(base: number, count: number, flags: number): number;
+	/**
+	 * Watches the levels that the views pick for the mesh `base`, from the frame that the renderer
+	 * began last on, in place of a watch that the mesh had. The loader of a model with staged levels
+	 * waits on the watch before it downloads the next stage.
+	 */
+	watchStageLevels(base: number): number;
+	/**
+	 * The levels of the mesh `base` that a view picked since its watch began, one bit each, bit 0
+	 * for the mesh itself. 0 for a mesh that no loader watches.
+	 */
+	stageLevelPicks(base: number): number;
+	/**
+	 * The bands of the mesh `base`'s tree of cluster patches that a view drew since its watch
+	 * began, one bit each, bit 0 for the band that the file holds. 0 for a mesh that no loader
+	 * watches.
+	 */
+	stageBandPicks(base: number): number;
+	/** The frames that drew the mesh `base` since its watch began, 0 for a mesh that no watch has. */
+	stageFrames(base: number): number;
+	/**
+	 * Stops watching the levels that the views pick for the mesh `base`, so the frames that follow
+	 * pay nothing while no loader waits on it. The loader watches the mesh again when its camera
+	 * could want another stage.
+	 */
+	unwatchStageLevels(base: number): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
 	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
-	 * polygon offset units and factor.
+	 * polygon offset units and factor. `swayDistance` is the distance from the camera out to which a
+	 * custom material's vertex offset moves, in meters, or 0 for every distance. A `singleLayer` of
+	 * 1 draws the material's blended surfaces in the camera's one-sample layer while the scene has
+	 * more than one sample, and 0 draws them in the transparent pass.
 	 */
 	createMaterial(
 		shading: number,
@@ -377,6 +568,8 @@ export interface CoreGlue extends CoreErrors {
 		a: number,
 		biasConstant: number,
 		biasSlope: number,
+		swayDistance: number,
+		singleLayer: number,
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
@@ -454,7 +647,7 @@ export interface CoreGlue extends CoreErrors {
 	 * changes. Before the scene's first sky background, the maps show the sky of the background's
 	 * values, which TypeScript writes first.
 	 */
-	addSkyMap(texture: number, stages: number): number;
+	addSkyMap(texture: number, stages: number, capture: number): number;
 	/**
 	 * Sets reflection probe `slot`, adding it when the slot is empty: its box from the low corner to
 	 * the high one, the point it captures from, its blend and intensity, its flags
@@ -486,6 +679,8 @@ export interface CoreGlue extends CoreErrors {
 	setProbeSize(size: number): number;
 	/** 1 while a reflection probe waits for its first capture, and 0 otherwise. */
 	probesWaiting(): number;
+	/** 1 while a light's picture waits for its texture's texels to be copied, and 0 otherwise. */
+	lightImagesWaiting(): number;
 	/**
 	 * Returns the image id under which TypeScript sends the generator that runs reflection probes'
 	 * filters, once.
@@ -497,6 +692,14 @@ export interface CoreGlue extends CoreErrors {
 	 * layer, and level after level for a texture whose data brings its mip levels.
 	 */
 	setTextureData(texture: number, width: number, height: number): number;
+	/**
+	 * Gives a rectangle of a texture new texels: `width` x `height` at (`x`, `y`) in its first
+	 * layer's level 0, and returns the address that TypeScript writes them at: tightly packed rows,
+	 * the rectangle's bottom row first. Returns 0 while the texture still waits for all its texels,
+	 * because a rectangle cannot fill the rest. The rectangle uploads within the frame's budget and
+	 * makes its mip levels again.
+	 */
+	setTextureRegion(texture: number, x: number, y: number, width: number, height: number): number;
 	destroyTexture(texture: number, frame: number): number;
 	/**
 	 * Tells the texture store what the thread that draws has: images received, and frames taken.
@@ -514,6 +717,8 @@ export interface CoreGlue extends CoreErrors {
 	failTextureReload(texture: number): void;
 	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
 	textureStat(field: number, texture: number): number;
+	/** The array layer that a map of the texture samples now. */
+	textureLayer(texture: number): number;
 	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
 	setTextureOption(option: number, value: number): number;
 	/**
@@ -576,7 +781,9 @@ export interface CoreGlue extends CoreErrors {
 	 * texels, or with a width of 0, of `scale` of the render size each way. It reads the input
 	 * image `source` (`PASS_SOURCE_*`), the scene's depth with the flag `EFFECT_DEPTH`, the
 	 * uniforms at `effectValues` and the textures at `effectTextures`, in one frame of every
-	 * `every`. Returns the view's place from 1, or 0 on failure, as `addPass` does.
+	 * `every`. A fragment form of a compute pass draws a target of `format`, a draw list format
+	 * code, or of the scene's views' format with 0. Returns the view's place from 1, or 0 on
+	 * failure, as `addPass` does.
 	 */
 	addFullscreenPass(
 		pass: string,
@@ -588,7 +795,66 @@ export interface CoreGlue extends CoreErrors {
 		template: number,
 		flags: number,
 		source: number,
+		fallback: number,
+		history: number,
+		layers: number,
+		steps: number,
+		format: number,
 	): number;
+	/**
+	 * Adds a compute pass named `pass`, which runs the compiled WGSL of compute pipeline template
+	 * `template` over the whole of a target named `target`: of `width` x `height` texels, or with
+	 * a width of 0, of `scale` of the render size each way. It writes the target as a storage
+	 * texture of `format`, a draw list format code, over a workgroup of `workgroup` invocations
+	 * packed one axis to a byte, and dispatches `counts` workgroups along each axis packed the same
+	 * way, or covers the target when every count is 0. It reads its uniforms at `effectValues` and
+	 * its textures at `effectTextures`, in one frame of every `every`. Returns the view's place
+	 * from 1, or 0 on failure, as `addPass` does.
+	 */
+	addComputePass(
+		pass: string,
+		target: string,
+		width: number,
+		height: number,
+		scale: number,
+		every: number,
+		template: number,
+		format: number,
+		workgroup: number,
+		counts: number,
+		afterScene: number,
+		countsBuffer: number,
+		instancesBuffer: number,
+		instancesBytes: number,
+		history: number,
+		layers: number,
+		steps: number,
+	): number;
+	/**
+	 * Gives the compute pass of view place `place` the uniforms at `effectValues` and the textures
+	 * at `effectTextures`, from the next frame on. Returns 0, or the render graph's code for a
+	 * texture that closes a loop of passes.
+	 */
+	setComputeValues(place: number): number;
+	/** Gives the compute pass of view place `place` the runs that a frame records. */
+	setComputeSteps(place: number, steps: number): number;
+	/** Asks the compute pass of view place `place` to clear both states before its next run. */
+	resetComputeState(place: number): number;
+	/**
+	 * Adds a view that draws the scene into a rectangle of the canvas, which the first four call
+	 * values name: its left and top, then its width and height, as fractions of the canvas. The
+	 * view's lens goes to it through `setPerspectiveCamera` or `setOrthographicCamera` with
+	 * `CAMERA_TARGET_PASS_VIEWS` plus its place. Returns the view's place from 1, or 0 when the
+	 * frame draws the most views already.
+	 */
+	addSceneView(): number;
+	/**
+	 * Sets the rectangle of the view at `place` from the first four call values, as `addSceneView`
+	 * gives them.
+	 */
+	setSceneViewRect(place: number): number;
+	/** Removes the view at `place`, from the next frame on. */
+	removeSceneView(place: number): number;
 	/**
 	 * Gives the full-screen pass of a view place the uniforms at `effectValues` and the textures at
 	 * `effectTextures`, from the next frame on, or fails with the render graph's error.
@@ -601,28 +867,52 @@ export interface CoreGlue extends CoreErrors {
 	setReflectionScale(): number;
 	/** Sets the most area lights that one frame shades. */
 	setAreaLightCap(cap: number): number;
+	/** Fits the light clusters' depth slices to the depth that the frame before measured, or not. */
+	setLightFit(enabled: number): number;
 	/** Makes room for the area lights' tables; the address of their half floats, or 0. */
 	areaLightTables(): number;
 	/** Marks the area lights' tables as written, so frames light with area lights. */
 	finishAreaLightTables(): number;
-	/** Makes room for a rectangle light's image; the address of its half floats, or 0. */
-	areaLightImage(light: number): number;
-	/** Marks a rectangle light's image as written, so frames show it. */
-	finishAreaLightImage(light: number): number;
-	/** Takes a rectangle light's image away. */
-	removeAreaLightImage(light: number): number;
+	/**
+	 * Makes room for a light's image of `size` texels a side; the address of its half floats, or 0.
+	 */
+	lightImage(light: number, size: number): number;
+	/** Marks a light's image as written, so frames show it. */
+	finishLightImage(light: number): number;
+	/**
+	 * Gives a light an image of `size` texels a side whose texels come from a texture, which a
+	 * frame copies into the image once the texture's texels are on the GPU.
+	 */
+	setLightMapTexture(light: number, texture: number, size: number): number;
+	/** Takes a light's image away. */
+	removeLightImage(light: number): number;
 	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
 	setPhysicalSky(on: boolean): number;
+	/** Sets the steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer. */
+	setCloudSteps(steps: number): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
 	setScenePassEnabled(place: number, enabled: boolean): number;
+	/** Gives the scene pass of a view place a cadence of one frame in `every`, without a compile. */
+	setScenePassEvery(place: number, every: number): number;
 	/** Creates a texture that shows the target of a scene pass's view place; 0 on failure. */
 	createPassTexture(place: number, width: number, height: number): number;
 	/** The message of the last render graph error, with the passes and resources by name. */
 	renderGraphMessage(): string;
 	/** The render graph of the passes as they are now, as Graphviz DOT text. */
 	renderGraphDot(): string;
+	/**
+	 * Turns the development probe of the two-step pass on. Its answers stay zero until it is on, so
+	 * nothing reads them unless the page asked.
+	 */
+	setDebugTwoStep(on: boolean): void;
+	/**
+	 * The two-step answers of the last recorded frame, as the address of five 32-bit words: whether
+	 * the frame wanted the two-step pass, declared it, had its second step built and drew it, then
+	 * the render scale in thousandths. Zero until `setDebugTwoStep(true)`.
+	 */
+	debugTwoStep(): number;
 	/**
 	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
 	 * codes. Returns the light's id.
@@ -642,6 +932,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setLightValue(light: number, which: number): number;
 	/**
+	 * Sets the object whose shadow a directional light draws into a tile of its own to `object`, or
+	 * stops with 0.
+	 */
+	setLightHero(light: number, object: number): number;
+	/**
 	 * Sets the number that each light created from now on starts with to the first call value:
 	 * `which` is one of the `LIGHT_VALUE_*` codes.
 	 */
@@ -650,8 +945,8 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(): number;
 	/**
 	 * The address of the block of post-processing values (`POST_VALUE_*`), 32-bit floats that
-	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut`, `setVignette` or
-	 * `setOutline`.
+	 * TypeScript writes before it calls `setOutput`, `setBloom`, `setAo`, `setLut`, `setVignette`,
+	 * `setSharpen` or `setOutline`.
 	 */
 	postValues(): number;
 	/** The tone mapping, by code, and the exposure from the post-processing values, from the next frame on. */
@@ -686,10 +981,33 @@ export interface CoreGlue extends CoreErrors {
 	 * steps of their march, from the next frame on: a size of 0 draws none.
 	 */
 	setSsrQuality(thousandths: number, steps: number): number;
+	/**
+	 * The rays that each texel of screen-space bounce light casts, from the next frame on: 0 draws
+	 * none.
+	 */
+	setBounceRays(rays: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/**
+	 * The generation of the plan's texture list, which changes when a pass change makes the frame
+	 * make some targets again. A frame's list recorded under an older generation names textures
+	 * that a later plan replaced, so the thread that draws skips it.
+	 */
+	planEpoch(): number;
 	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
 	setSubsurfaceTaps(taps: number): number;
+	/**
+	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, whether
+	 * the camera takes its sub-pixel offsets, whether the cheaper path draws, the bits of the
+	 * transparency signals that lower the history, and whether the history follows the exposure.
+	 */
+	setTaa(
+		feedback: number,
+		jitter: boolean,
+		phone: boolean,
+		reactive: number,
+		exposure: boolean,
+	): number;
 	/** Turns automatic exposure on with the post-processing values' settings, or off. */
 	setAutoExposure(on: boolean): number;
 	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
@@ -709,27 +1027,116 @@ export interface CoreGlue extends CoreErrors {
 	markParticleRecords(id: number, start: number, count: number): number;
 	/** Marks a particle system's values for the next frame's upload. */
 	markParticleValues(id: number): number;
+	/**
+	 * Makes room for `count` births' parameters in the core's block, nine numbers per birth, and
+	 * returns the address of its first number, or 0 when the memory cannot grow.
+	 */
+	particleRecordBlock(count: number): number;
+	/**
+	 * Writes the records of `count` births from the core's block, from record `first` on, and
+	 * marks them for the next frame's upload.
+	 */
+	writeParticleRecords(id: number, count: number, first: number): number;
+	/**
+	 * Takes whole `seconds` off the birth times of records `from` to `to`, which moves the time
+	 * that they count from, and marks them.
+	 */
+	shiftParticleRecords(id: number, from: number, to: number, seconds: number): number;
+	/**
+	 * Makes room for a particle system's emitter block of `floats` numbers and returns its
+	 * address, or 0 for no such system or when the memory cannot grow.
+	 */
+	particleEmitterBlock(id: number, floats: number): number;
+	/** Reads an emitter's settings from its block and starts its births and its time base again. */
+	configureParticleEmitter(id: number): number;
+	/** The address of a system's sub-emitter inverse world matrices, 16 numbers each, or 0. */
+	particleSubMatrices(id: number): number;
+	/** Emits a particle system's frame, fires its due sub-emitters, and moves its time base. */
+	emitParticleFrame(id: number): number;
+	/** Emits `count` particles of a system at once, at the place and velocity in its block. */
+	burstParticles(id: number, count: number): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
+	/**
+	 * Makes a draw of `vertices` vertices for each of `instances` copies for the object in scene
+	 * slot `slot`, and returns its id, or 0 when the scene holds the most draws already.
+	 */
+	createVertexDraw(slot: number, vertices: number, instances: number): number;
+	/** Forgets a draw that makes its own vertices. */
+	destroyVertexDraw(id: number): number;
+	/** Sets the vertices of one shape and the number of its copies of such a draw. */
+	setVertexDrawCounts(id: number, vertices: number, instances: number): number;
+	/**
+	 * Makes a draw of at most `capacity` instances for the object in scene slot `slot`, whose
+	 * instance count the GPU writes, and returns its id, or 0 when the scene holds the most such
+	 * draws already.
+	 */
+	createFeatureInstances(slot: number, capacity: number): number;
+	/** Forgets a draw whose instance count the GPU writes. */
+	destroyFeatureInstances(id: number): number;
+	/** The id of the per-instance buffer that such a draw reads. */
+	featureInstanceBuffer(id: number): number;
+	/** The id of the count word that such a draw takes. */
+	featureInstanceCountBuffer(id: number): number;
+	/**
+	 * Sets the count that a shadow view draws and that a page without compute sets for a draw
+	 * whose instance count the GPU writes.
+	 */
+	setFeatureInstanceCount(id: number, count: number): number;
+	/**
+	 * Tells the engine whether the add-on's feature draws now. A draw that is not ready records no
+	 * draw, no conversion and no count copy. Returns 1 for a draw that does not exist.
+	 */
+	setFeatureInstanceReady(id: number, ready: boolean): number;
+	/**
+	 * Writes `count` per-instance rows from `values` at row `start`, as the engine's instance
+	 * buffers hold them: three world-matrix rows, then the ids. Returns 0, or 1 for values that a
+	 * draw does not take.
+	 */
+	setFeatureInstanceRows(id: number, start: number, count: number, values: Float32Array): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
+	/**
+	 * Notes the GPU's time for a frame that it finished, from the frame's submit to its completion,
+	 * in microseconds, which GPU occlusion culling's check compares with its passes on and off.
+	 */
+	gpuFrameTime(frame: number, micros: number): number;
+	/** Sets the control slot that GPU occlusion culling's reads of its counts raise. */
+	setOcclusionReadSlot(slot: number): number;
 	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
 	setParallax(on: boolean): number;
+	/**
+	 * Draws the blended surfaces in the camera's moment transparency layer from the next frame on,
+	 * as the quality preset's `momentTransparency` says.
+	 */
+	setMomentTransparency(on: boolean): number;
 	/**
 	 * Sets the pixels that software occlusion culling's buffer holds about from the next frame
 	 * on, or 0 for the core's default, where the path culls on the CPU.
 	 */
 	setOcclusionBuffer(pixels: number): number;
 	/**
+	 * Holds GPU occlusion culling's passes on in every frame from the next one on, without its
+	 * check's trials, or lets the check judge them again. The WebGL2 path ignores it.
+	 */
+	holdOcclusionCheck(held: boolean): number;
+	/**
 	 * Grades the canvas color with the color grading table in a 3D texture, or with none for 0,
 	 * from the next frame on, with the post-processing values' intensity and domain.
 	 */
 	setLut(texture: number): number;
 	/**
+	 * Grades the canvas color with the built-in grading table in a 3D texture, or with none for 0,
+	 * from the next frame on: a job worker baked the sketch's grading values into it.
+	 */
+	setGrade(texture: number): number;
+	/**
 	 * Turns the vignette on with the post-processing values' intensity, size, falloff and roundness,
 	 * or off.
 	 */
 	setVignette(on: boolean): number;
+	/** Turns the sharpening on with the post-processing values' strength, or off. */
+	setSharpen(on: boolean): number;
 	/** Turns outlines on with the post-processing values' line colors and width, or off. */
 	setOutline(on: boolean): number;
 	/**
@@ -840,6 +1247,21 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setBackgroundSource(kind: number, texture: number): number;
 	/**
+	 * Draws the sky layer of render pipeline template `template` over the background, with the share
+	 * `sun` of the sun that it hides, its `opacity`, and `refresh` seconds between the sky map's
+	 * captures of it. `map` is the same WGSL built into the shader that fills the sky map's cube
+	 * faces, and `slot` the control slot that a map's light capture raises once its coefficients
+	 * are in engine memory. Removes the layer for template 0.
+	 */
+	setSkyLayer(
+		template: number,
+		map: number,
+		sun: number,
+		opacity: number,
+		refresh: number,
+		slot: number,
+	): number;
+	/**
 	 * The scene's fog: its curve (`FOG_CURVE_*`), or none. The call values give its linear color,
 	 * the density of exponential and exponential squared fog, the near and far distances of linear
 	 * fog, the height where the fog has that density, its height falloff, its sun glow and the
@@ -862,6 +1284,11 @@ export interface CoreGlue extends CoreErrors {
 	 * `DEBUG_VIEW_LIT`, from the next frame on.
 	 */
 	setDebugView(view: number): number;
+	/**
+	 * Draws every mesh of the main pass with the material whose id is `material` in place of its
+	 * own, or with its own materials with 0, from the next frame on.
+	 */
+	setOverrideMaterial(material: number): number;
 	/**
 	 * The layers whose objects decals mark, as a 32-bit mask. An object that is also on another
 	 * layer draws again after the decals.
@@ -1009,10 +1436,15 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'recordFrame',
 	'visibleEntries',
 	'occludedEntries',
+	'patchRanges',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'updateMemoryRegister',
+	'setMemoryMaximum',
+	'fillHeapForTest',
+	'memoryAreas',
 	'reserveDebugLines',
 	'debugLineArrays',
 	'drawDebugLines',
@@ -1024,9 +1456,21 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchUnculled',
+	'setBatchBounds',
+	'setBatchDrawRange',
+	'reserveBatchRanges',
 	'setBatchLayers',
 	'setBatchShadows',
 	'markBatchDirty',
+	'splatChunksReserve',
+	'splatChunkPrepare',
+	'splatChunkField',
+	'splatChunkDestroy',
+	'splatChunksDrop',
+	'splatPackPlan',
+	'splatPack',
+	'splatPackedCount',
 	'memoryEpoch',
 	'queryArrays',
 	'reserveRays',
@@ -1036,19 +1480,39 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'requestPick',
 	'pickResultAddress',
 	'pickCoversScene',
+	'pickFrame',
 	'pickTargetId',
 	'pickTargetRow',
+	'requestPassRead',
+	'passReadAddress',
+	'passReadStride',
 	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
+	'createLevelMesh',
+	'createLevelCopy',
+	'createSplitLevel',
+	'meshPlanningPart',
+	'replaceMeshIndices',
 	'setMeshBvh',
 	'setMeshBlocker',
+	'setMeshPatches',
+	'setMeshPieces',
+	'setMeshPieceList',
+	'appendMeshPatches',
 	'meshRadius',
+	'meshCenter',
 	'meshVertexCount',
 	'meshFormat',
+	'turnRows',
 	'updateVertices',
 	'destroyMeshes',
 	'setMeshLevels',
+	'watchStageLevels',
+	'stageLevelPicks',
+	'stageBandPicks',
+	'stageFrames',
+	'unwatchStageLevels',
 	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
@@ -1068,14 +1532,17 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'captureReflectionProbe',
 	'setProbeSize',
 	'probesWaiting',
+	'lightImagesWaiting',
 	'probeGenerator',
 	'setTextureData',
+	'setTextureRegion',
 	'destroyTexture',
 	'syncTextures',
 	'setTextureReloadable',
 	'takeTextureReload',
 	'failTextureReload',
 	'textureStat',
+	'textureLayer',
 	'setTextureOption',
 	'setShadowTiles',
 	'setPerspectiveCamera',
@@ -1083,25 +1550,39 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'clearShadowCamera',
 	'addPass',
 	'addFullscreenPass',
+	'addComputePass',
+	'setComputeValues',
+	'setComputeSteps',
+	'resetComputeState',
+	'addSceneView',
+	'setSceneViewRect',
+	'removeSceneView',
 	'setPassValues',
 	'setReflectionScale',
 	'setAreaLightCap',
+	'setLightFit',
 	'areaLightTables',
 	'finishAreaLightTables',
-	'areaLightImage',
-	'finishAreaLightImage',
-	'removeAreaLightImage',
+	'lightImage',
+	'finishLightImage',
+	'setLightMapTexture',
+	'removeLightImage',
 	'setPhysicalSky',
+	'setCloudSteps',
 	'removeScenePass',
 	'setScenePassEnabled',
+	'setScenePassEvery',
 	'createPassTexture',
 	'renderGraphMessage',
 	'renderGraphDot',
+	'setDebugTwoStep',
+	'debugTwoStep',
 	'createLight',
 	'copyLight',
 	'destroyLight',
 	'setLightColor',
 	'setLightValue',
+	'setLightHero',
 	'setLightDefault',
 	'setBackground',
 	'postValues',
@@ -1115,10 +1596,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'planEpoch',
 	'setSubsurfaceTaps',
+	'setTaa',
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
+	'setBounceRays',
 	'setAutoExposure',
 	'setExposureMeter',
 	'createParticles',
@@ -1127,12 +1611,36 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleValues',
 	'markParticleRecords',
 	'markParticleValues',
+	'particleRecordBlock',
+	'writeParticleRecords',
+	'shiftParticleRecords',
+	'particleEmitterBlock',
+	'configureParticleEmitter',
+	'particleSubMatrices',
+	'emitParticleFrame',
+	'burstParticles',
 	'setSoftParticles',
+	'createVertexDraw',
+	'destroyVertexDraw',
+	'setVertexDrawCounts',
+	'createFeatureInstances',
+	'destroyFeatureInstances',
+	'featureInstanceBuffer',
+	'featureInstanceCountBuffer',
+	'setFeatureInstanceCount',
+	'setFeatureInstanceRows',
+	'setFeatureInstanceReady',
 	'setSoftwareOcclusion',
+	'gpuFrameTime',
+	'setOcclusionReadSlot',
 	'setParallax',
+	'setMomentTransparency',
 	'setOcclusionBuffer',
+	'holdOcclusionCheck',
 	'setLut',
+	'setGrade',
 	'setVignette',
+	'setSharpen',
 	'environmentValues',
 	'setEnvironment',
 	'lightProbeValues',
@@ -1153,11 +1661,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'hasLevels',
 	'backgroundValues',
 	'setBackgroundSource',
+	'setSkyLayer',
 	'setFog',
 	'setFogVolume',
 	'setFogSlices',
 	'setFogHalvings',
 	'setDebugView',
+	'setOverrideMaterial',
 	'setDecalLayers',
 	'initAnimations',
 	'animationStaging',
@@ -1228,16 +1738,19 @@ export function coreUrls(build: Build): CoreFiles {
 export type LoadedGlue = Partial<CoreGlue> & { readonly coreSources?: string };
 
 /**
- * E1402 when a generated module does not belong with this code: when `sources`, the stamp of the
- * Rust sources that a dev server gives, differs from the stamp that the build wrote in, or when
- * the module lacks a function that the engine calls.
+ * E1402 when a generated module does not belong with this code: when `sources`, the stamps of the
+ * Rust sources that a dev server gives, holds none of the module's stamp, or when the module lacks
+ * a function that the engine calls.
  */
 export function glueMismatch(
 	build: Build,
 	glue: LoadedGlue,
-	sources: string | undefined,
+	sources: readonly string[] | undefined,
 ): EngineError | undefined {
-	if (sources !== undefined && glue.coreSources !== sources)
+	if (
+		sources !== undefined &&
+		(glue.coreSources === undefined || !sources.includes(glue.coreSources))
+	)
 		return new EngineError(
 			'E1402',
 			`the ${build} engine core was built from other Rust sources than this checkout holds.`,

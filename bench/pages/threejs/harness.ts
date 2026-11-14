@@ -10,13 +10,11 @@ import {
 	BACKGROUND,
 	CAMERA,
 	CANVAS,
-	MEASURE_SECONDS,
 	type OutArray,
 	PARITY_CANVAS,
 	type SceneLights,
 	SHADOWS,
 	VIEW_LIGHTS,
-	WARMUP_SECONDS,
 } from '../../scenes/spec';
 import { fillWindow, fitToWindow, showPageName } from '../lib/fit';
 import { measureFrames } from '../lib/measure';
@@ -470,11 +468,7 @@ export function runThreePage(
 			renderer.setAnimationLoop(null);
 			Object.assign(report, { load: { firstFrameMs, wholeMs: performance.now(), ...figures } });
 		}
-		const timings = await measureFrames(
-			frame,
-			options.seconds ?? WARMUP_SECONDS,
-			options.seconds ?? MEASURE_SECONDS,
-		);
+		const timings = await measureFrames(frame, options.warmupSeconds, options.measureSeconds);
 		return {
 			...report,
 			...timings,

@@ -76,6 +76,17 @@ describe('vertex formats', () => {
 		expect(variantLocations([0, 1, 2, 3], both)).toEqual([0, 1, 2, 3, 4, 5]);
 	});
 
+	test('a variant reads each location once when its template already reads the colors', () => {
+		// A custom material's vertex offset reads the colors, and its vertex color variants ask again.
+		const colors = locationOfAttribute(VERTEX_COLOR);
+		expect(variantLocations([0, 1, 2, colors], PERMUTATION_VERTEX_COLOR)).toEqual([
+			0,
+			1,
+			2,
+			colors,
+		]);
+	});
+
 	test('the base format holds a position and a normal, three floats each', () => {
 		expect(vertexStride(0)).toBe(24);
 		expect(vertexAttribute(0, 0)).toEqual(floats(0, 3, 0));
@@ -87,7 +98,7 @@ describe('vertex formats', () => {
 	test('each optional attribute follows the ones before it, at its own location', () => {
 		// Floats, apart from the joints, whose default is four 8-bit integers in one word. The core
 		// gives the same stride.
-		expect(vertexStride(VERTEX_ALL)).toBe(100);
+		expect(vertexStride(VERTEX_ALL)).toBe(108);
 		expect(vertexAttribute(VERTEX_ALL, 2)).toEqual(floats(2, 2, 24));
 		expect(vertexAttribute(VERTEX_ALL, 3)).toEqual(floats(3, 2, 32));
 		expect(vertexAttribute(VERTEX_ALL, 4)).toEqual(floats(4, 4, 40));
@@ -100,7 +111,7 @@ describe('vertex formats', () => {
 			integer: true,
 		});
 		expect(vertexAttribute(VERTEX_ALL, 7)).toEqual(floats(7, 4, 76));
-		expect(vertexAttribute(VERTEX_ALL, 8)).toEqual(floats(8, 2, 92));
+		expect(vertexAttribute(VERTEX_ALL, 8)).toEqual(floats(8, 4, 92));
 		// Without the first texture coordinates, the second take their place.
 		expect(vertexAttribute(VERTEX_UV1, 3)).toEqual(floats(3, 2, 24));
 		expect(vertexAttribute(VERTEX_UV1, 2)).toBeUndefined();
@@ -158,8 +169,8 @@ describe('vertex formats', () => {
 	test('an attribute of one type has no type field, so its own bit does not hide it', () => {
 		const morph = locationOfAttribute(VERTEX_MORPH);
 		expect(typeOf(VERTEX_MORPH, morph)).toBe(VERTEX_TYPE_F32);
-		// Two floats after the position and the normal.
-		expect(vertexStride(VERTEX_MORPH)).toBe(vertexStride(0) + 8);
+		// Four floats after the position and the normal: the target position and the level's error.
+		expect(vertexStride(VERTEX_MORPH)).toBe(vertexStride(0) + 16);
 	});
 
 	test('in every format of floats, the last attribute ends at the stride', () => {

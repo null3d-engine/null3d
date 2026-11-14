@@ -11,9 +11,11 @@
 #import null3d::backdrop::{Backdrop}
 
 @group(0) @binding(0) var<uniform> frame: Frame;
-@group(1) @binding(0) var layers: texture_2d_array<f32>;
-@group(1) @binding(1) var layer_sampler: sampler;
-@group(2) @binding(0) var<uniform> backdrop: Backdrop;
+// The background's values take the group that a sky's own values take, so every background's
+// values sit at group 1, and the maps follow in the group after.
+@group(1) @binding(0) var<uniform> backdrop: Backdrop;
+@group(2) @binding(0) var layers: texture_2d_array<f32>;
+@group(2) @binding(1) var layer_sampler: sampler;
 
 struct VertexOut {
     @builtin(position) clip: vec4f,
@@ -44,6 +46,7 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     return null3d::tonemap::finish(
         texel.rgb * light,
         in.clip.xy,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,

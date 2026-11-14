@@ -46,10 +46,32 @@ export function shownAddress(url: URL): string {
 const reason = (thrown: unknown) => (thrown instanceof Error ? thrown.message : String(thrown));
 
 /**
+ * Calls `report` as each byte range of a body passes through it, with the bytes that have passed
+ * and the bytes that the response announced. `total` is 0 when the response gave no length.
+ */
+function counted(
+	body: ReadableStream<Uint8Array<ArrayBufferLike>>,
+	total: number,
+	report: (loaded: number, total: number) => void,
+): ReadableStream<Uint8Array<ArrayBufferLike>> {
+	let loaded = 0;
+	return body.pipeThrough(
+		new TransformStream<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>({
+			transform(chunk, controller) {
+				loaded += chunk.byteLength;
+				report(loaded, total);
+				controller.enqueue(chunk);
+			},
+		}),
+	);
+}
+
+/**
  * Downloads a WebAssembly file and compiles it as it arrives. `name` says what the file is, for
  * errors. `readHead` reads a copy of the download, such as the start of the module, while the
- * browser compiles. Fails with E1406 when the file does not download whole or is not WebAssembly,
- * and with E1418 when the page's Content-Security-Policy blocks WebAssembly.
+ * browser compiles. `onDownload` hears the bytes as they arrive, with the length that the response
+ * announced, or 0 when it gave none. Fails with E1406 when the file does not download whole or is
+ * not WebAssembly, and with E1418 when the page's Content-Security-Policy blocks WebAssembly.
  */
 export async function compileWasm<T>(
 	url: URL,
@@ -57,6 +79,7 @@ export async function compileWasm<T>(
 	error: WasmError,
 	readHead?: (stream: ReadableStream<Uint8Array>) => Promise<T>,
 	started?: Promise<Response>,
+	onDownload?: (loaded: number, total: number) => void,
 ): Promise<{ module: WebAssembly.Module; head: T | undefined }> {
 	const where = shownAddress(url);
 	const crossOrigin = isCrossOrigin(url);
@@ -80,7 +103,13 @@ export async function compileWasm<T>(
 	}
 	if (!response.ok || !response.body)
 		throw error('E1406', `${name} did not download from ${where}: HTTP ${response.status}.`);
-	let body = response.body;
+	let body: ReadableStream<Uint8Array<ArrayBufferLike>> = response.body;
+	if (onDownload) {
+		const length = Number(response.headers.get('content-length'));
+		const total = Number.isFinite(length) && length > 0 ? length : 0;
+		onDownload(0, total);
+		body = counted(body, total, onDownload);
+	}
 	let head: Promise<T | undefined> = Promise.resolve(undefined);
 	if (readHead) {
 		const [compiled, read] = body.tee();

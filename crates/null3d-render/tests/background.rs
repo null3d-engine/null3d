@@ -41,6 +41,7 @@ fn background(source: BackgroundSource) -> Background {
         intensity: 1.0,
         blur: 0.0,
         rotation: [0.0; 3],
+        sun_visibility: 1.0,
     }
 }
 
@@ -52,6 +53,22 @@ fn background_pipelines(commands: &[(Op, Vec<u32>)], depth: u32) -> Vec<u32> {
         .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::BACKGROUND)
         .map(|(_, o)| {
             assert_eq!(o[6], depth);
+            o[0]
+        })
+        .collect()
+}
+
+/// The ids of the cloud tier's pipelines that a frame's list creates: the sky's depth state, and a
+/// blend over the sky that the march's coverage sets.
+fn cloud_pipelines(commands: &[(Op, Vec<u32>)], depth: u32) -> Vec<u32> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::BACKGROUND_CLOUDS)
+        .map(|(_, o)| {
+            assert_eq!(
+                o[6],
+                depth | state_flags::CULL_NONE | state_flags::BLEND_NORMAL
+            );
             o[0]
         })
         .collect()
@@ -97,16 +114,20 @@ fn draws_around(commands: &[(Op, Vec<u32>)], pipeline: u32) -> (usize, usize) {
 
 /// The background's draw in a frame's list: the draw after `SetPipeline` of `pipeline`, with the
 /// texture's group that it binds at index 1.
-fn background_draw(commands: &[(Op, Vec<u32>)], pipeline: u32) -> Option<(u32, Vec<u32>)> {
+fn background_draw(
+    commands: &[(Op, Vec<u32>)],
+    pipeline: u32,
+    group_index: u32,
+) -> Option<(u32, Vec<u32>)> {
     let set = commands
         .iter()
         .position(|(op, o)| *op == Op::SetPipeline && o[0] == pipeline)?;
     let after = &commands[set..];
     let group = after
         .iter()
-        .find(|(op, o)| *op == Op::SetBindGroup && o[0] == 1)
+        .find(|(op, o)| *op == Op::SetBindGroup && o[0] == group_index)
         .map(|(_, o)| o[1])
-        .expect("the background binds a group at index 1");
+        .expect("the background binds a group at the named index");
     let (_, draw) = after.iter().find(|(op, _)| *op == Op::Draw)?;
     Some((group, draw.clone()))
 }
@@ -124,7 +145,11 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
         "the pipeline builds while the texture loads"
     );
     let pipeline = pipelines[0];
-    assert_eq!(background_draw(&commands, pipeline), None, "no texels yet");
+    assert_eq!(
+        background_draw(&commands, pipeline, 2),
+        None,
+        "no texels yet"
+    );
 
     world.arrive(&mut mock, 1, SIZE);
     let commands = world.step(&mut mock, false);
@@ -137,7 +162,7 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
     let group = store.group_id(texture).unwrap();
     let layer = store.ready_layer(texture).unwrap();
     assert_eq!(
-        background_draw(&commands, pipeline),
+        background_draw(&commands, pipeline, 2),
         Some((group, vec![3, 1, layer * 3, 0])),
         "one triangle, whose first vertex names the layer"
     );
@@ -156,7 +181,7 @@ fn draws_once_the_texels_are_on_the_gpu<B: FrameBuilder>(mut world: World<B>) {
         .unwrap();
     let draws = mock.draws;
     let commands = world.step(&mut mock, false);
-    assert_eq!(background_draw(&commands, pipeline), None);
+    assert_eq!(background_draw(&commands, pipeline, 2), None);
     assert_eq!(
         with_background - (mock.draws - draws),
         2,
@@ -224,6 +249,22 @@ fn box_pipelines(commands: &[(Op, Vec<u32>)], template: u32, depth: u32) -> Vec<
         .collect()
 }
 
+/// The ids of the sky layer's pipelines that a frame's list creates: the box's state, and a blend
+/// over the sky by the layer's coverage.
+fn layer_pipelines(commands: &[(Op, Vec<u32>)], depth: u32) -> Vec<u32> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == LAYER)
+        .map(|(_, o)| {
+            assert_eq!(
+                o[6],
+                depth | state_flags::CULL_NONE | state_flags::BLEND_NORMAL
+            );
+            o[0]
+        })
+        .collect()
+}
+
 /// The uniform buffer that the background's group binds, from the frame that made the group.
 fn values_buffer(commands: &[(Op, Vec<u32>)]) -> u32 {
     let (_, words) = commands
@@ -263,7 +304,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
         "the pipeline builds while the faces load"
     );
     assert_eq!(
-        background_draw(&commands, pipelines[0]),
+        background_draw(&commands, pipelines[0], 1),
         None,
         "no texels yet"
     );
@@ -282,7 +323,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     );
     let buffer = values_buffer(&commands);
     assert_eq!(value_writes(&commands, buffer), 1);
-    let (_, draw) = background_draw(&commands, pipelines[0]).expect("the cube map draws");
+    let (_, draw) = background_draw(&commands, pipelines[0], 1).expect("the cube map draws");
     assert_eq!(draw, vec![36, 1, 0, 0], "a box of twelve triangles");
     let (before, after) = draws_around(&commands, pipelines[0]);
     assert!(
@@ -306,7 +347,7 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     let commands = world.step(&mut mock, false);
     let pipelines = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
     assert_eq!(pipelines.len(), 1);
-    assert!(background_draw(&commands, pipelines[0]).is_some());
+    assert!(background_draw(&commands, pipelines[0], 1).is_some());
     assert_eq!(
         count(&commands, Op::CreateBindGroup),
         1,
@@ -323,6 +364,66 @@ fn cube_maps_and_the_sky_draw_a_box<B: FrameBuilder>(mut world: World<B>) {
     let commands = world.step(&mut mock, false);
     assert_eq!(value_writes(&commands, buffer), 1, "the clouds moved");
     assert_eq!(count(&commands, Op::CreateBindGroup), 0);
+}
+
+/// Steps a world whose sky draws the volumetric cloud tier at `steps`, on either frame builder.
+fn the_sky_draws_the_cloud_tier<B: FrameBuilder>(mut world: World<B>) {
+    let mut mock = MockBackend::default();
+    world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .settings_mut()
+        .set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+
+    let commands = world.step(&mut mock, true);
+    let sky = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
+    assert_eq!(sky.len(), 1, "the sky builds");
+    assert!(
+        cloud_pipelines(&commands, LAST).is_empty(),
+        "no step count draws the flat layer alone"
+    );
+    assert!(background_draw(&commands, sky[0], 1).is_some());
+
+    // A step count builds the tier's own box and draws it over the sky in the same pass.
+    world.renderer.settings_mut().set_cloud_steps(32);
+    let commands = world.step(&mut mock, false);
+    let cloud = cloud_pipelines(&commands, LAST);
+    assert_eq!(cloud.len(), 1, "the tier builds its box");
+    let (group, draw) = background_draw(&commands, cloud[0], 1).expect("the march draws");
+    assert!(group != 0, "the box binds the noise field's group");
+    assert_eq!(draw, vec![36, 1, 0, 0], "a box of twelve triangles");
+    let sky_at = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == sky[0])
+        .expect("the sky draws");
+    let cloud_at = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == cloud[0])
+        .expect("the march draws");
+    assert!(cloud_at > sky_at, "the clouds blend over the sky");
+    let (before, after) = draws_around(&commands, cloud[0]);
+    assert!(before >= 2, "the object and the sky draw first");
+    assert_eq!(after, 0, "the tier's box ends the pass");
+
+    // Zero steps drop the box again, and the sky draws alone.
+    world.renderer.settings_mut().set_cloud_steps(0);
+    let commands = world.step(&mut mock, false);
+    assert!(cloud_pipelines(&commands, LAST).is_empty());
+    assert!(background_draw(&commands, cloud[0], 1).is_none());
+    assert!(background_draw(&commands, sky[0], 1).is_some());
+}
+
+#[test]
+fn the_sky_draws_the_cloud_tier_on_webgpu() {
+    the_sky_draws_the_cloud_tier(World::new());
+}
+
+#[test]
+fn the_sky_draws_the_cloud_tier_on_webgl2() {
+    the_sky_draws_the_cloud_tier(World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw: true,
+        ..CpuCulledConfig::default()
+    })));
 }
 
 #[test]
@@ -377,4 +478,152 @@ fn a_material_without_depth_writes_draws_over_the_sky_on_webgl2() {
     a_material_without_depth_writes_draws_over_the_sky(World::build(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     )));
+}
+
+/// The render pipeline template of a sky layer: a page's own, as a custom effect's is.
+const LAYER: u32 = template::CUSTOM_FIRST;
+
+/// A layer over the test's sky, with the template that its shader would take.
+fn sky_layer(sun: f32, opacity: f32) -> null3d_render::background::SkyLayer {
+    null3d_render::background::SkyLayer {
+        template: LAYER,
+        map: 0,
+        opacity,
+        sun,
+        refresh: 0.0,
+    }
+}
+
+/// The uniform block of a sky layer that a frame's list creates: the buffer that the group binds,
+/// and the bytes of its block.
+fn layer_buffer(commands: &[(Op, Vec<u32>)]) -> u32 {
+    let (_, words) = commands
+        .iter()
+        .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::BACKGROUND_LAYER)
+        .expect("the frame makes the layer's group");
+    assert_eq!(words[7], sizes::BACKGROUND_LAYER_UNIFORM_BYTES);
+    words[5]
+}
+
+/// Steps a world with a sky and a layer over it, on either frame builder: the layer's pipeline
+/// draws the box right after the background, in the background's place, and its values are written
+/// only when they change.
+fn a_sky_layer_draws_after_the_background<B: FrameBuilder>(mut world: World<B>) {
+    let mut mock = MockBackend::default();
+    world.add_object(&grid(1, 1), Shading::Lit);
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)), 0);
+    let commands = world.step(&mut mock, true);
+    let sky = box_pipelines(&commands, template::BACKGROUND_SKY, LAST);
+    assert_eq!(sky.len(), 1);
+    let layers = layer_pipelines(&commands, LAST);
+    assert_eq!(layers.len(), 1, "the layer takes the background's place");
+    let layer = layers[0];
+
+    let (_, draw) = background_draw(&commands, layer, 1).expect("the layer draws");
+    assert_eq!(draw, vec![36, 1, 0, 0], "the template's box");
+    // The layer draws in the background's render pass, after its own draw.
+    let set = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == layer)
+        .unwrap();
+    let end = set
+        + commands[set..]
+            .iter()
+            .position(|(op, _)| *op == Op::EndRenderPass)
+            .unwrap();
+    let sky_set = commands
+        .iter()
+        .position(|(op, o)| *op == Op::SetPipeline && o[0] == sky[0])
+        .unwrap();
+    assert!(sky_set < set, "the layer draws after the sky");
+    let between = &commands[sky_set..set];
+    assert_eq!(
+        between
+            .iter()
+            .filter(|(op, _)| DRAWS.contains(op) || *op == Op::SetPipeline)
+            .count(),
+        2,
+        "nothing draws between the sky and the layer"
+    );
+    assert!(end > set);
+
+    // The layer's block holds the sky's clouds and the share of the sun that it hides.
+    let buffer = layer_buffer(&commands);
+    assert_eq!(value_writes(&commands, buffer), 1);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(value_writes(&commands, buffer), 0, "the same values");
+    world
+        .renderer
+        .settings_mut()
+        .set_sky_layer(Some(sky_layer(0.6, 0.5)), 0);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(value_writes(&commands, buffer), 1, "the layer changed");
+}
+
+#[test]
+fn a_sky_layer_draws_after_the_background_on_webgpu() {
+    a_sky_layer_draws_after_the_background(World::new());
+}
+
+#[test]
+fn a_sky_layer_draws_after_the_background_on_webgl2() {
+    a_sky_layer_draws_after_the_background(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+}
+
+#[test]
+fn a_debug_view_or_a_scene_without_a_background_draws_no_layer() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let settings = world.renderer.settings_mut();
+    settings.set_sky_layer(Some(sky_layer(0.4, 1.0)), 0);
+    let commands = world.step(&mut mock, true);
+    assert!(
+        layer_pipelines(&commands, LAST).is_empty(),
+        "a layer needs a background to lie over"
+    );
+
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    settings.set_debug_view(DebugView::Normals);
+    let commands = world.step(&mut mock, true);
+    assert!(
+        layer_pipelines(&commands, LAST).is_empty(),
+        "a debug view draws no background"
+    );
+}
+
+#[test]
+fn a_layer_dims_the_sun_that_the_sky_draws() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    settings.set_sky_layer(Some(sky_layer(0.25, 1.0)), 0);
+    assert_eq!(
+        world
+            .renderer
+            .settings()
+            .background()
+            .unwrap()
+            .sun_visibility,
+        0.75,
+        "the sky draws the rest of the sun"
+    );
+    // A new background keeps the layer's share.
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(background(BackgroundSource::Sky(Sky::default()))));
+    assert_eq!(
+        world
+            .renderer
+            .settings()
+            .background()
+            .unwrap()
+            .sun_visibility,
+        0.75
+    );
+    let _ = world.step(&mut mock, true);
 }

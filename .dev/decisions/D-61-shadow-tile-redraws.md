@@ -1,12 +1,12 @@
 # D-61: Which spot and point shadow tiles draw again, and how many per frame
 
-Status: decided. Date: 2026-10-05. Task: M2-R9. The cap's frame times on the iPad and the Automate phones are pending.
+Status: decided and built. The cap's frame times on the iPad and the Automate phones are pending. Task: M2-R9.
 
-Summary: A moved caster marks only the tiles whose views its sphere touches: 1.3 to 2.3 of a point light's 6 faces for casters of 0.25 to 1 m. Tiles whose views miss the camera's wait. At most 12 tiles draw again per frame, whole lights, longest waiting first; tiles that hold no depth of their light yet draw at once. A burst on Ultra's 24 tiles takes two frames.
+Summary: A moved caster marks only the tiles whose views its sphere touches: 1.3 to 2.3 of a point light's 6 faces for casters of 0.25 to 1 m. Tiles that the camera misses wait, and at most 12 tiles draw again per frame, whole lights, longest waiting first. Tiles that hold no depth of their light yet draw at once, and a burst on Ultra's 24 tiles takes two frames.
 
 ## Question
 
-A moved caster marked all six faces of every point light within its reach, and every marked tile drew in the same frame. Which tiles must a change mark, and how many may draw again in one frame?
+When a caster moves, the shadow tiles that could show it must draw again. Marking all six faces of every point light within its reach, and drawing every marked tile in the same frame, makes bursts of tile passes. Which tiles must a change mark, and how many may draw again in one frame?
 
 ## Rule
 
@@ -33,11 +33,11 @@ Tile passes in the Rust tests (`crates/null3d-render/tests/shadow_tiles.rs`), be
 | A point light 5 m behind the camera, first frame | 6 | 1; the other 5 draw when the camera turns to them |
 | Four point lights (24 tiles) after a structure change | 24 in one frame | 12, then 12 |
 
-What one tile pass stores, before its casters: a 1,024 x 1,024 tile of 32-bit depth is 4 MiB. Point light shadows run on High (16 tiles) and Ultra (24 tiles) only. A burst on Ultra stored 96 MiB of depth in one frame; with the cap it stores at most 48 MiB per frame.
+What one tile pass stores, before its casters: a 1,024 x 1,024 tile of 32-bit depth is 4 MiB. Point light shadows run on High (16 tiles) and Ultra (24 tiles) only. Without the cap, a burst on Ultra stores 96 MiB of depth in one frame. With it, a frame stores at most 48 MiB.
 
 Godot caps its shadow passes at 512 per frame (`MAX_UPDATE_SHADOWS`) and draws the lights over the cap in the next frame. That number counts the passes of an atlas with many lights and quadrants. So it does not carry over to a budget of at most 24 tiles.
 
-How the data was produced: a throwaway Rust test over `TileShape::touches` with a fixed random seed, and the tile tests above on the mock backend. Both ran on 5 October 2026.
+How the data was produced: a throwaway Rust test over `TileShape::touches` with a fixed random seed, and the tile tests above on the mock backend.
 
 ## Decision
 
@@ -50,6 +50,6 @@ How the data was produced: a throwaway Rust test over `TileShape::touches` with 
 
 - `crates/null3d-render/src/shadow_tiles.rs` holds the face test, the view test and the cap. `ShadowTiles::waiting` reports the tiles that wait under the cap.
 - The shadows of the lights that wait lag their casters by a frame. This happens only in frames where more than 12 tiles must draw again.
-- The same change keeps each caster's layers and a hash of its pose, and the atlas keeps its layers while a light casts ([implementation notes](../implementation-notes.md#shadows)).
+- The shadow tiles keep each caster's layers and a hash of its pose, and the atlas keeps its layers while a light casts ([implementation notes](../implementation-notes.md#shadows)).
 - [Shadows](../../docs/concepts/shadows.md#when-a-tile-draws) describes the behavior for users.
 - Revisit the cap with the frame times of a burst on the iPad and the Automate phones.

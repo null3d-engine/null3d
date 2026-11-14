@@ -12,7 +12,10 @@ run('destroy', async () => {
 		if (!canvas) throw new Error('the page has fewer than two canvases');
 		const sketch = new URL('./sketches/destroy-sketch.ts', import.meta.url);
 		sketch.searchParams.set('mode', mode);
-		const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
+		// The preset is fixed, as the engine's other comparison pages fix it: an engine that chooses its
+		// own runs the preset check and can settle on another preset than the other engine's, which
+		// changes the pixels that the test compares.
+		const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1, preset: 'low' });
 		const failures: string[] = [];
 		engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 		const ready = await new Promise<{ meshBytes: number }>((resolve) =>

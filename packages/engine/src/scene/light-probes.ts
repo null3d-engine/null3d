@@ -17,19 +17,26 @@ import type { Texture, Textures } from './textures';
 
 // Light probe grids: a three-dimensional grid of irradiance probes, each holding L1 spherical
 // harmonics of the light that reaches its point (see `.dev/decisions/D-146-light-probe-grid.md`).
-// Standard materials read the grid per pixel, three hardware-filtered reads each, to light a scene
+// Standard materials read the grid per pixel, four hardware-filtered reads each, to light a scene
 // with the light that its own walls, ground and sky bounce back, which one scene-wide environment
 // cannot show.
 //
 // This module holds the shape of the grid and the maths that the bake and the shaders share, so the
 // CPU bake and the WGSL sampling agree. The renderer binds the packed texels as one RGBA16F 3D
-// texture: three sub-volumes along Z, one per `vec4f` of a probe's four RGB coefficients, each with
-// one padding slice at either end, so hardware trilinear filtering never blends across sub-volumes.
-// The coefficient order is the shader's, which is three.js's own: L0, then L1 along y, along z and
-// along x, four RGB coefficients in all.
+// texture: four sub-volumes along Z, three that hold a probe's four RGB coefficients and one that
+// holds its validity and its sky visibility, each with one padding slice at either end, so hardware
+// trilinear filtering never blends across sub-volumes. The coefficient order is the shader's, which
+// is three.js's own: L0, then L1 along y, along z and along x, four RGB coefficients in all.
+//
+// A probe's coefficients hold the light that its surroundings bounce back. They leave out the sky
+// itself, which no longer has to bake: the fourth sub-volume holds how much sky the probe sees, and
+// the shader weights that by the surface's tilt toward the sky and multiplies it by the live
+// environment's light, so time of day needs no new bake. A probe that lies inside geometry cannot
+// light anything, and its validity is 0, which keeps its light from leaking through the wall around
+// it.
 
-/** The sub-volumes of a probe's texture along Z: three, because L1 needs three `vec4f`. */
-export const PROBE_SUBVOLUMES = 3;
+/** The sub-volumes of a probe's texture along Z: three of coefficients and one of its masks. */
+export const PROBE_SUBVOLUMES = 4;
 
 /** The texels along each side of a 3D texture that every device holds, as the core's limit. */
 export const VOLUME_TEXELS = 256;
@@ -37,7 +44,7 @@ export const VOLUME_TEXELS = 256;
 /** The probes along the least axis of a grid. */
 export const FEWEST_PROBES = 2;
 /**
- * The most probes along x, along y and along z. Along z the three sub-volumes and their padding
+ * The most probes along x, along y and along z. Along z the four sub-volumes and their padding
  * slices share one side of the 3D texture.
  */
 export const MOST_PROBES: ProbeCounts = [
@@ -48,6 +55,9 @@ export const MOST_PROBES: ProbeCounts = [
 
 /** The floats of one probe's four RGB coefficients. */
 export const PROBE_FLOATS = 12;
+
+/** The channels that a sample interpolates: twelve coefficients, the validity and the sky visibility. */
+export const PROBE_CHANNELS = PROBE_FLOATS + 2;
 
 /** The probes along each axis. */
 export type ProbeCounts = [number, number, number];
@@ -102,12 +112,19 @@ export function l1Irradiance(
 /**
  * The irradiance that a grid of `counts` probes gives a surface at world position `(px, py, pz)`
  * with unit normal `(nx, ny, nz)`, as the shader reads it. `origin` and `spacing` place the grid,
- * `coefficients` holds four RGB coefficients per probe, and the sample point moves half a probe
- * spacing along the normal, so light does not leak across a wall. `work` holds at least 12 numbers,
- * the interpolated coefficients. Writes three numbers into `out`.
+ * `coefficients` holds four RGB coefficients per probe, `validity` and `skyVisibility` hold one
+ * number per probe, and the sample point moves half a probe spacing along the normal, so light does
+ * not leak across a wall. `work` holds at least 14 numbers, the interpolated channels. Writes four
+ * numbers into `out`: the light of the coefficients, and the share of the environment's own light
+ * that the sky gives, both weighted by the interpolated validity. The caller multiplies the
+ * environment's irradiance by the latter, so the sky needs no bake. The share weights the
+ * interpolated sky visibility by the surface's tilt toward the sky above the horizon, because the
+ * visibility counts the whole sphere and the irradiance covers one hemisphere.
  */
 export function sampleGrid(
 	coefficients: Float32Array,
+	validity: Float32Array,
+	skyVisibility: Float32Array,
 	counts: ProbeCounts,
 	origin: ArrayLike<number>,
 	spacing: ArrayLike<number>,
@@ -140,34 +157,37 @@ export function sampleGrid(
 	const j1 = Math.min(j0 + 1, counts[1] - 1);
 	const k1 = Math.min(k0 + 1, counts[2] - 1);
 	const [fx, fy, fz] = [gx - i0, gy - j0, gz - k0];
-	// The eight probes' four RGB coefficients interpolate first: irradiance is linear in them, so
-	// this gives the same light as interpolating its value at each of the eight.
 	const at = (i: number, j: number, k: number) =>
 		((k * counts[1] + j) * counts[0] + i) * PROBE_FLOATS;
-	for (let c = 0; c < PROBE_FLOATS; c++) {
-		const x0 = mix(
-			coefficients[at(i0, j0, k0) + c] as number,
-			coefficients[at(i1, j0, k0) + c] as number,
-			fx,
-		);
-		const x1 = mix(
-			coefficients[at(i0, j1, k0) + c] as number,
-			coefficients[at(i1, j1, k0) + c] as number,
-			fx,
-		);
-		const x2 = mix(
-			coefficients[at(i0, j0, k1) + c] as number,
-			coefficients[at(i1, j0, k1) + c] as number,
-			fx,
-		);
-		const x3 = mix(
-			coefficients[at(i0, j1, k1) + c] as number,
-			coefficients[at(i1, j1, k1) + c] as number,
-			fx,
-		);
+	const where = (i: number, j: number, k: number) => (k * counts[1] + j) * counts[0] + i;
+	// The eight probes' channels interpolate first: irradiance is linear in the coefficients, so
+	// this gives the same light as interpolating its value at each of the eight.
+	for (let c = 0; c < PROBE_CHANNELS; c++) {
+		const read = (i: number, j: number, k: number) =>
+			c < PROBE_FLOATS
+				? (coefficients[at(i, j, k) + c] as number)
+				: c === PROBE_FLOATS
+					? (validity[where(i, j, k)] as number)
+					: (skyVisibility[where(i, j, k)] as number);
+		const x0 = mix(read(i0, j0, k0), read(i1, j0, k0), fx);
+		const x1 = mix(read(i0, j1, k0), read(i1, j1, k0), fx);
+		const x2 = mix(read(i0, j0, k1), read(i1, j0, k1), fx);
+		const x3 = mix(read(i0, j1, k1), read(i1, j1, k1), fx);
 		work[c] = mix(mix(x0, x1, fy), mix(x2, x3, fy), fz);
 	}
+	const valid = work[PROBE_FLOATS] as number;
+	const sky = work[PROBE_FLOATS + 1] as number;
 	l1Irradiance(work, 0, nx, ny, nz, out);
+	for (let c = 0; c < 3; c++) out[c] = (out[c] as number) * valid;
+	// The visibility counts the whole sphere and the environment's irradiance the hemisphere around
+	// the normal, so a surface that faces a sky above the horizon takes twice the share. The weight
+	// fades as the sky wraps around the probe.
+	const tilt = Math.min(1, 2 * (1 - sky));
+	// The shader saturates the whole product, not its factor: a surface facing an open sky takes
+	// twice the visibility, which can exceed one before the clamp, and that is what keeps a probe
+	// that sees half the sphere from giving half the light.
+	const share = Math.min(1, Math.max(0, sky * (1 + ny * tilt)));
+	out[3] = valid * share;
 }
 
 function mix(a: number, b: number, t: number): number {
@@ -184,34 +204,42 @@ export function gridTexels(counts: ProbeCounts): [number, number, number] {
 	return [counts[0], counts[1], PROBE_SUBVOLUMES * (counts[2] + 2)];
 }
 
-/** The GPU bytes of a packed grid: 24 per probe, plus the padding slices. */
+/** The GPU bytes of a packed grid: 32 per probe, plus the padding slices. */
 export function gridBytes(counts: ProbeCounts): number {
 	const [w, h, d] = gridTexels(counts);
 	return w * h * d * 8;
 }
 
 /**
- * Packs four RGB coefficients per probe into the RGBA16F texels of the grid's 3D texture: half
- * floats in rows from the bottom up, slice after slice. The first texel of a probe holds L0's red,
- * green and blue and L1y's red, and the padding slices stay zero, so a filter across one fades to
- * no light instead of to a neighbour's coefficients.
+ * Packs four RGB coefficients, a validity and a sky visibility per probe into the RGBA16F texels of
+ * the grid's 3D texture: half floats in rows from the bottom up, slice after slice. The first texel
+ * of a probe holds L0's red, green and blue and L1y's red, the first texel of the fourth sub-volume
+ * holds the probe's validity and sky visibility, and the padding slices stay zero, so a filter
+ * across one fades to no light instead of to a neighbour's coefficients.
  */
 export function packProbes(
 	counts: ProbeCounts,
 	coefficients: Float32Array,
+	validity: Float32Array,
+	skyVisibility: Float32Array,
 	texels: Uint16Array,
 	toHalf: (value: number) => number,
 ): void {
 	const [nx, ny, nz] = counts;
+	const coefficientVolumes = PROBE_SUBVOLUMES - 1;
 	for (let k = 0; k < nz; k++) {
 		for (let j = 0; j < ny; j++) {
 			for (let i = 0; i < nx; i++) {
-				const at = ((k * ny + j) * nx + i) * PROBE_FLOATS;
-				for (let s = 0; s < PROBE_SUBVOLUMES; s++) {
+				const probe = (k * ny + j) * nx + i;
+				const at = probe * PROBE_FLOATS;
+				for (let s = 0; s < coefficientVolumes; s++) {
 					const texel = ((s * (nz + 2) + 1 + k) * ny + j) * nx + i;
 					for (let c = 0; c < 4; c++)
 						texels[texel * 4 + c] = toHalf(coefficients[at + s * 4 + c] as number);
 				}
+				const mask = ((coefficientVolumes * (nz + 2) + 1 + k) * ny + j) * nx + i;
+				texels[mask * 4] = toHalf(validity[probe] as number);
+				texels[mask * 4 + 1] = toHalf(skyVisibility[probe] as number);
 			}
 		}
 	}
@@ -241,7 +269,9 @@ export interface LightProbeGridOptions {
 	intensity?: number;
 	/**
 	 * The share of the environment's diffuse light that the grid takes over, 0 to 1. The default
-	 * is 1: the bake counts the sky already, so the grid replaces that light.
+	 * is 1. The grid then gives a surface the light that its probes baked from their surroundings,
+	 * plus the live environment's light times how much sky each probe sees, so the sky follows the
+	 * hour without a new bake.
 	 */
 	environmentWeight?: number;
 }
@@ -377,12 +407,13 @@ export interface BakeProbesOptions {
 	/** How far a ray reaches before it counts as the sky, in meters. The default is the box's diagonal. */
 	distance?: number;
 	/**
-	 * The scene's environment. A ray that reaches the sky takes the environment's diffuse light
-	 * from its direction, from its nine RGB coefficients. Without one, sky rays give no light.
+	 * The scene's environment: the light that a surface sends back when a ray hits it. Without
+	 * one, the bake counts no bounce light. The sky itself never bakes, because the shader reads
+	 * the environment's live light for it.
 	 */
 	environment?: Environment | null;
 	/**
-	 * The intensity and rotation that `scene.setEnvironment` got, so the baked sky matches the
+	 * The intensity and rotation that `scene.setEnvironment` got, so the bounce light matches the
 	 * scene's. The defaults are those of `scene.setEnvironment`.
 	 */
 	environmentOptions?: EnvironmentOptions;
@@ -390,9 +421,10 @@ export interface BakeProbesOptions {
 	 * The color a ray takes when it hits a surface, for one colored bounce: the surface sends
 	 * back that share of the environment's light at its normal, as a matte surface does. The
 	 * bounce sees the whole sky, so the light of a hit has no occlusion of its own, and the bake
-	 * counts no lamps. A ray whose hit has no color gives none, so a scene without this bakes sky
-	 * light and its occlusion alone. `normal` is reused from hit to hit, so copy what you keep,
-	 * and return the same array each time where you can: the bake calls this for every hit.
+	 * counts no lamps. A ray whose hit has no color gives no bounce light, so a scene without this
+	 * bakes the probes' sky visibility and validity alone. `normal` is reused from hit to hit, so
+	 * copy what you keep, and return the same array each time where you can: the bake calls this
+	 * for every hit.
 	 */
 	albedo?: (
 		object: QueryTarget | null,
@@ -402,7 +434,8 @@ export interface BakeProbesOptions {
 }
 
 /**
- * A baked grid: its placement and the L1 coefficients of its probes, four RGB each.
+ * A baked grid: its placement, the L1 coefficients of its probes and the two masks that the shader
+ * reads beside them.
  *
  * @category api/scene
  */
@@ -414,15 +447,30 @@ export class LightProbeGridData {
 		readonly spacing: Float32Array,
 		/** The probes along each axis. */
 		readonly counts: [number, number, number],
-		/** Four RGB coefficients per probe. */
+		/** Four RGB coefficients per probe, of the light that its surroundings bounce back. */
 		readonly coefficients: Float32Array,
+		/**
+		 * One number per probe: 1 where the probe stands in open space and 0 where geometry
+		 * encloses it. A probe with 0 gives no light, which keeps it from leaking through the
+		 * wall around it.
+		 */
+		readonly validity: Float32Array,
+		/** One number per probe: the share of the sky that its rays reached, 0 to 1. */
+		readonly skyVisibility: Float32Array,
 	) {}
 
 	/** The `rgba16float` 3D texture that `scene.setLightProbeGrid` takes. */
 	toTexture(textures: Textures): Texture {
 		const [width, height, depth] = gridTexels(this.counts);
 		const texels = new Uint16Array(width * height * depth * 4);
-		packProbes(this.counts, this.coefficients, texels, toHalfFloat);
+		packProbes(
+			this.counts,
+			this.coefficients,
+			this.validity,
+			this.skyVisibility,
+			texels,
+			toHalfFloat,
+		);
 		return textures.fromVolumeData(
 			width,
 			height,
@@ -434,26 +482,9 @@ export class LightProbeGridData {
 	}
 }
 
-// The constants of the real spherical harmonics of the first three bands, in three.js's order.
+// The constants of the real spherical harmonics of the first two bands, in three.js's order.
 const Y00 = 0.282095;
 const Y1 = 0.488603;
-const Y2 = 1.092548;
-const Y20 = 0.315392;
-const Y22 = 0.546274;
-
-/** The radiance toward unit direction `(x, y, z)` from nine RGB coefficients, into `out`. */
-function shRadiance(sh: Float32Array, x: number, y: number, z: number, out: Float32Array): void {
-	for (let c = 0; c < 3; c++)
-		out[c] =
-			(sh[c] as number) * Y00 +
-			Y1 * ((sh[3 + c] as number) * y + (sh[6 + c] as number) * z + (sh[9 + c] as number) * x) +
-			Y2 *
-				((sh[12 + c] as number) * x * y +
-					(sh[15 + c] as number) * y * z +
-					(sh[21 + c] as number) * x * z) +
-			(sh[18 + c] as number) * Y20 * (3 * z * z - 1) +
-			(sh[24 + c] as number) * Y22 * (x * x - y * y);
-}
 
 /**
  * The irradiance at a surface of unit normal `(x, y, z)` from nine RGB coefficients of radiance,
@@ -520,6 +551,8 @@ export class ProbeBake {
 	private readonly objects: (QueryTarget | null)[];
 	private readonly instances: Int32Array;
 	private readonly hits: RaycastBatchHits;
+	/** 1 for each ray that met the back of a surface, which means geometry encloses the probe. */
+	private readonly backFacing: Uint8Array;
 	private readonly sky: Float32Array | null;
 	private readonly intensity: number;
 	/** The rows that turn a world direction into the environment map's. */
@@ -527,7 +560,12 @@ export class ProbeBake {
 	private readonly rayOptions: { maxDistance: number };
 	/** The hit normal that the albedo callback reads, reused from hit to hit. */
 	private readonly hitNormal = new Float32Array(3);
+	/** The neighbours of the probe that the fill reads, reused from probe to probe. */
+	private readonly near = new Uint32Array(6);
+	/** The neighbours that the fill's queue reads, kept apart from the list that a visit writes. */
+	private readonly around = new Uint32Array(6);
 	private next = 0;
+	private filled = false;
 
 	/** @internal */
 	constructor(
@@ -557,6 +595,8 @@ export class ProbeBake {
 			spacing,
 			shown,
 			new Float32Array(this.total * PROBE_FLOATS),
+			new Float32Array(this.total).fill(1),
+			new Float32Array(this.total),
 		);
 		this.directions = new Float32Array(this.samples * 3);
 		fibonacciDirections(this.samples, this.directions);
@@ -566,6 +606,7 @@ export class ProbeBake {
 		this.normals = new Float32Array(this.samples * 3);
 		this.objects = new Array<QueryTarget | null>(this.samples).fill(null);
 		this.instances = new Int32Array(this.samples);
+		this.backFacing = new Uint8Array(this.samples);
 		this.hits = {
 			distances: this.distances,
 			objects: this.objects,
@@ -587,7 +628,12 @@ export class ProbeBake {
 	/** Bakes up to `budget` probes. Returns true when every probe is baked. */
 	step(budget = 4): boolean {
 		for (let n = 0; n < budget && this.next < this.total; n++) this.bakeProbe(this.next++);
-		return this.next >= this.total;
+		if (this.next < this.total) return false;
+		if (!this.filled) {
+			this.filled = true;
+			this.fill();
+		}
+		return true;
 	}
 
 	/** Bakes every remaining probe and returns the grid. */
@@ -596,15 +642,18 @@ export class ProbeBake {
 		return this.grid;
 	}
 
-	/** Casts `samples` rays from probe `index` and adds their light to its coefficients. */
+	/**
+	 * Casts `samples` rays from probe `index`, adds the light that their surfaces bounce to its
+	 * coefficients, and records how much sky it sees and whether geometry encloses it.
+	 */
 	private bakeProbe(index: number): void {
-		const { origin, spacing, counts, coefficients } = this.grid;
+		const { origin, spacing, counts, coefficients, validity, skyVisibility } = this.grid;
 		const columns = counts[0];
 		const rows = counts[1];
 		const x = (origin[0] as number) + (index % columns) * (spacing[0] as number);
 		const y = (origin[1] as number) + (Math.floor(index / columns) % rows) * (spacing[1] as number);
 		const z = (origin[2] as number) + Math.floor(index / (columns * rows)) * (spacing[2] as number);
-		const { rays, directions } = this;
+		const { rays, directions, backFacing } = this;
 		for (let s = 0; s < this.samples; s++) {
 			rays[s * 6] = x;
 			rays[s * 6 + 1] = y;
@@ -613,45 +662,47 @@ export class ProbeBake {
 			rays[s * 6 + 4] = directions[s * 3 + 1] as number;
 			rays[s * 6 + 5] = directions[s * 3 + 2] as number;
 		}
-		this.scene.raycastBatch(rays, this.rayOptions, this.hits);
+		// Both faces are tested, so a ray from inside a wall meets the back of the wall and says so.
+		this.scene.raycastBatchFaces(rays, this.rayOptions, this.hits, backFacing);
 		const at = index * PROBE_FLOATS;
 		// Monte Carlo projection over the whole sphere: each direction stands for 4 pi / samples.
 		const scale = (4 * Math.PI) / this.samples;
 		const { normals, hitNormal } = this;
+		let sky = 0;
+		let enclosed = 0;
 		for (let s = 0; s < this.samples; s++) {
 			const dx = directions[s * 3] as number;
 			const dy = directions[s * 3 + 1] as number;
 			const dz = directions[s * 3 + 2] as number;
-			let red = 0;
-			let green = 0;
-			let blue = 0;
 			if ((this.distances[s] as number) < 0) {
-				const sky = this.skyLight(dx, dy, dz, shRadiance);
-				red = sky[0] as number;
-				green = sky[1] as number;
-				blue = sky[2] as number;
-			} else if (this.options.albedo) {
-				hitNormal[0] = normals[s * 3] as number;
-				hitNormal[1] = normals[s * 3 + 1] as number;
-				hitNormal[2] = normals[s * 3 + 2] as number;
-				const albedo = this.options.albedo(
-					this.objects[s] as QueryTarget | null,
-					this.instances[s] as number,
-					hitNormal,
-				);
-				if (albedo) {
-					// A matte surface sends back albedo times its irradiance over pi.
-					const light = this.skyLight(
-						hitNormal[0] as number,
-						hitNormal[1] as number,
-						hitNormal[2] as number,
-						shIrradiance,
-					);
-					red = ((albedo[0] as number) * (light[0] as number)) / Math.PI;
-					green = ((albedo[1] as number) * (light[1] as number)) / Math.PI;
-					blue = ((albedo[2] as number) * (light[2] as number)) / Math.PI;
-				}
+				sky++;
+				continue;
 			}
+			// A ray that met the back of a surface came from inside geometry, and the light it
+			// gathers is that of the solid, not of the space around the probe.
+			if ((backFacing[s] as number) !== 0) {
+				enclosed++;
+				continue;
+			}
+			if (!this.options.albedo) continue;
+			hitNormal[0] = normals[s * 3] as number;
+			hitNormal[1] = normals[s * 3 + 1] as number;
+			hitNormal[2] = normals[s * 3 + 2] as number;
+			const albedo = this.options.albedo(
+				this.objects[s] as QueryTarget | null,
+				this.instances[s] as number,
+				hitNormal,
+			);
+			if (!albedo) continue;
+			// A matte surface sends back albedo times its irradiance over pi.
+			const light = this.environmentIrradiance(
+				hitNormal[0] as number,
+				hitNormal[1] as number,
+				hitNormal[2] as number,
+			);
+			const red = ((albedo[0] as number) * (light[0] as number)) / Math.PI;
+			const green = ((albedo[1] as number) * (light[1] as number)) / Math.PI;
+			const blue = ((albedo[2] as number) * (light[2] as number)) / Math.PI;
 			// The four coefficients, in the shader's order: L0, then L1 along y, z and x.
 			coefficients[at] = (coefficients[at] as number) + red * Y00 * scale;
 			coefficients[at + 1] = (coefficients[at + 1] as number) + green * Y00 * scale;
@@ -669,18 +720,74 @@ export class ProbeBake {
 			coefficients[at + 10] = (coefficients[at + 10] as number) + green * x1;
 			coefficients[at + 11] = (coefficients[at + 11] as number) + blue * x1;
 		}
+		skyVisibility[index] = sky / this.samples;
+		// A probe that most rays enter from behind stands inside geometry. Its light is the solid's,
+		// so it takes none, and the fill below hands it the light of the probes around it.
+		validity[index] = enclosed * 2 > this.samples ? 0 : 1;
 	}
 
 	/**
-	 * The environment's light for world direction `(x, y, z)`, turned and scaled as the scene's:
-	 * its radiance toward that direction with `shRadiance`, or its irradiance at that normal with
-	 * `shIrradiance`. Zero without an environment.
+	 * Fills each probe that geometry encloses with the light of the probes that it reaches, so a
+	 * wall's probe holds the light of the room beside it. Its validity stays 0, so the light it
+	 * takes is a smooth falloff for the filter and never a source of its own.
 	 */
-	private skyLight(x: number, y: number, z: number, light: typeof shRadiance): Float32Array {
+	private fill(): void {
+		const { counts, coefficients, validity, skyVisibility } = this.grid;
+		const [nx, ny, nz] = counts;
+		const total = this.total;
+		// 1 for a probe that the bake left valid, 2 for one that the fill has given light.
+		const state = new Uint8Array(total);
+		const queue = new Uint32Array(total);
+		const near = this.near;
+		const around = this.around;
+		let head = 0;
+		let tail = 0;
+		for (let p = 0; p < total; p++)
+			if ((validity[p] as number) > 0) {
+				state[p] = 1;
+				queue[tail++] = p;
+			}
+		const visit = (p: number) => {
+			if (state[p] !== 0) return;
+			const count = neighbours(p, nx, ny, nz, near);
+			let resolved = 0;
+			for (let q = 0; q < count; q++) if ((state[near[q] as number] as number) !== 0) resolved++;
+			if (resolved === 0) return;
+			for (let c = 0; c < PROBE_FLOATS; c++) {
+				let sum = 0;
+				for (let q = 0; q < count; q++) {
+					const other = near[q] as number;
+					if ((state[other] as number) !== 0)
+						sum += coefficients[other * PROBE_FLOATS + c] as number;
+				}
+				coefficients[p * PROBE_FLOATS + c] = sum / resolved;
+			}
+			let sky = 0;
+			for (let q = 0; q < count; q++) {
+				const other = near[q] as number;
+				if ((state[other] as number) !== 0) sky += skyVisibility[other] as number;
+			}
+			skyVisibility[p] = sky / resolved;
+			state[p] = 2;
+			queue[tail++] = p;
+		};
+		while (head < tail) {
+			const p = queue[head++] as number;
+			// The visit writes its own neighbour list, so the loop reads a list of its own.
+			const count = neighbours(p, nx, ny, nz, around);
+			for (let q = 0; q < count; q++) visit(around[q] as number);
+		}
+	}
+
+	/**
+	 * The environment's irradiance at a surface whose unit normal is `(x, y, z)`, turned and scaled
+	 * as the scene's. Zero without an environment.
+	 */
+	private environmentIrradiance(x: number, y: number, z: number): Float32Array {
 		const sky = this.sky;
 		if (!sky) return ZERO;
 		const t = this.turn;
-		light(
+		shIrradiance(
 			sky,
 			(t[0] as number) * x + (t[1] as number) * y + (t[2] as number) * z,
 			(t[3] as number) * x + (t[4] as number) * y + (t[5] as number) * z,
@@ -690,6 +797,21 @@ export class ProbeBake {
 		for (let c = 0; c < 3; c++) SKY[c] = (SKY[c] as number) * this.intensity;
 		return SKY;
 	}
+}
+
+/** Writes the probes that sit next to probe `p` into `out`, and returns how many, at most six. */
+function neighbours(p: number, nx: number, ny: number, nz: number, out: Uint32Array): number {
+	const i = p % nx;
+	const j = Math.floor(p / nx) % ny;
+	const k = Math.floor(p / (nx * ny));
+	let count = 0;
+	if (i > 0) out[count++] = p - 1;
+	if (i + 1 < nx) out[count++] = p + 1;
+	if (j > 0) out[count++] = p - nx;
+	if (j + 1 < ny) out[count++] = p + nx;
+	if (k > 0) out[count++] = p - nx * ny;
+	if (k + 1 < nz) out[count++] = p + nx * ny;
+	return count;
 }
 
 const ZERO = new Float32Array(3);

@@ -1,5 +1,5 @@
 // Runs the F10 upscaler probe on this computer's GPU and writes its figures beside the page.
-// It serves index.html from a small local server, opens it in the installed Chrome through
+// It serves index.html from a small local server, opens it in the pinned Chrome for Testing through
 // Playwright, waits for the page's measurements, and writes one JSON record for each canvas size
 // and mip bias. The page itself holds the scene and the four upscalers; this driver only starts it
 // and collects the result.
@@ -15,6 +15,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchChromium } from '../../../packages/cli/src/browser.js';
+import { refuseInQuietWindow } from '../../../tools/lib/quiet-window.ts';
+import { chromeForTesting } from '../../../tests/lib/chrome-for-testing.ts';
+
+refuseInQuietWindow('The upscaler probe');
 
 interface ProbeResult {
 	config: Record<string, unknown>;
@@ -80,7 +84,7 @@ console.log(`serving the probe at ${base}`);
 
 const browser = await launchChromium({
 	headless: false,
-	channel: 'chrome',
+	...chromeForTesting(),
 	args: [
 		'--window-position=-2000,80',
 		'--window-size=900,1000',

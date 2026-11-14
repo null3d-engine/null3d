@@ -1,6 +1,6 @@
 # D-112: Draco decoding
 
-Status: decided. The owner decided on 2026-10-04 that the engine reads Draco files, with the decoder loaded on first use ([D-54](D-54-addon-modules.md#draco), [D-14](D-14-js-budget.md#recorded-exceptions)). This record holds how M2-A6 built it. Date: 2026-10-08. Task: M2-A6.
+Status: decided and built. The owner decided that the engine reads Draco files, with the decoder loaded on first use ([D-54](D-54-addon-modules.md#draco), [D-14](D-14-js-budget.md#recorded-exceptions)). This record holds how M2-A6 builds it. Task: M2-A6.
 
 Summary: The glTF worker reads `KHR_draco_mesh_compression` with Google's own glTF decoder, Draco 1.5.7, kept unchanged in the repository: 59 KB after Brotli, downloaded with the first Draco file and compiled once per page. Decoded normals and tangents become 8-bit integers and texture coordinates in 0 to 1 become 16-bit ones, which halves those attributes' GPU memory. Decoded counts must match the accessors, broken data fails with E1416 in under a millisecond, and a decoder that failed or grew past 64 MiB gives way to a fresh one.
 
@@ -31,7 +31,7 @@ The official script calls no `eval` and no `Function` constructor on strings: a 
 
 The script is not an ES module. In a production build, Vite's bundler wraps it as CommonJS, and its import gives the factory as the default export. The dev server serves it as it is, and the browser runs it as a module, where it hands the factory to an AMD `define`. `scene/gltf-draco.ts` offers that `define` on the global object for the time of the import, and then removes it. Both paths run in the browser tests: the dev server's pages, and the production build of the test pages.
 
-Measured from this build (`bun run build`, 8 October 2026):
+Measured from the build (`bun run build`):
 
 | File | Raw | gzip | Brotli |
 | --- | --- | --- | --- |
@@ -70,7 +70,7 @@ These are the types that the asset tool writes and that [D-25](D-25-vertex-types
 
 ### Broken and hostile data
 
-The decoder rejected each broken input at once, on the Mac in Node, without growing its 16 MiB of memory:
+The decoder rejects each broken input at once, on the Mac in Node, without growing its 16 MiB of memory:
 
 | Input | Decoder's answer | Time |
 | --- | --- | --- |
@@ -92,7 +92,7 @@ The spec says that the accessors "must match the decompressed data". three.js ig
 
 - Unit tests (`tests/lib/draco-decoding.test.ts`) with the shipped decoder. The Khronos RiggedSimple Draco model gives the triangles of its uncompressed twin, each vertex within 0.005 of its twin's position, normals within 0.02, the same joints and weights within 0.01. The test file's texture coordinates match its source within 0.001. Six broken files each give E1416, and a fresh decoder reads the whole file after a spent one.
 - `tests/lib/draco-fixtures.test.ts` checks that the test file is what the encoder builds, and `tools/lib/draco-vendor.test.ts` that the vendored files are the pinned release's.
-- Image tests on all three tiers: `gltf-rigged` (new references), and `gltf-draco-rigged` and `gltf-draco-texture-coordinates`, which match their uncompressed scenes' references within the default tolerance, on the Mac's GPU and on SwiftShader. The parity check compares all three with three.js's `GLTFLoader` and `DRACOLoader`: 0.000% of the pixels differ on every tier in both sets (8 October 2026). The rigged scenes needed a fixed frame, since three.js's bounds of a skinned mesh hold the pose.
+- Image tests on all three tiers: `gltf-rigged` (new references), and `gltf-draco-rigged` and `gltf-draco-texture-coordinates`, which match their uncompressed scenes' references within the default tolerance, on the Mac's GPU and on SwiftShader. The parity check compares all three with three.js's `GLTFLoader` and `DRACOLoader`: 0.000% of the pixels differ on every tier in both sets. The rigged scenes needed a fixed frame, since three.js's bounds of a skinned mesh hold the pose.
 - A browser test in each thread mode on both GPU paths loads both Draco files, refuses a broken one with E1416, and loads the test file again. The page downloads the decoder's script and module once, and pages without Draco files download neither.
 
 ## Decision
@@ -107,7 +107,7 @@ Option (a), with the quantized types and the checks above.
 
 ## Consequences
 
-- `KHR_draco_mesh_compression` joins the extensions that the loader reads. E1417 no longer names Draco as its example.
+- `KHR_draco_mesh_compression` is among the extensions that the loader reads. E1417 does not name Draco as its example.
 - The size report lists `draco_decoder_gltf.wasm` among the first-use modules, with the exception of D-14, and the decoder's script as a part that the glTF worker loads.
 - `THIRD-PARTY-NOTICES.txt` holds Draco's notice. The offline list puts the decoder under the `gltf` feature.
-- `docs/concepts/assets.md` says when a Draco file is worth keeping. The three.js mapping turns `DRACOLoader` into a direct entry.
+- `docs/concepts/assets.md` says when a Draco file is worth keeping. The three.js mapping lists `DRACOLoader` as a direct entry.

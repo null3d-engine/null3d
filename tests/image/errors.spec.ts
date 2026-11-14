@@ -52,10 +52,14 @@ for (const mode of ENGINE_MODES) {
 	test(`errors keep their code and full message, and the engine starts again, ${mode.name}`, async ({
 		page,
 	}) => {
+		// The pipelined start pays the built page's first load, which CI's software GPU took 52.1
+		// seconds for on one run and more than 60 on the next, where the other four modes took 10
+		// to 18. Both waits allow a run twice as slow as that, and the test's limit clears them.
+		test.setTimeout(150_000);
 		const requests: string[] = [];
 		page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
 		await page.goto(`errors.html?gpu=webgpu&${mode.query}`);
-		const result = await pageResult<ErrorsResult>(page, 60_000);
+		const result = await pageResult<ErrorsResult>(page, 120_000);
 		expect(result.error).toBeUndefined();
 		// The fixes' text is a file of its own, which the first error loads.
 		expect(requests.filter((path) => FIXES_FILE.test(path)).length).toBeGreaterThan(0);
@@ -89,6 +93,10 @@ for (const mode of ENGINE_MODES) {
 			['E1206', 'geometry.fromArrays() got NaN at uvs[4].'],
 			['E1108', 'the sketch asked for row 11 of 10.'],
 			['E1502', ''],
+			[
+				'E1223',
+				`setSkyLayer() got the feature 'broken-layer' with the frame "opaque"; a sky layer records at 'background'.`,
+			],
 		];
 		expect(result.inSketch).toHaveLength(bodies.length);
 		for (const [index, [code, detail]] of bodies.entries()) {
@@ -114,6 +122,14 @@ for (const mode of ENGINE_MODES) {
 		expect(graph.message).toContain('"broken"');
 		expect(graph.message).toContain('"nothing"');
 		expect(graph.message).toContain(`${ERROR_FIXES.E1502} See ${DOCS}E1502.md`);
+		// The engine refuses a sky layer whose description names the wrong frame, before it reads
+		// the WGSL.
+		expect(result.patched[6]).toEqual(
+			engineError(
+				'E1223',
+				`setSkyLayer() got the feature 'broken-layer' with the frame "opaque"; a sky layer records at 'background'.`,
+			),
+		);
 		// Every build refuses query input that is not finite in 32 bits, which the core's trees
 		// could not stand on, and the engine answers the queries after them.
 		const F32 = 'pass a number from -3.4e38 to 3.4e38, the range of 32-bit floats.';

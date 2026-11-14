@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { setWakeByMessage } from '../shared/wake';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
 import {
@@ -88,6 +89,8 @@ function countingSketch(started = true): SketchRunner & { started: boolean } {
 const DISPLAY_HZ = 60;
 /** Callbacks the display makes: two refresh meter samples. */
 const CALLBACKS = 64;
+/** A worker's callbacks in a browser with no frame cap, 0.2 ms apart. */
+const UNCAPPED_CALLBACK_HZ = 5000;
 
 describe('the render loop', () => {
 	let loop: RenderLoop | undefined;
@@ -158,6 +161,41 @@ describe('the render loop', () => {
 		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(1);
 		expect(drawn).toEqual([]);
 		expect(prepared).toEqual([]);
+		expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(1);
+	});
+
+	it('draws the frame it took when the next frame records a new plan during the wake', () => {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		// The sketch thread's wake messages reach their sketched frames here, in place of another
+		// worker that records the next frame as the wake reaches it.
+		setWakeByMessage(true);
+		try {
+			const wake = {
+				postMessage: () => {
+					if (Atomics.load(slots, Slot.FramesTaken) !== 1) return;
+					if (Atomics.load(slots, Slot.FramesPublished) !== 1) return;
+					// The next frame's plan made its targets again, so its generation differs.
+					Atomics.store(slots, Slot.PlanEpoch, 2);
+					Atomics.store(slots, Slot.FramePlan0, 2);
+					Atomics.store(slots, Slot.FramesPublished, 2);
+				},
+			};
+			loop = runRenderLoop(renderer, control, metrics, {}, wake);
+			// Frame 1 was recorded under the plan's first generation.
+			Atomics.store(slots, Slot.PlanEpoch, 1);
+			Atomics.store(slots, Slot.FramePlan0 + 1, 1);
+			Atomics.store(slots, Slot.FramesPublished, 1);
+			refresh(DISPLAY_HZ, 1);
+			// The frame draws, though the wake recorded a newer plan before the loop drew it. The
+			// capture that only that frame records would be lost otherwise.
+			expect(drawn).toEqual([1]);
+			expect(Atomics.load(slots, Slot.FramePresented)).toBe(1);
+			expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(0);
+			refresh(DISPLAY_HZ, 1);
+			expect(drawn).toEqual([1, 2]);
+		} finally {
+			setWakeByMessage(false);
+		}
 	});
 });
 
@@ -174,6 +212,36 @@ describe('the hold loop', () => {
 		await held;
 		expect(drawn).toEqual([7]);
 		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(7);
+	});
+
+	it('draws both held frames when the later one records a newer plan', async () => {
+		const { metrics, slots, drawn, renderer } = setup();
+		const hold = new HoldLoop(slots, renderer, metrics);
+		// The held scene recorded two frames. The first captures a probe, and the second turns the
+		// capture views off, which changes the plan's texture list. Both draw, in that order: a held
+		// frame that is skipped would lose the capture and the textures that only it made.
+		Atomics.store(slots, Slot.HeldFrom, 1);
+		Atomics.store(slots, Slot.FramePlan0 + 1, 1);
+		Atomics.store(slots, Slot.FramePlan0, 2);
+		Atomics.store(slots, Slot.PlanEpoch, 2);
+		Atomics.store(slots, Slot.FramesPublished, 2);
+		const held = hold.drawHeld();
+		refresh(DISPLAY_HZ, 2);
+		await held;
+		expect(drawn).toEqual([1, 2]);
+		expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(0);
+	});
+
+	it('fails by the stopped clock when the page runs no callbacks', async () => {
+		const { metrics, slots, renderer } = setup();
+		const hold = new HoldLoop(slots, renderer, metrics);
+		Atomics.store(slots, Slot.FramesPublished, 5);
+		const ended = hold.drawHeld(5).then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		// No refresh: the page's animation-frame clock stopped, as a hidden or throttled page's does.
+		expect(await ended).toContain('the frame clock stopped');
 	});
 });
 
@@ -228,6 +296,27 @@ describe("a capture's wait for the next frame", () => {
 		const stopped = waitForFrame(slots);
 		await Promise.resolve();
 		expect([paused.ended, stopped.ended]).toEqual([true, true]);
+	});
+
+	it('fails by the stopped clock when no callback comes at all', async () => {
+		const { slots } = setup();
+		const ended = nextFrameTaken(slots, 5).then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		expect(await ended).toContain('the frame clock stopped');
+	});
+
+	it('still captures a slow page whose callbacks come slowly', async () => {
+		const { slots } = setup();
+		const wait = nextFrameTaken(slots, 200).then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		Atomics.add(slots, Slot.FramesTaken, 1);
+		refresh(DISPLAY_HZ, 1);
+		expect(await wait).toBe('resolved');
 	});
 
 	it('gives up when no frame comes, as after a sketch error', async () => {
@@ -383,8 +472,17 @@ describe('the wake-up before the next frame', () => {
 	it('gives the wake-up a delay in whole milliseconds, a few before the next callback', () => {
 		expect(wakeDelayMs(60)).toBe(13);
 		expect(wakeDelayMs(120)).toBe(4);
-		// A display too fast for a wake-up gets one at once.
+		// A display too fast for a wake-up ahead of its next callback gets none.
 		expect(wakeDelayMs(360)).toBe(0);
+	});
+
+	it('sets no timer once the callbacks come too often for a wake-up', () => {
+		const { control, metrics, renderer } = setup();
+		const delays = wakeDelays(UNCAPPED_CALLBACK_HZ, () =>
+			runRenderLoop(renderer, control, metrics, {}),
+		);
+		// The callbacks before the refresh meter's first measurement assume a 60 Hz display.
+		expect(delays).toEqual(new Array(CALLBACKS / 2).fill(wakeDelayMs(60)));
 	});
 
 	it('wakes a worker before each callback, at the rate the refresh meter measured', () => {
@@ -452,6 +550,27 @@ describe('the hold to the display rate', () => {
 
 	it('draws at every timer callback when the display is faster than the timer', () => {
 		expect(runTimed(72, TIMER_HZ)).toHaveLength(CALLS);
+	});
+
+	it('draws at every callback of a browser with no frame cap, and records the page rate', () => {
+		// Chrome without vsync calls a worker thousands of times a second, and the page that draws
+		// nothing 48 times.
+		const { control, metrics, slots, drawn, renderer, reader } = setup();
+		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / 48));
+		loop = runRenderLoop(renderer, control, metrics, {});
+		refresh(UNCAPPED_CALLBACK_HZ, CALLS, (call) =>
+			Atomics.store(slots, Slot.FramesPublished, call + 1),
+		);
+		expect(drawn).toHaveLength(CALLS);
+		expect(reader.refreshHz).toBe(48);
+	});
+
+	it('draws the direct loop at every callback of a browser with no frame cap too', () => {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / 48));
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, {});
+		refresh(UNCAPPED_CALLBACK_HZ, CALLS);
+		expect(drawn).toHaveLength(CALLS);
 	});
 
 	it('leaves a worker whose callbacks follow the display alone, whatever rate the page measured', () => {

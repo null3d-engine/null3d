@@ -7,7 +7,7 @@ mod common;
 
 use std::collections::{HashMap, HashSet};
 
-use common::{World, count, grid, map_desc};
+use common::{World, base_box, count, grid, map_desc};
 use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
@@ -21,7 +21,7 @@ use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
-use null3d_render::materials::{MapSlot, Shading, feature};
+use null3d_render::materials::{CustomShading, MapSlot, Shading, feature};
 use null3d_render::pipelines::{DepthBias, DrawKey};
 use null3d_render::shadows::ShadowQuality;
 use null3d_render::view::ViewId;
@@ -32,10 +32,13 @@ const SUN: SunShadow = SunShadow {
     map_size: 1024,
     bias: 0.5,
     normal_bias: 1.0,
+    intensity: 1.0,
     distance: 60.0,
     auto: false,
     contact: 0.0,
     layers: DEFAULT_LAYERS,
+    hero: None,
+    hero_size: 0,
 };
 
 /// The common world with the sun casting `shadow`. The lit box and the lit ball cast shadows and
@@ -55,6 +58,21 @@ fn shadowed(shadow: SunShadow) -> World {
     world.scene.apply_commands(&commands, world.frame).unwrap();
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
     world
+}
+
+/// A card's custom material: the standard template with the caster builds that its coverage
+/// function needs, and no vertex attributes beyond the mesh's own.
+fn card_shading() -> Shading {
+    Shading::Custom(CustomShading {
+        template: template::CUSTOM_FIRST,
+        attributes: 0,
+        base_color: true,
+        textures: 0,
+        transmission: false,
+        row_values: false,
+        caster: true,
+        object_ids: false,
+    })
 }
 
 /// The operands of each command of `op`.
@@ -751,6 +769,100 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
     world.step(&mut mock, true);
     assert_eq!(drawn(&world.step(&mut mock, false)).0.len(), 2);
 }
+
+/// A frame's count of the far cascade's depth passes over a run, with a card of `features` at
+/// `position`, whose vertex offset sways out to `sway` meters, or at every distance for 0.
+fn far_cascade_draws(features: u32, position: [f32; 3], sway: f32) -> usize {
+    let quality = ShadowQuality {
+        filter: 3,
+        far_interval: 2,
+        follow_movers: true,
+        ..ShadowQuality::default()
+    };
+    let mut world = shadowed(SUN);
+    world.renderer.settings_mut().set_shadow_quality(quality);
+    let card = world.add_object_at(&base_box(), card_shading(), features, position);
+    let material = world.scene.materials()[card.slot() as usize];
+    world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .set_sway(material - 1, sway)
+        .unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_flags(
+                card,
+                flags::CAST_SHADOWS,
+                flags::CAST_SHADOWS,
+            )],
+            world.frame,
+        )
+        .unwrap();
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    let layers: Vec<u32> = operands(&first, Op::CreateTextureView)
+        .iter()
+        .map(|view| view[0])
+        .collect();
+    let far = |commands: &[(Op, Vec<u32>)]| {
+        operands(commands, Op::BeginRenderPass)
+            .iter()
+            .any(|pass| pass[0] == NO_TARGET && pass[2] == layers[2])
+    };
+    let mut count = usize::from(far(&first));
+    for _ in 1..8 {
+        count += usize::from(far(&world.step(&mut mock, false)));
+    }
+    count
+}
+
+#[test]
+fn a_still_card_in_a_far_cascade_leaves_its_layer_cached() {
+    let still = far_cascade_draws(
+        feature::MOVING_VERTICES | feature::STILL_CASTER,
+        FAR_CARD,
+        0.0,
+    );
+    let fixed = far_cascade_draws(0, FAR_CARD, 0.0);
+    let moving = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD, 0.0);
+    assert_eq!(
+        still, fixed,
+        "a still card redraws the far cascade as often as a caster that never moves"
+    );
+    assert_eq!(
+        moving, 8,
+        "a moving card redraws the far cascade in every frame"
+    );
+}
+
+/// The card stands about 50 m from the camera. A sway distance short of that leaves it still,
+/// and one that reaches past it keeps the card moving.
+const SHORT_SWAY: f32 = 40.0;
+const LONG_SWAY: f32 = 60.0;
+
+#[test]
+fn a_card_past_its_sway_distance_leaves_a_far_cascade_cached() {
+    let fixed = far_cascade_draws(0, FAR_CARD, 0.0);
+    let past = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD, SHORT_SWAY);
+    let within = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD, LONG_SWAY);
+    assert!(
+        fixed < 8,
+        "a caster that never moves leaves the far cascade to its turns"
+    );
+    assert_eq!(
+        past, fixed,
+        "a card past its sway distance redraws the far cascade as often as a still one"
+    );
+    assert_eq!(
+        within, 8,
+        "a card within its sway distance redraws the far cascade in every frame"
+    );
+}
+
+/// Where the card stands: in the far cascade's box, about 50 m from the camera.
+const FAR_CARD: [f32; 3] = [0.0, 0.0, -30.0];
 
 #[test]
 fn a_batch_that_casts_draws_into_each_cascade_and_one_that_receives_reads_the_map() {

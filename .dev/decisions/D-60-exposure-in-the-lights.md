@@ -1,8 +1,8 @@
 # D-60: Exposure in the lights, and light units
 
-Status: decided. Date: 2026-10-04. Task: M2-E6.
+Status: decided and built. Task: M2-E6.
 
-Summary: The core multiplies the exposure into every light, the background color and the fog color, and the shaders into the colors of materials and textures; the final pass's exposure is 1. A sun of 100,000 lux at EV100 15 then stores values near 1, and the image tests keep their references. `ev100` multiplies with `exposure`; point and spot lights take `intensityUnit: 'lumen'` as three.js's `power` does. Bloom's threshold is multiplied by the exposure, not divided.
+Summary: Every light, the background, the fog and the colors of materials take the exposure, so the final pass's exposure is 1. A sun of 100,000 lux at EV100 15 then stores values near 1, and the image tests keep their references. The `ev100` setting multiplies with `exposure`, point and spot lights take `intensityUnit: 'lumen'`, and bloom's threshold is multiplied by the exposure.
 
 ## Question
 
@@ -16,9 +16,9 @@ Where does the exposure scale the scene's color, so that scenes in real units st
 
 ## Data
 
-Before this record, the final pass multiplied the scene color by the exposure. The scene color held the light before the exposure, in an `rgba16float` target, whose largest value is 65,504.
+The table compares two places for the exposure. In the final pass, the scene color holds the light before the exposure. In the lights, it holds exposed light. The scene color is an `rgba16float` target, whose largest value is 65,504.
 
-| Case | Value before the exposure | Exposure | Stored before | Stored now |
+| Case | Value before the exposure | Exposure | Stored, exposure in the final pass | Stored, exposure in the lights |
 | --- | --- | --- | --- | --- |
 | White rough surface facing a sun of 100,000 lux | 100,000 / π = 31,831 | 2.54e-5 (EV100 15) | 31,831 | 0.81 |
 | The sun's highlight on smooth metal at the roughness floor, about 42,000 times the irradiance | 4.2e9 | 2.54e-5 | 65,472 after the color limit of M2-R12, so the canvas shows 1.66 before the tone curve: gray, not white | 107,000, limited to 65,472: white |
@@ -28,7 +28,7 @@ Everything before the tone curve is linear. So multiplying the exposure into eac
 
 How the data was produced: the formulas of the standard material, and Filament's exposure, `1 / (1.2 × 2^EV100)`. The image tests `real-units` and `real-units-exposure` and their pixel spec (`tests/image/real-units.spec.ts`) check it on every tier.
 
-Results on 5 October 2026, on the Mac's GPU and on SwiftShader:
+Results on the Mac's GPU and on SwiftShader:
 
 | Check | Before (the shading branch, M2-R12) | After |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ Intensities stay in three.js's units by default: candela for point and spot ligh
 
 ### Bloom's threshold is multiplied by the exposure
 
-The threshold keeps three.js's meaning: luminance before the exposure. `UnrealBloomPass` compares it before `OutputPass` exposes the picture. The scene color now holds exposed color. So the bright pass compares against the threshold times the exposure, and its soft edge, three.js's `smoothWidth` of 0.01, scales the same way.
+The threshold keeps three.js's meaning: luminance before the exposure. `UnrealBloomPass` compares it before `OutputPass` exposes the picture. The scene color holds exposed color. So the bright pass compares against the threshold times the exposure, and its soft edge, three.js's `smoothWidth` of 0.01, scales the same way.
 
 An example: a pixel of luminance 2, a threshold of 1 and an exposure of 0.5.
 
@@ -68,11 +68,11 @@ An example: a pixel of luminance 2, a threshold of 1 and an exposure of 0.5.
 | null3D, threshold multiplied | 2 × 0.5 = 1 | 1 × 0.5 = 0.5 | Yes, by a margin of 0.5: three.js's exposed glow |
 | null3D, threshold divided | 1 | 1 / 0.5 = 2 | No |
 
-The plan's wording for this task said "divided by the exposure", which was wrong for that reason. M2-R12's limit on bloom's input now applies to exposed color.
+A threshold divided by the exposure would not let that pixel glow, so it is rejected. M2-R12's limit on bloom's input applies to exposed color.
 
 ## Consequences
 
-- `LightTable::gather` takes the frame's exposure, and `Fog::uniform` takes it too. `SceneColor::clear_color` exposes the background, and `Environment::uniform` exposes the environment's intensity. `Output::tone_map` became `Output::expose`, and `FinalPass::prepare` takes only the tone mapping. Bloom's bright pass takes the exposure through `Bloom::bright_pass`.
-- `null3d::tonemap::tone_map` takes exposed color, and the final pass's FXAA weights no longer read the exposure. `null3d::mesh` adds `exposed` and `finish_exposed`. The standard material's template imports `finish_exposed` in place of `finish`. A surface function may now declare `finish`, and may not declare `finish_exposed`.
+- `LightTable::gather` takes the frame's exposure, and `Fog::uniform` takes it too. The background takes the exposure in `SceneColor::clear_color`, and the environment's intensity in `Environment::uniform`. The final pass's `FinalPass::prepare` takes only the tone mapping, and `Output::expose` applies the exposure to a color. Bloom's bright pass takes the exposure through `Bloom::bright_pass`.
+- `null3d::tonemap::tone_map` takes exposed color, and the final pass's FXAA weights read no exposure. `null3d::mesh` adds `exposed` and `finish_exposed`. The standard material's template imports `finish_exposed`. A surface function may declare `finish`, and may not declare `finish_exposed`.
 - A scene in real units shows its background color and unlit colors black. three.js does the same at that exposure, since those colors are in the scene's units too.
-- Docs: `concepts/lighting` (units and exposure), `api/lights`, `api/post`, `concepts/post-processing`, `concepts/color-management`, `shaders/surface-functions` and `guides/custom-shaders`. The mapping entries of `toneMappingExposure` and of the lights' `power` changed too. Skills: the porting skill's notes on lights and exposure, and the develop skill's reserved shader names.
+- Docs: `concepts/lighting` (units and exposure), `api/lights`, `api/post`, `concepts/post-processing`, `concepts/color-management`, `shaders/surface-functions` and `guides/custom-shaders`. The mapping entries of `toneMappingExposure` and of the lights' `power` describe it too. Skills: the porting skill's notes on lights and exposure, and the develop skill's reserved shader names.

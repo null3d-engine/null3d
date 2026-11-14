@@ -167,7 +167,18 @@ describe('SketchQuality', () => {
 		expect(quality.takeChange()).toBe(RESTART_CHANGE);
 	});
 
-	it('keeps the settings fixed when the engine starts through setPreset and the check', async () => {
+	it("keeps the lower preset's anti-aliasing mode when a later setPreset changes the preset", async () => {
+		const { quality } = medium();
+		await quality.lower();
+		expect(quality.settings.antialias).toBe('fxaa');
+		// A device cannot take a heavier mode than the one it draws with, so the setting stays on
+		// the mode that the canvas draws, whatever preset comes next.
+		await quality.setPreset('high');
+		expect(quality.preset).toBe('high');
+		expect(quality.settings.antialias).toBe('fxaa');
+	});
+
+	it("keeps the settings fixed when the engine starts through setPreset, and the check takes the lower preset's anti-aliasing", async () => {
 		const { quality } = medium();
 		await quality.setPreset('ultra');
 		expect(quality.settings.antialias).toBe(MEDIUM.antialias);
@@ -175,7 +186,8 @@ describe('SketchQuality', () => {
 		await quality.lower();
 		await quality.lower();
 		expect(quality.preset).toBe('low');
-		expect(quality.settings.antialias).toBe(MEDIUM.antialias);
+		// A device can move to a lighter mode while it runs, so the check's lower preset gives it.
+		expect(quality.settings.antialias).toBe('fxaa');
 	});
 
 	it('keeps the lowest render scale at or below the highest', async () => {
@@ -211,7 +223,8 @@ describe('SketchQuality.lower', () => {
 		const { quality, applied, settled } = medium();
 		await quality.lower();
 		expect(quality.preset).toBe('low');
-		expect(quality.settings).toEqual(fromMedium('low'));
+		// The device moves to the lower preset's anti-aliasing mode, which costs less to draw.
+		expect(quality.settings).toEqual(fromMedium('low', { antialias: 'fxaa' }));
 		expect(applied.at(-1)?.preset).toBe('low');
 		expect(settled.count).toBe(1);
 		expect(quality.takeRestart()).toBe(true);
@@ -243,27 +256,32 @@ describe('SketchQuality.lower', () => {
 			subsurfaceSamples: low.subsurfaceSamples,
 			ssrScale: low.ssrScale,
 			ssrSteps: low.ssrSteps,
+			bounceRays: low.bounceRays,
 			exposureMeter: low.exposureMeter,
 			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
 			probeSize: low.probeSize,
 			areaLights: low.areaLights,
+			lightFit: low.lightFit,
 			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
-			lodShadowFactor: low.lodShadowFactor,
+			lodShadowThreshold: low.lodShadowThreshold,
 			lodFade: low.lodFade,
 			physicalSky: low.physicalSky,
+			cloudSteps: low.cloudSteps,
 			softwareOcclusion: low.softwareOcclusion,
 			parallax: low.parallax,
 			governor: true,
 			maxAnisotropy: 16,
 			textureMemoryMiB: low.textureMemoryMiB,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
-			antialias: MEDIUM.antialias,
+			antialias: low.antialias,
+			momentTransparency: MEDIUM.momentTransparency,
 			shadowCascades: MEDIUM.shadowCascades,
 			shadowMapSize: MEDIUM.shadowMapSize,
 			shadowTiles: MEDIUM.shadowTiles,
 			shadowTileSize: MEDIUM.shadowTileSize,
+			heroTileSize: MEDIUM.heroTileSize,
 			pointLightShadows: MEDIUM.pointLightShadows,
 			depthPrepass: MEDIUM.depthPrepass,
 			gpuOcclusion: MEDIUM.gpuOcclusion,
@@ -272,7 +290,7 @@ describe('SketchQuality.lower', () => {
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
 		// the reflections' size, the probes' size, the cap of area lights, soft particles, the levels
-		// of detail and parallax did.
+		// of detail, parallax and the fitted light clusters did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -289,10 +307,11 @@ describe('SketchQuality.lower', () => {
 			'areaLights',
 			'softParticles',
 			'lodThreshold',
-			'lodShadowFactor',
 			'lodFade',
 			'physicalSky',
 			'parallax',
+			'antialias',
+			'lightFit',
 		]);
 	});
 });
@@ -323,8 +342,9 @@ describe('SketchQuality.setPreset', () => {
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
 		// Low and Medium share the highest render scale, following of moving casters, the far
-		// characters' update interval, cascade blend, software occlusion culling and governor, and on
-		// WebGPU the ambient occlusion scale, contact shadow steps and subsurface blur too.
+		// characters' update interval, cascade blend, software occlusion culling, governor and the
+		// shadow maps' level threshold, and on WebGPU the ambient occlusion scale, contact shadow
+		// steps and subsurface blur too. Both draw no bounce light.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
@@ -333,8 +353,11 @@ describe('SketchQuality.setPreset', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'subsurfaceSamples',
+			'bounceRays',
+			'cloudSteps',
 			'softwareOcclusion',
 			'governor',
+			'lodShadowThreshold',
 		];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);

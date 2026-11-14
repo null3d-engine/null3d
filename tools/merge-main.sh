@@ -1,7 +1,7 @@
 #!/bin/sh
 # Merges origin/main into the current branch, and resolves the clashes on generated files that git
-# does not keep (D-105, .dev/pull-requests.md). A branch from before git stopped keeping them runs
-# it straight from main, so it needs no copy of its own:
+# does not keep (D-105, .dev/pull-requests.md). A branch that lacks this script runs it straight from
+# main:
 #   git fetch origin main && sh -c "$(git show origin/main:tools/merge-main.sh)"
 # An argument names another commit to merge instead of origin/main.
 # A generated file that main deleted stays deleted. A conflict whose branch side holds an old

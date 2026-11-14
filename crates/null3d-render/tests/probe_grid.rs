@@ -117,6 +117,7 @@ fn check_grid<B: FrameBuilder>(
     assert_eq!(uniform.inverse_spacing, [1.0, 0.5, 2.0, 0.0]);
     assert_eq!(uniform.counts, [3.0, 2.0, 4.0, 6.0]);
     assert_eq!(uniform.params[1], 1.0);
+    assert_eq!(uniform.params[2], 0.5);
 }
 
 fn camera_grid(frame: Option<&ViewFrame>) -> Option<ProbeGridUniform> {

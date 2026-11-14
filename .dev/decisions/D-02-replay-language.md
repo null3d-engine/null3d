@@ -1,6 +1,6 @@
 # D-02: Replay loop in WebAssembly or TypeScript
 
-Status: decided. Date: 2026-09-29. Task: M0-D3.
+Status: decided. The replay loop stays in TypeScript, and the WebAssembly loop is kept only as a patch outside the repository. Task: M0-D3.
 
 Summary: Keep the replay loop in TypeScript, the faster of the two on the S24+ in every scene.
 
@@ -14,7 +14,7 @@ Keep the faster one on the S24+ WebGL2 path; if they are within 5%, keep the one
 
 ## Method
 
-1. An upper bound first. A loop in WebAssembly still makes every browser call, each through a JavaScript import, so it can save at most the time the TypeScript loop spends in its own code. `bun run bench:profile --android` (PR #23, fixed in #25) sampled Chrome's CPU profiler on the S24+'s render worker, WebGL2, default counts:
+1. An upper bound first. A loop in WebAssembly still makes every browser call, each through a JavaScript import, so it can save at most the time the TypeScript loop spends in its own code. `bun run bench:profile --android` (PR #23 and #25) sampled Chrome's CPU profiler on the S24+'s render worker, WebGL2, default counts:
 
    | Scene | Replay per frame | Engine's own code | Browser calls |
    | --- | --- | --- | --- |
@@ -56,8 +56,7 @@ Keep the replay loop in TypeScript. On the S24+ WebGL2 path it is the faster of 
 
 ## Consequences
 
-- The GPU commands are decided (D-02, 2026-09-29): replay in TypeScript.
-- The WebAssembly replay is not merged. The whole experiment is kept as a patch outside the repository, with how to rebuild and re-run it, in case browsers make calls from WebAssembly cheaper. Direct imports of Web APIs are one way they could. The patch also holds one change made after the runs: bind group setup reads its entries in place instead of copying the list. That saves well under a microsecond per frame and cannot close a gap of 10%.
-- Kept from the experiment: the device runner's `--pages` and `--scenes` options, and the GPU interface of each benchmark page kind, which any comparison on a phone needs.
+- The WebAssembly replay is not merged. The whole experiment is kept as a patch outside the repository, with how to rebuild and re-run it, in case browsers make calls from WebAssembly cheaper. Direct imports of Web APIs are one way they could. The patch also holds one change that the runs did not measure. In it, bind group setup reads its entries in place instead of copying the list. That saves well under a microsecond per frame and cannot close a gap of 10%.
+- The repository keeps two parts of the experiment, which any comparison on a phone needs. These are the device runner's `--pages` and `--scenes` options, and the GPU interface of each benchmark page kind.
 - The profile (`bun run bench:profile`) shows where the TypeScript loop's own time goes on the S24+: the replay switch, starting and ending the render pass, and bind group setup. They are the places to look when the WebGL2 path's render thread needs to get faster. Among the browser calls, the MSAA resolve (`blitFramebuffer`, `invalidateFramebuffer`, `bindFramebuffer`) takes about a quarter of S1-static's replay.
-- No public docs change: the architecture page says the render worker replays draw lists without naming the language, which stays true.
+- The architecture page says that the render worker replays draw lists, without naming the language.

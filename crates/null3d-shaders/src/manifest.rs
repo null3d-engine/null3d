@@ -53,6 +53,12 @@ pub struct FirstUse {
     /// the feature.
     #[serde(default)]
     pub bits: Vec<String>,
+    /// Permutation bits by name, each with the shaders whose builds the bit may take. A value that
+    /// names one feature in one template can name another in another template, so a bit whose
+    /// value another template lists takes only the builds of the shaders that it names here. A bit
+    /// without an entry takes the builds of every template that lists its name.
+    #[serde(default)]
+    pub bit_shaders: BTreeMap<String, Vec<String>>,
 }
 
 /// One entry shader.
@@ -94,6 +100,14 @@ pub struct Shader {
     /// pass, which their pieces build with.
     #[serde(default)]
     pub effect_fold_host: bool,
+    /// True for the template that sky layers build with their own WGSL added. It is a template
+    /// only: the build checks it and writes no module of it.
+    #[serde(default)]
+    pub sky_layers: bool,
+    /// True for the shader that a sky map's cube faces are drawn with, which a layer builds again
+    /// with its own WGSL added.
+    #[serde(default)]
+    pub sky_layer_maps: bool,
 }
 
 /// The entry points of one render pipeline.
@@ -242,18 +256,19 @@ pub struct BuildCounts {
 /// The most builds the engine's manifest may make, for each target.
 ///
 /// Every build costs the shader build its compile time and costs a page the bytes that carry it,
-/// and a permutation bit on a lit template multiplies the count. The figures are the count on
-/// 19 October 2026, when the relief materials of M2-J4 joined the manifest after the shader build's
-/// shared tables split (D-190): their three bits make the standard material's maps builds 3.33
-/// times as many, and the split keeps that growth out of every page's start. The count also holds
-/// the translucency bit and the two subsurface templates of M2-EX36. The implementation notes give
-/// the measurement and the reason to raise a figure ([the count the manifest may not
+/// and a permutation bit on a lit template multiplies the count. The figures hold the masked
+/// transmission, whose cut-out keeps its transmission, so its three mask shapes multiply the
+/// transmission words. They also hold the relief materials of M2-J4, whose three bits make the
+/// standard material's maps builds 3.33 times as many. The shader build's shared tables are split
+/// (D-190), which keeps that growth out of every page's start. The count also holds the
+/// translucency bit and the two subsurface templates of M2-EX36. The implementation notes give the
+/// measurement and the reason to raise a figure ([the count the manifest may not
 /// pass](../../../.dev/implementation-notes.md#the-count-the-manifest-may-not-pass)). A commit
 /// that adds builds on purpose raises the figure it passes and records why there. The test
 /// `the_manifests_builds_stay_within_the_recorded_figure` refuses a count past it.
 pub const BUILD_BUDGET: BuildCounts = BuildCounts {
-    glsl: 53_762,
-    wgsl: 19_227,
+    glsl: 66_531,
+    wgsl: 25_795,
 };
 
 impl Manifest {
@@ -566,6 +581,33 @@ fn check_first_use(errors: &mut Vec<String>, manifest: &Manifest) {
                 errors.push(format!(
                     "{key}.bits has \"{bit}\", which first_use.{other} names too. A bit's builds load with one feature."
                 ));
+            }
+        }
+        for (bit, shaders) in &first_use.bit_shaders {
+            if !first_use.bits.contains(bit) {
+                errors.push(format!(
+                    "{key}.bit_shaders has \"{bit}\", which `bits` does not list. Add it to `bits`, or name the shaders of a bit that the feature loads."
+                ));
+                continue;
+            }
+            for shader_name in shaders {
+                match manifest.shaders.get(shader_name) {
+                    None => errors.push(format!(
+                        "{key}.bit_shaders.{bit} has \"{shader_name}\", which is not a shader of the manifest."
+                    )),
+                    Some(shader)
+                        if !shader.by_device
+                            || !shader
+                                .variants
+                                .values()
+                                .any(|variant| variant.permutations.contains(bit)) =>
+                    {
+                        errors.push(format!(
+                            "{key}.bit_shaders.{bit} has \"{shader_name}\", which loads no build with that bit. Name only shaders that load by device and list the bit."
+                        ));
+                    }
+                    Some(_) => {}
+                }
             }
         }
     }

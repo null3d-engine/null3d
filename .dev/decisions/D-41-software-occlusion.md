@@ -1,8 +1,8 @@
 # D-41: Software occlusion culling on WebGL2
 
-Status: decided for the method, 2026-10-04; the preset rows wait for T-36 on the S24+ and the iPad (M2-I3, D-22). Task: M2-I2.
+Status: method decided and built. T-36's runs on the S24+ and the iPad set it off on every preset (M2-I3, [D-22](D-22-occlusion-presets.md)). Task: M2-I2.
 
-Summary: Masked software occlusion culling on the job workers for the camera's view, in the same frame. Each blocker clears the pixels its outline touches, so the buffer never hides what a finer depth buffer shows: of 4,800 random spheres, it hid 66% of those that a buffer four times finer hides, and no other. 64 buildings draw in 45 µs on one thread natively; a sphere tests in 7.6 ns. In Chrome on the Mac, a street of the test city hides 627 of 971 entries for 0.35 ms more CPU time per frame.
+Summary: Masked software occlusion culling runs on the job workers for the camera's view, in the same frame, and is off on every preset. Each blocker clears the pixels its outline touches, so the buffer hides 66% of what a buffer four times finer hides, and nothing else. In Chrome on the Mac, a street of the test city hides 627 of 971 entries for 0.35 ms more CPU time per frame.
 
 ## Question
 
@@ -45,7 +45,7 @@ Intel's method tests each pixel at its center. Say a blocker covers a pixel's ce
 - A closed mesh draws only the triangles that face the camera. Their union is the whole shape's outline, and the far side never sets a depth. An open mesh draws the faces that its material draws: front faces, or both for a double-sided material. Faces follow the GPU's rule, the sign of the triangle's homogeneous determinant, so a mirrored object blocks with the faces that the GPU draws.
 - Rounding moves every depth away from the camera, and every object's depth toward it.
 
-Two cheaper rules were tried on paper and rejected:
+Two cheaper rules are rejected:
 
 - Pixel centers alone, as Intel's method does. It hides objects that show in slivers.
 - Shrinking each triangle by half a pixel on every side. It leaves a line of uncovered pixels along every shared edge, such as a box face's diagonal. A subtile that the line crosses never fills, so it hides nothing.
@@ -59,11 +59,11 @@ The blockers use the frame's own camera and world matrices. So an object shows i
 - `setOccluder(true)`, or the `occluder` option of `createMesh` and `instantiate`, sets the object flag `OCCLUDER` (1 << 7). It is not structural, so a change needs no rebuild of the draw tables. A model file sets it for the meshes that the asset tool gave blockers ([D-50](D-50-blockers-and-stored-trees.md)), and `setOccluder` overrides that.
 - A blocker draws its own mesh, welded where corners share a position, up to 4,096 triangles. The mesh is built once, the first time an object with that mesh blocks. A blocker that the asset tool stored in a model file takes its place ([D-50](D-50-blockers-and-stored-trees.md)).
 - Objects that blend, cut holes with an alpha mask, skip the depth buffer, use a custom material or are skinned never block. Their drawn shape can have gaps that their mesh does not show.
-- Only the active camera's view uses blockers. Shadow cascades, shadow tiles and other views cull as before, so a hidden object still casts its shadow. Blended objects of the transparent pass are tested too.
+- Only the active camera's view uses blockers. Shadow cascades, shadow tiles and other views cull with the frustum test alone, so a hidden object still casts its shadow. Blended objects of the transparent pass are tested too.
 
 ### Spreading the work
 
-A band whose subtiles already hold depths nearer than all of a blocker skips that blocker. The merge would discard all its coverage anyway, so the skip changes nothing. Blockers draw nearest first, so in a street the far buildings mostly skip. In the benchmark below, the pairs of band and blocker that drew fell from about 139 to 60 per frame.
+A band whose subtiles already hold depths nearer than all of a blocker skips that blocker. The merge would discard all its coverage anyway, so the skip changes nothing. Blockers draw nearest first, so in a street the far buildings mostly skip. In the benchmark below, the skip cuts the pairs of band and blocker that draw from about 139 to 60 per frame.
 
 Triangle setup runs in 64-bit floats. A wall beside the camera reaches far past the screen's edges once the near plane cuts it. 64-bit setup keeps its edges exact there, with no clipping at the screen's sides.
 
@@ -84,11 +84,11 @@ Triangle setup runs in 64-bit floats. A wall beside the camera reaches far past 
 | 256 | 1 | 104 µs | 154 µs | 49% |
 | 256 | 4 | 61 µs | 153 µs | 49% |
 
-The hidden share counts every sphere, also those outside the view. Testing a sphere costs about 7.6 ns, four at a time; one at a time it cost 13.5 ns.
+The hidden share counts every sphere, also those outside the view. Testing a sphere costs about 7.6 ns, four at a time; one at a time it costs 13.5 ns.
 
-Three changes made the drawing about 2.6 times faster than the first version, which took 127 µs for 64 buildings on one thread:
+Three choices make the drawing about 2.6 times faster than a plain version, which takes 127 µs for 64 buildings on one thread:
 
-- Bands skip blockers that lie wholly behind what they hold, which halved the band work.
+- Bands skip blockers that lie wholly behind what they hold, which halves the band work.
 - Each row of subtiles finds the run of subtiles that a triangle touches from the triangle's corners, instead of testing every subtile in its box.
 - The depth of four subtiles at a time, with SIMD.
 
@@ -108,11 +108,11 @@ The occlusion cost page (`tests/pages/occlusion-cost.html`) draws a city of 64 b
 
 The culling hides about two thirds of what the frustum test keeps, for about 0.35 ms more CPU time per frame on the Mac. WebGL2 has no GPU timer in this browser, so the GPU time that the hidden objects save is not measured here. The Mac's GPU draws the city in far less than a frame either way. The saving matters on phones, where T-36 measures it.
 
-A measurement that holds no finished frame measures again for twice as long. The occlusion spec runs the page with half-second measurements and a tenth of the spheres and boxes (`?light`). On a busy Mac, SwiftShader drew a frame of it only every 2.4 to 2.8 s, so a half-second measurement could hold no frame, and its figures were empty.
+A measurement that holds no finished frame measures again for twice as long. The occlusion spec runs the page with half-second measurements and a tenth of the spheres and boxes (`?light`). On a busy Mac, SwiftShader draws a frame of it only every 2.4 to 2.8 s, so a half-second measurement can hold no frame.
 
-Where nothing blocks, the culling costs one pass over the scene's flags per frame. The command below ran main (a8bf5ed) and this branch in turns, at the Medium preset, where the culling is on. It was `bun run bench:run --compare <main>,. --scenes s1,s1-cells,s3 --pages null3d-webgl2 --runs 3 --seconds 10`:
+Where nothing blocks, the culling costs one pass over the scene's flags per frame. The command below ran main (a8bf5ed), without the culling, and the build with it in turns, at the Medium preset with the culling on. It was `bun run bench:run --compare <main>,. --scenes s1,s1-cells,s3 --pages null3d-webgl2 --runs 3 --seconds 10`:
 
-| Scene | Busiest thread, main | This branch | Change |
+| Scene | Busiest thread, without the culling | With it | Change |
 | --- | --- | --- | --- |
 | S1 | 4.340 ms | 4.355 ms | -0.9%, same |
 | S1-cells | 0.100 ms | 0.095 ms | -5.0%, same |
@@ -120,28 +120,28 @@ Where nothing blocks, the culling costs one pass over the scene's flags per fram
 
 ### Size
 
-The core's WebAssembly grows by about 15 KB after Brotli, from 221 KB to 236 KB of its 600 KB budget (+6.9%). Most of it is the band drawing, the blockers' setup and the sphere test. Two changes kept it from growing 30 KB:
+The core's WebAssembly grows by about 15 KB after Brotli, from 221 KB to 236 KB of its 600 KB budget (+6.9%). Most of it is the band drawing, the blockers' setup and the sphere test. Two choices keep it from growing 30 KB:
 
 - The blockers' sort and the edges' sort reuse the 32-bit radix sort of the cluster code, instead of two sorts of their own. Building a blocker mesh welds its corners with a small hash table of its own, instead of the standard library's.
 - The 64-bit `clamp` of the standard library carries a panic message that prints floats, which linked about 20 KB of float printing. The band code bounds its values with `max` and `min` instead.
 
-How the data was produced: `cargo test -p null3d-core --release --test occlusion -- --nocapture`, `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_software_occlusion`, and `NULL3D_PORT=10273 bun run test occlusion.spec.ts` in `tests/`, on 4 October 2026, with `bun run build:check-size` for the sizes.
+How the data was produced: `cargo test -p null3d-core --release --test occlusion -- --nocapture`, `cargo test -p null3d-core --release --test bench -- --ignored --nocapture --test-threads=1 bench_software_occlusion`, and `NULL3D_PORT=10273 bun run test occlusion.spec.ts` in `tests/`, with `bun run build:check-size` for the sizes.
 
 ### Images
 
 The image tests `occlusion-off` and `occlusion-on` draw a lighter city in hold mode, and both match the references of `occlusion-off` at the usual tolerance. The occlusion spec then draws the city with the culling off and on at six times along the street, in one run on one machine, and requires the same pixels. With the culling on, WebGL2 draws the same image to the bit as with it off, on the Mac's GPU and on SwiftShader.
 
-The first version of `occlusion-on` required the same pixels as the `occlusion-off` reference, which SwiftShader on the Mac drew. CI's SwiftShader, on x86, rounds one pixel of that city one step of red apart, with the culling off too. Drawn in Docker on x86 Linux with Playwright's CI image, the culling-off and culling-on images were the same at 20 times along the street. So the culling hid nothing that shows. The test compared images from two kinds of processor at zero tolerance.
+The image test cannot require the same pixels as the `occlusion-off` reference, which SwiftShader on the Mac draws. CI's SwiftShader, on x86, rounds one pixel of that city one step of red apart, with the culling off too. A zero tolerance would compare images from two kinds of processor. Drawn in Docker on x86 Linux with Playwright's CI image, the culling-off and culling-on images are the same at 20 times along the street.
 
 ## Decision
 
-Build masked software occlusion culling on the job workers, with the conservative coverage above, for the camera's view on WebGL2. The `softwareOcclusion` setting turns it on and off during play, and the `?occlusion=on|off` switch and the `softwareOcclusion` option of `createEngine` set it for a page. It starts on from Medium up, the value proposed before any measurement, until T-36 measures it on the S24+ and the iPad. T-36's runs turned it off on every preset on 2026-10-11 ([D-22](D-22-occlusion-presets.md#decision)). A scene without blockers pays only one pass over the scene's flags per frame.
+Build masked software occlusion culling on the job workers, with the conservative coverage above, for the camera's view on WebGL2. The `softwareOcclusion` setting turns it on and off during play, and the `?occlusion=on|off` switch and the `softwareOcclusion` option of `createEngine` set it for a page. T-36's runs on the S24+ and the iPad set it off on every preset ([D-22](D-22-occlusion-presets.md#decision)). A scene without blockers pays only one pass over the scene's flags per frame.
 
 three.js has no occlusion culling in its core; it culls each object against the frustum alone. Babylon.js offers occlusion queries per mesh, whose answers arrive frames later.
 
 ## Consequences
 
 - `crates/null3d-core/src/occlusion.rs` holds the buffer, the blocker meshes and the test. `culling::cull_into_buckets` and the transparent pass's sort take the buffer through `CullView`. The WebGL2 frame builder picks the blockers (`crates/null3d-render/src/occlusion.rs`).
-- `engine.measure` reports `occludedEntries`, a new counter of the frame record, which grows from 20 to 21 words.
-- The docs: `concepts/culling` (the method and its limits), `api/objects` (`setOccluder`), `guides/performance` (blockers and the new figure), and the preset table. The develop skill's quick reference lists `setOccluder`.
-- The device runner's `occlusion` plan runs the cost page, for T-36 (M2-I3). M2-B4 adds blocker meshes from the asset tool, and S6 (M2-L3) uses them.
+- `engine.measure` reports `occludedEntries`, a counter of the frame record.
+- The docs: `concepts/culling` (the method and its limits), `api/objects` (`setOccluder`), `guides/performance` (blockers and the hidden-entries figure), and the preset table. The develop skill's quick reference lists `setOccluder`.
+- The device runner's `occlusion` plan runs the cost page, for T-36 (M2-I3). M2-B4's blocker meshes from the asset tool feed it ([D-50](D-50-blockers-and-stored-trees.md)), and S6 (M2-L3) uses them.

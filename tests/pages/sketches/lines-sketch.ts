@@ -4,7 +4,9 @@
 import { defineSketch } from '@null3d/engine';
 import { WIDE_LINES } from '../../../bench/scenes/lines';
 import { drawLineScene } from '../lib/line-scene';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 export default defineSketch(async (context) => {
+	applySketchSwitches(import.meta.url, context.quality);
 	await drawLineScene(context, WIDE_LINES);
 });

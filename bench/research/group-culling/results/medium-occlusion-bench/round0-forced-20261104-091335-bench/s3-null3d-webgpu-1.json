@@ -1,0 +1,485 @@
+{
+	"page": "bench",
+	"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+	"url": "http://localhost:5175/bench/pages/null3d/s3.html?gpu=webgpu&preset=medium&direct=off&occlusion=on&occlusion-check=off&still-camera=off",
+	"calibrationMs": 1.1950000077486038,
+	"ok": true,
+	"scene": "s3",
+	"renderer": "null3d",
+	"tier": "webgpu",
+	"mode": {
+		"build": "threaded",
+		"latency": "pipelined",
+		"sketchThread": "worker",
+		"renderThread": "render-worker",
+		"jobWorkers": 16,
+		"hold": null,
+		"preset": "medium",
+		"presetCheck": null,
+		"crashedStarts": 0,
+		"memoryMaximumMiB": 1024,
+		"renderFallback": null,
+		"keepTextureCopies": false
+	},
+	"drawPath": "forced",
+	"n": 20000,
+	"frames": 19689,
+	"cpuMs": {
+		"count": 19689,
+		"median": 0.1850000023841858,
+		"p95": 0.2549999952316284,
+		"p99": 0.3449999988079071,
+		"max": 3.75,
+		"min": 0.030000001192092896,
+		"mean": 0.18904312050410976
+	},
+	"intervalMs": {
+		"count": 19690,
+		"median": 1.4249999523162842,
+		"p95": 2.744999885559082,
+		"p99": 3.450000047683716,
+		"max": 18.93000030517578,
+		"min": 0.12999999523162842,
+		"mean": 1.524258253718464
+	},
+	"stats": {
+		"seconds": 30.000625,
+		"frames": 19689,
+		"updatedFps": 656.0615212935176,
+		"updateErrors": 0,
+		"cpuMs": {
+			"count": 19689,
+			"median": 0.1850000023841858,
+			"p95": 0.2549999952316284,
+			"p99": 0.3449999988079071,
+			"max": 3.75,
+			"min": 0.030000001192092896,
+			"mean": 0.18904312050410976
+		},
+		"cpuMsAllThreads": {
+			"count": 19689,
+			"median": 0.33500000834465027,
+			"p95": 0.4399999976158142,
+			"p99": 0.5550000071525574,
+			"max": 4.009999990463257,
+			"min": 0.06000000238418579,
+			"mean": 0.33941033058198833
+		},
+		"threads": {
+			"sketch-worker": {
+				"busyMs": {
+					"count": 19689,
+					"median": 0.17500001192092896,
+					"p95": 0.23499999940395355,
+					"p99": 0.29500001668930054,
+					"max": 2.259999990463257,
+					"min": 0.0299999862909317,
+					"mean": 0.17764106853011055
+				},
+				"phases": {
+					"update": {
+						"count": 19689,
+						"median": 0.025000005960464478,
+						"p95": 0.03500001132488251,
+						"p99": 0.04999999701976776,
+						"max": 1.8799999952316284,
+						"min": 0,
+						"mean": 0.027659352932558046
+					},
+					"commands": {
+						"count": 19689,
+						"median": 0.004999995231628418,
+						"p95": 0.01000000536441803,
+						"p99": 0.015000000596046448,
+						"max": 1.2799999713897705,
+						"min": 0,
+						"mean": 0.00555665600163001
+					},
+					"transforms": {
+						"count": 19689,
+						"median": 0.019999995827674866,
+						"p95": 0.025000005960464478,
+						"p99": 0.030000001192092896,
+						"max": 0.6949999928474426,
+						"min": 0,
+						"mean": 0.02017141552109844
+					},
+					"batches": {
+						"count": 19689,
+						"median": 0.004999995231628418,
+						"p95": 0.01000000536441803,
+						"p99": 0.01000000536441803,
+						"max": 0.4399999976158142,
+						"min": 0,
+						"mean": 0.0046906902454462345
+					},
+					"cull": {
+						"count": 19689,
+						"median": 0.030000001192092896,
+						"p95": 0.03999999165534973,
+						"p99": 0.05500000715255737,
+						"max": 0.5049999952316284,
+						"min": 0,
+						"mean": 0.03043882369895216
+					},
+					"record": {
+						"count": 19689,
+						"median": 0.08999998867511749,
+						"p95": 0.12000000476837158,
+						"p99": 0.16499999165534973,
+						"max": 1.524999976158142,
+						"min": 0.009999990463256836,
+						"mean": 0.08872466859092647
+					}
+				}
+			},
+			"render-worker": {
+				"busyMs": {
+					"count": 19689,
+					"median": 0.1599999964237213,
+					"p95": 0.2199999988079071,
+					"p99": 0.3149999976158142,
+					"max": 3.75,
+					"min": 0.024999991059303284,
+					"mean": 0.1617692620518778
+				},
+				"phases": {
+					"replay": {
+						"count": 19689,
+						"median": 0.1550000011920929,
+						"p95": 0.2150000035762787,
+						"p99": 0.3050000071525574,
+						"max": 3.7300000190734863,
+						"min": 0.024999991059303284,
+						"mean": 0.15633348573355516
+					}
+				}
+			}
+		},
+		"gpuMs": {
+			"count": 1790,
+			"median": 1.147691011428833,
+			"p95": 2.136281383037567,
+			"p99": 2.75000277996063,
+			"max": 3.8052749633789062,
+			"min": 0.7711129784584045,
+			"mean": 1.2434750264583354
+		},
+		"gpuPassMs": [
+			{
+				"name": "copies",
+				"ms": {
+					"count": 1653,
+					"median": 0.0034580000210553408,
+					"p95": 0.38248579502105673,
+					"p99": 0.7943049955368046,
+					"max": 1.4663530588150024,
+					"min": 0.00004099999932805076,
+					"mean": 0.07121758247575816
+				}
+			},
+			{
+				"name": "compute",
+				"ms": {
+					"count": 3580,
+					"median": 0.0856660008430481,
+					"p95": 0.13170699775218964,
+					"p99": 0.17408960938453674,
+					"max": 0.29778701066970825,
+					"min": 0.06299900263547897,
+					"mean": 0.0903431354829386
+				}
+			},
+			{
+				"name": "occluders",
+				"ms": {
+					"count": 1790,
+					"median": 0.013124000281095505,
+					"p95": 0.019207999110221863,
+					"p99": 0.02512500062584877,
+					"max": 0.14695599675178528,
+					"min": 0.01075000036507845,
+					"mean": 0.014026690507047503
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 1790,
+					"median": 0.8386119902133942,
+					"p95": 1.3449873030185697,
+					"p99": 1.7779360580444303,
+					"max": 2.520251989364624,
+					"min": 0.5649499893188477,
+					"mean": 0.8892908484576135
+				}
+			},
+			{
+				"name": "light depth",
+				"ms": {
+					"count": 1790,
+					"median": 0.019874999299645424,
+					"p95": 0.06409084983170031,
+					"p99": 0.0902345027029514,
+					"max": 0.14599700272083282,
+					"min": 0.01412499975413084,
+					"mean": 0.025580572057515384
+				}
+			},
+			{
+				"name": "final",
+				"ms": {
+					"count": 1790,
+					"median": 0.7657179832458496,
+					"p95": 1.3089990437030792,
+					"p99": 1.710820131301876,
+					"max": 2.499253988265991,
+					"min": 0.034915000200271606,
+					"mean": 0.8133099403128278
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 1790,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0.588201024569571,
+					"min": 0,
+					"mean": 0.00043309439629233084
+				}
+			}
+		],
+		"gpuStepMs": null,
+		"intervalMs": {
+			"count": 19690,
+			"median": 1.4249999523162842,
+			"p95": 2.744999885559082,
+			"p99": 3.450000047683716,
+			"max": 18.93000030517578,
+			"min": 0.12999999523162842,
+			"mean": 1.524258253718464
+		},
+		"presentedFps": 656.0568050463079,
+		"completedFps": 656.0572422940227,
+		"gpuLatencyMs": {
+			"count": 19690,
+			"median": 2.6600000858306885,
+			"p95": 3.984999895095825,
+			"p99": 5.4166499471664515,
+			"max": 25.219999313354492,
+			"min": 1.7300000190734863,
+			"mean": 2.8317056873717728
+		},
+		"uploadBytes": {
+			"count": 19690,
+			"median": 21748,
+			"p95": 21988,
+			"p99": 22068,
+			"max": 22068,
+			"min": 21188,
+			"mean": 21716.73539867953
+		},
+		"drawCalls": {
+			"count": 19690,
+			"median": 5,
+			"p95": 5,
+			"p99": 5,
+			"max": 5,
+			"min": 5,
+			"mean": 5
+		},
+		"triangles": {
+			"count": 19690,
+			"median": 1,
+			"p95": 1,
+			"p99": 1,
+			"max": 1,
+			"min": 1,
+			"mean": 1
+		},
+		"visibleEntries": null,
+		"occludedEntries": {
+			"count": 19690,
+			"median": 0,
+			"p95": 0,
+			"p99": 0,
+			"max": 0,
+			"min": 0,
+			"mean": 0
+		},
+		"rebuilds": 0,
+		"pipelines": 0,
+		"skippedDraws": 0,
+		"gpuObjects": 0,
+		"memory": {
+			"wasmBytes": 13631488,
+			"jsHeap": {
+				"bytes": 63097042,
+				"byScope": {
+					"Window http://localhost:5175/bench/pages/null3d/s3.html?gpu=webgpu&preset=medium&direct=off&occlusion=on&occlusion-check=off&still-camera=off": 23083099,
+					"shared": 860195,
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/sketch-worker-LwAQ9kCD.js": 19582808,
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/render-worker-C2OAvYjt.js": 19570940
+				}
+			},
+			"jsHeapSamples": [
+				{
+					"atSeconds": 13.01604999999702,
+					"bytes": 63097042
+				}
+			],
+			"jsHeapNote": null
+		},
+		"load": {
+			"engineStartMs": 351.20000000298023,
+			"probeMs": 90.41499999165535,
+			"coreMs": 8.799999997019768,
+			"firstFrameMs": 710.68994140625,
+			"firstFrameDoneMs": 720.364990234375,
+			"warmUpMs": 24.044921875,
+			"firstDrawMs": 3.320000007748604,
+			"firstFramePipelines": 15,
+			"firstFramePreset": "medium"
+		},
+		"gpuLosses": 0,
+		"downloadBytes": {
+			"wasm": 1978900
+		},
+		"lostRecords": 0,
+		"completionSignal": "queue",
+		"refreshHz": 48,
+		"mainThread": {
+			"longTasks": 0,
+			"longestTaskMs": 0,
+			"inputDelayMs": null
+		},
+		"perSecond": [
+			{
+				"presentedFps": 634,
+				"completedFps": 634
+			},
+			{
+				"presentedFps": 451,
+				"completedFps": 451
+			},
+			{
+				"presentedFps": 453,
+				"completedFps": 453
+			},
+			{
+				"presentedFps": 487,
+				"completedFps": 487
+			},
+			{
+				"presentedFps": 624,
+				"completedFps": 624
+			},
+			{
+				"presentedFps": 613,
+				"completedFps": 613
+			},
+			{
+				"presentedFps": 649,
+				"completedFps": 649
+			},
+			{
+				"presentedFps": 656,
+				"completedFps": 656
+			},
+			{
+				"presentedFps": 649,
+				"completedFps": 649
+			},
+			{
+				"presentedFps": 655,
+				"completedFps": 655
+			},
+			{
+				"presentedFps": 725,
+				"completedFps": 725
+			},
+			{
+				"presentedFps": 709,
+				"completedFps": 709
+			},
+			{
+				"presentedFps": 715,
+				"completedFps": 715
+			},
+			{
+				"presentedFps": 723,
+				"completedFps": 723
+			},
+			{
+				"presentedFps": 699,
+				"completedFps": 699
+			},
+			{
+				"presentedFps": 656,
+				"completedFps": 656
+			},
+			{
+				"presentedFps": 648,
+				"completedFps": 648
+			},
+			{
+				"presentedFps": 692,
+				"completedFps": 692
+			},
+			{
+				"presentedFps": 660,
+				"completedFps": 660
+			},
+			{
+				"presentedFps": 681,
+				"completedFps": 681
+			},
+			{
+				"presentedFps": 669,
+				"completedFps": 669
+			},
+			{
+				"presentedFps": 678,
+				"completedFps": 678
+			},
+			{
+				"presentedFps": 627,
+				"completedFps": 627
+			},
+			{
+				"presentedFps": 684,
+				"completedFps": 684
+			},
+			{
+				"presentedFps": 743,
+				"completedFps": 743
+			},
+			{
+				"presentedFps": 744,
+				"completedFps": 744
+			},
+			{
+				"presentedFps": 715,
+				"completedFps": 715
+			},
+			{
+				"presentedFps": 679,
+				"completedFps": 679
+			},
+			{
+				"presentedFps": 675,
+				"completedFps": 674
+			},
+			{
+				"presentedFps": 688,
+				"completedFps": 689
+			}
+		]
+	},
+	"machineLoad": {
+		"before": 6.53955078125,
+		"after": 12.4580078125
+	}
+}

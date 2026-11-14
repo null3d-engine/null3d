@@ -1,0 +1,19 @@
+[package]
+name = "null3d-splats"
+description = "The splats add-on's per-frame work: the chunk selection and its distance sort, as a WebAssembly module for the add-on's job workers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The one float operation that core leaves to the standard library: its square root. The
+# WebAssembly build keeps no standard library, so it takes it from here.
+libm = "0.2.16"
+
+[lints]
+workspace = true

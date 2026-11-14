@@ -2,7 +2,13 @@
 // with shape keys in sparse accessors as Blender writes it, and files that must fail with their
 // codes. The sketch posts what it found as `result`.
 import { defineSketch, EngineError, type Mesh } from '@null3d/engine';
-import { armBuilder, blenderMorphBuilder, GltfBuilder, shipBuilder } from '../lib/gltf-files';
+import {
+	armBuilder,
+	blenderMorphBuilder,
+	GltfBuilder,
+	shipBuilder,
+	sunsBuilder,
+} from '../lib/gltf-files';
 import { avifHeader, pngHeader } from '../lib/image-headers';
 
 /** The address of bytes, for assets.loadGltf. */
@@ -18,6 +24,13 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	const batch = scene.createInstances(ship, 8);
 	const face = await assets.loadGltf(addressOf(blenderMorphBuilder().glb()));
 	const faceMesh = scene.instantiate(face, { position: [-3, 0, 0] }).find('Face') as Mesh;
+	// A file with several directional lights keeps every one of them. A directional light has the
+	// hero shadow that the other lights lack, which tells its kind without the class's value.
+	const suns = scene.instantiate(await assets.loadGltf(addressOf(sunsBuilder().glb())));
+	const sunLights = ['Key', 'Fill', 'Rim'].map((name) => {
+		const light = suns.find(name);
+		return light !== undefined && 'setHeroShadow' in light;
+	});
 
 	/** The code of the error that loading `url` gives, or 'none'. */
 	const codeOf = async (url: string, options?: Parameters<typeof assets.loadGltf>[1]) => {
@@ -84,6 +97,8 @@ export default defineSketch(async ({ scene, assets, page }) => {
 	const codes = {
 		broken: await codeOf(addressOf(broken.glb())),
 		required: await codeOf(addressOf(shipBuilder().uses('KHR_materials_variants', true).glb())),
+		// The same extension used but not required loads, and a development build notes it.
+		used: await codeOf(addressOf(shipBuilder().uses('KHR_materials_variants').glb())),
 		missing: await codeOf(addressOf(missing.gltf(bin), 'model/gltf+json')),
 		loop: await codeOf(addressOf(loop.glb())),
 		huge: await codeOf(addressOf(huge.glb())),
@@ -109,6 +124,7 @@ export default defineSketch(async ({ scene, assets, page }) => {
 		bounds: [ship.bounds.min, ship.bounds.max],
 		materials: ship.materials.length,
 		faceWeights: ['Smile', 'Blink', 'Rest'].map((name) => faceMesh.getMorphWeight(name)),
+		sunLights,
 		codes,
 	});
 	return {};

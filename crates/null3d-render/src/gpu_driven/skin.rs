@@ -289,14 +289,15 @@ impl Skinning {
 
 /// The group index of the first bind group after the frame's in the mesh pipelines.
 const FIRST_GROUP: u32 = 1;
-/// The bind groups after the frame's that a mesh pipeline reads at most: a material's maps, the
-/// joint texture and the view's index group.
-const MESH_GROUPS: usize = 3;
+/// The bind groups after the frame's that a mesh pipeline reads at most: a material's maps, its
+/// scene group, the joint texture and the view's index group.
+const MESH_GROUPS: usize = 4;
 
 /// The bind groups after the frame's that a bundle or a pass has set while it records its draws.
 /// A mesh pipeline reads, one after another from the group after the frame's: a material's maps
-/// where it samples them, the joint texture where it skins in the vertex shader, and the view's
-/// index group where it reads its instances by index.
+/// where it samples them, the scene group where its surface function reads the scene's depth, the
+/// joint texture where it skins in the vertex shader, and the view's index group where it reads
+/// its instances by index.
 #[derive(Debug, Default)]
 pub(super) struct DrawGroups {
     /// The group set at each index after the frame's, or 0 for none yet.
@@ -305,17 +306,19 @@ pub(super) struct DrawGroups {
 
 impl DrawGroups {
     /// Sets the groups that a draw's pipeline reads where they differ from those set: the maps'
-    /// group `maps`, or 0 for a pipeline that samples none, with `skins`, the joint texture's, and
-    /// the index group `index`, or 0 for a pipeline that reads copies.
+    /// group `maps`, or 0 for a pipeline that samples none, the scene group `scene`, or 0 for a
+    /// material that reads no scene input, with `skins`, the joint texture's, and the index group
+    /// `index`, or 0 for a pipeline that reads copies.
     pub(super) fn set(
         &mut self,
         list: &mut DrawList,
         maps: u32,
+        scene: u32,
         skins: bool,
         index: u32,
     ) -> Result<(), RecordError> {
         let joints = if skins { ids::JOINTS_GROUP } else { 0 };
-        let wanted = [maps, joints, index]
+        let wanted = [maps, scene, joints, index]
             .into_iter()
             .filter(|&group| group != 0);
         for (slot, group) in wanted.enumerate() {
@@ -587,7 +590,7 @@ impl Skinning {
                 continue;
             };
             let vertex_skins = || {
-                let material = scene.materials()[slot];
+                let material = settings.drawn_material(scene.materials()[slot]);
                 let shading = settings.materials().shading(material.wrapping_sub(1));
                 !shading.is_ok_and(Shading::is_full_shader)
                     && settings
@@ -743,7 +746,9 @@ impl Skinning {
             .enumerate()
         {
             if *made < needed {
-                *made = grown_size(needed, binding_bytes);
+                *made = grown_size(needed, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
                 // The motion pass copies the regions into its own buffers each frame.
                 let flags = usage::STORAGE | usage::VERTEX | usage::COPY_SRC;
                 let id = ids::skinned(buffer as u32);
@@ -757,7 +762,10 @@ impl Skinning {
         }
         let table_bytes = self.table_entries * ENTRY_WORDS * 4;
         if self.table_made < table_bytes {
-            self.table_made = grown_size(table_bytes, binding_bytes);
+            self.table_made =
+                grown_size(table_bytes, binding_bytes).ok_or(RecordError::BufferFull {
+                    bytes: binding_bytes,
+                })?;
             let flags = usage::STORAGE | usage::COPY_DST;
             list.push(Op::CreateBuffer, &[ids::SKIN_TABLE, self.table_made, flags])?;
             self.groups_stale = true;
@@ -1073,11 +1081,12 @@ mod tests {
                 0
             ]
         );
-        // A morphed mesh's color is morphed into four floats, not copied. Source: the morph
-        // attribute after the weights, at 60 bytes. Skinned: the color at 48, 64 bytes in all.
+        // A morphed mesh's color is morphed into four floats, not copied. Source: the record
+        // after the weights, at 60 bytes, four floats long. Skinned: the color at 48, 64 bytes in
+        // all.
         let morphed = format | vertex::MORPH;
         let [strides, more, runs] = format_entries(morphed, false);
-        assert_eq!(strides[..2], [17, 16]);
+        assert_eq!(strides[..2], [19, 16]);
         assert_eq!(more[3], 15);
         let color = 11 | (Type::Unorm8 as u32) << 8 | (12 << 16);
         assert_eq!(runs, [5 | (6 << 8) | (2 << 16), 0, color, 0]);
@@ -1085,7 +1094,7 @@ mod tests {
         // after them move up. Skinned: position 0, normal 12, uv 16, tangent 24, the color as
         // floats at 28, 44 bytes in all.
         let [strides, more, runs] = format_entries(morphed, true);
-        assert_eq!(strides[..2], [17, 11]);
+        assert_eq!(strides[..2], [19, 11]);
         assert_eq!(more[0], 7 | (6 << 16));
         let color = 11 | (Type::Unorm8 as u32) << 8 | (7 << 16);
         assert_eq!(runs, [5 | (4 << 8) | (2 << 16), 0, color, 0]);

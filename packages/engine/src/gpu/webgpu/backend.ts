@@ -3,15 +3,24 @@
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
 import { messageOf } from '../../errors/message';
+import { SHADING_CUSTOM_FIRST } from '../../generated/core';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
+import { DROP_COUNTED_LABEL } from '../../shared/metrics';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
+import {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
+import { variantFor } from '../variants';
 import { BufferReads } from './buffer-reads';
 import type { CulledCounts } from './culled-counts';
 import type { CubeGenerator } from './environment';
@@ -57,6 +66,13 @@ TEXTURE_FORMATS[G.FORMAT_R16_FLOAT] = 'r16float';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
+
+/**
+ * Bits of the scale draw's instance that hold the texels across the destination: a light's image
+ * takes at most 512, so they fit in ten. The source's layer sits above them. The mipmap shader's
+ * scale pipeline reads both.
+ */
+const SCALE_SIZE_BITS = 10;
 
 const VIEW_DIMENSIONS: (GPUTextureViewDimension | undefined)[] = [];
 VIEW_DIMENSIONS[G.VIEW_2D] = '2d';
@@ -104,6 +120,23 @@ function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
 	return value;
 }
 
+/**
+ * A pass command's label. The label follows the second color target, and takes its place in a list
+ * that names no second target. A list that names no label, as a hand-made one may, gives 0.
+ */
+function passLabel(a: number, length: number, words: Uint32Array): number {
+	if (length > 12) return words[a + 10] as number;
+	if (length > 10) return words[a + 9] as number;
+	return 0;
+}
+
+/** A pass command's scope, which follows the label, or 0 for a list that names none. */
+function passScope(a: number, length: number, words: Uint32Array): number {
+	if (length > 12) return words[a + 11] as number;
+	if (length > 11) return words[a + 10] as number;
+	return 0;
+}
+
 /** The views, bind groups and pass descriptors that make the mip levels of one layer of a texture. */
 interface MipChain {
 	readonly layer: number;
@@ -125,6 +158,8 @@ export class WebGPUBackend {
 	readonly gpuMemory = new GpuMemory();
 	/** Each texture's view for bind groups: the whole texture, in the dimension it was made with. */
 	private readonly bindingViews: (GPUTextureView | undefined)[] = [];
+	/** The view dimension that each texture's bind groups see, which its bind views share. */
+	private readonly viewDimensions: (GPUTextureViewDimension | undefined)[] = [];
 	/** Each render target's view: a texture of one layer and one mip level, or a view of one. */
 	private readonly targetViews: (GPUTextureView | undefined)[] = [];
 	private readonly samplers: (GPUSampler | undefined)[] = [];
@@ -171,11 +206,23 @@ export class WebGPUBackend {
 	skinsInVertexShaders = false;
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
+	/** The opcode and word of the command that the replay is carrying out. */
+	private replayOp = -1;
+	private replayWord = -1;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
 	private skipDraws = false;
 	/** True while the compute pass's pipeline is building: its dispatches do nothing. */
 	private skipDispatches = false;
 	private readonly bindGroups: (GPUBindGroup | undefined)[] = [];
+	/** The words of each bind group, so one is made again when a texture it names is made again. */
+	private readonly bindGroupWords: (Uint32Array | undefined)[] = [];
+	/**
+	 * A group that names the old view reads the new texture from its next set on. The set compares
+	 * the group's epoch with the texture's, so a frame that makes no group again pays one compare.
+	 */
+	private textureEpoch = 0;
+	/** The texture epoch at which each bind group was made. */
+	private readonly bindGroupEpoch: number[] = [];
 	/**
 	 * Each bundle's commands as the draw list recorded them, which `ExecuteBundles` replays into the
 	 * render pass. The backend makes no native render bundles: Safari 26 encodes a bundle that holds
@@ -194,6 +241,12 @@ export class WebGPUBackend {
 	timer: GpuTimer | undefined;
 	/** Reads back what the draws culled on the GPU drew, while the page samples. */
 	culled: CulledCounts | undefined;
+	/**
+	 * True once a replay met an indirect draw, which is a draw that the GPU's culling wrote the
+	 * count of. A page whose frames draw none has no count to read back, so it makes no counts
+	 * module and fetches no part of the engine for one.
+	 */
+	culledDrawn = false;
 	/**
 	 * The device shaders that load another module when a pipeline needs builds with other fixed
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
@@ -225,6 +278,15 @@ export class WebGPUBackend {
 	private copyBuffer: GPUBuffer | undefined;
 	/** Copy buffers that a larger one replaced, which commands not yet submitted may still read. */
 	private readonly retiredCopyBuffers: GPUBuffer[] = [];
+	/**
+	 * Textures that a later creation replaced, with their bytes, which commands not yet submitted
+	 * may still read. WebGPU forbids a submit that names a destroyed texture, and a frame recreates
+	 * a data texture on the same id when the scene grows, so the old one goes only after this
+	 * frame's submit. Its bytes stay in the total until the device frees it.
+	 */
+	private readonly retiredTextures: { texture: GPUTexture; bytes: number }[] = [];
+	/** Replaced textures whose work the GPU may still run, which a backend that stops frees. */
+	private readonly retiringTextures: { texture: GPUTexture; bytes: number }[] = [];
 	/** Where the bytes of `ReadBuffer` commands land, which the frame replay sets. */
 	readSink: ReadSink | undefined;
 	private readonly reads = new BufferReads();
@@ -267,7 +329,10 @@ export class WebGPUBackend {
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
 		const value = table[id];
-		if (value === undefined) throw new Error(`draw list names ${what} ${id}, which does not exist`);
+		if (value === undefined)
+			throw new Error(
+				`draw list names ${what} ${id}, which does not exist${this.replayWord < 0 ? '' : `, in command ${this.replayOp} at word ${this.replayWord}`}`,
+			);
 		return value;
 	}
 
@@ -354,7 +419,10 @@ export class WebGPUBackend {
 	 */
 	private createTexture(words: Uint32Array, a: number): void {
 		const id = words[a] as number;
+		// A texture made again on its id leaves every group that names it reading an old view.
+		const replacing = this.textures[id] !== undefined;
 		this.releaseTexture(id);
+		if (replacing) this.textureEpoch++;
 		const width = words[a + 1] as number;
 		const height = words[a + 2] as number;
 		const layers = words[a + 3] as number;
@@ -378,6 +446,7 @@ export class WebGPUBackend {
 		const bytes = textureBytes(format, width, height, layers, mips, samples, dimension === '3d');
 		this.textureSizes[id] = bytes;
 		this.gpuMemory.addTextures(bytes);
+		this.viewDimensions[id] = dimension;
 		if (bound)
 			this.bindingViews[id] = texture.createView({
 				dimension,
@@ -407,17 +476,67 @@ export class WebGPUBackend {
 		});
 	}
 
+	/**
+	 * A view of a range of one texture's array layers, for bind groups to name. The range keeps a
+	 * compute pass's storage writes and its reads of the state before on separate subresources.
+	 */
+	private createBindView(words: Uint32Array, a: number): void {
+		const id = words[a] as number;
+		this.releaseTexture(id);
+		const base = words[a + 1] as number;
+		const texture = this.need(this.textures, base, 'texture');
+		const dimension = this.viewDimensions[base];
+		if (!dimension || !this.bindingViews[base])
+			throw new Error(`texture ${base} has no view for bind groups`);
+		this.viewDimensions[id] = dimension;
+		this.bindingViews[id] = texture.createView({
+			dimension,
+			baseArrayLayer: words[a + 2] as number,
+			arrayLayerCount: words[a + 3] as number,
+		});
+	}
+
+	/** Clears a range of a texture's layers to zero, one layer at a time, outside the passes. */
+	private clearTexture(words: Uint32Array, a: number): void {
+		const texture = this.need(this.textures, words[a] as number, 'texture');
+		const base = words[a + 1] as number;
+		const count = words[a + 2] as number;
+		const encoder = this.commandEncoder();
+		for (let layer = 0; layer < count; layer++) {
+			const view = texture.createView({
+				dimension: '2d',
+				usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+				baseArrayLayer: base + layer,
+				arrayLayerCount: 1,
+			});
+			encoder
+				.beginRenderPass({
+					colorAttachments: [
+						{
+							view,
+							clearValue: { r: 0, g: 0, b: 0, a: 0 },
+							loadOp: 'clear',
+							storeOp: 'store',
+						},
+					],
+				})
+				.end();
+		}
+	}
+
 	/** Destroys a texture, or releases a view. */
 	private releaseTexture(id: number): void {
 		this.canvasResolved.delete(id);
 		const texture = this.textures[id];
 		if (texture) {
 			this.generators?.release(texture, this.gpuMemory);
-			texture.destroy();
-			this.gpuMemory.addTextures(-(this.textureSizes[id] as number));
+			// A command of the frame being recorded may still read it, so it goes after the submit.
+			// Its bytes leave the total when the device frees it.
+			this.retiredTextures.push({ texture, bytes: this.textureSizes[id] as number });
 		}
 		this.textures[id] = undefined;
 		this.bindingViews[id] = undefined;
+		this.viewDimensions[id] = undefined;
 		this.targetViews[id] = undefined;
 		this.mipChains[id] = undefined;
 	}
@@ -473,22 +592,74 @@ export class WebGPUBackend {
 	 * draws into its level of the layer, and reads the level before it through a view of every
 	 * layer, as compatibility mode binds whole arrays only. The views, bind groups and pass
 	 * descriptors stay with the texture, so a render target whose levels a frame makes in every
-	 * frame makes none of them again.
+	 * frame makes none of them again. `levels` holds how many levels the image needs, or 0 for the
+	 * texture's own count.
 	 */
-	private generateMipmaps(id: number, layer: number): void {
+	private generateMipmaps(id: number, layer: number, levels = 0): void {
 		const texture = this.need(this.textures, id, 'texture');
 		const pipeline = this.pipelines.mipmaps(texture.format);
 		let chain = this.mipChains[id];
 		if (!chain || chain.layer !== layer || chain.pipeline !== pipeline)
 			chain = this.mipChains[id] = this.mipChain(texture, pipeline, layer);
 		const encoder = this.commandEncoder();
-		for (let level = 1; level < texture.mipLevelCount; level++) {
+		const count = levels === 0 ? texture.mipLevelCount : Math.min(levels, texture.mipLevelCount);
+		for (let level = 1; level < count; level++) {
 			const pass = encoder.beginRenderPass(chain.passes[level - 1] as GPURenderPassDescriptor);
 			pass.setPipeline(pipeline);
 			pass.setBindGroup(0, chain.groups[level - 1] as GPUBindGroup);
 			pass.draw(3, 1, 0, layer);
 			pass.end();
 		}
+	}
+
+	/**
+	 * Draws one layer of a source texture into the first texels of one layer of a light's image,
+	 * at a size of its own, then makes that layer's mip levels: a spot light's picture that a
+	 * sketch set as a texture. The image's corner is the smallest `size` by `size` texels of the
+	 * layer, which the light tables' shaders read, so a source larger than the corner is reduced.
+	 * The scale pipeline takes the image's size and the source's layer in its first instance.
+	 */
+	private copyIntoImage(words: Uint32Array, a: number): void {
+		const sourceId = words[a] as number;
+		const sourceLayer = words[a + 1] as number;
+		const destId = words[a + 2] as number;
+		const destLayer = words[a + 3] as number;
+		const size = words[a + 4] as number;
+		const levels = words[a + 5] as number;
+		const source = this.need(this.textures, sourceId, 'texture');
+		const dest = this.need(this.textures, destId, 'texture');
+		const pipeline = this.pipelines.mipScale(dest.format);
+		this.mipSampler ??= this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+		const sourceView = source.createView({
+			dimension: '2d-array',
+			baseMipLevel: 0,
+			mipLevelCount: 1,
+			usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+		});
+		const group = this.device.createBindGroup({
+			layout: pipeline.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: sourceView },
+				{ binding: 1, resource: this.mipSampler },
+			],
+		});
+		const target = dest.createView({
+			dimension: '2d',
+			baseMipLevel: 0,
+			mipLevelCount: 1,
+			baseArrayLayer: destLayer,
+			arrayLayerCount: 1,
+			usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+		});
+		const pass = this.commandEncoder().beginRenderPass({
+			colorAttachments: [{ view: target, loadOp: 'clear', storeOp: 'store' }],
+		});
+		pass.setPipeline(pipeline);
+		pass.setBindGroup(0, group);
+		pass.setScissorRect(0, 0, size, size);
+		pass.draw(3, 1, 0, size | (sourceLayer << SCALE_SIZE_BITS));
+		pass.end();
+		this.generateMipmaps(destId, destLayer, levels);
 	}
 
 	/** What making the levels of one layer of a texture with `pipeline` draws with, level by level. */
@@ -543,8 +714,39 @@ export class WebGPUBackend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const panorama = words[a + 3] as number;
 			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + CLOUD_STEPS_WORD] as number;
+			const field = words[a + CLOUD_FIELD_WORD] as number;
+			const noise =
+				cloudSteps > 0 && field !== 0 ? this.need(this.textures, field, 'texture') : undefined;
+			// The page's sky layer, once its shader is here: the map's texels then hold the layer
+			// that the background shows, and so do the reflections and the light taken from them.
+			const template = words[a + LAYER_WORD] as number;
+			const layer =
+				template === 0
+					? undefined
+					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'wgsl');
+			const capture = words[a + LIGHT_BUFFER_WORD] as number;
+			// A capture draws the frame again to read it back, and the light capture already ran in
+			// the frame that it draws again: a second draw would write a buffer whose read is still
+			// mapping it, which the device refuses.
+			const readback =
+				capture === 0 || this.canvasTarget ? undefined : this.need(this.buffers, capture, 'buffer');
 			const encoder = this.commandEncoder();
-			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source);
+			code.skyStage(
+				this.device,
+				encoder,
+				texture,
+				words,
+				floats,
+				a,
+				this.gpuMemory,
+				source,
+				layer,
+				readback,
+				noise,
+			);
 		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
 
@@ -618,6 +820,7 @@ export class WebGPUBackend {
 		this.culled?.copy(encoder);
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
+		if (this.retiredTextures.length > 0) this.destroyRetiredTextures();
 		const start = this.routes.timing ? performance.now() : 0;
 		this.staging.afterSubmit();
 		if (this.routes.timing) this.routes.ringWork(performance.now() - start);
@@ -631,6 +834,27 @@ export class WebGPUBackend {
 	private destroyRetired(): void {
 		for (const buffer of this.retiredCopyBuffers) this.destroyBuffer(buffer);
 		this.retiredCopyBuffers.length = 0;
+	}
+
+	/**
+	 * Destroys the textures that a later creation replaced, once the GPU has finished the work that
+	 * named them. A command buffer already handed to the queue keeps the texture it names, so the
+	 * device frees it only after that work completes.
+	 */
+	private destroyRetiredTextures(): void {
+		if (this.retiredTextures.length === 0) return;
+		const retiring = this.retiredTextures.splice(0);
+		this.retiringTextures.push(...retiring);
+		void this.device.queue.onSubmittedWorkDone().then(() => {
+			for (const entry of retiring) {
+				// A backend that stopped has already freed these, and counts their bytes once.
+				const at = this.retiringTextures.indexOf(entry);
+				if (at < 0) continue;
+				this.retiringTextures.splice(at, 1);
+				entry.texture.destroy();
+				this.gpuMemory.addTextures(-entry.bytes);
+			}
+		});
 	}
 
 	resetCounts(): void {
@@ -659,6 +883,7 @@ export class WebGPUBackend {
 	 * nothing.
 	 */
 	prepare(words: Uint32Array, start: number, end: number): number {
+		this.replayWord = -1;
 		let i = start;
 		while (i < end) {
 			const header = words[i] as number;
@@ -781,6 +1006,15 @@ export class WebGPUBackend {
 
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
 	private computeReady(template: number, permutation: number): boolean {
+		// An add-on's compute pass brings its own whole shader, which the sketch sent before the
+		// frame that first creates its pipeline. The template is defined once that shader arrives,
+		// and until then its pipeline waits.
+		const custom = this.images.shaders.get(template);
+		if (custom?.kind === 'compute') {
+			if (!this.pipelines.has(template)) this.pipelines.defineCustom(template, custom);
+			return true;
+		}
+		if (template >= SHADING_CUSTOM_FIRST) return false;
 		const variants = this.pipelines.computeVariants(template, permutation);
 		return (
 			variants === undefined || (this.moreShaders?.ready(variants, permutation, 'wgsl') ?? true)
@@ -946,8 +1180,14 @@ export class WebGPUBackend {
 			let length = header >>> 8;
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
+			this.replayOp = op;
+			this.replayWord = i;
 			switch (op) {
 				case G.OP_CREATE_BUFFER: {
+					// A capture draws the frame again, and the buffers of that frame exist already:
+					// making one again would destroy the buffer that a read is still mapping it from,
+					// and the read would fail with the buffer gone.
+					if (this.canvasTarget && this.buffers[words[a] as number] !== undefined) break;
 					this.counts.objects++;
 					this.releaseBuffer(words[a] as number);
 					// A buffer of indirect draws is also a source of copies: of each draw's arguments
@@ -955,9 +1195,12 @@ export class WebGPUBackend {
 					// (./indirect-arguments.ts), and of the counts that the culling shaders wrote
 					// while the page samples (./culled-counts.ts).
 					const usage = words[a + 2] as number;
+					const gpuUsage = usage & ~G.BUFFER_USAGE_DROP_COUNTED;
 					this.buffers[words[a] as number] = device.createBuffer({
+						label: usage & G.BUFFER_USAGE_DROP_COUNTED ? DROP_COUNTED_LABEL : undefined,
 						size: words[a + 1] as number,
-						usage: usage & G.BUFFER_USAGE_INDIRECT ? usage | G.BUFFER_USAGE_COPY_SRC : usage,
+						usage:
+							gpuUsage & G.BUFFER_USAGE_INDIRECT ? gpuUsage | G.BUFFER_USAGE_COPY_SRC : gpuUsage,
 					});
 					this.gpuMemory.addBuffers(words[a + 1] as number);
 					break;
@@ -998,6 +1241,13 @@ export class WebGPUBackend {
 				case G.OP_CREATE_TEXTURE_VIEW:
 					this.counts.objects++;
 					this.createView(words, a);
+					break;
+				case G.OP_CREATE_BIND_VIEW:
+					this.counts.objects++;
+					this.createBindView(words, a);
+					break;
+				case G.OP_CLEAR_TEXTURE:
+					this.clearTexture(words, a);
 					break;
 				case G.OP_WRITE_TEXTURE: {
 					// A texel write lands when the queue receives it, as writeBuffer does, before the
@@ -1048,6 +1298,9 @@ export class WebGPUBackend {
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
 					break;
+				case G.OP_COPY_INTO_IMAGE:
+					this.copyIntoImage(words, a);
+					break;
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
@@ -1096,31 +1349,10 @@ export class WebGPUBackend {
 					// A list that creates a pipeline after other commands builds it at once.
 					this.createPipeline(op, words, a, false);
 					break;
-				case G.OP_CREATE_BIND_GROUP: {
+				case G.OP_CREATE_BIND_GROUP:
 					this.counts.objects++;
-					const layout = this.pipelines.layout(words[a + 1] as number);
-					const entries: GPUBindGroupEntry[] = [];
-					for (let e = 0, at = a + 3; e < (words[a + 2] as number); e++, at += 5) {
-						const kind = words[at + 1] as number;
-						const id = words[at + 2] as number;
-						const size = words[at + 4] as number;
-						let resource: GPUBindingResource;
-						if (kind === G.RESOURCE_BUFFER)
-							resource = {
-								buffer: this.need(this.buffers, id, 'buffer'),
-								offset: words[at + 3] as number,
-								size: size === 0 ? undefined : size,
-							};
-						else if (kind === G.RESOURCE_TEXTURE)
-							resource = this.need(this.bindingViews, id, 'bound texture');
-						else if (kind === G.RESOURCE_SAMPLER)
-							resource = this.need(this.samplers, id, 'sampler');
-						else throw new Error(`unknown bind group resource kind ${kind}`);
-						entries.push({ binding: words[at] as number, resource });
-					}
-					this.bindGroups[words[a] as number] = device.createBindGroup({ layout, entries });
+					this.createBindGroup(words, a);
 					break;
-				}
 				case G.OP_CLEAR_BUFFER:
 					this.commandEncoder().clearBuffer(
 						this.need(this.buffers, words[a] as number, 'buffer'),
@@ -1139,8 +1371,11 @@ export class WebGPUBackend {
 						floats,
 						a + 3,
 					);
-					// The weighted layer's pass names a second color target after the flags.
-					setup.setSecondColor(length > 10 ? this.targetView(words[a + 9] as number) : undefined);
+					// The weighted layer's pass names a second color target after the flags, then
+					// its label and its scope. A pass without a second target leaves its word out,
+					// so the command is shorter.
+					const second = length > 12 ? (words[a + 9] as number) : G.NO_TARGET;
+					setup.setSecondColor(second === G.NO_TARGET ? undefined : this.targetView(second));
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,
@@ -1148,7 +1383,9 @@ export class WebGPUBackend {
 						floats,
 						a + 7,
 					);
-					setup.setTimestampWrites(this.timer?.passWrites(true));
+					setup.setTimestampWrites(
+						this.timer?.passWrites(true, passLabel(a, length, words), passScope(a, length, words)),
+					);
 					this.indirect.begin(words, i + length, end, this.bundles, this.buffers, this.openEncoder);
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					this.skipDraws = false;
@@ -1207,7 +1444,12 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_BEGIN_COMPUTE_PASS:
-					this.computePass.timestampWrites = this.timer?.passWrites(false);
+					// The pass names its label, then its scope.
+					this.computePass.timestampWrites = this.timer?.passWrites(
+						false,
+						length > 0 ? (words[a] as number) : 0,
+						length > 1 ? (words[a + 1] as number) : 0,
+					);
 					computePass = this.commandEncoder().beginComputePass(this.computePass);
 					this.skipDispatches = false;
 					break;
@@ -1230,15 +1472,21 @@ export class WebGPUBackend {
 					computePass?.end();
 					computePass = undefined;
 					break;
-				case G.OP_COPY_BUFFER_TO_BUFFER:
+				case G.OP_COPY_BUFFER_TO_BUFFER: {
+					const target = this.need(this.buffers, words[a + 2] as number, 'buffer');
+					// A capture replays a frame that the loop replayed already, and skips its reads. A
+					// copy into a buffer that a read maps would reach it while the first replay's map
+					// may still be under way, which the device refuses.
+					if (this.canvasTarget && (target.usage & GPUBufferUsage.MAP_READ) !== 0) break;
 					this.commandEncoder().copyBufferToBuffer(
 						this.need(this.buffers, words[a] as number, 'buffer'),
 						words[a + 1] as number,
-						this.need(this.buffers, words[a + 2] as number, 'buffer'),
+						target,
 						words[a + 3] as number,
 						words[a + 4] as number,
 					);
 					break;
+				}
 				case G.OP_READ_BUFFER:
 					if (this.canvasTarget) break;
 					this.reads.add(
@@ -1258,15 +1506,71 @@ export class WebGPUBackend {
 			i += length;
 		}
 		this.submit();
+		// A list that destroyed a texture and recorded no command still lets the device free it.
+		if (this.retiredTextures.length > 0) this.destroyRetiredTextures();
 		this.reads.start(this.readSink);
 		this.staging.endFrame();
 	}
 
+	/**
+	 * Makes a bind group and keeps what it names. A data texture is made again on the same id when
+	 * the scene grows, so a group that names it is made again, from these words, before its next
+	 * set. The words are copied, because the draw list's memory is used again, into a buffer that
+	 * the group keeps, so a group that a frame makes again allocates nothing.
+	 */
+	private createBindGroup(words: Uint32Array, a: number): void {
+		const id = words[a] as number;
+		const length = 3 + 5 * (words[a + 2] as number);
+		let kept = this.bindGroupWords[id];
+		if (kept === undefined || kept.length !== length) {
+			kept = new Uint32Array(length);
+			this.bindGroupWords[id] = kept;
+		}
+		// A loop, not subarray: a view of the draw list would be one allocation for every group that
+		// a frame makes again.
+		for (let k = 0; k < length; k++) kept[k] = words[a + k] as number;
+		this.bindGroups[id] = this.makeBindGroup(kept, 0);
+		this.bindGroupEpoch[id] = this.textureEpoch;
+	}
+
+	/** Makes a bind group's native object from the words that name its resources, at `a`. */
+	private makeBindGroup(words: Uint32Array, a: number): GPUBindGroup {
+		const layout = this.pipelines.layout(words[a + 1] as number);
+		const entries: GPUBindGroupEntry[] = [];
+		for (let e = 0, at = a + 3; e < (words[a + 2] as number); e++, at += 5) {
+			const kind = words[at + 1] as number;
+			const id = words[at + 2] as number;
+			const size = words[at + 4] as number;
+			let resource: GPUBindingResource;
+			if (kind === G.RESOURCE_BUFFER)
+				resource = {
+					buffer: this.need(this.buffers, id, 'buffer'),
+					offset: words[at + 3] as number,
+					size: size === 0 ? undefined : size,
+				};
+			else if (kind === G.RESOURCE_TEXTURE)
+				resource = this.need(this.bindingViews, id, 'bound texture');
+			else if (kind === G.RESOURCE_SAMPLER) resource = this.need(this.samplers, id, 'sampler');
+			else throw new Error(`unknown bind group resource kind ${kind}`);
+			entries.push({ binding: words[at] as number, resource });
+		}
+		return this.device.createBindGroup({ layout, entries });
+	}
+
 	/** Sets a bind group on a pass. The dynamic offsets are read straight from the draw list. */
 	private setBindGroup(pass: GPUBindingCommandsMixin, words: Uint32Array, a: number): void {
+		const id = words[a + 1] as number;
+		// A texture that a group names was made again on its id, so the group takes its new view.
+		if (this.bindGroupEpoch[id] !== this.textureEpoch) {
+			const kept = this.bindGroupWords[id];
+			if (kept !== undefined) {
+				this.bindGroups[id] = this.makeBindGroup(kept, 0);
+				this.bindGroupEpoch[id] = this.textureEpoch;
+			}
+		}
 		pass.setBindGroup(
 			words[a] as number,
-			this.need(this.bindGroups, words[a + 1] as number, 'bind group'),
+			this.need(this.bindGroups, id, 'bind group'),
 			words,
 			a + 3,
 			words[a + 2] as number,
@@ -1344,7 +1648,8 @@ export class WebGPUBackend {
 				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
 				const buffer = this.need(this.buffers, id, 'buffer');
-				this.culled?.note(buffer, offset, this.lines);
+				if (this.culled) this.culled.note(buffer, offset, this.lines);
+				else this.culledDrawn = true;
 				if (copy) pass.drawIndexedIndirect(copy, 0);
 				else pass.drawIndexedIndirect(buffer, offset);
 				return true;
@@ -1393,6 +1698,9 @@ export class WebGPUBackend {
 	destroy(): void {
 		for (let id = 0; id < this.buffers.length; id++) this.releaseBuffer(id);
 		for (let id = 0; id < this.textures.length; id++) this.releaseTexture(id);
+		this.bindGroupWords.length = 0;
+		this.bindGroupEpoch.length = 0;
+		this.textureEpoch = 0;
 		this.endCapture();
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
@@ -1400,5 +1708,16 @@ export class WebGPUBackend {
 		if (this.copyBuffer) this.destroyBuffer(this.copyBuffer);
 		this.copyBuffer = undefined;
 		this.destroyRetired();
+		// The device goes with the backend, so its queue reports nothing more to wait for.
+		for (const entry of this.retiredTextures) {
+			entry.texture.destroy();
+			this.gpuMemory.addTextures(-entry.bytes);
+		}
+		for (const entry of this.retiringTextures) {
+			entry.texture.destroy();
+			this.gpuMemory.addTextures(-entry.bytes);
+		}
+		this.retiredTextures.length = 0;
+		this.retiringTextures.length = 0;
 	}
 }

@@ -1,0 +1,79 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": 40,
+		"sunRise": 48,
+		"skyShare": 0.5,
+		"daylight": 5.5,
+		"fov": 30
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": 20,
+		"sunRise": 52,
+		"skyShare": 0.5,
+		"daylight": 5.2,
+		"fov": 30
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 30,
+		"sunRise": 68,
+		"skyShare": 0.55,
+		"daylight": 3.8
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.5,
+		"daylight": 3.6,
+		"distance": 4
+	},
+	"05-crown-underside.png": {
+		"skyShare": 0.68,
+		"daylight": 2.1
+	},
+	"06-inside-crown.png": {
+		"skyShare": 0.6,
+		"daylight": 1.9
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.62,
+		"daylight": 1.9
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.12,
+		"eye": 0.3
+	},
+	"08-limb-fork.png": {
+		"background": "studio-grey",
+		"sky": "#c8c4be"
+	},
+	"common-ash-turntable.mp4": {
+		"skyShare": 0.62,
+		"daylight": 2.2
+	},
+	"common-ash-wind-motion.mp4": {
+		"skyShare": 0.62,
+		"daylight": 2.2
+	},
+	"09-secondary-branching.png": {
+		"leaves": 3.4,
+		"roll": -90
+	},
+	"10-fine-twigs.png": {
+		"leaves": 1.3
+	},
+	"19-keys.png": {
+		"season": "summer"
+	},
+	"14-bark-base.png": {
+		"daylight": 1.0,
+		"barkMask": true
+	},
+	"28-young-bark.png": {
+		"thin": 0.015,
+		"span": 0.1,
+		"barkMask": true
+	},
+	"15-bark-mid-trunk.png": {},
+	"16-bark-on-limb.png": {}
+}

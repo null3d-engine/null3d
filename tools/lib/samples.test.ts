@@ -257,4 +257,40 @@ describe('copyNamedSamples', () => {
 			rmSync(out, { recursive: true, force: true });
 		}
 	});
+
+	it('copies the chunk files that a named splat stream index names', () => {
+		const cache = scratch();
+		const out = scratch();
+		const before = process.env.NULL3D_SAMPLES_DIR;
+		process.env.NULL3D_SAMPLES_DIR = cache;
+		try {
+			const named = namedSamples(repoRoot, ['examples']).map((sample) => sample.path ?? '');
+			const index = named.find((path) => path.endsWith('bolton-priory-stream/index.json'));
+			expect(index).toBeDefined();
+			const commit = join(cache, readLock(repoRoot).commit);
+			for (const path of named) {
+				mkdirSync(join(commit, path, '..'), { recursive: true });
+				writeFileSync(join(commit, path), path);
+			}
+			const folder = (index as string).slice(0, -'index.json'.length);
+			const stream = {
+				format: 'null3d.splats.stream',
+				version: 1,
+				count: 2,
+				chunks: [{ url: 'chunk-0.spz' }, { url: 'chunk-1.spz' }],
+			};
+			writeFileSync(join(commit, index as string), JSON.stringify(stream));
+			for (const chunk of ['chunk-0.spz', 'chunk-1.spz'])
+				writeFileSync(join(commit, folder, chunk), chunk);
+			const copied = copyNamedSamples(repoRoot, out);
+			expect(copied).toContain(`${folder}chunk-0.spz`);
+			expect(copied).toContain(`${folder}chunk-1.spz`);
+			expect(readFileSync(join(out, folder, 'chunk-1.spz'), 'utf8')).toBe('chunk-1.spz');
+		} finally {
+			if (before === undefined) delete process.env.NULL3D_SAMPLES_DIR;
+			else process.env.NULL3D_SAMPLES_DIR = before;
+			rmSync(cache, { recursive: true, force: true });
+			rmSync(out, { recursive: true, force: true });
+		}
+	});
 });

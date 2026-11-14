@@ -28,7 +28,7 @@ null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere
 | WebGPU compatibility mode | Chrome 146+ on devices that have only OpenGL ES 3.1 or Direct3D 11 | Compute shaders and indirect draws on older GPUs | About 45% of these devices allow no storage buffers in vertex shaders; 16-bit float targets cannot use MSAA; uniform bindings stop at 16 KB |
 | WebGL2 | Every other supported browser: iPhones and iPads on iOS and iPadOS 18, Android phones without WebGPU (including phones with Samsung Xclipse GPUs), Firefox on Android and Linux | Instancing, uniform buffers, MSAA | No compute shaders, no indirect draws, no storage buffers |
 
-These facts were checked in September 2026. Browser support changes often, so this table can go out of date. At run time, the engine's feature tests decide.
+Browser support changes often, so this table can go out of date. At run time, the engine's feature tests decide.
 
 ## How each path draws
 
@@ -57,13 +57,15 @@ WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](q
 
 ## Color and anti-aliasing on each tier
 
-The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it.
+The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it. One exception: when the start-up preset check lowers the preset, the demo draws with the lower preset's mode. The engine moves the canvas to a lighter mode for that, and never under the viewer's own preset change.
 
 | Mode | How the frame draws it |
 | --- | --- |
 | `msaa` | The opaque pass draws 4 samples per pixel into color and depth targets the size of the canvas, and its render pass averages them. Edges and thin lines come out smooth. WebGL2 lets every device draw at least 4 samples. |
 | `fxaa` | The opaque pass draws one sample per pixel. The final pass finds edges by their contrast, and blends each pixel on an edge with its neighbors along the edge. It needs less memory and bandwidth than MSAA, and blurs thin lines a little. |
 | `none` | The opaque pass draws one sample per pixel, and nothing smooths the edges. |
+
+The moment transparency layer draws its surfaces at one sample per pixel, whatever the mode. While a sketch turns `momentTransparency` on, SMAA 1x smooths the layer's edges under the share that its moments cover, and MSAA's samples keep smoothing the opaque geometry around them. SMAA reads the color, so it works on every tier and replaces no other mode. It runs only under that share, so it does not soften edges that MSAA already smoothed.
 
 The scene's color target differs from tier to tier:
 
@@ -91,7 +93,7 @@ The engine draws reversed depth: the near plane stores 1 and the far plane store
 | WebGL2 with the `EXT_clip_control` extension | Reversed, in a 32-bit float buffer | Out to 10 km |
 | WebGL2 without it | Reversed, in WebGL2's range from -1 to 1 | Out to about 250 m |
 
-WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In September 2026, Chrome, Safari and Brave had it on a MacBook Pro. So did Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS did not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
+WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In the engine's tests, Chrome, Safari and Brave have it on a MacBook Pro. So do Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS does not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
 
 The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension. In both, depth textures such as [shadow maps](shadows.md) hold the same values as on WebGPU. Shaders that read depth then work the same on every tier. The `?depth=standard` switch below gives a third value, `standard`.
 
@@ -101,7 +103,7 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision, directDraws }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth, halfPrecision, directDraws, drawPath }
 ```
 
 The `features` field lists the WebGPU adapter's optional features. On WebGL2 it lists the extensions that the engine asks for and the browser has. The `limits` field gives the WebGPU adapter's limits, and is empty on WebGL2. The engine acts on these tests:
@@ -113,7 +115,7 @@ The `features` field lists the WebGPU adapter's optional features. On WebGL2 it 
 - rendering into 16-bit and 32-bit float textures, and into the packed `R11F_G11F_B10F` format, on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 - transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
 
-The engine also measures whether direct draws are clearly faster than its indirect draws. That is not a capability flag. `engine.capabilities.directDraws` reports the choice, and it is false on WebGL2, which always draws directly.
+On an Apple GPU in WebKit, the engine also measures whether direct draws are faster than its indirect draws. WebKit is the engine of Safari and of every browser on iPhone and iPad. It checks each indirect draw at a fixed cost, which direct draws do not pay. That is not a capability flag. The `directDraws` field reports the choice, and it is false on WebGL2, which always draws directly. The `drawPath` field says why the engine took its path. On other devices it is `not-apple-gpu-in-webkit`, since they skip the measurement.
 
 Where float targets take the anti-aliasing mode, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU and on WebGL2 devices that pass the float target test. It holds in compatibility mode with FXAA or none too. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
@@ -148,6 +150,8 @@ A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, whi
 ## Never branch on GPU names
 
 Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead.
+
+The engine itself reads a name only to work around a measured cost of one browser on one kind of GPU. The direct draw path is such a case. It runs only on an Apple GPU in WebKit, where the engine measures it faster. A noisy measurement on another device then cannot pick it.
 
 ## Devices with two GPUs
 

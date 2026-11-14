@@ -13,6 +13,11 @@
 //!   from black in full shadow to white in full light. The gray is the shadow factor that lit
 //!   shading multiplies the sun's light by, so tests can read shadows alone, without the lighting
 //!   and the materials. A surface that receives no shadows shows white.
+//! - levels: one color for each level of detail that a draw picks, and a dither of two colors where
+//!   two levels hand over in a fading band. A source that the size rule or a draw range hid draws
+//!   at its base level in a striped marker color, at the place it would have drawn. Each level is
+//!   its own bucket, so the culling carries the level in each entry and the view needs no shader
+//!   for each material.
 //! - motion: each pixel's whole motion since the last frame as a color: its direction as the hue,
 //!   its length as the brightness (see [`crate::motion`]). The scene draws with its materials, so
 //!   the depth and the masks are what the motion's readers see, and a full-screen step then draws
@@ -35,6 +40,7 @@ pub mod code {
     pub const WIREFRAME: u32 = 4;
     pub const SHADOWS: u32 = 5;
     pub const MOTION: u32 = 6;
+    pub const LEVELS: u32 = 7;
 }
 
 /// How the scene draws: with its materials, or with one debug shading.
@@ -48,6 +54,7 @@ pub enum DebugView {
     Wireframe = code::WIREFRAME as isize,
     Shadows = code::SHADOWS as isize,
     Motion = code::MOTION as isize,
+    Levels = code::LEVELS as isize,
 }
 
 impl DebugView {
@@ -61,6 +68,7 @@ impl DebugView {
             code::WIREFRAME => Self::Wireframe,
             code::SHADOWS => Self::Shadows,
             code::MOTION => Self::Motion,
+            code::LEVELS => Self::Levels,
             _ => return None,
         })
     }
@@ -91,6 +99,12 @@ impl DebugView {
             Self::Wireframe => (
                 permutation::DEBUG_VIEW_LOW | permutation::DEBUG_VIEW_HIGH,
                 state_flags::LINE_LIST,
+            ),
+            // Its buckets list the level code beside each entry, which WebGL2 reads only with the
+            // fading bit, so every level draws with it.
+            Self::Levels => (
+                permutation::DEBUG_VIEW_LEVELS | permutation::LOD_FADE,
+                faces,
             ),
             Self::Shadows if shades_with_lights(key.template) => (
                 permutation::RECEIVE_SHADOWS | permutation::DEBUG_VIEW_LOW,
@@ -172,10 +186,10 @@ mod tests {
 
     #[test]
     fn codes_name_each_view_once() {
-        for view in 0..7 {
+        for view in 0..8 {
             assert_eq!(DebugView::from_code(view).map(|v| v as u32), Some(view));
         }
-        assert_eq!(DebugView::from_code(7), None);
+        assert_eq!(DebugView::from_code(8), None);
         assert!(DebugView::Motion.is_debug());
         assert_eq!(
             DebugView::Motion.draw_key(BLENDED),
@@ -215,6 +229,29 @@ mod tests {
             permutation::DEBUG_VIEW_LOW | permutation::DEBUG_VIEW_HIGH
         );
         assert_eq!(wireframe.state, state_flags::LINE_LIST);
+    }
+
+    #[test]
+    fn the_levels_view_lists_its_level_and_fades_in_its_own_buckets() {
+        let levels = DebugView::Levels.draw_key(BLENDED);
+        assert_eq!(levels.template, template::DEBUG_VIEW);
+        assert_eq!(
+            levels.permutation,
+            permutation::DEBUG_VIEW_LEVELS | permutation::LOD_FADE
+        );
+        // No other view takes that combination, and the shadows view never meets it.
+        for view in [
+            DebugView::Normals,
+            DebugView::Depth,
+            DebugView::Overdraw,
+            DebugView::Wireframe,
+            DebugView::Shadows,
+        ] {
+            assert_ne!(view.draw_key(BLENDED).permutation, levels.permutation);
+        }
+        assert_eq!(levels.state, state_flags::CULL_NONE);
+        assert!(!levels.blends());
+        assert_eq!(receiving(levels), levels, "a shadow map adds nothing here");
     }
 
     #[test]

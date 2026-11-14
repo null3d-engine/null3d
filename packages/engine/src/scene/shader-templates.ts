@@ -7,10 +7,10 @@
 //
 // The thread that draws gets the builds of its GPU path only, so it never holds the other path's
 // text. A custom material's builds load on first use, in sets by the permutation bits that a
-// device fixes and by skinning. When the sketch first uses the material, this thread imports the
-// set of its device's bits that does not skin and sends it on. The thread that draws asks for
-// another set when a pipeline first needs one, and this thread imports that set then. It imports
-// and sends each set of a template once.
+// device fixes and by skinning; an effect's and a tone curve's take one set for each GPU path.
+// When the sketch first uses a shader, this thread imports its first set and sends it on. The
+// thread that draws asks for another set when a pipeline first needs one, and this thread imports
+// that set then. It imports and sends each set of a template once.
 
 import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
@@ -71,8 +71,8 @@ export class ShaderTemplates {
 	 * The first template of `compiled`. The first call for it takes a template for each shader that
 	 * `shaders` gives, in order, and sends each one to the thread that draws. On the dev server,
 	 * WGSL under the hot update key `hot` shares the templates of the first WGSL under it, and the
-	 * newest shaders under it go first. `later` imports the sets of the first shader's builds,
-	 * which load on first use: the device's set starts to load at once.
+	 * newest shaders under it go first. `later` imports the sets of the builds of the shaders that
+	 * load on first use: the first set of each starts to load at once.
 	 */
 	of(
 		compiled: object,
@@ -90,10 +90,13 @@ export class ShaderTemplates {
 			this.next += made.length;
 			for (let k = 0; k < made.length; k++) this.give(first + k, made[k] as CustomShader);
 			if (key !== undefined) this.hotFirsts.set(key, first);
-			if (later && made[0]?.builds) {
-				this.later.set(first, later);
-				this.answer(first, this.deviceSet);
-			}
+			if (later)
+				for (let k = 0; k < made.length; k++) {
+					const shader = made[k] as CustomShader;
+					if (!shader.builds) continue;
+					this.later.set(first + k, later);
+					this.answer(first + k, shader.buildsSet ?? this.deviceSet);
+				}
 		}
 		this.firsts.set(compiled, first);
 		return first;

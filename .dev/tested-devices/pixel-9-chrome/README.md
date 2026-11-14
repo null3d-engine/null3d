@@ -10,5 +10,6 @@
 ## Known issues
 
 The phone grows hot in long benchmark runs.
-In the S1 background run of 2026-10-07, runs 2 to 5 drew 33 to 42 fps, at 14.1 to 17.4 ms of GPU time on every page.
-The GPU timer's pass times overlap on this GPU, so only the whole frame's GPU time is reliable
+In the S1 background runs, runs 2 to 5 drew 33 to 42 fps ([run](20261004-earlier-runs.md)).
+They took 14.1 to 17.4 ms of GPU time on every page.
+The GPU timer's pass times overlap on this GPU, so only the whole frame's GPU time is reliable.

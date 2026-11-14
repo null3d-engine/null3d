@@ -1,8 +1,8 @@
 # D-154: WebGL2's multi-draw shaders read their draw records from a texture
 
-Status: decided. Date: 12 October 2026. Task: M2-R28.
+Status: decided by the M2-R28 helper and the team lead, from the figures below. Built: the multi-draw builds read their records from a texture on every device. Task: M2-R28.
 
-Summary: The WebGL2 builds that draw many buckets in one multi-draw call read each draw's record from a texture, at the draw index. They read it from a uniform block before. On a Galaxy Tab A9+ (Adreno 619), 444 of 557 such programs then failed to link, with an empty log. Every device takes the texture, so there is one path. The renderer still binds the records as a uniform buffer range, and the WebGL2 backend copies the range into a texture on the GPU.
+Summary: The WebGL2 builds that draw many buckets in one multi-draw call read each draw's record from a texture, at the draw index. Read from a uniform block, 444 of 557 such programs fail to link on a Galaxy Tab A9+ (Adreno 619), with an empty log. Every device takes the texture at no measurable cost: the renderer binds a uniform buffer range, and the WebGL2 backend copies it into a texture.
 
 ## Question
 
@@ -16,7 +16,7 @@ How should a WebGL2 vertex shader of a multi-draw build read its draw's record? 
 
 ## Data
 
-The Galaxy Tab A9+ (SM-X216B, Adreno 619, Android 14, Chrome 152), BrowserStack's device cloud, 12 October 2026. A probe page linked the engine's failing programs in changed forms, each with its own fragment shader:
+The Galaxy Tab A9+ (SM-X216B, Adreno 619, Android 14, Chrome 152), BrowserStack's device cloud. A probe page linked the engine's failing programs in changed forms, each with its own fragment shader:
 
 | Form of the vertex shader | Result |
 | --- | --- |
@@ -31,7 +31,7 @@ The Galaxy Tab A9+ (SM-X216B, Adreno 619, Android 14, Chrome 152), BrowserStack'
 | A constant index | Links |
 | The table in an `RGBA32UI` texture, read with `texelFetch` (chosen) | Links |
 
-The first three of the nine parts of the shader check hold 557 multi-draw programs. As built, 444 of them failed. With the texture, none failed. Small test programs that read a uniform table at `gl_DrawID` linked.
+The first three of the nine parts of the shader check hold 557 multi-draw programs. With the uniform block, 444 of them fail. With the texture, none fails. Small test programs that read a uniform table at `gl_DrawID` linked.
 
 Cost, on a Google Pixel 9 in BrowserStack's cloud (Chrome 152, WebGL2, which links both forms). Each figure is the median of one 10-second run, 3 runs of each build, at the device's default preset. The render thread replays the draw list, so it pays for the copies. The phone gives no GPU timer on WebGL2, so the frame interval stands in for GPU time.
 
@@ -66,8 +66,6 @@ On both devices, the texture's figures lie within the spread of the uniform bloc
 
 ## Decision
 
-The `DRAW_INDEX` builds declare the draw records as a `texture_2d<u32>` at group 1, binding 0. They read the record at the draw index (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer binds the same uniform buffer range as before. A program may read a texture at a slot where a bind group left a buffer range. The WebGL2 backend then copies the range into an `RGBA32UI` texture of its own, one texel per 16 bytes, through `PIXEL_UNPACK_BUFFER`, and binds that. A copy stays until the buffer's next write, so the depth prepass, the opaque pass and the shadow passes share it. A new range takes over a copy that no draw read since that write. So the textures stay as many as the ranges that draws read between two writes.
+The `DRAW_INDEX` builds declare the draw records as a `texture_2d<u32>` at group 1, binding 0. They read the record at the draw index (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer binds the records as a uniform buffer range. A program may read a texture at a slot where a bind group left a buffer range. The WebGL2 backend then copies the range into an `RGBA32UI` texture of its own, one texel per 16 bytes, through `PIXEL_UNPACK_BUFFER`, and binds that. A copy stays until the buffer's next write, so the depth prepass, the opaque pass and the shadow passes share it. A new range takes over a copy that no draw read since that write. So the textures stay as many as the ranges that draws read between two writes.
 
-A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index (hard rule 21). It found the shader build's own test shader doing so, which now reads a texture too.
-
-Decided by the M2-R28 helper and team-lead, from the figures above, on 12 October 2026.
+A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index (hard rule 21). The shader build's own test shader reads a texture too.

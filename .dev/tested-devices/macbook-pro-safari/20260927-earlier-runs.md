@@ -39,4 +39,4 @@ Plain Safari: a page with no engine held 1 place, with its page kept, for at lea
 On WebGL2, an engine stopped 2 s before its frame went held 2 places.
 All else came back in 2 to 5 s.
 Through WebDriver, the plain page held 1 to 2 places on both paths.
-The probe's own count can hold every memory it counts, so its room figures are a guide only ([D-92](../../decisions/D-92-safari-removed-frames.md#addendum-2026-10-07)).
+The probe's own count can hold every memory it counts, so its room figures are a guide only ([D-92](../../decisions/D-92-safari-removed-frames.md#what-the-probe-can-and-cannot-show)).

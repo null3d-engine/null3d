@@ -6,8 +6,8 @@
 // Automate's Windows machines have no GPU: their browsers draw with Microsoft's software renderer,
 // which gives no WebGPU adapter. So the Windows runners may lack WebGPU, and their runs test the
 // WebGL2 path in software and the clear failure of each WebGPU page. Firefox on them is left out:
-// it gave no WebGL2 context either, so the smoke plan of 4 October 2026 passed only 2 of its 51
-// pages there, and tested nothing that Chrome's run does not.
+// it gives no WebGL2 context either, so the smoke plan passes only 2 of its 51 pages there, and
+// tests nothing that Chrome's run does not.
 
 /** A tier of the device guide: A for each gate and release, B for each milestone. */
 export type CloudTier = 'A' | 'B';

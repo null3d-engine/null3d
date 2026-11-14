@@ -47,18 +47,20 @@
 use std::collections::TryReserveError;
 
 use null3d_core::alloc::reserve_keeping;
-use null3d_core::cells::ORIGIN_CELL;
+use null3d_core::cells::{CELL_SHIFT, ORIGIN_CELL};
 use null3d_core::clusters::RowCells;
 use null3d_core::culling::{
-    self as core_culling, BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows,
-    NO_BUCKET, RowRadii, SetLayers, SetOrder,
+    self as core_culling, BY_ROW, BucketedCull, CullRun, CullSet, CullView, Frustum, LevelChoice,
+    LevelRows, NO_BUCKET, RowBiases, RowRadii, RowRanges, SetLayers, SetOrder,
 };
-use null3d_core::levels::{LevelLink, LevelRule};
+use null3d_core::levels::LevelRule;
+use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::DrawList;
 
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
-use super::layout::{Clusters, CullRoom, Layout};
+use super::layout::{Clusters, CullRoom, Layout, STREAMED};
+use super::opaque::PatchView;
 use crate::cells::{CellCulling, CellMask, MOVING};
 use crate::frame::{
     CellOffsets, FrameInput, RecordError, RunCells, address, push_runs, words_as_bytes,
@@ -66,6 +68,8 @@ use crate::frame::{
 use crate::materials::MaterialTable;
 use crate::meshes::MeshStorage;
 use crate::occlusion::Occluders;
+use crate::patches::PatchStorage;
+use crate::pieces::CopyFrame;
 use crate::sorted::{SortedLayout, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
@@ -74,6 +78,8 @@ pub(super) struct Occlusion<'a> {
     pub(super) occluders: &'a mut Occluders,
     pub(super) meshes: &'a MeshStorage,
     pub(super) materials: &'a MaterialTable,
+    /// The material that every mesh of the main pass draws with, or 0 for none.
+    pub(super) override_material: u32,
 }
 
 /// The culling sets: the scene's slots in place, the still scene objects through the scene's cell
@@ -116,6 +122,15 @@ struct ViewCull {
     /// Each frame parity's entry lists that a growth replaced, kept until that parity sorts again:
     /// the list of its last frame may still upload from them.
     sorted_kept: [Vec<Vec<u32>>; 2],
+    /// Each frame parity's chosen patch runs, by cluster bucket: each cluster bucket's first run,
+    /// then one past the last.
+    patch_starts: [Vec<u32>; 2],
+    /// Each frame parity's chosen patch runs, one first index and count each. They are pairs, so
+    /// their sort shares the core's one copy of the pairs' sort with the layouts.
+    patch_runs: [Vec<(u32, u32)>; 2],
+    /// The camera's own view's counts of what each mesh's pieces drew, in the frame that culled
+    /// last. Every other view has none.
+    piece_counts: Vec<PieceCount>,
 }
 
 /// Each view's culling output, and the runs of rows that a view culls. The views are of one kind,
@@ -204,6 +219,177 @@ fn push_view_runs(
     Ok(())
 }
 
+/// Where the matrices of a WebGL2 layout's entries come from: the scene's world buffer and the
+/// batches', and the offset from the view's camera to each cell in use.
+struct SourceRows<'a> {
+    input: &'a FrameInput<'a>,
+    layout: &'a Layout,
+    offsets: &'a [[f32; 4]],
+}
+
+impl SourceRows<'_> {
+    /// The rows of the world matrix of the source that an entry of data texture `texture` names,
+    /// moved by its cell's offset from the view's camera, or `None` for a row that no source holds.
+    fn rows(&self, entry: u32, texture: u32) -> Option<[[f32; 4]; 3]> {
+        let parity = self.input.parity();
+        let row = entry & ((1 << CELL_SHIFT) - 1);
+        let cell = (entry >> CELL_SHIFT) as usize;
+        let streamed = texture == STREAMED;
+        let (matrices, at) = if !streamed && row < self.layout.scene_rows {
+            (self.input.scene.world(parity).matrices(), row)
+        } else {
+            let slot = self.layout.batches.iter().find(|slot| {
+                slot.dynamic == streamed && slot.base <= row && slot.bucket != NO_BUCKET && {
+                    let batch = self.input.batches.get(slot.id);
+                    batch.is_ok_and(|batch| row < slot.base + batch.capacity())
+                }
+            })?;
+            let batch = self.input.batches.get(slot.id).ok()?;
+            (batch.world(parity).matrices(), row - slot.base)
+        };
+        let m = matrices.get(at as usize * MATRIX_FLOATS..(at as usize + 1) * MATRIX_FLOATS)?;
+        let offset = self.offsets.get(cell).copied().unwrap_or([0.0; 4]);
+        Some([
+            [m[0], m[1], m[2], m[3] + offset[0]],
+            [m[4], m[5], m[6], m[7] + offset[1]],
+            [m[8], m[9], m[10], m[11] + offset[2]],
+        ])
+    }
+}
+
+/// Lists each entry of each bucket whose mesh draws pieces again in the bucket of each piece that
+/// the copy shows in the view's `frustum`, with the cone test where `cones` allows it (see
+/// [`crate::pieces`]). The pieces' buckets follow every other bucket, so their entries follow every
+/// other entry in the view's index list. With `counts`, each set adds its mesh, the triangles that
+/// its copies would draw whole and those that its pieces draw, for the check of what pieces cull.
+fn list_pieces(
+    cull: &mut BucketedCull,
+    layout: &Layout,
+    rows: &SourceRows<'_>,
+    frustum: &Frustum,
+    cones: bool,
+    mut counts: Option<&mut Vec<PieceCount>>,
+) -> Result<(), TryReserveError> {
+    if let Some(counts) = counts.as_deref_mut() {
+        counts.clear();
+        counts.try_reserve(layout.piece_sets.len())?;
+    }
+    for set in &layout.piece_sets {
+        let words = if set.pairs { 2 } else { 1 };
+        let starts = cull.bucket_starts();
+        let copies =
+            u64::from(starts[set.bucket as usize + 1] - starts[set.bucket as usize]) / words as u64;
+        let (mut whole, mut drawn) = (0u64, 0u64);
+        for k in 0..set.count {
+            let piece = &layout.piece_bounds[(set.first + k - layout.piece_sets[0].first) as usize];
+            let to = (set.first + k) as usize;
+            cull.list_kept(set.bucket, set.first + k, words, |entry| {
+                rows.rows(entry, set.texture)
+                    .is_none_or(|matrix| CopyFrame::new(matrix).shows(frustum, piece, cones))
+            })?;
+            let starts = cull.bucket_starts();
+            let kept = u64::from(starts[to + 1] - starts[to]) / words as u64;
+            whole += u64::from(piece.triangles);
+            drawn += kept * u64::from(piece.triangles);
+        }
+        if let Some(counts) = counts.as_deref_mut() {
+            counts.push(PieceCount {
+                mesh: set.mesh,
+                would: copies * whole,
+                drawn,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// What one mesh's pieces drew in a view: the triangles that its copies in view would draw whole,
+/// and those that its pieces drew.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PieceCount {
+    pub(super) mesh: u32,
+    pub(super) would: u64,
+    pub(super) drawn: u64,
+}
+
+impl ViewCull {
+    /// Picks the patches that the view draws from each cluster bucket's tree. A patch draws where
+    /// its own error passes the view's threshold at its own sphere and the error of the patch
+    /// above it does not pass at that patch's sphere, as the compute pass reads the rule
+    /// ([`crate::patches::PatchTree::walk`]). Runs that are neighbours in the tree's index list merge, so a view uploads fewer
+    /// ranges for the same triangles.
+    fn walk_patches(
+        &mut self,
+        input: &FrameInput<'_>,
+        layout: &Layout,
+        patches: &PatchStorage,
+        rule: &LevelRule,
+    ) {
+        let parity = input.parity();
+        let (patch_runs, patch_starts) =
+            (&mut self.patch_runs[parity], &mut self.patch_starts[parity]);
+        patch_runs.clear();
+        patch_starts.clear();
+        patch_starts.push(0);
+        if layout.cluster_buckets.is_empty() {
+            return;
+        }
+        let starts = self.culls[parity].bucket_starts();
+        let world = input.scene.world(parity);
+        let matrices = world.matrices();
+        let cells = input.scene.cells();
+        let offsets = self.offsets.as_slice();
+        for cluster in &layout.cluster_buckets {
+            let bucket = cluster.bucket as usize;
+            let listed = starts.get(bucket + 1).copied().unwrap_or(0)
+                > starts.get(bucket).copied().unwrap_or(0);
+            let tree = if listed {
+                patches.of(cluster.mesh)
+            } else {
+                None
+            };
+            if let Some(tree) = tree {
+                let slot = cluster.object as usize;
+                let cell = cells.get(slot).copied().unwrap_or(0);
+                let offset = offsets.get(cell as usize).copied().unwrap_or([0.0; 4]);
+                let matrix: &null3d_core::math::Affine = matrices
+                    [slot * MATRIX_FLOATS..(slot + 1) * MATRIX_FLOATS]
+                    .try_into()
+                    .expect("a matrix is 12 floats");
+                let first = patch_runs.len();
+                tree.walk(
+                    matrix,
+                    [offset[0], offset[1], offset[2]],
+                    rule,
+                    self.frame.as_ref().map(|frame| &frame.frustum),
+                    |patch| {
+                        if let Some((start, count)) = tree.run(patch) {
+                            patch_runs.push((start, count));
+                        }
+                    },
+                );
+                patch_runs[first..].sort_unstable();
+                let mut write = first;
+                for read in first..patch_runs.len() {
+                    let run = patch_runs[read];
+                    let joint = write > first && {
+                        let before = patch_runs[write - 1];
+                        before.0 + before.1 == run.0
+                    };
+                    if joint {
+                        patch_runs[write - 1].1 += run.1;
+                    } else {
+                        patch_runs[write] = run;
+                        write += 1;
+                    }
+                }
+                patch_runs.truncate(write);
+            }
+            patch_starts.push(patch_runs.len() as u32);
+        }
+    }
+}
+
 impl Culling {
     /// No culling output yet, for views from `first` on.
     pub(super) fn new(first: ViewId) -> Self {
@@ -258,7 +444,25 @@ impl Culling {
         &self.views[self.slot(view)].offsets
     }
 
+    /// The chosen patch runs of a view, by cluster bucket, for a frame's parity.
+    pub(super) fn patch_view(&self, frame: u32, view: ViewId) -> PatchView<'_> {
+        let parity = (frame & 1) as usize;
+        match view.index().checked_sub(self.first.index()) {
+            Some(slot) => match self.views.get(slot) {
+                Some(view) => PatchView::new(&view.patch_starts[parity], &view.patch_runs[parity]),
+                None => PatchView::NONE,
+            },
+            None => PatchView::NONE,
+        }
+    }
+
     /// The objects, rows and clusters that a view's culling tested in the frame that culled last.
+    /// What each mesh's pieces drew in the camera's own view, in the frame that culled last.
+    pub(super) fn piece_counts(&self) -> &[PieceCount] {
+        self.output(ViewId::CAMERA)
+            .map_or(&[], |view| view.piece_counts.as_slice())
+    }
+
     pub(super) fn tested(&self, view: ViewId) -> u32 {
         self.output(view).map_or(0, |view| view.tested)
     }
@@ -266,6 +470,18 @@ impl Culling {
     /// The culling output of a frame's parity for a view: its visible sources, bucket by bucket.
     pub(super) fn culled(&self, frame: u32, view: ViewId) -> &BucketedCull {
         &self.views[self.slot(view)].culls[(frame & 1) as usize]
+    }
+
+    /// A view's culling output for a frame, or `None` when that frame did not cull or the view has
+    /// no output.
+    pub(super) fn culled_in(&self, frame: u32, view: ViewId) -> Option<&BucketedCull> {
+        if self.culled != frame {
+            return None;
+        }
+        let slot = view.index().checked_sub(self.first.index())?;
+        self.views
+            .get(slot)
+            .map(|view| &view.culls[(frame & 1) as usize])
     }
 
     /// The sources inside the views' frustums that blockers hid in a frame, or 0 for a frame that
@@ -278,6 +494,18 @@ impl Culling {
             .iter()
             .filter(|view| view.frame.is_some())
             .map(|view| view.occluded)
+            .sum()
+    }
+
+    /// The ranges of cluster-tree patches that the views chose in a frame, or 0 for a frame that
+    /// did not cull or views that draw whole levels.
+    pub(super) fn patch_ranges(&self, frame: u32) -> u32 {
+        if self.culled != frame {
+            return 0;
+        }
+        self.views
+            .iter()
+            .map(|view| view.patch_runs[(frame & 1) as usize].len() as u32)
             .sum()
     }
 
@@ -403,6 +631,7 @@ impl Culling {
         frame_of: &dyn Fn(ViewId) -> Option<ViewFrame>,
         rule_of: &dyn Fn(ViewId) -> LevelRule,
         sorted: Option<(&SortedLayout, &SortedLayout, &SortedLayout)>,
+        patches: Option<&PatchStorage>,
         mut occlusion: Option<Occlusion<'_>>,
     ) -> Result<(), TryReserveError> {
         let (parity, scene, batches) = (input.parity(), input.scene, input.batches);
@@ -420,7 +649,14 @@ impl Culling {
             let buffer = match (&mut occlusion, &view.frame) {
                 (Some(o), Some(frame)) if k == 0 => o
                     .occluders
-                    .draw(input, frame, view.offsets.as_slice(), o.meshes, o.materials)?
+                    .draw(
+                        input,
+                        frame,
+                        view.offsets.as_slice(),
+                        o.meshes,
+                        o.materials,
+                        o.override_material,
+                    )?
                     .is_some(),
                 _ => false,
             };
@@ -528,6 +764,8 @@ impl Culling {
                     spheres: scene.world(parity).spheres(),
                     cells: core_culling::RowCells::Rows(scene.cells()),
                     radii: RowRadii::Rows(scene.local_radii()),
+                    biases: RowBiases::Rows(scene.level_biases()),
+                    ranges: RowRanges::Rows(scene.draw_ranges()),
                 };
             }
             let k = (set - FIRST_BATCH_SET) as usize;
@@ -540,10 +778,11 @@ impl Culling {
                     core_culling::RowCells::One,
                 ),
                 radii: RowRadii::One(batch.local_radius()),
+                biases: RowBiases::One(1.0),
+                ranges: core_culling::batch_ranges(batches, batch),
             }
         };
         let links = &layout.level_links;
-        let picks = |bucket: u32| links.get(bucket as usize).is_some_and(LevelLink::has_next);
         for (k, view) in self.views.iter_mut().enumerate() {
             let Some(frame) = &view.frame else {
                 continue;
@@ -552,6 +791,8 @@ impl Culling {
                 rule: rule_of(ViewId::from_index(first + k)),
                 links,
                 rows: &level_rows,
+                codes: layout.codes,
+                levels: &layout.bucket_levels,
             };
             let buffer = occlusion
                 .as_ref()
@@ -578,7 +819,7 @@ impl Culling {
             let by_row = self
                 .runs
                 .iter()
-                .filter(|run| run.bucket == BY_ROW || picks(run.bucket))
+                .filter(|run| choice.run_looks_up(run.bucket, run.set))
                 .count();
             let room = &layout.room;
             view.culls[parity].try_reserve(
@@ -604,6 +845,40 @@ impl Culling {
                 &mut view.culls[parity],
             );
             view.occluded = view.culls[parity].hidden() as u32;
+            view.piece_counts.clear();
+            if !layout.piece_sets.is_empty() {
+                // Only the camera's own view places its instances relative to its eye, where the
+                // cone test holds.
+                let camera = first + k == ViewId::CAMERA.index();
+                let cones = camera && !choice.rule.orthographic;
+                let rows = SourceRows {
+                    input,
+                    layout,
+                    offsets: view.offsets.as_slice(),
+                };
+                list_pieces(
+                    &mut view.culls[parity],
+                    layout,
+                    &rows,
+                    &frame.frustum,
+                    cones,
+                    camera.then_some(&mut view.piece_counts),
+                )?;
+            }
+            // The camera's views draw their cluster meshes from the trees, which the walk picks
+            // patch by patch with the same rule as the GPU's compute pass. Every other layout
+            // draws whole meshes or whole levels.
+            match patches {
+                Some(patches) => view.walk_patches(input, layout, patches, &choice.rule),
+                None => {
+                    for (runs, starts) in
+                        view.patch_runs.iter_mut().zip(view.patch_starts.iter_mut())
+                    {
+                        runs.clear();
+                        starts.clear();
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -688,9 +963,14 @@ impl Culling {
         let k = self.slot(view);
         let state = &mut self.views[k];
         let entries = &state.sorted_entries;
+        // A frame whose index list and patch runs equal the frame before it draws from the ring
+        // slot that already holds them. A camera that moves keeps the same sources in view but
+        // picks other patches, so the runs must match too.
         let kept = state.listed.holds_previous(frame)
             && state.culls[parity].same_entries(&state.culls[parity ^ 1])
-            && entries[parity] == entries[parity ^ 1];
+            && entries[parity] == entries[parity ^ 1]
+            && state.patch_runs[parity] == state.patch_runs[parity ^ 1]
+            && state.patch_starts[parity] == state.patch_starts[parity ^ 1];
         let slot = state.listed.take(frame, !kept);
         if !kept {
             let indices = state.culls[parity].indices();

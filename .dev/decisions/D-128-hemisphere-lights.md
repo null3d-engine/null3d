@@ -1,12 +1,12 @@
 # D-128: Hemisphere lights light surfaces, summed into the frame's values
 
-Status: decided. Date: 2026-10-10. Task: M2-EX12.
+Status: decided. Task: M2-EX12.
 
-Summary: Hemisphere lights now light standard materials and lit lines on every GPU path, with three.js's `HemisphereLight` blend. The core sums any number of them, each frame, into the ambient light and one color per world axis. The frame's values grow by 48 bytes, to 560, and each pixel pays three multiply-adds, with or without hemisphere lights. Their light adds to an environment's light, as in three.js, and neither the environment's intensity nor a material's `envIntensity` scales it.
+Summary: Hemisphere lights light standard materials and lit lines on every GPU path, summed each frame into the ambient light and three axis colors. The three colors take 48 bytes of the frame's values, and each pixel pays three multiply-adds, with or without hemisphere lights. Their light follows three.js's `HemisphereLight` blend and adds to an environment's light; neither the environment's intensity nor a material's `envIntensity` scales it.
 
 ## Question
 
-`scene.createHemisphereLight` was documented, and it returned a light, but no GPU path drew its light. A demo that relied on it for fill got none. How does the engine draw any number of hemisphere lights, whose colors and intensities change in every frame? And how does it keep the cost near zero when a scene has none? And how does their light combine with an environment's?
+`scene.createHemisphereLight` returns a light that must light surfaces, as a demo's fill light. How does the engine draw any number of hemisphere lights, whose colors and intensities change in every frame? And how does it keep the cost near zero when a scene has none? And how does their light combine with an environment's?
 
 ## Rule
 
@@ -28,7 +28,7 @@ three.js's `getHemisphereLightIrradiance` blends `mix(ground, sky, 0.5 * dot(n, 
 
 The constant part of each light joins the ambient sum, which the shaders already add. So the shaders add `ambient + n.x * X + n.y * Y + n.z * Z`. Without hemisphere lights, the three colors are zero, and the sum is the ambient light, bit for bit.
 
-The frame's values were full at 512 bytes. The three colors go at their end, so the offsets of every older field stay. On WebGL2, a frame's slot in the ring of frame values aligns its next part to 256 bytes. So the slot's part before the cell offsets grows from 512 to 768 bytes. That is 256 bytes of GPU memory per slot.
+The fields before them fill the first 512 bytes of the frame's values. The three colors follow them, so no other field moves. On WebGL2, a frame's slot in the ring of frame values aligns its next part to 256 bytes. So the slot's part before the cell offsets takes 768 bytes in place of 512: 256 bytes of GPU memory per slot.
 
 ## Environments
 
@@ -36,11 +36,11 @@ three.js adds the hemisphere lights' irradiance to the ambient light and the lig
 
 The engine does the same. The hemisphere lights join the ambient light. The environment's light, from a file, the built-in room or the sky's environment, adds after it, times the environment's intensity and the material's `envIntensity`. The occlusion map and the frame's ambient occlusion darken all of it. The shader does not know where an environment came from, so the rule is the same for each. A scene lit by the sky's environment already has the sky's light, so it needs no hemisphere light.
 
-Some views have no copy of the opaque colors. There, without an environment, surfaces that let light through take the light behind them from the ambient light. They now take the ambient and hemisphere light along the refracted ray.
+Some views have no copy of the opaque colors. There, without an environment, surfaces that let light through take the light behind them from the ambient and hemisphere light along the refracted ray.
 
 ## Data
 
-Parity with three.js r186, by three.js's image rule (under 0.1% of pixels), on 10 October 2026. The figures give the share of pixels that differ from three.js's page on the same GPU path.
+Parity with three.js r186, by three.js's image rule (under 0.1% of pixels). The figures give the share of pixels that differ from three.js's page on the same GPU path.
 
 | Scene | WebGPU | Compatibility mode | WebGL2 | three.js's two renderers | Device |
 | --- | --- | --- | --- | --- | --- |
@@ -52,9 +52,9 @@ Parity with three.js r186, by three.js's image rule (under 0.1% of pixels), on 1
 
 Compatibility mode's figures with the room pass because three.js's two renderers differ more. They come from the room, not from the hemisphere light: the room alone gives the same figures.
 
-The `lights-hemisphere-split` test draws the light as two halves, one upside down with its colors swapped, set in every frame. It matched the single light's references on all three paths, on the Mac's GPU and on SwiftShader.
+The `lights-hemisphere-split` test draws the light as two halves, one upside down with its colors swapped, set in every frame. It matches the single light's references on all three paths, on the Mac's GPU and on SwiftShader.
 
-GPU time per frame, `bun run bench:gpu-check` on the MacBook Pro in Chrome, WebGPU, 10 October 2026: S4 at Medium 3.91 to 3.92 ms, S6 at Medium 4.70 to 4.78 ms, S4 at High 2.62 to 2.20 ms, S6 at High 10.00 to 8.67 ms. No change lay outside the check's rule of 25% and 0.3 ms. The check judged none, because this change adds a switch to the benchmark pages. Neither scene has a hemisphere light, so the figures measure the three multiply-adds that every pixel now pays.
+GPU time per frame, `bun run bench:gpu-check` on the MacBook Pro in Chrome, WebGPU: S4 at Medium 3.91 to 3.92 ms, S6 at Medium 4.70 to 4.78 ms, S4 at High 2.62 to 2.20 ms, S6 at High 10.00 to 8.67 ms. No change lay outside the check's rule of 25% and 0.3 ms. The check judged none, because the change adds a switch to the benchmark pages. Neither scene has a hemisphere light, so the figures measure the three multiply-adds that every pixel pays.
 
 Allocation, `bun run bench:allocation --hemisphere`: S1 with two hemisphere lights whose intensities change in every frame passes on WebGPU and on WebGL2. No place of the light code shows in the profile.
 
@@ -66,8 +66,8 @@ Option B. The core sums the hemisphere lights in the frame's light pass (`LightT
 
 ## Consequences
 
-- `docs/api/lights.md` and `docs/concepts/lighting.md` describe hemisphere lights and the rule for environments, and drop the note that they do not light yet. The three.js mapping and both skills follow.
+- `docs/api/lights.md` and `docs/concepts/lighting.md` describe hemisphere lights and the rule for environments. The three.js mapping and both skills follow.
 - The image tests add `lights-hemisphere`, `lights-hemisphere-split` and `environment-room-hemisphere`. The parity list compares the first and the last with three.js.
-- Every shader that declares the frame's values carries the three new fields. After Brotli, the WebGPU builds of the lines grew by 150 bytes (2.3%), and the small texture coordinate builds by 67 to 72 bytes (2.8% and 3.9%). Every other file grew by less than 2%.
+- Every shader that declares the frame's values carries the three fields. After Brotli, they add 150 bytes (2.3%) to the WebGPU builds of the lines. They add 67 to 72 bytes (2.8% and 3.9%) to the small texture coordinate builds. Every other file grows by less than 2%.
 - `bun run bench:allocation --hemisphere` samples S1 with two hemisphere lights whose intensities change in every frame.
-- three.js points a hemisphere light's sky from its position toward the origin. null3D points it along the light's +Y axis, as before this record. A port turns the light where three.js moves it.
+- three.js points a hemisphere light's sky from its position toward the origin. null3D points it along the light's +Y axis. A port turns the light where three.js moves it.

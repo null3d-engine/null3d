@@ -1,12 +1,15 @@
-// The capability probe. It reads what the browser and device can do, by feature tests only: the
-// engine never decides anything from browser or GPU names. The report is plain JSON, so test
-// runners can store it and compare it across devices.
+// The capability probe. It reads what the browser and device can do, by feature tests. A choice
+// from browser or GPU names is made only where hard rule 14 allows it, for a measured cost that
+// belongs to one browser on one kind of GPU. The report is plain JSON, so test runners can store
+// it and compare it across devices.
 
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
+import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import type { DeviceHints } from '../quality/chooser';
-import { spawnWorker } from '../shared/worker-start';
+import { readDeviceHints } from '../quality/device-hints';
+import { spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -56,6 +59,7 @@ const WEBGL2_EXTENSIONS = [
 	'EXT_float_blend',
 	'OES_texture_float_linear',
 	'WEBGL_multi_draw',
+	'WEBGL_provoking_vertex',
 	'KHR_parallel_shader_compile',
 	'EXT_disjoint_timer_query_webgl2',
 	'EXT_clip_control',
@@ -107,10 +111,12 @@ export interface WebGPUReport {
 	/**
 	 * True when the start-up probe measured the device drawing a bucket faster with direct draws
 	 * than with the engine's indirect draws, so the engine draws directly. The probe runs on a
-	 * worker's device. It reads no browser or GPU name, except to never choose the direct path on a
-	 * software renderer (D-174). False on WebGL2.
+	 * worker's device, and only on an Apple GPU in WebKit, whose validation of each indirect draw
+	 * the direct path removes (D-174). False on WebGL2.
 	 */
 	directDraws: boolean;
+	/** Why the probe chose that draw path, or why it did not measure. */
+	drawPath: DrawPathReason;
 	/**
 	 * Reported for the record. The engine reads no meaning from it, and only compares it with an
 	 * earlier start's, to tell whether a stored preset check came from the same GPU.
@@ -233,6 +239,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		preferredCanvasFormat: null,
 		transientAttachments: false,
 		directDraws: false,
+		drawPath: 'no-probe',
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -262,6 +269,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			// The worker's probe measures this on the device that draws; until then the engine
 			// keeps its current path.
 			directDraws: false,
+			drawPath: 'no-probe',
 			adapterInfo: info
 				? {
 						vendor: info.vendor,
@@ -379,7 +387,11 @@ export function probeFloatTarget(
 	return { complete, readsBack, samples };
 }
 
-function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
+/**
+ * What a WebGL2 context offers. `multiDraw` false reports the context as a device without
+ * `WEBGL_multi_draw`, which a page switch uses to draw the fallback that such a device takes.
+ */
+function probeWebGL2(powerPreference?: PowerPreference, multiDraw = true): WebGL2Report {
 	const empty: WebGL2Report = {
 		available: false,
 		extensions: {},
@@ -402,11 +414,14 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 		if (!gl) return empty;
 		const extensions: Record<string, boolean> = {};
 		for (const name of WEBGL2_EXTENSIONS) extensions[name] = gl.getExtension(name) !== null;
+		if (!multiDraw) extensions.WEBGL_multi_draw = false;
 		const debug = gl.getExtension('WEBGL_debug_renderer_info');
 		const report: WebGL2Report = {
 			available: true,
 			extensions,
-			supportedExtensions: gl.getSupportedExtensions() ?? [],
+			supportedExtensions: (gl.getSupportedExtensions() ?? []).filter(
+				(name) => multiDraw || name !== 'WEBGL_multi_draw',
+			),
 			maxSamples: gl.getParameter(gl.MAX_SAMPLES) as number,
 			maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
 			maxRenderbufferSize: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
@@ -518,11 +533,12 @@ function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFa
 				timeoutMs,
 			);
 		};
-		worker.onerror = (event) =>
+		watchWorkerError(worker, (message) =>
 			finish({
 				failure: 'failed-to-start',
-				error: event.message || 'the probe worker failed to start',
-			});
+				error: message || 'the probe worker failed to start',
+			}),
+		);
 	});
 }
 
@@ -533,31 +549,21 @@ function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFa
 export type PowerPreference = 'high-performance' | 'low-power';
 
 /**
- * Reads the device hints on the page's main thread, which workers cannot: they have no media
- * queries and no screen.
- */
-export function readDeviceHints(): DeviceHints {
-	const screen = globalThis.screen;
-	const memory = (globalThis.navigator as { deviceMemory?: unknown } | undefined)?.deviceMemory;
-	return {
-		coarsePointer: globalThis.matchMedia?.('(pointer: coarse)').matches ?? false,
-		screenMinEdge: screen ? Math.min(screen.width, screen.height) : 0,
-		deviceMemoryGB: typeof memory === 'number' ? memory : null,
-	};
-}
-
-/**
  * Probes the browser and device, on the GPU that `powerPreference` picks. Runs on the page's main
- * thread. `hints` are the device hints when the page has read them already.
+ * thread. `hints` are the device hints when the page has read them already. `multiDraw` false
+ * reports WebGL2 without `WEBGL_multi_draw`, as the ?multidraw=off switch asks.
  */
 export async function probeCapabilities(
 	powerPreference?: PowerPreference,
 	hints: DeviceHints = readDeviceHints(),
+	multiDraw = true,
 ): Promise<CapabilityReport> {
 	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
 	// The probe worker measures the draw paths on a device of its own, which the render worker's
 	// device answers the same way for the browser and the driver.
-	const directDraws = 'directDraws' in worker && worker.directDraws;
+	const probed = 'directDraws' in worker && webgpu.available;
+	const directDraws = probed && worker.directDraws;
+	const drawPath: DrawPathReason = probed ? worker.drawPath : 'no-probe';
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
@@ -569,8 +575,8 @@ export async function probeCapabilities(
 		transferControlToOffscreen:
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
-		webgpu: { ...webgpu, directDraws: webgpu.available && directDraws },
-		webgl2: probeWebGL2(powerPreference),
+		webgpu: { ...webgpu, directDraws, drawPath },
+		webgl2: probeWebGL2(powerPreference, multiDraw),
 		worker,
 	};
 }

@@ -12,9 +12,14 @@
 //   bun run bench:profile
 //   bun run bench:profile --scene s2 --gpu webgpu --seconds 10
 //   bun run bench:profile --android --n 300000 --thread sketch
+//   bun run bench:profile --scene s4 --gpu webgpu --thread sketch --switches preset=medium&governor=off&still-camera=off
+// `--switches` adds page switches, such as those that a comparison of two builds gives a page, so
+// the profile samples the frames that the comparison times.
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
 import { keepingFocus, launchInWindow, parkChromeWindow } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	attachWorkers,
 	type CallFrame,
@@ -73,6 +78,8 @@ interface Options {
 	warmup: number;
 	android: boolean;
 	dev: boolean;
+	/** Page switches that the page's address adds, without a leading `&`. */
+	switches: string;
 }
 
 function parseArgs(args: string[]): Options {
@@ -105,6 +112,7 @@ function parseArgs(args: string[]): Options {
 		warmup: number('--warmup', WARMUP_SECONDS),
 		android: args.includes('--android'),
 		dev: args.includes(DEV_OPTION),
+		switches: (value('--switches') ?? '').replace(/^&+/, ''),
 	};
 }
 
@@ -147,7 +155,7 @@ async function profileScene(
 	names: BuildNames | undefined,
 ): Promise<SceneProfile> {
 	const pageSeconds = Math.max(options.warmup, options.seconds + 2 * MARGIN_SECONDS);
-	const switches = `seconds=${pageSeconds}${options.n === null ? '' : `&n=${options.n}`}`;
+	const switches = `seconds=${pageSeconds}${options.n === null ? '' : `&n=${options.n}`}${options.switches ? `&${options.switches}` : ''}`;
 	const url = `${serverUrl}${pagePath(scene, `null3d-${options.gpu}`, switches)}`;
 	const { targetId } = await keepingFocus(async () => {
 		const target = await devtools.send<{ targetId: string }>('Target.createTarget', { url });
@@ -206,6 +214,7 @@ function report({ scene, result, split }: SceneProfile, name: ThreadName): strin
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The profile');
 	const options = parseArgs(process.argv.slice(2));
 	const server = await serveBenchPages({ dev: options.dev });
 	const stops: (() => Promise<void> | void)[] = [() => server.stop()];
@@ -218,7 +227,7 @@ async function main(): Promise<void> {
 			devtools = await connectPhoneChrome(DEBUG_PORT);
 		} else {
 			const browser = await launchInWindow({
-				channel: 'chrome',
+				...chromeForTesting(),
 				args: [`--remote-debugging-port=${DEBUG_PORT}`],
 			});
 			stops.push(() => browser.close());

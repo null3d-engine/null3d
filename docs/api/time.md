@@ -62,6 +62,8 @@ In hold mode, the first frame gets 0 and each later frame gets 1/60 second. The 
 | `time.now` | Sketch time in seconds: the sum of every frame's step. It is 0 during the setup function. |
 | `time.dt` | The frame's step in seconds: the `dt` that `onUpdate` and `onLateUpdate` get. It is 0 during the setup function. |
 | `time.frame` | The frame number: 0 during the setup function, 1 in the first frame, and one more in each frame after it. |
+| `time.held` | True while hold mode steps to its held frame, and false otherwise. Work on a cadence reads it to draw in every frame, so a held frame never lands between two of its draws. |
+| `time.drawn` | False in a step of hold mode whose frame the GPU never draws, and true in every other frame. Hold mode draws only the frames at the end of its hold. Work that a frame's GPU passes pay for, such as a solver's runs for the time that passed, waits for a frame that draws, so the held frame carries the whole hold's work once. |
 
 The engine updates the fields at the start of each frame, before it calls `onFixedUpdate`, so `time.now` already includes the frame's step. The fields keep their values until the next frame, in every callback. In hold mode, `time.now` in the last frame is the held time exactly.
 

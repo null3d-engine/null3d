@@ -304,11 +304,14 @@ function sameView(ring: Float64Array, at: number, view: Float64Array): boolean {
  */
 export const VIEW_FLOATS = 19;
 const VIEW_POSITION = 9;
+/** Half the view's width and height in a view that `viewOf` wrote. */
 const VIEW_SCALE_X = 12;
-const VIEW_SCALE_Y = 13;
-const VIEW_ORTHO = 14;
-const VIEW_CENTER_X = 15;
-const VIEW_CENTER_Y = 16;
+export const VIEW_SCALE_Y = 13;
+/** 1 in a view that `viewOf` wrote for an orthographic lens, or 0. */
+export const VIEW_ORTHO = 14;
+/** An orthographic view's center in a view that `viewOf` wrote. */
+export const VIEW_CENTER_X = 15;
+export const VIEW_CENTER_Y = 16;
 /** The distances to the near and far planes in a view that `viewOf` wrote. */
 export const VIEW_NEAR = 17;
 export const VIEW_FAR = 18;

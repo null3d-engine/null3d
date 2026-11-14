@@ -31,6 +31,9 @@ run('warm-up', async () => {
 		});
 	});
 	const adding = engine.measure(SECONDS * 2);
+	// The preset in force while the object is added and warmed up: the engine's own check has
+	// finished by play, so this is the preset that the object's pipelines follow.
+	const playPreset = engine.mode.preset;
 	engine.postToSketch('add');
 	await warmed;
 	const added = await adding;
@@ -47,6 +50,8 @@ run('warm-up', async () => {
 		tier: engine.capabilities.tier,
 		directDraws: engine.capabilities.directDraws,
 		firstFramePipelines: play.load.firstFramePipelines,
+		firstFramePreset: play.load.firstFramePreset,
+		playPreset,
 		warmUpMs: play.load.warmUpMs,
 		engineStartMs: play.load.engineStartMs,
 		firstFrameDoneMs: play.load.firstFrameDoneMs,

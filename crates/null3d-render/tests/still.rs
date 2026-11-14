@@ -268,3 +268,46 @@ fn a_page_that_turns_the_accumulation_off_never_blends() {
     turned_off_never_blends(webgpu);
     turned_off_never_blends(webgl2);
 }
+
+/// The control slot that GPU occlusion culling's reads of its counts raise.
+const READ_SLOT: u32 = 60;
+/// Frames between two trials of GPU occlusion culling's check.
+const CHECK_PERIOD: u32 = 120;
+
+/// True when a frame's commands create GPU occlusion culling's first phase, which they do once an
+/// object may hide others.
+fn creates_occlusion(commands: &[(Op, Vec<u32>)]) -> bool {
+    commands.iter().any(|(op, operands)| {
+        *op == Op::CreateComputePipeline && operands[1] == template::OCCLUSION_EARLY
+    })
+}
+
+#[test]
+fn a_still_view_rests_with_gpu_occlusion_culling_and_its_check() {
+    let mut world = World::build_still(GpuDrivenRenderer::new(RendererConfig {
+        canvas: CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            antialias: Antialias::Msaa,
+            transparent: false,
+        },
+        gpu_occlusion: true,
+        ..RendererConfig::default()
+    }));
+    world.renderer.settings_mut().set_still_enabled(true);
+    world.renderer.set_occlusion_read_slot(READ_SLOT);
+    let mut device = device();
+    let first = step(&mut world, &mut device);
+    assert!(creates_occlusion(&first), "the objects may hide others");
+    // The check's trials and its copies of the counts would record other commands, and each
+    // frame's counts name their frame: a view that rests must keep resting past several trials.
+    rest(&mut world, &mut device);
+    holds(&mut world, &mut device, 3 * CHECK_PERIOD);
+
+    // A moved object draws at once, and the view rests again.
+    let object = world.objects[0];
+    world.scene.set_position(object, [0.0, 3.0, 0.0]).unwrap();
+    step(&mut world, &mut device);
+    assert_eq!(world.renderer.still().samples(), 0, "a change starts again");
+    rest(&mut world, &mut device);
+    holds(&mut world, &mut device, 3 * CHECK_PERIOD);
+}

@@ -10,7 +10,7 @@ summary: "The npm packages; the Vite plugin, which every Vite build needs; packa
 
 > Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The packages are not on npm until the 0.1 release, so the install commands below fail before then.
 
-null3D installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3D sketch.
+null3D installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3D sketch. To try the engine in one HTML file with no install, see [Try null3D from a CDN](cdn.md).
 
 The commands on these pages use [Bun](https://bun.sh) 1.4.3 or newer. Older Bun can drop its link to the browser that `bunx @null3d/cli test` and the tool's other browser commands drive, and the command then waits forever. npm, pnpm and Yarn work too, with their own install and run commands.
 
@@ -48,7 +48,7 @@ Every Vite build of a null3D project needs the plugin, for the dev server and fo
 - Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
 - Compiles your sketch file for the sketch worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core. Each built page that loads the engine gets a small script of its own, which starts the core's download as soon as the page arrives.
 - Compiles the WGSL in your code, in `.wgsl` files and in strings tagged `/* wgsl */`, for WebGPU and WebGL2. A shader error stops Vite with its file, line and column. Beside each `.wgsl` file, the plugin writes a TypeScript declaration that holds the types of the file's uniforms. It compiles on worker threads, so the dev server goes on serving while a shader compiles. On the dev server, a shader that you change reaches the running page without a reload. [Custom shaders](../guides/custom-shaders.md) explains both forms and hot reload.
-- Keeps the engine's development checks in the dev server and removes them from production builds.
+- Keeps the engine's development checks in the dev server and removes them from production builds. Without the plugin, nothing tells the engine's code which build it is in, so it runs as a development build. It then runs every check and reads the page's address switches. This also holds for another bundler, and for a page that imports the package's files with no bundler. The [CDN build](cdn.md#production-and-development-entries) has a production entry for such pages.
 - Builds the engine's workers as ES modules, so that they share the shader files. Without the plugin, Vite builds each worker as one classic script that holds every shader file. Each worker is then about 34 MB, and the page downloads them all at its start. The plugin warns if another setting builds workers in another format.
 - In each worker, starts the files that a file loaded on demand imports together with that file, as Vite does on the page. Without this, a worker asks for them only once the file has arrived, one round trip later. The engine's workers load the renderers of their GPU path this way.
 - Writes the notices of the third-party code that the engine ships beside the page in each production build. [Hosting](hosting.md#publish-the-third-party-notices) says what to do with them.

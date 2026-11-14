@@ -1,10 +1,10 @@
 // Chrome's measurement of the page's memory waits until every worker of the page has run it as a
-// task. An engine's idle job workers used to block in the job loop and never run it, so each
-// measurement took about a minute, and the whole page could stop answering meanwhile: on 12 and 13
-// October 2026, Night town's comparison pages with job workers hung for minutes. While a
-// measurement runs, the engine now lets idle job workers run their threads' tasks between frame
-// jobs. This test starts job workers with a busy scene, then measures the page's memory as the
-// stats overlay does, and checks that the answer comes within seconds while the page answers.
+// task. An idle job worker that blocks in the job loop never runs it, so each measurement takes
+// about a minute, and the whole page can stop answering meanwhile: Night town's comparison pages
+// with job workers hang for minutes. While a measurement runs, the engine lets idle job workers run
+// their threads' tasks between frame jobs. This test starts job workers with a busy scene, then
+// measures the page's memory as the stats overlay does, and checks that the answer comes within
+// seconds while the page answers.
 import { expect, test } from '@playwright/test';
 
 /** The job workers that the page's trail notes as started. */
@@ -12,7 +12,8 @@ const JOB_STARTED = /null3d-job-\d+: started/g;
 
 /**
  * The longest a measurement may take. Without the eager flag, Chrome answers at its next garbage
- * collection, which took up to 17 s on the Mac. Before the fix, it answered after about a minute.
+ * collection, which takes up to 17 s on the Mac. A job worker that never runs the task holds the
+ * answer back for about a minute.
  */
 const MEASURE_LIMIT_MS = 30_000;
 

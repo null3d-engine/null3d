@@ -5,6 +5,7 @@ import type { Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import { engineShadersRoot } from './engine-shaders.ts';
 import {
+	baseNamesIn,
 	engineModule,
 	FEATURE_MODULES,
 	featuresOf,
@@ -384,5 +385,68 @@ describe('missingWorkerAssets', () => {
 			},
 		} as unknown as Rollup.OutputBundle;
 		expect(missingWorkerAssets(bundle, workers)).toEqual([]);
+	});
+});
+
+describe('baseNamesIn', () => {
+	/** The names that one pattern of every base name finds in `text`, as the search did before. */
+	const byPattern = (bases: readonly string[], text: string) => {
+		const literal = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const pattern = new RegExp(
+			[...bases]
+				.sort((a, b) => b.length - a.length)
+				.map(literal)
+				.join('|'),
+			'g',
+		);
+		return [...text.matchAll(pattern)].map(([name]) => name);
+	};
+
+	it('finds names in quotes, after a folder and inside a longer name', () => {
+		const find = baseNamesIn(['index-Ab3_x.js', 'shaders-wgsl-half-Q1w2.js', 'room.ktx2']);
+		const text =
+			'import("./index-Ab3_x.js");const a=["assets/shaders-wgsl-half-Q1w2.js"],b=new URL("room.ktx2",import.meta.url),c="xindex-Ab3_x.js";';
+		expect(find(text).sort()).toEqual([
+			'index-Ab3_x.js',
+			'index-Ab3_x.js',
+			'room.ktx2',
+			'shaders-wgsl-half-Q1w2.js',
+		]);
+	});
+
+	it("finds a name whose extension begins another name's", () => {
+		const find = baseNamesIn(['data.json', 'data.js']);
+		expect(find('"data.json" "data.js"').sort()).toEqual(['data.js', 'data.js', 'data.json']);
+	});
+
+	it('finds names with spaces, and names with no extension, as one pattern does', () => {
+		for (const bases of [
+			['my file.js', 'plain-Ab.js'],
+			['LICENSE', 'plain-Ab.js'],
+		]) {
+			const text = 'a "my file.js" b "plain-Ab.js" c LICENSE';
+			expect(baseNamesIn(bases)(text).sort()).toEqual(byPattern(bases, text).sort());
+		}
+	});
+
+	it('finds every name that one pattern of every base name finds', () => {
+		let seed = 7;
+		const random = (below: number) => {
+			seed = (seed * 1103515245 + 12345) % 2 ** 31;
+			return seed % below;
+		};
+		const parts = ['a', 'b', 'shaders', 'wgsl', 'half', 'Xy', '9_', '$', '~'];
+		const bases = Array.from({ length: 300 }, () => {
+			const words = Array.from({ length: 1 + random(4) }, () => parts[random(parts.length)]);
+			return `${words.join('-')}-${random(1000)}${['.js', '.json', '.css', '.wasm'][random(4)]}`;
+		});
+		const find = baseNamesIn(bases);
+		for (let round = 0; round < 50; round++) {
+			const text = Array.from({ length: 40 }, () =>
+				random(3) === 0 ? bases[random(bases.length)] : ['"', '/', ' ', ',', 'x'][random(5)],
+			).join('');
+			const found = new Set(find(text));
+			for (const name of byPattern(bases, text)) expect(found.has(name)).toBe(true);
+		}
 	});
 });

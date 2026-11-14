@@ -4,6 +4,8 @@ import { ERROR_FIXES } from '../errors/fixes';
 import {
 	ARRAY_UVS,
 	ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE,
+	ARRAYS_PROBLEM_LENGTH,
+	ARRAYS_PROBLEM_LEVEL_BASE,
 	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
 	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
 	ARRAYS_PROBLEM_NOT_FINITE,
@@ -14,6 +16,7 @@ import {
 	MESH_ARRAYS_INDICES,
 	MESH_ARRAYS_JOINTS,
 	MESH_ARRAYS_NORMALS,
+	MESH_ARRAYS_TARGETS,
 	MESH_ARRAYS_UVS,
 	MESH_ARRAYS_WEIGHTS,
 	MORPH_COLORS,
@@ -22,6 +25,7 @@ import {
 } from '../generated/core';
 import {
 	VERTEX_ATTRIBUTES,
+	VERTEX_MORPH,
 	VERTEX_TYPE_SNORM8,
 	VERTEX_TYPE_UINT16,
 	VERTEX_TYPE_UNORM8,
@@ -29,7 +33,14 @@ import {
 } from '../generated/gpu';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
-import { arraysProblem, meshFromArrays, typeField, updateVertices } from './mesh-arrays';
+import {
+	arraysProblem,
+	meshFromArrays,
+	meshFromLevel,
+	typeField,
+	updateVertices,
+	type VertexLayout,
+} from './mesh-arrays';
 import type { MeshArrays } from './resources';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -106,6 +117,22 @@ describe('the shape checks of geometry.fromArrays', () => {
 		for (const [arrays, problem] of cases) expect(arraysProblem(arrays)).toBe(problem);
 	});
 
+	test('take the four-number record, and refuse it with morph targets', () => {
+		expect(arraysProblem({ ...QUAD, targets: new Float32Array(16) })).toBeUndefined();
+		expect(arraysProblem({ ...QUAD, targets: new Float32Array(12) })).toBe(
+			'got 12 numbers in targets for 4 vertices, not 16.',
+		);
+		expect(
+			arraysProblem({
+				...QUAD,
+				targets: new Float32Array(16),
+				morphTargets: { positions: [new Float32Array(12)] },
+			}),
+		).toBe(
+			'got targets and morphTargets; a vertex holds either its morph data or a generated target record, not both.',
+		);
+	});
+
 	test('check the morph targets against the vertices', () => {
 		const lift = new Float32Array(12);
 		expect(arraysProblem({ ...QUAD, morphTargets: { positions: [lift, lift] } })).toBeUndefined();
@@ -169,10 +196,18 @@ function fakeCore(failure?: { code: number; details: [number, number] }) {
 		targets?: number;
 		morph?: number;
 	}[] = [];
+	let level: { base: number; indices: number[] } | undefined;
 	const glue = {
 		meshArrays: (words: number) => {
 			asked.push({ words, vertices: 0, indices: 0, layout: 0, types: 0 });
 			return 256;
+		},
+		createLevelMesh: (base: number, words: number) => {
+			level = {
+				base,
+				indices: Array.from(new Uint32Array(memory.buffer, 256, words)),
+			};
+			return failure ? 0 : 9;
 		},
 		createMeshFromArrays: (
 			vertices: number,
@@ -189,7 +224,8 @@ function fakeCore(failure?: { code: number; details: [number, number] }) {
 		lastErrorCode: () => failure?.code ?? 0,
 		lastErrorDetail: (index: number) => failure?.details[index] ?? 0,
 	} as unknown as CoreGlue;
-	return { core: new CoreMemory(glue, memory), memory, asked };
+	const read = () => level;
+	return { core: new CoreMemory(glue, memory), memory, asked, read };
 }
 
 describe('meshes from arrays in engine memory', () => {
@@ -217,6 +253,17 @@ describe('meshes from arrays in engine memory', () => {
 		expect(Array.from(floats.subarray(24, 32))).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
 		expect(floats[32]).toBe(0.5);
 		expect(Array.from(new Uint32Array(memory.buffer, 256 + 48 * 4, 6))).toEqual([0, 1, 2, 0, 2, 3]);
+	});
+
+	test('stage the record as four floats after the other attributes', () => {
+		const { core, memory, asked } = fakeCore();
+		const targets = new Float32Array(16).fill(0.5);
+		expect(meshFromArrays(core, { ...QUAD, targets }, 'geometry.fromArrays')).toBe(7);
+		const layout = MESH_ARRAYS_NORMALS | MESH_ARRAYS_TARGETS | MESH_ARRAYS_INDICES;
+		expect(asked).toEqual([{ words: 12 + 12 + 16 + 6, vertices: 4, indices: 6, layout, types: 0 }]);
+		// The record follows the normals, one whole word each.
+		const floats = new Float32Array(memory.buffer, 256 + 96, 16);
+		expect(Array.from(floats)).toEqual(Array.from(targets));
 	});
 
 	test('keep their integers, each array from a whole word, with its type in the format', () => {
@@ -405,6 +452,16 @@ describe('vertex updates', () => {
 		]);
 	});
 
+	test('update the four-number record of a generated mesh', () => {
+		const { core, calls } = updatingCore();
+		const layout = { count: 4, format: MESH_UV0 | VERTEX_MORPH };
+		const targets = new Float32Array(16).fill(0.25);
+		updateVertices(core, 7, layout, 'targets', targets, 0, 4, call);
+		expect(calls.map(({ words, args }) => ({ words, args }))).toEqual([
+			{ words: 16, args: [7, 8, 4, 0, 4] },
+		]);
+	});
+
 	test('name what does not fit, and send nothing', () => {
 		const { core, calls } = updatingCore();
 		const message = (
@@ -412,7 +469,7 @@ describe('vertex updates', () => {
 			values: Float32Array | Uint16Array | number[],
 			start = 0,
 			count = 4,
-			layout = LAYOUT,
+			layout: VertexLayout = LAYOUT,
 		) => {
 			try {
 				updateVertices(core, 7, layout, name as 'positions', values, start, count, call);
@@ -424,7 +481,7 @@ describe('vertex updates', () => {
 		};
 		const twelve = new Float32Array(12);
 		expect(message('joints', twelve)).toStartWith(
-			'E1206: mesh.updateVertices() got joints; updates take positions, normals, uvs, uvs1, colors or tangents.',
+			'E1206: mesh.updateVertices() got joints; updates take positions, normals, uvs, uvs1, colors, tangents or targets.',
 		);
 		expect(message('uvs1', new Float32Array(8))).toStartWith(
 			'E1206: mesh.updateVertices() got uvs1 for a mesh without uvs1.',
@@ -445,6 +502,16 @@ describe('vertex updates', () => {
 			'E1206: mesh.updateVertices() got start 0.5 and count 1; both take whole numbers of 0 or more.',
 		);
 		expect(message('positions', twelve, 0, 4, { count: 4, format: MESH_JOINTS })).toStartWith(
+			'E1206: mesh.updateVertices() got a mesh with joints or morph targets, whose vertices take no updates.',
+		);
+		// A mesh with morph targets holds morph data in its record, which no update may move.
+		expect(
+			message('positions', twelve, 0, 4, {
+				count: 4,
+				format: MESH_UV0 | VERTEX_MORPH,
+				posed: true,
+			}),
+		).toStartWith(
 			'E1206: mesh.updateVertices() got a mesh with joints or morph targets, whose vertices take no updates.',
 		);
 		expect(calls).toEqual([]);
@@ -476,5 +543,33 @@ describe('vertex updates', () => {
 		const view = core.heap(Float32Array);
 		updateVertices(core, 7, LAYOUT, 'normals', positions, 0, 4, call);
 		expect(core.heap(Float32Array)).toBe(view);
+	});
+});
+
+describe("levels that draw their base mesh's vertices", () => {
+	const call = 'geometry.fromLevel';
+
+	test('write their triangles from a whole word and name their base', () => {
+		const { core, read } = fakeCore();
+		const indices = [0, 1, 2, 0, 2, 3];
+		expect(meshFromLevel(core, 7, indices, call)).toBe(9);
+		expect(read()).toEqual({ base: 7, indices });
+	});
+
+	test('take whole indices from 32-bit or 16-bit arrays', () => {
+		const { core, read } = fakeCore();
+		expect(meshFromLevel(core, 3, new Uint16Array([0, 1, 2]), call)).toBe(9);
+		expect(read()).toEqual({ base: 3, indices: [0, 1, 2] });
+	});
+
+	test("give way to a copy when the engine cannot share the base's vertices", () => {
+		const { core, read } = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_LEVEL_BASE, 0] });
+		expect(meshFromLevel(core, 7, [0, 1, 2], call)).toBeUndefined();
+		expect(read()).toEqual({ base: 7, indices: [0, 1, 2] });
+	});
+
+	test('throw the failure that is not a refusal', () => {
+		const { core } = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_LENGTH, 0] });
+		expect(() => meshFromLevel(core, 7, [0, 1, 2], call)).toThrow();
 	});
 });

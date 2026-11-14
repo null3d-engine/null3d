@@ -78,7 +78,9 @@ const UV1_LOCATION = locationOfAttribute(VERTEX_UV1);
 
 /**
  * The locations that a shader variant reads besides its template's: the mesh's colors in the
- * vertex color variants, and its tangents in the tangent variants.
+ * vertex color variants, and its tangents in the tangent variants. Each location comes once, so a
+ * custom material whose vertex offset reads the colors keeps one attribute for them in its vertex
+ * color variants.
  */
 export function variantLocations(template: readonly number[], permutation: number): number[] {
 	const locations = [...template];
@@ -86,7 +88,7 @@ export function variantLocations(template: readonly number[], permutation: numbe
 	if (permutation & PERMUTATION_VERTEX_COLOR) locations.push(locationOfAttribute(VERTEX_COLOR));
 	if (permutation & PERMUTATION_SKIN)
 		locations.push(locationOfAttribute(VERTEX_JOINTS), locationOfAttribute(VERTEX_WEIGHTS));
-	return locations;
+	return [...new Set(locations)];
 }
 
 /**

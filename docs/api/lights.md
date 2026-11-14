@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere, ambient, rectangle and tube ligh
 
 # Lights
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky, the light of hemisphere lights, rectangle and tube lights and contact shadows. The API is experimental, so it can still change between versions. Surfaces show only the first directional light, so a second one adds no light.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky, the light of hemisphere lights, rectangle and tube lights and contact shadows. Step 0.3 adds pictures that a spot light projects over its cone. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights: the first casts the shadows, and three more add fill and rim light.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -37,7 +37,7 @@ export default defineSketch(({ scene, time }) => {
 | --- | --- | --- | --- |
 | `createDirectionalLight(options)` | `DirectionalLight` | Parallel light from one direction, like sunlight | `direction`, `castShadows`, `shadow`, `intensityUnit` |
 | `createPointLight(options)` | `PointLight` | Light from a point in every direction, out to its range | `range` (required), `decay`, `castShadows`, `shadow`, `intensityUnit` |
-| `createSpotLight(options)` | `SpotLight` | Light from a point in a cone, out to its range | `range` (required), `angle`, `penumbra`, `decay`, `direction`, `target`, `castShadows`, `shadow`, `intensityUnit` |
+| `createSpotLight(options)` | `SpotLight` | Light from a point in a cone, out to its range | `range` (required), `angle`, `penumbra`, `decay`, `direction`, `target`, `map`, `castShadows`, `shadow`, `intensityUnit` |
 | `createHemisphereLight(options)` | `HemisphereLight` | Light from the sky above and the ground below | `skyColor`, `groundColor`, `intensityUnit` |
 | `createAmbientLight(options)` | `AmbientLight` | The same light on every surface | `intensityUnit` |
 | `createRectAreaLight(options)` | `RectAreaLight` | Light from a glowing rectangle, out to its range | `range` (required), `width`, `height`, `direction`, `target`, `image` |
@@ -52,6 +52,44 @@ Directional, spot and rectangle lights send their light along their -Z axis, the
 A directional light's position does not matter: only its direction does. The sky of a hemisphere light lies along its +Y axis, which points straight up until you turn the light. Its position does not matter either.
 
 A light's scale changes neither its range, its cone nor its size.
+
+## Spot light maps
+
+A spot light can project a picture over its cone, as a stage light throws a gobo pattern, a window throws its frame, or a projector shows an image. The `map` option and `setMap` take an engine texture, or sRGB pixels, four bytes each, top row first, as a rectangle light's `image` does.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, materials, geometry }) => {
+  const ground = materials.standard({ color: '#c8ccd2', roughness: 0.8 });
+  scene.createMesh({ mesh: geometry.plane({ width: 20, height: 20 }), material: ground, rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] });
+  // A lamp that throws a dark cross over the ground: white, with a dark band down and across.
+  const data = new Uint8Array(16 * 16 * 4);
+  for (let i = 0; i < 16 * 16; i++) {
+    const [x, y] = [i % 16, i >> 4];
+    const dark = Math.abs(x - 7.5) < 1 || Math.abs(y - 7.5) < 1;
+    data.set(dark ? [10, 10, 10, 255] : [255, 255, 255, 255], i * 4);
+  }
+  scene.createSpotLight({ position: [0, 6, 0], direction: [0, -1, 0], range: 15, angle: 0.6, intensity: 200, map: { width: 16, height: 16, data } });
+});
+```
+
+- The picture fills the square that bounds the cone: a circle in the middle of the picture lands on the cone's edge, where the light ends.
+- The picture's top row lies along the world's up, as three.js aims the camera that projects a spot light's map. Aim the light first: turning the light turns the picture with it, and rolling the light about its own axis leaves the picture as it is.
+- The color and intensity tint the picture: a dark part of it gives less light, and a red part gives red light. `setMap(null)` goes back to one color.
+- The map is sRGB pixels, four bytes each with the top row first, or a texture. The engine copies a texture into the light's picture once, when the texture's texels reach the GPU, so a later change to the texture does not reach the light: give a still texture. A video's texture and a render pass's texture change every frame, and a 3D or cube texture holds more than one image, so each throws E1112.
+- The engine keeps the picture's detail up to 512 texels a side, in every mip level, and reduces a larger texture to that. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. Up to 32 lights show pictures at once, and rectangle and spot lights share those places. A new picture takes up to a few tens of milliseconds, so set it at setup or now and then.
+- A picture of 128 x 128 texels a side takes about 0.2 MB with its mip levels. One of 512 x 512 takes about 2.8 MB. The engine keeps room for four pictures once a scene has one. A scene with one detailed picture therefore takes about 11 MB.
+- Spot light maps light every GPU path in the same way: WebGPU, WebGPU's compatibility mode and WebGL2. They add no texture to the lit shaders, because the lights' pictures share a table that every lit surface already reads.
+
+A picture from an image file is one call:
+
+```ts
+const gobo = await assets.loadTexture('/gobo.png');
+light.setMap(gobo);
+```
+
+Code that draws a picture, such as a canvas or a generated pattern, gives its sRGB pixels instead: `light.setMap({ width, height, data })`, four bytes each with the top row first.
 
 ## Color, intensity and units
 
@@ -88,7 +126,7 @@ Every setter allocates nothing, `setColor` and `setGroundColor` included. So `on
 
 In this version:
 
-- Surfaces show one directional light: the first one you created that is visible and shares a layer with the camera.
+- Surfaces show up to four directional lights that are visible and share a layer with the camera: the first four you created. The first one lights and casts the shadows. The next three light as fill and rim lights, without shadows. A fifth directional light gives no light.
 - Every ambient light that is visible and shares a layer with the camera adds its light.
 - Point and spot lights light the surfaces that their ranges reach. Each frame the engine finds the ones whose ranges reach into the camera's view. It lists each one in the clusters of the view that it reaches. The camera lists up to 1,024 of them, the nearest, and up to 128 in each cluster. [Lighting and environment](../concepts/lighting.md#clustered-forward-shading) explains clusters.
 - Rectangle and tube lights light the surfaces that their ranges reach, in the same clusters. The quality preset's `areaLights` caps how many one frame shades: 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. Past it, the ones that give the camera the most light shade: the brightest and largest for their distance. A light that joins or leaves them fades over a few frames, so none switches on or off at once. [Area lights](#area-lights) says more.
@@ -119,7 +157,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 - A rectangle light's light leaves the side that its -Z axis points to. Surfaces behind it get none. `width` runs along its X axis and `height` along its Y axis, and both default to 1 meter.
 - A tube light shines all around. `length` runs along its -Z axis, and defaults to 1 meter. `radius` defaults to 0.025 meters, a thin neon tube. The ends of the tube add no light, which a thin tube does not show.
 - Area lights need a `range`, as point and spot lights do. The light fades to nothing at the range from the light's middle. three.js's `RectAreaLight` has no range: pick the distance where the light no longer matters.
-- A rectangle light can show a picture over its area, such as a shop window or a screen. The `image` option and `setImage({ width, height, data })` take sRGB pixels, four bytes each, top row first. The light then varies over its area: a puddle shows the picture, and a rough wall gets its blurred colors. The color and intensity tint the picture. The light gives out its intensity times the picture's average color, in linear light. A mostly dark picture, such as thin neon tubes on black, lights little around it. Keep the intensity at the tubes' brightness, and paint a faint glow around the tubes to light more. The engine resamples it to 128 x 128 texels with every mip level. Up to 32 lights show pictures at once, and `setImage(null)` goes back to one color. A new picture allocates, so set it at setup or now and then.
+- A rectangle light can show a picture over its area, such as a shop window or a screen. The `image` option and `setImage({ width, height, data })` take sRGB pixels, four bytes each, top row first. The light then varies over its area: a puddle shows the picture, and a rough wall gets its blurred colors. The color and intensity tint the picture. The light gives out its intensity times the picture's average color, in linear light. A mostly dark picture, such as thin neon tubes on black, lights little around it. Keep the intensity at the tubes' brightness, and paint a faint glow around the tubes to light more. The engine keeps the picture's detail up to 512 texels a side, in every mip level. Up to 32 lights show pictures at once, and `setImage(null)` goes back to one color. A new picture allocates and takes up to a few tens of milliseconds, so set it at setup or now and then.
 - `setSize`, `setRange`, `setDirection` and `setIntensity` take effect in the next frame and allocate nothing.
 - Area lights cast no shadows. Use a spot light beside one for a shadow.
 - An area light costs each surface it reaches several times what a point light costs. The quality preset's `areaLights` caps how many one frame shades.
@@ -204,7 +242,18 @@ Point lights cast them where the quality preset's `pointLightShadows` is on, as 
 
 The directional light also draws contact shadows: short shadows from the camera's depth where small objects touch the ground. `contactDistance` sets how far they reach in meters, 0.3 by default, and 0 turns them off. They draw where the quality setting `contactShadowSteps` is above 0. That is on High and Ultra, and on Medium on WebGL2.
 
-[Shadows](../concepts/shadows.md) explains cascades, contact shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
+One object can get a shadow map of its own, fitted tightly to it, at several times the cascades' texel density. Name it with the `hero` option or `setHeroShadow`:
+
+```ts
+const car = scene.createMesh({ mesh: carMesh, castShadows: true, receiveShadows: true });
+sun.setShadow({ hero: car });
+// Back to the cascades alone.
+sun.setHeroShadow(null);
+```
+
+The object must cast shadows. Its tile comes from the same atlas as the spot and point lights' shadows, and takes its last layer. Surfaces within the object's box along the light read the tile, and the cascades shadow everything else. The tile size is 1,024, 2,048 or 4,096 texels on each side. Name one with `setHeroShadow(car, 4096)` or the `heroTileSize` option. The quality preset's `heroTileSize` is the default. See [A hero shadow](../concepts/shadows.md#a-hero-shadow).
+
+[Shadows](../concepts/shadows.md) explains cascades, contact shadows, hero shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
 
 ## Coming from three.js
 
@@ -221,8 +270,10 @@ The directional light also draws contact shadows: short shadows from the camera'
 | `pointLight.power = lumens` or `spotLight.power = lumens` | `intensity: lumens, intensityUnit: 'lumen'` at create; `setIntensity` then takes lumens |
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |
-| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
-| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias }` in meters. The quality preset sets the tile size. |
+| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias, intensity }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
+| A second shadowed light fitted to one object, or a hand-fitted `DirectionalLight` shadow camera, for a sharper close-up shadow | `sun.setShadow({ hero: object })`: the light gives the object a fitted shadow map of its own, and follows it |
+| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias, intensity }` in meters. The quality preset sets the tile size. |
+| `spotLight.map = texture` | `map: texture` at create, or `setMap(texture)`: the engine copies the texture into its own light image once. `setMap({ width, height, data })` takes sRGB pixels instead. `setMap(null)` goes back to one color |
 
 A three.js `distance` of 0 means a light with no end. null3D needs a finite range, so pick the distance where the light no longer matters.
 

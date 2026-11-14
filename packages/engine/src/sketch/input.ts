@@ -243,9 +243,24 @@ class TouchState implements InputTouch {
 	frame = 0;
 }
 
+/** Hears each input record that the sketch reads, so a recording keeps what the sketch saw. */
+export interface InputRecorder {
+	event(
+		type: number,
+		code: number,
+		flags: number,
+		id: number,
+		buttons: number,
+		x: number,
+		y: number,
+	): void;
+}
+
 /** Reads the input ring once per frame, and answers the sketch's input calls. */
 export class InputReader implements Input, PointerInput {
 	readonly pointer = new PointerState();
+	/** A recording that hears each record this frame reads, or undefined when the page records nothing. */
+	recorder: InputRecorder | undefined = undefined;
 	/** The log that copies each frame's pointer events, which pointer events on objects set. */
 	pointerLog: PointerLog | undefined = undefined;
 	readonly touches: TouchState[];
@@ -356,6 +371,16 @@ export class InputReader implements Input, PointerInput {
 			// ignore the wheel during a drag still take the scroll that comes after it.
 			if (released && (type === EVENT_WHEEL || (primary && type === EVENT_POINTER_DOWN))) break;
 			this.apply(base);
+			if (this.recorder !== undefined)
+				this.recorder.event(
+					type,
+					ints[base + FIELD_CODE] as number,
+					flags,
+					ints[base + FIELD_ID] as number,
+					ints[base + FIELD_BUTTONS] as number,
+					floats[base + FIELD_X] as number,
+					floats[base + FIELD_Y] as number,
+				);
 			// A locked pointer's records hold movement, which points at no object.
 			if (
 				log !== undefined &&

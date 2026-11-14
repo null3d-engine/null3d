@@ -14,8 +14,8 @@ use crate::frame::{RecordError, address, floats_as_bytes};
 /// Frames that the rings of streamed and index list textures cover: the frame being recorded and
 /// the two the GPU may still be drawing.
 pub(super) const RING: u32 = 3;
-/// Texels of one light record: four vectors of four 32-bit values.
-const LIGHT_TEXELS: u32 = sizes::LIGHT_RECORD_BYTES / 16;
+/// Texels of one light record: one per vector of four 32-bit values.
+const LIGHT_TEXELS: u32 = sizes::LIGHT_RECORD_TEXELS;
 /// The first column of the light grid's words in the light data texture, after the records'.
 const GRID_COLUMN: u32 = sizes::LIGHTS_PER_TEXTURE_ROW * LIGHT_TEXELS;
 /// Words of the light grid in one texel of the light data texture.
@@ -107,7 +107,7 @@ impl TextureRows {
 }
 
 impl DataTexture {
-    /// The light data textures: the light records, four texels each, then the light grid's
+    /// The light data textures: the light records, five texels each, then the light grid's
     /// words, four to a texel, all as 32-bit integers.
     pub(super) const fn light_data(first_id: u32, count: u32) -> Self {
         Self {

@@ -11,6 +11,7 @@
 // use: the builds that let light through to the other side. ?no-contact turns the sun's contact
 // shadows off, whose passes load ambient occlusion's shader file on their first use.
 import { defineSketch } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 import {
 	BOX,
 	CAMERA,
@@ -49,7 +50,8 @@ function texels(size: number, rgba: (u: number, v: number) => [number, number, n
 	return data;
 }
 
-export default defineSketch(({ scene, materials, geometry, textures }) => {
+export default defineSketch(({ scene, materials, geometry, textures, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#1b2433');
 	scene.setActiveCamera(scene.createPerspectiveCamera(CAMERA));
 	// The sun shines from behind the panels toward the camera, a little from above and the left.

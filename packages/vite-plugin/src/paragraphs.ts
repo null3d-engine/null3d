@@ -8,7 +8,7 @@
 // device module's imports and emits the tables they name, in the folder the bundler put the module
 // in, at the names the imports use. The tables then sit beside every module that imports them,
 // whatever the project's assets folder and asset naming pattern are.
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import type { Plugin, Rollup } from 'vite';
 
@@ -30,15 +30,14 @@ function headOf(source: string | Uint8Array, bytes: number): string {
 }
 
 /**
- * The names of the paragraph tables that a copied device module imports. A module imports its
+ * The names of the paragraph tables that a device module imports. A module imports its
  * kind's table and one for each feature family whose paragraphs it holds, so the module of a
  * relief feature imports several. The imports end at the first blank line after them.
  */
-function tableStems(source: string | Uint8Array): string[] {
-	const length = source.length;
+function tableStems(read: (bytes: number) => string, length: number): string[] {
 	let window = Math.min(IMPORT_WINDOW, length);
 	for (;;) {
-		const head = headOf(source, window);
+		const head = read(window);
 		// A device module's imports follow its short header, so a file with none in the first
 		// window is no device module and holds no table.
 		const first = head.indexOf('import ');
@@ -46,6 +45,25 @@ function tableStems(source: string | Uint8Array): string[] {
 		const complete = window >= length || head.indexOf('\n\n', first) >= 0;
 		if (complete) return [...head.matchAll(PARAGRAPH_IMPORT)].map((match) => match[1] as string);
 		window = Math.min(window * 2, length);
+	}
+}
+
+/**
+ * The tables that a device module on disk imports. The file is read from its start only, so a
+ * build covers the whole generated set without holding any of it in memory.
+ */
+export function tableStemsOfFile(file: string): string[] {
+	const fd = openSync(file, 'r');
+	try {
+		const length = statSync(file).size;
+		const read = (bytes: number) => {
+			const buffer = Buffer.alloc(Math.min(bytes, length));
+			const count = readSync(fd, buffer, 0, buffer.length, 0);
+			return buffer.subarray(0, count).toString('utf8');
+		};
+		return tableStems(read, length);
+	} finally {
+		closeSync(fd);
 	}
 }
 
@@ -79,7 +97,9 @@ export function emitParagraphTables(
 	const emitted = new Set<string>();
 	for (const file of Object.values(bundle)) {
 		if (file.type !== 'asset') continue;
-		const stems = [...new Set(tableStems(file.source))];
+		const stems = [
+			...new Set(tableStems((bytes) => headOf(file.source, bytes), file.source.length)),
+		];
 		if (stems.length === 0) continue;
 		const own = stems.map((stem) => posix.join(posix.dirname(file.fileName), `${stem}.js`));
 		for (const table of own) {

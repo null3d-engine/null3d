@@ -116,10 +116,18 @@ const QUIET_RUN = 2;
  * display. Measurements of callbacks at the display's rate jitter by a few percent.
  */
 const SLOW_PERCENT = 90;
+/**
+ * A worker's callbacks measured faster than this come from a browser that runs with no frame cap,
+ * such as Chrome started without vsync. No display refreshes this often, and Safari's timer runs a
+ * worker's callbacks well below it. The page's own callbacks there come at a slow rate of their own,
+ * which tells nothing of the screen, so the frames do not hold to it.
+ */
+const UNCAPPED_HZ = 1000;
 
 /**
  * The delay, in whole milliseconds, from the start of a frame callback to the wake-up before the
- * next one, for callbacks `hz` times a second. A whole number reaches the timer without allocating.
+ * next one, for callbacks `hz` times a second, or 0 when they come too often for a wake-up ahead of
+ * them. A whole number reaches the timer without allocating.
  */
 export function wakeDelayMs(hz: number): number {
 	return Math.max(0, Math.round(MS_PER_SECOND / hz - WAKE_AHEAD_MS));
@@ -136,6 +144,17 @@ function wakeUp(): void {}
 export const CAPTURE_WAIT_CALLBACKS = 120;
 
 /**
+ * How long a capture waits for any animation frame callback before it fails by the stopped clock.
+ * A page that is hidden or throttled runs no callbacks at all, so the callback count alone never
+ * ends the wait. A working page also runs none while it builds its pipelines: the island's first
+ * frame takes about 200 seconds on CI's software renderer, and one run drew no frame of the island
+ * within 300 while its twelve heavy shards shared a runner. The clock therefore sits above a whole
+ * first frame, so a slow page ends its wait by taking a frame, and a page that has stopped still
+ * fails inside the page budgets, the tightest of which is ten minutes.
+ */
+export const CAPTURE_CLOCK_MS = 480_000;
+
+/**
  * Resolves once the frame loop on this thread has taken a frame after this call. It checks in this
  * thread's animation frame callbacks, which run after the loop's own, so the loop takes and draws
  * any frame that is ready before a capture replays the frame taken last. A thread that a blocking
@@ -144,19 +163,29 @@ export const CAPTURE_WAIT_CALLBACKS = 120;
  * and after `CAPTURE_WAIT_CALLBACKS` callbacks without one. A hidden page runs no callbacks, so the
  * wait goes on once the page shows again.
  */
-export function nextFrameTaken(slots: Int32Array): Promise<void> {
+export function nextFrameTaken(slots: Int32Array, clockMs = CAPTURE_CLOCK_MS): Promise<void> {
 	const taken = Atomics.load(slots, Slot.FramesTaken);
 	let callbacks = 0;
-	return new Promise((resolve) => {
+	return new Promise((resolve, reject) => {
+		// A page whose animation-frame clock stops runs no callbacks, so the count alone cannot end
+		// the wait. The timer ends it by naming the stopped clock rather than one day timing out.
+		const clock = setTimeout(() => {
+			reject(
+				new Error(
+					`the frame clock stopped: no animation frame callback came within ${(clockMs / 1000).toFixed(0)} seconds, so a capture cannot wait for a frame`,
+				),
+			);
+		}, clockMs);
 		const check = () => {
 			if (
 				Atomics.load(slots, Slot.Paused) !== 0 ||
 				Atomics.load(slots, Slot.Running) === 0 ||
 				Atomics.load(slots, Slot.FramesTaken) !== taken ||
 				callbacks++ === CAPTURE_WAIT_CALLBACKS
-			)
+			) {
+				clearTimeout(clock);
 				resolve();
-			else requestAnimationFrame(check);
+			} else requestAnimationFrame(check);
 		};
 		check();
 	});
@@ -203,6 +232,11 @@ export class Presenter {
 	 * and their rate never tells the display's again, as it slows when the thread waits for the GPU.
 	 */
 	private timerDriven = false;
+	/**
+	 * True once a measurement of a worker's callbacks came faster than `UNCAPPED_HZ`: the browser
+	 * runs with no frame cap for the engine's life, and the frames never hold to the page's rate.
+	 */
+	private uncapped = false;
 	/** The page's display period in microseconds that the metrics hold as the refresh rate, or -1. */
 	private recordedInterval = -1;
 	/**
@@ -268,8 +302,10 @@ export class Presenter {
 	 * display runs at, a timer runs them, and the frames hold to the display's rate that the page
 	 * measured. From then on, the metrics hold the page's rate as the refresh rate too: the timer's
 	 * callbacks slow down while the worker waits for the GPU, and the quality governor's budget
-	 * would grow with them. On the page's thread, the metrics hold the display rate that the
-	 * intervals after callbacks that drew nothing measure, or a faster rate of all the callbacks.
+	 * would grow with them. A worker's callbacks faster than any display or timer come from a
+	 * browser with no frame cap: the frames then draw at every callback, and the metrics still hold
+	 * the page's rate. On the page's thread, the metrics hold the display rate that the intervals
+	 * after callbacks that drew nothing measure, or a faster rate of all the callbacks.
 	 */
 	tick(timestamp: number): void {
 		const hz = this.refresh.tick(timestamp);
@@ -282,6 +318,7 @@ export class Presenter {
 				if (hz > this.displayHz) this.setDisplayHz(hz);
 			} else {
 				this.timerDriven ||= !onDisplayRate;
+				this.uncapped ||= hz > UNCAPPED_HZ;
 				if (!this.timerDriven) this.record.setRefreshHz(hz);
 			}
 		}
@@ -290,7 +327,7 @@ export class Presenter {
 			this.recordedInterval = display;
 			this.record.setRefreshHz(snapMeanInterval(display, 1));
 		}
-		const interval = onDisplayRate ? 0 : display;
+		const interval = onDisplayRate || this.uncapped ? 0 : display;
 		if (interval === this.displayInterval) return;
 		this.displayInterval = interval;
 		this.pacer.holdToDisplay(interval / MICROSECONDS_PER_MS);
@@ -352,10 +389,12 @@ export class Presenter {
 	/**
 	 * In a worker, sets a timer that wakes the thread shortly before the next frame callback is due.
 	 * Call it as a callback starts. Where a worker's frame callbacks follow the display, the timer
-	 * runs and does nothing else.
+	 * runs and does nothing else. Callbacks too close together for a wake-up ahead of the next one,
+	 * as on a fast display or in a browser with no frame cap, set no timer: one due at once would
+	 * fire before the thread sleeps.
 	 */
 	wakeBeforeNextFrame(): void {
-		if (this.inWorker) setTimeout(wakeUp, this.wakeDelay);
+		if (this.inWorker && this.wakeDelay > 0) setTimeout(wakeUp, this.wakeDelay);
 	}
 
 	/**
@@ -381,20 +420,30 @@ export class Presenter {
 		);
 	}
 
-	/** True when a frame's draw list was recorded for a GPU device that the browser took away. */
-	private stale(frame: number): boolean {
-		const recordedFor = Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1));
-		return recordedFor !== Atomics.load(this.slots, Slot.GpuEpoch);
+	/**
+	 * True when a frame's draw list was recorded for a GPU device that the browser took away. Frames
+	 * draw in the order the sketch recorded them, so a plan that a later frame changed leaves an
+	 * earlier list safe: its list carries the textures it makes and releases. The frame loop judges a
+	 * frame before it wakes the sketch, because the sketch may record a frame of a newer plan during
+	 * that wake. A capture replays a list long after its frame was recorded, and it checks the plan's
+	 * generation as well (`FrameReplay.drawable`).
+	 */
+	deviceStale(frame: number): boolean {
+		return (
+			Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1)) !==
+			Atomics.load(this.slots, Slot.GpuEpoch)
+		);
 	}
 
 	/**
 	 * True when a frame may draw. The first call for a frame starts to build the pipelines that its
 	 * list creates, and the frame waits for them until the renderer has drawn a frame with every
 	 * pipeline built. A stale frame never waits, since it draws nothing. Once no pipeline is building,
-	 * the frame's number goes to the sketch thread, whose warm-ups wait for it.
+	 * the frame's number goes to the sketch thread, whose warm-ups wait for it. A caller that judges
+	 * the frame's staleness itself passes that answer, so that a wake inside the call cannot change it.
 	 */
-	ready(frame: number): boolean {
-		if (this.stale(frame)) return true;
+	ready(frame: number, stale = this.deviceStale(frame)): boolean {
+		if (stale) return true;
 		const ready = this.renderer.prepare(frame);
 		if ((this.lastPresented[0] as number) < 0) this.record.markWarmUp(this.renderer.building);
 		if (!this.renderer.building && frameAfter(frame, this.builtFrame)) {
@@ -408,10 +457,15 @@ export class Presenter {
 	/**
 	 * Draws a frame and records its CPU time and the interval since the previous one, and gives the
 	 * page the frame's labels. A frame whose draw list was recorded for a GPU device the browser took
-	 * away is skipped: its list names objects the new device lacks.
+	 * away is skipped: its list names objects that the new device lacks. A caller that judged the
+	 * frame's staleness itself passes that answer, so that a wake cannot change it after the frame
+	 * was taken.
 	 */
-	draw(frame: number, timestamp: number): void {
-		if (this.stale(frame)) return;
+	draw(frame: number, timestamp: number, stale = this.deviceStale(frame)): void {
+		if (stale) {
+			Atomics.add(this.slots, Slot.FramesSkipped, 1);
+			return;
+		}
 		// A still view that has accumulated enough frames submits no draw work: the callers take the
 		// frame anyway, so the sketch keeps stepping and can see the change that ends the rest, and
 		// the canvas keeps the converged image.
@@ -467,28 +521,52 @@ export class HoldLoop implements RenderLoop {
 		this.presenter = new Presenter(slots, renderer, metrics, {}, undefined, presented);
 	}
 
-	drawHeld(): Promise<void> {
+	drawHeld(clockMs = CAPTURE_CLOCK_MS): Promise<void> {
 		this.drawn ??= new Promise((resolve, reject) => {
 			let drawn = 0;
+			// The hold's frames draw from animation frame callbacks, so a page whose clock stops runs
+			// none and this promise never settles. The clock ends it by naming the stopped clock, as a
+			// capture's wait for a live frame does.
+			const clock = setTimeout(
+				() =>
+					reject(
+						new Error(
+							`the frame clock stopped: no animation frame callback came within ${(clockMs / 1000).toFixed(0)} seconds, so the held frame cannot draw`,
+						),
+					),
+				clockMs,
+			);
 			const attempt = (timestamp: number) => {
 				const published = Atomics.load(this.slots, Slot.FramesPublished);
 				const from = Atomics.load(this.slots, Slot.HeldFrom);
 				const frame = drawn > 0 ? drawn + 1 : from > 0 && from <= published ? from : published;
-				if (this.stopped) reject(new Error('the engine stopped before it drew the held frame'));
-				else if (published === 0) reject(new Error('the sketch thread published no held frame'));
-				else
+				if (this.stopped) {
+					clearTimeout(clock);
+					reject(new Error('the engine stopped before it drew the held frame'));
+				} else if (published === 0) {
+					clearTimeout(clock);
+					reject(new Error('the sketch thread published no held frame'));
+				} else
 					try {
-						if (!this.presenter.ready(frame)) {
+						// The held frames draw in the order they were recorded, so a plan that a later
+						// held frame changed leaves an earlier one safe. Only a list of an older GPU
+						// device is skipped, and the work that only it records is lost with it.
+						const stale = this.presenter.deviceStale(frame);
+						if (!this.presenter.ready(frame, stale)) {
 							requestAnimationFrame(attempt);
 							return;
 						}
 						this.presenter.applyResize();
 						Atomics.store(this.slots, Slot.FramesTaken, frame);
-						this.presenter.draw(frame, timestamp);
+						this.presenter.draw(frame, timestamp, stale);
 						drawn = frame;
 						if (frame < published) requestAnimationFrame(attempt);
-						else resolve();
+						else {
+							clearTimeout(clock);
+							resolve();
+						}
 					} catch (error) {
+						clearTimeout(clock);
 						reject(error);
 					}
 			};
@@ -523,11 +601,18 @@ export function runRenderLoop(
 		presenter.wakeBeforeNextFrame();
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (frameAfter(published, taken) && presenter.ready(published) && presenter.due(timestamp)) {
-			taken = published;
-			Atomics.store(slots, Slot.FramesTaken, taken);
-			notifySlot(slots, Slot.FramesTaken, wake);
-			presenter.draw(taken, timestamp);
+		if (frameAfter(published, taken)) {
+			// Judge the frame before any wake below. The sketch records no frame after one that the
+			// loop has not taken, so this answer holds until the frame draws, though the sketch may
+			// record the next frame as soon as the wake reaches it. A skipped list never draws again,
+			// so the work that only it records, such as a probe's capture, would be lost.
+			const stale = presenter.deviceStale(published);
+			if (presenter.ready(published, stale) && presenter.due(timestamp)) {
+				taken = published;
+				Atomics.store(slots, Slot.FramesTaken, taken);
+				notifySlot(slots, Slot.FramesTaken, wake);
+				presenter.draw(taken, timestamp, stale);
+			}
 		}
 		requestAnimationFrame(frame);
 	}, fault);

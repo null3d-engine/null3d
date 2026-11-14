@@ -1,0 +1,52 @@
+diff --git a/docs/concepts/lod.md b/docs/concepts/lod.md
+index 4eff6ca4e..64c4564ac 100644
+--- a/docs/concepts/lod.md
++++ b/docs/concepts/lod.md
+@@ -134,7 +134,7 @@ A level given by its error switches in where that error covers fewer pixels than
+ pixels = error × scale × render height / (2 × distance × tan(field of view / 2))
+ ```
+ 
+-The setting is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles the threshold, twice at most.
++The setting is 2 pixels on Low and Medium, and 1 pixel on High and Ultra. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles the threshold, twice at most.
+ 
+ A level given by its distance switches where the camera is that far from the object's nearest point. The camera's field of view, the screen height and the render scale do not move it. A level given by its coverage switches where the object's bounds cover that share of the render's height. A taller screen does not move that switch either.
+ 
+diff --git a/packages/engine/src/quality/presets.test.ts b/packages/engine/src/quality/presets.test.ts
+index f83729815..eb227bc5d 100644
+--- a/packages/engine/src/quality/presets.test.ts
++++ b/packages/engine/src/quality/presets.test.ts
+@@ -359,7 +359,7 @@ describe('presetSettings', () => {
+ 			probeSize: 256,
+ 			areaLights: 8,
+ 			softParticles: true,
+-			lodThreshold: 1,
++			lodThreshold: 2,
+ 			lodShadowThreshold: 1,
+ 			lodFade: true,
+ 			physicalSky: true,
+diff --git a/packages/engine/src/quality/presets.ts b/packages/engine/src/quality/presets.ts
+index 18d18a05d..8e00f38c2 100644
+--- a/packages/engine/src/quality/presets.ts
++++ b/packages/engine/src/quality/presets.ts
+@@ -283,13 +283,15 @@ export const QUALITY_SETTINGS = {
+ 		changes: 'live',
+ 		values: 'flag',
+ 	},
+-	// The error in pixels under which a mesh's coarser level of detail draws: Godot's rule of one
+-	// pixel, and two on Low, where phones draw. The render scale counts in the pixels, so a lower
+-	// scale picks coarser levels too. A bound that covers fewer pixels than this draws nothing, and
+-	// the levels' hiding fades out with the same band. 0 draws every mesh's base level. D-137 gives
+-	// the figures.
++	// The error in pixels under which a mesh's coarser level of detail draws: two on Low and
++	// Medium, and Godot's rule of one pixel on High and Ultra. At two pixels a frame's image error
++	// against its full-detail frame matches three.js's meshlet renderer at its own one pixel, with
++	// about 40% fewer triangles than at one pixel; one pixel keeps about half that image error. The
++	// render scale counts in the pixels, so a lower scale picks coarser levels too. A bound that
++	// covers fewer pixels than this draws nothing, and the levels' hiding fades out with the same
++	// band. 0 draws every mesh's base level. D-137 gives the figures.
+ 	lodThreshold: {
+-		presets: [2, 1, 1, 1],
++		presets: [2, 2, 1, 1],
+ 		changes: 'live',
+ 		values: { min: 0, max: 16, heavierBelow: true },
+ 	},

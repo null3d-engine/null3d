@@ -56,7 +56,7 @@ function growingCore() {
 		lastErrorDetail: () => 0,
 	};
 	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
-	const time = { frame: 1 };
+	const time = { frame: 1, now: 0 };
 	const scene = new Scene(core, time, false);
 	const materials = new Materials(core);
 	const textures = new Textures(core, () => {}, time, 0);
@@ -65,7 +65,8 @@ function growingCore() {
 }
 
 /** A mesh the fake core never needs to know. */
-const box = (core: CoreMemory) => ({ id: 1, radius: 1, core }) as unknown as MeshGeometry;
+const box = (core: CoreMemory) =>
+	({ id: 1, radius: 1, center: [0, 0, 0], core, drawnWith() {} }) as unknown as MeshGeometry;
 /** A material the fake core never needs to know. */
 const paint = (core: CoreMemory) => ({ id: 1, core }) as unknown as Material;
 

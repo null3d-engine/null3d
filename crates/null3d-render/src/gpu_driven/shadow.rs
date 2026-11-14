@@ -21,10 +21,11 @@ pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), Recor
 }
 
 /// Records the creation of bind group `group` of the depth template, which binds a view's frame
-/// uniform buffer with the material table, and for the vertex shaders of custom materials' shadow
-/// casters, the materials' custom values and the row values of instance batches: a cascade's or a
-/// tile's frame group, the outline view's, or the group of a camera view's depth prepass. A new
-/// row values texture needs it again.
+/// uniform buffer with the material table, and for the builds of custom materials' shadow casters,
+/// the materials' custom values and the row values of instance batches: a cascade's or a tile's
+/// frame group, the outline view's, or the group of a camera view's depth prepass. A masked custom
+/// caster's fragment stage runs the surface function, so it reads the custom values and the
+/// material table as its vertex stage does. A new row values texture needs it again.
 pub(super) fn bind_depth(list: &mut DrawList, group: u32, view: ViewId) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
     let entries = [

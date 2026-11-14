@@ -343,15 +343,25 @@ describe('CloudSessions', () => {
 		hub = fakeHub();
 		const sessions = sessionsOn(hub, [], [], 20);
 		await sessions.open('bspixel10-chrome', PAGE);
-		await Bun.sleep(110);
 		const count = () => hub!.received.filter((r) => r.body?.script === STATUS_SCRIPT).length;
+		// Waits for the second poll rather than for a fixed time, since a loaded machine runs the
+		// timer late: the check is that the polls repeat, not how soon.
+		for (const end = Date.now() + 5_000; count() < 2 && Date.now() < end; ) await Bun.sleep(10);
 		expect(count()).toBeGreaterThanOrEqual(2);
 		await sessions.closeAll();
-		// A poll sent just before the session closed may still arrive; none starts after it.
-		await Bun.sleep(40);
-		const polls = count();
-		await Bun.sleep(100);
-		expect(count()).toBe(polls);
+		// A poll sent just before the session closed may still arrive, and none starts after it. A
+		// timer of the poll's own period ticks five times, so a session timer that kept running
+		// would have sent about five more, however late a loaded machine runs both.
+		const atClose = count();
+		await new Promise<void>((done) => {
+			let ticks = 0;
+			const timer = setInterval(() => {
+				if (++ticks < 5) return;
+				clearInterval(timer);
+				done();
+			}, 20);
+		});
+		expect(count() - atClose).toBeLessThanOrEqual(1);
 	});
 
 	it('counts a session that the cloud ended as lost, and sends it nothing more than the end command', async () => {

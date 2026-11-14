@@ -1,8 +1,8 @@
 # D-94: Retry a refused shared memory for about 45 seconds, and tell the page at 10
 
-Status: decided. Date: 7 October 2026. Task: M2-R26.
+Status: decided by the owner. Built: the retry window and the `memory-wait` notice. Open: whether the engine also frees memories held in workers or kept frames waits for a clean repro. Task: M2-R26.
 
-Summary: When the browser refuses the engine's shared memory, the engine tries again for about 45 seconds before it fails with E1109. The waits double from 50 ms up to 8 s. At the first refusal after 10 seconds of waits, `onProgress` reports `memory-wait`. Safari on CI's Mac gave memory back 16 to 40 seconds after it refused it.
+Summary: When the browser refuses the engine's shared memory, the engine tries again for about 45 seconds before it fails with E1109. The waits double from 50 ms up to 8 s. At the first refusal after 10 seconds of waits, `onProgress` reports `memory-wait`. Safari on CI's Mac gives memory back 16 to 40 seconds after it refuses it.
 
 ## Question
 
@@ -19,27 +19,27 @@ The window covers the slowest return of memory measured in a browser the engine 
 | Memory of engines in removed frames, held after the frames went | Came back 16 to 40 s later; at times held for minutes ([D-92](D-92-safari-removed-frames.md)) | GitHub's macOS 15 machines, Safari 26.6.1 |
 | The same, on this Mac, in the restart pages | Came back within 1 s | Mac, Safari 26.6.2 |
 | Removed-frame probe, a page with no engine, plain Safari with no automation | Held 1 place for at least the 19 s that the probe watched; on CI, held room came back after about 2 minutes ([D-92](D-92-safari-removed-frames.md)) | Mac, Safari 26.6.2 |
-| Engine starts refused before this change | 9 tries over 10 s, then E1109, in the same-canvas checks after the frame restart pages | GitHub's macOS 15 machines, Safari 26.6.1 |
+| Engine starts refused with a window of 10 s | 9 tries over 10 s, then E1109, in the same-canvas checks after the frame restart pages | GitHub's macOS 15 machines, Safari 26.6.1 |
 
-How the data was produced: diagnostic CI runs of the Safari 1/2 shard on 6 and 7 October 2026, as D-92 describes.
+How the data was produced: diagnostic CI runs of the Safari 1/2 shard, as D-92 describes.
 
 ## Decision
 
-The owner chose this option on 7 October 2026, from a sketch with the window, the gaps and the notice. The waits are 50, 100, 200, 400, 800, 1600, 3200 and 6400 ms, then 8000 ms four times: 44.75 s in all, over 13 tries. The notice comes at the first refusal after 10 seconds of waits, at the ninth try, 12.75 s in. The notice is a new stage of `onProgress`, so it needs no new callback. A refusal after the last wait fails with E1109, as before.
+The owner chose this option, from a sketch with the window, the gaps and the notice. The waits are 50, 100, 200, 400, 800, 1600, 3200 and 6400 ms, then 8000 ms four times: 44.75 s in all, over 13 tries. The notice comes at the first refusal after 10 seconds of waits, at the ninth try, 12.75 s in. The notice is a stage of `onProgress`, so it needs no callback of its own. A refusal after the last wait fails with E1109.
 
 ## Consequences
 
 - `createSharedMemory` in `packages/engine/src/page/loader.ts` holds the schedule, and its unit tests check it with a clock that the waits move on.
-- `StartupStage` gains `memory-wait`. The engine API page, the loading screens guide, the E1109 error page and the skill's quick reference and recipes say so.
-- An app whose memory never comes back hears E1109 after about 45 seconds instead of 10. A real leak still fails, only later.
+- `StartupStage` has `memory-wait`. The engine API page, the loading screens guide, the E1109 error page and the skill's quick reference and recipes say so.
+- An app whose memory never comes back hears E1109 after about 45 seconds. A real leak still fails, only later than with a window of 10 s.
 
-## Addendum, 2026-10-07
+## What Safari's collection means for the engine
 
-WebKit bug 247984 already covers the memory that Safari keeps for removed frames. Safari also collects and tries again before it refuses a memory, but only on the asking thread's heap. [D-92](D-92-safari-removed-frames.md#addendum-2026-10-07) gives the detail. This addendum says what that means for the engine.
+WebKit bug 247984 covers the memory that Safari keeps for removed frames. Safari also collects and tries again before it refuses a memory, but only on the asking thread's heap. [D-92](D-92-safari-removed-frames.md#safari-collects-and-tries-again-before-it-refuses) gives the detail.
 
 ### Where the engine asks for its memory
 
-The threaded build makes its shared memory on the page's main thread (`createSharedMemory` in `packages/engine/src/page/loader.ts`). Each worker gets the memory in its start message. So each refused try in the window above makes Safari collect the main thread's heap. That heap holds the page and its same-origin frames. A dead memory that only the page or a removed frame reached comes back at the next try. Asking on the main thread, or asking there again after a refusal, is what the engine does already.
+The threaded build makes its shared memory on the page's main thread (`createSharedMemory` in `packages/engine/src/page/loader.ts`). Each worker gets the memory in its start message. So each refused try in the window above makes Safari collect the main thread's heap. That heap holds the page and its same-origin frames. A dead memory that only the page or a removed frame reached comes back at the next try. The engine asks on the main thread, and asks there again after each refusal.
 
 Two cases stay out of reach of these tries:
 
@@ -60,6 +60,6 @@ Safari first tries each new memory as a "fast" memory. A process has at most 8 o
 
 The engine's memory takes a fast slot while one is free, as the first 8 memories of a page do. JavaScriptCore's own log shows this. The macOS `jsc` shell is the same build as Safari 26.6.2. Run with `--logWasmMemory=1`, it made the first 8 memories of the engine's sizes as fast ones. A fast slot comes back once nothing reaches its memory, as the tests below show.
 
-An earlier test seemed to show that Safari holds a dropped fast-slot memory. On the owner's Mac (Safari 26.6.2) on 7 October 2026, test pages filled the area with memories and dropped one that held a fast slot. They then asked for one more every 250 ms. Safari refused for the whole 60 s in 18 of 18 rounds, and the engine's own retry ended in E1109 in 6 of 6. But in each of those pages, the page itself still reached the dropped memory. A function that was still waiting held it, or the page read a weak reference to it before each ask.
+A test of a dropped fast-slot memory must make sure that nothing reaches it. On the owner's Mac (Safari 26.6.2), test pages filled the area with memories and dropped one that held a fast slot. They then asked for one more every 250 ms. Where the page still reached the dropped memory, Safari refused for the whole 60 s in 18 of 18 rounds. The engine's own retry then ended in E1109 in 6 of 6. A function that was still waiting held the memory, or the page read a weak reference to it before each ask.
 
-A deciding test kept the memory only in a global and then cleared it, so nothing reached it. Safari then granted the next request at the first try, in 6 of 6 rounds. Three of them used the engine's own retry, which needed no second try. The `jsc` shell gave the same answer. So Safari gives a fast slot back once nothing reaches its memory, and this window needs no change for it. A page whose own code still reaches a stopped engine's memory holds its slot the same way, as it holds any memory it reaches.
+Where the page kept the memory only in a global and then cleared it, nothing reached it. Safari then granted the next request at the first try, in 6 of 6 rounds. Three of them used the engine's own retry, which needed no second try. The `jsc` shell gave the same answer. So Safari gives a fast slot back once nothing reaches its memory, and this window needs no change for it. A page whose own code still reaches a stopped engine's memory holds its slot the same way, as it holds any memory it reaches.

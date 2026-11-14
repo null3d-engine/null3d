@@ -12,8 +12,10 @@ import {
 	SUN,
 } from '../../../bench/scenes/texture-background';
 import { pictureUrl } from '../lib/picture';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
-export default defineSketch(async ({ scene, materials, geometry, assets, post }) => {
+export default defineSketch(async ({ scene, materials, geometry, assets, post, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	post.set({ toneMapping: 'none' });
 	scene.setBackground('#20242a');
 	const { fov, near, far, position, target } = BACKGROUND_CAMERA;

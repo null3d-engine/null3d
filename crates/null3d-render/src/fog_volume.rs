@@ -4,12 +4,13 @@
 //! Frostbite and Unreal Engine do, in four steps of the render graph (see [`crate::frame_graph`]):
 //!
 //! 1. The light step draws one triangle over the grid's texture, whose texels are the cells. Each
-//!    cell takes a point, moved by the frame's offset, and the fog's density there. It adds the
-//!    sun's light where the shadow cascades see the point, and that of each point and spot light
-//!    of its cluster, through its shadow tile, by Henyey-Greenstein's phase function. It blends the
-//!    result with the last frame's grid at the same place in the world. The step binds the
-//!    camera's frame group, which the frame builder records, so it reads the scene's shadows and
-//!    clustered lights with no binding of its own for them.
+//!    cell takes a point of its own inside it, hashed from the cell's place so that the point holds
+//!    still from frame to frame, and the fog's density there. It adds the sun's light where the
+//!    shadow cascades see the point, and that of each point and spot light of its cluster, through
+//!    its shadow tile, by Henyey-Greenstein's phase function. It blends the result with the last
+//!    frame's grid at the same place in the world. The step binds the camera's frame group, which
+//!    the frame builder records, so it reads the scene's shadows and clustered lights with no
+//!    binding of its own for them.
 //! 2. The block step sums, for each cell, the cells from the first slice of its block, a row of
 //!    tiles, to its own, front to back, with the exact integral over each slice, into a second
 //!    texture of the grid's size.
@@ -27,8 +28,7 @@
 //! [`crate::fog`] stays: it dims each surface and mixes in the fog's color. The grid only adds the
 //! light of the sun and the lamps, and replaces the sun glow of the camera's view.
 //!
-//! The steps' settings live in one uniform block, which every step reads and each frame uploads:
-//! the cells' offsets change every frame.
+//! The steps' settings live in one uniform block, which every step reads and each frame uploads.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, format, layout as bind_layout,
@@ -54,16 +54,13 @@ pub(crate) const GRID_FORMAT: u32 = format::RGBA16_FLOAT;
 /// The format of the apply step's target: HDR color, as the scene color holds it.
 pub(crate) const FORMAT: u32 = format::RGBA16_FLOAT;
 
-/// The weight of the last frame's grid in each cell's light: as Unreal Engine's default. The
-/// frames' offsets then average over about ten frames.
+/// The weight of the last frame's grid in each cell's light: as Unreal Engine's default. The blend
+/// then smooths the grid across the camera's motion over about ten frames.
 const HISTORY_WEIGHT: f32 = 0.9;
 
 /// The shortest distance from a lamp at which the light step counts its light, in world units.
 /// Nearer, a point light's light grows without bound, which no cell can hold.
 const NEAREST_LAMP: f32 = 0.25;
-
-/// The frames of the cells' offsets before they repeat.
-const OFFSETS: u32 = 16;
 
 /// The steps: the light step, the block step, the sum and the apply step.
 pub(crate) const STEPS: usize = 4;
@@ -158,7 +155,6 @@ struct Block {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
     medium: [f32; 4],
-    jitter: [f32; 4],
     history_view_proj: Mat4,
     history_row: [f32; 4],
 }
@@ -226,25 +222,6 @@ struct History {
     distance: f32,
 }
 
-/// The `index`th number of the van der Corput sequence in base `base`, from 0 to 1.
-fn radical_inverse(mut index: u32, base: u32) -> f32 {
-    let mut result = 0.0;
-    let mut fraction = 1.0 / base as f32;
-    while index > 0 {
-        result += (index % base) as f32 * fraction;
-        index /= base;
-        fraction /= base as f32;
-    }
-    result
-}
-
-/// The offset of each cell's point from its center in frame `frame`, in cells each way: the
-/// Halton sequence in bases 2, 3 and 5, which covers a cell evenly over [`OFFSETS`] frames.
-pub(crate) fn offset(frame: u32) -> [f32; 3] {
-    let index = frame % OFFSETS + 1;
-    [2, 3, 5].map(|base| radical_inverse(index, base) - 0.5)
-}
-
 /// The position relative to the camera, divided by its distance along the view for a perspective
 /// camera, of the point at normalized device coordinates `x` and `y` on the near plane of the
 /// camera whose view-projection matrix has the inverse `inverse`.
@@ -309,7 +286,7 @@ pub(crate) struct FogVolumePass {
     created: bool,
     /// The textures that the bind groups read, before the first group exists the default.
     bound: Option<FogVolumeSources>,
-    /// The frames that drew the grid, which pick each frame's offset and light texture.
+    /// The frames that drew the grid, which pick each frame's light texture.
     frames: u32,
     /// The camera of the last frame that drew the grid, while the next frame may read its grid.
     history: Option<History>,
@@ -448,13 +425,6 @@ impl FogVolumePass {
             None => (0.0, [0.0; 16], [0.0; 4]),
         };
         let intensity = frame.volumetric.intensity.max(0.0);
-        // A frame that reads no last grid samples each cell's center, so a still image, such as
-        // hold mode's single frame, does not depend on the frame's number.
-        let [x, y, z] = if weight > 0.0 {
-            offset(self.frames)
-        } else {
-            [0.0; 3]
-        };
         Block {
             cells: [
                 tile.0 as f32,
@@ -484,7 +454,6 @@ impl FogVolumePass {
             ),
             sun_color: vector(frame.sun_color.map(|c| c * intensity), intensity),
             medium: [frame.density.max(0.0), frame.falloff, weight, NEAREST_LAMP],
-            jitter: [x, y, z, 0.0],
             history_view_proj,
             history_row,
         }
@@ -632,7 +601,6 @@ mod tests {
             "sun_direction: vec4f,",
             "sun_color: vec4f,",
             "medium: vec4f,",
-            "jitter: vec4f,",
             "history_view_proj: mat4x4f,",
             "history_row: vec4f,",
         ];
@@ -642,7 +610,7 @@ mod tests {
             assert!(found.is_some(), "FogStep lacks {field} in this order");
             at += found.unwrap_or(0);
         }
-        assert_eq!(std::mem::size_of::<Block>(), 12 * 16 + 64);
+        assert_eq!(std::mem::size_of::<Block>(), 11 * 16 + 64);
         assert!(library.contains(&format!("SLICES_PER_ROW: u32 = {SLICES_PER_ROW}u;")));
     }
 
@@ -658,22 +626,6 @@ mod tests {
             size.viewport((1920, 1080), RenderScale::from_thousandths(500)),
             size.extent((1920, 1080))
         );
-    }
-
-    #[test]
-    fn the_offsets_cover_a_cell_evenly() {
-        let mut sums = [0.0f32; 3];
-        for frame in 0..OFFSETS {
-            let o = offset(frame);
-            for k in 0..3 {
-                assert!(o[k] > -0.5 && o[k] < 0.5, "{o:?}");
-                sums[k] += o[k];
-            }
-        }
-        for sum in sums {
-            assert!((sum / OFFSETS as f32).abs() < 0.07, "{sums:?}");
-        }
-        assert_eq!(offset(3), offset(3 + OFFSETS));
     }
 
     #[test]
@@ -709,7 +661,7 @@ mod tests {
         };
         let mut run = |pass: &mut FogVolumePass, frame: &FogVolumeFrame| -> Vec<Op> {
             list.clear();
-            arena.reset(FogVolumePass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             pass.prepare(
                 &mut list,
                 &mut arena,

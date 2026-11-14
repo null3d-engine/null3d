@@ -71,11 +71,11 @@ Surface functions keep instancing, shadows, fog and both backends working, and s
 
 ## 3. three.js built-ins and their null3D equivalents
 
-These exist now: the surface input's `relativePosition`, `worldPosition`, `normal`, `viewDirection`, `vertexColor`, `uv` and `frontFacing`, and `vertexOffset`'s `VertexInput`. So do `frame`, `camera.position`, `camera.viewProjection`, `object.position` and the `null3d::` library modules. From 0.2: the inputs' `uv1` and `instance`, the surface input's `fragCoord`, `camera.view`, `camera.projection`, `camera.near`, `camera.far`, and `object.worldMatrix`, `object.normalMatrix` and `object.id`. The engine works relative to the camera, so `object.worldMatrix` has its translation relative to the camera and `camera.view` holds the rotation only.
+These exist now: the surface input's `relativePosition`, `worldPosition`, `normal`, `viewDirection`, `vertexColor`, `uv` and `frontFacing`, and `vertexOffset`'s `VertexInput`. So do `frame`, `camera.position`, `camera.viewProjection`, `object.position` and the `null3d::` library modules. From 0.2: the inputs' `uv1`, `instance` and `colors`, the surface input's `fragCoord`, `camera.view`, `camera.projection`, `camera.near`, `camera.far`, and `object.worldMatrix`, `object.normalMatrix` and `object.id`. The engine works relative to the camera, so `object.worldMatrix` has its translation relative to the camera and `camera.view` holds the rotation only.
 
 | three.js (ShaderMaterial adds these) | null3D |
 | --- | --- |
-| `position`, `normal`, `uv`, `uv1` (older: `uv2`), `color` attributes | `VertexInput.position`, `normal`, `uv` and `uv1` (0.2) in `vertexOffset`; `SurfaceInput.uv`, `uv1` (0.2) and `vertexColor` in surface functions. `uv1` is the first set on a mesh with one set. A full shader reads each attribute at its location (section 5) |
+| `position`, `normal`, `uv`, `uv1` (older: `uv2`), `color` attributes | `VertexInput.position`, `normal`, `uv`, `uv1` (0.2) and `colors` (0.2) in `vertexOffset`; `SurfaceInput.uv`, `uv1` (0.2) and `vertexColor` in surface functions. `uv1` is the first set on a mesh with one set. `colors` is the mesh's vertex color, which a vertex offset reads even where the material does not light with it. A full shader reads each attribute at its location (section 5) |
 | `modelMatrix` | `object.worldMatrix` (0.2), with its translation relative to the camera; `object.position` for the origin in the world |
 | `viewMatrix`, `projectionMatrix` | `camera.view` (the rotation only) and `camera.projection` (reversed depth) (0.2); their product is `camera.viewProjection`, which takes positions relative to the camera |
 | `cameraNear`, `cameraFar` (depth shaders) | `camera.near`, `camera.far` (0.2) |

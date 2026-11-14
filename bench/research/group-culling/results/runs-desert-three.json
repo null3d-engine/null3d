@@ -1,0 +1,539 @@
+[
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:50:03.402Z",
+		"wallSeconds": 57.804,
+		"load": {
+			"before": 6.978515625,
+			"after": 7.33642578125
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40",
+		"copies": 63468,
+		"firstFrameMs": 9503.464999996126,
+		"frames": 17091,
+		"presentedFps": 427.275,
+		"intervalMs": {
+			"median": 2.264999999999418,
+			"p95": 3.2700000000004366,
+			"samples": 17091
+		},
+		"gpuMs": {
+			"median": 2.693001,
+			"p95": 3.8471909999999996,
+			"samples": 17075
+		},
+		"gpuRenderMs": {
+			"median": 1.268605,
+			"p95": 2.0748029999999997,
+			"samples": 17075
+		},
+		"gpuComputeMs": {
+			"median": 1.444977,
+			"p95": 1.772388,
+			"samples": 17075
+		},
+		"cpuMs": {
+			"median": 1.6799999997019768,
+			"p95": 3.0850000008940697,
+			"samples": 17091
+		},
+		"triangles": {
+			"median": 1693184,
+			"p95": 2618880,
+			"samples": 17091
+		},
+		"clusters": 22777,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=arch",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:51:02.451Z",
+		"wallSeconds": 54.343,
+		"load": {
+			"before": 7.33642578125,
+			"after": 9.0361328125
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=arch",
+		"copies": 48,
+		"firstFrameMs": 5384.219999998808,
+		"frames": 68158,
+		"presentedFps": 1703.95,
+		"intervalMs": {
+			"median": 0.5,
+			"p95": 1.0749999999970896,
+			"samples": 68158
+		},
+		"gpuMs": {
+			"median": 0.7490720000000001,
+			"p95": 1.122817,
+			"samples": 68104
+		},
+		"gpuRenderMs": {
+			"median": 0.48565899999999995,
+			"p95": 0.755363,
+			"samples": 68104
+		},
+		"gpuComputeMs": {
+			"median": 0.223163,
+			"p95": 0.513117,
+			"samples": 68104
+		},
+		"cpuMs": {
+			"median": 0.2549999952316284,
+			"p95": 0.619999997317791,
+			"samples": 68158
+		},
+		"triangles": {
+			"median": 346432,
+			"p95": 478912,
+			"samples": 68158
+		},
+		"clusters": 5977,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=boulder",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:52:27.329Z",
+		"wallSeconds": 49.077,
+		"load": {
+			"before": 6.6953125,
+			"after": 10.6162109375
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=boulder",
+		"copies": 3000,
+		"firstFrameMs": 694.195000000298,
+		"frames": 75864,
+		"presentedFps": 1896.6,
+		"intervalMs": {
+			"median": 0.47000000000116415,
+			"p95": 0.8799999999973807,
+			"samples": 75864
+		},
+		"gpuMs": {
+			"median": 0.588116,
+			"p95": 0.91007,
+			"samples": 75856
+		},
+		"gpuRenderMs": {
+			"median": 0.518826,
+			"p95": 0.7654460000000001,
+			"samples": 75856
+		},
+		"gpuComputeMs": {
+			"median": 0.063957,
+			"p95": 0.14529,
+			"samples": 75853
+		},
+		"cpuMs": {
+			"median": 0.22999999672174454,
+			"p95": 0.4700000062584877,
+			"samples": 75864
+		},
+		"triangles": {
+			"median": 754176,
+			"p95": 943744,
+			"samples": 75864
+		},
+		"clusters": 14510,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=pebble",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:54:01.968Z",
+		"wallSeconds": 49.124,
+		"load": {
+			"before": 7.59912109375,
+			"after": 7.630859375
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=pebble",
+		"copies": 60000,
+		"firstFrameMs": 476.16499999910593,
+		"frames": 39287,
+		"presentedFps": 982.175,
+		"intervalMs": {
+			"median": 0.9400000000023283,
+			"p95": 1.569999999999709,
+			"samples": 39287
+		},
+		"gpuMs": {
+			"median": 1.320147,
+			"p95": 1.9349690000000002,
+			"samples": 39162
+		},
+		"gpuRenderMs": {
+			"median": 1.118525,
+			"p95": 1.662308,
+			"samples": 39162
+		},
+		"gpuComputeMs": {
+			"median": 0.18958,
+			"p95": 0.312078,
+			"samples": 39120
+		},
+		"cpuMs": {
+			"median": 0.6450000032782555,
+			"p95": 1.2849999964237213,
+			"samples": 39287
+		},
+		"triangles": {
+			"median": 2996608,
+			"p95": 3694080,
+			"samples": 39287
+		},
+		"clusters": 43071,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=column",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:54:51.851Z",
+		"wallSeconds": 51.742,
+		"load": {
+			"before": 7.630859375,
+			"after": 8.4814453125
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=column",
+		"copies": 420,
+		"firstFrameMs": 2729.7999999970198,
+		"frames": 104765,
+		"presentedFps": 2619.125,
+		"intervalMs": {
+			"median": 0.33000000000174623,
+			"p95": 0.679999999998472,
+			"samples": 104765
+		},
+		"gpuMs": {
+			"median": 0.287162,
+			"p95": 0.5661579999999999,
+			"samples": 104493
+		},
+		"gpuRenderMs": {
+			"median": 0.243789,
+			"p95": 0.481867,
+			"samples": 104493
+		},
+		"gpuComputeMs": {
+			"median": 0.037374,
+			"p95": 0.085373,
+			"samples": 104494
+		},
+		"cpuMs": {
+			"median": 0.14999999850988388,
+			"p95": 0.3700000047683716,
+			"samples": 104765
+		},
+		"triangles": {
+			"median": 550272,
+			"p95": 762944,
+			"samples": 104765
+		},
+		"clusters": 9257,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&only=ground",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:55:59.046Z",
+		"wallSeconds": 52.237,
+		"load": {
+			"before": 7.0947265625,
+			"after": 6.34033203125
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&only=ground",
+		"copies": 0,
+		"firstFrameMs": 3223.259999997914,
+		"frames": 33320,
+		"presentedFps": 833,
+		"intervalMs": {
+			"median": 1.1899999999950523,
+			"p95": 1.5299999999988358,
+			"samples": 33320
+		},
+		"gpuMs": {
+			"median": 1.400604,
+			"p95": 1.505644,
+			"samples": 33140
+		},
+		"gpuRenderMs": {
+			"median": 0.30062,
+			"p95": 0.349661,
+			"samples": 33140
+		},
+		"gpuComputeMs": {
+			"median": 1.098358,
+			"p95": 1.174607,
+			"samples": 33320
+		},
+		"cpuMs": {
+			"median": 1.0799999982118607,
+			"p95": 1.244999997317791,
+			"samples": 33320
+		},
+		"triangles": {
+			"median": 347584,
+			"p95": 393216,
+			"samples": 33320
+		},
+		"clusters": 5519,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&shadows=1",
+		"run": 0,
+		"attempt": 0,
+		"invalid": true,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:56:51.848Z",
+		"wallSeconds": 58.153,
+		"load": {
+			"before": 6.34033203125,
+			"after": 7.24072265625
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&shadows=1",
+		"copies": 63468,
+		"firstFrameMs": 9962.284999996424,
+		"frames": 21436,
+		"presentedFps": 535.9,
+		"intervalMs": {
+			"median": 1.8299999999944703,
+			"p95": 2.459999999999127,
+			"samples": 21436
+		},
+		"gpuMs": {
+			"median": 1.913469,
+			"p95": 2.4392129999999996,
+			"samples": 21267
+		},
+		"gpuRenderMs": {
+			"median": 0.6892389999999999,
+			"p95": 1.068358,
+			"samples": 21267
+		},
+		"gpuComputeMs": {
+			"median": 1.25719,
+			"p95": 1.410645,
+			"samples": 21267
+		},
+		"cpuMs": {
+			"median": 1.5,
+			"p95": 2.239999994635582,
+			"samples": 21436
+		},
+		"triangles": {
+			"median": 1727040,
+			"p95": 2677888,
+			"samples": 21436
+		},
+		"clusters": 22305,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": [
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)"
+		]
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&shadows=1",
+		"run": 0,
+		"attempt": 1,
+		"invalid": true,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:57:51.309Z",
+		"wallSeconds": 59.532,
+		"load": {
+			"before": 8.58251953125,
+			"after": 7.6845703125
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&shadows=1",
+		"copies": 63468,
+		"firstFrameMs": 11257.465000003576,
+		"frames": 21825,
+		"presentedFps": 545.625,
+		"intervalMs": {
+			"median": 1.7599999999947613,
+			"p95": 2.5499999999992724,
+			"samples": 21825
+		},
+		"gpuMs": {
+			"median": 1.862098,
+			"p95": 2.4557539999999998,
+			"samples": 21810
+		},
+		"gpuRenderMs": {
+			"median": 0.6671560000000001,
+			"p95": 1.092524,
+			"samples": 21810
+		},
+		"gpuComputeMs": {
+			"median": 1.190773,
+			"p95": 1.466728,
+			"samples": 21810
+		},
+		"cpuMs": {
+			"median": 1.5150000005960464,
+			"p95": 2.060000002384186,
+			"samples": 21825
+		},
+		"triangles": {
+			"median": 1721536,
+			"p95": 2750272,
+			"samples": 21825
+		},
+		"clusters": 22803,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": [
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)"
+		]
+	},
+	{
+		"address": "three.html?view=walk&warmup=8&seconds=40&shadows=1",
+		"run": 0,
+		"attempt": 2,
+		"invalid": true,
+		"uncapped": true,
+		"startedAt": "2026-11-04T05:58:51.761Z",
+		"wallSeconds": 66.421,
+		"load": {
+			"before": 7.6845703125,
+			"after": 17.625
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "walk",
+		"switches": "?view=walk&warmup=8&seconds=40&shadows=1",
+		"copies": 63468,
+		"firstFrameMs": 17612.765000000596,
+		"frames": 21209,
+		"presentedFps": 530.225,
+		"intervalMs": {
+			"median": 1.8399999999965075,
+			"p95": 2.5199999999967986,
+			"samples": 21209
+		},
+		"gpuMs": {
+			"median": 1.994844,
+			"p95": 2.544754,
+			"samples": 21057
+		},
+		"gpuRenderMs": {
+			"median": 0.708574,
+			"p95": 1.1116089999999998,
+			"samples": 21057
+		},
+		"gpuComputeMs": {
+			"median": 1.270022,
+			"p95": 1.391979,
+			"samples": 21057
+		},
+		"cpuMs": {
+			"median": 1.1400000005960464,
+			"p95": 1.989999994635582,
+			"samples": 21209
+		},
+		"triangles": {
+			"median": 1658624,
+			"p95": 2770304,
+			"samples": 21209
+		},
+		"clusters": 22683,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": [
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)",
+			"THREE.TSL: TypeError: Cannot read properties of undefined (reading 'build') \"AssignNode.generate()\" at \"three.tsl.js:4796\"\n    at AssignNode.generate (three.tsl.js:4796:29)\n    at AssignNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)\n    at ShaderNodeInternal.generate (three.tsl.js:1776:22)\n    at ShaderNodeInternal.build (three.tsl.js:2011:20)\n    at ConditionalNode.generate (three.tsl.js:8314:26)\n    at ConditionalNode.build (three.tsl.js:2011:20)\n    at StackNode.build (three.tsl.js:12884:10)\n    at ShaderCallNodeInternal.build (three.tsl.js:4052:25)"
+		]
+	}
+]

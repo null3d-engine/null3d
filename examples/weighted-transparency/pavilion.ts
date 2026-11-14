@@ -2,7 +2,7 @@
 // glass to reflect, paving made in code, a round stone plinth, the
 // iron posts at the corners of the pavilion's two squares of glass, and a brazier of glowing embers
 // whose light flickers. The sketch adds the glass and the smoke.
-import { math, type PointLight, type SketchContext } from '@null3d/engine';
+import { math, type Object3D, type PointLight, type SketchContext } from '@null3d/engine';
 
 /** A point toward the sun: low, and to the left of the camera's view. */
 const SUN = [-0.88, 0.22, 0.36] as const;
@@ -20,12 +20,13 @@ export interface PanePlace {
 
 /**
  * Builds the scenery and returns the places of the eight panes, in two squares, one turned by 45
- * degrees, so each pane crosses two others, and a function that makes the brazier's light flicker
- * at a time.
+ * degrees, so each pane crosses two others, a function that makes the brazier's light flicker at a
+ * time, and the brazier's bowl, which carries the mode's label.
  */
 export async function pavilion(ctx: SketchContext): Promise<{
 	panes: PanePlace[];
 	flicker: (t: number) => void;
+	bowl: Object3D;
 }> {
 	const { scene, assets, geometry, materials, textures, post } = ctx;
 	scene.setBackground({
@@ -93,7 +94,12 @@ export async function pavilion(ctx: SketchContext): Promise<{
 		height: 0.35,
 		radialSegments: 32,
 	});
-	scene.createMesh({ mesh: bowl, material: iron, position: [0, 1.35, 0], castShadows: true });
+	const bowlMesh = scene.createMesh({
+		mesh: bowl,
+		material: iron,
+		position: [0, 1.35, 0],
+		castShadows: true,
+	});
 	scene.createMesh({
 		mesh: geometry.cylinder({ radiusTop: 0.5, radiusBottom: 0.5, height: 0.05 }),
 		material: materials.standard({ color: '#000000', emissive: '#ff6a1a', emissiveIntensity: 6 }),
@@ -109,5 +115,5 @@ export async function pavilion(ctx: SketchContext): Promise<{
 	});
 	const flicker = (t: number) =>
 		fire.setIntensity(14 + 3 * Math.sin(t * 11) + 2 * Math.sin(t * 17.3) + Math.sin(t * 29));
-	return { panes, flicker };
+	return { panes, flicker, bowl: bowlMesh };
 }

@@ -9,6 +9,8 @@ import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGL2GpuTimer } from '../gpu/webgl2/gpu-timer';
 import type { CoreDevice } from '../page/limits';
+import { Slot } from '../shared/control';
+import { DEV } from '../shared/dev';
 import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss } from './loss';
@@ -131,6 +133,8 @@ class WebGL2SceneRenderer implements Renderer {
 	private readonly backend: WebGL2Backend;
 	private readonly frames: FrameReplay;
 	private readonly release = new AbortController();
+	/** The control block's slots, where a development build reports the compile state of this path. */
+	private readonly slots: Int32Array;
 
 	/** The canvas's sized format, which a capture's stand-in takes: RGBA8 with alpha, else RGB8. */
 	private readonly canvasFormat: number;
@@ -162,7 +166,9 @@ class WebGL2SceneRenderer implements Renderer {
 			images,
 			device.parallelCompile,
 			device.transparent,
+			device.multiDraw,
 		);
+		this.slots = new Int32Array(control);
 		this.backend.moreShaders = shaders;
 		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.transparent = device.transparent;
@@ -186,7 +192,14 @@ class WebGL2SceneRenderer implements Renderer {
 
 	prepare(frame: number): boolean {
 		try {
-			return this.frames.prepare(frame);
+			const ready = this.frames.prepare(frame);
+			if (DEV) {
+				// The development probe of the two-step pass reads what this path knew at the frame:
+				// how many programs may still compile, and whether the context has the extension.
+				Atomics.store(this.slots, Slot.WebglCompiling, this.backend.compilingCount);
+				Atomics.store(this.slots, Slot.WebglParallel, this.backend.parallelCompile ? 1 : 0);
+			}
+			return ready;
 		} catch (error) {
 			this.lostDuring(error);
 			return false;

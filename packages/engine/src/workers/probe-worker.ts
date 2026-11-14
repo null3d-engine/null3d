@@ -1,9 +1,10 @@
 // A short-lived worker that tests what a dedicated worker can do: the worker frame timer, WebGL2 in
 // an OffscreenCanvas, and WebGPU with a canvas context. The render worker depends on all three. It
-// also measures the device's two draw paths, so the engine can draw the faster one (D-174).
+// also measures the device's two draw paths on an Apple GPU in WebKit, so the engine can draw the
+// faster one there (D-174).
 
 import { messageOf } from '../errors/message';
-import { probeDirectDraws } from '../gpu/webgpu/draw-path-probe';
+import { type DrawPathReason, probeDrawPath } from '../gpu/webgpu/draw-path-probe';
 import { needsOwnArguments } from '../gpu/webgpu/indirect-arguments';
 
 /**
@@ -20,10 +21,12 @@ export interface WorkerProbe {
 	/** True when a worker can draw with WebGPU into an `OffscreenCanvas`. */
 	offscreenWebGPU: boolean;
 	/**
-	 * True when the device draws a bucket faster with direct draws than with the engine's indirect
-	 * draws, measured on the worker's own device at start.
+	 * True when the device is an Apple GPU in WebKit and draws a bucket faster with direct draws
+	 * than with the engine's indirect draws, measured on the worker's own device at start.
 	 */
 	directDraws: boolean;
+	/** Why the worker chose that draw path, or why it did not measure. */
+	drawPath: DrawPathReason;
 	/** Why the WebGPU check failed, when it threw. The WebGL2 check's answer still holds. */
 	webgpuError?: string;
 }
@@ -44,6 +47,7 @@ async function probe(): Promise<WorkerProbe> {
 		offscreenWebGL2: false,
 		offscreenWebGPU: false,
 		directDraws: false,
+		drawPath: 'no-probe',
 	};
 	try {
 		const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
@@ -61,11 +65,15 @@ async function probe(): Promise<WorkerProbe> {
 			if (context) {
 				context.configure({ device, format: navigator.gpu.getPreferredCanvasFormat() });
 				result.offscreenWebGPU = true;
-				result.directDraws = await probeDirectDraws(
+				const userAgent = globalThis.navigator?.userAgent ?? '';
+				const choice = await probeDrawPath(
 					device,
 					adapter.info,
-					needsOwnArguments(globalThis.navigator?.userAgent ?? ''),
+					userAgent,
+					needsOwnArguments(userAgent),
 				);
+				result.directDraws = choice.directDraws;
+				result.drawPath = choice.reason;
 			}
 			device.destroy();
 		}

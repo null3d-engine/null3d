@@ -8,31 +8,11 @@
 // its own. On phones, the nearest 8,000 trees draw in full and the rest as cut-out cards. Press L to
 // draw every tree at its full detail, and compare the stats.
 import { defineSketch, timeOfDay } from '@null3d/engine';
+import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
-import {
-	BUSH,
-	bushRows,
-	cardArrays,
-	cardTexture,
-	countRows,
-	fillRows,
-	ground,
-	KINDS,
-	landArrays,
-	litterTexture,
-	meshOf,
-	plantRows,
-	woodTexture,
-} from './woods';
-
-/** Trees in all, the trees that draw in full on Low, and the radius of the forest in meters. */
-const TREES = 56_000;
-const NEAR = 8000;
-const RADIUS = 650;
-/** Bushes of the understory, the bushes that draw on Low, and how far out they cover, in meters. */
-const BUSHES = 30_000;
-const BUSH_NEAR = 12_000;
-const BUSH_RADIUS = 360;
+import { plantForest, RADIUS } from './planting';
+import { createSway } from './sway';
+import { cardTexture, ground, KINDS, landArrays, litterTexture, woodTexture } from './woods';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
@@ -62,12 +42,11 @@ export default defineSketch(async (ctx) => {
 		material: land,
 		receiveShadows: true,
 	});
-	const bark = materials.standard({
-		map: wood,
-		roughness: 0.85,
-		vertexColors: true,
-		doubleSided: true,
-	});
+	// The forest's one wind field. The trees bend in it, read at each tree's root, and the offset
+	// fades out by the sway distance so the far trees and their cached shadow cascades stand still.
+	const wind = createWind(ctx, { camera, box: 256 });
+	const sway = createSway(ctx, { wood, wind });
+	const bark = sway.material;
 	const card = materials.standard({
 		map: pictures,
 		roughness: 0.9,
@@ -76,54 +55,18 @@ export default defineSketch(async (ctx) => {
 		doubleSided: true,
 	});
 
-	// One batch per kind of tree, whose base mesh names its coarser levels: each row picks its own
-	// level in every frame. A second batch per kind holds the far rows as cards, for Low.
-	const rows = plantRows(TREES, RADIUS);
-	const { before, all } = countRows(rows, NEAR);
-	const kinds = KINDS.map((kind, n) => {
-		const count = all[n] as number;
-		const near = before[n] as number;
-		const trees = scene.createInstances(meshOf(geometry, kind), count, {
-			material: bark,
-			castShadows: true,
-			receiveShadows: true,
-			colors: true,
-		});
-		fillRows(trees, rows, n);
-		const cards = scene.createInstances(
-			geometry.fromArrays(cardArrays(kind, n, KINDS.length)),
-			count - near,
-			{
-				material: card,
-				colors: true,
-			},
-		);
-		fillRows(cards, rows, n, near);
-		return { trees, cards, count, near };
-	});
-	// The understory: broad bushes that cover the ground between the trunks, at their own levels.
-	const undergrowth = scene.createInstances(meshOf(geometry, BUSH), BUSHES, {
-		material: bark,
-		castShadows: true,
-		receiveShadows: true,
-		colors: true,
-	});
-	fillRows(undergrowth, bushRows(BUSHES, BUSH_RADIUS), 0);
-	const fit = () => {
-		const low = quality.preset === 'low';
-		for (const { trees, cards, count, near } of kinds) {
-			trees.setActiveCount(low ? near : count);
-			cards.setActiveCount(low ? count - near : 0);
-		}
-		undergrowth.setActiveCount(low ? BUSH_NEAR : BUSHES);
-	};
-	fit();
-	quality.onChange(fit);
+	const forest = plantForest(ctx, { bark, card });
+	quality.onChange(forest.fit);
 	// L draws every tree's base level, and the preset's threshold again on the next press.
 	let threshold = quality.settings.lodThreshold;
 
 	return {
 		onUpdate(dt) {
+			// The field's box follows the camera, so it steps before the trees read it.
+			wind.update();
+			sway.update();
+			if (input.wasPressed('KeyB')) forest.hero.setBias();
+
 			if (input.wasPressed('KeyL')) {
 				const levels = quality.settings.lodThreshold > 0;
 				if (levels) threshold = quality.settings.lodThreshold;

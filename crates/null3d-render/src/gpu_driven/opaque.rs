@@ -4,6 +4,10 @@
 //! layout or the mesh buffers change. The shadow passes record and replay their bundles the same
 //! way (see [`super::shadow`]).
 //!
+//! A bucket whose surface writes no color draws before the buckets that write color, so the depth
+//! it writes holds back their color. A no-color surface is a holdout: it shows nothing itself and
+//! hides what lies behind it.
+//!
 //! A bucket whose pipelines read their instances by index draws its slice of index entries, which
 //! follow the copies in the view's compacted instance buffer, and binds the view's index group
 //! after its other groups (see [`super::cull`]).
@@ -15,7 +19,10 @@
 //!
 //! A camera view that culls in two phases replays the depth bundle in its occluders' pass, a render
 //! pass of its own with no color target, from the first set of indirect draws. Its bundle then
-//! draws from the second set, which follows the first in the view's indirect buffer.
+//! draws from the second set, which follows the first in the view's indirect buffer. The depth
+//! bundle of such a view holds only the buckets that held occluders lately (see
+//! [`super::occlusion_check::OccluderBuckets`]), so the pass does not replay a draw of no
+//! instances for every other bucket.
 //!
 //! The outline view's bundle draws the outlined layout's buckets into the outline mask, twice: once
 //! to mark every part of each object, then again to mark the parts that nothing hides. It binds
@@ -38,6 +45,7 @@ use null3d_gpu::drawlist::{
 use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::{Bucket, Layout};
+use super::occlusion_check::OccluderBuckets;
 use super::skin::DrawGroups;
 use crate::environment;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
@@ -106,13 +114,27 @@ pub(super) fn bind_frame(
     parallax: bool,
 ) -> Result<(), RecordError> {
     let group = ids::frame_group(view);
-    push_frame_group(list, group, bind_layout::FRAME, view, inputs, |_| true)?;
+    push_frame_group(
+        list,
+        group,
+        bind_layout::FRAME,
+        view,
+        inputs,
+        |_| true,
+        None,
+    )?;
     if parallax {
         let group = ids::frame_parallax_group(view);
         let layout = bind_layout::FRAME_PARALLAX;
-        push_frame_group(list, group, layout, view, inputs, |binding| {
-            binding != transmission::BINDING
-        })?;
+        push_frame_group(
+            list,
+            group,
+            layout,
+            view,
+            inputs,
+            |binding| binding != transmission::BINDING,
+            None,
+        )?;
     }
     Ok(())
 }
@@ -126,9 +148,15 @@ pub(super) fn bind_decal_frame(
     inputs: &FrameInputs,
 ) -> Result<(), RecordError> {
     let (group, layout) = (ids::DECAL_FRAME_GROUP, bind_layout::DECAL_FRAME);
-    push_frame_group(list, group, layout, ViewId::CAMERA, inputs, |binding| {
-        binding != probe_grid::MAP_BINDING
-    })
+    push_frame_group(
+        list,
+        group,
+        layout,
+        ViewId::CAMERA,
+        inputs,
+        |binding| binding != probe_grid::MAP_BINDING,
+        None,
+    )
 }
 
 /// Records the creation of frame group `group` of `layout` for `view`, with the entries whose
@@ -140,6 +168,7 @@ fn push_frame_group(
     view: ViewId,
     inputs: &FrameInputs,
     keeps: impl Fn(u32) -> bool,
+    store: Option<u32>,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
     let entries: [[u32; 5]; FRAME_ENTRIES] = [
@@ -185,6 +214,16 @@ fn push_frame_group(
         words[end..end + 5].copy_from_slice(entry);
         end += 5;
     }
+    // A moment group adds the moment store after the frame's own entries. The copy of the opaque
+    // color keeps its binding, which every lit build declares.
+    if let Some(store) = store {
+        words[end..end + 5].copy_from_slice(&entry(
+            crate::moment::STORE_BINDING,
+            resource_kind::TEXTURE,
+            store,
+        ));
+        end += 5;
+    }
     words[end..end + environment::ENTRY_WORDS].copy_from_slice(&environment::entries(
         inputs.environment,
         ids::ENVIRONMENT_SAMPLER,
@@ -194,6 +233,28 @@ fn push_frame_group(
     words[..3].copy_from_slice(&[group, layout, count]);
     list.push(Op::CreateBindGroup, &words[..end])?;
     Ok(())
+}
+
+/// Records the creation of the camera's frame group that carries the moment layer's moment store
+/// beside the frame group's own entries, at a binding of its own after them.
+pub(super) fn bind_moment_frame(
+    list: &mut DrawList,
+    inputs: &FrameInputs,
+    store: u32,
+) -> Result<(), RecordError> {
+    let group = ids::moment_frame_group(ViewId::CAMERA);
+    let layout = bind_layout::MOMENT_FRAME;
+    // The colour builds declare no light probe grid, which leaves its entry out of their layout
+    // and their group; it would otherwise take the fragment stage past its sampled textures.
+    push_frame_group(
+        list,
+        group,
+        layout,
+        ViewId::CAMERA,
+        inputs,
+        |binding| binding != probe_grid::MAP_BINDING,
+        Some(store),
+    )
 }
 
 /// Uploads a view's list of reflection probes into its slot.
@@ -228,11 +289,17 @@ pub(super) enum Bundle {
     /// The view's objects, each bucket with its pipeline and its material's maps: a camera view's
     /// opaque pass, or a shadow pass.
     Opaque,
-    /// The depth of the camera view's opaque objects, for the depth prepass or the occluders' pass.
+    /// The depth of the camera view's opaque objects, for the depth prepass.
     Prepass,
+    /// The depth of a camera view's occluders, for the occluders' pass of occlusion culling, into
+    /// a depth target of one sample.
+    Occluders,
     /// The outline view's objects into the outline mask: every bucket with the pipeline that marks
     /// every part, then every bucket again with the pipeline that marks the parts nothing hides.
     Outline,
+    /// The tone view's objects into the blue channel of the outline mask: each bucket with the
+    /// mask pipeline, which tests the scene's depth.
+    Tone,
     /// The casters' depth into a tile of the shadow atlas, each bucket with its pipeline for the
     /// tiles, whose depth format may differ from the cascades'.
     Tile,
@@ -247,8 +314,11 @@ pub(super) enum Bundle {
 impl Bundle {
     fn id(self, view: ViewId) -> u32 {
         match self {
-            Self::Opaque | Self::Outline | Self::Tile | Self::Subsurface => ids::bundle(view),
+            Self::Opaque | Self::Outline | Self::Tone | Self::Tile | Self::Subsurface => {
+                ids::bundle(view)
+            }
             Self::Prepass => ids::prepass_bundle(view),
+            Self::Occluders => ids::occluders_bundle(view),
             Self::Motion(parity) => ids::motion_bundle(parity),
         }
     }
@@ -271,20 +341,49 @@ pub(super) fn record_bundle(
     first_draw: u32,
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
-    let frame_group = match kind {
-        Bundle::Prepass => ids::prepass_group(view),
-        Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
-        Bundle::Motion(parity) => ids::motion_frame_group(parity),
-        _ => ids::frame_group(view),
-    };
-    let shading_group = match kind {
-        Bundle::Subsurface => frame_group,
-        _ => ids::frame_group(view),
-    };
-    let motion = match kind {
-        Bundle::Motion(parity) => Some(parity),
-        _ => None,
-    };
+    record_bundle_of(
+        list, view, layout, meshes, targets, kind, first_draw, hidden, None,
+    )
+}
+
+/// Records the depth bundle of a view that culls in two phases, which its occluders' pass replays:
+/// as [`record_bundle`] records a depth bundle, but only of the buckets that `occluders` draws.
+pub(super) fn record_occluders_bundle(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    targets: PassTargets,
+    hidden: &dyn Fn(u32) -> bool,
+    occluders: &OccluderBuckets,
+) -> Result<(), RecordError> {
+    let kind = Bundle::Occluders;
+    record_bundle_of(
+        list,
+        view,
+        layout,
+        meshes,
+        targets,
+        kind,
+        0,
+        hidden,
+        Some(occluders),
+    )
+}
+
+/// Records a bundle as [`record_bundle`] does, of the buckets that `only` draws where it is given.
+#[allow(clippy::too_many_arguments)]
+fn record_bundle_of(
+    list: &mut DrawList,
+    view: ViewId,
+    layout: &Layout,
+    meshes: &MeshBuffers,
+    targets: PassTargets,
+    kind: Bundle,
+    first_draw: u32,
+    hidden: &dyn Fn(u32) -> bool,
+    only: Option<&OccluderBuckets>,
+) -> Result<(), RecordError> {
     list.push(
         Op::BeginBundle,
         &[
@@ -294,34 +393,8 @@ pub(super) fn record_bundle(
             targets.samples,
         ],
     )?;
-    let draws = Draws {
-        view,
-        layout,
-        meshes,
-        frame_group,
-        shading_group,
-        parallax_frame: if layout.parallax_frame() {
-            ids::frame_parallax_group(view)
-        } else {
-            0
-        },
-        first_draw,
-        hidden,
-        counts: None,
-        motion,
-    };
-    match kind {
-        Bundle::Opaque | Bundle::Subsurface => {
-            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
-        }
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
-        Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
-            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
-        }
-    }
+    Draws::of_kind(view, layout, meshes, kind, first_draw, hidden, None, only)
+        .record_kind(list, kind)?;
     list.push(Op::EndBundle, &[])?;
     Ok(())
 }
@@ -340,61 +413,24 @@ pub(super) fn record_direct(
     counts: &[u32],
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
-    let frame_group = match kind {
-        Bundle::Prepass => ids::prepass_group(view),
-        Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
-        Bundle::Motion(parity) => ids::motion_frame_group(parity),
-        _ => ids::frame_group(view),
-    };
-    let shading_group = match kind {
-        Bundle::Subsurface => frame_group,
-        _ => ids::frame_group(view),
-    };
-    let draws = Draws {
-        view,
-        layout,
-        meshes,
-        frame_group,
-        shading_group,
-        parallax_frame: if layout.parallax_frame() {
-            ids::frame_parallax_group(view)
-        } else {
-            0
-        },
-        first_draw: 0,
-        hidden,
-        counts: Some(counts),
-        motion: match kind {
-            Bundle::Motion(parity) => Some(parity),
-            _ => None,
-        },
-    };
-    match kind {
-        Bundle::Opaque | Bundle::Subsurface => {
-            draws.record(list, |b| b.pipeline, |_| true, |b| b.group)?
-        }
-        Bundle::Prepass => draws.record(list, |b| b.prepass, |b| b.prepass_own, |b| b.group)?,
-        Bundle::Tile => draws.record(list, |b| b.prepass, |_| true, |b| b.group)?,
-        Bundle::Motion(_) => draws.record(list, |b| b.pipeline, |_| false, |b| b.group)?,
-        Bundle::Outline => {
-            draws.record(list, |b| b.pipeline, |_| false, |_| 0)?;
-            draws.record(list, |b| b.prepass, |_| false, |_| 0)?;
-        }
-    }
-    Ok(())
+    Draws::of_kind(view, layout, meshes, kind, 0, hidden, Some(counts), None)
+        .record_kind(list, kind)
 }
 
 /// Records a view's pick pass: the draws of every bucket that has a pick build, each with the
 /// pipeline that finds its pixels in the scene's depth, from the view's compacted instances.
 /// `counts` holds each bucket's instance count on the direct-draw path, and `None` reads the
-/// view's indirect draws. A bucket whose pick build binds the material's maps binds them, as a
-/// custom material's pick build does; the pick template reads none.
+/// view's indirect draws from `first_draw` on: the set that the view's opaque pass draws, which
+/// is the second set in a view that culls in two phases. A bucket whose pick build binds the
+/// material's maps binds them, as a custom material's pick build does; the pick template reads
+/// none.
 pub(super) fn record_pick(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
     counts: Option<&[u32]>,
+    first_draw: u32,
     hidden: &dyn Fn(u32) -> bool,
 ) -> Result<(), RecordError> {
     let draws = Draws {
@@ -406,10 +442,13 @@ pub(super) fn record_pick(
         // A pick build draws the frame group alone: its pipelines take no maps' group, so they
         // never take the frame group of parallax either.
         parallax_frame: 0,
-        first_draw: 0,
+        first_draw,
         hidden,
         counts,
         motion: None,
+        // A pick build shades no surface, so its pipeline takes no scene group.
+        scene: 0,
+        only: None,
     };
     draws.record(
         list,
@@ -418,6 +457,7 @@ pub(super) fn record_pick(
         // the shading of the same draw does.
         |_| true,
         |bucket| if bucket.pick_maps { bucket.group } else { 0 },
+        |_| true,
     )
 }
 
@@ -439,19 +479,113 @@ struct Draws<'a> {
     counts: Option<&'a [u32]>,
     /// The frame parity whose last frame's data a motion bundle reads, or `None` for any other.
     motion: Option<usize>,
+    /// The group that a bucket whose material reads the scene's depth binds: the blank texel, or
+    /// 0 for a pass whose buckets bind none.
+    scene: u32,
+    /// The buckets that the bundle draws, or `None` for every bucket.
+    only: Option<&'a OccluderBuckets>,
 }
 
-impl Draws<'_> {
+impl<'a> Draws<'a> {
+    /// The draws of a bundle or a direct pass of `kind` for `view`, with the groups that the kind
+    /// binds, each bucket's instance count on the direct-draw path, and the buckets that `only`
+    /// names where it is given.
+    #[allow(clippy::too_many_arguments)]
+    fn of_kind(
+        view: ViewId,
+        layout: &'a Layout,
+        meshes: &'a MeshBuffers,
+        kind: Bundle,
+        first_draw: u32,
+        hidden: &'a dyn Fn(u32) -> bool,
+        counts: Option<&'a [u32]>,
+        only: Option<&'a OccluderBuckets>,
+    ) -> Self {
+        let frame_group = match kind {
+            Bundle::Prepass | Bundle::Occluders => ids::prepass_group(view),
+            Bundle::Subsurface => ids::frame_group(ViewId::CAMERA),
+            Bundle::Motion(parity) => ids::motion_frame_group(parity),
+            _ => ids::frame_group(view),
+        };
+        let shading_group = match kind {
+            Bundle::Subsurface => frame_group,
+            _ => ids::frame_group(view),
+        };
+        Self {
+            view,
+            layout,
+            meshes,
+            frame_group,
+            shading_group,
+            parallax_frame: if layout.parallax_frame() {
+                ids::frame_parallax_group(view)
+            } else {
+                0
+            },
+            first_draw,
+            hidden,
+            counts,
+            motion: match kind {
+                Bundle::Motion(parity) => Some(parity),
+                _ => None,
+            },
+            scene: ids::MATERIAL_SCENE_GROUPS,
+            only,
+        }
+    }
+
+    /// Records the draws of `kind`: each bucket with the pipeline, the vertex shader and the maps
+    /// that the kind draws with.
+    fn record_kind(&self, list: &mut DrawList, kind: Bundle) -> Result<(), RecordError> {
+        match kind {
+            Bundle::Opaque => {
+                // The surfaces that write no color draw first, so the depth they write holds back
+                // the color of the surfaces behind them.
+                self.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| b.holdout)?;
+                self.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| !b.holdout)
+            }
+            Bundle::Subsurface => {
+                self.record(list, |b| b.pipeline, |_| true, |b| b.group, |_| true)
+            }
+            Bundle::Prepass => self.record(
+                list,
+                |b| b.prepass,
+                |b| b.prepass_own,
+                |b| b.group,
+                |_| true,
+            ),
+            Bundle::Occluders => self.record(
+                list,
+                |b| b.occluder,
+                |b| b.occluder_own,
+                |b| b.group,
+                |_| true,
+            ),
+            Bundle::Tile => self.record(list, |b| b.prepass, |_| true, |b| b.group, |_| true),
+            Bundle::Motion(_) => {
+                self.record(list, |b| b.pipeline, |_| false, |b| b.group, |_| true)
+            }
+            Bundle::Outline => {
+                self.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true)?;
+                self.record(list, |b| b.prepass, |_| false, |_| 0, |_| true)
+            }
+            Bundle::Tone => self.record(list, |b| b.pipeline, |_| false, |_| 0, |_| true),
+        }
+    }
+
     /// Records the draws of every bucket of the layout with the pipeline that `pipeline_of` picks,
-    /// leaving out the buckets for which it gives 0. A bucket for which `own_of` is true draws with
-    /// its own template's vertex shader: it reads the view's frame group and its maps' group as its
-    /// shading does. The others read the depth group alone, as the depth and mask templates do.
+    /// leaving out the buckets for which it gives 0 and the buckets that `takes` refuses. A bucket
+    /// for which `own_of` is true draws with its own template's vertex shader: it reads the view's
+    /// frame group and its maps' group as its shading does. The others read the depth group alone,
+    /// as the depth and mask templates do. The selectors are plain functions, so every kind of
+    /// pass shares one copy of the loop.
     fn record(
         &self,
         list: &mut DrawList,
-        pipeline_of: impl Fn(&Bucket) -> u32,
-        own_of: impl Fn(&Bucket) -> bool,
-        maps_of: impl Fn(&Bucket) -> u32,
+        pipeline_of: fn(&Bucket) -> u32,
+        own_of: fn(&Bucket) -> bool,
+        maps_of: fn(&Bucket) -> u32,
+        takes: fn(&Bucket) -> bool,
     ) -> Result<(), RecordError> {
         let Self {
             view,
@@ -464,14 +598,38 @@ impl Draws<'_> {
             hidden,
             counts,
             motion,
+            scene,
+            only,
         } = *self;
         let (mut pipeline, mut vertices, mut indices) = (None, None, None);
         let mut last_vertices = None;
         let mut groups = DrawGroups::default();
         let mut bound = None;
-        for (b, bucket) in layout.buckets.iter().enumerate() {
+        for b in layout.drawn_buckets() {
+            let bucket = &layout.buckets[b];
+            if !takes(bucket) || only.is_some_and(|only| !only.draws(b)) {
+                continue;
+            }
+            // A level that holds no copy draws nothing. A bundle leaves out the draws of a level
+            // that the frame's counts have found idle, with its pieces' draws, and a direct pass
+            // leaves out a level's bucket whose count is 0.
+            let empty_level = match counts {
+                Some(counts) => {
+                    layout.marks.get(b).is_some_and(|&mark| mark != 0)
+                        && counts.get(b).copied().unwrap_or(0) == 0
+                }
+                None => layout.idle.get(b).copied().unwrap_or(false),
+            };
+            if empty_level {
+                continue;
+            }
             let id = pipeline_of(bucket);
-            if id == 0 || (bucket.group != 0 && hidden(bucket.group)) {
+            // A feature-instance draw whose feature does not draw now records nothing: the views
+            // take no room for it, and its count word is not copied either.
+            if id == 0
+                || (bucket.feature != 0 && !bucket.feature_ready)
+                || (bucket.group != 0 && hidden(bucket.group))
+            {
                 continue;
             }
             let own = own_of(bucket);
@@ -504,16 +662,52 @@ impl Draws<'_> {
             } else {
                 (layout.copy_stride(), 0)
             };
-            groups.set(list, maps, bucket.skins, index)?;
-            list.push(
-                Op::SetVertexBuffer,
-                &[
-                    1,
+            // A bucket whose material reads the scene's depth binds the group after its maps.
+            let scene = if own && bucket.scene_depth { scene } else { 0 };
+            groups.set(list, maps, scene, bucket.skins, index)?;
+            // A feature-instance draw reads the rows that the frame's conversion wrote from the
+            // add-on's world rows, from the buffer's first instance on.
+            let (instances, offset, bytes) = if bucket.feature != 0 {
+                (
+                    ids::feature_relative(bucket.feature),
+                    0,
+                    bucket.feature_capacity.max(1) * sizes::INSTANCE_STRIDE,
+                )
+            } else {
+                (
                     ids::visible(view),
                     bucket.base * stride,
                     bucket.capacity.max(1) * stride,
-                ],
-            )?;
+                )
+            };
+            list.push(Op::SetVertexBuffer, &[1, instances, offset, bytes])?;
+            // A cluster mesh draws the indices that the cluster pass copied for this view, in one
+            // draw that the pass sized, instead of its whole triangle list. The direct-draw path
+            // counts its own instances and records no cluster pass, so it draws the whole list.
+            if let Some(cluster) = bucket.cluster.filter(|_| self.counts.is_none()) {
+                let draw = layout.draws[bucket.first_draw as usize];
+                let (page_vertices, _) = meshes.ids(draw.page);
+                if vertices != Some((page_vertices, 0)) {
+                    list.push(Op::SetVertexBuffer, &[0, page_vertices, 0, 0])?;
+                    vertices = Some((page_vertices, 0));
+                }
+                let tree_indices = ids::cluster_list(view);
+                if indices != Some(tree_indices) {
+                    list.push(
+                        Op::SetIndexBuffer,
+                        &[tree_indices, index_format::UINT32, 0, 0],
+                    )?;
+                    indices = Some(tree_indices);
+                }
+                list.push(
+                    Op::DrawIndexedIndirect,
+                    &[
+                        ids::cluster_draws(view),
+                        super::clusters::Clusters::draw_offset(cluster),
+                    ],
+                )?;
+                continue;
+            }
             for index in bucket.first_draw..bucket.first_draw + bucket.draws {
                 let draw = layout.draws[index as usize];
                 let (page_vertices, page_indices) = meshes.ids(draw.page);

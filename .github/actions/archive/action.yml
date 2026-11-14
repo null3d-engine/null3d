@@ -1,0 +1,103 @@
+name: An archive artifact
+description: >-
+  Hands folders from one job to the jobs that read them as one tar file, compressed with zstd on
+  every core, in place of the artifact's own zip, which compresses each file on its own and on one
+  core. Files that share their text, as the shader modules do, compress together: the build job's
+  2.8 GB of files made a 510 MB zip in 77 s and make about 122 MB in seconds here. "upload" packs
+  the paths, which are relative to root, and uploads the file as it is. With link set, the files of
+  equal contents below the paths first become one file with several names, so the archive holds
+  each content once, as the load builds need. "download" takes the file and unpacks it into root.
+  With pattern set, "download" takes every archive whose artifact name matches, and unpacks each
+  into root, so several jobs' shares of one folder join there.
+  Each step that uses this action sets a limit of a few minutes, as a composite action's own steps
+  cannot: a transfer takes at most about 30 s, and one that stalls would otherwise hold its job,
+  and every run queued behind it, until the job's own limit. On 24 October 2026 the build job's
+  upload stalled for 19 minutes in run 40114017712 until a cancel by hand.
+
+inputs:
+  mode:
+    description: '"upload" packs and uploads the paths; "download" takes and unpacks them.'
+    required: true
+  name:
+    description: The artifact's name.
+    required: true
+  paths:
+    description: With "upload", the files and folders to pack, relative to root, split by spaces.
+    default: ""
+  root:
+    description: The folder that the paths are relative to, and that "download" unpacks into.
+    default: "."
+  link:
+    description: '"true" links the files of equal contents before an upload packs them.'
+    default: "false"
+  pattern:
+    description: >-
+      With "download", a pattern of artifact names in place of name: every archive that matches is
+      unpacked into root. A pattern that matches none unpacks nothing.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Pack ${{ inputs.name }}
+      if: inputs.mode == 'upload'
+      shell: bash
+      working-directory: ${{ inputs.root }}
+      env:
+        PATHS: ${{ inputs.paths }}
+        LINK: ${{ inputs.link }}
+        ARCHIVE: ${{ runner.temp }}/${{ inputs.name }}.tar.zst
+      run: |
+        # The paths split into words on purpose, and tar stops on one that is missing.
+        # shellcheck disable=SC2086
+        if [ "$LINK" = "true" ]; then bun "$GITHUB_WORKSPACE/tools/link-duplicates.ts" $PATHS; fi
+        # shellcheck disable=SC2086
+        tar -cf - $PATHS | zstd -T0 -6 -q -o "$ARCHIVE"
+        ls -l "$ARCHIVE"
+    # The file is compressed already.
+    - uses: actions/upload-artifact@v4
+      if: inputs.mode == 'upload'
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ runner.temp }}/${{ inputs.name }}.tar.zst
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 1
+    - uses: actions/download-artifact@v4
+      if: inputs.mode == 'download' && inputs.pattern == ''
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ runner.temp }}/${{ inputs.name }}
+    # Each archive is named for its artifact, so the matches share one folder without a clash.
+    - uses: actions/download-artifact@v4
+      if: inputs.mode == 'download' && inputs.pattern != ''
+      with:
+        pattern: ${{ inputs.pattern }}
+        merge-multiple: true
+        path: ${{ runner.temp }}/${{ inputs.name }}
+    - name: Unpack ${{ inputs.name }}
+      if: inputs.mode == 'download'
+      shell: bash
+      env:
+        ROOT: ${{ inputs.root }}
+        FOLDER: ${{ runner.temp }}/${{ inputs.name }}
+      # A tar that stops reading at the archive's end marker can close the pipe while zstd still
+      # writes the padding behind it. zstd then fails on the broken pipe, with its message or with
+      # the pipe's signal, although tar has unpacked every file, so that one failure, after tar
+      # passed, shows as a warning. Any other failure of either fails the step.
+      run: |
+        mkdir -p "$ROOT"
+        shopt -s nullglob
+        set +o pipefail
+        errors="$RUNNER_TEMP/zstd-errors"
+        for archive in "$FOLDER"/*.tar.zst; do
+          zstd -dc "$archive" 2>"$errors" | tar -xf - -C "$ROOT"
+          status=("${PIPESTATUS[@]}")
+          cat "$errors" >&2
+          if [ "${status[1]}" != 0 ]; then exit "${status[1]}"; fi
+          if [ "${status[0]}" != 0 ]; then
+            [ "${status[0]}" = 141 ] || grep -q "Broken pipe" "$errors" || exit "${status[0]}"
+            echo "::warning::zstd met a closed pipe after tar unpacked all of $(basename "$archive")"
+          fi
+        done
+        rm -rf "$FOLDER" "$errors"

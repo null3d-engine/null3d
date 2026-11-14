@@ -4,11 +4,16 @@
 // receives none, and an unlit box shows no shadow on itself. The page's ?shadowTileSize= switch
 // fixes the tile size, and the sketch fixes the 3 x 3 shadow filter, so every GPU tier draws the
 // same image whatever preset it runs. ?batches draws the ground's objects as rows of instance
-// batches of one row each, which must cast and receive as the objects do.
+// batches of one row each, which must cast and receive as the objects do. ?intensity= sets how much
+// of their shadow the lights draw, from 0 for none to 1, the default.
 import { defineSketch, type Material, type MeshGeometry } from '@null3d/engine';
 
+const params = new URL(import.meta.url).searchParams;
 /** Whether the objects draw as instance rows, from the sketch module's ?batches switch. */
-const BATCHES = new URL(import.meta.url).searchParams.has('batches');
+const BATCHES = params.has('batches');
+/** How much of their shadow the lights draw, from 0 for none to 1, the default, for all of it. */
+const intensity = Number(params.get('intensity') ?? 1);
+if (!Number.isFinite(intensity)) throw new Error('?intensity= must be a number from 0 to 1');
 
 export default defineSketch(({ scene, materials, geometry, quality }) => {
 	quality.set({ shadowFilter: 3 });
@@ -29,6 +34,7 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 		angle: 0.6,
 		penumbra: 0.2,
 		castShadows: true,
+		shadow: { intensity },
 	});
 	scene.createSpotLight({
 		position: [5, 6, -4],
@@ -39,7 +45,7 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 		angle: 0.5,
 		penumbra: 0.3,
 		castShadows: true,
-		shadow: { bias: 0.01, normalBias: 0.01 },
+		shadow: { bias: 0.01, normalBias: 0.01, intensity },
 	});
 	scene.createAmbientLight({ intensity: 0.08 });
 

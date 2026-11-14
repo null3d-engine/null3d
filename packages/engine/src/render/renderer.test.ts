@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
+import {
+	LIMIT_MAX_USEFUL_BINDING_BYTES,
+	LIMIT_PORTABLE_BUFFER_BYTES,
+	LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
+} from '../generated/core';
 import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
-import { releaseContext } from '../gpu/webgl2/context';
+import { releaseContext, webgl2Context } from '../gpu/webgl2/context';
 import type { CoreDevice } from '../page/limits';
 import { createRenderer, type RenderCanvas } from './renderer';
 
@@ -11,9 +16,11 @@ type ContextRequest = { type: string; settings: unknown };
  * request's context, whose settings later requests cannot change. `loseContext` and
  * `restoreContext` act out a loss as a browser does: the context counts as lost at once, and the
  * event follows. The context's `WEBGL_lose_context` acts as a browser's does: its loss event runs
- * in a later task, and a restore works only after that event ran and was cancelled.
+ * in a later task, and a restore works only after that event ran and was cancelled. With
+ * `refuseLater`, it refuses every request after the first, as Firefox's offscreen canvas in a worker
+ * does.
  */
-function fakeCanvas() {
+function fakeCanvas({ refuseLater = false } = {}) {
 	const requests: ContextRequest[] = [];
 	let lost = false;
 	let restorable = false;
@@ -22,6 +29,11 @@ function fakeCanvas() {
 		height: 150,
 		getContext(type: string, settings?: unknown) {
 			requests.push({ type, settings });
+			if (refuseLater && requests.length > 1)
+				throw new DOMException(
+					'OffscreenCanvas.getContext: Cannot update created context to different thread',
+					'InvalidStateError',
+				);
 			return context;
 		},
 	});
@@ -146,23 +158,35 @@ describe('the WebGL2 renderer', () => {
 
 	it('gives up the canvas own context when the renderer drew through a wrapper of it', async () => {
 		const { canvas } = fakeCanvas();
-		const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
+		const gl = webgl2Context(canvas, undefined);
 		// A stand-in like call timing's: it reads the canvas, and its extensions are its own.
 		releaseContext({ canvas, getExtension: () => null } as unknown as WebGL2RenderingContext);
 		expect(gl.isContextLost()).toBe(true);
 		await createRenderer(canvas, { tier: 'webgl2', device: {} as CoreDevice });
 		expect(gl.isContextLost()).toBe(false);
 	});
+
+	it('asks a canvas for its context once, for every renderer on it and every release', async () => {
+		const { canvas, requests } = fakeCanvas({ refuseLater: true });
+		const options = { tier: 'webgl2', device: {} as CoreDevice } as const;
+		const first = await createRenderer(canvas, options);
+		first.destroy();
+		const second = await createRenderer(canvas, options);
+		second.destroy();
+		expect(requests.length).toBe(1);
+	});
 });
 
 describe('the WebGPU renderer', () => {
-	/** Gives the thread a WebGPU adapter with `features`, and lists the features each device asks for. */
+	/** Gives the thread a WebGPU adapter with `features`, and lists what each device asks for. */
 	function fakeGpu(features: string[]) {
 		const requests: string[][] = [];
+		const limits: Record<string, number>[] = [];
 		const adapter = {
 			features: new Set(features),
 			async requestDevice(descriptor: GPUDeviceDescriptor) {
 				requests.push([...(descriptor.requiredFeatures ?? [])]);
+				limits.push((descriptor.requiredLimits ?? {}) as Record<string, number>);
 				throw new Error('the fake adapter makes no device');
 			},
 		};
@@ -174,8 +198,35 @@ describe('the WebGPU renderer', () => {
 		});
 		const restore = () =>
 			Object.defineProperty(navigator, 'gpu', { configurable: true, value: before });
-		return { requests, restore };
+		return { requests, limits, restore };
 	}
+
+	/**
+	 * The engine's own buffers follow the device's largest buffer, and the engine asks for that
+	 * largest buffer here: the portable limit at least, and the storage binding where a device
+	 * offers more. A request that stopped at the portable limit would leave a device with a larger
+	 * binding holding buffers it rejects.
+	 */
+	it('asks for a largest buffer of at least the engine sizes', async () => {
+		for (const binding of [LIMIT_PORTABLE_STORAGE_BINDING_BYTES, LIMIT_MAX_USEFUL_BINDING_BYTES]) {
+			const { requests, limits, restore } = fakeGpu(['core-features-and-limits']);
+			try {
+				const options = {
+					tier: 'webgpu' as const,
+					device: { capabilities: 0, storageBindingBytes: binding } as CoreDevice,
+				};
+				await expect(createRenderer(fakeCanvas().canvas, options)).rejects.toThrow(
+					'the fake adapter makes no device',
+				);
+				expect(requests).toHaveLength(1);
+				expect(limits[0]?.maxBufferSize).toBeGreaterThanOrEqual(
+					Math.max(binding, LIMIT_PORTABLE_BUFFER_BYTES),
+				);
+			} finally {
+				restore();
+			}
+		}
+	});
 
 	for (const [feature, device] of [
 		['shader-f16', { shaderBits: PERMUTATION_HALF }],

@@ -2,14 +2,25 @@
 // slowly, or when its own pace shows that it needs longer than its time limit, as the shaders page
 // does on a slow device, and how a finished page counts while the run goes on.
 
-/** The most time a page may ask for, as a share of its time limit. */
+/** The most time a page's file loads may add, as a share of its time limit. */
 export const MOST_TIME_SHARE = 3;
+
+/**
+ * The most time a page's own pace may add, as a share of its time limit. A page that kept working
+ * at its first steps' pace shows it in its expected end, and a page that stopped in one step leaves
+ * that end standing. A page may not borrow a slow load's whole share for a pace that its steps no
+ * longer show. The share grows with the time that the page spent loading files, since the pace it
+ * measured counts those seconds too.
+ */
+export const SLOW_PACE_SHARE = 1.5;
 
 /**
  * How often a runner page rewrites its heartbeat record while it waits on a page. The runner tool
  * counts a runner page that writes nothing for a page's limit and a little more as stopped. A page
  * may get longer than its limit, so the record shows the tool that the runner page still runs.
- * The beat comes well within the shortest such quiet time.
+ * The beat comes well within the shortest such quiet time. It carries the number of steps that the
+ * page under it has taken, since a runner page that beats says nothing about a page that stopped:
+ * the tool counts a beat that shows the same step for the page's quiet time as stopped too.
  */
 export const HEARTBEAT_SECONDS = 20;
 
@@ -39,17 +50,19 @@ export function expectedEndSeconds(
 
 /**
  * The time in seconds that the runner page gives a page: its limit plus the time that it spent
- * loading files, or longer when the page expects to end later, up to a few times the limit. A
- * device that reaches the server through a slow link, as the cloud's devices do through their
- * tunnel, then gets the time its loads take, and a page whose own work is slow still fails.
+ * loading files, or longer when the page expects to end later. A device that reaches the server
+ * through a slow link, as the cloud's devices do through their tunnel, then gets the time its
+ * loads take, up to a few times the limit. The page's own pace adds at most half the limit again,
+ * so a page that stopped in one step fails near its limit rather than at the plan's end.
  */
 export function grantedSeconds(
 	limitSeconds: number,
 	endsBy: number | undefined,
 	loadingSeconds = 0,
 ): number {
-	const expected = endsBy !== undefined && Number.isFinite(endsBy) ? endsBy : 0;
-	const asked = Math.max(limitSeconds + loadingSeconds, expected);
+	const pacedCap = limitSeconds * SLOW_PACE_SHARE + loadingSeconds;
+	const paced = endsBy !== undefined && Number.isFinite(endsBy) ? Math.min(endsBy, pacedCap) : 0;
+	const asked = Math.max(limitSeconds + loadingSeconds, paced);
 	return Math.max(limitSeconds, Math.min(Math.ceil(asked), limitSeconds * MOST_TIME_SHARE));
 }
 

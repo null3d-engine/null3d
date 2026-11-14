@@ -8,6 +8,7 @@ import { FLAG_OCCLUDER } from '../generated/core';
 import type { Vec3Like } from '../math/types';
 import { type AnimationRig, animateObject, destroyRig, morphObject, skinObject } from './animation';
 import type { CoreMemory } from './memory';
+import type { PropertyBinding, PropertyClipTracks } from './property-animation';
 import type { Geometry, Material, MeshGeometry } from './resources';
 import type { Mesh, Object3D, SceneChecks } from './scene';
 import type { Texture } from './textures';
@@ -35,6 +36,8 @@ export interface TemplateNode {
 	flags: number;
 	layers: number;
 	renderOrder: number;
+	/** The bias of the threshold that picks the mesh's levels of detail, 1 for none. */
+	levelBias: number;
 	/** The center and radius of the object's own bounds, which `FLAG_CUSTOM_BOUNDS` turns on. */
 	bounds?: ArrayLike<number>;
 	light?: LightTemplate;
@@ -55,6 +58,25 @@ export interface TemplateNode {
 	rest?: { readonly matrix: ArrayLike<number>; readonly exact: boolean };
 	/** The weights of the mesh's morph targets, for a mesh that has any. */
 	morph?: MorphTemplate;
+}
+
+/**
+ * @internal The property tracks of a model's clips, which move values of its materials, lights and
+ * nodes as the clips play.
+ */
+export interface PropertyAnimationData {
+	/** The property of each binding, with the value that the file gave it. */
+	readonly bindings: readonly PropertyBinding[];
+	/**
+	 * Where each binding's target is: the model's materials that draw that material of the file, or
+	 * the template node that holds the light or the object. A binding whose node is a joint writes
+	 * nothing.
+	 */
+	readonly targets: readonly (Material[] | { readonly node: number })[];
+	/** The tracks of each clip, by the clip's id in the core minus one. */
+	readonly clips: PropertyClipTracks;
+	/** What each binding animates, such as "materials/0/color", in the bindings' order. */
+	readonly keys: readonly string[];
 }
 
 /** @internal The morph weights of a template node's mesh. */
@@ -175,6 +197,8 @@ export class Prefab {
 		readonly rig: AnimationRig | undefined,
 		/** @internal What the prefab frees besides its public lists. */
 		private readonly owned: PrefabOwned,
+		/** @internal The properties that its clips move, when the file animates any. */
+		readonly properties: PropertyAnimationData | undefined = undefined,
 	) {}
 
 	/**
@@ -217,6 +241,11 @@ export class Prefab {
 			);
 	}
 
+	/** @internal True until `destroy` runs: a background load stops when the model goes. */
+	get live(): boolean {
+		return !this.destroyed;
+	}
+
 	/** The names of the model's clips, which a copy's animator plays. */
 	get clips(): readonly string[] {
 		return this.rig ? [...this.rig.clips.keys()] : [];
@@ -235,6 +264,13 @@ export class Prefab {
 			if (node.skinned) skinObject(objects[k] as Mesh, animator);
 			if ((node.morph?.joint ?? -1) >= 0) morphObject(objects[k] as Mesh, animator);
 		});
+		const properties = this.properties;
+		if (properties) {
+			const targets = properties.targets.map((target) =>
+				Array.isArray(target) ? target : (objects[target.node] ?? null),
+			);
+			animator.bindProperties(properties.bindings, properties.clips, targets, properties.keys);
+		}
 	}
 
 	/** @internal The model's address, as error messages show it. */

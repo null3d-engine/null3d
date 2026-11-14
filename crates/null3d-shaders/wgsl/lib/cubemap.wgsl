@@ -105,3 +105,28 @@ fn radical_inverse(i: u32) -> f32 {
     bits = ((bits & 0x00ff00ffu) << 8u) | ((bits & 0xff00ff00u) >> 8u);
     return f32(bits) * (1.0 / 4294967296.0);
 }
+
+/// 2 to the power `e`, exact for the exponents of normal floats.
+fn power_of_two(e: i32) -> f32 {
+    return bitcast<f32>(u32(e + 127) << 23u);
+}
+
+/// A texel's light as `rgb9e5ufloat`, rounded to nearest as `EXT_texture_shared_exponent` packs
+/// it, in the four bytes of an `rgba8unorm` texel, lowest byte first. A quarter step above each
+/// byte keeps the byte whether the GPU rounds or truncates its conversion to 8 bits.
+fn pack(light: vec3f) -> vec4f {
+    let c = select(vec3f(0.0), min(light, vec3f(65408.0)), light > vec3f(0.0));
+    let largest = max(c.r, max(c.g, c.b));
+    if largest < power_of_two(-24) {
+        return vec4f(0.25 / 255.0);
+    }
+    let floor_log = i32((bitcast<u32>(largest) >> 23u) & 255u) - 127;
+    var exponent = max(floor_log, -16) + 16;
+    if floor(largest * power_of_two(24 - exponent) + 0.5) >= 512.0 {
+        exponent += 1;
+    }
+    let m = min(vec3u(floor(c * power_of_two(24 - exponent) + 0.5)), vec3u(511u));
+    let word = m.r | (m.g << 9u) | (m.b << 18u) | (u32(exponent) << 27u);
+    let bytes = vec4u(word & 255u, (word >> 8u) & 255u, (word >> 16u) & 255u, word >> 24u);
+    return (vec4f(bytes) + 0.25) / 255.0;
+}

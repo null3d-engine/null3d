@@ -1,0 +1,60 @@
+[
+	{
+		"address": "three.html?scene=bistro&warmup=6&seconds=15&view=street",
+		"run": 0,
+		"attempt": 0,
+		"invalid": false,
+		"uncapped": true,
+		"startedAt": "2026-11-04T06:16:36.826Z",
+		"wallSeconds": 35.261,
+		"load": {
+			"before": 7.86083984375,
+			"after": 8.197265625
+		},
+		"engine": "three.js r187",
+		"pipeline": "meshlet",
+		"view": "street",
+		"switches": "?scene=bistro&warmup=6&seconds=15&view=street",
+		"copies": 1615,
+		"firstFrameMs": 13400.079999998212,
+		"frames": 5019,
+		"presentedFps": 334.6,
+		"intervalMs": {
+			"median": 2.474999999998545,
+			"p95": 7.844999999993888,
+			"samples": 5019
+		},
+		"gpuMs": {
+			"median": 4.6360529999999995,
+			"p95": 18.620258,
+			"samples": 5019
+		},
+		"gpuRenderMs": {
+			"median": 3.5429880000000002,
+			"p95": 18.058889999999998,
+			"samples": 5019
+		},
+		"gpuComputeMs": {
+			"median": 0.262496,
+			"p95": 3.2502,
+			"samples": 5019
+		},
+		"cpuMs": {
+			"median": 2.2950000017881393,
+			"p95": 7.379999995231628,
+			"samples": 5019
+		},
+		"triangles": {
+			"median": 425152,
+			"p95": 425152,
+			"samples": 5019
+		},
+		"clusters": 6643,
+		"drawn": {
+			"width": 1920,
+			"height": 1080
+		},
+		"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+		"problems": []
+	}
+]

@@ -1,12 +1,20 @@
 // The null3d engine: createEngine runs on the page, defineSketch in the sketch module, and the math
 // helpers in both.
 
-export type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug/debug';
-export type { FrameStats, FrameStatsThread } from './debug/stats';
+export type {
+	Debug,
+	DebugGridOptions,
+	DebugLightOptions,
+	DebugView,
+	DebugViewName,
+} from './debug/debug';
+export type { FrameStats, FrameStatsStep, FrameStatsThread } from './debug/stats';
 export type { StatsOverlayOptions } from './debug/stats-options';
+export type { EngineDebugView } from './debug/view-names';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
 export type { ShaderFeature } from './generated/shader-features';
+export type { DrawPathReason } from './gpu/webgpu/draw-path-probe';
 /**
  * Colors as linear RGB in plain arrays of three numbers, from hex colors, sRGB components, or hue,
  * saturation and lightness: `color.fromHex(out, '#ff8800')`.
@@ -35,7 +43,7 @@ export * as math from './math/math';
  * @category api/math
  */
 export * as quat from './math/quat';
-export type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from './math/types';
+export type { EulerOrder, Mat4Like, QuatLike, Vec2Like, Vec3Like } from './math/types';
 /**
  * Vectors (x, y, z) in plain arrays, in the style of gl-matrix: `vec3.add(out, a, b)` writes the sum
  * into `out` and returns `out`, so per-frame code allocates nothing.
@@ -55,6 +63,7 @@ export type {
 	EngineMode,
 	EngineOptions,
 	RenderFallback,
+	StartupProgress,
 	StartupStage,
 } from './page/engine';
 export { createEngine } from './page/engine';
@@ -63,16 +72,31 @@ export type {
 	FrameSummary,
 	GpuPassStats,
 	MainThreadStats,
+	MeasureOptions,
 	MemoryStats,
 	SecondRates,
+	SlowFrame,
+	SlowFrameThread,
 	ThreadStats,
 } from './page/frame-stats';
-export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
+export type {
+	HeldFrame,
+	HoldDump,
+	HoldFailure,
+	HoldResult,
+	HoldScript,
+	HoldScriptProblem,
+	HoldScriptResult,
+	HoldScriptStep,
+} from './page/hold';
 export type { EngineLabels } from './page/labels';
 export type { PointerLockOptions } from './page/pointer-lock';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
+export type { VideoOptions } from './page/videos';
 export type { PresetCheck, PresetCheckRound, TargetFps } from './quality/check';
-export type { DeviceHints } from './quality/chooser';
+export type { DeviceHints, DeviceKind } from './quality/chooser';
+export { deviceKind } from './quality/chooser';
+export { readDeviceHints } from './quality/device-hints';
 export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
 	AnimationEvent,
@@ -85,6 +109,12 @@ export type {
 } from './scene/animation';
 export type {
 	Assets,
+	GltfExtensionContext,
+	GltfExtensionData,
+	GltfExtensionHandler,
+	GltfExtensionNode,
+	GltfExtensionPart,
+	GltfExtensionPrimitive,
 	LoadGltfOptions,
 	LoadImageOptions,
 	LoadTextureOptions,
@@ -97,9 +127,15 @@ export type {
 	BackgroundSource,
 	Cubemap,
 	SkyBackground,
+	SkyLayer,
+	SkyLayerOptions,
+	SkyLayerValues,
 	SkyOptions,
 } from './scene/background';
+export type { LightMapData, LightMapEncoding } from './scene/baked-light';
+export type { ChunkRowData, ChunkRowWriter } from './scene/chunk-rows';
 export type { ColorInput } from './scene/color';
+export type { DerivedCache } from './scene/derived-cache';
 export type { Effect, EffectOptions } from './scene/effects';
 export type {
 	BuiltinEnvironmentName,
@@ -107,8 +143,50 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
+export type {
+	FeatureDraw,
+	FeatureDrawOptions,
+	FeatureDrawVertices,
+	FeatureInstances,
+	FeatureInstancesOptions,
+	FeatureRowOptions,
+} from './scene/feature-draws';
+export type { FeatureEffect, FeatureEffectOptions } from './scene/feature-effects';
+export type { FeatureHandle, FeatureHostOptions } from './scene/feature-host';
+export { FeatureHost } from './scene/feature-host';
+export type {
+	ComputeInstances,
+	ComputeInstancesOptions,
+	ComputeInstanceVertices,
+	FeatureInstanceBuffer,
+} from './scene/feature-instances';
+export type {
+	FeatureBand,
+	FeatureBudget,
+	FeatureDebugView,
+	FeatureDescription,
+	FeatureFrame,
+	FeatureGovernor,
+	FeatureGpu,
+	FeatureGpuPass,
+	FeatureKind,
+	FeatureNeutral,
+	FeatureOutput,
+	FeatureQuality,
+	FeatureReset,
+	FeatureResource,
+	FeatureSetting,
+	FeatureSize,
+	FeatureSlot,
+	FeatureStats,
+	FeatureValue,
+	FeatureView,
+	SceneInput,
+} from './scene/features';
+export { defineFeature, FeatureRegistry } from './scene/features';
 export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
+export { registerGltfExtension } from './scene/gltf-extensions';
 export type { LightImagePixels } from './scene/light-images';
 export type { BakeProbesOptions, LightProbeGridOptions } from './scene/light-probes';
 export { bakeProbes, LightProbeGridData, ProbeBake } from './scene/light-probes';
@@ -120,15 +198,26 @@ export type {
 	LineValues,
 } from './scene/lines';
 export type { Lut, LutData, LutDomain } from './scene/lut';
+export type { AddonNamespace, ExportedNames } from './scene/namespaces';
+export {
+	AddonNamespaces,
+	addonNamespaces,
+	declareAddonNamespace,
+} from './scene/namespaces';
 export type {
 	ParticleBuffer,
 	ParticleBufferOptions,
+	ParticleEmitterBurst,
+	ParticleEmitterOptions,
+	ParticleEmitterShape,
+	ParticleEmitterSub,
 	ParticleFacing,
 	ParticleFlipbook,
 	ParticleGroundMode,
 	ParticleLook,
 	ParticleMotion,
 	ParticleValues,
+	ParticleWindField,
 } from './scene/particles';
 export type { PickHit } from './scene/picks';
 export type {
@@ -143,16 +232,24 @@ export type {
 	BloomSettings,
 	DofSettings,
 	ExposureMetering,
+	GradingSettings,
 	OutlineSettings,
 	Post,
 	PostSettings,
+	SplitToningSettings,
 	SsrSettings,
 	ToneCurve,
 	ToneMapping,
 	VignetteSettings,
+	WhiteBalanceSettings,
 } from './scene/post';
 export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
 export type { ReflectionProbe, ReflectionProbeOptions } from './scene/probes';
+export type {
+	PropertyAnimation,
+	PropertyInterpolation,
+	PropertyKeyframes,
+} from './scene/property-animation';
 export type {
 	OverlapHit,
 	QueryOptions,
@@ -162,8 +259,15 @@ export type {
 	RaycastOptions,
 } from './scene/queries';
 export type {
+	ComputeDispatch,
+	ComputeFallback,
+	ComputeFormat,
+	ComputePassOptions,
+	ComputeWorkgroup,
 	FullscreenPassOptions,
 	PassInput,
+	PassReadRegion,
+	PassReadResult,
 	PassScale,
 	ReflectionPassOptions,
 	ReflectionPlane,
@@ -177,6 +281,7 @@ export type {
 	AlphaMode,
 	Blending,
 	BoxOptions,
+	BuildLevelsOptions,
 	CapsuleOptions,
 	CircleOptions,
 	CompiledWgsl,
@@ -187,6 +292,8 @@ export type {
 	DepthBias,
 	Geometry,
 	IntegerArray,
+	LevelsOption,
+	MapUvTransforms,
 	Material,
 	MaterialFeatures,
 	MaterialOptions,
@@ -202,6 +309,7 @@ export type {
 	ShaderValues,
 	ShadowCatcherOptions,
 	ShadowCatcherValues,
+	ShapeLevels,
 	SphereOptions,
 	StandardBaseOptions,
 	StandardMaps,
@@ -248,6 +356,9 @@ export type {
 	RectAreaLight,
 	RectAreaLightOptions,
 	Scene,
+	SceneView,
+	SceneViewOptions,
+	SceneViewRect,
 	SpotLight,
 	SpotLightOptions,
 	TubeLight,
@@ -264,6 +375,8 @@ export type {
 	SpriteValues,
 } from './scene/sprites';
 export type {
+	CanvasRect,
+	CanvasTextureOptions,
 	CompressedTextureFormat,
 	Texture,
 	TextureColorSpace,
@@ -283,6 +396,8 @@ export type {
 	TimeOfDayPreset,
 } from './scene/time-of-day';
 export { emptyTimeOfDay, timeOfDay } from './scene/time-of-day';
+export type { VertexDrawBounds, VertexDrawOptions } from './scene/vertex-draws';
+export { VertexDraw } from './scene/vertex-draws';
 export type {
 	TextureValues,
 	UniformType,
@@ -293,8 +408,20 @@ export type {
 	WgslUniforms,
 } from './scene/wgsl-uniforms';
 export type { PhaseName } from './shared/metrics';
+export type { ReplayResult } from './shared/recording';
+export { runTask } from './shared/run-task';
 export type { Percentiles } from './shared/stats';
+export { TaskFailure } from './shared/task-failure';
+export { TaskLoadError } from './shared/task-load-error';
+export type { Task, WasmFile } from './shared/tasks';
 export type { Tier } from './shared/tier';
+export type { PluginInterfaceRange } from './shared/version';
+export {
+	checkAddonVersion,
+	checkPluginInterface,
+	PLUGIN_INTERFACE_VERSION,
+	VERSION,
+} from './shared/version';
 export type {
 	SketchCallbacks,
 	SketchContext,
@@ -314,12 +441,6 @@ export type {
 	QualityBudgetOptions,
 	QualityGovernor,
 } from './sketch/quality';
-export type { LabelOptions, Ui } from './sketch/ui';
+export type { LabelOptions, LabelTransform, Ui } from './sketch/ui';
 export type { WorkerProbe } from './workers/probe-worker';
-
-/**
- * The engine version, which the WebAssembly core and this package always share.
- *
- * @category api/engine
- */
-export const VERSION = '0.0.0';
+export type { TaskModule, TaskResult, TaskStage } from './workers/tasks';

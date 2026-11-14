@@ -1,16 +1,16 @@
 # D-103: Object tables that grow on demand
 
-Status: decided by the owner on 2026-10-08 at about 00:05 (UTC+8): option (d), tables that grow. The coordinator set a small start at about 00:55, so that small games stay small. Timed on the Mac, the Galaxy S25 and the Pixel 9 on 2026-10-08. Date: 2026-10-08. Task: M2-L3 needs it.
+Status: decided by the owner: option (d), tables that grow. The coordinator set a small start, so that small games stay small. Built, and timed on the Mac, the Galaxy S25 and the Pixel 9. Task: M2-L3 needs it.
 
-Summary: The scene's object tables start with room for 1,023 objects, not 16,383. They double when the scene needs more, up to 1,048,575, the most that a handle names. A small scene's engine memory is 6.2 to 6.5 MB smaller. A growth copies 263 bytes per object. From 16,383 to 32,767 objects it takes 1 ms in Chrome on the Mac, and 2.4 to 5.3 ms on the Galaxy S25 and the Pixel 9. It comes at a frame's start once the scene is three quarters full, or at a create call that finds it full. The `expectedObjects` option sizes the tables from the start.
+Summary: The scene's object tables start with room for 1,023 objects and double as needed, up to 1,048,575, the most that a handle names. That saves a small scene 6.2 to 6.5 MB against room for 16,383, and `expectedObjects` sizes the tables from the start. A growth from 16,383 to 32,767 objects takes 1 ms on the Mac and 2.4 to 5.3 ms on phones.
 
 ## Question
 
-One engine held at most 16,383 objects, with every per-object table sized for that limit when the engine started. S6, the city, needs about 21,900 objects. How should the engine hold scenes larger than the limit, without making every scene pay for them?
+An engine whose per-object tables are sized at its start for 16,383 objects holds no more than that. S6, the city, needs about 21,900 objects. How should the engine hold larger scenes, without making every scene pay for them?
 
 ## Rule
 
-The owner set these requirements on 8 October 2026:
+The owner set these requirements:
 
 - Small games stay small: a scene of a few objects does not pay for thousands.
 - S1 and S2 keep their speeds. Their tables reach their size while they load, not during play.
@@ -47,7 +47,7 @@ So the ceiling is 1,048,575 objects. A larger ceiling would need more handle bit
 
 The engine's WebAssembly memory after the first frame of a scene with one camera, from `engine.measure(0.5).memory.wasmBytes`, in Chrome 155 on the Mac, 3 runs each:
 
-| GPU path | Room for 16,383 objects | Room for 1,023 objects (the new start) | Saved |
+| GPU path | Room for 16,383 objects | Room for 1,023 objects (the default start) | Saved |
 | --- | --- | --- | --- |
 | WebGPU | 29.3 to 29.4 MB | 22.8 to 23.2 MB | 6.2 to 6.5 MB |
 | WebGL2 | 30.1 to 30.2 MB | 23.9 MB | 6.2 MB |
@@ -73,11 +73,11 @@ In Chrome the first growth took longer than the second in every run, and these r
 
 The device runner's `object-growth` plan runs `tests/pages/object-growth.html?timing` three times on each GPU path, and its summary gives the tables above ([Device sessions](../devices.md#the-object-growth-plan)).
 
-The plan's first run, in Chrome 155 on the Mac on 2026-10-08 at a 1-minute load of 7.7, passed 6 of 6 loads. The growth from 16,383 to 32,767 objects took 0.98 to 1.07 ms on WebGPU and 0.91 to 0.97 ms on WebGL2. The growth to 65,535 took 1.55 to 1.83 ms and 1.62 to 1.87 ms. Those agree with the table above. The growths to 8,191 objects or fewer took 0.06 to 0.37 ms, less than the table's, and the first growth again varied the most. With the default start, the engine memory was 22.8 to 22.9 MB on WebGPU and 23.5 to 23.6 MB on WebGL2. With room for 16,383 objects, it was 29.3 to 29.4 MB and 30.1 MB.
+The plan's run in Chrome 155 on the Mac, at a 1-minute load of 7.7, passed 6 of 6 loads. The growth from 16,383 to 32,767 objects took 0.98 to 1.07 ms on WebGPU and 0.91 to 0.97 ms on WebGL2. The growth to 65,535 took 1.55 to 1.83 ms and 1.62 to 1.87 ms. Those agree with the table above. The growths to 8,191 objects or fewer took 0.06 to 0.37 ms, less than the table's, and the first growth again varied the most. With the default start, the engine memory was 22.8 to 22.9 MB on WebGPU and 23.5 to 23.6 MB on WebGL2. With room for 16,383 objects, it was 29.3 to 29.4 MB and 30.1 MB.
 
 ### The cost of a growth on phones
 
-Before the phone runs, this record estimated that a phone copies 2 to 4 times slower than the Mac. That made a growth to 32,767 objects about 2 to 4 ms, and one to 65,535 about 4 to 8 ms. The `object-growth` plan replaced the estimates on 2026-10-08, in Chrome 152 on BrowserStack Automate. Both phones passed 6 of 6 loads: 3 on WebGPU and 3 on WebGL2. Each cell is the lowest to the highest of the 3 loads.
+Say that a phone copies 2 to 4 times slower than the Mac. A growth to 32,767 objects then takes about 2 to 4 ms, and one to 65,535 about 4 to 8 ms. The `object-growth` plan measured the phones in Chrome 152 on BrowserStack Automate. Both phones passed 6 of 6 loads: 3 on WebGPU and 3 on WebGL2. Each cell is the lowest to the highest of the 3 loads.
 
 | Growth | S25, WebGPU | S25, WebGL2 | Pixel 9, WebGPU | Pixel 9, WebGL2 |
 | --- | --- | --- | --- | --- |
@@ -104,13 +104,13 @@ The phones' engine memory with the default start was 9.2 to 11.1 MB, and 17.6 to
 - (c) A start option that sets the fixed limit. Scenes that leave it out keep 16,383. A game that misjudges its size fails with E1102 in play.
 - (d) Tables that grow on demand, with an optional start size. A small scene keeps small tables. A larger scene grows, with a short pause per growth, or asks for its size at the start and never grows.
 
-The owner chose (d) on 8 October 2026, at about 00:05.
+The owner chose (d).
 
 ## Decision
 
 Option (d), built as follows.
 
-- The tables start with room for 1,023 objects. A first draft kept 16,383, so that no scene that works today would ever grow. The coordinator asked for a small start instead, because the owner was told that small games stay small. The start saves 6.2 to 6.5 MB of engine memory. A growth's cost follows the size of the tables, so the growths from a small start cost under 1 ms each on the Mac. A scene loads its objects in its setup, where the growths do no harm. S2 creates its 5,096 objects in its setup. Its tables grow to 8,191 then, 62% full, and never grow in play. S1 draws one instance batch, and holds a few objects.
+- The tables start with room for 1,023 objects, so that small games stay small. The start saves 6.2 to 6.5 MB of engine memory. A start of 16,383 would keep every scene within that fixed limit from growing, at that cost to every small scene. A growth's cost follows the size of the tables, so the growths from a small start cost under 1 ms each on the Mac. A scene loads its objects in its setup, where the growths do no harm. S2 creates its 5,096 objects in its setup. Its tables grow to 8,191 then, 62% full, and never grow in play. S1 draws one instance batch, and holds a few objects.
 - A smaller start, such as 255, saves only 0.2 MB more and adds two more growths to every scene of a few thousand objects. A larger one, such as 4,095, costs 0.8 MB more in every small scene.
 - Each growth doubles the room: 1,023, 2,047, 4,095 and so on. Each step keeps the row count a power of two.
 - At the start of each frame, after the frame's changes apply, the scene grows when it holds more than three quarters of its room. Objects that the sketch then creates in play rarely find the scene full. A growth that fails there is not tried again until the room changes, so a full memory costs no work per frame.
@@ -123,17 +123,17 @@ Option (d), built as follows.
 
 The draw list of a frame points at the world matrices in place. The thread that draws copies them to the GPU when it replays the list. It can still be replaying frame `f` while the sketch thread steps frame `f + 1`. A growth in frame `f + 1` therefore moves the world buffers to new arrays and keeps the old pair. It frees them at the start of the second frame after the growth. By then the thread that draws has taken the frame after `f`, so it has finished frame `f`. Each growth marks the scene's structure changed, so the renderer rebuilds its tables at the new size and uploads every matrix again. Before the core frees the old pair, it marks every row in it hidden. A replay that still read them would then draw nothing, which a test sees, in place of rows that look right.
 
-The world buffers are not the only memory that the list of frame `f` points at. A growth also makes room in the renderer for the new places, for both frame parities. That moved three more kinds of list while the thread that draws could still read them:
+The world buffers are not the only memory that the list of frame `f` points at. A growth also makes room in the renderer for the new places, for both frame parities. Unless they are kept, that moves three more kinds of list while the thread that draws can still read them:
 
 - the culled index lists of each view, on the path that culls on the CPU;
 - each view's sorted entries of blended rows;
 - the upload arenas, which hold the bytes that a frame copies to the GPU.
 
-Each of these now keeps a replaced buffer (`reserve_keeping` in the core's `alloc.rs`) until its parity is used again: the next cull, sort or arena reset. By then the thread that draws has finished the list that read it. The cost is one more buffer per list, held for a frame or two after a growth.
+Each of these keeps a replaced buffer (`reserve_keeping` in the core's `alloc.rs`) until its parity is used again: the next cull, sort or arena reset. By then the thread that draws has finished the list that read it. The cost is one more buffer per list, held for a frame or two after a growth.
 
-A new instance batch makes the same room in the renderer, so before this change a batch created during play could move an upload arena too. The kept buffers cover that case as well.
+A new instance batch makes the same room in the renderer, so a batch created during play can move an upload arena too. The kept buffers cover that case as well.
 
-A replaced buffer is at least twice the old one, as a vector's own growth is. Each new batch reserves the arenas for a bound that follows the frame's pending mesh uploads, so the bound creeps up as models load. A first version took exactly the bound. The memory test that loads and destroys models 100 times then saw the engine's memory grow once by 1.2 to 1.8 MB, at a round between the 10th and the 100th. It failed 2 of 12 runs, and 9 of 12 with room for 16,383 objects from the start. Main passed 12 of 12. With the doubling, the branch passed 12 of 12 both ways, on 8 October 2026 on the Mac's GPU.
+A replaced buffer is at least twice the old one, as a vector's own growth is. Each new batch reserves the arenas for a bound that follows the frame's pending mesh uploads, so the bound creeps up as models load. One memory test loads and destroys models 100 times. With a buffer of exactly the bound, the engine's memory grows once in it by 1.2 to 1.8 MB, at a round between the 10th and the 100th. That fails 2 of 12 runs, and 9 of 12 with room for 16,383 objects from the start. With the doubling, the test passes 12 of 12 both ways on the Mac's GPU, as it does with fixed tables.
 
 ### The page's views
 
@@ -144,18 +144,18 @@ Every array moves in a growth, but the memory need not grow, so the memory's buf
 - The core: `SceneStorage::try_grow`, `SlotAllocator::grow`, `Bitset::grow` and `WorldArrays::try_grown`. The WebAssembly entry point grows the scene in `reserveObject`, `reserveObjects` and `beginFrame`.
 - The page: the `expectedObjects` option, and views that refresh after a growth.
 - Tests: Rust unit tests check a grown scene against one that started large, and the old world buffers' lifetime. The object growth browser test grows the tables during play on WebGPU, compatibility mode and WebGL2. It checks the pictures before and after against an engine that never grew. It also checks every frame drawn while the tables grow, in pipelined mode.
-- The test runs with the `?replay-delay=50` switch. It makes the thread that draws wait 50 ms before it replays each frame's list, so the sketch thread steps the next frame, and grows the tables, first. Without the wait, the thread that draws copies the last frame's matrices long before the growth comes. A first version of the test then passed with the old world buffers freed at once, in 2 runs on each GPU path.
+- The test runs with the `?replay-delay=50` switch. It makes the thread that draws wait 50 ms before it replays each frame's list. So the sketch thread steps the next frame, and grows the tables, first. Without the wait, the thread that draws copies the last frame's matrices long before the growth comes. The test then passes even with the old world buffers freed at once.
 - The switch is for engine tests only, and counts from 1 to 1,000 ms. It busy-waits on the thread that draws, so a page with it runs slowly.
-- Checks of the test on the Mac's GPU in Chrome 155, 8 October 2026, 3 runs on each GPU path:
+- Checks of the test on the Mac's GPU in Chrome 155, 3 runs on each GPU path:
 
 | Build | Frames that showed neither picture | Result |
 | --- | --- | --- |
-| This branch | 0 in each of 9 runs | passes |
+| Tables that grow, as built | 0 in each of 9 runs | passes |
 | The old world buffers freed at once | 2 on WebGPU and compatibility mode, 3 on WebGL2, in each of 9 runs | fails |
 | Without the kept index lists, sorted entries and arenas | 2 on WebGPU; compatibility mode hung the page for over 30 minutes | fails |
 
-- On 10 October 2026 the test failed in CI, on WebGL2 on SwiftShader, in the runs of #472, #479 and #480. In #472 every frame after the first one differed from both pictures: `BXXXXXX`. In #480 the frames during the growth all showed one odd picture: `B,1,1,1,1,1,1`. In #479 the frames were right, but the last picture differed from the reference's. None of these is the pattern of buffers freed too early. That pattern shows 2 or 3 odd frames during the growth, and then the picture after.
-- The cause was the test, not the growth. The wait of `?replay-delay=` holds every frame far below the target rate. So the frame-budget governor lowers the render scale by one step at about 3 s into play. That is when its grace after the first frame ends and a whole second has missed the target. The test used to take its pictures at about that time. On a slow machine, one engine crossed that line before its last picture and the other did not, so their pictures differed. The bad last picture of #472 equals, in every pixel, the picture that SwiftShader on the Mac draws at a render scale of 0.95. Every other picture of those runs equals the one drawn at full scale. With 4 s of play before the first picture, the old test failed 6 of 6 runs on SwiftShader.
-- The sketch now turns the governor off, and the page names the Low preset, so the preset check does not time the slow frames either. Each engine reports the render scale of its pictures, and the test expects full scale for both. It plays 3.5 s before the first picture, so a governor left on would fail every run, not some. With these changes the test passed 30 of 30 runs on SwiftShader with 6 at once, on 10 October 2026.
+- The wait of `?replay-delay=` holds every frame far below the target rate. So the frame-budget governor lowers the render scale by one step at about 3 s into play. That is when its grace after the first frame ends and a whole second has missed the target. On a slow machine, one engine can cross that line before its last picture while the other does not, and their pictures then differ.
+- That fault fails the test on WebGL2 on SwiftShader (#472, #479 and #480). Its patterns differ from those of buffers freed too early, which show 2 or 3 odd frames during the growth and then the picture after. The bad last picture of #472 equals, in every pixel, the picture that SwiftShader on the Mac draws at a render scale of 0.95. Every other picture of those runs equals the one drawn at full scale. With the governor on and 4 s of play before the first picture, the test fails 6 of 6 runs on SwiftShader.
+- So the sketch turns the governor off, and the page names the Low preset, so the preset check does not time the slow frames either. Each engine reports the render scale of its pictures, and the test expects full scale for both. It plays 3.5 s before the first picture, so a governor left on would fail every run, not some. The test passes 30 of 30 runs on SwiftShader with 6 at once.
 - The Rust unit tests check the rules themselves: the old world buffers' lifetime, and that `reserve_keeping` keeps the old buffer in place.
 - Docs: the scene's limits, the engine's options and memory, handles, and E1102's example. The skill's quick reference lists the option.

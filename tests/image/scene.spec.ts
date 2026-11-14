@@ -30,7 +30,9 @@ interface SceneResult {
 
 /** Opens the scene page with `switches` and returns its result, which must have no error. */
 async function openScene(page: Page, switches: string): Promise<SceneResult> {
-	await page.goto(`scene.html?${switches}`);
+	// Two seconds of frames give the GPU timer several sampled frames, so a pass that the engine
+	// builds in its first frames reaches the parts.
+	await page.goto(`scene.html?seconds=2&${switches}`);
 	const result = await pageResult<SceneResult>(page, 30_000);
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
@@ -43,9 +45,10 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	if (!stats) throw new Error('the live page measured no frames');
 	// Four buckets draw: the red box, the red sphere, the unlit blue box, and the green floor batch.
 	// WebGPU draws them from one bundle; WebGL2 in multi-draw calls, or one draw each, and again in
-	// the depth prepass that its presets draw. Where the scene draws HDR color, the final pass adds
-	// one triangle over the canvas.
-	const opaqueDraws = tier === 'webgl2' ? 8 : 4;
+	// the depth prepass that its presets draw. WebGL2's Medium also draws the bounce light, whose
+	// steps add six draws, and WebGPU's Medium leaves that light off. Where the scene draws HDR
+	// color, the final pass adds one triangle over the canvas.
+	const opaqueDraws = tier === 'webgl2' ? 14 : 4;
 	expect(stats.drawCalls.median).toBe(opaqueDraws + (result.capabilities.hdr ? 1 : 0));
 	// On WebGL2 the list of visible objects has the three meshes and one entry for the floor batch,
 	// whose 25 rows form one group once they stop changing. The GPU culls on WebGPU.
@@ -59,9 +62,9 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	// HDR color, and the time between them.
 	if (tier === 'webgpu' && result.capabilities.features.includes('timestamp-query')) {
 		const parts = stats.gpuPassMs ?? [];
-		const renders = result.capabilities.hdr ? ['render 1', 'render 2'] : ['render 1'];
+		const renders = result.capabilities.hdr ? ['opaque', 'final'] : ['opaque'];
 		expect(parts.map((part) => part.name).sort()).toEqual(
-			['between passes', 'compute 1', 'copies', ...renders].sort(),
+			['between passes', 'compute', 'copies', ...renders].sort(),
 		);
 		for (const part of parts) expect(part.ms.count).toBeGreaterThan(0);
 	} else if (tier === 'webgl2' && stats.gpuMs) {
@@ -97,7 +100,11 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 
 for (const tier of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES) {
-		const switches = `gpu=${tier}&${mode.query}`;
+		// The reference is drawn in hold mode, which keeps the preset that the engine chose for the
+		// device and skips the start-up preset check. A live engine on a slow device, CI's software
+		// GPU among them, lowers the preset, and Low smooths edges with FXAA where the reference has
+		// MSAA. Medium fixes the reference's look and the frame that the test's own figures count.
+		const switches = `gpu=${tier}&preset=medium&${mode.query}`;
 		test(`a scene draws through the engine on ${tier}, ${mode.name}`, async ({ page }) => {
 			expectFrames(await openScene(page, switches), tier);
 		});

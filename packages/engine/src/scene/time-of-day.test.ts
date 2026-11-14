@@ -345,7 +345,7 @@ describe('timeOfDay', () => {
 		for (const hours of [5.5, 6, 6.5, 17.5, 18, 18.5]) expect(total(hours)).toBeGreaterThan(night);
 		// The moon stands highest at midnight, so the moonlit night is brightest then and dims
 		// steadily as the moon sinks toward dawn, and rises the same way from dusk: it never
-		// brightens toward dawn (owner, 20 October 2026). That holds while the sun is more than 14
+		// brightens toward dawn (owner's ruling). That holds while the sun is more than 14
 		// degrees down, where the night's exposure is steady.
 		const midnight = total(0);
 		let before = midnight;

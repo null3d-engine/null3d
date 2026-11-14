@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="data:," />
+		<title>Desert: null3D</title>
+		<style>
+			body { margin: 0; background: #101418; color: #e8e8e8; font: 12px monospace; }
+			#status { margin: 0; padding: 4px 8px; background: #000; white-space: pre-wrap; }
+		</style>
+	</head>
+	<body>
+		<pre id="status">loading</pre>
+		<script type="module">
+			// The null3D side: the engine's CDN build at the Medium preset with MSAA, a render scale of 1
+			// and no governor, which matches the three.js page's settings.
+			//
+			// `?pump=1` draws one pixel on a tiny canvas in each of the page's own frame callbacks. In Chrome
+			// without its frame cap (`run.ts --uncapped`), a page that draws nothing gets its callbacks at a
+			// fixed 48 Hz tick, the engine's page measures that tick as the display, and the engine's drawing
+			// worker holds its frames to it. The pump keeps the page's callbacks running as fast as Chrome
+			// allows, so the worker's frames are held to no display rate. Leave it off for capped runs.
+			import { createEngine } from '/cdn/lib/index.js';
+			import { makeCanvas, options, run } from './measure.js';
+
+			if (options.params.get('pump') === '1') {
+				const pump = document.createElement('canvas');
+				pump.width = pump.height = 1;
+				pump.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px';
+				document.body.append(pump);
+				const context = pump.getContext('2d');
+				let shade = 0;
+				const tick = () => {
+					shade = (shade + 1) & 255;
+					context.fillStyle = `rgb(${shade},0,0)`;
+					context.fillRect(0, 0, 1, 1);
+					requestAnimationFrame(tick);
+				};
+				requestAnimationFrame(tick);
+			}
+
+			run(async () => {
+				const started = performance.now();
+				// `?scene=bistro` draws the Bistro street scene from its own sketch; the desert is the default.
+				const sketch = new URL(options.params.get('scene') === 'bistro' ? './bistro-sketch.js' : './null3d-sketch.js', location.href);
+				for (const name of ['view', 'models', 'shadows', 'hold', 'occluder', 'only']) {
+					const value = options.params.get(name);
+					if (value !== null) sketch.searchParams.set(name, value);
+				}
+				let copies = 0;
+				const engine = await createEngine({
+					canvas: makeCanvas(),
+					sketch,
+					preset: options.params.get('preset') ?? 'medium',
+					antialias: 'msaa',
+					maxPixelRatio: 1,
+					memory: { maximumMiB: 4096 },
+					...(options.params.get('occlusion') === '1' && { gpuOcclusion: true }),
+					onSketchMessage: (name, data) => {
+						if (name === 'scene') copies = data.copies;
+					},
+				});
+				await engine.firstFrame;
+				globalThis.__ready = true;
+				const firstFrameMs = performance.now() - started;
+				await new Promise((resolve) => setTimeout(resolve, options.warmupSeconds * 1000));
+				const m = await engine.measure(options.measureSeconds);
+				// A captured frame has the size that the engine draws at, in device pixels.
+				const frame = await engine.captureFrame();
+				const result = {
+					engine: 'null3d',
+					view: options.view,
+					switches: location.search,
+					tier: engine.capabilities.tier,
+					directDraws: engine.capabilities.directDraws,
+					drawPath: engine.capabilities.drawPath,
+					mode: engine.mode,
+					copies,
+					firstFrameMs,
+					frames: m.frames,
+					presentedFps: m.presentedFps,
+					refreshHz: m.refreshHz,
+					completedFps: m.completedFps,
+					gpuLatencyMs: m.gpuLatencyMs,
+					threads: m.threads,
+					intervalMs: m.intervalMs,
+					gpuMs: m.gpuMs,
+					gpuPassMs: m.gpuPassMs,
+					cpuMs: m.cpuMs,
+					triangles: m.triangles,
+					occludedEntries: m.occludedEntries,
+					visibleEntries: m.visibleEntries,
+					drawCalls: m.drawCalls,
+					memory: m.memory,
+					drawn: { width: frame.width, height: frame.height },
+					userAgent: navigator.userAgent,
+				};
+				await engine.destroy();
+				return result;
+			});
+		</script>
+	</body>
+</html>

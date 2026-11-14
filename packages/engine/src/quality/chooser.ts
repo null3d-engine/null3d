@@ -29,7 +29,11 @@ export interface DeviceHints {
 	deviceMemoryGB: number | null;
 }
 
-/** A kind of device, as the main pointer and the screen's smaller edge tell them apart. */
+/**
+ * A kind of device, as the main pointer and the screen's smaller edge tell them apart.
+ *
+ * @category api/quality
+ */
 export type DeviceKind = 'phone' | 'tablet' | 'desktop';
 
 /**
@@ -48,6 +52,19 @@ export const MOBILE_TEXTURE_MEMORY_MIB = 1008;
 /** The cap on the texture memory of each kind of device, in MiB. */
 export function textureMemoryCap(kind: DeviceKind): number {
 	return kind === 'desktop' ? Number.POSITIVE_INFINITY : MOBILE_TEXTURE_MEMORY_MIB;
+}
+
+/**
+ * The page's choice of GPU occlusion culling on a kind of device: its own where it made one, else off
+ * on phones and tablets, where other engines block GPU culling on several drivers (D-22), and the
+ * preset's on desktops, which `undefined` leaves.
+ */
+export function gpuOcclusionChoice(
+	kind: DeviceKind,
+	page: boolean | undefined,
+): boolean | undefined {
+	if (page !== undefined) return page;
+	return kind === 'desktop' ? undefined : false;
 }
 
 /** A memory reading under this many GB lowers the preset by one. */
@@ -79,7 +96,11 @@ export interface PresetRequest {
 	crashedStarts: number;
 }
 
-/** The kind of device that the hints describe. */
+/**
+ * The kind of device that the hints describe.
+ *
+ * @category api/quality
+ */
 export function deviceKind(hints: DeviceHints): DeviceKind {
 	if (!hints.coarsePointer) return 'desktop';
 	return hints.screenMinEdge < TABLET_MIN_EDGE ? 'phone' : 'tablet';

@@ -12,10 +12,12 @@ import {
 	ARRAY_NORMALS,
 	ARRAY_POSITIONS,
 	ARRAY_TANGENTS,
+	ARRAY_TARGETS,
 	ARRAY_UVS,
 	ARRAY_UVS1,
 	ARRAY_WEIGHTS,
 	ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE,
+	ARRAYS_PROBLEM_LEVEL_BASE,
 	ARRAYS_PROBLEM_MORPH_LENGTH,
 	ARRAYS_PROBLEM_MORPH_NOT_FINITE,
 	ARRAYS_PROBLEM_MORPH_TOO_LARGE,
@@ -29,6 +31,7 @@ import {
 	MESH_ARRAYS_JOINTS,
 	MESH_ARRAYS_NORMALS,
 	MESH_ARRAYS_TANGENTS,
+	MESH_ARRAYS_TARGETS,
 	MESH_ARRAYS_UVS,
 	MESH_ARRAYS_UVS1,
 	MESH_ARRAYS_WEIGHTS,
@@ -52,6 +55,8 @@ import {
 	VERTEX_TYPE_UNORM16,
 	VERTEX_TYPES,
 } from '../generated/gpu';
+import type { PiecesData } from './gltf-parse';
+import { holdsAttribute, MAX_MASKED_PARTS, PLANNED_ATTRIBUTES } from './level-words';
 import type { CoreMemory, HeapConstructor } from './memory';
 import type {
 	IntegerArray,
@@ -73,6 +78,10 @@ export function typeField(location: number, type: number): number | undefined {
 
 /** The code of an E1206 failure that the engine core reports. */
 const BAD_ARRAYS = 1206;
+/** The code of a render fault that the engine core reports. */
+const RENDER_FAULT = 1501;
+/** The render fault that the mesh store reports for a mesh whose geometry it cannot make or change. */
+const MESH_PROBLEM = 7;
 
 type ArrayName =
 	| 'positions'
@@ -82,7 +91,8 @@ type ArrayName =
 	| 'colors'
 	| 'tangents'
 	| 'joints'
-	| 'weights';
+	| 'weights'
+	| 'targets';
 
 /** How an attribute reads integers: as fractions, as whole numbers, or as its array says. */
 type Reading = 'normalized' | 'plain' | 'either';
@@ -167,6 +177,14 @@ const ARRAYS: readonly ArraySpec[] = [
 		perVertex: 4,
 		reading: 'normalized',
 	},
+	{
+		name: 'targets',
+		code: ARRAY_TARGETS,
+		bit: MESH_ARRAYS_TARGETS,
+		location: 8,
+		perVertex: 4,
+		reading: 'either',
+	},
 ];
 
 /** The largest joint index that a plain array may hold: 16-bit. */
@@ -214,7 +232,7 @@ interface Values {
 	normalized: boolean | undefined;
 }
 
-function valuesOf(values: VertexValues): Values {
+export function valuesOf(values: VertexValues): Values {
 	if (ArrayBuffer.isView(values) || Array.isArray(values))
 		return { array: values as Values['array'], normalized: undefined };
 	const { array, normalized } = values as { array: Values['array']; normalized?: boolean };
@@ -372,6 +390,8 @@ export function arraysProblem(arrays: MeshArrays): string | undefined {
 	if (computeTangents && !arrays.uvs) return 'got computeTangents: true but no uvs.';
 	if (arrays.joints && !arrays.weights) return 'got joints but no weights.';
 	if (arrays.weights && !arrays.joints) return 'got weights but no joints.';
+	if (arrays.targets && arrays.morphTargets)
+		return 'got targets and morphTargets; a vertex holds either its morph data or a generated target record, not both.';
 	if (arrays.morphTargets)
 		return morphProblem(arrays.morphTargets, vertices, colorValues(arrays, vertices));
 	return undefined;
@@ -513,16 +533,282 @@ function arraysFailure(core: CoreMemory, arrays: MeshArrays, call: string): Engi
 	return new EngineError('E1206', `${call}() got arrays that do not make whole vertices.`);
 }
 
+/**
+ * Builds a level that draws the live mesh `base`'s vertices with the triangles `indices`, and
+ * returns its id: the level pays for its indices alone. Returns undefined when the base cannot
+ * share its vertices, because the engine split it into parts or pose moves its vertices, or when
+ * the base's page is full, so the caller gives the level its own arrays instead. Other failures
+ * throw.
+ */
+export function meshFromLevel(
+	core: CoreMemory,
+	base: number,
+	indices: Uint16Array | Uint32Array | readonly number[],
+	call: string,
+): number | undefined {
+	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
+	core.u32(address, indices.length).set(indices);
+	const id = core.glue.createLevelMesh(base, indices.length);
+	// The level's indices may have grown the memory.
+	core.refresh();
+	if (id !== 0) return id;
+	const { glue } = core;
+	const refused =
+		glue.lastErrorCode() === BAD_ARRAYS && glue.lastErrorDetail(0) === ARRAYS_PROBLEM_LEVEL_BASE;
+	if (!refused) throw coreFailure(glue, call);
+	return undefined;
+}
+
+/**
+ * Builds a level of the live mesh `base`, which the engine split into parts, that draws the base's
+ * own vertices with the triangles `indices`, in the base's numbering, and returns its id. The few
+ * triangles that span the parts' seams draw from a copy of their vertices. A level with `pieces`
+ * keeps the order of its triangles, which must come part by part as the parts draw them; one
+ * whose triangles do not draws without pieces.
+ */
+export function meshFromSplitLevel(
+	core: CoreMemory,
+	base: number,
+	indices: Uint32Array,
+	call: string,
+	pieces?: PiecesData,
+): number {
+	const address = stagePieces(core, pieces, indices.length, call);
+	core.u32(address, indices.length).set(indices);
+	const [count, groups] = pieceCounts(pieces);
+	return core.checkGrowth(core.glue.createSplitLevel(base, count, groups, indices.length), call);
+}
+
+/**
+ * The words of one piece, and of one group, in the staging words: its triangles, then its eight
+ * floats of bounds.
+ */
+const PIECE_WORDS = 9;
+
+/** The pieces and the groups that `pieces` hold. */
+const pieceCounts = (pieces: PiecesData | undefined): [pieces: number, groups: number] => [
+	pieces?.triangles.length ?? 0,
+	pieces?.groups?.length ?? 0,
+];
+
+/**
+ * Writes the `triangles` and `bounds` of `count` pieces or groups into `words`, nine words each.
+ */
+function stageRuns(
+	words: Uint32Array,
+	triangles: ArrayLike<number>,
+	bounds: Float32Array,
+	count: number,
+): void {
+	const floats = new Float32Array(words.buffer, words.byteOffset, count * PIECE_WORDS);
+	for (let k = 0; k < count; k++) {
+		words[k * PIECE_WORDS] = triangles[k] as number;
+		floats.set(bounds.subarray(k * 8, k * 8 + 8), k * PIECE_WORDS + 1);
+	}
+}
+
+/**
+ * Writes `pieces` into the staging words, nine words a piece, then their groups, nine words a
+ * group, with room for `more` words after them, and returns the address of those words.
+ */
+function stagePieces(
+	core: CoreMemory,
+	pieces: PiecesData | undefined,
+	more: number,
+	call: string,
+): number {
+	const [count, groups] = pieceCounts(pieces);
+	const runs = (count + groups) * PIECE_WORDS;
+	const at = core.checkGrowth(core.glue.meshArrays(runs + more), call);
+	if (!pieces) return at;
+	stageRuns(core.u32(at, count * PIECE_WORDS), pieces.triangles, pieces.bounds, count);
+	if (pieces.groups && pieces.groupBounds)
+		stageRuns(
+			core.u32(at + count * PIECE_WORDS * 4, groups * PIECE_WORDS),
+			pieces.groups,
+			pieces.groupBounds,
+			groups,
+		);
+	return at + runs * 4;
+}
+
+/**
+ * Gives the live mesh `mesh` the pieces of its own triangle list, which follow the list's order.
+ * Returns false when they do not fit the list, which then draws whole.
+ */
+export function setMeshPieces(
+	core: CoreMemory,
+	mesh: number,
+	pieces: PiecesData,
+	call: string,
+): boolean {
+	stagePieces(core, pieces, 0, call);
+	const taken = core.glue.setMeshPieces(mesh, ...pieceCounts(pieces));
+	// The pieces' table may have grown the memory, whether the mesh took them or not.
+	core.refresh();
+	return taken === 1;
+}
+
+/**
+ * Gives the live mesh `mesh` pieces over a sorted list of its triangles of their own, which shares
+ * its vertices, so the mesh keeps its own list. The list and pieces of an earlier call go. Returns
+ * false when the mesh takes none: one whose parts would draw the list in another order.
+ */
+export function setMeshPieceList(
+	core: CoreMemory,
+	mesh: number,
+	pieces: PiecesData & { indices: Uint32Array },
+	call: string,
+): boolean {
+	const { indices } = pieces;
+	core.u32(stagePieces(core, pieces, indices.length, call), indices.length).set(indices);
+	const taken = core.glue.setMeshPieceList(mesh, ...pieceCounts(pieces), indices.length);
+	// The list's indices may have grown the memory, whether the mesh took them or not.
+	core.refresh();
+	return taken === 1;
+}
+
+/**
+ * Builds a level of the live mesh `base` that holds its own copy of the vertices that the triangles
+ * `indices` name, in the base's numbering, and returns its id: the level of a base that is split
+ * into parts. The copy takes each vertex once, in the order that the triangles first name it.
+ */
+export function meshFromLevelCopy(
+	core: CoreMemory,
+	base: number,
+	indices: Uint32Array,
+	call: string,
+): number {
+	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
+	core.u32(address, indices.length).set(indices);
+	return core.checkGrowth(core.glue.createLevelCopy(base, indices.length), call);
+}
+
+/** The format bits of the attributes whose vertices pose or move: joints, and the vertex record. */
+export const MOVING_VERTEX_BITS =
+	(VERTEX_ATTRIBUTES[6]?.[0] ?? 0) | (VERTEX_ATTRIBUTES[8]?.[0] ?? 0);
+
+/** True for a format whose positions are floats, whose level of cards takes grown positions. */
+export function floatPositions(format: number): boolean {
+	const [, , shift] = VERTEX_ATTRIBUTES[0] ?? [0, 0, 0];
+	return ((format >>> shift) & 0xf) === VERTEX_TYPE_F32;
+}
+
+/**
+ * A mesh's vertices and triangles as the level planner reads them, which the core gives one part
+ * of the mesh at a time: the vertex count, the index count and the format, then each attribute's
+ * floats in the mesh's numbering, then the indices. The words own their buffer, which moves to a
+ * job worker.
+ */
+export interface PlanningWords {
+	readonly words: Uint32Array;
+	/** The mesh's parts, which `readPlanningPart` reads one at a time. */
+	readonly parts: number;
+	/** The indices that the parts read so far gave. */
+	indices: number;
+	/**
+	 * The parts that hold each vertex, one bit a part, for a mesh of several parts, up to
+	 * `MAX_MASKED_PARTS`: the pieces of its lists follow the parts.
+	 */
+	readonly masks?: Uint32Array;
+}
+
+/** The words before a part's own in the core's answer: the mesh's four, then the part's two. */
+const PART_HEADER = 6;
+
+/**
+ * Reads part `part` of the live mesh `mesh`'s vertices and triangles from the core into `into`, or
+ * into new words sized for the whole mesh. Each part holds at most 65,535 vertices, so a read
+ * takes a few milliseconds whatever the mesh's size, and a large mesh reads over several calls.
+ */
+export function readPlanningPart(
+	core: CoreMemory,
+	mesh: number,
+	part: number,
+	call: string,
+	into?: PlanningWords,
+): PlanningWords {
+	const at = core.checkGrowth(core.glue.meshPlanningPart(mesh, part), call);
+	const head = core.u32(at, PART_HEADER);
+	const vertices = head[1] as number;
+	const format = head[3] as number;
+	const count = head[4] as number;
+	const indices = head[5] as number;
+	let floats = 0;
+	for (const [location, size] of PLANNED_ATTRIBUTES)
+		if (holdsAttribute(format, location)) floats += size;
+	let read = into;
+	if (!read) {
+		const all = head[2] as number;
+		const words = new Uint32Array(3 + floats * vertices + all);
+		words[0] = vertices;
+		words[1] = all;
+		words[2] = format;
+		const parts = head[0] as number;
+		const masked = parts > 1 && parts <= MAX_MASKED_PARTS;
+		read = { words, parts, indices: 0, ...(masked && { masks: new Uint32Array(vertices) }) };
+	}
+	const { words, masks } = read;
+	const body = core.u32(at + PART_HEADER * 4, count * (1 + floats) + indices);
+	if (masks)
+		for (let local = 0; local < count; local++) {
+			const own = body[local] as number;
+			masks[own] = (masks[own] as number) | (1 << part);
+		}
+	let from = count;
+	let to = 3;
+	for (const [location, size] of PLANNED_ATTRIBUTES) {
+		if (!holdsAttribute(format, location)) continue;
+		for (let local = 0; local < count; local++) {
+			const own = body[local] as number;
+			for (let c = 0; c < size; c++)
+				words[to + own * size + c] = body[from + local * size + c] as number;
+		}
+		from += count * size;
+		to += vertices * size;
+	}
+	words.set(body.subarray(from, from + indices), to + read.indices);
+	read.indices += indices;
+	return read;
+}
+
+/**
+ * Gives the live mesh `mesh` the triangles `indices` in place of the ones it draws, which name its
+ * own vertices: how a staged level replaces its base's triangles as each part of its file
+ * downloads. Returns false when the mesh cannot take another triangle list, because it is split
+ * into parts, morphed, a level of its own, or drawn as lines. Other failures throw.
+ */
+export function replaceMeshIndices(
+	core: CoreMemory,
+	mesh: number,
+	indices: Uint16Array | Uint32Array | readonly number[],
+	call: string,
+): boolean {
+	const address = core.checkGrowth(core.glue.meshArrays(indices.length), call);
+	core.u32(address, indices.length).set(indices);
+	if (core.glue.replaceMeshIndices(mesh, indices.length) === 0) return true;
+	const { glue } = core;
+	const code = glue.lastErrorCode();
+	// A mesh that refuses the list, and a fault of the mesh store, leave the mesh as it was.
+	if (code === BAD_ARRAYS) return false;
+	if (code === RENDER_FAULT && glue.lastErrorDetail(0) === MESH_PROBLEM) return false;
+	throw coreFailure(glue, call);
+}
+
 /** The last vertex shader location whose attribute takes updates: the colors. */
 const LAST_UPDATABLE = 5;
+/** The location of the four-number vertex record, which also takes updates. */
+const RECORD_LOCATION = 8;
 
-/** The format bits of the attributes that make a mesh refuse updates: joints and morph targets. */
-const POSED_BITS = (VERTEX_ATTRIBUTES[6]?.[0] ?? 0) | (VERTEX_ATTRIBUTES[8]?.[0] ?? 0);
+/** The format bit of the attribute that makes a mesh refuse updates: the joints. */
+const POSED_BITS = VERTEX_ATTRIBUTES[6]?.[0] ?? 0;
 
 /** A mesh's vertex count and vertex format, as updates of its vertices read them. */
 export interface VertexLayout {
 	readonly count: number;
 	readonly format: number;
+	/** True for a mesh with morph targets, whose morph attribute takes no updates. */
+	readonly posed?: boolean;
 }
 
 /** The typed array class that holds values of a vertex type, as `INTEGER_ARRAYS` names them. */
@@ -546,9 +832,9 @@ function updateProblem(
 	out: { spec?: ArraySpec; type: number; components: number },
 ): string | undefined {
 	const spec = SPEC_BY_NAME.get(name);
-	if (!spec || spec.location > LAST_UPDATABLE)
-		return `got ${String(name)}; updates take positions, normals, uvs, uvs1, colors or tangents.`;
-	if (layout.format & POSED_BITS)
+	if (!spec || (spec.location > LAST_UPDATABLE && spec.location !== RECORD_LOCATION))
+		return `got ${String(name)}; updates take positions, normals, uvs, uvs1, colors, tangents or targets.`;
+	if (layout.posed || layout.format & POSED_BITS)
 		return 'got a mesh with joints or morph targets, whose vertices take no updates.';
 	const attributes = VERTEX_ATTRIBUTES[spec.location];
 	const bit = attributes?.[0] ?? 0;

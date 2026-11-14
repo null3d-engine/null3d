@@ -1,12 +1,12 @@
 // Draws one sketch of the image test manifest in the engine's hold mode and publishes the held
-// frame, with the depth mode that the engine drew. ?sketch= names the sketch module from the
+// frame, with the depth mode that the engine drew and the messages that the sketch posted. ?sketch= names the sketch module from the
 // server's root, with the sketch's own query after it, and ?size= gives the canvas in pixels, such
 // as 320x180. ?transparent starts the engine with a transparent canvas, ?antialias= with an
 // anti-aliasing mode, ?shadowTileSize= with a size of the shadow atlas's tiles, and
 // ?pointLightShadows with point light shadows on. The engine reads its own switches: ?hold= the
 // sketch time, ?gpu= the tier, ?depth= the WebGL2 depth mode, ?hdr=off, ?half=, and the thread
 // mode's switches.
-import { createEngine, type EngineOptions } from '@null3d/engine';
+import { createEngine, type EngineOptions, type HoldResult } from '@null3d/engine';
 import { depthFacts } from './lib/depth';
 import { run, toBase64 } from './lib/result';
 
@@ -43,6 +43,9 @@ run('image', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	canvas.style.width = `${width}px`;
 	canvas.style.height = `${height}px`;
+	// The probe's messages, kept in the result so a run of a probed test carries the facts that its
+	// picture cannot show. A test that posts none has an empty list.
+	const probe: unknown[] = [];
 	const engine = await createEngine({
 		canvas,
 		sketch: sketchUrl(sketch),
@@ -52,18 +55,38 @@ run('image', async () => {
 		shadowTileSize: params.has('shadowTileSize') ? Number(params.get('shadowTileSize')) : undefined,
 		pointLightShadows: params.has('pointLightShadows') || undefined,
 		morphTargets: params.has('morphTargets') ? Number(params.get('morphTargets')) : undefined,
+		cloudSteps: params.has('cloudSteps') ? Number(params.get('cloudSteps')) : undefined,
 		largeWorld: params.has('largeWorld'),
 	});
+	// The newest message of each name that the sketch posted, so a tool reads what the sketch
+	// measured beside the frame it drew. A sketch posts at its setup, long before the held frame.
+	const messages: Record<string, unknown> = {};
+	engine.onSketchMessage((name, data) => {
+		messages[name] = data;
+		if (name === 'probe') probe.push(data);
+	});
 	const frame = await engine.captureFrame();
+	const hold = (globalThis as { __null3dHold?: HoldResult }).__null3dHold;
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
 		hdr: engine.capabilities.hdr,
 		halfPrecision: engine.capabilities.halfPrecision,
+		// Whether the engine probed the extension that draws many ranges in one call, which a
+		// picture of the whole-level fallback expects it to lack.
+		multiDraw: engine.capabilities.features.includes('WEBGL_multi_draw'),
+		// Whether the held frame drew a cluster tree's patches as ranges, which a picture of the
+		// whole-level fallback expects false.
+		clusterPatches: hold?.ok ? hold.clusterPatches : null,
 		mode: engine.mode,
+		probe,
 		...depthFacts(engine),
 		width: frame.width,
 		height: frame.height,
 		pixels: toBase64(frame.pixels),
+		// The line that the two-step probe printed for the held frame, for the plan that asks for it,
+		// which keeps it in the run's result to read beside the other browsers' lines.
+		twoStep: (globalThis as { __null3dTwoStep?: string }).__null3dTwoStep ?? null,
+		sketch: messages,
 	};
 });

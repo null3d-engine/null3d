@@ -1,12 +1,12 @@
 # D-59: Limits on what one untrusted file may decode to
 
-Status: decided. Date: 2026-10-04. Task: M2-R17.
+Status: decided and built. Task: M2-R17, M2-L6.
 
-Summary: Every model and texture reader takes its limits from one object: 256 MiB per array or texture, a model's total of 64 MiB plus 32 times its bytes up to 1 GiB, 4,194,304 keys per clip, and KTX2 sides within `textures.maxSize`, all checked before allocation. Real models decode to at most 2.9 times their bytes. A 5 KB file that held the glTF worker for 11 minutes now fails in 3 ms. Text keys from files use maps, the parent loop check is linear, and the core builds meshes fallibly.
+Summary: Every model and texture reader takes its limits from one object, checked before allocation: 256 MiB per array or texture, a model's total of 64 MiB plus 32 times its bytes up to 1 GiB, 4,194,304 keys per clip, and KTX2 sides within `textures.maxSize`. Real models decode to at most 2.9 times their bytes, and a 5 KB file that would hold the glTF worker for 11 minutes fails in 3 ms. Text keys from files use maps, the parent loop check is linear, and the core builds meshes fallibly.
 
 ## Question
 
-A game can load model and texture files that its users made, or files that are broken. The review of 4 October found small files that hold the glTF worker for minutes or make it allocate hundreds of megabytes. What limits does each file get, and how are they checked before anything allocates? And how do the decoders still to come share them: Draco, WebP and AVIF images, and UASTC HDR textures?
+A game can load model and texture files that its users made, or files that are broken. The code review found small files that hold the glTF worker for minutes or make it allocate hundreds of megabytes. What limits does each file get, and how are they checked before anything allocates? And how do the later decoders share them: Draco, WebP and AVIF images, and UASTC HDR textures?
 
 ## Rule
 
@@ -58,7 +58,7 @@ Bun 1.3.14 on the Mac, `parseGltf`, scratch timing script:
 
 The clip of R4-02 is refused before the core allocates a key. Each of the six views of the meshopt test file decodes to 2,097,150 zero vertices of 16 bytes. The file is refused at its third primitive, at 168 MiB against the 160.1 MiB that its 3 MB allow.
 
-How the data was produced: `bun` scripts in a scratch folder ran `parseGltf` over the sample content at commit c52dda2 and over `tests/pages/assets`. A wrapper around `FileBudget.prototype.take` recorded each file's peak. `bun test packages/engine/src/scene/gltf-hostile.test.ts` and `cargo test -p null3d-core --test animation --test bvh` hold the files as tests. Each glTF file test of `gltf-hostile.test.ts` fails or hangs against the parser before the fix.
+How the data was produced: `bun` scripts in a scratch folder ran `parseGltf` over the sample content at commit c52dda2 and over `tests/pages/assets`. A wrapper around `FileBudget.prototype.take` recorded each file's peak. `bun test packages/engine/src/scene/gltf-hostile.test.ts` and `cargo test -p null3d-core --test animation --test bvh` hold the files as tests. Each glTF file test of `gltf-hostile.test.ts` fails or hangs against the parser without the fix.
 
 ## Decision
 
@@ -66,7 +66,7 @@ How the data was produced: `bun` scripts in a scratch folder ran `parseGltf` ove
 
 | Limit | Value | Reason | Code |
 | --- | --- | --- | --- |
-| `itemBytes`: one decoded array, view or texture | 256 MiB | WebGPU's portable limit on a buffer's size, which no mesh page passes anyway | E1416, E1412 |
+| `itemBytes`: one decoded array or texture | 256 MiB | WebGPU's portable limit on a buffer's size, which no mesh page passes anyway. A decoded meshopt view is a block that arrays are read out of, never one buffer, so only the file's total bounds it ([Decoded meshopt blocks](#decoded-meshopt-blocks)) | E1416, E1412 |
 | A model file's decoded total | 64 MiB + 32 x the file's bytes, up to 1 GiB | The floor lets a small file with sparse morph targets decode freely. Real files reach 2.9 times their bytes, meshopt 6.9 at most, so 32 leaves room for Draco. The cap is the engine's default memory, which a larger total could never fill | E1416 |
 | `textureLayers`: layers of one texture file | 256 | WebGPU's default limit on array layers | E1412 |
 | The sides of one texture file | `textures.maxSize` of the device | Checked from the KTX2 header, before the transcoder starts | E1412 |
@@ -108,11 +108,11 @@ The reader requires each empty child slot to hold the empty box bit for bit, whi
 
 ### KTX2 format choice on WebGL2
 
-On WebGL2, a device with BC7 now takes BC7 for both ETC1S and UASTC data, before ETC2 and ASTC. Mesa on desktop Linux offers ETC2 and ASTC on GPUs without them, and decodes such textures in software on the page's thread. three.js turns ETC2 and ASTC off on Linux Firefox when BC is present, by its user agent string. null3D decides from capabilities alone (hard rule 14), so the rule covers every WebGL2 device with BC. That is desktop Linux, and any other desktop that offers ETC2 or ASTC beside BC, such as a Mac forced onto WebGL2. On a Mac, an ETC1S texture without alpha then takes 16 bytes per block where ETC2 took 8. WebGPU keeps the old order: browsers offer a WebGPU format only where the GPU has it.
+On WebGL2, a device with BC7 takes BC7 for both ETC1S and UASTC data, before ETC2 and ASTC. Mesa on desktop Linux offers ETC2 and ASTC on GPUs without them, and decodes such textures in software on the page's thread. three.js turns ETC2 and ASTC off on Linux Firefox when BC is present, by its user agent string. null3D decides from capabilities alone (hard rule 14), so the rule covers every WebGL2 device with BC. That is desktop Linux, and any other desktop that offers ETC2 or ASTC beside BC, such as a Mac forced onto WebGL2. On a Mac, an ETC1S texture without alpha then takes 16 bytes per block where ETC2 takes 8. WebGPU keeps ETC2 and ASTC before BC7: browsers offer a WebGPU format only where the GPU has it.
 
-A KTX2 texture whose sides are not whole 4 x 4 blocks still loads as RGBA8, at 4 to 8 times the memory. Development builds warn with its size. The asset tool now writes sides of at least 4 texels, so every power of two it writes is a whole number of blocks.
+A KTX2 texture whose sides are not whole 4 x 4 blocks still loads as RGBA8, at 4 to 8 times the memory. Development builds warn with its size. The asset tool writes sides of at least 4 texels, so every power of two it writes is a whole number of blocks.
 
-### For the decoders to come
+### Draco and the image decoders
 
 M2-A6 (Draco) and M2-A7 (WebP, AVIF and UASTC HDR) take their limits from `FILE_LIMITS`:
 
@@ -136,33 +136,32 @@ Images take a budget of their own rather than the model's ratio. A 1 MB JPEG pho
 
 The review's low findings on the same files land with this record:
 
-- R1-05: the parser scales the bounds of normalized integer positions by 1/127, 1/255, 1/32,767 or 1/65,535. The shaders read them so, and three.js's loader scales them too. glTF stores the integers there, so `prefab.bounds` was up to 32,767 times too large.
-- R1-07: a load that fails destroys the textures and materials that it made, and closes the decoded images that no texture took. Meshes and skeletons have no destroy call yet, so they stay; `prefab.destroy()` waits for mesh `destroy`.
+- R1-05: the parser scales the bounds of normalized integer positions by 1/127, 1/255, 1/32,767 or 1/65,535. The shaders read them so, and three.js's loader scales them too. glTF stores the integers there, so unscaled bounds would be up to 32,767 times too large.
+- R1-07: a load that fails destroys the textures and materials that it made, and closes the decoded images that no texture took. It frees its meshes and its skeleton through the destroy calls of [D-75](D-75-mesh-and-prefab-destroy.md).
 - R1-09: before it reserves an object's slot, the scene checks that the command ring has room for each record of the object. Those are its create, layers and material, which it publishes at once. A light whose row the light table refuses is destroyed before the error reaches the sketch. So is a copy or clone that the animation or batch table refuses, whole. The 1,024 animated objects are in `api/scene`'s limits.
-- R1-11: an embedded image that does not decode gives E1412, as an image that the file names by address does and as the docs said.
+- R1-11: an embedded image that does not decode gives E1412, as the docs say. An image that the file names by address gives the same code.
 - R1-13: `loadGltf(url, { rewriteUrl })` checks or changes each address that a file names, as three.js's `LoadingManager.setURLModifier` does. The default stays as three.js's: every address downloads. A page that loads users' models should allow only the addresses it expects; `api/assets` shows how.
-- R1-16: `instantiate`'s `layers` reaches every object of the copy and its instance batches, where it set the group alone, which draws nothing.
+- R1-16: `instantiate`'s `layers` reaches every object of the copy and its instance batches. On the group alone it would reach nothing that draws.
 - R1-17: `destroy()` on a copy's group removes every object of the copy that is still live, and its batches. Objects that the sketch put under the copy later become roots, as children of any destroyed object do.
-- R1-18: each object keeps the set of its children, so `clone` walks only the tree it copies. It made a map of the whole scene on each call.
+- R1-18: each object keeps the set of its children, so `clone` walks only the tree it copies, not the whole scene.
 - R1-19: the `.3dl` reader stops with E1412 once it has read more numbers than the largest table holds, before it keeps them all.
-- R4-09: the frame step skips a played slot whose clip id names no clip, as sampling does, where it stopped the engine.
-- R4-10: a clip shorter than a microsecond keeps one frame. Its rate was infinite, so its poses were NaN.
+- R4-09: the frame step skips a played slot whose clip id names no clip, as sampling does, so such a slot cannot stop the engine.
+- R4-10: a clip shorter than a microsecond keeps one frame. Its rate would otherwise be infinite, and its poses NaN.
 
 ## Consequences
 
 - `scene/file-limits.ts` holds the limits. `gltf-parse.ts`, `gltf-animation.ts` and `gltf-json.ts` take a `FileBudget`; `gltf-hostile.test.ts` holds the hostile files.
-- `ktx2.ts` adds `ktx2TooLarge` and the WebGL2 rule; `Textures` keeps whether the engine draws with WebGL2. The file's reading and its size limits live in `scene/ktx2-file.ts` since [D-184](D-184-ktx2-level-index-limits.md).
-- The core: `MAX_CLIP_KEYS` replaces `MAX_FRAMES`, and E1218's problem 5 is now `KEYS`, whose detail is the keys the clip would hold. The stored-tree reader adds `FormatError::EmptySlot`. `ArraysError` and `MeshError` add `OutOfMemory`, which the WebAssembly entry point reports as E1109.
-- The glTF loader passes E1109 from a mesh through, instead of wrapping it in E1416.
+- `ktx2.ts` adds `ktx2TooLarge` and the WebGL2 rule; `Textures` keeps whether the engine draws with WebGL2. The file's reading and its size limits live in `scene/ktx2-file.ts` ([D-184](D-184-ktx2-level-index-limits.md)).
+- The core: `MAX_CLIP_KEYS` holds the limit on a clip's keys, and E1218's problem 5 is `KEYS`, whose detail is the keys the clip would hold. The stored-tree reader adds `FormatError::EmptySlot`. `ArraysError` and `MeshError` add `OutOfMemory`, which the WebAssembly entry point reports as E1109.
+- The glTF loader passes E1109 from a mesh through as it is. It does not wrap it in E1416.
 - The asset tool's `textureSize` keeps each side at 4 texels or more.
 - `file-limits.ts` adds `textureSide`, `imageSide`, `imageSize` and `imageTooLarge`; the parser checks embedded images, and `assets` checks each image it decodes.
 - `assets.loadGltf` takes `LoadGltfOptions` with `rewriteUrl`, which the three.js mapping lists for `LoadingManager.setURLModifier`.
 - `concepts/assets` lists the limits; `api/assets`, `api/textures` and the pages of E1109, E1218, E1412 and E1416 name them.
-- The record is in the table in [README.md](README.md).
 
-## Addendum, 2026-10-08: malformed files made from good ones
+## Malformed files made from good ones
 
-Task M2-L6 asked for unit tests that parse malformed glTF and KTX2 files. The hostile files of `gltf-hostile.test.ts` are made by hand, one per fault that the review found. They cover what we thought of. `malformed-files.test.ts` makes many more broken files from good ones. So it also covers faults that nobody thought of.
+Task M2-L6 adds unit tests that parse malformed glTF and KTX2 files. The hostile files of `gltf-hostile.test.ts` are made by hand, one per fault that the review found. They cover what we thought of. `malformed-files.test.ts` makes many more broken files from good ones. So it also covers faults that nobody thought of.
 
 - The glTF files are five. The test pages give the asset scene, its optimized copy with meshopt data and KTX2 textures, and the meshopt instancing file. The builder of test files gives the skinned arm with its clips, and the mesh with morph targets.
 - Each glTF file is cut short at 500 lengths. Each also gets 500 copies with 1 to 4 random bytes changed. Half of these changes fall inside the binary chunk, where the JSON still parses.
@@ -171,9 +170,30 @@ Task M2-L6 asked for unit tests that parse malformed glTF and KTX2 files. The ho
 - The rule: the parser reads a file or refuses it with its own error (`GltfError`, `Ktx2Refusal`), in under 1.5 seconds. Any other error, such as a `TypeError` or a `RangeError`, fails the test, which names the change that caused it. The transcoder writes the bytes that the header promises, or fails at its `run` stage. After each failure it must still transcode a good file.
 - A seeded generator picks the changes, so every run makes the same files.
 
-Data, 8 October 2026, on main at 061177262:
+Data, on main at 061177262:
 
 - With 4,000 copies of each kind per file, 26 tests and 28,801 checks, the parsers found no fault. They took 4 seconds in all. The committed test takes 500 copies of each kind, which runs in under a second.
 - On some copies, the Basis transcoder printed `elemental_vector::increase_capacity: Allocation failed!` and failed the file. It still transcoded the good file each time after. The engine checks a file's sides and bytes before the transcoder starts (`ktx2TooLarge`), so the sizes that a broken header claims never reach it.
-- 16 October 2026, later runs of the same check: the level index's own numbers were the gap in that. `ktx2TooLarge` reads the header, and the sizes a file declares live in the index that follows it. A 149-byte file whose first level declared 1 GiB grew the transcoder's WebAssembly heap by 1,024 MiB before the refusal, and this check's run cost 1,694 MiB. [D-184](D-184-ktx2-level-index-limits.md) bounds the index too, and the run now costs 264 MiB.
-- To show that the test sees a fault, we removed the index check of `gltf-json.ts` (an index at or past its array's length). 5 of the 26 tests then failed, each on a `TypeError` that names the change, such as "accessors.15.bufferView set to 255".
+- `ktx2TooLarge` reads the header, but the sizes a file declares live in the level index that follows it. Without a bound on the index, a 149-byte file whose first level declares 1 GiB grows the transcoder's WebAssembly heap by 1,024 MiB. That happens before the refusal, and this check's run then costs 1,694 MiB. [D-184](D-184-ktx2-level-index-limits.md) bounds the index too, and the run costs 264 MiB.
+- To show that the test sees a fault, a run left out the index check of `gltf-json.ts` (an index at or past its array's length). 5 of the 26 tests then failed, each on a `TypeError` that names the change, such as "accessors.15.bufferView set to 255".
+
+## Decoded meshopt blocks
+
+glTF-Transform's meshopt writer packs every index list of one width into one compressed buffer view. Take a desert scene that `bunx @null3d/cli assets optimize --lod --clusters` writes. The file holds 196.8 MB: 17 meshes, 7.1 million triangles and a cluster tree on each mesh. Its view 2 holds 49 index lists, 262.8 MiB in all, and its largest list holds 50.2 MiB.
+
+- `itemBytes` bounds one array because one array becomes one GPU buffer. A decoded view never becomes one: the parser copies each accessor out of it, and each copy meets `itemBytes`. So a view answers to the file's total alone, through `FileBudget.takeBlock`. The parser applies that limit twice: when it checks the view's extension, and when it takes the decoded bytes. A view whose count passes the file's total fails before the decode allocates, as the hostile view of `gltf-meshopt.test.ts` does.
+- A cluster tree's arrays (`NULL3D_clusters`) count once. The parser reads them as accessors, which copies them and takes their bytes, and the worker sends those copies on. The desert's trees hold 179.8 MiB. Counted twice, the file would take 1,153.6 MiB of its 1,024 MiB.
+- The parser reads the desert file at 973.8 MiB of its 1,024 MiB, in 0.7 s, with all 17 trees. A `bun` script on the Mac ran `parseGltf` with the shipped meshopt decoder, and summed what `FileBudget` took.
+- One helper checks the indices of meshes, trees and blockers with a counted loop. A `for ... of` loop over a typed array makes an object for each index until Bun's JavaScript engine optimizes the loop. In the test of a 270 MiB block, 63 million indices make about 500 MiB of such objects. The test's process then peaks at 1,110 MiB and parses in 0.5 s. With the counted loop it peaks at 610 to 625 MiB and parses in 0.3 s.
+- Rejected: raising `itemBytes`. It is WebGPU's portable limit on a buffer, which every accessor must still meet.
+
+`gltf-meshopt-block.test.ts` loads a block of 9 lists of 30 MiB, 270 MiB in all. Its decoder writes only each list's first triangle, so the test holds no compressed data. It runs in a process of its own (`tests/lib/heavy-checks.ts`), under a ceiling of 1,024 MiB. `gltf-parse.test.ts` checks that a tree's arrays count once. Both tests fail against a parser that judges the view by `itemBytes` and counts the tree twice.
+
+### The asset tool refuses what the engine refuses
+
+`optimizeModel` works out what the engine's parser takes from the file's budget, from the JSON that it writes, before it returns the file. It counts a copy of each accessor, each meshopt block and each image inside the file. It also counts 8-bit index lists widened to 16 bits, and each blocker's indices widened to 32 bits. The tool refuses a file whose largest accessor passes 256 MiB, or whose total passes what a file of its size may decode to. The error says to split the scene into several files.
+
+- The limits are `ENGINE_FILE_LIMITS` in `packages/cli/src/assets/pipeline.js`, a copy of the engine's `FILE_LIMITS`. A test in `optimize.test.ts` keeps the two equal, as `report.js` does for each preset's texture memory.
+- The tool's figure equals the parser's charges to the byte on five outputs of the tests. They are the asset scene with the default options, with levels, with stored trees and with no compression, and the cluster terrain. It also equals the desert file's 973.8 MiB.
+- The figure leaves out the joints and clips of skins. On the skinned Knight it is 4.6% short: 2.00 MB of 2.10 MB. So a scene of skinned characters near the cap can pass the tool and fail in the engine.
+- Rejected: running the engine's parser on the output. The tool does not depend on `@null3d/engine`, and it ships its source as it is, so it cannot import the parser. The parse would also decode the whole file again: 974 MiB more memory for the desert file.

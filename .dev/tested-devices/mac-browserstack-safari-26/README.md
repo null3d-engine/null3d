@@ -9,5 +9,5 @@
 
 ## Known issues
 
-`frame-restarts-drawing-on-the-main-thread` failed: engines in removed frames kept their memory until the page went away (room 36, then 30, then 0).
-The cloud iPhone shows the same; BrowserStack's automation link is a suspect
+`frame-restarts-drawing-on-the-main-thread` fails: engines in removed frames keep their memory until the page goes away (room 36, then 30, then 0).
+The cloud iPhone shows the same, and BrowserStack's automation link is a suspect.

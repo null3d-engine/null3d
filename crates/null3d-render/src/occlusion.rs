@@ -23,7 +23,7 @@ use null3d_core::clusters::sort_pairs;
 use null3d_core::occlusion::{Blocker, BlockerMesh, OcclusionBuffer, clip_matrix};
 use null3d_core::scene::flags;
 
-use crate::frame::FrameInput;
+use crate::frame::{FrameInput, drawn_material};
 use crate::materials::{MaterialTable, Shading, feature};
 use crate::meshes::MeshStorage;
 use crate::view::ViewFrame;
@@ -107,6 +107,7 @@ impl Occluders {
         offsets: &[[f32; 4]],
         meshes: &MeshStorage,
         materials: &MaterialTable,
+        override_material: u32,
     ) -> Result<Option<&OcclusionBuffer>, TryReserveError> {
         self.buffer.clear();
         if !self.on {
@@ -114,7 +115,7 @@ impl Occluders {
         }
         let [width, height, ..] = frame.uniform.target_size;
         self.buffer.resize(width as u32, height as u32)?;
-        self.pick(input, frame, offsets, materials)?;
+        self.pick(input, frame, offsets, materials, override_material)?;
         if self.candidates.is_empty() {
             return Ok(None);
         }
@@ -155,7 +156,7 @@ impl Occluders {
             self.blockers.try_reserve(parts.len())?;
             let [x, y, z, _] = offsets[scene.cells()[s] as usize];
             let clip = clip_matrix(view_proj, world.matrix(s), [x, y, z]);
-            let material = scene.materials()[s];
+            let material = drawn_material(materials, override_material, scene.materials()[s]);
             let double_sided = materials.features(material - 1) & feature::DOUBLE_SIDED != 0;
             for &part in parts {
                 let count = self.meshes[part as usize].triangle_count();
@@ -187,6 +188,7 @@ impl Occluders {
         frame: &ViewFrame,
         offsets: &[[f32; 4]],
         materials: &MaterialTable,
+        override_material: u32,
     ) -> Result<(), TryReserveError> {
         let (scene, parity) = (input.scene, input.parity());
         self.candidates.clear();
@@ -229,7 +231,10 @@ impl Occluders {
             if scene.meshes()[s] == 0
                 || scene.skins()[s] != 0
                 || scene.layers()[s] & frame.layers == 0
-                || !solid(materials, scene.materials()[s])
+                || !solid(
+                    materials,
+                    drawn_material(materials, override_material, scene.materials()[s]),
+                )
             {
                 continue;
             }

@@ -1,8 +1,8 @@
 # D-62: Clip start times, clip weights and phase-synced 1D blends
 
-Status: decided, 2026-10-05. Date: 2026-10-05. Task: M2-C9.
+Status: decided and built. Task: M2-C9.
 
-Summary: `play(name, { time, weight })`; a play with a weight joins its layer, one without takes it over, and each replaces only clips of its own kind. Clip weights, blend values and a play's numbers cross in engine memory, and a frozen options object is read once, so clip switches allocate nothing. A 1D blend moves each clip at its length over the weight-averaged length, as Godot and PlayCanvas do. S5 blends by clip weights; scripts stay within 3.9e-4 of three.js.
+Summary: `play(name, { time, weight })`; a play with a weight joins its layer, one without takes it over, and each replaces only clips of its own kind. Clip weights, blend values and a play's numbers cross in engine memory, and a frozen options object is read once, so clip switches allocate nothing. A 1D blend moves each clip at its length over the weight-averaged length, as Godot and PlayCanvas do, and scripts stay within 3.9e-4 of three.js.
 
 ## Question
 
@@ -14,7 +14,7 @@ How should the animator start clips out of step, weigh clips that play together,
 - A blend by a value keeps its clips' phases in step, by the rule that other engines use.
 - A sketch can change clip weights and blend values every frame at no cost, as layer weights already allow ([D-28](D-28-animator.md)).
 - S5 runs on clip weights and start times, as its three.js twin does, and its parity with the twin does not get worse.
-- The four animator findings of the core review each have a test that fails before the fix.
+- The four animator findings of the core review each have a test that fails without the fix.
 
 ## Data
 
@@ -31,26 +31,26 @@ How should the animator start clips out of step, weigh clips that play together,
 | additive on the base layer | a base action and an additive action at 0.5, then `crossFadeTo` another base action | 8.4e-5 |
 | phase-synced blend | two actions at the blend's shares, each with `timeScale` = its length over the weighted mean length, from one phase; then new shares | 2.5e-4 |
 
-The earlier nine scripts stay within 1.7e-4. three.js has no blend by a value. So the blend script sets the shares and rates that the rule gives. It checks that the core moves the clips' times and blends the pose as three.js would.
+D-28's nine scripts stay within 1.7e-4. three.js has no blend by a value. So the blend script sets the shares and rates that the rule gives. It checks that the core moves the clips' times and blends the pose as three.js would.
 
 ### S5 against its twin
 
-S5 used to walk on layer 0 and run on layer 1 at the layer weight. That matched the twin's two weighted actions only because the two weights add up to 1. S5 now plays both clips on layer 0 with `{ time, weight }`, and the twin sets `action.time` and `setEffectiveWeight`. Each character starts at its own time. A second generator draws it, so the rings and rates stay the same. `bun run parity --scene s5` on 5 October 2026 (MacBook Pro M5 Max, Chrome):
+S5 plays both clips on layer 0 with `{ time, weight }`, and the twin sets `action.time` and `setEffectiveWeight`. Each character starts at its own time. A second generator draws it, so the rings and rates stay the same. The column "Two layers" is S5 with its walk on layer 0 and its run on layer 1 at the layer weight. That matches the twin's two weighted actions only because the two weights add up to 1. `bun run parity --scene s5` (MacBook Pro M5 Max, Chrome):
 
-| GPU tier | Before (4 October) | After | three.js's two renderers |
+| GPU tier | Two layers | Clip weights | three.js's two renderers |
 | --- | --- | --- | --- |
-| WebGPU, Mac's GPU | 0.27% | 0.261% | 0.46% before, 0.451% after |
+| WebGPU, Mac's GPU | 0.27% | 0.261% | 0.46% with two layers, 0.451% with clip weights |
 | Compatibility, Mac's GPU | 0.33% | 0.307% | |
 | WebGL2, Mac's GPU | 0.20% | 0.197% | |
-| WebGPU, SwiftShader | 0.29% | 0.272% | 0.52% before, 0.536% after |
+| WebGPU, SwiftShader | 0.29% | 0.272% | 0.52% with two layers, 0.536% with clip weights |
 | Compatibility, SwiftShader | 0.32% | 0.293% | |
 | WebGL2, SwiftShader | 0.20% | 0.193% | |
 
-S5's image references changed on both sets: 3.5% to 3.6% of their pixels differ from the old ones, all in the characters' limbs.
+S5's image references with clip weights differ from those with two layers in 3.5% to 3.6% of their pixels. On both sets, these pixels lie in the characters' limbs.
 
 ### The review's findings
 
-Each test failed against the code of main, then passed with its fix:
+Each test failed against the code of main, and passes with its fix:
 
 | Finding | Test | Before the fix |
 | --- | --- | --- |
@@ -61,11 +61,11 @@ Each test failed against the code of main, then passed with its fix:
 
 ### Allocation
 
-`frames_allocate_nothing` counts 0 allocator calls in 197 frames. Its crowd now also plays blends, and clips side by side from start times. Sketch code moves the blend values and the clip weights every frame. `bun run bench:allocation --animated 64` adds the same to its 64 characters on 5 October 2026. It passes on WebGPU and with `--gpu webgl2`. The weight and blend writes allocate nothing. So do the rare switches, which play a blend again or fade a clip to a new weight. Neither the crowd's code nor `playBlend` shows in the samples of either GPU path. So the crowd has no budget of its own. The crowd keeps its options and blend points in frozen constants, as [Frozen options are read once](#frozen-options-are-read-once) explains.
+`frames_allocate_nothing` counts 0 allocator calls in 197 frames. Its crowd also plays blends, and clips side by side from start times. Sketch code moves the blend values and the clip weights every frame. `bun run bench:allocation --animated 64` adds the same to its 64 characters. It passes on WebGPU and with `--gpu webgl2`. The weight and blend writes allocate nothing. So do the rare switches, which play a blend again or fade a clip to a new weight. Neither the crowd's code nor `playBlend` shows in the samples of either GPU path. So the crowd has no budget of its own. The crowd keeps its options and blend points in frozen constants, as [Frozen options are read once](#frozen-options-are-read-once) explains.
 
-Before that rule, the switches allocated 8.5 bytes a frame on WebGPU: 7.0 in the crowd's code, where the browser inlined `play`, and 1.5 in `playBlend`. With inlining off (`--no-inline`), `play` and the code it calls showed 5.4 bytes a frame, and `playBlend` 0.9. A play with a fade and a weight made 36 bytes, a blend switch 12 and a cross-fade none. That is 16 bytes per switch, as measured. Each is one 12-byte number for each fraction read from an options object.
+Without that rule, the switches allocated 8.5 bytes a frame on WebGPU: 7.0 in the crowd's code, where the browser inlined `play`, and 1.5 in `playBlend`. With inlining off (`--no-inline`), `play` and the code it calls showed 5.4 bytes a frame, and `playBlend` 0.9. A play with a fade and a weight made 36 bytes, a blend switch 12 and a cross-fade none. That is 16 bytes per switch, as measured. Each is one 12-byte number for each fraction read from an options object.
 
-How the data was produced: `bun bench/three-fixtures.ts`, `cargo test -p null3d-core --test animation --test no_alloc`, `bun run parity -- --scene s5` with and without `CI=1`, and `bun run bench:allocation --animated 64` with and without `--gpu webgl2` and `--no-inline`, on 2026-10-05. The direct count is a loop of plays in Node 24.2 that read options of 4 to 9 shapes. The heap profiler sampled it every 64 bytes over 200,000 rounds.
+How the data was produced: `bun bench/three-fixtures.ts`, `cargo test -p null3d-core --test animation --test no_alloc`, `bun run parity -- --scene s5` with and without `CI=1`, and `bun run bench:allocation --animated 64` with and without `--gpu webgl2` and `--no-inline`. The direct count is a loop of plays in Node 24.2 that read options of 4 to 9 shapes. The heap profiler sampled it every 64 bytes over 200,000 rounds.
 
 ## Decision
 
@@ -91,7 +91,7 @@ A play's numbers cross in a small array of engine memory too, not as call argume
 
 Reading a fraction from an options object makes a 12-byte number in Chrome, even in optimized code. A game passes `play` objects of many shapes, one for each call site of a game. Past four shapes, the browser reads the property through its generic lookup. That lookup copies the fraction into a new number. With four or fewer, an option that some shapes lack merges with `undefined`, so the value read is boxed again. Node 24 runs the same engine as Chrome. A direct count in it found 97 to 162 bytes for each round of plays, and none for the same loop without the reads. Freezing an object does not change the read itself.
 
-So the animator reads a frozen options object, or a frozen points object of `playBlend`, once. It keeps what it read in a `WeakMap`, and later plays copy those numbers into engine memory with one `Float32Array.set`. A frozen object cannot change, so what the animator kept stays true. An object that is not frozen is read at every play, as before. Development builds check a frozen object's values the first time only.
+So the animator reads a frozen options object, or a frozen points object of `playBlend`, once. It keeps what it read in a `WeakMap`, and later plays copy those numbers into engine memory with one `Float32Array.set`. A frozen object cannot change, so what the animator kept stays true. An object that is not frozen is read at every play. Development builds check a frozen object's values the first time only.
 
 The rejected options:
 
@@ -111,7 +111,7 @@ A blend's clips belong to it until a play takes over the layer, or `stop` stops 
 
 ### Slots
 
-Each object keeps 8 slots. A three-clip blend that cross-fades to another three-clip blend uses 6, and a second layer that cross-fades uses 2 more. The test `two_blends_cross_fading_and_a_cross_fading_layer_fit_the_slots` fills all 8, with an additive clip in one of them. When all 8 hold clips, a play now first takes the slot of a clip that fades out: the one that counts least. The rule before took the slot that counted least. That could be a blend's clip at a share of 0, or a clip that just started to fade in.
+Each object keeps 8 slots. A three-clip blend that cross-fades to another three-clip blend uses 6, and a second layer that cross-fades uses 2 more. The test `two_blends_cross_fading_and_a_cross_fading_layer_fit_the_slots` fills all 8, with an additive clip in one of them. When all 8 hold clips, a play first takes the slot of a clip that fades out: the one that counts least. The slot that counts least among all clips was rejected. That could be a blend's clip at a share of 0, or a clip that just started to fade in.
 
 ### The review's findings
 
@@ -122,10 +122,9 @@ Each object keeps 8 slots. A three-clip blend that cross-fades to another three-
 ## Consequences
 
 - `crates/null3d-core/src/animation/actions.rs` holds the plays, the blend's weights and phase, and the slot choice. The file `system.rs` holds the slots' sources, the blend values and the merge of freed joints. The file `clip.rs` samples the clip's end exactly.
-- `animatorPlay` and the new `animatorPlayBlend` take their numbers from the play array (`ANIMATION_FIELD_PLAY_ARGS`). `animationArrays` also returns the slots' sources and the blend values.
+- `animatorPlay` and `animatorPlayBlend` take their numbers from the play array (`ANIMATION_FIELD_PLAY_ARGS`). `animationArrays` also returns the slots' sources and the blend values.
 - `setLayerWeight` and `setBlend` check the layer in every build, so a write never reaches another object's layers.
 - S5 and its twin start each character at its own time, and blend by clip weights.
-- `docs/api/animation.md` gains [Clip weights](../../docs/api/animation.md#clip-weights) and [1D blends](../../docs/api/animation.md#1d-blends). The mapping's `AnimationMixer` entry maps `time` and `setEffectiveWeight`. The develop skill's animation recipe uses a blend by speed.
-- D-28's slot and joint-run sections now point here.
+- `docs/api/animation.md` has [Clip weights](../../docs/api/animation.md#clip-weights) and [1D blends](../../docs/api/animation.md#1d-blends). The mapping's `AnimationMixer` entry maps `time` and `setEffectiveWeight`. The develop skill's animation recipe uses a blend by speed.
+- D-28's slot and joint-run sections point here.
 - Inertial transitions (M2-C10) switch what a layer plays; blends and clip weights keep weighted blending.
-- The record is in the table in [README.md](README.md).

@@ -1,12 +1,12 @@
 # D-144: Projected decals
 
-Status: decided by the helper of M2-EX27 on 11 October 2026. The owner approved the decals demo's look on 12 October 2026, from shots of the reworked street. Date: 2026-10-11. Task: M2-EX27.
+Status: decided by the helper of M2-EX27. The owner approved the decals demo's look, from shots of the reworked street. Built: decals ship in the engine, with a frame group of their own on WebGPU. Task: M2-EX27.
 
-Summary: A decal is a box mesh with a decal material: `materials.decal` takes the standard material's values and maps, and the box projects them onto every opaque surface inside it. Decals draw in a pass of their own, right after the camera's opaque pass, with a build of the standard material's own shader that finds the surface under each pixel from the scene's depth. The main pass gains no texture binding, and a page without decals pays nothing.
+Summary: A decal is a box mesh with `materials.decal`, which projects the standard material's values and maps onto every opaque surface inside the box. Decals draw in their own pass after the camera's opaque pass, with a standard material build that finds each pixel's surface from the scene's depth. The main pass gains no texture binding, and a page without decals pays nothing.
 
 ## Question
 
-The showcase scenes need scorch marks, mud, puddles, road paint, moss and cracks on any surface ([D-132](D-132-showcase-look-and-features-2026-10-11.md), and the owner's ruling D-142 of 11 October 2026). three.js offers `DecalGeometry`, which cuts a copy of the target mesh's triangles on the CPU. How does null3D put a material onto the surfaces inside a box, on all three GPU paths, without slowing the scenes that have no decals?
+The showcase scenes need scorch marks, mud, puddles, road paint, moss and cracks on any surface ([D-132](D-132-showcase-look-and-features.md), and the owner's ruling [D-142](D-142-more-techniques-before-1-0.md)). three.js offers `DecalGeometry`, which cuts a copy of the target mesh's triangles on the CPU. How does null3D put a material onto the surfaces inside a box, on all three GPU paths, without slowing the scenes that have no decals?
 
 ## Rule
 
@@ -39,6 +39,7 @@ What D gives up against A and B: a decal cannot change only the normal or the ro
 - Each decal draws the back faces of its box, with no depth test, so it draws while the camera is inside the box too.
 - Each pixel reads the scene's depth at its place and at its four neighbors. It finds the surface along the view ray through the box's face. On each axis, the neighbor whose depth lies closer belongs to the same surface. Those two neighbors give the surface's normal, and the change of the texture coordinates across the pixel, so mip levels do not jump at the edges of objects.
 - A pixel whose surface lies outside the box draws nothing.
+- A box with a zero size on one axis has no inverse and marks nothing. An animated size that passes through zero, or a size of 0 on the depth axis, makes such a box. The vertex stage inverts the box's axes by their cofactors, so a flat box carries out three zero axis vectors. The fragment stage tests the box's axis for zero. A flat box then takes a fixed aim, so no NaN is made, and `inside` is false, so it discards. Without that test, every point reads as the box's middle and the aim normalizes the zero vector into a NaN. A NaN is not below zero, so the box would draw.
 - The box's x and y axes give the texture coordinates, as three.js's `DecalGeometry` gives them, and the frame of the normal map. Its z axis is the decal's direction.
 - The decal fades where the surface turns away from its direction, from 60 to 80 degrees by default, and near both ends of the box along z.
 
@@ -75,29 +76,19 @@ runs of 10 seconds at each preset, on WebGPU and WebGL2, held 120 frames per sec
 
 ## Decision
 
-Option D, built from the standard material's own shader and the sorted machinery of the transparent pass.
+Option D, built from the standard material's own shader and the sorted machinery of the transparent pass. On WebGPU the decal templates bind a frame group of their own, as "Bindings" under Consequences says.
+
+Rejected: a higher `maxSampledTexturesPerShaderStage` on WebGPU, where the adapter offers it. Hard rule 6 then needs a fallback for devices that offer only 16, and phones often do, so the fallback has to exist anyway. The decals' own frame group keeps every device within the default limits with one code path.
 
 ## Consequences
 
 - Code: `materials.rs` (the `DECAL` feature and its values), `frame.rs` (the decal key and the decal layers), `pipelines.rs`, `sorted.rs` (the decal layout and the redraw layout), `frame_graph.rs` (the `Decals` and `DecalRedraw` passes), both builders, and the shaders `lit.wgsl` and `lib/mesh.wgsl` with the `decal` and `decal_maps` entries of the shader manifest, in the first-use set `decals`.
-- Bindings: the decal templates bind the frame's group, the material's maps where they sample them, then the scene's depth: group 1 or 2 on WebGPU, and group 4 on WebGL2, whose slots start at 47. On WebGL2 the decal builds take one of the four spare texture units of each stage for the depth, as the builds that let light through take one for the copy.
+- Bindings: the decal templates bind a frame group, the material's maps where they sample them, then the scene's depth: group 1 or 2 on WebGPU, and group 4 on WebGL2, whose slots start at 47. On WebGL2 the decal builds take one of the four spare texture units of each stage for the depth, as the builds that let light through take one for the copy.
+- The decals' frame group on WebGPU: WebGPU counts each pipeline's sampled textures per shader stage over every entry of its groups' layouts, whether or not the shader reads them. With the full frame group, a decal with maps would need 17 in its fragment stage: 8 from the frame group, 8 maps and the scene's depth. WebGPU's default limit is 16, so textured decals would draw nothing. WebGL2's programs take a texture unit only for a texture that they read, so WebGL2 draws them with the full frame group.
+  - On WebGPU the decal templates bind `layout::DECAL_FRAME` at group 0: the frame group's entries without bindings 10 and 15. Those two hold the light probe grid's 3D texture ([D-146](D-146-light-probe-grid.md)) and the copy of the opaque color, which no decal build reads. A decal with maps reads 15 sampled textures, and 1 stays free.
+  - The WebGPU builder makes the group only while the decal pass runs, from the camera's frame group's inputs, and again whenever it makes the camera's frame group again. A page without decals makes neither the group nor its layout.
+  - On WebGL2 the decal pass binds the frame group.
+  - A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's resources per stage over its layouts, for every template, against WebGPU's default limits. A new binding that passes a limit fails it. The render crate's `decals` tests check the group's entries and that the decal pass binds it.
 - Docs: `api/materials` (Decals), the mapping entry for `DecalGeometry`.
 - Skills: the develop skill's task table and quick reference, the port skill's notes.
 - Tests: the render crate's `decals` tests, the image tests `decals`, the first-use download test and `--decals` in `bench:allocation`.
-
-## Addendum, 2026-10-15: the decals' own frame group on WebGPU
-
-The light probe grid (D-146) added a 3D texture to the frame group. WebGPU counts each pipeline's sampled textures per shader stage over every entry of its groups' layouts, whether or not the shader reads them. A decal with maps then needed 17 in its fragment stage: 8 from the frame group, 8 maps and the scene's depth. WebGPU's default limit is 16, so textured decals drew nothing on WebGPU. WebGL2 drew them, as its programs take a texture unit only for a texture that they read.
-
-Two fixes were open. One asks for a higher `maxSampledTexturesPerShaderStage` where the adapter offers it. Hard rule 6 then needs a fallback for devices that offer only 16, and phones often do, so the fallback has to exist anyway. The other gives the decal templates a frame group without the textures that no decal build reads: the probe grid's and the copy of the opaque color. That keeps every device within the default limits with one code path, so it was chosen.
-
-- On WebGPU the decal templates bind `layout::DECAL_FRAME` at group 0: the frame group's entries without bindings 10 and 15. A decal with maps reads 15 sampled textures, and 1 stays free.
-- The WebGPU builder makes the group only while the decal pass runs, from the camera's frame group's inputs, and again whenever it makes the camera's frame group again. A page without decals makes neither the group nor its layout.
-- WebGL2 is unchanged: the decal pass binds the frame group.
-- A unit test (`gpu/webgpu/pipelines.test.ts`) sums each build's resources per stage over its layouts, for every template, against WebGPU's default limits. A new binding that passes a limit fails it. The render crate's `decals` tests check the group's entries and that the decal pass binds it.
-
-## Addendum, 2026-10-16: a box with a flat side marks nothing
-
-The vertex stage inverts the box's axes by their cofactors. Its comment says that a flat box has no inverse and marks nothing, and nothing enforced that. A box with a zero size on one axis gives a zero determinant, so the three axis vectors it carries out are all zero. Every dot product with them is zero. The fragment stage read that as a point at the box's middle, so `inside` held. The aim it normalized was the zero vector, which makes a NaN. `facing`, `angle_fade` and `decal_fade` followed. A NaN is not below zero, so the box drew rather than discarded.
-
-An animated size that passes through zero, or a size typed as 0 on the depth axis, reaches this. The fragment stage now tests the box's axis for zero. A flat box takes a fixed aim, so no NaN is made, and `inside` is false, so it discards. The decal image tests place boxes with a size on each axis, and the demos give every decal a depth, so no reference changes.

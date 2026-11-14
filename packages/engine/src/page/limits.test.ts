@@ -16,6 +16,7 @@ import {
 	DEPTH_WITHOUT_CLIP_CONTROL,
 	type DeviceOptions,
 	type DeviceReport,
+	drawPath,
 	effectsOutput,
 	keepTextureCopiesOption,
 	maxCanvasSize,
@@ -33,10 +34,12 @@ const MIB = 1024 * 1024;
 /** A WebGPU device with this storage binding. */
 const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	webgl2: false,
+	softwareRenderer: false,
 	storageBindingBytes,
 	capabilities: 0,
 	maxTextureSize: 0,
 	sharedUploads: true,
+	multiDraw: false,
 	depth: 'reversed',
 	parallelCompile: true,
 	freshShaders: false,
@@ -51,6 +54,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	cellCulling: true,
 	joinEffects: true,
 	depthPrepass: false,
+	prepassColor: C.PREPASS_COLOR_LOAD,
 	skinning: C.SKINNING_VERTEX,
 	indexInstances: false,
 	directDraws: false,
@@ -58,8 +62,9 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	largeWorld: false,
 	expectedObjects: 0,
 	gpuOcclusion: false,
-	textureCache: true,
+	derivedCache: true,
 	occlusionBuffer: 0,
+	occlusionCheck: true,
 });
 
 /** What the WebGL2 probe finds of a format that the device does not draw into. */
@@ -76,7 +81,13 @@ const F16 = C.CAPABILITY_FLOAT16_TARGETS;
 /** A report whose WebGL2 part has these fields, and whose WebGPU adapter has these features. */
 function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
-		webgpu: { limits: {}, features, transientAttachments: false, directDraws: false },
+		webgpu: {
+			limits: {},
+			features,
+			transientAttachments: false,
+			directDraws: false,
+			drawPath: 'not-apple-gpu-in-webkit',
+		},
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
@@ -108,11 +119,13 @@ const PLAIN: DeviceOptions = {
 	antialias: 'msaa',
 	transparent: false,
 	depthPrepass: false,
+	prepassColor: undefined,
 	largeWorld: false,
 	expectedObjects: 0,
 	gpuOcclusion: false,
-	textureCache: true,
+	derivedCache: true,
 	occlusionBuffer: undefined,
+	occlusionCheck: true,
 };
 
 /** The scene color format on a tier for a page with the plain options and these changes. */
@@ -320,11 +333,30 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(F16);
 	});
 
+	it('tells the core that flat values take the first vertex only where the extension exists', () => {
+		// Split meshes draw their trees on WebGL2 only with it: under GLSL's last-vertex rule ANGLE
+		// on Metal copies the whole bound index buffer before each draw.
+		const withIt = report({ extensions: { WEBGL_provoking_vertex: true } });
+		expect(coreDevice('webgl2', withIt, PLAIN).capabilities).toBe(
+			C.CAPABILITY_FIRST_PROVOKING_VERTEX | F16,
+		);
+		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(F16);
+	});
+
 	it('tells the core about 16-bit float targets only where RGBA16F passes the probe', () => {
 		const none = report({ floatRenderTargets: null });
 		expect(coreDevice('webgl2', none, PLAIN).capabilities).toBe(0);
 		const refused = report({ floatRenderTargets: { rgba16f: refusedTarget } });
 		expect(coreDevice('webgl2', refused, PLAIN).capabilities).toBe(0);
+	});
+
+	it('passes the way the prepass starts its stand-in color, and the default without a switch', () => {
+		const code = (prepassColor: DeviceOptions['prepassColor']) =>
+			coreDevice('webgl2', report({}), { ...PLAIN, prepassColor }).prepassColor;
+		expect(code(undefined)).toBe(C.PREPASS_COLOR_NONE);
+		expect(code('load')).toBe(C.PREPASS_COLOR_LOAD);
+		expect(code('clear')).toBe(C.PREPASS_COLOR_CLEAR);
+		expect(code('none')).toBe(C.PREPASS_COLOR_NONE);
 	});
 
 	it('flags each compressed texture family whose extension the context turned on', () => {
@@ -379,11 +411,59 @@ describe('coreDevice on WebGL2', () => {
 	it('draws directly where the probe measured it faster, as ?direct= forces', () => {
 		const probed = report({});
 		probed.webgpu.directDraws = true;
+		probed.webgpu.drawPath = 'probe-faster';
 		expect(coreDevice('webgpu', probed, PLAIN).directDraws).toBe(true);
 		expect(coreDevice('webgpu', report({}), PLAIN).directDraws).toBe(false);
 		expect(coreDevice('webgpu', report({}), { ...PLAIN, direct: 'on' }).directDraws).toBe(true);
 		expect(coreDevice('webgpu', probed, { ...PLAIN, direct: 'off' }).directDraws).toBe(false);
 		expect(coreDevice('webgl2', probed, { ...PLAIN, direct: 'on' }).directDraws).toBe(false);
+	});
+
+	it("names why the engine takes its draw path, with the switch over the probe's answer", () => {
+		const probed = report({});
+		probed.webgpu.directDraws = true;
+		probed.webgpu.drawPath = 'probe-faster';
+		expect(drawPath('webgpu', probed, 'auto')).toEqual({
+			directDraws: true,
+			reason: 'probe-faster',
+		});
+		// A device that is not an Apple GPU in WebKit keeps the indirect path, unless forced.
+		expect(drawPath('webgpu', report({}), 'auto')).toEqual({
+			directDraws: false,
+			reason: 'not-apple-gpu-in-webkit',
+		});
+		expect(drawPath('webgpu-compat', report({}), 'on')).toEqual({
+			directDraws: true,
+			reason: 'forced',
+		});
+		expect(drawPath('webgpu', probed, 'off')).toEqual({ directDraws: false, reason: 'forced' });
+		expect(drawPath('webgl2', probed, 'on')).toEqual({ directDraws: false, reason: 'webgl2' });
+	});
+
+	it('marks the devices whose reported names say they draw on the CPU', () => {
+		const software = report({ renderer: 'Google SwiftShader' });
+		expect(coreDevice('webgl2', software, PLAIN).softwareRenderer).toBe(true);
+		expect(
+			coreDevice('webgl2', report({ renderer: 'ANGLE (Apple, M1)' }), PLAIN).softwareRenderer,
+		).toBe(false);
+		const adapter = report({});
+		adapter.webgpu.adapterInfo = {
+			vendor: 'google',
+			architecture: 'swiftshader',
+			device: '',
+			description: '',
+		};
+		expect(coreDevice('webgpu', adapter, PLAIN).softwareRenderer).toBe(true);
+		const real = report({});
+		real.webgpu.adapterInfo = {
+			vendor: 'apple',
+			architecture: 'apple-m1',
+			device: '',
+			description: '',
+		};
+		expect(coreDevice('webgpu', real, PLAIN).softwareRenderer).toBe(false);
+		// A device that reports no name is no software renderer, which rule 14 needs.
+		expect(coreDevice('webgpu', report({}), PLAIN).softwareRenderer).toBe(false);
 	});
 
 	it('culls in two phases on WebGPU where the options ask for it', () => {
@@ -453,6 +533,14 @@ describe('the permutation bits that a device fixes', () => {
 		expect(coreDevice('webgl2', multiDraw, PLAIN).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
 		expect(coreDevice('webgl2', report({}), PLAIN).shaderBits).toBe(0);
 		expect(coreDevice('webgpu', multiDraw, PLAIN).shaderBits).toBe(0);
+	});
+
+	it('tells the drawing thread whether the device draws many ranges in one call', () => {
+		expect(
+			coreDevice('webgl2', report({ extensions: { WEBGL_multi_draw: true } }), PLAIN).multiDraw,
+		).toBe(true);
+		expect(coreDevice('webgl2', report({}), PLAIN).multiDraw).toBe(false);
+		expect(coreDevice('webgpu', report({}), PLAIN).multiDraw).toBe(false);
 	});
 
 	it('hold tone mapping in the shader on the 8-bit path', () => {

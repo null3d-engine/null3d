@@ -60,9 +60,10 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | `transmission` | A shader variant that samples a copy of the opaque objects' colors, and the transparent pass |
 | `diffuseTransmission` | A shader variant that lights the surface's back too, and lets that light through to its front |
 | `subsurfaceRadius` | The skin pass, which draws the object again with shaders of its own, and the subsurface blur after the scene |
-| A clear coat or a sheen | A shader variant that lights the layers above the surface, whose shaders load with the first such material |
+| A clear coat, a sheen, iridescence or anisotropy | A shader variant that lights the layers above the surface, whose shaders load with the first such material |
 | `doubleSided` | The pipeline's state: it culls no faces. A blended one draws with two pipelines, one per face, unless `forceSinglePass` asks for one |
 | `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
+| `colorWrite: false` | The pipeline's color state, and the place in the opaque pass: its objects draw first, so their depth holds back the surfaces behind them |
 | `flatShading` | The material's row: every standard shader can light with face normals |
 
 three.js compiles a new program when `material.needsUpdate` is set after such a change. null3D has no `needsUpdate`: create one material for each combination in the setup instead.
@@ -104,6 +105,8 @@ Sorting by object has these limits:
 - The triangles of one mesh draw in the mesh's own order. A closed blended mesh, such as a sphere, draws only its front faces unless it is double-sided. A double-sided one draws its back faces first, then its front faces, as three.js draws it. So its near side covers its far side. Each run of neighbors that share its mesh and material takes a second draw. On flat surfaces, whose faces never overlap, `forceSinglePass: true` saves it.
 
 Surfaces of the `weighted` blending need no sort. In the camera's view they leave the transparent pass and draw after it, in any order, into two targets of their own. A last step blends their weighted average over the scene, as far as they cover it together ([Weighted blending](../api/materials.md#weighted-blending)). Use it where the limits above make smoke, particles or crossing panes pop.
+
+The quality setting `momentTransparency` blends the same surfaces in a layer of its own, and it is nearer an exact back-to-front blend than the weighted average is. It draws each surface twice and keeps a store of four depth moments, so a page pays more for it ([Moment transparency](../api/materials.md#moment-transparency)).
 
 Surfaces that let light through, which `transmission` makes, draw in the transparent pass too, sorted with the blended ones. Before the camera's transparent pass, the engine copies its opaque objects' colors into a texture with blurred levels, which those surfaces sample behind them ([Transmission](../api/materials.md#transmission)).
 

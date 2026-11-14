@@ -1,15 +1,21 @@
-// The runner page's skips of GPU paths that a device lacks. The reports are the capabilities
-// page's, cut to the facts that decide the paths, from runs on these devices: the Redmi Note 13
-// (Chrome 138 on TestingBot), which offers WebGPU's compatibility mode only; the Galaxy S24
-// (Chrome), which gives no WebGPU adapter; and an iPad (Safari), which offers every path.
+// The runner page's skips of GPU paths that a device lacks, and of the pages that draw where the
+// browser's image buffers fail. The reports are the capabilities page's, cut to the facts that
+// decide the paths, from runs on these devices: the Redmi Note 13 (Chrome 138 on TestingBot), which
+// offers WebGPU's compatibility mode only; the Galaxy S24 (Chrome), which gives no WebGPU adapter;
+// and an iPad (Safari), which offers every path. The faults of image buffers are those of Safari
+// 27.2 on GitHub's macOS machines.
 import { describe, expect, it } from 'bun:test';
 import { parseArgs, planItems, summaryLine } from '../real-browsers.ts';
 import { testedDeviceEntry } from './device-record.ts';
 import {
 	type GpuPath,
+	imageBufferFault,
 	type MissingAllowed,
 	NONE_MISSING,
+	needsImageBuffers,
 	pathsToSkip,
+	skippedForImages,
+	skippedForImagesResult,
 	skippedPath,
 	skippedPathsText,
 	skippedResult,
@@ -162,6 +168,85 @@ describe('the skipped paths in the output', () => {
 		});
 		expect(result).toBe(
 			'270 passed, 87 skipped, 0 failed; skipped the pages for WebGPU, which the device lacks',
+		);
+	});
+});
+
+/** The faults that Safari 27.2's image buffers showed on GitHub's macOS machines. */
+const CI_SAFARI_FAULTS = [
+	'a 2D canvas cannot read back what it drew (InvalidStateError: The object is in an invalid state.)',
+	'WebGL2 uploads a red ImageBitmap as 0,0,0,0',
+	'an ImageBitmap posted to a worker arrives as null',
+];
+
+describe('the pages that a browser with faulty image buffers skips', () => {
+	const report = (imageBufferFaults: string[]): ItemResult => ({
+		ok: true,
+		report: { ...(IPAD.report as object), imageBufferFaults },
+	});
+
+	it('reads the faults from the report of the capabilities page', () => {
+		expect(imageBufferFault(report(CI_SAFARI_FAULTS))).toBe(
+			`the browser's image buffers fail: ${CI_SAFARI_FAULTS.join('; ')}`,
+		);
+	});
+
+	it('finds no fault where the buffers work, in an older report, or without a report', () => {
+		expect(imageBufferFault(report([]))).toBeUndefined();
+		expect(imageBufferFault(IPAD)).toBeUndefined();
+		expect(imageBufferFault(undefined)).toBeUndefined();
+		expect(imageBufferFault({ ok: false, error: 'no result within 30 s' })).toBeUndefined();
+	});
+
+	it('skips every page that draws and runs the pages that only read or compile', () => {
+		const items = checksPlan();
+		const run = items.filter((item) => !needsImageBuffers(item)).map((item) => item.check.kind);
+		expect(new Set(run)).toEqual(
+			new Set(['capabilities', 'capabilities-reload', 'isolation', 'shaders']),
+		);
+		expect(items.filter(needsImageBuffers).length).toBeGreaterThan(500);
+	});
+
+	it("marks a skipped page's result with the faults, which judging counts as a skip", () => {
+		const fault = imageBufferFault(report(CI_SAFARI_FAULTS)) as string;
+		const result = skippedForImagesResult(fault);
+		expect(skippedForImages(result)).toBe(fault);
+		expect(skippedPath(result)).toBeUndefined();
+		expect(skippedForImages(skippedResult('webgpu'))).toBeUndefined();
+		const image = checksPlan().find((item) => item.check.kind === 'image') as PlanItem<Check>;
+		expect(judge(image.check, result, NONE_MISSING)).toBe('skip');
+	});
+
+	it('lets the runner page skip them only in a run that allows the faults', () => {
+		expect(withGpuPaths(checksPlan(), ALLOW_NO_WEBGPU, true).flags).toEqual({
+			skipMissing: { report: 'capabilities', allowed: ALLOW_NO_WEBGPU },
+			skipImageFaults: { report: 'capabilities' },
+		});
+		expect(withGpuPaths(checksPlan(), NONE_MISSING, true).flags).toEqual({
+			skipImageFaults: { report: 'capabilities' },
+		});
+		expect(withGpuPaths(checksPlan(), ALLOW_NO_WEBGPU).flags).toEqual({
+			skipMissing: { report: 'capabilities', allowed: ALLOW_NO_WEBGPU },
+		});
+		expect(parseArgs(['--allow-image-faults', 'Safari']).imageFaults).toBe(true);
+		expect(parseArgs(['Safari']).imageFaults).toBeUndefined();
+	});
+
+	it('names the faults in the summary line and in the result of the entry', () => {
+		const fault = "the browser's image buffers fail: a 2D canvas cannot read back what it drew";
+		const counts = { pass: 30, skip: 15, fail: 0, skippedPaths: ['webgpu'] as GpuPath[] };
+		expect(summaryLine('mac-safari', { ...counts, imageFault: fault })).toBe(
+			`mac-safari: 30 passed, 15 skipped, 0 failed; skipped the pages for WebGPU, which the device lacks; skipped the pages that draw, since ${fault}`,
+		);
+		const { result } = testedDeviceEntry({
+			run: '20261105-053306-checks',
+			launch: 'mac',
+			device: { userAgent: '' },
+			...counts,
+			imageFault: fault,
+		});
+		expect(result).toBe(
+			`30 passed, 15 skipped, 0 failed; skipped the pages for WebGPU, which the device lacks; skipped the pages that draw, since ${fault}`,
 		);
 	});
 });

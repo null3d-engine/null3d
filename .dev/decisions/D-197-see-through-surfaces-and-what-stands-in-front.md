@@ -1,12 +1,12 @@
 # D-197: See-through surfaces never take the color of what stands in front of them
 
-Status: decided by the engine helper of M2-EX8 on 20 October 2026, for the owner's review. Built: the depth code in the copy of the opaque color, the check in the surfaces that let light through, and the `transmission-in-front` image test. Date: 2026-10-20. Task: M2-EX8.
+Status: decided by the engine helper of M2-EX8, for the owner's review. Built: the depth code in the copy of the opaque color, the check in the surfaces that let light through, and the `transmission-in-front` image test. Task: M2-EX8.
 
-Summary: The copy of the camera's opaque color keeps a code of the opaque depth's distance in its alpha. Where a bent ray lands on an opaque surface in front of the see-through surface, the surface samples its own pixel instead. The Creek's near-bank flowers no longer leave dim copies in the stream. Where the HDR scene color has no alpha, the copy takes 16-bit floats while such surfaces draw. That costs 19.66 MB more at a 2,560 x 1,440 canvas.
+Summary: The copy of the camera's opaque color keeps a code of the opaque depth's distance in its alpha. Where a bent ray lands on an opaque surface in front, the see-through surface samples its own pixel, so the Creek's flowers leave no copies in the stream. Where the HDR scene color has no alpha, the copy takes 16-bit floats, which costs 19.66 MB more at 2,560 x 1,440.
 
 ## Question
 
-On 20 October 2026 the owner saw dim copies of the near-bank flowers in the Creek's stream, just past the real flowers, as the camera turned. Why does the water show the color of a flower in front of it? How does the engine stop it without a new texture in the surface shaders?
+Without a depth check, dim copies of the near-bank flowers show in the Creek's stream, just past the real flowers, as the camera turns. Why does the water show the color of a flower in front of it? How does the engine stop it without a new texture in the surface shaders?
 
 ## Rule
 
@@ -15,11 +15,11 @@ On 20 October 2026 the owner saw dim copies of the near-bank flowers in the Cree
 - Both GPU paths and every scene color format follow the same rule.
 - The shaders grow little, and only the surfaces that let light through pay.
 
-## The finding
+## What causes it
 
-The Creek's water is a custom material with `transmission: 1` and a thickness of up to 0.62 m (`examples/showcase/creek/water.ts`). The engine follows three.js's `getIBLVolumeRefraction`. It bends the view ray into the volume and follows it for the thickness. It projects the exit point onto the screen, and samples the copy of the opaque color there (`copied_light` in `lib/refraction.wgsl`). Nothing checked depth.
+The water add-on's surface, which the Creek draws, is a custom material with `transmission: 1` and a thickness of up to 0.62 m (`packages/water/src/water.wgsl`). The engine follows three.js's `getIBLVolumeRefraction`. It bends the view ray into the volume and follows it for the thickness. It projects the exit point onto the screen, and samples the copy of the opaque color there (`copied_light` in `lib/refraction.wgsl`). That path checks no depth.
 
-Looking across the stream, the bent ray goes down into the water. Its exit point projects lower on the screen than the surface's own pixel. Just past a flower on the near bank, that point lands on the flower. The water then showed the flower's color, in a band as tall as the bend, which moved as the camera turned. three.js draws the same band. A true reflection of the flowers falls under the near bank, out of sight, and the planar reflection pass is not the cause.
+Looking across the stream, the bent ray goes down into the water. Its exit point projects lower on the screen than the surface's own pixel. Just past a flower on the near bank, that point lands on the flower. The water then shows the flower's color, in a band as tall as the bend, which moves as the camera turns. three.js draws the same band. A true reflection of the flowers falls under the near bank, out of sight, and the planar reflection pass is not the cause.
 
 ## Options
 
@@ -30,7 +30,7 @@ Looking across the stream, the bent ray goes down into the water. Its exit point
 | C: the scene depth as a texture of its own in the surface shaders | Rejected. It is one sampled texture past WebGPU's default limit |
 | D: no change, as three.js draws it | Rejected by the owner's look check |
 
-The copy's alpha had no reader. Screen-space reflections share the copy ([D-134](D-134-screen-space-reflections.md)), but they read its color alone. The mip levels average the alpha, and only the first level's alpha is read.
+The copy's alpha has no other reader. Screen-space reflections share the copy ([D-134](D-134-screen-space-reflections.md)), but they read its color alone. The mip levels average the alpha, and only the first level's alpha is read.
 
 ### The code
 
@@ -44,13 +44,13 @@ An opaque surface counts as in front when its code is smaller than the surface's
 
 ### The fallback
 
-The surface reads the code at the landing pixel and at the four pixels beside it, and takes the nearest. The filter reads those pixels too. A multisampled edge pixel can also hold the front surface's color with the back surface's depth. The test's first image read one pixel, and kept a one-pixel magenta outline there.
+The surface reads the code at the landing pixel and at the four pixels beside it, and takes the nearest. The filter reads those pixels too. A multisampled edge pixel can also hold the front surface's color with the back surface's depth. A read of the landing pixel alone keeps a one-pixel magenta outline there.
 
 Where the nearest code stands in front, the surface samples its own pixel, unbent. The depth test guarantees that the opaque surface there lies behind it. That pixel can show another part of the scene than its bent neighbors, so the fallback has a seam. In the Creek both sides show the stream's bed.
 
 ### The copy's format
 
-On the HDR path the copy had the scene color's format. WebGPU's default HDR scene color is `rg11b10ufloat`, which has no alpha. With that scene color, the copy is now `rgba16float` while some surface that lets light through wants the copy. A copy that only screen-space reflections read keeps `rg11b10ufloat`, as they read its color alone. The 8-bit path's sRGB copy and an `rgba16float` scene color have alpha already, so they cost nothing more. The copy has the canvas's size at every render scale, with its whole chain of mip levels. The wider copy takes 4 more bytes for each texel of the chain:
+On the HDR path the copy takes the scene color's format where that format has alpha. WebGPU's default HDR scene color is `rg11b10ufloat`, which has none. With that scene color, the copy is `rgba16float` while some surface that lets light through wants the copy. A copy that only screen-space reflections read keeps `rg11b10ufloat`, as they read its color alone. The 8-bit path's sRGB copy and an `rgba16float` scene color have alpha already, so they cost nothing more. The copy has the canvas's size at every render scale, with its whole chain of mip levels. The wider copy takes 4 more bytes for each texel of the chain:
 
 | Canvas | Copy in `rg11b10ufloat` | Copy in `rgba16float` | More |
 | --- | --- | --- | --- |
@@ -59,17 +59,17 @@ On the HDR path the copy had the scene color's format. WebGPU's default HDR scen
 
 A depth texture of its own, one channel at half size, would take about 2 MB at 2,560 x 1,440. It would be a seventeenth sampled texture in every lit build with maps. Their frame group holds eight, and their maps eight more. That passes WebGPU's default limit of 16, so the copy's alpha holds the code instead.
 
-The copy samples the scene depth. Ambient occlusion, contact shadows, screen-space reflections, soft particles and decals sample it already. In a frame with none of them, the camera's depth can no longer share a texture with another view's depth of the same shape.
+The copy samples the scene depth, as ambient occlusion, contact shadows, screen-space reflections, soft particles and decals do. So in a frame with none of them, the camera's depth still cannot share a texture with another view's depth of the same shape.
 
 ## Data
 
-**The new image test.** `transmission-in-front` puts a magenta post on a near bank, in front of clear water with a volume 0.6 m thick over a striped bed. Without the check, the water just past the post's top would take the post's color. On the Mac's GPU (Chrome, 20 October 2026), the first image after the check showed no magenta copy in the water. It kept a one-pixel magenta outline, up to 34 steps of red, around the area that fell back. Reading the codes beside the landing pixel too removed it. At most 13 steps of red remain, in the corner pixel. The references show the water past the post as the background straight behind it.
+**The image test.** `transmission-in-front` puts a magenta post on a near bank, in front of clear water with a volume 0.6 m thick over a striped bed. Without the check, the water just past the post's top would take the post's color. On the Mac's GPU (Chrome), the check leaves no magenta copy in the water. A check of the landing pixel alone keeps a one-pixel magenta outline around the area that falls back, up to 34 steps of red. With the codes beside the landing pixel read too, at most 13 steps of red remain, in the corner pixel. The references show the water past the post as the background straight behind it.
 
-**An image that moved, and why.** `transmission-water` had the same leak. Its picture showed a band of the banks' own green in the water just past each bank's top. The new picture shows the stream's bed there. On the Mac's GPU 0.93% of the pixels changed on WebGPU, 0.63% in compatibility mode and 0.94% on WebGL2, against the limit of 0.1%. On SwiftShader 0.93%, 0.63% and 0.95% changed, along the same bands. Its references moved in both sets. The other `transmission*` tests and every `ssr*` test kept their pictures: 45 of 45 passed on the Mac's GPU on the final code. On SwiftShader, the `transmission*`, `ssr-*`, `alpha-*`, `ao-*`, `contact*`, `lod-fade*` and `translucency*` tests ran too: 137 of 146 passed, and the other 9 were the three tests above.
+**The water test.** `transmission-water` has the same leak without the check. Its picture then shows a band of the banks' own green in the water just past each bank's top. With the check it shows the stream's bed there. On the Mac's GPU the two pictures differ in 0.93% of the pixels on WebGPU, 0.63% in compatibility mode and 0.94% on WebGL2. The limit is 0.1%. On SwiftShader 0.93%, 0.63% and 0.95% differ, along the same bands. Its references in both sets show the bed. The other `transmission*` tests and every `ssr*` test keep their pictures: 45 of 45 passed on the Mac's GPU. On SwiftShader, the `transmission*`, `ssr-*`, `alpha-*`, `ao-*`, `contact*`, `lod-fade*` and `translucency*` tests ran too: 137 of 146 passed, and the other 9 were the three tests above.
 
-**Size.** `bun tools/build-wasm.ts --check-size --base 199160dd8` measured the fixes against the commit before them, after Brotli. The 12 start shader files grew by 10 to 239 bytes each, at most 0.8%. The 12 tables of glass's shared paragraphs grew by 320 to 343 bytes each. That is 9% for GLSL, and 25 to 29% for WGSL, whose tables are smaller. One other file grew 2.1%, and every other file less than 2%. The two WebAssembly files grew by 92 bytes together. The first build of the fixes grew 454 files past the check's 2%. Its new names renumbered the names of the code around them in every build ([Implementation notes](../implementation-notes.md#new-shader-code-keeps-the-shared-paragraphs-shared)).
+**Size.** `bun tools/build-wasm.ts --check-size --base 199160dd8` measures the check against the commit without it, after Brotli. The 12 start shader files are 10 to 239 bytes larger each, at most 0.8%. The 12 tables of glass's shared paragraphs are 320 to 343 bytes larger each. That is 9% for GLSL, and 25 to 29% for WGSL, whose tables are smaller. One other file is 2.1% larger, and every other file less than 2%. The two WebAssembly files are 92 bytes larger together. New shader names can renumber the names of the code around them in every build. In one build of this check that grew 454 files past the check's 2% ([Implementation notes](../implementation-notes.md#new-shader-code-keeps-the-shared-paragraphs-shared)).
 
-**The whole manifest on the Mac's GPU.** `bun run test:images` ran at a load of 60 to 130 on 20 October 2026. 1,153 tests passed. Of the 171 that failed, 6 were the new tests with no reference yet, 3 were `transmission-water` and 3 were `demo-creek`. The other 159 ran out of time at that load. A second run of all 171 passed 163, and a third run passed the 5 that ran out of time again. Only `demo-creek` still differs. Its references move with that day's scenery work, so they are made with it.
+**The whole manifest on the Mac's GPU.** `bun run test:images` ran at a load of 60 to 130. 1,153 tests passed. Of the 171 that failed, 6 were the new tests with no reference yet, 3 were `transmission-water` and 3 were `demo-creek`. The other 159 ran out of time at that load. A second run of all 171 passed 163, and a third run passed the 5 that ran out of time again. Only `demo-creek` differed. Its references move with the Creek's scenery work, so they are drawn with it.
 
 ## Decision
 
@@ -77,6 +77,6 @@ Option A. The copy keeps the opaque depth's distance code in its alpha. A surfac
 
 ## Consequences
 
-- Code: `transmission_copy.wgsl` reads the depth and writes the code, `lib/depth.wgsl` has `distance_code`, and `lib/refraction.wgsl` checks the codes and falls back. `lit.wgsl` passes the fragment's position. `crates/null3d-render/src/transmission.rs` binds the scene color and depth. `frame_graph.rs` declares the depth read and picks the copy's format. The layout table in `null3d-gpu` and `pipelines.ts` add the multisampled layout.
+- Code: `transmission_copy.wgsl` reads the depth and writes the code, `lib/depth.wgsl` has `distance_code`, and `lib/refraction.wgsl` checks the codes and falls back. `lit.wgsl` passes the fragment's position. `crates/null3d-render/src/transmission.rs` binds the scene color and depth. `frame_graph.rs` declares the depth read and picks the copy's format. The layout table in `null3d-gpu` and `pipelines.ts` hold the multisampled layout.
 - Docs: Transmission on the Materials page, and the `mat-transmission` mapping entry, which names the difference from three.js. The porting skill's materials table says the same.
 - Tests: the image test `transmission-in-front`, with references in both sets, and the frame graph's test that the copy reads the depth into a target with alpha.

@@ -290,23 +290,55 @@ export function namedSamples(root: string, folders = SCANNED): NamedSample[] {
 	return out;
 }
 
+/** The format name of a splat stream index, as the splats add-on reads it. */
+const SPLAT_STREAM_FORMAT = 'null3d.splats.stream';
+
+/**
+ * The files that a splat stream index names beside itself, as paths of the sample content, or none
+ * for a file that is no stream index. A page names only the index, and reads its chunks from it.
+ */
+function streamChunks(path: string, bytes: Buffer): string[] {
+	if (!path.endsWith('.json')) return [];
+	let index: unknown;
+	try {
+		index = JSON.parse(bytes.toString('utf8'));
+	} catch {
+		return [];
+	}
+	const stream = index as { format?: unknown; chunks?: { url?: unknown }[] };
+	if (stream.format !== SPLAT_STREAM_FORMAT || !Array.isArray(stream.chunks)) return [];
+	const folder = posix.dirname(path);
+	return stream.chunks
+		.map((chunk) => chunk.url)
+		.filter((url): url is string => typeof url === 'string' && !url.includes(':'))
+		.map((url) => posix.join(folder, url));
+}
+
 /**
  * Copies every pinned sample file that the code under `folders` names into `outDir`, each at its
- * path there, from the cache that `bun run samples:fetch` fills. A build that ships the demos
- * outside the repository's servers, such as a website's, runs it and sets VITE_NULL3D_SAMPLES_BASE
- * to that folder. Returns the paths that it copied.
+ * path there, from the cache that `bun run samples:fetch` fills. A splat stream index brings the
+ * chunk files that it names. A build that ships the demos outside the repository's servers, such as
+ * a website's, runs it and sets VITE_NULL3D_SAMPLES_BASE to that folder. Returns the paths that it
+ * copied.
  */
 export function copyNamedSamples(root: string, outDir: string, folders = ['examples']): string[] {
-	const paths = [...new Set(namedSamples(root, folders).map((named) => named.path))].filter(
+	const named = [...new Set(namedSamples(root, folders).map((sample) => sample.path))].filter(
 		(path): path is string => path !== null,
 	);
-	for (const path of paths) {
+	const copied = new Set<string>();
+	const copy = (path: string): Buffer => {
 		const source = join(samplesDir(root), path);
 		if (!existsSync(source)) throw new Error(`${path} is missing: run bun run samples:fetch`);
 		mkdirSync(dirname(join(outDir, path)), { recursive: true });
 		copyFileSync(source, join(outDir, path));
+		copied.add(path);
+		return readFileSync(source);
+	};
+	for (const path of named) {
+		const bytes = copy(path);
+		for (const chunk of streamChunks(path, bytes)) if (!copied.has(chunk)) copy(chunk);
 	}
-	return paths;
+	return [...copied];
 }
 
 /** What makes an asset unfit to ship: a licence outside CC0 and CC BY, or a missing attribution field. */

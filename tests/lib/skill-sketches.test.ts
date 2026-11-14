@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { scaledBudget } from './run-budget.ts';
 import { REPO_ROOT } from './server.ts';
 import {
 	runnableSketches,
@@ -108,27 +109,35 @@ function typeCheck(folder: string, sketches: readonly SkillSketch[]): string[] {
 		);
 }
 
-test('every sketch that the skills show for this version type checks against the engine', () => {
-	const sketches = runnableSketches(REPO_ROOT);
-	expect(sketches.length).toBeGreaterThan(0);
-	expect(typeCheck('type-check', sketches)).toEqual([]);
-}, 120_000);
+test(
+	'every sketch that the skills show for this version type checks against the engine',
+	() => {
+		const sketches = runnableSketches(REPO_ROOT);
+		expect(sketches.length).toBeGreaterThan(0);
+		expect(typeCheck('type-check', sketches)).toEqual([]);
+	},
+	scaledBudget(120_000),
+);
 
-test('no sketch under a later version is built already', () => {
-	// A sketch that type checks against the engine uses only parts that exist, so the tests must
-	// run it: the version in its heading is stale, and the sketch has no guard while it stays.
-	const later = skillSketches(REPO_ROOT).filter((sketch) => sketch.later !== undefined);
-	if (later.length === 0) return;
-	const errors = typeCheck('type-check-later', later);
-	const fails = (sketch: SkillSketch) => {
-		const last = sketch.line + sketch.code.split('\n').length - 1;
-		return errors.some((error) => {
-			const [file, row] = error.split(':');
-			return file === sketch.file && Number(row) >= sketch.line && Number(row) < last;
-		});
-	};
-	const built = later
-		.filter((sketch) => !fails(sketch))
-		.map((sketch) => `${sketch.file}:${sketch.line} "${sketch.heading}"`);
-	expect(built).toEqual([]);
-}, 120_000);
+test(
+	'no sketch under a later version is built already',
+	() => {
+		// A sketch that type checks against the engine uses only parts that exist, so the tests must
+		// run it: the version in its heading is stale, and the sketch has no guard while it stays.
+		const later = skillSketches(REPO_ROOT).filter((sketch) => sketch.later !== undefined);
+		if (later.length === 0) return;
+		const errors = typeCheck('type-check-later', later);
+		const fails = (sketch: SkillSketch) => {
+			const last = sketch.line + sketch.code.split('\n').length - 1;
+			return errors.some((error) => {
+				const [file, row] = error.split(':');
+				return file === sketch.file && Number(row) >= sketch.line && Number(row) < last;
+			});
+		};
+		const built = later
+			.filter((sketch) => !fails(sketch))
+			.map((sketch) => `${sketch.file}:${sketch.line} "${sketch.heading}"`);
+		expect(built).toEqual([]);
+	},
+	scaledBudget(120_000),
+);

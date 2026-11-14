@@ -3,7 +3,13 @@
 // a glTF-Transform document in place.
 import { Accessor, Primitive } from '@gltf-transform/core';
 import { KHRMeshQuantization } from '@gltf-transform/extensions';
-import { MeshoptEncoder } from 'meshoptimizer';
+import {
+	GROUP_CONE_WEIGHT,
+	GROUP_TRIANGLES,
+	GROUP_VERTICES,
+	meshletGroups,
+} from '@null3d/engine/pieces-planner';
+import { MeshoptClusterizer, MeshoptEncoder } from 'meshoptimizer';
 import { lodOf, MSFT_LOD } from './lod-extension.js';
 
 /** @import { Document, Mesh, Node, PrimitiveTarget, Skin } from '@gltf-transform/core' */
@@ -66,6 +72,23 @@ export function triangleIndices(prim, vertices) {
 }
 
 /**
+ * The places that draw a mesh: its nodes, and the rows of their instancing.
+ *
+ * @param {Mesh} mesh
+ */
+export function copiesOf(mesh) {
+	let copies = 0;
+	for (const parent of mesh.listParents()) {
+		if (parent.propertyType !== 'Node') continue;
+		const node = /** @type {import('@gltf-transform/core').Node} */ (parent);
+		const instancing = /** @type {any} */ (node.getExtension('EXT_mesh_gpu_instancing'));
+		const rows = instancing?.listAttributes?.()[0]?.getCount() ?? 1;
+		copies += rows;
+	}
+	return copies;
+}
+
+/**
  * The triangle lists of a mesh that have positions, the only primitives that the steps change.
  *
  * @param {Mesh} mesh
@@ -99,6 +122,38 @@ function remapped(source, size, remap, count) {
 			out[to * size + k] = /** @type {number} */ (source[i * size + k]);
 	}
 	return out;
+}
+
+/**
+ * Gives a primitive's vertices the order that `remap` names, moving every vertex stream and the
+ * primitive's own indices. A stream that another primitive also uses gets a copy. Every old vertex
+ * needs a place in the new order.
+ *
+ * @param {Document} doc
+ * @param {Primitive} prim
+ * @param {Uint32Array} remap Each old vertex's new index.
+ */
+export function reorderVertices(doc, prim, remap) {
+	const count = /** @type {Accessor} */ (prim.getAttribute('POSITION')).getCount();
+	const seen = new Set();
+	for (const { owner, semantic, accessor } of vertexStreams(prim)) {
+		let own = accessor;
+		if (seen.has(accessor) || usesOf(doc, accessor) > 1) {
+			own = accessor.clone();
+			owner.setAttribute(semantic, own);
+		}
+		seen.add(own);
+		own.setArray(
+			remapped(/** @type {any} */ (accessor.getArray()), accessor.getElementSize(), remap, count),
+		);
+	}
+	const indices = triangleIndices(prim, count);
+	setIndices(
+		doc,
+		prim,
+		Uint32Array.from(indices, (vertex) => /** @type {number} */ (remap[vertex])),
+		count,
+	);
 }
 
 /**
@@ -179,6 +234,26 @@ export function cacheOrder(indices) {
 	for (let i = 0; i < work.length; i++)
 		work[i] = /** @type {number} */ (back[/** @type {number} */ (work[i])]);
 	return work;
+}
+
+/**
+ * A triangle list split into groups of triangles that lie close together, by meshoptimizer's
+ * clusterizer, as the pieces planner's `Clusterize` takes it. Call it once the clusterizer is
+ * ready.
+ *
+ * @param {Uint32Array} indices
+ * @param {Float32Array} positions
+ */
+export function clusterOrder(indices, positions) {
+	const { meshlets, vertices, triangles, meshletCount } = MeshoptClusterizer.buildMeshlets(
+		indices,
+		positions,
+		3,
+		GROUP_VERTICES,
+		GROUP_TRIANGLES,
+		GROUP_CONE_WEIGHT,
+	);
+	return meshletGroups(meshlets, vertices, triangles, meshletCount);
 }
 
 /**

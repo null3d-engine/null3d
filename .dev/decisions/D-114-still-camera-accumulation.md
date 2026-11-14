@@ -1,6 +1,6 @@
 # D-114: Still-camera accumulation
 
-Status: decided, 15 October 2026. Task: M2-F11.
+Status: decided and built. Task: M2-F11.
 
 Summary: A view whose scene stops changing draws each frame with the camera's projection moved by a
 sub-pixel jitter, and blends the frames into a kept 16-bit history, so the still image converges on
@@ -31,16 +31,16 @@ both GPU paths, without showing a frozen screen of a scene that moved?
 
 ## Data
 
-The first version of this design, written on 13 and 14 October, was never run. Reading it before its
-first run on 15 October found four faults, each of which the design below removes:
+A simpler form of this design has four faults. The design below removes each:
 
-- Turning the blend on changed the frame: new passes, a new compile of the graph, new textures and
-  a new weight upload in every frame. The comparison then saw a change in every frame, so a view
-  never settled and never rested.
-- The first blended frame had weight 1/2 and mixed in a history that no frame had written.
-- The final pass ran FXAA over the converged image.
-- Below render scale 1 the two-step output pass ([D-167](D-167-two-step-output.md)) took the frame
-  over and drew the scene color, not the history.
+- Turning the blend on must not change the frame. New passes, a new compile of the graph, new
+  textures or a new weight upload in every frame each count as a change. The comparison then sees
+  a change in every frame, so a view never settles and never rests.
+- The first blended frame must have weight 1. At weight 1/2 it mixes in a history that no frame
+  has written.
+- The final pass must not run FXAA over the converged image.
+- Below render scale 1 the two-step output pass ([D-167](D-167-two-step-output.md)) takes the frame
+  over. It then draws the scene color, not the history.
 
 The measurements:
 
@@ -55,7 +55,7 @@ The measurements:
 
 - The jitter cycles through the Halton sequence of bases 2 and 3. Sample 0 is no offset, so a moving
   view draws as it did. The offset is a fraction of a pixel in clip space, within half a pixel of
-  the centre. The camera view's frame uniform carries it (16 bytes), and the mesh and sprite vertex
+  the center. The camera view's frame uniform carries it (16 bytes), and the mesh and sprite vertex
   shaders add it to a position's clip position, scaled by `w`, so geometry and depth agree. Lines,
   points and particles draw without it.
 - One kept `rgba16float` target holds the history at the canvas's size. A blend pass draws the
@@ -103,9 +103,9 @@ The measurements:
   without any comparison.
 - The core tells the two kinds of frame apart with a second change signal. Its changed stamp
   records every object a dynamic update recomputed, because an object's children recompute from
-  it. The new `SceneStorage::rows_changed` records only the slots whose world row differs from the
-  row their parity held. The comparison reads that one. A camera, which the engine creates as a
-  dynamic object, therefore does not keep a still view from settling.
+  it. The second signal, `SceneStorage::rows_changed`, records only the slots whose world row
+  differs from the row their parity held. The comparison reads that one. A camera, which the
+  engine creates as a dynamic object, therefore does not keep a still view from settling.
 - A view never blends while bloom, an outline, an effect that folds into the final pass,
   automatic exposure, the volumetric fog or screen-space reflections draws, on a canvas that keeps
   its alpha, or on the 8-bit path. Their pictures change on the GPU alone, or the blend could not

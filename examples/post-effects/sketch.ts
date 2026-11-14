@@ -1,22 +1,40 @@
 // Post effects: crates at the dead end of a neon alley at night, on wet asphalt that mirrors the
 // neon, and the camera sways in front of them. Bloom spreads the neon past its edges, ambient
 // occlusion darkens the corner, an outline marks one crate, depth of field focuses on that crate,
-// and a vignette darkens the edges. A lens grade splits red from blue toward the edges, bleeds the
-// bright neon sideways into an anamorphic streak and adds film grain. Every 3 seconds the grading
-// table changes: none, warm, then cool, each made in code from a few numbers. The pointer moves the
-// pink lamp, and the bloom, the shading and the reflections in the puddles follow.
-import { defineSketch, type Vec3, vec3 } from '@null3d/engine';
+// the lens kit darkens the edges, keeps the crate edges crisp, splits red from blue toward the
+// edges, adds film grain and bleeds the bright neon sideways into an anamorphic streak, which it
+// reads from a level of bloom's chain rather than gathering its own blur. Every 3 seconds the color
+// grade changes: none, warm, then cool, each set from the grading controls, which a job worker bakes
+// into a table. The pointer moves the pink lamp, and the bloom, the shading and the reflections in
+// the puddles follow.
+import { defineSketch, type GradingSettings, type Vec3, vec3 } from '@null3d/engine';
+import { createLensKit } from '../addons/lens-kit/index';
 import { interact } from '../lib/interact';
-import { LENS_WGSL } from '../lib/lens';
 import { enableReflections } from '../lib/ssr';
-import { COOL, grade, WARM } from './grades';
 
-/** Seconds that each color grading table shows. */
+/** Seconds that each color grade shows. */
 const STEP = 3;
 
+/** Warmer whites, a lifted toe and a cool tint in the shadows. */
+const WARM: GradingSettings = {
+	whiteBalance: { temperature: 5300 },
+	lift: [0.02, 0.01, 0],
+	gamma: [1.05, 1, 0.95],
+	gain: [1.04, 1.01, 0.9],
+	saturation: 1,
+	splitToning: { shadows: '#3350a0', highlights: '#f0b070', balance: -0.2, strength: 0.15 },
+};
+
+/** A blue cast, less color, and a deeper toe. */
+const COOL: GradingSettings = {
+	gain: [0.94, 0.99, 1.06],
+	gamma: [0.95, 1, 1.05],
+	saturation: 0.85,
+	splitToning: { highlights: '#88aaff', balance: 0.1, strength: 0.2 },
+};
+
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, quality, time } = ctx;
-	const [warm, cool] = await Promise.all([grade(assets, WARM), grade(assets, COOL)]);
+	const { scene, geometry, materials, textures, post, quality, time } = ctx;
 	// Ambient occlusion draws on every preset, at half the canvas's resolution. Phones start with
 	// the reflections off, so the demo turns them on at a quarter of the size.
 	quality.set({ aoScale: 0.5 });
@@ -25,11 +43,19 @@ export default defineSketch(async (ctx) => {
 		bloom: { intensity: 0.3, threshold: 1 },
 		ao: { radius: 0.6, intensity: 1 },
 		outline: { color: '#ffd166', width: 2 },
-		vignette: { intensity: 0.9, size: 1.1 },
 		dof: { aperture: 1.4, focusPoint: [-0.3, 0.35, -1.45] },
 		ssr: { maxDistance: 24, thickness: 0.6 },
 	});
-	post.addEffect({ wgsl: LENS_WGSL, uniforms: { shift: 6, streak: 0.25, grain: 0.05 } });
+	// The lens kit gives the picture its vignette, its light sharpening and the camera's marks: the
+	// color fringes, an anamorphic streak read from bloom's own glow, and the grain.
+	const lens = createLensKit(ctx, {
+		sharpen: 0.5,
+		vignette: { intensity: 0.9, size: 1.1 },
+		bloomLevel: 3,
+		aberration: 2,
+		streak: 3.5,
+		grain: 0.05,
+	});
 	scene.setBackground('#05060a');
 	scene.setFog({ color: '#0a0c14', density: 0.03 });
 	const camera = scene.createPerspectiveCamera({ fov: 45 });
@@ -81,8 +107,7 @@ export default defineSketch(async (ctx) => {
 	block(neon('#36d6ff'), [-1.95, 2, 1.2], [0.08, 2.4, 0.08]);
 	block(neon('#ffa53a'), [3.15, 2.6, 2], [0.08, 0.08, 1.6]);
 
-	const tables = [false, warm, cool] as const;
-	const grading = { lut: tables[0] as (typeof tables)[number], lutIntensity: 1 };
+	const grades = [false, WARM, COOL] as const;
 	let shown = 0;
 	return {
 		onUpdate(dt) {
@@ -95,11 +120,10 @@ export default defineSketch(async (ctx) => {
 			view.update(dt);
 			view.steer(vec3.copy(lampAt, pink));
 			pinkLamp.setPosition(lampAt[0], lampAt[1], lampAt[2]);
-			const next = Math.floor(time.now / STEP) % tables.length;
+			const next = Math.floor(time.now / STEP) % grades.length;
 			if (next === shown) return;
 			shown = next;
-			grading.lut = tables[next];
-			post.set(grading);
+			lens.set({ grading: grades[next] });
 		},
 	};
 });

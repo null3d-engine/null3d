@@ -1,12 +1,12 @@
 # D-156: Permutation bits whose meaning depends on the template
 
-Status: decided, 2026-10-13. Date: 2026-10-13. Task: M2-EX28.
+Status: decided by the coordinator. Built: `AREA_LIGHTS` shares `FXAA`'s value, and the draw list's test and the shader build check every shared value. Task: M2-EX28.
 
-Summary: A value of the permutation word names one feature in each shader template. Two features may share a value when no template lists both. Area lights' `AREA_LIGHTS` shares `FXAA`'s value: only the lit templates list it, and only the final pass lists FXAA. The shader build refuses a template that lists two names of one value. A first-use table's bit takes only the builds of templates that list its name.
+Summary: A value of the permutation word names one feature in each shader template, so two features may share it when no template lists both. Area lights' `AREA_LIGHTS` shares `FXAA`'s value: only the lit templates list it, and only the final pass lists FXAA. The shader build refuses a template with two names of one value, and a first-use table's bit takes only builds of templates that name it.
 
 ## Question
 
-Every value of the 32-bit permutation word had a name, and the unmerged branches had claimed the last free ones. Area lights needed one more bit, so that scenes without them do not pay for their code ([D-145](D-145-area-lights.md)). Where does a new feature's bit come from?
+Every value of the 32-bit permutation word has a name. Area lights need one more bit, so that scenes without them do not pay for their code ([D-145](D-145-area-lights.md)). Where does a new feature's bit come from?
 
 ## Rule
 
@@ -16,7 +16,7 @@ Every value of the 32-bit permutation word had a name, and the unmerged branches
 
 ## Data
 
-The area lights' code in the shared light loop cost S4 5% more GPU time, though S4 has no area light. These are `bun run bench:gpu-check` figures on the Mac (Apple M5 Max, Chrome 155), against main at 3ed5e6c61, on 13 October 2026:
+The area lights' code in the shared light loop costs S4 5% more GPU time, though S4 has no area light. These are `bun run bench:gpu-check` figures on the Mac (Apple M5 Max, Chrome 155), against main at `3ed5e6c61`:
 
 | GPU time per frame | Medium | High |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ The light loop never runs the area lights' code in S4. The code still makes ever
 
 How the data was produced: two builds ran in one quiet window, each with `--measure` after `--prepare`. One was the branch. The other was a copy whose light loop had the area lights' branch inside `#ifdef`.
 
-Seven values served only templates that never draw a lit surface. They were `FXAA` and `BLOOM` (the final pass), `OUTLINE_VISIBLE` (the outline mask), `DEBUG_VIEW_LOW` and `DEBUG_VIEW_HIGH` (the debug view), `PREPASS` (the depth template) and `DEPTH_MULTISAMPLED` (custom effects).
+Seven values serve only templates that never draw a lit surface. They are `FXAA` and `BLOOM` (the final pass), `OUTLINE_VISIBLE` (the outline mask), `DEBUG_VIEW_LOW` and `DEBUG_VIEW_HIGH` (the debug view), `PREPASS` (the depth template) and `DEPTH_MULTISAMPLED` (custom effects).
 
 ## Options
 
@@ -42,7 +42,7 @@ Seven values served only templates that never draw a lit surface. They were `FXA
 
 ## Decision
 
-Option B. The coordinator ruled on 13 October 2026, after the measurements above.
+Option B, by the coordinator's ruling after the measurements above.
 
 - `permutation::SHARED` in `crates/null3d-gpu/src/drawlist.rs` lists the pairs of names that share a value. The draw list's test refuses any other shared value.
 - The shader build refuses a template whose variants list two names of one value.

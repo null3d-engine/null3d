@@ -1,7 +1,7 @@
 // The address switches that benchmark pages share. Each check fails with a message that says how to
 // fix the address, and the page publishes that message as its error.
 
-import { HOLD_TIME } from '../../scenes/spec';
+import { HOLD_TIME, MEASURE_SECONDS, WARMUP_SECONDS } from '../../scenes/spec';
 
 export interface RunOptions {
 	/**
@@ -19,8 +19,13 @@ export interface RunOptions {
 	keep: boolean;
 	/** `?n=`: the instance count, or null to use the scene's default. */
 	count: number | null;
-	/** `?seconds=`: the warm-up and the measured time of a run, or null to use the protocol's. */
-	seconds: number | null;
+	/** The warm-up of a timed run: `?seconds=`, or the protocol's without the switch. */
+	warmupSeconds: number;
+	/**
+	 * The measured time of a timed run: `?measure=`, or else `?seconds=`, or the protocol's. A run
+	 * that must count more frames measures longer without warming up longer.
+	 */
+	measureSeconds: number;
 	/**
 	 * `?soak=`: minutes to run the scene, measured once a minute, instead of a timed run, or null
 	 * without the switch.
@@ -55,8 +60,14 @@ export interface RunOptions {
 	 */
 	antialias: 'none' | 'fxaa' | 'msaa' | null;
 	/**
-	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page which fills the window draws at,
-	 * in place of the preset's cap, or null for the preset's.
+	 * `?cloudSteps=`: the steps of each ray of the sky's volumetric cloud tier, from 0 to 64, 0 for
+	 * the flat layer, in place of the preset's, or null for the preset's. The image tests pin it to 0
+	 * on the software renderer, which cannot afford the march.
+	 */
+	cloudSteps: number | null;
+	/**
+	 * `?maxPixelRatio=`: the highest pixel ratio that a null3D page draws at, in place of the preset's
+	 * cap on a page that fills the window and the protocol's on one that does not, or null for those.
 	 */
 	maxPixelRatio: number | null;
 	/**
@@ -64,15 +75,23 @@ export interface RunOptions {
 	 * it on, such as S4, so that a comparison of two builds measures the same work in every run.
 	 */
 	governor: boolean;
+	/**
+	 * `?renderScale=`: the render scale that a null3D scene holds, between 0.25 and 1, or null for
+	 * the preset's range and the governor's steps. A reading that names one scale's cost pins it,
+	 * so no step can move it under the reading.
+	 */
+	renderScale: number | null;
 }
 
-/** The value of a switch that must be one of a few words. */
+/** The value of a switch that must be one of a few words, or `fallback` when the address has none. */
 export function readChoice<T extends string>(
 	params: URLSearchParams,
 	name: string,
 	choices: readonly T[],
+	fallback?: T,
 ): T {
 	const value = params.get(name);
+	if (value === null && fallback !== undefined) return fallback;
 	const choice = choices.find((c) => c === value);
 	if (choice === undefined) {
 		const options = choices.map((c) => `?${name}=${c}`).join(' or ');
@@ -113,10 +132,14 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
- * Reads `?hold`, `?demo`, `?keep`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=`,
- * the shadow quality settings, `?antialias=` and `?maxPixelRatio=`.
+ * Reads `?hold`, `?demo`, `?keep`, `?n=`, `?seconds=`, `?measure=`, `?soak=`, `?shadows=`, `?far=`,
+ * `?governor=`, `?renderScale=`, the shadow quality settings, `?antialias=`, `?cloudSteps=` and
+ * `?maxPixelRatio=`.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
+	const seconds = (name: string) =>
+		readNumber(params, name, (v) => Number.isFinite(v) && v > 0, 'a number of seconds above 0');
+	const both = seconds('seconds');
 	return {
 		hold:
 			params.get('hold') === ''
@@ -135,12 +158,8 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			(v) => Number.isSafeInteger(v) && v > 0,
 			'a whole number above 0',
 		),
-		seconds: readNumber(
-			params,
-			'seconds',
-			(v) => Number.isFinite(v) && v > 0,
-			'a number of seconds above 0',
-		),
+		warmupSeconds: both ?? WARMUP_SECONDS,
+		measureSeconds: seconds('measure') ?? both ?? MEASURE_SECONDS,
 		soak: readNumber(
 			params,
 			'soak',
@@ -171,6 +190,12 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 		antialias: params.has('antialias')
 			? readChoice(params, 'antialias', ['none', 'fxaa', 'msaa'] as const)
 			: null,
+		cloudSteps: readNumber(
+			params,
+			'cloudSteps',
+			(v) => Number.isInteger(v) && v >= 0 && v <= 64,
+			'a whole step count from 0 to 64',
+		),
 		maxPixelRatio: readNumber(
 			params,
 			'maxPixelRatio',
@@ -178,5 +203,30 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 			'a pixel ratio of 0.5 or more',
 		),
 		governor: !params.has('governor') || readChoice(params, 'governor', ['off']) !== 'off',
+		renderScale: readNumber(
+			params,
+			'renderScale',
+			(v) => Number.isFinite(v) && v >= 0.25 && v <= 1,
+			'a scale from 0.25 to 1, such as 0.5',
+		),
+	};
+}
+
+/**
+ * The engine options that a page's switches set, for `createEngine`. Every switch that names a
+ * quality setting is forwarded here, so a page that builds its engine options with this function
+ * cannot drop one. `maxPixelRatio` is the page's, because a page that fills its window caps a
+ * pixel ratio the protocol's canvas does not. The governor and the render scale reach the sketch,
+ * which applies them to the engine's quality settings.
+ */
+export function engineOptionsOf(options: RunOptions) {
+	return {
+		...(options.antialias !== null && { antialias: options.antialias }),
+		...(options.cloudSteps !== null && { cloudSteps: options.cloudSteps }),
+		...(options.shadowCascades !== null && { shadowCascades: options.shadowCascades }),
+		...(options.shadowMapSize !== null && { shadowMapSize: options.shadowMapSize }),
+		...(options.shadowCascadeBlend !== null && {
+			shadowCascadeBlend: options.shadowCascadeBlend,
+		}),
 	};
 }

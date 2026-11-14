@@ -1,8 +1,8 @@
 # D-80: How the large-world jitter check measures a flight, and its tolerance
 
-Status: decided. Date: 2026-10-05; the iPad's run 2026-10-07. Task: M2-H2.
+Status: decided. Built: the jitter check, its tolerance and the warning when the cells run out. Task: M2-H2.
 
-Summary: A camera flies sideways past six squares that face it, 16 frames, at the origin, 1,000 km and 6,378 km. Each object's motion from frame to frame must match the origin flight's within 0.05 px; large-world mode measures under 0.0001 px on every GPU path. The same flights with every cell taken, which is the engine without cells, jump 3.2 to 7.8 px. The engine warns once when the cells run out.
+Summary: A camera flies sideways past six squares that face it, 16 frames, at the origin, 1,000 km and 6,378 km. Each object's motion from frame to frame must match the origin flight's within 0.05 px, and large-world mode measures under 0.0001 px. With every cell taken, the same flights jump 3.2 to 7.8 px, and the engine warns once when the cells run out.
 
 ## Question
 
@@ -33,7 +33,7 @@ The jitter page flies each flight in its own engine, 16 frames of 480 x 270 pixe
 | 1,000 km, no large-world mode, cells on | 3.50 | 3.57 | | |
 | 6,378 km, no large-world mode, cells on | 7.75 | 7.93 | | |
 
-Each range covers WebGPU, compatibility mode and WebGL2. `bun run --cwd tests test jitter.spec.ts`, Chrome on the Mac's GPU and with `CI=1` on SwiftShader, 2026-10-05. The rows without large-world mode come from a temporary build of the page, on WebGPU only. The device runner's figures go in the table below as the runs come in.
+Each range covers WebGPU, compatibility mode and WebGL2. `bun run --cwd tests test jitter.spec.ts`, Chrome on the Mac's GPU and with `CI=1` on SwiftShader. The rows without large-world mode come from a temporary build of the page, on WebGPU only. The table below gives the device runner's figures.
 
 | Device and browser | GPU path | Far flights, jitter | Flights without cells, jitter | Date |
 | --- | --- | --- | --- | --- |
@@ -79,7 +79,7 @@ The flights without cells must show at least 0.5 px, ten times the tolerance, so
 
 The table counts each source that enters a new cell while the table is full. The sketch thread reads the count after each frame's batch update, one call into the core, and warns once in the console. The two flights without cells check that the warning comes once in each.
 
-The reason: before this, a full table failed without a word. The object still draws, but in the origin's cell. So it jitters as the flights without cells do: 3.5 px at 1,000 km and 7.75 px at 6,378 km. A developer saw only a scene that shakes far from the origin, with nothing that pointed at the cells. The review of the large-world mode work (M2-H1, 4 October 2026, its issue 14) asked for the warning, and M2-H2 took it on.
+The reason: without the warning, a full table fails without a word. The object still draws, but in the origin's cell. So it jitters as the flights without cells do: 3.5 px at 1,000 km and 7.75 px at 6,378 km. A developer would see only a scene that shakes far from the origin, with nothing that points at the cells. The review of the large-world mode work (M2-H1, its issue 14) asked for the warning.
 
 - Once per engine, not once per refusal. A scene that runs out of cells can refuse a new one in every frame, and a warning each time would flood the console.
 - A count in the core that the sketch thread reads once per frame. The check costs one call and allocates nothing. The core needs no path of its own to the console.

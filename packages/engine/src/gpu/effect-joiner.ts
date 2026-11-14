@@ -37,6 +37,7 @@ const GLSL_INPUT: readonly (readonly [type: string, name: string])[] = [
 	['vec2', 'chain_pixel'],
 	['vec2', 'chain_size'],
 	['float', 'chain_time'],
+	['uint', 'chain_layer'],
 ];
 
 /**

@@ -1,8 +1,8 @@
 // The showcase controls HUD names every change in a toast at the top centre of the view. Playwright
-// opens the night town's HUD, picks a button in each group, and checks the toast's text
-// ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner, 14 October 2026). A toast
-// alone cannot show that a change took: the stage writes the sky, the fog and the environment light
-// every frame, and once undid each switch a frame after the toast named it. So the tests also read
+// opens the island's HUD, picks a button in each group, and checks the toast's text
+// ([D-171](../../.dev/decisions/D-171-showcase-controls-hud.md), owner's ruling). A toast alone
+// cannot show that a change took: the stage writes the sky, the fog and the environment light every
+// frame, and can undo a switch a frame after the toast names it. So the tests also read
 // the canvas, and check that each part stays off while it is off and comes back when it turns on.
 //
 // The checks fall into three tests, and each one opens the page afresh, so CI can run them in jobs
@@ -14,8 +14,12 @@
 // HUD": the job of the other tests that run alone leaves the three out by those words, and the rest
 // of the name picks one test.
 import { expect, type Page, test } from '@playwright/test';
-import { decodePngRgba } from '../../packages/cli/src/png.js';
 import { ALONE } from '../lib/alone.ts';
+import {
+	frameDifference as difference,
+	type Frame,
+	readFrame as frame,
+} from '../lib/canvas-frame.ts';
 import { watchPageProblems } from '../lib/page-result.ts';
 
 /** The panel of a group, by the group's name in the model. */
@@ -25,22 +29,31 @@ const panel = (page: Page, name: string) => page.locator(`#hud-panel-${name}`);
  * first frame is part of that, and on a software GPU it arrives long after the controls do, so each
  * test's budget covers that wait and the picks or switches after it, and each test runs alone.
  *
- * Alone for two reasons. Their pictures need the engine to draw frames, and on CI's two-core runner
- * a heavy test beside one starves its page's frames, which is the fault D-186 measures. And their
+ * Alone for two reasons. Their pictures need the engine to draw frames, and on CI's runner a heavy
+ * test beside one starves its page's frames, which is the fault D-186 measures. And their
  * budget cannot sit in a shard: a shard's limit is 25 minutes, which covers its tests taking twice
  * as long as the median, and these tests fail exactly on a slow machine. The waits below are sized
  * for a software renderer on a loaded runner: a first frame there took longer than three minutes,
  * and a switch showed no new frame within one. The whole sequence of picks and switches takes 14 to
- * 24 minutes on CI's software GPU, so the file splits it into three tests that CI can run at once.
+ * 24 minutes on CI's software GPU, so the file splits it into four tests that CI can run at once.
  * Each pays for its own page's first frame, and the sky and fog test, with two of the three
  * switches, is the longest. Each budget sits under the limit of the job that runs the test, so a
  * page that truly stops drawing still fails by name rather than by the job's clock.
  */
 test.describe.configure({ timeout: 1_500_000 });
 
+/** Clicks a group's button and checks the toast that names the change. */
+async function press(page: Page, group: string, button: string, text: string): Promise<void> {
+	await panel(page, group).getByRole('button', { name: button }).click();
+	// A frame on the software GPU can take a while, and the toast shows for 2 s, so allow for it.
+	const toast = page.locator('.hud__toast');
+	await expect(toast).toHaveClass(/\bshow\b/, { timeout: 20_000 });
+	await expect(toast).toHaveText(text, { timeout: 20_000 });
+}
+
 /**
  * Picks a button of a group and checks the toast that names the change: selects the group's tab,
- * then clicks the button, and reads the toast.
+ * then presses the button.
  */
 async function pick(
 	page: Page,
@@ -50,55 +63,21 @@ async function pick(
 	text: string,
 ): Promise<void> {
 	await page.getByRole('tab', { name: tab }).click();
-	await panel(page, group).getByRole('button', { name: button }).click();
-	// A frame on the software GPU can take a while, and the toast shows for 2 s, so allow for it.
-	const toast = page.locator('.hud__toast');
-	await expect(toast).toHaveClass(/\bshow\b/, { timeout: 20_000 });
-	await expect(toast).toHaveText(text, { timeout: 20_000 });
-}
-
-/** One frame of the canvas: its size and its RGBA pixels, top row first. */
-interface Frame {
-	width: number;
-	height: number;
-	data: Uint8Array;
+	await press(page, group, button, text);
 }
 
 /**
- * The canvas as the scene draws it, read through the demo's engine: the canvas exactly, at its own
- * size, and the controls panel, the toast, the tips, the caption and the stats overlay are page
- * elements, so none of them is in it. The engine publishes itself behind its own `?bench` switch, as
- * it does for a benchmark tool, so the page needs nothing added for a test to read its frames.
- *
- * A browser screenshot cannot serve here. Both ways of taking one wait on the browser's own frame
- * work: an element's picture waits for its box to hold still across two of the page's animation
- * frames, and a page picture waits on the compositor for a frame to capture. A software GPU busy with
- * several demos starves both, for the whole of a test's budget. The engine's own reader instead waits
- * on the engine's frame loop, which keeps its turn, and gives the frame drawn last when no new frame
- * comes: measured here, one read took 17 ms where the screenshots ran the test out.
+ * Turns a switch on unless the HUD shows it on already. Each scene opens with its own look: the
+ * island draws its haze, so its fog starts on, where a scene with clearer air starts it off. A test
+ * that needs the switch on reads its button rather than assuming the state it opens in.
  */
-async function frame(page: Page): Promise<Frame> {
-	const base64 = await page.evaluate(async () => {
-		const engine = (globalThis as { __null3dEngine?: { capture(): Promise<Blob> } }).__null3dEngine;
-		if (!engine)
-			throw new Error('the page publishes its engine behind ?bench, and it has not started one');
-		const bytes = new Uint8Array(await (await engine.capture()).arrayBuffer());
-		let text = '';
-		// Each chunk keeps the argument count of fromCharCode inside its own limit.
-		for (let at = 0; at < bytes.length; at += 0x8000)
-			text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-		return btoa(text);
-	});
-	return decodePngRgba(Buffer.from(base64, 'base64'), 'the canvas');
-}
-
-/** The mean difference of two frames' colour, in steps of 255, over every pixel and channel. */
-function difference(a: Frame, b: Frame): number {
-	let sum = 0;
-	for (let i = 0; i < a.data.length; i += 4)
-		for (let c = 0; c < 3; c++)
-			sum += Math.abs((a.data[i + c] as number) - (b.data[i + c] as number));
-	return sum / ((a.data.length / 4) * 3);
+async function turnOn(page: Page, tab: string, group: string, label: string): Promise<void> {
+	// The group's panel is out of the accessibility tree until its tab is picked, so the tab goes
+	// first and the button's state is read from the panel it shows.
+	await page.getByRole('tab', { name: tab }).click();
+	const button = panel(page, group).getByRole('button', { name: label });
+	if ((await button.getAttribute('aria-pressed')) === 'true') return;
+	await press(page, group, label, `${label}: on`);
 }
 
 /**
@@ -117,7 +96,7 @@ const CHANGED = 1.2;
 const RETURNED = 0.5;
 /** A mean difference below which the canvas counts as still, over a settled look. */
 const STILL = 0.5;
-/** Frames read after a switch: the old bug rewrote the part a frame later, so several are read. */
+/** Frames read after a switch, since a stage that rewrites the part does so a frame later. */
 const FRAMES = 4;
 /**
  * How long the engine's first frame may take to arrive. A page shows its controls while its sketch
@@ -200,22 +179,41 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
 	await expect
 		.poll(async () => difference(await frame(page), off), { timeout: WAIT_MS })
 		.toBeGreaterThan(departure * RETURNED);
+	progress(`${label} off and on again`);
+}
+
+/** When the test's page opened, for the progress lines that each stage prints. */
+let opened = 0;
+
+/**
+ * Prints how far the test has come and when, so a long run on a slow machine shows which stage takes
+ * its time.
+ */
+function progress(stage: string): void {
+	console.log(`  ${stage} after ${Math.round((performance.now() - opened) / 1000)} s`);
 }
 
 /**
- * Opens the night town's HUD as a visitor finds it, once the engine has drawn its first frame, and
- * watches the page for problems from the start. Gives the list of problems, which each test checks
- * last.
+ * Opens the island's HUD as a visitor finds it, once the engine has drawn its first frame, and
+ * watches the page for problems from the start, in a window of `size` when given. Gives the list of
+ * problems, which each test checks last.
  */
-async function openHud(page: Page): Promise<string[]> {
+async function openHud(page: Page, size?: { width: number; height: number }): Promise<string[]> {
 	const errors = watchPageProblems(page);
+	opened = performance.now();
+	if (size) await page.setViewportSize(size);
 	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its own
 	// look from code, so the toast text does not depend on the preset. `bench` publishes the demo's
 	// engine on the page, which is how these tests read the canvas's frames.
-	await page.goto('/examples/index.html?demo=night-town&preset=low&bench');
+	await page.goto('/examples/index.html?demo=island&preset=low&bench');
 	const hud = page.locator('.hud');
-	// The sketch posts the HUD once its setup has run, which loads nothing but builds the town.
-	await expect(hud).toBeVisible({ timeout: 90_000 });
+	// The sketch posts the HUD as soon as its controls exist, which is before it builds the island's
+	// town, its trees and its grass, and the page shows the controls when that message arrives. The
+	// scene's own builds and its environment maps, which a software GPU spends minutes on, no longer
+	// hold the controls back. The wait keeps the first frame's budget, because the sketch itself
+	// starts first: its core, its modules and the worker the sketch's setup runs in. A page that
+	// never posts the controls still fails here, by the test's own name.
+	await expect(hud).toBeVisible({ timeout: FIRST_FRAME_MS });
 	await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
 	// The controls come up while the sketch finishes its scene, which is before the engine's first
 	// frame. On a software GPU that frame arrives much later, and a picture read before it is an
@@ -224,6 +222,7 @@ async function openHud(page: Page): Promise<string[]> {
 	// page takes its loading overlay away on the first frame, so that is the signal to wait for
 	// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
 	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
+	progress('the first frame');
 	// Open the panel, as a visitor does, with the chevron.
 	await page.locator('.hud__chevron').click();
 	await expect(hud).toHaveClass(/\bopen\b/);
@@ -241,9 +240,7 @@ async function holdForSwitches(page: Page): Promise<void> {
 	await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
 	// The town opens at a fixed hour, and Auto moves the hour through the day.
 	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
-	// Atmosphere is a group of toggles: each names the effect, with its label's own case, and its
-	// new state.
-	await pick(page, 'Atmosphere', 'atmosphere', 'Snow', 'Snow: off');
+	progress('the scene held still for the switches');
 }
 
 test('the showcase HUD shows its toasts at the top centre', ALONE, async ({ page }) => {
@@ -302,32 +299,46 @@ test('the showcase HUD shows its toasts at the top centre', ALONE, async ({ page
 	expect(errors).toEqual([]);
 });
 
-test(
-	'the showcase HUD keeps the sky and the fog off until they turn on',
-	ALONE,
-	async ({ page }) => {
-		const errors = await openHud(page);
-		await holdForSwitches(page);
+/**
+ * The window of the tests that turn a part of the look off and on. They judge the canvas's frames,
+ * and CI's software GPU spends most of each frame on its pixels, so a quarter of the default
+ * window's pixels makes each frame they wait for cheaper. The HUD's layout stays the toast test's.
+ */
+const PART_WINDOW = { width: 640, height: 360 };
 
-		await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
-		// The fog starts off, so it is turned on before the part that checks it goes off and on.
-		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
-		await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
+// The sky and the fog each take about 2 minutes to go off and on again on CI's software GPU, so
+// each has a test, and a machine, of its own.
+test('the showcase HUD keeps the sky off until it turns on', ALONE, async ({ page }) => {
+	const errors = await openHud(page, PART_WINDOW);
+	await holdForSwitches(page);
 
-		expect(errors).toEqual([]);
-	},
-);
+	await switchPart(page, 'Sky', 'Atmosphere', 'atmosphere');
+
+	expect(errors).toEqual([]);
+});
+
+test('the showcase HUD keeps the fog off until it turns on', ALONE, async ({ page }) => {
+	const errors = await openHud(page, PART_WINDOW);
+	await holdForSwitches(page);
+
+	// The scene's own haze leaves the fog on, so it is on before the part that checks it goes off
+	// and on.
+	await turnOn(page, 'Atmosphere', 'atmosphere', 'Fog');
+	await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
+
+	expect(errors).toEqual([]);
+});
 
 test(
 	'the showcase HUD keeps the environment light off until it turns on',
 	ALONE,
 	async ({ page }) => {
-		const errors = await openHud(page);
+		const errors = await openHud(page, PART_WINDOW);
 		await holdForSwitches(page);
 
-		// The fog starts off. It goes on first, so the environment light is checked with the sky and
-		// the fog both drawn.
-		await pick(page, 'Atmosphere', 'atmosphere', 'Fog', 'Fog: on');
+		// The fog goes on first, when the scene starts without it, so the environment light is
+		// checked with the sky and the fog both drawn.
+		await turnOn(page, 'Atmosphere', 'atmosphere', 'Fog');
 		await switchPart(page, 'Environment', 'Lighting', 'lighting');
 
 		expect(errors).toEqual([]);

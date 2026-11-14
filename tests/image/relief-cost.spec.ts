@@ -14,6 +14,9 @@ import {
 	waitForQuietLoad,
 } from '../lib/cost-runs.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { TIMING_BROWSER } from '../lib/timing-browser.ts';
+
+test.use(TIMING_BROWSER);
 
 const features = (
 	process.env.NULL3D_RELIEF_FEATURES ?? 'displacement,parallax,bump,wireframe'

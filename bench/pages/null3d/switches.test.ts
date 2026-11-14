@@ -30,11 +30,35 @@ function readBySketches(): [string, string][] {
 	return reads;
 }
 
+/** Each sketch's source, by file name, less the shared helper and the harness. */
+function sources(): [string, string][] {
+	const list: [string, string][] = [];
+	for (const file of readdirSync(DIR)) {
+		if (!file.endsWith('.ts') || file.endsWith('.test.ts') || file === 'harness.ts') continue;
+		if (file === 'sketch-common.ts') continue;
+		list.push([file, readFileSync(join(DIR, file), 'utf8')]);
+	}
+	return list;
+}
+
 describe('bench page switches', () => {
 	it('passes every switch that a sketch reads on to the sketch', () => {
 		const known = new Set([...forwarded(), ...written()]);
 		const reads = readBySketches();
 		expect(reads.length).toBeGreaterThan(20);
 		expect(reads.filter(([, name]) => !known.has(name))).toEqual([]);
+	});
+
+	it('builds the engine options through the one shared forwarding path', () => {
+		expect(HARNESS).toContain('...engineOptionsOf(options)');
+	});
+
+	it('sets the governor and the pinned render scale only through the shared path', () => {
+		const sketches = sources();
+		expect(sketches.length).toBeGreaterThan(5);
+		expect(sketches.filter(([, source]) => /governor:\s*readGovernor\(/.test(source))).toEqual([]);
+		expect(
+			sketches.filter(([, source]) => source.includes('applyQualitySwitches(')).length,
+		).toBeGreaterThan(0);
 	});
 });

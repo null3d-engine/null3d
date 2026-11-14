@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -9,6 +10,7 @@ import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import {
 	borrowedRun,
 	type CandidateFacts,
+	ciRunOf,
 	clearCandidate,
 	clearCandidates,
 	compareWithReference,
@@ -20,7 +22,10 @@ import {
 	imageProblems,
 	imageRuns,
 	manifestProblems,
+	type OtherDrawing,
+	otherDrawingProblems,
 	type Place,
+	pageFactsOf,
 	readPng,
 	referenceFileProblems,
 	referenceOf,
@@ -110,7 +115,11 @@ const engineFacts = (
 let dirs: HarnessDirs;
 beforeEach(() => {
 	const root = mkdtempSync(join(tmpdir(), 'null3d-images-'));
-	dirs = { references: join(root, 'references'), candidates: join(root, 'candidates') };
+	dirs = {
+		references: join(root, 'references'),
+		candidates: join(root, 'candidates'),
+		drawn: join(root, 'drawn'),
+	};
 });
 afterEach(() => rmSync(join(dirs.references, '..'), { recursive: true, force: true }));
 
@@ -162,7 +171,9 @@ describe('the manifest', () => {
 					return path === 'showcase' ? sketches(path) : [];
 				});
 		expect(DEMOS.map(sketchPath).sort()).toEqual(sketches('').sort());
-		const tests = new Set(IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch : '')));
+		const tests = new Set(
+			IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch.split('?')[0] : '')),
+		);
 		expect(DEMOS.filter((demo) => !tests.has(`examples/${sketchPath(demo)}`))).toEqual([]);
 		const long = DEMOS.filter(
 			(demo) =>
@@ -183,12 +194,13 @@ describe('the manifest', () => {
 
 	it('sets an exposure in each demo that uses timeOfDay', () => {
 		// A dusk or night scene at the default exposure shows several times too dark. A demo takes
-		// the time of day's exposure or sets its own. Creek is exempt: the owner approved its look,
-		// which is tuned at the default exposure, and a new exposure would change it.
+		// the time of day's exposure or sets its own, directly or through the stage's exposure scale.
+		// Creek is exempt: the owner approved its look, which is tuned at the default exposure, and a
+		// new exposure would change it.
 		const exempt = new Set(['creek']);
 		const skipped = DEMOS.filter((demo) => {
 			const code = demoSources(demo);
-			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\b/.test(code);
+			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\w*/.test(code);
 		});
 		expect(skipped.map((demo) => demo.name)).toEqual([]);
 	});
@@ -262,19 +274,20 @@ describe('the runs of a test', () => {
 		expect(run('grid-compat').mode).toBeUndefined();
 	});
 
-	it("adds a test's SwiftShader switches only where SwiftShader draws", () => {
+	it("adds a test's SwiftShader switches, and the flat sky's step count, only where SwiftShader draws", () => {
 		expect(runIn(run('grid-compat'), 'chromium-swiftshader').path).toBe(
-			'/pages/grid.html?gpu=compat&preset=low&n=2&far=on',
+			'/pages/grid.html?gpu=compat&preset=low&n=2&far=on&cloudSteps=0',
 		);
 		expect(runIn(run('grid-compat'), 'chrome-real-gpu').path).toBe(
 			'/pages/grid.html?gpu=compat&preset=low',
 		);
-		expect(runIn(run('boxes-webgpu-pipelined'), 'chromium-swiftshader')).toBe(
-			run('boxes-webgpu-pipelined'),
+		// A test with no SwiftShader switches of its own draws the flat sky there.
+		expect(runIn(run('boxes-webgpu-pipelined'), 'chromium-swiftshader').path).toContain(
+			'&cloudSteps=0',
 		);
 	});
 
-	it('gives a switch that the page has its SwiftShader value, in place', () => {
+	it('gives a switch that the page has its SwiftShader value, in place, and the flat sky last', () => {
 		const [low] = imageRuns([
 			{
 				name: 'scene',
@@ -286,7 +299,7 @@ describe('the runs of a test', () => {
 		const path = runIn(low as ImageRun, 'chromium-swiftshader').path;
 		expect(path).toContain('&preset=low&');
 		expect(path).not.toContain('preset=high');
-		expect(path.endsWith('&far')).toBe(true);
+		expect(path.endsWith('&far&cloudSteps=0')).toBe(true);
 		expect(path).toContain('sketch=/sketches/s.ts%3Fx%3D1');
 	});
 
@@ -324,6 +337,7 @@ describe('the reference of a run', () => {
 	it("is the environment's own in Playwright's runs, and becomes the reference", () => {
 		expect(referenceOf(run('boxes-compat-pipelined'), REAL)).toEqual({
 			file: 'chrome-real-gpu/compat/boxes.png',
+			others: [],
 			tolerance: TOLERANCE,
 		});
 	});
@@ -347,6 +361,7 @@ describe('the reference of a run', () => {
 	it("is a device's own where the test records the device", () => {
 		expect(referenceOf(run('grid-webgpu'), IPAD)).toEqual({
 			file: 'ipad/webgpu/grid.png',
+			others: [],
 			tolerance: TOLERANCE,
 		});
 	});
@@ -359,6 +374,7 @@ describe('the reference of a run', () => {
 			referenceOf(shared as ImageRun, { runner: 'sm-s921b-chrome', device: 'sm-s921b' }),
 		).toEqual({
 			file: 'sm-s926b/webgl2/boxes.png',
+			others: [],
 			tolerance: TOLERANCE,
 		});
 	});
@@ -408,6 +424,22 @@ describe('the files in the folder of references', () => {
 		]);
 	});
 
+	it('give the command of a run that the image page does not draw, without and with CI', () => {
+		const command =
+			'{ci}bun run test:browser image/cli-script.spec.ts -g "cli on webgl2", then bun run images:review --accept cli';
+		const cli = {
+			...run('boxes-webgl2-pipelined'),
+			id: 'cli-webgl2',
+			test: 'cli',
+			reference: { test: 'cli', tier: 'webgl2' as const, devices: [] },
+			make: command,
+		};
+		expect(referenceFileProblems([cli], [])).toEqual([
+			`chrome-real-gpu/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', '')}`,
+			`chromium-swiftshader/webgl2/cli.png is missing. Make it: ${command.replace('{ci}', 'CI=1 ')}`,
+		]);
+	});
+
 	it('name every missing reference of a new test, both sets', () => {
 		const problems = referenceFileProblems(
 			RUNS,
@@ -451,6 +483,136 @@ describe('the files in the folder of references', () => {
 					(file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`,
 				),
 		);
+	});
+});
+
+describe('the other drawings that a test records', () => {
+	/** A test of one scene that keeps the two pictures of the linux device, on WebGL2. */
+	const tied = (otherDrawings: readonly OtherDrawing[]): readonly ImageTest[] => [
+		{
+			name: 'tied',
+			sketch: 'sketches/tied.ts',
+			hold: 0,
+			size: [20, 20],
+			tiers: ['webgl2'],
+			devices: ['linux'],
+			otherDrawings,
+		},
+	];
+	const primary = 'linux/webgl2/tied.png';
+	const second = 'linux/webgl2/tied.2.png';
+	const digest = 'a'.repeat(64);
+	const drawing = (over: Partial<OtherDrawing> = {}): OtherDrawing => ({
+		place: 'linux',
+		tier: 'webgl2',
+		file: second,
+		sha256: digest,
+		reason: 'a tied sample row',
+		...over,
+	});
+
+	/** A 20 x 20 image of one colour, with an optional square block of another. */
+	const picture = (
+		at?: readonly [number, number],
+		size = 1,
+		rgb: readonly number[] = [200, 10, 10],
+	) => {
+		const width = 20;
+		const height = 20;
+		const data = new Uint8Array(width * height * 4);
+		for (let i = 0; i < data.length; i += 4) data.set([10, 20, 30, 255], i);
+		if (at) {
+			for (let y = at[1]; y < at[1] + size; y++)
+				for (let x = at[0]; x < at[0] + size; x++) data.set([...rgb, 255], (y * width + x) * 4);
+		}
+		return { width, height, data };
+	};
+	const problemsOf = (
+		drawings: readonly OtherDrawing[],
+		pictures: Readonly<Record<string, ReturnType<typeof picture>>>,
+		digests: Readonly<Record<string, string>> = { [second]: digest },
+	) =>
+		otherDrawingProblems(
+			imageRuns(tied(drawings)),
+			(file) => digests[file],
+			(file) => pictures[file],
+		);
+
+	it('pass while a picture differs only outside the guarded end rows and columns', () => {
+		expect(problemsOf([drawing()], { [primary]: picture(), [second]: picture([3, 3]) })).toEqual(
+			[],
+		);
+	});
+
+	it('name a picture that differs inside the guarded end rows and columns', () => {
+		expect(
+			problemsOf([drawing()], { [primary]: picture(), [second]: picture([14, 14], 2) }),
+		).toEqual([
+			'tied: linux/webgl2/tied.2.png differs from linux/webgl2/tied.png in 2.500% of the guarded end rows and columns, and at most 0.100% may: an extra drawing must not absorb a fringe',
+		]);
+	});
+
+	it('name a picture that differs nowhere outside the guarded end rows and columns', () => {
+		expect(problemsOf([drawing()], { [primary]: picture(), [second]: picture() })).toEqual([
+			'tied: linux/webgl2/tied.2.png differs from linux/webgl2/tied.png nowhere outside the guarded end rows and columns',
+		]);
+	});
+
+	it('name a digest that does not match, and skip a missing file that the reference check names', () => {
+		expect(
+			problemsOf(
+				[drawing()],
+				{ [primary]: picture(), [second]: picture([3, 3]) },
+				{
+					[second]: 'b'.repeat(64),
+				},
+			),
+		).toEqual([
+			`tied: linux/webgl2/tied.2.png has SHA-256 ${'b'.repeat(64)}, not the recorded ${digest}`,
+		]);
+		expect(problemsOf([drawing()], { [primary]: picture() }, {})).toEqual([]);
+	});
+
+	it('name a second drawing, a place or tier the test does not keep, the primary file, and a reason or digest that is missing', () => {
+		const two = [drawing(), drawing({ file: 'linux/webgl2/tied.3.png' })];
+		const outside = drawing({ place: 'mac' });
+		const wrongTier = drawing({ tier: 'webgpu' });
+		const sameFile = drawing({ file: primary });
+		const noReason = drawing({ reason: ' ' });
+		const noDigest = drawing({ sha256: 'short' });
+		expect(
+			problemsOf(two, { [primary]: picture(), [second]: picture([3, 3]) }).concat(
+				problemsOf([outside], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([wrongTier], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([sameFile], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([noReason], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([noDigest], { [primary]: picture(), [second]: picture([3, 3]) }),
+			),
+		).toEqual([
+			'tied: at most one other drawing may be recorded, not 2',
+			'tied: the other drawing linux/webgl2/tied.2.png names the place mac, where the test keeps no pictures of its own',
+			"tied: the other drawing linux/webgl2/tied.2.png is on webgpu, and the test's references are on webgl2",
+			'tied: the other drawing linux/webgl2/tied.png is the primary reference',
+			'tied: the other drawing linux/webgl2/tied.2.png needs a reason',
+			'tied: the other drawing linux/webgl2/tied.2.png needs its SHA-256',
+		]);
+	});
+
+	it('need the second file, and keep the set closed when it is not recorded', () => {
+		const runs = imageRuns(tied([drawing()]));
+		const primaryFiles = [
+			'chrome-real-gpu/webgl2/tied.png',
+			'chromium-swiftshader/webgl2/tied.png',
+			'linux/webgl2/tied.png',
+		];
+		const files = [...primaryFiles, 'linux/webgl2/tied.2.png'];
+		expect(referenceFileProblems(runs, files)).toEqual([]);
+		expect(referenceFileProblems(runs, primaryFiles)).toEqual([
+			`linux/webgl2/tied.2.png is missing. Make it: run the checks plan on linux (.dev/devices.md), then copy tied's candidate to linux/webgl2/tied.2.png`,
+		]);
+		expect(referenceFileProblems(runs, [...files, 'linux/webgl2/tied.3.png'])).toEqual([
+			'linux/webgl2/tied.3.png is a reference of no test. Delete it, or add its test to the manifest',
+		]);
 	});
 });
 
@@ -539,8 +701,51 @@ describe('comparing an image with its reference', () => {
 			status: 'new',
 			reference: 'chrome-real-gpu/webgpu/boxes.png',
 			tolerance: TOLERANCE,
+			// CI's own drawing names its run, which a software-GPU reference needs.
+			...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 		});
 		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
+	});
+
+	it('keeps the device facts that the page reported with a candidate', () => {
+		const page = pageFactsOf({
+			ok: true,
+			tier: 'webgpu',
+			hdr: true,
+			halfPrecision: true,
+			multiDraw: false,
+			mode: { build: 'threaded', pipelined: true },
+			depth: 'reversed',
+			clipControl: false,
+			drewAsked: true,
+			pixels: 'AAAA',
+			sketch: { noise: 1 },
+		});
+		compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs, page);
+		const saved = base('chrome-real-gpu', 'webgpu', 'boxes');
+		expect(facts(`${saved}.json`)).toMatchObject({
+			page: {
+				tier: 'webgpu',
+				hdr: true,
+				halfPrecision: true,
+				multiDraw: false,
+				mode: { build: 'threaded', pipelined: true },
+				depth: 'reversed',
+				clipControl: false,
+				drewAsked: true,
+			},
+		});
+		// The pixels and the sketch's messages stay out of the facts.
+		const written = JSON.stringify(facts(`${saved}.json`));
+		expect(written).not.toContain('pixels');
+		expect(written).not.toContain('noise');
+	});
+
+	it('names the CI run that drew an image only inside GitHub Actions, not in a local CI=1 run', () => {
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '40109903483' })).toBe('40109903483');
+		expect(ciRunOf({ CI: '1' })).toBeUndefined();
+		expect(ciRunOf({ CI: 'true', GITHUB_RUN_ID: '1' })).toBeUndefined();
+		expect(ciRunOf({ GITHUB_ACTIONS: 'true' })).toBeUndefined();
 	});
 
 	it('passes an image within the tolerance, and saves nothing', () => {
@@ -582,6 +787,71 @@ describe('comparing an image with its reference', () => {
 		);
 	});
 
+	/** Runs `save` with the request for drawings on, and puts the setting back afterwards. */
+	const asking = (save: () => void) => {
+		const kept = process.env.NULL3D_TAKE_IMAGES;
+		process.env.NULL3D_TAKE_IMAGES = '1';
+		try {
+			save();
+		} finally {
+			if (kept === undefined) delete process.env.NULL3D_TAKE_IMAGES;
+			else process.env.NULL3D_TAKE_IMAGES = kept;
+		}
+	};
+
+	it('keeps no drawing of a passing image unless the run asks for it', () => {
+		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
+		expect(compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs)).toEqual([]);
+		expect(existsSync(dirs.drawn as string)).toBe(false);
+	});
+
+	it('keeps the image that a passing run drew when the run asks for its drawings', () => {
+		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
+		asking(() => {
+			expect(compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs)).toEqual([]);
+		});
+		const saved = join(dirs.drawn as string, 'chrome-real-gpu', 'webgpu', 'boxes');
+		// A drawing holds the image and its facts, and no diff or reference copy.
+		expect(readdirSync(join(saved, '..')).sort()).toEqual(['boxes.json', 'boxes.png']);
+		expect(facts(`${saved}.json`)).toMatchObject({ status: 'drawn', share: 0 });
+		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
+	});
+
+	it('keeps a drawing that differs from its reference, and one that cannot become a reference, with the reason', () => {
+		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
+		const drawn = image([10, 20, 30], { at: 5, rgb: [250, 20, 30] });
+		asking(() => {
+			compareWithReference(boxes(), REAL, drawn, dirs);
+			// The copy borrows boxes's reference, so it makes no reference of its own.
+			compareWithReference(borrowedRun(boxes(), 'boxes-copied'), REAL, drawn, dirs);
+		});
+		const saved = join(dirs.drawn as string, 'chrome-real-gpu', 'webgpu');
+		expect(readdirSync(saved).sort()).toEqual([
+			'boxes-copied.json',
+			'boxes-copied.png',
+			'boxes.json',
+			'boxes.png',
+		]);
+		expect(facts(join(saved, 'boxes.json'))).toMatchObject({ status: 'drawn', share: 0.125 });
+		expect(facts(join(saved, 'boxes-copied.json'))).toMatchObject({
+			status: 'drawn',
+			reference: 'chrome-real-gpu/webgpu/boxes.png',
+			fixed: expect.stringContaining('must draw the image of boxes'),
+		});
+	});
+
+	it('keeps the drawing of a tier that must draw another tier, with the reason', () => {
+		// The grid test's later tiers draw the first tier's picture, so only the first owns a reference.
+		asking(() => compareWithReference(run('grid-compat'), REAL, image([10, 20, 30]), dirs));
+		const saved = join(dirs.drawn as string, 'chrome-real-gpu', 'compat', 'grid.json');
+		expect(facts(saved)).toMatchObject({
+			status: 'drawn',
+			tier: 'compat',
+			reference: 'chrome-real-gpu/webgpu/grid.png',
+			fixed: expect.stringContaining('every tier must draw the image of webgpu'),
+		});
+	});
+
 	it('keeps the candidate of the first mode that differs, until the test runs again', () => {
 		compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs);
 		compareWithReference(run('boxes-webgpu-low-latency'), REAL, image([90, 20, 30]), dirs);
@@ -603,6 +873,123 @@ describe('comparing an image with its reference', () => {
 		expect(saved.fixed).toContain("add 'mac' to the test's devices");
 		clearCandidates(SAFARI, dirs);
 		expect(existsSync(join(dirs.candidates, 'mac-safari'))).toBe(false);
+	});
+});
+
+describe('the two drawings of the Firefox render-scale picture', () => {
+	const firefox: Place = { runner: 'linux-firefox', device: 'linux' };
+	const wrapped = IMAGE_RUNS.find(
+		(candidate) => candidate.test === 'render-scale-75-fxaa' && candidate.tier === 'webgl2',
+	);
+	if (!wrapped) throw new Error('the manifest has no render-scale-75-fxaa on webgl2');
+	const references = join(REPO_ROOT, 'tests/image/references');
+	const fileOf = (name: string) => join(references, name);
+	const primary = 'linux/webgl2/render-scale-75-fxaa.png';
+	const second = 'linux/webgl2/render-scale-75-fxaa.2.png';
+	const realDirs = (): HarnessDirs => ({
+		references,
+		candidates: dirs.candidates,
+		drawn: dirs.drawn,
+	});
+
+	/** A copy of an image, so a test can change it without touching the reference. */
+	const copy = (image: ReturnType<typeof readPng>) => ({
+		width: image.width,
+		height: image.height,
+		data: new Uint8Array(image.data),
+	});
+
+	/** `save` with the request for drawings on, and the setting put back afterwards. */
+	const asking = (save: () => void) => {
+		const kept = process.env.NULL3D_TAKE_IMAGES;
+		process.env.NULL3D_TAKE_IMAGES = '1';
+		try {
+			save();
+		} finally {
+			if (kept === undefined) delete process.env.NULL3D_TAKE_IMAGES;
+			else process.env.NULL3D_TAKE_IMAGES = kept;
+		}
+	};
+
+	it('records the second picture as the other drawing of the linux device', () => {
+		expect(referenceOf(wrapped, firefox)).toEqual({
+			file: primary,
+			others: [second],
+			tolerance: TOLERANCE,
+		});
+		// The manifest's digest is the file's own, so the accepted picture cannot drift.
+		expect(wrapped.otherDrawings?.[0]?.sha256).toBe(
+			createHash('sha256')
+				.update(readFileSync(fileOf(second)))
+				.digest('hex'),
+		);
+		expect(wrapped.otherDrawings?.[0]?.sha256).toBe(
+			'b5ffd9a9b60fed696d5f98b361505f23a1166443daf6b3a32c1c3ba84305e708',
+		);
+	});
+
+	it('passes the candidate picture as the other drawing, and records which picture matched', () => {
+		const candidate = readPng(fileOf(second));
+		asking(() => {
+			expect(compareWithReference(wrapped, firefox, candidate, realDirs())).toEqual([]);
+		});
+		const saved = JSON.parse(
+			readFileSync(
+				join(dirs.drawn as string, 'linux-firefox/webgl2/render-scale-75-fxaa.json'),
+				'utf8',
+			),
+		) as CandidateFacts;
+		expect(saved).toMatchObject({
+			status: 'drawn',
+			reference: second,
+			matched: second,
+			share: 0,
+			shares: [
+				{ reference: primary, share: 0.004548611111111111 },
+				{ reference: second, share: 0 },
+			],
+		});
+	});
+
+	it('passes the primary picture too, and names it as the one that matched', () => {
+		const reference = readPng(fileOf(primary));
+		asking(() => {
+			expect(compareWithReference(wrapped, firefox, reference, realDirs())).toEqual([]);
+		});
+		const saved = JSON.parse(
+			readFileSync(
+				join(dirs.drawn as string, 'linux-firefox/webgl2/render-scale-75-fxaa.json'),
+				'utf8',
+			),
+		) as CandidateFacts;
+		expect(saved).toMatchObject({ reference: primary, matched: primary, share: 0 });
+	});
+
+	it('fails a third drawing that is apart from both pictures', () => {
+		const third = copy(readPng(fileOf(second)));
+		for (let y = 40; y < 80; y++)
+			for (let x = 100; x < 140; x++) third.data.set([255, 0, 255, 255], (y * 320 + x) * 4);
+		const [problem] = compareWithReference(wrapped, firefox, third, realDirs());
+		expect(problem).toContain(
+			'of pixels differ from the closest accepted drawing linux/webgl2/render-scale-75-fxaa.2.png, and at most 0.100% may',
+		);
+		expect(problem).toContain(`${second} 2.776%`);
+		expect(problem).toContain(`${primary} 3.231%`);
+	});
+
+	it("fails a fringe added to the image's last rows and columns", () => {
+		const fringed = copy(readPng(fileOf(second)));
+		for (let y = 0; y < 180; y++)
+			for (let x = 0; x < 320; x++)
+				if (y >= 177 || x >= 317) fringed.data.set([255, 0, 255, 255], (y * 320 + x) * 4);
+		const [problem] = compareWithReference(wrapped, firefox, fringed, realDirs());
+		expect(problem).toContain(
+			'of pixels differ from the closest accepted drawing linux/webgl2/render-scale-75-fxaa.2.png',
+		);
+	});
+
+	it('holds the recorded set: the digest matches and the pictures agree in the guarded end', () => {
+		expect(otherDrawingProblems(IMAGE_RUNS)).toEqual([]);
 	});
 });
 

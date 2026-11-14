@@ -21,6 +21,14 @@ const COMMANDS = {
 		summary: "Measures the engine on the project's page: CPU time by thread and frame rates",
 		load: () => import('./bench.js'),
 	},
+	'check-addon': {
+		summary: "Runs the engine's gates on one add-on package, as a listing does",
+		load: () => import('./check-addon.js'),
+	},
+	create: {
+		summary: 'Makes a new project from a template, with an AGENTS.md and an agent hook',
+		load: () => import('./create.js'),
+	},
 	shot: {
 		summary: "Draws one frame of the project's page headless, and saves it as a PNG file",
 		load: () => import('./shot.js'),
@@ -30,7 +38,14 @@ const COMMANDS = {
 			'Type checks and lints the project, and compares its image tests with their references',
 		load: () => import('./test.js'),
 	},
+	upgrade: {
+		summary: 'Moves every null3D package in the project to one version, so exact pins never mix',
+		load: () => import('./upgrade.js'),
+	},
 };
+
+/** The width of the command column of the help, so every summary starts at one column. */
+const NAME_WIDTH = Math.max(...Object.keys(COMMANDS).map((name) => name.length)) + 2;
 
 const HELP = `null3D ${VERSION}: the command-line tool of the null3D engine
 
@@ -38,7 +53,7 @@ Usage: bunx @null3d/cli <command> [options]
 
 Commands:
 ${Object.entries(COMMANDS)
-	.map(([name, { summary }]) => `  ${name.padEnd(8)}${summary}`)
+	.map(([name, { summary }]) => `  ${name.padEnd(NAME_WIDTH)}${summary}`)
 	.join('\n')}
 
 Run bunx @null3d/cli <command> --help for a command's options.

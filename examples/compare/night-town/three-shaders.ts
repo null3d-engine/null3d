@@ -689,7 +689,6 @@ function streetNodes(
 		exp,
 		pow,
 		length,
-		sin,
 		cameraViewMatrix,
 		vec4,
 		positionViewDirection,

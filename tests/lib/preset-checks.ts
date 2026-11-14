@@ -123,9 +123,14 @@ export function presetChangeProblems(
 		const reported = result.sketch?.settings[name] ?? Number.POSITIVE_INFINITY;
 		if (reported !== value) problems.push(`${name} is ${reported}, not ${value}`);
 	}
+	// A window that recorded no frames measured nothing, so it cannot say anything about the
+	// pipelines: a page that draws no frames while it is away, such as one in the background or one
+	// whose thread that draws stopped and came back, leaves the window empty. Say that, rather than
+	// blame the pipeline for a count that the window never could have held.
+	if (result.frames === 0) problems.push('the measurement recorded no frames');
 	// A measurement that lost records cannot say whether the new preset built a pipeline: the
 	// frame that builds it stalls, and on a slow software GPU that frame can fall outside them.
-	if (result.pipelines === 0 && (result.lostRecords ?? 0) === 0)
+	else if (result.pipelines === 0 && (result.lostRecords ?? 0) === 0)
 		problems.push('the new preset built no pipeline');
 	if (result.skippedDraws > 0)
 		problems.push(`${result.skippedDraws} draws were skipped while the new pipeline built`);

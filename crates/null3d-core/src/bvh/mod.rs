@@ -621,7 +621,7 @@ pub fn sphere_touches_box(center: [f32; 3], radius: f32, b: &Aabb) -> bool {
 /// Sorts `v` by `less`, a strict order, in place, with no allocation. Heap sort keeps the code
 /// small in WebAssembly, where each of the standard library's sorts adds kilobytes per element
 /// type. Equal elements may change places, so callers sort by keys that differ.
-pub(crate) fn heap_sort_by<T: Copy>(v: &mut [T], less: impl Fn(&T, &T) -> bool) {
+pub fn heap_sort_by<T: Copy>(v: &mut [T], less: impl Fn(&T, &T) -> bool) {
     let sift = |v: &mut [T], mut root: usize, end: usize| loop {
         let mut child = 2 * root + 1;
         if child >= end {

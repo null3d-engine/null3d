@@ -5,26 +5,18 @@
 //
 // The particles add-on will take these over when it ships: emitters with their own update on the
 // GPU. Until then, sprite batches carry them.
-import { math, type SketchContext, type Texture } from '@null3d/engine';
+import { type Camera, math, type SketchContext, type Texture } from '@null3d/engine';
+import { createFloatingLeaves, type FloatingLeaves } from '@null3d/vegetation';
+import type { WindField } from '@null3d/wind';
 import { markEffect } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import type { Mood, MoodMix } from '../../lib/stage';
-import { groundHeight, streamZ, WATER } from './land';
+import { streamZ, WATER } from './land';
 
 /** Falling leaves, dust motes and puffs of mist. */
 const LEAVES = 80;
 const MOTES = 220;
 const MIST = 40;
-/** The breeze that carries the leaves, in meters a second along x and z. */
-const BREEZE = [0.35, 0.25] as const;
-
-/** A crown that leaves fall from: its middle on the ground, its height and its reach. */
-export interface Crown {
-	x: number;
-	z: number;
-	top: number;
-	reach: number;
-}
 
 type Rgb = [number, number, number];
 
@@ -81,46 +73,6 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 	Studio: { leaves: [0.8, 0.8, 0.8], motes: [0, 0, 0], mist: [0, 0, 0], mistOpacity: 0 },
 };
 
-/** An atlas of four leaves, side by side: two greens, a yellow and a russet, each tip up. */
-function leafAtlas({ textures }: SketchContext): Texture {
-	const size = 32;
-	const tones = [
-		[78, 120, 40],
-		[110, 140, 50],
-		[200, 160, 50],
-		[170, 80, 35],
-	];
-	const data = new Uint8Array(size * 4 * size * 4);
-	for (let y = 0; y < size; y++)
-		for (let x = 0; x < size * 4; x++) {
-			const frame = Math.floor(x / size);
-			const u = ((x % size) + 0.5) / size - 0.5;
-			const v = (y + 0.5) / size;
-			// An ovate leaf with a point, inside a border of a few texels.
-			const half =
-				0.3 * Math.max(Math.sin(Math.PI * Math.min(Math.max((v - 0.1) / 0.8, 0), 1)), 0) ** 0.8;
-			const inside = Math.min(Math.max((half - Math.abs(u)) * size + 0.5, 0), 1);
-			const midrib = Math.abs(u) < 0.03 ? 1.15 : 1;
-			const tone = tones[frame] as number[];
-			data.set(
-				[
-					Math.min(255, tone[0] * midrib),
-					Math.min(255, tone[1] * midrib),
-					Math.min(255, tone[2] * midrib),
-					Math.round(255 * inside),
-				],
-				(y * size * 4 + x) * 4,
-			);
-		}
-	return textures.fromData({
-		width: size * 4,
-		height: size,
-		data,
-		colorSpace: 'srgb',
-		mipmaps: true,
-	});
-}
-
 /** A soft round puff, brightest in its middle, for motes and mist. */
 function puff({ textures }: SketchContext, size: number, falloff: number): Texture {
 	const data = new Uint8Array(size * size * 4);
@@ -135,9 +87,10 @@ function puff({ textures }: SketchContext, size: number, falloff: number): Textu
 /** Makes the air's batches, with what moves them in each frame and what each mood sets. */
 export async function createAir(
 	ctx: SketchContext,
-	crowns: readonly Crown[],
+	camera: Camera,
+	wind: WindField,
 ): Promise<{
-	update(t: number): void;
+	update(t: number, dt: number): void;
 	/** Shows the look of a mix of moods, each value blended between the two moods' own. */
 	setLook(mix: MoodMix): void;
 	setFireflies(on: boolean): void;
@@ -146,14 +99,20 @@ export async function createAir(
 }> {
 	const { scene } = ctx;
 	const next = random(71);
-	const [leaves, motes, mist] = await Promise.all([
-		scene.createSprites({
-			count: LEAVES,
-			map: leafAtlas(ctx),
-			atlas: { columns: 4, rows: 1 },
-			alphaMode: 'mask',
-			dynamic: true,
-		}),
+	// The leaves ride the wind add-on's field on the GPU: each keeps a place and a speed of its own
+	// that the field steps, so a gust carries it along rather than pushing it where it stands. The
+	// box follows the camera, so the leaves fill whatever part of the valley the view shows.
+	const leaves: FloatingLeaves = createFloatingLeaves(ctx, {
+		wind,
+		camera,
+		count: LEAVES,
+		area: { x: 0, z: 0, size: 40, high: 12, low: WATER + 0.02 },
+		size: 0.1,
+		seed: 71,
+		ride: 'state',
+	});
+	markEffect(leaves.batch);
+	const [motes, mist] = await Promise.all([
 		scene.createSprites({
 			count: MOTES,
 			map: puff(ctx, 16, 2),
@@ -170,17 +129,13 @@ export async function createAir(
 			dynamic: true,
 		}),
 	]);
-	// The air fills the scene, so the clearance guard must not treat a leaf, a mote or the mist as a
-	// wall.
-	markEffect(leaves);
+	// The air fills the scene, so the clearance guard must not treat a mote or the mist as a wall.
 	markEffect(motes);
 	markEffect(mist);
 	// Each row's own four numbers from 0 to 1: where it starts in its cycle, its speed and its path.
 	const seeds = (count: number) => Float32Array.from({ length: count * 4 }, () => next());
-	const leafSeed = seeds(LEAVES);
 	const moteSeed = seeds(MOTES);
 	const mistSeed = seeds(MIST);
-	for (let k = 0; k < LEAVES; k++) leaves.frames[k] = k % 4;
 	const glow: Rgb = [...LOOK.Afternoon.motes];
 	const tint: Rgb = [...LOOK.Afternoon.leaves];
 	const haze: Rgb = [...LOOK.Afternoon.mist];
@@ -199,7 +154,7 @@ export async function createAir(
 				haze[c] = math.lerp(a.mist[c] as number, b.mist[c] as number, share);
 			}
 			const opacity = math.lerp(a.mistOpacity, b.mistOpacity, share);
-			leaves.material.set({ color: tint });
+			leaves.setColor(tint);
 			motes.setActiveCount(glow[0] === 0 && !fireflies ? 0 : MOTES);
 			mist.setActiveCount(!mistShown || opacity === 0 ? 0 : MIST);
 			mist.material.set({ color: haze, opacity });
@@ -212,39 +167,9 @@ export async function createAir(
 			mistShown = on;
 			mist.setActiveCount(on ? MIST : 0);
 		},
-		update(t) {
-			// Leaves: each falls from a crown over its own time, swaying and spinning, carried on the
-			// breeze, then starts again from the crown.
-			{
-				const { positions, sizes, rotations, colors } = leaves;
-				for (let k = 0; k < LEAVES; k++) {
-					const a = leafSeed[k * 4] as number;
-					const b = leafSeed[k * 4 + 1] as number;
-					const c = leafSeed[k * 4 + 2] as number;
-					const d = leafSeed[k * 4 + 3] as number;
-					const crown = crowns[Math.floor(a * crowns.length)] as Crown;
-					const fall = 9 + 6 * b;
-					const age = (t / fall + c) % 1;
-					const lap = Math.floor(t / fall + c);
-					const turn = d * 6.283 + lap * 2.4;
-					const x0 = crown.x + Math.cos(turn) * crown.reach * 0.7;
-					const z0 = crown.z + Math.sin(turn) * crown.reach * 0.7;
-					const drift = age * fall;
-					const x = x0 + BREEZE[0] * drift + 0.5 * Math.sin(t * 1.3 + d * 20);
-					const z = z0 + BREEZE[1] * drift + 0.4 * Math.cos(t * 1.1 + b * 20);
-					const ground = groundHeight(x, z);
-					const y = Math.max(crown.top - (crown.top - ground) * age, ground + 0.02);
-					positions[k * 3] = x;
-					positions[k * 3 + 1] = Math.max(y, WATER + 0.02);
-					positions[k * 3 + 2] = z;
-					const flutter = Math.sin(t * 3 + a * 30);
-					const size = 0.07 + 0.04 * b;
-					sizes[k * 2] = size * (0.55 + 0.45 * Math.abs(flutter));
-					sizes[k * 2 + 1] = size;
-					rotations[k] = t * (0.8 + c) + d * 6.283;
-					colors[k * 4 + 3] = Math.min(1, age * 20, (1 - age) * 12);
-				}
-			}
+		update(t, dt) {
+			// The leaves keep their place and speed in the field's own step, so a gust carries them.
+			leaves.update(dt);
 			// Motes: each wanders in a box over the near bank and the water, where the camera looks.
 			{
 				const { positions, sizes, colors } = motes;

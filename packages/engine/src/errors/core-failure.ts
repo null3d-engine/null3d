@@ -55,6 +55,12 @@ const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
 	14: (views) =>
 		`the frame draws ${views} views, the camera's included, which is the most it draws`,
 	16: (lights) => `${lights} rectangle lights already show images, the most that can at once`,
+	// The ceiling is `MAX_ATLAS_BYTES` in crates/null3d-render/src/shadow_tiles.rs.
+	18: (megabytes) =>
+		`the shadow atlas would need ${megabytes} MB, more than the 1,024 MB it may take; name a smaller heroTileSize or fewer shadowTiles`,
+	19: (bytes) =>
+		`a buffer that the frame fills needs more than the ${bytes} bytes that one GPU buffer may take on this device`,
+	20: (texels) => `a light's image of ${texels} texels a side is not a size that an image takes`,
 };
 
 /** What the renderer ran out of, for the details `limit` and `value` of E1501. */
@@ -71,7 +77,7 @@ const NOT_A_VOLUME = 17;
 
 /** What is wrong with levels of detail that a mesh refused, by the core's problem. */
 const LEVEL_PROBLEMS: Record<number, string> = {
-	[LEVEL_PROBLEM_TOO_MANY]: 'a mesh takes at most 7 lower levels',
+	[LEVEL_PROBLEM_TOO_MANY]: 'a mesh takes at most 15 lower levels',
 	[LEVEL_PROBLEM_ERRORS]: 'each error must be finite, above 0 and above the error before it',
 	[LEVEL_PROBLEM_MESH]: 'a level is not a live mesh of this engine, or is the base mesh itself',
 	[LEVEL_PROBLEM_FORMAT]:
@@ -177,6 +183,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 					: `${name} failed: the render graph does not compile.`,
 			);
 		}
+		case 1506:
+			return error(
+				'E1506',
+				`${name} failed: a draw whose instance count the GPU writes arrived after the first frame, and this device draws directly.`,
+			);
 		default: {
 			const id = `E${code}`;
 			return error(

@@ -33,13 +33,14 @@ The values of the frame, the same for every draw in it.
 | `time` | `f32` | The sketch time in seconds, as `time.now` gives it to the sketch |
 | `deltaTime` | `f32` | The seconds since the frame before, as `time.dt` gives them |
 | `index` | `u32` | The frame's number, counting from 1, as `time.frame` gives it |
-| `resolution` | `vec2f` | The size in pixels that the scene draws at. It is the canvas's size at the [render scale](../api/quality.md#render-scale), and `@builtin(position)` counts in the same pixels. |
+| `lastFrame` | `bool` | True in the [motion pass](../concepts/render-graph.md#motion-vectors)'s second call of a vertex offset, which moves vertices as the frame before did. The time, the step and the index then hold that frame's values. False in every other call. |
+| `resolution` | `vec2f` | The size in pixels that the scene draws at. It is the canvas's size at the [render scale](../api/quality.md#render-scale), and `@builtin(position)` counts in the same pixels. In a masked custom material's shadow caster it is the camera's size, which `input.fragCoord` counts in. |
 
 The time stops while the sketch is paused, as the sketch's own time does. In hold mode, it is the held time, so an image test of an animated material draws the same image each time.
 
 ## `camera`
 
-The values of the camera that the view draws from.
+The values of the scene camera, in every pass, a shadow pass included.
 
 | Field | Type | What it holds |
 | --- | --- | --- |
@@ -50,7 +51,7 @@ The values of the camera that the view draws from.
 | `near` | `f32` | The distance of the camera's near plane |
 | `far` | `f32` | The distance of the camera's far plane |
 
-The engine stores depth reversed on every GPU path. Clip space's depth is 1 at the near plane and 0 at the far plane. `camera.projection` gives that depth. A light draws each shadow, so a vertex offset reads zeros for the camera's `view` and `projection` in a shadow pass.
+The engine stores depth reversed on every GPU path. Clip space's depth is 1 at the near plane and 0 at the far plane. `camera.projection` gives that depth. A light draws each shadow, but a material's surface still reads the scene camera there: `camera` and `frame.resolution` hold the scene camera's values in a shadow pass, as they do where the surface shades.
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -107,8 +108,10 @@ The values above that a material does not read cost it nothing. A few inputs cos
 | Input | Its cost, only where the WGSL reads it |
 | --- | --- |
 | `uv1` | One more vertex attribute, the mesh's second texture coordinates |
+| `VertexInput.colors` | One more vertex attribute, the mesh's vertex color, for a vertex offset that reads it as data |
 | `instance`, `object.id` | A search per vertex in a small table of the scene's batches, which the engine keeps while a material reads them |
 | `object.worldMatrix`, `object.normalMatrix` | Three more values from the vertex stage to the fragment stage, in materials whose surface function runs |
+| `vertexRecord` | The mesh's four-number vertex record, one more vertex attribute, which a vertex offset reads |
 
 The pixel's position, the camera's values and `object.position` cost nothing.
 

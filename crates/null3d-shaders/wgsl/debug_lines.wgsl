@@ -35,6 +35,7 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     return null3d::tonemap::finish(
         in.linear * frame.output.exposure,
         in.clip.xy,
+        frame.occlusion.y,
         frame.output,
         frame.target_size.xy,
         frame.vignette,

@@ -35,7 +35,7 @@
     },
     {
       "id": 3,
-      "prompt": "Add an animated water surface to my null3d scene: gentle waves that move the vertices, a lighter color on the crests, and it should still receive shadows and fog.",
+      "prompt": "Add an animated liquid-mercury surface to my null3d sci-fi logo reveal: gentle waves that move the vertices, a brighter color on the crests, and it should still receive shadows and fog.",
       "expected_output": "A materials.shader material whose one WGSL literal holds a vertexOffset for the waves and a surface function that starts from defaultSurface and changes color by wave height, keeping engine lighting, shadows and fog; bounds enlarged; WebGL2 check suggested.",
       "files": [],
       "expectations": [
@@ -98,6 +98,80 @@
         "Uses post.set({ dof: { ... } }) with an f-number aperture such as 1.4 or 1.8",
         "Focuses with focusPoint on the hero's position, passed again each frame without allocating, or with focusDistance",
         "Mentions that the Low preset draws no depth of field unless quality.set({ dofSamples }) turns it on"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "I'm building a campfire scene in null3d. I'll write my own particle system: a pool of quads, each with a velocity and a lifetime, updated every frame in onUpdate. Is that the right approach, or is there something built in?",
+      "expected_output": "The answer points to the particles add-on: createParticles from @null3d/particles with particleTextures.flame or smoke, emitters and bursts, presented as built. It explains that the add-on animates particles in closed form on the GPU, so the sketch needs no per-frame simulation or pool, and it does not write the hand-rolled pool. It mentions blending and soft particles for the look, and warns that particles cost fill rate on phones.",
+      "files": [],
+      "expectations": [
+        "Recommends createParticles from @null3d/particles, presented as built",
+        "Does not present the hand-rolled quad pool as the main answer",
+        "Names an emitter or burst, and a particle texture such as particleTextures.flame or smoke",
+        "Explains that the add-on animates particles in closed form on the GPU, so no per-frame JavaScript simulation is needed",
+        "Mentions blending, such as additive for fire and normal for smoke, or soft particles",
+        "Mentions the fill-rate cost on phones or a quality setting"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Add physics to my null3d game: about 300 crates should fall, stack and collide with a ground plane. I want a null3d physics API, so show me the call.",
+      "expected_output": "The answer says that null3D has no physics API in this version and that the physics foundation add-on is not built yet. It does not invent scene.createPhysics or @null3d/physics. It runs Rapier (@dimforge/rapier3d-compat) in the sketch worker, uses one dynamic instance batch for the crates, and copies each body's translation into batch.positions without allocating. It says that the physics state is copied into the scene each frame, and that the add-on replaces the workaround when it ships.",
+      "files": [],
+      "expectations": [
+        "States that null3D has no physics API in this version, or that the physics add-on is not built yet",
+        "Does not invent a null3D physics call or package, such as scene.createPhysics or @null3d/physics",
+        "Runs @dimforge/rapier3d-compat or cannon-es in the sketch worker",
+        "Uses one dynamic instance batch for the crates and writes batch.positions from the body translations",
+        "Writes batch.positions directly with no array or object literal in the loop, and names the library's own per-call objects as the remaining allocation",
+        "Names the workaround as temporary until the physics add-on ships"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "My null3d product page needs a 40,000 square metre valley with hills, and the camera orbits 200 m above it. I planned to write a subdivided height-map plane and update it myself. Is that the best route?",
+      "expected_output": "The answer recommends createTerrain from @null3d/terrain, presented as built, with terrainTextures for its surface. It explains the camera-centred quadtree of blocks and that a still camera costs no work. It places objects with heightAt and normalAt because the terrain carries no collision. It does not write the hand-rolled plane as the main answer, and it suggests checking the WebGL2 path.",
+      "files": [],
+      "expectations": [
+        "Recommends createTerrain from @null3d/terrain, presented as built",
+        "Does not present the hand-rolled subdivided height-map plane as the main answer",
+        "Explains the camera-centred quadtree of blocks, or that detail follows the camera",
+        "Uses heightAt or normalAt to place objects, and says that the terrain carries no collision",
+        "Mentions terrainTextures or a splat-mapped surface",
+        "Suggests checking the WebGL2 path"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "My null3d landing page generates a terrain height field and scatters 40,000 rocks in the sketch's setup. Every visit waits about 4 seconds before anything shows. Make repeat visits fast without making the first visit slower.",
+      "expected_output": "A cache of the generated arrays in a namespace of the engine's cache of derived data, from assets.cache(name, import.meta.url) in the sketch, keyed by every input that changes the output, with the same build code after a hit or a miss and every undefined answer treated as a miss. The answer also moves work that the first view does not show into a later stage, and explains how to time a first and a repeat visit.",
+      "files": [],
+      "expectations": [
+        "Stores only the bytes of numbers and typed arrays (heights, rock rows) through assets.cache from sketch.ts, never meshes, materials, textures or batches",
+        "Gives the namespace import.meta.url or a version of its own as its version, keys each entry by the inputs that change the output, such as the seed, the size or the quality preset, and skips the cache in development",
+        "Runs the same code to build the terrain and the rocks after a hit and after a miss",
+        "Calls put without waiting for it, never in onUpdate, and leaves the bytes unchanged until its promise resolves; a new version deletes the older entries",
+        "Makes the data again whenever get answers undefined, which covers a miss, a failed read and a cache that is off",
+        "Says that storage is best effort: browsers can evict the origin, and Safari deletes script-written storage of a site unused for seven days",
+        "Does not claim that the engine caches compiled shaders, and presents the engine's cache of derived data, its transcoded textures and the stored preset check as built",
+        "Builds only the first view in the setup and adds the rest hidden behind scene.warmUp(), or places rows over frames, without allocating in onUpdate",
+        "Explains how to time a first visit and a repeat visit, such as on Slow 4G with a new profile or ?check=fresh&shaders=fresh&derived-cache=off"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Review the null3d hero scene on our marketing homepage before launch. It's decorative, it sits behind the headline, and the team says it runs at 60 fps on their laptops.",
+      "expected_output": "A review in order: how the frame rate was measured, the preset and governor state, the passes, rebuilds and pipelines during play, the page without JavaScript, after a failed start and after a crash, repeat visits and back navigation, the page thread during the start, and what Low leaves out. It recommends content-page rules for a decorative scene.",
+      "files": [],
+      "expectations": [
+        "Asks how 60 fps was measured, and recommends engine.measure or bunx @null3d/cli bench, which take the lower of the presented and completed rates",
+        "Asks for measurements on a real phone and on the WebGL2 path, at the presets that phones get",
+        "Checks the page with JavaScript off, with a failed start and with the crash marker set, and checks that the headline text never hides while the scene loads",
+        "Marks the canvas aria-hidden, pauses it off screen with an IntersectionObserver, and brings it to rest under reduced motion",
+        "Suggests powerPreference: 'low-power' for a decorative scene, and a load deadline counted from navigation",
+        "Checks rebuilds, pipelines and skippedDraws during play, and long tasks on the page's thread during the start",
+        "Asks what the Low preset leaves out of the scene's own work, not only what numbers it lowers"
       ]
     }
   ]

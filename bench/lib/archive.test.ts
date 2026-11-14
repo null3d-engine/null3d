@@ -5,10 +5,12 @@ import { join } from 'node:path';
 import {
 	archivedKind,
 	archiveFolder,
+	archiveRun,
 	commitAt,
 	compact,
 	NoResultsError,
 	PLAYWRIGHT,
+	pageDetails,
 	parseResultName,
 	parseRunName,
 	resultRows,
@@ -16,6 +18,7 @@ import {
 	round,
 	slimResult,
 } from './archive';
+import type { BenchResult } from './report';
 
 const host = { name: 'Apple M5 Max, 18 cores, 128 GB' };
 
@@ -59,6 +62,15 @@ function null3dResult(busy: number, update: number) {
 				'sketch-worker': { busyMs: figures(busy), phases: { update: figures(update) } },
 				'render-worker': { busyMs: figures(0.2), phases: { replay: figures(0.2) } },
 			},
+		},
+		memory: {
+			ready: true,
+			wasmBytes: 8323072,
+			engineBytes: 8283750,
+			gpuTextureBytes: 157705830,
+			gpuBufferBytes: 5033165,
+			jsHeapBytes: 3565158,
+			totalBytes: 174587904,
 		},
 	};
 }
@@ -245,6 +257,60 @@ describe('slimResult', () => {
 	});
 });
 
+describe('pageDetails', () => {
+	it("keeps each preset and draw path that a page's runs reported, once", () => {
+		const run = (preset: string, drawPath?: string) =>
+			({ ok: true, n: 5, mode: { jobWorkers: 2, preset }, drawPath }) as BenchResult;
+		expect(
+			pageDetails([
+				run('high', 'not-apple-gpu-in-webkit'),
+				run('high', 'not-apple-gpu-in-webkit'),
+				run('low', 'forced'),
+			]),
+		).toEqual({ n: 5, presets: ['high', 'low'], drawPaths: ['not-apple-gpu-in-webkit', 'forced'] });
+		expect(pageDetails([run('high')])).toEqual({ n: 5, presets: ['high'] });
+	});
+});
+
+describe('archiveRun', () => {
+	it("keeps a run's load, the busiest other processes and a desert page's figures", () => {
+		const desert = {
+			engine: 'null3d',
+			view: 'walk',
+			shadows: 3,
+			drawn: { width: 1920, height: 1080 },
+			intervalMs: 2.72,
+			gpuMs: 1.87,
+			triangles: 7_940_000,
+			drawCalls: 1189,
+			firstFrameMs: 3240,
+			settings: { preset: 'medium', directDraws: false },
+		};
+		const result = {
+			...null3dResult(1, 0.1),
+			machineLoad: { before: 4.5, after: 9.25 },
+			otherWork: {
+				start: [],
+				end: [],
+				during: [1, 2, 3, 4].map((pid) => ({ pid, name: `p${pid}`, cores: 1 / pid })),
+			},
+			desert,
+		};
+		const run = archiveRun(
+			{ id: 'desert-null3d-webgpu-1', scene: 'desert', page: 'null3d-webgpu' },
+			result as never,
+			undefined,
+		);
+		expect(run.machineLoad).toEqual({ before: 4.5, after: 9.25 });
+		expect(run.otherWork?.map((use) => use.pid)).toEqual([1, 2, 3]);
+		expect(run.desert).toMatchObject({
+			path: 'indirect',
+			drawn: { width: 1920, height: 1080 },
+			shadows: 3,
+		});
+	});
+});
+
 describe('archiveFolder', () => {
 	it("keeps a device runner's pages, runs, device and the commit that the checkout had out", () => {
 		const record = archiveFolder(deviceBenchRun(), host);
@@ -265,7 +331,13 @@ describe('archiveFolder', () => {
 		});
 		expect(runner?.counts).toEqual({ pass: 8, skip: 0, fail: 0 });
 		const page = runner?.pages?.find((p) => p.page === 'null3d-webgpu');
-		expect(page).toMatchObject({ n: 300000, presets: ['low'], runs: 2, ownWorkMs: 2 });
+		expect(page).toMatchObject({
+			n: 300000,
+			presets: ['low'],
+			runs: 2,
+			ownWorkMs: 2,
+			memory: { gpuTextureBytes: 157705830, totalBytes: 174587904 },
+		});
 		expect(page?.againstThree).toEqual({
 			wholeFrame: { page: 'threejs-webgpu', threeMs: 31, share: 0.5161 },
 			ownWork: { page: 'threejs-webgpu', threeMs: 17, share: 0.1176 },
@@ -281,6 +353,7 @@ describe('archiveFolder', () => {
 				{ name: 'compute 1', ms: 0.25 },
 				{ name: 'render 1', ms: 1.75 },
 			],
+			memory: { gpuBufferBytes: 5033165, jsHeapBytes: 3565158 },
 		});
 		expect(JSON.stringify(record)).not.toContain('captured frame');
 	});

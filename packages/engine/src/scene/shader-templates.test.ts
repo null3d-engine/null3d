@@ -87,6 +87,34 @@ describe('the templates of compiled WGSL', () => {
 		}
 	});
 
+	test('import set 0 first for a shader whose builds take one set for each GPU path', async () => {
+		const { templates } = recording('wgsl');
+		const imports: [string, number][] = [];
+		const later = async (path: string, set: number) => {
+			imports.push([path, set]);
+			return { build: wgsl(0) } as unknown as ShaderVariants;
+		};
+		const shaderSet = { ...shader(true), buildsSet: 0 };
+		templates.of({}, () => [shaderSet], undefined, later);
+		expect(imports).toEqual([['wgsl', 0]]);
+	});
+
+	test('import the builds of each template that a tone curve makes', async () => {
+		const { templates, sent } = recording('glsl');
+		const imports: [string, number][] = [];
+		const later = async (path: string, set: number) => {
+			imports.push([path, set]);
+			return { build: glsl(0) } as unknown as ShaderVariants;
+		};
+		const shaderOfCurve = (): CustomShader => ({ ...shader(true), buildsSet: 0 });
+		const first = templates.of({}, () => [shaderOfCurve(), shaderOfCurve()], undefined, later);
+		expect(imports).toEqual([
+			['glsl', 0],
+			['glsl', 0],
+		]);
+		expect(sent.map(([template]) => template)).toEqual([first, first + 1]);
+	});
+
 	test('send why a set did not load', async () => {
 		const { templates, builds } = recording('wgsl');
 		const template = templates.of(

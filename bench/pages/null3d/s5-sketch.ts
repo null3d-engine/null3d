@@ -27,7 +27,13 @@ import {
 	s5CharactersAt,
 } from '../../scenes/s5';
 import { S5_MODEL_URL } from '../lib/s5-model';
-import { followPath, readCount, readGovernor, setUpView, watchQuality } from './sketch-common';
+import {
+	applyQualitySwitches,
+	followPath,
+	readCount,
+	setUpView,
+	watchQuality,
+} from './sketch-common';
 
 export default defineSketch(async (context) => {
 	const { scene, materials, geometry, assets, time, input, debug } = context;
@@ -41,7 +47,7 @@ export default defineSketch(async (context) => {
 		dynamicResolution: true,
 		shadowDistance: S5_SHADOW_DISTANCE,
 	});
-	context.quality.set({ governor: readGovernor(import.meta.url) });
+	applyQualitySwitches(context.quality, import.meta.url);
 	const reportQuality = watchQuality(context);
 
 	const { size, thickness, color, roughness } = S5_GROUND;

@@ -1,0 +1,46 @@
+{
+	"caps": "ground",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"frame": {
+			"petiole": [511, 1016],
+			"tip": [519, 6]
+		},
+		"lowerFrame": {
+			"petiole": [511, 1013],
+			"tip": [516, 9]
+		},
+		"relief": {
+			"veins": 1,
+			"pucker": 0.8,
+			"depth": 0.0015
+		}
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "stipe",
+				"slot": 16,
+				"crop": [410, 300, 200],
+				"tile": [0.04, 0.04],
+				"depth": 0.0005,
+				"smooth": 4
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 16,
+			"crop": [410, 300, 200],
+			"tile": [0.02, 0.02],
+			"depth": 0.0002,
+			"smooth": 4
+		}
+	},
+	"quality": {
+		"young-color": 50,
+		"young-normal": 50,
+		"bark-color": 100,
+		"bark-normal": 60
+	}
+}

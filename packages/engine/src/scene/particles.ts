@@ -11,7 +11,7 @@
 // downloads none of it. Like the sprite code, it imports no engine module but constants and types.
 
 import * as C from '../generated/core';
-import type { Vec3Like } from '../math/types';
+import type { Mat4Like, Vec3Like } from '../math/types';
 import type { ColorInput } from './color';
 import type { CoreMemory, ViewHolder } from './memory';
 import type { Mesh } from './scene';
@@ -31,7 +31,10 @@ export interface ParticleMotion {
 	 * most of the difference in about a second. The default is 0.
 	 */
 	drag?: number;
-	/** The velocity that drag pulls the particles toward, in meters per second. The default is still air. */
+	/**
+	 * The velocity that drag pulls the particles toward, in meters per second. The default is still
+	 * air. A buffer with a `windField` uses the field's local air instead.
+	 */
 	wind?: Vec3Like;
 	/**
 	 * How far simplex noise moves each particle from its path, in meters. Each particle starts on its
@@ -163,6 +166,29 @@ export interface ParticleLook {
 export interface ParticleValues extends ParticleMotion, ParticleLook {}
 
 /**
+ * A field of air that a buffer's particles sample: a texture of the air, the box that it covers,
+ * and the steady settings that a reader works out beyond the box. The wind add-on's field is one,
+ * and a page connects the two without either add-on importing the other.
+ *
+ * @category api/particles
+ */
+export interface ParticleWindField {
+	/** The field's texture, whose `layer` names the newest state. */
+	readonly texture: Texture;
+	/** The box's near corner across the ground, in meters: x and z. */
+	readonly origin: readonly [number, number];
+	/** The box's width across the ground, in meters, or 0 for the steady field everywhere. */
+	readonly size: number;
+	/** The air's steady settings: the base wind, the gust, the swirl and the gust a page sent. */
+	readonly air: {
+		readonly base: readonly number[];
+		readonly gust: readonly number[];
+		readonly swirl: readonly number[];
+		readonly sent: readonly number[];
+	};
+}
+
+/**
  * Options of `scene.createParticleBuffer`.
  *
  * @category api/particles
@@ -182,6 +208,216 @@ export interface ParticleBufferOptions extends ParticleValues {
 	map?: Texture;
 	/** The layers the particles draw on. The default is the default layer. */
 	layers?: number;
+	/**
+	 * A field of air that moves the particles. Its local air replaces the fixed `wind`, so dust,
+	 * motes, smoke and rain ride the same gusts as the plants around them. Give it again with
+	 * `setWind` in each frame, because its box follows the camera.
+	 */
+	windField?: ParticleWindField;
+}
+
+/**
+ * Where an emitter's particles are born, in its own space, and which way they set off. A `point`
+ * emits at the emitter, along `direction`. A `sphere` emits inside a ball of `radius`, or on its
+ * surface with `surface`, and sends particles outward. A `cone` emits on a disc of `radius` across
+ * the emitter's +y axis. It sends particles up within `angle` radians of that axis. A `box` emits
+ * inside a box of `size`, centered on the emitter, along `direction`. A `disc` emits on a disc of
+ * `radius` across the +y axis, along `direction`.
+ *
+ * @category api/particles
+ */
+export type ParticleEmitterShape =
+	| { type: 'point' }
+	| { type: 'sphere'; radius: number; surface?: boolean }
+	| { type: 'cone'; radius: number; angle: number }
+	| { type: 'box'; size: Vec3Like }
+	| { type: 'disc'; radius: number };
+
+/**
+ * A burst of an emitter: `count` particles at once, at `time` seconds after the system starts,
+ * then every `interval` seconds, `cycles` times in all.
+ *
+ * @category api/particles
+ */
+export interface ParticleEmitterBurst {
+	/** Seconds after the system starts. */
+	time: number;
+	/** The particles of each burst. */
+	count: number;
+	/** Seconds between bursts. Without it, the burst happens once, or once per loop of a looping system. */
+	interval?: number;
+	/** How many bursts, with `interval`. The default is no limit. */
+	cycles?: number;
+}
+
+/**
+ * A sub-emitter of an emitter: another particle buffer that bursts where a particle of this one
+ * dies or first meets the ground.
+ *
+ * @category api/particles
+ */
+export interface ParticleEmitterSub {
+	/** The buffer that bursts. */
+	buffer: ParticleBuffer;
+	/** `death` at the end of the particle's life, or `ground` where it first meets the ground. */
+	on: 'death' | 'ground';
+	/** The particles of each burst. */
+	count: number;
+	/** The share of the particle's velocity that the burst's particles take on. The default is 0. */
+	inheritVelocity?: number;
+}
+
+/**
+ * What an emitter writes, and the settings that the core keeps to write its births. The core
+ * makes a frame's records in one call from these numbers, so no per-birth loop runs in TypeScript.
+ *
+ * @category api/particles
+ */
+export interface ParticleEmitterOptions {
+	/** The seed of the emitter's random numbers. Emitters with the same seed emit the same particles. */
+	seed?: number;
+	/** Where the particles are born. The default is a point. */
+	shape?: ParticleEmitterShape;
+	/** The way particles set off from a point, box or disc, in the emitter's space. The default is up. */
+	direction?: Vec3Like;
+	/** How far from `direction` particles set off at random, in radians. The default is 0. */
+	spread?: number;
+	/** The smallest and the largest start speed, in meters per second. The default is 1. */
+	speed?: readonly [number, number];
+	/** A velocity that every particle adds to its own at birth, in meters per second. */
+	velocity?: Vec3Like;
+	/** The smallest and the largest lifetime, in seconds. The default is 1. */
+	lifetime?: readonly [number, number];
+	/** Bursts of particles at set times. */
+	bursts?: readonly ParticleEmitterBurst[];
+	/**
+	 * Seconds that the emitter emits for. With `loop`, it starts again after it; without, it stops.
+	 * The default is no end.
+	 */
+	duration?: number;
+	/** True to start again after `duration`. The default is true. */
+	loop?: boolean;
+	/** True when particles move with a followed object, which `setEmitterFollow` places. */
+	follow?: boolean;
+	/** Buffers that burst where this emitter's particles die or meet the ground. */
+	subEmitters?: readonly ParticleEmitterSub[];
+}
+
+/** The places of a particle emitter's block, which the core reads. */
+const E = {
+	rate: 0,
+	emitting: 1,
+	from: 2,
+	to: 3,
+	time: 4,
+	prewarm: 5,
+	atFlag: 6,
+	at: 7,
+	velocityFlag: 10,
+	velocity: 11,
+	bursts: 14,
+	subs: 15,
+	last: 16,
+	now: 32,
+	toLocal: 48,
+	world: 64,
+	box: 80,
+	emitted: 86,
+	rows: 88,
+} as const;
+
+/** The places of an emitter's fixed settings, after the bursts' and sub-emitters' rows. */
+const F = {
+	seed: 0,
+	shape: 1,
+	radius: 2,
+	surface: 3,
+	angle: 4,
+	size: 5,
+	speed: 8,
+	lifetime: 10,
+	velocityFlag: 12,
+	velocity: 13,
+	frame: 16,
+	spread: 25,
+	duration: 26,
+	loop: 27,
+	follow: 28,
+	motion: 29,
+	windTime: 48,
+	windOrigin: 49,
+	windSize: 51,
+	windStrength: 52,
+	windBase: 53,
+	windGust: 57,
+	windSwirl: 61,
+	windSent: 65,
+} as const;
+
+/** The shape codes that the core reads. */
+const SHAPES = { point: 0, sphere: 1, cone: 2, box: 3, disc: 4 } as const;
+
+/** The frame of directions about up, for a cone. */
+const IDENTITY = new Float64Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+
+/** Drag below which a particle's motion is the plain ballistic one. */
+const LITTLE_DRAG = 1e-4;
+
+/** The motion of an emitter's particles, which its events use and its bounds grow by. */
+interface MotionValues {
+	gx: number;
+	gy: number;
+	gz: number;
+	drag: number;
+	wx: number;
+	wy: number;
+	wz: number;
+	turbulence: number;
+	turbulenceScale: number;
+	turbulenceSpeed: number;
+	groundHeight: number;
+	groundMode: number;
+	restitution: number;
+	friction: number;
+	/** The fastest air that a field adds, in meters a second, for the bounds' reach. */
+	windSpeed: number;
+}
+
+/** A new motion at rest. */
+function stillMotion(): MotionValues {
+	return {
+		gx: 0,
+		gy: 0,
+		gz: 0,
+		drag: 0,
+		wx: 0,
+		wy: 0,
+		wz: 0,
+		turbulence: 0,
+		turbulenceScale: 1,
+		turbulenceSpeed: 1,
+		groundHeight: 0,
+		groundMode: 0,
+		restitution: 0.4,
+		friction: 0.2,
+		windSpeed: 0,
+	};
+}
+
+/** How far a particle may move from its birth place in `lifetime` seconds at `speed`. */
+function reach(m: MotionValues, speed: number, lifetime: number): number {
+	const g = Math.sqrt(m.gx * m.gx + m.gy * m.gy + m.gz * m.gz);
+	const turbulence = 2 * m.turbulence;
+	// The air carries a particle at most this fast, so its bounds grow by that much over its life.
+	const blown = m.windSpeed * lifetime;
+	if (m.drag < LITTLE_DRAG)
+		return speed * lifetime + 0.5 * g * lifetime * lifetime + turbulence + blown;
+	const tx = m.wx + m.gx / m.drag;
+	const ty = m.wy + m.gy / m.drag;
+	const tz = m.wz + m.gz / m.drag;
+	const end = Math.sqrt(tx * tx + ty * ty + tz * tz);
+	const settle = Math.min(lifetime, 1 / m.drag);
+	return end * lifetime + (speed + end) * settle + turbulence + blown;
 }
 
 /** The places of the values in a buffer's block of values, which the particle shaders read. */
@@ -216,7 +452,16 @@ const V = {
 	holdFrame: 43,
 	colorOverLife: 48,
 	sizeOverLife: 112,
+	airBase: 128,
+	airGust: 132,
+	airSwirl: 136,
+	airSent: 140,
+	windField: 144,
+	windBox: 148,
 } as const;
+
+/** The place of the wind texture's number among the frame's values. */
+const FRAME_WIND_TEXTURE = 4;
 
 /** The steps of a curve over life. */
 const CURVE_STEPS = 16;
@@ -245,6 +490,11 @@ function putVector(
 ) {
 	if (!v) return;
 	for (let k = 0; k < n; k++) b[at + k] = v[k] as number;
+}
+
+/** Writes a 4 by 4 matrix into `b` at `at`. */
+function putMatrix(b: Float64Array, at: number, m: Mat4Like): void {
+	for (let k = 0; k < 16; k++) b[at + k] = m[k] as number;
 }
 
 /** Writes `v` into `b` at `at`, when it is given. */
@@ -291,14 +541,16 @@ function isOneColor(colors: ColorInput | readonly [ColorInput, ColorInput]): col
 /** An empty view that a dropped view takes, so it holds none of the engine's memory. */
 const NO_FLOAT32 = new Float32Array(0);
 const NO_UINT32 = new Uint32Array(0);
+const NO_FLOAT64 = new Float64Array(0);
 
 /**
  * A particle buffer: a scene object that draws a quad for each live particle record. The
  * particles add-on's emitters write records into it. Write a particle's record once, when it is
- * born, with `write`. The GPU moves it and changes its look as it ages, as the buffer's values
- * say. It stops drawing the particle at the end of its lifetime. Once per frame, write the
- * buffer's time and the records the GPU reads into `frame`, and call `commit`. Every call takes
- * typed arrays and whole numbers, so a frame's calls allocate nothing.
+ * born, with `write`, or write a frame's births in one call with `writeRecords`. The GPU moves it
+ * and changes its look as it ages, as the buffer's values say. It stops drawing the particle at
+ * the end of its lifetime. Once per frame, write the buffer's time and the records the GPU reads
+ * into `frame`, and call `commit`. Every call takes typed arrays and whole numbers, so a frame's
+ * calls allocate nothing.
  *
  * @category api/particles
  */
@@ -308,6 +560,32 @@ export class ParticleBuffer implements ViewHolder {
 	private words!: Uint32Array;
 	private block!: Float32Array;
 	private frameValues!: Float32Array;
+	/** The core's block of births' parameters, and the address it was at. */
+	private birthAddress = 0;
+	private birthView: Float32Array = NO_FLOAT32;
+	/** The core's block of the emitter's numbers, its size and its address. */
+	private emitterAddress = 0;
+	private emitterFloats = 0;
+	private emitterView: Float64Array = NO_FLOAT64;
+	/** The core's block of the sub-emitters' inverse world matrices, and how many it holds. */
+	private subAddress = 0;
+	private subCount = 0;
+	private subView: Float64Array = NO_FLOAT64;
+	/** The buffers that burst for this one, and the block's place of their first row. */
+	private subBuffers: ParticleBuffer[] = [];
+	private subRows = 0;
+	/** The emitter's motion as the core's events use it, and how far its particles may move. */
+	private motion: MotionValues = stillMotion();
+	private grow = 0;
+	private emitterSpeed = 1;
+	private emitterLifetime = 1;
+	private emitterVelocity: Vec3Like | undefined;
+	/** The options that made the values, and the values last set. */
+	private initial: ParticleValues = {};
+	private lastValues: ParticleValues = {};
+	/** The culling sphere last given to the object, and the point that carries its center. */
+	private readonly bounds = new Float64Array(4);
+	private readonly center = [0, 0, 0];
 	/** The records written since the last frame and not yet marked, as a start and an end. */
 	private start = 0;
 	private end = 0;
@@ -339,6 +617,10 @@ export class ParticleBuffer implements ViewHolder {
 		this.words = NO_UINT32;
 		this.block = NO_FLOAT32;
 		this.frameValues = NO_FLOAT32;
+		this.birthView = NO_FLOAT32;
+		this.birthAddress = 0;
+		this.emitterView = NO_FLOAT64;
+		this.subView = NO_FLOAT64;
 	}
 
 	/** The record and value arrays, made again after the engine's memory grew. */
@@ -353,6 +635,17 @@ export class ParticleBuffer implements ViewHolder {
 		const values = core.glue.particleValues(id);
 		this.block = core.f32(values, C.PARTICLE_PARAM_FLOATS);
 		this.frameValues = core.f32(values + C.PARTICLE_PARAM_FLOATS * 4, C.PARTICLE_FRAME_FLOATS);
+		this.birthView = NO_FLOAT32;
+		this.birthAddress = 0;
+		// The core's own blocks stay in one place while the engine's memory grows: only a block
+		// that the core sizes again moves, and the emitter's is sized once.
+		if (this.emitterAddress !== 0)
+			this.emitterView = core.f64(this.emitterAddress, this.emitterFloats);
+		if (this.subAddress !== 0)
+			this.subView = core.f64(
+				this.subAddress,
+				this.subCount * C.PARTICLE_EMITTER_SUB_MATRIX_FLOATS,
+			);
 		this.generation = core.generation;
 	}
 
@@ -380,6 +673,46 @@ export class ParticleBuffer implements ViewHolder {
 			this.start = index;
 			this.end = index + 1;
 		}
+	}
+
+	/**
+	 * Writes `count` records from a block of birth parameters, from record `first` on, in one call
+	 * into the core, which packs them and marks the ranges it wrote. The block holds nine numbers
+	 * for each birth, in the order that `write` takes them: the birth place, the birth time, the
+	 * velocity, the lifetime, then the seed. Pass the whole block that the births fill, so the
+	 * core's room for it stays the same from frame to frame.
+	 */
+	writeRecords(block: Float32Array, count: number, first: number): void {
+		if (count <= 0 || block.length < count * C.PARTICLE_BIRTH_FLOATS) return;
+		this.views();
+		// Records that `write` wrote are marked before the core's own range.
+		this.mark();
+		const births = Math.floor(block.length / C.PARTICLE_BIRTH_FLOATS);
+		// The core's room for the block may grow the engine's memory, so the views are made again
+		// from the new buffer before the block is written.
+		const address = this.core.checkGrowth(
+			this.core.glue.particleRecordBlock(births),
+			'writeRecords',
+			'the particle record block',
+		);
+		this.views();
+		if (address !== this.birthAddress || this.birthView.length !== block.length) {
+			this.birthAddress = address;
+			this.birthView = this.core.f32(address, block.length);
+		}
+		this.birthView.set(block);
+		this.core.glue.writeParticleRecords(this.id, count, first);
+	}
+
+	/**
+	 * Takes whole `seconds` off the birth times of records `from` to `to`, which moves the time
+	 * that they count from, and marks them. The GPU takes the shift off the birth times that the
+	 * move has not reached.
+	 */
+	shiftRecords(from: number, to: number, seconds: number): void {
+		if (from >= to) return;
+		this.views();
+		this.core.glue.shiftParticleRecords(this.id, from, to, seconds);
 	}
 
 	/**
@@ -418,6 +751,261 @@ export class ParticleBuffer implements ViewHolder {
 	/** Sends the records written since the last call to the GPU with the next frame. Call it once per frame. */
 	commit(): void {
 		this.mark();
+	}
+
+	/**
+	 * Gives the core the emitter's settings and starts its birth schedule, its time base and its
+	 * events again. From then on the core writes every record that the emitter makes, so the
+	 * sketch starts a frame and reads settings but runs no loop over the births. Call this once,
+	 * before the first `emitFrame`.
+	 */
+	configureEmitter(options: ParticleEmitterOptions): void {
+		this.views();
+		const core = this.core;
+		const bursts = options.bursts ?? [];
+		const subs = options.subEmitters ?? [];
+		const rows = C.PARTICLE_EMITTER_HEADER_FLOATS;
+		const floats =
+			rows +
+			(bursts.length + subs.length) * C.PARTICLE_EMITTER_ROW_FLOATS +
+			C.PARTICLE_EMITTER_FIXED_FLOATS;
+		const address = core.checkGrowth(
+			core.glue.particleEmitterBlock(this.id, floats),
+			'configureEmitter',
+			'the particle emitter block',
+		);
+		this.emitterAddress = address;
+		this.emitterFloats = floats;
+		const e = core.f64(address, floats);
+		this.emitterView = e;
+		e[E.bursts] = bursts.length;
+		e[E.subs] = subs.length;
+		const row = (k: number) => rows + k * C.PARTICLE_EMITTER_ROW_FLOATS;
+		for (let k = 0; k < bursts.length; k++) {
+			const burst = bursts[k] as ParticleEmitterBurst;
+			const at = row(k);
+			e[at] = burst.time;
+			e[at + 1] = burst.count;
+			e[at + 2] = burst.interval ?? Number.NaN;
+			e[at + 3] = burst.cycles ?? Number.NaN;
+		}
+		for (let k = 0; k < subs.length; k++) {
+			const sub = subs[k] as ParticleEmitterSub;
+			const at = row(bursts.length + k);
+			e[at] = sub.buffer.id;
+			e[at + 1] = sub.on === 'ground' ? 1 : 0;
+			e[at + 2] = sub.count;
+			e[at + 3] = sub.inheritVelocity ?? 0;
+		}
+		this.subBuffers = subs.map((sub) => sub.buffer);
+		this.subRows = row(bursts.length);
+		const f = rows + (bursts.length + subs.length) * C.PARTICLE_EMITTER_ROW_FLOATS;
+		const shape = options.shape ?? { type: 'point' };
+		e[f + F.seed] = options.seed ?? 1;
+		e[f + F.shape] = SHAPES[shape.type];
+		e[f + F.radius] = 'radius' in shape ? shape.radius : 0;
+		e[f + F.surface] = shape.type === 'sphere' && shape.surface ? 1 : 0;
+		e[f + F.angle] = shape.type === 'cone' ? shape.angle : 0;
+		if (shape.type === 'box') {
+			for (let k = 0; k < 3; k++) e[f + F.size + k] = shape.size[k] as number;
+		}
+		const speed = options.speed ?? [1, 1];
+		e[f + F.speed] = speed[0] as number;
+		e[f + F.speed + 1] = speed[1] as number;
+		const lifetime = options.lifetime ?? [1, 1];
+		e[f + F.lifetime] = lifetime[0] as number;
+		e[f + F.lifetime + 1] = lifetime[1] as number;
+		const velocity = options.velocity;
+		e[f + F.velocityFlag] = velocity ? 1 : 0;
+		if (velocity) for (let k = 0; k < 3; k++) e[f + F.velocity + k] = velocity[k] as number;
+		const frame = this.directionFrame(options.direction);
+		for (let k = 0; k < 9; k++) e[f + F.frame + k] = frame[k] as number;
+		e[f + F.spread] = options.spread ?? 0;
+		e[f + F.duration] = options.duration ?? Number.POSITIVE_INFINITY;
+		e[f + F.loop] = options.loop === false ? 0 : 1;
+		e[f + F.follow] = options.follow ? 1 : 0;
+		const m = this.motion;
+		e[f + F.motion] = m.gx;
+		e[f + F.motion + 1] = m.gy;
+		e[f + F.motion + 2] = m.gz;
+		e[f + F.motion + 3] = m.drag;
+		e[f + F.motion + 4] = m.wx;
+		e[f + F.motion + 5] = m.wy;
+		e[f + F.motion + 6] = m.wz;
+		e[f + F.motion + 7] = m.turbulence;
+		e[f + F.motion + 8] = m.turbulenceScale;
+		e[f + F.motion + 9] = m.turbulenceSpeed;
+		e[f + F.motion + 10] = m.groundHeight;
+		e[f + F.motion + 11] = m.groundMode;
+		e[f + F.motion + 12] = m.restitution;
+		e[f + F.motion + 13] = m.friction;
+		core.glue.configureParticleEmitter(this.id);
+		this.subCount = subs.length;
+		const subAddress = core.glue.particleSubMatrices(this.id);
+		this.subAddress = subAddress;
+		this.subView =
+			subAddress === 0
+				? NO_FLOAT64
+				: core.f64(subAddress, subs.length * C.PARTICLE_EMITTER_SUB_MATRIX_FLOATS);
+		this.emitterSpeed = speed[1] as number;
+		this.emitterLifetime = lifetime[1] as number;
+		this.emitterVelocity = velocity;
+		this.updateGrow(this.lastValues.size?.[1], this.lastValues.aspect);
+	}
+
+	/** The axes of the frame whose y axis is the emitter's direction, as three columns. */
+	private directionFrame(direction: Vec3Like | undefined): ArrayLike<number> {
+		if (!direction) return IDENTITY;
+		// t = normalize(cross(a, n)) and b = cross(n, t), for n the direction and a an axis apart.
+		const [dx, dy, dz] = [direction[0] as number, direction[1] as number, direction[2] as number];
+		const len = Math.hypot(dx, dy, dz) || 1;
+		const [nx, ny, nz] = [dx / len, dy / len, dz / len];
+		const [ax, ay, az] = Math.abs(ny) < 0.99 ? [0, 1, 0] : [1, 0, 0];
+		const [cx, cy, cz] = [ay * nz - az * ny, az * nx - ax * nz, ax * ny - ay * nx];
+		const tl = Math.hypot(cx, cy, cz) || 1;
+		const [tx, ty, tz] = [cx / tl, cy / tl, cz / tl];
+		const bx = ny * tz - nz * ty;
+		const by = nz * tx - nx * tz;
+		const bz = nx * ty - ny * tx;
+		return [tx, ty, tz, nx, ny, nz, bx, by, bz];
+	}
+
+	/**
+	 * Places the followed object's world matrix in this frame and in the frame before, and this
+	 * buffer's inverse world matrix, for the births that it follows.
+	 */
+	setEmitterFollow(last: Mat4Like, now: Mat4Like, toLocal: Mat4Like): void {
+		this.views();
+		const e = this.emitterView;
+		putMatrix(e, E.last, last);
+		putMatrix(e, E.now, now);
+		putMatrix(e, E.toLocal, toLocal);
+	}
+
+	/**
+	 * Gives this buffer's world matrix and each sub-emitter's inverse world matrix for the frame's
+	 * events, in the order that the sub-emitters were configured.
+	 */
+	setEmitterEvents(world: Mat4Like, children: readonly Mat4Like[]): void {
+		this.views();
+		putMatrix(this.emitterView, E.world, world);
+		const s = this.subView;
+		const count = Math.min(children.length, this.subCount);
+		for (let k = 0; k < count; k++)
+			putMatrix(s, k * C.PARTICLE_EMITTER_SUB_MATRIX_FLOATS, children[k] as Mat4Like);
+	}
+
+	/**
+	 * Emits the emitter's particles for one frame, fires the sub-emitters that fall due, and
+	 * moves the time base when the time calls for it. The core writes the records, so this call
+	 * runs no per-birth loop. Call it once per frame, after `numbers` holds the frame's start and
+	 * end in seconds, its rate, and 1 or 0 for whether it emits and whether it is the first frame
+	 * of a prewarmed system. The numbers cross in a typed array, so no fraction crosses as a
+	 * call argument, which the browser would box.
+	 */
+	emitFrame(numbers: Float64Array): void {
+		this.views();
+		const e = this.emitterView;
+		// A buffer that the sketch destroyed bursts nothing, and its id may name a new system.
+		for (let k = 0; k < this.subBuffers.length; k++) {
+			const child = this.subBuffers[k] as ParticleBuffer;
+			e[this.subRows + k * C.PARTICLE_EMITTER_ROW_FLOATS] = child.live ? child.id : 0;
+		}
+		e[E.rate] = numbers[2] as number;
+		e[E.emitting] = numbers[3] as number;
+		e[E.from] = numbers[0] as number;
+		e[E.to] = numbers[1] as number;
+		e[E.time] = numbers[1] as number;
+		e[E.prewarm] = numbers[4] as number;
+		this.core.glue.emitParticleFrame(this.id);
+		this.updateBounds();
+	}
+
+	/**
+	 * Emits `count` particles at once, at the emitter, or at `at` in the buffer's space with the
+	 * shape's spread around it. Each particle adds `velocity` to its own start velocity, in place
+	 * of the emitter's `velocity` option.
+	 */
+	emitBurst(count: number, at?: Vec3Like, velocity?: Vec3Like): void {
+		this.views();
+		const e = this.emitterView;
+		e[E.atFlag] = at ? 1 : 0;
+		if (at) for (let k = 0; k < 3; k++) e[E.at + k] = at[k] as number;
+		e[E.velocityFlag] = velocity ? 1 : 0;
+		if (velocity) for (let k = 0; k < 3; k++) e[E.velocity + k] = velocity[k] as number;
+		this.core.glue.burstParticles(this.id, count);
+	}
+
+	/** The particles that the emitter has made so far. */
+	get emitted(): number {
+		this.views();
+		return this.emitterView[E.emitted] as number;
+	}
+
+	/**
+	 * Gives the object a culling sphere around every live particle: the births of this span of
+	 * the longest lifetime and the one before, grown by how far a particle can move. The core
+	 * keeps the births' box and turns it as the lifetimes pass.
+	 */
+	private updateBounds(): void {
+		const e = this.emitterView;
+		const o = this.bounds;
+		const center = this.center;
+		let squared = 0;
+		let moved = 0;
+		for (let c = 0; c < 3; c++) {
+			const low = e[E.box + c] as number;
+			const high = e[E.box + 3 + c] as number;
+			if (!(low <= high)) return;
+			const middle = (low + high) / 2;
+			squared += (high - middle) * (high - middle);
+			moved += (middle - (o[c] as number)) * (middle - (o[c] as number));
+			center[c] = middle;
+		}
+		const radius = Math.sqrt(squared) + this.grow;
+		const kept = o[3] as number;
+		if (Math.sqrt(moved) + radius <= kept && radius > kept * 0.8) return;
+		for (let c = 0; c < 3; c++) o[c] = center[c] as number;
+		o[3] = radius;
+		this.object.setBounds(center, radius);
+	}
+
+	/** How far a particle may move, which the culling sphere grows by. */
+	private updateGrow(size: number | undefined, aspect: number | undefined): void {
+		const add = this.emitterVelocity;
+		const extra = add ? Math.hypot(add[0] as number, add[1] as number, add[2] as number) : 0;
+		const high = Math.max(size ?? 0, this.initial.size?.[1] ?? 0.1);
+		const ratio = Math.max(1, aspect ?? this.initial.aspect ?? 1);
+		this.grow = reach(this.motion, this.emitterSpeed + extra, this.emitterLifetime) + high * ratio;
+	}
+
+	/** Keeps the emitter's copy of the motion in step with the buffer's values. */
+	private readMotion(values: ParticleValues): void {
+		const m = this.motion;
+		const { gravity, wind } = values;
+		if (gravity) {
+			m.gx = gravity[0] as number;
+			m.gy = gravity[1] as number;
+			m.gz = gravity[2] as number;
+		}
+		if (wind) {
+			m.wx = wind[0] as number;
+			m.wy = wind[1] as number;
+			m.wz = wind[2] as number;
+		}
+		m.drag = values.drag ?? m.drag;
+		m.turbulence = values.turbulence ?? m.turbulence;
+		m.turbulenceScale = values.turbulenceScale ?? m.turbulenceScale;
+		m.turbulenceSpeed = values.turbulenceSpeed ?? m.turbulenceSpeed;
+		if (values.groundHeight !== undefined) {
+			m.groundHeight = values.groundHeight;
+			if (m.groundMode === 0) m.groundMode = GROUND_MODES.bounce;
+		}
+		if (values.groundMode) m.groundMode = GROUND_MODES[values.groundMode];
+		m.restitution = values.restitution ?? m.restitution;
+		m.friction = values.friction ?? m.friction;
+		this.lastValues = values;
+		this.updateGrow(values.size?.[1], values.aspect);
 	}
 
 	/** Changes the values that `values` gives, from the next frame on; the rest keep theirs. */
@@ -470,12 +1058,68 @@ export class ParticleBuffer implements ViewHolder {
 			b[V.blendFrames] = book.blend === false || book.hold ? 0 : 1;
 			b[V.holdFrame] = book.hold ? 1 : 0;
 		}
+		this.readMotion(values);
+		this.core.glue.markParticleValues(this.id);
+	}
+
+	/**
+	 * Gives the buffer the field of air that moves its particles, or removes it, from the next frame
+	 * on. Call it once per frame for a field, because the box follows the camera and the texture's
+	 * newest layer moves. `time` is the sketch time, which the field's gust and swirl read.
+	 */
+	setWind(field: ParticleWindField | undefined, time: number): void {
+		this.views();
+		const b = this.block;
+		const e = this.emitterView;
+		// The emitter's block holds the field for its events' closed form, when the buffer has one.
+		const held = e.length >= F.windTime + 21;
+		if (!field) {
+			b.fill(0, V.airBase, V.windBox + 4);
+			this.frameValues[FRAME_WIND_TEXTURE] = 0;
+			if (held) e.fill(0, F.windTime, F.windTime + 21);
+			this.motion.windSpeed = 0;
+			this.updateGrow(this.lastValues.size?.[1], this.lastValues.aspect);
+			this.core.glue.markParticleValues(this.id);
+			return;
+		}
+		const { texture, origin, size, air } = field;
+		const vectors = [air.base, air.gust, air.swirl, air.sent];
+		for (let k = 0; k < 4; k++) {
+			const v = vectors[k] as readonly number[];
+			for (let c = 0; c < 4; c++) {
+				b[V.airBase + k * 4 + c] = (v[c] ?? 0) as number;
+				if (held) e[F.windBase + k * 4 + c] = (v[c] ?? 0) as number;
+			}
+		}
+		b[V.windField] = texture.layer;
+		b[V.windField + 1] = 1;
+		b[V.windBox] = origin[0];
+		b[V.windBox + 1] = origin[1];
+		b[V.windBox + 2] = size;
+		b[V.windBox + 3] = 0;
+		this.frameValues[FRAME_WIND_TEXTURE] = texture.handle;
+		if (held) {
+			e[F.windTime] = time;
+			e[F.windOrigin] = origin[0];
+			e[F.windOrigin + 1] = origin[1];
+			e[F.windSize] = size;
+			e[F.windStrength] = 1;
+		}
+		// The fastest air that the field holds, for the bounds that the culling sphere grows by.
+		this.motion.windSpeed =
+			Math.abs(air.base[0] ?? 0) +
+			Math.abs(air.gust[0] ?? 0) +
+			Math.abs(air.swirl[0] ?? 0) +
+			Math.abs(air.sent[2] ?? 0);
+		this.updateGrow(this.lastValues.size?.[1], this.lastValues.aspect);
 		this.core.glue.markParticleValues(this.id);
 	}
 
 	/** @internal Writes every value's default, then `values`. */
-	reset(values: ParticleValues): void {
+	reset(values: ParticleValues & { windField?: ParticleWindField }): void {
 		this.views();
+		this.initial = values;
+		this.motion = stillMotion();
 		const b = this.block;
 		b.fill(0, 0, C.PARTICLE_PARAM_FLOATS);
 		b[V.turbulenceScale] = 1;
@@ -493,6 +1137,7 @@ export class ParticleBuffer implements ViewHolder {
 		b.fill(1, V.colorOverLife, V.sizeOverLife + CURVE_STEPS);
 		b[V.additive] = this.additive ? 1 : 0;
 		this.set(values);
+		this.setWind(values.windField, 0);
 	}
 
 	/**
@@ -503,6 +1148,8 @@ export class ParticleBuffer implements ViewHolder {
 	destroy(): void {
 		if (!this.live) return;
 		this.live = false;
+		this.emitterAddress = 0;
+		this.subAddress = 0;
 		this.dropViews();
 		this.core.glue.destroyParticles(this.id);
 		this.object.scene.particleBuffers--;

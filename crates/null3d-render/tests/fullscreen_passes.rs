@@ -13,6 +13,7 @@ use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{Op, format, template};
 use null3d_gpu::mock::MockBackend;
+use null3d_gpu::pass_role::{self, PassRole};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::effects::{EFFECT_FLOATS, Effect, EffectMaps, MAX_TEXTURES};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
@@ -70,8 +71,26 @@ fn add_fullscreen<B: FrameBuilder>(
     source: PassSource,
     maps: EffectMaps,
 ) -> ViewId {
+    add_fullscreen_switched(world, name, source, maps, true)
+}
+
+/// Adds a full-screen pass as [`add_fullscreen`] does, switched `on` or off from its first frame.
+/// A pass that starts switched off has never drawn, so its passes stay out of the plan.
+fn add_fullscreen_switched<B: FrameBuilder>(
+    world: &mut World<B>,
+    name: &str,
+    source: PassSource,
+    maps: EffectMaps,
+    on: bool,
+) -> ViewId {
     let pass = Fullscreen {
         template: PASS_TEMPLATE,
+        fallback: false,
+        format: 0,
+        history: false,
+        layers: 1,
+        steps: 1,
+        reset: 0,
         source,
         depth: source == PassSource::SceneColor,
         values: [0.0; EFFECT_FLOATS],
@@ -79,6 +98,7 @@ fn add_fullscreen<B: FrameBuilder>(
     };
     let target = ViewTarget {
         halvings: 1,
+        enabled: on,
         ..ViewTarget::default()
     };
     let names = ViewNames {
@@ -134,6 +154,7 @@ fn chain<B: FrameBuilder>(world: &mut World<B>) -> (ViewId, ViewId) {
     let effect = Effect {
         template: PASS_TEMPLATE,
         depth: false,
+        bloom: None,
         values: [0.0; EFFECT_FLOATS],
         maps: one_texture(echo_texture),
     };
@@ -237,6 +258,292 @@ fn passes_chain_before_and_after_the_camera_and_bind_their_textures_on_both_path
             &format!("WebGL2, {antialias:?}"),
         );
     }
+}
+
+/// The number of draws that `view`'s full-screen pass makes in a frame's commands.
+fn fullscreen_draws(commands: &[(Op, Vec<u32>)], view: ViewId) -> usize {
+    let label = pass_role::label(PassRole::Fullscreen, view.index() as u32);
+    let mut inside = false;
+    let mut count = 0;
+    for (op, operands) in commands {
+        match op {
+            Op::BeginRenderPass => {
+                let at = operands.len().saturating_sub(2);
+                inside = operands.len() >= 2 && operands[at] == label;
+            }
+            Op::EndRenderPass => inside = false,
+            Op::Draw if inside => count += 1,
+            _ => {}
+        }
+    }
+    count
+}
+
+/// Steps `world` six times with a cadence of two on its full-screen pass, and returns how many
+/// frames of each drew it: one turn, then a frame without, and so on.
+fn cadence_draws<B: FrameBuilder>(mut world: World<B>, path: &str) {
+    let view = add_fullscreen(
+        &mut world,
+        "Cadence",
+        PassSource::SceneColor,
+        EffectMaps::NONE,
+    );
+    // A target that nothing shows is culled, so a screen reads this pass's texture.
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    let mut mock = MockBackend::default();
+    world.renderer.check_graph().unwrap();
+    // The frame that builds the pass draws it once, so the cadence starts after it.
+    world.step(&mut mock, true);
+    world.renderer.settings_mut().set_view_every(view, 2);
+    let mut draws = Vec::new();
+    for _ in 0..6 {
+        let commands = world.step(&mut mock, false);
+        draws.push(fullscreen_draws(&commands, view));
+    }
+    // A cadence of two draws in the first frame of each pair, and its target keeps the last image
+    // in the frame between.
+    assert_eq!(draws, vec![1, 0, 1, 0, 1, 0], "{path}");
+}
+
+#[test]
+fn a_cadenced_full_screen_pass_draws_in_one_frame_of_two() {
+    let (webgpu, webgl2) = worlds(Antialias::None);
+    cadence_draws(webgpu, "WebGPU");
+    cadence_draws(webgl2, "WebGL2");
+}
+
+// These tests drive a full-screen view alone. A transparent pass's place in the plan also waits on
+// whether the frame blends, and no test here drives that branch.
+/// A pass that carries a cadence keeps its place in the plan: neither the frame that its turn
+/// comes round nor the frame that it skips compiles the graph. The enabled switch beside it is the
+/// control: it changes what the plan holds, so the counter moves when the switch does.
+fn cadence_compiles_no_plan<B: FrameBuilder>(
+    mut world: World<B>,
+    graph: impl Fn(&B) -> &RenderGraph,
+    path: &str,
+) {
+    let mut mock = MockBackend::default();
+    // A pass that starts switched off has never drawn, so its passes stay out of the plan.
+    let view = add_fullscreen_switched(
+        &mut world,
+        "Cadence",
+        PassSource::SceneColor,
+        EffectMaps::NONE,
+        false,
+    );
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    world.renderer.check_graph().unwrap();
+    for frame in 0..3 {
+        world.step(&mut mock, frame == 0);
+    }
+
+    // The control: switching the pass on adds its passes to the plan, which compiles the graph.
+    let settled = graph(&world.renderer).compiles();
+    world.renderer.settings_mut().set_view_enabled(view, true);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(
+        graph(&world.renderer).compiles(),
+        settled + 1,
+        "{path}: the enabled switch moves the counter"
+    );
+    assert_eq!(
+        fullscreen_draws(&commands, view),
+        1,
+        "{path}: the switched-on pass draws"
+    );
+
+    // The cadence changes nothing that the plan holds, so the counter does not move on either kind
+    // of frame, and the pass still draws in one frame of two.
+    world.renderer.settings_mut().set_view_every(view, 2);
+    let mut draws = Vec::new();
+    for _ in 0..6 {
+        let commands = world.step(&mut mock, false);
+        draws.push(fullscreen_draws(&commands, view));
+        assert_eq!(
+            graph(&world.renderer).compiles(),
+            settled + 1,
+            "{path}: a cadence compiles no plan"
+        );
+    }
+    assert_eq!(draws, vec![1, 0, 1, 0, 1, 0], "{path}: one turn in two");
+}
+
+#[test]
+fn a_cadence_compiles_no_plan_while_the_enabled_switch_compiles() {
+    let (webgpu, webgl2) = worlds(Antialias::None);
+    cadence_compiles_no_plan(webgpu, |r| r.render_graph(), "WebGPU");
+    cadence_compiles_no_plan(webgl2, |r| r.render_graph(), "WebGL2");
+}
+
+/// A cadenced pass that is also switched keeps the two mechanisms apart: a frame that it rests
+/// draws nothing, a frame after the switch moves nothing in the plan, and the turns pace it again
+/// once it is switched on.
+fn resting_cadenced_pass_compiles_no_plan<B: FrameBuilder>(
+    mut world: World<B>,
+    graph: impl Fn(&B) -> &RenderGraph,
+    path: &str,
+) {
+    let mut mock = MockBackend::default();
+    let view = add_fullscreen(
+        &mut world,
+        "Cadence",
+        PassSource::SceneColor,
+        EffectMaps::NONE,
+    );
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    world.renderer.check_graph().unwrap();
+    for frame in 0..3 {
+        world.step(&mut mock, frame == 0);
+    }
+    world.renderer.settings_mut().set_view_every(view, 2);
+    // One frame with the pass and one without, so the cadence is in effect before the switch.
+    let mut draws = Vec::new();
+    for _ in 0..2 {
+        let commands = world.step(&mut mock, false);
+        draws.push(fullscreen_draws(&commands, view));
+    }
+    assert_eq!(draws, vec![1, 0], "{path}: the cadence is in effect");
+    let settled = graph(&world.renderer).compiles();
+
+    // The pass has drawn, so its passes stay in the plan while it rests: the switch stops the
+    // drawing without compiling anything.
+    world.renderer.settings_mut().set_view_enabled(view, false);
+    for _ in 0..4 {
+        let commands = world.step(&mut mock, false);
+        assert_eq!(
+            fullscreen_draws(&commands, view),
+            0,
+            "{path}: a resting pass draws nothing"
+        );
+        assert_eq!(
+            graph(&world.renderer).compiles(),
+            settled,
+            "{path}: a switch of a pass that has drawn compiles no plan"
+        );
+    }
+
+    // Switched on again, it draws in one frame of two, and the plan is still the same.
+    world.renderer.settings_mut().set_view_enabled(view, true);
+    let mut draws = Vec::new();
+    for _ in 0..4 {
+        let commands = world.step(&mut mock, false);
+        draws.push(fullscreen_draws(&commands, view));
+        assert_eq!(
+            graph(&world.renderer).compiles(),
+            settled,
+            "{path}: the cadence and the switch do not compile the plan"
+        );
+    }
+    assert_eq!(
+        draws,
+        vec![1, 0, 1, 0],
+        "{path}: the cadence paces the turns again"
+    );
+}
+
+#[test]
+fn a_resting_cadenced_pass_compiles_no_plan() {
+    let (webgpu, webgl2) = worlds(Antialias::None);
+    resting_cadenced_pass_compiles_no_plan(webgpu, |r| r.render_graph(), "WebGPU");
+    resting_cadenced_pass_compiles_no_plan(webgl2, |r| r.render_graph(), "WebGL2");
+}
+
+/// The format of the target that a fallback pass declaring `declared` draws into, on the WebGL2
+/// path with an 8-bit canvas, where the scene color cannot hold a compute pass's own values.
+fn fallback_target_format(declared: u32) -> u32 {
+    let canvas = CanvasOutput {
+        scene_color: SceneColor::EIGHT_BIT,
+        antialias: Antialias::None,
+        transparent: false,
+    };
+    let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        canvas,
+        multi_draw: true,
+        ..CpuCulledConfig::default()
+    }));
+    let pass = Fullscreen {
+        template: PASS_TEMPLATE,
+        fallback: true,
+        format: declared,
+        history: false,
+        layers: 1,
+        steps: 1,
+        reset: 0,
+        source: PassSource::None,
+        depth: false,
+        values: [0.0; EFFECT_FLOATS],
+        maps: EffectMaps::NONE,
+    };
+    let view = world
+        .renderer
+        .settings_mut()
+        .add_named_view(
+            View::fullscreen(
+                pass,
+                ViewTarget {
+                    shown: true,
+                    ..ViewTarget::default()
+                },
+            ),
+            ViewNames {
+                pass: "Fallback".into(),
+                target: "fallback".into(),
+                reads: Vec::new(),
+            },
+        )
+        .unwrap();
+    // A target that nothing shows is culled, so a screen reads this pass's texture.
+    let shown = world.show(view);
+    add_screen(&mut world, shown);
+    world.renderer.check_graph().unwrap();
+    let mut mock = MockBackend::default();
+    let mut commands = Vec::new();
+    for frame in 0..3 {
+        commands.extend(world.step(&mut mock, frame == 0));
+    }
+    let label = pass_role::label(PassRole::Fullscreen, view.index() as u32);
+    let target = commands
+        .iter()
+        .find_map(|(op, operands)| {
+            (*op == Op::BeginRenderPass
+                && operands.len() >= 2
+                && (operands[operands.len() - 1] == label || operands[operands.len() - 2] == label))
+                .then(|| operands[0])
+        })
+        .expect("the fallback pass draws");
+    // The pass draws into a view of the target's only layer, so a view names its texture.
+    let texture = commands
+        .iter()
+        .find_map(|(op, operands)| {
+            (*op == Op::CreateTextureView && operands[0] == target && operands.len() > 1)
+                .then(|| operands[1])
+        })
+        .unwrap_or(target);
+    commands
+        .iter()
+        .find_map(|(op, operands)| {
+            (*op == Op::CreateTexture && operands[0] == texture && operands.len() > 4)
+                .then(|| operands[4])
+        })
+        .expect("the pass's target is made")
+}
+
+#[test]
+fn a_fallback_pass_keeps_the_format_its_compute_pass_declares() {
+    assert_eq!(
+        fallback_target_format(format::RGBA16_FLOAT),
+        format::RGBA16_FLOAT,
+        "the fragment form writes its compute pass's format"
+    );
+    // A fragment form that declares no format keeps the scene's own.
+    assert_eq!(
+        fallback_target_format(0),
+        format::RGBA8_UNORM_SRGB,
+        "a pass without a declared format keeps the scene's"
+    );
 }
 
 /// Records warm-up frames of `world`'s chain, then frames in which the passes' uniforms and the

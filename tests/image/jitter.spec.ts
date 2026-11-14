@@ -14,14 +14,21 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 	test(`a flight far from the origin moves as the flight at the origin does, on ${gpu}`, async ({
 		page,
 	}) => {
-		test.setTimeout(180_000);
+		// CI's software GPU drew this page in 120 seconds on webgl2 and in 12.9 on compat, in run
+		// 39977400113. The same run gave the webgpu tier no result in 150 seconds, and no run so far
+		// has seen that tier finish. Both waits allow twice the webgl2 figure, and the limit clears
+		// them.
+		test.setTimeout(270_000);
 		const warnings: string[] = [];
 		page.on('console', (message) => {
 			if (message.type() === 'warning' && message.text().includes('grid cells are in use'))
 				warnings.push(message.text());
 		});
 		await page.goto(`jitter.html?gpu=${gpu}&images`);
-		const result = await pageResult<JitterResult>(page, 150_000);
+		// On CI's software renderer the WebGL2 tier takes 120 seconds over this page, and the WebGPU
+		// tier has not been seen to finish it. The wait is four times the WebGL2 figure, and a tier
+		// that still fails needs the page looked at rather than the wait.
+		const result = await pageResult<JitterResult>(page, 480_000);
 		expect(result.error).toBeUndefined();
 		saveJitterResult(join(REPO_ROOT, 'test-results', 'jitter', gpu), result);
 		console.log(jitterRows(gpu, result).join('\n'));

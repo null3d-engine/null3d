@@ -171,10 +171,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		expect(ktx2Downloads(requests)).toEqual({ loader: 1, task: 0, wasm: 0 });
 	});
 
-	test(`?texture-cache=off transcodes KTX2 files on every visit, and stores nothing, on ${gpu}`, async ({
+	test(`?derived-cache=off transcodes KTX2 files on every visit, and stores nothing, on ${gpu}`, async ({
 		page,
 	}) => {
-		const query = `gpu=${gpu}&texture-cache=off`;
+		const query = `gpu=${gpu}&derived-cache=off`;
 		const first = await cacheVisit(page, query);
 		const second = await cacheVisit(page, query);
 		expect([first.entriesAfter, second.entriesBefore]).toEqual([0, 0]);

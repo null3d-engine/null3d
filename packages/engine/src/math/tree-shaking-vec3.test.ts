@@ -2,14 +2,19 @@
 // a module calls and drops the rest. This builds one small sketch for production, as the Vite
 // plugin does, and reads which helpers the bundle holds.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { bundle, helpersIn } from '../../../../tests/lib/tree-shaking-build.ts';
 
 describe('the math helpers', () => {
-	it('reach a bundle only when a module calls them', async () => {
-		const code = await bundle(`
+	it(
+		'reach a bundle only when a module calls them',
+		async () => {
+			const code = await bundle(`
 			import { vec3 } from '@null3d/engine';
 			export const sum = vec3.add(vec3.create(), [1, 2, 3], [4, 5, 6]);
 		`);
-		expect(helpersIn(code)).toEqual(['vec3', 'vec3.add', 'vec3.create']);
-	}, 60_000);
+			expect(helpersIn(code)).toEqual(['vec3', 'vec3.add', 'vec3.create']);
+		},
+		scaledBudget(60_000),
+	);
 });

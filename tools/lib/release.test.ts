@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { fixture } from './fixture';
 import {
 	applyOverride,
@@ -31,6 +32,49 @@ import {
 const repoRoot = join(import.meta.dir, '../..');
 const commit = (subject: string, body = '', hash = 'abc1234') =>
 	parseCommit({ subject, body, hash });
+
+/**
+ * The variables with which a git hook names the repository it guards to every process it starts.
+ * Git obeys them over the working directory, so code that must keep to a repository of its own
+ * removes them.
+ */
+const HOOK_REPOSITORY_VARIABLES = [
+	'GIT_DIR',
+	'GIT_WORK_TREE',
+	'GIT_INDEX_FILE',
+	'GIT_COMMON_DIR',
+	'GIT_OBJECT_DIRECTORY',
+	'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+	'GIT_NAMESPACE',
+	'GIT_PREFIX',
+] as const;
+
+/**
+ * The environment for a git command that must read the repository its own working directory names.
+ * The user's settings and hooks stay out, and so do a runner's repository and a hook's repository,
+ * which would otherwise outrank the directory.
+ */
+function repositoryFreeEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		GIT_CONFIG_GLOBAL: '/dev/null',
+		GIT_CONFIG_SYSTEM: '/dev/null',
+	};
+	for (const name of ['GITHUB_REPOSITORY', 'GITHUB_SERVER_URL', 'GITHUB_API_URL']) delete env[name];
+	for (const name of HOOK_REPOSITORY_VARIABLES) delete env[name];
+	return env;
+}
+
+/** A git command that keeps to the folder it runs in, under the test's own identity. */
+function gitIn(dir: string) {
+	const env = repositoryFreeEnv();
+	return (...args: string[]) =>
+		execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+			cwd: dir,
+			env,
+			encoding: 'utf8',
+		}).trim();
+}
 
 /** The lines under a heading of the notes, up to the next heading of the same level. */
 function extractSection(notes: string, heading: string): string {
@@ -243,96 +287,85 @@ describe('fitReleaseText', () => {
 describe('the notes of a history with branch merges', () => {
 	// It runs many git commands and the release command. A busy machine slows a whole file's tests
 	// to a crawl, and a loaded Mac runs them at background priority, so the limit is generous.
-	it('list every commit since the last release once, whichever branch brought it', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'null3d-release-notes-'));
-		// The user's own git settings, such as commit signing and hooks, stay out of the test.
-		const env: NodeJS.ProcessEnv = {
-			...process.env,
-			GIT_CONFIG_GLOBAL: '/dev/null',
-			GIT_CONFIG_SYSTEM: '/dev/null',
-		};
-		// The release command links its commits when it knows the repository, and the notes built in
-		// this process are told nothing of one. A runner sets that knowledge in the environment, so
-		// it comes out here: both sides then render the same history the same way.
-		for (const name of ['GITHUB_REPOSITORY', 'GITHUB_SERVER_URL', 'GITHUB_API_URL'])
-			delete env[name];
-		const git = (...args: string[]) =>
-			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-				cwd: dir,
-				env,
-				encoding: 'utf8',
-			}).trim();
-		const commitOn = (subject: string) => {
-			git('commit', '--quiet', '--allow-empty', '-m', subject);
-			return git('rev-parse', 'HEAD');
-		};
-		try {
-			git('init', '--quiet', '--initial-branch=main');
-			writeFileSync(join(dir, 'README.md'), '# Fake\n');
-			mkdirSync(join(dir, 'packages/engine'), { recursive: true });
-			writeFileSync(join(dir, 'packages/engine/package.json'), '{ "version": "0.1.0" }\n');
-			git('add', '.');
-			commitOn('chore: start');
-			commitOn('feat(engine): ship the first release');
+	it(
+		'list every commit since the last release once, whichever branch brought it',
+		async () => {
+			const dir = mkdtempSync(join(tmpdir(), 'null3d-release-notes-'));
+			const env = repositoryFreeEnv();
+			const git = gitIn(dir);
+			const commitOn = (subject: string) => {
+				git('commit', '--quiet', '--allow-empty', '-m', subject);
+				return git('rev-parse', 'HEAD');
+			};
+			try {
+				git('init', '--quiet', '--initial-branch=main');
+				writeFileSync(join(dir, 'README.md'), '# Fake\n');
+				mkdirSync(join(dir, 'packages/engine'), { recursive: true });
+				writeFileSync(join(dir, 'packages/engine/package.json'), '{ "version": "0.1.0" }\n');
+				git('add', '.');
+				commitOn('chore: start');
+				commitOn('feat(engine): ship the first release');
 
-			// A branch that starts before the release and lands after it.
-			git('switch', '--quiet', '-c', 'late');
-			const late = commitOn('fix(engine): keep frames paced');
-			git('switch', '--quiet', 'main');
-			git('tag', '0.1.0');
-			const onMain = commitOn('perf(render): skip empty passes');
+				// A branch that starts before the release and lands after it.
+				git('switch', '--quiet', '-c', 'late');
+				const late = commitOn('fix(engine): keep frames paced');
+				git('switch', '--quiet', 'main');
+				git('tag', '0.1.0');
+				const onMain = commitOn('perf(render): skip empty passes');
 
-			// Two branches that land the same change under the same subject.
-			git('switch', '--quiet', '-c', 'one');
-			const firstCopy = commitOn('feat(engine): blend clips with inertia');
-			git('switch', '--quiet', 'main');
-			git('merge', '--quiet', '--no-ff', 'one', '-m', 'Merge branch one');
-			git('switch', '--quiet', '-c', 'two', 'main~1');
-			const docs = commitOn('docs(dev): record D-174, the probe');
-			const secondCopy = commitOn('feat(engine): blend clips with inertia');
-			git('merge', '--quiet', '--no-ff', 'main', '-m', 'Merge main into two');
-			git('switch', '--quiet', 'main');
-			git('merge', '--quiet', '--no-ff', 'two', '-m', 'Merge branch two');
-			git('merge', '--quiet', '--no-ff', 'late', '-m', 'Merge branch late');
-			commitOn('chore(release): 0.2.0');
+				// Two branches that land the same change under the same subject.
+				git('switch', '--quiet', '-c', 'one');
+				const firstCopy = commitOn('feat(engine): blend clips with inertia');
+				git('switch', '--quiet', 'main');
+				git('merge', '--quiet', '--no-ff', 'one', '-m', 'Merge branch one');
+				git('switch', '--quiet', '-c', 'two', 'main~1');
+				const docs = commitOn('docs(dev): record D-174, the probe');
+				const secondCopy = commitOn('feat(engine): blend clips with inertia');
+				git('merge', '--quiet', '--no-ff', 'main', '-m', 'Merge main into two');
+				git('switch', '--quiet', 'main');
+				git('merge', '--quiet', '--no-ff', 'two', '-m', 'Merge branch two');
+				git('merge', '--quiet', '--no-ff', 'late', '-m', 'Merge branch late');
+				commitOn('chore(release): 0.2.0');
 
-			const commits: ParsedCommit[] = [];
-			for await (const c of readCommits(dir, '0.1.0..HEAD'))
-				if (!isReleaseCommit(c)) commits.push(c);
-			expect(commits.map((c) => c.hash).sort()).toEqual(
-				[late, onMain, firstCopy, secondCopy, docs].sort(),
-			);
+				const commits: ParsedCommit[] = [];
+				for await (const c of readCommits(dir, '0.1.0..HEAD'))
+					if (!isReleaseCommit(c)) commits.push(c);
+				expect(commits.map((c) => c.hash).sort()).toEqual(
+					[late, onMain, firstCopy, secondCopy, docs].sort(),
+				);
 
-			const notes = renderChangelog({
-				version: '0.2.0',
-				date: 'd',
-				commits,
-				packages: packageFolders(dir),
-				previousTag: '0.1.0',
-			});
-			expect(notes).not.toContain('Merge');
-			expect(notes).not.toContain('Ship the first release');
-			expect(notes).toContain('- Keep frames paced');
-			expect(notes).toContain('- Skip empty passes');
-			expect(notes).toContain('- Record the probe');
-			const blended = notes.split('\n').filter((l) => l.includes('Blend clips with inertia'));
-			expect(blended).toHaveLength(1);
-			for (const hash of [firstCopy, secondCopy]) expect(blended[0]).toContain(hash.slice(0, 9));
+				const notes = renderChangelog({
+					version: '0.2.0',
+					date: 'd',
+					commits,
+					packages: packageFolders(dir),
+					previousTag: '0.1.0',
+				});
+				expect(notes).not.toContain('Merge');
+				expect(notes).not.toContain('Ship the first release');
+				expect(notes).toContain('- Keep frames paced');
+				expect(notes).toContain('- Skip empty passes');
+				expect(notes).toContain('- Record the probe');
+				const blended = notes.split('\n').filter((l) => l.includes('Blend clips with inertia'));
+				expect(blended).toHaveLength(1);
+				for (const hash of [firstCopy, secondCopy]) expect(blended[0]).toContain(hash.slice(0, 9));
 
-			// The release command, run in the same history, prints the same notes.
-			const printed = execFileSync('bun', [join(repoRoot, 'tools/release.ts')], {
-				cwd: dir,
-				env,
-				encoding: 'utf8',
-				stdio: ['ignore', 'pipe', 'ignore'],
-			});
-			expect(printed).toStartWith('version: 0.1.1 (bump: patch, previous: 0.1.0)');
-			const body = (text: string) => text.slice(text.indexOf('\n###')).trimEnd();
-			expect(body(printed)).toBe(body(notes));
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	}, 120_000);
+				// The release command, run in the same history, prints the same notes.
+				const printed = execFileSync('bun', [join(repoRoot, 'tools/release.ts')], {
+					cwd: dir,
+					env,
+					encoding: 'utf8',
+					stdio: ['ignore', 'pipe', 'ignore'],
+				});
+				expect(printed).toStartWith('version: 0.1.1 (bump: patch, previous: 0.1.0)');
+				const body = (text: string) => text.slice(text.indexOf('\n###')).trimEnd();
+				expect(body(printed)).toBe(body(notes));
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		},
+		scaledBudget(120_000),
+	);
 
 	it('fails when git cannot read the range', async () => {
 		const read = async () => {
@@ -340,6 +373,73 @@ describe('the notes of a history with branch merges', () => {
 		};
 		await expect(read()).rejects.toThrow('git log no-such-tag..HEAD failed');
 	});
+});
+
+describe('a repository named by a git hook', () => {
+	// The push hook runs this file and hands the repository it guards to every process it starts. This
+	// builds a repository of the same shape, a linked worktree included, and names it to the history
+	// helper and to the reader. Neither may reach it: the helper would commit into the worktree and
+	// make the shared config bare, and the reader would read the wrong history.
+	it(
+		'leaves the repository the hook names unchanged',
+		async () => {
+			const root = mkdtempSync(join(tmpdir(), 'null3d-hook-guard-'));
+			const guarded = join(root, 'guarded');
+			const linked = join(root, 'linked');
+			const history = join(root, 'history');
+			const guard = gitIn(root);
+			try {
+				mkdirSync(guarded);
+				mkdirSync(history);
+				guard('init', '--quiet', '--initial-branch=main', guarded);
+				writeFileSync(join(guarded, 'README.md'), '# Guarded\n');
+				guard('-C', guarded, 'add', '.');
+				guard('-C', guarded, 'commit', '--quiet', '-m', 'chore: the repository a hook guards');
+				guard('-C', guarded, 'worktree', 'add', '--quiet', '-b', 'guarded-branch', linked);
+
+				// A linked worktree's git directory holds its branch, and the config it shares holds a bare
+				// flag that a re-initialisation sets, so the three name the damage the fault did.
+				const state = () => ({
+					refs: guard('-C', guarded, 'for-each-ref', '--format=%(refname) %(objectname)'),
+					head: gitIn(linked)('rev-parse', 'HEAD'),
+					bare: guard('-C', guarded, 'config', '--local', '--get', 'core.bare'),
+				});
+				const before = state();
+
+				const saved = HOOK_REPOSITORY_VARIABLES.map((name) => [name, process.env[name]] as const);
+				process.env.GIT_DIR = join(guarded, '.git', 'worktrees', 'linked');
+				try {
+					// The helper that builds the notes test's history, run in a folder of its own.
+					const build = gitIn(history);
+					build('init', '--quiet', '--initial-branch=main');
+					writeFileSync(join(history, 'README.md'), '# History\n');
+					build('add', '.');
+					build('commit', '--quiet', '-m', 'chore: start');
+					build('commit', '--quiet', '--allow-empty', '-m', 'feat(engine): ship it');
+					build('switch', '--quiet', '-c', 'late');
+
+					// Building that history must not have reached the repository the hook named.
+					const after = state();
+					expect(after.refs).toBe(before.refs);
+					expect(after.head).toBe(before.head);
+					expect(after.bare).toBe(before.bare);
+
+					// The reader reads that history, not the one the hook named.
+					const read: string[] = [];
+					for await (const entry of readCommits(history, 'HEAD')) read.push(entry.description);
+					expect(read).toEqual(['ship it', 'start']);
+				} finally {
+					for (const [name, value] of saved) {
+						if (value === undefined) delete process.env[name];
+						else process.env[name] = value;
+					}
+				}
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		},
+		scaledBudget(30_000),
+	);
 });
 
 describe('the changelog file', () => {
@@ -396,7 +496,9 @@ describe('version copies', () => {
 	it('rewrites every kind of copy in place', () => {
 		const root = fixture({
 			'packages/engine/package.json': '{\n\t"name": "e",\n\t"version": "0.0.0"\n}\n',
-			'packages/engine/src/index.ts': "export const VERSION = '0.0.0';\n",
+			'packages/engine/src/shared/version.ts': "export const VERSION = '0.0.0';\n",
+			'packages/controls/package.json': '{\n\t"name": "c",\n\t"version": "0.0.0"\n}\n',
+			'packages/controls/src/version.ts': "export const VERSION = '0.0.0';\n",
 			'Cargo.toml':
 				'[workspace]\nmembers = ["crates/*"]\n\n[workspace.package]\nversion = "0.0.0"\n',
 			'crates/core/Cargo.toml': '[package]\nname = "demo-core"\nversion.workspace = true\n',
@@ -411,7 +513,8 @@ describe('version copies', () => {
 		}
 		const read = (path: string) => readFileSync(join(root, path), 'utf8');
 		expect(read('packages/engine/package.json')).toContain('"version": "0.1.0"');
-		expect(read('packages/engine/src/index.ts')).toBe("export const VERSION = '0.1.0';\n");
+		expect(read('packages/engine/src/shared/version.ts')).toBe("export const VERSION = '0.1.0';\n");
+		expect(read('packages/controls/src/version.ts')).toBe("export const VERSION = '0.1.0';\n");
 		expect(read('Cargo.toml')).toContain('[workspace.package]\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "demo-core"\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "other"\nversion = "0.0.0"');
@@ -429,7 +532,8 @@ describe('version copies', () => {
 		const paths = new Set(copies.map((c) => c.path));
 		for (const path of [
 			'packages/engine/package.json',
-			'packages/engine/src/index.ts',
+			'packages/engine/src/shared/version.ts',
+			'packages/controls/src/version.ts',
 			'Cargo.toml',
 			'Cargo.lock',
 			'.claude-plugin/marketplace.json',

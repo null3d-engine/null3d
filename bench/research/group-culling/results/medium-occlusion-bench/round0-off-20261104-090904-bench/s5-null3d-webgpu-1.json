@@ -1,0 +1,874 @@
+{
+	"page": "bench",
+	"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+	"url": "http://localhost:5175/bench/pages/null3d/s5.html?gpu=webgpu&preset=medium&direct=off&occlusion=off&still-camera=off",
+	"calibrationMs": 0.8699999898672104,
+	"ok": true,
+	"scene": "s5",
+	"renderer": "null3d",
+	"tier": "webgpu",
+	"mode": {
+		"build": "threaded",
+		"latency": "pipelined",
+		"sketchThread": "worker",
+		"renderThread": "render-worker",
+		"jobWorkers": 16,
+		"hold": null,
+		"preset": "medium",
+		"presetCheck": null,
+		"crashedStarts": 0,
+		"memoryMaximumMiB": 1024,
+		"renderFallback": null,
+		"keepTextureCopies": false
+	},
+	"drawPath": "forced",
+	"n": 500,
+	"canvas": {
+		"width": 1400,
+		"height": 778,
+		"pixelRatio": 1
+	},
+	"frames": 11115,
+	"cpuMs": {
+		"count": 11115,
+		"median": 1.125,
+		"p95": 1.4149999618530273,
+		"p99": 1.5550000667572021,
+		"max": 2.609999895095825,
+		"min": 0.7849999666213989,
+		"mean": 1.1374691846828657
+	},
+	"intervalMs": {
+		"count": 11116,
+		"median": 2.740000009536743,
+		"p95": 3.2750000953674316,
+		"p99": 3.879250097274782,
+		"max": 7.610000133514404,
+		"min": 1.024999976158142,
+		"mean": 2.7007282303794335
+	},
+	"stats": {
+		"seconds": 30.00192000000179,
+		"frames": 11115,
+		"updatedFps": 370.2733309002708,
+		"updateErrors": 0,
+		"cpuMs": {
+			"count": 11115,
+			"median": 1.125,
+			"p95": 1.4149999618530273,
+			"p99": 1.5550000667572021,
+			"max": 2.609999895095825,
+			"min": 0.7849999666213989,
+			"mean": 1.1374691846828657
+		},
+		"cpuMsAllThreads": {
+			"count": 11115,
+			"median": 2.4510000091977417,
+			"p95": 3.4022999495267863,
+			"p99": 3.612000032775104,
+			"max": 4.418000071775168,
+			"min": 1.5649999976158142,
+			"mean": 2.4309351341119365
+		},
+		"threads": {
+			"sketch-worker": {
+				"busyMs": {
+					"count": 11115,
+					"median": 1.125,
+					"p95": 1.4149999618530273,
+					"p99": 1.5550000667572021,
+					"max": 2.609999895095825,
+					"min": 0.7849999666213989,
+					"mean": 1.137440844596746
+				},
+				"phases": {
+					"update": {
+						"count": 11115,
+						"median": 0.040000006556510925,
+						"p95": 0.05500000715255737,
+						"p99": 0.06999999284744263,
+						"max": 0.7900000214576721,
+						"min": 0.024999991059303284,
+						"mean": 0.04225910932455736
+					},
+					"commands": {
+						"count": 11115,
+						"median": 0,
+						"p95": 0.01000000536441803,
+						"p99": 0.015000000596046448,
+						"max": 0.10000000894069672,
+						"min": 0,
+						"mean": 0.0034039586313233095
+					},
+					"transforms": {
+						"count": 11115,
+						"median": 0.8350000381469727,
+						"p95": 1.0750000476837158,
+						"p99": 1.1749999523162842,
+						"max": 2.234999895095825,
+						"min": 0.5600000023841858,
+						"mean": 0.8428371563882265
+					},
+					"batches": {
+						"count": 11115,
+						"median": 0,
+						"p95": 0.005000010132789612,
+						"p99": 0.005000010132789612,
+						"max": 0.040000006556510925,
+						"min": 0,
+						"mean": 0.0012959964080699864
+					},
+					"cull": {
+						"count": 11115,
+						"median": 0.019999995827674866,
+						"p95": 0.030000001192092896,
+						"p99": 0.034999996423721313,
+						"max": 0.10500000417232513,
+						"min": 0.009999990463256836,
+						"mean": 0.020478632496489742
+					},
+					"record": {
+						"count": 11115,
+						"median": 0.22500000894069672,
+						"p95": 0.2750000059604645,
+						"p99": 0.3149999976158142,
+						"max": 0.550000011920929,
+						"min": 0.16500000655651093,
+						"mean": 0.22693567104935913
+					}
+				}
+			},
+			"render-worker": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0.6549999713897705,
+					"p95": 0.7749999761581421,
+					"p99": 0.8550000190734863,
+					"max": 1.6100000143051147,
+					"min": 0.5249999761581421,
+					"mean": 0.6659392731767809
+				},
+				"phases": {
+					"replay": {
+						"count": 11115,
+						"median": 0.6549999713897705,
+						"p95": 0.7749999761581421,
+						"p99": 0.8500000238418579,
+						"max": 1.6050000190734863,
+						"min": 0.5249999761581421,
+						"mean": 0.6638803442104733
+					}
+				}
+			},
+			"job-0": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.289000004529953,
+					"min": 0,
+					"mean": 0.03794170045367184
+				},
+				"phases": {}
+			},
+			"job-1": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.15399999916553497,
+					"p99": 0.20399999618530273,
+					"max": 0.30399999022483826,
+					"min": 0,
+					"mean": 0.03890193435993989
+				},
+				"phases": {}
+			},
+			"job-2": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.2840000092983246,
+					"min": 0,
+					"mean": 0.03825542066146562
+				},
+				"phases": {}
+			},
+			"job-3": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0.004000000189989805,
+					"p95": 0.15399999916553497,
+					"p99": 0.2083000048995047,
+					"max": 0.2840000092983246,
+					"min": 0,
+					"mean": 0.040104903313413
+				},
+				"phases": {}
+			},
+			"job-4": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.15399999916553497,
+					"p99": 0.2083000048995047,
+					"max": 0.30399999022483826,
+					"min": 0,
+					"mean": 0.03967503378757628
+				},
+				"phases": {}
+			},
+			"job-5": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0.004000000189989805,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.33399999141693115,
+					"min": 0,
+					"mean": 0.0397746288902585
+				},
+				"phases": {}
+			},
+			"job-6": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.3840000033378601,
+					"min": 0,
+					"mean": 0.037877103042157446
+				},
+				"phases": {}
+			},
+			"job-7": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0.004000000189989805,
+					"p95": 0.15399999916553497,
+					"p99": 0.20900000631809235,
+					"max": 0.2840000092983246,
+					"min": 0,
+					"mean": 0.04021232571449505
+				},
+				"phases": {}
+			},
+			"job-8": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0.004000000189989805,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.3089999854564667,
+					"min": 0,
+					"mean": 0.038962843071910655
+				},
+				"phases": {}
+			},
+			"job-9": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.15399999916553497,
+					"p99": 0.20399999618530273,
+					"max": 0.3089999854564667,
+					"min": 0,
+					"mean": 0.039773909171588226
+				},
+				"phases": {}
+			},
+			"job-10": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.30399999022483826,
+					"min": 0,
+					"mean": 0.03866720651869222
+				},
+				"phases": {}
+			},
+			"job-11": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0.008999999612569809,
+					"p95": 0.15399999916553497,
+					"p99": 0.20900000631809235,
+					"max": 0.39899998903274536,
+					"min": 0,
+					"mean": 0.04055951419414209
+				},
+				"phases": {}
+			},
+			"job-12": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.32899999618530273,
+					"min": 0,
+					"mean": 0.037883400861123594
+				},
+				"phases": {}
+			},
+			"job-13": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.4690000116825104,
+					"min": 0,
+					"mean": 0.03850796224094435
+				},
+				"phases": {}
+			},
+			"job-14": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0,
+					"p95": 0.14900000393390656,
+					"p99": 0.20399999618530273,
+					"max": 0.29899999499320984,
+					"min": 0,
+					"mean": 0.03858182640114462
+				},
+				"phases": {}
+			},
+			"job-15": {
+				"busyMs": {
+					"count": 11115,
+					"median": 0.008999999612569809,
+					"p95": 0.1589999943971634,
+					"p99": 0.20900000631809235,
+					"max": 0.3440000116825104,
+					"min": 0,
+					"mean": 0.04187530365588627
+				},
+				"phases": {}
+			}
+		},
+		"gpuMs": {
+			"count": 1011,
+			"median": 3.3163249492645264,
+			"p95": 3.928460478782654,
+			"p99": 4.1421160697937,
+			"max": 4.48638916015625,
+			"min": 2.4285049438476562,
+			"mean": 3.307371081985187
+		},
+		"gpuPassMs": [
+			{
+				"name": "compute",
+				"ms": {
+					"count": 1011,
+					"median": 0.032999999821186066,
+					"p95": 0.03510349988937378,
+					"p99": 0.03727349936962127,
+					"max": 0.1308320015668869,
+					"min": 0.029874000698328018,
+					"mean": 0.033211478672398424
+				}
+			},
+			{
+				"name": "shadow cascade 0",
+				"ms": {
+					"count": 1011,
+					"median": 0.4105769991874695,
+					"p95": 0.42316050827503204,
+					"p99": 0.4439890950918198,
+					"max": 0.639240026473999,
+					"min": 0.3731609880924225,
+					"mean": 0.40611902457080656
+				}
+			},
+			{
+				"name": "shadow cascade 1",
+				"ms": {
+					"count": 1011,
+					"median": 0.32791200280189514,
+					"p95": 0.3435780107975006,
+					"p99": 0.3618065059185028,
+					"max": 0.5564500093460083,
+					"min": 0.2993699908256531,
+					"mean": 0.3267479383273365
+				}
+			},
+			{
+				"name": "shadow cascade 2",
+				"ms": {
+					"count": 1011,
+					"median": 0.2334129959344864,
+					"p95": 0.2545585036277771,
+					"p99": 0.27528700530529016,
+					"max": 0.41686901450157166,
+					"min": 0.21495600044727325,
+					"mean": 0.23513122949413917
+				}
+			},
+			{
+				"name": "opaque",
+				"ms": {
+					"count": 1011,
+					"median": 1.8873050212860107,
+					"p95": 2.050489902496338,
+					"p99": 2.309598398208618,
+					"max": 2.479046106338501,
+					"min": 1.691683053970337,
+					"mean": 1.89504660284248
+				}
+			},
+			{
+				"name": "final",
+				"ms": {
+					"count": 1011,
+					"median": 1.2542309761047363,
+					"p95": 1.4074989557266235,
+					"p99": 1.6256673216819761,
+					"max": 1.82463800907135,
+					"min": 1.094565987586975,
+					"mean": 1.2667025518700348
+				}
+			},
+			{
+				"name": "between passes",
+				"ms": {
+					"count": 1011,
+					"median": 0,
+					"p95": 0,
+					"p99": 0,
+					"max": 0,
+					"min": 0,
+					"mean": 0
+				}
+			},
+			{
+				"name": "copies",
+				"ms": {
+					"count": 1001,
+					"median": 0.5944910049438477,
+					"p95": 1.2632310390472412,
+					"p99": 1.4318950176239014,
+					"max": 1.9228450059890747,
+					"min": 0.00045900000259280205,
+					"mean": 0.5925639441147187
+				}
+			}
+		],
+		"gpuStepMs": null,
+		"intervalMs": {
+			"count": 11116,
+			"median": 2.740000009536743,
+			"p95": 3.2750000953674316,
+			"p99": 3.879250097274782,
+			"max": 7.610000133514404,
+			"min": 1.024999976158142,
+			"mean": 2.7007282303794335
+		},
+		"presentedFps": 370.2705028782207,
+		"completedFps": 370.2702560922166,
+		"gpuLatencyMs": {
+			"count": 11116,
+			"median": 4.704999923706055,
+			"p95": 5.550000190734863,
+			"p99": 5.9492498636245745,
+			"max": 10.335000038146973,
+			"min": 3.2200000286102295,
+			"mean": 4.7070227608744215
+		},
+		"uploadBytes": {
+			"count": 11116,
+			"median": 1616020,
+			"p95": 1616020,
+			"p99": 1616020,
+			"max": 1616020,
+			"min": 1616020,
+			"mean": 1616020
+		},
+		"drawCalls": {
+			"count": 11116,
+			"median": 42,
+			"p95": 42,
+			"p99": 42,
+			"max": 42,
+			"min": 42,
+			"mean": 42
+		},
+		"triangles": {
+			"count": 11116,
+			"median": 1,
+			"p95": 1,
+			"p99": 1,
+			"max": 1,
+			"min": 1,
+			"mean": 1
+		},
+		"visibleEntries": null,
+		"occludedEntries": null,
+		"rebuilds": 0,
+		"pipelines": 0,
+		"skippedDraws": 0,
+		"gpuObjects": 0,
+		"memory": {
+			"wasmBytes": 39714816,
+			"jsHeap": {
+				"bytes": 1318446548,
+				"byScope": {
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/job-worker-BDOamyk9.js": 1127972928,
+					"Window http://localhost:5175/bench/pages/null3d/s5.html?gpu=webgpu&preset=medium&direct=off&occlusion=off&still-camera=off": 93785026,
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/sketch-worker-LwAQ9kCD.js": 47401498,
+					"shared": 529893,
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/render-worker-C2OAvYjt.js": 47892413,
+					"DedicatedWorkerGlobalScope http://localhost:5175/bench/assets/gltf-worker-Bz6YBh6v.js": 864790
+				}
+			},
+			"jsHeapSamples": [
+				{
+					"atSeconds": 18.011810000002384,
+					"bytes": 1283568823
+				},
+				{
+					"atSeconds": 27.03042999999225,
+					"bytes": 1318446548
+				}
+			],
+			"jsHeapNote": null
+		},
+		"load": {
+			"engineStartMs": 688.75,
+			"probeMs": 86.21500000357628,
+			"coreMs": 6.700000002980232,
+			"firstFrameMs": 1291.4150390625,
+			"firstFrameDoneMs": 1317.68017578125,
+			"warmUpMs": 278.81494140625,
+			"firstDrawMs": 3.4100000113248825,
+			"firstFramePipelines": 14,
+			"firstFramePreset": "medium"
+		},
+		"gpuLosses": 0,
+		"downloadBytes": {
+			"wasm": 1978900
+		},
+		"lostRecords": 0,
+		"completionSignal": "queue",
+		"refreshHz": 48,
+		"mainThread": {
+			"longTasks": 0,
+			"longestTaskMs": 0,
+			"inputDelayMs": null
+		},
+		"perSecond": [
+			{
+				"presentedFps": 351,
+				"completedFps": 351
+			},
+			{
+				"presentedFps": 360,
+				"completedFps": 360
+			},
+			{
+				"presentedFps": 368,
+				"completedFps": 368
+			},
+			{
+				"presentedFps": 372,
+				"completedFps": 372
+			},
+			{
+				"presentedFps": 380,
+				"completedFps": 380
+			},
+			{
+				"presentedFps": 380,
+				"completedFps": 380
+			},
+			{
+				"presentedFps": 384,
+				"completedFps": 384
+			},
+			{
+				"presentedFps": 383,
+				"completedFps": 383
+			},
+			{
+				"presentedFps": 379,
+				"completedFps": 379
+			},
+			{
+				"presentedFps": 367,
+				"completedFps": 367
+			},
+			{
+				"presentedFps": 364,
+				"completedFps": 364
+			},
+			{
+				"presentedFps": 366,
+				"completedFps": 366
+			},
+			{
+				"presentedFps": 369,
+				"completedFps": 369
+			},
+			{
+				"presentedFps": 368,
+				"completedFps": 368
+			},
+			{
+				"presentedFps": 371,
+				"completedFps": 371
+			},
+			{
+				"presentedFps": 381,
+				"completedFps": 381
+			},
+			{
+				"presentedFps": 386,
+				"completedFps": 386
+			},
+			{
+				"presentedFps": 385,
+				"completedFps": 385
+			},
+			{
+				"presentedFps": 384,
+				"completedFps": 384
+			},
+			{
+				"presentedFps": 379,
+				"completedFps": 379
+			},
+			{
+				"presentedFps": 366,
+				"completedFps": 366
+			},
+			{
+				"presentedFps": 367,
+				"completedFps": 367
+			},
+			{
+				"presentedFps": 370,
+				"completedFps": 370
+			},
+			{
+				"presentedFps": 350,
+				"completedFps": 350
+			},
+			{
+				"presentedFps": 363,
+				"completedFps": 363
+			},
+			{
+				"presentedFps": 362,
+				"completedFps": 362
+			},
+			{
+				"presentedFps": 362,
+				"completedFps": 362
+			},
+			{
+				"presentedFps": 363,
+				"completedFps": 363
+			},
+			{
+				"presentedFps": 366,
+				"completedFps": 366
+			},
+			{
+				"presentedFps": 362,
+				"completedFps": 362
+			}
+		]
+	},
+	"trace": [
+		{
+			"presentedFps": 351,
+			"completedFps": 351,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 360,
+			"completedFps": 360,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 368,
+			"completedFps": 368,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 372,
+			"completedFps": 372,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 380,
+			"completedFps": 380,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 380,
+			"completedFps": 380,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 384,
+			"completedFps": 384,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 383,
+			"completedFps": 383,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 379,
+			"completedFps": 379,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 367,
+			"completedFps": 367,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 364,
+			"completedFps": 364,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 366,
+			"completedFps": 366,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 369,
+			"completedFps": 369,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 368,
+			"completedFps": 368,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 371,
+			"completedFps": 371,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 381,
+			"completedFps": 381,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 386,
+			"completedFps": 386,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 385,
+			"completedFps": 385,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 384,
+			"completedFps": 384,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 379,
+			"completedFps": 379,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 366,
+			"completedFps": 366,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 367,
+			"completedFps": 367,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 370,
+			"completedFps": 370,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 350,
+			"completedFps": 350,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 363,
+			"completedFps": 363,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 362,
+			"completedFps": 362,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 362,
+			"completedFps": 362,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 363,
+			"completedFps": 363,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 366,
+			"completedFps": 366,
+			"renderScale": 1,
+			"steps": 0
+		},
+		{
+			"presentedFps": 362,
+			"completedFps": 362,
+			"renderScale": 1,
+			"steps": 0
+		}
+	],
+	"machineLoad": {
+		"before": 4.4619140625,
+		"after": 5.7412109375
+	}
+}

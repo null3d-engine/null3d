@@ -9,7 +9,9 @@
 // the writer overwrote meanwhile is counted as lost instead of read half-written.
 
 import * as Counter from './counter';
+import { gcd } from './gpu-clock';
 import * as GpuCounter from './gpu-counter';
+import { MEMORY_AREA_COUNT, MEMORY_AREA_VALUES } from './memory-area';
 import * as MemoryFigure from './memory-figure';
 import * as Phase from './phase';
 import * as Role from './role';
@@ -81,7 +83,8 @@ export type CounterName = (typeof COUNTER_NAMES)[number];
 /**
  * Passes that a GPU record times one by one. A GPU record's phase slots hold the time before the
  * frame's first pass, which the copies recorded there take, then the time of each of these passes
- * in order. A pass after them adds its time to the last one's.
+ * in order. The passes after them share one figure of their own, which no scope names, so a pass
+ * never reads as another step's time.
  */
 export const GPU_TIMED_PASSES = PHASE_NAMES.length - 1;
 
@@ -108,7 +111,18 @@ const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
 const COUNTERS = PHASES + PHASE_NAMES.length;
-const RECORD_WORDS = 32;
+/**
+ * A GPU record's label of each pass that the timer times alone, in the order of the pass slots
+ * after the copies. The label says what the pass draws for, so a frame's parts name a pass rather
+ * than its position. The spare words of a record hold them.
+ */
+const PASS_ROLES = COUNTERS + COUNTER_NAMES.length;
+/**
+ * The word of a GPU record that holds the time of the passes after those it times one by one. They
+ * share one figure, so no scope claims another pass's time.
+ */
+const LATER = PASS_ROLES + GPU_TIMED_PASSES;
+const RECORD_WORDS = LATER + 1;
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;
@@ -139,7 +153,20 @@ const FIRST_DRAW = 8;
  * samples, in the order of `MemoryFigure`.
  */
 const MEMORY = 9;
-const HEADER_WORDS = 2 * (MEMORY + MemoryFigure.Count);
+/**
+ * Float64 index of the first of the memory register's figures that the sketch thread publishes:
+ * the bytes each area reserves, uses and has used at most.
+ */
+const MEMORY_AREAS = MEMORY + MemoryFigure.Count;
+const AREA_VALUES = MEMORY_AREA_COUNT * MEMORY_AREA_VALUES;
+/**
+ * Float64 index of the epoch time, in ms, at which the sketch's setup function started, or 0
+ * before it: the page reads it to tell a scene that is still growing from one that has stopped.
+ */
+const SETUP_START = MEMORY_AREAS + AREA_VALUES;
+/** Float64 index of the time, in ms, that the sketch's setup function took, or 0 until it ends. */
+const SETUP_MS = SETUP_START + 1;
+const HEADER_WORDS = 2 * (SETUP_MS + 1);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -220,6 +247,15 @@ export function memoryFigures(buffer: ArrayBufferLike): Float64Array {
 	return new Float64Array(buffer, MEMORY * 8, MemoryFigure.Count);
 }
 
+/**
+ * A view of the memory register's figures, which the sketch thread publishes: three numbers per
+ * area, in the order of `MEMORY_AREA_NAMES`. Each area's numbers are the bytes that it reserves,
+ * uses and has used at most, and all are 0 until the page asks for a report.
+ */
+export function memoryAreaFigures(buffer: ArrayBufferLike): Float64Array {
+	return new Float64Array(buffer, MEMORY_AREAS * 8, AREA_VALUES);
+}
+
 /** The display's refresh rate in hertz, as the thread that draws measured it, or 0 before then. */
 export function refreshRate(buffer: ArrayBufferLike): number {
 	return new Float64Array(buffer, 0, HEADER_WORDS / 2)[REFRESH_HZ] as number;
@@ -297,9 +333,32 @@ export class FrameRecorder {
 		words[this.at + COUNTERS + GpuCounter.RenderPasses] = renderPasses;
 	}
 
+	/** A GPU record's step between its frame's timestamps, in nanoseconds, or 0 when it has none. */
+	gpuTick(ns: number): void {
+		this.views.words[this.at + COUNTERS + GpuCounter.Tick] = ns;
+	}
+
 	/** A GPU record's time in one slot: 0 for the copies before the first pass, then one per pass. */
 	gpuTime(slot: number, ms: number): void {
 		this.views.floats[this.at + PHASES + slot] = ms;
+	}
+
+	/** A GPU record's time of the passes after those that it times one by one, or `UNTIMED`. */
+	gpuLater(ms: number): void {
+		this.views.floats[this.at + LATER] = ms;
+	}
+
+	/** A GPU record's label of the pass in one slot, from 0 for the first pass after the copies. */
+	gpuPassRole(slot: number, label: number): void {
+		this.views.words[this.at + PASS_ROLES + slot] = label;
+	}
+
+	/**
+	 * The scope of a GPU record's pass: a code from the engine that names the step that the pass
+	 * records, or 0 where no scope names it.
+	 */
+	gpuScope(pass: number, id: number): void {
+		this.views.words[this.at + COUNTERS + GpuCounter.Scope + pass] = id;
 	}
 
 	/** Time since the previous presented frame, recorded by the thread that presents. */
@@ -348,6 +407,14 @@ export class FrameRecorder {
 	}
 
 	/**
+	 * Publishes the memory register's figures, three numbers for each area, from `from` on.
+	 */
+	publishMemoryRegister(values: ArrayLike<number>, from = 0): void {
+		const { times } = this.views;
+		for (let k = 0; k < AREA_VALUES; k++) times[MEMORY_AREAS + k] = values[from + k] as number;
+	}
+
+	/**
 	 * Publishes the GPU memory that the backend holds: its texture bytes, then its buffer bytes, as
 	 * `GpuMemory.bytes` keeps them. A copy between typed arrays boxes no fraction.
 	 */
@@ -370,6 +437,25 @@ export class FrameRecorder {
 	}
 
 	/**
+	 * Records, once per engine, when the sketch's setup function started, as epoch milliseconds, so
+	 * the page can time a scene that is still growing.
+	 */
+	markSetupStart(): void {
+		const { times } = this.views;
+		if (times[SETUP_START] === 0) times[SETUP_START] = performance.timeOrigin + performance.now();
+	}
+
+	/**
+	 * Records, once per engine, how long the sketch's setup function took, in milliseconds. A
+	 * finished setup records a value even when its call took no measurable time, which the readers
+	 * would otherwise take for one still running.
+	 */
+	markSetupDone(ms: number): void {
+		const { times } = this.views;
+		if (times[SETUP_MS] === 0) times[SETUP_MS] = ms > 0 ? ms : Number.EPSILON;
+	}
+
+	/**
 	 * Records, once per engine, when the first frame's pipelines started to build and when none was
 	 * building any longer, as epoch milliseconds. The thread that draws calls it each time it
 	 * checks the first frame, until that frame draws.
@@ -389,6 +475,10 @@ export interface RingRecords {
 	intervals: number[];
 	phases: number[][];
 	counters: number[][];
+	/** Each GPU record's pass labels, in the order of its pass slots after the copies. */
+	passRoles: number[][];
+	/** Each GPU record's time of the passes after those it timed one by one, or `UNTIMED`. */
+	later: number[];
 }
 
 function emptyRecords(): RingRecords {
@@ -398,6 +488,8 @@ function emptyRecords(): RingRecords {
 		intervals: [],
 		phases: PHASE_NAMES.map(() => []),
 		counters: COUNTER_NAMES.map(() => []),
+		passRoles: Array.from({ length: GPU_TIMED_PASSES }, () => []),
+		later: [],
 	};
 }
 
@@ -450,6 +542,25 @@ export class MetricsReader {
 		return (times[FIRST_FRAME] as number) > 0 ? (times[FIRST_FRAME_PIPELINES] as number) : null;
 	}
 
+	/** Epoch milliseconds at which the sketch's setup function started, or 0 before it. */
+	get setupStart(): number {
+		return this.views.times[SETUP_START] as number;
+	}
+
+	/** Milliseconds that the sketch's setup function took, or null while it runs. */
+	get setupMs(): number | null {
+		const ms = this.views.times[SETUP_MS] as number;
+		return ms > 0 ? ms : null;
+	}
+
+	/**
+	 * Epoch milliseconds at which the first frame's pipelines started to build, or 0 before the
+	 * thread that draws first checked that frame.
+	 */
+	get warmUpStart(): number {
+		return this.views.times[WARM_UP_START] as number;
+	}
+
 	/** The display's refresh rate in hertz, or 0 before the thread that draws has measured it. */
 	get refreshHz(): number {
 		return this.views.times[REFRESH_HZ] as number;
@@ -495,6 +606,9 @@ export class MetricsReader {
 					out.phases[p]?.push(floats[at + PHASES + p] as number);
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					out.counters[c]?.push(words[at + COUNTERS + c] as number);
+				for (let p = 0; p < GPU_TIMED_PASSES; p++)
+					out.passRoles[p]?.push(words[at + PASS_ROLES + p] as number);
+				out.later.push(floats[at + LATER] as number);
 				if (!this.views.holds(at, sequence)) {
 					dropLast(out);
 					this.lost++;
@@ -557,30 +671,62 @@ export class RefreshRate {
 export class RingSums {
 	/** The window's sums, by the `SUM_` indices. */
 	readonly sums: Float64Array;
+	/**
+	 * The last record's counters, by counter index. A reader that asks for them keeps them, and they
+	 * are 0 until one such record comes.
+	 */
+	readonly last = new Float64Array(COUNTER_NAMES.length);
+	/**
+	 * The records of the window whose phase slot held a time above 0, by phase index. A pass that a
+	 * GPU record did not time adds nothing to its phase's mean.
+	 */
+	readonly phaseRecords = new Float64Array(PHASE_NAMES.length);
+	/**
+	 * The window's sums of the phase slots that held a time above 0, by phase index. The sums leave
+	 * out a slot's untimed figure, so a pass that some records did not time still reads its mean.
+	 */
+	readonly phaseSums = new Float64Array(PHASE_NAMES.length);
+	/** The records of the window that timed the passes after those timed one by one. */
+	laterRecords = 0;
+	/** The window's sum of the later passes' figure over those records. */
+	laterSums = 0;
 	private readonly views: MetricsViews;
 	private next: number;
+	/** The greatest common divisor of `stepCounter`'s values over the records added, or 0. */
+	private step = 0;
+	private readonly stepCounter: number;
 
 	/** With detail, a record's phases and counters, copied before the check that the record held. */
 	private readonly detail: Float64Array | undefined;
 
 	/**
 	 * Sums `ring`'s records from those written after this call. With `detail`, the sums also hold
-	 * each phase and each counter.
+	 * each phase and each counter. With `stepCounter`, `commonStep` keeps the greatest common
+	 * divisor of those counter values, for a figure that the records measure as a step. With
+	 * `keep`, `last` and `phaseRecords` keep the newest record's counters and each phase's count.
 	 */
 	constructor(
 		buffer: ArrayBufferLike,
 		readonly ring: number,
 		detail = false,
+		stepCounter = -1,
+		private readonly keep = false,
 	) {
 		this.views = new MetricsViews(buffer);
 		this.next = Atomics.load(this.views.header, WRITTEN + ring);
 		this.sums = new Float64Array(detail ? SUM_COUNTERS + COUNTER_NAMES.length : SUM_PHASES);
 		this.detail = detail ? new Float64Array(DETAIL_VALUES) : undefined;
+		this.stepCounter = stepCounter;
+	}
+
+	/** The greatest common divisor of the step counter's values in the records added, or 0. */
+	get commonStep(): number {
+		return this.step;
 	}
 
 	/** Takes in the records written since the last call. */
 	add(): void {
-		const { views, sums, detail } = this;
+		const { views, sums, detail, stepCounter, keep } = this;
 		const { floats, words } = views;
 		const written = Atomics.load(views.header, WRITTEN + this.ring);
 		const from = Math.max(this.next, written - views.capacity);
@@ -589,12 +735,30 @@ export class RingSums {
 			if (!views.holds(at, sequence)) continue;
 			const busy = floats[at + BUSY] as number;
 			const interval = floats[at + INTERVAL] as number;
+			const step = stepCounter >= 0 ? (words[at + COUNTERS + stepCounter] as number) : 0;
 			if (detail) {
 				for (let p = 0; p < PHASE_NAMES.length; p++) detail[p] = floats[at + PHASES + p] as number;
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					detail[PHASE_NAMES.length + c] = words[at + COUNTERS + c] as number;
 			}
 			if (!views.holds(at, sequence)) continue;
+			if (step > 0) this.step = gcd(this.step, step);
+			if (keep) {
+				for (let c = 0; c < COUNTER_NAMES.length; c++)
+					this.last[c] = words[at + COUNTERS + c] as number;
+				for (let p = 0; p < PHASE_NAMES.length; p++) {
+					const ms = floats[at + PHASES + p] as number;
+					if (ms > 0) {
+						this.phaseRecords[p] = (this.phaseRecords[p] as number) + 1;
+						this.phaseSums[p] = (this.phaseSums[p] as number) + ms;
+					}
+				}
+				const later = floats[at + LATER] as number;
+				if (later > 0) {
+					this.laterRecords++;
+					this.laterSums += later;
+				}
+			}
 			sums[SUM_RECORDS] = (sums[SUM_RECORDS] as number) + 1;
 			sums[SUM_BUSY_MS] = (sums[SUM_BUSY_MS] as number) + busy;
 			sums[SUM_LONGEST_BUSY_MS] = Math.max(sums[SUM_LONGEST_BUSY_MS] as number, busy);
@@ -606,16 +770,69 @@ export class RingSums {
 		this.next = written;
 	}
 
-	/** Starts a new window: the sums go back to zero, and the place in the ring stays. */
+	/** Starts a new window: the sums and the step go back to zero, and the place in the ring stays. */
 	clear(): void {
 		this.sums.fill(0);
+		this.phaseRecords.fill(0);
+		this.phaseSums.fill(0);
+		this.last.fill(0);
+		this.laterRecords = 0;
+		this.laterSums = 0;
+		this.step = 0;
 	}
 }
 
+/**
+ * Steps through the frame numbers and busy times of the records that a ring receives, one record at
+ * a time, from those written after it was made. It keeps the newest record's values in its fields,
+ * so a reader on a hot path allocates nothing.
+ */
+export class RingFrames {
+	/** The frame number of the record that the last `step` reached. */
+	frame = 0;
+	/** The busy time of that record, in microseconds, rounded. */
+	busyUs = 0;
+	private readonly views: MetricsViews;
+	private next: number;
+
+	constructor(
+		buffer: ArrayBufferLike,
+		readonly ring: number,
+	) {
+		this.views = new MetricsViews(buffer);
+		this.next = Atomics.load(this.views.header, WRITTEN + ring);
+	}
+
+	/** Moves to the next whole record written since the last step; false when none is left. */
+	step(): boolean {
+		const { views } = this;
+		const written = Atomics.load(views.header, WRITTEN + this.ring);
+		if (this.next < written - views.capacity) this.next = written - views.capacity;
+		while (this.next < written) {
+			const sequence = this.next++;
+			const at = views.record(this.ring, sequence);
+			if (!views.holds(at, sequence)) continue;
+			const frame = views.words[at + FRAME] as number;
+			const busy = views.floats[at + BUSY] as number;
+			if (!views.holds(at, sequence)) continue;
+			this.frame = frame;
+			this.busyUs = Math.round(busy * 1000);
+			return true;
+		}
+		return false;
+	}
+}
+
+/** Drops the last frame that a drain copied. */
 function dropLast(records: RingRecords): void {
 	records.frames.pop();
 	records.busy.pop();
 	records.intervals.pop();
 	for (const values of records.phases) values.pop();
 	for (const values of records.counters) values.pop();
+	for (const values of records.passRoles) values.pop();
+	records.later.pop();
 }
+
+/** The label of a buffer of culled draws, whose last word counts the copies that culling dropped. */
+export const DROP_COUNTED_LABEL = 'culled draws';

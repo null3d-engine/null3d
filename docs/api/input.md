@@ -158,6 +158,7 @@ The engine passes one event object to every handler and reuses it, so copy any v
 | `object` | The object under the pointer, or the batch of a row: an instance, sprite, point or line batch. It can be a child of the object whose handler runs. For `pointerleave`, it is the object that the pointer moved onto, or null |
 | `instance` | The row of a batch: an instance row, a sprite, a point or a line's segment. -1 for an object |
 | `point`, `normal`, `distance`, `triangle` | Where the ray hit `object`, as a [raycast's hit](raycast.md#raycasts) gives them |
+| `uv`, `hasUv` | Where on the surface the ray hit, in the mesh's first texture coordinates, which `hasUv` reports. An in-world screen uses them to turn a click into a pixel of its image |
 | `ray` | The ray from the camera through the pointer, from the frame that was on screen at the event |
 | `x`, `y` | The pointer's position in CSS pixels from the canvas's top-left corner |
 | `pointerId` | The browser's pointer id. Each finger on a touch screen has its own |

@@ -8,7 +8,7 @@ enable draw_index;
 // instance on both GPU paths. The ROW_VALUES builds multiply the color by the row's color, for the
 // rows of instance batches with row values. The LOD_FADE builds draw a level of detail inside the
 // band where it hands over to the next, on its side of a 4 × 4 ordered dither.
-#import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
+#import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed_material, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{material_of, relative_position}
 #import null3d::vertex::{mesh_position}
@@ -16,7 +16,7 @@ enable draw_index;
 #import null3d::mesh::{row_values_of}
 #endif
 #ifdef LOD_FADE
-#import null3d::mesh::{instance_fade, lod_kept}
+#import null3d::mesh::{instance_lod, lod_kept}
 #endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
@@ -29,6 +29,17 @@ enable draw_index;
 #endif
 #ifdef WEIGHTED
 #import null3d::weighted::{WeightedFragment, weighted_fragment}
+#endif
+#ifdef MOMENT
+#import null3d::moment::{moment_fragment}
+#endif
+#ifdef MOMENT_COLOUR
+#import null3d::moment::{moment_colour_fragment}
+
+/// The moment store that the colour pass reads at each fragment's own pixel (decision record
+/// D-261), in the frame's group. It takes the light probe grid's binding, which the layer's own
+/// frame layout leaves out because no moment build reads the grid.
+@group(0) @binding(10) var moment_store: texture_2d<f32>;
 #endif
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
@@ -70,8 +81,8 @@ struct VertexOut {
     @location(4) @interpolate(flat, either) row_color: vec4f,
 #endif
 #ifdef LOD_FADE
-    /// The fade value of the instance's level of detail.
-    @location(5) @interpolate(flat, either) lod_fade: f32,
+    /// The fade value of the instance's level of detail, and the phase of its dither.
+    @location(5) @interpolate(flat, either) lod: vec2f,
 #endif
 }
 
@@ -112,7 +123,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.row_color = row_values_of(found).color;
 #endif
 #ifdef LOD_FADE
-    out.lod_fade = instance_fade(i);
+    out.lod = instance_lod(i, found.source);
 #endif
     return out;
 }
@@ -122,6 +133,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 fn fs(in: VertexOut) -> MaskedFragment {
 #else ifdef WEIGHTED
 fn fs(in: VertexOut) -> WeightedFragment {
+#else ifdef MOMENT_COLOUR
+fn fs(in: VertexOut) -> @location(0) vec4f {
 #else
 fn fs(in: VertexOut) -> @location(0) vec4f {
 #endif
@@ -151,17 +164,25 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     }
 #endif
 #ifdef LOD_FADE
-    if !lod_kept(in.lod_fade, in.clip.xy) {
+    if !lod_kept(in.lod.x, in.clip.xy, u32(in.lod.y)) {
         discard;
     }
 #endif
-    let finished = finish_exposed(fogged(exposed(base), in.relative, m), in.clip.xy);
+    let finished = finish_exposed_material(m, fogged(exposed(base), in.relative, m), in.clip.xy);
 #ifdef SAMPLE_MASK
     return masked_fragment(vec4f(finished.rgb, alpha));
 #else ifdef ALPHA_COVERAGE
     return vec4f(finished.rgb, alpha);
 #else ifdef WEIGHTED
     return weighted_fragment(fragment_color(m, finished.rgb, alpha), in.relative);
+#else ifdef MOMENT
+    return moment_fragment(alpha, in.relative);
+#else ifdef MOMENT_COLOUR
+    return moment_colour_fragment(
+        fragment_color(m, finished.rgb, alpha),
+        in.relative,
+        textureLoad(moment_store, vec2u(in.clip.xy), 0),
+    );
 #else
     return fragment_color(m, finished.rgb, alpha);
 #endif

@@ -14,8 +14,14 @@ import { Counter, type FrameRecorder } from '../shared/metrics';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
 const BUILD_POLL_MS = 4;
-/** The longest that a capture waits for pipelines to build. */
-export const BUILD_WAIT_LIMIT_MS = 30_000;
+/**
+ * The longest that a capture waits for pipelines to build. A software rasteriser builds a
+ * showcase's pipelines slower than a GPU: the island needed more than thirty seconds at every
+ * load, from forty-five to four, and returned no frame at all under the old limit. Its High preset
+ * at 640 x 360 then needed more than two minutes, so the wait takes five, which is half the
+ * worker's ten-minute reply limit: a capture that waits for a slow build still reports a stuck one.
+ */
+export const BUILD_WAIT_LIMIT_MS = 300_000;
 
 /** What the scene renderers ask of a GPU backend. */
 interface SceneBackend {
@@ -161,7 +167,7 @@ export class FrameReplay {
 		this.end = start + Atomics.load(this.slots, Slot.DrawListWords0 + parity);
 		const end = this.end;
 		// A list whose first word is zero is the one a failed device cleared.
-		if (this.epochOf(parity) && end > start && words[start] !== 0) {
+		if (this.drawable(parity) && end > start && words[start] !== 0) {
 			const found = this.restOf(frame);
 			const rest =
 				end > found && words[found] !== 0 ? found : this.backend.restStart(words, start, end);
@@ -170,16 +176,22 @@ export class FrameReplay {
 		const other = parity ^ 1;
 		const otherStart = (Atomics.load(this.slots, Slot.DrawListAddress0 + other) >>> 0) / 4;
 		const otherEnd = otherStart + Atomics.load(this.slots, Slot.DrawListWords0 + other);
-		if (this.epochOf(other) && otherEnd > otherStart && words[otherStart] !== 0)
+		if (this.drawable(other) && otherEnd > otherStart && words[otherStart] !== 0)
 			return { from: otherStart, end: otherEnd };
 		return null;
 	}
 
-	/** True when the list of a frame's parity was recorded for the GPU device that draws now. */
-	private epochOf(parity: number): boolean {
+	/**
+	 * True when the list of a frame's parity was recorded for the GPU device that draws now and
+	 * under the plan's current generation: a list of an older plan names textures that the frame
+	 * after replaced.
+	 */
+	private drawable(parity: number): boolean {
 		return (
 			Atomics.load(this.slots, Slot.FrameEpoch0 + parity) ===
-			Atomics.load(this.slots, Slot.GpuEpoch)
+				Atomics.load(this.slots, Slot.GpuEpoch) &&
+			Atomics.load(this.slots, Slot.FramePlan0 + parity) ===
+				Atomics.load(this.slots, Slot.PlanEpoch)
 		);
 	}
 

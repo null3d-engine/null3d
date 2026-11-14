@@ -1,6 +1,6 @@
 # D-110: Pointer lock, and one set of first-person controls for two three.js controls
 
-Status: decided by the M2-P1 helper. Date: 2026-10-08. Task: M2-P1.
+Status: decided by the M2-P1 helper, and built. Task: M2-P1.
 
 Summary: The page asks for the pointer lock with `engine.requestPointerLock()`, which resolves when the lock begins and fails with E1425. While the canvas holds the lock, the page writes the mouse's movement into the input ring in place of its position. The sketch reads it as `input.pointer.dx` and `dy`, and `input.pointer.locked` is true. One call, `createFirstPersonControls`, acts as three.js's `FirstPersonControls` without the lock, and as its `PointerLockControls` with it.
 
@@ -42,7 +42,7 @@ The input ring:
 | Option | For | Against |
 | --- | --- | --- |
 | (a) A new event type that carries the movement beside each pointer move | Position and movement both reach the sketch | Two records per move, and the position does not change while locked anyway |
-| (b) A flag on pointer records, whose X and Y then hold the movement, and an event for the lock's start and end (chosen) | One record per move, as now. `pointer.dx` and `dy` give the movement with no new field, so orbit controls and sketch code work while locked | Records mean two things, so code that reads X and Y must check the flag: the reader and the log of pointer events on objects |
+| (b) A flag on pointer records, whose X and Y then hold the movement, and an event for the lock's start and end (chosen) | One record per move. `pointer.dx` and `dy` give the movement with no new field, so orbit controls and sketch code work while locked | Records mean two things, so code that reads X and Y must check the flag: the reader and the log of pointer events on objects |
 | (c) A virtual position: the lock's place plus the summed movement | No change to the record format | The position leaves the canvas, so picking and `ndcX` give nonsense |
 
 The controls:
@@ -71,11 +71,11 @@ Known differences, which [Camera controls](../../docs/api/controls.md#difference
 
 The unit tests feed the same scripted input to null3D's controls and to three.js's, and compare the poses after each frame. Fly controls have 7 such tests, and first-person controls 11. A browser test locks the pointer in Chrome and checks that the engine's first-person controls reach the pose of three.js's `PointerLockControls` on the same canvas.
 
-That test runs in Playwright's full Chromium build in Chrome's own headless mode, not in Playwright's headless shell, which the other SwiftShader tests use. The headless shell, Chromium 153 with Playwright 1.63, gets the lock wrong in two ways. On Linux, as in CI, it grants the lock. But each mouse move under the lock reports the pointer's position as its movement, and then the same movement back. The moves add up to nothing, so neither camera turned, and the test failed in CI. On a Mac it refuses the lock with `WrongDocumentError`. Playwright's mouse cannot set the movement itself, as Chrome DevTools' mouse event has no movement field. The full build reports the movement as Google Chrome does, on Linux and on a Mac. The browser's own reason can end with a full stop, as `WrongDocumentError`'s does, so E1425's message drops it before adding its own.
+That test runs in Playwright's full Chromium build in Chrome's own headless mode, not in Playwright's headless shell, which the other SwiftShader tests use. The headless shell, Chromium 153 with Playwright 1.63, gets the lock wrong in two ways. On Linux, as in CI, it grants the lock. But each mouse move under the lock reports the pointer's position as its movement, and then the same movement back. The moves add up to nothing, so neither camera turns, and the test fails. On a Mac it refuses the lock with `WrongDocumentError`. Playwright's mouse cannot set the movement itself, as Chrome DevTools' mouse event has no movement field. The full build reports the movement as Google Chrome does, on Linux and on a Mac. The browser's own reason can end with a full stop, as `WrongDocumentError`'s does, so E1425's message drops it before adding its own.
 
 ## Consequences
 
-- `shared/control.ts` gains `EVENT_POINTER_LOCK` and `FLAG_LOCKED`. `page/input.ts` writes them, `sketch/input.ts` reads them, and `InputPointer` gains `locked`.
-- `page/pointer-lock.ts` holds the request, and `Engine` gains `requestPointerLock`. The error table gains E1425.
-- `@null3d/controls` gains `createFlyControls` and `createFirstPersonControls`.
+- `shared/control.ts` holds `EVENT_POINTER_LOCK` and `FLAG_LOCKED`. `page/input.ts` writes them, `sketch/input.ts` reads them, and `InputPointer` has `locked`.
+- `page/pointer-lock.ts` holds the request, and `Engine` has `requestPointerLock`. The error table has E1425.
+- `@null3d/controls` exports `createFlyControls` and `createFirstPersonControls`.
 - Docs: `api/controls`, `api/engine`, `api/input`, and the mapping entry `fly-controls`. Skills: the develop skill's quick reference and the port skill's controls table.

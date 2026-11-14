@@ -1,12 +1,12 @@
 # D-148: Automatic exposure
 
-Status: decided, 2026-10-11. Date: 2026-10-11. Task: M2-EX31.
+Status: decided. Built: automatic exposure ships in the engine on all three GPU paths. Task: M2-EX31.
 
-Summary: `post.set({ autoExposure })` adapts the picture to the scene's brightness, as an eye or a camera does. A meter on the GPU reads the frame's linear color in the same frame, as a compute histogram on WebGPU and as a small downsample on WebGL2 and the Low preset. The final pass multiplies the color by the adapted factor before the vignette and the tone curve. The meter takes the mean or a trimmed mean, weights the center, adapts up and down at its own speeds, stays between two exposure limits, and takes a compensation. Hold mode settles at once, so image tests stay the same from run to run. It costs nothing while it is off.
+Summary: `post.set({ autoExposure })` adapts the picture to the scene's brightness, from a GPU meter that reads the frame's linear color in the same frame. WebGPU meters with a compute histogram, WebGL2 and Low with a small downsample, and the final pass applies the factor before the vignette and tone curve. Its settings give the meter, center weight, speeds, limits and compensation; hold mode settles at once, and the feature costs nothing while off.
 
 ## Question
 
-The showcase scenes walk from bright to dark places, such as a sunlit street into a dark hall. The owner pulled automatic exposure into this release on 11 October 2026 (D-142). A fixed exposure shows one of the two well and the other badly. How does the engine adapt the exposure on WebGPU, its compatibility mode and WebGL2? Where does the factor apply, given that the core puts the camera's exposure into each light ([D-60](D-60-exposure-in-the-lights.md))? What do its settings look like, and what does each quality preset pay?
+The showcase scenes walk from bright to dark places, such as a sunlit street into a dark hall. The owner pulled automatic exposure into this release ([D-142](D-142-more-techniques-before-1-0.md)). A fixed exposure shows one of the two well and the other badly. How does the engine adapt the exposure on WebGPU, its compatibility mode and WebGL2? Where does the factor apply, given that the core puts the camera's exposure into each light ([D-60](D-60-exposure-in-the-lights.md))? What do its settings look like, and what does each quality preset pay?
 
 ## Rule
 
@@ -53,7 +53,6 @@ The steps run just before the final pass, after bloom's chain. The meter owns it
 
 **The downsample path** (WebGL2, and Low on every path):
 
-
 1. A full-screen step draws 16 x 16 cells. Each cell takes the mean `log2(luminance / 0.18)` of 4 x 4 filtered taps over its part of the drawn corner, and its center weight.
 2. A full-screen step into one texel reads the 256 cells and the stored state. It builds a histogram of the cells in its one fragment, meters it as the histogram path does, and writes the factor and the new state.
 3. The frame copies that texel into the state texel for the next frame.
@@ -89,7 +88,7 @@ post.set({
 
 The twelve automatic-exposure image tests and the demo's draw on WebGPU, compatibility mode and WebGL2, in both reference sets (`chrome-real-gpu` and `chromium-swiftshader`). A dark hall and a sunny street both adapt toward middle gray: the difference between the two images is what the meter removes. The percentile and the mean meters, a center weight, a compensation and an eye range each move the image. The eye adapts with bloom and AgX, and at half the render scale. Turning it on during play draws the image of turning it on at the start, since the meter's first frame settles at once. The downsample meter draws its own image, and a device with no HDR target keeps the camera's exposure.
 
-The engine downloads the meter's shaders on the first `post.set({ autoExposure })`: `js/shaders-exposure-glsl.js` is 2,532 bytes after Brotli, and `js/shaders-exposure-wgsl.js` is 2,767 bytes. The WebAssembly grew 2.8%, from 391,494 to 402,578 bytes after Brotli on the threaded build and from 390,306 to 401,154 on the single build.
+The engine downloads the meter's shaders on the first `post.set({ autoExposure })`: `js/shaders-exposure-glsl.js` is 2,532 bytes after Brotli, and `js/shaders-exposure-wgsl.js` is 2,767 bytes. The meter adds 2.8% to the WebAssembly after Brotli: 402,578 bytes against 391,494 without it on the threaded build, and 401,154 against 390,306 on the single build.
 
 The GPU check of the benchmark scenes S4 and S6, which keep automatic exposure off, measured the median GPU time per frame moving from 3.98 to 3.99 ms on S4 at Medium (+0.2%), from 4.89 to 5.08 ms on S6 at Medium (+4.6%), from 4.96 to 4.78 ms on S4 at High (-2.4%) and from 6.08 to 6.94 ms on S6 at High (+12.1%), all within the check's limits. The feature costs about nothing while it is off.
 
@@ -102,12 +101,5 @@ Chosen: option C, where the meter runs after the scene in the same frame and the
 ## Consequences
 
 - Code: `crates/null3d-render/src/exposure.rs`, the final pass's binding 12 and its flag, the frame graph's hook before the final pass, `exposure.wgsl` and the `null3d::exposure` module, the first-use shader set `exposure`, both backends' layouts and templates, the post values and `post.set`, and the quality setting `exposureMeter`.
+- The final pass's group binds the outline mask at binding 11 and the automatic exposure's texel at binding 12, which every build binds (a blank texel while the meter is off). The group's tests name the mask's own binding and expect six entries, so a binding added later cannot break them.
 - Docs: `api/post`, `concepts/post-processing`, `concepts/color-management`, the mapping, both skills.
-
-## Addendum: the final group's bindings
-
-The final pass's group binds the outline mask at binding 11 and the automatic exposure's texel at
-binding 12, which every build binds (a blank texel while the meter is off). The group's tests were
-written for its five entries: two read the mask from the entries at binding 11 and up, and two
-counted five. They now name the mask's own binding and expect six entries, so a binding added later
-cannot break them.

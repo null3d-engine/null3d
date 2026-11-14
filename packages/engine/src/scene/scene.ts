@@ -43,9 +43,21 @@ import {
 	isAtmosphereBackground,
 	isSkyBackground,
 	SceneBackground,
+	SceneSkyLayer,
+	type SkyLayer,
+	type SkyLayerOptions,
 } from './background';
+import type { ChunkRowWriter } from './chunk-rows';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
+import type {
+	FeatureDraw,
+	FeatureDrawOptions,
+	FeatureInstances,
+	FeatureInstancesOptions,
+} from './feature-draws';
+import type { ComputeInstances, ComputeInstancesOptions } from './feature-instances';
+import type { FeatureDescription } from './features';
 import { type FogOptions, setSceneFog } from './fog';
 import {
 	FrameCameras,
@@ -95,6 +107,29 @@ import {
 	ReflectionProbes,
 } from './probes';
 import {
+	PROPERTY_CAMERA_FAR,
+	PROPERTY_CAMERA_FOV,
+	PROPERTY_CAMERA_HEIGHT,
+	PROPERTY_CAMERA_NEAR,
+	PROPERTY_LIGHT_ANGLE,
+	PROPERTY_LIGHT_COLOR,
+	PROPERTY_LIGHT_DECAY,
+	PROPERTY_LIGHT_INTENSITY,
+	PROPERTY_LIGHT_PENUMBRA,
+	PROPERTY_LIGHT_RANGE,
+	PROPERTY_MATERIAL,
+	PROPERTY_POSITION,
+	PROPERTY_ROTATION,
+	PROPERTY_SCALE,
+	PROPERTY_VISIBLE,
+	PropertyAnimation,
+	type PropertyBinding,
+	type PropertyInterpolation,
+	type PropertyKeyframes,
+	PropertySystem,
+	type PropertyTrack,
+} from './property-animation';
+import {
 	type OverlapHit,
 	type QueryOptions,
 	type QueryTargets,
@@ -103,8 +138,16 @@ import {
 	type RaycastOptions,
 	SceneQueries,
 } from './queries';
-import type { AlphaMode, Material, MeshGeometry } from './resources';
+import {
+	type AlphaMode,
+	type CompiledWgsl,
+	Material,
+	type MeshGeometry,
+	materialValueComponents,
+	type ShaderOptions,
+} from './resources';
 import { quaternionLookAt } from './rotation';
+import { ShaderTemplates } from './shader-templates';
 import type {
 	PointBatch,
 	PointChecks,
@@ -116,6 +159,7 @@ import type {
 } from './sprites';
 import { Texture } from './textures';
 import { type RowField, UnmarkedRows, UnmarkedWrites } from './unmarked-writes';
+import { VertexDraw, type VertexDrawOptions } from './vertex-draws';
 
 /**
  * A vector (x, y, z).
@@ -144,7 +188,11 @@ export interface NodeOptions {
 	name?: string;
 	/** The position relative to the parent. The default is (0, 0, 0). */
 	position?: Vec3;
-	/** The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. */
+	/**
+	 * The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. The
+	 * engine scales a rotation more than one per cent off unit length, so a mistyped quaternion
+	 * still only turns the object and never stretches or shears it.
+	 */
 	rotation?: Quat;
 	/** The scale on each axis. The default is (1, 1, 1). */
 	scale?: Vec3;
@@ -183,8 +231,9 @@ export interface MeshOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes the mesh block the view for occlusion culling, on WebGL2 and on WebGPU, like
-	 * `setOccluder(true)`. The default is false.
+	 * Whether the mesh blocks the view for occlusion culling, like `setOccluder`. True makes it a
+	 * blocker on WebGL2 too. False keeps it from hiding anything on WebGPU. Left out, the mesh blocks
+	 * nothing on WebGL2, and on WebGPU it hides what lies behind it whenever it looks large enough.
 	 */
 	occluder?: boolean;
 }
@@ -262,6 +311,176 @@ export interface OrthographicCameraOptions extends CameraOptions {
 }
 
 /**
+ * A rectangle of the canvas as `[x, y, width, height]`, in fractions of the canvas's width and
+ * height from its top-left corner: `[0, 0, 0.5, 1]` is its left half.
+ *
+ * @category api/cameras
+ */
+export type SceneViewRect = readonly [x: number, y: number, width: number, height: number];
+
+/**
+ * Options for `scene.createView`.
+ *
+ * @category api/cameras
+ */
+export interface SceneViewOptions {
+	/** The camera that the view draws from. */
+	readonly camera: Camera;
+	/**
+	 * The rectangle of the canvas that the view draws into, from its top-left corner. Its width
+	 * and height are above 0, and its right and bottom edges lie within the canvas.
+	 */
+	readonly rect: SceneViewRect;
+}
+
+/**
+ * A view of the scene from its own camera, drawn into a rectangle of the canvas after the
+ * camera's view: a split screen or a picture in picture. `scene.createView` makes it.
+ * `scene.activeCamera` still draws the whole canvas first, and the view's image covers its
+ * rectangle. The engine culls the scene for the view on its own, and draws it once more, at the
+ * rectangle's pixels.
+ *
+ * @category api/cameras
+ */
+export class SceneView {
+	/** @internal Its place in the engine core's list of views, or 0 once removed. */
+	place: number;
+	private cameraValue: Camera;
+	private rectValue: [number, number, number, number];
+
+	/** @internal */
+	constructor(
+		private readonly scene: Scene,
+		place: number,
+		camera: Camera,
+		rect: SceneViewRect,
+	) {
+		this.place = place;
+		this.cameraValue = camera;
+		this.rectValue = [rect[0], rect[1], rect[2], rect[3]];
+	}
+
+	/** True until `destroy` removes the view. */
+	get live(): boolean {
+		return this.place > 0;
+	}
+
+	/** The camera that the view draws from. */
+	get camera(): Camera {
+		return this.cameraValue;
+	}
+
+	/** The rectangle of the canvas that the view draws into. */
+	get rect(): SceneViewRect {
+		return this.rectValue;
+	}
+
+	/**
+	 * Draws the view from `camera` from the next frame on. It takes the camera's layers, and
+	 * follows them when they change.
+	 */
+	setCamera(camera: Camera): void {
+		const call = 'setCamera';
+		if (DEV) {
+			checkViewCamera(call, camera);
+			checkViewLive(call, this);
+		}
+		this.cameraValue = camera;
+		this.scene.setPassCamera(this.place, camera, undefined);
+	}
+
+	/**
+	 * Draws the view into `rect` from the next frame on. It allocates nothing, so a sketch can
+	 * change the rectangle in any frame. Development builds throw E1203 for a number that is not
+	 * finite, and E1213 for a rectangle outside the canvas.
+	 */
+	setRect(rect: SceneViewRect): void {
+		const call = 'setRect';
+		if (DEV) {
+			checkViewLive(call, this);
+			checkViewRect(call, rect);
+		}
+		const values = this.scene.core.callValues();
+		const own = this.rectValue;
+		own[0] = values[0] = rect[0];
+		own[1] = values[1] = rect[1];
+		own[2] = values[2] = rect[2];
+		own[3] = values[3] = rect[3];
+		this.scene.core.check(this.scene.core.glue.setSceneViewRect(this.place), call, undefined, true);
+	}
+
+	/**
+	 * Removes the view from the next frame on. The camera's view draws the canvas alone again.
+	 * Development builds throw E1101 for a view that was removed.
+	 */
+	destroy(): void {
+		const call = 'destroy';
+		if (DEV) checkViewLive(call, this);
+		this.scene.core.check(this.scene.core.glue.removeSceneView(this.place), call, undefined, true);
+		this.scene.setPassCamera(this.place, undefined, undefined);
+		this.place = 0;
+	}
+}
+
+/** Throws E1203 or E1213 for a camera or a rectangle that `scene.createView` does not take. */
+/**
+ * The flags of an object's `occluder` option: a blocker on both paths for true, no occluder on
+ * WebGPU for false, and none for an option left out, which lets WebGPU choose.
+ */
+function occluderFlags(occluder: boolean | undefined): number {
+	if (occluder === undefined) return 0;
+	return occluder ? C.FLAG_OCCLUDER : C.FLAG_NOT_OCCLUDER;
+}
+
+function checkViewOptions(options: SceneViewOptions, call: string): void {
+	if (typeof options !== 'object' || options === null)
+		throw new EngineError('E1213', `${call}() got ${String(options)}, which is not options.`);
+	checkViewCamera(call, options.camera);
+	if (options.rect === undefined) throw new EngineError('E1213', `${call}() got no rect.`);
+	checkViewRect(call, options.rect);
+}
+
+/** Throws E1213 for a value that is not a live camera of the engine. */
+function checkViewCamera(call: string, camera: unknown): void {
+	if (typeof (camera as Camera | undefined)?.sendLens !== 'function')
+		throw new EngineError(
+			'E1213',
+			`${call}() got no camera. Give the camera that the view draws from.`,
+		);
+	checkLive(call, camera as Camera, true);
+}
+
+/** Throws E1203 or E1213 for a rectangle that a view does not take. */
+function checkViewRect(call: string, rect: unknown): void {
+	const outside = (values: readonly unknown[]) =>
+		new EngineError(
+			'E1213',
+			`${call}() got the rect [${values.join(', ')}]; it takes [x, y, width, height] as fractions of the canvas from 0 to 1, with a width and a height above 0, inside the canvas.`,
+		);
+	if (!Array.isArray(rect) || rect.length !== 4) throw outside(Array.isArray(rect) ? rect : [rect]);
+	const [x, y, width, height] = rect as number[];
+	for (const value of [x, y, width, height])
+		if (!Number.isFinite(value))
+			throw new EngineError(
+				'E1203',
+				`${call}() got ${String(value)} in the rect. Its numbers must be finite.`,
+			);
+	if ((x as number) < 0 || (y as number) < 0) throw outside(rect as number[]);
+	if (!((width as number) > 0) || !((height as number) > 0)) throw outside(rect as number[]);
+	if ((x as number) + (width as number) > 1 || (y as number) + (height as number) > 1)
+		throw outside(rect as number[]);
+}
+
+/** Throws E1101 for a view that `destroy` removed. */
+function checkViewLive(call: string, view: SceneView): void {
+	if (!view.live)
+		throw new EngineError(
+			'E1101',
+			`${call}() was called on a view that was removed. Make a new view with scene.createView().`,
+		);
+}
+
+/**
  * Options for `scene.createInstances`.
  *
  * @category api/scene
@@ -280,12 +499,17 @@ export interface InstanceOptions {
 	colors?: boolean;
 	/**
 	 * Adds four numbers per row of the sketch's own in `batch.values`, 0 at first, such as a wind
-	 * phase, an age or a tint. A custom material's `surface` and `vertexOffset` functions read the
-	 * row's as `object.values`, as three.js's instanced attributes give a shader values per
+	 * phase, an age or a tint. A custom material's `surface`, `vertexOffset` and `lobe` functions
+	 * read the row's as `object.values`, as three.js's instanced attributes give a shader values per
 	 * instance. With values, a masked material tests its alpha against its cutoff, without alpha to
 	 * coverage or the alpha hash.
 	 */
 	values?: boolean;
+	/**
+	 * Adds a start and an end distance per row in `batch.ranges`, so each row draws in a band of
+	 * its own. Leave it out for a range that every row shares, which costs no memory.
+	 */
+	ranges?: boolean;
 	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
 	/**
@@ -302,6 +526,12 @@ export interface InstanceOptions {
 	castShadows?: boolean;
 	/** True makes shadows fall on every row, as `receiveShadows` does for a mesh. The default is false. */
 	receiveShadows?: boolean;
+	/**
+	 * False keeps every row from hiding what lies behind it in GPU occlusion culling on WebGPU, like
+	 * `setOccluder(false)`. Left out, or true, a row of an opaque mesh hides what lies behind it
+	 * whenever it looks large enough. Rows never block on WebGL2.
+	 */
+	occluder?: boolean;
 }
 
 /**
@@ -321,9 +551,10 @@ export interface InstantiateOptions extends NodeOptions {
 	 */
 	receiveShadows?: boolean;
 	/**
-	 * True makes every mesh of the copy block the view for occlusion culling, on WebGL2 and on
-	 * WebGPU, like `setOccluder(true)`, and false makes none block. Left out, the meshes that the
-	 * asset tool gave blockers block, and the others do not.
+	 * True makes every mesh of the copy block the view for occlusion culling, like
+	 * `setOccluder(true)`, and false makes none block, on WebGL2 or WebGPU, nor any row of its
+	 * instance batches on WebGPU. Left out, the meshes that the asset tool gave blockers block on
+	 * WebGL2, and on WebGPU every opaque mesh and row may hide what lies behind it.
 	 */
 	occluder?: boolean;
 	/**
@@ -434,6 +665,29 @@ export interface DirectionalShadowOptions {
 	 * `contactShadowSteps` decides whether they draw. The default is 0.3.
 	 */
 	contactDistance?: number;
+	/**
+	 * An object whose shadow the light draws into a tile of its own, at a much finer scale than the
+	 * cascades, or `null` for none. The tile fits the object's bounds along the light, and surfaces
+	 * near the object read it in place of the coarser cascades, so a car, a character or a product
+	 * keeps a sharp shadow. The object must cast shadows. The tile takes a layer of the shadow
+	 * atlas, which the point and spot lights share, and every layer of the atlas takes the tile's
+	 * size. The default is none.
+	 */
+	hero?: Object3D | null;
+	/**
+	 * Texels on each side of the hero's tile: 1,024, 2,048 or 4,096. The default is the quality
+	 * preset's `heroTileSize`. The tile's texels are finer as the number grows. A larger object
+	 * needs a larger number to keep the ratio of its shadow's detail to the cascades'. The atlas
+	 * holds the tile, so a larger number takes more memory for every tile of the atlas, and a hero
+	 * that moves draws the larger tile again in every frame.
+	 */
+	heroTileSize?: 1024 | 2048 | 4096;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -486,6 +740,12 @@ export interface LightShadowOptions {
 	 * times the sine of its angle to the light. The default is 0.02.
 	 */
 	normalBias?: number;
+	/**
+	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
+	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
+	 * `LightShadow.intensity` does.
+	 */
+	intensity?: number;
 }
 
 /**
@@ -511,6 +771,12 @@ export interface SpotLightOptions extends PointLightOptions {
 	 * default, 0, gives a sharp edge.
 	 */
 	penumbra?: number;
+	/**
+	 * A picture that the light projects over its cone, such as a window frame, a gobo pattern or a
+	 * projected photograph, as `setMap` takes it: sRGB pixels, or a texture. The color and
+	 * intensity tint it. Without it, the light has one color in the cone.
+	 */
+	map?: LightImagePixels | Texture;
 	/**
 	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. The
 	 * quality preset's `shadowTiles` caps the lights that cast them at once.
@@ -657,6 +923,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 	[C.LIGHT_VALUE_PENUMBRA]: ['penumbra', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_BIAS]: ['shadow bias', 0, Number.MAX_VALUE, 'at least 0'],
 	[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]: ['shadow normal bias', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_SHADOW_INTENSITY]: ['shadow intensity', 0, 1, 'from 0 to 1'],
 	[C.LIGHT_VALUE_SHADOW_CASCADES]: ['shadow cascades', 1, 4, 'a whole number from 1 to 4'],
 	[C.LIGHT_VALUE_SHADOW_MAP_SIZE]: [
 		'shadow map size',
@@ -671,6 +938,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		'above 0',
 	],
 	[C.LIGHT_VALUE_SHADOW_CONTACT]: ['contact shadow distance', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_HERO_SIZE]: ['hero shadow tile size', 1024, 4096, '1,024, 2,048 or 4,096'],
 	[C.LIGHT_VALUE_WIDTH]: ['width or length', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_HEIGHT]: ['height', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_RADIUS]: ['radius', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
@@ -684,6 +952,8 @@ const SHADOW_NUMBERS = [
 	['normalBias', C.LIGHT_VALUE_SHADOW_NORMAL_BIAS],
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
 	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
+	['heroTileSize', C.LIGHT_VALUE_HERO_SIZE],
+	['intensity', C.LIGHT_VALUE_SHADOW_INTENSITY],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */
@@ -1052,6 +1322,15 @@ export class Object3D implements Described {
 		this.attachTo(parent);
 	}
 
+	/**
+	 * The object's parent, or null for a root object. A destroyed parent leaves the object a
+	 * root object.
+	 */
+	getParent(): Object3D | null {
+		if (DEV) checkLive('getParent', this);
+		return this.liveParent;
+	}
+
 	/** @internal Records `parent` as the object's parent, in both objects. */
 	attachTo(parent: Object3D | null): void {
 		this.parentObject?.childObjects?.delete(this);
@@ -1101,6 +1380,15 @@ export class Object3D implements Described {
 		}
 		this.scene.command(C.COMMAND_SET_LAYERS, this.handle, mask >>> 0, 0, 'setLayers');
 		this.layerMask = mask >>> 0;
+	}
+
+	/**
+	 * The object's layer mask, as `setLayers` or its create options set it: bit n puts it on layer
+	 * n.
+	 */
+	getLayers(): number {
+		if (DEV) checkLive('getLayers', this);
+		return this.layerMask;
 	}
 
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
@@ -1173,6 +1461,32 @@ export class Object3D implements Described {
 		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, flag, on ? flag : 0, call);
 		this.keepFlag(flag, on);
 	}
+
+	/**
+	 * Replaces the object's bounding sphere, which culling and the light's hero shadow test, with a
+	 * sphere of your own: `center` relative to the object's origin, and `radius`, both before the
+	 * object's scale. Use it when a shader moves vertices outside a mesh's sphere. A mesh takes its
+	 * mesh's sphere at first, and `setMesh` gives that back; a group has none, so it needs a sphere
+	 * of its own wherever one is read, as the hero shadow that names it reads it.
+	 */
+	setBounds(center: Vec3Like, radius: number): void {
+		const x = center[0] as number;
+		const y = center[1] as number;
+		const z = center[2] as number;
+		if (DEV) {
+			checkLive('setBounds', this);
+			checkVector('setBounds', this, x, y, z);
+			checkNumber('setBounds', 'radius', radius, this);
+			if (radius < 0)
+				throw new EngineError(
+					'E1108',
+					`setBounds() got the radius ${radius} on ${this.describe()}, below 0.`,
+				);
+		}
+		this.scene.writeBounds(this.row, x, y, z, radius);
+		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
+		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
+	}
 }
 
 /**
@@ -1242,6 +1556,10 @@ export class Mesh extends Object3D {
 	material: Material | undefined;
 	/** @internal The render order, as `setRenderOrder` gave it. */
 	renderOrder = 0;
+	/** @internal The bias of the threshold that picks the levels, as `setLevelBias` gave it. */
+	levelBias = 1;
+	/** @internal The distances between which the mesh draws, as `setDrawRange` gave them. */
+	drawRange: readonly [number, number] = [0, Number.POSITIVE_INFINITY];
 	/** @internal The mesh's block of morph weights in the engine core, plus one, or 0 for none. */
 	morphBlock = 0;
 	/** @internal The place of the block's first weight in the core's table of morph weights. */
@@ -1269,6 +1587,8 @@ export class Mesh extends Object3D {
 		twin.mesh = this.mesh;
 		twin.material = this.material;
 		twin.renderOrder = this.renderOrder;
+		twin.levelBias = this.levelBias;
+		twin.drawRange = this.drawRange;
 		twin.morphJoint = this.morphJoint;
 		return twin;
 	}
@@ -1341,11 +1661,15 @@ export class Mesh extends Object3D {
 		const { mesh } = this;
 		const own = this.flags & C.FLAG_CUSTOM_BOUNDS;
 		if (mesh && !own && margin !== (this.material?.boundsMargin ?? 0)) {
-			this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + margin);
+			const [x, y, z] = mesh.center;
+			this.scene.writeBounds(this.row, x, y, z, mesh.radius + margin);
 			if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
+		// A copy that drew with a material that draws the base level alone was not counted.
+		const counted = this.material !== undefined && !this.material.wholeOnly;
 		this.material = material;
+		mesh?.drawnWith(material, counted ? 0 : 1, 'setMaterial');
 	}
 
 	/**
@@ -1357,10 +1681,12 @@ export class Mesh extends Object3D {
 			checkLive('setMesh', this);
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
-		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + (this.material?.boundsMargin ?? 0));
+		const [x, y, z] = mesh.center;
+		this.scene.writeBounds(this.row, x, y, z, mesh.radius + (this.material?.boundsMargin ?? 0));
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
+		if (this.material) mesh.drawnWith(this.material, 1, 'setMesh');
 		this.keepFlag(C.FLAG_CUSTOM_BOUNDS, false);
 		// A mesh of as many morph targets keeps its weights; another gets weights of its own.
 		if (mesh.morphTargets !== this.morphCount) {
@@ -1397,21 +1723,28 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Makes the mesh block the view, or stop. The default is false, except for the meshes of a
-	 * model file that the asset tool gave blockers. On WebGL2, while the `softwareOcclusion`
-	 * quality setting is on, the job workers draw each blocker into a small depth buffer every
-	 * frame, and the engine skips every object that lies wholly behind the blockers. On WebGPU,
-	 * while the `gpuOcclusion` setting is on, the GPU draws the depth of the blockers that showed
-	 * in the last frame and skips every object wholly behind them. Mark large, solid meshes that
-	 * hide much of the scene, such as buildings and walls, whose mesh has at most 4,096 triangles.
-	 * On WebGL2, a mesh that the asset tool gave a blocker draws that blocker instead, a few boxes
-	 * inside the mesh, whatever the mesh's own size. A blocker's mesh must lie inside what the
-	 * object draws, as the object's own mesh does. Objects that blend, cut holes with an alpha
-	 * mask or use a custom material never block, whatever this says, nor do skinned ones on
-	 * WebGL2. A change needs no rebuild of the engine's tables.
+	 * Makes the mesh block the view, or keeps it from blocking. On WebGL2, while the
+	 * `softwareOcclusion` quality setting is on, the job workers draw each blocker into a small
+	 * depth buffer every frame, and the engine skips every object that lies wholly behind the
+	 * blockers. Only meshes marked true block there, and the meshes of a model file that the asset
+	 * tool gave blockers. Mark large, solid meshes that hide much of the scene, such as buildings
+	 * and walls, whose mesh has at most 4,096 triangles. A mesh that the asset tool gave a blocker
+	 * draws that blocker instead, a few boxes inside the mesh, whatever the mesh's own size. A
+	 * blocker's mesh must lie inside what the object draws, as the object's own mesh does. On WebGPU,
+	 * while the `gpuOcclusion` setting is on, every opaque mesh may block without a mark: the GPU
+	 * draws the depth of those that showed in the last frame and look large on the screen, and
+	 * skips every object wholly behind them. False keeps the mesh from blocking there too. Objects
+	 * that blend, cut holes with an alpha mask or use a custom material never block, whatever this
+	 * says, nor do skinned ones on WebGL2. A change needs no rebuild of the engine's tables.
 	 */
 	setOccluder(occluder: boolean): void {
-		this.setFlag('setOccluder', C.FLAG_OCCLUDER, occluder);
+		const call = 'setOccluder';
+		if (DEV) checkLive(call, this);
+		const mask = C.FLAG_OCCLUDER | C.FLAG_NOT_OCCLUDER;
+		const value = occluder ? C.FLAG_OCCLUDER : C.FLAG_NOT_OCCLUDER;
+		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, mask, value, call);
+		this.keepFlag(C.FLAG_OCCLUDER, occluder);
+		this.keepFlag(C.FLAG_NOT_OCCLUDER, !occluder);
 	}
 
 	/**
@@ -1430,36 +1763,65 @@ export class Mesh extends Object3D {
 	}
 
 	/**
+	 * Raises or lowers the threshold that picks this mesh's levels of detail, as Godot's
+	 * `lod_bias` does. A bias above 1 makes every switch happen nearer, so the object draws
+	 * coarser levels. A bias below 1 keeps its detail, which a hero object wants. The bias
+	 * multiplies the threshold of the level switches and of the distance at which the object
+	 * hides, so both move by the same factor. The default is 1. The object's mesh needs levels
+	 * (`setLevels`). A change rebuilds the engine's tables of what it draws, as a new material
+	 * does. Throws E1108 for a bias that is not a number above 0.
+	 */
+	setLevelBias(bias: number): void {
+		if (DEV) {
+			checkLive('setLevelBias', this);
+			checkNumber('setLevelBias', 'bias', bias, this);
+			if (bias <= 0)
+				throw new EngineError(
+					'E1108',
+					`setLevelBias() got ${bias} on ${this.describe()}, not a number above 0.`,
+				);
+		}
+		const bits = this.scene.floatBits(bias);
+		this.scene.command(C.COMMAND_SET_LEVEL_BIAS, this.handle, bits, 0, 'setLevelBias');
+		this.levelBias = bias;
+	}
+
+	/**
+	 * Sets the distances between which the mesh draws, as Godot's visibility range and Bevy's
+	 * `VisibilityRange` do: nothing nearer than `start`, which is 0 for none, and nothing past
+	 * `end`, which is `Infinity` for none. Each edge fades over a short band, so a mesh that fades
+	 * in or out does not pop. A mesh whose bounds leave the range costs no draw at all. The
+	 * default draws at every distance. The `lodFade` quality setting turns the bands off on Low.
+	 * Throws E1108 for a range that is not two numbers with 0 <= start < end.
+	 */
+	setDrawRange(start: number, end: number): void {
+		if (DEV) {
+			checkLive('setDrawRange', this);
+			checkNumber('setDrawRange', 'start', start, this);
+			checkNumber('setDrawRange', 'end', end, this);
+			if (!(start >= 0 && start < end))
+				throw new EngineError(
+					'E1108',
+					`setDrawRange() got ${start} and ${end} on ${this.describe()}, not a start at or above 0 and below the end.`,
+				);
+		}
+		this.scene.command(
+			C.COMMAND_SET_DRAW_RANGE,
+			this.handle,
+			this.scene.floatBits(start),
+			this.scene.floatBits(end),
+			'setDrawRange',
+		);
+		this.drawRange = [start, end];
+	}
+
+	/**
 	 * With false, the engine draws the mesh even where its bounds are out of view, as three.js's
 	 * `frustumCulled = false` does. The default is true. For vertices that a shader moves, larger
 	 * bounds from `setBounds` cost less.
 	 */
 	setFrustumCulled(culled: boolean): void {
 		this.setFlag('setFrustumCulled', C.FLAG_UNCULLED, !culled);
-	}
-
-	/**
-	 * Replaces the mesh's bounding sphere, which culling tests, with a sphere of your own: `center`
-	 * relative to the object's origin, and `radius`, both before the object's scale. Use it when a
-	 * shader moves vertices outside the mesh's sphere. `setMesh` gives the mesh's sphere back.
-	 */
-	setBounds(center: Vec3Like, radius: number): void {
-		const x = center[0] as number;
-		const y = center[1] as number;
-		const z = center[2] as number;
-		if (DEV) {
-			checkLive('setBounds', this);
-			checkVector('setBounds', this, x, y, z);
-			checkNumber('setBounds', 'radius', radius, this);
-			if (radius < 0)
-				throw new EngineError(
-					'E1108',
-					`setBounds() got the radius ${radius} on ${this.describe()}, below 0.`,
-				);
-		}
-		this.scene.writeBounds(this.row, x, y, z, radius);
-		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
-		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
 	}
 }
 
@@ -1472,6 +1834,14 @@ function checkSameEngine(
 ): void {
 	if (core !== scene.core)
 		throw new EngineError('E1103', `${call}() got a ${kind} that is not from this engine.`);
+}
+
+/** What a material's shading draws besides a mesh, or undefined for a material that draws meshes. */
+function batchOnlyShading(shading: number): string | undefined {
+	if (shading === C.SHADING_SPRITE) return 'sprite';
+	if (shading === C.SHADING_LINE || shading === C.SHADING_LINE_LIT) return 'line';
+	if (shading === C.SHADING_PARTICLE) return 'particle';
+	return undefined;
 }
 
 /**
@@ -1796,6 +2166,11 @@ export class Light extends Object3D {
 	 * `setIntensity` reads it without boxing a number.
 	 */
 	readonly unitScale = new Float64Array(1).fill(1);
+	/**
+	 * @internal The picture that `setImage` or `setMap` set and that is not written yet, if any, so
+	 * a task that writes it can tell whether a later call has replaced it.
+	 */
+	pendingImage: LightImagePixels | null = null;
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
@@ -1896,11 +2271,12 @@ export class Light extends Object3D {
 			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
 			// The shadow distance 0 is 'auto', and it stands in for the default.
 			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
-			// Cascades are whole, and map sizes are powers of two.
+			// Cascades are whole, and map and tile sizes are powers of two.
 			const whole =
 				which === C.LIGHT_VALUE_SHADOW_CASCADES
 					? Number.isInteger(value)
-					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (value & (value - 1)) === 0;
+					: (which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE && which !== C.LIGHT_VALUE_HERO_SIZE) ||
+						(value & (value - 1)) === 0;
 			if (!auto && !(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
@@ -1939,6 +2315,10 @@ export class Light extends Object3D {
  * Light from one direction, like sunlight. It travels along the light's -Z axis, which
  * `setDirection`, `lookAt` and the light's parents turn. Its position does not matter.
  *
+ * Up to four directional lights light surfaces at once. The first one created casts the shadows,
+ * when `castShadows` is on, and up to three more light as fill and rim lights, without shadows.
+ * A fifth directional light gives no light.
+ *
  * @category api/lights
  */
 export class DirectionalLight extends Light {
@@ -1956,11 +2336,46 @@ export class DirectionalLight extends Light {
 	}
 
 	/**
+	 * Gives `hero` its own shadow map, or takes it away with `null`. The map is a tile of the
+	 * shadow atlas, fitted tightly to the object along the light, so its shadow keeps far finer
+	 * texels than the cascades give it. Surfaces near the object read that tile in place of the
+	 * cascades. The object casts shadows; its light is this light.
+	 *
+	 * `tileSize` gives the tile's texels on each side, 1,024, 2,048 or 4,096. Leaving it out keeps
+	 * the light's value, which starts as the quality preset's `heroTileSize`.
+	 */
+	setHeroShadow(hero: Object3D | null, tileSize?: 1024 | 2048 | 4096): void {
+		if (DEV) {
+			checkLive('setHeroShadow', this);
+			if (hero !== null) {
+				if (!(hero instanceof Object3D))
+					throw new EngineError(
+						'E1213',
+						`setHeroShadow() got ${String(hero)}, which is not an object. Give an object that casts shadows, or null.`,
+					);
+				checkLive('setHeroShadow', hero, true);
+			}
+		}
+		if (tileSize !== undefined) this.writeValue('setHeroShadow', C.LIGHT_VALUE_HERO_SIZE, tileSize);
+		const { core } = this.scene;
+		const object = hero === null ? 0 : hero.handle >>> 0;
+		// The core's light setters report nothing the page can act on, like every other one here.
+		core.glue.setLightHero(this.id, object);
+	}
+
+	/**
 	 * Changes how the light's shadows draw. Settings that `shadow` leaves out keep their values. A
 	 * new cascade count or map size makes the shadow map again, so set them at setup.
 	 */
 	setShadow(shadow: DirectionalShadowOptions): void {
 		this.shadow('setShadow', shadow);
+	}
+
+	/** @internal Sets each of the shadow settings that `shadow` gives, the hero among them. */
+	override shadow(call: string, shadow: DirectionalShadowOptions | LightShadowOptions): void {
+		super.shadow(call, shadow);
+		const hero = (shadow as DirectionalShadowOptions).hero;
+		if (hero !== undefined) this.setHeroShadow(hero);
 	}
 }
 
@@ -2003,6 +2418,9 @@ export class PointLight extends Light {
  * @category api/lights
  */
 export class SpotLight extends Light {
+	/** @internal The texture that `setMap` gave the light and that is not copied yet, so a later picture cancels it. */
+	pendingTexture: Texture | null = null;
+
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
 		this.scene.core.callValues()[0] = range;
@@ -2025,6 +2443,51 @@ export class SpotLight extends Light {
 	setPenumbra(penumbra: number): void {
 		this.scene.core.callValues()[0] = penumbra;
 		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA);
+	}
+
+	/**
+	 * Projects a picture over the light's cone, such as a window frame, a gobo pattern or a
+	 * projected photograph, or `null` to go back to one color. The color and intensity tint it.
+	 * The picture fills the square around the cone: a circle in its middle lands on the cone's
+	 * edge, where the light ends. The picture's top row lies along the world's up, as three.js
+	 * aims a spot light's map. The engine keeps the picture's detail up to 512 texels a side, so a
+	 * small gobo costs less memory than a detailed photograph. Give sRGB pixels, or a texture that
+	 * the engine copies once: a texture larger than 512 texels a side is reduced, and one that
+	 * changes every frame, such as a video's or a render pass's, throws E1112, because the copy
+	 * would show a single frame. A surface far from the light shows the picture blurred. Up to 32
+	 * lights show pictures at once, and rectangle and spot lights share those places. A new
+	 * picture takes up to a few tens of milliseconds, so set it at setup or now and then, not in
+	 * every frame.
+	 */
+	setMap(map: LightImagePixels | Texture | null): void {
+		const call = 'setMap';
+		if (DEV) checkLive(call, this);
+		if (map instanceof Texture) {
+			checkMapTexture(call, map, this);
+			this.pendingImage = null;
+			this.pendingTexture = map;
+			writeLightTexture(this, map, call);
+			return;
+		}
+		this.pendingTexture = null;
+		if (map !== null && DEV) checkLightImage(call, map, this);
+		this.pendingImage = map;
+		writeLightImage(this, map, call);
+	}
+
+	/** @internal A copy starts without the picture, which `setMap` gives it. */
+	override twin(handle: number): Object3D {
+		const twin = super.twin(handle) as SpotLight;
+		twin.writeValue('twin', C.LIGHT_VALUE_IMAGE, 0);
+		return twin;
+	}
+
+	/** Removes the light at the next frame, and frees its picture's place. */
+	override destroy(): void {
+		this.pendingImage = null;
+		this.pendingTexture = null;
+		if (this.id !== 0) this.scene.core.glue.removeLightImage(this.id);
+		super.destroy();
 	}
 
 	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
@@ -2101,37 +2564,18 @@ export class RectAreaLight extends Light {
 	 * to one color. The color and intensity tint it. The light gives out its intensity times the
 	 * picture's average color, so a mostly dark picture lights little around it. The picture's top
 	 * row lies along the light's +Y axis, and it reads the right way round from the lit side. The
-	 * engine resamples it to 128 x 128 texels, so shiny surfaces show it sharp and rough ones
-	 * blurred. Up to 32 lights show pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
-	 * now and then, not in every frame.
+	 * engine keeps the picture's detail up to 512 texels a side, so shiny surfaces show it sharp
+	 * and rough ones blurred. Up to 32 lights show pictures at once. A new picture allocates and
+	 * takes up to a few tens of milliseconds, so set it at setup or now and then, not in every
+	 * frame.
 	 */
 	setImage(image: LightImagePixels | null): void {
 		const call = 'setImage';
 		if (DEV) checkLive(call, this);
-		const { scene } = this;
-		const { core } = scene;
-		if (image === null) {
-			this.pendingImage = null;
-			core.check(core.glue.removeAreaLightImage(this.id), call, this.label, true);
-			return;
-		}
-		if (DEV) checkLightImage(call, image, this);
-		// The resampler loads on first use, so a page that sets no picture downloads none of it.
-		// The light keeps the pixels; a task writes them, which `imagesSettled` waits for.
+		if (image !== null && DEV) checkLightImage(call, image, this);
 		this.pendingImage = image;
-		const id = this.id;
-		scene.queueImage(
-			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
-				if (this.id !== id || this.pendingImage !== image) return;
-				const at = core.checkGrowth(core.glue.areaLightImage(id), call, this.label);
-				prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
-				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
-			}),
-		);
+		writeLightImage(this, image, call);
 	}
-
-	/** The picture that `setImage` set and that is not written yet, if any. */
-	private pendingImage: LightImagePixels | null = null;
 
 	/** @internal A copy starts without the picture, which `setImage` gives it. */
 	override twin(handle: number): Object3D {
@@ -2143,9 +2587,33 @@ export class RectAreaLight extends Light {
 	/** Removes the light at the next frame, and frees its picture's place. */
 	override destroy(): void {
 		this.pendingImage = null;
-		if (this.id !== 0) this.scene.core.glue.removeAreaLightImage(this.id);
+		if (this.id !== 0) this.scene.core.glue.removeLightImage(this.id);
 		super.destroy();
 	}
+}
+
+/**
+ * Writes `image` into the light tables for `light`, or frees its place for `null`. The resampler
+ * loads on first use, so a page that sets no picture downloads none of it. The light keeps the
+ * pixels; a task writes them, which `imagesSettled` waits for.
+ */
+function writeLightImage(light: Light, image: LightImagePixels | null, call: string): void {
+	const { scene } = light;
+	const { core } = scene;
+	if (image === null) {
+		core.check(core.glue.removeLightImage(light.id), call, light.label, true);
+		return;
+	}
+	const id = light.id;
+	scene.queueImage(
+		import('./light-images').then(({ lightImageSize, lightImageHalves, prepareLightImage }) => {
+			if (light.id !== id || light.pendingImage !== image) return;
+			const size = lightImageSize(image.width, image.height);
+			const at = core.checkGrowth(core.glue.lightImage(id, size), call, light.label);
+			prepareLightImage(image, core.view(Uint16Array, at, lightImageHalves(size)), size);
+			core.check(core.glue.finishLightImage(id), call, light.label, true);
+		}),
+	);
 }
 
 /** Throws E1108 for pixels whose size or data a light's image cannot take. */
@@ -2156,6 +2624,48 @@ function checkLightImage(call: string, image: LightImagePixels, light: Light): v
 		throw new EngineError(
 			'E1108',
 			`${call}() got an image of ${width} x ${height} pixels with ${data?.length ?? 0} bytes on ${light.describe()}, which needs a whole width and height above 0 and 4 bytes per pixel.`,
+		);
+}
+
+/**
+ * Gives `light` a picture whose texels come from `texture`: the resampler picks the image's size
+ * from the texture's, and a task asks the frame builder for the copy, which `imagesSettled` waits
+ * for. The frame builder copies once, when the texture's texels reach the GPU.
+ */
+function writeLightTexture(light: SpotLight, texture: Texture, call: string): void {
+	const { scene } = light;
+	const { core } = scene;
+	const id = light.id;
+	scene.queueImage(
+		import('./light-images').then(({ lightImageSize }) => {
+			if (light.id !== id || light.pendingTexture !== texture || !texture.live) return;
+			const size = lightImageSize(texture.width, texture.height);
+			core.check(core.glue.setLightMapTexture(id, texture.handle, size), call, light.label, true);
+		}),
+	);
+}
+
+/** Throws E1112 for a texture that a spot light's map cannot copy into its image. */
+function checkMapTexture(call: string, texture: Texture, light: Light): void {
+	if (!texture.live)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture that texture.destroy() destroyed on ${light.describe()}. Give a live texture.`,
+		);
+	if (texture.pass || texture.video)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture that changes every frame on ${light.describe()}, which a spot light's map copies once. Give a still texture, such as one that assets.loadTexture loaded.`,
+		);
+	if (texture.depth !== 1)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture of ${texture.depth} layers on ${light.describe()}, which a spot light's map cannot project. Give a 2D texture.`,
+		);
+	if (texture.droppedLevels > 0)
+		throw new EngineError(
+			'E1112',
+			`${call}() got a texture whose largest mip levels the texture memory budget dropped on ${light.describe()}, so it has no picture to copy. Free texture memory, or give another texture.`,
 		);
 }
 
@@ -2202,6 +2712,7 @@ export class InstanceBatch implements ViewHolder {
 		scales: Float32Array;
 		colors: Float32Array | undefined;
 		values: Float32Array | undefined;
+		ranges: Float32Array | undefined;
 	};
 	/** @internal */
 	destroyedFrame = -1;
@@ -2263,6 +2774,8 @@ export class InstanceBatch implements ViewHolder {
 
 	private makeViews(): void {
 		const { core } = this.scene;
+		if (this.own.ranges)
+			core.check(core.glue.reserveBatchRanges(this.id), 'instance arrays', 'an instance batch');
 		const address = (field: number) =>
 			core.check(core.glue.batchArrays(this.id, field), 'instance arrays', 'an instance batch');
 		this.rows = {
@@ -2271,6 +2784,7 @@ export class InstanceBatch implements ViewHolder {
 			scales: core.f32(address(C.BATCH_FIELD_SCALES), this.count * 3),
 			colors: this.own.colors ? core.f32(address(C.BATCH_FIELD_COLORS), this.count * 4) : undefined,
 			values: this.own.values ? core.f32(address(C.BATCH_FIELD_VALUES), this.count * 4) : undefined,
+			ranges: this.own.ranges ? core.f32(address(C.BATCH_FIELD_RANGES), this.count * 2) : undefined,
 		};
 		this.generation = core.generation;
 	}
@@ -2306,11 +2820,95 @@ export class InstanceBatch implements ViewHolder {
 		return this.views().values;
 	}
 
+	/**
+	 * The rows' distance ranges, two floats per row: the start distance at `2i` and the end
+	 * distance at `2i + 1`, when the batch was created with `ranges`. A row draws between them,
+	 * with a fade at each edge. `setDrawRange` sets every row's, and a later write to this array
+	 * changes one row. Write it at setup: the engine reads it when it next rebuilds its draw
+	 * tables, which `setDrawRange` and a new object or batch make.
+	 */
+	get ranges(): Float32Array | undefined {
+		return this.views().ranges;
+	}
+
+	/**
+	 * Sets the distances between which every row draws, as `Mesh.setDrawRange` does for one mesh:
+	 * nothing nearer than `start`, which is 0 for none, and nothing past `end`, which is
+	 * `Infinity` for none. The rows take a fade at each edge. A batch created with `ranges` gets
+	 * the same range in its own array. Throws E1108 for a range that is not two numbers with
+	 * 0 <= start < end.
+	 */
+	setDrawRange(start: number, end: number): void {
+		if (DEV) {
+			checkNumber('setDrawRange', 'start', start, this);
+			checkNumber('setDrawRange', 'end', end, this);
+			if (!(start >= 0 && start < end))
+				throw new EngineError(
+					'E1108',
+					`setDrawRange() got ${start} and ${end} on ${this.describe()}, not a start at or above 0 and below the end.`,
+				);
+		}
+		const { core } = this.scene;
+		const values = core.callValues();
+		values[0] = start;
+		values[1] = end;
+		core.check(core.glue.setBatchDrawRange(this.id), 'setDrawRange', undefined, true);
+		for (const part of this.parts) core.glue.setBatchDrawRange(part);
+	}
+
+	/**
+	 * Keeps every row of the batch whatever a camera's frustum says, or culls its rows again. An
+	 * add-on whose own cull or count decides what draws marks its batch unculled. A change
+	 * recomputes the rows' bounds, so make it at setup.
+	 */
+	setFrustumCulled(culled: boolean): void {
+		const { core } = this.scene;
+		core.check(core.glue.setBatchUnculled(this.id, !culled), 'setFrustumCulled', undefined, true);
+	}
+
+	/**
+	 * Makes the writer that packs chunks of rows into this batch's rows, for an add-on whose rows
+	 * arrive as chunks. The writer stores each chunk once when it arrives, then packs the chosen
+	 * prefix of each into the rows in the core's memory, so a frame copies no rows through the
+	 * sketch's heap. The batch must own its rows' transforms: a pack on a part of a model, or on a
+	 * sprite or line batch, writes nothing. The code loads on first use.
+	 *
+	 * @category api/scene
+	 */
+	async createChunkRows(): Promise<ChunkRowWriter> {
+		const { ChunkRowWriter } = await loadChunkRows('createChunkRows');
+		return new ChunkRowWriter(this.scene.core, this);
+	}
+
 	/** Draws only the first `count` rows. */
 	setActiveCount(count: number): void {
 		const { core } = this.scene;
 		core.check(core.glue.setBatchActiveCount(this.id, count), 'setActiveCount', undefined, true);
 		this.activeRows = count;
+	}
+
+	/**
+	 * Makes every row's bounding sphere, which culling tests, hold the sphere of `radius` meters
+	 * around the row's origin, in place of the mesh's own sphere. Each sphere keeps the mesh's
+	 * center (`mesh.center`), so its radius grows by that center's distance from the origin. A
+	 * vertex shader that carries rows away from their origins, such as traffic along a lane, needs
+	 * this: the engine culls a row moved beyond the mesh's own sphere while it is still on the
+	 * screen. A later change of the mesh's radius, which a displaced material makes, replaces it.
+	 * Every row is marked for update, and the call builds the engine's draw tables again, so make it
+	 * at setup. Throws E1203 for a value that is not a finite number, and E1108 for 0 or below.
+	 */
+	setBoundingRadius(radius: number): void {
+		if (DEV) {
+			checkNumber('setBoundingRadius', 'radius', radius, this);
+			if (radius <= 0)
+				throw new EngineError(
+					'E1108',
+					`setBoundingRadius() got the radius ${radius} on ${this.describe()}, not a number above 0.`,
+				);
+		}
+		const { core } = this.scene;
+		core.callValues()[0] = radius;
+		core.check(core.glue.setBatchBounds(this.id), 'setBoundingRadius', undefined, true);
 	}
 
 	/**
@@ -2340,6 +2938,15 @@ export class InstanceBatch implements ViewHolder {
 	 */
 	setReceiveShadows(receive: boolean): void {
 		this.setShadowBit('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Lets every row hide what lies behind it in GPU occlusion culling on WebGPU, or keeps every row
+	 * from it. Rows of an opaque mesh may hide others by default, when they look large enough on the
+	 * screen. Rows never block on WebGL2. A change rebuilds the engine's tables of what it draws.
+	 */
+	setOccluder(occluder: boolean): void {
+		this.setShadowBit('setOccluder', C.FLAG_NOT_OCCLUDER, !occluder);
 	}
 
 	private shadowBits = 0;
@@ -2426,16 +3033,18 @@ export class InstanceBatch implements ViewHolder {
 export interface RowValueArrays {
 	readonly colors: boolean;
 	readonly values: boolean;
+	readonly ranges: boolean;
 }
 
 /** @internal An instance batch with neither colors nor values. */
-export const NO_ROW_VALUES: RowValueArrays = { colors: false, values: false };
+export const NO_ROW_VALUES: RowValueArrays = { colors: false, values: false, ranges: false };
 
 /** The row arrays that an instance batch's options ask for. */
 function rowValueArrays(options: Partial<InstanceOptions>): RowValueArrays {
 	const colors = options.colors ?? false;
 	const values = options.values ?? false;
-	return colors || values ? { colors, values } : NO_ROW_VALUES;
+	const ranges = options.ranges ?? false;
+	return colors || values || ranges ? { colors, values, ranges } : NO_ROW_VALUES;
 }
 
 /** @internal The meshes and materials that an instance batch draws, which their destroy checks. */
@@ -2456,6 +3065,7 @@ const NO_ROWS = {
 	scales: NO_FLOATS,
 	colors: undefined,
 	values: undefined,
+	ranges: undefined,
 };
 
 /** The row fields of an instance batch, which the check of unmarked row writes hashes. */
@@ -2501,6 +3111,18 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 	}
 }
 
+/** Imports the chunked-row code, which a page downloads with its first chunked batch, or throws E1406. */
+async function loadChunkRows(call: string): Promise<typeof import('./chunk-rows')> {
+	try {
+		return await import('./chunk-rows');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the chunked row code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
 /** Imports the particle code, which a page downloads with its first particle buffer, or throws E1406. */
 async function loadParticles(call: string): Promise<typeof import('./particles')> {
 	try {
@@ -2521,6 +3143,30 @@ async function loadLines(call: string): Promise<typeof import('./lines')> {
 		throw new EngineError(
 			'E1406',
 			`the line code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** Imports the instance adapter, which a page downloads with its first instance draw, or throws E1406. */
+async function loadFeatureInstances(call: string): Promise<typeof import('./feature-instances')> {
+	try {
+		return await import('./feature-instances');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the feature instance code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** Imports the draw adapter, which a page downloads with its first feature draw, or throws E1406. */
+async function loadFeatureDraws(call: string): Promise<typeof import('./feature-draws')> {
+	try {
+		return await import('./feature-draws');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the feature draw code did not download for ${call}(): ${reasonOf(error)}.`,
 		);
 	}
 }
@@ -2667,6 +3313,230 @@ export const SCENE_CHECKS = {
 /** @internal The type of `SCENE_CHECKS`. */
 export type SceneChecks = typeof SCENE_CHECKS;
 
+/** The color that a property write fills for a material or a light, shared by every write. */
+const PROPERTY_COLOR: [number, number, number] = [0, 0, 0];
+
+/** The values of a hold script's step, shared by every step: a rotation takes the most, at four. */
+const SCRIPT_VALUES = new Float32Array(4);
+
+/** The value that a property had before a hold script wrote it, which a full-weight write ignores. */
+const SCRIPT_BASE = new Float32Array(4);
+
+/** The smallest positive value that a light's range, a camera's planes and its view take. */
+const SMALLEST = 1e-6;
+
+/** `value` kept between `low` and `high`: a key's curve can overshoot the values that a setter takes. */
+function between(value: number, low: number, high = Infinity): number {
+	return value < low ? low : value > high ? high : value;
+}
+
+/**
+ * Writes a value that a property track sampled into its target, mixed by `weight` with the value
+ * that the target held before any clip moved it, which is the binding's base. It keeps a value
+ * within what the target takes, because a cubic key can overshoot, and writes nothing for a value
+ * that is not a number or for a target that was destroyed. It allocates nothing, so a track writes
+ * a value in every frame.
+ */
+function writeProperty(
+	target: object,
+	binding: PropertyBinding,
+	values: Float32Array,
+	at: number,
+	weight: number,
+): void {
+	const { what, base } = binding;
+	const rest = 1 - weight;
+	/** The number of component `c`, mixed with the base, or the base for one that is no number. */
+	const mixed = (c: number) => {
+		const value = (values[at + c] as number) * weight + (base[c] as number) * rest;
+		return Number.isFinite(value) ? value : (base[c] as number);
+	};
+	/** The color of components 0 to 2, each between 0 and 1. */
+	const color = () => {
+		PROPERTY_COLOR[0] = between(mixed(0), 0, 1);
+		PROPERTY_COLOR[1] = between(mixed(1), 0, 1);
+		PROPERTY_COLOR[2] = between(mixed(2), 0, 1);
+		return PROPERTY_COLOR;
+	};
+	if (what === PROPERTY_MATERIAL) {
+		const material = target as Material;
+		if (!material.live) return;
+		if (binding.components === 2) {
+			// A pair is where a map sits on the texture coordinates: one map's, or every map's.
+			if (binding.name === 'uvOffset' || binding.name === 'uvScale')
+				material.writeUvPair(binding.name, mixed(0), mixed(1), binding.slot);
+			return;
+		}
+		if (binding.components === 1) material.writeUniform(binding.name, mixed(0));
+		else material.writeUniform(binding.name, color());
+		return;
+	}
+	const object = target as Object3D;
+	if (object.destroyedFrame !== -1) return;
+	switch (what) {
+		case PROPERTY_LIGHT_INTENSITY:
+			(target as Light).setIntensity(between(mixed(0), 0));
+			return;
+		case PROPERTY_LIGHT_COLOR:
+			(target as Light).setColor(color());
+			return;
+		case PROPERTY_LIGHT_RANGE:
+			(target as PointLight).setRange(between(mixed(0), SMALLEST));
+			return;
+		case PROPERTY_LIGHT_DECAY:
+			(target as PointLight).setDecay(between(mixed(0), 0));
+			return;
+		case PROPERTY_LIGHT_ANGLE:
+			(target as SpotLight).setAngle(between(mixed(0), SMALLEST, Math.PI / 2));
+			return;
+		case PROPERTY_LIGHT_PENUMBRA:
+			(target as SpotLight).setPenumbra(between(mixed(0), 0, 1));
+			return;
+		case PROPERTY_CAMERA_FOV:
+			(target as PerspectiveCamera).setFov(between(mixed(0), 1e-3, 179.999));
+			return;
+		case PROPERTY_CAMERA_NEAR: {
+			// The near plane stays below the far one, and above 0.
+			const camera = target as Camera;
+			camera.setNearFar(between(mixed(0), SMALLEST, camera.far), camera.far);
+			return;
+		}
+		case PROPERTY_CAMERA_FAR: {
+			const camera = target as Camera;
+			camera.setNearFar(camera.near, between(mixed(0), camera.near * 1.001));
+			return;
+		}
+		case PROPERTY_CAMERA_HEIGHT:
+			(target as OrthographicCamera).setOrthoHeight(between(mixed(0), SMALLEST));
+			return;
+		case PROPERTY_POSITION:
+			object.setPosition(mixed(0), mixed(1), mixed(2));
+			return;
+		case PROPERTY_ROTATION: {
+			const x = mixed(0);
+			const y = mixed(1);
+			const z = mixed(2);
+			const w = mixed(3);
+			const length = Math.hypot(x, y, z, w);
+			if (length === 0) object.setRotation(0, 0, 0, 1);
+			else object.setRotation(x / length, y / length, z / length, w / length);
+			return;
+		}
+		case PROPERTY_SCALE:
+			object.setScale(mixed(0), mixed(1), mixed(2));
+			return;
+		case PROPERTY_VISIBLE:
+			object.setVisible(mixed(0) >= 0.5);
+			return;
+	}
+}
+
+/** What a property path names: the value, the material name that holds it, and its size. */
+interface PropertyPath {
+	what: number;
+	name: string;
+	components: number;
+}
+
+/** The properties of a light, by the name that a path gives them. */
+const LIGHT_PATHS: ReadonlyMap<string, PropertyPath> = new Map<string, PropertyPath>([
+	['intensity', { what: PROPERTY_LIGHT_INTENSITY, name: '', components: 1 }],
+	['color', { what: PROPERTY_LIGHT_COLOR, name: '', components: 3 }],
+	['range', { what: PROPERTY_LIGHT_RANGE, name: '', components: 1 }],
+	['decay', { what: PROPERTY_LIGHT_DECAY, name: '', components: 1 }],
+	['angle', { what: PROPERTY_LIGHT_ANGLE, name: '', components: 1 }],
+	['penumbra', { what: PROPERTY_LIGHT_PENUMBRA, name: '', components: 1 }],
+]);
+
+/** The properties of a camera, by the name that a path gives them. */
+const CAMERA_PATHS: ReadonlyMap<string, PropertyPath> = new Map<string, PropertyPath>([
+	['fov', { what: PROPERTY_CAMERA_FOV, name: '', components: 1 }],
+	['near', { what: PROPERTY_CAMERA_NEAR, name: '', components: 1 }],
+	['far', { what: PROPERTY_CAMERA_FAR, name: '', components: 1 }],
+	['height', { what: PROPERTY_CAMERA_HEIGHT, name: '', components: 1 }],
+]);
+
+/** The properties of an object, by the name that a path gives them. */
+const OBJECT_PATHS: ReadonlyMap<string, PropertyPath> = new Map<string, PropertyPath>([
+	['position', { what: PROPERTY_POSITION, name: '', components: 3 }],
+	['rotation', { what: PROPERTY_ROTATION, name: '', components: 4 }],
+	['scale', { what: PROPERTY_SCALE, name: '', components: 3 }],
+	['visible', { what: PROPERTY_VISIBLE, name: '', components: 1 }],
+]);
+
+/** A list of names for a message, such as "a, b and c". */
+function listNames(names: Iterable<string>): string {
+	const all = [...names];
+	return all.length < 2 ? (all[0] ?? 'none') : `${all.slice(0, -1).join(', ')} and ${all.at(-1)}`;
+}
+
+/** The properties of a target that has none of its own, such as a plain object. */
+const NO_OWN_PATHS: ReadonlyMap<string, PropertyPath> = new Map();
+
+/** The light properties that a directional light lacks, and the ones that only a spot light has. */
+const LIGHT_RANGE_PATHS: ReadonlySet<number> = new Set([
+	PROPERTY_LIGHT_RANGE,
+	PROPERTY_LIGHT_DECAY,
+]);
+const SPOT_PATHS: ReadonlySet<number> = new Set([PROPERTY_LIGHT_ANGLE, PROPERTY_LIGHT_PENUMBRA]);
+
+/**
+ * The property that `path` names on `target`: `'light.intensity'` or `'intensity'` for a light,
+ * `'camera.fov'` or `'fov'` for a camera, `'material.opacity'` or `'opacity'` for a material, and
+ * `'position'`, `'rotation'`, `'scale'` or `'visible'` for any object. Throws E1218 for a path that
+ * the target does not take. `call` names the call in the message, such as a hold script's step.
+ */
+function propertyPath(
+	target: object,
+	path: string,
+	error: (detail: string) => never,
+	call = 'animateProperty',
+): PropertyPath {
+	const dot = path.indexOf('.');
+	const head = dot > 0 ? path.slice(0, dot) : '';
+	const name = dot > 0 ? path.slice(dot + 1) : path;
+	if (target instanceof Material) {
+		const components = materialValueComponents(name);
+		if (components > 0 && (head === 'material' || head === ''))
+			return { what: PROPERTY_MATERIAL, name, components };
+		throw error(
+			`${call}() got "${path}" on a material, which it does not take. A material animates the values that setUniform takes, such as "opacity" and "color", with or without the "material." prefix.`,
+		);
+	}
+	const kind = target instanceof Light ? 'light' : target instanceof Camera ? 'camera' : '';
+	const own = kind === 'light' ? LIGHT_PATHS : kind === 'camera' ? CAMERA_PATHS : NO_OWN_PATHS;
+	const found =
+		head === '' || head === 'object'
+			? (OBJECT_PATHS.get(name) ?? (head === '' ? own.get(name) : undefined))
+			: head === kind
+				? own.get(name)
+				: undefined;
+	// A light or a camera takes only the values of its own kind: a directional light has no range,
+	// and a perspective camera has no view height.
+	const otherKind =
+		target instanceof OrthographicCamera
+			? found?.what === PROPERTY_CAMERA_FOV
+			: target instanceof PerspectiveCamera
+				? found?.what === PROPERTY_CAMERA_HEIGHT
+				: target instanceof DirectionalLight
+					? LIGHT_RANGE_PATHS.has(found?.what ?? -1)
+					: target instanceof Light && !(target instanceof SpotLight)
+						? SPOT_PATHS.has(found?.what ?? -1)
+						: false;
+	if (found !== undefined && !otherKind) return found;
+	const where =
+		kind === '' ? (target as Object3D).describe() : `${(target as Object3D).describe()}, a ${kind}`;
+	if (otherKind)
+		throw error(`${call}() got "${path}" on ${where}, which this kind of ${kind} does not have.`);
+	const accepted = [
+		...(kind === '' ? [] : [...own.keys()].map((key) => `${kind}.${key}`)),
+		...[...OBJECT_PATHS.keys()].map((key) => (kind === '' ? key : `object.${key}`)),
+	];
+	throw error(
+		`${call}() got "${path}" on ${where}, which it does not take. It animates ${listNames(accepted)}.`,
+	);
+}
+
 /**
  * The scene: every object, the active camera, the lights and the background.
  *
@@ -2686,10 +3556,12 @@ export class Scene implements ViewHolder {
 	private areaTablesLoad: Promise<AreaLightTables> | undefined;
 	/** @internal The area lights' tables' failure before the code arrived, once: the frame loop reports it. */
 	private areaTablesFailure: EngineError | undefined;
-	/** @internal The tasks that write the pictures that `RectAreaLight.setImage` set. */
+	/** @internal The tasks that write the pictures that `RectAreaLight.setImage` and `SpotLight.setMap` set. */
 	private readonly imageTasks = new Set<Promise<void>>();
 	/** @internal The picture that failed to write, once: the frame loop reports it. */
 	private imageFailure: unknown;
+	/** @internal The draws that answer each frame whether their feature is ready. */
+	private readonly readiness: Array<() => void> = [];
 
 	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
 	private loadAreaTables(): void {
@@ -2725,7 +3597,7 @@ export class Scene implements ViewHolder {
 		);
 	}
 
-	/** @internal Settles when every picture that `setImage` set has been written to engine memory. */
+	/** @internal Settles when every picture that `setImage` or `setMap` set has been written to engine memory. */
 	async imagesSettled(): Promise<void> {
 		while (this.imageTasks.size > 0) await Promise.all(this.imageTasks);
 	}
@@ -2776,8 +3648,12 @@ export class Scene implements ViewHolder {
 	private readonly spriteQuads = new Map<string, MeshGeometry>();
 	/** @internal The particle buffers in the scene. */
 	particleBuffers = 0;
+	/** @internal The draws that make their own vertices. */
+	vertexDraws = 0;
 	/** The one triangle that particle buffers' objects draw with, made with the first buffer. */
 	private particleMesh: MeshGeometry | undefined;
+	/** The one triangle that such draws' objects hold, made with the first draw. */
+	private vertexDrawMesh: MeshGeometry | undefined;
 	/** The segment mesh of line batches, which every line batch shares, made with the first. */
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
@@ -2787,6 +3663,8 @@ export class Scene implements ViewHolder {
 	/** The ray and hit that a pick's raycast reuses. */
 	private pickRay: Ray | undefined;
 	private pickHit: RaycastHit | undefined;
+	/** The point of a pick's ray, in CSS pixels, which the ray's math reads from an array. */
+	private pickPoint: Float64Array | undefined;
 	/** The command batches that the world took before the runner's first frame, or -1. */
 	private settledCommands = -1;
 	/** The environment's values in the core, made on the first `setEnvironment`. */
@@ -2795,6 +3673,8 @@ export class Scene implements ViewHolder {
 	private sceneProbeGrid: SceneLightProbeGrid | undefined;
 	/** The background's values in the core, made on the first `setBackground`. */
 	private sceneBackground: SceneBackground | undefined;
+	/** The add-on's layer over the background, made on the first `setSkyLayer`. */
+	private skyLayer: SceneSkyLayer | undefined;
 	/** True while the fog is volumetric. */
 	private fogVolume = false;
 	/** Pointer events on objects, made on the first `on`. */
@@ -2813,6 +3693,8 @@ export class Scene implements ViewHolder {
 	declare readonly unmarkedRows: UnmarkedRows | undefined;
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
+	/** @internal The scene's property animations, from the first animated property. */
+	properties: PropertySystem | undefined;
 	/** @internal True once an object has morph weights, so each frame's animation step runs. */
 	morphed = false;
 	/** The core's table of morph weights, made again after the engine's memory grew. */
@@ -2822,7 +3704,7 @@ export class Scene implements ViewHolder {
 	/** @internal */
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
-		private readonly time: { readonly frame: number },
+		private readonly time: { readonly frame: number; readonly held?: boolean },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
@@ -3046,6 +3928,115 @@ export class Scene implements ViewHolder {
 		out[3] = r[i + 3] as number;
 	}
 
+	/** @internal Copies the scale of the object in `slot` into `out`. */
+	readScale(slot: number, out: Vec3Like): void {
+		const s = this.views.scales;
+		const i = slot * 3;
+		out[0] = s[i] as number;
+		out[1] = s[i + 1] as number;
+		out[2] = s[i + 2] as number;
+	}
+
+	/**
+	 * @internal Writes a value that a hold script's `set` step names, at once, with the property
+	 * paths of `animateProperty`. Throws E1218 for a target that was destroyed, a path that the
+	 * object does not take, and a count of values that the path does not take.
+	 */
+	setScriptPath(target: Object3D, path: string, values: readonly number[]): void {
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (target.destroyedFrame !== -1) fail(`set() got ${target.describe()}, which was destroyed.`);
+		const property = propertyPath(target, path, fail, 'set');
+		if (values.length !== property.components)
+			fail(
+				`set() got ${values.length} ${values.length === 1 ? 'value' : 'values'} for "${path}" on ${target.describe()}, which takes ${property.components}.`,
+			);
+		const at = SCRIPT_VALUES;
+		for (let k = 0; k < property.components; k++) at[k] = values[k] as number;
+		SCRIPT_BASE.fill(0);
+		writeProperty(
+			target,
+			{
+				what: property.what,
+				name: property.name,
+				components: property.components,
+				base: SCRIPT_BASE,
+			},
+			at,
+			0,
+			1,
+		);
+	}
+
+	/**
+	 * @internal The value that a hold script's `dump` step reads, with the property paths of
+	 * `animateProperty`: the object's position, rotation, scale or visible flag, a camera's lens
+	 * values, or a light's color. Throws E1218 for a target that was destroyed, a path that the
+	 * object does not take, or a value that the engine does not keep to read back.
+	 */
+	readScriptPath(target: Object3D, path: string): number[] {
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (target.destroyedFrame !== -1) fail(`dump() got ${target.describe()}, which was destroyed.`);
+		const property = propertyPath(target, path, fail, 'dump');
+		const out = new Array<number>(property.components).fill(0);
+		const read = SCRIPT_VALUES;
+		switch (property.what) {
+			case PROPERTY_POSITION:
+				this.readPosition(target.row, read);
+				break;
+			case PROPERTY_ROTATION:
+				this.readRotation(target.row, read);
+				break;
+			case PROPERTY_SCALE:
+				this.readScale(target.row, read);
+				break;
+			case PROPERTY_VISIBLE:
+				read[0] = (target.flags & C.FLAG_VISIBLE) !== 0 ? 1 : 0;
+				break;
+			case PROPERTY_CAMERA_FOV:
+				read[0] = (target as PerspectiveCamera).fov;
+				break;
+			case PROPERTY_CAMERA_NEAR:
+				read[0] = (target as Camera).near;
+				break;
+			case PROPERTY_CAMERA_FAR:
+				read[0] = (target as Camera).far;
+				break;
+			case PROPERTY_CAMERA_HEIGHT:
+				read[0] = (target as OrthographicCamera).height;
+				break;
+			case PROPERTY_LIGHT_COLOR:
+				read.set((target as Light).linear);
+				break;
+			default:
+				fail(
+					`dump() cannot read "${path}" on ${target.describe()}, which the engine does not keep. It reads position, rotation, scale, visible, a light's color, and a camera's fov, near, far and height.`,
+				);
+		}
+		for (let k = 0; k < property.components; k++) out[k] = read[k] as number;
+		return out;
+	}
+
+	/**
+	 * @internal Up to `limit` names in the scene that contain `text`, in the order the objects were
+	 * created, or the first names when none contains it. A message about a name that found no object
+	 * shows them, so the wrong name in a script or a call is easy to fix.
+	 */
+	nearNames(text: string, limit = 3): string[] {
+		const wanted = text.toLowerCase();
+		const close: string[] = [];
+		const all: string[] = [];
+		for (const name of this.names.keys()) {
+			if (name === '') continue;
+			if (all.length < limit) all.push(name);
+			if (close.length < limit && name.toLowerCase().includes(wanted)) close.push(name);
+		}
+		return close.length > 0 ? close : all;
+	}
+
 	/**
 	 * @internal The core's table of morph weights. Sketches set weights every frame, so the check
 	 * stays small enough for the browser to inline into their code.
@@ -3132,10 +4123,32 @@ export class Scene implements ViewHolder {
 		else this.names.set(name, new Set([known, object]));
 	}
 
+	/**
+	 * @internal Visits each live object whose mesh has lower levels of detail, until `visit`
+	 * returns false. The debug view of levels draws their culling spheres, so it reads the objects
+	 * that have such a sphere of their own.
+	 */
+	forEachLevelMesh(visit: (object: Mesh) => boolean): void {
+		for (const object of this.objectSlots) {
+			if (object === undefined || object.destroyedFrame !== -1) continue;
+			if (!(object instanceof Mesh) || object.mesh === undefined) continue;
+			if (object.mesh.levels.length === 0) continue;
+			if (!visit(object)) return;
+		}
+	}
+
 	/** Adds a new batch to the index that queries read, by the slot of each of its core batches. */
 	private rememberBatch(batch: InstanceBatch): void {
 		this.batchSlots[batch.id & SLOT_MASK] = batch;
 		for (const part of batch.parts) this.batchSlots[part & SLOT_MASK] = batch;
+	}
+
+	/**
+	 * @internal The frame that the sketch ran last, and whether hold mode steps the frames, which a
+	 * mesh reads to make its planned levels one a frame.
+	 */
+	get pace(): { readonly frame: number; readonly held?: boolean } {
+		return this.time;
 	}
 
 	/**
@@ -3254,6 +4267,7 @@ export class Scene implements ViewHolder {
 		flags: number,
 		material: number,
 		call: string,
+		center: readonly number[],
 		...extra: A
 	): T {
 		const { layers } = options;
@@ -3270,7 +4284,7 @@ export class Scene implements ViewHolder {
 		this.writePosition(slot, x, y, z);
 		v.rotations.set(options.rotation ?? [0, 0, 0, 1], slot * 4);
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
-		v.radii[slot] = radius;
+		this.writeBounds(slot, center[0] as number, center[1] as number, center[2] as number, radius);
 		const all = flags | C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
 		const parent = options.parent?.handle ?? 0;
 		this.writeCommand(write++, C.COMMAND_CREATE | (all << 8), handle, parent, mesh);
@@ -3288,7 +4302,7 @@ export class Scene implements ViewHolder {
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 0, 'createGroup', ORIGIN);
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
@@ -3301,7 +4315,7 @@ export class Scene implements ViewHolder {
 		const flags =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
-			(options.occluder ? C.FLAG_OCCLUDER : 0);
+			occluderFlags(options.occluder);
 		const object = this.create(
 			Mesh,
 			options,
@@ -3310,9 +4324,11 @@ export class Scene implements ViewHolder {
 			flags,
 			material.id,
 			'createMesh',
+			mesh.center,
 		);
 		object.mesh = mesh;
 		object.material = material;
+		mesh.drawnWith(material, 1, 'createMesh');
 		const block = this.makeMorph(object, mesh, undefined, 'createMesh');
 		if (block !== 0) this.command(C.COMMAND_SET_MORPH, object.handle, block, 0, 'createMesh');
 		return object;
@@ -3339,7 +4355,7 @@ export class Scene implements ViewHolder {
 		const extra =
 			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
 			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0) |
-			(options.occluder ? C.FLAG_OCCLUDER : 0);
+			occluderFlags(options.occluder);
 		const root: TemplateNode = {
 			...(template[0] as TemplateNode),
 			name: options.name ?? template[0]?.name ?? '',
@@ -3371,6 +4387,93 @@ export class Scene implements ViewHolder {
 		}
 		instance.batches = batches;
 		return instance;
+	}
+
+	/**
+	 * Animates one value of a light, a camera, a material or an object from keyframes, such as a
+	 * lamp that pulses or a color that changes, and returns an object that controls it. The engine
+	 * writes the value in each frame, so the sketch has no update call to make. A glTF file
+	 * animates the same kinds of value with its `KHR_animation_pointer` channels.
+	 *
+	 * `path` names the value. A light takes `'light.intensity'`, `'light.color'`, `'light.range'`,
+	 * `'light.decay'`, `'light.angle'` or `'light.penumbra'`; a camera takes `'camera.fov'` (in
+	 * degrees), `'camera.near'`, `'camera.far'` or `'camera.height'` (for an orthographic camera);
+	 * a material takes the values that `setUniform` takes, such as `'material.opacity'` or
+	 * `'material.color'`; and every object takes `'position'`, `'rotation'`, `'scale'` or
+	 * `'visible'`. The prefix is optional, so `'intensity'` and `'position'` work too.
+	 *
+	 * Every object that uses the material changes with it, and an animation that writes every
+	 * frame allocates nothing. `setTime` places the animation at a time; a frozen keyframes object
+	 * is read once. Throws E1218 for a path that the target does not take, or for keyframes that
+	 * do not fit the value's numbers per key.
+	 *
+	 * @category api/animation
+	 */
+	animateProperty(
+		target: Light | Camera | Material | Object3D,
+		path: string,
+		keyframes: PropertyKeyframes,
+	): PropertyAnimation {
+		const call = 'animateProperty';
+		const fail = (detail: string): never => {
+			throw this.checks.error('E1218', detail);
+		};
+		if (DEV) {
+			if (target === null || typeof target !== 'object') fail(`${call}() got no target.`);
+			if (target instanceof Material) {
+				checkSameEngine(call, 'material', target.core, this);
+				if (!target.live) fail(`${call}() got a material that was destroyed.`);
+			} else checkLive(call, target, true);
+		}
+		const property = propertyPath(target, path, fail);
+		const { times, values } = keyframes;
+		const interpolation: PropertyInterpolation = keyframes.interpolation ?? 'linear';
+		if (DEV) {
+			if (interpolation !== 'linear' && interpolation !== 'step' && interpolation !== 'cubic')
+				fail(
+					`${call}() got the interpolation ${String(interpolation)}; it takes 'linear', 'step' or 'cubic'.`,
+				);
+			if (times.length === 0) fail(`${call}() got no keys for "${path}". Name at least one.`);
+			// A cubic key holds an in-tangent, the value and an out-tangent for each value.
+			const parts = interpolation === 'cubic' ? 3 : 1;
+			const perKey = property.components * parts;
+			if (values.length !== times.length * perKey)
+				fail(
+					`${call}() got ${values.length} values for ${times.length} keys of "${path}", which takes ${perKey} ${perKey === 1 ? 'value' : 'values'} per key.`,
+				);
+			let previous = -Infinity;
+			for (let k = 0; k < times.length; k++) {
+				const time = times[k] as number;
+				if (!Number.isFinite(time) || time < previous)
+					fail(
+						`${call}() got the key times of "${path}", which must be numbers from 0 up that never fall back.`,
+					);
+				previous = time;
+			}
+			for (let k = 0; k < values.length; k++)
+				if (!Number.isFinite(values[k])) fail(`${call}() got a value that is not a number.`);
+			const { speed, time } = keyframes;
+			if (speed !== undefined) checkNumber(call, 'speed', speed, target as Object3D);
+			if (time !== undefined) checkNumber(call, 'time', time, target as Object3D);
+		}
+		const system = this.propertySystem();
+		const { what, name, components } = property;
+		const binding: PropertyBinding = { what, name, components, base: new Float32Array(components) };
+		const track: PropertyTrack = {
+			binding: 0,
+			interpolation,
+			times: Float32Array.from(times),
+			values: Float32Array.from(values),
+		};
+		const animation = new PropertyAnimation(system, target, binding, track, keyframes);
+		system.add(animation);
+		return animation;
+	}
+
+	/** @internal The scene's property animations, which the first one makes. */
+	propertySystem(): PropertySystem {
+		this.properties ??= new PropertySystem(writeProperty);
+		return this.properties;
 	}
 
 	/**
@@ -3436,6 +4539,7 @@ export class Scene implements ViewHolder {
 				flags: each.flags,
 				layers: each.layerMask,
 				renderOrder: mesh?.renderOrder ?? 0,
+				levelBias: mesh?.levelBias ?? 1,
 				bounds,
 				source: each,
 			};
@@ -3461,10 +4565,11 @@ export class Scene implements ViewHolder {
 		const node = (k: number) => (k === 0 && root ? root : (nodes[k] as TemplateNode));
 		let records = 0;
 		for (let k = 0; k < count; k++) {
-			const { mesh, layers, renderOrder } = node(k);
+			const { mesh, layers, renderOrder, levelBias } = node(k);
 			records += 1 + (mesh ? 1 : 0) + (layers !== C.LAYERS_DEFAULT ? 1 : 0);
 			if (mesh && mesh.morphTargets > 0) records++;
 			if (renderOrder !== 0) records++;
+			if (levelBias !== 1) records++;
 		}
 		let write = this.reserveCommands(records, call);
 		const { core } = this;
@@ -3486,7 +4591,11 @@ export class Scene implements ViewHolder {
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
 				v.radii[slot] = bounds[3] as number;
-			} else v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
+			} else {
+				const center = n.mesh?.center ?? ORIGIN;
+				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = center[i] as number;
+				v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
+			}
 			const up = n.parent < 0 ? (parent?.handle ?? 0) : (handles[n.parent] as number);
 			const mesh = n.mesh?.id ?? C.CORE_NO_MESH;
 			this.writeCommand(write++, C.COMMAND_CREATE | (flags << 8), handle, up, mesh);
@@ -3497,6 +4606,10 @@ export class Scene implements ViewHolder {
 			if (n.renderOrder !== 0) {
 				const bits = this.floatBits(n.renderOrder);
 				this.writeCommand(write++, C.COMMAND_SET_RENDER_ORDER, handle, bits, 0);
+			}
+			if (n.levelBias !== 1) {
+				const bits = this.floatBits(n.levelBias);
+				this.writeCommand(write++, C.COMMAND_SET_LEVEL_BIAS, handle, bits, 0);
 			}
 			const object = this.makeObject(n, handle, call);
 			if (n.mesh && n.mesh.morphTargets > 0) {
@@ -3544,6 +4657,7 @@ export class Scene implements ViewHolder {
 		mesh.mesh = node.mesh;
 		mesh.material = node.material;
 		mesh.renderOrder = node.renderOrder;
+		mesh.levelBias = node.levelBias;
 		return mesh;
 	}
 
@@ -3557,7 +4671,7 @@ export class Scene implements ViewHolder {
 		instance: PrefabInstance,
 		spec: InstancingTemplate,
 		call: string,
-		{ layers, castShadows, receiveShadows }: InstantiateOptions,
+		{ layers, castShadows, receiveShadows, occluder }: InstantiateOptions,
 	): InstanceBatch {
 		const v = this.views;
 		const world = identityMatrix(new Float64Array(16));
@@ -3577,7 +4691,7 @@ export class Scene implements ViewHolder {
 		const batch = this.createParts(
 			spec.parts,
 			spec.count,
-			{ origin, layers, castShadows, receiveShadows },
+			{ origin, layers, castShadows, receiveShadows, occluder },
 			call,
 		);
 		const { positions, rotations, scales } = batch;
@@ -3634,6 +4748,7 @@ export class Scene implements ViewHolder {
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
+		if (options.occluder === false) batch.setOccluder(false);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
@@ -3693,12 +4808,14 @@ export class Scene implements ViewHolder {
 			meshes: [mesh],
 			materials: [material],
 		});
+		mesh.drawnWith(material, count, call);
 		this.rememberBatch(batch);
 		if (DEV && !options.dynamic) this.unmarkedRows?.watch(batch, meshRowFields(own));
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
+		if (options.occluder === false) batch.setOccluder(false);
 		if (options.origin) batch.setOrigin(options.origin, call);
 		return batch;
 	}
@@ -3748,6 +4865,151 @@ export class Scene implements ViewHolder {
 		const points = sprites.pointBatch(batch, POINT_CHECKS, positions, colors, size);
 		instances.face = points;
 		return points;
+	}
+
+	/**
+	 * An add-on's own kind of draw, declared by a feature description with the kind `'draw'`: its
+	 * WGSL, its vertex data, its uniforms and the description's frame point, band and order. The
+	 * engine draws the object on every GPU path and in every thread mode, as it draws the scene's
+	 * other objects, and sorts a blended draw among the transparent pass's objects. The first call
+	 * downloads the draw adapter.
+	 *
+	 * The description names the frame point: `'opaque'` with an opaque or masked material,
+	 * `'transparent'` with a blended one, or `'resolve'` with a blended one that blends after the
+	 * transparent pass's objects. With MSAA, a draw at `'resolve'` blends its surfaces back to
+	 * front in a layer of one sample per pixel, which the engine then blends over the scene, so
+	 * many overlapping surfaces, such as Gaussian splats, cost one blend per pixel instead of one
+	 * per sample. Its surfaces show in front of every object of the transparent pass, and other
+	 * views draw them in their own transparent pass. The band and order place a blended draw among
+	 * the pass's objects. The adapter records in the main view alone, so a description with
+	 * another view throws E1223. The description's `reads`, `writes`, `outputs` and `provides`
+	 * stay with the feature registry: this draw draws no scene resource.
+	 *
+	 * Throws E1223 for a description that is not a draw the adapter can place, E1215, E1216 and
+	 * E1217 for WGSL and values that `materials.shader` refuses, E1206 for vertex data that makes no
+	 * mesh, and E1406 when the adapter does not download.
+	 */
+	async addFeatureDraw<const Wgsl extends string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: FeatureDrawOptions<Wgsl>,
+	): Promise<FeatureDraw<Wgsl>> {
+		const call = 'addFeatureDraw';
+		const { makers } = this;
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const draws = await loadFeatureDraws(call);
+		return draws.createFeatureDraw(
+			description,
+			options,
+			{
+				geometry: makers.geometry,
+				materials: makers.materials,
+				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createInstances: (mesh, count, options) =>
+					this.createInstances(mesh, count, options as InstanceOptions),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
+	}
+
+	/**
+	 * An add-on's own kind of draw, repeated once for each row of an instance batch, declared by a
+	 * feature description with the kind `'draw'`. It takes the options of `addFeatureDraw` and a
+	 * number of copies; each row of `draw.batch` places one copy and brings its own color and four
+	 * values. The engine culls and sorts the rows in each view as it does a batch's, so a blended
+	 * draw of many copies draws back to front on both GPU paths.
+	 *
+	 * Throws E1223 for a description that the adapter cannot place, for a place that belongs to one
+	 * object, or for a count that is not a whole number from 1 up, E1215, E1216 and E1217 for WGSL
+	 * and values that `materials.shader` refuses, E1206 for vertex data that makes no mesh, and
+	 * E1406 when the adapter does not download.
+	 */
+	async addFeatureInstances<const Wgsl extends string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: FeatureInstancesOptions<Wgsl>,
+	): Promise<FeatureInstances<Wgsl>> {
+		const call = 'addFeatureInstances';
+		const { makers } = this;
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const draws = await loadFeatureDraws(call);
+		return draws.createFeatureInstances(
+			description,
+			options,
+			{
+				geometry: makers.geometry,
+				materials: makers.materials,
+				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createInstances: (mesh, count, options) =>
+					this.createInstances(mesh, count, options as InstanceOptions),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
+	}
+
+	/**
+	 * An add-on's own kind of draw whose instance count the GPU writes: the description places it,
+	 * the options give its one shape, its shader and the most instances that it holds, and the
+	 * add-on fills its per-instance data. On WebGPU the draw reads the add-on's instance buffer and
+	 * the count word that its compute pass writes; the engine copies the count into the indirect
+	 * draw each frame. WebGL2 has no compute, so the page sets the instances and the count on the
+	 * CPU, which draws the same picture.
+	 *
+	 * The description names the frame point `'opaque'` and the main view alone. The draw is
+	 * unculled: the add-on's own cull or count decides what draws. The first call downloads the
+	 * adapter.
+	 *
+	 * Throws E1223 for a description that the adapter cannot place or a capacity that it cannot
+	 * take, E1215, E1216 and E1217 for WGSL and values that `materials.shader` refuses, E1206 for
+	 * vertex data that makes no mesh, and E1406 when the adapter does not download. A draw that
+	 * arrives after the first frame on a device that draws directly fails the frame with E1506:
+	 * create it in the setup, and await this call there.
+	 */
+	async addComputeInstances<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
+		description: FeatureDescription,
+		options: ComputeInstancesOptions<Wgsl>,
+	): Promise<ComputeInstances<Wgsl>> {
+		const call = 'addComputeInstances';
+		const { makers, core } = this;
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		const draws = await loadFeatureInstances(call);
+		return draws.createComputeInstances(
+			description,
+			options,
+			{
+				webgl2: this.webgl2,
+				core,
+				geometry: makers.geometry,
+				materials: makers.materials,
+				createMesh: (mesh, material, place) => this.createMesh({ mesh, material, ...place }),
+				createBatch: (mesh, material, count) => this.createInstances(mesh, count, { material }),
+				watchReady: (poll) => this.watchReady(poll),
+				fail: (detail) => new EngineError('E1223', detail),
+			},
+			call,
+		);
+	}
+
+	/**
+	 * @internal Asks `poll` before each frame's work, and forgets it when the returned function is
+	 * called. A feature-instance draw reports each frame whether its feature's `ready` callback
+	 * says that it draws.
+	 */
+	private watchReady(poll: () => void): () => void {
+		this.readiness.push(poll);
+		return () => {
+			const at = this.readiness.indexOf(poll);
+			if (at >= 0) this.readiness.splice(at, 1);
+		};
+	}
+
+	/**
+	 * @internal Asks each feature draw whether it draws now. The sketch's thread calls it before
+	 * the frame's commands, so a feature that stops drawing takes no room in that frame.
+	 */
+	pollReadiness(): void {
+		const polls = this.readiness;
+		for (let k = 0; k < polls.length; k++) polls[k]?.();
 	}
 
 	/**
@@ -3803,6 +5065,111 @@ export class Scene implements ViewHolder {
 		instances.face = batch;
 		if (layers !== undefined) batch.setLayers(layers);
 		return [sprites, batch, instances];
+	}
+
+	/**
+	 * A draw that has a custom material and a vertex count but no mesh data: its shader makes every
+	 * vertex of every copy from `@builtin(vertex_index)` and `@builtin(instance_index)`, so a draw
+	 * of 50,000 rain streaks uploads nothing in a frame. The draw's object gives its place, its
+	 * layers and the sphere that culls it, and the material's values move its shapes.
+	 *
+	 * The draw blends, so it draws in the transparent pass. The options take every option of
+	 * `materials.shader` but the maps: a draw's WGSL declares no texture. The draw's culling sphere
+	 * holds every shape, or a shape that leaves it stops drawing. A draw that uses the camera's
+	 * position, such as rain around the camera, reads it in its WGSL, and `null3d::wrap` wraps a
+	 * position relative to the camera into a box.
+	 *
+	 * Throws E1108 for a count or a sphere that the draw cannot take, or when the scene holds the
+	 * most draws already, E1215 for WGSL that the plugin did not compile as a draw shader, and
+	 * E1217 for a texture or an alpha mode that a draw does not take.
+	 */
+	createVertexDraw<const Wgsl extends string | CompiledWgsl = string | CompiledWgsl>(
+		options: VertexDrawOptions<Wgsl>,
+	): VertexDraw<Wgsl> {
+		const call = 'createVertexDraw';
+		const { makers, core } = this;
+		const {
+			shader,
+			vertices,
+			instances,
+			bounds,
+			position,
+			rotation,
+			scale,
+			layers,
+			alphaMode,
+			...materialOptions
+		} = options as VertexDrawOptions<Wgsl> & { alphaMode?: AlphaMode };
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		// A draw computes its vertices, so its WGSL has the draw shader's entry points, which the
+		// plugin compiles as a custom material that reads no vertex buffer.
+		if (typeof shader !== 'object' || shader.kind !== 'material' || shader.meshless !== true)
+			throw new EngineError(
+				'E1215',
+				`${call}() got WGSL that is not a draw shader. Give it one @vertex entry point that takes the vertex and instance indices, as @builtin(vertex_index) and @builtin(instance_index), and one @fragment entry point.`,
+			);
+		if (alphaMode !== undefined && alphaMode !== 'blend')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the alpha mode '${alphaMode}'. A draw blends, so its material draws in the transparent pass, where its sphere culls it.`,
+			);
+		if (materialOptions.blending === 'weighted')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the weighted blending. A draw blends in the transparent pass, so it takes 'normal', 'additive' or 'multiply'.`,
+			);
+		const mostVertices = C.VERTEX_DRAW_MAX_VERTICES;
+		const mostInstances = C.VERTEX_DRAW_MAX_INSTANCES;
+		if (!Number.isInteger(vertices) || vertices < 1 || vertices > mostVertices)
+			throw new EngineError(
+				'E1108',
+				`${call}() got ${vertices} vertices. A draw makes from 1 to ${mostVertices} vertices for each copy.`,
+			);
+		if (!Number.isInteger(instances) || instances < 1 || instances > mostInstances)
+			throw new EngineError(
+				'E1108',
+				`${call}() got ${instances} copies. A draw makes from 1 to ${mostInstances} copies of its shape.`,
+			);
+		if (bounds === undefined || !(bounds.radius > 0) || !Number.isFinite(bounds.radius))
+			throw new EngineError(
+				'E1108',
+				`${call}() got the sphere radius ${bounds?.radius}. Give the bounds, with the radius that holds every shape of the draw, above 0.`,
+			);
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		if (this.vertexDraws >= C.VERTEX_DRAW_MAX_DRAWS)
+			throw new EngineError(
+				'E1108',
+				`${call}() found ${C.VERTEX_DRAW_MAX_DRAWS} draws in the scene, the most it holds. Destroy one first.`,
+			);
+		const material = makers.materials.shader({
+			...(materialOptions as Omit<ShaderOptions<Wgsl>, 'wgsl'>),
+			// The check above narrowed the value to an object; the option keeps the caller's type.
+			wgsl: shader as Wgsl,
+			alphaMode: 'blend',
+		});
+		this.vertexDrawMesh ??= makers.geometry.fromArrays({
+			positions: new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]),
+			normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+			indices: [0, 1, 2],
+		});
+		const object = this.createMesh({
+			mesh: this.vertexDrawMesh,
+			material,
+			position,
+			rotation,
+			scale,
+			layers,
+		});
+		let id: number;
+		try {
+			id = core.checkGrowth(core.glue.createVertexDraw(object.slot, vertices, instances), call);
+		} catch (error) {
+			object.destroy();
+			throw error;
+		}
+		this.vertexDraws++;
+		const draw = new VertexDraw(core, id, object, material, call, vertices, instances);
+		return draw.setBounds(bounds.center ?? [0, 0, 0], bounds.radius);
 	}
 
 	/**
@@ -3961,7 +5328,17 @@ export class Scene implements ViewHolder {
 	): T {
 		const node = { dynamic: true, ...options };
 		// A view reads its camera's world transform even below a hidden object.
-		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, C.FLAG_TRACKED, 0, call, ...lens);
+		const camera = this.create(
+			kind,
+			node,
+			C.CORE_NO_MESH,
+			0,
+			C.FLAG_TRACKED,
+			0,
+			call,
+			ORIGIN,
+			...lens,
+		);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
@@ -3971,6 +5348,38 @@ export class Scene implements ViewHolder {
 	setActiveCamera(camera: Camera): void {
 		this.activeCamera = camera;
 		this.lensChanged(camera);
+	}
+
+	/**
+	 * Draws the scene again from `camera`, into the rectangle of the canvas that `rect` gives,
+	 * after the camera's view and in the same frame: a split screen or a picture in picture. The
+	 * view draws the scene once more at the rectangle's pixels, with its own culling, so its cost
+	 * follows the rectangle's area. It draws the sun and its shadows as the camera's view does,
+	 * which costs nothing more, the background and the fog. Its objects take no ambient occlusion
+	 * or screen-space reflections, which shade the camera's view; the camera's volumetric fog and
+	 * outline reach the whole image, a view's rectangle included. An object whose material shows a
+	 * render pass's texture does not draw in a view.
+	 *
+	 * The camera's view still draws the whole canvas first, so a split screen that covers the
+	 * canvas draws the scene one more time than it needs for its two halves. The scene and its
+	 * passes share 32 views, the camera's included.
+	 *
+	 * Throws E1501 when the 32 views are in use. Development builds throw E1213 for a camera or a
+	 * rectangle that a view does not take, and E1203 for a number that is not finite.
+	 */
+	createView(options: SceneViewOptions): SceneView {
+		const call = 'createView';
+		if (DEV) checkViewOptions(options, call);
+		const { camera, rect } = options;
+		const values = this.core.callValues();
+		values[0] = rect[0];
+		values[1] = rect[1];
+		values[2] = rect[2];
+		values[3] = rect[3];
+		const place = this.core.check(this.core.glue.addSceneView(), call);
+		const view = new SceneView(this, place, camera, rect);
+		this.setPassCamera(place, camera, undefined);
+		return view;
 	}
 
 	/**
@@ -3990,7 +5399,7 @@ export class Scene implements ViewHolder {
 				`${call}() got the intensity unit ${JSON.stringify(intensityUnit)}, and this light takes only '${LIGHT_UNITS[type]}'.`,
 			);
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
-		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call);
+		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, 0, call, ORIGIN);
 		const { core } = this;
 		try {
 			light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);
@@ -4039,7 +5448,9 @@ export class Scene implements ViewHolder {
 
 	/** Light from a point in a cone, out to `range` meters, which it needs. */
 	createSpotLight(options: SpotLightOptions): SpotLight {
-		return this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
+		const light = this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
+		if (options.map) light.setMap(options.map);
+		return light;
 	}
 
 	/**
@@ -4117,6 +5528,41 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
+	 * Draws an add-on's sky layer over the background, under every object: the top of a sky, such
+	 * as an aurora, a second layer of clouds or a space backdrop. The description is a feature
+	 * description ([Add-on feature descriptions](../features.md)): it names the feature and
+	 * records at the background point, as a draw, provides the sky, and draws in the main view, the
+	 * scene passes and the reflections. The layer's WGSL, compiled by the null3D Vite plugin,
+	 * declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer`. The engine gives it the fragment's
+	 * direction in the world, the core sky's cloud coverage, density, elevation and scale, the
+	 * sketch time and the share of the sun that the layer hides, and it blends what the layer
+	 * returns over the sky by the layer's coverage and opacity. A layer that hides part of the sun
+	 * also dims the disc and glow that the core sky draws, through `sun`. The layer draws in the
+	 * main view, in scene passes and in reflections, and draws nothing where the background draws
+	 * nothing, as in a debug view. A second call replaces the layer.
+	 *
+	 * Throws E1223 for a description that the engine cannot place, E1215 for WGSL that the plugin
+	 * did not compile as a sky layer, E1203 for a number that is not finite, and E1108 for a number
+	 * out of its range.
+	 */
+	setSkyLayer(description: FeatureDescription, options: SkyLayerOptions): SkyLayer {
+		this.skyLayer ??= new SceneSkyLayer(
+			this.core,
+			this.makers?.materials.shaderTemplates ?? new ShaderTemplates(),
+		);
+		this.skyLayer.install(description, options, 'setSkyLayer');
+		return this.skyLayer;
+	}
+
+	/**
+	 * Removes the sky layer that `setSkyLayer` installed, from the next frame on, and gives the
+	 * core sky its full sun back. A call with no layer installed does nothing.
+	 */
+	clearSkyLayer(): void {
+		this.skyLayer?.clear();
+	}
+
+	/**
 	 * Sets the layers whose objects decals mark, as a 32-bit mask as `setLayers` takes. An object
 	 * that is also on a layer outside the mask shows no decals, so a character on a layer of its own
 	 * walks through a puddle clean. Such objects draw a second time after the decals, over their own
@@ -4125,6 +5571,48 @@ export class Scene implements ViewHolder {
 	setDecalLayers(mask: number): void {
 		if (DEV) checkLayers('setDecalLayers', mask);
 		this.core.glue.setDecalLayers(mask >>> 0);
+	}
+
+	/** The material that every mesh of the main pass draws with, or null while each uses its own. */
+	private overrideMaterialValue: Material | null = null;
+
+	/**
+	 * Draws every mesh and instance batch of the main pass with this material in place of its own,
+	 * as three.js's `scene.overrideMaterial` does, or with their own materials with null. Each
+	 * object keeps its mesh, its place and its instances, so a batch draws every row with it, and
+	 * every camera view draws with it, the scene passes among them. Sprites, points, lines and
+	 * particle systems keep their own materials, and the shadow maps keep each object's material,
+	 * as three.js's shadow maps do. A change rebuilds the engine's draw tables in the next frame;
+	 * after that it adds no draw call and builds no pipeline. Throws E1224 for a sprite, point or
+	 * line material, E1101 for a material that is destroyed, and E1103 for a material of another
+	 * engine.
+	 */
+	get overrideMaterial(): Material | null {
+		return this.overrideMaterialValue;
+	}
+
+	set overrideMaterial(material: Material | null) {
+		if (material === this.overrideMaterialValue) return;
+		const { glue } = this.core;
+		if (material === null) {
+			this.core.check(glue.setOverrideMaterial(0), 'scene.overrideMaterial', undefined, true);
+			this.overrideMaterialValue = null;
+			return;
+		}
+		if (DEV) checkSameEngine('overrideMaterial', 'material', material.core, this);
+		const batchOnly = batchOnlyShading(material.shading);
+		if (batchOnly !== undefined)
+			throw new EngineError(
+				'E1224',
+				`scene.overrideMaterial got a ${batchOnly} material. It takes a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal().`,
+			);
+		this.core.check(
+			glue.setOverrideMaterial(material.id),
+			'scene.overrideMaterial',
+			undefined,
+			true,
+		);
+		this.overrideMaterialValue = material;
 	}
 
 	/**
@@ -4236,8 +5724,8 @@ export class Scene implements ViewHolder {
 	/** GPU picking's queries, made on the first pick. */
 	private get picks(): ScenePicks {
 		if (!this.scenePicks) {
-			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y) =>
-				this.pickByRay(x, y),
+			this.scenePicks = new ScenePicks(this.core, this.queryTargets(), (x, y, frame) =>
+				this.pickByRay(x, y, frame),
 			);
 		}
 		return this.scenePicks;
@@ -4249,6 +5737,13 @@ export class Scene implements ViewHolder {
 	 * `camera.screenToRay` takes them, and the point is tested at the pixel that the camera draws,
 	 * not at a projected triangle: a cut-out material's holes and a surface thinner than a pixel
 	 * answer as the image shows them.
+	 *
+	 * A hit carries `uv`, where on the surface the pixel landed in the mesh's first texture
+	 * coordinates, blended across its triangle's three corners as a raycast's `uv` is, and `hasUv`,
+	 * which says whether to read it. A ray from the camera of the frame that recorded the pick
+	 * finds them from the same point, so the two ways of asking agree. A skinned or morphed
+	 * character, and a custom material that offsets its vertices, draws a different shape than the
+	 * mesh that the ray tests, so its coordinates can differ from the pose it drew.
 	 *
 	 * The answer arrives one or more frames later, through a promise, and a pick in every frame
 	 * waits in a queue of its own. The frame that records the pick draws it, so the camera of that
@@ -4280,10 +5775,14 @@ export class Scene implements ViewHolder {
 		this.scenePicks?.stop();
 	}
 
-	/** Casts a ray through a point of the canvas, for a pick that the GPU pass cannot draw. */
-	private pickByRay(x: number, y: number): PickHit | null {
-		const camera = this.activeCamera;
-		if (!camera || camera.destroyedFrame !== -1) return null;
+	/**
+	 * Casts a ray through a point of the canvas: with the camera of `frame`, or with the camera as
+	 * it stands and the frame of the point's input event when `frame` is -1. Answers a pick that the
+	 * GPU pass cannot draw, and finds the texture coordinates of a pixel that it did pick.
+	 */
+	private pickByRay(x: number, y: number, frame: number): PickHit | null {
+		const active = this.activeCamera;
+		const live = active !== undefined && active.destroyedFrame === -1 ? active : undefined;
 		// The ray and hit are made once, when the first pick needs them.
 		if (!this.pickRay) this.pickRay = { origin: [0, 0, 0], direction: [0, 0, 0] };
 		if (!this.pickHit) {
@@ -4292,23 +5791,44 @@ export class Scene implements ViewHolder {
 				instance: -1,
 				point: [0, 0, 0],
 				normal: [0, 0, 0],
+				uv: [0, 0],
+				hasUv: false,
 				distance: 0,
 				triangle: -1,
 			};
 		}
 		const ray = this.pickRay;
 		const hit = this.pickHit;
-		camera.screenToRay(x, y, ray);
+		let layers: number;
+		if (frame < 0) {
+			if (live === undefined) return null;
+			live.screenToRay(x, y, ray);
+			layers = live.layers;
+		} else {
+			if (!this.pickPoint) this.pickPoint = new Float64Array(2);
+			const point = this.pickPoint;
+			point[0] = x;
+			point[1] = y;
+			// A frame that the ring no longer holds answers no coordinates, rather than aim a camera
+			// that has moved at the pixel that the older frame showed.
+			layers = this.frameCameras.frameRay(frame, point, ray, undefined);
+			if (layers < 0) return null;
+		}
 		// A camera that has not drawn cannot project the point, so the frame it would have answered
 		// showed nothing there.
 		if (!Number.isFinite(ray.direction[0])) return null;
 		if (!Number.isFinite(ray.direction[1])) return null;
 		if (!Number.isFinite(ray.direction[2])) return null;
-		const layers = camera.layers;
 		if (!this.raycast(ray.origin, ray.direction, { layers }, hit) || hit.object === null) {
 			return null;
 		}
-		return { object: hit.object, instance: hit.instance };
+		const uv = hit.uv;
+		return {
+			object: hit.object,
+			instance: hit.instance,
+			uv: [uv?.[0] ?? Number.NaN, uv?.[1] ?? Number.NaN],
+			hasUv: hit.hasUv === true,
+		};
 	}
 
 	/**
@@ -4396,6 +5916,22 @@ export class Scene implements ViewHolder {
 		out: RaycastBatchHits,
 	): number {
 		return this.queries.raycastBatch(rays, options, out);
+	}
+
+	/**
+	 * Casts many rays as `raycastBatch` does, but tests both faces of every triangle and writes 1
+	 * for each ray that met the back of a surface and 0 for one that met the front. The light probe
+	 * bake reads it to find the probes that lie inside geometry.
+	 *
+	 * @internal
+	 */
+	raycastBatchFaces(
+		rays: ArrayLike<number>,
+		options: RaycastOptions | undefined,
+		out: RaycastBatchHits,
+		backFacing: Uint8Array,
+	): number {
+		return this.queries.raycastBatchFaces(rays, options, out, backFacing);
 	}
 
 	/**

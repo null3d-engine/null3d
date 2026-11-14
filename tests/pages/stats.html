@@ -4,6 +4,9 @@
 		<meta charset="utf-8" />
 		<title>null3d test: stats overlay</title>
 		<style>
+			/* The page does not scroll: Safari reserves a scrollbar when its content overflows, which
+			   narrows the canvas and moves the overlay 15 px from the corner the test measures. */
+			html, body { overflow: hidden; }
 			body { margin: 0; padding: 24px 0 0 40px; }
 			canvas { width: 320px; height: 180px; display: block; }
 		</style>

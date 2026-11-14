@@ -1,0 +1,352 @@
+// Rebuilds the milestone pull request's description from two sources that cannot drift: the plan's
+// task headings, and the `Task:` trailers of the commits on this branch. The marks it prints are
+// the ones the pull request uses, and the three tables below carry the judgement that a trailer
+// cannot: what part of a task landed, and what a task's own outcome was.
+//
+// It reads the plan from `.internal/plan/m3-breakdown.md`, which git does not keep: on a clone
+// without it the tool says so and stops, and nothing else in the repository depends on it.
+//
+// From the repository root:
+//   bun run pr-status            print the description
+//   bun run pr-status --apply    write it to the milestone pull request
+//   bun run pr-status --ready    print the open tasks, the ones nothing blocks first
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { TASK_TRAILER } from './hooks/check-task';
+import { findAckValues } from './hooks/commit-ack';
+import { TASK_EVIDENCE } from './task-evidence.ts';
+
+/** The milestone pull request, its title, and the plan that lists its tasks. */
+const PR = '549';
+const TITLE = 'feat: the 0.2 release work for level of detail, effects, add-ons and vegetation';
+const PLAN = '.internal/plan/m3-breakdown.md';
+const BASE = 'origin/main';
+
+/** Tasks whose work is partly on the branch: the part that landed, and the part that remains. */
+const PARTIAL: Readonly<Record<string, string>> = {};
+
+/** Tasks whose work is on a helper branch, whether or not part of it has reached this branch. */
+const ON_BRANCH = new Set<string>([]);
+
+/** A task that a commit names, but that the audit of the branch found unfinished. */
+// The branch's audits read every ticked task against its own "Done when" and its section's rule.
+// A tick states that the task is done, so a task those audits found short of its own line is not
+// ticked here until the gap closes, whatever code it already has.
+// A task belongs here only when it has no evidence yet. A task whose proof is written but whose
+// gap still stops the tick belongs in AUDIT_GAPS instead: a task in both lists says its work is
+// unfinished and finished at once, and the release hook refuses a range that creates that pair.
+const INCOMPLETE = new Set<string>([]);
+
+/** Tasks whose outcome a reader needs told, beyond the plan's own line. */
+const NOTES: Readonly<Record<string, string>> = {
+	'M3-S1':
+		"every queue lane's peak is measured on the server with its conditions, the shader build's peak is the landing's outside-the-queue measurement (5,172 MiB at `91bfccc40` over fourteen threads and 1,180 seconds, free 18.3 GB before, 8.1 at its lowest and 14.5 after, a floor, with the queue's 17 GB booking named beside it), the page process links the built set rather than building it, its cut is proved in one sitting (15,311 MiB before against 14,336, 4 seconds under 1,280 after), the type check needs no cut at 3.0 GB against 7, and the lane pairs hold the reserve (free 29 to 28 GB of 36, the lowest share 69 to 79 per cent)",
+	'M3-C2':
+		"the owner ruled that the showroom's look stands, and the rate is held by dynamic resolution, the first of three options, with no code change. The studio view reads 45 to 46 frames a second at the whole render scale; the governor walks to 0.75 over about ten seconds, its opening windows read 48.5 to 50.5, at 0.75 the view holds 59.2, and a 15-second window at 0.85 reads 59.8. In the second session the car had left the studio, the view cost about half, and the whole scale itself held 60 after settling, with 0.85 also at 60 and the lower scale saving only 1.8 ms of that street view. The time outside the engine's passes, 5.07 to 5.51 ms on the studio pages and 4.7 to 7.8 across the session, is the browser's presentation. The Mac's rows (108.0 and 106.2 at Low) and the S24's 29.4 of its 30 Hz cap stand as the evidence records them. D-345 records the look and the rate",
+	'M3-R43':
+		"the owner read the cross-tier clause under the device tolerance: the same-run software drawings agree at 0.109 to 0.127 per cent, inside the 0.5 per cent tolerance that browsers and devices use, so the clause is met; the harness's 0.100 reference limit is the bar for a drawing against its reference, and its 0.127 count here is its anti-aliasing exclusion failing on a dithered picture. The three SwiftShader references come from CI run 42992273718 at `7a084744d`, the run-to-run stability is measured by runs 42749736710 and 42749760664 at `5fad58f09`, and the water add-on's held-frame test observes the pass the add-on draws. D-326's addendum records the reading",
+	'M3-R22':
+		"the export test reads 10.2 s against its 60 s clause, the determinism part 33 s against 2 min, and the six rust-tests parts 2m29s, 3m22s, 1m58s, 2m01s, 2m05s and 2m28s against 4 min, in CI run 43151824050 at 43cf36e72, every job green; the kind assertion still holds, because both checks read one list and each entry alone writes the kinds it covers. The whole-build comparison that the determinism test runs only when the shard variable is unset sits outside the Done-when's four clauses and does not block the tick",
+	'M3-A8':
+		"the evidence measures the worst error at 2.03 of an 8-bit step at a saturated yellow, over the prototype's one-step tolerance. The owner accepted that cost and ruled that the display table stays and the light table comes out",
+	'M3-X1':
+		"the demos show each new feature, and Creek's pictures moved in both reference sets with the species rework, which is the redraw the line asks for. The owner answered again that the demo shortfalls stand, and that answer covers the Skyway's two Low rows alone: Creek's and the forest's frame-ceiling misses stay open under M3-V16 and M3-V14, and the cloud S24 cannot be judged against 60 at all because its display caps at 30, which is why the phone-class answer is the S24 Plus's 58.9",
+	'M3-V7':
+		"the plants sway through the material and Creek draws through it, and the picture test that the first generator took with it now has a replacement: `tests/image/plant-sway.spec.ts` draws one hawthorn under a strength-2 field beside the same plant at a 1 mm sway distance, at fixed times, and the control measured exactly 0.00000 on all three tiers while the swaying picture moved 0.10111 on WebGPU, 0.02966 in compatibility mode and 0.03024 on WebGL2. The shadow redraw count now has its witnesses: tests/image/plant-shadow-count.spec.ts counts a plant's cascade draws, and crates/null3d-render/tests/shadows.rs and cpu_culled_shadows.rs redraw a still camera's far cascade past a material's sway distance 5 frames of 8 where forcing the skip off reads 8. The motion data now has its witness too: plant-sway.spec.ts draws the swaying plant under the motion view and reads 0.73 of the frame lit against none for its one-millimetre twin, on WebGPU, the compatibility path and WebGL2, and its held-time pair keeps the field's own offset so a frozen sway fails. The Rust test's cache claim rests on equality with a still card: a_card_past_its_sway_distance_leaves_a_far_cascade_cached redraws the far cascade as often for a card past its distance as for a still one, and every frame for a card within it.",
+	'M3-E6':
+		"both first users follow the preset: splats' budget, and the water add-on's reflection cadence, which doubles the wait at each frame-budget step up to every sixteenth frame. The overlay now lists the GPU time of each step of the frame and fills an add-on's row from the render passes that its description names, which the water add-on uses for its reflection pass; a feature whose work records inside the engine's own pass reads gpu not measured, as splats does on every path (D-267)",
+	'M3-E8':
+		"the hook carries M3-V13's history, and the wind add-on's field is the first user that ships: its cards, grass and leaf materials read the compute pass in the same frame on WebGPU, compatibility mode and WebGL2, where the add-on's fragment form draws it. The water add-on's FFT ocean, the plan's named first user, is on the milestone and draws its chain on all three paths under M3-F9",
+	'M3-R42':
+		'the High and Ultra pictures-and-timings clause has no timing pair at the head and no Ultra picture. The evidence entry records no High or Ultra timing row, and the image tests draw at `preset=high` (`REFERENCE_PRESET_SWITCH` in `bench/lib/parity.ts`), so no Ultra picture exists. The shipped change is provably Low-only: `examples/showcase/island/shadow.test.ts` pins Low at 250 m and the three heavier presets at the stretchable 600 m, so the High picture cannot move. But the clause names timings and pictures and was not given them. The owner ruled that the guard test satisfies the clause: asked whether it stands in for a High and an Ultra timing pair, he answered that it is ok, so the clause is met on his word, and D-326 records the ruling',
+	'M3-F3':
+		"dropped with the temporal resolve it waited on (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+	'M3-F10':
+		"dropped with the temporal resolve it needs (D-206), so it is cancelled rather than open work; M3-A11's own record made the call, not the owner, and hard rule 39 may apply, so the owner may want to see it",
+	'M3-F9':
+		"the simulation, the material and the older path's fragment form are on the milestone, and the ocean draws on all three GPU paths. The demo's WebGL2 picture was blocked by an ordering fault rather than by something the picture could not show: the CPU-culled builder culled each view from the turn before its own, so a reflection that waited recorded a pass with no objects and resolved its clear color, and the sea lost its mirror. The cull now moves the views' turns on first, and the rule is recorded: a view's turn must advance before anything culls against it. The mirror keeps its image at cadences of two, three and four, and the every-frame reflection picture is byte-identical before and after the fix (0 of 230,400 bytes differ). The six demo pictures hold in both reference sets. The 833 ms frame against 158 without was the graph's recompile from switching the pass, not the ocean's draws: with the pass carrying its cadence the page held 60.01 frames a second and a 16.7 ms frame in all three states at 1920 by 1080 on WebGL2 at Low, at a one-minute load of 7.7, against 1.21 frames a second with the pass switched. The ocean's simulation costs 2.850 ms a frame on WebGL2, the least of three batches of an on/off ablation in separate page loads with the quiet window held; on WebGPU and in compatibility mode the batches straddle zero inside the frame's own variation, so the method states no cost there, with a bound of about 1.4 ms. The preset changes none of the bands or the grid: `createOcean` takes them as options, the transform's grid is the fixed 128 constant, and the add-on's only preset row is `reflectionEvery`, so the figure is the figure at every preset. WebGL2's 2.850 ms is 5.7 times the plan's 0.5 ms estimate, a finding about the estimate, and the Mac's ocean sits well inside a 16.7 ms frame on its own; the only per-preset reflection figure is the Galaxy S25's 1.7, 1.7, 3.4 and 3.4 ms (D-120), and the two devices are not one frame. The add-on's gates pass, with zero bytes allocated per frame at every preset and its shader sets inside the first-use figure that has since risen to 128 KB, with an add-on over a figure a warning by the owner's ruling",
+	'M3-A11':
+		'measured on both paths at every preset; it does not beat the presets, so it stays behind the internal setting and does not ship (D-206). Its black-capture and bind-group faults are fixed, its shader file still loads on first use, and that first-use case is now tested on both paths',
+	'M3-D5': 'the layout that D-173 settled, which the traffic lanes add-on follows',
+	'M3-R23':
+		'the depth-only prepass is the default and passes the bar on the iPhone 18 Pro at both scales and on the iPad 10 at half scale; the iPad 10 at full scale reads 0.52 and 0.64 ms against the 0.5 ms bar, and the owner ruled that margin accepted (D-269)',
+	'M3-R19':
+		"the second step costs 2.96 to 2.99 ms of a 6.14 to 6.23 ms frame at half the scale on the cloud iPad, and 3.71 to 4.16 ms on the High preset's canvas; the first addendum's 20.5 to 34.9 ms was the frame's tail, since the engine folds every pass after the seventh into it. The held pair of 34.6 against 29.7 frames a second and 22.56 against 27.56 ms has no run file, and this reading's cells bracket its GPU times. The gate commit's 36.1 frames a second lies inside the 29.6 to 36.2 spread three runs gave at one code state, and the head's 29.0 sits 0.6 below its floor, so the second step is not shown to cause S5's drop (D-236)",
+	'M3-V15':
+		"the held pair that its Done-when asks for is recorded: two runs on this Mac's card gave the same three shares, 0.08900, 0.05505 and 0.08261, and a browser run of the wind pictures passed 21 of 21 with none moved, so no reference was redrawn",
+	'M3-V8':
+		"the hill draws through the add-on on both GPU paths, with a per-tile view cull, a far share that widens the blades it keeps, and a per-view cull that the near cascades apply too. Creek's two grass fields draw through the add-on with no grass code of its own, the 11 grass tests pass, and the real-GPU pictures hold the look. At Creek's own density on the Tab A9 Plus the far share takes 12.68 ms, 4.0 per cent, back at 2,312 tufts and 36.44 ms, 6.9 per cent, at 6,820, and the per-view cull takes the 2,312-tuft row to 288.75, 294.98 and 298.22 ms over three runs against 306.09, while at 6,820 the runs straddle 490.73; neither row reached 208.3 ms, the S24 class's High ceiling, which the far-cover work took as its stretch target, and the gap was the grass's: the same page with the grass switched off measures 179.18 ms, 29.12 ms inside that target, so the grass's 126.91 ms at 2,312 tufts and 311.55 at 6,820 carry those rows past it. The shadow views were never the large part: the three cascade passes cost 2.1 to 2.2 ms at the valley's density and 6.3 at the strip's. The timer times the frame's first seven passes one by one and adds each pass after them to the last, so the 176.36 ms that it gave ambient occlusion's denoise was the opaque pass in that slot: with the sun's contact shadows and the bounce light off the scene measures 143.49 ms, and the timer names the opaque pass at 138.94, so the three ambient occlusion passes cost about 43 ms and four pictures of the hill, with either effect off and with both, are pixel for pixel the same. With both off the hill at Creek's density measured 235.41 ms, 27.11 ms past that target, and the far cover closed the rest: its fade now reaches its floor at 24.31 meters, removing 36.9 per cent of the drawn tufts, and the row measures 209.72 and 196.02 ms there, mean 202.87, against 217.45 and 216.60 at 25.59. The base page bracketed that block at 162.27 and 156.30, so the machine drifted about 6 ms within it, and the 208.3 target sits inside the row's spread at the chosen distance rather than outside it; the hill crest's picture differs from the authored distance by 0.768 per cent of its pixels and the demo's horizon by 0.085, with no bare edge. The 20,000 tuft hill is a stress case with no ceiling, and its Tab High row is 961.54 ms with the shadows. The iPad's stress rows hold its ceilings, and the S24 gives WebGL2 only, with its two rows inside the S24 class's. The per-view cull reads the frame's own matrix and the one count that the compute pass writes, and Creek's whole frame is M3-V11's. The low-end tablet's top presets are no longer a gap: the row exists and all thirteen pages draw at d822a8cc2, with Low at 170.98 ms against 1,268.5 and Medium at 425.33 against 1,820.8 both holding, where the recorded branch run at 5fad58f09 read Medium 2,243 and High drew no frame, and D-241 gives this tablet no High or Ultra row, so its High and Ultra figures, 754.52 and 941.49 ms, are recorded without a ceiling rather than against the S24 class's 208.3 and 499.8. The Mac's row now exists too: all thirteen pages at d822a8cc2 read 2.06, 3.67, 6.68 and 9.31 ms from Low to Ultra on the newer path, 1.97 and 4.06 on the compatibility path, and 5.80 and 9.19 on WebGL2, with no drawing-buffer warning. The iPad's rows above Low now exist: the iPad Pro 13 passes all thirteen vegetation-grass pages at d822a8cc2, reading 3.65, 6.44, 10.04 and 12.14 ms of GPU time from Low to Ultra on the newer path and 3.52 and 6.72 on the compatibility path, with its WebGL2 CPU times, and the no-grass page's timer is refused as the hot-device fault it was. The view-edge clause now has its record: `tests/image/vegetation-grass-shadow-edge.spec.ts` reads the bottom sixteenth's share of the frame's own ground shadow, 0.786 on WebGPU, 0.912 in compatibility mode and 0.876 on WebGL2, and it falls to zero when the blade list's cull is given no reach past the view; the WebGL2 path passes the cut case because it culls each view itself.",
+};
+
+/**
+ * Why a task whose work is on the branch is still unticked: the gap that the branch's audits found
+ * between the task's own "Done when" and what the branch holds. These win over the note above,
+ * because both describe the same task and only one of them can be true.
+ */
+const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-V12':
+		"its budget clause is short: the owner ruled that the forest's ceilings stand, and with the field off the forest's scene alone is over them in every measured cell (the iPhone and iPad rows above). The route is now the whole-tree triangle budget: a tree's budget is allocated by each part's visible share, which saves more than a flat budget because the level-2 wood spends 27 to 73 per cent against a visible share of 0 to 13. At 300 triangles the silhouette overlaps by 0.72 to 0.81 for the broadleaves and 0.38 to 0.56 for the pine, and the owner accepted that divergence. The near count is about 1,850 trees, so the low ceilings afford 300 to 600 triangles a tree and the higher ceilings 1,000 to 1,500; the model puts Low at 7 to 10 ms, Medium at 10 to 15, High at 12 to 18 and Ultra at 14 to 22 against the Apple ceilings, the S24's Low at 18 to 27 against 33.3, and every iPhone row inside. The Tab's Low may miss and misses today, and memory at Ultra is the open risk; the near rows are unaffected by the budget. The route needs three landings: the budget work, the Scots pine, and the impostor far bake and level-switch distances. The owner freed the pine to land (\"yes, land the pine\"), and the batch session prepares a pine-only range for the gate. The far bake's real distances remain on a branch 1,565 commits behind; the owner's answer named only the pine, so that landing still waits on his word and a rebase. The swap cannot be measured for the record without it: a run on the milestone's placeholders is a prototype, not the route's row, and it must be labelled so. The figures are modelled and the text stays provisional until the budget work, the near-band image review of the 30-triangle case, and the far bake's landing, then the measured rows. The owner is asked for the far bake's scope and freeze word; the pine is freed, the far bake is not. D-347 records the rule, the acceptance and the route; the work stays in this task and no new task is opened. The measured rows replace the model. The demo's own forest at scale 1 on this Mac reads 69 draws, 16.665 ms and 12,250,000 triangles, and the route at a 30-triangle budget reads 72 draws, 84.29 ms and 11,990,000 — three more calls, 260,000 fewer counted triangles and 5.06 times the frame — because the near levels' batches hold all 8,000 copies and each casts shadows, so the shadow cascades submit the full batches, which the overlay does not count. No tested budget meets a ceiling on any device: the tablet's Low reads 1,878.5 ms against 385.2, and the phone draws no frame at any budget, at 161 to 162 draws against the demo's own 74. So the card budget and the draw count are both refuted as levers. The owner confirmed the swap on 10 November 2026, and on 13 November 2026 he ruled the route down: the forest looks terrible, so the demo's own forest stays until the vegetation add-on redoes its generator. The forest's gap therefore waits on the reworked generator and not on any shadow rework, and nothing on this task waits on his word",
+	'M3-V11':
+		"the swap landed at `10d91fda8`, and its pictures are redrawn at `287adc5b9`, one commit on `05532906c` carrying all twenty-four pictures in both reference sets (129 files): the Mac set passed 58 of 61 first time and the three creek water pictures passed on a later run, though Creek water still flips by up to 0.446 per cent between runs until its reflection cadence is fixed; the software set comes from CI run 43395162151, with the nine files of five pictures that this Mac drew on SwiftShader carrying a reason in `tests/image/local-references.json` because CI's heavy shard 12 kept no drawn artifact, and CI's next drawing replaces each. The owner's ruling of 13 November 2026 settles the look review: Creek's scene reads right as it stands (\"2. creek is ok\"), and it survives the redraw. V11 stays open on one clause now. The design's species line is revised: the owner withdrew the valley's maple, hemlock and pine names rather than growing the three, and the valley's species are the ones the add-on dresses it with, recorded in D-241's addendum. So that clause closes, and one stays open: the budgets. And the budgets are short: the iPad's Low row reads 24.28 ms median against the 30.8 ceiling at `5fad58f09`, its High and Ultra rows are unmeasured, and the Mac's and the S24-class phone's rows are absent",
+	'M3-V16':
+		"its Done-when is met, but its Budget line is not: the governor must hold each preset's D-241 frame ceiling and never fall below that preset's vegetation GPU time. Cells that fail are measured, not missing. the S25's Ultra Creek row now holds by measurement: run 20261112-035733 at Ultra, with no preset check and the render scale at 1.00, draws 20.47M triangles and 867 draws, and its three window medians read 433.25, 433.31 and 366.63 ms against the 511 ms ceiling, 78 ms or 15.3 per cent inside on the median that the device metrics judge (.dev/tested-devices.md:282,288); the GPU median is 479.30 ms from two samples. The tail is not inside the ceiling: p95 reads 966.43, 814.95 and 733.27 ms, and it stays in this row as the caveat. The iPad's forest reads 65.45 against 54.8 at Medium, 76.14 against 67.1 at High and 84.06 against 71.1 at Ultra. The Tab A9 Plus's 1,484.12 against 1,268.5 at Low is from branch `3f6da0f4c`, 2,247 commits back and before the far cover; the head's run reads 1,059 against 1,268.5 and holds, and the tablet's vegetation pages at Medium and above drew no frame in its 9 November run, where its grass pages drew all four presets in the 11 November run. The wind's own row holds where it was measured — the S25 settles at its 33.3 ms display floor with one field cycle at 5.8 of its 6.25 ms budget — so the failure is the scene, and only the owner's M3-V14 options settle it. The reference Mac is measured at all four presets in a 2 November run at `6c22e1c01`: its High frame reads 89.28 ms against the Apple devices' 62.5 to 67.1 ms High ceilings, so that row misses too, while its Low, Medium and Ultra rows are within the wider Apple ceiling of their preset. That run's canvas is larger than the earlier Mac Creek record's, so its milliseconds must not be set against that older row's; compare them only with the ceilings. The iPad's Creek High and Ultra and its newer path remain unmeasured, but measured rows already miss the budget, so no missing figure decides the tick. The forest rows wait on the budget route's measured checks and on the Scots pine's landing under the owner's freeze, and the Mac High row misses on the scene's cost",
+	'M3-V17':
+		"the Done-when's frame clause now has the field's split on the iPhone and the iPad. With the field off, every measured forest cell is over its ceiling on the scene alone: the iPhone Medium 11.10, Medium WebGL2 2.30, High 26.16 and Ultra 38.37 ms over; the iPad Medium 12.36, Medium WebGL2 14.90, High 17.44 and Ultra 25.50 over. The wind's addition is mostly small or inside the noise, and two cells are mostly the wind: the iPhone Medium WebGL2 adds 12.75 ms, 0.75 over its 12 ms allowance, and the iPad High adds 28.88, inside its 49.0 ms allowance. The Tab's two cells are unmeasured (no frame in 5 s at 60.7 s to first frame; E1302 GPU lost), and the S24's Medium WebGL2 field-off attempt lost its cloud session, so its share is open; measured cells already miss, so no missing figure decides the clause, and those cells stay as recorded rather than as passes. The owner ruled that the forest's ceilings stand, so the forest's cost is the demo's and the owner directed a per-level triangle budget separate from the sparse form, the Scots pine has landed, and the forest rows here wait on the budget route's swap and on the impostor far bake's landing, which still needs the owner's word. the iPhone Medium WebGL2 cell reads met on its governed row: after a 90-second settle at render scale 0.60, the field-on frame medians read 17.74, 18.61 and 30.28 ms against off 15.81, 15.84 and 30.26, so the governed wind share is 1.93, 2.77 and 0.02 ms by median and 0.89, 0.58 and 0.34 by window mean. The paired base-settings run matched the scene at 22,500 against 22,600 objects and 13.2M triangles at the same scale, and its median frame times gave -0.42, -0.43 and -0.23 ms: negative at the phone's resolution, because the off side ran second and its first window was the on side's third, so the sign is order and heat, not the wind. The share therefore lies within the phone's spread, 0.0 to 2.8 ms, inside the 12 ms allowance. The ungoverned full-settings share is 12.75 ms, the figure the cell was opened on, and the step-row change and its two redraws are dropped. The particles add-on now takes the wind field: `windField` carries the field's texture, box and steady air to the particle buffer through the engine, the shader reads the wind add-on's canonical `wind-steady` and `wind-sample` blocks, the engine binds them in the system's group at bindings 2 and 3 within the device's four, the closed-form sub-emitter twin samples the same air, and a system without a field binds one blank texel it never reads. The `particles-wind` picture passes 3 of 3 on WebGPU, compatibility mode and WebGL2, its real-GPU references drawn on this Mac and its software references local with a reason for CI to replace. The held Creek picture now exists: `creek-gust` holds the demo's own gust, sent at 8.4 s with strength 10, on WebGL2's 8-bit path against a control page without it, moves 0.31912 on WebGL2 and 0.34931 on the software path, and checks the send's time and strength and that the control sends none; its WebGL2 reference is real-GPU and its software reference is local with a reason for CI to replace. The motion-vectors and shadows clause is witnessed by M3-V7's plant-sway motion view, 0.73 of the frame lit against 0.00000 for the one-millimetre twin, and its shadow redraw count, 5 frames of 8 past the sway distance against 8 of 8, not by a V17 picture. So the particle, picture and motion clauses are met, and the task stays open on the frame clause alone: the one cell whose wind is over its allowance, and the forest rows that wait on the demo's own cost",
+	'M3-V14':
+		"the owner ruled the rows and the budgets, and D-283 records them. The look clause is met: the smallest tier he cannot tell from the next one up is Medium, and shown the wind demo's two tiers side by side the owner answered \"low looks fine, close it\", so Low's look stands. The M5 Max row is dropped: the owner ruled that the task is judged on the M3 Max rows already recorded, and D-283 now says so. One clause remains, so the task stays open: the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings. Creek's side now holds on the measured governed row: the S25's Ultra frame medians read 433.25, 433.31 and 366.63 ms against the owner's 511 ms ceiling, with the p95 at 966.43, 814.95 and 733.27 ms as the caveat. The forest's side waits on V12's cost work: with the wind off the forest's scene alone is over its ceilings in every measured cell, so no wind row closes it. D-283 records the look answer",
+};
+
+/** The plan's groups, by the first letter of a task's part, in the plan's order. */
+const GROUPS: readonly (readonly [string, string])[] = [
+	['Level of detail', 'L'],
+	["The study's follow-ups", 'ABC'],
+	['Add-on platform and hooks', 'DE'],
+	['Effects and techniques', 'F'],
+	['glTF and API', 'GK'],
+	['Shipping', 'OT'],
+	['Queue lanes', 'S'],
+	["The study's tasks", 'R'],
+	['Vegetation', 'V'],
+	['Demos', 'X'],
+];
+
+const git = (...args: string[]) =>
+	execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+
+/** The roots that hold a build of the engine, its tests, its demos and its published pages. */
+const CODE_ROOTS = ['crates/', 'packages/', 'tests/', 'examples/', 'bench/', 'docs/'];
+
+/**
+ * Every task ID that a kept commit's `Task:` trailer names, once that commit built something. The
+ * count reads every commit's trailer block, with no dateline: it reports which tasks the branch
+ * names in a footer that git reads, and a tick that rests on a footer git cannot see is a tick that
+ * nothing downstream can carry.
+ */
+function landedTasks(): Set<string> {
+	// A record-only commit claims a task without building any of it, so it must not read as work
+	// that landed with its evidence still owed: that reads to a maintainer as a finished feature
+	// whose proof is missing. Only a commit that touches a file outside the records counts.
+	const out = git('log', '--format=%x1e%H%x1f%b%x1f', `${BASE}..HEAD`, '--name-only');
+	const tasks = new Set<string>();
+	for (const chunk of out.split('\x1e')) {
+		const [, body = '', names = ''] = chunk.split('\x1f');
+		const files = names
+			.split('\n')
+			.map((line) => line.trim())
+			.filter(Boolean);
+		// A test file is code wherever it lives: the guard test for a tool sits beside the tool, and
+		// without this a task whose whole work is a test in `tools/` could never land.
+		const built = files.some(
+			(file) =>
+				CODE_ROOTS.some((root) => file.startsWith(root)) || /\.(test|spec)\.[jt]s$/.test(file),
+		);
+		if (!built) continue;
+		// A trailer claims a task. A body that mentions an ID in prose, such as a `Docs-Checked:`
+		// line, must not tick it, or a task that no commit names in a trailer reads as ticked.
+		for (const value of findAckValues(body, TASK_TRAILER))
+			for (const id of value.match(/M3-[A-Z0-9]+[a-z]?/g) ?? []) tasks.add(id);
+	}
+	return tasks;
+}
+
+/** Each task of the plan, in its order, with the name it was given. */
+function planTasks(): { id: string; name: string }[] {
+	const text = readFileSync(PLAN, 'utf8');
+	// A plan entry that names a closed investigation rather than work is not a task, and counting
+	// it among the open ones says the milestone has work it does not have.
+	const NOT_TASKS = new Set(['M3-R37']);
+	const marks = [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) (.+?)(?: \(P.*)?$/gm)];
+	// An entry the owner dropped is not work either: its own line says so, and no ready start makes
+	// it happen.
+	const dropped = new Set<string>();
+	for (let i = 0; i < marks.length; i++) {
+		const start = marks[i]?.index ?? 0;
+		const end = marks[i + 1]?.index ?? text.length;
+		if (/^Dropped by the owner's ruling/m.test(text.slice(start, end)))
+			dropped.add(marks[i]?.[1] as string);
+	}
+	return marks
+		.filter((match) => !NOT_TASKS.has(match[1] as string) && !dropped.has(match[1] as string))
+		.map((match) => ({
+			id: match[1] as string,
+			name: (match[2] as string).trim(),
+		}));
+}
+
+function description(): string {
+	const tasks = planTasks();
+	const landed = landedTasks();
+	const done = ({ id }: { id: string }) => isDone(id, landed);
+	const open = tasks.filter(({ id }) => !landed.has(id) && !PARTIAL[id] && !ON_BRANCH.has(id));
+	const lines = [
+		'One pull request for the whole of the milestone that ships 0.2.0. It is not merged until every task below is done, so the list moves as the work lands.',
+		'',
+		'**How to read the marks:** `[x]` done and on this branch. `[ ]` not done, with its state in the note after the name: part landed, on a helper branch, or not started.',
+		'',
+		`The milestone holds ${tasks.length} tasks. ${tasks.filter(done).length} are done and ticked below, ${tasks.filter(({ id }) => landed.has(id) && !done({ id }) && !PARTIAL[id] && !ON_BRANCH.has(id)).length} have their work on the branch but not the evidence a tick needs, ${Object.keys(PARTIAL).length} are part landed, ${ON_BRANCH.size} are in progress on a branch, and ${open.length} are open.`,
+		'',
+	];
+	for (const [title, letters] of GROUPS) {
+		lines.push(`### ${title}`, '');
+		for (const { id, name } of tasks) {
+			if (!letters.includes(id.split('-')[1]?.[0] ?? '')) continue;
+			// GitHub draws a checkbox only for `[x]` and `[ ]`, so a task that is part done or on a
+			// branch keeps the empty box and says its state in the note; anything else reads as text.
+			// A task whose code sits only on a helper branch is not done: the pull request merges the
+			// branch, so an unmerged task would claim work that a reader cannot find here.
+			const done = isDone(id, landed);
+			const mark = done ? 'x' : ' ';
+			const note = PARTIAL[id]
+				? ` — part landed: ${PARTIAL[id]}`
+				: ON_BRANCH.has(id)
+					? NOTES[id]
+						? ` — on a helper branch: ${NOTES[id]}`
+						: ' — on a helper branch'
+					: INCOMPLETE.has(id) || NOTES[id] || AUDIT_GAPS[id]
+						? (AUDIT_GAPS[id] ?? NOTES[id])
+							? ` — ${AUDIT_GAPS[id] ?? NOTES[id]}`
+							: ' — the branch check is owed'
+						: landed.has(id) && !(id in TASK_EVIDENCE)
+							? ' — the branch check is owed'
+							: '';
+			lines.push(`- [${mark}] **${id}** ${name}${note}`);
+		}
+		lines.push('');
+	}
+	lines.push(
+		'### How it is verified',
+		'',
+		"- CI on this pull request is the branch's backstop, never the first reader of a change.",
+		'- Each helper commits on its own worktree branch, runs the tests its change touches, and reports before the coordinator merges it.',
+		"- A task reported done is read by a fresh checker, never by its author: the checker reads the task's own Done-when line, runs the tests it names and opens the pictures it cites, and only a cleared verdict lets a tick or a landing through.",
+		'- `bun run limits` reports each fixed limit before a push, and `bun run pr-status` rebuilds this list from the branch itself.',
+		'- A commit that can move a limit carries a `Limits-Checked:` line, and one that changes what the GPU draws carries a `GPU-Checked:` line.',
+		'- The pictures, timings and device rows live in `.dev/examples.md`, `.dev/benchmarks.md` and `.dev/tested-devices.md` beside the features they measure.',
+	);
+	return `${lines.join('\n')}\n`;
+}
+
+/**
+ * True for a task that counts as done: landed, with an evidence entry, and nothing that holds it.
+ * The description's marks and the ready list both read this one rule, so a change to it reaches
+ * every place that says whether a task is finished.
+ */
+function isDone(id: string, landed: ReadonlySet<string>): boolean {
+	return (
+		landed.has(id) &&
+		!PARTIAL[id] &&
+		!ON_BRANCH.has(id) &&
+		!INCOMPLETE.has(id) &&
+		!(id in AUDIT_GAPS) &&
+		id in TASK_EVIDENCE
+	);
+}
+
+/** The tasks that count as done, for the ready list. */
+function doneTasks(): Set<string> {
+	const landed = landedTasks();
+	return new Set(
+		planTasks()
+			.filter(({ id }) => isDone(id, landed))
+			.map(({ id }) => id),
+	);
+}
+
+/**
+ * Each task's dependencies, as the plan's own lines name them. A task is blocked only by a task it
+ * names and that is not done, so the list never grows by an assumption about what a feature needs.
+ */
+function planDependencies(): Map<string, string[]> {
+	const text = readFileSync(PLAN, 'utf8');
+	const marks = [...text.matchAll(/^(M3-[A-Z0-9]+[a-z]?) /gm)];
+	const out = new Map<string, string[]>();
+	for (let i = 0; i < marks.length; i++) {
+		const mark = marks[i];
+		if (!mark) continue;
+		const id = mark[1] as string;
+		const start = mark.index ?? 0;
+		const next = marks[i + 1];
+		const end = next?.index ?? text.length;
+		const deps = new Set<string>();
+		for (const line of text.slice(start, end).split('\n'))
+			if (/depends on/i.test(line))
+				for (const match of line.matchAll(/M3-[A-Z0-9]+[a-z]?/g)) deps.add(match[0]);
+		deps.delete(id);
+		out.set(id, [...deps]);
+	}
+	return out;
+}
+
+/** The open tasks, the ones nothing blocks first, so a coordinator starts what can start. */
+function readyLines(): string[] {
+	const done = doneTasks();
+	const deps = planDependencies();
+	const open = planTasks().filter(({ id }) => !done.has(id));
+	const lines: string[] = [];
+	const ready = open.filter(({ id }) => (deps.get(id) ?? []).every((dep) => done.has(dep)));
+	const waiting = open.filter(({ id }) => !ready.includes(open.find((t) => t.id === id)!));
+	lines.push(`${ready.length} tasks nothing blocks, and ${waiting.length} that wait on another:`);
+	for (const { id, name } of ready) lines.push(`ready    ${id} — ${name}`);
+	for (const { id, name } of waiting) {
+		const blocked = (deps.get(id) ?? []).filter((dep) => !done.has(dep));
+		lines.push(
+			`waiting  ${id} — waits on ${blocked.join(', ')}${blocked.length === 0 ? name : ''}`,
+		);
+	}
+	return lines;
+}
+
+function main(): void {
+	if (!existsSync(PLAN)) {
+		console.error(`pr-status reads the plan at ${PLAN}, which this clone does not keep.`);
+		process.exit(1);
+	}
+	if (process.argv.includes('--ready')) {
+		process.stdout.write(`${readyLines().join('\n')}\n`);
+		return;
+	}
+	const body = description();
+	// A task the plan no longer holds can still be named by an old commit's trailer, and it owes
+	// nothing: the owed set is what the plan lists, not every id a trailer ever carried.
+	const planIds = new Set(planTasks().map((task) => task.id));
+	const owed = [...landedTasks()].filter((id) => planIds.has(id));
+	for (const id of owed) {
+		if (!(id in TASK_EVIDENCE) && !INCOMPLETE.has(id) && !ON_BRANCH.has(id) && !PARTIAL[id])
+			console.error(
+				`owed: ${id} landed with no entry in tools/task-evidence.ts, so its box stays empty`,
+			);
+	}
+	if (process.argv.includes('--check')) {
+		// A task the tool marks unfinished or on a branch, while the evidence file already names its
+		// proof, is a stale mark: the work landed and someone forgot the set.
+		for (const id of planTasks().map((task) => task.id)) {
+			const stale = INCOMPLETE.has(id) || ON_BRANCH.has(id) || Boolean(PARTIAL[id]);
+			if (stale && id in TASK_EVIDENCE)
+				console.error(`stale: ${id} is marked unfinished or on a branch but has evidence`);
+		}
+		const missing = [...owed].filter(
+			(id) =>
+				!(id in TASK_EVIDENCE) &&
+				!INCOMPLETE.has(id) &&
+				!ON_BRANCH.has(id) &&
+				!PARTIAL[id] &&
+				!NOTES[id] &&
+				!AUDIT_GAPS[id],
+		);
+		if (missing.length > 0) process.exit(1);
+	}
+	if (!process.argv.includes('--apply')) {
+		process.stdout.write(body);
+		return;
+	}
+	const file = join(tmpdir(), `pr-${PR}-body.md`);
+	writeFileSync(file, body);
+	execFileSync('gh', ['pr', 'edit', PR, '--title', TITLE, '--body-file', file], {
+		stdio: 'inherit',
+	});
+	console.log(`wrote the description of pull request ${PR}`);
+}
+
+main();

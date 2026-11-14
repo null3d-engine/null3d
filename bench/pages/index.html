@@ -119,6 +119,35 @@
 				<a href="threejs/s6.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
 				<a href="threejs/s6.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
 			</li>
+			<li>
+				S7, the reflection (a paved surface that mirrors a sky with a layer over it; fixed camera):
+				<a href="threejs/s7.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s7.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s7.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s7.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s7.html?renderer=webgl&amp;seconds=2">WebGL</a>,
+				<a href="threejs/s7.html?renderer=webgpu&amp;seconds=2">WebGPU</a>
+			</li>
+		</ul>
+
+		<h2>The desert, against three.js's meshlet renderer</h2>
+		<p>
+			A dune ground, columns, arches, boulders and pebbles: 63,469 objects, about 1.7 billion
+			triangles at full detail, at 1920 x 1080 in both engines. three.js runs r187's meshlet
+			renderer on WebGPU. Build the model files first with
+			<code>bun bench/lib/desert-files.ts</code>. <code>?view=aerial</code> circles high above,
+			and <code>?shadows=3</code> turns the sun's shadows on.
+		</p>
+		<ul>
+			<li>
+				null3D:
+				<a href="null3d/desert.html?gpu=webgpu">walk</a>,
+				<a href="null3d/desert.html?gpu=webgpu&amp;view=aerial">aerial</a>,
+				<a href="null3d/desert.html?gpu=webgpu&amp;seconds=2">quick run</a>; three.js:
+				<a href="threejs/desert.html?renderer=webgpu">walk</a>,
+				<a href="threejs/desert.html?renderer=webgpu&amp;view=aerial">aerial</a>,
+				<a href="threejs/desert.html?renderer=webgpu&amp;seconds=2">quick run</a>
+			</li>
 		</ul>
 
 		<h2>Playable demos</h2>

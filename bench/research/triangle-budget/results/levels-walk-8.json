@@ -1,0 +1,2245 @@
+{
+	"view": "walk",
+	"samples": 8,
+	"null3dFile": "/Users/ram/dev/null3d/null3d/.claude/worktrees/agent-ac8d65542e78344c7/node_modules/.cache/null3d-assets/ff2387a0001e773f/props.glb",
+	"chains": {
+		"column-0": {
+			"null3d": {
+				"triangles": [
+					518688, 259344, 129672, 64836, 32418, 16208, 8104, 4052, 2026, 1012, 506, 306
+				],
+				"errors": [
+					0, 0.0004342000817580224, 0.0006866322793141539, 0.0012882385819719248,
+					0.002690550041513071, 0.006405720364106616, 0.01423328688152979, 0.031065461836854873,
+					0.07456248488930027, 0.20435847792514536, 1.0075008082883172, 8.384129366187512
+				]
+			},
+			"three": {
+				"triangles": [518720, 285312, 129728, 51904, 20800, 7808],
+				"errors": [
+					0, 0.0011652740504359826, 0.0029452614253386855, 0.006145255698356777,
+					0.01964786573080346, 0.04275444470113143
+				],
+				"real": [518688, 285277, 129671, 51867, 20747, 7780]
+			},
+			"radius": 4.575887100230611
+		},
+		"column-1": {
+			"null3d": {
+				"triangles": [
+					518688, 259344, 129672, 64836, 32418, 16208, 8104, 4052, 2026, 1012, 506, 306
+				],
+				"errors": [
+					0, 0.00046710887467810966, 0.0007848820501228672, 0.0015029013102317856,
+					0.0032539723055241766, 0.007473164394080388, 0.016612859201003423, 0.03551245512837478,
+					0.0806078950120206, 0.2302197112506223, 1.008503725100428, 10.105875844768587
+				]
+			},
+			"three": {
+				"triangles": [518720, 285312, 129728, 51904, 20800, 7808],
+				"errors": [
+					0, 0.0012816870184906293, 0.0031501232260779943, 0.0066009754191327374,
+					0.021101803413330344, 0.04620689073271933
+				],
+				"real": [518688, 285278, 129672, 51868, 20746, 7780]
+			},
+			"radius": 5.315180051541532
+		},
+		"column-2": {
+			"null3d": {
+				"triangles": [
+					518688, 259344, 129672, 64836, 32418, 16208, 8104, 4052, 2026, 1010, 504, 320
+				],
+				"errors": [
+					0, 0.0003149329854352314, 0.0004723994781528471, 0.0007209613009622521,
+					0.0015161038013142814, 0.003968211553326987, 0.010412994451634157, 0.025932448555877393,
+					0.07115281799027437, 0.21146857591584217, 0.9150919804540633, 5.065492261615302
+				]
+			},
+			"three": {
+				"triangles": [518720, 285312, 129728, 51904, 20800, 7808],
+				"errors": [
+					0, 0.0007018264943487937, 0.002025150686288661, 0.004340901921191374,
+					0.014589567623217968, 0.03214405888162721
+				],
+				"real": [518688, 285277, 129671, 51868, 20746, 7779]
+			},
+			"radius": 2.8335495893483498
+		},
+		"arch-0": {
+			"null3d": {
+				"triangles": [
+					1023360, 511680, 255840, 127920, 63960, 31980, 15990, 7994, 3996, 1998, 998, 658
+				],
+				"errors": [
+					0, 0.006980693562097043, 0.01529403528444844, 0.032559908300101095, 0.06882366815818741,
+					0.15137081653051349, 0.33374951786407303, 0.6672354621842667, 1.067465501094735,
+					1.6267426497702184, 4.136394243051928, 31.76201246023157
+				]
+			},
+			"three": {
+				"triangles": [1023360, 562880, 255872, 102336, 40960, 15360],
+				"errors": [
+					0, 0.0054955387928232735, 0.015538264895976761, 0.032721226007674575, 0.08965654759814012,
+					0.19660194635848183
+				],
+				"real": [1023360, 562848, 255840, 102335, 40934, 15350]
+			},
+			"radius": 18.435082487666882
+		},
+		"arch-1": {
+			"null3d": {
+				"triangles": [
+					1023360, 511680, 255840, 127920, 63960, 31980, 15990, 7994, 3996, 1998, 998, 666
+				],
+				"errors": [
+					0, 0.007162854909233617, 0.01576184119008404, 0.032864291531894296, 0.06830553526361216,
+					0.15154130631328022, 0.3320377453577926, 0.6467280509366898, 1.0865013666012349,
+					1.6443262710918176, 4.087363043329219, 33.10904677918072
+				]
+			},
+			"three": {
+				"triangles": [1023360, 562880, 255872, 102336, 40960, 15360],
+				"errors": [
+					0, 0.005572646187027186, 0.01591339743060266, 0.032990262701114326, 0.09028853179232305,
+					0.19865811147410267
+				],
+				"real": [1023360, 562847, 255839, 102335, 40933, 15350]
+			},
+			"radius": 20.356498595932827
+		},
+		"arch-2": {
+			"null3d": {
+				"triangles": [
+					1023360, 511680, 255840, 127920, 63960, 31980, 15990, 7994, 3996, 1998, 998, 672
+				],
+				"errors": [
+					0, 0.007008702582795035, 0.01558220362543142, 0.033310626620834956, 0.07064071586152966,
+					0.15378317633566194, 0.3433537963720372, 0.6514993225558249, 1.08434813915598,
+					1.7290633172878134, 4.393353108774974, 24.82499606394228
+				]
+			},
+			"three": {
+				"triangles": [1023360, 562880, 255872, 102336, 40960, 15360],
+				"errors": [
+					0, 0.00537630095928654, 0.015577193110733134, 0.03291283194952821, 0.09159464256743255,
+					0.19847483538366517
+				],
+				"real": [1023360, 562847, 255840, 102335, 40934, 15350]
+			},
+			"radius": 17.288316767207686
+		},
+		"boulder-0": {
+			"null3d": {
+				"triangles": [81920, 40960, 20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.003986107333745882, 0.007700462608715682, 0.017832068422275336, 0.03667743686194773,
+					0.06709843303897166, 0.11236933127275804, 0.1888487580877989, 0.2880853796959322,
+					0.4321280695438982, 0.6481921043158474, 0.972288156473771
+				]
+			},
+			"three": {
+				"triangles": [81920, 45056, 20480, 8192, 3328, 1280],
+				"errors": [
+					0, 0.0024137239152293155, 0.005826671840952979, 0.012495472961271847, 0.03345897982048607,
+					0.0682958547885435
+				],
+				"real": [81920, 45056, 20480, 8192, 3276, 1228]
+			},
+			"radius": 1.086884771424493
+		},
+		"boulder-1": {
+			"null3d": {
+				"triangles": [81920, 40960, 20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.0038911944912848944, 0.007885616498735733, 0.01755514891257552, 0.03781715269350249,
+					0.06790924428361596, 0.1133279449653047, 0.17856293909333049, 0.282541908356855,
+					0.42381286253528255, 0.6357192938029238, 0.9535789407043856
+				]
+			},
+			"three": {
+				"triangles": [81920, 45056, 20480, 8192, 3328, 1280],
+				"errors": [
+					0, 0.0023726387873240773, 0.00580696749347881, 0.012514829931380145, 0.03321793334066542,
+					0.06932481279990882
+				],
+				"real": [81920, 45056, 20480, 8192, 3276, 1228]
+			},
+			"radius": 1.1017145790677496
+		},
+		"boulder-2": {
+			"null3d": {
+				"triangles": [81920, 40960, 20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.003916980308042798, 0.007832601738433484, 0.017719077656413156, 0.036401143280821203,
+					0.06872399220015275, 0.11298320244682634, 0.17592084000037359, 0.28344508046601563,
+					0.4251676206990234, 0.6377514310485352, 0.9566271465728027
+				]
+			},
+			"three": {
+				"triangles": [81920, 45056, 20480, 8192, 3328, 1280],
+				"errors": [
+					0, 0.0023986144797627507, 0.005790261239595029, 0.01241037111101062, 0.033269576021943026,
+					0.06878726978418226
+				],
+				"real": [81920, 45056, 20480, 8192, 3276, 1228]
+			},
+			"radius": 1.144087833140869
+		},
+		"boulder-3": {
+			"null3d": {
+				"triangles": [81920, 40960, 20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.0039021755859006174, 0.007805044062552535, 0.01798429550540068, 0.03784405583091146,
+					0.06895809215840285, 0.1134576108270975, 0.1768692867570364, 0.2999829582623561,
+					0.44997443739353415, 0.6749616560903012, 1.012442484135452
+				]
+			},
+			"three": {
+				"triangles": [81920, 45056, 20480, 8192, 3328, 1280],
+				"errors": [
+					0, 0.002374771402527953, 0.005815988838054897, 0.01251919018402714, 0.03331399251834566,
+					0.0683152197791348
+				],
+				"real": [81920, 45056, 20480, 8192, 3276, 1228]
+			},
+			"radius": 1.1312856933634061
+		},
+		"pebble-0": {
+			"null3d": {
+				"triangles": [20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.005311848012434653, 0.010427663939358893, 0.02157869791729474, 0.04258855272931373,
+					0.07973394430966968, 0.11960091646450452, 0.1866524343242342, 0.3060916312121,
+					0.45913744681814994
+				]
+			},
+			"three": {
+				"triangles": [20480, 11264, 5120, 2048, 832, 320],
+				"errors": [
+					0, 0.003951773282389964, 0.009353711863869213, 0.01937367896648909, 0.05235075156450317,
+					0.10429530993740285
+				],
+				"real": [20480, 11264, 5120, 2048, 818, 306]
+			},
+			"radius": 1.0499146167423221
+		},
+		"pebble-1": {
+			"null3d": {
+				"triangles": [20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.0053279263784895324, 0.010294868639100126, 0.021624088942853763, 0.04383542028346977,
+					0.08188969109925229, 0.12797437450130142, 0.19474309250551952, 0.299179599056852,
+					0.448769398585278
+				]
+			},
+			"three": {
+				"triangles": [20480, 11264, 5120, 2048, 832, 320],
+				"errors": [
+					0, 0.004009677189239308, 0.009425924549255837, 0.0197138941356243, 0.0526302518474997,
+					0.10694252930539805
+				],
+				"real": [20480, 11264, 5120, 2048, 818, 306]
+			},
+			"radius": 1.001898429407213
+		},
+		"pebble-2": {
+			"null3d": {
+				"triangles": [20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.005145669761957737, 0.010272778061270079, 0.020922971584915254, 0.04243108224979446,
+					0.0752296657314094, 0.1366144208416092, 0.20839729088714518, 0.31259593633071775,
+					0.46889390449607665
+				]
+			},
+			"three": {
+				"triangles": [20480, 11264, 5120, 2048, 832, 320],
+				"errors": [
+					0, 0.0039619790329599724, 0.009293819262578606, 0.019395605473454036,
+					0.053005378448159834, 0.10758735601329333
+				],
+				"real": [20480, 11264, 5120, 2048, 818, 306]
+			},
+			"radius": 1.0311761382872338
+		},
+		"pebble-3": {
+			"null3d": {
+				"triangles": [20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.005227522068824243, 0.010257541424952506, 0.021631062605165535, 0.041733338762985676,
+					0.07515145176922336, 0.12734553333969847, 0.21218323848057044, 0.3182748577208557,
+					0.4774122865812835
+				]
+			},
+			"three": {
+				"triangles": [20480, 11264, 5120, 2048, 832, 320],
+				"errors": [
+					0, 0.003931955665302467, 0.009249895914525075, 0.0193369404339625, 0.052487816790533826,
+					0.1054555850159502
+				],
+				"real": [20480, 11264, 5120, 2048, 818, 306]
+			},
+			"radius": 1.0322505411715175
+		},
+		"pebble-4": {
+			"null3d": {
+				"triangles": [20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.005235305867415285, 0.01007143132096554, 0.021325781358838974, 0.041078875930291435,
+					0.0719473801294184, 0.12782217158311446, 0.19483388988685446, 0.2930327733049261,
+					0.43954915995738914
+				]
+			},
+			"three": {
+				"triangles": [20480, 11264, 5120, 2048, 832, 320],
+				"errors": [
+					0, 0.0039016430333103924, 0.00923238630448972, 0.019498347942982747, 0.052616743637038915,
+					0.10837373069454323
+				],
+				"real": [20480, 11264, 5120, 2048, 818, 306]
+			},
+			"radius": 1.0428033120809366
+		},
+		"pebble-5": {
+			"null3d": {
+				"triangles": [20480, 10240, 5120, 2560, 1280, 640, 320, 160, 80, 40],
+				"errors": [
+					0, 0.005510802530333119, 0.010259511461128013, 0.021687497989806577, 0.04375967683686898,
+					0.078189141837099, 0.12442892963906226, 0.19427752198179973, 0.2914162829726996,
+					0.43919501983968384
+				]
+			},
+			"three": {
+				"triangles": [20480, 11264, 5120, 2048, 832, 320],
+				"errors": [
+					0, 0.003963988656863204, 0.009386724786009104, 0.019421934812480224, 0.05355504746422657,
+					0.10778735503629289
+				],
+				"real": [20480, 11264, 5120, 2048, 818, 306]
+			},
+			"radius": 1.0435746238777184
+		}
+	},
+	"camera": {
+		"null3d": {
+			"1": {
+				"arch": 1842847.5,
+				"boulder": 877510,
+				"column": 148587.75,
+				"pebble": 808605,
+				"all": 3677550.25
+			},
+			"2": {
+				"arch": 1189255,
+				"boulder": 326690,
+				"column": 103211.25,
+				"pebble": 332150,
+				"all": 1951306.25
+			},
+			"3": {
+				"arch": 1000369.5,
+				"boulder": 180775,
+				"column": 85355.5,
+				"pebble": 187100,
+				"all": 1453600
+			},
+			"4": {
+				"arch": 872447.5,
+				"boulder": 114910,
+				"column": 73711,
+				"pebble": 122470,
+				"all": 1183538.5
+			},
+			"0.5": {
+				"arch": 2670330,
+				"boulder": 2146400,
+				"column": 242861,
+				"pebble": 1861385,
+				"all": 6920976
+			},
+			"1.5": {
+				"arch": 1447095,
+				"boulder": 503150,
+				"column": 116394.5,
+				"pebble": 494125,
+				"all": 2560764.5
+			}
+		},
+		"null3dCenter": {
+			"1": {
+				"arch": 1013366.25,
+				"boulder": 860830,
+				"column": 143394,
+				"pebble": 799275,
+				"all": 2816865.25
+			},
+			"2": {
+				"arch": 531666,
+				"boulder": 320795,
+				"column": 101754.75,
+				"pebble": 327985,
+				"all": 1282200.75
+			},
+			"3": {
+				"arch": 349276,
+				"boulder": 174795,
+				"column": 83899,
+				"pebble": 184660,
+				"all": 792630
+			},
+			"4": {
+				"arch": 279818,
+				"boulder": 111910,
+				"column": 72824.75,
+				"pebble": 121060,
+				"all": 585612.75
+			},
+			"0.5": {
+				"arch": 1794877.5,
+				"boulder": 2115780,
+				"column": 236403,
+				"pebble": 1843485,
+				"all": 5990545.5
+			},
+			"1.5": {
+				"arch": 651592.25,
+				"boulder": 489890,
+				"column": 113479.75,
+				"pebble": 489700,
+				"all": 1744662
+			}
+		},
+		"three": {
+			"arch": 916704,
+			"boulder": 953600,
+			"column": 705624,
+			"pebble": 3273048,
+			"all": 5848976
+		},
+		"threeReal": {
+			"arch": 916539,
+			"boulder": 919176,
+			"column": 703095.625,
+			"pebble": 3138229.75,
+			"all": 5677040.375
+		},
+		"null3dLevelsCenterDistance": {
+			"arch": 1013366.25,
+			"boulder": 860830,
+			"column": 143394,
+			"pebble": 799275,
+			"all": 2816865.25
+		},
+		"threeLevelsNearestDistance": {
+			"arch": 1647752,
+			"boulder": 965056,
+			"column": 714384,
+			"pebble": 3281328,
+			"all": 6608520
+		},
+		"copiesInView": {
+			"arch": 12.5,
+			"boulder": 666.125,
+			"column": 88.5,
+			"pebble": 9681,
+			"all": 10448.125
+		},
+		"null3dHidden": {
+			"arch": 0,
+			"boulder": 0,
+			"column": 0,
+			"pebble": 1726.625,
+			"all": 1726.625
+		}
+	},
+	"shadow": {
+		"null3dCascades": [
+			{
+				"arch": 1343160,
+				"boulder": 89600,
+				"column": 38494,
+				"pebble": 893630,
+				"all": 2364884
+			},
+			{
+				"arch": 1055340,
+				"boulder": 296640,
+				"column": 82559.5,
+				"pebble": 1193600,
+				"all": 2628139.5
+			},
+			{
+				"arch": 1171267.5,
+				"boulder": 1436240,
+				"column": 277308.75,
+				"pebble": 1083795,
+				"all": 3968611.25
+			}
+		],
+		"null3dCascadesAt": {
+			"2": [
+				{
+					"arch": 719550,
+					"boulder": 51520,
+					"column": 19753.5,
+					"pebble": 303935,
+					"all": 1094758.5
+				},
+				{
+					"arch": 615615,
+					"boulder": 158480,
+					"column": 41786.25,
+					"pebble": 423445,
+					"all": 1239326.25
+				},
+				{
+					"arch": 621611.25,
+					"boulder": 500700,
+					"column": 138455.25,
+					"pebble": 683595,
+					"all": 1944361.5
+				}
+			],
+			"4": [
+				{
+					"arch": 383760,
+					"boulder": 26080,
+					"column": 13928.75,
+					"pebble": 111755,
+					"all": 535523.75
+				},
+				{
+					"arch": 347782.5,
+					"boulder": 60280,
+					"column": 41153,
+					"pebble": 260670,
+					"all": 709885.5
+				},
+				{
+					"arch": 300801.25,
+					"boulder": 184850,
+					"column": 138455.25,
+					"pebble": 0,
+					"all": 624106.5
+				}
+			]
+		},
+		"three": {
+			"arch": 2604560,
+			"boulder": 1783840,
+			"column": 1111664,
+			"pebble": 12350000,
+			"all": 17850064
+		},
+		"threeAtNull3dCascade0Texel": {
+			"arch": 9850736,
+			"boulder": 6936128,
+			"column": 6157336,
+			"pebble": 21104624,
+			"all": 44048824
+		},
+		"texels": [0.018942000403269713, 0.045136575956505935, 0.15553939997952418, 0.0732421875]
+	},
+	"arches": [
+		{
+			"t": 2.5,
+			"name": "arch-0",
+			"scale": 0.967,
+			"radius": 17.83,
+			"centerDistance": 280.3,
+			"nearestDistance": 262.4,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.58,
+			"null3dErrorPxAtCenter": 0.54,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.7,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 2.5,
+			"name": "arch-0",
+			"scale": 1.383,
+			"radius": 25.49,
+			"centerDistance": 105.5,
+			"nearestDistance": 80,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.58,
+			"null3dErrorPxAtCenter": 0.44,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.44,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 2.5,
+			"name": "arch-0",
+			"scale": 1.389,
+			"radius": 25.61,
+			"centerDistance": 105.8,
+			"nearestDistance": 80.2,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.59,
+			"null3dErrorPxAtCenter": 0.44,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.45,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 2.5,
+			"name": "arch-0",
+			"scale": 0.864,
+			"radius": 15.92,
+			"centerDistance": 363.8,
+			"nearestDistance": 347.9,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.86,
+			"null3dErrorPxAtCenter": 0.82,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.48,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 2.5,
+			"name": "arch-0",
+			"scale": 0.737,
+			"radius": 13.58,
+			"centerDistance": 286.5,
+			"nearestDistance": 272.9,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.93,
+			"null3dErrorPxAtCenter": 0.89,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.52,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 2.5,
+			"name": "arch-1",
+			"scale": 1.243,
+			"radius": 25.3,
+			"centerDistance": 294.3,
+			"nearestDistance": 269,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.73,
+			"null3dErrorPxAtCenter": 0.66,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.87,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 2.5,
+			"name": "arch-1",
+			"scale": 0.702,
+			"radius": 14.29,
+			"centerDistance": 280.6,
+			"nearestDistance": 266.3,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.91,
+			"null3dErrorPxAtCenter": 0.86,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.52,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 2.5,
+			"name": "arch-1",
+			"scale": 0.875,
+			"radius": 17.81,
+			"centerDistance": 390.6,
+			"nearestDistance": 372.8,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.81,
+			"null3dErrorPxAtCenter": 0.77,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.46,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 2.5,
+			"name": "arch-2",
+			"scale": 1.162,
+			"radius": 20.08,
+			"centerDistance": 167.1,
+			"nearestDistance": 147,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.58,
+			"null3dErrorPxAtCenter": 0.51,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.66,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 2.5,
+			"name": "arch-2",
+			"scale": 1.186,
+			"radius": 20.51,
+			"centerDistance": 99.3,
+			"nearestDistance": 78.8,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.52,
+			"null3dErrorPxAtCenter": 0.41,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.41,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 2.5,
+			"name": "arch-2",
+			"scale": 0.879,
+			"radius": 15.19,
+			"centerDistance": 21.5,
+			"nearestDistance": 6.3,
+			"null3dLevel": 0,
+			"null3dTriangles": 1023360,
+			"null3dErrorPx": 0,
+			"null3dErrorPxAtCenter": 0,
+			"threeLevel": 2,
+			"threeTriangles": 255872,
+			"threeErrorPx": 0.66,
+			"null3dLevelAtCenterDistance": 2,
+			"null3dTrianglesAtCenterDistance": 255840
+		},
+		{
+			"t": 2.5,
+			"name": "arch-2",
+			"scale": 1.101,
+			"radius": 19.03,
+			"centerDistance": 172.4,
+			"nearestDistance": 153.3,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.53,
+			"null3dErrorPxAtCenter": 0.47,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.61,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 2.5,
+			"name": "arch-2",
+			"scale": 1.272,
+			"radius": 21.98,
+			"centerDistance": 22.3,
+			"nearestDistance": 0.3,
+			"null3dLevel": 0,
+			"null3dTriangles": 1023360,
+			"null3dErrorPx": 0,
+			"null3dErrorPxAtCenter": 0,
+			"threeLevel": 2,
+			"threeTriangles": 255872,
+			"threeErrorPx": 0.92,
+			"null3dLevelAtCenterDistance": 2,
+			"null3dTrianglesAtCenterDistance": 255840
+		},
+		{
+			"t": 7.5,
+			"name": "arch-0",
+			"scale": 1.383,
+			"radius": 25.49,
+			"centerDistance": 57.8,
+			"nearestDistance": 32.3,
+			"null3dLevel": 2,
+			"null3dTriangles": 255840,
+			"null3dErrorPx": 0.68,
+			"null3dErrorPxAtCenter": 0.38,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.81,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 7.5,
+			"name": "arch-0",
+			"scale": 1.389,
+			"radius": 25.61,
+			"centerDistance": 59.2,
+			"nearestDistance": 33.6,
+			"null3dLevel": 2,
+			"null3dTriangles": 255840,
+			"null3dErrorPx": 0.66,
+			"null3dErrorPxAtCenter": 0.37,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.8,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 7.5,
+			"name": "arch-0",
+			"scale": 1.093,
+			"radius": 20.16,
+			"centerDistance": 276,
+			"nearestDistance": 255.9,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.67,
+			"null3dErrorPxAtCenter": 0.62,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.81,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 7.5,
+			"name": "arch-0",
+			"scale": 1.088,
+			"radius": 20.06,
+			"centerDistance": 281.7,
+			"nearestDistance": 261.7,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.65,
+			"null3dErrorPxAtCenter": 0.61,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.79,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 7.5,
+			"name": "arch-0",
+			"scale": 0.864,
+			"radius": 15.92,
+			"centerDistance": 316.4,
+			"nearestDistance": 300.5,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.99,
+			"null3dErrorPxAtCenter": 0.94,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.56,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 7.5,
+			"name": "arch-0",
+			"scale": 0.737,
+			"radius": 13.58,
+			"centerDistance": 240,
+			"nearestDistance": 226.5,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.51,
+			"null3dErrorPxAtCenter": 0.48,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.63,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 7.5,
+			"name": "arch-1",
+			"scale": 1.001,
+			"radius": 20.38,
+			"centerDistance": 347.7,
+			"nearestDistance": 327.3,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.48,
+			"null3dErrorPxAtCenter": 0.45,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.59,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 7.5,
+			"name": "arch-1",
+			"scale": 1.194,
+			"radius": 24.31,
+			"centerDistance": 67.7,
+			"nearestDistance": 43.4,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.94,
+			"null3dErrorPxAtCenter": 0.6,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.6,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 7.5,
+			"name": "arch-1",
+			"scale": 1.178,
+			"radius": 23.97,
+			"centerDistance": 163.4,
+			"nearestDistance": 139.4,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.6,
+			"null3dErrorPxAtCenter": 0.51,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.68,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 7.5,
+			"name": "arch-1",
+			"scale": 0.947,
+			"radius": 19.29,
+			"centerDistance": 278.4,
+			"nearestDistance": 259.1,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.57,
+			"null3dErrorPxAtCenter": 0.53,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.7,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 7.5,
+			"name": "arch-1",
+			"scale": 0.702,
+			"radius": 14.29,
+			"centerDistance": 232.7,
+			"nearestDistance": 218.4,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.51,
+			"null3dErrorPxAtCenter": 0.47,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.62,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 7.5,
+			"name": "arch-1",
+			"scale": 0.875,
+			"radius": 17.81,
+			"centerDistance": 342.7,
+			"nearestDistance": 324.9,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.93,
+			"null3dErrorPxAtCenter": 0.88,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.53,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 7.5,
+			"name": "arch-2",
+			"scale": 0.935,
+			"radius": 16.16,
+			"centerDistance": 122.8,
+			"nearestDistance": 106.7,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.64,
+			"null3dErrorPxAtCenter": 0.56,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.72,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 7.5,
+			"name": "arch-2",
+			"scale": 1.186,
+			"radius": 20.51,
+			"centerDistance": 59.5,
+			"nearestDistance": 39,
+			"null3dLevel": 2,
+			"null3dTriangles": 255840,
+			"null3dErrorPx": 0.49,
+			"null3dErrorPxAtCenter": 0.32,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.68,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 7.5,
+			"name": "arch-2",
+			"scale": 1.101,
+			"radius": 19.03,
+			"centerDistance": 126.4,
+			"nearestDistance": 107.3,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.75,
+			"null3dErrorPxAtCenter": 0.64,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.83,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 12.5,
+			"name": "arch-0",
+			"scale": 0.869,
+			"radius": 16.02,
+			"centerDistance": 242.4,
+			"nearestDistance": 226.4,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.6,
+			"null3dErrorPxAtCenter": 0.56,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.73,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-0",
+			"scale": 0.876,
+			"radius": 16.14,
+			"centerDistance": 90.1,
+			"nearestDistance": 73.9,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.85,
+			"null3dErrorPxAtCenter": 0.69,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.9,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 12.5,
+			"name": "arch-0",
+			"scale": 0.803,
+			"radius": 14.81,
+			"centerDistance": 185.6,
+			"nearestDistance": 170.8,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.74,
+			"null3dErrorPxAtCenter": 0.68,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.88,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-0",
+			"scale": 1.093,
+			"radius": 20.16,
+			"centerDistance": 243.8,
+			"nearestDistance": 223.6,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.77,
+			"null3dErrorPxAtCenter": 0.7,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.91,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-0",
+			"scale": 1.088,
+			"radius": 20.06,
+			"centerDistance": 247.2,
+			"nearestDistance": 227.2,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.75,
+			"null3dErrorPxAtCenter": 0.69,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.9,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 1.325,
+			"radius": 26.98,
+			"centerDistance": 50.3,
+			"nearestDistance": 23.3,
+			"null3dLevel": 2,
+			"null3dTriangles": 255840,
+			"null3dErrorPx": 0.93,
+			"null3dErrorPxAtCenter": 0.43,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.9,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 1.001,
+			"radius": 20.38,
+			"centerDistance": 316.3,
+			"nearestDistance": 296,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.53,
+			"null3dErrorPxAtCenter": 0.5,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.65,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 0.712,
+			"radius": 14.5,
+			"centerDistance": 323.3,
+			"nearestDistance": 308.8,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.79,
+			"null3dErrorPxAtCenter": 0.76,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.45,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 0.8,
+			"radius": 16.29,
+			"centerDistance": 191.8,
+			"nearestDistance": 175.5,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.72,
+			"null3dErrorPxAtCenter": 0.66,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.86,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 1.194,
+			"radius": 24.31,
+			"centerDistance": 47.3,
+			"nearestDistance": 23,
+			"null3dLevel": 2,
+			"null3dTriangles": 255840,
+			"null3dErrorPx": 0.85,
+			"null3dErrorPxAtCenter": 0.41,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.86,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 1.178,
+			"radius": 23.97,
+			"centerDistance": 133.6,
+			"nearestDistance": 109.6,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.76,
+			"null3dErrorPxAtCenter": 0.62,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.83,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 0.717,
+			"radius": 14.6,
+			"centerDistance": 137.1,
+			"nearestDistance": 122.5,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.92,
+			"null3dErrorPxAtCenter": 0.82,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.49,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-1",
+			"scale": 0.947,
+			"radius": 19.29,
+			"centerDistance": 242.6,
+			"nearestDistance": 223.3,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.67,
+			"null3dErrorPxAtCenter": 0.61,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.8,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-2",
+			"scale": 0.935,
+			"radius": 16.16,
+			"centerDistance": 92.8,
+			"nearestDistance": 76.6,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.89,
+			"null3dErrorPxAtCenter": 0.74,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.96,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 12.5,
+			"name": "arch-2",
+			"scale": 0.876,
+			"radius": 15.15,
+			"centerDistance": 297.4,
+			"nearestDistance": 282.3,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.5,
+			"null3dErrorPxAtCenter": 0.47,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.61,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 12.5,
+			"name": "arch-2",
+			"scale": 1.256,
+			"radius": 21.71,
+			"centerDistance": 192.1,
+			"nearestDistance": 170.4,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.54,
+			"null3dErrorPxAtCenter": 0.48,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.62,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 12.5,
+			"name": "arch-2",
+			"scale": 0.718,
+			"radius": 12.41,
+			"centerDistance": 77.6,
+			"nearestDistance": 65.2,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.81,
+			"null3dErrorPxAtCenter": 0.68,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.88,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 12.5,
+			"name": "arch-2",
+			"scale": 1.311,
+			"radius": 22.67,
+			"centerDistance": 72.5,
+			"nearestDistance": 49.8,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.91,
+			"null3dErrorPxAtCenter": 0.63,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.62,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 12.5,
+			"name": "arch-2",
+			"scale": 0.986,
+			"radius": 17.04,
+			"centerDistance": 195.3,
+			"nearestDistance": 178.2,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.88,
+			"null3dErrorPxAtCenter": 0.81,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.48,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 17.5,
+			"name": "arch-0",
+			"scale": 0.869,
+			"radius": 16.02,
+			"centerDistance": 226.2,
+			"nearestDistance": 210.2,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.65,
+			"null3dErrorPxAtCenter": 0.6,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.78,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 17.5,
+			"name": "arch-0",
+			"scale": 0.876,
+			"radius": 16.14,
+			"centerDistance": 69.4,
+			"nearestDistance": 53.2,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.56,
+			"null3dErrorPxAtCenter": 0.43,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.43,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 17.5,
+			"name": "arch-0",
+			"scale": 0.803,
+			"radius": 14.81,
+			"centerDistance": 167.6,
+			"nearestDistance": 152.8,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.83,
+			"null3dErrorPxAtCenter": 0.75,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.98,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 17.5,
+			"name": "arch-0",
+			"scale": 0.837,
+			"radius": 15.44,
+			"centerDistance": 73.7,
+			"nearestDistance": 58.3,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.49,
+			"null3dErrorPxAtCenter": 0.38,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.39,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 17.5,
+			"name": "arch-0",
+			"scale": 1.332,
+			"radius": 24.55,
+			"centerDistance": 361.3,
+			"nearestDistance": 336.7,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.62,
+			"null3dErrorPxAtCenter": 0.58,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.75,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 17.5,
+			"name": "arch-0",
+			"scale": 1.061,
+			"radius": 19.56,
+			"centerDistance": 122.3,
+			"nearestDistance": 102.8,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.74,
+			"null3dErrorPxAtCenter": 0.62,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.81,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 17.5,
+			"name": "arch-1",
+			"scale": 1.325,
+			"radius": 26.98,
+			"centerDistance": 32.5,
+			"nearestDistance": 5.5,
+			"null3dLevel": 0,
+			"null3dTriangles": 1023360,
+			"null3dErrorPx": 0,
+			"null3dErrorPxAtCenter": 0,
+			"threeLevel": 2,
+			"threeTriangles": 255872,
+			"threeErrorPx": 0.67,
+			"null3dLevelAtCenterDistance": 2,
+			"null3dTrianglesAtCenterDistance": 255840
+		},
+		{
+			"t": 17.5,
+			"name": "arch-1",
+			"scale": 0.712,
+			"radius": 14.5,
+			"centerDistance": 302.5,
+			"nearestDistance": 288,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.85,
+			"null3dErrorPxAtCenter": 0.81,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.49,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 17.5,
+			"name": "arch-1",
+			"scale": 0.8,
+			"radius": 16.29,
+			"centerDistance": 171,
+			"nearestDistance": 154.7,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.81,
+			"null3dErrorPxAtCenter": 0.74,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.96,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 17.5,
+			"name": "arch-1",
+			"scale": 0.717,
+			"radius": 14.6,
+			"centerDistance": 116.2,
+			"nearestDistance": 101.6,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.5,
+			"null3dErrorPxAtCenter": 0.44,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.58,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 17.5,
+			"name": "arch-1",
+			"scale": 1.369,
+			"radius": 27.86,
+			"centerDistance": 148.3,
+			"nearestDistance": 120.5,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.8,
+			"null3dErrorPxAtCenter": 0.65,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.86,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 17.5,
+			"name": "arch-1",
+			"scale": 0.835,
+			"radius": 17,
+			"centerDistance": 90.9,
+			"nearestDistance": 73.9,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.8,
+			"null3dErrorPxAtCenter": 0.65,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.86,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 17.5,
+			"name": "arch-2",
+			"scale": 0.876,
+			"radius": 15.15,
+			"centerDistance": 276.6,
+			"nearestDistance": 261.4,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.53,
+			"null3dErrorPxAtCenter": 0.51,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.65,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 17.5,
+			"name": "arch-2",
+			"scale": 0.718,
+			"radius": 12.41,
+			"centerDistance": 56.7,
+			"nearestDistance": 44.3,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.56,
+			"null3dErrorPxAtCenter": 0.44,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.43,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 17.5,
+			"name": "arch-2",
+			"scale": 1.311,
+			"radius": 22.67,
+			"centerDistance": 53.1,
+			"nearestDistance": 30.4,
+			"null3dLevel": 2,
+			"null3dTriangles": 255840,
+			"null3dErrorPx": 0.7,
+			"null3dErrorPxAtCenter": 0.4,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.84,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 17.5,
+			"name": "arch-2",
+			"scale": 1.28,
+			"radius": 22.13,
+			"centerDistance": 322.8,
+			"nearestDistance": 300.7,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.68,
+			"null3dErrorPxAtCenter": 0.63,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.82,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 22.5,
+			"name": "arch-0",
+			"scale": 0.876,
+			"radius": 16.14,
+			"centerDistance": 24.5,
+			"nearestDistance": 8.4,
+			"null3dLevel": 1,
+			"null3dTriangles": 511680,
+			"null3dErrorPx": 0.76,
+			"null3dErrorPxAtCenter": 0.26,
+			"threeLevel": 2,
+			"threeTriangles": 255872,
+			"threeErrorPx": 0.58,
+			"null3dLevelAtCenterDistance": 2,
+			"null3dTrianglesAtCenterDistance": 255840
+		},
+		{
+			"t": 22.5,
+			"name": "arch-0",
+			"scale": 0.837,
+			"radius": 15.44,
+			"centerDistance": 58.5,
+			"nearestDistance": 43.1,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.66,
+			"null3dErrorPxAtCenter": 0.48,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.49,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 22.5,
+			"name": "arch-0",
+			"scale": 1.332,
+			"radius": 24.55,
+			"centerDistance": 322,
+			"nearestDistance": 297.4,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.7,
+			"null3dErrorPxAtCenter": 0.65,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.84,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 22.5,
+			"name": "arch-0",
+			"scale": 1.061,
+			"radius": 19.56,
+			"centerDistance": 85.9,
+			"nearestDistance": 66.4,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.54,
+			"null3dErrorPxAtCenter": 0.42,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.42,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 22.5,
+			"name": "arch-1",
+			"scale": 0.717,
+			"radius": 14.6,
+			"centerDistance": 68.8,
+			"nearestDistance": 54.2,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.94,
+			"null3dErrorPxAtCenter": 0.74,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.98,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 22.5,
+			"name": "arch-1",
+			"scale": 0.834,
+			"radius": 16.98,
+			"centerDistance": 263.6,
+			"nearestDistance": 246.6,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.53,
+			"null3dErrorPxAtCenter": 0.5,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.65,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 22.5,
+			"name": "arch-1",
+			"scale": 1.369,
+			"radius": 27.86,
+			"centerDistance": 126.4,
+			"nearestDistance": 98.6,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.98,
+			"null3dErrorPxAtCenter": 0.77,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.37,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 22.5,
+			"name": "arch-1",
+			"scale": 0.835,
+			"radius": 17,
+			"centerDistance": 56.4,
+			"nearestDistance": 39.4,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.72,
+			"null3dErrorPxAtCenter": 0.5,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.51,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 22.5,
+			"name": "arch-2",
+			"scale": 0.876,
+			"radius": 15.15,
+			"centerDistance": 229.1,
+			"nearestDistance": 214,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.65,
+			"null3dErrorPxAtCenter": 0.61,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.79,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 22.5,
+			"name": "arch-2",
+			"scale": 0.718,
+			"radius": 12.41,
+			"centerDistance": 10.7,
+			"nearestDistance": 0,
+			"null3dLevel": 0,
+			"null3dTriangles": 1023360,
+			"null3dErrorPx": 0,
+			"null3dErrorPxAtCenter": 0,
+			"threeLevel": 1,
+			"threeTriangles": 562880,
+			"threeErrorPx": 0.37,
+			"null3dLevelAtCenterDistance": 1,
+			"null3dTrianglesAtCenterDistance": 511680
+		},
+		{
+			"t": 22.5,
+			"name": "arch-2",
+			"scale": 1.28,
+			"radius": 22.13,
+			"centerDistance": 289.8,
+			"nearestDistance": 267.7,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.76,
+			"null3dErrorPxAtCenter": 0.7,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.91,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 22.5,
+			"name": "arch-2",
+			"scale": 1.214,
+			"radius": 20.99,
+			"centerDistance": 135.6,
+			"nearestDistance": 114.6,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.78,
+			"null3dErrorPxAtCenter": 0.66,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.85,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 27.5,
+			"name": "arch-0",
+			"scale": 0.837,
+			"radius": 15.44,
+			"centerDistance": 11.2,
+			"nearestDistance": 0,
+			"null3dLevel": 0,
+			"null3dTriangles": 1023360,
+			"null3dErrorPx": 0,
+			"null3dErrorPxAtCenter": 0,
+			"threeLevel": 1,
+			"threeTriangles": 562880,
+			"threeErrorPx": 0.42,
+			"null3dLevelAtCenterDistance": 1,
+			"null3dTrianglesAtCenterDistance": 511680
+		},
+		{
+			"t": 27.5,
+			"name": "arch-1",
+			"scale": 0.791,
+			"radius": 16.1,
+			"centerDistance": 208.1,
+			"nearestDistance": 192,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.65,
+			"null3dErrorPxAtCenter": 0.6,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.78,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 27.5,
+			"name": "arch-1",
+			"scale": 0.834,
+			"radius": 16.98,
+			"centerDistance": 217.4,
+			"nearestDistance": 200.4,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.65,
+			"null3dErrorPxAtCenter": 0.6,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.79,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 27.5,
+			"name": "arch-1",
+			"scale": 1.369,
+			"radius": 27.86,
+			"centerDistance": 81.7,
+			"nearestDistance": 53.8,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.87,
+			"null3dErrorPxAtCenter": 0.57,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.57,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 27.5,
+			"name": "arch-2",
+			"scale": 1.386,
+			"radius": 23.97,
+			"centerDistance": 50.2,
+			"nearestDistance": 26.3,
+			"null3dLevel": 2,
+			"null3dTriangles": 255840,
+			"null3dErrorPx": 0.85,
+			"null3dErrorPxAtCenter": 0.45,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.94,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 27.5,
+			"name": "arch-2",
+			"scale": 1.214,
+			"radius": 20.99,
+			"centerDistance": 90.2,
+			"nearestDistance": 69.3,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.61,
+			"null3dErrorPxAtCenter": 0.46,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.46,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 32.5,
+			"name": "arch-1",
+			"scale": 0.791,
+			"radius": 16.1,
+			"centerDistance": 173,
+			"nearestDistance": 156.9,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.79,
+			"null3dErrorPxAtCenter": 0.72,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.94,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 32.5,
+			"name": "arch-1",
+			"scale": 1.256,
+			"radius": 25.57,
+			"centerDistance": 353.1,
+			"nearestDistance": 327.5,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.6,
+			"null3dErrorPxAtCenter": 0.56,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.73,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 32.5,
+			"name": "arch-1",
+			"scale": 0.814,
+			"radius": 16.57,
+			"centerDistance": 369.2,
+			"nearestDistance": 352.6,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.8,
+			"null3dErrorPxAtCenter": 0.76,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.45,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 32.5,
+			"name": "arch-1",
+			"scale": 0.872,
+			"radius": 17.75,
+			"centerDistance": 123.1,
+			"nearestDistance": 105.3,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.59,
+			"null3dErrorPxAtCenter": 0.5,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.66,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 32.5,
+			"name": "arch-2",
+			"scale": 0.827,
+			"radius": 14.29,
+			"centerDistance": 67.5,
+			"nearestDistance": 53.2,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.54,
+			"null3dErrorPxAtCenter": 0.42,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.42,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 32.5,
+			"name": "arch-2",
+			"scale": 1.137,
+			"radius": 19.66,
+			"centerDistance": 37.1,
+			"nearestDistance": 17.5,
+			"null3dLevel": 1,
+			"null3dTriangles": 511680,
+			"null3dErrorPx": 0.47,
+			"null3dErrorPxAtCenter": 0.22,
+			"threeLevel": 2,
+			"threeTriangles": 255872,
+			"threeErrorPx": 0.49,
+			"null3dLevelAtCenterDistance": 2,
+			"null3dTrianglesAtCenterDistance": 255840
+		},
+		{
+			"t": 32.5,
+			"name": "arch-2",
+			"scale": 1.386,
+			"radius": 23.97,
+			"centerDistance": 32.1,
+			"nearestDistance": 8.1,
+			"null3dLevel": 0,
+			"null3dTriangles": 1023360,
+			"null3dErrorPx": 0,
+			"null3dErrorPxAtCenter": 0,
+			"threeLevel": 2,
+			"threeTriangles": 255872,
+			"threeErrorPx": 0.7,
+			"null3dLevelAtCenterDistance": 2,
+			"null3dTrianglesAtCenterDistance": 255840
+		},
+		{
+			"t": 32.5,
+			"name": "arch-2",
+			"scale": 0.953,
+			"radius": 16.48,
+			"centerDistance": 285.8,
+			"nearestDistance": 269.3,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.56,
+			"null3dErrorPxAtCenter": 0.53,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.69,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 32.5,
+			"name": "arch-2",
+			"scale": 1.272,
+			"radius": 21.98,
+			"centerDistance": 90.5,
+			"nearestDistance": 68.5,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.64,
+			"null3dErrorPxAtCenter": 0.49,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.48,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 37.5,
+			"name": "arch-0",
+			"scale": 0.967,
+			"radius": 17.83,
+			"centerDistance": 319.4,
+			"nearestDistance": 301.6,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.5,
+			"null3dErrorPxAtCenter": 0.48,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.62,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 37.5,
+			"name": "arch-1",
+			"scale": 1.256,
+			"radius": 25.57,
+			"centerDistance": 332.5,
+			"nearestDistance": 306.9,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.64,
+			"null3dErrorPxAtCenter": 0.59,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.78,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 37.5,
+			"name": "arch-1",
+			"scale": 0.814,
+			"radius": 16.57,
+			"centerDistance": 348.3,
+			"nearestDistance": 331.7,
+			"null3dLevel": 6,
+			"null3dTriangles": 15990,
+			"null3dErrorPx": 0.85,
+			"null3dErrorPxAtCenter": 0.81,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.48,
+			"null3dLevelAtCenterDistance": 6,
+			"null3dTrianglesAtCenterDistance": 15990
+		},
+		{
+			"t": 37.5,
+			"name": "arch-1",
+			"scale": 1.243,
+			"radius": 25.3,
+			"centerDistance": 332.4,
+			"nearestDistance": 307.1,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.64,
+			"null3dErrorPxAtCenter": 0.59,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.77,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 37.5,
+			"name": "arch-2",
+			"scale": 1.162,
+			"radius": 20.08,
+			"centerDistance": 212.3,
+			"nearestDistance": 192.2,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.96,
+			"null3dErrorPxAtCenter": 0.87,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.52,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 37.5,
+			"name": "arch-2",
+			"scale": 1.137,
+			"radius": 19.66,
+			"centerDistance": 16.8,
+			"nearestDistance": 0,
+			"null3dLevel": 0,
+			"null3dTriangles": 1023360,
+			"null3dErrorPx": 0,
+			"null3dErrorPxAtCenter": 0,
+			"threeLevel": 1,
+			"threeTriangles": 562880,
+			"threeErrorPx": 0.38,
+			"null3dLevelAtCenterDistance": 1,
+			"null3dTrianglesAtCenterDistance": 511680
+		},
+		{
+			"t": 37.5,
+			"name": "arch-2",
+			"scale": 1.186,
+			"radius": 20.51,
+			"centerDistance": 127.8,
+			"nearestDistance": 107.3,
+			"null3dLevel": 4,
+			"null3dTriangles": 63960,
+			"null3dErrorPx": 0.81,
+			"null3dErrorPxAtCenter": 0.68,
+			"threeLevel": 4,
+			"threeTriangles": 40960,
+			"threeErrorPx": 0.88,
+			"null3dLevelAtCenterDistance": 4,
+			"null3dTrianglesAtCenterDistance": 63960
+		},
+		{
+			"t": 37.5,
+			"name": "arch-2",
+			"scale": 0.879,
+			"radius": 15.19,
+			"centerDistance": 48,
+			"nearestDistance": 32.8,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.93,
+			"null3dErrorPxAtCenter": 0.63,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.63,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		},
+		{
+			"t": 37.5,
+			"name": "arch-2",
+			"scale": 0.953,
+			"radius": 16.48,
+			"centerDistance": 265,
+			"nearestDistance": 248.6,
+			"null3dLevel": 5,
+			"null3dTriangles": 31980,
+			"null3dErrorPx": 0.61,
+			"null3dErrorPxAtCenter": 0.57,
+			"threeLevel": 5,
+			"threeTriangles": 15360,
+			"threeErrorPx": 0.74,
+			"null3dLevelAtCenterDistance": 5,
+			"null3dTrianglesAtCenterDistance": 31980
+		},
+		{
+			"t": 37.5,
+			"name": "arch-2",
+			"scale": 1.272,
+			"radius": 21.98,
+			"centerDistance": 69.5,
+			"nearestDistance": 47.6,
+			"null3dLevel": 3,
+			"null3dTriangles": 127920,
+			"null3dErrorPx": 0.92,
+			"null3dErrorPxAtCenter": 0.63,
+			"threeLevel": 3,
+			"threeTriangles": 102336,
+			"threeErrorPx": 0.62,
+			"null3dLevelAtCenterDistance": 3,
+			"null3dTrianglesAtCenterDistance": 127920
+		}
+	]
+}

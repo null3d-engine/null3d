@@ -9,6 +9,7 @@ import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensi
 import { ASSET_SCENE } from '../../../../tests/lib/asset-scene.ts';
 import { CONVERT_FILES, cubePly, pyramidStl } from '../../../../tests/lib/convert-files.ts';
 import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { type GltfData, parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
 import { main } from '../cli.js';
 import { convertModel, parseConvertArgs } from './convert.js';
@@ -17,7 +18,7 @@ import { srgbToLinear } from './images.js';
 import { plyDocument, readPlyHeader } from './ply.js';
 import { readStl, weldSolid } from './stl.js';
 
-setDefaultTimeout(30_000);
+setDefaultTimeout(scaledBudget(30_000));
 
 const ROOT = join(import.meta.dir, '../../../..');
 const at = (path: string) => join(ROOT, path);

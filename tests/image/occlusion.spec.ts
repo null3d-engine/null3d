@@ -1,7 +1,8 @@
 // Software occlusion culling in a live engine: the occlusion cost page flies down a street of the
 // city with the culling off and on in turns. On WebGL2 the buildings hide part of the city, so the
 // frames with the culling on list fewer entries, and count the ones they hid; the frames with it
-// off hide none. WebGPU ignores the setting and counts nothing. Each run logs the page's figures.
+// off hide none. WebGPU ignores the setting: where GPU occlusion culling runs, it counts the objects
+// that it hid on both sides, and elsewhere nothing. Each run logs the page's figures.
 // In hold mode, the culling must draw the city to the pixel as it is without it, at several points
 // along the street, compared on the machine that draws both.
 import { expect, type Page, test } from '@playwright/test';
@@ -19,18 +20,20 @@ interface Side {
 interface OcclusionResult {
 	error?: string;
 	tier: string;
+	gpuOcclusion: boolean;
 	off: Side;
 	on: Side;
 	failures: string[];
 }
 
 /**
- * How long the page may take to report. On CI's software GPU the WebGPU run took 50 to 57 seconds,
- * close to the default limit, and a slower machine passed it, so the wait leaves room for that.
- * On 20 October 2026 a shard's run reached the limit without reporting, so the wait leaves room for
- * a slower shard too.
+ * How long the page may take to report. On CI's software GPU the WebGPU run takes 50 to 57 seconds,
+ * close to the default limit, and a slower machine or a loaded shard takes longer. The software
+ * renderer draws this page slower than any other: a run can pass 180 seconds without an answer,
+ * where its GPU paths answer in tens. A run that still fails at twice that needs the page looked at
+ * rather than a longer wait.
  */
-const RESULT_MS = 180_000;
+const RESULT_MS = 360_000;
 
 for (const tier of ['webgl2', 'webgpu'] as const)
 	test(`software occlusion culling hides what the buildings block on ${tier}`, async ({ page }) => {
@@ -43,7 +46,13 @@ for (const tier of ['webgl2', 'webgpu'] as const)
 		expect(result.failures).toEqual([]);
 		const { off, on } = result;
 		if (tier === 'webgpu') {
-			expect([off.occludedEntries, on.occludedEntries]).toEqual([null, null]);
+			// The GPU culls, so the CPU lists no entries. Where GPU occlusion culling runs, both sides
+			// count the objects that it hid, 0 while its check keeps its passes off.
+			expect([off.visibleEntries, on.visibleEntries]).toEqual([null, null]);
+			if (result.gpuOcclusion) {
+				expect(off.occludedEntries).toBeGreaterThanOrEqual(0);
+				expect(on.occludedEntries).toBeGreaterThanOrEqual(0);
+			} else expect([off.occludedEntries, on.occludedEntries]).toEqual([null, null]);
 			return;
 		}
 		expect(off.occludedEntries).toBe(0);

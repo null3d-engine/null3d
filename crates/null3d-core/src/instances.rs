@@ -73,6 +73,7 @@ use crate::lines::{self, LineLook, LineMode, Segment};
 use crate::math::{
     self, Affine, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, mul4, transpose4,
 };
+use crate::memory::{MemoryRegister, MemoryUse, area, vec_bytes};
 use crate::scene::flags;
 use crate::sprites::{self, SpriteLook};
 use crate::world::{
@@ -86,6 +87,9 @@ pub const ROW_CHUNK: u32 = 1024;
 pub const MAX_ROW_RANGES: usize = 1024;
 
 const WORDS_PER_CHUNK: u32 = ROW_CHUNK / 64;
+/// The bits of an object's flags that a batch keeps for every row: its shadows, and its opt-out of
+/// GPU occlusion culling's occluders.
+pub const ROW_FLAGS: u32 = flags::SHADOWS | flags::NOT_OCCLUDER;
 
 /// A range of rows: `start..start + count`.
 #[repr(C)]
@@ -128,7 +132,36 @@ struct LineRows {
     stale: u32,
 }
 
+impl SpriteRows {
+    /// The bytes that the sprite's own arrays hold.
+    fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            vec_bytes(&self.sizes),
+            vec_bytes(&self.rotations),
+            vec_bytes(&self.colors),
+            vec_bytes(&self.frames),
+        ] {
+            use_.add(array);
+        }
+        use_
+    }
+}
+
 impl LineRows {
+    /// The bytes that the line's own arrays hold.
+    fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            vec_bytes(&self.points),
+            vec_bytes(&self.colors),
+            vec_bytes(&self.distances),
+        ] {
+            use_.add(array);
+        }
+        use_
+    }
+
     /// The number of points the batch holds.
     fn capacity(&self) -> u32 {
         (self.points.len() / 3) as u32
@@ -175,11 +208,21 @@ pub struct InstanceBatch {
     dynamic: bool,
     mesh: u32,
     material: u32,
+    /// The center of the mesh's bounding sphere, in the mesh's space, which every row's sphere
+    /// shares. Sprite and line batches keep the origin, around which they pack their rows.
+    local_center: [f32; 3],
     local_radius: f32,
     active: u32,
     /// The layer mask of every row (see [`crate::layers`]).
     layers: u32,
-    /// The shadow bits of every row: [`flags::CAST_SHADOWS`] and [`flags::RECEIVE_SHADOWS`].
+    /// The distances between which every row draws: its start distance and its end distance, 0
+    /// and infinity for none.
+    draw_range: [f32; 2],
+    /// The rows' own distance ranges, two floats per row, which a row without an entry takes from
+    /// the batch's. Empty until the first row sets one.
+    row_ranges: Vec<f32>,
+    /// The bits of every row: [`flags::CAST_SHADOWS`], [`flags::RECEIVE_SHADOWS`] and
+    /// [`flags::NOT_OCCLUDER`].
     shadows: u32,
     /// True when rows have a colour and values of their own, which the world output carries.
     with_values: bool,
@@ -225,9 +268,42 @@ pub struct InstanceBatch {
     origin_local: [f32; 3],
     /// Counts the updates that wrote rows of the world output.
     version: u32,
+    /// True when culling must keep every row: an add-on's own cull, or a page's count, decides
+    /// what draws.
+    unculled: bool,
 }
 
 impl InstanceBatch {
+    /// The bytes that the batch's own arrays hold.
+    fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            vec_bytes(&self.row_ranges),
+            vec_bytes(&self.positions),
+            vec_bytes(&self.rotations),
+            vec_bytes(&self.scales),
+            vec_bytes(&self.colors),
+            vec_bytes(&self.values),
+            self.world[0].memory_use(),
+            self.world[1].memory_use(),
+            self.dirty.memory_use(),
+            self.changed[0].memory_use(),
+            self.changed[1].memory_use(),
+            vec_bytes(&self.ranges),
+            vec_bytes(&self.cells),
+            self.moved.memory_use(),
+        ] {
+            use_.add(array);
+        }
+        if let Some(sprite) = &self.sprite {
+            use_.add(sprite.memory_use());
+        }
+        if let Some(line) = &self.line {
+            use_.add(line.memory_use());
+        }
+        use_
+    }
+
     /// A batch of `capacity` rows, all active, at the origin with identity rotation and unit
     /// scale (and white with zero values, with row values). `local_radius` is the mesh's bounding radius around its
     /// origin. Every row starts dirty, so the first update computes them all.
@@ -393,9 +469,12 @@ impl InstanceBatch {
             dynamic,
             mesh,
             material,
+            local_center: [0.0; 3],
             local_radius,
             active: capacity,
             layers: DEFAULT_LAYERS,
+            draw_range: [0.0, f32::INFINITY],
+            row_ranges: Vec::new(),
             shadows: 0,
             with_values,
             source,
@@ -442,6 +521,7 @@ impl InstanceBatch {
             origin_cell: [0; 3],
             origin_local: [0.0; 3],
             version: 0,
+            unculled: false,
         })
     }
 
@@ -591,9 +671,21 @@ impl InstanceBatch {
     }
 
     /// True for a batch whose rows culling must never reject: sprites sized in pixels of the
-    /// screen, whose size in the world changes with their distance.
+    /// screen, whose size in the world changes with their distance, and a batch that a page marks
+    /// unculled.
     pub fn unculled(&self) -> bool {
-        self.sprite_look().is_some_and(|look| look.screen_size)
+        self.unculled || self.sprite_look().is_some_and(|look| look.screen_size)
+    }
+
+    /// Keeps every row of the batch whatever a view's frustum says, or culls its rows again. An
+    /// add-on whose own cull or count decides what draws marks its batch unculled.
+    pub fn set_unculled(&mut self, unculled: bool) {
+        if self.unculled == unculled {
+            return;
+        }
+        self.unculled = unculled;
+        self.dirty.set_range(0, self.active);
+        self.dirty_any = true;
     }
 
     /// A sprite batch's sizes, 2 floats per row, its rotations in radians, 1 float per row, its
@@ -648,10 +740,28 @@ impl InstanceBatch {
         self.local_radius
     }
 
+    /// The center of the mesh's local bounding sphere.
+    pub fn local_center(&self) -> [f32; 3] {
+        self.local_center
+    }
+
     /// Sets the mesh's local bounding radius, as a displaced material grows it, and marks every
     /// row changed, so the next update moves each row's sphere.
     pub fn set_local_radius(&mut self, radius: f32) {
-        if radius != self.local_radius {
+        self.set_local_sphere(self.local_center, radius);
+    }
+
+    /// Moves the mesh's local bounding sphere to `center`, in the mesh's space, with its radius
+    /// kept, and marks every row changed, so the next update moves each row's sphere.
+    pub fn set_local_center(&mut self, center: [f32; 3]) {
+        self.set_local_sphere(center, self.local_radius);
+    }
+
+    /// Sets the mesh's local bounding sphere, its center in the mesh's space and its radius, and
+    /// marks every row changed, so the next update moves each row's sphere.
+    pub fn set_local_sphere(&mut self, center: [f32; 3], radius: f32) {
+        if radius != self.local_radius || center != self.local_center {
+            self.local_center = center;
             self.local_radius = radius;
             self.dirty.set_range(0, self.capacity);
             self.dirty_any |= self.capacity > 0;
@@ -668,6 +778,46 @@ impl InstanceBatch {
         self.layers
     }
 
+    /// The distances between which every row draws, as the start and the end distance.
+    pub fn draw_range(&self) -> [f32; 2] {
+        self.draw_range
+    }
+
+    /// Sets the distances between which every row draws: nothing nearer than `start`, which is 0
+    /// for none, and nothing past `end`, which is infinite for none. Each edge fades over a band.
+    /// The rows' own ranges, where the batch has made them, take the same range.
+    pub fn set_draw_range(&mut self, start: f32, end: f32) {
+        self.draw_range = [start, end];
+        for pair in self.row_ranges.as_chunks_mut::<2>().0 {
+            *pair = [start, end];
+        }
+    }
+
+    /// The rows' own distance ranges, two floats per row, or an empty slice until a row sets one.
+    pub fn row_ranges(&self) -> &[f32] {
+        &self.row_ranges
+    }
+
+    /// The rows' own distance ranges, two floats per row, made at their capacity and filled with
+    /// the batch's range on first use. Fails when memory cannot grow for them.
+    pub fn try_row_ranges_mut(&mut self) -> Result<&mut [f32], TryReserveError> {
+        let rows = self.capacity as usize;
+        if self.row_ranges.is_empty() && rows > 0 {
+            let mut ranges = filled(rows * 2, 0.0)?;
+            for pair in ranges.as_chunks_mut::<2>().0 {
+                pair[0] = self.draw_range[0];
+                pair[1] = self.draw_range[1];
+            }
+            self.row_ranges = ranges;
+        }
+        Ok(&mut self.row_ranges)
+    }
+
+    /// True when the batch or its rows draw in a distance range.
+    pub fn has_range(&self) -> bool {
+        !self.row_ranges.is_empty() || self.draw_range[0] > 0.0 || self.draw_range[1].is_finite()
+    }
+
     /// Sets the layer mask of every row. The renderer reads it when it culls, so a change needs
     /// no rebuild and no update of the rows.
     pub fn set_layers(&mut self, mask: u32) {
@@ -677,16 +827,26 @@ impl InstanceBatch {
     /// The shadow bits of every row: whether the rows cast shadows ([`flags::CAST_SHADOWS`]) and
     /// receive them ([`flags::RECEIVE_SHADOWS`]), as an object's flags say.
     pub fn shadows(&self) -> u32 {
+        self.shadows & flags::SHADOWS
+    }
+
+    /// The bits of every row that [`Self::set_shadows`] keeps.
+    pub fn row_flags(&self) -> u32 {
         self.shadows
     }
 
-    /// Sets the shadow bits of every row, from the [`flags::SHADOWS`] bits of `bits`. Sprite and
-    /// line batches place their own vertices, so they take none. The renderer's tables depend on
-    /// the bits, so a change needs their rebuild.
+    /// Sets the bits of every row, from the [`ROW_FLAGS`] bits of `bits`. Sprite and line batches
+    /// place their own vertices, so they take none. The renderer's tables depend on the bits, so a
+    /// change needs their rebuild.
     pub fn set_shadows(&mut self, bits: u32) {
         if self.sprite.is_none() && self.line.is_none() {
-            self.shadows = bits & flags::SHADOWS;
+            self.shadows = bits & ROW_FLAGS;
         }
+    }
+
+    /// True when no row of the batch may hide others in GPU occlusion culling.
+    pub fn not_occluder(&self) -> bool {
+        self.shadows & flags::NOT_OCCLUDER != 0
     }
 
     /// Sets how many rows are drawn. Rows that become active are marked dirty. Fails with
@@ -967,7 +1127,9 @@ impl InstanceBatch {
             has_part: self.part.is_some(),
             sprite: rows.sprite,
             line,
+            local_center: self.local_center,
             local_radius: self.local_radius,
+            unculled: self.unculled,
             out: self.world[parity].ptrs(),
             previous,
             dirty: self.dirty.words().as_ptr(),
@@ -1182,7 +1344,10 @@ struct RowKernel {
     sprite: Option<SpriteKernel>,
     /// A line batch's points, which each row packs into its matrix as a segment.
     line: Option<LineKernel>,
+    local_center: [f32; 3],
     local_radius: f32,
+    /// True when every row keeps an unbounded radius, so culling never rejects one.
+    unculled: bool,
     out: WorldPtrs,
     previous: WorldPtrs,
     dirty: *const u64,
@@ -1307,8 +1472,16 @@ impl RowKernel {
             if self.has_part {
                 matrices = mul4(&matrices, &self.part);
             }
-            let radii = f32x4::splat(self.local_radius) * max_axis_scale4(&matrices);
-            self.out.write4(row, &matrices, radii);
+            let radii = if self.unculled {
+                f32x4::splat(crate::world::UNBOUNDED_RADIUS)
+            } else {
+                f32x4::splat(self.local_radius) * max_axis_scale4(&matrices)
+            };
+            let [cx, cy, cz] = self.local_center.map(f32x4::splat);
+            let centers = [0, 1, 2].map(|r| {
+                matrices[r][0] * cx + matrices[r][1] * cy + matrices[r][2] * cz + matrices[r][3]
+            });
+            self.out.write4(row, &matrices, centers, radii);
             if !self.colors.is_null() {
                 let (colors, values) = (self.colors.add(row * 4), self.values.add(row * 4));
                 self.out.write_values4(row, colors, values);
@@ -1352,8 +1525,11 @@ impl RowKernel {
             if self.has_part {
                 matrix = math::mul(&matrix, &self.part);
             }
-            self.out
-                .write(row, &matrix, math::world_sphere(&matrix, self.local_radius));
+            let mut sphere = math::world_sphere_at(&matrix, self.local_center, self.local_radius);
+            if self.unculled {
+                sphere[3] = crate::world::UNBOUNDED_RADIUS;
+            }
+            self.out.write(row, &matrix, sphere);
             if !self.colors.is_null() {
                 let (color, values) = (self.colors.add(row * 4), self.values.add(row * 4));
                 self.out.write_values(row, color, values);
@@ -1596,6 +1772,23 @@ pub struct BatchTable {
 }
 
 impl BatchTable {
+    /// Adds the bytes that the table and its batches hold to the memory register.
+    pub fn account(&self, register: &mut MemoryRegister) {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            self.ids.memory_use(),
+            vec_bytes(&self.batches),
+            vec_bytes(&self.kernels),
+            vec_bytes(&self.work),
+        ] {
+            use_.add(array);
+        }
+        for batch in self.batches.iter().flatten() {
+            use_.add(batch.memory_use());
+        }
+        register.add(area::INSTANCES, use_);
+    }
+
     /// A table for up to `max_batches` batches.
     pub fn with_capacity(max_batches: u32) -> Self {
         let slots = max_batches as usize + 1;
@@ -2302,6 +2495,24 @@ mod tests {
     }
 
     #[test]
+    fn the_register_counts_every_batchs_rows() {
+        let mut table = BatchTable::with_capacity(4);
+        let mut register = MemoryRegister::new();
+        register.begin();
+        table.account(&mut register);
+        let empty = register.area(area::INSTANCES).reserved;
+        table
+            .create(1_000, false, true, 1, 1, 1.0)
+            .expect("a batch");
+        register.begin();
+        table.account(&mut register);
+        let rows = register.area(area::INSTANCES).reserved - empty;
+        // A row holds its position, rotation, scale, colour, values and world output, so the batch
+        // reserves at least a few hundred bytes for each.
+        assert!(rows >= 1_000 * 200, "{rows} bytes for a thousand rows");
+    }
+
+    #[test]
     fn the_memory_epoch_counts_growth() {
         let table = BatchTable::with_capacity(1);
         assert_eq!(table.memory_epoch(), 0);
@@ -2516,6 +2727,40 @@ mod tests {
     }
 
     #[test]
+    fn each_rows_sphere_lies_on_the_meshs_center_moved_by_the_rows_matrix() {
+        // Nine rows take both the four-row path and the one-row path. Odd rows turn half round,
+        // which takes a center off the origin to the other side of the row.
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut table = BatchTable::with_capacity(1);
+        let batch = table.create(9, true, false, 1, 2, 0.5).unwrap();
+        let rows = table.get_mut(batch).unwrap();
+        rows.set_local_sphere([1.0, 0.0, 0.0], 0.5);
+        let half_turn = [0.0, 1.0, 0.0, 0.0];
+        for row in 0..9 {
+            rows.positions_mut()[row * 3..row * 3 + 3].copy_from_slice(&[row as f32, 0.0, 1.0]);
+            if row % 2 == 1 {
+                rows.rotations_mut()[row * 4..row * 4 + 4].copy_from_slice(&half_turn);
+            }
+        }
+        table.update(&jobs, 1, &mut cells);
+        let world = table.get(batch).unwrap().world(1);
+        for row in 0..9 {
+            let x = if row % 2 == 1 {
+                row as f32 - 1.0
+            } else {
+                row as f32 + 1.0
+            };
+            let sphere = world.sphere(row);
+            let want = [x, 0.0, 1.0, 0.5];
+            assert!(
+                (0..4).all(|k| (sphere[k] - want[k]).abs() < 1e-5),
+                "row {row}: {sphere:?} against {want:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_part_follows_the_dirty_rows_and_active_count_of_its_source() {
         let jobs = JobSystem::new(0);
         let mut cells = CellTable::new();
@@ -2595,5 +2840,26 @@ mod tests {
         table.get_mut(first).unwrap().mark_dirty(13, 1).unwrap();
         table.update(&jobs, 3, &mut cells);
         assert_eq!(table.get(second).unwrap().world(1).matrix(13), &before);
+    }
+
+    #[test]
+    fn an_unculled_batch_keeps_every_row() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut batch = InstanceBatch::new(4, false, false, 0, 0, 1.0);
+        batch.update(&jobs, 1, &mut cells);
+        assert!(!batch.unculled());
+        assert!(batch.world(1).radii()[0].is_finite());
+        batch.set_unculled(true);
+        assert!(batch.unculled());
+        batch.update(&jobs, 2, &mut cells);
+        // Every row reaches the culling pass with a radius no view's frustum rejects.
+        for row in 0..4 {
+            assert_eq!(batch.world(0).radii()[row], crate::world::UNBOUNDED_RADIUS);
+        }
+        // Culling rows again restores their own spheres.
+        batch.set_unculled(false);
+        batch.update(&jobs, 3, &mut cells);
+        assert!(batch.world(1).radii()[0].is_finite());
     }
 }

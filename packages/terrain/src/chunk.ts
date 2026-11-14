@@ -4,10 +4,8 @@
 // corner, and the object that draws it stands there, so its bounds stay small and it culls well.
 //
 // Every block of one grid has the same vertices, texture coordinates and triangles, so those are
-// worked out once and shared, and a block's heights and normals are written into arrays that the
-// caller keeps. A ground that moves its blocks as the camera travels therefore builds no arrays of
-// its own in a frame.
-import type { Heightfield } from './heightfield';
+// worked out once and shared. The heights and normals that fill them come from the add-on's
+// WebAssembly module, which writes them into arrays that the caller keeps.
 
 /**
  * What every block of one grid shares: how many vertices it has, the ring of vertices around it
@@ -86,35 +84,4 @@ export function chunkShape(quads: number): ChunkShape {
 		indices[at++] = aLow;
 	}
 	return { quads, vertices, ring, uvs, indices };
-}
-
-/**
- * Writes the positions and normals of one block into `positions` and `normals`, both holding three
- * numbers per vertex of `shape`. The block stands at the world point (`originX`, `originZ`), covers
- * `blockSize` meters along each side, and its skirt hangs `skirt` meters below its edge.
- */
-export function writeChunkVertices(
-	field: Heightfield,
-	shape: ChunkShape,
-	blockSize: number,
-	originX: number,
-	originZ: number,
-	skirt: number,
-	positions: Float32Array,
-	normals: Float32Array,
-): void {
-	const { quads, ring } = shape;
-	const grid = (quads + 1) * (quads + 1);
-	field.writeGridVertices(blockSize, originX, originZ, quads, positions, normals);
-	// The skirt: a copy of each ring vertex, dropped by the skirt's depth.
-	for (let k = 0; k < ring.length; k++) {
-		const source = (ring[k] as number) * 3;
-		const target = (grid + k) * 3;
-		positions[target] = positions[source] as number;
-		positions[target + 1] = (positions[source + 1] as number) - skirt;
-		positions[target + 2] = positions[source + 2] as number;
-		normals[target] = normals[source] as number;
-		normals[target + 1] = normals[source + 1] as number;
-		normals[target + 2] = normals[source + 2] as number;
-	}
 }

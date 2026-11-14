@@ -1,12 +1,12 @@
 # D-176: The build caches the WebAssembly artifacts it writes
 
-Status: decided. Date: 2026-10-14. Task: the build-speed work of 14 October 2026.
+Status: decided and built. Task: the build-speed work.
 
 Summary: A build runs cargo, wasm-bindgen and wasm-opt for the two WebAssembly variants, and cargo
-again for the shader compiler and the asset tool's formats. It ran them every time, even when
-nothing had changed. It now keeps each artifact set under a key of every input, in a cache shared by
-every checkout, `~/.cache/null3d/wasm-artifacts`. A no-change build copies the files in place and
-skips cargo, wasm-bindgen and wasm-opt. A fresh worktree skips the link too.
+again for the shader compiler and the asset tool's formats. It keeps each artifact set under a key
+of every input, in a cache shared by every checkout, `~/.cache/null3d/wasm-artifacts`. A no-change
+build copies the files in place and skips cargo, wasm-bindgen and wasm-opt, and a fresh worktree
+skips the link too.
 
 ## Question
 
@@ -24,8 +24,11 @@ a build.
 
 ## Data
 
-On the Mac (18 cores), 14 October 2026, with the shared cargo target warm and `bun run build
---pages-only`:
+On the Mac (18 cores), with a warm cargo target that several checkouts shared and `bun run build
+--pages-only`. Each checkout builds into its own folder
+([D-177](D-177-build-cache-module.md#one-rust-build-folder-per-checkout)).
+
+
 
 | build | time |
 | --- | --- |
@@ -58,7 +61,7 @@ one entry for each core variant and one for the build tools' modules:
 5. the locked wasm-bindgen release with this machine's target, and the wasm-opt release from the
    `binaryen` version with this machine's platform and architecture;
 6. for the build tools' modules, the input hash of each crate that they build from, which the shader
-   module cache already computes.
+   module cache computes.
 
 Write a record of each stored file's SHA-256 beside it. A read trusts an entry only when every named
 file matches its recorded hash, so a missing, truncated or edited entry is a miss and the build runs.
@@ -73,16 +76,15 @@ file again.
 
 - `tools/build-wasm.ts` holds the cache and the keys, and `tools/build-wasm.test.ts` checks the keys
   and the miss paths.
-- [Branches and parallel work](../pull-requests.md#builds) gains the new cache beside the shared
-  cargo target and the shader module cache, with the measured figures.
+- [Branches and parallel work](../pull-requests.md#builds) lists this cache beside the cargo target
+  and the shader module cache, with the measured figures.
 - The escape hatch covers a cache that a reader suspects is stale, and a build that must not read a
   cache at all.
 
-## Addendum, 15 October 2026: the key assumes the checkout's own build folder
+## The key assumes the checkout's own build folder
 
 The key hashes every input of a build, and a hit holds exactly the bytes that this build would write,
-only if cargo compiled this checkout's sources. A Rust build folder shared by several checkouts broke
-that: Cargo judged another checkout's build of an engine crate fresh, and the cache stored that build
-under this checkout's key. Each checkout now builds into its own folder, and the cache was purged.
-[D-177](D-177-build-cache-module.md#addendum-15-october-2026-one-rust-build-folder-per-checkout) gives
-the details.
+only if cargo compiled this checkout's sources. A Rust build folder shared by several checkouts
+breaks that: Cargo judges another checkout's build of an engine crate fresh, and the cache would
+store that build under this checkout's key. So each checkout builds into its own folder.
+[D-177](D-177-build-cache-module.md#one-rust-build-folder-per-checkout) gives the details.

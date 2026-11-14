@@ -1,11 +1,14 @@
 // The outline's scene (bench/scenes/outline.ts), which the parity test also draws from the mask of
 // three.js's OutlinePass: a sphere half behind a wall and a box in the open take the outline, beside
-// a wall and a box without one. ?outline=plain or ?outline=hidden names its settings, and without it
-// the outline stays off. ?scale= draws at that render scale, with a range that reaches down to it.
+// a wall and a box without one. ?outline=plain or ?outline=hidden names the core's settings, and
+// without it the outline stays off. ?compat=glow or ?compat=pulse draws the soft outline of
+// @null3d/three-compat instead. ?scale= draws at that render scale, with a range that reaches down
+// to it.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
 import { defineSketch } from '@null3d/engine';
+import { createOutlinePass } from '@null3d/three-compat';
 import {
 	OUTLINE_AMBIENT,
 	OUTLINE_BACKGROUND,
@@ -23,12 +26,26 @@ const OUTLINE =
 		: name === 'hidden'
 			? OUTLINE_SETTINGS.hidden
 			: undefined;
+const COMPAT = params.get('compat');
 const SCALE = params.get('scale');
 
-export default defineSketch(({ scene, materials, geometry, post, quality }) => {
+export default defineSketch((ctx) => {
+	const { scene, materials, geometry, post, quality } = ctx;
 	// The three.js twin draws with AgXToneMapping, which plain AgX matches.
 	post.set({ toneMapping: 'agx' });
 	if (OUTLINE) post.set({ outline: OUTLINE });
+	if (COMPAT) {
+		// The add-on's settings mirror three.js's OutlinePass: a soft edge with a glow, or the
+		// same edge with a pulse.
+		createOutlinePass(ctx, {
+			color: '#ffaa00',
+			hiddenColor: '#3070ff',
+			strength: 3,
+			thickness: 1.5,
+			glow: 1,
+			...(COMPAT === 'pulse' ? { pulsePeriod: 0.5 } : {}),
+		});
+	}
 	if (SCALE !== null) {
 		const scale = Number(SCALE);
 		quality.set({ minRenderScale: scale, maxRenderScale: scale, governor: false });
