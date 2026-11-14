@@ -245,15 +245,12 @@ export const record: Species = {
 			angle: 20,
 			ranks: 0,
 			optics: {
-				// The linear ratio of the branch studio's foliage to the render's, channel by
-				// channel: red 0.867, green 1 and blue 1.123 (the alder's method, D-334), which takes
-				// the studio's colour difference from 3.6 to 1.1. The whole views cannot be paired:
-				// the leaf form draws a bare spar there, so their foliage figure reads the bark's
-				// hue, and those colour rows stand unjudged until the crown draws its needles. The
-				// faces and the transmitted light take the same ratios.
-				reflectance: [0.095, 0.193, 0.11],
-				reflectanceBack: [0.246, 0.354, 0.303],
-				transmittance: [0.145, 0.266, 0.152],
+				// The linear ratio of still 01's foliage to the render's, channel by channel: red 0.83,
+				// green 0.74 and blue 0.79 (the alder's method, D-334). The faces and the transmitted
+				// light take the same ratios, and the close shoot is read beside the whole view.
+				reflectance: [0.11, 0.193, 0.098],
+				reflectanceBack: [0.284, 0.354, 0.27],
+				transmittance: [0.167, 0.266, 0.135],
 				roughness: [0.5, 0.7],
 			},
 		},
