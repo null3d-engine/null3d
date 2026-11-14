@@ -30,7 +30,9 @@
 		"background": "studio-grey"
 	},
 	"07-stems-leaving-base.png": {
-		"view": "bark-base"
+		"view": "bark-base",
+		"barkMask": true,
+		"daylight": 1.896
 	},
 	"09-secondary-branching.png": {
 		"leaves": 23
