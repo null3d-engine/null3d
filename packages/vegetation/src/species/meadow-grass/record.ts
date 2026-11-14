@@ -53,8 +53,8 @@ export const record: Species = {
 		// top at about half the plant's height, so the inner blades end at the mound's top and the
 		// middle ones at 0.85 of it, where 0.72 drew a vase a third of the height. The outer pose
 		// reaches 0.58, short of still 01's traced 0.7 to 0.8, because the whole-plant stills stand
-		// the plant about 1.2 times as tall as wide and the crown must keep that width; the turning
-		// video's wider plant is recorded as a reference conflict.
+		// the plant 1.26 times as tall as wide and the crown must keep that width; the turning video's
+		// wider plant is recorded as a reference conflict.
 		poses: [
 			{ share: 0.4, leave: 85, apex: 1, drop: 0, reach: 0.08 },
 			{ share: 0.35, leave: 65, apex: 0.85, drop: 0.02, reach: 0.4 },
@@ -71,8 +71,8 @@ export const record: Species = {
 			// 1.82 of the mound's.
 			top: [1.32, 1.82],
 			// Still 01: the middle stem is plumb and the rim's lean up to 35 degrees. The stills'
-			// height over width of about 1.2 sets the rim's lean at 22 degrees, short of the traced
-			// 35, so the heads' spread stays inside the stills' width.
+			// height over width of 1.26 sets the rim's lean at 22 degrees, short of the traced 35, so
+			// the heads' spread stays inside the stills' width.
 			lean: [0, 22],
 			// Still 01: a stem is straight, with a slight outward curve over its upper part.
 			bow: { from: 0.5, turn: [4, 12] },
