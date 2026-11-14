@@ -3,7 +3,7 @@
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { SpeciesKitData } from '../asset';
-import { AXIS_CULM, BUD_DORMANT, type MacroSkeleton } from '../core/graph';
+import { AXIS_CULM, BUD_DORMANT, BUD_JOINT, BUD_TERMINAL, type MacroSkeleton } from '../core/graph';
 import type { CulmClump } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { spreadAt } from '../core/types';
@@ -48,7 +48,7 @@ function socketsOf(skeleton: MacroSkeleton) {
 	const out: { bud: number; axis: number; rank: number; y: number; piece: string }[] = [];
 	if (!buds.sockets) return out;
 	for (let b = 0; b < buds.count; b++)
-		if ((buds.kind[b] as number) !== BUD_DORMANT)
+		if ((buds.kind[b] as number) === BUD_TERMINAL)
 			out.push({
 				bud: b,
 				axis: buds.axis[b] as number,
@@ -145,5 +145,25 @@ describe('the culm-clump grower on the bamboo', () => {
 				);
 			}
 		expect(sheaths).toBeGreaterThan(0);
+	});
+
+	it('leaves a joint bud at every joint above the foot, with the wood radius the ring takes', () => {
+		const { skeleton } = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		const joints = new Map<number, number>();
+		for (const culm of culmsOf(skeleton)) {
+			const { axes } = skeleton;
+			for (let n = (axes.first[culm.axis] as number) + 1; n < (axes.last[culm.axis] as number); n++)
+				joints.set(n, skeleton.radius[n] as number);
+		}
+		let jointsWithBud = 0;
+		for (let b = 0; b < skeleton.buds.count; b++) {
+			if ((skeleton.buds.kind[b] as number) !== BUD_JOINT) continue;
+			const node = skeleton.buds.node[b] as number;
+			const radius = joints.get(node);
+			expect(radius).toBeDefined();
+			expect(skeleton.buds.woodRadius[b] as number).toBeCloseTo(radius as number, 5);
+			jointsWithBud++;
+		}
+		expect(jointsWithBud).toBe(joints.size);
 	});
 });

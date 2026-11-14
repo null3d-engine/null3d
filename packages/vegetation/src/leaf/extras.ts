@@ -2,8 +2,11 @@
 // spine fans, and catkins, on the sites their record names, in the seasons it names. A share of the
 // matching sites carries one or more, chosen by hash, and a record may give the count at a site;
 // each hangs from its site's direction toward the ground by the record's degrees. Shoot tips and
-// nodes come from the shoot rows; old wood, areoles, the crown's top, flower sites and the tips of
-// flowering stems come from the skeleton's bud sites.
+// nodes come from the shoot rows; old wood, areoles, the crown's top, flower sites, the tips of
+// flowering stems, a culm's sheathed nodes and a culm's joints come from the skeleton's bud sites.
+//
+// A lathe measured in wood radii takes its size from the wood at its site, so one profile fits a
+// thick culm and a thin one alike; every other shape is in metres.
 //
 // An extra's colour bytes hold its axis's wind record (high and low byte, global in the species'
 // table), its entry in the record's extras, which picks its colour from the plant material's header,
@@ -17,6 +20,7 @@ import {
 	BUD_AREOLE,
 	BUD_DORMANT,
 	BUD_FLOWER,
+	BUD_JOINT,
 	BUD_LATERAL,
 	BUD_SPUR,
 	BUD_TERMINAL,
@@ -83,6 +87,11 @@ interface Site {
 	readonly record: number;
 	/** Sky visibility at the site, 0 to 255. */
 	sky: number;
+	/**
+	 * The wood's radius at the site, in metres, which sizes a shape the record gives in wood
+	 * radii; 0 where the site names no wood, such as a shoot row's tip.
+	 */
+	readonly woodRadius: number;
 }
 
 /** A shoot's wood tip: a point on its stem, and the way the stem runs there. */
@@ -286,6 +295,7 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 				direction,
 				record: base + (rows.record[r] as number),
 				sky: 0,
+				woodRadius: 0,
 			});
 		}
 		return out;
@@ -320,6 +330,11 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 					kind === BUD_DORMANT &&
 					(all.axes.kind[all.buds.axis[g] as number] as number) === AXIS_CULM;
 				break;
+			case 'culm-joint':
+				// Every joint of a culm carries its node ring, on the bud the grower leaves there.
+				take =
+					kind === BUD_JOINT && (all.axes.kind[all.buds.axis[g] as number] as number) === AXIS_CULM;
+				break;
 			default:
 				take = kind === BUD_TERMINAL && y > all.height * 0.85;
 		}
@@ -332,6 +347,7 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 			direction: quatRotate(buds.frame, b * 4, up, [0, 0, 0]),
 			record: base + (skeleton.axes.record[buds.axis[b] as number] as number),
 			sky: 0,
+			woodRadius: buds.woodRadius[b] as number,
 		});
 	}
 	return out;
@@ -380,13 +396,24 @@ function sizeOf(extra: ExtraSpec): number {
 }
 
 /**
- * The pixels an extra spans where a card level starts: its breadth over the longest shoot's reach,
- * times the pixels that shoot spans at the level's switch. Undefined for a plant without shoots.
+ * The pixels a shape of `breadth` metres spans where a card level starts: its breadth over the
+ * longest shoot's reach, times the pixels that shoot spans at the level's switch. Undefined for a
+ * plant without shoots.
  */
-function pixelsAt(input: MeshInput, extra: ExtraSpec, level: 1 | 2): number | undefined {
+function pixelsFor(input: MeshInput, breadth: number, level: 1 | 2): number | undefined {
 	if (!input.record.shoots || input.kit.prototypes.length === 0) return undefined;
 	const pixels = input.record.lod.switchPixels[level - 1] as number;
-	return (breadthOf(extra) / shootReach(input.kit)) * pixels;
+	return (breadth / shootReach(input.kit)) * pixels;
+}
+
+/** The pixels an extra spans where a card level starts, at its recorded size. */
+function pixelsAt(input: MeshInput, extra: ExtraSpec, level: 1 | 2): number | undefined {
+	return pixelsFor(input, breadthOf(extra), level);
+}
+
+/** Whether a shape's lathe stands in the site's wood radii rather than in metres. */
+function byWoodRadius(extra: ExtraSpec): boolean {
+	return 'lathe' in extra.shape && extra.shape.byWoodRadius === true;
 }
 
 /** The colour bytes of one extra: its axis's wind record, its entry in the record and its sky. */
@@ -818,10 +845,24 @@ function writeExtra(
 				];
 			}
 		}
+		// A profile given in wood radii takes the width of the wood its site names, so one ring fits a
+		// thick culm and a thin one alike. The band's bounds are heights of the profile, so they
+		// scale with it.
+		const wood = 'lathe' in shape && shape.byWoodRadius ? site.woodRadius || 0 : 0;
+		const size = wood > 0 ? wood : 1;
+		if (wood > 0) {
+			profile = profile.map(([radius, height]) => [radius * wood, height * wood]);
+			scaledFrom *= wood;
+			scaledTo *= wood;
+		}
+		const band =
+			'lathe' in shape && shape.scaled
+				? [shape.scaled[0] * size, shape.scaled[1] * size]
+				: undefined;
 		// A band colour meets the body at a sharp edge, so each end of the band stands twice.
 		const banded =
-			'lathe' in shape && extra.bandColour && shape.scaled
-				? bandEdges(profile, shape.scaled[0], shape.scaled[1])
+			'lathe' in shape && band && extra.bandColour
+				? bandEdges(profile, band[0] as number, band[1] as number)
 				: undefined;
 		if (banded) profile = banded.profile;
 		// A hanging body roots a short way back along the support it hangs from, so the body's tube
@@ -1034,7 +1075,10 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 	const salt = input.record.seedSalt;
 	extras.forEach((extra, index) => {
 		if (index >= MOST || !extra.seasons.includes(input.season)) return;
-		if (level > 0) {
+		// A shape that takes its size from its site's wood is judged site by site, since one record
+		// serves the thick culms and the thin ones.
+		const sized = byWoodRadius(extra);
+		if (level > 0 && !sized) {
 			const pixels = pixelsAt(input, extra, level as 1 | 2);
 			if (
 				pixels === undefined ? level === 2 && sizeOf(extra) < SMALLEST_FAR : pixels < FEWEST_PIXELS
@@ -1076,6 +1120,13 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 						at: [given.at[0] + offset[0], given.at[1] + offset[1], given.at[2] + offset[2]],
 					}
 				: given;
+			// A shape sized by its site's wood spans the pixels that this site's stem gives it.
+			if (sized && level > 0) {
+				const breadth = breadthOf(extra) * given.woodRadius;
+				const pixels = pixelsFor(input, breadth, level as 1 | 2);
+				if (pixels === undefined ? level === 2 && breadth < SMALLEST_FAR : pixels < FEWEST_PIXELS)
+					return;
+			}
 			site.sky = Math.round(
 				255 * Math.min(1, Math.max(0, crownSkyAt(input.crown, site.at[0], site.at[1], site.at[2]))),
 			);

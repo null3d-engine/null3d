@@ -77,6 +77,57 @@ export const directed: Species = {
 		sheaths: { upTo: 0.06 },
 	},
 	pieces: PIECES,
+	extras: [
+		{
+			// Pictures 07, 16 and 19: papery sheaths stay on the lowest joints, flaring wider than the
+			// culm they wrap. Their measurements are in the culm's own radius, so a sheath on a thin
+			// culm hangs to the same share of its width as one on a thick culm.
+			kind: 'sheath',
+			at: 'culm-node',
+			share: 0.5,
+			count: 1,
+			seasons: ['summer', 'autumn', 'winter', 'blossom'],
+			shape: {
+				byWoodRadius: true,
+				lathe: [
+					[1, 0],
+					[1.42, 0.25],
+					[1.5, 0.58],
+					[1.42, 1.08],
+					[1.25, 1.5],
+				],
+				sides: 10,
+			},
+			colour: [0.34, 0.27, 0.16],
+			roughness: [0.85, 0.85],
+			hang: 0,
+		},
+		{
+			// Picture 15: each joint crosses the smooth green skin as a raised ring, a sixteenth of the
+			// culm's width proud of the wood. The profile is in the culm's own radius, so every joint
+			// of every culm carries the same ring.
+			kind: 'ring',
+			at: 'culm-joint',
+			share: 1,
+			count: 1,
+			seasons: ['summer', 'autumn', 'winter', 'blossom'],
+			shape: {
+				byWoodRadius: true,
+				lathe: [
+					[0.99, 0],
+					[1.0, 0.03],
+					[1.06, 0.06],
+					[1.06, 0.1],
+					[1.0, 0.13],
+					[0.99, 0.16],
+				],
+				sides: 10,
+			},
+			colour: [0.3, 0.25, 0.15],
+			roughness: [0.8, 0.8],
+			hang: 0,
+		},
+	],
 	bark: {
 		...bark,
 		// The culm texture keeps picture 26, a close-up far greener than the plant's own culms (green

@@ -2557,10 +2557,12 @@ export interface ExtraSpec {
 		| 'thorn'
 		| 'spine-cluster'
 		| 'berry'
-		| 'sheath';
+		| 'sheath'
+		| 'ring';
 	/**
 	 * Which bud sites carry it: 'flower' takes the grower's flower sites (a head's spikelets,
-	 * florets or hanging spikes), 'stem-tip' the tip of each flowering stem.
+	 * florets or hanging spikes), 'stem-tip' the tip of each flowering stem, 'culm-node' the
+	 * sheathed joints low on a culm and 'culm-joint' every joint of a culm.
 	 */
 	readonly at:
 		| 'shoot-tip'
@@ -2571,7 +2573,8 @@ export interface ExtraSpec {
 		| 'crown-top'
 		| 'flower'
 		| 'stem-tip'
-		| 'culm-node';
+		| 'culm-node'
+		| 'culm-joint';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
 	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
@@ -2634,6 +2637,14 @@ export type ExtraShape =
 			readonly lathe: readonly Vec2[];
 			/** Faces round the nearest level's lathe, where the level's own count reads as facets. */
 			readonly sides?: number;
+			/**
+			 * The lathe's measurements stand in the site's own wood radius rather than in metres, so
+			 * one profile fits a stem of any width: a culm's node ring is a share of the culm's
+			 * radius, as the wood's surface changes from the thick culms to the thin ones. The
+			 * profile's radii and heights, and the band's bounds, scale with the wood; a stalk's
+			 * length stays in metres. Off by default, a profile in metres.
+			 */
+			readonly byWoodRadius?: boolean;
 			/** Rows of scale bumps, one ring a row. */
 			readonly scales?: number;
 			/** The profile heights, in metres, that carry the scale bumps: a cup or a cone's fertile part. */

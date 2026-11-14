@@ -5,7 +5,8 @@
 // branching height every joint holds one socket, on the side opposite the joint below it, and the
 // socket carries a branch pair from the kit (a piece: two branches with their twigs and leaf fans),
 // chosen by the joint's place up the branching zone. A culm's tip holds one more socket. The joints
-// below the sheath height hold dormant buds, which carry the culm sheaths.
+// below the sheath height hold dormant buds, which carry the culm sheaths, and every joint above the
+// foot holds a joint bud, where the record's extras stand the node ring.
 //
 // Every socket carries a rank, ranked once across the plant. Within each culm the sockets take
 // their ranks in radical-inverse order up the culm, and the culms interleave, so any leading run of
@@ -13,12 +14,23 @@
 import {
 	AXIS_CULM,
 	BUD_DORMANT,
+	BUD_JOINT,
 	BUD_TERMINAL,
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { cos, exp, PI, pow, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
+import {
+	cos,
+	exp,
+	normalize3,
+	PI,
+	pow,
+	quatFromFrame,
+	radians,
+	sin,
+	type Vector3,
+} from '../core/math';
 import type { CulmClump, Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
 import type { GrowInput } from '../stages';
@@ -132,6 +144,13 @@ export function growCulmClump(input: GrowInput): MacroSkeleton {
 	const planned: Planned[] = [];
 	const sheathed: { node: number; axis: number; at: Vector3; heading: number; radius: number }[] =
 		[];
+	const jointSites: {
+		node: number;
+		axis: number;
+		at: Vector3;
+		direction: Vector3;
+		radius: number;
+	}[] = [];
 	const sky: Vector3 = [0, 1, 0];
 	for (let c = 0; c < culms; c++) {
 		// The culms' feet stand on a sunflower spiral over the foot, so the foot is evenly full.
@@ -177,6 +196,28 @@ export function growCulmClump(input: GrowInput): MacroSkeleton {
 			});
 			nodes.push(previous);
 			lean.push(tilt);
+		}
+		// Every joint above the foot carries the ring where its node stands, and the culm's own
+		// tangent at the joint is the way the ring turns about.
+		for (let j = 1; j < nodes.length - 1; j++) {
+			const node = nodes[j] as number;
+			const below = nodes[j - 1] as number;
+			const at: Vector3 = [
+				builder.position[node * 3] as number,
+				builder.position[node * 3 + 1] as number,
+				builder.position[node * 3 + 2] as number,
+			];
+			jointSites.push({
+				node,
+				axis,
+				at,
+				direction: normalize3([
+					at[0] - (builder.position[below * 3] as number),
+					at[1] - (builder.position[below * 3 + 1] as number),
+					at[2] - (builder.position[below * 3 + 2] as number),
+				]),
+				radius: builder.radius[node] as number,
+			});
 		}
 		// The branching zone starts higher on a culm nearer the clump's middle.
 		const from =
@@ -283,6 +324,21 @@ export function growCulmClump(input: GrowInput): MacroSkeleton {
 			light: 1,
 			axis: bud.axis,
 			woodRadius: bud.radius,
+		});
+	}
+	for (const joint of jointSites) {
+		quatFromFrame(joint.direction, sky, frame);
+		builder.addBud({
+			node: joint.node,
+			x: joint.at[0],
+			y: joint.at[1],
+			z: joint.at[2],
+			frame,
+			kind: BUD_JOINT,
+			vigor: 0,
+			light: 1,
+			axis: joint.axis,
+			woodRadius: joint.radius,
 		});
 	}
 	return builder.finish(crownBase);

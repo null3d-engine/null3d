@@ -4,6 +4,7 @@
 // level, and the same bytes from the same seed.
 import { describe, expect, it } from 'bun:test';
 import type { SpeciesKitData } from '../asset';
+import { AXIS_CULM, BUD_DORMANT, BUD_JOINT, SkeletonBuilder } from '../core/graph';
 import { length3 } from '../core/math';
 import { placeholderSkeleton } from '../core/placeholder';
 import type { ExtraSpec, Species } from '../core/record';
@@ -719,5 +720,99 @@ describe('the one-winged key', () => {
 			highest = Math.max(highest, summer.positions[i] as number);
 		}
 		expect(highest - lowest).toBeGreaterThan(KEY.length);
+	});
+
+	it('sizes a profile given in wood radii from the wood at each site, so one ring fits a thin culm', () => {
+		// Two culms, one twice the other's width, each with a joint bud at its middle.
+		const builder = new SkeletonBuilder();
+		const frame = new Float32Array([0, 0, 0, 1]);
+		const widths = [0.1, 0.05];
+		for (let i = 0; i < widths.length; i++) {
+			const radius = widths[i] as number;
+			const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_CULM });
+			const foot = builder.addNode({ x: i * 2, y: 0, z: 0, radius, parent: -1, axis, light: 1 });
+			const joint = builder.addNode({
+				x: i * 2,
+				y: 1,
+				z: 0,
+				radius,
+				parent: foot,
+				axis,
+				light: 1,
+			});
+			builder.addBud({
+				node: joint,
+				x: i * 2,
+				y: 0.5,
+				z: 0,
+				frame,
+				kind: BUD_JOINT,
+				vigor: 0,
+				light: 1,
+				axis,
+				woodRadius: radius,
+			});
+		}
+		// A sheathed node on a third culm carries a dormant bud, which no ring takes.
+		const sheathAxis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_CULM });
+		const foot = builder.addNode({
+			x: 4,
+			y: 0,
+			z: 0,
+			radius: 0.1,
+			parent: -1,
+			axis: sheathAxis,
+			light: 1,
+		});
+		builder.addBud({
+			node: foot,
+			x: 4,
+			y: 0.1,
+			z: 0,
+			frame,
+			kind: BUD_DORMANT,
+			vigor: 0,
+			light: 1,
+			axis: sheathAxis,
+			woodRadius: 0.1,
+		});
+		const skeleton = builder.finish(0);
+		const ring: ExtraSpec = {
+			kind: 'ring',
+			at: 'culm-joint',
+			share: 1,
+			seasons: ['summer'],
+			shape: {
+				byWoodRadius: true,
+				lathe: [
+					[1, 0],
+					[1.5, 0.2],
+					[1, 0.4],
+				],
+			},
+			colour: [0.3, 0.25, 0.15],
+			hang: 0,
+		};
+		const record = oakRecord({ extras: [ring] });
+		const kit = kits.get(record) ?? testKit(record);
+		const base = { record, seed: 11, variant: 0, season: 'summer' as Season, kit, skeleton };
+		const input: MeshInput = {
+			...base,
+			rows: placeShoots(base),
+			crown: { cells: [1, 1, 1], min: [0, 0, 0], cell: 1, sky: new Float32Array([1]) },
+			detail: 'high',
+		};
+		const mesh = extrasMesh(input, 0);
+		if (!mesh) throw new Error('no rings');
+		// Each ring's widest reach from its culm's own axis is half again that culm's radius.
+		const widest = [0, 0];
+		for (let v = 0; v < mesh.positions.length / 3; v++) {
+			const x = mesh.positions[v * 3] as number;
+			const culm = x < 1 ? 0 : 1;
+			const reach = Math.abs(x - culm * 2);
+			widest[culm] = Math.max(widest[culm] as number, reach);
+		}
+		expect(widest[0] as number).toBeCloseTo(1.5 * (widths[0] as number), 4);
+		expect(widest[1] as number).toBeCloseTo(1.5 * (widths[1] as number), 4);
 	});
 });
