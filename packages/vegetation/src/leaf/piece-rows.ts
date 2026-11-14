@@ -4,10 +4,11 @@
 // one piece at each socket, as rows of the kind the renderer draws for shoots: every part of the
 // piece's chosen variant is a row of its own at the socket's place, with one turn, one scale, one
 // wind record and one phase, so the parts move as one body. A socket carries the piece its record
-// names, or the piece the socket itself names where a plant's sockets carry different pieces. No
-// shade or sky line thins the rows afterwards: the grower placed the sockets where the foliage
-// stands.
+// names, or the piece the socket itself names where a plant's sockets carry different pieces. A
+// flower site carries the record's extras and no piece. No shade or sky line thins the rows
+// afterwards: the grower placed the sockets where the foliage stands.
 import type { ShootPrototype } from '../asset';
+import { BUD_FLOWER } from '../core/graph';
 import { hashAt } from '../core/hash';
 import { quatAxisAngle, quatMultiply, quatRotate, radians, type Vector3 } from '../core/math';
 import type { GrowthModel, Species } from '../core/record';
@@ -20,7 +21,7 @@ import type { UncardedPrototype } from './shoot';
 export const PROTOTYPES_MOST = 255;
 
 /** The growth models that end their wood in sockets. */
-const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame'];
+const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame', 'frond-crown'];
 /** The growth models whose growers write the pieces their sockets carry. */
 const WRITTEN: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 
@@ -144,6 +145,7 @@ export function pieceRows(input: DressInput): Row[] {
 	const growth = record.growth;
 	const turned = growth.model === 'frame' && growth.sockets.turn !== undefined;
 	for (let b = 0; b < buds.count; b++) {
+		if ((buds.kind[b] as number) === BUD_FLOWER) continue;
 		const choices = own && byPlace.length > 0 ? byPlace[own[b] as number] : variants;
 		if (!choices || choices.length === 0)
 			throw new Error(

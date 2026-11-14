@@ -563,6 +563,19 @@ pub mod level_problem {
     }
 }
 
+/// What a level's switch value measures, as the engine core names it: the level's error, a distance
+/// in meters, or the share of the render's height that the bounds cover.
+pub mod level_switch {
+    use null3d_core::levels::Switch;
+
+    /// The level's error, in the units of the base mesh's positions.
+    pub const ERROR: u32 = Switch::Error as u32;
+    /// A distance in meters from the camera to the nearest point of the bounds.
+    pub const DISTANCE: u32 = Switch::Distance as u32;
+    /// The share of the render's height that the bounds cover.
+    pub const COVERAGE: u32 = Switch::Coverage as u32;
+}
+
 /// The arrays of the animation table that `animationArrays` returns.
 pub mod animation_field {
     /// The clip of each sample slot, as 32-bit unsigned integers.
@@ -1780,6 +1793,14 @@ pub fn typescript() -> String {
                 ("ERRORS", level_problem::ERRORS),
                 ("MESH", level_problem::MESH),
                 ("FORMAT", level_problem::FORMAT),
+            ],
+        ),
+        (
+            "LEVEL_SWITCH",
+            &[
+                ("ERROR", level_switch::ERROR),
+                ("DISTANCE", level_switch::DISTANCE),
+                ("COVERAGE", level_switch::COVERAGE),
             ],
         ),
         (

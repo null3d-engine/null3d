@@ -82,6 +82,7 @@ const { standInMaterials, standInPlace } = await import('./stand-in');
 const { record: oak } = await import('../species/pedunculate-oak/record');
 const { standInSpecies } = await import('../core/stand-in');
 const { bakeFarNow, buildKitNow, growPlantNow, loadPlantCode } = await import('../generate');
+const { loadFarBaker } = await import('../lod/impostor');
 
 /** A page that records what placing asks of it. */
 const ctx = {
@@ -139,12 +140,8 @@ describe('the stand-ins on the page', () => {
 		const data = buildKitNow(species, { detail: 'high', placeholders: true });
 		const kit = { ...data, textures: {} } as never;
 		const assets = [0, 1].map((variant) => growPlantNow(data, { seed: 17, variant, near: true }));
-		const far = await Promise.all(
-			assets.map(async (asset) => ({
-				variant: asset.variant,
-				bake: await bakeFarNow(data, asset),
-			})),
-		);
+		await loadFarBaker();
+		const far = assets.map((asset) => ({ variant: asset.variant, bake: bakeFarNow(data, asset) }));
 		const copies = {
 			count: 5,
 			position: new Float32Array([0, 0, 0, 30, 1, -4, -60, 2, 9, 200, 0, 200, -400, 5, 120]),

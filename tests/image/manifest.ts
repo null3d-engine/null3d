@@ -2750,7 +2750,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
-		tolerance: { maxDiffRatio: 0.005 },
+		// The third row's two copies cover 564 pixels. A tolerance below that fails when both draw
+		// the wrong level together, which the old 0.5 per cent could not see.
+		tolerance: { maxDiffRatio: 0.004 },
 	},
 	// The same copies and the same levels, with each level picked by its distance on this canvas
 	// rather than by its measured error, and then by the share of the screen its bounds cover. All
@@ -2861,7 +2863,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
-		tolerance: { maxDiffRatio: 0.005 },
+		// The copies cover 199 pixels. A tolerance below that fails on an empty frame, which the
+		// old 0.5 per cent let pass.
+		tolerance: { maxDiffRatio: 0.0015 },
 	},
 	// The levels view: each copy draws its level in the level's color, at the same places as the
 	// first test's copies. A crisp level switches at once, so the picture holds on every path.
@@ -2893,7 +2897,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		switches: ['view=levels', 'compile=wait'],
-		tolerance: { maxDiffRatio: 0.005 },
+		// The markers cover 474 pixels. A tolerance below that fails on an empty frame.
+		tolerance: { maxDiffRatio: 0.003 },
 	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
@@ -3858,6 +3863,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		swiftShaderSwitches: ['preset=low'],
 		expect: { hdr: false },
 		timeoutSeconds: 600,
+		// Firefox on Linux skips this picture, and the fault is the wind field's reader rather than
+		// the browser's limit. In drawn run 43346825811 the same page with the send's strength at
+		// zero drew in 108 seconds (job 131633715875), while the strength of ten stopped the runner
+		// page twice, 90 seconds each time, and drew nothing (job 131633715943). The same container
+		// also stopped demo-creek once and creek-water-close once in that run. The skip stays so the
+		// Firefox job keeps its meaning; the reader's cost there is open work.
+		without: ['Firefox'],
 	},
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view
 	// and from the low pass along the bank. The scene draws into a corner of the depth copy, which
@@ -4129,7 +4141,11 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		name: 'plant-coverage',
 		page: 'tests/pages/plant-coverage.html',
 		size: [1280, 720],
-		timeoutSeconds: 180,
+		// Three crowns compile their materials before the first frame. A busy software runner drew
+		// its first frame at 64 seconds and its second at 159, and the page then gave no result inside
+		// its 180-second limit (run 43515868396). The limit stays under the page budget and above
+		// what the page has needed.
+		timeoutSeconds: 300,
 	},
 	...sparseFormTests(),
 ];

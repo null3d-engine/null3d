@@ -1503,6 +1503,12 @@ impl GpuDrivenRenderer {
             .collect()
     }
 
+    /// The count of rebuilds that filled the scene's cluster tables, so a test sees an unchanged
+    /// count when a rebuild kept them. For tests.
+    pub fn cluster_tables_epoch(&self) -> u64 {
+        self.layout.cluster_tables_epoch()
+    }
+
     /// The sources that a view's culling pass tests in the last recorded frame, in the order its
     /// threads take them: the sources in the runs of the cell order that it culls, or every
     /// source in place when it culls without cells. For tests; it allocates the list.

@@ -152,11 +152,12 @@ fn bounds_of(
         OWN_BOUNDS + slot as u32
     } else if object_flags & flags::UNCULLED != 0 {
         UNCULLED_BOUNDS
-    } else if skinning.skins_in_vertex_shader(slot as u32) {
+    } else if skinning.skins_in_vertex_shader(slot as u32) && scene.level_biases()[slot] == 1.0 {
+        // The skinned objects of one mesh share a bucket, whose sphere holds every one of them. A
+        // bucket holds one bias, so a skinned object that sets its own bias draws from a bucket of
+        // its own, as any other object with a bias does.
         SHARED_SKIN_BOUNDS
     } else if object_flags & flags::CUSTOM_BOUNDS != 0 || scene.level_biases()[slot] != 1.0 {
-        // A bucket holds one threshold bias, so an object whose bias differs from the quality
-        // settings' draws from a bucket of its own.
         OWN_BOUNDS + slot as u32
     } else {
         MESH_BOUNDS
@@ -476,6 +477,15 @@ impl ClusterMesh {
     }
 }
 
+/// A hash of the keys whose trees the tables hold, in their sorted order: a structure change that
+/// leaves the same trees in the same order keeps the tables.
+fn treed_keys_of(keys: &[(BucketKey, u32)]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    keys.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
@@ -577,6 +587,13 @@ pub(super) struct Layout {
     /// The scene's cluster meshes, which the casters' layout may draw: the scene's tables hold
     /// their patches, and its own records name its own copies and draws.
     pub(super) scene_trees: Vec<ClusterMesh>,
+    /// The tree generation and the hash of the tree keys whose patches the tables hold. A rebuild
+    /// that changes neither keeps the tables, so a structure change does not copy or upload them.
+    tables_generation: u64,
+    treed_keys_hash: u64,
+    tables_built: bool,
+    /// Counts the rebuilds that filled the cluster tables. A frame that sees it move uploads them.
+    tables_epoch: u64,
     /// Every cluster patch of those meshes, eight words each: its sphere and its record.
     pub(super) cluster_patches: Vec<[u32; 8]>,
     /// Every patch's indices, one patch after another.
@@ -811,6 +828,12 @@ impl Layout {
             fixed_slots,
             ..Self::default()
         }
+    }
+
+    /// The count of rebuilds that filled the cluster tables, so a frame that uploads them knows
+    /// when they changed. A rebuild that keeps the tables leaves it where it was.
+    pub(super) fn cluster_tables_epoch(&self) -> u64 {
+        self.tables_epoch
     }
 
     /// The buffers of the bucket table and the bucket records, which the culling passes bind.
@@ -1352,6 +1375,9 @@ impl Layout {
         // fits the storage binding that the pass's tables and each view's list take, beside the
         // trees before it, or it draws whole levels.
         let patches = settings.patches();
+        // True when the patched tables are built again: the trees changed, or the keys that draw
+        // them changed or moved.
+        let mut rebuild_tables = true;
         // Each key that draws a tree, with the scene object that draws it.
         let mut treed_keys: Vec<(BucketKey, u32)> = Vec::new();
         // A caster draws its tree in each shadow view where the scene's layout draws the same
@@ -1411,6 +1437,14 @@ impl Layout {
             }
             treed_keys.sort_unstable_by_key(|&(key, _)| key);
             treed_keys.dedup_by_key(|pair| pair.0);
+            let generation = settings.patches().generation();
+            let keys_hash = treed_keys_of(&treed_keys);
+            rebuild_tables = !self.tables_built
+                || self.tables_generation != generation
+                || self.treed_keys_hash != keys_hash;
+            self.tables_built = true;
+            self.tables_generation = generation;
+            self.treed_keys_hash = keys_hash;
         }
         let tree_object = |key: &BucketKey| {
             treed_keys
@@ -1473,6 +1507,10 @@ impl Layout {
             Some(bucket)
         };
         let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
+        // A measured level fades when the governed threshold is high enough that its switch shows.
+        // It is a level's own hand-over, so it draws in every layout whose builds can fade, as a
+        // hand-set level does.
+        let measured_fades = settings.measured_levels_fade() && !self.index_instances;
         // The keys whose sources draw in a distance band, which need a fade bucket beside each of
         // their levels only while the quality settings fade those bands.
         let mut ranged_keys: Vec<BucketKey> = Vec::new();
@@ -1499,6 +1537,7 @@ impl Layout {
             key_counts,
             levels,
             fades,
+            measured_fades,
             self.codes,
             ranged,
             eligible,
@@ -1540,21 +1579,36 @@ impl Layout {
         self.bucket_levels.clear();
         self.draws.clear();
         self.skinned.clear();
-        self.clusters.clear();
-        self.cluster_patches.clear();
-        self.cluster_indices.clear();
+        if rebuild_tables {
+            self.tables_epoch = self.tables_epoch.wrapping_add(1);
+        }
         if shared_trees {
+            self.clusters.clear();
             self.clusters
                 .extend(self.scene_trees.iter().map(|&tree| ClusterMesh {
                     slot: NOT_DRAWN,
                     first_draw: NOT_DRAWN,
                     ..tree
                 }));
+        } else if rebuild_tables {
+            self.clusters.clear();
+            self.cluster_patches.clear();
+            self.cluster_indices.clear();
+        } else {
+            // The tables hold the same trees in the same order, so keep them and the records that
+            // name where each tree starts. The bucket loop writes each tree's copy and draw again.
+            for tree in &mut self.clusters {
+                tree.slot = NOT_DRAWN;
+                tree.first_draw = NOT_DRAWN;
+            }
         }
         self.parallax = false;
         self.material_views = 0;
         self.pick_views = 0;
         let (mut copied, mut indexed) = (0, 0);
+        // The place of the next tree of a kept table: the keys visit the trees in the order that
+        // the build that filled the table named them.
+        let mut kept_tree = 0usize;
         // The buckets whose mesh draws pieces in their place, each with its mesh and whether its
         // pipeline drops back faces.
         let mut pieced_buckets: Vec<(u32, u32, bool)> = Vec::new();
@@ -1566,6 +1620,7 @@ impl Layout {
                 &*key_counts,
                 levels,
                 self.codes,
+                measured_fades,
                 bands,
                 eligible,
                 &level_bucket,
@@ -1610,6 +1665,18 @@ impl Layout {
                     let record = &mut self.clusters[index];
                     record.slot = slot_base;
                     record.first_draw = first_draw;
+                    return Some(index as u32);
+                }
+                if !rebuild_tables {
+                    // The kept table holds the trees in the key order that filled it, so this key
+                    // takes the next record and names this frame's copy and draw.
+                    let index = kept_tree;
+                    kept_tree += 1;
+                    let record = self.clusters.get_mut(index)?;
+                    debug_assert_eq!(record.mesh, mesh);
+                    record.slot = slot_base;
+                    record.first_draw = first_draw;
+                    record.object = tree_object(&key).unwrap_or(NOT_DRAWN);
                     return Some(index as u32);
                 }
                 let index = self.clusters.len() as u32;

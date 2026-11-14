@@ -121,6 +121,7 @@ import {
 	type GpuPath,
 	type MissingAllowed,
 	NONE_MISSING,
+	skippedForBrowser,
 	skippedForImages,
 	skippedPath,
 } from './gpu-paths.ts';
@@ -4043,7 +4044,7 @@ export function judge(
 	missing: MissingAllowed,
 	context?: JudgeContext,
 ): string[] | 'skip' {
-	if (skippedPath(result) || skippedForImages(result)) return 'skip';
+	if (skippedPath(result) || skippedForImages(result) || skippedForBrowser(result)) return 'skip';
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';

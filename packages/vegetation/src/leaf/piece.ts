@@ -57,6 +57,7 @@ import {
 	turn,
 	type UncardedPrototype,
 } from './shoot';
+import { SURFACE_LEAF, SURFACE_PIECE } from './writer';
 
 /**
  * How each tier meshes a piece's wood and buds. A tree carries thousands of pieces, so a piece's
@@ -91,7 +92,8 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		axilLeast: 0.015,
 		coneBelow: 0.015,
 		thorn: { sides: 3, round: false, cone: true },
-		body: { sides: 4, round: true },
+		body: { sides: 3, round: false, double: true },
+		roundBody: { sides: 4, round: false, double: true, widest: 0.65 },
 	},
 	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
 };
@@ -180,6 +182,14 @@ export interface PieceLeaves {
 	 */
 	readonly flat?: number;
 	/**
+	 * Leaves in two ranks along the stem's two sides, as a frond's leaflets or pinnae stand: every
+	 * node holds one group a side, a leaf at each lift, in degrees out of the plane of the two sides
+	 * toward the sky side (below 0 away from it). A frond whose pinnae lie in its plane names one
+	 * lift of 0; a date palm's leaflets leave in threes at -30, 0 and 30. At most four lifts. Where
+	 * this is named, the arrangement's own places round the stem are not used.
+	 */
+	readonly ranked?: readonly number[];
+	/**
 	 * A flat rosette: the stem's leaves fan out in the plane that faces the piece's sky side, spread
 	 * evenly to `reach` degrees either side of the stem, the lowest leaf the widest, and each blade
 	 * faces the sky side within `tilt` degrees. Each leaf also rises or falls out of that plane by up
@@ -260,6 +270,15 @@ export interface PieceStem {
 	 * through it and shows no corner.
 	 */
 	readonly kink?: { readonly length: number; readonly angle: number };
+	/**
+	 * The most degrees the stem turns between two of its rings, at every tier: a ring stands at its
+	 * ends and wherever it has turned this far since the last. A long arched stem, such as a palm
+	 * frond's rachis, keeps its arch at the low tier, which otherwise draws its foot and its tip
+	 * alone, and a long thin straight one, such as a fern's pinna midrib, keeps a few rings at every
+	 * tier rather than one at each of its nodes. Absent, each tier keeps the rings its own spacing
+	 * gives.
+	 */
+	readonly rings?: number;
 	/** Its leaves, where it carries any. */
 	readonly leaves?: PieceLeaves;
 	/** Its side stems, one rule for each kind. */
@@ -299,6 +318,12 @@ export interface PieceMark {
 	readonly stalk?: number;
 	/** Bodies at one place, each on a stalk of its own. */
 	readonly count?: Spread;
+	/**
+	 * Whether a body keeps its rounded shape at the high tier, for a berry or a woody cone whose
+	 * close view reads round. Absent, the high tier draws a body as a double cone, as suits a slim
+	 * catkin.
+	 */
+	readonly round?: boolean;
 }
 
 /**
@@ -324,6 +349,11 @@ export interface PieceRule {
 	 * crown's side shows its face rather than its edge. Absent, 0.
 	 */
 	readonly roll?: number;
+	/**
+	 * How far the piece's leaves have browned, from 0 to 1: a dead frond's leaflets draw toward the
+	 * species' autumn colour by this share, as a placed piece's own browning. Absent, 0.
+	 */
+	readonly browning?: number;
 	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
@@ -626,10 +656,14 @@ export function planPiece(
 		const skyTurn = Math.min(1, Math.max(0, own.skyward ?? shoots.placement.skyward));
 		const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
 		const share = Math.min(1, skyTurn + flatten * (1 - skyTurn));
+		// Two ranks: the first side's leaves rise toward the sky side by their lift, and the second
+		// side's mirror them, so both sides stand alike.
+		const azimuths = own.ranked?.flatMap((lift) => [lift, 180 - lift]);
 		return {
 			salt,
 			key: PIECE_KEY + key,
 			phyllotaxis,
+			...(azimuths ? { azimuths } : {}),
 			leafAngle: own.angle,
 			leafAngleSpread: own.angleSpread ?? 0,
 			leafAzimuthSpread: 0,
@@ -789,6 +823,7 @@ export function planPiece(
 		const hook = stem.hook;
 		let direction: Vector3 = [...start.line];
 		let sky = square(start.sky, direction, [0, 0, 1]);
+		let ringDirection: Vector3 = [...direction];
 		if (hook) {
 			const a = radians(hook.angle);
 			direction = normalize3([
@@ -864,7 +899,32 @@ export function planPiece(
 			along += run;
 			const share = (k + 1) / steps;
 			const radius = footRadius + (tipRadius - footRadius) * share;
-			points.push({ at: [...at], radius, along });
+			// The low tier keeps a ring wherever the stem has turned its rule's bend since the last.
+			const ring =
+				stem.rings !== undefined &&
+				k < steps - 1 &&
+				(acos(
+					Math.min(
+						1,
+						Math.max(
+							-1,
+							direction[0] * ringDirection[0] +
+								direction[1] * ringDirection[1] +
+								direction[2] * ringDirection[2],
+						),
+					),
+				) *
+					180) /
+					PI >=
+					stem.rings;
+			if (ring) ringDirection = [...direction];
+			points.push(
+				ring
+					? { at: [...at], radius, along, unitEnd: true }
+					: stem.rings !== undefined
+						? { at: [...at], radius, along, plain: true }
+						: { at: [...at], radius, along },
+			);
 			frames.push({ at: [...at], direction: [...direction], sky: [...sky], along });
 			if (atNode && leavesBy && from + run >= leafFrom - 1e-9 && from + run <= leafTo + 1e-9) {
 				const first = leaves.length;
@@ -966,6 +1026,7 @@ export function planPiece(
 						cluster: true,
 						stack: size,
 						mark: 'body',
+						...(mark.round ? { round: true } : {}),
 					});
 				}
 			}
@@ -1266,6 +1327,23 @@ function stemCuts(
 }
 
 /**
+ * Marks a mesh's leaves as a piece's own surface with their browning, so the plant material draws
+ * them toward the species' autumn colour by that share. A piece's vertex holds the share along its
+ * part where a leaf's holds its metres, so the metres become a share of the leaf's length and the
+ * leaf flutters as before.
+ */
+function browned(mesh: PrototypeArrays, browning: number, leafLength: number): void {
+	const share = Math.min(1, Math.max(0, browning));
+	const length = Math.max(1e-3, leafLength);
+	for (let i = 0; i < mesh.colors.length / 4; i++) {
+		if ((mesh.colors[i * 4 + 2] as number) !== SURFACE_LEAF) continue;
+		mesh.colors[i * 4 + 2] = SURFACE_PIECE;
+		mesh.uvs1[i * 2] = Math.min(1, Math.max(0, (mesh.uvs1[i * 2] as number) / length));
+		mesh.uvs1[i * 2 + 1] = share;
+	}
+}
+
+/**
  * Builds a species' pieces, each variant at every detail tier, from its leaf meshes. A variant too
  * large for one prototype comes as several parts, unless its brush cards draw its leaves at every
  * tier.
@@ -1287,6 +1365,13 @@ export function piecePrototypes(
 	fall?: Readonly<Vector3>,
 ): PiecePrototype[] {
 	const pictureTier = DETAILS.indexOf(BRUSH_PICTURE_TIER);
+	const foliage = record.foliage;
+	const leafLength =
+		foliage.kind === 'blade'
+			? spreadMean(foliage.leaf.length)
+			: foliage.kind === 'needle' || foliage.kind === 'fascicle'
+				? spreadMean(foliage.needle.length)
+				: 1;
 	const out: PiecePrototype[] = [];
 	for (const [r, rule] of rules.entries()) {
 		const own = rule.leafDroop === 'plane' ? straight : leaves;
@@ -1332,6 +1417,21 @@ export function piecePrototypes(
 								...(rule.brushFinest ? { finest: true } : {}),
 							}
 						: undefined;
+				const meshed = meshedPlan(
+					plan,
+					own,
+					stemCuts(
+						!rule.brushCards || !rule.brushHidesStems
+							? PIECE_CUTS
+							: rule.brushFinest
+								? BRUSH_STEM_CUTS_ALL
+								: BRUSH_STEM_CUTS,
+						rule.brushStemKeep,
+					),
+					woodTiers,
+				);
+				if (rule.browning)
+					for (const tier of meshed.tiers) browned(tier, rule.browning, leafLength);
 				out.push({
 					piece: rule.name,
 					variant,
@@ -1341,19 +1441,7 @@ export function piecePrototypes(
 					...(rule.plane ? { plane: rule.plane } : {}),
 					...(rule.roll ? { roll: rule.roll } : {}),
 					sites: pieceSites(plan),
-					...meshedPlan(
-						plan,
-						own,
-						stemCuts(
-							!rule.brushCards || !rule.brushHidesStems
-								? PIECE_CUTS
-								: rule.brushFinest
-									? BRUSH_STEM_CUTS_ALL
-									: BRUSH_STEM_CUTS,
-							rule.brushStemKeep,
-						),
-						woodTiers,
-					),
+					...meshed,
 					...(brushes ? { brushes } : {}),
 				});
 			}

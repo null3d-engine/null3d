@@ -69,6 +69,8 @@ export type {
 	FoliageKind,
 	FormField,
 	FrondColony,
+	FrondCrown,
+	FrondRank,
 	FrondShape,
 	GrassBlade,
 	Growth,

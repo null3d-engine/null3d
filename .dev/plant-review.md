@@ -137,7 +137,8 @@ Row 11 is judged against a built neighbor, named in the verdict. A species with 
 states that instead of passing.
 
 Row 6 is read from the sky gap: the share of background enclosed by the crown's own outline, on both
-pictures at each whole view. The verdict names this figure beside each value. Both pictures are
+pictures at each whole view. Each side is read by the rule in [Sky read like for like](#sky-read-like-for-like); at a
+whole view the drawing's matte figures are instrument only. The verdict names this figure beside each value. Both pictures are
 read one way: a texel is sky or plant. A render's matte also holds each texel's clear share, and a
 figure read by that share is about 0.015 more closed than the same outline read as a photograph's
 is. The summary prints that reading beside the figure, since earlier figures were read by it. Both
@@ -733,6 +734,155 @@ is not passed.
 
 Limits are reported singly, each with its figure, its reason and the alternative that was tried. A
 limit is never a reason to stop work on the pictures it names.
+
+## The side-by-side gate
+
+A species moves to a new structure only when its new drawing reads nearer its photographs than the
+old grower's drawing of the same pictures. Until then the old grower stays registered, and the new
+record waits beside it. The gate decides which plant ships. It passes no row of the twelve.
+
+- **Both drawings are real engine drawings.** A CPU preview or a frame sheet can show that a plant is
+  fit for its round. It never stands for the round, because the card levels and the light differ.
+- **The old drawing is the fair floor.** Draw the old grower again with the current review tool where
+  you can, so both drawings meet one tool. Where that is not possible, take the old grower's newest
+  clean whole-view run, and do not set its outline figures beside the new tool's.
+- **Eye first.** Lay the photograph, the old drawing and the new drawing side by side at one size.
+  Say in one sentence what a person would take each drawing for. Then read the figures.
+- **The floor names its points.** For each species, write what the old drawing reads as and the two or
+  three things it gets right. The new plant must keep or beat each point, and the verdict says which.
+- **Color counts.** Leaf, bark and fruit color are judged with the shape. A new plant that is nearer
+  in shape and behind in color is judged on both, and the verdict says which side wins.
+- **A pass keeps an open fault list.** The gate's pass names the views it wins and the views it loses.
+  Its open faults stay in the species' entry in [the vegetation species guide](vegetation-species.md).
+- **A pass may carry a condition.** When one fault would stop a person at once, the pass names it. The
+  switch waits for a round that shows it mended. The hosta's black leaf and the alder's pink haze are
+  such conditions.
+- **The eye beats a passing test.** When a change makes a test pass and the eye reads the plant as
+  further from its photograph, revert the change. Then mend the test until the worse plant fails it.
+
+## Sky read like for like
+
+Row 6 compares two sky gaps, so both sides must be read by the same rule. A gap with no shared rule
+is not quoted.
+
+| Still | The photograph | The drawing |
+| --- | --- | --- |
+| A whole view, `01` or `02` | Each pixel far enough in color from its fitted sky is plant | The same rule on the drawing's color still: the color-still gap |
+| A silhouette, `18` | The half-dark rule | The half-dark rule on the drawing's matte |
+
+The drawing's matte at a whole view is instrument only. The engine writes it display-encoded, so the
+half-dark rule counts a pixel as plant only from about 0.78 cover. A photograph's mask counts a pixel
+from a small cover. So the matte reads every whole view too open: the ash by 0.12 to 0.15, the
+meadow grass's `01` by 0.32. The run's summary prints the like-for-like figure first and the matte's
+as "instrument only".
+
+The band stays as row 6 states it. A builder does not raise density or move spacing to close a whole
+view's gap that the matte reads. Read the like-for-like figure first.
+
+## Reference conflicts
+
+The pictures of one species are generated one by one, so they show different individuals. The whole
+plant's turning video and picture `01` define the one primary plant. The other pictures are matched
+on form and proportion.
+
+When two pictures at one turn ask for opposite things, record a reference conflict. Name the picture
+that governs, and judge the other by eye for the plant's build, never by its figure. The recorded
+conflicts:
+
+| Species | Pictures | What governs |
+| --- | --- | --- |
+| Sedge | `01`, an upright fountain, against `02`, a wide mound | `02` and the turning video; `01`'s width and gap are recorded, not targets |
+| Saguaro | `18`, two tiers of arms; `07`, one arm on its own collar | Still `01` and the one plane of arms the owner chose |
+| Silver birch | `18`, a narrower tree than `01` at the same turn | `01`; `18` judges the build by eye |
+| Common alder | `02` and `18`, a narrow cone with a low crown base, against `30`, a broader crown based higher | `30` and the turning video set the build; `02`'s crown base and width are judged by eye |
+| Leaves on a cut twig | A face-on still against the narrowest frame of its video | The still sets the blade's face; the edge-on figure is recorded |
+
+Read the turn each picture is drawn at before calling a conflict. Two figures at different turns do
+not bind one projection, as [a same-angle conflict](#what-a-reviewer-must-see-for-the-picture-judged-rows) says.
+
+## Count before you draw
+
+A plant of pieces reports its counts with every preview and every real round:
+
+- each piece's triangles at each tier;
+- all its pieces placed, at the kit's tier;
+- the most triangles drawn at once from the worst stated eye, at the tallest view the quality
+  presets allow.
+
+A plant's own triangle figure that leaves its pieces out is wrong, and it can hide a plant far over
+its cap. With its pieces counted, the pine's near form drew 11.3 million triangles against a cap of
+2.8 million. The oak's sparse pieces drew 7.3 million against 2.5 million.
+
+A plant's near cap is held at the reference view, 1,080 pixels tall at 60 degrees. At taller views
+the engine scales the switch, so a near plant can draw whole. There the scene's budget of real pieces
+governs, not the plant's own cap. Builders still report the tallest view's count.
+
+## Color found by isolating its cause
+
+A color figure is measured before anything changes. Read the leaf and bark figures per still, at the
+level drawn, beside the photograph and the fair floor. The cause is then found by a test that changes one
+thing at a time:
+
+1. the species' own texture, its albedo;
+2. the record's tints;
+3. the leaf material's light through the blade and its back faces;
+4. the card bake's color;
+5. the review's own light.
+
+A species' own textures and tints are its builder's to change. A shared material, light or bake change
+goes to the lead first. A color is never fitted to one picture's light. A color that reads wrong across
+a whole crown is first tested for what the crown draws at all. The hosta's black leaf came from its
+flutter phase byte, which landed on a surface kind's value. A crown that reads rust at a card
+level may draw its young bark and few leaves.
+
+## A confirming round after a shared change
+
+A species that has passed the gate is drawn again when a shared change moves its card levels or its
+wood after the judged round. The shared support branches are one such change. The confirming round
+answers two questions: does the win hold, and does anything new read wrong. The pedunculate oak's
+confirming round after the shared supports holds its win, and its cards that hang from other cards
+read as foliage on wood.
+
+Every merge into the shared line also compares all twenty species' digests before and after, as
+[the vegetation process guide](vegetation-process.md#merges-into-the-shared-line) says. A switched
+species whose look moves stops the merge until the change is made opt-in or the reviewer judges it.
+
+## Closing a figure without fitting it
+
+A figure checks the plant. A builder does not tune the plant to the figure.
+
+- Do not fit a spacing, a density or a tint to one figure from one picture. A lever that closes the
+  figure and moves the plant away from its photograph by eye is reverted.
+- Read the figure by the rule both sides share before acting on it. A figure inside the tool's own
+  drift between versions decides nothing.
+- A test is proved by putting its fault back. Restore the fault in a copy of the commit and run the
+  test: it must fail. A test that counts by the code's own rule is true by construction
+  and proves nothing. A count of the cards that a join rule keeps is one such test.
+- A fix is proved by the picture it was for. A fix can move the plant and still leave its fault in
+  place, as the hosta's roll fix left its black leaf. The next round's picture shows that.
+
+## Reading rules learned from the rounds
+
+- **A row needs every picture.** A row passes only when every picture behind it passes. A stated limit
+  is still a fail of the row.
+- **A stills pass can fail on its turn.** Before a cluster or crown row passes on stills, read the
+  same run's turn: its crown box's spread can sit far outside the reference's.
+- **Limb crossings are row 12.** A crossing changes no outline and no gap. Open the views from below,
+  under the crown and inside it, and trace each great limb past its neighbors.
+- **Row 9 reads the drawn width.** The trunk check is the drawn silhouette's width at breast height
+  over the height. The skeleton's radius is another measure.
+- **A card level flatters a sparse plant.** Cards grow about their centers, so a crown can read inside
+  its band at a card level while its leaf form is a bare frame. Read both levels.
+- **The matte overstates cover close up.** Inside a crown the matte blends soft coverage from every
+  level. Read a close view's cover from its parts picture.
+- **Measure from the true foot.** A script that takes the horizon row as the foot measures heights
+  against two rulers. Pass the foot row.
+- **Open the parts picture before disputing a void.** A color still can hide a second part in front
+  of the subject.
+- **An inert cut proves nothing.** Before trusting identical figures from a change, show that the
+  change moves the picture.
+- **A share of pixels is not equality.** To say two drawings are the same, compare their bytes. Two
+  pictures with the same bytes and different level labels mean one label is wrong.
 
 ## The process
 

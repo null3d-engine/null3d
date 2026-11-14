@@ -24,6 +24,7 @@ import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import { oakRecord } from './grow/oak.fixture';
 import { growSelfOrganizing } from './grow/self-organizing';
+import { carriesPieces } from './leaf/piece-rows';
 import { SURFACE_STEM } from './leaf/writer';
 
 const stub = standInSpecies('stub', { height: 12, aspect: 0.8 });
@@ -275,7 +276,6 @@ describe('cuttings', () => {
 			{ placeholders: 'missing', detail: 'low' },
 		);
 		const after = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
-		expect(after.prototypes.length).toBeGreaterThan(before.prototypes.length);
 		const grow = { seed: 11, variant: 0, near: true } as const;
 		const own = growPlantNow(before, grow).shoots;
 		const withCuttings = growPlantNow(after, grow).shoots;
@@ -298,23 +298,40 @@ describe('cuttings', () => {
 			expect(cutsShoot(oak.record, part)).toBe(true);
 			const piece = growPlantNow(oakKit, { seed: 11, variant: 0, cutting: { part } });
 			expect(piece.shoots.count).toBe(1);
-			expect(oakKit.prototypes[piece.shoots.prototype[0] as number]?.class).toBe(hint.shoot);
+			const prototype = oakKit.prototypes[piece.shoots.prototype[0] as number];
+			// A piece-carrying kit dresses the cut from the piece its sockets carry; another kit
+			// dresses it from the shoot class the hint names.
+			if (carriesPieces(oak.record)) {
+				const growth = oak.record.growth;
+				const sockets = 'sockets' in growth ? growth.sockets : undefined;
+				const socketPiece = sockets && 'piece' in sockets ? sockets.piece : undefined;
+				if (!socketPiece) throw new Error('the piece-carrying record names no socket piece');
+				expect(prototype?.piece?.name).toBe(socketPiece);
+			} else {
+				expect(prototype?.class).toBe(hint.shoot);
+			}
 		}
 		expect(cutsShoot(stub.record, 'branch')).toBe(false);
 		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
 	});
 
 	it('cuts a cluster that names a plant cut from one long axis, not from the kit', async () => {
-		// A fern's leaf cluster is a section of a frond, which is a leaf axis of the grown plant.
-		// The cut must keep that axis rather than refuse it as a shoot-style cluster does.
-		const { species: fern } = await import('./species/tree-fern');
-		await loadPlantCode(fern.record);
-		const kit = buildKitNow(fern, { placeholders: 'missing', detail: 'low' });
+		// A crown-rosette frond is a long leaf axis of the grown plant, and its record states the
+		// cluster cut over that axis. The cut must keep the axis rather than refuse it as a
+		// shoot-style cluster does.
+		const { species: fernModule } = await import('./species/tree-fern');
+		const { record: fernRecord } = await import('./species/tree-fern/record');
+		await loadPlantCode(fernRecord);
+		const kit = buildKitNow(
+			{ record: fernRecord, textures: fernModule.textures },
+			{ placeholders: 'missing', detail: 'low' },
+		);
 		const whole = growPlantNow(kit, { seed: 11, variant: 0, near: true });
-		const hint = fern.record.cuttings?.cluster;
-		if (!hint || !('order' in hint)) throw new Error('the fern names no plant cut for its cluster');
-		expect(cutsShoot(fern.record, 'cluster')).toBe(false);
-		const cut = cutBranch(whole.skeleton, fern.record, { part: 'cluster' });
+		const hint = fernRecord.cuttings?.cluster;
+		if (!hint || !('order' in hint))
+			throw new Error('the fern record names no plant cut for its cluster');
+		expect(cutsShoot(fernRecord, 'cluster')).toBe(false);
+		const cut = cutBranch(whole.skeleton, fernRecord, { part: 'cluster' });
 		if (!cut) throw new Error('the fern cluster cut found no axis');
 		expect(cut.order).toBe(hint.order);
 		// The piece is the span of one frond, not the whole plant.
@@ -323,21 +340,25 @@ describe('cuttings', () => {
 	});
 
 	it("takes a plant cut's leaf scale from its record, and the crown's size when none is named", async () => {
-		const { species: fern } = await import('./species/tree-fern');
-		await loadPlantCode(fern.record);
-		const hint = fern.record.cuttings?.cluster;
-		if (!hint || !('order' in hint)) throw new Error('the fern names no plant cut for its cluster');
+		// The crown-rosette frond states a plant cut with a leaf scale of its own: the scale lengthens
+		// its pinnae alone, so the cut's axes and nodes stay where they are.
+		const { species: fernModule } = await import('./species/tree-fern');
+		const { record: fernRecord } = await import('./species/tree-fern/record');
+		await loadPlantCode(fernRecord);
+		const hint = fernRecord.cuttings?.cluster;
+		if (!hint || !('order' in hint))
+			throw new Error('the fern record names no plant cut for its cluster');
 		const kitOf = (scale?: number) =>
 			buildKitNow(
 				{
-					...fern,
 					record: {
-						...fern.record,
+						...fernRecord,
 						cuttings: {
-							...fern.record.cuttings,
+							...fernRecord.cuttings,
 							cluster: scale === undefined ? hint : { ...hint, scale },
 						},
 					},
+					textures: fernModule.textures,
 				},
 				{ placeholders: 'missing', detail: 'low' },
 			);

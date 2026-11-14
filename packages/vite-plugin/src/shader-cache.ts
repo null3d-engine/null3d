@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { COMPILER_STAMP_FILE, readCompilerStamp } from './compiler-stamp.ts';
 import {
 	type CompileResult,
 	type EffectResult,
@@ -83,14 +84,24 @@ function engineVersion(root: string): string {
 	}
 }
 
-/** The shader build's own stamp: the bytes of the compiler module, hashed once. */
+/** The record that the build writes beside the compiler, naming the inputs of a project's compile. */
+const COMPILER_STAMP_URL = new URL(`../dist/${COMPILER_STAMP_FILE}`, import.meta.url);
+
+/**
+ * The shader build's own stamp: the inputs that a project's compile may read, which the build
+ * records beside the compiler. A build that wrote no record is named by the compiler's own bytes,
+ * which change with every shader source and so compile every entry again.
+ */
 let stamp: string | undefined;
 function shaderBuildStamp(): string {
 	if (stamp === undefined) {
-		try {
-			stamp = hashOf(readFileSync(SHADER_COMPILER_URL));
-		} catch {
-			stamp = 'missing';
+		stamp = readCompilerStamp(COMPILER_STAMP_URL);
+		if (stamp === undefined) {
+			try {
+				stamp = hashOf(readFileSync(SHADER_COMPILER_URL));
+			} catch {
+				stamp = 'missing';
+			}
 		}
 	}
 	return stamp;
@@ -98,7 +109,8 @@ function shaderBuildStamp(): string {
 
 /**
  * The version that keys the cache: the engine's, with the shader build's own stamp. Both change
- * when the engine or the compiler changes, so neither serves an old shader after an upgrade.
+ * when the engine or the inputs of a project's compile change, so neither serves an old shader
+ * after an upgrade or a change that could affect it.
  */
 export function shaderCompilerVersion(root: string): string {
 	return `${engineVersion(root)}:${shaderBuildStamp()}`;

@@ -34,7 +34,7 @@ use null3d_core::culling::{Frustum, NO_BUCKET, RowRanges, batch_ranges, row_cent
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
-use null3d_core::levels::{DrawRange, LevelRule, NO_LINK, Picked};
+use null3d_core::levels::{DrawRange, LevelRule, NO_LINK};
 use null3d_core::scene::SceneStorage;
 use null3d_core::shared::SharedMut;
 use null3d_core::world::UNBOUNDED_RADIUS;
@@ -492,18 +492,9 @@ impl Layout {
                     len += 1;
                 }
             };
-            match edge {
-                Picked::One(bucket) => keep(bucket),
-                Picked::Fade { new, old, .. } => {
-                    keep(new);
-                    keep(old);
-                }
-                Picked::FadeIn { bucket, .. } => keep(bucket),
-                Picked::FadeOut { old, .. } => keep(old),
-                // A levels debug view draws a hidden source at its base level, marked with the
-                // hidden bit, so the home bucket's slice holds it.
-                Picked::Hidden if self.codes => keep(home),
-                Picked::Hidden => {}
+            let (entries, len, _) = edge.entries(home, self.codes);
+            for entry in &entries[..len] {
+                keep(entry.bucket);
             }
         }
         for &bucket in &picked[..len] {

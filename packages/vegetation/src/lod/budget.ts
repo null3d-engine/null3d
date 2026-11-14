@@ -22,6 +22,7 @@
 // where the quick count was low, the part steps down and the wood is meshed again.
 import type { ClusterCount, MeshArrays, PartTriangles, PrototypeArrays, ShootRows } from '../asset';
 import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE } from '../core/graph';
+import { NotBuiltError } from '../core/not-built';
 import { DETAILS, type Detail } from '../core/types';
 import { grower } from '../grow/models';
 import { extrasMesh } from '../leaf/extras';
@@ -219,11 +220,21 @@ const isMerged = (mesh: MeshInput) => mesh.record.lod.nearFoliage === 'merged';
 /**
  * The foliage mesh a plant's grower builds itself at a level: a merged plant's foliage, or the
  * part a plant of written pieces draws beside them, such as a tuft's stool and what lies in the
- * soil under it. None where the grower builds none.
+ * soil under it. A plant of pieces draws none where its grower builds none. A merged plant's
+ * leaves are this mesh, so a grower that builds none is a stage not built yet.
+ *
+ * @param mesh What the level is meshed from.
+ * @param level The level.
+ * @returns The grower's foliage mesh, or none.
+ * @throws {NotBuiltError} When the plant's foliage is merged and its grower builds none.
+ * @category api/vegetation
  */
-function mergedFoliage(mesh: MeshInput, level: MeshLevel): MeshArrays | undefined {
-	if (!isMerged(mesh) && !writesPieces(mesh.record)) return undefined;
-	return grower(mesh.record.growth.model).foliage?.(mesh, level);
+export function mergedFoliage(mesh: MeshInput, level: MeshLevel): MeshArrays | undefined {
+	const merged = isMerged(mesh);
+	if (!merged && !writesPieces(mesh.record)) return undefined;
+	const build = grower(mesh.record.growth.model).foliage;
+	if (!build && merged) throw new NotBuiltError(`merged ${mesh.record.growth.model} foliage`);
+	return build?.(mesh, level);
 }
 
 /**

@@ -6,8 +6,7 @@ layers of 128x128, Ultra on the volume 64x24x64, and Low on the formula wind on 
 phone measures the small grid. The ruling closes the rows and the budgets. The smallest-tier look is judged: shown the wind demo at
 Low beside Medium, the owner answered that he can tell the difference, and shown Medium beside High
 he answered that he finds little difference, so the smallest tier he cannot tell from the next one up
-is Medium. The look clause is met: shown the wind demo's two tiers side by side, the owner answered "low looks fine, close it". Two clauses of the task's Done-when stay open: the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
-the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
+is Medium. The look clause is met: shown the wind demo's two tiers side by side, the owner answered "low looks fine, close it". The owner dropped the M5 Max row: the machine here is an M3 Max, no M5 Max ran the plan, and the task is judged on the M3 Max rows this record carries. <!-- outside date --> The iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus carry their rows. One clause of the task's Done-when stays open:
 the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings: the S25's
 Ultra Creek row read 516.56 ms against the 511 ms ceiling before its governed settle and now holds by measurement, with the forest's rows measured over
 their ceilings too, at 88, 111 and 97 ms on the iPad at Medium, High and Ultra against 54.8, 67.1 and
@@ -494,8 +493,9 @@ case as its test.
   two states and the branch poses. The water material uses three of six, so three are free for a
   flag or a ripple.
 - The device rows are measured on this Mac's Apple M3 Max, the iPhone 17, the Galaxy S24, the iPad
-  Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus. The M5 Max that the task names is owed, because
-  this machine is an M3 Max and no M5 Max ran the plan. The solver on this tree fixes 20 pressure
+  Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus. The owner dropped the M5 Max row this task
+  once named: no M5 Max ran the plan, and the M3 Max rows are the ones the task is judged on.
+  <!-- outside date --> The solver on this tree fixes 20 pressure
   steps and 60 cycles a second. The real cycles in the tables are that cycle, and the other pressure
   counts and field rates are the chain's.
 - A row's cost a frame follows the display's rate, because the field steps at a fixed rate: a 30 Hz

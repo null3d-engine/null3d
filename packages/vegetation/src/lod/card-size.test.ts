@@ -15,7 +15,7 @@ import { loadSpecies } from '../core/registry';
 import type { Detail } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { foliageBox } from './card-size.test-support';
-import { matteShare, outlineMatte, skyShare } from './outline.test-support';
+import { matteShare, outlineMatte, outsideShare, skyShare } from './outline.test-support';
 
 /** A species grows and its three levels are read texel by texel; a busy machine takes a while. */
 const LONG = scaledBudget(180_000);
@@ -36,11 +36,29 @@ const GROUND_SLACK = 0.01;
 const SKY_MORE = 0.05;
 const SKY_LESS = 0.02;
 
+/**
+ * The most of the leaf form's outline area that a card level may draw outside that outline, in the
+ * front view and in the side view: a box can agree while a level is fatter between its extremes.
+ */
+const OUTSIDE_MOST = 0.03;
+
+/**
+ * The species whose card levels stand outside the leaf form's outline today, each a known fault.
+ * The giant sequoia's second card level reads 0.0745 of the outline's area outside in front and
+ * 0.1036 at the side, at seed 11 and variant 0: its kept cards grow to make up the cards it drops,
+ * and the hull that holds them reads reach from the axis by band and sector, which does not bound
+ * the front and side outlines of a crown in tiers. With no growth it reads 0.0064 and 0.0348. The
+ * cure is to picture a dropped neighbour's cover on the kept card that replaces it. The sequoia is
+ * to be built again on a directed frame, so its case is read again then.
+ */
+const OUTSIDE_FAULTS = new Set<string>(['giant-sequoia']);
+
 /** One plant of each habit: the growth model, the species, and the seeds it grows from. */
 const HABITS: readonly (readonly [habit: string, id: string, seeds: readonly number[]])[] = [
 	['a broadleaf tree', 'pedunculate-oak', [11, 2027]],
 	['an evergreen broadleaf', 'holm-oak', [11]],
 	['a conifer', 'scots-pine', [11, 2027]],
+	['a giant conifer', 'giant-sequoia', [11]],
 	['a weeping tree', 'silver-birch', [11]],
 	['a shrub', 'hawthorn-shrub', [11, 2027]],
 	['a ribbed column', 'saguaro', [11]],
@@ -134,6 +152,24 @@ describe('a card level keeps the plant size', () => {
 					const sky = skyShare(leaf, outlineMatte(kit, asset, level, 192), from);
 					const at = `${id} level ${level}: leaf form ${own.toFixed(4)}, level ${sky.toFixed(4)}`;
 					expect([at, sky - own <= SKY_MORE, own - sky <= SKY_LESS]).toEqual([at, true, true]);
+				}
+			},
+			LONG,
+		);
+
+	// Read as the review reads it: each view's outline is, row by row, the span from the leaf form's
+	// first covered pixel to its last, at 256 pixels, at the medium tier.
+	for (const [, id] of HABITS)
+		(OUTSIDE_FAULTS.has(id) ? it.failing : it)(
+			`draws each card level of the ${id} inside the leaf form's outline, front and side`,
+			async () => {
+				const kit = await kitOf(id, 'medium');
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+				const leaf = outlineMatte(kit, asset, 0, 256, 'leaves');
+				for (const level of [1, 2] as const) {
+					const [front, side] = outsideShare(leaf, outlineMatte(kit, asset, level, 256));
+					const at = `${id} level ${level}: front ${front.toFixed(4)}, side ${side.toFixed(4)}`;
+					expect([at, front <= OUTSIDE_MOST, side <= OUTSIDE_MOST]).toEqual([at, true, true]);
 				}
 			},
 			LONG,

@@ -148,6 +148,11 @@ export interface BranchPiece {
 	 * A view square to either sees the piece that deep.
 	 */
 	readonly depth?: { readonly face: number; readonly side: number };
+	/**
+	 * The piece's centre line from near its socket to near its tip, where it states one: an arching
+	 * piece's stem runs well off the straight line from its socket to its tip.
+	 */
+	readonly path?: readonly V3[];
 }
 
 /**
@@ -260,8 +265,8 @@ const GREAT = 0.35;
 /** The fewest bud sites a branch carries for its foliage to count as a lobe. */
 const LOBE_BUDS = 8;
 /** The most radius a lobe may have, as a share of the plant's height, and the least that most may be, in metres. */
-const LOBE_HEIGHT_SHARE = 0.12;
-const LOBE_LEAST_RADIUS = 0.3;
+export const LOBE_HEIGHT_SHARE = 0.12;
+export const LOBE_LEAST_RADIUS = 0.3;
 /** A solid ball's radius over the root mean square distance of its points from its middle. */
 const BALL = Math.sqrt(5 / 3);
 /** The most twig tips the adapter names, the best lit and farthest out first. */
@@ -550,7 +555,12 @@ interface PieceRun {
 	/** How far its vertices stand off the socket along its own +Z and its own +X. */
 	readonly face: number;
 	readonly side: number;
+	/** Its centre line, in its own frame. */
+	readonly path: readonly V3[];
 }
+
+/** The steps a piece's centre line is read in. */
+const PATH_STEPS = 12;
 
 /** The run of a piece whose parts are these prototypes' meshes, at scale 1. */
 function runOf(meshes: readonly Float32Array[]): PieceRun {
@@ -573,6 +583,7 @@ function runOf(meshes: readonly Float32Array[]): PieceRun {
 	let spread = 0;
 	let face = 0;
 	let side = 0;
+	let reach = 0;
 	for (const positions of meshes)
 		for (let i = 0; i + 2 < positions.length; i += 3) {
 			const x = positions[i] as number;
@@ -585,8 +596,31 @@ function runOf(meshes: readonly Float32Array[]): PieceRun {
 			);
 			face = Math.max(face, Math.abs(z));
 			side = Math.max(side, Math.abs(x));
+			reach = Math.max(reach, Math.hypot(y, z));
 		}
-	return { way, length, spread, face, side };
+	// The centre line: the mean of the vertices in each step of their distance from the socket in
+	// the piece's mid-plane, its +Y and +Z, so a blade's two sides average onto the stem between them.
+	const sums = Array.from({ length: PATH_STEPS }, () => [0, 0, 0, 0]);
+	if (reach > 0)
+		for (const positions of meshes)
+			for (let i = 0; i + 2 < positions.length; i += 3) {
+				const x = positions[i] as number;
+				const y = positions[i + 1] as number;
+				const z = positions[i + 2] as number;
+				const k = Math.min(PATH_STEPS - 1, Math.floor((Math.hypot(y, z) / reach) * PATH_STEPS));
+				const sum = sums[k] as number[];
+				sum[0] = (sum[0] as number) + x;
+				sum[1] = (sum[1] as number) + y;
+				sum[2] = (sum[2] as number) + z;
+				sum[3] = (sum[3] as number) + 1;
+			}
+	const path = sums
+		.filter((sum) => (sum[3] as number) > 0)
+		.map((sum): V3 => {
+			const n = sum[3] as number;
+			return [(sum[0] as number) / n, (sum[1] as number) / n, (sum[2] as number) / n];
+		});
+	return { way, length, spread, face, side, path };
 }
 
 /**
@@ -652,6 +686,11 @@ export function piecesOfRows(
 				face: upward(turnedBy(rows, r, 0, 0, 1)),
 				side: turnedBy(rows, r, 1, 0, 0),
 				depth: { face: run.face * scale, side: run.side * scale },
+				path: run.path.map((point): V3 => {
+					const out: [number, number, number] = [0, 0, 0];
+					placeOnRow(rows, r, point[0], point[1], point[2], out, 0);
+					return out;
+				}),
 				out: Math.hypot(
 					socket[0] + direction[0] * length - foot[0],
 					socket[2] + direction[2] * length - foot[2],
@@ -664,6 +703,43 @@ export function piecesOfRows(
 		return absent('the plant places no branch piece at a socket: its rows are shoots');
 	pieces.sort((a, b) => b.out - a.out);
 	return pieces.map(({ out: _out, ...piece }) => piece);
+}
+
+/**
+ * The rows of the one piece a plant places at a socket: the run of rows that stand there with one
+ * scale, as `piecesOfRows` groups a piece's parts. No rows where no piece stands at the socket.
+ *
+ * @param rows The plant's rows.
+ * @param socket Where the piece stands.
+ * @returns The piece's rows, as views on the plant's own arrays.
+ */
+export function pieceRowsAt(rows: ShootRows, socket: V3): ShootRows {
+	const at = (r: number) =>
+		rows.position[r * 3] === socket[0] &&
+		rows.position[r * 3 + 1] === socket[1] &&
+		rows.position[r * 3 + 2] === socket[2];
+	let first = 0;
+	while (first < rows.count && !at(first)) first++;
+	let end = first;
+	while (end < rows.count && at(end) && rows.scale[end] === rows.scale[first]) end++;
+	const of = <T extends { subarray(begin: number, end: number): T }>(array: T, size: number) =>
+		array.subarray(first * size, end * size);
+	return {
+		count: end - first,
+		prototype: of(rows.prototype, 1),
+		position: of(rows.position, 3),
+		rotation: of(rows.rotation, 4),
+		scale: of(rows.scale, 1),
+		record: of(rows.record, 1),
+		phase: of(rows.phase, 1),
+		sky: of(rows.sky, 1),
+		bent: of(rows.bent, 1),
+		order: of(rows.order, 1),
+		...(rows.back && { back: of(rows.back, 3) }),
+		...(rows.node && { node: of(rows.node, 1) }),
+		...(rows.socket && { socket: of(rows.socket, 1) }),
+		...(rows.id && { id: of(rows.id, 1) }),
+	};
 }
 
 /**

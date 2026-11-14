@@ -33,6 +33,33 @@ export const SURFACE_EXTRA = 170;
  */
 export const SURFACE_SHEATH = 240;
 
+/** Every surface kind the plant shaders read from a vertex's third colour byte. */
+export const SURFACE_KINDS: readonly number[] = [
+	SURFACE_LEAF,
+	SURFACE_BRUSH,
+	SURFACE_PIECE,
+	SURFACE_PIECE_SHEATH,
+	SURFACE_PETIOLE,
+	SURFACE_STEM,
+	SURFACE_BUD,
+	SURFACE_EXTRA,
+	SURFACE_SHEATH,
+];
+
+/**
+ * A flutter phase byte from a hash, for a mesh whose third colour byte holds each run's phase:
+ * the shaders read some values of that byte as surface kinds, so a phase that lands on one takes
+ * the next free value, and a leaf never draws as a sheath column or widens as a petiole.
+ *
+ * @param hash Any whole number; its low byte is the phase.
+ * @returns The phase, 0 to 255, never a surface kind.
+ */
+export function phaseByte(hash: number): number {
+	let phase = hash & 255;
+	while (SURFACE_KINDS.includes(phase)) phase = (phase + 1) & 255;
+	return phase;
+}
+
 /**
  * Whether a prototype's surface kind draws with the leaf's texture: a leaf, or a placed piece's
  * own surface. The plant material draws every kind below half the stem's so.
@@ -373,6 +400,7 @@ export function lathe(
 ): void {
 	const [x, y] = sideAxes(direction, hint);
 	let previous = -1;
+	let previousRadius = -1;
 	const height = (profile[profile.length - 1] as readonly [number, number])[1] || 1;
 	for (let k = 0; k < profile.length; k++) {
 		const [radius, h] = profile[k] as readonly [number, number];
@@ -409,10 +437,12 @@ export function lathe(
 		}
 		if (previous >= 0)
 			for (let j = 0; j < sides; j++)
-				// A pointed lathe closes on a ring of no radius with one triangle a side, not a quad
-				// whose second half has no area.
+				// A pointed lathe closes on a ring of no radius, at either end, with one triangle a
+				// side, not a quad whose second half has no area.
 				if (pointed && radius === 0) mesh.tri(previous + j, previous + j + 1, first + j + 1);
+				else if (pointed && previousRadius === 0) mesh.tri(previous + j, first + j + 1, first + j);
 				else mesh.quad(previous + j, previous + j + 1, first + j + 1, first + j);
 		previous = first;
+		previousRadius = radius;
 	}
 }

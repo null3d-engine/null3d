@@ -21,10 +21,12 @@ import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import type { PlantTaskInput } from '../generate-task';
 import { bladeHalf } from '../leaf/grass-blade';
 import { builder as thickBuilder } from '../leaf/thick-leaf';
+import { phaseByte, SURFACE_KINDS } from '../leaf/writer';
 import { dequantisePosition } from '../lod/quantise';
 import { AXIS_LEAF } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
 import { targetHeight } from './height';
+import { leafRoll } from './rosette';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
 const kits = new Map<string, SpeciesKitData>(
@@ -79,6 +81,16 @@ function drawnBounds(asset: PlantAsset, kit: SpeciesKitData): { min: number[]; m
 		}
 	return { min, max };
 }
+
+describe("a merged run's flutter phase", () => {
+	it('never takes a surface kind, and stays within a step of its hash', () => {
+		for (let hash = 0; hash < 65_536; hash++) {
+			const phase = phaseByte(hash);
+			expect(SURFACE_KINDS.includes(phase)).toBe(false);
+			expect((phase - (hash & 255) + 256) % 256).toBeLessThanOrEqual(1);
+		}
+	});
+});
 
 describe('the ground plants grown end to end', () => {
 	for (const { record } of GROUND_TEST_SPECIES) {
@@ -186,6 +198,19 @@ self.onmessage = async (event) => {
 			}
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("the hosta's rolled leaves", () => {
+	it('meshes no leaf rolled at or past the rolled share of its age', async () => {
+		const module = await loadSpecies('hosta');
+		const growth = module.record.growth;
+		if (growth.model !== 'rosette') throw new Error('the hosta is not a rosette');
+		for (let age = 0; age <= 1; age += 1 / 64) {
+			const roll = leafRoll(age, growth.rolled);
+			if (age >= growth.rolled) expect([age, roll]).toEqual([age, 0]);
+			else expect(roll).toBeGreaterThan(0);
 		}
 	});
 });
@@ -316,9 +341,11 @@ describe('the pendulous sedge', () => {
 			{ placeholders: 'missing', detail: 'high' },
 		);
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
-		// soil grows exactly these. A deliberate record change re-records the figure, and the
-		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('7b23104bdfbecf1b');
+		// soil grows exactly these. The digest reads every typed array of the grown asset, and
+		// [D-314](../../../../.dev/decisions/D-314-plant-coarseness.md) lists them. It does not
+		// read the impostor cards, so their mesh moving leaves it alone. A deliberate record
+		// change re-records the figure, and the growth path that reads no soil must not move it.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('d5639f211ed6d288');
 	});
 
 	it('ends its blades in long fine points', () => {

@@ -188,3 +188,27 @@ too.
   [Benchmarks](../benchmarks.md#build-caches) holds the measured figures.
 - The caches stay outside git, as [D-105](D-105-generated-files-out-of-git.md) requires. Nothing
   generated is committed.
+
+## A project's shader entries and the compiler's version
+
+The Vite plugin keeps a compiled entry in its cache under the compiler's version. That version was
+the hash of the built compiler file, and the compiler embeds every engine WGSL source verbatim. So
+any engine shader edit moved the version, and every project's entry missed, whether the project
+compiled that shader or not. The CI job that builds a fresh project compiled its fifty entries cold
+at about five minutes, and that job lost a third of its margin against its own limit.
+
+The build now writes `shader-compiler.stamp.json` beside the compiler. The record names the inputs
+that a project's compile can read: the compiler's Rust sources, the wasm crate, the library modules,
+the manifest's template tables and the template WGSL. The plugin reads the record as the version and
+falls back to the compiler's own bytes when the record is missing, so a checkout that never built
+still behaves safely.
+
+The rule: a compiled entry is kept while the inputs a project's compile can read are unchanged. An
+engine entry shader that no project compiles is not among them. A change to a library module or a
+template still recompiles every project's entries, because the version covers the whole set; that is
+broader than the native build's per-entry reads and it is recorded as the cost.
+
+The tests hold both directions: the stamp keeps when an entry shader or an unrelated manifest table
+changes, and moves when a library module, a template, a template table or either crate's code does.
+The workflow's key hashes the record with the engine package, the demos and the site page, and
+restores under a broad prefix.

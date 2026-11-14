@@ -4,6 +4,9 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	LEVEL_SWITCH_COVERAGE,
+	LEVEL_SWITCH_DISTANCE,
+	LEVEL_SWITCH_ERROR,
 	LEVELS_MAX,
 	MAP_ROW_SLOT_ANISOTROPY,
 	MAP_ROW_SLOT_BUMP,
@@ -209,8 +212,9 @@ const LEVEL_FRAME_POLL_MS = 2;
  * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
  * `error`, the `distance` at which it switches in, or the screen `coverage` under which it draws.
  * A level with a measured error, which the asset tool writes, changes the picture by under a pixel
- * at its switch and switches at once. A level given by a distance, by a coverage or by a hand-set
- * error fades over a short band, so its switch does not pop.
+ * at a small threshold and switches at once. A governed threshold above about one and a half
+ * pixels makes that switch show, and such a level then fades too. A level given by a distance, by
+ * a coverage or by a hand-set error fades over a short band, so its switch does not pop.
  *
  * @category api/geometry
  */
@@ -241,11 +245,19 @@ export interface MeshLevel {
 	/**
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
-	 * once. The default is `fade` in the options. A level with a measured error changes the picture
-	 * by under a pixel at its switch, so its band only costs. The glTF reader switches a file's
-	 * measured error at once and fades an error that comes alone, which its author set by hand.
+	 * once. The default is `fade` in the options. A level with a measured error changes the
+	 * picture by under a pixel while the governed threshold stays small, so its band only costs
+	 * then; the engine fades such a level above about one and a half pixels. The glTF reader
+	 * switches a file's measured error at once and fades an error that comes alone, which its
+	 * author set by hand.
 	 */
 	fade?: boolean;
+	/**
+	 * @internal True for a level whose error the asset tool or the planner measured, rather than
+	 * one an author set by hand. Such a level switches at once at a small threshold, and the engine
+	 * fades it once the governed threshold makes its switch show.
+	 */
+	measured?: boolean;
 	/**
 	 * The material that the level's surface draws with, where it shades more cheaply than the base
 	 * mesh's. A level without one draws with the material of the level before it, and the base
@@ -264,25 +276,24 @@ export interface MeshLevelOptions {
 	/**
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
-	 * once. The default is true. A level's own `fade` overrides it.
+	 * once. The default is true. A level's own `fade` overrides it. A level with a measured error
+	 * fades too once the governed threshold rises above about one and a half pixels, where its
+	 * switch shows.
 	 */
 	fade?: boolean;
 	/**
-	 * The vertical field of view, in degrees, at which a level given by its error covers the
-	 * threshold's pixels, and a level given by its coverage covers that share of the screen. The
-	 * default is 50, three.js's default for a perspective camera.
+	 * The vertical field of view, in degrees, that checks the order of the levels when the mesh
+	 * takes them. Each frame compares a level's error or coverage with the field of view of the
+	 * view that draws it, so this option moves no switch. The default is 50, three.js's default
+	 * for a perspective camera.
 	 */
 	fov?: number;
 }
 
-/** The screen height in pixels at which the engine compares a level's error and coverage. */
+/** The screen height in pixels at which the engine orders a mesh's levels when it takes them. */
 const LEVEL_REFERENCE_HEIGHT = 1080;
-/** The field of view in degrees at which the engine compares a level's error and coverage. */
+/** The field of view in degrees at which the engine orders a mesh's levels when it takes them. */
 const LEVEL_REFERENCE_FOV = 50;
-/** The level's switch measures, as the engine core names them: error, distance and coverage. */
-const LEVEL_SWITCH_ERROR = 0;
-const LEVEL_SWITCH_DISTANCE = 1;
-const LEVEL_SWITCH_COVERAGE = 2;
 /** The most lower levels a mesh takes: the core's levels, less the base mesh. */
 const MAX_LOWER_LEVELS = LEVELS_MAX - 1;
 
@@ -330,7 +341,7 @@ export interface BuildLevelsOptions {
 /**
  * The levels of detail that a mesh made in code plans on its own. By default it plans them the
  * first time the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or
- * more, or when its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
+ * more, or when it holds at least `geometry.automaticCopyTriangles` triangles and its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
  * and `true` or options plan them when the mesh is made, at any size. `'pieces'` plans no lower
  * levels, and sorts a mesh of 32,768 triangles or more into pieces by space at its first draw, as
  * a merged far cell or a large ground whose levels come from elsewhere gains from.
@@ -583,7 +594,8 @@ export class MeshGeometry {
 	 * fewer pixels on the screen than the `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
 	 * more cheaply; a level without one draws with the level before's material. A bound that
 	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
-	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
+	 * geometry. The shadow maps pick their own levels, by each map's texel size, so a caster's
+	 * shadow shows the detail that the map can hold. An empty list takes the levels away.
 	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
 	 * skinned object draws a level while the level names the base mesh's own vertices.
 	 * Destroying a level's mesh takes every level away. Levels set here win over the ones that
@@ -609,10 +621,11 @@ export class MeshGeometry {
 	 * vertices, in their own order, so they cost indices alone: the mesh keeps its vertices and
 	 * triangles as they are. A mesh that the engine split into parts, past 65,535 vertices, shares
 	 * them part by part, and copies only the vertices of the triangles that cross from one part to
-	 * another. A large mesh spreads the work over frames: the engine reads one part of it in each
-	 * frame for the plan, and gives it one level in each frame, coarsest first, when the plan is
-	 * done. The mesh draws its full shape until the levels arrive, and every object and instance
-	 * batch that draws it then picks its level. The mesh and each level of 32,768 triangles or more
+	 * another. A large mesh spreads the work over frames. The engine reads one part of it in each
+	 * frame for the plan. It makes one level in each frame when the plan is done, and gives the
+	 * scene the whole set once, so the scene's draw tables rebuild once. The mesh draws its full
+	 * shape until the levels arrive, and every object and instance batch that draws it then picks
+	 * its level. The mesh and each level of 32,768 triangles or more
 	 * also get 8 to 16 pieces, which each copy skips where they lie outside the view or face away.
 	 * A smaller list that many copies draw gets a piece for each way it faces where its triangles
 	 * face a few ways, as a building's walls do. A mesh that one object draws, or a smaller mesh,
@@ -620,7 +633,8 @@ export class MeshGeometry {
 	 * copies of a large mesh keep their levels' pieces alone.
 	 *
 	 * A mesh made in code plans its levels on its own the first time the scene draws it, when it
-	 * holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
+	 * holds `geometry.automaticLevelTriangles` triangles or more, or when it holds at least
+	 * `geometry.automaticCopyTriangles` triangles and its copies hold
 	 * `geometry.automaticDrawnTriangles` together. Call this to plan another mesh's, to plan again
 	 * after `updateVertices`, or to await the levels of a plan that runs: a call while a plan with
 	 * the same options runs returns that plan's promise. `setLevels` wins over a plan, and
@@ -746,9 +760,9 @@ export class MeshGeometry {
 	/**
 	 * Gives the mesh the levels that a plan made, unless a later call ended the plan, or the plan
 	 * was the automatic default's and the mesh has refused automatic levels or holds levels set by
-	 * hand since. The levels arrive one a frame, coarsest first, so that no frame takes the work of
-	 * every level of a large mesh: each frame's set holds the levels made so far, and the mesh draws
-	 * its base mesh nearer than the finest of them. Hold mode takes them all at once.
+	 * hand since. The plan makes one level a frame, so that no frame takes the work of every level
+	 * of a large mesh. It gives the set to the scene once, when the plan ends. The scene's draw
+	 * tables then rebuild once, however many levels the plan made. Hold mode takes them all at once.
 	 */
 	private async takePlan(
 		output: LevelsTaskOutput,
@@ -773,18 +787,36 @@ export class MeshGeometry {
 		});
 		const old = this.built;
 		const made: MeshGeometry[] = [];
-		for (let k = planned.length - 1; k >= 0; k--) {
-			if (made.length > 0) await this.nextFrame();
-			if (ended()) return this.levels;
-			made.unshift(this.levelMesh(planned[k] as TaskLevel, call));
-			this.applyLevels(
-				made.map((mesh, j) => ({ mesh, error: errors[k + j] as number, fade: false })),
-				{},
-				call,
-			);
-			this.built = made.slice();
-			this.builtAutomatically = entry.automatic;
-			if (made.length === 1) this.freeMeshes(old, call);
+		try {
+			for (let k = planned.length - 1; k >= 0; k--) {
+				if (made.length > 0) await this.nextFrame();
+				if (ended()) {
+					this.freeMeshes(made, call);
+					return this.levels;
+				}
+				made.unshift(this.levelMesh(planned[k] as TaskLevel, call));
+			}
+			// One hand-over for the whole set: the scene rebuilds its draw tables once, and each
+			// level's mesh still arrives in its own frame.
+			if (made.length > 0) {
+				this.applyLevels(
+					made.map((mesh, j) => ({
+						mesh,
+						error: errors[j] as number,
+						fade: false,
+						measured: true,
+					})),
+					{},
+					call,
+				);
+				this.built = made.slice();
+				this.builtAutomatically = entry.automatic;
+				this.freeMeshes(old, call);
+			}
+		} catch (error) {
+			// The plan's levels that the scene does not name yet go with it.
+			this.freeMeshes(made, call);
+			throw error;
 		}
 		// The mesh's own pieces come last, in a frame of their own, since the copy of a large list
 		// takes as long as a level's. They take the place of the pieces of an earlier plan.
@@ -846,8 +878,8 @@ export class MeshGeometry {
 	/**
 	 * @internal Notes that the scene draws `copies` more copies of the mesh with `material`, and
 	 * plans the mesh's levels as the automatic default asks: once the mesh holds
-	 * `AUTOMATIC_LEVEL_TRIANGLES` triangles, or its copies hold `AUTOMATIC_DRAWN_TRIANGLES`
-	 * together. A flat mesh, whose shape a shader may give it, plans none, and neither does a mesh
+	 * `AUTOMATIC_LEVEL_TRIANGLES` triangles, or it holds at least `AUTOMATIC_COPY_TRIANGLES` triangles and its copies hold
+	 * `AUTOMATIC_DRAWN_TRIANGLES` together. A flat mesh, whose shape a shader may give it, plans none, and neither does a mesh
 	 * that only materials that blend or let light through draw, which draw the base level alone.
 	 * A material that moves the
 	 * vertices in its shader draws another shape than the one that the levels simplify, so the mesh
@@ -1009,6 +1041,7 @@ export class MeshGeometry {
 		const radius = this.radius;
 		const defaultFade = options.fade ?? true;
 		let fades = 0;
+		let measured = 0;
 		let before = 0;
 		const values: number[] = [];
 		const switches: number[] = [];
@@ -1054,6 +1087,7 @@ export class MeshGeometry {
 			values.push(value);
 			switches.push(switchValue);
 			if (level.fade ?? defaultFade) fades |= 1 << (k + 1);
+			if (level.measured) measured |= 1 << (k + 1);
 		}
 		const count = levels.length;
 		const ids = levels.map((level) => level.mesh.id);
@@ -1077,7 +1111,13 @@ export class MeshGeometry {
 		this.core.f32(at + 4 * count, count).set(values);
 		this.core.u32(at + 8 * count, count).set(switches);
 		this.core.u32(at + 12 * count, count).set(materials);
-		this.core.check(this.core.glue.setMeshLevels(id, count, fades), call, 'a mesh', true);
+		// The low half of the word names the fading levels and the high half the measured ones.
+		this.core.check(
+			this.core.glue.setMeshLevels(id, count, (fades | (measured << 16)) >>> 0),
+			call,
+			'a mesh',
+			true,
+		);
 		this.lowerLevels = levels.map((level) => ({ ...level }));
 	}
 
@@ -1119,7 +1159,7 @@ export interface ShapeLevels {
 	/**
 	 * The levels of detail that the mesh plans on its own. By default it plans them the first time
 	 * the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or more, or
-	 * when its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none, and
+	 * when it holds at least `geometry.automaticCopyTriangles` triangles and its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none, and
 	 * `true` or options plan them when the mesh is made, at any size.
 	 */
 	levels?: LevelsOption;
@@ -1564,7 +1604,8 @@ export interface MeshArrays {
 	/**
 	 * The levels of detail that the mesh plans on its own, on the job workers, as
 	 * `mesh.buildLevels` plans them. By default it plans them the first time the scene draws it,
-	 * when it holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
+	 * when it holds `geometry.automaticLevelTriangles` triangles or more, or when it holds at least
+	 * `geometry.automaticCopyTriangles` triangles and its copies hold
 	 * `geometry.automaticDrawnTriangles` together. A mesh with joints, morph targets or `targets`
 	 * plans none, and neither does one that lies flat or that a material with moving vertices
 	 * draws. `false` plans none: give it to a mesh whose shape a shader moves, or whose levels you

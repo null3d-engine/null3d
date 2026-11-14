@@ -35,6 +35,9 @@ const keyOf = (x: number, y: number, z: number) =>
  * @param rows Whether the shoot rows' bases are checked against the wood, as at the nearest level.
  * @param names The parts read beside the wood: the cards and a merged plant's foliage by default.
  *   Extras hang from the shoots' own tips, which a card level does not draw, so they are left out.
+ * @param leafReach The distance in metres from a cell's point to a joined point within which the
+ *   cell joins, as the level's own join allows. A piece farther from all joined points hangs free.
+ *   The wood always joins by touching cells alone when this is no wider than a cell.
  * @returns The counts.
  */
 export function bodyFill(
@@ -44,9 +47,12 @@ export function bodyFill(
 	cell: number,
 	rows = false,
 	names: readonly PlantPart['name'][] = ['cards', 'foliage'],
+	leafReach = cell,
 ): BodyFill {
 	const wood = new Set<number>();
 	const leaves = new Set<number>();
+	/** One point of each cell, which the card reach reads. */
+	const points = new Map<number, [number, number, number]>();
 	/** Each leaf triangle's cells. */
 	const triangles: number[][] = [];
 	const at = (p: ArrayLike<number>, i: number) =>
@@ -99,6 +105,8 @@ export function bodyFill(
 							wb * (positions[b + k] as number) +
 							wc * (positions[c + k] as number);
 					const key = at(point, 0);
+					if (!points.has(key))
+						points.set(key, [point[0] as number, point[1] as number, point[2] as number]);
 					if (isWood) wood.add(key);
 					else {
 						leaves.add(key);
@@ -134,6 +142,52 @@ export function bodyFill(
 			if (reached.has(next) || !(wood.has(next) || leaves.has(next))) continue;
 			reached.add(next);
 			queue.push(next);
+		}
+	}
+	// A piece joins where one of its points stands within the level's own reach of a joined point, or
+	// of another piece that joined. A pass joins every piece that reaches a joined point, and the
+	// passes repeat until none joins, so a chain of pieces joins too.
+	if (leafReach > cell) {
+		const square = leafReach * leafReach;
+		const cells = new Map<string, number[]>();
+		const cellOf = (p: ArrayLike<number>) =>
+			`${Math.floor((p[0] as number) / leafReach)},${Math.floor((p[1] as number) / leafReach)},${Math.floor((p[2] as number) / leafReach)}`;
+		const mark = (key: number): void => {
+			reached.add(key);
+			const bucket = cellOf(points.get(key) as [number, number, number]);
+			const list = cells.get(bucket);
+			if (list) list.push(key);
+			else cells.set(bucket, [key]);
+		};
+		for (const key of reached) mark(key);
+		let moved = true;
+		while (moved) {
+			moved = false;
+			for (const key of points.keys()) {
+				if (reached.has(key)) continue;
+				const p = points.get(key) as [number, number, number];
+				const bx = Math.floor((p[0] as number) / leafReach);
+				const by = Math.floor((p[1] as number) / leafReach);
+				const bz = Math.floor((p[2] as number) / leafReach);
+				let joined = false;
+				for (let dx = -1; dx <= 1 && !joined; dx++)
+					for (let dy = -1; dy <= 1 && !joined; dy++)
+						for (let dz = -1; dz <= 1 && !joined; dz++)
+							for (const other of cells.get(`${bx + dx},${by + dy},${bz + dz}`) ?? []) {
+								const q = points.get(other) as [number, number, number];
+								const ex = (q[0] as number) - (p[0] as number);
+								const ey = (q[1] as number) - (p[1] as number);
+								const ez = (q[2] as number) - (p[2] as number);
+								if (ex * ex + ey * ey + ez * ez <= square) {
+									joined = true;
+									break;
+								}
+							}
+				if (joined) {
+					mark(key);
+					moved = true;
+				}
+			}
 		}
 	}
 	let freeWood = 0;

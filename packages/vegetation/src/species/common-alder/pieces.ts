@@ -91,6 +91,7 @@ function arm(length: number): PieceStem {
 		marks: [
 			{
 				kind: 'body',
+				round: true,
 				gap: 0.3,
 				from: 0.35,
 				to: 0.95,
@@ -195,6 +196,7 @@ export const PIECES: readonly PieceRule[] = [
 						marks: [
 							{
 								kind: 'body',
+								round: true,
 								gap: 0.033,
 								from: 0.5,
 								to: 0.66,

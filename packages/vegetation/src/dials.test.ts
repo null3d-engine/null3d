@@ -7,7 +7,7 @@ import type { PlantAsset } from './asset';
 import { loadSpecies } from './core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import { cardMesh, cardRows, connectedCards } from './lod/cards';
-import { connectedBody, geometryComponents } from './lod/connect';
+import { connectedBody } from './lod/connect';
 import type { MeshInput } from './stages';
 import { meshWood } from './wood/wood-mesh';
 
@@ -39,6 +39,48 @@ function meshInput(asset: PlantAsset): MeshInput {
 		},
 		detail: 'high' as const,
 	};
+}
+
+/**
+ * The distance from each fine run's first node to the parent node it leaves, less the parent's
+ * radius, in metres. The mesher joins a fine piece at the parent node its axis names, so the gap is
+ * one growth step at most.
+ */
+function fineRunSteps(skeleton: PlantAsset['skeleton']): number[] {
+	const { axes, position, radius } = skeleton;
+	const steps: number[] = [];
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.fine?.[a] ?? 0) !== 1) continue;
+		const base = axes.first[a] as number;
+		const parent = axes.parent[a] as number;
+		const at = axes.parentNode[a] as number;
+		if (parent < 0 || at < 0) {
+			steps.push(Number.POSITIVE_INFINITY);
+			continue;
+		}
+		let sum = 0;
+		for (let k = 0; k < 3; k++) {
+			const d = (position[base * 3 + k] as number) - (position[at * 3 + k] as number);
+			sum += d * d;
+		}
+		steps.push(Math.sqrt(sum) - (radius[at] as number));
+	}
+	return steps;
+}
+
+/** The fill pitch a record's patch rules state, as a share of the plant's height. */
+function fillPitchShare(rule: {
+	readonly patch?: { readonly fill?: { readonly pitch: number } };
+	readonly children?: readonly unknown[];
+}): number | undefined {
+	let share: number | undefined;
+	const pitch = rule.patch?.fill?.pitch;
+	if (typeof pitch === 'number') share = pitch;
+	for (const child of rule.children ?? []) {
+		const found = fillPitchShare(child as typeof rule);
+		if (found !== undefined) share = Math.max(share ?? 0, found);
+	}
+	return share;
 }
 
 /** The rows a card level draws, after the join rule. */
@@ -179,12 +221,32 @@ describe('the connectivity helper', () => {
 	);
 
 	it(
-		'welds the mesher surface seams into one body at the near and far levels',
+		'leaves the fine runs their own surfaces, each within a step of the wood it leaves',
 		() => {
 			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
-			const input = meshInput(asset);
-			expect(geometryComponents(meshWood(input, 0))).toBe(1);
-			expect(geometryComponents(meshWood(input, 2))).toBe(1);
+			// The finest wood, grown to clothe a foliage patch, draws as straight runs of the fewest
+			// sides and is left unblended, a deliberate byte saving. The mesher joins each run at the
+			// parent node its axis names, and the frame grows the first sprout one step on: 0.6 of
+			// the patch's fill pitch, a share of the plant's height. A run whose first node stands
+			// farther from that node floats away from the wood that carries it.
+			const growth = kit.record.growth;
+			const share = growth.model === 'frame' ? fillPitchShare(growth.frame.stems) : undefined;
+			if (share === undefined) throw new Error('the oak states no fill pitch');
+			const height = kit.record.size.height;
+			const tolerance = 0.6 * share * (typeof height === 'number' ? height : height.mean) + 0.01;
+			const steps = fineRunSteps(asset.skeleton);
+			expect(steps.length).toBeGreaterThan(0);
+			expect(Math.max(...steps)).toBeLessThan(tolerance);
+			// A run moved off its step fails the same check.
+			const floated = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+			const { axes, position } = floated.skeleton;
+			for (let a = 0; a < axes.count; a++) {
+				if ((axes.fine?.[a] ?? 0) !== 1) continue;
+				const base = axes.first[a] as number;
+				position[base * 3] = (position[base * 3] as number) + 1;
+				break;
+			}
+			expect(Math.max(...fineRunSteps(floated.skeleton))).toBeGreaterThan(tolerance);
 		},
 		LONG,
 	);

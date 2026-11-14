@@ -15,6 +15,7 @@ import { leafSurface, SURFACE_BRUSH } from '../../../packages/vegetation/src/lea
 import {
 	CARD_CUT_FALL_MOST,
 	CARD_CUT_LEAST,
+	cardLevelMost,
 	paletteOf,
 } from '../../../packages/vegetation/src/lod/card-bake.ts';
 import {
@@ -22,7 +23,7 @@ import {
 	rasterise,
 	rasterTarget,
 } from '../../../packages/vegetation/src/lod/raster.ts';
-import { blank, type Rgba } from '../plant-review/image.ts';
+import { blank, type Rgba, srgbByte } from '../plant-review/image.ts';
 import { type PreviewCamera, pixelsPerMetre, project } from './camera.ts';
 
 /** What covers a pixel. */
@@ -473,13 +474,18 @@ interface CoverageLevel {
 }
 
 /**
- * A card atlas layer's coverage and its whole mip chain down to one texel, each level the mean of
- * four texels of the one below, as the GPU builds an atlas's mips.
+ * One byte of a card atlas layer's texels, as a share, and its whole mip chain down to one texel,
+ * each level the mean of four texels of the one below, as the GPU builds an atlas's mips.
  */
-function coverageChain(color: Uint8Array, size: number, layer: number): CoverageLevel[] {
+function texelChain(
+	bytes: Uint8Array,
+	size: number,
+	layer: number,
+	channel: number,
+): CoverageLevel[] {
 	const base = new Float32Array(size * size);
 	const from = layer * size * size;
-	for (let i = 0; i < size * size; i++) base[i] = (color[(from + i) * 4 + 3] as number) / 255;
+	for (let i = 0; i < size * size; i++) base[i] = (bytes[(from + i) * 4 + channel] as number) / 255;
 	const chain: CoverageLevel[] = [{ side: size, alpha: base }];
 	for (
 		let below = chain[0] as CoverageLevel;
@@ -583,9 +589,11 @@ export function cardFootprint(
  * the level's own quantised part. A whole view of a tree stands past the distance where its shoots
  * hand over to their cards, so this is the foliage a review's whole view shows. Each triangle reads
  * the card atlas at its own mip level, from its footprint at the review's still, through the whole
- * mip chain, and a card seen from behind reads the atlas's back layer. The colour picture keeps a
+ * mip chain and no coarser than the species' coarsest useful level, and a card seen from behind
+ * reads the atlas's back layer. The colour picture keeps a
  * texel where its coverage reaches the cell's own cut at that level: one half at full size, lower by
- * the fall the bake measured for the cell at each coarser level. The matte takes each kept texel's
+ * the fall the bake measured for the cell at each coarser level, read from the surface map at that
+ * level as the material reads it. The matte takes each kept texel's
  * coverage, raised with the level as the material raises it, one card over another as the matte
  * material blends them; a texel the colour picture drops adds nothing to the matte. A card's tone is
  * its row's sky.
@@ -607,8 +615,14 @@ export function drawCards(
 ): void {
 	const { size, color, surface } = kit.cards;
 	if (size === 0) return;
-	const chains = [coverageChain(color, size, 0), coverageChain(color, size, 1)] as const;
+	// Each layer's coverage, and the fall of each cell's cut, which the material samples from the
+	// surface map at the same level, so a coarse level blends a cell's fall with its border's.
+	const chains = [texelChain(color, size, 0, 3), texelChain(color, size, 1, 3)] as const;
+	const falls = [texelChain(surface, size, 0, 2), texelChain(surface, size, 1, 2)] as const;
 	const canvasPerStill = into.width / stillWidth;
+	// The coarsest level the material lets a card read, where the species' smallest leaf cell still
+	// holds four texels a side; 0 holds none.
+	const most = cardLevelMost(kit.prototypes);
 	const shown = new Float32Array(into.width * into.height).fill(Infinity);
 	for (const part of asset.levels[level].parts) {
 		if (part.name !== 'cards') continue;
@@ -628,6 +642,7 @@ export function drawCards(
 			if (f.triangle !== triangle) {
 				triangle = f.triangle;
 				read = cardFootprint(points, uvs, a, b, c, size, canvasPerStill);
+				if (most > 0 && read.level > most) read = { ...read, level: most };
 			}
 			const u =
 				((uvs[a * 2] as number) * f.w0 +
@@ -641,11 +656,7 @@ export function drawCards(
 				TOP;
 			const layer = read.back ? 1 : 0;
 			const coverage = sampleChain(chains[layer], read.level, u, v);
-			const tx = Math.min(size - 1, Math.max(0, Math.floor(u * size)));
-			const ty = Math.min(size - 1, Math.max(0, Math.floor(v * size)));
-			const fall =
-				((surface[(layer * size * size + ty * size + tx) * 4 + 2] as number) / 255) *
-				CARD_CUT_FALL_MOST;
+			const fall = sampleChain(falls[layer], read.level, u, v) * CARD_CUT_FALL_MOST;
 			if (coverage < Math.max(CARD_CUT_LEAST, CARD_CUTOFF - fall * read.level)) return false;
 			const at = f.y * into.width + f.x;
 			const lifted = Math.min(1, coverage * (1 + CARD_MIP_LIFT * read.level));
@@ -766,6 +777,8 @@ export function painted(from: Canvas, factor: number, paint: Paint): Rgba {
 /**
  * A canvas as a matte, shrunk by a whole factor: the plant dark on white, each pixel as dark as the
  * share of it the plant covers, which is the picture the review tool reads a render's outline from.
+ * The bytes are display-encoded as the engine's canvas stores them, so the half-dark rule counts a
+ * preview pixel as plant from the same cover it counts in an engine still.
  *
  * @param from The canvas.
  * @param factor Canvas pixels per matte pixel, a side.
@@ -782,7 +795,7 @@ export function matte(from: Canvas, factor: number): Rgba {
 			for (let sy = 0; sy < factor; sy++)
 				for (let sx = 0; sx < factor; sx++)
 					clear += from.clear[(y * factor + sy) * from.width + x * factor + sx] as number;
-			const value = Math.round((255 * clear) / samples);
+			const value = srgbByte(clear / samples);
 			const to = (y * width + x) * 4;
 			out.data[to] = value;
 			out.data[to + 1] = value;

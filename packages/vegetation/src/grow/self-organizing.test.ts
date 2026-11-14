@@ -18,7 +18,7 @@ import {
 import { hashAt, hashBytes, unitAt } from '../core/hash';
 import type { Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
-import { species } from '../species/pedunculate-oak';
+import { record as oakSpeciesRecord } from '../species/pedunculate-oak/record';
 import {
 	envelopeSilhouette,
 	envelopeVolume,
@@ -75,7 +75,7 @@ function envelopeFit(skeleton: MacroSkeleton, variant: number, seed = 11): numbe
  * touching cells: one for a crown that hangs together.
  */
 function silhouettePieces(skeleton: MacroSkeleton, variant = 0): number {
-	const record = species.record;
+	const record = oakSpeciesRecord;
 	const height = spreadAt(record.size.height, unitAt(11, record.seedSalt >>> 0, variant, 1));
 	const turn = unitAt(11, record.seedSalt >>> 0, variant, 2) * 2 * Math.PI;
 	const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
@@ -240,7 +240,7 @@ describe('the self-organizing oak', () => {
 	it(
 		'turns a shoot aside to keep its clearance',
 		() => {
-			const record = species.record;
+			const record = oakSpeciesRecord;
 			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 			// The turning rule alone: the species' own thickness floor would keep some clearances.
 			const shaped = (turning?: number): Species => ({
@@ -270,7 +270,7 @@ describe('the self-organizing oak', () => {
 	it(
 		'keeps the clearance only for wood above the record thickness',
 		() => {
-			const record = species.record;
+			const record = oakSpeciesRecord;
 			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 			// The rule alone is judged here, without the probe record's great-limb bud share.
 			const buds = { ...growth.buds, limbBuds: undefined };
@@ -436,7 +436,7 @@ self.onmessage = () => {
 	});
 
 	it('keeps a share of the great limbs’ lateral buds as buds when the record asks', () => {
-		const grown = species.record;
+		const grown = oakSpeciesRecord;
 		const growth = grown.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		// The record's own bud share is off here, so both arms start from the same crown.
 		const base: Species = {
@@ -467,7 +467,7 @@ self.onmessage = () => {
 	});
 
 	it('holds a step’s turn and a great limb’s azimuth when the record asks', () => {
-		const record = species.record;
+		const record = oakSpeciesRecord;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		// The fields are off here, so both arms start from the record's crown without them.
 		const base: Species = {
@@ -519,7 +519,7 @@ self.onmessage = () => {
 	});
 
 	it('parts the laterals along a parent when the record asks', () => {
-		const record = species.record;
+		const record = oakSpeciesRecord;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		// The field is off here, so both arms start from the record's crown without it.
 		const base: Species = { ...record, growth: { ...growth, lateralSpacing: undefined } };
@@ -566,7 +566,7 @@ self.onmessage = () => {
 	});
 
 	it("gives the real oak's surface buds a share of the last resource by their site's light", () => {
-		const record = species.record;
+		const record = oakSpeciesRecord;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		const dark: Species = {
 			...record,
@@ -594,7 +594,7 @@ self.onmessage = () => {
 	});
 
 	it("weighs the real oak's wood at its record's girth, so the drawn trunk width leaves the crown", () => {
-		const record = species.record;
+		const record = oakSpeciesRecord;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		const drawn = (dbh: number, girth: number | undefined): Species => ({
 			...record,
@@ -622,7 +622,7 @@ self.onmessage = () => {
 	});
 
 	it("lets the real oak's shoots under its crown's base die back, and only those", () => {
-		const record = species.record;
+		const record = oakSpeciesRecord;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		const lit: Species = {
 			...record,
@@ -676,7 +676,7 @@ self.onmessage = () => {
 	});
 
 	it("lays the real oak's bole straight from its foot to its division, and leaves the crown", () => {
-		const record = species.record;
+		const record = oakSpeciesRecord;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		const divide = growth.divide as NonNullable<typeof growth.divide>;
 		const crooked: Species = {

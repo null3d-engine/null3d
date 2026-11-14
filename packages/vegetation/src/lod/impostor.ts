@@ -1,14 +1,21 @@
-// The far bake: the first card level, its wood and its cards, baked on the CPU into the octahedral
-// impostor atlases, from the card atlas's pixels and a mean bark colour. The first card level holds
-// the same silhouette as the nearest one at a hundredth of its triangles. The card's alpha is the
-// card atlas's coverage, so the far card keeps the crown's own holes.
-
-import { bakeImpostorAtlas, type ImpostorBakePart } from '@null3d/impostors/bake';
-import type { PlantAsset, SpeciesKitData } from '../asset';
-import type { FarBake, MeshInput } from '../stages';
-import { meshWood } from '../wood/wood-mesh';
-import { cardMesh } from './cards';
-import { dequantisePosition } from './quantise';
+// The far bake: the first card level, its wood, its cards and its extras, drawn on the CPU into the
+// octahedral impostor atlases that the impostors add-on's cards read. The first card level holds the
+// same outline as the nearest one at a hundredth of its triangles, so it is the source.
+//
+// The CPU cannot read the shipped KTX2 textures, so the colours come from what the kit holds: the
+// cards sample the card atlas's front layer, which the kit baked on the CPU from the leaves' means
+// and profiles; the wood takes its bark zone's mean colour; an extra takes its record colour. Each
+// vertex's sky visibility darkens it, as the plant shader's ambient light does, so the crown's
+// inside reads darker from afar. The bake is arithmetic on the arrays, so every device gets the
+// same pixels.
+import type { ImpostorBakePart } from '@null3d/impostors/bake';
+import type { MeshArrays, PlantAsset, PlantPart, SpeciesKitData } from '../asset';
+import type { Rgb } from '../core/types';
+import { lightCrown } from '../crown/visibility';
+import { GREAT_LIMB_SHARE, woodParts } from '../grow/sparse';
+import type { DressInput, FarBake, MeshInput } from '../stages';
+import { levelBuild } from './budget';
+import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './quantise';
 
 /**
  * A variant's far cards on a page: its impostor bake, which the impostors add-on's cards draw.
@@ -22,35 +29,198 @@ export interface FarPlant {
 	readonly bake: FarBake;
 }
 
-/** The mean bark colour a far card shows its wood in. */
-const BARK = [0.24, 0.2, 0.15] as const;
+/** The impostors add-on's CPU baker, which draws parts into the octahedral atlases. */
+type AtlasBaker = typeof import('@null3d/impostors/bake').bakeImpostorAtlas;
 
-/** The box a bake draws the plant in, and the extent of its drawn wood and cards. */
-function drawnBounds(positions: readonly Float32Array[]): {
-	min: [number, number, number];
-	max: [number, number, number];
-} {
-	const min: [number, number, number] = [
-		Number.POSITIVE_INFINITY,
-		Number.POSITIVE_INFINITY,
-		Number.POSITIVE_INFINITY,
-	];
-	const max: [number, number, number] = [
-		Number.NEGATIVE_INFINITY,
-		Number.NEGATIVE_INFINITY,
-		Number.NEGATIVE_INFINITY,
-	];
-	for (const array of positions)
-		for (let i = 0; i < array.length; i += 3)
-			for (let k = 0; k < 3; k++) {
-				min[k] = Math.min(min[k] as number, array[i + k] as number);
-				max[k] = Math.max(max[k] as number, array[i + k] as number);
-			}
-	return { min, max };
+/** The baker this thread has loaded. */
+let baker: AtlasBaker | undefined;
+
+/**
+ * Loads the far baker on this thread, once. It is a lazy chunk, as the growers are, so the plant
+ * core's other stages load on a thread that cannot read the impostors add-on.
+ *
+ * @category api/vegetation
+ */
+export async function loadFarBaker(): Promise<void> {
+	baker ??= (await import('@null3d/impostors/bake')).bakeImpostorAtlas;
+}
+
+/** The share of its colour that a vertex keeps where the crown hides all of its sky. */
+const SHADED = 0.4;
+
+/** The bark colour where neither the manifest nor the record names one. */
+const BARK: Rgb = [0.2, 0.16, 0.12];
+
+/** One part of the first card level in the plant's metres, as the bake draws it. */
+interface LevelPart {
+	readonly name: string;
+	readonly positions: Float32Array;
+	readonly normals: Float32Array;
+	/** Fractions of the texture for cards and leaves; the wood's are not read. */
+	readonly uvs: Float32Array;
+	/** 4 bytes per vertex: the wind record, then a byte the part defines, then the sky visibility. */
+	readonly colors: Uint8Array;
+	readonly indices: Uint16Array | Uint32Array;
+}
+
+/** A drawn part's arrays back in the plant's metres, its normals as unit floats, and its uvs as fractions. */
+function unpack(part: PlantPart, kit: SpeciesKitData): LevelPart {
+	const a = part.arrays;
+	const uvSteps = part.name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS;
+	const count = a.positions.length / 3;
+	const positions = new Float32Array(count * 3);
+	const normals = new Float32Array(count * 3);
+	for (let i = 0; i < count * 3; i++) {
+		const k = i % 3;
+		const low = kit.box.min[k] as number;
+		const span = (kit.box.max[k] as number) - low;
+		positions[i] = low + ((a.positions[i] as number) / 65535) * span;
+		normals[i] = (a.normals[i] as number) / 127;
+	}
+	const uvs = new Float32Array(a.uvs.length);
+	for (let i = 0; i < uvs.length; i++) uvs[i] = (a.uvs[i] as number) / uvSteps;
+	return { name: part.name, positions, normals, uvs, colors: a.colors, indices: a.indices };
 }
 
 /**
- * Bakes a variant's impostor atlases, in a job worker or in Bun.
+ * The first card level as the plant's best look draws it, rebuilt from a grown asset: its wood, its
+ * cards, its merged foliage and its extras, with the crown lit again on a copy of the rows, so the
+ * sky visibility each vertex carries is the drawn level's, and each part quantised as the asset's
+ * own parts are. A triangle maximum thins the level the asset draws, but the far card is two
+ * triangles whatever it shows, so it pictures the best look.
+ */
+function bestFirstLevel(kit: SpeciesKitData, asset: PlantAsset): LevelPart[] {
+	const dress: DressInput = {
+		record: kit.record,
+		seed: asset.seed,
+		variant: asset.variant,
+		season: asset.season,
+		kit,
+		skeleton: asset.skeleton,
+		coarseness: asset.coarseness,
+	};
+	const rows = { ...asset.shoots, sky: asset.shoots.sky.slice(), bent: asset.shoots.bent.slice() };
+	const mesh: MeshInput = { ...dress, rows, crown: lightCrown(dress, rows), detail: kit.detail };
+	const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
+	const build = levelBuild({ mesh, parts: woodParts(asset.skeleton, limbs), wood: false }, 1);
+	const parts: LevelPart[] = [];
+	const add = (name: PlantPart['name'], arrays: MeshArrays | undefined, rest = false): void => {
+		if (!arrays || arrays.indices.length === 0) return;
+		const steps = name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS;
+		for (const quantised of quantiseParts(arrays, kit.box, steps, rest))
+			parts.push(unpack({ name, arrays: quantised }, kit));
+	};
+	add('wood', build.wood);
+	add('foliage', build.foliage);
+	add('cards', build.cards);
+	// Fruit and cones are quantised in finer steps, as the asset's own extras are.
+	add('extras', build.extras, true);
+	return parts;
+}
+
+/** Widens a box to hold a part's positions. */
+function widen(positions: Float32Array, min: number[], max: number[]): void {
+	for (let i = 0; i < positions.length; i++) {
+		const k = i % 3;
+		const v = positions[i] as number;
+		if (v < (min[k] as number)) min[k] = v;
+		if (v > (max[k] as number)) max[k] = v;
+	}
+}
+
+/** Linear colours per vertex: a part's colour, darkened by the vertex's sky visibility byte. */
+function shadedColours(bytes: Uint8Array, colour: (vertex: number) => Rgb): Float32Array {
+	const count = bytes.length / 4;
+	const out = new Float32Array(count * 3);
+	for (let v = 0; v < count; v++) {
+		const sky = (bytes[v * 4 + 3] as number) / 255;
+		const keep = SHADED + (1 - SHADED) * sky;
+		const c = colour(v);
+		out[v * 3] = (c[0] as number) * keep;
+		out[v * 3 + 1] = (c[1] as number) * keep;
+		out[v * 3 + 2] = (c[2] as number) * keep;
+	}
+	return out;
+}
+
+/** The mean colour of the bark a variant's far wood shows: its first zone's layer, linear. */
+function barkMean(kit: SpeciesKitData): Rgb {
+	const zone = kit.record.bark?.zones[0];
+	const layer = zone ? kit.manifest.bark?.layers[zone.layer] : undefined;
+	const mean = layer?.mean ?? kit.manifest.bark?.young.mean ?? BARK;
+	const tint = zone?.tint ?? [1, 1, 1];
+	return [mean[0] * tint[0], mean[1] * tint[1], mean[2] * tint[2]];
+}
+
+/**
+ * The share of a far texel's area that leaves must cover for it to draw. Cards seen from far draw
+ * with alpha to coverage, so a crown's texel where a third of the area is leaf reads as crown.
+ */
+const FAR_SHARE = 0.3;
+
+/**
+ * How many times finer than the far atlas the bake draws, along each side. Each fine texel samples
+ * the cards' full detail: one that misses a card's leaves goes on to the cards behind it, as the
+ * eye's ray does. A far texel then holds the share of its fine texels that hit a leaf.
+ */
+const SUPERSAMPLE = 4;
+
+/** The card atlas's front layer as a coverage map whose blue holds the coverage, as the bake reads it. */
+const COVERAGE = new WeakMap<Uint8Array, Uint8Array>();
+
+function coverageOf(color: Uint8Array, texels: number): Uint8Array {
+	const kept = COVERAGE.get(color);
+	if (kept) return kept;
+	const out = new Uint8Array(texels * 4);
+	for (let t = 0; t < texels; t++) out[t * 4 + 2] = color[t * 4 + 3] as number;
+	COVERAGE.set(color, out);
+	return out;
+}
+
+/**
+ * The far atlases at their own size from the finer bake: each far texel's coverage is the share of
+ * its fine texels that drew, raised so that `FAR_SHARE` meets the cards' cutoff of one half; its
+ * colour and surface are the means of the fine texels that drew.
+ */
+function filtered(
+	fine: { readonly color: Uint8Array; readonly surface: Uint8Array },
+	side: number,
+): { readonly color: Uint8Array; readonly surface: Uint8Array } {
+	const s = SUPERSAMPLE;
+	const wide = side * s;
+	const color = new Uint8Array(side * side * 4);
+	const surface = new Uint8Array(side * side * 4);
+	const sum = new Float64Array(6);
+	for (let y = 0; y < side; y++)
+		for (let x = 0; x < side; x++) {
+			sum.fill(0);
+			let drawn = 0;
+			for (let dy = 0; dy < s; dy++)
+				for (let dx = 0; dx < s; dx++) {
+					const at = ((y * s + dy) * wide + x * s + dx) * 4;
+					if ((fine.color[at + 3] as number) < 128) continue;
+					drawn++;
+					for (let k = 0; k < 3; k++) {
+						sum[k] = (sum[k] as number) + (fine.color[at + k] as number);
+						sum[3 + k] = (sum[3 + k] as number) + (fine.surface[at + k] as number);
+					}
+				}
+			const at = (y * side + x) * 4;
+			if (drawn === 0) continue;
+			const share = drawn / (s * s);
+			const alpha = Math.round(255 * Math.min(1, share / (2 * FAR_SHARE)));
+			for (let k = 0; k < 3; k++) {
+				color[at + k] = Math.round((sum[k] as number) / drawn);
+				surface[at + k] = Math.round((sum[3 + k] as number) / drawn);
+			}
+			color[at + 3] = alpha;
+			surface[at + 3] = alpha;
+		}
+	return { color, surface };
+}
+
+/**
+ * Bakes a variant's impostor atlases, in a job worker or in Bun, from its first card level.
  *
  * @param kit The species' kit.
  * @param asset The grown variant.
@@ -58,95 +228,97 @@ function drawnBounds(positions: readonly Float32Array[]): {
  * @category api/vegetation
  */
 export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
-	const record = kit.record;
-	// The first card level's cards, rebuilt from the rows and the kit: their atlas is the bake's map.
-	const input = {
-		record,
-		seed: asset.seed,
-		variant: asset.variant,
-		season: asset.season,
-		kit,
-		skeleton: asset.skeleton,
-		coarseness: asset.coarseness,
-		rows: asset.shoots,
-		crown: {
-			cells: [1, 1, 1] as const,
-			min: [0, 0, 0] as const,
-			cell: 1,
-			sky: new Float32Array([1]),
-		},
-		detail: kit.detail,
-	} satisfies MeshInput;
-	const cards = cardMesh(input, 1);
-	const cell = kit.cards.size || 1;
-	const front = kit.cards.color.subarray(0, cell * cell * 4);
-	const coverage = new Uint8Array(cell * cell * 4);
-	for (let i = 0; i < cell * cell; i++) coverage[i * 4 + 2] = front[i * 4 + 3] as number;
-	const parts: ImpostorBakePart[] = [
-		{
-			positions: cards.positions,
-			normals: cards.normals,
-			uvs: cards.uvs,
-			indices: cards.indices,
-			color: { width: cell, height: cell, data: front },
-			coverage: { width: cell, height: cell, data: coverage },
-			doubleSided: true,
-			alphaCutoff: 0.5,
-		},
-	];
-	// The first card level's wood, thinned of its twigs, in the bark's mean colour. The far card is
-	// small on screen, so the wood shows as a dark stem under the crown rather than a texture.
-	const box = kit.box;
-	const out: [number, number, number] = [0, 0, 0];
-	const drawn: Float32Array[] = [cards.positions];
-	// A triangle maximum may have thinned the level's own wood. The far card is two triangles
-	// whatever it shows, so it shows the level's wood as its best look draws it.
-	if (asset.maxTriangles !== undefined) {
-		const wood = meshWood(input, 1);
-		const colours = new Float32Array(wood.positions.length);
-		for (let i = 0; i < colours.length; i += 3) colours.set(BARK, i);
-		parts.push({
-			positions: wood.positions,
-			normals: wood.normals,
-			indices: wood.indices,
-			colors: colours,
-		});
-		drawn.push(wood.positions);
-	}
-	for (const part of asset.levels[1].parts) {
-		if (part.name !== 'wood' || asset.maxTriangles !== undefined) continue;
-		const arrays = part.arrays;
-		const count = arrays.positions.length / 3;
-		const positions = new Float32Array(count * 3);
-		for (let i = 0; i < count; i++) {
-			dequantisePosition(arrays.positions, i, box, out);
-			positions[i * 3] = out[0];
-			positions[i * 3 + 1] = out[1];
-			positions[i * 3 + 2] = out[2];
-		}
-		const normals = new Float32Array(count * 3);
-		for (let i = 0; i < count * 3; i++) normals[i] = (arrays.normals[i] as number) / 127;
-		const colours = new Float32Array(count * 3);
-		for (let i = 0; i < count; i++) colours.set(BARK, i * 3);
-		parts.push({ positions, normals, indices: arrays.indices, colors: colours });
-		drawn.push(positions);
-	}
-	const { min, max } = drawnBounds(drawn);
+	if (!baker)
+		throw new Error(
+			'@null3d/vegetation: the far baker is not loaded on this thread; await loadFarBaker() first',
+		);
 	const views = asset.impostor.views;
 	const texels = asset.impostor.texels;
-	// The far cards read a square atlas of `views` by `views` cells, each `texels` a side.
-	const bake = bakeImpostorAtlas({
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	const parts: ImpostorBakePart[] = [];
+	const bark = barkMean(kit);
+	const size = kit.cards.size;
+	const cards: ImpostorBakePart[] = [];
+	const level =
+		asset.maxTriangles === undefined
+			? asset.levels[1].parts.map((part) => unpack(part, kit))
+			: bestFirstLevel(kit, asset);
+	for (const part of level) {
+		if (part.indices.length === 0) continue;
+		const { positions, normals, uvs } = part;
+		if (part.name === 'wood') {
+			widen(positions, min, max);
+			parts.push({
+				positions,
+				normals,
+				colors: shadedColours(part.colors, () => bark),
+				indices: part.indices,
+			});
+		} else if (part.name === 'cards' && size > 0) {
+			widen(positions, min, max);
+			cards.push({
+				positions,
+				normals,
+				uvs,
+				colors: shadedColours(part.colors, () => [1, 1, 1]),
+				indices: part.indices,
+				doubleSided: true,
+			});
+		} else if (part.name === 'extras' || part.name === 'foliage') {
+			widen(positions, min, max);
+			const extras = kit.record.extras ?? [];
+			const bytes = part.colors;
+			const leaf = kit.manifest.leaf?.mean.upper ?? [0.1, 0.2, 0.06];
+			parts.push({
+				positions,
+				normals,
+				colors: shadedColours(bytes, (v) =>
+					part.name === 'extras'
+						? (extras[bytes[v * 4 + 2] as number]?.colour ?? leaf)
+						: (leaf as Rgb),
+				),
+				indices: part.indices,
+				doubleSided: true,
+			});
+		}
+	}
+	if (cards.length > 0) {
+		const color = kit.cards.color.subarray(0, size * size * 4);
+		const map = { width: size, height: size };
+		for (const card of cards)
+			parts.push({
+				...card,
+				color: { ...map, data: color },
+				coverage: { ...map, data: coverageOf(color, size * size) },
+			});
+	}
+	if (parts.length === 0 || !((max[1] as number) > (min[1] as number))) {
+		// A plant with nothing at its first card level bakes an empty atlas of one texel a view.
+		const side = Math.max(1, views);
+		return {
+			views: side,
+			texels: 1,
+			color: new Uint8Array(side * side * 4),
+			surface: new Uint8Array(side * side * 4),
+			size: [1, 1],
+			room: 1,
+			depth: 1,
+		};
+	}
+	const bake = baker({
 		atlas: { columns: views, rows: views },
-		texels,
+		texels: texels * SUPERSAMPLE,
 		parts,
-		min,
-		max,
+		min: [min[0] as number, min[1] as number, min[2] as number],
+		max: [max[0] as number, max[1] as number, max[2] as number],
 	});
+	const far = filtered({ color: bake.color.data, surface: bake.surface.data }, views * texels);
 	return {
 		views,
 		texels,
-		color: bake.color.data,
-		surface: bake.surface.data,
+		color: far.color,
+		surface: far.surface,
 		size: bake.size,
 		room: bake.room,
 		depth: bake.depth,

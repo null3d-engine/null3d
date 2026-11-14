@@ -1,6 +1,7 @@
 // The card bake and the card levels: three cells a prototype in the atlas, a leaf colour whose mean
 // is the texture's mean, coverage and colour that keep through the mip levels the GPU averages, and
-// card levels that place each row's planes and keep every second card in the thinned level.
+// card levels that place each row's planes and keep every second card and the rim's in the thinned
+// level.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PrototypeArrays, SpeciesKitData } from '../asset';
@@ -544,7 +545,8 @@ describe('the coarsest mip level a card reads', () => {
 });
 
 describe('the card bake along a long piece', () => {
-	const record = oakRecord();
+	const plain = oakRecord();
+	const record = { ...plain, lod: { ...plain.lod, cardCuts: { most: 4 } } };
 	const planesOf = (prototype: UncardedPrototype) =>
 		(bakeCards(record, OAK_MANIFEST, 'high', [prototype]).cells[0] as { planes: CardPlanes })
 			.planes;
@@ -580,6 +582,21 @@ describe('the card bake along a long piece', () => {
 		const perMetre = face.front[3] / (2 * Math.hypot(...(face.up as [number, number, number])));
 		const uncut = face.front[3] / 1.25;
 		expect(perMetre).toBeGreaterThan((planes.length / 2) * uncut * 0.8);
+	});
+
+	it('keeps a long piece whole where its record asks for no cut', () => {
+		const strip = prototypeOf(
+			ribbon(
+				Array.from({ length: 25 }, (_, k) => [(k / 24) * 1.2, 0] as const),
+				0.06,
+			),
+			'piece',
+			1,
+		);
+		const planes = (
+			bakeCards(plain, OAK_MANIFEST, 'high', [strip]).cells[0] as { planes: CardPlanes }
+		).planes;
+		expect(planes.map((plane) => plane.role)).toEqual([0, 1, 2]);
 	});
 
 	it('keeps three planes on a card about as long as it is wide', () => {

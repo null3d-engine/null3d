@@ -126,7 +126,11 @@ test("a file's level fades unless the coverage that its measured error implies c
 	// A hand-set error, as the Creek trees' levels hold: the switch shows, so the level fades.
 	expect(fileLevelMeasure([28.297, 56.594], undefined, 0)).toEqual({ error: 28.297 });
 	// A measured error, which the asset tool writes with the coverage that the error implies.
-	expect(fileLevelMeasure([919.294], [0.0165], 0)).toEqual({ error: 919.294, fade: false });
+	expect(fileLevelMeasure([919.294], [0.0165], 0)).toEqual({
+		error: 919.294,
+		fade: false,
+		measured: true,
+	});
 	// A file that gives the coverage of its levels alone.
 	expect(fileLevelMeasure(undefined, [0.0165], 0)).toEqual({ coverage: 0.0165 });
 });

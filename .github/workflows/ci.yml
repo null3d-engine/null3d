@@ -1209,16 +1209,26 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
-      # The website build's compiled shaders, which the test keeps between runs. An entry is named by
-      # its source and the compiler's version, so a kept entry never serves another compiler. The key
-      # starts empty when the compiler or the plugin changes, so the folder holds no old compiler's
-      # entries, and takes the newest folder of the same compiler when only the demos change.
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
+      # The website build's compiled shaders, which the test keeps between runs. The build records
+      # the inputs of a project's shader compile beside the compiler, in shader-compiler.stamp.json:
+      # its own sources, the library modules, the templates that a project builds with, and the
+      # engine's version. The key adds the demos and the site page, which decide the requests. An
+      # engine shader that the site never compiles is not one of those inputs, so its change keeps
+      # every entry. Each entry also names its own source and the compiler's version, so a restored
+      # entry never serves another source or another compiler. The broad restore key lets a change
+      # to one input reuse every entry that it leaves valid.
       - uses: actions/cache@v4
         with:
           path: ~/.cache/null3d/fresh-project-shaders
-          key: fresh-project-shaders-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ hashFiles('examples/**') }}
+          key: fresh-project-shaders-${{ hashFiles('packages/vite-plugin/dist/shader-compiler.stamp.json', 'packages/engine/package.json', 'examples/**', 'tests/fresh-project.ts', 'tsconfig.web.base.json') }}
           restore-keys: |
-            fresh-project-shaders-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-
+            fresh-project-shaders-
       # The step packs the packages, builds a fresh project and a website page of the demos, and
       # starts them in a browser. Its limit ends a stuck browser before the job's, with the step
       # named as the one that ran out of time.
@@ -1256,7 +1266,11 @@ jobs:
     # and that shard spent the whole room and was cancelled at 27.9. If that gap moves again, the
     # model's absolute reading is what to revisit, not the split. In run 39306888159 a shard
     # modelled at 11 minutes ran 71 of its 74 tests in 19.6.
-    timeout-minutes: 27
+    # A run asked for its drawings writes every picture it draws, which the weights do not model,
+    # and the drawings that a late test draws matter most: a shard that ends at its limit before
+    # them has drawn nothing. So a drawing run takes the same room again, and an ordinary run keeps
+    # the tighter limit that ends a hang early.
+    timeout-minutes: ${{ inputs['drawn-images'] && 40 || 27 }}
     strategy:
       fail-fast: false
       matrix:
@@ -1289,6 +1303,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       # The compiled WGSL of the pages, from the build job, so the dev server and the page builds
       # compile none of it. A failed download only makes the first page of each module slow.
       - uses: ./.github/actions/archive
@@ -1368,6 +1388,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1396,11 +1422,13 @@ jobs:
     # run 40080490543). These weights come from the same five full runs as the browser job's, and
     # their times model the slowest heavy shard at 13.8 minutes, against 16.4 for the ones before
     # them.
+    # A picture test sits late in its shard, so a drawing run takes the room that the pictures it
+    # keeps add; an ordinary run keeps the tighter limit.
     name: browser (heavy tests, ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: ${{ inputs['drawn-images'] && 35 || 25 }}
     strategy:
       fail-fast: false
       matrix:
@@ -1423,6 +1451,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1511,6 +1545,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1583,6 +1623,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1660,6 +1706,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1782,6 +1834,12 @@ jobs:
           name: load-pages
           root: target
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1853,6 +1911,12 @@ jobs:
           name: load-pages
           root: target
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       # The benchmark pages' build holds S6's pages, which load the city's files.
       - uses: ./.github/actions/archive
         timeout-minutes: 5

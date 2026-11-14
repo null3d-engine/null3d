@@ -33,7 +33,7 @@ const STALK_PLANE = 0.75;
  * metre between a card and its wood shows, so a card joins only where its foot stands on drawn wood;
  * at the second, past a hundred metres, a few metres span a few pixels.
  */
-const SEED_REACH = [0.4, 2.5] as const;
+export const SEED_REACH = [0.4, 2.5] as const;
 
 /** Metres between two cards' feet within which one joins the other's clump, at each card level. */
 const CARD_REACH = [0.4, 2] as const;
@@ -787,42 +787,136 @@ function joinedCards(
 	return joined;
 }
 
-/**
- * The branches some card rows stand on: for each row, the axis of its node, or of the nearest node
- * where the rows name none, and every axis above it.
- */
-function branchesUnder(input: MeshInput, cards: readonly number[]): Uint8Array {
+/** The axis a card row stands on: the axis of its node, or of the nearest node where the rows name none. */
+function rowAxis(input: MeshInput, r: number): number {
 	const { skeleton, rows } = input;
-	const { position, axisOf, nodeCount, axes } = skeleton;
-	const out = new Uint8Array(axes.count);
-	for (const r of cards) {
-		let axis = -1;
-		if (rows.node) axis = axisOf[rows.node[r] as number] as number;
-		else {
-			const x = rows.position[r * 3] as number;
-			const y = rows.position[r * 3 + 1] as number;
-			const z = rows.position[r * 3 + 2] as number;
-			let best = Number.POSITIVE_INFINITY;
-			for (let n = 0; n < nodeCount; n++) {
-				const dx = (position[n * 3] as number) - x;
-				const dy = (position[n * 3 + 1] as number) - y;
-				const dz = (position[n * 3 + 2] as number) - z;
-				const d = dx * dx + dy * dy + dz * dz;
-				if (d < best) {
-					best = d;
-					axis = axisOf[n] as number;
-				}
-			}
+	const { position, axisOf, nodeCount } = skeleton;
+	if (rows.node) return axisOf[rows.node[r] as number] as number;
+	const x = rows.position[r * 3] as number;
+	const y = rows.position[r * 3 + 1] as number;
+	const z = rows.position[r * 3 + 2] as number;
+	let best = Number.POSITIVE_INFINITY;
+	let axis = -1;
+	for (let n = 0; n < nodeCount; n++) {
+		const dx = (position[n * 3] as number) - x;
+		const dy = (position[n * 3 + 1] as number) - y;
+		const dz = (position[n * 3 + 2] as number) - z;
+		const d = dx * dx + dy * dy + dz * dz;
+		if (d < best) {
+			best = d;
+			axis = axisOf[n] as number;
 		}
-		for (let a = axis; a >= 0 && out[a] !== 1; a = axes.parent[a] as number) out[a] = 1;
+	}
+	return axis;
+}
+
+/** The branches some card rows stand on: for each row, the axis it stands on and every axis above it. */
+function branchesUnder(input: MeshInput, cards: readonly number[]): Uint8Array {
+	const { axes } = input.skeleton;
+	const out = new Uint8Array(axes.count);
+	for (const r of cards)
+		for (let a = rowAxis(input, r); a >= 0 && out[a] !== 1; a = axes.parent[a] as number)
+			out[a] = 1;
+	return out;
+}
+
+/**
+ * The branches a level draws under its free cards, shared between cards: the first free card in
+ * row order takes the branch it stands on and every branch under it down to the level's own wood,
+ * and every free card that then reaches that new wood, or a card joined to it, joins it and takes
+ * no branch of its own. So one branch holds the cards of its clump, and only a card that reaches
+ * none of them adds wood.
+ *
+ * @param input The dressed variant.
+ * @param kept The card rows the level keeps.
+ * @param joined One flag per row, 1 for a card joined to the level's own wood; the cards the new
+ *   branches join are marked in it too.
+ * @param keep The highest order the level draws as its own wood.
+ * @param level The card level, which sets the reaches.
+ * @returns One flag per axis, 1 for a branch drawn for the cards.
+ */
+function sharedSupports(
+	input: MeshInput,
+	kept: readonly number[],
+	joined: Uint8Array,
+	keep: number,
+	level: 1 | 2,
+): Uint8Array {
+	const { skeleton, rows } = input;
+	const { axes, position } = skeleton;
+	const out = new Uint8Array(axes.count);
+	const seedReach = (SEED_REACH[level - 1] as number) ** 2;
+	const cardReach = (CARD_REACH[level - 1] as number) ** 2;
+	const cell = Math.max(SEED_REACH[level - 1] as number, CARD_REACH[level - 1] as number);
+	// The free cards in cells of the larger reach, so each search reads the 27 cells about a point.
+	const cells = new Map<string, number[]>();
+	const cellOf = (x: number, y: number, z: number) =>
+		`${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+	const free = kept.filter((r) => joined[r] === 0);
+	for (const r of free) {
+		const key = cellOf(
+			rows.position[r * 3] as number,
+			rows.position[r * 3 + 1] as number,
+			rows.position[r * 3 + 2] as number,
+		);
+		const list = cells.get(key);
+		if (list) list.push(r);
+		else cells.set(key, [r]);
+	}
+	const queue: number[] = [];
+	// Every free card within a reach of a point joins, and waits to pass the join on.
+	const joinNear = (x: number, y: number, z: number, reach: number) => {
+		const ix = Math.floor(x / cell);
+		const iy = Math.floor(y / cell);
+		const iz = Math.floor(z / cell);
+		for (let dx = -1; dx <= 1; dx++)
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dz = -1; dz <= 1; dz++)
+					for (const other of cells.get(`${ix + dx},${iy + dy},${iz + dz}`) ?? []) {
+						if (joined[other]) continue;
+						const ox = (rows.position[other * 3] as number) - x;
+						const oy = (rows.position[other * 3 + 1] as number) - y;
+						const oz = (rows.position[other * 3 + 2] as number) - z;
+						if (ox * ox + oy * oy + oz * oz > reach) continue;
+						joined[other] = 1;
+						queue.push(other);
+					}
+	};
+	for (const r of free) {
+		if (joined[r]) continue;
+		joined[r] = 1;
+		queue.push(r);
+		for (
+			let a = rowAxis(input, r);
+			a >= 0 && out[a] !== 1 && (axes.order[a] as number) > keep;
+			a = axes.parent[a] as number
+		) {
+			out[a] = 1;
+			for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++)
+				joinNear(
+					position[n * 3] as number,
+					position[n * 3 + 1] as number,
+					position[n * 3 + 2] as number,
+					seedReach,
+				);
+		}
+		while (queue.length > 0) {
+			const c = queue.pop() as number;
+			joinNear(
+				rows.position[c * 3] as number,
+				rows.position[c * 3 + 1] as number,
+				rows.position[c * 3 + 2] as number,
+				cardReach,
+			);
+		}
 	}
 	return out;
 }
 
 /**
  * The branches a level draws beside its own orders so its cards stay joined: with a `branch` join,
- * the branches under every card the level keeps; on a plant that sparseness took foliage from, the
- * branches under each card that reaches neither the level's wood nor a joined card.
+ * the branches under every card the level keeps; by default, the branches under the cards that
+ * reach neither the level's wood nor a joined card, each shared by every card it then reaches.
  *
  * @param input The dressed variant.
  * @param level The card level.
@@ -838,10 +932,7 @@ export function supportAxes(input: MeshInput, level: 1 | 2): Uint8Array | undefi
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const orders = input.skeleton.axes.order;
 	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep, level);
-	return branchesUnder(
-		input,
-		kept.filter((r) => joined[r] === 0),
-	);
+	return sharedSupports(input, kept, joined, keep, level);
 }
 
 /**
