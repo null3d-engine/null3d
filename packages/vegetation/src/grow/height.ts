@@ -12,8 +12,10 @@
 import type { ShootRows, SpeciesKitData } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
 import { unitAt } from '../core/hash';
+import { quatRotate, type Vector3 } from '../core/math';
 import type { Species } from '../core/record';
 import { curveAt, DETAILS, spreadAt, spreadMax } from '../core/types';
+import { CARD_CORNERS } from '../lod/cards';
 
 /** The hash purpose each grower draws its height with. */
 const HEIGHT_PURPOSE = 1;
@@ -83,7 +85,7 @@ function leafMeshes(kit: SpeciesKitData): readonly (LeafMesh | undefined)[] {
  * @returns The crown's reach in metres.
  * @category api/vegetation
  */
-export function crownReach(kit: SpeciesKitData, record: Species): number {
+function leafReach(kit: SpeciesKitData, record: Species): number {
 	const placement = record.shoots?.placement;
 	if (!placement) return 0;
 	let local = 0;
@@ -95,6 +97,57 @@ export function crownReach(kit: SpeciesKitData, record: Species): number {
 	});
 	const curve = placement.scaleByHeight === undefined ? 1 : curveAt(placement.scaleByHeight, 1);
 	return local * spreadMax(placement.scale) * curve;
+}
+
+/** The card of one prototype: its centre and half-extents, as the card level builds it. */
+type Card = SpeciesKitData['prototypes'][number]['card'];
+
+/** A prototype card's highest corner above its shoot, in prototype metres. */
+function cardReach(card: Card): number {
+	let top = 0;
+	for (const plane of card.planes) {
+		const y = plane.centre[1] + Math.abs(plane.right[1]) + Math.abs(plane.up[1]);
+		if (y > top) top = y;
+	}
+	return top;
+}
+
+/** The crown's added height estimated from the kit's card corners, as the level drew it before. */
+function cardCrownReach(kit: SpeciesKitData, record: Species): number {
+	const placement = record.shoots?.placement;
+	if (!placement) return 0;
+	let local = 0;
+	for (const prototype of kit.prototypes) {
+		if (prototype.cutting) continue;
+		const reach = cardReach(prototype.card);
+		if (reach > local) local = reach;
+	}
+	const curve = placement.scaleByHeight === undefined ? 1 : curveAt(placement.scaleByHeight, 1);
+	return local * spreadMax(placement.scale) * curve;
+}
+
+/**
+ * Whether a record scales its plant to its drawn card level rather than its leaf form. A record that
+ * names `lod.heightAtLeafTop` measures the nearest foliage, which no card change moves; every other
+ * record keeps the card level's measure it was judged with.
+ */
+export function scalesToLeafTop(record: Species): boolean {
+	return record.lod.heightAtLeafTop === true;
+}
+
+/**
+ * The crown's added height above the wood, estimated from the kit: the leaf form's highest point, or
+ * the card level's highest corner where the record scales to the card level, times the largest
+ * placement scale and the height curve's top. The topmost row's own rotation may tilt it, so this
+ * is an upper bound and the residual measure corrects the difference.
+ *
+ * @param kit The species' kit.
+ * @param record The record the plant grows from.
+ * @returns The crown's reach in metres.
+ * @category api/vegetation
+ */
+export function crownReach(kit: SpeciesKitData, record: Species): number {
+	return scalesToLeafTop(record) ? leafReach(kit, record) : cardCrownReach(kit, record);
 }
 
 /** A row's turn as the second row of its matrix, times its scale: a vertex's height is its dot. */
@@ -181,6 +234,88 @@ export function leafTop(kit: SpeciesKitData, rows: ShootRows): number {
  */
 export function topRow(kit: SpeciesKitData, rows: ShootRows): number {
 	return highest(kit, rows).row;
+}
+
+/** The highest point of one shoot row's cards, in metres. */
+function rowCardTop(kit: SpeciesKitData, rows: ShootRows, r: number): number {
+	const prototype = kit.prototypes[rows.prototype[r] as number];
+	if (!prototype) return Number.NEGATIVE_INFINITY;
+	const local: Vector3 = [0, 0, 0];
+	const world: Vector3 = [0, 0, 0];
+	const scale = rows.scale[r] as number;
+	const y = rows.position[r * 3 + 1] as number;
+	let top = Number.NEGATIVE_INFINITY;
+	for (const plane of prototype.card.planes) {
+		for (const [sx, sy] of CARD_CORNERS) {
+			for (let c = 0; c < 3; c++)
+				local[c] =
+					(plane.centre[c] as number) +
+					sx * (plane.right[c] as number) +
+					sy * (plane.up[c] as number);
+			local[0] *= scale;
+			local[1] *= scale;
+			local[2] *= scale;
+			quatRotate(rows.rotation, r * 4, local, world);
+			if (y + (world[1] as number) > top) top = y + (world[1] as number);
+		}
+	}
+	return top;
+}
+
+/**
+ * The highest point of the drawn card level, in metres: every shoot's card planes at the shoot's own
+ * size, turned and placed as the shoot places them.
+ *
+ * @param kit The species' kit.
+ * @param rows The dressed shoot rows.
+ * @returns The card level's top.
+ * @category api/vegetation
+ */
+export function cardTop(kit: SpeciesKitData, rows: ShootRows): number {
+	let top = 0;
+	for (let r = 0; r < rows.count; r++) top = Math.max(top, rowCardTop(kit, rows, r));
+	return top;
+}
+
+/** The shoot row whose cards reach highest, which holds the drawn top of the card level. */
+function cardTopRow(kit: SpeciesKitData, rows: ShootRows): number {
+	let best = -1;
+	let top = Number.NEGATIVE_INFINITY;
+	for (let r = 0; r < rows.count; r++) {
+		const reach = rowCardTop(kit, rows, r);
+		if (reach > top) {
+			top = reach;
+			best = r;
+		}
+	}
+	return best;
+}
+
+/**
+ * The top a record's plant is scaled to: its leaf form's where the record names
+ * `lod.heightAtLeafTop`, else its drawn card level's, which is the measure it was judged with.
+ *
+ * @param kit The species' kit.
+ * @param rows The dressed shoot rows.
+ * @param record The record the plant grows from.
+ * @returns The top in metres.
+ * @category api/vegetation
+ */
+export function plantTop(kit: SpeciesKitData, rows: ShootRows, record: Species): number {
+	return scalesToLeafTop(record) ? leafTop(kit, rows) : cardTop(kit, rows);
+}
+
+/**
+ * The shoot row that holds the top the plant is scaled to, as `plantTop` measures it.
+ *
+ * @param kit The species' kit.
+ * @param rows The dressed shoot rows.
+ * @param record The record the plant grows from.
+ * @returns The row, or -1 when no row draws a shape.
+ * @category api/vegetation
+ */
+export function plantTopRow(kit: SpeciesKitData, rows: ShootRows, record: Species): number {
+	return scalesToLeafTop(record) ? topRow(kit, rows) : cardTopRow(kit, rows);
 }
 
 /** The record with its shoot placement scaled by `factor`, so the crown scales with the wood. */

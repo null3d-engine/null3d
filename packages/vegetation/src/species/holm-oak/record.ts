@@ -202,14 +202,11 @@ export const record: Species = {
 			shadePrune: 0.1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
-			// Whole view 01 at the first card level: the sky enclosed by the crown's outline reads
-			// 0.0869, against the photograph's 0.1102 and the band's 0.090 floor, from 0.050 with
-			// every leaf group drawn; the crown box reads 0.3215 against 0.3503, the colour
-			// difference 11.65, and the matte one piece with nothing floating. A third of the
-			// crown's leaf groups gives way, so the crown shows sky through its inside as the
-			// photographs do. The dropped groups leave the cards' size alone, so the card-size rule
-			// still holds.
-			cardCoverage: 0.65,
+			// Row 6 is open: at the first card level picture 01's enclosed sky reads 0.050 against
+			// the photograph's 0.110. A third of the leaf groups giving way closes it to 0.0869, but
+			// the reviewer refused that value: it closes the figure only by shrinking the crown
+			// (shape overlap 0.80 to 0.67, width error 0.052 to 0.138, colour difference 7.1 to 11.7
+			// at 01 and 6.4 to 10.1 at 02) and reads as a dense ball on a thin trunk. No value is set.
 		},
 	},
 	foliage: {

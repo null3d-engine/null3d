@@ -232,11 +232,13 @@ export function walkSpecies(walked: Walked): void {
 			scaledBudget(120_000),
 		);
 
-		// The leaf form, which every level is judged against, stands at the height its record asks:
-		// its wood's top or its nearest foliage's, whichever is higher.
+		// A record that scales to its leaf form stands within 3 per cent of its record's height:
+		// its wood's top or its nearest foliage's, whichever is higher. Every other record keeps the
+		// drawn card level's measure it was judged with, which its cards may stand above.
 		it(
-			"stands its leaf form within 3 per cent of its record's height",
+			"stands its leaf form within 3 per cent of its record's height where it asks to",
 			() => {
+				if (record.lod.heightAtLeafTop !== true) return;
 				const kit = buildKitNow(module, { placeholders: walked.placeholders });
 				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
 				const target = targetHeight(record, 11, 0);
