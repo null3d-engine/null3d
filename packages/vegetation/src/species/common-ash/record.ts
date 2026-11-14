@@ -183,7 +183,9 @@ export const record: Species = {
 		],
 		// Stills 20, 21 and 22: a cut twig forks at one joint into two shoots, each with a pair or two
 		// of leaves below its black bud and bare wood between the joints. The crown cannot carry a
-		// shoot this open, so the cuttings draw this class and the crown never does.
+		// shoot this open, so the cuttings draw this class and the crown never does. Each class is
+		// cut-only, so a cutting kit holds it and the plant's kit leaves it out; a class the cutting
+		// kit lacks leaves the cut view drawing the plant's own shoots.
 		cuttingClasses: [
 			{
 				// Still 23 and the cluster's turn: the video's piece carries six leaves in three
@@ -191,6 +193,7 @@ export const record: Species = {
 				// pairs. A cutting class never offers itself to the crown, so the tree keeps its own
 				// shoots, as the branch's cut class does.
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
@@ -213,6 +216,7 @@ export const record: Species = {
 			},
 			{
 				name: 'cut',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
