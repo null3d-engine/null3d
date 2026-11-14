@@ -198,12 +198,14 @@ export const record: Species = {
 		// The close pictures show cut pieces with their leaves spaced along the wood, which the
 		// crown's own classes do not: a crown's spray crowds its leaves for the veil, and a cut piece
 		// wants the run between them bare. Each close piece takes a class of its own, which the crown
-		// never draws.
+		// never draws. Each class is cut-only, so the cutting kit holds it and the plant kit leaves it
+		// out; a class without the flag leaves the cut view drawing the crown's own shoots.
 		cuttingClasses: [
 			{
 				// Still 21: a cut branch divides into thin twigs that arch out and droop, the leaves
 				// alternating along their run and spaced apart.
 				name: 'whip',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -231,11 +233,11 @@ export const record: Species = {
 				droop: 55,
 			},
 			{
-				// Still 23: a short shoot of six large leaves spaced along its run, as its photograph shows
-				// it, and a side shoot at the joint below its newest year. The same class draws the close
-				// cluster, whose photograph holds eight over the same box. The blades run larger than the
-				// species' own, because six of them must cover what the pictures show.
+				// Stills 11 and 23: a short shoot of six leaves spaced along its run, and a side shoot
+				// at the joint below its newest year. The blades run a little larger than the species'
+				// own, so six of them carry the cluster's box without closing it.
 				name: 'cut',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -248,8 +250,8 @@ export const record: Species = {
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
 				leafScale: [
-					[0, 1.4],
-					[1, 1.6],
+					[0, 1.15],
+					[1, 1.35],
 				],
 				leafAngle: [
 					[0, 70],
@@ -261,6 +263,7 @@ export const record: Species = {
 				// Still 22: the same twig, its leaves two-ranked and held face on to the camera as its
 				// photograph shows them, which the cluster's own class does not take.
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -461,8 +464,8 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// The largest of the species and its three forms: 3.37, 5.52, 9.42 and 16.89 MB. The kit
-			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
-			// photographs.
+			// holds the long leafy shoots the fine leaf needs; the cutting classes stand in the
+			// cutting kit alone.
 			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_500_000, ultra: 17_000_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
