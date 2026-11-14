@@ -71,12 +71,12 @@ import {
 import {
 	crownReach,
 	HEIGHT_RESIDUAL,
-	leafTop,
+	plantTop,
+	plantTopRow,
 	scaledPlacement,
 	scaledRows,
 	scaledSkeleton,
 	targetHeight,
-	topRow,
 } from './grow/height';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
@@ -827,7 +827,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 					1,
 				)
 			: rows.count > 0
-				? Math.max(skeleton.height, leafTop(kit, rows))
+				? Math.max(skeleton.height, plantTop(kit, rows, record))
 				: 0;
 		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
 			const corrective = target / top;
@@ -868,7 +868,7 @@ interface Dressed {
 function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
 	if (!grown.order) {
 		// The row that holds the drawn top stays, so every sparseness keeps the plant's height.
-		const top = topRow(kit, grown.rows);
+		const top = plantTopRow(kit, grown.rows, kit.record);
 		grown.order = sparseOrder(
 			grown.input.skeleton,
 			grown.rows,
