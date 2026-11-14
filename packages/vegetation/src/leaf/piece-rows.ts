@@ -8,7 +8,7 @@
 // flower site carries the record's extras and no piece. No shade or sky line thins the rows
 // afterwards: the grower placed the sockets where the foliage stands.
 import type { ShootPrototype } from '../asset';
-import { BUD_FLOWER } from '../core/graph';
+import { BUD_DORMANT, BUD_FLOWER } from '../core/graph';
 import { hashAt } from '../core/hash';
 import { quatAxisAngle, quatMultiply, quatRotate, radians, type Vector3 } from '../core/math';
 import type { GrowthModel, Species } from '../core/record';
@@ -138,7 +138,9 @@ export function pieceRows(input: DressInput): Row[] {
 	const growth = record.growth;
 	const turned = growth.model === 'frame' && growth.sockets.turn !== undefined;
 	for (let b = 0; b < buds.count; b++) {
-		if ((buds.kind[b] as number) === BUD_FLOWER) continue;
+		// A flower site carries the record's extras and a dormant bud its sheath, never a piece.
+		const kind = buds.kind[b] as number;
+		if (kind === BUD_FLOWER || kind === BUD_DORMANT) continue;
 		const choices = own && byPlace.length > 0 ? byPlace[own[b] as number] : variants;
 		if (!choices || choices.length === 0)
 			throw new Error(
