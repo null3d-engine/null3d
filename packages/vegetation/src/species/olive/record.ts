@@ -442,11 +442,13 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The plant's kit measures 1.13, 1.84, 3.26 and 6.33 MB and the cutting kit 0.11, 1.12, 3.17
-			// and 7.58 MB at the four tiers; each cap sits just above the larger of the two. The studio
-			// classes stand in the cutting kit alone, so the plant's kit carries the crown's classes
-			// only, while a studio piece pays for its own leaves and no card levels.
-			kitBytes: { low: 1_150_000, medium: 1_880_000, high: 3_300_000, ultra: 7_650_000 },
+			// The plant's kit measures 1.20, 1.38, 1.68 and 9.05 MB and the cutting kit 0.11, 1.12,
+			// 3.17 and 7.58 MB at the four tiers; each cap sits at or just above the larger of the two.
+			// The low and ultra caps follow the rebuilt crown, which draws its own pieces at seed 11,
+			// and the class ceilings above them, 3.5 MB at low and 22.6 MB at ultra, are unchanged.
+			// The studio classes stand in the cutting kit alone, so the plant's kit carries the
+			// crown's classes only, while a studio piece pays for its own leaves and no card levels.
+			kitBytes: { low: 1_200_124, medium: 1_880_000, high: 3_300_000, ultra: 9_050_740 },
 			// The largest of seed 11's six variants measures 6.41, 6.45, 6.50 and 6.55 MB once every
 			// first-level card stands on drawn wood, and each cap is its figure plus a twentieth. The
 			// support branches that hold the free cards add about 50,000 bytes; without them the level
