@@ -165,7 +165,7 @@ console.log(far.stats.parts[0], far.stats.allowed?.[0], far.shootDetail);
 - **Shoots.** The shoots draw at the kit's tier, then at each tier below it. Below the lowest tier, each shoot draws as its leaf cards, and `shootDetail` is `none`. Below that, each run of neighboring shoots draws as one larger card set. Every card set touches the drawn wood or another joined card set, or takes a thin stalk to the wood.
 - **Extras.** The extras draw on every site, then on a share of the sites, then in the coarser forms of the far levels, then not at all.
 - **Ground plants.** A plant whose leaves are one mesh, such as a hosta or a sedge, steps down its tiers, then draws the forms of its far levels. Below those it draws fewer leaves, taken out evenly.
-- **Never more.** No level draws more than the maximum. `stats.parts` gives each level's triangles part by part, and `stats.allowed` gives each part's allowance.
+- **Never more.** No level draws more than the maximum. `stats.triangles` gives each level's whole count, with the nearest level's shoots and pieces at the tier they draw at. `stats.parts` gives the same triangles part by part, and `stats.allowed` gives each part's allowance.
 
 The maximum acts at any sparseness, on what the sparseness left. A stand-in species and a cut piece grow as they are. The far cards are two triangles each whatever they show, so they show the plant at its best look. On a grown oak at the low tier, the nearest level holds 1,389,818 triangles. At a maximum of 10,000 it draws 9,931: 3,073 of wood and 6,858 of leaf cards.
 

@@ -18,7 +18,7 @@ export function flag(name: string): boolean {
 }
 
 /** Switches that take no value, so the word after one is not its value. */
-const SWITCHES = new Set(['--no-matte']);
+const SWITCHES = new Set(['--no-matte', '--draw-only']);
 
 /**
  * The words on the command line that are neither options nor options' values, in order. The words

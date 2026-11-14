@@ -254,3 +254,37 @@ export function skyShare(outline: OutlineMatte, matte: OutlineMatte, from = 0): 
 	}
 	return inside === 0 ? 0 : open / inside;
 }
+
+/**
+ * How much of a matte stands outside a plant's outline, in each view: the covered pixels outside
+ * each row's span from the outline matte's first covered pixel to its last, over the pixels inside
+ * those spans. A level that is fatter than the leaf form between its extremes shows here, though
+ * its box agrees.
+ *
+ * @param outline The matte whose rows give the outline: the plant's leaf form.
+ * @param matte The matte read against it.
+ * @returns The share outside, front view then side view.
+ */
+export function outsideShare(outline: OutlineMatte, matte: OutlineMatte): [number, number] {
+	const { size } = outline;
+	const out: [number, number] = [0, 0];
+	for (let view = 0; view < 2; view++) {
+		const offset = view * size * size;
+		let inside = 0;
+		let outside = 0;
+		for (let y = 0; y < size; y++) {
+			let first = -1;
+			let last = -1;
+			for (let x = 0; x < size; x++)
+				if (outline.covered[offset + y * size + x]) {
+					if (first < 0) first = x;
+					last = x;
+				}
+			if (first >= 0) inside += last - first + 1;
+			for (let x = 0; x < size; x++)
+				if (matte.covered[offset + y * size + x] && (first < 0 || x < first || x > last)) outside++;
+		}
+		out[view] = inside === 0 ? 0 : outside / inside;
+	}
+	return out;
+}

@@ -371,6 +371,11 @@ export interface PlantAsset {
 	readonly stats: {
 		readonly milliseconds: number;
 		readonly bytes: number;
+		/**
+		 * Each level's triangles as it draws whole: the sum of its parts. The nearest level counts its
+		 * shoot rows at the tier they draw at beside its own meshes, so a plant of pieces counts every
+		 * piece placed at a socket. A level's own meshes alone are its `triangles`.
+		 */
 		readonly triangles: readonly [number, number, number];
 		/**
 		 * Each level's triangles part by part. The nearest level counts its shoot rows at the tier

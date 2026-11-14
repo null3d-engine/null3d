@@ -17,6 +17,7 @@ import {
 	crownOutsideShot,
 	crownUndersideShot,
 	forkShot,
+	insideBesideTrunk,
 	insideShot,
 	junctionShot,
 	limbShot,
@@ -224,6 +225,28 @@ describe('the view up the trunk', () => {
 		expect(shot.facts.trunkShare as number).toBeGreaterThan(0.42);
 		expect(landing(shot, lens, 'the top of the bole').y).toBeCloseTo(0.42, 6);
 		// The horizon stands below the frame, so the picture holds no ground.
+		expect(landing(shot, lens, 'the horizon').y).toBeGreaterThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
+	});
+
+	test('never looks down at the ground beside a thick trunk whose top leans away', () => {
+		// A bole a metre through, leaning so its limbs part well to the side of where it stands at the
+		// eye; the camera stands on the side it leans away from, so its top is farther off than its foot.
+		const lens = { fov: 70, aspect: 4 / 3 };
+		const leaning: TrunkSubject = {
+			...trunkOf(8, 1, 4),
+			axis: axis([0, 0, 0], [0.25, 1, 0], Math.hypot(2, 8), 1, 0.5, 17),
+			firstFork: { at: [1, 4, 0], radius: 0.8 },
+		};
+		const subjects = tree({
+			trunk: leaning,
+			crownBase: 4,
+			limbs: [{ ...limbOf(1, 4, [1, 0.25, 0], 0.5, 8, 0.9), joint: [1, 4, 0] }],
+		});
+		const shot = shotOf(belowShot(subjects, lens, { turn: 0 }));
+		expect(shot.camera.position[0]).toBeLessThan(0);
+		expect(pitchOf(shot.camera)).toBeCloseTo(40, 4);
+		expect(landing(shot, lens, 'the top of the bole').y).toBeCloseTo(0.42, 6);
 		expect(landing(shot, lens, 'the horizon').y).toBeGreaterThan(1);
 		expect(checkShot(shot, lens).present).toBe(true);
 	});
@@ -442,6 +465,25 @@ describe('the view of a limb leaving the trunk', () => {
 		// A thin limb on the same bole still shows the trunk's round: the frame is 0.9 of its diameter.
 		const thin = tree({ trunk, limbs: [limbOf(1, 5, [1, 0.3, 0], 0.15, 3, 0.9)] });
 		expect(shotOf(junctionShot(thin, TALL)).facts.frame as number).toBeCloseTo(0.9 * 1.8, 9);
+	});
+
+	test('reads the trunk below the join from the collar, where a limb leaves a thick trunk steeply', () => {
+		// A bole 2 m through with a limb about a metre through rising at 57 degrees: the limb comes out
+		// of the bark some 1.5 m above its joint on the trunk's line.
+		const lens = { fov: 50, aspect: 1 };
+		const trunk = trunkOf(14, 1, 5);
+		const lie = 57 * DEG;
+		const subjects = tree({
+			trunk,
+			limbs: [limbOf(1, 5, [Math.cos(lie), Math.sin(lie), 0], 0.48, 9, 1)],
+		});
+		const shot = shotOf(junctionShot(subjects, lens, { limbShare: 0.25, column: 0.45, lie: 45 }));
+		const below = landing(shot, lens, 'the trunk below the joint');
+		const collar = landing(shot, lens, 'the collar, where the limb meets the trunk');
+		expect(below.x).toBeLessThan(collar.x);
+		expect(below.y).toBeGreaterThan(collar.y);
+		expect(below.y).toBeLessThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
 	test("takes the photograph's own subject box shares where the tool measured them", () => {
@@ -726,6 +768,29 @@ describe("the view of the crown's underside", () => {
 describe('the view from inside the crown', () => {
 	const lens = { fov: 75, aspect: 3 / 4 };
 
+	test('stands beside a trunk its crown clothes from low down, with no great limb', () => {
+		// A column whose fine branches are no great limbs, its crown from near the ground.
+		const column = tree({
+			height: 18,
+			reach: 1.5,
+			crownBase: 0.3,
+			trunk: trunkOf(17, 0.3),
+			limbs: absent('no limb takes a share of the trunk'),
+		});
+		expect(insideBesideTrunk(column)).toBe(true);
+		const shot = shotOf(insideShot(column, lens, { turn: 0 }));
+		expect(shot.facts.wood).toBe('trunk');
+		expect(Math.hypot(shot.camera.position[0], shot.camera.position[2])).toBeLessThan(1.5);
+	});
+
+	test("keeps a crown that stands only at its trunk's top to the stalk bundle", () => {
+		// A palm: its leaves leave the trunk's top, and no limb leaves the trunk below them.
+		const palm = tree({ height: 9, reach: 3, crownBase: 7.5, trunk: trunkOf(8, 0.25), limbs: [] });
+		expect(insideBesideTrunk(palm)).toBe(false);
+		expect(insideBesideTrunk(tree())).toBe(true);
+		expect(insideBesideTrunk(tree({ trunk: absent('no stem') }))).toBe(false);
+	});
+
 	test('stands beside the trunk above the crown base and looks up along it', () => {
 		const subjects = tree();
 		const shot = shotOf(insideShot(subjects, lens, { turn: 0 }));
@@ -947,6 +1012,32 @@ describe('the view of one branch piece', () => {
 		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
 	});
 
+	test("stands an arched piece's whole run in the frame, square to its line", () => {
+		// A frond whose blade bends away from its socket: its run from cut to tip leans 42 degrees off
+		// its blade's face, so a camera square to the face would see it shortened.
+		const frond = {
+			class: 'frond-arched',
+			socket: [0, 2.6, 0] as V3,
+			direction: normalize([0, 0.743, 0.669]),
+			length: 2.4,
+			spread: 0.7,
+			face: normalize([0, 0.2, 1]),
+			side: [1, 0, 0] as V3,
+			depth: { face: 1.6, side: 0.47 },
+		};
+		const shot = shotOf(placedPieceShot(tree({ pieces: [frond] }), 'frond', TALL));
+		const cut = landing(shot, TALL, 'the cut');
+		const tip = landing(shot, TALL, 'the tip');
+		expect(cut.y - tip.y).toBeCloseTo(0.85, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		// The camera looks square to the line, and the blade's width lies across the frame.
+		const { forward } = cameraAxes(shot.camera);
+		expect(dot(forward, frond.direction)).toBeCloseTo(0, 6);
+		expect(forward[0]).toBeCloseTo(0, 6);
+		// Nothing of the piece stands farther off its line than its spread, so the slab holds it.
+		expect((shot.far as number) - (shot.near as number)).toBeCloseTo(2 * frond.spread, 6);
+	});
+
 	test('frames the piece that heads toward the camera when asked, not the outermost', () => {
 		const outward = { ...piece, direction: normalize([1, 0.2, 0]) };
 		const toward = { ...piece, socket: [0, 6, 1] as V3, direction: normalize([0, 0.2, 1]) };
@@ -1009,6 +1100,42 @@ describe('the view of the stem cut across', () => {
 	test('fails the plant whose stem does not reach the cut', () => {
 		const missing = sectionShot(tree(), WIDE, 40);
 		expect(isAbsent(missing) && missing.lacks).toBe(true);
+	});
+});
+
+describe("the view up a crown's face", () => {
+	// A column fifteen metres tall whose limb leaves its stem nearly level at its foot, so the limb
+	// comes out of the bark under the least bole a camera looks up.
+	const column = tree({
+		height: 15,
+		reach: 1.2,
+		crownBase: 0.2,
+		trunk: trunkOf(15, 0.25, 0.1),
+		limbs: [limbOf(1, 0.15, [1, 0.2, 0], 0.08, 3, 0.25)],
+	});
+
+	test('stands at the eye just outside the crown and looks steeply up to its top', () => {
+		const shot = shotOf(belowShot(column, WIDE, { turn: 0 }));
+		expect(shot.kind).toBe("the crown's face from its foot, looking up it");
+		expect(shot.camera.position[1]).toBeCloseTo(1.6, 6);
+		expect(Math.hypot(shot.camera.position[0], shot.camera.position[2])).toBeCloseTo(1.45, 6);
+		expect(pitchOf(shot.camera)).toBeGreaterThan(50);
+		const top = landing(shot, WIDE, "the plant's top");
+		expect(top.x).toBeCloseTo(0.5, 6);
+		expect(top.y).toBeCloseTo(0.06, 3);
+	});
+
+	test('leaves a low plant with no bole to the low eye inside its rim', () => {
+		const low = tree({
+			height: 1.5,
+			reach: 0.6,
+			crownBase: 0,
+			trunk: trunkOf(1.5, 0.03, 0.05),
+			limbs: [limbOf(1, 0.05, [1, 2, 0], 0.01, 0.5, 0.03)],
+		});
+		expect(shotOf(belowShot(low, WIDE, { turn: 0 })).kind).toBe(
+			'the plant from a low eye inside its rim',
+		);
 	});
 });
 

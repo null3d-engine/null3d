@@ -6,7 +6,7 @@
 //   bun run plants:review <species> [--refs <folder or slug>] [--out <folder>] [--run <name>]
 //     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell <pixels>] [--only stills,turns,wind]
 //     [--stills 01,02,18] [--seed 11] [--variant 0] [--preset high] [--sparse 0..1] [--lod 0|1|2] [--gpu webgpu]
-//     [--no-matte] [--compare <run folder>]
+//     [--no-matte] [--draw-only] [--compare <run folder>]
 //
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
@@ -907,7 +907,7 @@ function compareRun(
 			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}${colourGapClause(pair)}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, ${gapClause(pair)}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -1186,11 +1186,24 @@ function areaLines(pairs: readonly StillResult[]): string[] {
 	);
 }
 
-/** The drawing's gap read from its colour still, and whether row 6 reads it in place of the matte's. */
-function colourGapClause(pair: StillResult): string {
-	if (pair.gap?.renderByColour === undefined) return '';
-	const read = rowGap(pair.gap);
-	return `; by the colour still ${fixed(pair.gap.renderByColour)}${read.read === 'colour still' ? ", which row 6 reads: the matte's differs by more than 0.05" : ''}`;
+/**
+ * A pair's enclosed sky gap for its summary line: the figure read alike on both sides first, with
+ * its rule named, and the drawing's matte after it, which at a whole view stands against the
+ * photograph's colour mask and is an instrument figure only.
+ */
+function gapClause(pair: StillResult): string {
+	const gap = pair.gap;
+	const read = gap ? rowGap(gap) : undefined;
+	const clear =
+		gap?.renderByCoverage === undefined
+			? ''
+			: `, ${fixed(gap.renderByCoverage)} by its clear share`;
+	if (!gap) return "sky gap enclosed by the crown's outline (row 6's figure): not read";
+	if (read?.rule === 'colour')
+		return `sky gap enclosed by the crown's outline (row 6's figure), by the photograph's colour rule on both pictures: photograph ${fixed(gap.reference)}, drawing ${fixed(read.value)}; the drawing's matte ${fixed(gap.render)}${clear}, instrument only, not comparable at 01/02`;
+	if (read?.rule === 'half-dark')
+		return `sky gap enclosed by the crown's outline (row 6's figure), by the half-dark rule on both pictures: photograph ${fixed(gap.reference)}, drawing ${fixed(read.value)}${clear}`;
+	return `sky gap enclosed by the crown's outline, the drawing's matte against the photograph's colour mask, instrument only and not quoted in row 6: photograph ${fixed(gap.reference)}, drawing ${fixed(gap.render)}${clear}`;
 }
 
 /**
@@ -1504,6 +1517,12 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
+	if (flag('draw-only')) {
+		// The comparison then runs as a process of its own, within its own time limit.
+		console.log(`compare with: bun run plants:review --compare ${dir}`);
+		if (failed > 0) process.exitCode = 1;
+		return;
+	}
 	const complete = compareRun(dir, manifest, set, windFps, await habitOf(manifest.species), sheath);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
