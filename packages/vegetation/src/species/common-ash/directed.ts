@@ -257,6 +257,10 @@ export const directed = {
 		turn: { roll: 90, tilt: 25 },
 	}),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
+	// The second card level keeps one of each four of the frame's cards, each grown inside the leaf
+	// form's outline: a socket's branch end is a card of its own, so the smaller kept cards leave no
+	// more sky between them than the leaf form shows.
+	lod: { ...record.lod, cardShare: [1, 0.5] as const },
 	// The record's keys hang from a share of the shoot tips, and the old grower's tree has 1,399 of
 	// them at seed 11, so the record means about 84 bunches. The frame carries a branch end at each
 	// of about 4,100 sockets, so the same share would hang three times as many. Until a
