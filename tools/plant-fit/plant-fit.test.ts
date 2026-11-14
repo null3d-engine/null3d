@@ -324,7 +324,9 @@ describe.skipIf(!existsSync(OAK_VIDEO))('the pedunculate oak, from the private r
 			const hull = fit.hull;
 			expect(hull).not.toBeNull();
 			if (!hull || !oakRecord.envelope) return;
-			expect(Math.abs(hull.crownBase - 0.115)).toBeLessThanOrEqual(0.011);
+			// The reference's own foot: frame 143 of oak-turntable.mp4 puts the crown's base at
+			// 0.135 of the plant's height, measured with the thin runs along the ground cleaned off.
+			expect(Math.abs(hull.crownBase - 0.135)).toBeLessThanOrEqual(0.011);
 			const ours = envelopeVolume(hull.envelope, 1, 0);
 			const theirs = envelopeVolume(oakRecord.envelope, 1, 0);
 			const frame = { left: -COLUMNS / 2 / CELLS, cell: 1 / CELLS, cols: COLUMNS, rows: CELLS + 4 };
@@ -335,7 +337,7 @@ describe.skipIf(!existsSync(OAK_VIDEO))('the pedunculate oak, from the private r
 				).toBeGreaterThanOrEqual(0.95);
 			}
 			// The 5 November turntable (SHA-256 43e6ca23) and the whole-plant stills overlap the hull
-			// at 0.728 to 0.866, mean 0.795. The floors guard the fit against a regression; they are
+			// at 0.734 to 0.872, mean 0.802. The floors guard the fit against a regression; they are
 			// not a claim about the recording's own symmetry.
 			expect(hull.consistency.lowest).toBeGreaterThan(0.7);
 			expect(hull.consistency.mean).toBeGreaterThan(0.78);
