@@ -78,6 +78,20 @@ main mass came from them. A Bun script over `prototype.card.planes` gave the pla
 pixel spans about 7 cm at the beech's whole view. Its crown box is 476 pixels for a crown about 34 m
 across.
 
+## The opt-in, measured across the twenty species
+
+The independent review compared every species' drawn arrays and digest at three points: before the
+marker, at the first form that moved every named line to its twig's width, and at the corrected form.
+Before against corrected, nineteen of twenty species are byte-identical in every array of every level
+part; **only the silver birch moves**, in the first texture coordinates where the twig's radius now
+stands, from digest `41c82b609e25d431` to `203f5bac0748f1a1` at that probe's kit setting. Against the
+first form, ten species' coordinates return to zero. So the marker is opt-in at the record, at the
+header's stalk texel, in the card mesh and in the shader, and no judged look moves.
+
+The tufts name the marker on their own branch, not in the marker's commits: the sedge names
+`cardStalk`, `cardStalkWidth` and `cardStalkToFoliage`, and the meadow grass's line is turned off
+again because its dark tone pulls the pale crown's mean from a colour difference of 13.3 to 32.4.
+
 ## Look
 
 The line under the card reads as the spray's own twig. The reference photographs show that twig
