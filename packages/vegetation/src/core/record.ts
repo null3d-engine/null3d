@@ -2808,13 +2808,53 @@ export interface LodSpec {
 	 */
 	readonly extrasFrom?: 1 | 2;
 	/**
+	 * The length over width from which a card is cut along its piece, in place of the class's own
+	 * threshold of 4 for a shoot and 1.5 for a placed piece. A species whose shoots are stouter than
+	 * the class's rule assumes asks for a lower threshold, so a whip whose leaves fall under the
+	 * card's cut at a whole view gets finer texels along it. Only a record that also names
+	 * `cardCuts` is cut at all.
+	 */
+	readonly cardCutLength?: number;
+	/**
+	 * How many times the cover a kept card must make up, 1 or more and 1 by default. A card level
+	 * that drops much of its cover, such as a crown of sparse shoots seen whole, grows each card
+	 * about its middle to recover it; a species whose cards still read thin at that scale asks for
+	 * more. Growth stays inside the leaf form's hull, so the card level never stands larger than
+	 * the leaves it pictures.
+	 */
+	readonly cardGrow?: number;
+	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
 	 * draws its supporting twig as a line of at least this width, in the young bark's tone, so the
-	 * join shows. 0 or absent, a card draws no stalk.
+	 * join shows. 0 or absent, a card draws no stalk. A record that names `cardStalkWidth` draws
+	 * the line as wide as the twig instead.
 	 */
 	readonly cardStalk?: number;
+	/**
+	 * Whether a card's stalk line draws at its supporting twig's own width on screen, instead of the
+	 * least width `cardStalk` names, and never under the wood's least drawn width. A record names
+	 * this where its stems are thinner than a pixel at the distances its cards draw: a flowering
+	 * stem then shows at every distance, where a fixed least would draw it wider than the stem. A
+	 * record without it draws exactly the fixed width it names.
+	 */
+	readonly cardStalkWidth?: boolean;
+	/**
+	 * How much of the young bark's tone a card's stalk line keeps, from 0.05 to 1, where the default
+	 * suits the species less well. The line stands inside the crown, so its default draws shaded
+	 * wood; a pale, sparse crown shows a dark line over a large share of itself, and a species there
+	 * may lighten the line toward the bark's own tone.
+	 */
+	readonly cardStalkShade?: number;
+	/**
+	 * Whether the plant is scaled to its leaf form's top rather than its drawn card level's. The card
+	 * level's corners stand above the leaves that they picture, so a plant scaled to them can fall
+	 * short of its record's height when a card changes; a species whose pictures show that fault
+	 * names this, and its height then follows the foliage that no card change moves. A record that
+	 * does not name it keeps the measure it was judged with.
+	 */
+	readonly heightAtLeafTop?: boolean;
 	/**
 	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
 	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch

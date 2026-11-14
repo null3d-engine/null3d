@@ -69,14 +69,14 @@ import {
 	mergeShoots,
 } from './cutting';
 import {
-	cardTop,
 	crownReach,
 	HEIGHT_RESIDUAL,
+	plantTop,
+	plantTopRow,
 	scaledPlacement,
 	scaledRows,
 	scaledSkeleton,
 	targetHeight,
-	topRow,
 } from './grow/height';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
@@ -758,8 +758,8 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		() => placeholderSkeleton(growInput),
 	);
 	speciesHooks(record.id)?.afterGrow?.(grown, record, growInput.seed);
-	// The record's height means the drawn plant's top: the grown skeleton and the shoot placement are
-	// scaled together before the light, so the drawn crown aims at the sampled target. A cut piece
+	// The record's height means the leaf form's top: the grown skeleton and the shoot placement are
+	// scaled together before the light, so the nearest foliage aims at the sampled target. A cut piece
 	// keeps its own size. An instanced plant draws its cards, and a merged plant its foliage mesh;
 	// both are scaled through the skeleton, and each is measured at its own drawn level.
 	const merged = record.lod.nearFoliage === 'merged';
@@ -847,7 +847,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 					1,
 				)
 			: rows.count > 0
-				? Math.max(skeleton.height, cardTop(kit, rows))
+				? Math.max(skeleton.height, plantTop(kit, rows, record))
 				: 0;
 		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
 			const corrective = target / top;
@@ -889,7 +889,7 @@ interface Dressed {
 function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
 	if (!grown.order) {
 		// The row that holds the drawn top stays, so every sparseness keeps the plant's height.
-		const top = topRow(kit, grown.rows);
+		const top = plantTopRow(kit, grown.rows, kit.record);
 		grown.order = sparseOrder(
 			grown.input.skeleton,
 			grown.rows,

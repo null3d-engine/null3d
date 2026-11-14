@@ -23,7 +23,9 @@ import { standInSpecies } from '../../packages/vegetation/src/core/stand-in';
 import { DETAILS } from '../../packages/vegetation/src/core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../../packages/vegetation/src/generate';
 import { kitBuffers } from '../../packages/vegetation/src/generate-task';
+import { targetHeight } from '../../packages/vegetation/src/grow/height';
 import { SURFACE_SHEATH } from '../../packages/vegetation/src/leaf/writer';
+import { foliageBox } from '../../packages/vegetation/src/lod/card-size.test-support';
 import { drawnAtTallest } from '../../packages/vegetation/src/lod/drawn';
 import { scaledBudget } from './run-budget.ts';
 
@@ -133,6 +135,9 @@ function growsWithinBudget(kit: SpeciesKitData): void {
 	}
 }
 
+/** How far a leaf form's top may stand from its record's sampled height, as a share of it. */
+const HEIGHT_SLACK = 0.03;
+
 /**
  * Registers the checks one species must pass.
  *
@@ -223,6 +228,27 @@ export function walkSpecies(walked: Walked): void {
 				expect(drawn).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
 			},
 			scaledBudget(120_000),
+		);
+
+		// A record that scales to its leaf form stands within 3 per cent of its record's height:
+		// its wood's top or its nearest foliage's, whichever is higher. Every other record keeps the
+		// drawn card level's measure it was judged with, which its cards may stand above.
+		it(
+			"stands its leaf form within 3 per cent of its record's height where it asks to",
+			() => {
+				if (record.lod.heightAtLeafTop !== true) return;
+				const kit = buildKitNow(module, { placeholders: walked.placeholders });
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+				const target = targetHeight(record, 11, 0);
+				const top = Math.max(asset.skeleton.height, foliageBox(kit, asset, 0).max[1]);
+				const off = Math.abs(top - target) / target;
+				expect([walked.folder, top.toFixed(3), off <= HEIGHT_SLACK]).toEqual([
+					walked.folder,
+					top.toFixed(3),
+					true,
+				]);
+			},
+			scaledBudget(60_000),
 		);
 
 		it(

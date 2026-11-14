@@ -135,13 +135,13 @@ const HEADER_EXTRA_BANDS: i32 = 43;
 const HEADER_EXTRA_SCALES: i32 = 47;
 // An extra's stalk colour and its band's roughness, per extra in record order.
 const HEADER_EXTRA_STALKS: i32 = 51;
-// The least width in pixels that a card's stalk draws, or 0 where the record gives none.
-const HEADER_CARD_STALK: i32 = 55;
 const HEADER_SCAR: i32 = 69;
 const HEADER_SCAR_COLOUR: i32 = 70;
 /// The coarsest mip level a card's sample reads: the deepest where the species' smallest leaf cell
 /// still holds four texels a side.
 const HEADER_CARD_LEVEL_MOST: i32 = 71;
+// A card's stalk line: its least width in pixels, and 1 where the line draws at its twig's width.
+const HEADER_CARD_STALK: i32 = 55;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
@@ -626,12 +626,15 @@ fn bark_lift(input: VertexInput) -> f32 {
     return (luminance - tiling.z) * tiling.w * weight;
 }
 
-/// The plant-space offset that widens a card's stalk to the record's least width on screen. The two
-/// vertices at each end of the stalk start at one point, so the vertex stage gives the line its
-/// width: it turns the width across the stalk's own direction on screen, and brings it back into
-/// the plant's space through the frame's projection and the object's transform.
+/// The plant-space offset that widens a card's stalk to the record's least width on screen, or, where
+/// the record names the twig-width marker, to the width of the twig it stands for, floored at the
+/// record's least and the wood's least drawn width. The two vertices at each end of the stalk start
+/// at one point, so the vertex stage gives the line its width: it turns the width across the stalk's
+/// own direction on screen, and brings it back into the plant's space through the frame's projection
+/// and the object's transform.
 fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
-    let least = header(HEADER_CARD_STALK).x;
+    let stalk = header(HEADER_CARD_STALK);
+    let least = stalk.x;
     if (least <= 0.0 || frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
         return vec3f(0.0);
     }
@@ -652,9 +655,19 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     }
     let side = select(-1.0, 1.0, input.uv.x > 0.5 * TEXTURE_UV_STEPS);
     let across = vec2f(-along.y, along.x) * side;
-    // Half the least width, in normalized device coordinates.
-    let ndc = across * (least * 0.5) / frame.resolution * 2.0;
     let projection = camera.projection;
+    // The record's least width, and, where it names the twig-width marker, the twig's own width in
+    // pixels from the radius the card mesh writes in the second texture coordinate, floored at that
+    // least and at half the wood's least drawn width.
+    var half = least * 0.5;
+    if (stalk.y > 0.5) {
+        let scale = sqrt(max(dot(model[0].xyz, model[0].xyz), 0.000001));
+        let radius = input.uv.y / TEXTURE_UV_STEPS * WOOD_RADIUS_SPAN * scale;
+        let own = radius * projection[1][1] * frame.resolution.y * 0.5 / clip.w;
+        half = max(own, max(half, WOOD_LEAST_PIXELS * 0.5));
+    }
+    // That half-width, in normalized device coordinates.
+    let ndc = across * half / frame.resolution * 2.0;
     let view = vec3f(ndc.x * clip.w / projection[0][0], ndc.y * clip.w / projection[1][1], 0.0);
     let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
     // The object's linear part is a uniform scale and a turn, so its inverse is the transpose over
@@ -1265,7 +1278,10 @@ fn surface(input: SurfaceInput) -> Surface {
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
             // A card's stalk: a shade of the young bark's tone, so the join the card's leaves stand
             // on shows without the line standing out pale against the leaves.
-            base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb * CARD_STALK_SHADE;
+            let shade = header(HEADER_CARD_STALK).z;
+            base =
+                header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb *
+                select(CARD_STALK_SHADE, shade, shade > 0.0);
             roughness = 0.85;
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {

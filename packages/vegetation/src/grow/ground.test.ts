@@ -345,7 +345,10 @@ describe('the pendulous sedge', () => {
 		// [D-314](../../../../.dev/decisions/D-314-plant-coarseness.md) lists them. It does not
 		// read the impostor cards, so their mesh moving leaves it alone. A deliberate record
 		// change re-records the figure, and the growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('d5639f211ed6d288');
+		// The record names the leaf-form height measure, the one its whole views were judged with,
+		// and it draws its cards' twig lines at the twigs' widths and on to the cards' centres; all
+		// of these move the sedge's blades' scale and its card levels.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('f1926c1fb4d54966');
 	});
 
 	it('ends its blades in long fine points', () => {
