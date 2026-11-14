@@ -766,6 +766,23 @@ describe('the card levels', () => {
 		}
 	});
 
+	it("grows a card further where the record asks, inside the leaf form's hull", () => {
+		const asked = {
+			...mesh,
+			record: { ...record, lod: { ...record.lod, cardGrow: 2 } },
+		};
+		const plain = cardMesh(mesh, 1);
+		const grown = cardMesh(asked, 1);
+		// The first card's quad: its first two corners are its plane's left and right edges.
+		const width = (arrays: { positions: Float32Array }) =>
+			Math.hypot(
+				(arrays.positions[3] as number) - (arrays.positions[0] as number),
+				(arrays.positions[4] as number) - (arrays.positions[1] as number),
+				(arrays.positions[5] as number) - (arrays.positions[2] as number),
+			);
+		expect(width(grown)).toBeGreaterThan(width(plain) * 1.01);
+	});
+
 	it('draws no card stalk where the record asks for none', () => {
 		const plain = cardMesh(mesh, 1);
 		expect(planeTriangles(plain)).toBe(drawnRows(1).length * 6);
