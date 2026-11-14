@@ -53,9 +53,10 @@ export const directed: Species = {
 		fronds: {
 			// Picture 01 at full size shows 22 to 24 living fronds from one side (some 6 steep, 9
 			// spreading, 8 hanging), the turning video 18 to 24 a frame and picture 05 from below 24.
-			// The crown takes the pictures' highest one-side reading, doubled: 48 in all. At 40 the
-			// crown drew 0.44 of its own sky against the photographs' 0.20 (the preview's match, 01).
-			count: { mean: 48, spread: 4 },
+			// The crown takes the pictures' highest one-side reading, doubled and raised by a sixth: 56 in all.
+			// At 48, 0.44 of the crown's own sky against the photographs' 0.20, and at 56, 0.27
+			// (the preview's match at 01).
+			count: { mean: 56, spread: 4 },
 			divergence: 137.5,
 			// Picture 05: the frond bases clasp about the top metre of the trunk.
 			clasp: 0.9,
