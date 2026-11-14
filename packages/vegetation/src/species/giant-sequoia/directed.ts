@@ -9,10 +9,27 @@ import { record } from './record';
 /** The record's stem base without its surface roots. */
 const { roots: _roots, ...foot } = record.base as BaseSpec;
 
+/**
+ * The species' leaf at the top of its stated 3 to 6 mm: still 21's cord is a rope of scales 6 to 7 mm
+ * thick. The old record keeps the leaf for the crown it grows; this plant takes the cord's own size.
+ */
+const foliage: Species['foliage'] =
+	record.foliage.kind === 'needle'
+		? {
+				...record.foliage,
+				needle: {
+					...record.foliage.needle,
+					length: { mean: 0.006, spread: 0.001 },
+					width: 0.0035,
+				},
+			}
+		: record.foliage;
+
 /** The giant sequoia's record with the directed frame in place of the grown one. */
 export const directed: Species = {
 	...record,
 	pieces: PIECES,
+	foliage,
 	// Still 01: the trunk is 0.21 of the height across at breast height, on its flare.
 	size: { ...record.size, dbh: 12 },
 	growth: {
@@ -106,20 +123,20 @@ export const directed: Species = {
 			// degrees.
 			arms: { count: 2, angle: 25, radius: 0.7 },
 		},
-		// Still 01: separate rounded clumps 0.04 to 0.06 of the height across, one on each end.
+		// Still 01: separate rounded clumps 0.04 to 0.06 of the height across. One long dome lies
+		// along each limb's outer half, so the clumps of neighbouring levels meet.
 		patch: {
 			kind: 'dome',
 			each: 'limb',
 			width: [0.04, 0.06],
 			along: 0.5,
 			depth: 1,
-			// No picture shows a clump opened. A dome 2.9 m across clothed with boughs 0.84 m long
-			// takes 20 to 40 of them, which a bough to each 0.45 m square of a dome a bough's reach
-			// inside the clump's gives. At that pitch the nearest wood is 11.3 MB against the class's
-			// 8.9 MB, and the boughs drawn at once 4.66 million against 2.5 million; a bough to each
-			// 0.70 m square holds every limit (6.0 MB, 1.98 million). Still 04: the boughs point up
-			// and out of the clump.
-			sockets: { piece: 'bough', pitch: 0.45, lift: 45 },
+			// At seed 11 a bough to each 0.35 m square is 5,860 boughs: near wood 6.85 MB against the
+			// class's 8.9 MB, and the first card level's sky 0.263, 0.228 and 0.260 on 01, 02 and 18
+			// against 0.035, 0.022 and 0.081. Its levels cost 146,587 and 21,695 triangles against
+			// 152,000 and 42,800, and 1.06 million draw at once from the tallest stated eye against
+			// 2.5 million. Still 04: the boughs point up and out of the clump.
+			sockets: { piece: 'bough', pitch: 0.35, lift: 45 },
 		},
 	},
 	lod: {
@@ -131,20 +148,18 @@ export const directed: Species = {
 		// cords: each takes one stretch, three quads, so the bough's brushes cost a few hundred
 		// triangles.
 		cardCuts: { most: 1 },
-		// A card level draws the branch under every card it keeps, so each level keeps the wood its
-		// cards stand on: the arms at the first, whose ends carry clumps, and the limbs at the second.
-		// With the trunk alone at the second the branches under its cards cost 73,486 triangles of
-		// its 42,800; with the limbs 7,763.
+		// A socket's twig leaves a limb or an arm, so each level keeps the wood its rows stand on:
+		// the arms at the first and the limbs at the second.
 		woodOrders: [2, 1],
-		// Each card level draws the branch under any card that would hang free, so no card draws a
-		// stalk of its own: the stalks cost 4 of each card's 10 triangles.
-		cardStalk: 0,
-		cardStalkToFoliage: false,
+		// Each card draws its own stalk from the wood it stands on to its foliage, four triangles of
+		// its ten, so no branch under it is drawn to join it.
+		cardStalk: 1,
+		cardStalkToFoliage: true,
 		// The second level keeps every second of its cards, each grown by the root of two, and keeps
-		// the cards' area within a hundredth: 75,940 card triangles become 22,740 with no stalks.
+		// the cards' area within a hundredth.
 		cardShare: [1, 0.5],
 		// Still 21: a bough carries two cones 6.5 cm long, under a pixel or a few at the card levels'
-		// distances, where they cost 66,572 triangles of the first level's 152,000.
+		// distances, where drawing them would cost 66,572 triangles of the first level's 152,000.
 		extrasFrom: 1,
 	},
 	base: {
