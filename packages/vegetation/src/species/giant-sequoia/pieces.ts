@@ -33,7 +33,7 @@ const SCALES = {
 function branchlet(length: number): PieceStem {
 	return {
 		length: { mean: length, spread: length * 0.1 },
-		radius: [0.004, 0.002],
+		radius: [0.0045, 0.0022],
 		droop: 100,
 		droopOver: [0.1, 0.55],
 		leaves: { ...SCALES, from: 0.1 },
@@ -42,33 +42,35 @@ function branchlet(length: number): PieceStem {
 			{
 				stem: {
 					length: { mean: 0.11, spread: 0.02 },
-					radius: [0.0022, 0.0018],
+					radius: [0.0026, 0.002],
 					droop: 10,
 					leaves: SCALES,
 					bud: false,
-					// Still 09: each side shoot of a hanging branchlet divides into 3 to 6 cords.
+					// Still 09: each side shoot of a hanging branchlet divides into 4 or 5 cords, whose
+					// scales make a rope near the scales' own width.
 					sides: [
 						{
 							stem: {
 								length: { mean: 0.06, spread: 0.01 },
-								radius: [0.0018, 0.0015],
+								radius: [0.0022, 0.0018],
 								leaves: SCALES,
 								bud: false,
 							},
-							gap: 0.025,
+							gap: 0.02,
 							from: 0.2,
 							to: 0.95,
 							arrangement: 'alternate',
-							angle: { mean: 35, spread: 5 },
+							angle: { mean: 45, spread: 5 },
 						},
 					],
 				},
-				// Seven a branchlet, alternate, over its hanging part.
+				// Seven a branchlet, alternate, over its hanging part, spread like the fingers of a
+				// tassel so the plumes of neighbouring branchlets overlap.
 				gap: (length * 0.7) / 7,
 				from: 0.3,
 				to: 1,
 				arrangement: 'alternate',
-				angle: { mean: 25, spread: 8 },
+				angle: { mean: 40, spread: 10 },
 			},
 		],
 	};

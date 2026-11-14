@@ -119,7 +119,7 @@ export const directed: Species = {
 			// 8.9 MB, and the boughs drawn at once 4.66 million against 2.5 million; a bough to each
 			// 0.70 m square holds every limit (6.0 MB, 1.98 million). Still 04: the boughs point up
 			// and out of the clump.
-			sockets: { piece: 'bough', pitch: 0.7, lift: 45 },
+			sockets: { piece: 'bough', pitch: 0.45, lift: 45 },
 		},
 	},
 	lod: {
