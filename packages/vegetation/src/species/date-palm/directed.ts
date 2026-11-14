@@ -52,22 +52,25 @@ export const directed: Species = {
 		},
 		fronds: {
 			// Picture 01 at full size shows 22 to 24 living fronds from one side (some 6 steep, 9
-			// spreading, 8 hanging), the turning video 18 to 24 a frame and picture 05 from below 24:
-			// about 40 in all, 36 to 44.
-			count: { mean: 40, spread: 4 },
+			// spreading, 8 hanging), the turning video 18 to 24 a frame and picture 05 from below 24.
+			// The crown takes the pictures' highest one-side reading, doubled: 48 in all. At 40 the
+			// crown drew 0.44 of its own sky against the photographs' 0.20 (the preview's match, 01).
+			count: { mean: 48, spread: 4 },
 			divergence: 137.5,
 			// Picture 05: the frond bases clasp about the top metre of the trunk.
 			clasp: 0.9,
 			// Picture 01, from the growing point: the share of fronds in each rank and the angle they
 			// leave at. The inner, young fronds are 0.7 of a full frond long. Pictures 01 and 04 and
 			// the turning video: the fronds fill one even dome from near upright to hanging, in layers
-			// 10 to 15 degrees apart, so each rank spreads over about half the gap to its neighbours.
+			// 10 to 15 degrees apart. The shares follow the picture's 6 steep, 9 spreading and 8
+			// hanging from one side, so a quarter of the fronds hang; at an eighth the crown's sky
+			// stood 0.01 wider at 01 (the preview's match).
 			ranks: [
-				{ share: 0.2, leave: 82, spread: 6, piece: 'frond-straight', length: 0.7 },
-				{ share: 0.27, leave: 55, spread: 12, piece: 'frond-arched', length: 1 },
-				{ share: 0.27, leave: 30, spread: 11, piece: 'frond-arched', length: 1 },
-				{ share: 0.18, leave: 8, spread: 11, piece: 'frond-arched', length: 1 },
-				{ share: 0.08, leave: -30, spread: 15, piece: 'frond-straight', length: 1 },
+				{ share: 0.15, leave: 82, spread: 6, piece: 'frond-straight', length: 0.7 },
+				{ share: 0.2, leave: 55, spread: 12, piece: 'frond-arched', length: 1 },
+				{ share: 0.2, leave: 30, spread: 11, piece: 'frond-arched', length: 1 },
+				{ share: 0.2, leave: 8, spread: 11, piece: 'frond-arched', length: 1 },
+				{ share: 0.25, leave: -30, spread: 15, piece: 'frond-straight', length: 1 },
 			],
 		},
 		// Picture 20: a dense curtain of about 15 dead fronds from one side, 2.9 times the trunk wide,
@@ -162,13 +165,13 @@ export const directed: Species = {
 		leaf: {
 			...leaflet,
 			// Picture 04, several whole fronds with their leaflets full from base to tip: the longest
-			// leaflets 0.10 to 0.12 of the frond (0.66 m on this one, past the fact sheet's 20 to
-			// 40 cm, recorded), and a tenth to a twelfth as wide as long (the fact sheet says a
-			// fifteenth to a thirtieth). Still 12: widest at 0.35 from the base, a long straight taper
+			// leaflets 0.10 to 0.12 of the frond (0.72 m, the picture's most, past the fact sheet's
+			// 20 to 40 cm, recorded), and a tenth to a twelfth as wide as long (the fact sheet says a
+			// fifteenth to a thirtieth). At 0.66 m the crown drew 0.39 of its own sky at 01. Still 12: widest at 0.35 from the base, a long straight taper
 			// to a sharp point. The longest stand at the frond's middle (pieces.ts). A narrow leaflet
 			// is a card at the low and medium tiers and a card folded at its midrib at the high and
 			// ultra tiers: stills 09 and 12 and the fact sheet show the fold.
-			length: { mean: 0.66, spread: 0.05 },
+			length: { mean: 0.72, spread: 0.05 },
 			// The upper face as the plant's own pictures show its leaflets (green pixels' means, in
 			// sRGB): 04 96 / 108 / 90, 09 114 / 126 / 99, 11 114 / 125 / 103, 12 110 / 128 / 107, 21
 			// 112 / 122 / 103 and 22 124 / 134 / 116, their mean 112 / 124 / 103. The texture's source,
@@ -177,8 +180,8 @@ export const directed: Species = {
 			narrow: true,
 			outline: {
 				width: [
-					[0, 0.012],
-					[0.35, 0.042],
+					[0, 0.013],
+					[0.35, 0.046],
 					[1, 0.003],
 				],
 				tip: 'acuminate',
@@ -221,7 +224,13 @@ export const directed: Species = {
 			// together: 4.06, 4.22, 4.44 and 4.83 MB at the low, medium, high and ultra tiers, against
 			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.73, 0.85, 1.06 and
 			// 1.43 MB; a plant's at most 1.38 MB, the dates most of it.
-			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 2_500_000, ultra: 2_500_000 },
+			// The ultra kit's own cap rises once, to its measure plus a twentieth, by the lead's
+			// ruling on 14 November 2026: 2,602,980 bytes measured at seed 11 over the three
+			// variants (kit 1.80 / 1.94 / 2.19 / 2.60 MB at low / medium / high / ultra), after the
+			// leaflets went to 102 a side, the fronds to 48 and the leaflet to 0.72 m, which took the
+			// crown's own sky at 01 from 0.45 to 0.33 against the photographs' 0.20. The other tiers
+			// stay at 2.5 MB and the palm class's cap at 4 MB.
+			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 2_500_000, ultra: 2_733_000 },
 			variantBytes: { low: 1_600_000, medium: 1_600_000, high: 1_600_000, ultra: 1_600_000 },
 		},
 	},
