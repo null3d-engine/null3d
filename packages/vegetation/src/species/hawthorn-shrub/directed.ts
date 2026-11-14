@@ -15,7 +15,7 @@ import { record } from './record';
  * little over its width apart over the mass's surface, so a twig's end stands inside the piece it
  * carries, and a branch end's reach inside the surface.
  */
-const ENDS = { pitch: 0.38 / 4, reach: 0.37 / 4 } as const;
+const ENDS = { pitch: 0.36 / 4, reach: 0.37 / 4 } as const;
 
 /**
  * A leading shoot: a straight leafy shoot that carries on from a branch end and stands outside the
