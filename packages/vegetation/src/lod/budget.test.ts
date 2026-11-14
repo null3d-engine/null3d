@@ -56,11 +56,10 @@ const FLOORS: readonly (readonly [woody: number, ground: number])[] = [
 const BODY_CELL = 0.4;
 
 /**
- * The distance in metres from a card's point to a joined point within which the card's level holds
- * it, so a card the join holds does not read as free. Wood keeps the finer cell, since a gap between
- * wood pieces of the join's reach shows at every distance.
+ * The distance in metres from a cell's point to a joined point within which the level's own join
+ * holds it, so a piece the join holds does not read as free.
  */
-function cardReach(level: 0 | 1 | 2): number {
+function levelReach(level: 0 | 1 | 2): number {
 	return level === 0 ? BODY_CELL : (SEED_REACH[level - 1] as number);
 }
 
@@ -120,12 +119,12 @@ for (const id of SPECIES) {
 						fullParts === fullCount,
 						`${id} sparse ${sparse} none: parts ${fullParts} against the levels' ${fullCount}`,
 					);
-					// The best look is one body too, every card within the reach that its level's join
+					// The best look is one body too, every piece within the reach that its level's join
 					// allows.
 					for (const level of [1, 2] as const) {
 						const parts = full.stats.parts[level];
 						if (parts.trunk === 0) continue;
-						const body = bodyFill(kit, full, level, BODY_CELL, false, ['cards'], cardReach(level));
+						const body = bodyFill(kit, full, level, BODY_CELL, false, ['cards'], levelReach(level));
 						check(
 							body.freeWood === 0 && body.freeLeaves === 0,
 							`${id} sparse ${sparse} none level ${level}: ${body.freeWood} free wood, ${body.freeLeaves} free leaves`,
@@ -170,7 +169,7 @@ for (const id of SPECIES) {
 							if (parts.trunk > 0)
 								check(joins?.free === 0, `${at} level ${level}: ${joins?.free} free clusters`);
 							// The level's own meshes show it: a fill from the trunk's foot reaches every
-							// piece of wood and every card, and a card joins within the reach its level
+							// piece of wood and every card, and a piece joins within the reach its level
 							// allows.
 							if (joins && joins.clusters > 0 && parts.trunk > 0) {
 								const body = bodyFill(
@@ -180,7 +179,7 @@ for (const id of SPECIES) {
 									BODY_CELL,
 									false,
 									['cards'],
-									cardReach(level),
+									levelReach(level),
 								);
 								check(
 									body.freeWood === 0 && body.freeLeaves === 0,

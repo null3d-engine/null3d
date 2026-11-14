@@ -35,9 +35,9 @@ const keyOf = (x: number, y: number, z: number) =>
  * @param rows Whether the shoot rows' bases are checked against the wood, as at the nearest level.
  * @param names The parts read beside the wood: the cards and a merged plant's foliage by default.
  *   Extras hang from the shoots' own tips, which a card level does not draw, so they are left out.
- * @param leafReach The distance in metres from a card's point to a joined point within which the
- *   card joins, as the card level's own join allows. A card farther from all joined points hangs
- *   free. The wood always joins by touching cells alone.
+ * @param leafReach The distance in metres from a cell's point to a joined point within which the
+ *   cell joins, as the level's own join allows. A piece farther from all joined points hangs free.
+ *   The wood always joins by touching cells alone when this is no wider than a cell.
  * @returns The counts.
  */
 export function bodyFill(
@@ -144,9 +144,9 @@ export function bodyFill(
 			queue.push(next);
 		}
 	}
-	// A card joins where one of its points stands within the card level's own reach of a joined
-	// point, or of another card that joined. A pass joins every card that reaches a joined point,
-	// and the passes repeat until none joins, so a chain of cards joins too.
+	// A piece joins where one of its points stands within the level's own reach of a joined point, or
+	// of another piece that joined. A pass joins every piece that reaches a joined point, and the
+	// passes repeat until none joins, so a chain of pieces joins too.
 	if (leafReach > cell) {
 		const square = leafReach * leafReach;
 		const cells = new Map<string, number[]>();
@@ -163,7 +163,7 @@ export function bodyFill(
 		let moved = true;
 		while (moved) {
 			moved = false;
-			for (const key of leaves) {
+			for (const key of points.keys()) {
 				if (reached.has(key)) continue;
 				const p = points.get(key) as [number, number, number];
 				const bx = Math.floor((p[0] as number) / leafReach);
