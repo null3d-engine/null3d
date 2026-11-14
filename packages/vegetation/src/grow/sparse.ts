@@ -532,7 +532,11 @@ function socketPlaces(
 	floor: number,
 	place: Uint32Array,
 	barePlace: Uint32Array,
-): { readonly carriers: number; readonly least: number; readonly runEnd: Uint32Array } {
+): {
+	readonly carriers: number;
+	readonly least: number;
+	readonly runEnd: Uint32Array;
+} {
 	const { axes, buds } = skeleton;
 	// Each socket's earliest place among its rows, and its unit: the branch that leaves a stem or a
 	// great limb and holds it, or, for the sockets on a stem or great limb itself, that axis's own.
@@ -749,6 +753,7 @@ export interface SparsePlant {
  * @param keep The carriers to keep.
  * @param least The fewest carriers the plant may keep: the order's own least for a sparseness,
  *   which holds the plant's height and outline, and fewer where a triangle maximum must go below it.
+ * @param wholeRuns Whether a cut that falls inside a run keeps the whole run.
  * @returns The sparser plant, or undefined when nothing goes.
  * @category api/vegetation
  */
@@ -758,10 +763,14 @@ export function sparsePlant(
 	order: SparseOrder,
 	keep: number,
 	least: number = order.least,
+	wholeRuns = true,
 ): SparsePlant | undefined {
 	let kept = Math.min(order.carriers, Math.max(least, Math.round(keep)));
-	// A thinning that cuts into a run that keeps or goes together keeps the whole run.
-	if (order.runEnd && kept > 0) kept = Math.max(kept, order.runEnd[kept - 1] as number);
+	// A thinning that cuts into a run that keeps or goes together keeps the whole run, so no unit
+	// loses half its clothing. At the sparsest the run is not kept, so the floor's share holds and
+	// the plant keeps fewer carriers than the next sparseness does.
+	if (wholeRuns && order.runEnd && kept > 0)
+		kept = Math.max(kept, order.runEnd[kept - 1] as number);
 	if (kept >= order.carriers) return undefined;
 	const { axes, buds } = skeleton;
 	const count = axes.count;

@@ -307,17 +307,22 @@ for (const id of SPECIES) {
 								r,
 								true,
 							]);
-						// Every level shows this same plant: a card level draws each card its share of
-						// the rows keeps, none dropped for want of a branch.
+						// Every level shows this same plant: it keeps the roots the plant's leaf form
+						// keeps, and a card level draws each card its share of the rows keeps, none
+						// dropped for want of a branch. A colony's fronds are separate bodies, so a
+						// sparser colony keeps fewer of them than the grown plant, and the count is the
+						// plant's own.
 						const input = meshInput(kit, plant);
+						const own = connectedBody(input, 0);
+						const grownBody = connectedBody(fullInput, 0);
+						expect([at, own.components <= grownBody.components]).toEqual([at, true]);
 						for (const level of [0, 1, 2] as const) {
 							const body = connectedBody(input, level);
-							const grown = connectedBody(fullInput, level);
 							expect([at, level, body.components, body.reachesRoot]).toEqual([
 								at,
 								level,
-								grown.components,
-								grown.reachesRoot,
+								own.components,
+								own.reachesRoot,
 							]);
 							if (level === 0) continue;
 							let share = 0;

@@ -916,7 +916,14 @@ function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 	if (thins && sparse > 0) {
 		const order = orderOf(kit, grown);
 		const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
-		thinned = sparsePlant(full.skeleton, full.rows, order, sparseKeep(order, sparse, floor));
+		thinned = sparsePlant(
+			full.skeleton,
+			full.rows,
+			order,
+			sparseKeep(order, sparse, floor),
+			order.least,
+			sparse < 1,
+		);
 	}
 	const input: DressInput = thinned
 		? { ...grown.input, skeleton: thinned.skeleton, grown: full }
