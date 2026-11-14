@@ -1,5 +1,5 @@
 // Sparseness takes foliage and the branches that carried it out of one grown plant. These tests
-// state its contracts over trees, a shrub, ground plants and a cactus: a sparser plant is a subset
+// state its contracts over every species the registry ships: a sparser plant is a subset
 // of every denser one, it is one body joined to its root, its counts fall, its height and trunk
 // hold, the removal is even round the crown and through its height, and a change of sparseness cuts
 // the plant that is kept as grown and grows nothing again.
@@ -9,7 +9,7 @@ import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset'
 import { speciesProblems } from './core/check';
 import { AXIS_STEM, SkeletonBuilder } from './core/graph';
 import type { Species, SpeciesModule } from './core/record';
-import { loadSpecies } from './core/registry';
+import { loadSpecies, speciesIds } from './core/registry';
 import {
 	buildKitNow,
 	forgetGrownPlants,
@@ -36,16 +36,8 @@ import type { MeshInput } from './stages';
 /** A species grows, meshes and thins at five values; a busy machine takes tens of seconds. */
 const LONG = scaledBudget(180_000);
 
-/** The species the contracts are stated over: three trees, a shrub, two ground plants, a cactus. */
-const SPECIES = [
-	'pedunculate-oak',
-	'scots-pine',
-	'silver-birch',
-	'hawthorn-shrub',
-	'sedge',
-	'hosta',
-	'saguaro',
-] as const;
+/** The species the contracts are stated over: every species the registry ships, as it ships it. */
+const SPECIES = speciesIds();
 
 /** The sparseness values each plant is cut at, rising. */
 const LEVELS = [0, 0.25, 0.5, 0.75, 1] as const;

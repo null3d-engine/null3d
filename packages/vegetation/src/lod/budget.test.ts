@@ -1,5 +1,5 @@
 // A triangle maximum draws one plant in no more triangles than a page allows. These tests state its
-// contracts over trees, a shrub, ground plants and a cactus, at nine maxima and three sparseness
+// contracts over every species the registry ships, uncapped and at eight maxima, at three sparseness
 // values: no level draws more than the maximum, each part stays within its allowance, the plant is
 // one body with every card joined to the wood, a growth gives the same bytes twice, and the capped
 // plant's outline overlaps the uncapped plant's by at least a stated share at each maximum.
@@ -7,7 +7,7 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
 import { shootTriangles } from '../coarseness';
-import { loadSpecies } from '../core/registry';
+import { loadSpecies, speciesIds } from '../core/registry';
 import {
 	buildKitNow,
 	forgetGrownPlants,
@@ -23,25 +23,8 @@ import { outlineMatte, outlineOverlap } from './outline.test-support';
 /** A species grows once and is cut and capped many times; a busy machine takes tens of seconds. */
 const LONG = scaledBudget(240_000);
 
-/** The species the contracts are stated over: three trees, a shrub, two ground plants, a cactus. */
-const SPECIES = [
-	'pedunculate-oak',
-	'scots-pine',
-	'silver-birch',
-	'hawthorn-shrub',
-	'sedge',
-	'hosta',
-	'saguaro',
-] as const;
-
-/** The plants with wood and shoot rows, whose leaves a maximum draws as cards. */
-const WOODY = new Set<string>([
-	'pedunculate-oak',
-	'scots-pine',
-	'silver-birch',
-	'hawthorn-shrub',
-	'saguaro',
-]);
+/** The species the contracts are stated over: every species the registry ships, as it ships it. */
+const SPECIES = speciesIds();
 
 /** The maxima each plant is capped at, falling; none stands for the plant's best look. */
 const MAXIMA = [1_000_000, 250_000, 50_000, 10_000, 2_000, 500, 100, 30] as const;
@@ -104,21 +87,44 @@ for (const id of SPECIES) {
 				`keeps every level within the maximum, each part within its allowance, and one body, at sparseness ${sparse}`,
 				async () => {
 					const kit = await kitOf(id);
-					// Every overlap under its floor, named, so one run shows them all.
-					const low: string[] = [];
+					// Every check that fails, with its figure, so one run shows them all.
+					const problems: string[] = [];
+					const check = (ok: boolean, what: string) => {
+						if (!ok) problems.push(what);
+					};
 					const base = { seed: 11, variant: 0, near: true, sparse } as const;
 					const full = growPlantNow(kit, base);
 					const matte = outlineMatte(kit, full, 0);
+					// A plant with wood and shoot rows draws its leaves as cards under a maximum; any other
+					// draws its own mesh of leaves.
+					const woody =
+						full.shoots.count > 0 && full.levels[0].parts.some((part) => part.name === 'wood');
 					// The best look counts every part, and its parts add up to what the levels hold.
-					expect(full.stats.allowed).toBeUndefined();
-					expect(partTotal(full.stats.parts[0])).toBe(
-						full.levels[0].triangles + shootTriangles(kit, full.shoots, kit.detail),
+					check(
+						full.stats.allowed === undefined,
+						`${id} sparse ${sparse}: the best look has allowances`,
 					);
+					const fullParts = partTotal(full.stats.parts[0]);
+					const fullCount = full.levels[0].triangles + shootTriangles(kit, full.shoots, kit.detail);
+					check(
+						fullParts === fullCount,
+						`${id} sparse ${sparse} none: parts ${fullParts} against the levels' ${fullCount}`,
+					);
+					// The best look is one body too.
+					for (const level of [1, 2] as const) {
+						const parts = full.stats.parts[level];
+						if (parts.trunk === 0) continue;
+						const body = bodyFill(kit, full, level, BODY_CELL, false, ['cards']);
+						check(
+							body.freeWood === 0 && body.freeLeaves === 0,
+							`${id} sparse ${sparse} none level ${level}: ${body.freeWood} free wood, ${body.freeLeaves} free leaves`,
+						);
+					}
 					for (const max of MAXIMA) {
 						const at = `${id} sparse ${sparse} max ${max}`;
 						const plant = growPlantNow(kit, { ...base, maxTriangles: max });
 						const allowed = plant.stats.allowed;
-						expect([at, allowed !== undefined, plant.maxTriangles]).toEqual([at, true, max]);
+						check(allowed !== undefined && plant.maxTriangles === max, `${at}: no allowances`);
 						for (const level of [0, 1, 2] as const) {
 							const parts = plant.stats.parts[level];
 							// The count is the level's own meshes and, at the nearest, its shoot rows at
@@ -127,12 +133,12 @@ for (const id of SPECIES) {
 								level === 0 && plant.shootDetail !== 'none'
 									? shootTriangles(kit, plant.shoots, plant.shootDetail ?? kit.detail)
 									: 0;
-							expect([at, level, partTotal(parts)]).toEqual([
-								at,
-								level,
-								plant.levels[level].triangles + rows,
-							]);
-							expect([at, level, partTotal(parts) <= max]).toEqual([at, level, true]);
+							const total = partTotal(parts);
+							check(
+								total === plant.levels[level].triangles + rows,
+								`${at} level ${level}: parts ${total} against the level's ${plant.levels[level].triangles + rows}`,
+							);
+							check(total <= max, `${at} level ${level}: ${total} triangles`);
 							for (const part of [
 								'trunk',
 								'limbs',
@@ -141,39 +147,40 @@ for (const id of SPECIES) {
 								'leaves',
 								'extras',
 							] as const)
-								expect([at, level, part, parts[part] <= (allowed?.[level][part] ?? 0)]).toEqual([
-									at,
-									level,
-									part,
-									true,
-								]);
+								check(
+									parts[part] <= (allowed?.[level][part] ?? 0),
+									`${at} level ${level}: ${part} ${parts[part]} over its allowance ${allowed?.[level][part] ?? 0}`,
+								);
 							// One body: limbs and branches only on a trunk, and every card cluster joined to
 							// the wood the level draws.
 							if (parts.limbs + parts.branches > 0)
-								expect([at, level, parts.trunk > 0]).toEqual([at, level, true]);
+								check(parts.trunk > 0, `${at} level ${level}: limbs or branches with no trunk`);
 							const joins = plant.stats.clusters?.[level];
-							if (parts.trunk > 0) expect([at, level, joins?.free]).toEqual([at, level, 0]);
+							if (parts.trunk > 0)
+								check(joins?.free === 0, `${at} level ${level}: ${joins?.free} free clusters`);
 							// The level's own triangles show it: a fill from the trunk's foot through cells
 							// of 0.4 m reaches every piece of wood and every card.
 							if (joins && joins.clusters > 0 && parts.trunk > 0) {
 								const body = bodyFill(kit, plant, level, BODY_CELL, false, ['cards']);
-								expect([at, level, body.freeWood, body.freeLeaves]).toEqual([at, level, 0, 0]);
+								check(
+									body.freeWood === 0 && body.freeLeaves === 0,
+									`${at} level ${level}: ${body.freeWood} free wood, ${body.freeLeaves} free leaves`,
+								);
 							}
 						}
 						// The nearest wood that arrives later is the wood the capped level holds.
 						const later = growNearWoodNow(kit, { ...base, maxTriangles: max });
 						let wood = 0;
 						for (const part of later) wood += part.arrays.indices.length / 3;
-						expect([at, wood]).toEqual([at, trianglesOf(plant, 0, 'wood')]);
+						const held = trianglesOf(plant, 0, 'wood');
+						check(wood === held, `${at}: later wood ${wood} against the level's ${held}`);
 						// The outline holds its share of the uncapped plant's.
 						const overlap = outlineOverlap(matte, outlineMatte(kit, plant, 0));
 						table.set(`${id}|${sparse}|${max}`, overlap);
-						const floor = (FLOORS[MAXIMA.indexOf(max)] as readonly [number, number])[
-							WOODY.has(id) ? 0 : 1
-						];
-						if (overlap < floor) low.push(`${at}: ${overlap.toFixed(3)} under ${floor}`);
+						const floor = (FLOORS[MAXIMA.indexOf(max)] as readonly [number, number])[woody ? 0 : 1];
+						check(overlap >= floor, `${at}: overlap ${overlap.toFixed(3)} under ${floor}`);
 					}
-					expect(low).toEqual([]);
+					expect(problems).toEqual([]);
 				},
 				LONG,
 			);
