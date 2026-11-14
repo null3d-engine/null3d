@@ -10,6 +10,7 @@ import {
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../../../packages/vegetation/src/core/graph.ts';
+import { stoolRadius } from '../../../tests/pages/lib/plant-review/anatomy.ts';
 import {
 	checkShot,
 	forkShot,
@@ -120,6 +121,28 @@ function oak(): MacroSkeleton {
 	buds(b, thin, twig[3] as number, [-4, 6.3, 0], 0.5, 4);
 	return b.finish(5);
 }
+
+/** Two stems from one foot, the second standing 0.4 m away, each 0.1 m thick at its base. */
+function clump(): MacroSkeleton {
+	const b = new SkeletonBuilder();
+	const first = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	run(b, first, -1, [0, 0, 0], [0, 1, 0], 4, 0.1, 0.2);
+	const second = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	run(b, second, -1, [0.4, 0, 0], [0, 1, 0], 4, 0.1, 0.2);
+	return b.finish(3);
+}
+
+describe('the wood that stands at the ground', () => {
+	test('reads a single stem at its own base radius', () => {
+		expect(stoolRadius(oak())).toBeCloseTo(0.8, 6);
+	});
+
+	test("reads a clump at its farthest stem, with that stem's own drawn radius", () => {
+		expect(stoolRadius(clump())).toBeCloseTo(0.5, 6);
+		// The record's flare adds its share of each stem's radius, not of the stool's spread.
+		expect(stoolRadius(clump(), 1.2)).toBeCloseTo(0.62, 6);
+	});
+});
 
 describe('the subjects of a macro skeleton', () => {
 	const subjects = subjectsOfSkeleton(oak(), { leafLength: 0.11 });

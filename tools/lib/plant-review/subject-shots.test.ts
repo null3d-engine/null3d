@@ -902,6 +902,21 @@ describe('the bark views', () => {
 		expect(shot.facts.frame as number).toBeCloseTo((pipe.facts.frame as number) * 1.85, 6);
 	});
 
+	test('the frame covers a stool of stems, so the ground beside it stays in the picture', () => {
+		const trunk = trunkOf(14, 0.35, 5);
+		const shot = shotOf(barkBaseShot(tree({ trunk }), WIDE, { turn: 0, stool: 0.6 }));
+		// The stool's own spread fills the share the view asks for, wider than the pipe's flare.
+		expect(shot.facts.radius as number).toBeCloseTo(0.6, 6);
+		expect(shareOfWidth(shot, WIDE, [0, 0, 0], 1.2)).toBeCloseTo(0.5, 6);
+		expect(0.5 - shareOfWidth(shot, WIDE, [0, 0, 0], 0.6)).toBeGreaterThan(0.1);
+		// Each stem takes a smaller share of a stool's frame, so the stool's spread holds the scale.
+		expect(checkShot(shot, WIDE).present).toBe(true);
+		// A stool narrower than the pipe gives keeps the pipe's own frame and its stem's share.
+		const narrow = shotOf(barkBaseShot(tree({ trunk }), WIDE, { turn: 0, stool: 0.1 }));
+		expect(narrow.facts.radius as number).toBeCloseTo(0.35, 2);
+		expect(narrow.points.some((p) => p.size !== undefined)).toBe(true);
+	});
+
 	test('the mid-trunk frame narrows to the bark a thin trunk has', () => {
 		const thin = tree({ trunk: trunkOf(10, 0.12, 5) });
 		const lens = { fov: 40, aspect: 1 };

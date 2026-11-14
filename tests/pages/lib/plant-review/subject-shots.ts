@@ -1870,6 +1870,20 @@ export interface BarkBaseOptions {
 	 * the picture; a record with no base holds the pipe's own width.
 	 */
 	readonly base?: BaseSpec;
+	/**
+	 * The radius, in metres, of the wood that stands at the ground where the plant grows several
+	 * stems from one stool. The frame covers the whole stool, so the ground beside it stays in the
+	 * picture; a plant with one stem passes nothing and keeps the width its own flare gives.
+	 */
+	readonly stool?: number;
+}
+
+/**
+ * The share that the record's flare, taper and buttress crests add to a stem's radius at the
+ * ground. A base that states none of them keeps the pipe's own width.
+ */
+export function baseSwell(base: BaseSpec | undefined): number {
+	return (base?.flare.amount ?? 0) + (base?.taper?.amount ?? 0) + (base?.buttress?.amount ?? 0);
 }
 
 /** The share of the frame's width that the trunk's foot takes. */
@@ -1899,13 +1913,14 @@ export function barkBaseShot(
 	// The foot's own width: the pipe swells at the ground by the record's flare, its bole taper and
 	// the crests of its buttresses. The frame follows the foot, so the ground beside it stays in the
 	// picture; a base that states none of these keeps the pipe's width.
-	const swell =
-		(options.base?.flare.amount ?? 0) +
-		(options.base?.taper?.amount ?? 0) +
-		(options.base?.buttress?.amount ?? 0);
-	const radius =
+	const swell = baseSwell(options.base);
+	const foot =
 		Math.max((trunk.axis[0] as AxisSample).radius, trunkRadius(trunk, ground + FLARE_HEIGHT)) *
 		(1 + swell);
+	// A stool of stems stands wider than one stem's foot: the frame then covers the whole stool.
+	const stool = options.stool ?? 0;
+	const overStool = stool > foot;
+	const radius = overStool ? stool : foot;
 	const tall = (2 * radius) / BASE_TRUNK_SHARE / lens.aspect;
 	const lookDown = Math.max(options.lookDown ?? 0, lens.fov / 2 + BASE_EDGE_BELOW_LEVEL) * DEG;
 	const out = facing(options.turn);
@@ -1934,7 +1949,11 @@ export function barkBaseShot(
 				name: 'the trunk above its flare',
 				at: above.at,
 				within: [0.3, 0.05, 0.7, BASE_ROW],
-				size: { metres: 2 * above.radius, of: 'width', min: 0.15, max: 0.8 },
+				// A picture of a stool frames the whole stool, so each stem takes a smaller share
+				// than a lone trunk's: the stool's own spread in the frame carries the scale.
+				...(!overStool && {
+					size: { metres: 2 * above.radius, of: 'width' as const, min: 0.15, max: 0.8 },
+				}),
 			},
 		],
 		regions: [

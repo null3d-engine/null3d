@@ -6,6 +6,7 @@ import {
 	AXIS_CULM,
 	AXIS_LIMB,
 	AXIS_ROOT,
+	AXIS_STEM,
 	BUD_FLOWER,
 } from '../../../../packages/vegetation/src/core/graph';
 import type { MacroSkeleton, ShootRows } from './plant-types';
@@ -298,6 +299,29 @@ export function stemFoot(skeleton: MacroSkeleton): V3 {
 	if (stem < 0) return [0, 0, 0];
 	const base = nodeAt(skeleton, skeleton.axes.first[stem] as number);
 	return [base[0], 0, base[2]];
+}
+
+/**
+ * The radius, in metres, of the wood that stands at the ground: the farthest of the stems' bases
+ * from the main stem's foot, with that base's own drawn radius. A plant with one stem gives its own
+ * base radius. A clump of stems from one stool gives the stool's spread, which is wider than any
+ * one stem's flare. `swell` is the share the record's flare, taper and buttress crests add to each
+ * stem's radius, so the figure reaches the wood's drawn edge.
+ */
+export function stoolRadius(skeleton: MacroSkeleton, swell = 0): number {
+	const foot = stemFoot(skeleton);
+	const { axes } = skeleton;
+	let most = 0;
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.kind[a] as number) !== AXIS_STEM) continue;
+		const first = axes.first[a] as number;
+		const base = nodeAt(skeleton, first);
+		const reach =
+			Math.hypot(base[0] - foot[0], base[2] - foot[2]) +
+			(skeleton.radius[first] as number) * (1 + swell);
+		if (reach > most) most = reach;
+	}
+	return most;
 }
 
 /** The largest first-order limb: the thickest at its base, or -1 for a plant with none. */
