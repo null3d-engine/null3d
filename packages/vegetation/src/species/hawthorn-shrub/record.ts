@@ -303,9 +303,9 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 15 and 26: the sampled plates read lighter and bluer than the photographs, so the
-		// zone scales red and green a little and cuts blue hard to keep the grey-brown.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [0.82, 0.8, 0.64] }],
+		// Stills 15 and 26: the sampled plates read darker than the photographs, so the zone lifts
+		// red, green and blue together, a little more blue, toward the grey-brown the photographs show.
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [2.094, 2.366, 2.37] }],
 		young: 0,
 		// Still 16 and 28: the plates fade to smooth red-brown bark on wood thinner than about four
 		// centimetres across.
