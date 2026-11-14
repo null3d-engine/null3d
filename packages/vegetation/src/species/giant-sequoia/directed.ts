@@ -31,7 +31,7 @@ const CROWN_REACH = [
  * The inner body's share of the crown's reach: the shaded depth of the crown, which stands behind
  * the boughs so that the gaps between the clumps show the crown's own shade and never open sky.
  */
-const BODY = 0.72;
+const BODY = 0.66;
 
 /**
  * The inner body's half width at each height, as a share of the plant's height: the crown's own
