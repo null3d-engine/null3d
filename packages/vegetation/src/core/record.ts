@@ -2679,6 +2679,13 @@ export interface LodSpec {
 	 */
 	readonly cardStalkWidth?: boolean;
 	/**
+	 * How much of the young bark's tone a card's stalk line keeps, from 0.05 to 1, where the default
+	 * suits the species less well. The line stands inside the crown, so its default draws shaded
+	 * wood; a pale, sparse crown shows a dark line over a large share of itself, and a species there
+	 * may lighten the line toward the bark's own tone.
+	 */
+	readonly cardStalkShade?: number;
+	/**
 	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
 	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch
 	 * behind the row may end half a metre short of the leaves it is meant to carry. With this, the

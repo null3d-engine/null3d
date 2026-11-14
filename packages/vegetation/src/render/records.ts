@@ -425,7 +425,7 @@ export function speciesHeader(
 	texel(header, HEADER.cardStalk, [
 		record.lod.cardStalk ?? 0,
 		record.lod.cardStalkWidth ? 1 : 0,
-		0,
+		record.lod.cardStalkShade ?? 0,
 		0,
 	]);
 	texel(header, HEADER.cardCoverage, [record.shoots?.placement.cardCoverage ?? 1, 0, 0, 0]);
