@@ -27,18 +27,18 @@ its new structure passes the gate and a ready branch switches it.
 | Sedge | Passed | `8bf4c3d5c` | Directed |
 | Bracken | Passed | `65344adbc` | Directed |
 | Saguaro | Passed | `0765d087a` | Directed |
-| Date palm | Passed, narrowly | `c6da1d7a8` | Directed once its ready branch merges |
+| Date palm | Passed, narrowly | `c6da1d7a8` | Directed |
 | Weeping willow | Passed, plainly | `5ff18694d` | Directed once its ready branch merges |
 | Tree fern | Passed, narrowly | `a8e7144cf` | Directed once its ready branch merges |
 | Common alder | Passed on form; its condition met | `235c80c6a`; condition met at `c364864a1` | Directed once its ready branch merges |
-| Hosta | Passed, on two conditions; one met | `c0daa59ff`; the black leaf gone at `743390cef` | Old grower until a picture of `02` at a card level is drawn |
+| Hosta | Passed; both its conditions met | `c0daa59ff`; conditions met at `743390cef` | Directed |
 | Silver birch | Not passed | `963981822` | Old grower |
 | Hawthorn | Not yet drawn as a real round | none | Old grower |
 | Meadow grass | Not passed, close | `138dc4fb8` | Old grower |
 | European beech | Not yet drawn | none | Old grower |
 | Olive | Not yet drawn | none | Old grower |
 | Giant sequoia | Not yet drawn | none | Old grower |
-| Bamboo | Not yet drawn | none | Old grower |
+| Bamboo | Not passed; level with the old one | `0c90f46f1` | Old grower |
 
 ## Draw a round again
 
@@ -197,13 +197,13 @@ One crown widest low on a straight leader with near-level limbs.
 
 A low mound of heart-shaped leaves whose rim leaves hang tips down.
 
-- **Gate:** passed at `c0daa59ff`, narrowly at `01` and plainly at `02`, on two conditions. The black leaf
-  is gone at `743390cef`: a leaf's flutter phase byte had landed on the sheath kind's value. A picture of
-  `02` at a card level is still owed.
+- **Gate:** passed at `c0daa59ff`, narrowly at `01` and plainly at `02`, on two conditions, both met at
+  `743390cef`. The black leaf is gone: a leaf's flutter phase byte had landed on the sheath kind's value.
+  The picture of `02` at the first card level reads as the leaf form's mound, with no black leaf.
 - **Open faults:** Too closed (`01` 0.12 against 0.07, `02` 0.13 against 0.07). A flat top where the
-  photograph domes. A closed disc from above. Narrow at `02`. Pale lime at `01`. The cut pieces' few splayed
-  leaves.
-- **Next:** the card-level picture, then the dome.
+  photograph domes. A closed disc from above. Narrow at `02`. Pale lime at `01`. The cut pieces' few
+  splayed leaves.
+- **Next:** the dome, then cover.
 
 ## Silver birch
 
@@ -237,14 +237,26 @@ A vase of blades with open feathery heads.
 - **Reference conflicts:** `01` and `02` ask for opposite sky. Recorded.
 - **Next:** a round at the raised vase.
 
-## European beech, olive, giant sequoia and bamboo
+## Bamboo
 
-None of the four has a real round of its new structure yet. Their floors:
+A clump of straight culms from one foot.
+
+- **Gate:** not passed at `0c90f46f1`; level with the old grower, a lime fountain of thick culms
+  arching over at the top. The new clump has the photograph's straight culms, a narrow foot and sheath
+  rings. The old keeps the full crown.
+- **Open faults:** The plume narrow and sparse, its leaves smudged at the first card level where the
+  photograph shows fans of narrow pointed blades. Too open at `01` (0.13 against 0.28). Lime culms
+  with no node rings, where the photograph's are gray-green with tan nodes.
+- **Reference limits:** no fact sheet. The pictures show an 11 cm cane on a 6 m clump, recorded as a
+  limit of the reference.
+- **Next:** the leaves as blades in fans, and a fuller, wider plume.
+
+## European beech, olive and giant sequoia
+
+None of the three has a real round of its new structure yet. Their floors:
 
 - **European beech:** a haystack of fine dull twigs. A new beech with a visible bole, a dome and bright
   green leaf beats it.
 - **Olive:** a small flat-topped tree, right in its gray-green with pale flecks. Its variant caps rise to
   about 6,820,000 bytes.
-- **Giant sequoia:** A conifer on a red pole with its foliage wound round it. Its bark is right.
-- **Bamboo:** No fact sheet. Its pictures show an 11 cm cane on a 6 m clump, recorded as a limit of the
-  reference.
+- **Giant sequoia:** a conifer on a red pole with its foliage wound round it. Its bark is right.
