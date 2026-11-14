@@ -343,9 +343,10 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		// The sedge scales to its card level's top by default, the measure it was judged with; a
-		// record that names lod.heightAtLeafTop moves the blades' scale.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('bfeb7506fc8ff564');
+		// The record names the leaf-form height measure, the one its whole views were judged with,
+		// and it draws its cards' twig lines at the twigs' widths and on to the cards' centres; all
+		// of these move the sedge's blades' scale and its card levels.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('f1926c1fb4d54966');
 	});
 
 	it('ends its blades in long fine points', () => {
