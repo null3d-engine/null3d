@@ -160,13 +160,19 @@ export function pooledShoots(
 		began: new Float64Array(target.slots.holders.length).fill(Number.NaN),
 	}));
 
-	/** The share of a slot's rows drawn at a time, from its fade. */
+	/**
+	 * The share of a slot's rows drawn at a time, from its fade: rows coming in reach their share in
+	 * the fade's first half, while the copy's cards still draw whole, and rows going out thin only in
+	 * its second half, once the cards are whole again, so no pixel drops out of both.
+	 */
 	const shareAt = (fade: (typeof fades)[number], slot: number, now: number) => {
 		const began = fade.began[slot] as number;
 		const to = fade.to[slot] as number;
 		if (Number.isNaN(began)) return to;
 		const from = fade.from[slot] as number;
-		return from + (to - from) * Math.min(1, (now - began) / FADE_SECONDS);
+		const progress = Math.min(1, (now - began) / FADE_SECONDS);
+		const step = to > from ? Math.min(1, 2 * progress) : Math.max(0, 2 * progress - 1);
+		return from + (to - from) * step;
 	};
 
 	/** Writes a slot's rows for a copy, or parks them for none, and the copy's place in the table. */

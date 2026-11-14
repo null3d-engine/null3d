@@ -277,7 +277,8 @@ fn plant_dither(pixel: vec2f, phase: f32) -> f32 {
 /// Whether a first card level's pixel gives way to its copy's real pieces. Its card row holds the
 /// copy's edge (x, 0 for none), the edge it fades from (y), how far the fade has come (z) and the
 /// phase of its dither (w): inside both edges the cards give way, outside both they draw, and between
-/// them they cross over the fade, the cards fading out as the pieces fade in, and back.
+/// them they cross over the fade, the cards fading out as the pieces fade in, and back: the side coming
+/// in first, then the side going out.
 fn cards_give_way(distance: f32, pixel: vec2f) -> bool {
     let values = object.values;
     let cut_new = values.x > 0.0 && distance < values.x * 0.96;
@@ -285,8 +286,10 @@ fn cards_give_way(distance: f32, pixel: vec2f) -> bool {
     if (cut_new == cut_old) {
         return cut_new;
     }
+    // The side coming in reaches its whole share in the fade's first half, and only then does the side
+    // going out thin, so no pixel drops out of both.
     let dither = plant_dither(pixel, values.w);
-    return select(dither >= values.z, dither < values.z, cut_new);
+    return select(dither >= min(1.0, 2.0 * values.z), dither < max(0.0, 2.0 * values.z - 1.0), cut_new);
 }
 
 struct ShootRow {

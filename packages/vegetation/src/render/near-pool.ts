@@ -34,6 +34,11 @@ export interface NearPoolOptions {
 	readonly triangles?: number;
 	/** The camera the page draws from, whose place sets the nearest copies. */
 	readonly camera?: { getWorldPosition(out: Vec3Like): void };
+	/**
+	 * The clock the crossfades run on, in seconds: the sketch's time by default. A page that records
+	 * a walk frame by frame gives its own.
+	 */
+	readonly clock?: () => number;
 	/** A pool for stand-in kits, which draws no real shoots. */
 	readonly placeholders?: boolean;
 }
@@ -90,6 +95,7 @@ export function isPoolHost(pool: NearPool | undefined): pool is NearPoolHost {
 export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}): NearPool {
 	if (options.placeholders) return standInNearPool();
 	const camera = options.camera;
+	const clock = options.clock ?? (() => ctx.time.now);
 	if (!camera)
 		throw new Error('@null3d/vegetation: a near pool needs the camera the page draws from.');
 	const caps = NEAR_CAPS[ctx.quality.preset];
@@ -180,7 +186,7 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 		},
 		update() {
 			// The fades move on every frame; a slot whose rows have faded out may go to a waiting copy.
-			const now = ctx.time.now;
+			const now = clock();
 			for (const { member } of members) if (member.advance(now)) fresh = true;
 			camera.getWorldPosition(eye);
 			const moved = length3(
