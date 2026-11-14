@@ -359,6 +359,8 @@ function frondCrownProblems(record: Species, growth: FrondCrown, out: string[]):
 	spreadProblems(fronds.count, 'growth.fronds.count', true, out);
 	notNegative(fronds.clasp, 'growth.fronds.clasp', out);
 	if (fronds.ranks.length === 0) out.push('growth.fronds.ranks is empty; give one rank at least');
+	if (fronds.layout !== undefined && fronds.layout !== 'spiral' && fronds.layout !== 'rings')
+		out.push(`growth.fronds.layout is '${fronds.layout}'; give 'spiral' or 'rings'`);
 	const shares = fronds.ranks.reduce((sum, rank) => sum + rank.share, 0);
 	if (Math.abs(shares - 1) > 0.01)
 		out.push(
