@@ -33,7 +33,7 @@
 		"test": "custom-cutout-motion",
 		"tier": "compat",
 		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
+		"reason": "M3-V2 landing at cd7029591: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
 	},
 	"chromium-swiftshader/compat/custom-dissolve.png": {
 		"test": "custom-dissolve",
@@ -87,7 +87,7 @@
 		"test": "demo-spot-cookies",
 		"tier": "compat",
 		"date": "2026-10-31",
-		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at dcfef367f, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/compat/demo-terrain.png": {
 		"test": "demo-terrain",
@@ -183,7 +183,7 @@
 		"test": "plant-european-beech",
 		"tier": "compat",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/compat/plant-giant-sequoia.png": {
 		"test": "plant-giant-sequoia",
@@ -195,7 +195,7 @@
 		"test": "plant-holm-oak",
 		"tier": "compat",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/compat/plant-hosta.png": {
 		"test": "plant-hosta",
@@ -291,13 +291,13 @@
 		"test": "spot-map-probe",
 		"tier": "compat",
 		"date": "2026-10-31",
-		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at dcfef367f, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/compat/spot-map.png": {
 		"test": "spot-map",
 		"tier": "compat",
 		"date": "2026-11-04",
-		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
+		"reason": "the bounce light (f67173495) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
 	},
 	"chromium-swiftshader/compat/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
@@ -351,7 +351,7 @@
 		"test": "custom-cutout-motion",
 		"tier": "webgl2",
 		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
+		"reason": "M3-V2 landing at cd7029591: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
 	},
 	"chromium-swiftshader/webgl2/custom-dissolve.png": {
 		"test": "custom-dissolve",
@@ -393,7 +393,7 @@
 		"test": "demo-spot-cookies",
 		"tier": "webgl2",
 		"date": "2026-10-31",
-		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at dcfef367f, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/webgl2/demo-terrain.png": {
 		"test": "demo-terrain",
@@ -495,7 +495,7 @@
 		"test": "plant-european-beech",
 		"tier": "webgl2",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/plant-giant-sequoia.png": {
 		"test": "plant-giant-sequoia",
@@ -507,7 +507,7 @@
 		"test": "plant-holm-oak",
 		"tier": "webgl2",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/plant-hosta.png": {
 		"test": "plant-hosta",
@@ -537,7 +537,7 @@
 		"test": "plant-pedunculate-oak",
 		"tier": "webgl2",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/plant-scots-pine.png": {
 		"test": "plant-scots-pine",
@@ -633,13 +633,13 @@
 		"test": "spot-map-probe",
 		"tier": "webgl2",
 		"date": "2026-10-31",
-		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at dcfef367f, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/webgl2/spot-map.png": {
 		"test": "spot-map",
 		"tier": "webgl2",
 		"date": "2026-11-04",
-		"reason": "the bounce light (49b215a8a) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
+		"reason": "the bounce light (f67173495) moved the WebGPU and WebGL2 pictures, and each tier now keeps a picture of its own; this Mac's SwiftShader drew the set before the branch's CI run, and CI's own SwiftShader redraws it"
 	},
 	"chromium-swiftshader/webgl2/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",
@@ -693,7 +693,7 @@
 		"test": "custom-cutout-motion",
 		"tier": "webgpu",
 		"date": "2026-10-29",
-		"reason": "M3-V2 landing at 6463f38bb: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
+		"reason": "M3-V2 landing at cd7029591: this machine's SwiftShader run drew the new tests, and no CI run exists for them"
 	},
 	"chromium-swiftshader/webgpu/custom-dissolve.png": {
 		"test": "custom-dissolve",
@@ -747,7 +747,7 @@
 		"test": "demo-spot-cookies",
 		"tier": "webgpu",
 		"date": "2026-10-31",
-		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at dcfef367f, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/webgpu/demo-terrain.png": {
 		"test": "demo-terrain",
@@ -759,7 +759,7 @@
 		"test": "demo-vegetation",
 		"tier": "webgpu",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -849,7 +849,7 @@
 		"test": "plant-european-beech",
 		"tier": "webgpu",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/plant-giant-sequoia.png": {
 		"test": "plant-giant-sequoia",
@@ -861,7 +861,7 @@
 		"test": "plant-holm-oak",
 		"tier": "webgpu",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/plant-hosta.png": {
 		"test": "plant-hosta",
@@ -891,7 +891,7 @@
 		"test": "plant-scots-pine",
 		"tier": "webgpu",
 		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 661c7f8be; CI's next drawing replaces it"
+		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/plant-sedge.png": {
 		"test": "plant-sedge",
@@ -993,7 +993,7 @@
 		"test": "spot-map-probe",
 		"tier": "webgpu",
 		"date": "2026-10-31",
-		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at fefc14741, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
+		"reason": "drawn on this Mac's software GPU with CI=1 from the cookie branch at dcfef367f, whose CI run has not drawn them; CI's own software drawings of the branch replace them"
 	},
 	"chromium-swiftshader/webgpu/terrain-baked-normals.png": {
 		"test": "terrain-baked-normals",

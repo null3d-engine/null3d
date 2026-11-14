@@ -4,8 +4,8 @@
 // draws: a card level that thinned without growing its cards leaves holes, and its share falls below
 // the near copy's. Every drawn pixel counts, however dark it is. A count that left the dark pixels
 // out cut through the leaves' own range, so a change to the plant's light moved the measure as
-// though the cards had thinned. The move sits between `1f06d15f7` and its parent: the probe at
-// `234025b1e` reads the earlier figures, and the two commits between it and the shade touch only
+// though the cards had thinned. The move sits between `6756777a6` and its parent: the probe at
+// `c08ecb041` reads the earlier figures, and the two commits between it and the shade touch only
 // example files. That commit changes the wood branch alone, and no cut of the wood has yet shown
 // whether it reaches the counted pixels, so the mechanism inside that pair is unproven. The count's
 // fix stands whatever the cause was.

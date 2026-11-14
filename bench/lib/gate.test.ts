@@ -256,10 +256,10 @@ describe('the gate steps', () => {
 		// The tool asks git for the commit the hash names; a hash that names nothing makes git exit
 		// nonzero, which is how the tool tells a short one from a wrong one.
 		const git = (args: string[]) => {
-			expect(args).toEqual(['rev-parse', '--verify', '6abef3495^{commit}']);
+			expect(args).toEqual(['rev-parse', '--verify', '1b27d04ef^{commit}']);
 			return `${whole}\n`;
 		};
-		expect(wholeCommit('6abef3495', git)).toBe(whole);
+		expect(wholeCommit('1b27d04ef', git)).toBe(whole);
 		expect(
 			wholeCommit('notacommit', () => {
 				throw new Error('fatal: Needed a single revision');

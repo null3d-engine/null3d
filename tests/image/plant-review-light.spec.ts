@@ -4,7 +4,7 @@
 // 0.357, as several species' whole views are lit. The leaf's mean linear green against the record's
 // reflectance is the leaf material's own share; the daylight's against the copy stand's is the light's.
 //
-// Measured at aedef14e8, on the real GPU: the copy stand shows the leaf at 1.06 of its
+// Measured at 2cf33dc35, on the real GPU: the copy stand shows the leaf at 1.06 of its
 // reflectance, its gloss and its edge pixels blended with the white ground; the daylight at 1.11 of the
 // copy stand, a face turned to the camera taking half the sky and the ground, the ambient light and the
 // high sun at about a third of its strength; and the sky share at 0.87, which moves light from the sky

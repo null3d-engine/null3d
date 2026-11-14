@@ -1,7 +1,7 @@
 // The date palm on the directed design: one plumb trunk to a single growing point, and round it a
 // spiral of 56 living fronds and a ring of 20 dead ones, each frond a piece at a socket of its own
 // (pieces.ts), with the date bunches at flower sites under the lowest fronds. This record is the
-// species' shipped look, passed at the judged round date-palm-f35ae5ac9: the crown's enclosed sky
+// species' shipped look, passed at the judged round date-palm-cee58b2a9: the crown's enclosed sky
 // 0.28 at 01 and 0.23 at 02 against the photographs' 0.20 and 0.19, and 0.31 at 18 against 0.41 by
 // the half-dark rule, with the outline overlap 0.50, 0.60 and 0.46. The kit measures 1.80, 1.94,
 // 2.19 and 2.60 MB at its four tiers and a plant's near form 139,825 triangles at high. Open for

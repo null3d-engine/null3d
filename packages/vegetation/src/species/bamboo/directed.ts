@@ -1,6 +1,6 @@
 // The bamboo on the directed design: a clump of jointed culms from one foot, bare to about 0.4 of
 // the height and then a plume of branch pairs, each pair a piece at a socket of its own (pieces.ts).
-// This record is the species' shipped look, passed at the judged round bamboo-47a6bfc38: picture
+// This record is the species' shipped look, passed at the judged round bamboo-f29369486: picture
 // 01's crown 0.16 of its own sky against the photograph's 0.13, inside its band, with the shape
 // overlap 0.63, and 02 and 18 at 0.16 and 0.20 against 0.38 and 0.40, their closure recorded as the
 // other side of the reference conflict below. Its cost at that round: 433 node rings, the near level

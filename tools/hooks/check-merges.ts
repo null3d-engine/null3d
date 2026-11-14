@@ -32,15 +32,15 @@ export const MERGE_RULE_SINCE = '2026-10-15T14:28:48+0800';
  * merge: their content is on the branch, and rewriting them would risk more than it fixes (D-259).
  */
 export const KNOWN_MERGES: ReadonlySet<string> = new Set([
-	'f593dbb4e8cee3db614f7ca327e6e67e90cc6ff7', // Merge commit '148fd2660' into m3-start
-	'd4e2230daf5ffe7f617073bf6c1029083805eed4', // Merge remote-tracking branch 'origin/m3-start' into fix/skyway-phone-weight
-	'860e3cc0a4caa1bed3b5560f36c6a1752782c8fd', // Merge branch 'fix/skyway-phone-weight' into m3-start
-	'ffa03c91020e220b12f7f24e2d8fdedc0656c09b', // Merge branch 'feat/m3-a11-taa-measure' into m3-start
-	'2cf17e8781eaaaf40489b54cad0fa9ed92f07ba5', // refactor(engine): name the compute instance draw apart from the batch draw
-	'503bb3051b9e8d6f3eb93db5299e129e77cda136', // Merge branch 'feat/m3-levels-red' into m3-start
-	'864f29fcaaf5c90261fe49e6a9d3a3f4939739af', // Merge the milestone branch into the cluster levels branch
-	'21b18bd578fd72a74c72ef4224d687c4655ff9ab', // Merge the milestone branch into the cluster levels branch
-	'7c9deadc991784a7ad76986e2939036918929b80', // Merge origin/m3-start into feat/m3-l1-rest
+	'69cfc974716cd5db7a97407df87bddbfa1155865', // Merge commit '5f4aa0104' into m3-start
+	'87e4843448054f20f5b19aab33770aab6893deeb', // Merge remote-tracking branch 'origin/m3-start' into fix/skyway-phone-weight
+	'6fafb27b2b35b80025435f0eb0db787c26437b28', // Merge branch 'fix/skyway-phone-weight' into m3-start
+	'954f2f1a84a6b45623fa436b77c48b3d2f0fe1dc', // Merge branch 'feat/m3-a11-taa-measure' into m3-start
+	'2df8ed7d31b013d6bac556f6751f8be43878af9c', // refactor(engine): name the compute instance draw apart from the batch draw
+	'eab7e749c6082583da3dea713d0606138438ef49', // Merge branch 'feat/m3-levels-red' into m3-start
+	'42ab5431afc23ada0ae62a4d3787f656744b0084', // Merge the milestone branch into the cluster levels branch
+	'5ff008ccecabafe143e32acf7fcf671078f7015c', // Merge the milestone branch into the cluster levels branch
+	'b989845376b971e376653a349bf6ed197e8452dd', // Merge origin/m3-start into feat/m3-l1-rest
 ]);
 
 /** Words of new work a merge may hold before the check refuses it: a line or two of glue. */

@@ -238,7 +238,7 @@ const SAMPLES = 2;
 /**
  * Frames that the samples must hold before their per-frame readings are judged. A place's bytes a
  * frame divide its allocations by the sample's frames, so a page that drew few frames reads high at
- * every place. The wind run at `4e1883f32` drew 16 frames on CI's software GPU and crossed the
+ * every place. The wind run at `a3bfe2800` drew 16 frames on CI's software GPU and crossed the
  * sketch worker's (V8 API) budget at 1,468.5 bytes a frame against 32, where the same head drawn
  * here over 306 frames held every budget. A healthy CI run read 93 frames without the wind and 110
  * with it, so this floor sits well above the thin run and below a healthy one.

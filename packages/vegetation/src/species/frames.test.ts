@@ -1403,7 +1403,7 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	}, 10_000);
 
 	it('fails the oak built with its clumps first on three of the four', () => {
-		expect(clumpsFirst.commit).toBe('5b5c56272');
+		expect(clumpsFirst.commit).toBe('dee0437c9');
 		// Eighteen patches that a view shows near the trunk's line hang under the boundary; those the
 		// trunk hides behind it in a view are not read there.
 		expect(underFork(clumps)).toBe(18);

@@ -168,7 +168,7 @@ describe('a picture of the parts', () => {
 	});
 
 	test("names each figure's own box when thinner wood lies across the trunk", () => {
-		// The olive's bark-base at `olive-9b4955aba`: the whole box is wood, but roots thinner than the
+		// The olive's bark-base at `olive-b0dfe9faa`: the whole box is wood, but roots thinner than the
 		// trunk lie over it, so only a part of the box is trunk-thick. The cover is a share of the box
 		// and the least is the least share; the radius is metres and is no figure to read as a share.
 		const rooted = partsOf(rootedPicture());

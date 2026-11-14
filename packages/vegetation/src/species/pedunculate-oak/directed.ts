@@ -508,7 +508,7 @@ function acorn(extra: ExtraSpec): ExtraSpec {
  * the measure, under every class-wide cap: the variant's bytes at each tier, and the second card
  * level's triangles at the finest tier. The fill's sockets stand closer than a branch end's width so
  * the crown reads closed, which the review judged better than the old oak (round
- * pedunculate-oak-0bc6547f1); that takes 11,725 rows where the old record's budget held 7,935.
+ * pedunculate-oak-38f84d469); that takes 11,725 rows where the old record's budget held 7,935.
  * Measured: 12,049,487, 12,196,112, 12,394,235 and 12,641,108 bytes from low to ultra, the merged
  * crown's largest variant at each tier; each cap sits a twentieth above its figure. The second card
  * level measures 40,469 to 42,992 triangles. The first card level, 107,111 to 122,840, keeps the
@@ -548,12 +548,12 @@ export const directed = {
 		rows: { mean: 5, spread: 1 },
 		fan: 45,
 		piece: 'branch-end',
-		// The bake worker's reading of round `pedunculate-oak-ef69fe7b9`: with every branch end's
+		// The bake worker's reading of round `pedunculate-oak-9178db536`: with every branch end's
 		// flat side to the sky, a crown seen from the side shows most of its cards slanted or edge
 		// on, and the sky shows through. A real crown's rosettes face every way, so each piece rolls
 		// up to a quarter turn either way about its own line and tilts a little off the wood's.
 		// Rolled round the sky, more than half the pieces showed their pale lower faces to a side view
-		// (the bake worker's count at `ac293bed1`). A crown's outer leaves turn their upper faces to
+		// (the bake worker's count at `95257a144`). A crown's outer leaves turn their upper faces to
 		// the light, so each piece first tips down from straight out of its clump, its upper face
 		// leaning out and up; a steeper tip opens the crown.
 		turn: { roll: 90, tilt: 25, out: 30 },
