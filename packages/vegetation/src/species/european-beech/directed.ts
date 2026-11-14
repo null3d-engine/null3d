@@ -18,9 +18,11 @@ import { record } from './record';
  * The fine wood that clothes a spray, each twig ending in a socket that carries the branch end of
  * still 21. A branch end is 1.2 m long and 1.3 m wide on a tree 20 m tall. At its 930 triangles the
  * leaf form's cap holds about 2,750 of them, so the sockets stand a little over a branch end's
- * width apart and each stands a branch end's reach inside the surface.
+ * width apart and each stands a branch end's reach inside the surface. The outermost sockets stand
+ * on the crown's own outline, so the crown is one dome: laid on the boughs' clump surfaces alone,
+ * their union is scalloped where still 01 is closed from rim to rim.
  */
-const ENDS = { pitch: 1.62 / 20, reach: 1.17 / 20 } as const;
+const ENDS = { pitch: 1.45 / 20, reach: 1.17 / 20, outline: true } as const;
 
 /**
  * A layered spray of foliage that fine wood clothes. Still 04: flat sprays of oval leaves overlap

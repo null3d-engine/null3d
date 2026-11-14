@@ -1018,6 +1018,70 @@ describe('the size a frame socket carries its piece at', () => {
 	});
 });
 
+describe('the fill that stands on the crown outline', () => {
+	/** One stem with three filled boughs, small enough to grow in a moment. */
+	const spec = (fill: {
+		readonly pitch: number;
+		readonly reach: number;
+		readonly outline?: boolean;
+	}): FrameSpec => ({
+		outline: evenOutline(0.62, 1),
+		stems: {
+			name: 'trunk',
+			count: 1,
+			width: [
+				[0, 0.09],
+				[1, 0.06],
+			],
+			length: { share: 0.55 },
+			sway: 2,
+			elbows: 2,
+			children: [
+				{
+					name: 'bough',
+					role: 'branch',
+					count: 3,
+					along: [0.4, 1],
+					around: 'spiral',
+					angle: 50,
+					from: 'parent',
+					length: { share: 0.28 },
+					radius: 0.4,
+					taper: 0.4,
+					sway: 4,
+					elbows: 2,
+					patch: { kind: 'clump', width: 0.2, depth: 0.12, fill },
+				},
+			],
+		},
+	});
+	const grown = (fill: {
+		readonly pitch: number;
+		readonly reach: number;
+		readonly outline?: boolean;
+	}): MacroSkeleton =>
+		growFrame({
+			record: framedRecord(europeanBeechRecord, spec(fill), {
+				rows: { mean: 4, spread: 1 },
+				fan: 45,
+				piece: 'branch-end',
+			}),
+			seed: 11,
+			variant: 0,
+			season: 'summer',
+		});
+
+	it('leaves every socket where it stood unless the record asks for the outline', () => {
+		const plain = grown({ pitch: 0.05, reach: 0.04 });
+		const named = grown({ pitch: 0.05, reach: 0.04, outline: false });
+		expect(plain.buds.count).toBeGreaterThan(0);
+		expect(named.buds.position).toEqual(plain.buds.position);
+		const skin = grown({ pitch: 0.05, reach: 0.04, outline: true });
+		expect(skin.buds.count).toBeGreaterThan(0);
+		expect(skin.buds.position).not.toEqual(plain.buds.position);
+	});
+});
+
 describe('the crown test, on crowns made by hand', () => {
 	const SCALE = 20;
 	const dome: FrameSpec = {

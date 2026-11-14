@@ -234,9 +234,11 @@ export interface FramePatchRule {
 	 * from one such point to the next over the surface, which is the width of the piece a socket
 	 * carries, and `reach` is that piece's length, which the sockets stand inside the surface by.
 	 * A point is left out where the surface stands inside another patch or under the crown's lower
-	 * boundary. Left out, the patch has no wood of its own.
+	 * boundary. With `outline`, the outermost points stand on the crown's own outline at their
+	 * height and side, a piece's reach inside it, so a crown carried by clumps draws one dome while
+	 * the deeper shells still clothe its depth. Left out, the patch has no wood of its own.
 	 */
-	readonly fill?: { readonly pitch: number; readonly reach: number };
+	readonly fill?: { readonly pitch: number; readonly reach: number; readonly outline?: boolean };
 }
 
 /** What every axis rule states. */
@@ -479,7 +481,7 @@ export interface FramePatch {
 
 /** A patch while its plan is built, with the fine wood it asks for, in metres. */
 interface Mass extends FramePatch {
-	readonly fill?: { readonly pitch: number; readonly reach: number };
+	readonly fill?: { readonly pitch: number; readonly reach: number; readonly outline?: boolean };
 }
 
 /**
@@ -1538,7 +1540,13 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 					: {}),
 				...(patch.along === undefined ? {} : { clothes: patch.along }),
 				...(patch.fill
-					? { fill: { pitch: patch.fill.pitch * scale, reach: patch.fill.reach * scale } }
+					? {
+							fill: {
+								pitch: patch.fill.pitch * scale,
+								reach: patch.fill.reach * scale,
+								...(patch.fill.outline === undefined ? {} : { outline: patch.fill.outline }),
+							},
+						}
 					: {}),
 			});
 		}
@@ -1863,6 +1871,14 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			// The sockets stand on shells through the patch's depth: the outermost a piece's reach
 			// inside its surface, where a surface point the patch owns gives one, and each deeper shell
 			// smaller and more thinly set, so the patch is clothed through and not only at its rim.
+			const skin = fill.outline === true;
+			/** A point of the crown's own outline, at a place's height and side, a piece's reach inside. */
+			const onOutline = (point: Readonly<Vector3>): Vector3 | undefined => {
+				const azimuth = atan2(point[2], point[0]);
+				const inward = outlineRadius(spec, scale, point[1], azimuth) - fill.reach;
+				if (inward <= fill.pitch * 0.5) return undefined;
+				return [cos(azimuth) * inward, point[1], sin(azimuth) * inward];
+			};
 			const goals: Vector3[] = [];
 			FILL_SHELLS.forEach(([size, keep], shell) => {
 				const shellA = innerA * size;
@@ -1877,13 +1893,21 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 					const point: Vector3 = [cx + shellA * dx, cy + shellB * y, cz + shellA * dz];
 					// The outermost shell answers for the surface over it; a deeper one for its own place.
 					const outer: Vector3 = shell === 0 ? [cx + a * dx, cy + b * y, cz + a * dz] : point;
-					const low = Math.min(outer[1], point[1]) - fill.pitch / 6;
+					let at = point;
+					let face = outer;
+					if (skin && shell === 0) {
+						const moved = onOutline(outer);
+						if (!moved) continue;
+						at = moved;
+						face = moved;
+					}
+					const low = Math.min(face[1], at[1]) - fill.pitch / 6;
 					if (
-						low < outlineUnder(spec, scale, outer[0], outer[2]) ||
-						low < outlineUnder(spec, scale, point[0], point[2])
+						low < outlineUnder(spec, scale, face[0], face[2]) ||
+						low < outlineUnder(spec, scale, at[0], at[2])
 					)
 						continue;
-					if (!owned(outer)) goals.push(point);
+					if (!owned(face)) goals.push(at);
 				}
 			});
 
