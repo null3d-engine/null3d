@@ -7,7 +7,7 @@ import { speciesProblems } from '../core/check';
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import type { Conifer } from '../core/record';
-import { curveAt, spreadMean } from '../core/types';
+import { type Curve, curveAt, spreadMean } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { directed as sequoia } from '../species/giant-sequoia/directed';
 import { species as cypressModule } from '../species/italian-cypress';
@@ -32,6 +32,14 @@ function digest(skeleton: MacroSkeleton): string {
 		hashBytes(new Uint8Array(skeleton.parent.buffer), 3),
 		hashBytes(skeleton.axes.order, 4),
 	].join(':');
+}
+
+/** The lowest and highest heights that a curve names, in shares of the height. */
+function curveEnds(curve: Curve): readonly [number, number] {
+	if (typeof curve === 'number') return [0, 1];
+	const first = curve[0] as [number, number] | undefined;
+	const last = curve[curve.length - 1] as [number, number] | undefined;
+	return [first?.[0] ?? 0, last?.[0] ?? 1];
 }
 
 /** The most degrees any internode of a skeleton turns from the internode before it on its axis. */
@@ -278,30 +286,30 @@ describe("the giant sequoia's frame", () => {
 		}
 	});
 
-	it("carries a patch on every limb end and every arm end, each apart from its own limb's others", () => {
+	it("tiles the crown's outline with one shell patch a limb and stands every socket inside it", () => {
 		const plan = planConifer(grown(11));
-		// One on the trunk's tip, and one on every limb end and arm end.
-		expect(plan.patches.length).toBe(1 + own.limbs.count * (1 + own.limbs.arms.count));
+		// One on each limb's run under the shell, and none on the trunk's tip, which the top rows close.
+		expect(plan.patches.length).toBe(1 + own.limbs.count);
+		expect(plan.patches.every((patch) => patch.kind === 'shell')).toBe(true);
 		expect(plan.height).toBeCloseTo(
 			Math.max(...plan.patches.map((patch) => patch.centre[1] + patch.depth / 2)),
 			3,
 		);
-		for (const limb of plan.limbs) {
-			const ends = [limb.patch, ...limb.arms.map((arm) => arm.patch)];
-			for (let a = 0; a < ends.length; a++)
-				for (let b = a + 1; b < ends.length; b++) {
-					const first = ends[a];
-					const second = ends[b];
-					expect(first && second).toBeTruthy();
-					if (!first || !second) continue;
-					const apart = Math.hypot(
-						first.centre[0] - second.centre[0],
-						first.centre[1] - second.centre[1],
-						first.centre[2] - second.centre[2],
-					);
-					expect(apart).toBeGreaterThan(first.width * 0.6);
-				}
+		// A socket's foliage tip stands inside the crown's measured outline at its height, and the
+		// sockets run from the crown's foot to its top, so the column carries no bare tier.
+		const [foot, top] = curveEnds(own.limbs.reach);
+		let lowest = 1;
+		let highest = 0;
+		for (const socket of plan.sockets) {
+			const share = socket.at[1] / plan.height;
+			expect(Math.hypot(socket.at[0], socket.at[2])).toBeLessThanOrEqual(
+				curveAt(own.limbs.reach, share) * plan.height + 1e-6,
+			);
+			lowest = Math.min(lowest, share);
+			highest = Math.max(highest, share);
 		}
+		expect(lowest).toBeLessThan(foot + 0.02);
+		expect(highest).toBeGreaterThan(top - 0.02);
 	});
 
 	it('dips its lower limbs and hooks every limb end up', () => {
@@ -324,10 +332,15 @@ describe("the giant sequoia's frame", () => {
 		for (const seed of SEEDS) {
 			const skeleton = growConifer(grown(seed));
 			expect(sharpestTurn(skeleton)).toBeLessThanOrEqual(TURN_MOST);
-			for (let a = 1; a < skeleton.axes.count; a++)
+			// Every axis joins its parent's wood but a root: the trunk, and the inner body, which
+			// stands inside the crown joined to nothing.
+			for (let a = 1; a < skeleton.axes.count; a++) {
+				const parent = skeleton.axes.parent[a] as number;
+				if (parent < 0) continue;
 				expect(skeleton.axisOf[skeleton.parent[skeleton.axes.first[a] as number] as number]).toBe(
-					skeleton.axes.parent[a] as number,
+					parent,
 				);
+			}
 		}
 		expect(digest(growConifer(grown(11)))).toBe(digest(growConifer(grown(11))));
 	});

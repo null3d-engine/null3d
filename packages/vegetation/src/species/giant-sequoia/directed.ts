@@ -2,12 +2,63 @@
 // from the reference set and stated here. Shares are of the tree's height. Still 01 and the
 // whole-tree turning video are one tree, and every figure is that tree's unless its line says
 // another still.
-import type { BaseSpec, Species } from '../../core/record';
+import type { BarkSpec, BaseSpec, Species } from '../../core/record';
+import { curveAt } from '../../core/types';
 import { PIECES } from './pieces';
 import { record } from './record';
 
 /** The record's stem base without its surface roots. */
 const { roots: _roots, ...foot } = record.base as BaseSpec;
+
+/**
+ * Still 01, the crown's half width by height: the far edge of the longest limb's foliage at that
+ * height. The limbs reach to it and the inner body takes its share of it.
+ */
+const CROWN_REACH = [
+	[0.34, 0.115],
+	[0.38, 0.135],
+	[0.46, 0.153],
+	[0.54, 0.152],
+	[0.62, 0.14],
+	[0.7, 0.128],
+	[0.78, 0.114],
+	[0.86, 0.093],
+	[0.94, 0.063],
+	[0.98, 0.039],
+] as const;
+
+/**
+ * The inner body's share of the crown's reach: the shaded depth of the crown, which stands behind
+ * the boughs so that the gaps between the clumps show the crown's own shade and never open sky.
+ */
+const BODY = 0.8;
+
+/**
+ * The inner body's half width at each height, as a share of the plant's height: the crown's own
+ * share of its measured reach. Its foot stands inside the trunk at the crown's base, so no free rim
+ * shows below the lowest boughs, and it closes to nothing at the tip.
+ */
+const BODY_RADIUS: readonly (readonly [number, number])[] = [
+	[0.31, 0.045],
+	[0.36, 0.075],
+	[0.4, 0.1],
+	[0.46, curveAt(CROWN_REACH, 0.46) * BODY],
+	[0.54, curveAt(CROWN_REACH, 0.54) * BODY],
+	[0.62, curveAt(CROWN_REACH, 0.62) * BODY],
+	[0.7, curveAt(CROWN_REACH, 0.7) * BODY],
+	[0.78, curveAt(CROWN_REACH, 0.78) * BODY],
+	[0.86, curveAt(CROWN_REACH, 0.86) * BODY],
+	[0.94, curveAt(CROWN_REACH, 0.94) * BODY],
+	[0.98, curveAt(CROWN_REACH, 0.98) * BODY],
+	[1, 0],
+];
+
+/**
+ * The inner body's tint on its bark: the drawn foliage's linear colour over the drawn bole's, a
+ * third of it, since the crown's shade is a third of its lit leaves. The foliage is still 21's
+ * studio spray and the bole still 01's trunk, both as the engine draws them.
+ */
+const BODY_TINT = [0.22, 0.86, 0.9] as const;
 
 /**
  * The species' leaf at the top of its stated 3 to 6 mm: still 21's cord is a rope of scales 6 to 7 mm
@@ -84,26 +135,17 @@ export const directed: Species = {
 				[0.8, 22],
 				[0.97, 55],
 			],
+			// The top limbs run up under the crown's rounded top, so they end no higher than the
+			// pictures' top limbs leave, and their hook stays inside the crown.
 			end: [
 				[0.31, 50],
 				[0.65, 60],
-				[0.97, 75],
+				[0.97, 60],
 			],
 			riseOver: 0.01,
 			endOver: 0.4,
 			// Still 01, the crown's half width by height.
-			reach: [
-				[0.34, 0.115],
-				[0.38, 0.135],
-				[0.46, 0.153],
-				[0.54, 0.152],
-				[0.62, 0.14],
-				[0.7, 0.128],
-				[0.78, 0.114],
-				[0.86, 0.093],
-				[0.94, 0.063],
-				[0.98, 0.039],
-			],
+			reach: CROWN_REACH,
 			// The crown is round within 5 per cent through the turning video, so the limbs of a level
 			// reach alike.
 			reachShare: [
@@ -123,21 +165,18 @@ export const directed: Species = {
 			// degrees.
 			arms: { count: 2, angle: 25, radius: 0.7 },
 		},
-		// Still 01: separate rounded clumps 0.04 to 0.06 of the height across. One long dome lies
-		// along each limb's outer half, so the clumps of neighbouring levels meet.
+		// Still 01: the crown is one continuous column of clumps, not separate tiers of them, so its
+		// sockets tile the whole measured outline from the crown's foot to its top.
 		patch: {
-			kind: 'dome',
+			kind: 'shell',
 			each: 'limb',
 			width: [0.04, 0.06],
-			along: 0.5,
 			depth: 1,
-			// At seed 11 a bough to each 0.35 m square is 5,860 boughs: near wood 6.85 MB against the
-			// class's 8.9 MB, and the first card level's sky 0.263, 0.228 and 0.260 on 01, 02 and 18
-			// against 0.035, 0.022 and 0.081. Its levels cost 146,587 and 21,695 triangles against
-			// 152,000 and 42,800, and 1.06 million draw at once from the tallest stated eye against
-			// 2.5 million. Still 04: the boughs point up and out of the clump.
-			sockets: { piece: 'bough', pitch: 0.35, lift: 45 },
+			sockets: { piece: 'bough', pitch: 0.55, rise: 0.55, lift: 20 },
 		},
+		// The crown's shaded depth behind the boughs: the clumps stand on it, and the sky between
+		// them is the photograph's dark interior rather than open air.
+		body: { radius: BODY_RADIUS },
 	},
 	lod: {
 		...record.lod,
@@ -174,5 +213,32 @@ export const directed: Species = {
 		// Still 01: the foot is 0.296 of the height across at the ground and 0.173 at 0.06 of the
 		// height, on its root lobes.
 		flare: { amount: 0.15, height: 0.8 },
+	},
+	bark: {
+		...(record.bark as BarkSpec),
+		zones: [
+			...((record.bark as BarkSpec).zones ?? []),
+			// The inner body takes the crown's shade. Its radius stands well above the trunk's through
+			// the crown and falls below the trunk's only above the crown's shoulders, so two radius
+			// bands hold it and no trunk or limb: the body's own column, and its tip.
+			{
+				layer: 0,
+				by: 'radius',
+				from: 3,
+				to: 8,
+				blend: 0.02,
+				tint: BODY_TINT,
+				second: { from: 0.31, to: 0.99, blend: 0.02 },
+			},
+			{
+				layer: 0,
+				by: 'radius',
+				from: 1.2,
+				to: 3,
+				blend: 0.02,
+				tint: BODY_TINT,
+				second: { from: 0.9, to: 1, blend: 0.02 },
+			},
+		],
 	},
 };
