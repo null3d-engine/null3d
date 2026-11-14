@@ -447,6 +447,12 @@ export const record: Species = {
 		// Stills 01 and 19: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air; each card draws its twig as a line and the join shows.
 		cardStalk: 5,
+		// Still 01: the crown's box shows 0.45 of sky in the photograph and 0.69 at the first card
+		// level, whose weeping shoots stand open. At the medium tier the card levels read 0.0955 and
+		// 0.1113 more sky than the leaf form; 1.25 brings them to 0.0147 and 0.0190, where each card
+		// pictures its shoot. Larger values draw the second level outside the leaf form's outline:
+		// 0.0328 at 1.3 against the 0.03 the card test allows.
+		cardGrow: 1.25,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
