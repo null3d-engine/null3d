@@ -1240,11 +1240,27 @@ function gapClause(pair: StillResult): string {
 }
 
 /**
- * A pair's crown balance for its summary line, beside the shape overlap: the share of the crown's
- * covered area on each side of the trunk's column. It sits beside row 1's other evidence, since a
- * crown can match its reference's outline and still gather its mass on one side.
+ * A pair's crown balance for its summary line, beside the shape overlap: the crown's covered area
+ * in horizontal bands, each band split at the trunk's column, top first. The row is judged on the
+ * band that stands furthest from its reference's. The whole-crown split is printed after it as an
+ * instrument figure, since a limb reaching far out on one side can balance the total while a band
+ * still shows the lean.
  */
 function crownBalanceClause(pair: StillResult): string {
+	const bands = pair.crownBands;
+	if (bands) {
+		const side = (values: readonly (number | null)[] | null, why?: string) =>
+			values === null
+				? `not read${why ? ` (${why})` : ''}`
+				: values.map((value) => (value === null ? '-' : fixed(value))).join(' ');
+		const worst = bands.worst
+			? `; largest difference ${fixed(Math.abs(bands.worst.difference), 3)} at band ${bands.worst.band + 1} of ${bands.count} from the top`
+			: '; no band pairs';
+		const whole = pair.crownBalance
+			? `; whole-crown split, instrument only: photograph left ${fixed(pair.crownBalance.reference?.left)} right ${fixed(pair.crownBalance.reference?.right)}, drawing left ${fixed(pair.crownBalance.render?.left)} right ${fixed(pair.crownBalance.render?.right)}`
+			: '';
+		return `, crown balance (row 1's figure), ${bands.count} bands top first: photograph ${side(bands.reference, bands.referenceWhy)}; drawing ${side(bands.render, bands.renderWhy)}${worst}${whole}`;
+	}
 	const balance = pair.crownBalance;
 	if (!balance) return '';
 	const side = (value: { readonly left: number; readonly right: number } | null, why?: string) =>
