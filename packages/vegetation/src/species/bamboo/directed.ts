@@ -19,6 +19,13 @@
 // 0.264, 0.210 and 0.257, 0.246 and 0.288; the whips alone from four to two 0.220 and 0.260, 0.215
 // and 0.255, 0.254 and 0.292. The three stills cannot be met by one crown, so the eye decides; the
 // sub-branch count of four to three is the candidate, its move the smallest.
+//
+// Picture 21's leaf colour, a shared light fault: the photograph's greens mean 106 / 130 / 39 sRGB,
+// the judged drawing 89 / 122 / 42, darker in red and green and slightly bluer. The piece's albedo is
+// the texture's, and three levers of the fan left the means where they were: the cone from 15 to 8
+// degrees 90 / 123 / 44, the tilt from 25 to 10 degrees 91 / 124 / 46, and the leaves' spread from 8
+// to 20 degrees 89 / 122 / 42. The shift is toward shadow, which the review's daylight and the fan's
+// self-shading give together, so it is not fitted from the record.
 import type { Species } from '../../core/record';
 import { PIECES } from './pieces';
 import { record } from './record';
