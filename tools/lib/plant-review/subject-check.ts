@@ -178,12 +178,15 @@ function checkCovers(
 ): MatteCheck {
 	const failures: string[] = [];
 	const covers = read.map(({ region, cover }) => {
-		const shows = `${region.name} shows ${coveredBy(region)} over ${cover.toFixed(2)} of its part of the picture`;
+		// The cover is a share of the region's box and the least and the most are shares too, so each
+		// figure names its box: a wood region also names a radius in metres, and two bare decimals in
+		// one clause read as one scale.
+		const shows = `${region.name}: ${coveredBy(region)} covers ${cover.toFixed(2)} of its box`;
 		// An area that is only reported gives its figure and judges nothing.
 		if (!region.report && region.min !== undefined && cover < region.min)
-			failures.push(`${shows}, under ${region.min}`);
+			failures.push(`${shows}, under the least ${region.min.toFixed(2)}`);
 		if (!region.report && region.max !== undefined && cover > region.max)
-			failures.push(`${shows}, over ${region.max}`);
+			failures.push(`${shows}, over the most ${region.max.toFixed(2)}`);
 		return { name: region.name, cover: Number(cover.toFixed(4)) };
 	});
 	return failures.length === 0
