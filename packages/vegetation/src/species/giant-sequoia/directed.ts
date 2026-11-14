@@ -220,7 +220,9 @@ export const directed: Species = {
 			...((record.bark as BarkSpec).zones ?? []),
 			// The inner body takes the crown's shade. Its radius stands well above the trunk's through
 			// the crown and falls below the trunk's only above the crown's shoulders, so two radius
-			// bands hold it and no trunk or limb: the body's own column, and its tip.
+			// bands hold it and no trunk or limb: the body's own column, and its tip. Each band holds
+			// from above the trunk's thickest radius at the crown's base of the shortest plant drawn,
+			// up past the tallest plant's top.
 			{
 				layer: 0,
 				by: 'radius',
@@ -228,7 +230,7 @@ export const directed: Species = {
 				to: 8,
 				blend: 0.02,
 				tint: BODY_TINT,
-				second: { from: 0.31, to: 0.99, blend: 0.02 },
+				second: { from: 15, to: 62, blend: 0.02 },
 			},
 			{
 				layer: 0,
@@ -237,7 +239,7 @@ export const directed: Species = {
 				to: 3,
 				blend: 0.02,
 				tint: BODY_TINT,
-				second: { from: 0.9, to: 1, blend: 0.02 },
+				second: { from: 48, to: 62, blend: 0.02 },
 			},
 		],
 	},
