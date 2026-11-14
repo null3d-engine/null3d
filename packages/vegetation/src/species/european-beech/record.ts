@@ -288,11 +288,13 @@ export const record: Species = {
 			// twig at a cut view meets the wood instead of standing a pixel or two clear of it.
 			// The beech has no fact sheet, so the photographs are the ruler: 24 full leaves on stills
 			// 11, 22 and 23 read 8 to 9 centimetres, and some full leaves on still 21 the same. The
-			// branch pieces already wear that leaf (`PIECE_LEAF` in pieces.ts), and the crown wears it
-			// too, at the photographs' width: 0.42 to 0.65 as wide as long, median 0.55, over the
-			// texture contour's 0.75.
+			// single leaves of stills 12 and 13 are 0.69 to 0.71 as wide as long, which is 0.89 of the
+			// texture contour's 0.75 once the 12-degree fold flattens the blade. The branch pieces wear
+			// that leaf (`PIECE_LEAF` in pieces.ts), and the crown wears it too; its leaves read 0.42 to
+			// 0.65 as wide as long in the photographs, median 0.55, and the same blade stands at the top
+			// of that range.
 			length: { mean: 0.09, spread: 0.014 },
-			breadth: 0.733,
+			breadth: 0.89,
 			outline: 'texture',
 			petiole: { length: 0.0015, radius: 0.0012, flat: 0, droop: 12 },
 			fold: 12,
