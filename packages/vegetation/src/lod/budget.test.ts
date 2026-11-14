@@ -19,6 +19,7 @@ import {
 } from '../generate';
 import { bodyFill } from './body.test-support';
 import { partTotal } from './budget';
+import { SEED_REACH } from './cards';
 import { loadFarBaker } from './impostor';
 import { outlineMatte, outlineOverlap } from './outline.test-support';
 
@@ -72,6 +73,14 @@ const FLOORS: readonly (readonly [woody: number, ground: number])[] = [
 
 /** The side of the cells a level's triangles are read in, in metres, to see whether it is one body. */
 const BODY_CELL = 0.4;
+
+/**
+ * The distance in metres from a cell's point to a joined point within which the level's own join
+ * holds it, so a piece the join holds does not read as free.
+ */
+function levelReach(level: 0 | 1 | 2): number {
+	return level === 0 ? BODY_CELL : (SEED_REACH[level - 1] as number);
+}
 
 /** The triangles of a level's parts of one name. */
 function trianglesOf(asset: PlantAsset, level: 0 | 1 | 2, name: string): number {
@@ -155,10 +164,19 @@ for (const id of SPECIES) {
 								expect([at, level, parts.trunk > 0]).toEqual([at, level, true]);
 							const joins = plant.stats.clusters?.[level];
 							if (parts.trunk > 0) expect([at, level, joins?.free]).toEqual([at, level, 0]);
-							// The level's own triangles show it: a fill from the trunk's foot through cells
-							// of 0.4 m reaches every piece of wood and every card.
+							// The level's own meshes show it: a fill from the trunk's foot reaches every
+							// piece of wood and every card, and a piece joins within the reach its level
+							// allows.
 							if (joins && joins.clusters > 0 && parts.trunk > 0) {
-								const body = bodyFill(kit, plant, level, BODY_CELL, false, ['cards']);
+								const body = bodyFill(
+									kit,
+									plant,
+									level,
+									BODY_CELL,
+									false,
+									['cards'],
+									levelReach(level),
+								);
 								expect([at, level, body.freeWood, body.freeLeaves]).toEqual([at, level, 0, 0]);
 							}
 						}
