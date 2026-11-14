@@ -238,6 +238,39 @@ export interface MergeFinding {
 	binaryFiles: number;
 	/** The `Merge-Edit:` trailer's value, when the message has one that says something. */
 	reason: string | null;
+	/**
+	 * Set when the two parents share no commit, which a message-only rewrite of one line leaves
+	 * behind: whether the merge kept its first parent's files exactly, or changed them.
+	 */
+	unrelated?: "kept its first parent's tree" | "changed its first parent's tree";
+}
+
+/**
+ * What git's automatic merge writes of two commits, conflicts marked, or `unrelated` when the two
+ * histories share no commit and git refuses to merge them at all.
+ */
+function automaticMerge(
+	ours: string,
+	theirs: string,
+	cwd?: string,
+): { tree: string; conflicted: Set<string> } | 'unrelated' {
+	const args = [
+		'-c',
+		'merge.conflictStyle=merge',
+		'merge-tree',
+		'--write-tree',
+		'--name-only',
+		ours,
+		theirs,
+	];
+	const result = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 1 << 30 });
+	if (result.status === 128 && /unrelated histories/.test(result.stderr ?? '')) return 'unrelated';
+	// Exit status 1 means the automatic merge had conflicts; the tree then holds the markers.
+	if (result.status === null || ![0, 1].includes(result.status))
+		throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+	const out = (result.stdout ?? '').split('\n');
+	const end = out.indexOf('');
+	return { tree: out[0] ?? '', conflicted: new Set(out.slice(1, end === -1 ? undefined : end)) };
 }
 
 /**
@@ -258,14 +291,28 @@ export function analyseMerge(
 	const trailer = findAckValue(effectiveMessage(message), MERGE_EDIT_TRAILER, committedAt);
 
 	// Exit status 1 means the automatic merge had conflicts; the tree then holds the markers.
-	const out = git(
-		['-c', 'merge.conflictStyle=merge', 'merge-tree', '--write-tree', '--name-only', ours, theirs],
-		cwd,
-		[0, 1],
-	).split('\n');
-	const tree = out[0] ?? '';
-	const end = out.indexOf('');
-	const conflicted = new Set(out.slice(1, end === -1 ? undefined : end));
+	const merged = automaticMerge(ours, theirs, cwd);
+	if (merged === 'unrelated') {
+		// A message-only rewrite gives its line a copy of the other's history under new ids, so the
+		// merge that restores the ancestry has no common commit to resolve against and git writes
+		// no automatic tree to compare with. The merge must then keep its first parent's files
+		// exactly and say in its message why it stands.
+		const tree = git(['rev-parse', `${sha}^{tree}`], cwd).trim();
+		const first = git(['rev-parse', `${ours}^{tree}`], cwd).trim();
+		return {
+			sha,
+			subject: message.split('\n')[0] ?? '',
+			files: new Map(),
+			words: 0,
+			shaderLines: 0,
+			binaryFiles: 0,
+			reason: trailer !== null && !isBareAck(trailer) ? trailer : null,
+			unrelated:
+				tree === first ? "kept its first parent's tree" : "changed its first parent's tree",
+		};
+	}
+	const tree = merged.tree;
+	const conflicted = merged.conflicted;
 	const diff = parseDiff(
 		git(['diff', '--no-color', '--no-ext-diff', '--no-renames', '-U0', tree, sha], cwd),
 	);
@@ -316,6 +363,10 @@ export function analyseMerge(
 
 /** Why a merge cannot be pushed, or null when it holds only resolutions and mechanical fixes. */
 export function mergeProblem(finding: MergeFinding): string | null {
+	if (finding.unrelated === "changed its first parent's tree")
+		return `${finding.sha.slice(0, 9)} ${finding.subject}\n  joins two histories that share no commit and changes its first parent's files, which such a merge must keep exactly.`;
+	if (finding.unrelated && !finding.reason)
+		return `${finding.sha.slice(0, 9)} ${finding.subject}\n  joins two histories that share no commit. Add a Merge-Edit: trailer that names the rewrite which made them unrelated and says the tree already holds the other side's content.`;
 	if (finding.reason) return null;
 	const { words: count, shaderLines, binaryFiles } = finding;
 	if (count <= NEW_WORD_ALLOWANCE && shaderLines === 0 && binaryFiles === 0) return null;
