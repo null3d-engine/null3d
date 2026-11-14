@@ -37,5 +37,9 @@
 	"09-secondary-branching.png": {
 		"leaves": 23
 	},
+	"12-single-leaf-upper.png": {
+		"leaves": 1.1,
+		"roll": -43
+	},
 	"_habit": "clump"
 }
