@@ -16,10 +16,12 @@ import { record } from './record';
 
 /**
  * The fine wood that clothes a clump, each twig ending in a socket that carries the branch end of
- * still 21. A branch end is 1.05 m long and 1.0 m wide on a plant 8 m tall, so the sockets stand a
- * branch end's width apart over the clump's surface and a branch end's reach inside it.
+ * still 21. A branch end is 1.05 m long and 1.0 m wide on a plant 8 m tall. The sockets stand a
+ * quarter more than a branch end's width apart over the clump's surface, so the pieces keep their
+ * reach at the clump's rim and show sky between them through the crown as still 01 does, and they
+ * stand a branch end's reach inside the surface.
  */
-const ENDS = { pitch: 1.0 / 8, reach: 1.05 / 8 } as const;
+const ENDS = { pitch: 1.25 / 8, reach: 1.05 / 8 } as const;
 
 /**
  * A rounded clump of foliage that fine wood clothes. Still 01: the dome's surface is rounded masses
