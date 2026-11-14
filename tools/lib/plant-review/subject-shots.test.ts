@@ -921,6 +921,24 @@ describe('the bark views', () => {
 		expect(checkShot(shot, TALL).present).toBe(true);
 	});
 
+	test('frames the limb whose radius the photograph shows, in place of the thickest', () => {
+		// A willow: a thick low limb with trunk-like furrowed bark, and thin limbs far out with smooth
+		// bark. Picture 16 shows the thin one, so the slot names its radius.
+		const limbs = [
+			limbOf(1, 4, [1, 0.2, 0], 0.4, 9, 0.5),
+			limbOf(2, 7, [-1, 0.4, 0.3], 0.06, 6, 0.3),
+			limbOf(3, 6, [0.3, 0.5, -1], 0.12, 7, 0.35),
+		];
+		const subjects = tree({ limbs });
+		const thickest = shotOf(barkLimbShot(subjects, TALL, { girth: 0.38, along: 0.3 }));
+		expect(thickest.facts.limb).toBe(1);
+		const thin = shotOf(barkLimbShot(subjects, TALL, { girth: 0.38, along: 0.3, thin: 0.06 }));
+		expect(thin.facts.limb).toBe(2);
+		expect(thin.facts.radius as number).toBeLessThan(0.1);
+		expect(thickest.facts.radius as number).toBeGreaterThan(0.3);
+		expect(checkShot(thin, TALL).present).toBe(true);
+	});
+
 	test('a bark view of a plant with no wood gives no shot', () => {
 		const tuft = tree({ trunk: absent('a tuft has no stem'), limbs: absent('a tuft has no stem') });
 		expect(barkBaseShot(tuft, WIDE, { turn: 0 })).toEqual({ absent: 'a tuft has no stem' });

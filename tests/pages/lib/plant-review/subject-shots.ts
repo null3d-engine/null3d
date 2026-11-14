@@ -2005,13 +2005,19 @@ export interface BarkLimbOptions {
 	readonly along?: number;
 	/** The great limb to frame, by its id, in place of the solve's own choice. */
 	readonly limb?: number;
+	/**
+	 * The radius in metres of the wood that the photograph shows: the solve frames the great limb
+	 * whose radius there stands nearest it, in place of the thickest. A trunk's furrowed bark stands
+	 * on a thick limb, so a photograph of a thin limb's smooth bark needs this.
+	 */
+	readonly thin?: number;
 }
 
 /**
  * The view of the bark on a great limb, as picture 16 shows it: the limb crossing the frame, seen
  * square across its run, its thickness taking the share of the frame's height that the photograph
- * gives it. The limb is the thickest that runs on past both edges of the frame and that nothing
- * hides, seen from its outer side where that is clear.
+ * gives it. The limb is the one whose radius the slot asks for, or the thickest, that runs on past
+ * both edges of the frame and that nothing hides, seen from its outer side where that is clear.
  */
 export function barkLimbShot(
 	subjects: PlantSubjects,
@@ -2022,13 +2028,22 @@ export function barkLimbShot(
 	const girth = options.girth ?? 0.38;
 	const along = options.along ?? 0.3;
 	const frameOf = (limb: GreatLimb) => (2 * sampleAlong(limb.axis, along).radius) / girth;
+	const thin = options.thin;
 	const candidates = (
 		options.limb === undefined
 			? subjects.limbs.filter((limb) => limb.length >= frameOf(limb) * lens.aspect)
 			: subjects.limbs.filter((limb) => limb.id === options.limb)
 	)
 		.slice()
-		.sort((a, b) => b.radius - a.radius || a.id - b.id);
+		.sort(
+			(a, b) =>
+				(thin === undefined
+					? 0
+					: Math.abs(sampleAlong(a.axis, along).radius - thin) -
+						Math.abs(sampleAlong(b.axis, along).radius - thin)) ||
+				b.radius - a.radius ||
+				a.id - b.id,
+		);
 	if (candidates.length === 0)
 		return options.limb === undefined
 			? lacking('no great limb runs on past a frame of its own thickness')
