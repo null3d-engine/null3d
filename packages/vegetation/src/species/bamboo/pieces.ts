@@ -24,7 +24,7 @@ const LEAF = 0.16 / 0.17;
  * 22).
  */
 const FAN: PieceLeaves = {
-	gap: 0.011,
+	gap: 0.008,
 	from: 0.7,
 	hang: 0.25,
 	angle: [
