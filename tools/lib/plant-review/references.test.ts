@@ -6,7 +6,7 @@ import {
 	readPlantReviewQuery,
 } from '../../../tests/pages/lib/plant-review/query.ts';
 import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
-import { blank, labImage, labOf, type Rgba } from './image.ts';
+import { blank, labImage, labOf, onColour, type Rgba } from './image.ts';
 import {
 	anyPlantMask,
 	boxOf,
@@ -42,11 +42,12 @@ import {
 } from './references.ts';
 
 /** Paints a pixel of an image. */
-function put(image: Rgba, x: number, y: number, colour: readonly number[]): void {
+function put(image: Rgba, x: number, y: number, colour: readonly number[], alpha = 255): void {
 	const at = (y * image.width + x) * 4;
 	image.data[at] = colour[0] as number;
 	image.data[at + 1] = colour[1] as number;
 	image.data[at + 2] = colour[2] as number;
+	image.data[at + 3] = alpha;
 }
 
 /** The test scene's sizes: the frame, the horizon, the trunk and the crown. */
@@ -101,6 +102,42 @@ describe('the horizon', () => {
 		const image = blank(120, 80, [204, 205, 209]);
 		for (let y = 20; y < 60; y++) for (let x = 50; x < 70; x++) put(image, x, y, [40, 70, 30]);
 		expect(findHorizon(labImage(image), image.width, image.height)).toBeNull();
+	});
+});
+
+describe('a picture with a clear ground', () => {
+	/** A pale plant on a clear ground, as a cleaned leaf texture source stands: the alpha states the leaf. */
+	const paleLeaf = () => {
+		const image = blank(120, 90, [255, 255, 255]);
+		for (let i = 0; i < image.width * image.height; i++) image.data[i * 4 + 3] = 0;
+		for (let y = 20; y < 70; y++)
+			for (let x = 40; x < 80; x++) put(image, x, y, [250, 249, 246], 255);
+		return image;
+	};
+
+	test('reads its plant from the alpha, where the colour fit cannot part it from the ground', () => {
+		const plant = plantMask(paleLeaf());
+		expect(plant.mask[45 * 120 + 60]).toBe(1);
+		expect(plant.mask[5 * 120 + 5]).toBe(0);
+		for (let y = 20; y < 70; y++)
+			for (let x = 40; x < 80; x++) expect(plant.mask[y * 120 + x]).toBe(1);
+	});
+
+	test('keeps the clear ground through the white composite the comparison reads', () => {
+		const composed = onColour(paleLeaf(), [255, 255, 255]);
+		expect(composed.data[3]).toBe(0);
+		expect(composed.data[(45 * 120 + 60) * 4 + 3]).toBe(255);
+		expect(plantMask(composed).mask[45 * 120 + 60]).toBe(1);
+	});
+
+	test('reads an opaque picture by its colours, whatever a corner says', () => {
+		const image = blank(120, 80, [204, 205, 209]);
+		for (let y = 20; y < 60; y++) for (let x = 50; x < 70; x++) put(image, x, y, [40, 70, 30]);
+		// One clear texel in a corner does not make the picture's alpha its outline.
+		image.data[3] = 0;
+		const plant = plantMask(image);
+		expect(plant.mask[40 * 120 + 60]).toBe(1);
+		expect(plant.mask[40 * 120 + 10]).toBe(0);
 	});
 });
 

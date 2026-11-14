@@ -1328,11 +1328,36 @@ export function keepHangingParts(
 
 /** The share of a frame's height, at its foot, that the hanging rule covers when no horizon shows. */
 const FOOT_SHARE = 0.03;
+/** The alpha at or above which a texel of a picture that states its own transparency is the plant. */
+const ALPHA_PLANT = 16;
+/** The share of a picture's border that must be clear before its alpha channel is its outline. */
+const ALPHA_BORDER_SHARE = 0.2;
+
+/** The share of a picture's border ring that is clear, read from its alpha channel. */
+function transparentBorderShare(image: Rgba): number {
+	const { width, height, data } = image;
+	const alpha = (x: number, y: number) => data[(y * width + x) * 4 + 3] as number;
+	let clear = 0;
+	let total = 0;
+	for (let x = 0; x < width; x++)
+		for (const y of [0, height - 1]) {
+			total++;
+			if (alpha(x, y) < ALPHA_PLANT) clear++;
+		}
+	for (let y = 1; y < height - 1; y++)
+		for (const x of [0, width - 1]) {
+			total++;
+			if (alpha(x, y) < ALPHA_PLANT) clear++;
+		}
+	return total === 0 ? 0 : clear / total;
+}
 
 /**
- * The plant's outline in a picture with a plain background or a fitted sky, in the work picture's
- * pixels. The picture is first shrunk to the work width. Returns a mask with no plant when the
- * border is neither plain nor a sky the surface fit models (see `skyMaskable`).
+ * The plant's outline in a picture with a plain background, a fitted sky, or a clear ground that its
+ * alpha channel states, in the work picture's pixels. The picture is first shrunk to the work width.
+ * A picture whose border is mostly clear takes its outline from the alpha channel, since a colour fit
+ * against the ground erodes a pale plant. Returns a mask with no plant when the border is neither
+ * plain, nor a sky the surface fit models (see `skyMaskable`), nor mostly clear.
  */
 export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 	const work = image.width > workWidth ? resizeToWidth(image, workWidth) : image;
@@ -1340,6 +1365,11 @@ export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 	const lab = labImage(work);
 	const background = backgroundOf(lab, width, height);
 	const mask = new Uint8Array(width * height);
+	if (transparentBorderShare(work) >= ALPHA_BORDER_SHARE) {
+		for (let at = 0; at < mask.length; at++)
+			mask[at] = (work.data[at * 4 + 3] as number) >= ALPHA_PLANT ? 1 : 0;
+		return { width, height, mask, background };
+	}
 	if (!background.plain && !skyMaskable(background) && !soilMaskable(background, height))
 		return { width, height, mask, background };
 	const horizon = background.horizon ?? height;

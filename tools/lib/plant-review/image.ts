@@ -135,7 +135,9 @@ export function onColour(image: Rgba, colour: readonly number[]): Rgba {
 			out[i * 4 + c] = Math.round(
 				(image.data[i * 4 + c] as number) * a + (colour[c] as number) * (1 - a),
 			);
-		out[i * 4 + 3] = 255;
+		// The picture keeps its own alpha, so a picture with a clear ground still states its
+		// outline to the mask that reads it.
+		out[i * 4 + 3] = image.data[i * 4 + 3] as number;
 	}
 	return { width: image.width, height: image.height, data: out };
 }
