@@ -42,12 +42,13 @@ export function createMeadow(
 	let planted: Piece[] = [];
 	/** Whether the meadow has been built once: its first build belongs to the sketch's own start. */
 	let grown = false;
-	/** The note that shows while the meadow grows, counting the species it has finished. */
+	/** The bar that shows while the meadow grows, counting the species it has finished. */
 	const growing = (() => {
-		// A sketch runs in a worker, where the page has no document, so the note shows only on a
+		// A sketch runs in a worker, where the page has no document, so the bar shows only on a
 		// thread that has one. The meadow grows either way.
 		const shows = typeof document !== 'undefined';
 		let box: HTMLElement | undefined;
+		let fill: HTMLElement | undefined;
 		let said: HTMLElement | undefined;
 		return {
 			begin(): void {
@@ -58,7 +59,8 @@ export function createMeadow(
 					'left:50%',
 					'top:18px',
 					'transform:translateX(-50%)',
-					'padding:10px 16px',
+					'width:min(420px,80vw)',
+					'padding:10px 14px 12px',
 					'border-radius:10px',
 					'background:rgba(16,18,20,0.86)',
 					'color:#e8eaec',
@@ -67,17 +69,37 @@ export function createMeadow(
 					'z-index:20',
 					'pointer-events:none',
 				].join(';');
-				said = document.createElement('span');
-				box.append(said);
+				said = document.createElement('div');
+				said.textContent = 'Growing the meadow, 0%';
+				const track = document.createElement('div');
+				track.style.cssText = [
+					'margin-top:8px',
+					'height:6px',
+					'border-radius:3px',
+					'background:rgba(255,255,255,0.16)',
+					'overflow:hidden',
+				].join(';');
+				fill = document.createElement('div');
+				fill.style.cssText = [
+					'width:0%',
+					'height:100%',
+					'border-radius:3px',
+					'background:#8fbf8e',
+					'transition:width 120ms linear',
+				].join(';');
+				track.append(fill);
+				box.append(said, track);
 				document.body.append(box);
 			},
 			set(done: number, total: number): void {
-				if (said)
-					said.textContent = `Growing the meadow, ${Math.round((done / Math.max(1, total)) * 100)}%`;
+				const share = Math.round((done / Math.max(1, total)) * 100);
+				if (said) said.textContent = `Growing the meadow, ${share}%`;
+				if (fill) fill.style.width = `${share}%`;
 			},
 			end(): void {
 				box?.remove();
 				box = undefined;
+				fill = undefined;
 				said = undefined;
 			},
 		};

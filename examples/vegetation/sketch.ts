@@ -24,14 +24,15 @@ export default defineSketch(async (ctx) => {
 	const day = timeOfDay('afternoon', { heading: 0.6 });
 	scene.setBackground({ sky: day.sky }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 0.8 });
-	scene.setFog({ ...day.fog, density: 0.0004 });
+	scene.setFog({ ...day.fog, density: 0.0035 });
 	post.set({ exposure: day.exposure });
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 60 } });
 	scene.createAmbientLight(day.ambient);
 
-	// The ground: a wide field, so a row of several species reads as a meadow rather than a plinth.
+	// The ground: a field that reaches past the meadow's grass, so the eye finds the pasture then
+	// loses it to the haze rather than to an edge. The fog below closes the far ground to the sky.
 	scene.createMesh({
-		mesh: ctx.geometry.plane({ width: 600, height: 600 }),
+		mesh: ctx.geometry.plane({ width: 460, height: 460 }),
 		material: ctx.materials.standard({ color: [0.3, 0.34, 0.16], roughness: 0.95 }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 		receiveShadows: true,
@@ -50,8 +51,8 @@ export default defineSketch(async (ctx) => {
 	const meadow = await loadSpecies('meadow-grass');
 	createGrass(ctx, {
 		height: () => 0,
-		area: { x: 0, z: 0, size: 140 },
-		count: 140_000,
+		area: { x: 0, z: 0, size: 220 },
+		count: 300_000,
 		seed: 11,
 		blades: 14,
 		...grassCover(meadow.record),
