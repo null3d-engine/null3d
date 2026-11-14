@@ -2686,6 +2686,14 @@ export interface LodSpec {
 	 */
 	readonly cardStalkShade?: number;
 	/**
+	 * Whether the plant is scaled to its leaf form's top rather than its drawn card level's. The card
+	 * level's corners stand above the leaves that they picture, so a plant scaled to them can fall
+	 * short of its record's height when a card changes; a species whose pictures show that fault
+	 * names this, and its height then follows the foliage that no card change moves. A record that
+	 * does not name it keeps the measure it was judged with.
+	 */
+	readonly heightAtLeafTop?: boolean;
+	/**
 	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
 	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch
 	 * behind the row may end half a metre short of the leaves it is meant to carry. With this, the
