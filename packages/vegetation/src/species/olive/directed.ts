@@ -1,4 +1,4 @@
-// The olive as a directed frame: one massive trunk a third of the height wide, three crooked great
+// The olive as a directed frame: one massive trunk a third of the height wide, four crooked great
 // limbs that leave it below its top and spread outward, two that divide from its top, and each
 // limb's branches, which end in an airy mass of sprays. Each figure names the reference picture it
 // was read on. Shares are of the tree's height. Still 01 and the whole-tree turning video are the
@@ -20,7 +20,7 @@ import { record } from './record';
  * a branch end's reach inside the mass's surface and closer together than its width, so neighbouring
  * branch ends overlap as a real crown's do.
  */
-const ENDS = { pitch: (0.95 * 1.06 * 0.72) / 7, reach: 0.9 / 7 } as const;
+const ENDS = { pitch: (0.95 * 1.06 * 0.7) / 7, reach: 0.9 / 7 } as const;
 
 /**
  * What a great limb's own wood shares. Stills 05, 01 and 18: a limb is crooked, with two or three
@@ -77,7 +77,7 @@ const branches: FrameBranchRule = {
 			apart: 0.015,
 			// Stills 01 and 18: each limb carries two great masses whose sprays join into a cloud,
 			// with sky between the masses of neighbouring limbs.
-			patch: { kind: 'mass', width: 0.4, depth: 0.32, offset: -0.3, fill: ENDS },
+			patch: { kind: 'mass', width: 0.4, depth: 0.42, offset: -0.3, fill: ENDS },
 		},
 	],
 };
@@ -86,27 +86,29 @@ const branches: FrameBranchRule = {
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in bands from the top down to the foliage foot, each band's
 	// height 0.94 of the photograph's: the upright branch ends stand above the frame's outline by
-	// about their own height, so the drawn top stands at the photograph's.
+	// about their own height, so the drawn top stands at the photograph's. Each reach is the
+	// photograph's half width raised a tenth, because each mass stands beyond the outline its limb
+	// aims at, so the drawn crown reaches the photograph's width.
 	outline: evenOutline(
 		[
-			[0.244, 0.5],
-			[0.255, 0.55],
-			[0.294, 0.6],
-			[0.333, 0.66],
-			[0.372, 0.69],
-			[0.412, 0.725],
-			[0.45, 0.785],
-			[0.49, 0.81],
-			[0.529, 0.805],
-			[0.568, 0.785],
-			[0.647, 0.76],
-			[0.685, 0.75],
-			[0.725, 0.68],
-			[0.764, 0.635],
-			[0.803, 0.395],
-			[0.842, 0.385],
-			[0.882, 0.325],
-			[0.92, 0.18],
+			[0.244, 0.55],
+			[0.255, 0.605],
+			[0.294, 0.66],
+			[0.333, 0.726],
+			[0.372, 0.759],
+			[0.412, 0.798],
+			[0.45, 0.864],
+			[0.49, 0.891],
+			[0.529, 0.886],
+			[0.568, 0.864],
+			[0.647, 0.836],
+			[0.685, 0.825],
+			[0.725, 0.748],
+			[0.764, 0.699],
+			[0.803, 0.435],
+			[0.842, 0.424],
+			[0.882, 0.358],
+			[0.92, 0.198],
 			[0.94, 0],
 		],
 		// The crown is built round: still 02, a quarter turn on, is 0.96 as wide over tall as still
