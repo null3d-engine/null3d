@@ -6,10 +6,10 @@ reference conflicts, its costs against its caps, and what it needs next. [Plant 
 standard these verdicts apply, and [the vegetation process](vegetation-process.md) says how the work runs.
 
 Read the figures this way. A round is named by its species and the commit it was drawn at, such as
-`pedunculate-oak-963981822`. A sky gap gives the photograph's figure first and the drawing's second,
-read like for like: the color-still gap at `01` and `02`, the half-dark gap at `18`. A leaf color figure
-is the review's color difference, where about 2 is one visible step. A level is named where it matters:
-the leaf form, the first card level or the second.
+`pedunculate-oak-963981822`. A sky gap gives the photograph's figure first and the drawing's second.
+Read it like for like: the color-still gap at `01` and `02`, the half-dark gap at `18`. A leaf color
+figure is the review's color difference, where about 2 is one visible step. A level is named where it
+matters: the leaf form, the first card level or the second.
 
 ## The twenty at a glance
 
@@ -121,11 +121,11 @@ A closed dark green column of fans round a tinted inner body.
 A wide mound of arching blades with flowering stems round the whole tuft.
 
 - **Gate:** passed at `8bf4c3d5c` against the old, fuller tuft. The round at its shipped files,
-  `743390cef`, holds the pass and is nearer: flowering stems arch over the mound all round, and the sky at
-  `02` is inside (0.37 against 0.36).
-- **Open faults:** The first card level draws a near-black smear of vertical streaks, with its spikes as
-  loose dashes floating over the mound (leaf color 31.6 at `02`). Every card-level drawing of the sedge
-  shows it. The lower blades read blue-gray, and the spikes are dark.
+  `743390cef`, holds the pass and is nearer. Its flowering stems arch over the mound all round, and the
+  sky at `02` is inside (0.37 against 0.36).
+- **Open faults:** The first card level draws a near-black smear of vertical streaks. Its spikes draw as
+  loose dashes floating over the mound, and its leaf color is 31.6 at `02`. Every card-level drawing of
+  the sedge shows this. The lower blades read blue-gray, and the spikes are dark.
 - **Reference conflicts:** `01` (an upright fountain) against `02` (a wide mound). Picture `02` and the
   turning video govern.
 - **Next:** the card level's color and its spikes, by testing the card bake's color for thin blades first.
@@ -155,7 +155,7 @@ A ribbed column with four arms in one plane, the plane facing camera `01`.
 
 A fountain of forty feathery fronds on a tall patterned trunk.
 
-- **Gate:** passed narrowly at `c6da1d7a8`: the first card level draws fronds, where the old palm is a wire
+- **Gate:** passed narrowly at `c6da1d7a8`: the first card level draws fronds. The old palm is a wire
   star with a second palm at its foot.
 - **Open faults:** Too open at every view (`01` 0.201 against 0.489, `02` 0.189 against 0.402, `18` 0.413
   against 0.559). The dates draw at about a twentieth of the photograph's share. The brown dead fronds. The
