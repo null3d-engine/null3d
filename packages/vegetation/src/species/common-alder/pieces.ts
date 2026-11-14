@@ -23,8 +23,12 @@ import {
  */
 export const PIECE_LEAF: PieceLeaf = { stalk: 0.015 };
 
-/** A piece's leaf over the record's: 9.5 centimetres measured on still 21, over 7. */
-const LEAF_SCALE = 1.3;
+/**
+ * A piece's leaf over the record's: 9.5 centimetres measured on still 21, over 7. The pieces wear
+ * the photographs' top leaf of ten centimetres, which grows each clump and hides the twigs that
+ * would otherwise show between them.
+ */
+const LEAF_SCALE = 1.43;
 /** The twig's height over the 0.4 metres its rule is written for: a blade is 0.148 of its height. */
 const TWIG_SCALE = 0.07 / 0.148 / 0.4;
 
