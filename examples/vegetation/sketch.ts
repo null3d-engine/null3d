@@ -8,8 +8,7 @@
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createGrass, grassCover, isSpeciesId, loadSpecies } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
-import { DEMO_SPARSENESS } from '../lib/plants';
-import { type MeadowControls, postHud } from './hud';
+import { isPolygonStep, type MeadowControls, polygonMaximum, postHud } from './hud';
 import { createMeadow } from './meadow';
 
 /**
@@ -59,11 +58,11 @@ export default defineSketch(async (ctx) => {
 	});
 
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
-	// turns in autumn and flowers in blossom. Summer is the record's default. One sparse slider moves
-	// a species' limbs, leaves and coarseness together toward the least it still reads as itself. The
-	// meadow opens at the sparsest form, as every demo that grows plants through the add-on does by
-	// the owner's ruling, and a hand that drags the slider to the left adds density.
-	const controls: MeadowControls = { season: 'summer', sparse: DEMO_SPARSENESS };
+	// turns in autumn and flowers in blossom. Summer is the record's default. Two sliders shape the
+	// build: the sparseness moves a species' limbs, leaves and coarseness together toward the least
+	// it still reads as itself, and the polygon maximum caps the triangles one plant draws. Both
+	// open at the left, so the meadow draws each species' own form until a hand drags right.
+	const controls: MeadowControls = { season: 'summer', sparse: 0, maxTriangles: undefined };
 
 	let seed = 11;
 	const growMeadow = createMeadow(ctx, page, {
@@ -87,14 +86,24 @@ export default defineSketch(async (ctx) => {
 				return;
 			controls.season = value;
 			showHud();
+			// The season grows the meadow at once, so a slider change that waits to settle would only
+			// grow the same meadow a second time.
+			clearTimeout(settling);
 			void growMeadow(seed);
 			return;
 		}
 		const next = Number(value);
 		if (!Number.isFinite(next)) return;
-		// The explainer button shares the group's name, so only a number turns the slider.
-		if (name !== 'sparse') return;
-		controls.sparse = next;
+		// A value that the slider already holds changes nothing, so the meadow stays as it is.
+		if (name === 'sparse') {
+			if (next < 0 || next > 1 || next === controls.sparse) return;
+			controls.sparse = next;
+		} else if (name === 'polygons') {
+			if (!isPolygonStep(next)) return;
+			const maxTriangles = polygonMaximum(next);
+			if (maxTriangles === controls.maxTriangles) return;
+			controls.maxTriangles = maxTriangles;
+		} else return;
 		showHud();
 		settleThenGrow();
 	});
