@@ -2,7 +2,7 @@
 // species names. The generated registry loads this entry as a chunk of its own.
 import { files } from '@null3d/vegetation-textures/giant-sequoia';
 import type { SpeciesModule } from '../../core/record';
-import { record } from './record';
+import { directed } from './directed';
 
-/** The giant sequoia. */
-export const species: SpeciesModule = { record, textures: files };
+/** The giant sequoia, grown as a directed frame whose clumps carry its boughs at sockets. */
+export const species: SpeciesModule = { record: directed, textures: files };
