@@ -179,7 +179,7 @@ export const directed = {
 			// The crown's clumps stand a little larger than the cut branch's measured piece, so
 			// neighbouring clumps meet into the one leafy mass the whole views show; the cutting still
 			// draws the piece its studio photograph measured.
-			scale: 1.25,
+			scale: 1.05,
 			// With every branch end's flat side to the sky, a crown seen from the side shows most of
 			// its leaves slanted or edge on. Stills 07 and 17: the alder's leafy shoots face every way,
 			// so each piece rolls up to a quarter turn either way about its own line and tilts a
