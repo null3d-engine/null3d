@@ -140,8 +140,8 @@ function pair(name: string, length: number, count: number, droop: number): Piece
  */
 export const PIECES: readonly PieceRule[] = [
 	pair('pair-low', 0.06 * 8, 3, 45),
-	pair('pair-full', 0.11 * 8, 3, 55),
-	pair('pair-whip', 0.09 * 8, 3, 65),
+	pair('pair-full', 0.11 * 8, 4, 55),
+	pair('pair-whip', 0.09 * 8, 4, 65),
 ];
 
 /** The studio photograph of a branch: still 21 stands one branch with its twigs and fans. */
