@@ -694,6 +694,10 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
 		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
 			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
+		if (growth.sockets.scale !== undefined && !(growth.sockets.scale > 0))
+			out.push(
+				`growth.sockets.scale is ${growth.sockets.scale}; it is a size over the piece's own, above 0`,
+			);
 		const sides = growth.frame.outline;
 		if (sides.length < 2)
 			out.push(`growth.frame.outline has ${sides.length} sides; an outline states two or more`);

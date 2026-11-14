@@ -2296,11 +2296,12 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 	const plan = planFrame(growth.frame, input);
 	const builder = new SkeletonBuilder();
 	const written = writeAxes(plan, builder);
-	// Shoot rows grow with the plant; a branch piece is the size its leaves make it.
+	// Shoot rows grow with the plant; a branch piece is the size its leaves make it, or the size the
+	// record asks where a crown and a cut draw one piece at two scales.
 	const scale =
 		growth.sockets.piece === undefined
 			? plan.scale / Math.max(1e-6, spreadMean(input.record.size.height))
-			: 1;
+			: (growth.sockets.scale ?? 1);
 	const frame = new Float32Array(4);
 	const spin = new Float32Array(4);
 	// Each piece's roll and tilt are its socket's place in two evenly spread runs of shares, each

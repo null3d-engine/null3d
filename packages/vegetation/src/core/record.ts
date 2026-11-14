@@ -737,6 +737,13 @@ export interface Framed {
 		 */
 		readonly piece?: string;
 		/**
+		 * The size of each socket's piece over its rule's own. A crown's sprays and the cutting a close
+		 * view draws may stand at different sizes of one measured piece: the crown's at the species'
+		 * leaf, the cut's at the size its photograph's frame asks. Absent, 1. It reads only where a
+		 * piece is named, so a plant of shoot rows is unaffected.
+		 */
+		readonly scale?: number;
+		/**
 		 * The most degrees each piece turns at its socket: its roll about its own line, from the
 		 * side its upper face starts toward, and its tilt off the wood's line. Each is a share spread
 		 * evenly over the sockets in their order, so no two neighbours turn alike and the crown's

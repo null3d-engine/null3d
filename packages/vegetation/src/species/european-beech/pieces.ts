@@ -18,12 +18,6 @@ const LEAF_WIDTH = 0.55;
 const CONTOUR_WIDTH = 0.75;
 
 /**
- * The leaf the pieces wear: 9 centimetres long, with the record's share of spread, and drawn at the
- * photographs' width, about 0.73 of the texture contour's. The record's leaf grows the crown the
- * species ships, so it keeps its own length and outline until a plant built of pieces replaces
- * that crown.
- */
-/**
  * Degrees per side of the V a piece's blade keeps: edge on it stands the blade wide, where the
  * crown's shallow fold shows a line, and a folded blade shows its face a share narrower, so the
  * breadth below is widened by the same share.
@@ -31,6 +25,10 @@ const CONTOUR_WIDTH = 0.75;
 const PIECE_FOLD = 35;
 const FOLD_FLATTEN = Math.cos((PIECE_FOLD * Math.PI) / 180);
 
+/**
+ * The leaf the pieces wear: 9 centimetres long, with the record's share of spread, and drawn at the
+ * photographs' width, about 0.73 of the texture contour's.
+ */
 export const PIECE_LEAF: PieceLeaf = {
 	length: { mean: LEAF, spread: 0.014 },
 	breadth: LEAF_WIDTH / CONTOUR_WIDTH / FOLD_FLATTEN,
@@ -43,6 +41,14 @@ const LEAF_SHARE = 0.0845;
 const TWIG_LEAF_SHARE = 0.0715;
 /** A branch end's leaf over the pieces' leaf, in a branch one unit tall. */
 const LEAF_SCALE = LEAF_SHARE / LEAF;
+/**
+ * The share of the leaf-share size the cutting view's piece stands at. The photograph's own cutting,
+ * 519 by 408 pixels at the tool's 640, is 1.272 wide over tall as still 21's piece is, but it reads
+ * 29 per cent larger than the picture at picture 09's frame, so the cut's piece stands at 0.776 of
+ * the size its leaf share alone gives. A crown undoes this share (in `directed.ts`), so its sprays
+ * wear the species' own leaf at nine centimetres while the cut keeps picture 09's size.
+ */
+export const CUT_SCALE = 0.776;
 /** The twig's leaf over the pieces' leaf, in the twig's own unit. */
 const TWIG_LEAF_SCALE = TWIG_LEAF_SHARE / LEAF;
 /** A node's spacing along a spray, in a branch one unit tall: a row's two nodes 1.1 leaf widths apart. */
@@ -182,10 +188,8 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'branch-end',
 		attitude: 'level',
 		variants: 2,
-		// The photograph's own cutting, 519 by 408 px at the tool's 640, is 1.272 wide over tall as
-		// still 21's piece is, but it reads 29 per cent larger than the picture at picture 09's
-		// frame: the piece stands at 0.776 of the size its leaf share alone gives.
-		scale: (LEAF / LEAF_SHARE) * 0.776,
+		// The cutting view's own size, at which picture 09 reads its photograph's size (`CUT_SCALE`).
+		scale: (LEAF / LEAF_SHARE) * CUT_SCALE,
 		// The turning video of the cut branch: edge on it is 0.24 as wide as face on.
 		depth: 13,
 		// Every bud draws as a three-sided cone at the high tier: a bud is a few pixels wide in the
