@@ -120,7 +120,7 @@ A species that fails a point fails the row that carries it.
 
 | # | Row | What is judged | Evidence |
 | --- | --- | --- | --- |
-| 1 | Structure | The skeleton: one stem or many, where the first limbs leave, the angles they leave at, how they fork, where the crown begins, and whether the silhouette is one solid shape or a set of pieces | The whole view against its reference, plus the skeleton view |
+| 1 | Structure | The skeleton: one stem or many, where the first limbs leave, the angles they leave at, how they fork, where the crown begins, whether the silhouette is one solid shape or a set of pieces, and how the crown's mass balances either side of the trunk | The whole view against its reference, plus the skeleton view, and the balance figure beside each whole view |
 | 2 | Branch density | How many branches there are, how they are spaced along the trunk and along each parent branch, and whether the spacing follows the species: whorled tiers for a conifer, alternate for a broadleaf, a fan for a palm | The skeleton view, counting the visible limbs and their gaps along each parent |
 | 3 | Branch length and taper | Whether a branch reaches far enough before it forks, and whether it thins along its length | The skeleton view and a close view of a limb |
 | 4 | Leaf shape | The painted silhouette of one leaf: entire, toothed or lobed, its proportion, its tip and its base | The leaf close-up against the reference leaf picture |
@@ -135,6 +135,26 @@ A species that fails a point fails the row that carries it.
 
 Row 11 is judged against a built neighbor, named in the verdict. A species with no built neighbor
 states that instead of passing.
+
+Row 1 is read from the silhouette and the balance figure together. The balance figure reads the
+crown's covered area in horizontal bands, each band split at the trunk's column, so a hollow flank
+shows as a band where one side carries far less than its reference does. The row passes when no band
+differs from its reference's by more than ten hundredths. A whole-crown split is not enough: a drawing
+whose fuller left flank is balanced by a limb reaching far out on the right reads an even split while
+the eye still sees a lean, which is what the common alder's still 02 did. A species that is normally
+one-sided names that in its record, and the reference's own split is then the mark, in either
+direction.
+
+Row 4 is read from the leaf outline overlap: the share of one leaf's painted silhouette that its
+reference leaf covers, both scaled to one width, on the upper and the underside face. It passes at
+0.85 or better on each face. A species whose leaf covers fewer than eight pixels in its own reference
+close-up is judged at the cluster instead, because the leaf outline cannot be read that small.
+
+Row 5 is read from the cluster's sky: the share of the cluster's own box that shows background,
+measured on the render's cluster close-up and on the reference's. It passes when the render is no more
+than ten hundredths above its reference and no more than two hundredths below it. A cluster that reads
+as separate leaves on a visible shoot where the reference is a closed mass fails, however well each
+leaf is drawn.
 
 Row 6 is read from the sky gap: the share of background enclosed by the crown's own outline, on both
 pictures at each whole view. Each side is read by the rule in [Sky read like for like](#sky-read-like-for-like); at a
@@ -164,6 +184,13 @@ denser than its reference is as much a fail as a thin one. The eye is the judge 
 the check: when the two disagree the reviewer says so and names which it followed. The figure
 measures the share of sky, not where it sits: a crown whose openings gather in a few large holes
 fails under the branch structure section, whatever the share reads.
+
+Row 6 takes a second figure, because the sky gap cannot tell a mass of leaves from a lace of twigs.
+The crown's foliage share is the share of the crown's own covered area that is foliage rather than
+wood: measured on the render from the parts picture, which draws wood and foliage as separate layers,
+and on the reference from the foliage and bark colors inside its crown box. It passes when the render
+is no more than ten hundredths above its reference's share of wood. A crown that reads with its limbs
+and twigs showing through the mass fails on this figure however little sky its gap shows.
 
 Row 12 carries a checklist, and one entry on it fails the row. The reviewer writes the entry's
 picture beside it:
@@ -344,10 +371,9 @@ bare.
 
 ## What a reviewer must see for the picture-judged rows
 
-Seven rows are judged on a picture, not only on a band: 1 structure, 2 branch density, 3 branch
-length and taper, 5 leaf cluster density, 7 bark curviness, 11 distinctness, and 12 plausibility,
-neatness and pattern. Rows 4, 6, 8, 9 and 10 carry a numeric band, and their picture check is named
-beside the band.
+Six rows are judged on a picture, not only on a band: 1 structure, 2 branch density, 3 branch
+length and taper, 7 bark curviness, 11 distinctness, and 12 plausibility, neatness and pattern. Rows
+4, 5, 6, 8, 9 and 10 carry a numeric band, and their picture check is named beside the band.
 
 For each picture row the reviewer writes three things: what must be seen, which reference picture it
 is set beside, and what makes it fail. The same three apply in the same way at every round. The
@@ -365,7 +391,7 @@ standard picture map:
 
 | Row | Must see | Beside | Fails if |
 | --- | --- | --- | --- |
-| 1 Structure | The species' stem count and habit, where the first limbs leave and at what angle, the crown base, and one solid silhouette or the reference's own piece count | `01`, `02`, `18`, and `03` where it exists; the skeleton view for the wood alone | The habit differs, the limb angle or arrangement differs, the crown base leaves the reference's, or the silhouette breaks into more pieces than the reference's |
+| 1 Structure | The species' stem count and habit, where the first limbs leave and at what angle, the crown base, one solid silhouette or the reference's own piece count, and the crown's balance either side of the trunk | `01`, `02`, `18`, and `03` where it exists; the skeleton view for the wood alone | The habit differs, the limb angle or arrangement differs, the crown base leaves the reference's, the silhouette breaks into more pieces than the reference's, or the balance leaves the reference's by more than ten hundredths |
 | 2 Branch density | The count of visible first-order limbs and their spacing: whorled, opposite, alternate, spiral or a fan | The skeleton view; count on `03` and the whole views at a matched framing | The count leaves the reference's visible count by more than a quarter, or the spacing is the wrong pattern |
 | 3 Branch length and taper | A branch reaching far enough before it forks and thinning along its length; a cut piece with the photograph's side shoots and scale | `07`, `08`, `09`, `17`; the cut pieces `21` and `22` | The branch forks too early or late, the taper is wrong, the piece is one leafy stem where the photograph has side shoots, or the piece is at the wrong scale |
 | 5 Leaf cluster density | The photograph's leaf count, the cluster's spread and tightness, the terminal bud where the species has one, and one joined piece | `11`, `23`, and `04` for the crown close-up | The count differs beyond the photograph's own spread, the gap leaves its band, or the cluster breaks into pieces |
