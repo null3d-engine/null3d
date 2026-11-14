@@ -1966,10 +1966,14 @@ export function engineLevelAt(cell: unknown): number | undefined {
 	const level = (cell as { level?: { distance?: unknown; starts?: unknown } } | undefined)?.level;
 	if (!level || typeof level.distance !== 'number' || !Array.isArray(level.starts))
 		return undefined;
-	const starts = level.starts as readonly number[];
+	const starts = level.starts as readonly unknown[];
 	let drawn = 0;
-	for (let at = 0; at < Math.min(3, starts.length); at++)
-		if ((starts[at] as number) <= level.distance) drawn = at;
+	// A band with no start is not drawn at any distance, as the shaped plant's starts read for the
+	// levels it left empty.
+	for (let at = 0; at < Math.min(3, starts.length); at++) {
+		const start = starts[at];
+		if (typeof start === 'number' && start <= level.distance) drawn = at;
+	}
 	return drawn;
 }
 
