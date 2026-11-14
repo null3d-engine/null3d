@@ -296,22 +296,28 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 	const base = { picture: pair.file, run, ...(pair.level !== undefined && { level: pair.level }) };
 	switch (row) {
 		case 1: {
-			// The crown's mass either side of the trunk's column. The left share carries the figure,
-			// since the right share is its complement; the reference's own split is the mark.
-			const balance = pair.crownBalance;
-			if (!balance?.reference || !balance.render) return [];
-			return [
-				{
+			// The crown's mass in horizontal bands, each band split at the trunk's column. The row
+			// passes when no band's left share stands more than ten hundredths from its reference's,
+			// so every band that both pictures read gives a figure.
+			const bands = pair.crownBands;
+			if (!bands?.reference || !bands.render) return [];
+			const figures: Figure[] = [];
+			for (let band = 0; band < Math.min(bands.reference.length, bands.render.length); band++) {
+				const from = bands.reference[band];
+				const to = bands.render[band];
+				if (from === null || from === undefined || to === null || to === undefined) continue;
+				figures.push({
 					...base,
-					name: 'crown balance, left share',
-					value: balance.render.left,
-					reference: balance.reference.left,
+					name: `crown balance, left share in band ${band + 1} of ${bands.count}`,
+					value: to,
+					reference: from,
 					band: {
-						min: rounded(balance.reference.left - BALANCE_BELOW),
-						max: rounded(balance.reference.left + BALANCE_BELOW),
+						min: rounded(from - BALANCE_BELOW),
+						max: rounded(from + BALANCE_BELOW),
 					},
-				},
-			];
+				});
+			}
+			return figures;
 		}
 		case 2: {
 			// A cut branch's density, where the run measured it on both pictures of the piece. A

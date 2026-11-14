@@ -37,6 +37,7 @@ import {
 	boxOf,
 	type CrownRegion,
 	crownBalanceOf,
+	crownBandsOf,
 	crownFoliageOf,
 	halfDarkMask,
 	hangingParts,
@@ -643,6 +644,25 @@ interface PairMetrics {
 		readonly render: { readonly left: number; readonly right: number } | null;
 		readonly renderWhy?: string;
 	} | null;
+	/**
+	 * The crown's covered area in horizontal bands, each band split at the trunk's column, top
+	 * first. A hollow flank shows as a band whose split stands far from its reference's. The figure
+	 * the row is judged on is the band with the largest difference.
+	 */
+	readonly crownBands: {
+		readonly count: number;
+		readonly reference: readonly (number | null)[] | null;
+		readonly render: readonly (number | null)[] | null;
+		readonly referenceWhy?: string;
+		readonly renderWhy?: string;
+		readonly worst: {
+			readonly band: number;
+			readonly reference: number;
+			readonly render: number;
+			/** The drawing's left share less the photograph's, in that band. */
+			readonly difference: number;
+		} | null;
+	} | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
 	/**
 	 * The drawn plant's share of the frame's height over its photograph's: its scale against the
@@ -763,6 +783,7 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			: null,
 		crownFoliage: null,
 		crownBalance: null,
+		crownBands: null,
 		frameGap:
 			both && framed
 				? { reference: reference.measures.frameGap, render: render.measures.frameGap }
@@ -835,6 +856,47 @@ function crownBalancePair(
 		...(reference === null && { referenceWhy }),
 		render: read ? side(read) : null,
 		...(read === null && { renderWhy }),
+	};
+}
+
+/** The band whose split stands furthest from its reference's, or null where no band pairs. */
+function worstBand(
+	reference: readonly (number | null)[],
+	render: readonly (number | null)[],
+): NonNullable<NonNullable<PairMetrics['crownBands']>['worst']> | null {
+	let worst: NonNullable<NonNullable<PairMetrics['crownBands']>['worst']> | null = null;
+	for (let band = 0; band < Math.min(reference.length, render.length); band++) {
+		const from = reference[band];
+		const to = render[band];
+		if (from === null || from === undefined || to === null || to === undefined) continue;
+		const difference = Number((to - from).toFixed(4));
+		if (worst === null || Math.abs(difference) > Math.abs(worst.difference))
+			worst = { band, reference: from, render: to, difference };
+	}
+	return worst;
+}
+
+/**
+ * The crown's balance in horizontal bands on both sides of a picture: each band's left share of
+ * its covered area, and the band that stands furthest from its reference's. The reference's side
+ * reads its outline; the render's side reads its matte.
+ */
+function crownBandsPair(
+	refPlant: PlantMask,
+	refRegion: CrownRegion | null,
+	render: Side,
+): NonNullable<PairMetrics['crownBands']> | null {
+	const reference = refRegion ? crownBandsOf(refPlant, refRegion) : null;
+	const region = render.measures.crownRegion;
+	const read = region ? crownBandsOf(render.plant, region) : null;
+	if (!reference && !read) return null;
+	return {
+		count: Math.max(reference?.left.length ?? 0, read?.left.length ?? 0),
+		reference: reference?.left ?? null,
+		render: read?.left ?? null,
+		...(reference === null && { referenceWhy: 'the photograph gives no crown box' }),
+		...(read === null && { renderWhy: 'the drawing has no crown box' }),
+		worst: reference && read ? worstBand(reference.left, read.left) : null,
 	};
 }
 
@@ -2365,6 +2427,7 @@ export function compareStills(
 			crownBoxGap: null,
 			crownFoliage: null,
 			crownBalance: null,
+			crownBands: null,
 			frameGap: null,
 			frameScale: null,
 			foliageDeltaE: null,
@@ -2514,6 +2577,9 @@ export function compareStills(
 			: null;
 		const crownBalance = crownView
 			? crownBalancePair(refPlant, refSide.measures.crownRegion, render)
+			: null;
+		const crownBands = crownView
+			? crownBandsPair(refPlant, refSide.measures.crownRegion, render)
 			: null;
 		// A reference whose outline joins its background, as the review data records, has none to read.
 		// A solved close view stands inside the plant, where the frame cuts it and a matte reads
@@ -2678,6 +2744,7 @@ export function compareStills(
 					}),
 			crownFoliage,
 			crownBalance,
+			crownBands,
 		};
 		const framing = closeFraming(frame.facts);
 		// The crown's box is read from an outline, so only a picture compared by outline has its note.

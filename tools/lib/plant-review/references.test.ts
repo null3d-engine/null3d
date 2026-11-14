@@ -15,6 +15,7 @@ import {
 	classifySlot,
 	classifyTurn,
 	crownBalanceOf,
+	crownBandsOf,
 	crownFoliageOf,
 	crownStartRow,
 	filledSpans,
@@ -1421,5 +1422,40 @@ describe("the crown's balance", () => {
 				bottom: 70,
 			}),
 		).toBeNull();
+	});
+});
+
+describe("the crown's balance in bands", () => {
+	const width = 100;
+	const height = 80;
+	/** A crown 70 columns wide over a trunk whose column stands at its middle. */
+	function crown(): Uint8Array {
+		const mask = new Uint8Array(width * height);
+		for (let y = 10; y <= 49; y++) for (let x = 10; x <= 79; x++) mask[y * width + x] = 1;
+		for (let y = 50; y <= 59; y++) for (let x = 45; x <= 54; x++) mask[y * width + x] = 1;
+		return mask;
+	}
+	const region: CrownRegion = { left: 10, top: 10, right: 79, bottom: 49 };
+
+	test('gives each band its left share of the band, top first', () => {
+		const mask = crown();
+		// The top band loses its right half, so it reads all left where the other bands read 40 of 70.
+		for (let y = 10; y <= 16; y++) for (let x = 50; x <= 79; x++) mask[y * width + x] = 0;
+		const bands = crownBandsOf(mattePlant(width, height, mask), region);
+		expect(bands).not.toBeNull();
+		expect(bands?.column).toBeCloseTo(49.5, 1);
+		expect(bands?.left.length).toBe(6);
+		expect(bands?.left[0]).toBe(1);
+		for (const share of (bands?.left ?? []).slice(1)) expect(share).toBeCloseTo(40 / 70, 3);
+	});
+
+	test('leaves a band too thin to read as no share', () => {
+		const mask = crown();
+		for (let y = 10; y <= 16; y++) for (let x = 10; x <= 79; x++) mask[y * width + x] = 0;
+		// Three specks in the top band, under the least a band needs.
+		for (const x of [20, 21, 22]) mask[12 * width + x] = 1;
+		const bands = crownBandsOf(mattePlant(width, height, mask), region);
+		expect(bands?.left[0]).toBeNull();
+		expect(bands?.left[1]).not.toBeNull();
 	});
 });
