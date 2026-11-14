@@ -120,16 +120,15 @@ for (const id of SPECIES) {
 						fullParts === fullCount,
 						`${id} sparse ${sparse} none: parts ${fullParts} against the levels' ${fullCount}`,
 					);
-					// The best look is one body too: its wood within the fine cell, and its cards within
-					// the reach that the level's own join allows.
+					// The best look is one body too, every card within the reach that its level's join
+					// allows.
 					for (const level of [1, 2] as const) {
 						const parts = full.stats.parts[level];
 						if (parts.trunk === 0) continue;
-						const wood = bodyFill(kit, full, level, BODY_CELL, false, []);
-						const cards = bodyFill(kit, full, level, BODY_CELL, false, ['cards'], cardReach(level));
+						const body = bodyFill(kit, full, level, BODY_CELL, false, ['cards'], cardReach(level));
 						check(
-							wood.freeWood === 0 && cards.freeLeaves === 0,
-							`${id} sparse ${sparse} none level ${level}: ${wood.freeWood} free wood, ${cards.freeLeaves} free leaves`,
+							body.freeWood === 0 && body.freeLeaves === 0,
+							`${id} sparse ${sparse} none level ${level}: ${body.freeWood} free wood, ${body.freeLeaves} free leaves`,
 						);
 					}
 					for (const max of MAXIMA) {
@@ -171,11 +170,10 @@ for (const id of SPECIES) {
 							if (parts.trunk > 0)
 								check(joins?.free === 0, `${at} level ${level}: ${joins?.free} free clusters`);
 							// The level's own meshes show it: a fill from the trunk's foot reaches every
-							// piece of wood in the fine cell, and every card within the level's own join
-							// reach.
+							// piece of wood and every card, and a card joins within the reach its level
+							// allows.
 							if (joins && joins.clusters > 0 && parts.trunk > 0) {
-								const wood = bodyFill(kit, plant, level, BODY_CELL, false, []);
-								const cards = bodyFill(
+								const body = bodyFill(
 									kit,
 									plant,
 									level,
@@ -185,8 +183,8 @@ for (const id of SPECIES) {
 									cardReach(level),
 								);
 								check(
-									wood.freeWood === 0 && cards.freeLeaves === 0,
-									`${at} level ${level}: ${wood.freeWood} free wood, ${cards.freeLeaves} free leaves`,
+									body.freeWood === 0 && body.freeLeaves === 0,
+									`${at} level ${level}: ${body.freeWood} free wood, ${body.freeLeaves} free leaves`,
 								);
 							}
 						}
