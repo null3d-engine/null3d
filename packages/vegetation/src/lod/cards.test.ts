@@ -839,8 +839,17 @@ describe('the card levels', () => {
 		expect(stalks).toBe(stretched * 4);
 	});
 
-	it('reaches the carried foliage only where the record asks', () => {
-		const stalked = { ...record, lod: { ...record.lod, cardStalk: 1, cardStalkToFoliage: false } };
+	it("joins a marked card's stalk to the wood and to the card, as the record asks", () => {
+		// The marker names the line's width; the join is what this test proves, so both sides name it.
+		const stalked = {
+			...record,
+			lod: {
+				...record.lod,
+				cardStalk: 1,
+				cardStalkWidth: true,
+				cardStalkToFoliage: false,
+			},
+		};
 		const reaching = { ...stalked, lod: { ...stalked.lod, cardStalkToFoliage: true } };
 		const off = cardMesh({ ...mesh, record: stalked }, 1);
 		const on = cardMesh({ ...mesh, record: reaching }, 1);
