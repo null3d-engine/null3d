@@ -2315,6 +2315,45 @@ export interface BranchPieceOptions {
 }
 
 /**
+ * A face made square to a line, as near the face as that allows. An arching piece's face leans
+ * along its line, as a frond whose blade bends away from its socket does, so a camera square to
+ * the face would see the line shortened; square to the line, the line lies across the frame at
+ * its whole length.
+ */
+function squareTo(face: V3, line: V3): V3 {
+	const along = dot(face, line);
+	const off: V3 = [face[0] - along * line[0], face[1] - along * line[1], face[2] - along * line[2]];
+	return Math.hypot(...off) > 1e-3 ? normalize(off) : across(line);
+}
+
+/**
+ * The point at a share of a piece's run, on its centre line, and the line's way there: along the
+ * straight line from its socket where the piece states no centre line.
+ */
+function alongPiece(piece: BranchPiece, share: number): { readonly at: V3; readonly way: V3 } {
+	const points = piece.path && piece.path.length > 0 ? [piece.socket, ...piece.path] : [];
+	if (points.length < 2)
+		return { at: step(piece.socket, piece.direction, piece.length * share), way: piece.direction };
+	const lengths = points.slice(1).map((point, k) => {
+		const from = points[k] as V3;
+		return Math.hypot(point[0] - from[0], point[1] - from[1], point[2] - from[2]);
+	});
+	let left = share * lengths.reduce((sum, length) => sum + length, 0);
+	for (let k = 0; k < lengths.length; k++) {
+		const length = lengths[k] as number;
+		if (left > length && k < lengths.length - 1) {
+			left -= length;
+			continue;
+		}
+		const from = points[k] as V3;
+		const to = points[k + 1] as V3;
+		const way = normalize([to[0] - from[0], to[1] - from[1], to[2] - from[2]]);
+		return { at: step(from, way, Math.min(left, length)), way };
+	}
+	return { at: piece.socket, way: piece.direction };
+}
+
+/**
  * The view of one branch piece, as the cut-branch pictures show it: square to the piece's own face,
  * the piece standing on its cut at the frame's foot with its tip near the top, or laid across the
  * frame with its cut at the left. The piece fills the frame from cut to tip, and the frame widens
@@ -2327,18 +2366,20 @@ export function branchPieceShot(
 ): Solved {
 	if (!(piece.length > 0)) return absent('the branch piece has no length');
 	const fill = options.fill ?? 0.85;
-	const face = piece.face ?? across(piece.direction);
-	const look = options.edge ? (piece.side ?? normalize(cross(piece.direction, face))) : face;
-	const forward: V3 = [-look[0], -look[1], -look[2]];
+	const given = piece.face ?? across(piece.direction);
 	const laid = options.laid === true;
-	const roll = rollUp(forward, piece.direction) + (laid ? -Math.PI / 2 : 0);
-	const tall = laid
-		? Math.max(piece.length / (fill * lens.aspect), (2 * piece.spread) / fill)
-		: Math.max(piece.length / fill, (2 * piece.spread) / (fill * lens.aspect));
+	// The camera's way and roll for a line of the piece: square to its face, or along its side.
+	const viewOf = (line: V3) => {
+		const face = squareTo(given, line);
+		const look = options.edge ? (piece.side ?? normalize(cross(line, face))) : face;
+		const forward: V3 = [-look[0], -look[1], -look[2]];
+		return { forward, roll: rollUp(forward, line) + (laid ? -Math.PI / 2 : 0) };
+	};
 	if (options.span !== undefined) {
-		// A part of the piece, the span wide, round the share of its run asked.
+		// A part of the piece, the span wide, round the share of its run asked, on its centre line.
 		const share = Math.max(0, Math.min(1, options.along ?? 0.5));
-		const at = step(piece.socket, piece.direction, piece.length * share);
+		const { at, way } = alongPiece(piece, share);
+		const { forward, roll } = viewOf(way);
 		const high = options.span / lens.aspect;
 		return {
 			kind: `one branch piece, ${options.span} m of it round ${Math.round(share * 100)} per cent along it`,
@@ -2350,6 +2391,10 @@ export function branchPieceShot(
 			facts: { length: piece.length, spread: piece.spread, frame: high, laid, span: options.span },
 		};
 	}
+	const { forward, roll } = viewOf(piece.direction);
+	const tall = laid
+		? Math.max(piece.length / (fill * lens.aspect), (2 * piece.spread) / fill)
+		: Math.max(piece.length / fill, (2 * piece.spread) / (fill * lens.aspect));
 	const middle = step(piece.socket, piece.direction, piece.length / 2);
 	const camera = aim(middle, 0.5, 0.5, forward, tall, lens, roll);
 	// The piece's run as a share of the frame's side it lies along.
@@ -2401,8 +2446,17 @@ export function placedPieceShot(
 		shot.camera.target[2] - shot.camera.position[2],
 	);
 	// The slab is the piece's own depth along the line of sight, so what stands beside it in the
-	// plant is cut away; a piece that states no depth takes its spread.
-	const deep = piece.depth ? (options.edge ? piece.depth.side : piece.depth.face) : piece.spread;
+	// plant is cut away. An arching piece is seen square to its line rather than to its face, and
+	// nothing of it stands farther off that line than its spread; a piece that states no depth takes
+	// its spread too.
+	const arched = piece.face !== undefined && Math.abs(dot(piece.face, piece.direction)) > 1e-3;
+	const deep = !piece.depth
+		? piece.spread
+		: options.edge
+			? piece.depth.side
+			: arched
+				? piece.spread
+				: piece.depth.face;
 	const slab = Math.max(deep, 0.05 * piece.length);
 	return {
 		...shot,

@@ -88,6 +88,7 @@ import {
 import {
 	isAbsent,
 	type PlantSubjects,
+	pieceRowsAt,
 	piecesOfRows,
 	subjectsOfSkeleton,
 } from '../lib/plant-review/subjects';
@@ -604,6 +605,24 @@ function shaped(asset: PlantAsset, woodOnly: boolean, lod = LOD): PlantAsset {
 		shoots: rows,
 		levels: [
 			levelAt(0, 0, source),
+			{ ...empty, level: 1, from: Number.MAX_VALUE },
+			{ ...empty, level: 2, from: Number.MAX_VALUE },
+		],
+		impostor: { ...asset.impostor, from: Number.MAX_VALUE },
+	};
+}
+
+/**
+ * One placed piece alone, as a studio photograph shows a cut piece: its own rows at the nearest
+ * level from the lens to the horizon, with no wood, no cards and no other row of the plant.
+ */
+function pieceAlone(asset: PlantAsset, socket: V3): PlantAsset {
+	const empty = { parts: [], triangles: 0, bytes: 0 };
+	return {
+		...asset,
+		shoots: pieceRowsAt(asset.shoots, socket),
+		levels: [
+			{ ...asset.levels[0], parts: [], triangles: 0, bytes: 0, from: 0 },
 			{ ...empty, level: 1, from: Number.MAX_VALUE },
 			{ ...empty, level: 2, from: Number.MAX_VALUE },
 		],
@@ -2019,9 +2038,17 @@ export default defineSketch(async (ctx) => {
 					false,
 				).level
 			: undefined;
+	// A placed piece drawn alone stands on the background as its studio photograph's cut piece does.
+	const placedShot = QUERY.alone ? solvedViews.get(VIEW)?.shot : undefined;
+	const socket =
+		placedShot && !isAbsent(placedShot) ? (placedShot.facts.socket as V3 | undefined) : undefined;
 	const drawn = cutAcross(
-		shaped(main, WOOD_ONLY, plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD),
+		socket
+			? pieceAlone(main, socket)
+			: shaped(main, WOOD_ONLY, plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD),
 	);
+	if (QUERY.alone && !socket)
+		notes.push('the view frames no placed piece, so it draws the plant, not a piece alone');
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
