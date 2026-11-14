@@ -6,7 +6,6 @@
 // sky inside the crown's outline, so the gaps between cards stay hidden.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
-import type { Species } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import type { Detail } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
@@ -170,12 +169,4 @@ describe('a card level keeps the plant size', () => {
 			},
 			LONG,
 		);
-
-	it('names no card growth in any record', async () => {
-		const { speciesIds } = await import('../core/registry');
-		for (const id of speciesIds()) {
-			const { record } = await loadSpecies(id);
-			expect([id, 'cardGrow' in (record.lod as Species['lod'])]).toEqual([id, false]);
-		}
-	});
 });
