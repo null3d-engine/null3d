@@ -23,7 +23,7 @@
 // the parts thinner than a texel among them, so the mip levels average to the shoot's own cover. Last, each cell
 // measures how fast the coverage it must reach to draw has to fall as the GPU's mip levels average
 // it, so a far card keeps the cover the near one draws.
-import type { CardCell, PrototypeArrays } from '../asset';
+import type { CardCell, MeshArrays } from '../asset';
 import { atan2, cos, length3, pow, sin } from '../core/math';
 import type { Species } from '../core/record';
 import { barkColourOf, type TextureManifest } from '../core/textures';
@@ -95,7 +95,7 @@ interface PlannedPlane extends CardPlane {
 }
 
 /** The three planes of a prototype through the middle of its bounds, each across the whole of it. */
-function planesOf(mesh: PrototypeArrays): PlannedPlane[] {
+function planesOf(mesh: MeshArrays): PlannedPlane[] {
 	const lo = [Infinity, Infinity, Infinity];
 	const hi = [-Infinity, -Infinity, -Infinity];
 	for (let i = 0; i < mesh.positions.length; i += 3)
@@ -174,7 +174,7 @@ function unit(v: readonly number[], fallback: readonly number[]): [number, numbe
 }
 
 /** A vertex's place. */
-function vertexAt(mesh: PrototypeArrays, v: number): [number, number, number] {
+function vertexAt(mesh: MeshArrays, v: number): [number, number, number] {
 	return [
 		mesh.positions[v * 3] as number,
 		mesh.positions[v * 3 + 1] as number,
@@ -187,7 +187,7 @@ function vertexAt(mesh: PrototypeArrays, v: number): [number, number, number] {
  * of their spread in the plane square to the line.
  */
 function crossAxes(
-	mesh: PrototypeArrays,
+	mesh: MeshArrays,
 	vertices: Iterable<number>,
 	line: readonly number[],
 ): { wide: [number, number, number]; thin: [number, number, number] } {
@@ -234,7 +234,7 @@ function crossAxes(
  * droops; any other prototype is taken by distance from its attach point, which grows from base to
  * tip along a strand, a frond or a twig.
  */
-function pieceLine(mesh: PrototypeArrays): PieceLine {
+function pieceLine(mesh: MeshArrays): PieceLine {
 	const triangles = mesh.indices.length / 3;
 	let pieceVertices = 0;
 	for (let i = 2; i < mesh.colors.length; i += 4)
@@ -382,11 +382,7 @@ function pointAlong(line: PieceLine, at: number): [number, number, number] {
  * @param most The most stretches it is cut into.
  * @returns The planes, base first on a cut card.
  */
-function cardPlanes(
-	prototype: UncardedPrototype,
-	mesh: PrototypeArrays,
-	most: number,
-): PlannedPlane[] {
+function cardPlanes(prototype: UncardedPrototype, mesh: MeshArrays, most: number): PlannedPlane[] {
 	const triangles = mesh.indices.length / 3;
 	// A prototype only a cutting draws is drawn at the nearest level alone, so its card stays whole.
 	if (triangles === 0 || prototype.cutting) return planesOf(mesh);
@@ -669,6 +665,15 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 }
 
 /**
+ * The mesh a prototype's cards picture: a placed piece's whole mesh where it carries one, since a
+ * cut piece's tier may hold only the neck it is cut at, else the prototype's own mesh at the bake's
+ * tier.
+ */
+function bakeMeshOf(prototype: UncardedPrototype): MeshArrays {
+	return prototype.bake ?? (prototype.tiers[BAKE_TIER] as MeshArrays);
+}
+
+/**
  * Bakes the card atlas of a species' prototypes, and each prototype's cells in it.
  *
  * @param record The species record.
@@ -685,7 +690,7 @@ export function bakeCards(
 ): { readonly atlas: CardAtlas; readonly cells: readonly CardCell[] } {
 	const cuts = record.lod.cardCuts;
 	const planned = prototypes.map((prototype) =>
-		cardPlanes(prototype, prototype.tiers[BAKE_TIER] as PrototypeArrays, cuts?.most ?? CUTS_MOST),
+		cardPlanes(prototype, bakeMeshOf(prototype), cuts?.most ?? CUTS_MOST),
 	);
 	// A prototype without leaves holds thin stems and buds, so its planes take half cells; so do a cut
 	// prototype's stretches, unless the record asks for whole ones.
@@ -705,7 +710,7 @@ export function bakeCards(
 	const surface = new Uint8Array(layerBytes * 2);
 	const palette = paletteOf(record, manifest);
 	const cells: CardCell[] = prototypes.map((prototype, p) => {
-		const mesh = prototype.tiers[BAKE_TIER] as PrototypeArrays;
+		const mesh = bakeMeshOf(prototype);
 		const planes = planned[p] as PlannedPlane[];
 		return {
 			planes: planes.map((plane, k) => {
@@ -939,7 +944,7 @@ export interface CardPlane {
  * where absent.
  */
 export function bakeCell(
-	mesh: PrototypeArrays,
+	mesh: MeshArrays,
 	plane: CardPlane,
 	rect: readonly [number, number, number, number],
 	size: number,
@@ -982,7 +987,7 @@ export function bakeCell(
  * value a texel of the cell, for the dither that sets the alpha after it.
  */
 function drawPlane(
-	mesh: PrototypeArrays,
+	mesh: MeshArrays,
 	triangles: ArrayLike<number>,
 	plane: CardPlane,
 	rect: [number, number, number, number],

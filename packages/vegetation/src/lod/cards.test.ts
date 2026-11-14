@@ -225,6 +225,25 @@ describe('the card bake', () => {
 		expect(leaves).toBeGreaterThan(100);
 		expect(whiteTexels / leaves).toBeGreaterThan(0.9);
 	});
+
+	it("pictures a placed piece's whole mesh where it carries one", () => {
+		// A tier that holds only the small neck a piece is cut at, and the whole piece around it.
+		const neck = quads([[0.4, 0.6, 0.4, 0.6, SURFACE_LEAF]]);
+		const whole = quads([[-0.5, 0.5, -0.5, 0.5, SURFACE_LEAF]]);
+		const planesOf = (prototype: UncardedPrototype) =>
+			(
+				bakeCards(oakRecord(), OAK_MANIFEST, 'high', [prototype]).cells[0] as {
+					planes: readonly { right: readonly number[]; up: readonly number[] }[];
+				}
+			).planes;
+		const width = (planes: readonly { right: readonly number[] }[]): number =>
+			Math.hypot(...(planes[0] as { right: readonly number[] }).right);
+		const short = planesOf(prototypeOf(neck, 'piece', 1));
+		const full = planesOf({ ...prototypeOf(neck, 'piece', 1), bake: whole });
+		// The planes stand on the mesh the cards picture: the whole piece's card is wider than the
+		// neck's, though its own tier mesh is the same small one.
+		expect(width(full)).toBeGreaterThan(width(short));
+	});
 });
 
 /** Flat quads in the plane z = 0 facing +z, each `[x0, x1, y0, y1, kind]` in a unit square. */
@@ -727,12 +746,24 @@ describe('the card levels', () => {
 		expect(plain.indices.length / 3).toBe(drawnRows(1).length * 6);
 	});
 
-	it("draws each card's stalk where the record asks, at its twig's own radius", () => {
+	it("draws each card's stalk where the record asks, at its twig's radius where it names so", () => {
 		const asked = {
 			...mesh,
 			record: { ...record, lod: { ...record.lod, cardStalk: 1 } },
 		};
 		const stalked = cardMesh(asked, 1);
+		// Without the marker a stalk's second coordinate holds no radius: the shader draws the
+		// record's least width.
+		for (let v = 0; v < stalked.uvs1.length / 2; v++)
+			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) < 1e-6)
+				expect(stalked.uvs[v * 2 + 1]).toBe(0);
+		const marked = cardMesh(
+			{
+				...mesh,
+				record: { ...record, lod: { ...record.lod, cardStalk: 1, cardStalkWidth: true } },
+			},
+			1,
+		);
 		const drawn = drawnRows(1);
 		const thickest = Math.max(...mesh.skeleton.radius);
 		let stretched = 0;
@@ -744,21 +775,21 @@ describe('the card levels', () => {
 		}
 		expect(stretched).toBeGreaterThan(0);
 		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
-		expect(stalked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
+		expect(marked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
 		let stalks = 0;
-		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
-			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
+		for (let v = 0; v < marked.uvs1.length / 2; v++) {
+			if (Math.abs((marked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
 			stalks++;
-			expect([0, 1]).toContain(stalked.uvs[v * 2] as number);
+			expect([0, 1]).toContain(marked.uvs[v * 2] as number);
 			// The second texture coordinate holds the twig's radius over the wood's radius span.
-			const radius = (stalked.uvs[v * 2 + 1] as number) * WOOD_RADIUS_RANGE;
+			const radius = (marked.uvs[v * 2 + 1] as number) * WOOD_RADIUS_RANGE;
 			expect(radius).toBeGreaterThan(0);
 			expect(radius).toBeLessThanOrEqual(thickest);
 			expect(
 				Math.hypot(
-					stalked.normals[v * 3] as number,
-					stalked.normals[v * 3 + 1] as number,
-					stalked.normals[v * 3 + 2] as number,
+					marked.normals[v * 3] as number,
+					marked.normals[v * 3 + 1] as number,
+					marked.normals[v * 3 + 2] as number,
 				),
 			).toBeCloseTo(1, 5);
 		}
