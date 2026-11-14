@@ -41,13 +41,13 @@ function branchlet(length: number): PieceStem {
 		sides: [
 			{
 				stem: {
-					length: { mean: 0.11, spread: 0.02 },
+					length: { mean: 0.12, spread: 0.02 },
 					radius: [0.0026, 0.002],
 					droop: 10,
 					leaves: SCALES,
 					bud: false,
-					// Still 09: each side shoot of a hanging branchlet divides into 4 or 5 cords, whose
-					// scales make a rope near the scales' own width.
+					// Still 09: each side shoot of a hanging branchlet divides into six cords, the top of
+					// its stated 3 to 6, whose scales make a rope near the scales' own width.
 					sides: [
 						{
 							stem: {
@@ -56,7 +56,7 @@ function branchlet(length: number): PieceStem {
 								leaves: SCALES,
 								bud: false,
 							},
-							gap: 0.02,
+							gap: 0.014,
 							from: 0.2,
 							to: 0.95,
 							arrangement: 'alternate',
@@ -64,9 +64,9 @@ function branchlet(length: number): PieceStem {
 						},
 					],
 				},
-				// Seven a branchlet, alternate, over its hanging part, spread like the fingers of a
-				// tassel so the plumes of neighbouring branchlets overlap.
-				gap: (length * 0.7) / 7,
+				// Eight a branchlet, the top of the stated 5 to 8, alternate over its hanging part and
+				// spread like the fingers of a tassel, so the plumes of neighbouring branchlets overlap.
+				gap: (length * 0.7) / 8,
 				from: 0.3,
 				to: 1,
 				arrangement: 'alternate',
