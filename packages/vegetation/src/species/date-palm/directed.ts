@@ -231,7 +231,7 @@ export const directed: Species = {
 			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.73, 0.85, 1.06 and
 			// 1.43 MB; a plant's at most 1.38 MB, the dates most of it.
 			// The ultra kit's own cap rises once, to its measure plus a twentieth, by the lead's
-			// ruling on 14 November 2026: 2,602,980 bytes measured at seed 11 over the three
+			// ruling: 2,602,980 bytes measured at seed 11 over the three
 			// variants (kit 1.80 / 1.94 / 2.19 / 2.60 MB at low / medium / high / ultra), after the
 			// leaflets went to 102 a side, the fronds to 48 and the leaflet to 0.72 m, which took the
 			// crown's own sky at 01 from 0.45 to 0.33 against the photographs' 0.20. The other tiers
