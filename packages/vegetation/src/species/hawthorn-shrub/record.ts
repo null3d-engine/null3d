@@ -422,6 +422,10 @@ export const record: Species = {
 		cardStalk: 3,
 		cardStalkToFoliage: true,
 		woodOrders: [2, 1],
+		// A card level shows a thorn, a haw or a flower a few pixels wide, while the extras cost more
+		// than twice the cards they stand among; both card levels leave them out and the near views
+		// keep them.
+		extrasFrom: 1,
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
@@ -434,8 +438,9 @@ export const record: Species = {
 			// The near band measures 483,068 triangles once the height calibration's scale is applied
 			// before the light grid, so the cap keeps its 17,728-triangle spare above that read, 3.67
 			// per cent of it; the earlier 481,806 stood the same spare, 3.82 per cent, above the
-			// pre-calibration 464,078. The first card level measures at most 152,498 and the second at
-			// most 22,761 over the variants and seasons, under the class's shared card caps.
+			// pre-calibration 464,078. The first card level measures at most 45,820 and the second at
+			// most 20,993 over the variants and seasons at the high tier, under the class's shared card
+			// caps; the leaf form alone carries the thorns, haws and flowers.
 			lod0Triangles: 500_796,
 			lod1Triangles: 155_000,
 			lod2Triangles: 25_000,
