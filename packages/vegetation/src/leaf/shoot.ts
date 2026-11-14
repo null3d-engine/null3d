@@ -139,6 +139,13 @@ export interface BudShape {
 	readonly round: boolean;
 	/** A plain cone in one band, for a bud a few pixels long at the distances the tier draws. */
 	readonly cone?: boolean;
+	/**
+	 * A closed double cone, a point at each end and the widest ring at the middle, for a fruit or
+	 * a cone that is seen whole and from below in one band each way.
+	 */
+	readonly double?: boolean;
+	/** The share of a double cone's length from its foot to its widest ring, a half where absent. */
+	readonly widest?: number;
 }
 
 /** How a tier meshes a shoot's wood and buds. */
@@ -166,6 +173,8 @@ export interface ShootCut {
 	/** A thorn's and a fruiting body's shapes; absent, a thorn takes the axil's and a body the cluster's. */
 	readonly thorn?: BudShape;
 	readonly body?: BudShape;
+	/** A fruiting body's shape where its species keeps it round; absent, it takes `body`'s. */
+	readonly roundBody?: BudShape;
 	/** Whether a stem run that its leaves hide takes rings far apart, since no ring of it shows. */
 	readonly thinHidden?: boolean;
 	/**
@@ -256,6 +265,8 @@ export interface PlannedBud {
 	readonly stack?: number;
 	/** The species' mark it draws, a thorn or a fruiting body, where it is one and not a bud. */
 	readonly mark?: 'thorn' | 'body';
+	/** Whether a fruiting body keeps its rounded shape where the tier draws other bodies plainer. */
+	readonly round?: boolean;
 }
 
 /**
@@ -1420,7 +1431,7 @@ export function meshShoot(
 			bud.mark === 'thorn'
 				? (cut.thorn ?? cut.axil)
 				: bud.mark === 'body'
-					? (cut.body ?? cut.cluster)
+					? ((bud.round ? cut.roundBody : undefined) ?? cut.body ?? cut.cluster)
 					: bud.cluster
 						? cut.cluster
 						: cut.axil;
@@ -1452,23 +1463,30 @@ export function meshShoot(
 		const w = bud.width / 2;
 		const l = bud.length;
 		const cone = shape.cone === true || (!bud.mark && bud.length < (cut.coneBelow ?? 0));
+		const double = shape.double === true && !cone;
 		const profile: [number, number][] = cone
 			? [
 					[w, 0],
 					[0, l],
 				]
-			: shape.round
+			: double
 				? [
-						[w * 0.6, 0],
-						[w, l * 0.35],
-						[w * 0.7, l * 0.72],
+						[0, 0],
+						[w, l * (shape.widest ?? 0.5)],
 						[0, l],
 					]
-				: [
-						[w * 0.5, 0],
-						[w, l * 0.4],
-						[0, l],
-					];
+				: shape.round
+					? [
+							[w * 0.6, 0],
+							[w, l * 0.35],
+							[w * 0.7, l * 0.72],
+							[0, l],
+						]
+					: [
+							[w * 0.5, 0],
+							[w, l * 0.4],
+							[0, l],
+						];
 		lathe(
 			mesh,
 			profile,
@@ -1477,7 +1495,7 @@ export function meshShoot(
 			shape.sides,
 			[bendByte(bud.along, plan.span), 0, SURFACE_BUD, 255],
 			undefined,
-			cone,
+			cone || double,
 		);
 	}
 	for (const leaf of plan.leaves) {
