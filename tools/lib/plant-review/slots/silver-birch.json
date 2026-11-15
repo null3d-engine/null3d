@@ -127,6 +127,21 @@
 			"standing": "second-form",
 			"reason": "the dense old tree is a second form of the species and does not judge the primary tree",
 			"ruling": "the owner ruled that the dense old tree is a named second form"
+		},
+		"31-young-birch-whole.png": {
+			"standing": "reference-limit",
+			"reason": "the young birch is a named form the directed record does not grow, so the mature tree cannot judge it: its crown balance reads 0.45 in the top band against the photograph's 0.81, its sky gap 0.16 against 0.26 and its crown aspect 0.537 against 0.773",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"32-juvenile-bark.png": {
+			"standing": "reference-limit",
+			"reason": "the juvenile stem's red-brown bark is a part the grown form does not have: the drawn bark reads L* 70.0 against the photograph's 47.4, 24.53 colour steps apart",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"30-woodland-form-whole.png": {
+			"standing": "reference-limit",
+			"reason": "the woodland birch is a named form the directed record does not grow: its long clean bole and small high crown are absent, and the frame draws the mature tree at 0.58 of the photograph's height against 0.97",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
 		}
 	}
 }
