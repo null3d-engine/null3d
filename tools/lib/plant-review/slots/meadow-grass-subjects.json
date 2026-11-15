@@ -1,0 +1,29 @@
+{
+	"09-tiller-division.png": {
+		"bottom": 0.6438
+	},
+	"11-blade-cluster.png": {
+		"bottom": 0.5355
+	},
+	"12-single-blade-upper.png": {
+		"bottom": 0.9392
+	},
+	"13-single-blade-underside.png": {
+		"bottom": 0.9425
+	},
+	"21-branch-studio.png": {
+		"bottom": 0.8299
+	},
+	"22-subbranch-studio.png": {
+		"bottom": 0.5549
+	},
+	"23-leaf-cluster-studio.png": {
+		"bottom": 0.6426
+	},
+	"24-leaf-texture-upper.png": {
+		"bottom": 0.9722
+	},
+	"25-leaf-texture-underside.png": {
+		"bottom": 0.9542
+	}
+}
