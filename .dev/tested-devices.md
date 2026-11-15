@@ -96,6 +96,8 @@ Ten pages passed, and none was skipped.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Creek Low | WebGL2 | 32.0 | 30.8 | 28.3 | n/a | 2,748,900 | 139 | 120.6 | 14.7 | 71.3 |
 | Creek Medium | WebGL2 | 10.8 | 90.8 | 85.2 | n/a | 6,364,500 | 153 | 537.5 | 18.4 | 79.6 |
+| Creek High | WebGPU | 8.6 | 87.71 | 1.02 | 76.42 | 3,130,000 | 461 | 422.3 | 72.5 | 139.3 |
+| Creek Ultra | WebGPU | 8.6 | 118.10 | 0.94 | 107.22 | 3,760,000 | 168 | 584.1 | 35.6 | 89.9 |
 | Forest Low | WebGPU | 60.0 | 15.6 | 1.9 | 6.9 | 7,160,900 | 88 | 57.4 | 34.4 | 328.8 |
 | Forest Low | Compatibility | 59.6 | 15.6 | 1.9 | 6.9 | 6,962,000 | 88 | 57.4 | 34.4 | 328.8 |
 | Forest Low | WebGL2 | 60.1 | 15.5 | 1.5 | n/a | 4,839,200 | 35 | 95.8 | 11.0 | 69.5 |
@@ -107,6 +109,12 @@ Ten pages passed, and none was skipped.
 
 The run: [20261024-105210-vegetation](tested-devices/ipad-pro-13-safari/20261024-105210-vegetation.md).
 Ten pages passed, and none was skipped.
+
+Creek's High and Ultra rows come from a later run on the landed head:
+[20261115-112412-vegetation](tested-devices/ipad-pro-13-safari/20261115-112412-vegetation.md), at
+`1c6785724` in Safari 26.6.1. That run drew Creek only. Both rows miss D-241's lines for this
+device: High reads 87.71 against a ceiling of 62.5 to 67.1, and Ultra 118.10 against 71.1 to 99.0.
+The pages run no wind reader, so the misses are the Creek scene's own cost on this device.
 
 The forest's GPU time at High and Ultra goes into the last render pass, which draws the far cards.
 Its triangle count is higher at High than at Ultra, because each preset picks its own levels.
