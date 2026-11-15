@@ -5,10 +5,12 @@
 		"cutSpan": 0.4
 	},
 	"12-single-leaflet-upper.png": {
-		"roll": -45
+		"roll": -45,
+		"leaves": 1
 	},
 	"13-single-leaflet-underside.png": {
-		"roll": -40.5
+		"roll": -40.5,
+		"leaves": 1
 	},
 	"09-frond-leaflet-rows.png": { "piece": "frond-arched", "along": 0.5 },
 	"22-subbranch-studio.png": {
@@ -25,10 +27,12 @@
 		"cutSpan": 0.4
 	},
 	"24-leaf-texture-upper.png": {
-		"roll": -45
+		"roll": -45,
+		"leaves": 1
 	},
 	"25-leaf-texture-underside.png": {
-		"roll": -45
+		"roll": -45,
+		"leaves": 1
 	},
 	"21-branch-studio.png": {
 		"cutFrom": 0,
