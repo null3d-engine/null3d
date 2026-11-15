@@ -11,6 +11,10 @@
 		"span": 1.6,
 		"roll": -10
 	},
+	"14-trunk-base-offshoots.png": {
+		"barkMask": true,
+		"daylight": 1.47
+	},
 	"11-leaflet-group.png": {
 		"roll": 50,
 		"cutFrom": 2.1,

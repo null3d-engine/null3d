@@ -122,9 +122,10 @@ export const record: Species = {
 	bark: {
 		zones: [
 			// Stills 15, 17 and 26: one lattice of cut leaf bases over the lower trunk, warmer than
-			// the texture's own grey. Stills 01 and 02: the upper trunk's bark reads cooler than its
-			// photographs, so that zone carries a warmer tint; the texture view stands at the foot
-			// and keeps the lower zone.
+			// the texture's own grey. The upper zone keeps a warmer tint than the lower one. The
+			// bark's hue is a reference conflict: still 14's bark reads a* -1.8, still 15's +3.2
+			// and the texture source's own colour matches the lower zone, so one tint cannot bring
+			// both close views inside three steps.
 			{ layer: 0, by: 'height', from: 0, to: 3, blend: 0.6, tint: [1.15, 1.15, 1.1] },
 			{ layer: 0, by: 'height', from: 3, to: 40, blend: 0.6, tint: [1.5, 1.18, 1.0] },
 		],
