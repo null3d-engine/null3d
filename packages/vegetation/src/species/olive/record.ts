@@ -307,6 +307,10 @@ export const record: Species = {
 			// the texture source's contour a little broad for the species.
 			length: { mean: 0.065, spread: 0.008 },
 			outline: 'texture',
+			// Stills 12 and 13: the blade runs about five times as long as it is wide, and the texture
+			// source's contour, 24 and 25, is broader than the photographs' leaf. The mesh narrows
+			// across the midrib to the photographs' proportion.
+			breadth: 0.8,
 			petiole: { length: 0.005, radius: 0.001, flat: 0, droop: 10 },
 			fold: 14,
 			curl: 14,

@@ -344,6 +344,11 @@ const OPEN_TOP: Readonly<Record<string, number>> = {
 	// limit. The leaf sweep reads 0.233, 0.220 and 0.227 at 3.9, 4.0 and 4.1 cm blades, and 0.220 at
 	// seven and at eight blades, so no leaf size or count closes it.
 	'hawthorn-shrub 22': 0.22,
+	// The video's band tops at 0.302. The piece reads 0.312, a 0.01 limit: the blade the single-leaf
+	// stills measure is narrower than the texture source's contour, and a narrower blade opens the
+	// edge-on sky. A blade wide enough to close it takes the leaf stills away from their photographs,
+	// where the same blade measures the leaf's proportion.
+	'olive 22': 0.312,
 };
 /**
  * How far a cut's depth over width may stand from its video's either way. The standard gives no
@@ -358,7 +363,6 @@ const FIGURE_ROUNDING = 0.0005;
  * band leaves the list.
  */
 const OPEN_DEPTH: Readonly<Record<string, number>> = {
-	'olive 22': 0.367,
 	'european-beech 22': 0.216,
 	'common-ash 22': 0.244,
 	// Still 9's crowded branch draws shallower than the arch's depth: the reviewer's like-for-like
