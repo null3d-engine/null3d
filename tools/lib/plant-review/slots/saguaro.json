@@ -104,7 +104,8 @@
 		"sunAzimuth": -18,
 		"sunRise": 52,
 		"skyShare": 0.32,
-		"daylight": 1.5
+		"daylight": 1.5,
+		"turn": 0
 	},
 	"17-trunk-taper.png": {
 		"sunAzimuth": -24,

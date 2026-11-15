@@ -1,0 +1,15 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.18,
+		"daylight": 1.65
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": -18,
+		"sunRise": 52,
+		"skyShare": 0.32,
+		"daylight": 1.5,
+		"turn": 0
+	}
+}
