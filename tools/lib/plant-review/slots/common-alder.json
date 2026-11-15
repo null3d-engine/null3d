@@ -81,6 +81,9 @@
 		"distance": 0.3,
 		"daylight": 2.0
 	},
+	"20-roots-in-water.png": {
+		"daylight": 4.1
+	},
 	"common-alder-turntable.mp4": {
 		"skyShare": 0.6,
 		"daylight": 2.2
@@ -90,6 +93,7 @@
 		"daylight": 2.2
 	},
 	"14-bark-base.png": {
+		"daylight": 1.8,
 		"barkMask": true
 	},
 	"15-bark-mid-trunk.png": {
