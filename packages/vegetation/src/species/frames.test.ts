@@ -229,7 +229,9 @@ const HELD: readonly Held[] = [
 		// Twenty-four limbs a golden angle apart leave no gap wider than two even shares and their
 		// jitter.
 		round: { rule: 'limb', gap: 46, lean: 0.25 },
-		base: { limb: 0.25, side: 0.5 },
+		// A side branch thins to a little over half its parent's radius there, so a limb's division
+		// reads as two arms of like size.
+		base: { limb: 0.25, side: 0.55 },
 		plumb: ['leader'],
 		through: 0,
 		// The frame's own eight: the leader and the first limb pass the first side twig near the trunk.
