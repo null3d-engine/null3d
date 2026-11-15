@@ -1,4 +1,13 @@
 {
+	"01-whole-column-distant.png": {
+		"daylight": 1.74
+	},
+	"02-whole-column-profile.png": {
+		"daylight": 2.36
+	},
+	"15-bark-mid-trunk.png": {
+		"daylight": 3.16
+	},
 	"06-inside-column.png": {
 		"view": "inside"
 	},
