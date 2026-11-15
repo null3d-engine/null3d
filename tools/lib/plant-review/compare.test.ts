@@ -20,6 +20,7 @@ import {
 	engineLevelAt,
 	fittedMaskClause,
 	frameFiguresHold,
+	frameIou,
 	frameScale,
 	frameTilt,
 	framingFault,
@@ -34,6 +35,7 @@ import {
 	motionProfile,
 	NORMAL_HEIGHT,
 	NORMAL_WIDTH,
+	nearIou,
 	normalise,
 	patchDifference,
 	patchLab,
@@ -1127,5 +1129,24 @@ describe("a whole view's sky gap, read like with like", () => {
 			for (let x = 0; x < read.width; x++)
 				if (crown(x, y) && !trunk(x, y) && read.mask[y * read.width + x]) crownPlant++;
 		expect(crownPlant).toBe(0);
+	});
+});
+
+// A thresholded colour edge and an anti-aliased matte differ by about a pixel all round, so a thin
+// subject is mostly boundary. The mask gate must not fail a sound matte for that.
+describe('the mask gate on a thin subject', () => {
+	const card = (x0: number) => rectangle(40, 30, { left: x0, top: 4, right: x0 + 2, bottom: 25 });
+
+	test('passes a sound matte whose outline is one pixel out', () => {
+		const coloured = card(20);
+		const matte = card(21);
+		expect(frameIou(coloured, matte)).toBeLessThan(MASK_GATE_PLAIN);
+		expect(nearIou(coloured, matte)).toBeGreaterThanOrEqual(MASK_GATE_PLAIN);
+	});
+
+	test('fails a matte that is truly displaced', () => {
+		const coloured = card(20);
+		const matte = card(28);
+		expect(nearIou(coloured, matte)).toBeLessThan(MASK_GATE_PLAIN);
 	});
 });
