@@ -1221,6 +1221,41 @@ function junction(skeleton: MeshInput['skeleton'], axis: number, out: Vector3): 
 }
 
 /**
+ * The node nearest a row whose axis the level draws, or -1 where it draws none. A row that names no
+ * node of its own, such as a framed plant's foliage, is anchored through it.
+ *
+ * @param input What the level is built from.
+ * @param row The card row.
+ * @param drawn Whether the level draws an axis.
+ * @returns The nearest drawn node, or -1.
+ */
+function nearestDrawnNode(
+	input: MeshInput,
+	row: number,
+	drawn: (axis: number) => DrawnWood,
+): number {
+	const { skeleton, rows } = input;
+	const { position, axisOf, nodeCount } = skeleton;
+	const x = rows.position[row * 3] as number;
+	const y = rows.position[row * 3 + 1] as number;
+	const z = rows.position[row * 3 + 2] as number;
+	let best = Number.POSITIVE_INFINITY;
+	let found = -1;
+	for (let n = 0; n < nodeCount; n++) {
+		if (drawn(axisOf[n] as number) === 0) continue;
+		const dx = (position[n * 3] as number) - x;
+		const dy = (position[n * 3 + 1] as number) - y;
+		const dz = (position[n * 3 + 2] as number) - z;
+		const d = dx * dx + dy * dy + dz * dz;
+		if (d < best) {
+			best = d;
+			found = n;
+		}
+	}
+	return found;
+}
+
+/**
  * The nearest point of the drawn wood under a shoot row: the row's own node where its axis is
  * drawn, or else the place where the first axis above it that is drawn takes the branch it hangs
  * on. On an axis drawn as one straight run, the point is moved onto that run.
@@ -1232,8 +1267,11 @@ function anchorOf(
 ): Vector3 | undefined {
 	const { skeleton, rows } = input;
 	const { axes, position, axisOf } = skeleton;
-	if (!rows.node) return undefined;
-	const node = rows.node[row] as number;
+	// A row that names no node, as a framed plant's foliage does, takes the nearest node the level
+	// draws. Without it the card would stand where it was grown while the wood under it was taken
+	// by a polygon maximum, and hang in the air.
+	const node = rows.node ? (rows.node[row] as number) : nearestDrawnNode(input, row, drawn);
+	if (node < 0) return undefined;
 	let axis = axisOf[node] as number;
 	const at: Vector3 = [
 		position[node * 3] as number,
