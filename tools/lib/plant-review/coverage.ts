@@ -76,9 +76,10 @@ function stillLine(file: string, kind: string, result: StillResult | undefined):
 			render: '-',
 			result: `the render failed: ${result.error}`,
 		};
-	// A photograph of a stand is drawn and set beside its reference, and is not judged: it holds
-	// no pass back, since no single plant could match it.
-	if (result.standing?.kind === 'stand')
+	// A photograph that does not judge the primary plant — a stand of many plants, a second form of
+	// the species, or a recorded limit of the reference set — is drawn and set beside its reference
+	// and is not judged. It holds no pass back, whatever standing it carries.
+	if (result.standing !== undefined)
 		return {
 			file,
 			kind,
