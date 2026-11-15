@@ -56,7 +56,8 @@
 		"skyShare": 0.19,
 		"daylight": 2.761,
 		"limbRow": 0.85,
-		"limbShare": 0.1
+		"limbShare": 0.1,
+		"lod": 0
 	},
 	"06-inside-crown.png": {
 		"skyShare": 0.395,
