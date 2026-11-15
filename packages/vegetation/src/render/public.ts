@@ -17,6 +17,7 @@ export {
 	placePlants,
 	switchScale,
 } from './place';
+export { type DrawnLevel, drawnLevel } from './static-shoots';
 export {
 	type PrepareOptions,
 	prepareSpecies,

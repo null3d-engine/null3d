@@ -17,6 +17,7 @@ export const FORM_FIELDS: Readonly<Record<'form' | FormField, true>> = {
 	base: true,
 	extras: true,
 	wind: true,
+	lod: true,
 	roundBand: true,
 	lopsided: true,
 	cuttings: true,

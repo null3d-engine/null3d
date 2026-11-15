@@ -9,6 +9,7 @@ import { cos, sin } from '../core/math';
 import type { BarkSpec } from '../core/record';
 import { spreadAt } from '../core/types';
 import type { AxisRings } from './tube';
+import { zoneHolds } from './uv';
 
 /** Hash purpose of the strips, apart from every other stage's. */
 const PEEL = 0x61;
@@ -76,8 +77,7 @@ export function peelFins(
 	for (let r = rings.welded; r + 1 < plain; r++) {
 		const first = rings.first[r] as number;
 		const pipe = rings.pipe[first] as number;
-		const at = zone.by === 'height' ? (rings.centre[r * 3 + 1] as number) : pipe;
-		if (at < zone.from || at >= zone.to) continue;
+		if (!zoneHolds(zone, pipe, rings.centre[r * 3 + 1] as number)) continue;
 		const length = (rings.arc[r + 1] as number) - (rings.arc[r] as number);
 		const mean = rings.rho[first] as number;
 		const area = 2 * Math.PI * mean * length;

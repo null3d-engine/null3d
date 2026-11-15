@@ -198,7 +198,7 @@ export function windRecords(input: MeshInput): WindTable {
 		records[at + 9] = flutter.frequency;
 		records[at + 10] = order;
 		records[at + 11] = length;
-		records[at + 12] = unitAt(seed, record.seedSalt, variant, PHASE_KEY, a);
+		records[at + 12] = unitAt(seed, record.seedSalt, variant, PHASE_KEY, axes.origin?.[a] ?? a);
 		records[at + 13] = whips && order >= whips.fromOrder ? whips.pendulum : 0;
 	}
 	return { base, count: from.length, records };

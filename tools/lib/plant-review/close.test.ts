@@ -4,43 +4,41 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ShootRows } from '../../../packages/vegetation/src/asset.ts';
+import type { ShootPrototype, ShootRows } from '../../../packages/vegetation/src/asset.ts';
 import {
+	AXIS_CULM,
 	AXIS_LIMB,
+	AXIS_RACHIS,
 	AXIS_ROOT,
 	AXIS_STEM,
+	BUD_FLOWER,
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../../../packages/vegetation/src/core/graph.ts';
 import {
-	dot,
 	firstForkHeight,
-	normalize,
+	flowerSites,
+	sheathColumn,
 	stemAt,
 	stemSurfaceAt,
-	turnedAbout,
 	type V3,
 } from '../../../tests/pages/lib/plant-review/anatomy.ts';
 import {
-	barkLimbView,
-	belowView,
+	type ClosePlant,
+	type CloseView,
 	departures,
 	forks,
-	forkView,
-	insideView,
-	junctionView,
-	surfaceView,
-	trunkView,
+	strandsView,
 	walkedRound,
 } from '../../../tests/pages/lib/plant-review/close.ts';
-import { rowAngle, spanDistance } from '../../../tests/pages/lib/plant-review/framing.ts';
+import { spanDistance } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	clutterOf,
-	lensAxes,
 	plantSpheres,
 	type Spheres,
 	sharedRecords,
 } from '../../../tests/pages/lib/plant-review/sight.ts';
+import { checkShot } from '../../../tests/pages/lib/plant-review/subject-shots.ts';
 import { closeFraming } from './compare.ts';
 
 /** No shoot rows, for a plant drawn as its wood alone. */
@@ -124,176 +122,59 @@ describe('a part of a piece framed at its own span', () => {
 	});
 });
 
-describe('the view up the stem', () => {
-	const skeleton = oakLike();
-	const plant = { skeleton, shoots: NO_ROWS, prototypes: [] };
-	const lens = { fov: 70, aspect: 1.5 };
-
-	test('stands at eye height a step back from the bark, on the side the turn faces', () => {
-		const view = belowView(plant, 0, lens, { elevation: 70 });
-		expect(view.position[1]).toBeCloseTo(1.6, 6);
-		const reach = Math.hypot(view.position[0], view.position[2]);
-		// Outside the bark at eye height, by the step back.
-		expect(reach).toBeGreaterThan(0.6);
-		expect(reach).toBeLessThan(0.8 + 1.01);
-		expect(view.position[2]).toBeGreaterThan(0);
-		expect(view.subject.pitch).toBe(70);
-	});
-
-	test('drops its lens into a plant shorter than a person, so the crown stands above it', () => {
+describe('the flower sites', () => {
+	test('finds the flowers and the ring they make, and none where the plant carries none', () => {
 		const b = new SkeletonBuilder();
 		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		run(b, stem, -1, [0, 0, 0], [0, 0.1, 0], 11, 0.02, 0.3);
-		const short = { skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] };
-		expect(short.skeleton.height).toBeCloseTo(1, 6);
-		const view = belowView(short, 0, lens, { elevation: 70 });
-		// A third of the way up the plant, and still above the ground.
-		expect(view.position[1]).toBeCloseTo(0.35, 6);
-		expect(view.subject.pitch).toBe(70);
-	});
-
-	test('pitches up until the bark where the stem divides lands on the asked row', () => {
-		const forkRow = 0.4;
-		const view = belowView(plant, 0, lens, { elevation: 85, forkRow });
-		const pitch = view.subject.pitch as number;
-		expect(pitch).toBeLessThan(85);
-		// The near bark at the fork's height, seen from the camera, lands on the asked row.
-		const fork = view.subject.fork as number;
-		const near = Math.hypot(view.position[0], view.position[2]) - 0.56;
-		const angle = Math.atan2(fork - 1.6, near) - (pitch * Math.PI) / 180;
-		expect(angle).toBeCloseTo(rowAngle(forkRow, lens.fov), 1);
-	});
-
-	test("stands back until the ground at the bark and the crown's base land on the asked rows", () => {
-		const wide = { fov: 75, aspect: 1 };
-		// A crown whose foliage starts at 4.5 m, where the limbs leave the bole.
-		const crowned = { skeleton: { ...skeleton, crownBase: 4.5 }, shoots: NO_ROWS, prototypes: [] };
-		const view = belowView(crowned, 0, wide, { elevation: 70, crownRow: 0.09, footRow: 0.96 });
-		expect(view.position[1]).toBeCloseTo(1.6, 6);
-		const base = view.subject.crownBase as number;
-		expect(base).toBe(4.5);
-		const bark =
-			Math.hypot(view.position[0], view.position[2]) - (view.subject.stemRadius as number);
-		const pitch = ((view.subject.pitch as number) * Math.PI) / 180;
-		const row = (height: number) =>
-			0.5 -
-			Math.tan(Math.atan2(height - 1.6, bark) - pitch) / (2 * Math.tan((37.5 * Math.PI) / 180));
-		expect(row(0)).toBeCloseTo(0.96, 6);
-		expect(row(base)).toBeCloseTo(0.09, 6);
-	});
-
-	test("takes the plain view up the stem, and says so, where the crown's base stands low", () => {
-		const low = { skeleton: { ...skeleton, crownBase: 0.4 }, shoots: NO_ROWS, prototypes: [] };
-		const view = belowView(
-			low,
-			0,
-			{ fov: 75, aspect: 1 },
-			{ elevation: 70, crownRow: 0.09, footRow: 0.96 },
-		);
-		expect(view.subject.warning).toContain("crown's base");
-		expect(view.subject.crownBase).toBeUndefined();
-		expect(view.position[1]).toBeCloseTo(1.6, 6);
-		expect(view.subject.pitch).toBe(70);
-		const swapped = belowView(
-			{ skeleton: { ...skeleton, crownBase: 4.5 }, shoots: NO_ROWS, prototypes: [] },
-			0,
-			{ fov: 75, aspect: 1 },
-			{ elevation: 70, crownRow: 0.96, footRow: 0.09 },
-		);
-		expect(swapped.subject.warning).toContain("crown's row");
-		expect(Math.hypot(swapped.position[0], swapped.position[2])).toBeLessThan(5);
-		const near = belowView(
-			{ skeleton: { ...skeleton, crownBase: 4.5 }, shoots: NO_ROWS, prototypes: [] },
-			0,
-			{ fov: 75, aspect: 1 },
-			{ elevation: 70, crownRow: 0.49, footRow: 0.5 },
-		);
-		expect(near.subject.warning).toContain("crown's row");
-		expect(Math.hypot(near.position[0], near.position[2])).toBeLessThan(5);
-	});
-
-	test("stands low at a stemless plant's rim and looks up through its leaves", () => {
-		const b = new SkeletonBuilder();
-		const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
-		const foot = b.addNode({ x: 0, y: 0, z: 0, radius: 0.11, parent: -1, axis: crown });
-		const top = b.addNode({ x: 0, y: 0.03, z: 0, radius: 0.11, parent: foot, axis: crown });
-		const shoot = b.addAxis({ parent: crown, parentNode: top, order: 1, kind: AXIS_LIMB });
-		run(b, shoot, top, [0.2, 0, 0], [0.2, 0.28, 0], 6, 0.02, 0.5);
-		const skeleton = b.finish(1);
-		const view = belowView({ skeleton, shoots: NO_ROWS, prototypes: [] }, 0, lens, {
-			elevation: 70,
-		});
-		expect(view.position[1]).toBeLessThan(0.6);
-		expect(Math.hypot(view.position[0], view.position[2])).toBeGreaterThan(0.5);
-		expect(view.subject.kind).toBe('the plant from its foot');
-		expect(view.subject.pitch).toBe(70);
-	});
-
-	test("stands as far from the stem's axis as the photograph, in stem radii", () => {
-		const view = belowView(plant, 0, lens, { elevation: 70, stand: 3.3 });
-		const radius = view.subject.stemRadius as number;
-		expect(Math.hypot(view.position[0], view.position[2])).toBeCloseTo(3.3 * radius, 6);
-	});
-
-	test('walks round the stem to a stand clear of a low branch', () => {
-		const b = new SkeletonBuilder();
-		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		const trunk = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3);
-		// A low branch at eye height, running out across the stand on the +Z side.
-		const low = b.addAxis({
-			parent: stem,
-			parentNode: trunk[1] as number,
-			order: 1,
-			kind: AXIS_LIMB,
-		});
-		run(b, low, trunk[1] as number, [-1, 1.6, 1.7], [0.5, 0, 0], 5, 0.15, 0.2);
-		const view = belowView({ skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] }, 0, lens, {
-			elevation: 70,
-		});
-		expect(view.subject.walked).not.toBe(0);
-		expect(view.subject.warning).toBeUndefined();
-		expect(Math.abs(view.position[2] - 1.7) + Math.abs(view.position[0])).toBeGreaterThan(0.5);
-	});
-
-	test('says so when no stand round the stem is clear, and keeps the one its turn asks', () => {
-		const b = new SkeletonBuilder();
-		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		const trunk = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3);
-		// A branch that rings the stem at eye height, through every stand a step back from the bark.
-		const ring = b.addAxis({
-			parent: stem,
-			parentNode: trunk[1] as number,
-			order: 1,
-			kind: AXIS_LIMB,
-		});
-		const reach = 0.8 * (1 - (0.3 * 1.6) / 5) + 1;
-		let previous = trunk[1] as number;
-		for (let k = 0; k <= 48; k++) {
-			const angle = (k / 48) * 2 * Math.PI;
-			previous = b.addNode({
-				x: reach * Math.sin(angle),
-				y: 1.6,
-				z: reach * Math.cos(angle),
-				radius: 0.3,
-				parent: previous,
-				axis: ring,
+		const nodes = run(b, stem, -1, [0, 0, 0], [0, 0.4, 0], 6, 0.2, 0.3);
+		const node = nodes[nodes.length - 1] as number;
+		for (const [x, z] of [
+			[0.3, 0],
+			[-0.3, 0],
+			[0, 0.3],
+			[0, -0.3],
+		])
+			b.addBud({
+				node,
+				x: x as number,
+				y: 2.4,
+				z: z as number,
+				frame: [0, 0, 0, 1],
+				kind: BUD_FLOWER,
+				vigor: 0.5,
+				light: 1,
+				axis: stem,
+				woodRadius: 0.2,
 			});
-		}
-		const view = belowView({ skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] }, 0, lens, {
-			elevation: 70,
+		// An arm's own ring stands lower, and the crown's ring is the stem's top.
+		const arm = b.addAxis({
+			parent: stem,
+			parentNode: nodes[2] as number,
+			order: 1,
+			kind: AXIS_LIMB,
 		});
-		expect(view.subject.walked).toBe(0);
-		expect(view.subject.warning).toContain('no stand');
-		expect(view.position[2]).toBeCloseTo(reach, 6);
-	});
-
-	test('turns its look to the right of the stem by the aside', () => {
-		const straight = belowView(plant, 0, lens, { elevation: 80 });
-		const turned = belowView(plant, 0, lens, { elevation: 80, aside: 40 });
-		const heading = (v: typeof straight) =>
-			Math.atan2(v.target[0] - v.position[0], v.target[2] - v.position[2]);
-		const turn = ((heading(straight) - heading(turned) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
-		expect((turn * 180) / Math.PI).toBeCloseTo(40, 3);
+		const armNodes = run(b, arm, nodes[2] as number, [0.2, 0.8, 0], [0.3, 0.2, 0], 4, 0.1, 0.15);
+		for (const x of [1.3, 1.5])
+			b.addBud({
+				node: armNodes[armNodes.length - 1] as number,
+				x,
+				y: 1.6,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_FLOWER,
+				vigor: 0.5,
+				light: 1,
+				axis: arm,
+				woodRadius: 0.1,
+			});
+		const ring = flowerSites(b.finish(0));
+		expect(ring?.sites.length).toBe(4);
+		expect(ring?.radius as number).toBeCloseTo(0.3, 5);
+		expect(ring?.centre[1] as number).toBeCloseTo(2.4, 5);
+		// A plant with no flower site has no ring.
+		const bare = new SkeletonBuilder();
+		bare.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		expect(flowerSites(bare.finish(0))).toBeUndefined();
 	});
 });
 
@@ -306,55 +187,6 @@ describe('the limbs that leave the stem', () => {
 		expect(limbs.map((d) => d.axis)).toEqual([2, 4, 3]);
 		expect(limbs[0]?.angle).toBeGreaterThan(75);
 	});
-
-	test('frame the huge limb side on from the side where no other limb stands in front', () => {
-		const view = junctionView(
-			{ skeleton, shoots: NO_ROWS, prototypes: [] },
-			{ fov: 50, aspect: 1 },
-		);
-		if (!view) throw new Error('the junction view found no limb');
-		expect(view.subject.axis).toBe(2);
-		// The camera stands on the clear side, square to the plane of the stem and the limb.
-		expect(view.position[2]).toBeLessThan(view.target[2]);
-		const back = [0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number));
-		expect(Math.abs((back[2] as number) / Math.hypot(...back))).toBeGreaterThan(0.6);
-		expect(view.clutter?.front).toBeLessThan(0.05);
-	});
-});
-
-describe('the limb a junction view takes', () => {
-	test('is the most level of the thick limbs, though a steeper one is thicker', () => {
-		const b = new SkeletonBuilder();
-		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		const top = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3)[5] as number;
-		const steep = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
-		run(b, steep, top, [0.8, 5.8, 0], [0.7, 0.7, 0], 8, 0.5, 0.5);
-		const level = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
-		run(b, level, top, [-1, 5.1, 0], [-1, 0.05, 0], 8, 0.4, 0.5);
-		const view = junctionView(
-			{ skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] },
-			{ fov: 50, aspect: 1 },
-		);
-		expect(view?.subject.axis).toBe(level);
-	});
-});
-
-describe('how level a limb leaves', () => {
-	test('counts a limb drooping past square as level as one rising as far', () => {
-		const b = new SkeletonBuilder();
-		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		const top = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3)[5] as number;
-		// One limb rises at about 15 degrees, the other droops at about 6 degrees.
-		const rising = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
-		run(b, rising, top, [1, 5.3, 0], [1, 0.27, 0], 8, 0.4, 0.5);
-		const drooping = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
-		run(b, drooping, top, [-1, 4.9, 0], [-1, -0.1, 0], 8, 0.4, 0.5);
-		const view = junctionView(
-			{ skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] },
-			{ fov: 50, aspect: 1 },
-		);
-		expect(view?.subject.axis).toBe(drooping);
-	});
 });
 
 describe('a limb dividing into two', () => {
@@ -366,168 +198,30 @@ describe('a limb dividing into two', () => {
 		for (const f of found) expect(f.armRadius).toBeGreaterThan(0.5 * f.radius);
 	});
 
-	test('is the fork whose arms part upright, seen square to them, its joint under the middle', () => {
-		const view = forkView({ skeleton, shoots: NO_ROWS, prototypes: [] }, { fov: 50, aspect: 1 });
-		if (!view) throw new Error('the fork view found no fork');
-		const upright = forks(skeleton).find((f) => f.arm === 6);
-		expect(view.subject.node).toBe(upright?.node ?? -1);
-		// The arms part in the plane facing +Z, so the camera looks along Z, nearly level.
-		const back = [0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number));
-		expect(Math.abs((back[2] as number) / Math.hypot(...back))).toBeGreaterThan(0.8);
-		expect(view.target[1]).toBeGreaterThan(upright?.at[1] ?? 0);
-	});
-
-	/** The height in metres that a view's frame covers at its target. */
-	const frameHeight = (view: { position: number[]; target: number[] }): number =>
-		2 *
-		Math.hypot(...[0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number))) *
-		Math.tan((50 * Math.PI) / 360);
-
-	test("frames the arms' run, and takes the span a picture asks for", () => {
-		const plant = { skeleton, shoots: NO_ROWS, prototypes: [] };
-		const plain = forkView(plant, { fov: 50, aspect: 1 });
-		if (!plain) throw new Error('the fork view found no fork');
-		const fork = forks(skeleton).find((f) => f.node === plain.subject.node);
-		if (!fork) throw new Error('the framed fork is not a fork');
-		// The photograph frames both arms and their twigs, so the frame runs well past the limb's own
-		// thickness.
-		expect(frameHeight(plain)).toBeGreaterThan(4 * 2 * fork.radius);
-		// A picture that asks for a span gets it, as the limb view does.
-		const asked = forkView(plant, { fov: 50, aspect: 1 }, undefined, 3);
-		if (!asked) throw new Error('the fork view found no fork');
-		expect(frameHeight(asked)).toBeCloseTo(3, 5);
-	});
-
-	test("takes a great limb's fork over a branch's fork nearer the sought size", () => {
+	test('reads a stem that ends in two arms as one fork, with both arms', () => {
 		const b = new SkeletonBuilder();
-		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		const top = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3)[5] as number;
-		// A great limb leaving the stem, rising, that divides into an even arm far out.
-		const great = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
-		const limb = run(b, great, top, [0.8, 5.6, 0], [0.8, 0.6, 0], 8, 0.45, 0.5);
-		const fork = limb[6] as number;
-		const arm = b.addAxis({ parent: great, parentNode: fork, order: 2, kind: AXIS_LIMB });
-		run(b, arm, fork, [5.6, 9.4, -0.6], [0.3, 0.8, -0.4], 4, 0.2, 0.4);
-		// A branch of the great limb that divides as well, its girth nearer the sought radius.
-		const branch = b.addAxis({
-			parent: great,
-			parentNode: limb[3] as number,
-			order: 2,
-			kind: AXIS_LIMB,
-		});
-		const twig = run(b, branch, limb[3] as number, [3.2, 7.8, 0.6], [0.2, 0.8, 0.5], 6, 0.2, 0.3);
-		const split = b.addAxis({
-			parent: branch,
-			parentNode: twig[3] as number,
-			order: 3,
-			kind: AXIS_LIMB,
-		});
-		run(b, split, twig[3] as number, [3.4, 10.4, 2.4], [0.6, 0.6, 0.1], 3, 0.15, 0.3);
-		const view = forkView(
-			{ skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] },
-			{ fov: 50, aspect: 1 },
-		);
-		expect(view?.subject.node).toBe(fork);
-		expect(view?.subject.wishes).toMatchObject({ great: true });
-	});
-
-	test("says which of the photograph's wishes the plant has forks to meet", () => {
-		const view = forkView({ skeleton, shoots: NO_ROWS, prototypes: [] }, { fov: 50, aspect: 1 });
-		expect(view?.subject.wishes).toEqual({ great: true, size: true, even: true, wide: true });
-	});
-
-	test('turns its picture until the limb comes up to the fork from the lower edge', () => {
-		const view = forkView({ skeleton, shoots: NO_ROWS, prototypes: [] }, { fov: 50, aspect: 1 });
-		if (!view) throw new Error('the fork view found no fork');
-		const fork = forks(skeleton).find((f) => f.node === view.subject.node);
-		if (!fork) throw new Error('the fork view framed no fork of the plant');
-		const { forward, up } = lensAxes(view);
-		const rolledUp = turnedAbout(up, forward, view.roll ?? 0);
-		const along = fork.into.map((v, k) => v - (forward[k] as number) * dot(fork.into, forward));
-		expect(dot(normalize(along), rolledUp)).toBeGreaterThan(0.99);
+		const main = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, main, -1, [0, 0, 0], [0, 1, 0], 6, 0.3, 0.1);
+		const forking = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const nodes = run(b, forking, -1, [1, 0, 0], [0, 1, 0], 5, 0.2, 0.1);
+		const top = nodes[4] as number;
+		const left = b.addAxis({ parent: forking, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, left, top, [0.95, 4.8, 0], [-0.3, 0.7, 0], 4, 0.12, 0.2);
+		const right = b.addAxis({ parent: forking, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, right, top, [1.05, 4.8, 0], [0.3, 0.7, 0], 4, 0.12, 0.2);
+		const found = forks(b.finish(6)).filter((fork) => fork.node === top);
+		// The node carries one fork, not one for each arm.
+		expect(found.length).toBe(1);
+		expect(found[0]?.radius).toBeCloseTo(0.18, 6);
+		expect(found[0]?.armRadii?.map((radius) => Number(radius.toFixed(6)))).toEqual([0.12, 0.12]);
+		// The arms part to either side of the stem's line.
+		expect(found[0]?.armDirections?.[0][0] ?? 0).toBeLessThan(0);
+		expect(found[0]?.armDirections?.[1][0] ?? 0).toBeGreaterThan(0);
 	});
 });
 
-describe("the crown's outer rim", () => {
-	test('is seen from under it, on the stem side, looking up past its edge', () => {
-		const skeleton = oakLike();
-		const view = surfaceView(
-			{ skeleton, shoots: NO_ROWS, prototypes: [] },
-			{ fov: 45, aspect: 1 },
-			{ share: 0.6, thin: 0.15, span: 2 },
-		);
-		if (!view) throw new Error('the rim view found no limb');
-		const back = [0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number));
-		const rise = (Math.asin((back[1] as number) / Math.hypot(...back)) * 180) / Math.PI;
-		expect(rise).toBeGreaterThan(-32);
-		expect(rise).toBeLessThan(-18);
-		expect(Math.hypot(view.position[0], view.position[2])).toBeLessThan(
-			Math.hypot(view.target[0], view.target[2]),
-		);
-	});
-});
-
-describe('the views of a great limb and of the bole', () => {
-	const skeleton = oakLike();
-	const plant = { skeleton, shoots: NO_ROWS, prototypes: [] };
-
-	test('stand under the limb from inside the crown, looking up across it', () => {
-		const view = insideView(plant, { fov: 75, aspect: 1 });
-		if (!view) throw new Error('the inside view found no limb');
-		expect(view.subject.axis).toBe(2);
-		const back = [0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number));
-		const rise = (Math.asin((back[1] as number) / Math.hypot(...back)) * 180) / Math.PI;
-		expect(rise).toBeLessThan(-30);
-		// The huge limb runs along X, so the camera stands off it along Z.
-		expect(Math.abs(back[2] as number)).toBeGreaterThan(Math.abs(back[0] as number));
-	});
-
-	test("frame a limb's bark with the limb's thickness filling its share of the frame", () => {
-		const girth = 0.38;
-		const view = barkLimbView(plant, { fov: 40, aspect: 1 }, girth, 0.3);
-		if (!view) throw new Error('the bark view found no limb');
-		const radius = view.subject.radius as number;
-		const distance = Math.hypot(...view.position.map((p, k) => p - (view.target[k] as number)));
-		expect(distance).toBeCloseTo(radius / girth / Math.tan((20 * Math.PI) / 180), 6);
-	});
-
-	test('frame the bole from the side where the fewest limbs cross in front of it', () => {
-		const lens = { fov: 40, aspect: 0.75 };
-		const view = trunkView(plant, lens, 0);
-		if (!view) throw new Error('the bole view found no stem');
-		const spheres = plantSpheres(skeleton, NO_ROWS, [], view.target, 20);
-		const mark = { axes: new Uint8Array(skeleton.axes.count).fill(0), band: 20 };
-		mark.axes[0] = 1;
-		mark.axes[1] = 1;
-		const stand = view.subject.stand as number;
-		const asked = { position: [0, view.position[1], stand] as V3, target: view.target };
-		const chosen = clutterOf(spheres, view, lens.fov, lens.aspect, mark).front;
-		expect(chosen).toBeLessThanOrEqual(
-			clutterOf(spheres, asked, lens.fov, lens.aspect, mark).front,
-		);
-	});
-});
-
-describe('the view of the bole', () => {
-	const skeleton = oakLike();
-	const lens = { fov: 40, aspect: 1 };
-
-	test("stands at eye height, the foot on the frame's lower margin and the fork a fifth under its top", () => {
-		const view = trunkView({ skeleton, shoots: NO_ROWS, prototypes: [] }, lens, 0);
-		if (!view) throw new Error('the bole view found no stem');
-		expect(view.position[1]).toBeCloseTo(1.6, 6);
-		expect(view.subject.fork).toBe(5);
-		const look = normalize(view.target.map((t, k) => t - (view.position[k] as number)) as V3);
-		const pitch = Math.asin(look[1]);
-		const bark =
-			Math.hypot(view.position[0], view.position[2]) - (stemAt(skeleton, 1.6)?.radius ?? 0);
-		const row = (height: number) =>
-			0.5 - Math.tan(Math.atan2(height - 1.6, bark) - pitch) / (2 * Math.tan((20 * Math.PI) / 180));
-		expect(row(0)).toBeCloseTo(0.92, 6);
-		expect(row(5)).toBeCloseTo(0.2, 6);
-	});
-
-	test('divides where a limb of a share of the stem leaves, not where a thin shoot leaves low', () => {
+describe("the stem's first division", () => {
+	test('stands where a limb of a share of the stem leaves, not where a thin shoot leaves low', () => {
 		const b = new SkeletonBuilder();
 		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
 		const trunk = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3);
@@ -590,11 +284,17 @@ describe('the framing a close view reports', () => {
 describe("the plant's types the cameras read", () => {
 	test('come from the plant core as types alone, so no engine code loads with the cameras', () => {
 		const file = join(import.meta.dir, '../../../tests/pages/lib/plant-review/plant-types.ts');
-		const lines = readFileSync(file, 'utf8')
+		// Each statement, which the formatter may wrap over several lines, is a type export.
+		const statements = readFileSync(file, 'utf8')
 			.split('\n')
-			.filter((line) => line.trim() !== '' && !line.startsWith('//'));
-		expect(lines.length).toBeGreaterThan(0);
-		for (const line of lines) expect(line).toMatch(/^export type \{[^}]+\} from '[^']+';$/);
+			.filter((line) => !line.startsWith('//'))
+			.join('\n')
+			.split(';')
+			.map((statement) => statement.trim())
+			.filter((statement) => statement !== '');
+		expect(statements.length).toBeGreaterThan(0);
+		for (const statement of statements)
+			expect(statement).toMatch(/^export type \{[^}]+\} from '[^']+'$/);
 	});
 });
 
@@ -703,6 +403,51 @@ describe('the stem surface of a plant with no single trunk', () => {
 	});
 });
 
+describe('the sheath column of a ground plant', () => {
+	test('takes the thickest short limb, not a blade or a flowering stem', () => {
+		const b = new SkeletonBuilder();
+		const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
+		const crownBase = b.addNode({ x: 0, y: -0.03, z: 0, radius: 0.05, parent: -1, axis: crown });
+		const crownTop = b.addNode({ x: 0, y: 0, z: 0, radius: 0.05, parent: crownBase, axis: crown });
+		const thick = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		const thickNodes = run(b, thick, crownTop, [0.01, 0, 0], [0, 0.02, 0], 3, 0.0018, 0.2);
+		const thin = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		run(b, thin, crownTop, [-0.01, 0, 0], [0, 0.02, 0], 3, 0.0009, 0.2);
+		// A flowering stem and a blade both rise past the sheaths; neither is the sheath column.
+		const culm = b.addAxis({
+			parent: thick,
+			parentNode: thickNodes[thickNodes.length - 1] as number,
+			order: 2,
+			kind: AXIS_CULM,
+		});
+		run(
+			b,
+			culm,
+			thickNodes[thickNodes.length - 1] as number,
+			[0.01, 0.06, 0],
+			[0, 0.1, 0],
+			5,
+			0.0008,
+			0.3,
+		);
+		const blade = b.addAxis({
+			parent: thick,
+			parentNode: thickNodes[0] as number,
+			order: 2,
+			kind: AXIS_RACHIS,
+		});
+		run(b, blade, thickNodes[0] as number, [0.01, 0.02, 0], [0.02, 0.1, 0], 4, 0.003, 0.5);
+		expect(sheathColumn(b.finish(0))).toBe(thick);
+	});
+
+	test('finds none on a plant with a trunk', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.2, 0.3);
+		expect(sheathColumn(b.finish(0))).toBe(-1);
+	});
+});
+
 describe('a sheet of turns of a close view', () => {
 	test('walks round the subject at the same distance and height', () => {
 		const view = {
@@ -714,5 +459,75 @@ describe('a sheet of turns of a close view', () => {
 		expect(walked.target).toEqual(view.target);
 		expect(walked.position[1]).toBeCloseTo(2, 6);
 		expect(Math.hypot(walked.position[0], walked.position[2])).toBeCloseTo(5, 6);
+	});
+});
+
+describe('the view of hanging shoots', () => {
+	/** One shoot row's prototype: a shoot a little over a metre long. */
+	const PROTOTYPE = { length: 1.2, radius: 0.01, tiers: [] } as unknown as ShootPrototype;
+
+	/**
+	 * A willow-like plant: a stem whose one limb rises steeply to the crown's rim, so no level
+	 * stretch of limb carries the shoots, and three shoots hanging from the rim's mid band.
+	 */
+	function hangingPlant(): ClosePlant {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const trunk = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.4, 0.3);
+		const limb = b.addAxis({
+			parent: stem,
+			parentNode: trunk[4] as number,
+			order: 1,
+			kind: AXIS_LIMB,
+		});
+		run(b, limb, trunk[4] as number, [0, 4, 0], [0.8, 0.5, 0], 5, 0.15, 0.5);
+		// A rotation about Z by -120 degrees turns the shoot's +Y to (0.866, -0.5, 0): 30 degrees down.
+		const q = [0, 0, -0.866, 0.5];
+		const rows: ShootRows = {
+			count: 3,
+			prototype: new Uint8Array([0, 0, 0]),
+			position: new Float32Array([3.1, 5, 0, 3.1, 5, 0.2, 3.1, 5, -0.2]),
+			rotation: new Float32Array([...q, ...q, ...q]),
+			scale: new Float32Array([1, 1, 1]),
+			record: new Uint16Array(3),
+			phase: new Uint8Array(3),
+			sky: new Uint8Array([200, 200, 200]),
+			bent: new Uint8Array(12),
+			order: new Uint32Array(3),
+		};
+		// The crown starts where the limb leaves the stem's upper third, so the rim's mid band holds
+		// the steep limb and the hanging shoots.
+		return { skeleton: b.finish(4.2), shoots: rows, prototypes: [PROTOTYPE] };
+	}
+
+	test('frames one hanging shoot from its origin to its tip where no limb stretch carries one', () => {
+		const view = strandsView(hangingPlant(), { fov: 45, aspect: 1 });
+		expect(view?.subject.kind).toBe('one hanging shoot from its origin to its tip');
+		expect(view?.points?.length).toBe(2);
+		expect(view?.regions?.length).toBe(2);
+		// The camera stands level at the shoot's middle, inside the crown, looking outward.
+		expect(view?.position[1]).toBeCloseTo(view?.target[1] as number, 6);
+	});
+
+	test('holds its points in the frame of the camera that drew it', () => {
+		const view = strandsView(hangingPlant(), { fov: 45, aspect: 1 }) as CloseView;
+		const checked = checkShot(
+			{
+				kind: String(view.subject.kind),
+				camera: { position: view.position, target: view.target },
+				points: view.points ?? [],
+				regions: view.regions ?? [],
+				facts: view.subject,
+			},
+			{ fov: 45, aspect: 1 },
+		);
+		expect(checked.present).toBe(true);
+	});
+
+	test('gives no view for a plant whose shoots all stand up', () => {
+		const plant = hangingPlant();
+		plant.shoots.rotation.fill(0);
+		for (let row = 0; row < plant.shoots.count; row++) plant.shoots.rotation[row * 4 + 3] = 1;
+		expect(strandsView(plant, { fov: 45, aspect: 1 })).toBeUndefined();
 	});
 });

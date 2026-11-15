@@ -2,6 +2,13 @@
 // stem and its radius at a height, the largest first-order limb, the limb that carries a thickness,
 // where the stem first forks, and a sunlit shoot tip. They read only the skeleton's arrays, so they
 // hold for every growth model.
+import {
+	AXIS_CULM,
+	AXIS_LIMB,
+	AXIS_ROOT,
+	AXIS_STEM,
+	BUD_FLOWER,
+} from '../../../../packages/vegetation/src/core/graph';
 import type { MacroSkeleton, ShootRows } from './plant-types';
 
 /** A point or direction in plant space. */
@@ -85,6 +92,21 @@ export function normalize(a: readonly number[]): V3 {
 		: [0, 1, 0];
 }
 
+/** The point `metres` from `at` along a direction. */
+export function step(at: readonly number[], direction: readonly number[], metres: number): V3 {
+	return [
+		(at[0] as number) + (direction[0] as number) * metres,
+		(at[1] as number) + (direction[1] as number) * metres,
+		(at[2] as number) + (direction[2] as number) * metres,
+	];
+}
+
+/** A unit vector square to `v`, level where it can be: across a direction's run. */
+export function across(v: readonly number[]): V3 {
+	const level = cross([0, 1, 0], v);
+	return Math.hypot(...level) > 1e-3 ? normalize(level) : [1, 0, 0];
+}
+
 /** The chain of one axis: its parent node before its base (when it has one), then its own nodes. */
 export function chainOf(skeleton: MacroSkeleton, axis: number): number[] {
 	const { axes } = skeleton;
@@ -105,6 +127,33 @@ export function lengthOf(skeleton: MacroSkeleton, axis: number): number {
 		length += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 	}
 	return length;
+}
+
+/**
+ * The thickest short limb that carries a ground plant's sheaths, such as a tiller's column: a sheath
+ * column is short and thick where a flowering stem is long and thin. Undefined for a plant with a
+ * single trunk, and for one with no sheath-bearing limb.
+ */
+export function sheathColumn(skeleton: MacroSkeleton): number {
+	// A ground plant's crown axis looks like a stem at its base but reaches no height, so the test
+	// for a trunk is a stem that crosses a quarter of the plant's height.
+	if (stemAt(skeleton, skeleton.height * 0.25)) return -1;
+	const { axes } = skeleton;
+	let best = -1;
+	let thickest = 0;
+	const long = Math.max(0.25, skeleton.height * 0.4);
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.parent[a] as number) < 0) continue;
+		const kind = axes.kind[a] as number;
+		if (kind !== AXIS_LIMB && kind !== AXIS_CULM) continue;
+		if (lengthOf(skeleton, a) > long) continue;
+		const radius = skeleton.radius[axes.first[a] as number] as number;
+		if (radius > thickest) {
+			thickest = radius;
+			best = a;
+		}
+	}
+	return best;
 }
 
 /** A point on an axis: where it is, the axis's direction there and its radius. */
@@ -149,6 +198,9 @@ export function mainStem(skeleton: MacroSkeleton): number {
 	let thickest = -1;
 	for (let a = 0; a < axes.count; a++) {
 		if ((axes.parent[a] as number) >= 0) continue;
+		// The soil's rhizome and roots are not a stem, even where the rhizome is the thickest ground
+		// axis: the views stand on the plant's stems.
+		if ((axes.kind[a] as number) === AXIS_ROOT) continue;
 		const r = skeleton.radius[axes.first[a] as number] as number;
 		if (r > thickest) {
 			thickest = r;
@@ -186,6 +238,42 @@ export function stemAt(skeleton: MacroSkeleton, y: number): AxisPoint | undefine
 }
 
 /**
+ * The turn that looks into the widest gap between the main stem's first-order limbs, so a camera
+ * stands between two limbs instead of in front of one. Undefined when the stem carries fewer than
+ * two limbs reaching clear of its centre.
+ */
+export function limbGapTurn(skeleton: MacroSkeleton): number | undefined {
+	const { axes } = skeleton;
+	const stem = mainStem(skeleton);
+	if (stem < 0) return undefined;
+	const angles: number[] = [];
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.parent[a] as number) !== stem || (axes.order[a] as number) !== 1) continue;
+		const base = nodeAt(skeleton, axes.first[a] as number);
+		const centre = pointAtHeight(skeleton, stem, base[1]);
+		if (!centre) continue;
+		const dx = base[0] - centre.at[0];
+		const dz = base[2] - centre.at[2];
+		if (Math.hypot(dx, dz) < 1e-4) continue;
+		angles.push(Math.atan2(dx, dz));
+	}
+	if (angles.length < 2) return undefined;
+	angles.sort((p, q) => p - q);
+	let widest = 0;
+	let middle = angles[0] as number;
+	for (let n = 0; n < angles.length; n++) {
+		const from = angles[n] as number;
+		const to =
+			n + 1 < angles.length ? (angles[n + 1] as number) : (angles[0] as number) + 2 * Math.PI;
+		if (to - from > widest) {
+			widest = to - from;
+			middle = from + (to - from) / 2;
+		}
+	}
+	return middle;
+}
+
+/**
  * The thickest stem surface at a height, for a plant with no single trunk: the axis crossing that
  * height with the largest radius there, such as a tuft's culm or a sheath column. Undefined when
  * no axis crosses it.
@@ -211,6 +299,29 @@ export function stemFoot(skeleton: MacroSkeleton): V3 {
 	if (stem < 0) return [0, 0, 0];
 	const base = nodeAt(skeleton, skeleton.axes.first[stem] as number);
 	return [base[0], 0, base[2]];
+}
+
+/**
+ * The radius, in metres, of the wood that stands at the ground: the farthest of the stems' bases
+ * from the main stem's foot, with that base's own drawn radius. A plant with one stem gives its own
+ * base radius. A clump of stems from one stool gives the stool's spread, which is wider than any
+ * one stem's flare. `swell` is the share the record's flare, taper and buttress crests add to each
+ * stem's radius, so the figure reaches the wood's drawn edge.
+ */
+export function stoolRadius(skeleton: MacroSkeleton, swell = 0): number {
+	const foot = stemFoot(skeleton);
+	const { axes } = skeleton;
+	let most = 0;
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.kind[a] as number) !== AXIS_STEM) continue;
+		const first = axes.first[a] as number;
+		const base = nodeAt(skeleton, first);
+		const reach =
+			Math.hypot(base[0] - foot[0], base[2] - foot[2]) +
+			(skeleton.radius[first] as number) * (1 + swell);
+		if (reach > most) most = reach;
+	}
+	return most;
 }
 
 /** The largest first-order limb: the thickest at its base, or -1 for a plant with none. */
@@ -293,6 +404,54 @@ export interface ShootTip {
 	readonly bud: number;
 	readonly at: V3;
 	readonly direction: V3;
+}
+
+/** The flower sites a plant carries: where they stand, the ring's middle and the ring's radius. */
+export interface FlowerSites {
+	/** Where the flowers stand, in plant space. */
+	readonly sites: readonly V3[];
+	/** The middle of the ring, in plant space. */
+	readonly centre: V3;
+	/** The ring's radius in metres: the farthest site from the centre across, zero for one site. */
+	readonly radius: number;
+}
+
+/**
+ * The flowers the plant carries, from the flower sites the grown plant marks: a cactus and other
+ * crown-flowering plants carry a ring of them at the stem's top, which a close view frames as a ring.
+ */
+export function flowerSites(skeleton: MacroSkeleton): FlowerSites | undefined {
+	const { buds } = skeleton;
+	// Each axis that flowers carries its own ring at its top; the crown's is the highest.
+	const rings = new Map<number, V3[]>();
+	for (let b = 0; b < buds.count; b++) {
+		if ((buds.kind[b] as number) !== BUD_FLOWER) continue;
+		const axis = buds.axis[b] as number;
+		let ring = rings.get(axis);
+		if (!ring) {
+			ring = [];
+			rings.set(axis, ring);
+		}
+		ring.push([
+			buds.position[b * 3] as number,
+			buds.position[b * 3 + 1] as number,
+			buds.position[b * 3 + 2] as number,
+		]);
+	}
+	const meanHeight = (ring: readonly V3[]) =>
+		ring.reduce((sum, site) => sum + site[1], 0) / ring.length;
+	let sites: V3[] | undefined;
+	for (const ring of rings.values())
+		if (!sites || meanHeight(ring) > meanHeight(sites)) sites = ring;
+	if (!sites) return undefined;
+	const centre: V3 = [0, 0, 0];
+	for (const site of sites)
+		for (let k = 0; k < 3; k++)
+			centre[k] = (centre[k] as number) + (site[k] as number) / sites.length;
+	let radius = 0;
+	for (const site of sites)
+		radius = Math.max(radius, Math.hypot(site[0] - centre[0], site[2] - centre[2]));
+	return { sites, centre, radius };
 }
 
 /**

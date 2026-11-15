@@ -31,7 +31,7 @@ import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '..
 import type { FoliageBuilder } from './kinds';
 import { cutLeaf, type LeafCut } from './leaf-mesh';
 import { type LeafOutline, textureOutline } from './outline';
-import { MeshWriter, SURFACE_LEAF, tube } from './writer';
+import { MeshWriter, phaseByte, SURFACE_LEAF, tube } from './writer';
 
 /**
  * A frond's age in the two shares its shape reads.
@@ -138,7 +138,7 @@ export function frondShapeOf(record: Species): FrondShape {
 }
 
 /** The pinnae of a pinnate or bipinnate frond. */
-function pinnaeOf(shape: FrondShape): PinnaSpec {
+export function pinnaeOf(shape: FrondShape): PinnaSpec {
 	if ((shape.kind === 'pinnate' || shape.kind === 'bipinnate') && shape.pinnae) return shape.pinnae;
 	throw new Error(
 		`@null3d/vegetation: a '${shape.kind}' frond is not built; pinnate and bipinnate fronds with pinnae are`,
@@ -451,7 +451,7 @@ interface FrondVertex {
  * @param second The second coordinates of each vertex: share along and browning on a plant, metres
  *   along and across in the kit's leaf.
  */
-function writeBlade(
+export function writeBlade(
 	mesh: MeshWriter,
 	blade: FrondBlade,
 	outline: LeafOutline,
@@ -528,7 +528,7 @@ function writeBlade(
 }
 
 /** How much of the pinnae's fold a grid can show: none until it has two rows to a pinna. */
-function foldWeight(cut: LeafCut, pinnae: PinnaSpec): number {
+export function foldWeight(cut: LeafCut, pinnae: PinnaSpec): number {
 	const perPinna = cut.rows / Math.max(1, spreadMean(pinnae.count));
 	return Math.max(0, Math.min(1, (perPinna - 2) / 2));
 }
@@ -681,7 +681,7 @@ export function frondFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			cut,
 			{
 				colour(at, share) {
-					bytes[2] = (frond.phase + Math.round(share * 64)) & 255;
+					bytes[2] = phaseByte(frond.phase + Math.round(share * 64));
 					const sky = crownSkyAt(input.crown, at[0], at[1], at[2]);
 					bytes[3] = Math.round(255 * Math.max(0, Math.min(1, sky)));
 					return bytes;

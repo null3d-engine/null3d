@@ -6,34 +6,48 @@ import {
 	readPlantReviewQuery,
 } from '../../../tests/pages/lib/plant-review/query.ts';
 import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
-import { blank, labImage, labOf, type Rgba } from './image.ts';
+import { blank, labImage, labOf, onColour, type Rgba } from './image.ts';
 import {
 	anyPlantMask,
 	boxOf,
+	type CrownRegion,
+	centralRuns,
 	classifySlot,
 	classifyTurn,
+	crownBalanceOf,
+	crownBandsOf,
+	crownFoliageOf,
 	crownStartRow,
+	filledSpans,
 	findHorizon,
 	greenLeaves,
+	halfDarkMask,
+	hangingParts,
 	matteMask,
+	matteOwnMask,
 	measurePlant,
 	type PlantMask,
 	pieceCount,
+	pieceParts,
 	plantMask,
 	readIndex,
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
+	skyMaskable,
+	soilMaskable,
+	subjectShares,
 	widthProfile,
 	withSlot,
 } from './references.ts';
 
 /** Paints a pixel of an image. */
-function put(image: Rgba, x: number, y: number, colour: readonly number[]): void {
+function put(image: Rgba, x: number, y: number, colour: readonly number[], alpha = 255): void {
 	const at = (y * image.width + x) * 4;
 	image.data[at] = colour[0] as number;
 	image.data[at + 1] = colour[1] as number;
 	image.data[at + 2] = colour[2] as number;
+	image.data[at + 3] = alpha;
 }
 
 /** The test scene's sizes: the frame, the horizon, the trunk and the crown. */
@@ -88,6 +102,42 @@ describe('the horizon', () => {
 		const image = blank(120, 80, [204, 205, 209]);
 		for (let y = 20; y < 60; y++) for (let x = 50; x < 70; x++) put(image, x, y, [40, 70, 30]);
 		expect(findHorizon(labImage(image), image.width, image.height)).toBeNull();
+	});
+});
+
+describe('a picture with a clear ground', () => {
+	/** A pale plant on a clear ground, as a cleaned leaf texture source stands: the alpha states the leaf. */
+	const paleLeaf = () => {
+		const image = blank(120, 90, [255, 255, 255]);
+		for (let i = 0; i < image.width * image.height; i++) image.data[i * 4 + 3] = 0;
+		for (let y = 20; y < 70; y++)
+			for (let x = 40; x < 80; x++) put(image, x, y, [250, 249, 246], 255);
+		return image;
+	};
+
+	test('reads its plant from the alpha, where the colour fit cannot part it from the ground', () => {
+		const plant = plantMask(paleLeaf());
+		expect(plant.mask[45 * 120 + 60]).toBe(1);
+		expect(plant.mask[5 * 120 + 5]).toBe(0);
+		for (let y = 20; y < 70; y++)
+			for (let x = 40; x < 80; x++) expect(plant.mask[y * 120 + x]).toBe(1);
+	});
+
+	test('keeps the clear ground through the white composite the comparison reads', () => {
+		const composed = onColour(paleLeaf(), [255, 255, 255]);
+		expect(composed.data[3]).toBe(0);
+		expect(composed.data[(45 * 120 + 60) * 4 + 3]).toBe(255);
+		expect(plantMask(composed).mask[45 * 120 + 60]).toBe(1);
+	});
+
+	test('reads an opaque picture by its colours, whatever a corner says', () => {
+		const image = blank(120, 80, [204, 205, 209]);
+		for (let y = 20; y < 60; y++) for (let x = 50; x < 70; x++) put(image, x, y, [40, 70, 30]);
+		// One clear texel in a corner does not make the picture's alpha its outline.
+		image.data[3] = 0;
+		const plant = plantMask(image);
+		expect(plant.mask[40 * 120 + 60]).toBe(1);
+		expect(plant.mask[40 * 120 + 10]).toBe(0);
 	});
 });
 
@@ -159,6 +209,60 @@ describe('the plant mask', () => {
 			for (let x = 0; x < W; x++) put(wide, x, y, y < HORIZON ? [180, 205, 235] : [150, 160, 95]);
 		for (let y = 30; y < HORIZON; y++) for (let x = 0; x < 120; x++) put(wide, x, y, [35, 62, 30]);
 		expect(plantMask(wide).mask[60 * W + 2]).toBe(1);
+	});
+
+	test("clears the ground's top edge where it stands above the horizon's row", () => {
+		// A field whose edge rises four rows above the horizon's row across the middle of the frame,
+		// clear of both sides, as a ploughed field's clods lift it.
+		const frame = scene();
+		for (let y = HORIZON - 4; y < HORIZON; y++)
+			for (let x = 20; x < W - 20; x++) if (!inPlant(x, y)) put(frame, x, y, [150, 160, 95]);
+		// The plant's shadow along the lifted edge beside the trunk.
+		for (let y = HORIZON - 2; y < HORIZON; y++)
+			for (let x = TRUNK.right + 1; x < 140; x++) put(frame, x, y, [80, 88, 48]);
+		const field = plantMask(frame);
+		expect(Math.abs((field.background.horizon as number) - HORIZON)).toBeLessThanOrEqual(1);
+		expect(field.mask[(HORIZON - 3) * W + 30]).toBe(0);
+		expect(field.mask[(HORIZON - 3) * W + 160]).toBe(0);
+		expect(field.mask[(HORIZON - 1) * W + 120]).toBe(0);
+		// The trunk keeps its rows through the lifted edge.
+		expect(field.mask[(HORIZON - 3) * W + 100]).toBe(1);
+		const box = boxOf(field.mask, W, H);
+		expect(box?.left).toBeGreaterThanOrEqual(48);
+		expect(box?.right).toBeLessThanOrEqual(152);
+	});
+
+	test("keeps the foot of a plant of its ground's own colour above the horizon's row", () => {
+		// A tuft of the meadow's own colour standing on the horizon: its foot could be the ground's
+		// lifted edge, so it stays plant.
+		const frame = blank(W, H, [0, 0, 0]);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++)
+				put(
+					frame,
+					x,
+					y,
+					y < HORIZON ? [170 + Math.round((y / HORIZON) * 30), 205, 235] : [150, 160, 95],
+				);
+		for (let y = 70; y < HORIZON; y++)
+			for (let x = 80; x < 120; x++) put(frame, x, y, [140, 152, 90]);
+		const tuft = plantMask(frame);
+		expect(tuft.mask[(HORIZON - 3) * W + 100]).toBe(1);
+		expect(tuft.mask[80 * W + 100]).toBe(1);
+	});
+
+	test('refuses a fitted background that finds only a few specks', () => {
+		// A textured backdrop that a smooth surface still models, with a dark subject under a
+		// fiftieth of the frame: the surface marks the subject's specks, not a plant.
+		const frame = blank(200, 200, [0, 0, 0]);
+		for (let y = 0; y < 200; y++)
+			for (let x = 0; x < 200; x++)
+				put(frame, x, y, (x + y) % 2 === 0 ? [170, 170, 170] : [230, 230, 230]);
+		for (let y = 90; y < 110; y++) for (let x = 90; x < 110; x++) put(frame, x, y, [20, 60, 20]);
+		const speck = plantMask(frame);
+		expect(speck.background.plain).toBe(false);
+		expect(skyMaskable(speck.background)).toBe(true);
+		expect(speck.mask.reduce((sum, value) => sum + value, 0)).toBe(0);
 	});
 
 	test('reads the meadow in shade as shadow and the trunk as plant', () => {
@@ -256,6 +360,34 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
 	});
 
+	test('reads the stem through side offshoots at its foot, not the row span', () => {
+		const width = 500;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A palm: a crown that tapers from its widest upper mass down to a thick trunk, with basal
+		// offshoots standing on both sides of the foot. The foot's rows span nearly the crown's width,
+		// but the run through the picture's centre is the narrow stem. The span alone raises the
+		// margin until the crown's taper reads as stem, and the box holds only the apex.
+		for (let y = 0; y < 10; y++) for (let x = 230; x < 270; x++) mask[y * width + x] = 1;
+		for (let y = 10; y < 29; y++) for (let x = 50; x < 450; x++) mask[y * width + x] = 1;
+		for (let y = 29; y < 50; y++) {
+			const half = Math.round(110 - 45 * ((y - 29) / 21));
+			for (let x = 250 - half; x < 250 + half; x++) mask[y * width + x] = 1;
+		}
+		for (let y = 50; y < 100; y++) for (let x = 224; x < 276; x++) mask[y * width + x] = 1;
+		for (let y = 82; y < 100; y++) {
+			for (let x = 130; x < 200; x++) mask[y * width + x] = 1;
+			for (let x = 300; x < 370; x++) mask[y * width + x] = 1;
+		}
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		const spans = rowSpans(mask, width, height);
+		// The offshoots' span sets the margin, and the foot lands at the taper's top.
+		expect(crownStartRow(spans, box)).toBe(28);
+		// The centre-column runs are the corrupt-trunk guard, not the stem's own width, so they do
+		// not move this row.
+		expect(crownStartRow(spans, box, centralRuns(mask, width, box))).toBe(28);
+	});
+
 	test('finds a crown whose lowest boughs are thin above a flared foot', () => {
 		const width = 220;
 		const height = 180;
@@ -341,10 +473,115 @@ describe('the width profile', () => {
 	});
 });
 
+describe('a bole hidden by the boughs beside it', () => {
+	// The plant mask lies, so the measure can read the central run: a plain sky over the mask.
+	const plantOf = (width: number, height: number, mask: Uint8Array): PlantMask => ({
+		width,
+		height,
+		mask,
+		background: {
+			horizon: null,
+			sky: {
+				coefficients: [
+					[100, 0, 0, 0, 0, 0],
+					[0, 0, 0, 0, 0, 0],
+					[0, 0, 0, 0, 0, 0],
+				],
+				noise: 0.5,
+				fit: 1,
+			},
+			plain: true,
+		},
+	});
+	const beech = (name: string) => {
+		const profile = JSON.parse(
+			readFileSync(join(import.meta.dirname, `fixtures/${name}.json`), 'utf8'),
+		) as {
+			readonly width: number;
+			readonly height: number;
+			readonly top: number;
+			readonly rows: readonly (readonly (readonly [number, number])[])[];
+		};
+		const mask = new Uint8Array(profile.width * profile.height);
+		profile.rows.forEach((runs, index) => {
+			for (const [left, right] of runs)
+				for (let x = left; x <= right; x++) mask[(profile.top + index) * profile.width + x] = 1;
+		});
+		const box = boxOf(mask, profile.width, profile.height) as NonNullable<ReturnType<typeof boxOf>>;
+		return { mask, box, width: profile.width, height: profile.height };
+	};
+
+	test("finds the profile's crown above the stem its boughs hide", () => {
+		// The beech's whole-profile photograph: its boughs sweep beside the stem, so the outermost
+		// span reads nearly the crown's width at the foot and the plain rule leaves the start there.
+		const { mask, box, width, height } = beech('european-beech-profile');
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		expect((box.bottom - plain) / (box.bottom - box.top + 1)).toBeCloseTo(0, 3);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+		);
+		expect(measured.crownStart).toBeCloseTo(0.1086, 3);
+	});
+
+	test("finds the silhouette's crown above its stem", () => {
+		const { mask, box, width, height } = beech('european-beech-silhouette');
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		expect((box.bottom - plain) / (box.bottom - box.top + 1)).toBeCloseTo(0.0028, 3);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+		);
+		expect(measured.crownStart).toBeCloseTo(0.1567, 3);
+	});
+
+	test('keeps a mound form at its foot when a central run exists', () => {
+		// The same beech mask, read as a species the record grows as a mound of leaves: the central
+		// run is a leaf, not a stem, so the crown start stays at the foot.
+		const { mask, box, width, height } = beech('european-beech-profile');
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+			'mound',
+		);
+		expect(measured.crownStart).toBeCloseTo((box.bottom - plain) / (box.bottom - box.top + 1), 3);
+	});
+
+	test('leaves an ordinary bole untouched by the central run', () => {
+		// A crown of 80 over a trunk of 20 and a foot of 50: the outer span is the stem itself, so
+		// the corruption guard does not fire and the central run changes no figure.
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		for (let y = 0; y < 50; y++) for (let x = 10; x < 90; x++) mask[y * width + x] = 1;
+		for (let y = 50; y < 92; y++) for (let x = 40; x < 60; x++) mask[y * width + x] = 1;
+		for (let y = 92; y < 100; y++) for (let x = 25; x < 75; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+		);
+		expect(measured.crownStart).toBeCloseTo((box.bottom - plain) / (box.bottom - box.top + 1), 3);
+	});
+});
+
 describe('the slots', () => {
+	test("read a cactus's ribs as its skin, and a leaf's ribs as the leaf's", () => {
+		expect(classifySlot('13-rib-close-up.png')?.view).toBe('bark-mid');
+		expect(classifySlot('08-areole-rows.png')?.note).toContain('cactus skin');
+		// A hosta's ribbed blade is its leaf, which the cactus skin rule would frame as bark.
+		expect(classifySlot('08-leaf-surface-ribs.png')?.note ?? '').not.toContain('cactus skin');
+		expect(classifySlot('08-leaf-surface-ribs.png')?.view).not.toBe('bark-mid');
+	});
+
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
-		expect(classifySlot('05-crown-underneath.png')?.view).toBe('below');
+		// The whole-from-below and crown-underside photographs take their own views: one frames the
+		// plant from its foot, the other the crown's underside from under it.
+		expect(classifySlot('03-whole-from-below.png')?.view).toBe('below');
+		expect(classifySlot('05-crown-underneath.png')?.view).toBe('crown-underside');
 		expect(classifySlot('02-whole-profile-b.png')).toMatchObject({
 			view: 'whole',
 			turn: 90,
@@ -401,6 +638,36 @@ describe('the slots', () => {
 				query,
 			);
 		}
+		// A cutting's layout and its span read back, so a probe can fan one picture's piece.
+		const cutting = (query: Parameters<typeof plantReviewQuery>[0]) =>
+			readPlantReviewQuery(new URLSearchParams(plantReviewQuery(query)));
+		expect(cutting({ species: 'stub', view: 'branch', layout: 'fan', spread: 1.2 })).toMatchObject({
+			layout: 'fan',
+			spread: 1.2,
+		});
+		expect(() => cutting({ species: 'stub', view: 'branch', layout: 'fan' })).not.toThrow();
+		// A stem-and-laterals piece reads back its stem, its lateral count and its span.
+		expect(
+			cutting({
+				species: 'stub',
+				view: 'branch',
+				stem: 'cut',
+				laterals: 6,
+				lateralFrom: 0.4,
+				lateralTo: 0.9,
+				lateralAngle: 20,
+				lateralScale: 0.6,
+				stemPick: 1,
+			}),
+		).toMatchObject({
+			stem: 'cut',
+			laterals: 6,
+			lateralFrom: 0.4,
+			lateralTo: 0.9,
+			lateralAngle: 20,
+			lateralScale: 0.6,
+			stemPick: 1,
+		});
 		// A single-leaf still's pressed choice reads back either way, and is absent when not named.
 		const pressed = (value?: boolean) =>
 			readPlantReviewQuery(
@@ -413,6 +680,91 @@ describe('the slots', () => {
 				),
 			).pressed;
 		expect([pressed(true), pressed(false), pressed()]).toEqual([true, false, undefined]);
+		// The join a redraw asks for reads back, so a joined card level draws as asked.
+		const joined = { species: 'stub', view: 'whole' as const, cardJoin: 'twig' as const };
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(joined))).cardJoin).toBe(
+			'twig',
+		);
+		// Every field the page reads survives the query: a field the writer drops draws the default
+		// while the run records what was asked, so its picture measures nothing.
+		const every = {
+			species: 'stub',
+			form: 'young',
+			view: 'whole' as const,
+			variant: 3,
+			seed: 11,
+			turn: 1,
+			elevation: 2,
+			distance: 30,
+			fov: 40,
+			background: 'sky-meadow' as const,
+			sky: '#9dcefc',
+			ground: '#aba659',
+			sunAzimuth: 13.8,
+			sunRise: 41.9,
+			skyShare: 0.4,
+			daylight: 2.4,
+			lamp: '#f5f0b4',
+			wind: 1,
+			sway: 20,
+			time: 1.5,
+			season: 'summer' as const,
+			lod: 2 as const,
+			preset: 'high' as const,
+			size: [960, 720] as const,
+			sun: 'low' as const,
+			pick: 1,
+			cut: 2,
+			measure: true,
+			lifted: true,
+			scale: true,
+			motion: true,
+			barkMask: true,
+			leafyBark: true,
+			noOutline: true,
+			foliage: true,
+			fruit: true,
+			pressed: false,
+			age: 0.5,
+			young: true,
+			surface: true,
+			matte: true,
+			placeholders: true,
+			horizon: 0.84,
+			fill: 0.7,
+			targetY: 0.5,
+			targetX: 0.48,
+			widthShare: 0.77,
+			standScale: 1.1,
+			top: 0.1,
+			eye: 0.3,
+			along: 0.4,
+			thin: 0.2,
+			barkZone: 1,
+			span: 4,
+			subjectWidth: 0.6,
+			subjectHeight: 0.5,
+			forkRow: 0.4,
+			footRow: 0.5,
+			crownRow: 0.4,
+			leaves: 8,
+			sparse: 0.5,
+			sections: 0.5,
+			cards: 0.5,
+			cardJoin: 'twig' as const,
+			leafLength: 0.1,
+			roll: 5,
+			girth: 0.2,
+			turns: 8,
+			step: 45,
+			columns: 4,
+		};
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(every)))).toMatchObject(every);
+		// A picture whose own background is the subject keeps its no-outline flag through the query.
+		const flagged = { species: 'stub', view: 'whole' as const, noOutline: true };
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(flagged))).noOutline).toBe(
+			true,
+		);
 		const read = (text: string) => () =>
 			readPlantReviewQuery(new URLSearchParams(`species=stub&view=bark-limb&${text}`));
 		// A limb that fills none of the frame gives no distance to see it from.
@@ -428,7 +780,6 @@ describe('the slots', () => {
 			readPlantReviewQuery(new URLSearchParams('species=stub&crownRow=0.4&footRow=0.5')),
 		).not.toThrow();
 		expect(read('leaves=0')).toThrow('above 0');
-		expect(read('stand=1')).toThrow('above 1');
 		// The daylight's strength is a multiple of the soft daylight: above none, and not past eight.
 		expect(read('daylight=2.5')().daylight).toBe(2.5);
 		expect(read('daylight=0')).toThrow('above 0');
@@ -521,6 +872,9 @@ describe('the slots', () => {
 		expect(classifySlot('19-hips-on-the-cane.png')?.query?.season).toBe('autumn');
 		expect(classifySlot('19-flowers.png')?.query?.season).toBe('blossom');
 		expect(classifySlot('19-cones-on-a-branch.png')?.query?.season).toBeUndefined();
+		// A ground plant's flowering heads are framed on one stem's hanging spikes, since a twig
+		// view has no woody stem to find.
+		expect(classifySlot('19-flower-spikes.png')?.view).toBe('spike');
 		expect(
 			classifySlot('19-hanging-clusters.png', 'The tree in full flower, white clusters')?.query
 				?.season,
@@ -645,15 +999,15 @@ describe('the strands view', () => {
 		expect(named.view).toBe('strands');
 		// It is off every slot number: no standard picture takes it, so no other render moves.
 		expect(VIEW_SPECS.strands.slots).toEqual([]);
-		// The standard names keep the views they had before the view was added. The birch's
-		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
-		// names the view it wants in its own slot entry.
+		// The standard names keep their views, except the `05` underside class, which the new view
+		// takes. The birch's `19-drooping-twig-ends` name reads as `subbranch` by the twig rule
+		// today; the species names the view it wants in its own slot entry.
 		const standard: readonly (readonly [string, PlantView])[] = [
 			['01-whole-distant.png', 'whole'],
 			['02-whole-profile.png', 'whole'],
 			['03-whole-from-below.png', 'below'],
 			['04-crown-outside.png', 'limb'],
-			['05-crown-underside.png', 'below'],
+			['05-crown-underside.png', 'crown-underside'],
 			['06-inside-crown.png', 'inside'],
 			['07-limb-leaving-trunk.png', 'junction'],
 			['08-limb-fork.png', 'fork'],
@@ -681,6 +1035,53 @@ describe('the strands view', () => {
 	});
 });
 
+describe('the shares a subject box gives a view', () => {
+	test('reads a separable box, and refuses a void one or a picture whose outline does not separate', () => {
+		const box = { left: 100, top: 200, right: 300, bottom: 500 };
+		expect(subjectShares(1000, 1000, box, true)).toEqual({ width: 0.2, height: 0.3 });
+		// A picture whose outline the reference set does not separate gives no shares, so the view
+		// that asks for them keeps its own frame.
+		expect(subjectShares(1000, 1000, box, false)).toBeUndefined();
+		// A void box, and a box reaching past the frame, give none either.
+		expect(
+			subjectShares(1000, 1000, { left: 100, top: 200, right: 100, bottom: 500 }, true),
+		).toBeUndefined();
+		expect(
+			subjectShares(1000, 1000, { left: 100, top: 200, right: 1300, bottom: 500 }, true),
+		).toBeUndefined();
+		expect(subjectShares(1000, 1000, undefined, true)).toBeUndefined();
+	});
+});
+
+describe('the flowers view', () => {
+	test('takes a picture of flowers on the crown, and leaves other flower pictures alone', () => {
+		expect(classifySlot('19-flowers-on-crown.png')?.view).toBe('flowers');
+		// A flower detail or a flowering whole picture keeps the view its number gives; a picture
+		// whose name says a spike takes the spike view that frames a tuft's flowering heads.
+		expect(classifySlot('19-flower-detail.png')?.view).toBe('twigs');
+		expect(classifySlot('19-flower-spikes.png')?.view).toBe('spike');
+		expect(classifySlot('20-flowers-spring.png')?.view).toBe('limb');
+		// A crown picture that names no flowers keeps the crown view.
+		expect(classifySlot('09-crown-close.png')?.view).toBe('crown');
+	});
+});
+
+describe('the sheath view', () => {
+	test('a ground plant’s sheath, collar and ligule pictures take it', () => {
+		expect(classifySlot('15-sheath-and-collar.png')?.view).toBe('sheath');
+		expect(classifySlot('16-ligule-and-collar.png')?.view).toBe('sheath');
+		expect(classifySlot('15-sheath-and-ligule.png')?.view).toBe('sheath');
+		// The bark pictures keep the views they had: only the sheath words take the new view.
+		expect(classifySlot('15-bark-mid-trunk.png')?.view).toBe('bark-mid');
+		expect(classifySlot('16-bark-on-limb.png')?.view).toBe('bark-limb');
+		// A picture of a blade leaving its sheath is not one tiller's column, so it keeps the view
+		// its number gives. A culm sheath on a stem is not one either: it takes the bamboo's own
+		// view of a young culm's foot, where the sheaths sit.
+		expect(classifySlot('08-blade-leaving-sheath.png')?.view).toBe('fork');
+		expect(classifySlot('16-culm-sheath.png')?.view).toBe('bark-base');
+	});
+});
+
 /** A plant's mask on the matte's plain white background. */
 function mattePlant(
 	width: number,
@@ -705,6 +1106,21 @@ function mattePlant(
 		background: { horizon: null, sky: flat, plain: true },
 	};
 }
+
+describe("a silhouette photograph read by the matte's rule", () => {
+	test('keeps only the texels darker than half of what the photograph mask counts as plant', () => {
+		const image = blank(4, 1, [255, 255, 255]);
+		put(image, 0, 0, [10, 10, 10]);
+		put(image, 1, 0, [120, 120, 120]);
+		put(image, 2, 0, [170, 170, 170]);
+		put(image, 3, 0, [0, 0, 0]);
+		// The photograph mask counts the three darkened texels; the fourth it left out stays out.
+		const photograph = mattePlant(4, 1, Uint8Array.from([1, 1, 1, 0]));
+		const read = halfDarkMask(photograph, image);
+		expect([...read.mask]).toEqual([1, 1, 0, 0]);
+		expect([...photograph.mask]).toEqual([1, 1, 1, 0]);
+	});
+});
 
 describe('the coverage matte', () => {
 	test("keeps a texel's own coverage beside the half-black mask", () => {
@@ -740,6 +1156,60 @@ describe('the coverage matte', () => {
 		expect(pieceCount(anyPlantMask(plant), width, height, 24)).toBe(1);
 	});
 
+	test("keeps a hairline join at the picture's width that the work width drops", () => {
+		// Two bodies, and one row of near-white between them: coverage the picture keeps and the
+		// half-size downscale rounds away. The gate reads the picture's own width, because a join it
+		// keeps is a real part of the plant.
+		const width = 1280;
+		const height = 64;
+		const image = blank(width, height, [255, 255, 255]);
+		for (let y = 10; y < 55; y++) {
+			for (let x = 100; x < 500; x++) put(image, x, y, [0, 0, 0]);
+			for (let x = 600; x < 1000; x++) put(image, x, y, [0, 0, 0]);
+		}
+		for (let x = 500; x < 600; x++) put(image, x, 32, [253, 253, 253]);
+		const own = matteOwnMask(image);
+		expect(pieceParts(own.mask, own.width, own.height, 24).length).toBe(1);
+		const work = matteMask(image);
+		expect(work.width).toBe(640);
+		expect(pieceParts(anyPlantMask(work), work.width, work.height, 24).length).toBe(2);
+	});
+
+	test('names a piece that meets nothing, and spares one the frame carries', () => {
+		const width = 40;
+		const height = 40;
+		const mask = new Uint8Array(width * height);
+		// The body.
+		for (let y = 10; y < 20; y++) for (let x = 10; x < 20; x++) mask[y * width + x] = 1;
+		// A blob that meets nothing inside the frame: 25 pixels, five by five.
+		for (let y = 25; y < 30; y++) for (let x = 25; x < 30; x++) mask[y * width + x] = 1;
+		// A piece the frame's right edge carries, so its part may run on outside the picture.
+		for (let y = 30; y < 36; y++) for (let x = 36; x < 40; x++) mask[y * width + x] = 1;
+		const parts = pieceParts(mask, width, height, 24);
+		expect(parts.length).toBe(3);
+		expect(parts[0]?.area).toBe(100);
+		// The largest run is the body; any other run the border does not carry meets nothing.
+		const floating = parts.slice(1).filter((part) => !part.border);
+		expect(
+			floating.map((part) => [part.area, part.left, part.top, part.right, part.bottom]),
+		).toEqual([[25, 25, 25, 29, 29]]);
+		expect(parts.filter((part) => part.border).length).toBe(1);
+	});
+
+	test("roots a piece that stands inside the ground band the plant's feet span", () => {
+		// A colony's groups stand at different depths: the front group's feet reach row 29 and a
+		// further group's row 20, and one piece hangs in the air above them.
+		const front = { area: 100, left: 0, top: 10, right: 9, bottom: 29, border: false };
+		const further = { area: 100, left: 20, top: 8, right: 29, bottom: 20, border: false };
+		const air = { area: 100, left: 40, top: 2, right: 49, bottom: 6, border: false };
+		// One row calls the further group floating.
+		expect(hangingParts([front, further, air]).parts.map((part) => part.top)).toEqual([8, 2]);
+		// The ground band the feet span roots both standing groups.
+		expect(
+			hangingParts([front, further, air], { top: 20, base: 29 }).parts.map((part) => part.top),
+		).toEqual([2]);
+	});
+
 	test('counts a partly covered texel as the sky it leaves in the gap', () => {
 		const width = 20;
 		const height = 20;
@@ -753,16 +1223,276 @@ describe('the coverage matte', () => {
 		const image = blank(width, height, [0, 0, 0]);
 		const binary = measurePlant(image, mattePlant(width, height, mask));
 		const fractional = measurePlant(image, mattePlant(width, height, mask, coverage));
-		// The hole is four texels of the crown's hundred; two are half covered, so the fractional
-		// gap gives back the half texel each of them leaves. The measure rounds the share to four
-		// places, which is where three per cent sits.
+		// The hole is four texels of the crown's hundred, and both pictures count four. Two are
+		// half covered, so the reading by clear share gives back the half texel each of them
+		// leaves. The measure rounds the share to four places, which is where three per cent sits.
 		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
-		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		expect(fractional.gapFraction).toBeCloseTo(4 / 100, 4);
+		expect(fractional.gapByCoverage as number).toBeCloseTo(3 / 100, 4);
+		expect(binary.gapByCoverage).toBe(null);
 		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
 		// the empty sky around the plant and reads far larger.
 		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
 		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
 		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
 		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
+	});
+
+	test("weights a texel's colour by the share of it a leaf covers", () => {
+		const width = 20;
+		const height = 20;
+		const mask = new Uint8Array(width * height);
+		for (let y = 5; y <= 14; y++) for (let x = 5; x <= 14; x++) mask[y * width + x] = 1;
+		const image = blank(width, height, [0, 0, 0]);
+		// One crown texel is half leaf and half sky, so its colour blends towards the white sky.
+		put(image, 14, 9, [255, 255, 255]);
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		coverage[9 * width + 14] = 128;
+		const plain = measurePlant(image, mattePlant(width, height, mask));
+		const weighted = measurePlant(image, mattePlant(width, height, mask, coverage));
+		// The plain mean counts the half-covered texel whole, so its lightness is a hundredth of the
+		// white; the weighted mean takes only the share the leaf covers, which is half a hundredth.
+		expect(plain.foliage?.lab[0] as number).toBeCloseTo(1, 2);
+		expect(weighted.foliage?.lab[0] as number).toBeCloseTo(0.5, 1);
+		// A matte that covers every texel whole gives the plain mean back exactly.
+		const full = new Uint8Array(width * height).fill(255);
+		expect(measurePlant(image, mattePlant(width, height, mask, full)).foliage).toEqual(
+			plain.foliage,
+		);
+	});
+});
+
+describe('a fitted sky', () => {
+	const surface = (fit: number, noise: number) =>
+		({
+			coefficients: [
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+			],
+			noise,
+			fit,
+		}) as never;
+
+	test('is maskable only when the fit is strong, the residual bounded and no horizon stands', () => {
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 17.1), plain: false })).toBe(true);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9, 5), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 40), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: 100, sky: surface(0.9999, 5), plain: false })).toBe(false);
+	});
+
+	test('a fitted soil is maskable only with a real region each side of a strong ground fit', () => {
+		// The sedge's 07: horizon at 186 of 640, sky 1 / 24.19, ground 1 / 18.55.
+		expect(
+			soilMaskable(
+				{ horizon: 186, sky: surface(1, 24.19), ground: surface(1, 18.55), plain: false },
+				640,
+			),
+		).toBe(true);
+		// The meadow's 07: horizon at 596 of 640, sky 1 / 26.41, ground 1 / 19.90.
+		expect(
+			soilMaskable(
+				{ horizon: 596, sky: surface(1, 26.41), ground: surface(1, 19.9), plain: false },
+				640,
+			),
+		).toBe(true);
+		// A ramp that does not fit, a horizon at the frame's edge, and a background with no horizon.
+		expect(
+			soilMaskable(
+				{ horizon: 300, sky: surface(1, 20), ground: surface(1, 40), plain: false },
+				640,
+			),
+		).toBe(false);
+		expect(
+			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
+		).toBe(false);
+		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
+	});
+});
+
+describe('the crown start of a clump', () => {
+	/** A clump 100 rows tall: five thin stems that fan out from its foot, then a dense dome. */
+	const clump = (): { mask: Uint8Array; width: number; height: number } => {
+		const width = 200;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// The dome fills rows 0 to 59, and the stems spread over rows 60 to 99.
+		for (let y = 0; y < 60; y++) for (let x = 20; x < 180; x++) mask[y * width + x] = 1;
+		for (let y = 60; y < height; y++) {
+			const up = (height - 1 - y) / 40;
+			for (let stem = 0; stem < 5; stem++) {
+				const centre = Math.round(100 + (stem - 2) * 30 * up);
+				for (let x = centre - 1; x <= centre + 1; x++) mask[y * width + x] = 1;
+			}
+		}
+		return { mask, width, height };
+	};
+
+	test('is where the rows fill with foliage, not where the stems have spread', () => {
+		const { mask, width, height } = clump();
+		const box = boxOf(mask, width, height);
+		if (!box) throw new Error('the clump has no box');
+		// The stems' outer span passes the width test well below the dome, so the outline rule
+		// starts the crown among the bare stems.
+		const outline = crownStartRow(rowSpans(mask, width, height), box);
+		expect(outline).toBeGreaterThan(70);
+		// Each row counted by the plant it holds starts the crown at the dome's foot.
+		const filled = crownStartRow(filledSpans(mask, width, height), box);
+		expect(filled).toBeGreaterThanOrEqual(58);
+		expect(filled).toBeLessThanOrEqual(60);
+	});
+
+	test('counts each row by the plant it holds, as one run on the frame’s middle', () => {
+		const { mask, width, height } = clump();
+		const spans = filledSpans(mask, width, height);
+		// A stem row holds five stems of three columns; a dome row holds 160 columns.
+		expect((spans[80 * 2 + 1] as number) - (spans[80 * 2] as number) + 1).toBe(15);
+		expect((spans[30 * 2 + 1] as number) - (spans[30 * 2] as number) + 1).toBe(160);
+		expect(Array.from(filledSpans(new Uint8Array(8), 4, 2))).toEqual([-1, -1, -1, -1]);
+	});
+});
+
+describe("the crown's foliage share", () => {
+	const width = 100;
+	const height = 60;
+	const region: CrownRegion = { left: 10, top: 10, right: 89, bottom: 49 };
+	const mask = new Uint8Array(width * height);
+	for (let y = region.top; y <= region.bottom; y++)
+		for (let x = region.left; x <= region.right; x++) mask[y * width + x] = 1;
+	const plant = mattePlant(width, height, mask);
+
+	/** A picture of the crown painted by column: the colours in the list, in equal bands. */
+	function crown(colours: readonly (readonly number[])[]): Rgba {
+		const image = blank(width, height, [255, 255, 255]);
+		const band = Math.ceil((region.right - region.left + 1) / colours.length);
+		for (let y = region.top; y <= region.bottom; y++)
+			for (let x = region.left; x <= region.right; x++) {
+				const at = Math.min(colours.length - 1, Math.floor((x - region.left) / band));
+				put(image, x, y, colours[at] as readonly number[]);
+			}
+		return image;
+	}
+
+	test('reads the greener of two fitted clusters as the foliage', () => {
+		const read = crownFoliageOf(
+			crown([
+				[35, 105, 35],
+				[130, 95, 60],
+			]),
+			plant,
+			region,
+		);
+		expect(read.pixels).toBe(3200);
+		expect(read.share).not.toBeNull();
+		expect(read.share as number).toBeCloseTo(0.5, 1);
+	});
+
+	test('reads a crown whose two clusters are both green as all foliage', () => {
+		const read = crownFoliageOf(
+			crown([
+				[35, 105, 35],
+				[85, 145, 55],
+			]),
+			plant,
+			region,
+		);
+		expect(read.share).toBe(1);
+	});
+
+	test('gives no share where both clusters are brown, as a winter tree against brown ground', () => {
+		const read = crownFoliageOf(
+			crown([
+				[130, 95, 60],
+				[100, 75, 50],
+			]),
+			plant,
+			region,
+		);
+		expect(read.share).toBeNull();
+		expect(read.why).toContain('not leaf green');
+	});
+
+	test('gives no share for a crown box too small to fit', () => {
+		const read = crownFoliageOf(
+			crown([
+				[35, 105, 35],
+				[130, 95, 60],
+			]),
+			plant,
+			{
+				left: 10,
+				top: 10,
+				right: 12,
+				bottom: 12,
+			},
+		);
+		expect(read.share).toBeNull();
+		expect(read.why).toContain('too few');
+	});
+});
+
+describe("the crown's balance", () => {
+	const width = 100;
+	const height = 80;
+	const mask = new Uint8Array(width * height);
+	// A crown 70 columns wide over a trunk whose column stands at its middle, with ground below.
+	for (let y = 10; y <= 49; y++) for (let x = 10; x <= 79; x++) mask[y * width + x] = 1;
+	for (let y = 50; y <= 59; y++) for (let x = 45; x <= 54; x++) mask[y * width + x] = 1;
+	const region: CrownRegion = { left: 10, top: 10, right: 79, bottom: 49 };
+
+	test('splits the covered area at the trunk’s column, giving each side its share', () => {
+		const balance = crownBalanceOf(mattePlant(width, height, mask), region);
+		expect(balance).not.toBeNull();
+		// The trunk's column is 49.5 on the picture: 40 crown columns left of it and 30 right.
+		expect(balance?.column).toBeCloseTo(49.5, 1);
+		expect(balance?.left).toBeCloseTo(40 / 70, 2);
+		expect(balance?.right).toBeCloseTo(30 / 70, 2);
+	});
+
+	test('gives no balance for a crown box with no plant', () => {
+		expect(
+			crownBalanceOf(mattePlant(width, height, mask), {
+				left: 0,
+				top: 60,
+				right: 9,
+				bottom: 70,
+			}),
+		).toBeNull();
+	});
+});
+
+describe("the crown's balance in bands", () => {
+	const width = 100;
+	const height = 80;
+	/** A crown 70 columns wide over a trunk whose column stands at its middle. */
+	function crown(): Uint8Array {
+		const mask = new Uint8Array(width * height);
+		for (let y = 10; y <= 49; y++) for (let x = 10; x <= 79; x++) mask[y * width + x] = 1;
+		for (let y = 50; y <= 59; y++) for (let x = 45; x <= 54; x++) mask[y * width + x] = 1;
+		return mask;
+	}
+	const region: CrownRegion = { left: 10, top: 10, right: 79, bottom: 49 };
+
+	test('gives each band its left share of the band, top first', () => {
+		const mask = crown();
+		// The top band loses its right half, so it reads all left where the other bands read 40 of 70.
+		for (let y = 10; y <= 16; y++) for (let x = 50; x <= 79; x++) mask[y * width + x] = 0;
+		const bands = crownBandsOf(mattePlant(width, height, mask), region);
+		expect(bands).not.toBeNull();
+		expect(bands?.column).toBeCloseTo(49.5, 1);
+		expect(bands?.left.length).toBe(6);
+		expect(bands?.left[0]).toBe(1);
+		for (const share of (bands?.left ?? []).slice(1)) expect(share).toBeCloseTo(40 / 70, 3);
+	});
+
+	test('leaves a band too thin to read as no share', () => {
+		const mask = crown();
+		for (let y = 10; y <= 16; y++) for (let x = 10; x <= 79; x++) mask[y * width + x] = 0;
+		// Three specks in the top band, under the least a band needs.
+		for (const x of [20, 21, 22]) mask[12 * width + x] = 1;
+		const bands = crownBandsOf(mattePlant(width, height, mask), region);
+		expect(bands?.left[0]).toBeNull();
+		expect(bands?.left[1]).not.toBeNull();
 	});
 });

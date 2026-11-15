@@ -51,7 +51,10 @@ export const record: Species = {
 	// plant. Still 18 stands the thickest stem about two hundredths of the height across at breast
 	// height. Its height is read from the stems' own size in still 07; its spread and crown base are
 	// the fit's.
-	size: { height: { mean: 4, spread: 0.6 }, dbh: 0.08, aspect },
+	// Stills 07 and 18 stand the thickest stem at about two hundredths of the height across at
+	// breast height; the first setting drew it at 0.0156. The bend keeps its own girth below, so
+	// the thicker drawn wood does not stiffen the crown's sag.
+	size: { height: { mean: 4, spread: 0.6 }, dbh: 0.103, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 30,
@@ -114,8 +117,10 @@ export const record: Species = {
 			],
 		},
 		// Stills 01, 02 and 18: foliage stands almost to the grass, with only the stool itself bare,
-		// and no low shoot is lost to the shade of the crown above it.
-		shedding: { threshold: 0.03, cleanBole: 0, stubs: 0.1, underCrown: 0 },
+		// and no low shoot is lost to the shade of the crown above it. The drawn dome sits taller
+		// than the photographs' and keeps its mass too high, so the tender shoots in the crown's
+		// shade are shed a little more readily than the first setting allowed.
+		shedding: { threshold: 0.06, cleanBole: 0, stubs: 0.1, underCrown: 0 },
 		// The bend weighs the wood at the stem's own girth, so a thin stool sags a little and its
 		// tips right themselves.
 		bending: { strength: 0.2, upturn: 0.3, girth: 0.1 },
@@ -246,8 +251,9 @@ export const record: Species = {
 				[1, 16],
 			],
 			// The reference's dome is denser than the curve alone gives: this is the dial, not a
-			// change of reach or part size.
-			density: 1.7,
+			// change of reach or part size. The first card level's shared cap sets the most the crown
+			// may carry, so the dial stands where every variant and season fits under it.
+			density: 1.63,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, while the lit outer masses stay.
@@ -260,6 +266,15 @@ export const record: Species = {
 			lift: 6,
 			skyward: 0.55,
 			scale: { mean: 1.2, spread: 0.1 },
+			// Stills 01, 02 and 18: the dome is broad at its middle and flat across its top, so the
+			// mid-crown shoots reach a little further than the record's one scale and the top ones
+			// stand half as far past their twigs, which lowers the dome without raising its foot.
+			scaleByHeight: [
+				[0, 1],
+				[0.55, 1.1],
+				[0.8, 0.8],
+				[1, 0.32],
+			],
 		},
 	},
 	foliage: {
@@ -269,6 +284,10 @@ export const record: Species = {
 			// wedge base, three to four centimetres from base to tip, on a stalk about a quarter of that.
 			length: { mean: 0.035, spread: 0.006 },
 			outline: 'texture',
+			// This stalk grows the crown the species ships, and that crown keeps it. The branch pieces
+			// wear the twig photograph's stalk (`PIECE_LEAF` in pieces.ts): 1.25 centimetres, 0.36 of
+			// the blade, the median of eight full leaves on still 22. The record takes it when the
+			// plant built of pieces replaces this crown.
 			petiole: { length: 0.009, radius: 0.0005, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 10,
@@ -284,10 +303,13 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 15 and 26: the sampled plates read lighter and bluer than the photographs, so the
-		// zone scales red and green a little and cuts blue hard to keep the grey-brown.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [0.82, 0.8, 0.64] }],
+		// Stills 15 and 26: the sampled plates read darker than the photographs, so the zone lifts the
+		// measured colour, a little more in green and blue, toward the grey-brown the photographs show.
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [2.8, 3.2, 3.2] }],
 		young: 0,
+		// Still 16: the young bark draws redder than its photograph, so thin wood lifts green and blue
+		// more than red. Still 28's young stem asks for a neutral cast instead, a recorded conflict.
+		youngTint: [1.03, 1.34, 1.22],
 		// Still 16 and 28: the plates fade to smooth red-brown bark on wood thinner than about four
 		// centimetres across.
 		youngRadius: 0.02,
@@ -406,16 +428,23 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit's leaves and six shoot prototypes measure 2.46, 3.36, 5.29 and 9.05 MB; each
-			// cap sits above its figure, under the class's own ceiling.
+			// The kit holds two branch-end prototypes and the piece's leaf meshes: 0.33, 0.37, 0.44
+			// and 1.97 MB at the four tiers; each cap sits above its figure, under the class's own
+			// ceiling.
 			kitBytes: { low: 2_600_000, medium: 3_500_000, high: 5_600_000, ultra: 9_500_000 },
-			// Six variants measure 4.6 to 8.8 MB in leaf, and the blossom season carries the flowers'
-			// own mesh at 13.7 MB; each cap sits above the largest, under the class's own ceiling.
+			// The six variants measure 5.30 to 6.01 MB in leaf, and the blossom season reaches 13.34 MB
+			// with the flowers' own mesh; each cap sits above the largest, under the class's own ceiling.
 			variantBytes: { low: 14_000_000, medium: 14_000_000, high: 14_000_000, ultra: 14_000_000 },
-			// The nearest level, with the shoot rows that stand in it, measures 246,651 triangles; the
-			// first card level 138,000 to 148,050 and the second 19,000 to 24,000, over three variants
-			// and every season.
-			lod0Triangles: 300_000,
+			// The shrub as its directed frame of branch ends at sockets, measured at seed 11 and the
+			// high tier: its leaf form is 1,149,351 triangles, all of them draw at once at the tallest
+			// view, and 734,736 at the reference view. The largest of the six variants measures
+			// 1,154,985 at its leaf form, so the cap keeps 65,015 above that read, 5.6 per cent, and
+			// sits under the tree class's own 2,900,000. The earlier 500,796 was read before the plant
+			// became a frame of pieces, by a count that drew farther shoots at coarser tiers than the
+			// engine does, so it no longer described the plant. The first card level measures at most
+			// 137,400 and the second at most 18,400 over the variants and seasons, under the class's
+			// shared card caps.
+			lod0Triangles: 1_220_000,
 			lod1Triangles: 155_000,
 			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,
@@ -427,9 +456,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1870652341,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.5, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.11 },
 	roundBand,
 	cuttings: {
 		// Still 21: the branch keeps the spray's years of stiff twigs, bare between the leaf tufts.

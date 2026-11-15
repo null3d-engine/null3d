@@ -6,6 +6,7 @@ import type { MeshArrays, ShootRows, SpeciesKitData } from './asset';
 import type { MacroSkeleton } from './core/graph';
 import type { Species } from './core/record';
 import type { Detail, Season, Vec3 } from './core/types';
+import type { CuttingOptions } from './cutting';
 
 /**
  * What a grower takes: the record, the seed, the variant and the season.
@@ -51,16 +52,48 @@ export interface DressInput extends GrowInput {
 	/** The grown skeleton. */
 	readonly skeleton: MacroSkeleton;
 	/**
-	 * How much simpler than grown the plant is, from 0 to 1: fewer and larger shoot rows, and wood
-	 * of fewer rings and sides. 0 when not given. The skeleton is already pruned for it.
+	 * How finely the wood is drawn, from 0 to 1: it takes longer edges, so fewer rings and sides.
+	 * The skeleton and the shoot rows stay as grown. 0 when not given.
 	 */
 	readonly coarseness?: number;
+	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
+	 * sides, and 1 a few flat-sided runs with square ends. Absent or 0 meshes as the level does.
+	 * It changes no vertex's place along its axis, only how many rings and sides the axis draws.
+	 */
+	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: 1 keeps the level's own
+	 * rows and the cards' own size, and below 1 thins the rows by the level's rule, so the kept
+	 * cards grow to hold the crown. A review redraw uses it to measure what the cards buy.
+	 */
+	readonly cards?: number;
+	/**
+	 * How a card joins the plant when its branch is not drawn at the level: `remove` drops the card,
+	 * `branch` draws the branch every card stands on, and `twig` keeps the card and draws it a twig
+	 * to the nearest drawn branch. Absent, the level keeps every card and draws the branch under each
+	 * card that reaches neither drawn wood nor a joined card.
+	 */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 	/**
 	 * The light of the crown as grown, which a sky-prune line reads at every coarseness, so a
 	 * coarser plant prunes the shoots its full crown leaves in the dark and the light is found once.
 	 * Absent, the prune lights the crown of the rows it is given.
 	 */
 	readonly pruneLight?: CrownLight;
+	/** The cutting this variant is, where it is a piece rather than a whole plant. */
+	readonly cutting?: CuttingOptions;
+	/**
+	 * The plant as grown, on a plant that sparseness took foliage from: its skeleton and its rows
+	 * before the thinning. They keep the number each site and stem had as grown, so a choice keyed
+	 * on one falls the same way on the sparser plant. Absent on a plant as grown.
+	 */
+	readonly grown?: { readonly skeleton: MacroSkeleton; readonly rows: ShootRows };
+	/**
+	 * The share of each extra's sites that draws it, from 0 to 1, where a triangle maximum thins the
+	 * extras. A site that draws at a share draws at every larger one. Every site when absent.
+	 */
+	readonly extrasShare?: number;
 }
 
 /**

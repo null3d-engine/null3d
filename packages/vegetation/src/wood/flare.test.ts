@@ -8,7 +8,7 @@ import type { BaseSpec } from '../core/record';
 import { loadPlantCode } from '../generate';
 import { leadOnThickest } from '../grow/leaders';
 import { grower } from '../grow/models';
-import { species } from '../species/pedunculate-oak';
+import { record as oldOak } from '../species/pedunculate-oak/record';
 import { type StemSection, type SurfaceRoot, stemSection, surfaceRoots } from './flare';
 
 const base: BaseSpec = {
@@ -79,6 +79,86 @@ describe('the stem base', () => {
 		}
 	});
 
+	it('cuts a fire scar into one side of the first stem alone, deepest at its middle', () => {
+		const plain: BaseSpec = { flare: { amount: 0.3, height: 0.5 } };
+		const scarred: BaseSpec = {
+			...plain,
+			scar: {
+				from: 0,
+				to: 4,
+				angle: 90,
+				width: 40,
+				depth: 0.2,
+				colour: [0.012, 0.011, 0.009],
+			},
+		};
+		const a = stemSection(plain, 11, 7, 0, 0);
+		const b = stemSection(scarred, 11, 7, 0, 0);
+		if (!a || !b) throw new Error('no section');
+		const centre = Math.PI / 2;
+		// The hollow is the record's depth at its middle, and the healthy bark round it is untouched.
+		expect(a.radius(2, centre, 1) - b.radius(2, centre, 1)).toBeCloseTo(0.2, 6);
+		expect(b.radius(2, -Math.PI / 2, 1)).toBeCloseTo(a.radius(2, -Math.PI / 2, 1), 6);
+		expect(b.radius(5, centre, 1)).toBeCloseTo(a.radius(5, centre, 1), 6);
+		// A plant's later stems carry no scar.
+		const other = stemSection(scarred, 11, 7, 0, 1);
+		if (!other) throw new Error('no second section');
+		expect(other.radius(2, centre, 1)).toBeCloseTo(a.radius(2, centre, 1), 6);
+	});
+
+	it('winds its flutes the stated turns up to their held height, as one closed surface', () => {
+		const height = 4;
+		const twist = 0.5;
+		const hold = 0.8;
+		const fluted: BaseSpec = {
+			flare: { amount: 0, height: 0.5 },
+			flutes: { count: { mean: 6, spread: 0 }, depth: 0.2, height, twist, hold },
+		};
+		const section = stemSection(fluted, 11, 7, 0, 0);
+		if (!section) throw new Error('no section');
+		const samples = 3600;
+		const step = (2 * Math.PI) / samples;
+		/** The angle of the deepest groove at a height, and the groove's depth there. */
+		const groove = (h: number): { at: number; depth: number } => {
+			let at = 0;
+			let least = Infinity;
+			let most = -Infinity;
+			for (let k = 0; k < samples; k++) {
+				const r = section.radius(h, k * step, 1);
+				if (r < least) {
+					least = r;
+					at = k * step;
+				}
+				most = Math.max(most, r);
+			}
+			return { at, depth: most - least };
+		};
+		const pitch = (2 * Math.PI) / 6;
+		/** The angle between two places on the stem, both taken round one groove's pitch. */
+		const apart = (a: number, b: number): number => {
+			const d = (((a - b) % pitch) + pitch) % pitch;
+			return Math.min(d, pitch - d);
+		};
+		const foot = groove(0);
+		const held = groove(height * hold);
+		// The groove has turned by the stated share of its turns at the held height, and kept its depth.
+		const turned = 2 * Math.PI * twist * hold;
+		expect(apart(held.at, foot.at + turned)).toBeLessThan(step * 2);
+		expect(foot.depth).toBeCloseTo(0.2, 3);
+		expect(held.depth).toBeCloseTo(0.2, 3);
+		// Above the held height it fades, and at its height it is gone.
+		expect(groove(height * 0.9).depth).toBeLessThan(0.2);
+		expect(groove(height).depth).toBeCloseTo(0, 6);
+		// One closed surface: round the stem the radius meets itself, with no step between neighbours.
+		for (const h of [0, 1, 2.5, 3.2, 3.8]) {
+			expect(section.radius(h, 2 * Math.PI, 1)).toBeCloseTo(section.radius(h, 0, 1), 9);
+			for (let k = 0; k < samples; k++)
+				expect(
+					Math.abs(section.radius(h, (k + 1) * step, 1) - section.radius(h, k * step, 1)),
+				).toBeLessThan(0.01);
+		}
+	});
+
 	it('widens a tapered bole evenly toward the ground, and leaves it plain above the taper', () => {
 		const plain: BaseSpec = { flare: { amount: 0.3, height: 0.5 } };
 		const tapered: BaseSpec = { ...plain, taper: { amount: 0.2, height: 4 } };
@@ -122,9 +202,11 @@ describe('the stem base', () => {
 	});
 
 	it(
-		'draws the oak bole as stills 01, 02, 17 and 18 show it: an eighth of its height across, on a short concave foot',
+		"draws the old grower's oak bole as stills 01, 02, 17 and 18 show it: an eighth of its height across, on a short concave foot",
 		async () => {
-			const record = species.record;
+			// The old grower's record: the oak registered as a frame states its foot in its trunk's
+			// width, and its frame's tests hold that foot to still 01.
+			const record = oldOak;
 			await loadPlantCode(record);
 			for (let variant = 0; variant < 6; variant++) {
 				const led = leadOnThickest(

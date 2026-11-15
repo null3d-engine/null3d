@@ -367,6 +367,20 @@ function bladeLevel(leaf: ThickLeaf, input: MeshInput, level: MeshLevel): ThickD
 	return level === 1 ? { rows: 8, columns: 4, ribs: false } : { rows: 4, columns: 2, ribs: false };
 }
 
+/**
+ * How far a leaf of an age is meshed rolled round its midrib, from 0 open to 1 closed. Only a leaf
+ * the grower stands rolled, upright and unbent, below the record's rolled share of its age, is
+ * rolled, unrolling as it ages: an open leaf is pitched and curled, and a roll on top of that turns
+ * its faces in.
+ *
+ * @param age The leaf's age, 0 youngest to 1 oldest.
+ * @param rolled The record's rolled share of a shoot's leaves.
+ * @returns The roll.
+ */
+export function leafRoll(age: number, rolled: number): number {
+	return age < rolled ? Math.max(0, 1 - age / Math.max(1e-6, 1.4 * rolled)) : 0;
+}
+
 /** The +Z axis of a frame quaternion: the upper face. */
 function faceOfBud(q: ArrayLike<number>): [number, number, number] {
 	const x = q[0] as number;
@@ -458,7 +472,7 @@ export function meshRosette(input: MeshInput, level: MeshLevel): MeshArrays {
 				length: midrib.length,
 				leaf,
 				outline,
-				roll: Math.max(0, 1 - age / Math.max(1e-6, 1.4 * growth.rolled)),
+				roll: leafRoll(age, growth.rolled),
 				browning,
 				along: [bladeStart, 1],
 				wavePhase: unitAt(input.seed, key, 3),

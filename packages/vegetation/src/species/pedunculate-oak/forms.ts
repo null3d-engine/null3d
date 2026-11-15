@@ -21,6 +21,10 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		// than the open oak, measured on the photo's outline as on the render's.
 		size: { height: { mean: 26, spread: 2 }, dbh: 1.57, aspect: 0.6 },
 		growth: {
+			// Stills 30 and 31: the woodland leader runs up through the crown on its own line, so it
+			// does not take the open oak's per-step turn limit; with the limit the stem top falls to
+			// 0.807 of the height, and without it the six variants read 0.854 to 0.979.
+			maxTurn: null,
 			// Still 30: the leader runs up through the crown to the top; it does not divide low.
 			divide: null,
 			// Still 30: one leader carries the crown to its top, its limbs leaving it at upward angles.

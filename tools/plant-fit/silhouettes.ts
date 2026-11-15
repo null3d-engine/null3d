@@ -20,7 +20,7 @@ import type { Rgba } from '../lib/plant-review/image.ts';
 import {
 	type Box,
 	boxOf,
-	keepPlantParts,
+	dropThinLowRuns,
 	measurePlant,
 	type PlantMask,
 	type PlantMeasures,
@@ -33,10 +33,6 @@ export const CELLS = 96;
 export const SPAN = 1.3;
 /** Grid cells across. */
 export const COLUMNS = Math.round(2 * SPAN * CELLS);
-/** The share of the plant's height, from the ground, in which thin horizontal runs are dropped. */
-const LOW_SHARE = 0.2;
-/** The least run up and down, in grid cells, through a pixel of the plant's lowest share. */
-const LOW_RUN = 3;
 
 /** One frame's plant: its mask, box and foot, or why the envelope may not read it. */
 export interface FrameOutline {
@@ -56,30 +52,6 @@ export interface FrameOutline {
 /** A cell's centre in plant heights from the trunk, positive to the right. */
 export function columnX(col: number): number {
 	return (col + 0.5) / CELLS - COLUMNS / 2 / CELLS;
-}
-
-/**
- * A mask without the thin horizontal runs of the plant's lowest share: a pixel there stays only
- * where the outline runs `LOW_RUN` grid cells' height up or down through it, as a trunk or a tuft
- * does and a horizon line or a ground strip does not.
- */
-export function dropThinLowRuns(plant: PlantMask, box: Box): PlantMask {
-	const { width, height } = plant;
-	const tall = box.bottom - box.top + 1;
-	const run = Math.max(2, Math.round((LOW_RUN * tall) / CELLS));
-	const from = box.bottom - Math.round(LOW_SHARE * tall);
-	const mask = plant.mask.slice();
-	for (let y = Math.max(0, from); y <= box.bottom; y++)
-		for (let x = 0; x < width; x++) {
-			const at = y * width + x;
-			if (!plant.mask[at]) continue;
-			let length = 1;
-			for (let d = 1; d < run && y + d < height && plant.mask[at + d * width]; d++) length++;
-			for (let d = 1; d < run && y - d >= 0 && plant.mask[at - d * width]; d++) length++;
-			if (length < run) mask[at] = 0;
-		}
-	keepPlantParts(mask, width, height, plant.background.horizon ?? height);
-	return { ...plant, mask };
 }
 
 /**

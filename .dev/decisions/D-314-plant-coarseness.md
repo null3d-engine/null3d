@@ -1,8 +1,10 @@
 # D-314: a page asks for a simpler plant by one coarseness or a triangle target, and moves every switch by one bias
 
-Status: decided. Coarseness and the triangle target are built in the grower's pruning pass, the
-shoot instancer and the wood mesher. The page's switch bias is built on the stand-ins' placement.
-The real placement takes the same bias once it is built. Task: none.
+Status: decided. The pruning pass and the shoot-row thinning are superseded by
+[D-348](D-348-two-dials-keep-their-own-work.md); the triangle target and the switch bias stand.
+Coarseness and the triangle target are built in the grower's mesh pass and the wood mesher. The
+page's switch bias is built on the stand-ins' placement. The real placement takes the same bias once
+it is built. Task: none.
 
 Summary: One coarseness from 0 to 1 prunes up to 30 per cent of the finest twigs, the deepest first.
 It keeps as few as 20 per cent of the shoot rows, spread evenly and grown up to 2.25 times. It

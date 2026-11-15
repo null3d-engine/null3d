@@ -1,6 +1,6 @@
 # Group-level culling: what it would drop, and whether to build it
 
-Branch `research/group-culling` from `58dafca09` (perf/walk-view). Scripts, pages and results are in `bench/research/group-culling/` (`scripts/`, `pages/`, `results/`). Large files (models, Bistro download, depth images, three.js build) are in `target/group-culling/`, outside git; `scripts/prepare.ts` rebuilds them.
+Branch `research/group-culling` from `86f221ac5` (perf/walk-view). Scripts, pages and results are in `bench/research/group-culling/` (`scripts/`, `pages/`, `results/`). Large files (models, Bistro download, depth images, three.js build) are in `target/group-culling/`, outside git; `scripts/prepare.ts` rebuilds them.
 
 ## Summary
 
@@ -28,7 +28,7 @@ Branch `research/group-culling` from `58dafca09` (perf/walk-view). Scripts, page
   - desert walk: 40 camera times over the measured lap.
   - Amazon Lumberyard Bistro exterior: CC BY 4.0, from casual-effects.com `Exterior.zip`, SHA-256 `f612ba0d8a65811afe0d48a023d31e5b43ac40b78e9b12d15e2b7dc8923c29d4`, 2.84 M triangles, 1,306 objects, no textures. Built with `null3d assets convert`, then `assets optimize --lod --no-blockers --bvh 0`, and scaled to meters. Two fixed views (`pages/bistro-views.js`): street at head height; wide at 45 m over the block.
 - **Ground:** the desert ground draws from its cluster tree, so it is left out of the model's counts (0.06 M measured).
-- **Level plans:** both scenes carry their levels in the files, so the runtime level-plan bug (fixed in 6460966bc) does not touch these counts. No run reported E1420 or any engine problem.
+- **Level plans:** both scenes carry their levels in the files, so the runtime level-plan bug (fixed in 08380066c) does not touch these counts. No run reported E1420 or any engine problem.
 
 ### The model against the engine (browser counts, triangles per frame)
 

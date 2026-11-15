@@ -29,7 +29,7 @@ const MOVED = 1 / 255;
 const MOVES = 0.05;
 /**
  * How far one floor box's bleed may lie from the bake's, in 8-bit levels. D-284's addendum records
- * the run at `af1ffe477`, where the probe's sky share is weighted by the surface's tilt: the left
+ * the run at `b6f9e3afc`, where the probe's sky share is weighted by the surface's tilt: the left
  * box reads 3.06 levels from the bake and the right 0.01, on both paths. Four levels therefore
  * covers both boxes on both paths.
  */

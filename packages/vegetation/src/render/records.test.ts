@@ -8,6 +8,15 @@ import type { Species } from '../core/record';
 import { standInRecord } from '../core/stand-in';
 import { noTextureFiles, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
+import {
+	leafSurface,
+	SURFACE_BUD,
+	SURFACE_LEAF,
+	SURFACE_PIECE,
+	SURFACE_PIECE_SHEATH,
+	SURFACE_SHEATH,
+	SURFACE_STEM,
+} from '../leaf/writer';
 import { DEFAULT_WIND_SWAY, VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
 import {
 	BARK_ZONE_TEXELS,
@@ -109,6 +118,34 @@ describe('the species header', () => {
 		expect(header.length).toBe(HEADER_ROWS * RECORDS_WIDTH * 4);
 	});
 
+	test('draws as before when the record names no sky-to-leaf term', () => {
+		expect([...speciesHeader(record, manifest, box)]).toEqual([...header]);
+		expect(texel(header, HEADER.sway)[3]).toBe(0);
+	});
+
+	test('packs the sky-to-leaf extinction in the sway texel', () => {
+		const lit = speciesHeader({ ...record, skyToLeaf: 0.3 }, manifest, box);
+		expect(texel(lit, HEADER.sway)[3]).toBeCloseTo(0.3, 6);
+	});
+
+	test('packs the two colours of a tuft sheath, and none where the record gives none', () => {
+		const tuft = {
+			...record,
+			growth: {
+				model: 'tuft',
+				sheathColour: { foot: [0.3, 0.4, 0.2], collar: [0.5, 0.6, 0.7], reach: 0.85 },
+			},
+		} as unknown as Species;
+		const sheathed = speciesHeader(tuft, manifest, box);
+		for (const [k, v] of [0.3, 0.4, 0.2, 0.7].entries())
+			expect(texel(sheathed, HEADER.sheath)[k] as number).toBeCloseTo(v, 5);
+		for (const [k, v] of [0.5, 0.6, 0.7, 0.85].entries())
+			expect(texel(sheathed, HEADER.sheathCollar)[k] as number).toBeCloseTo(v, 5);
+		// The blade-leaved record names no tuft, so both sheath texels stay empty.
+		expect(texel(header, HEADER.sheath)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.sheathCollar)).toEqual([0, 0, 0, 0]);
+	});
+
 	test('holds each face its own scale, share and roughness from its own mean', () => {
 		const upper = faceTerms([0.05, 0.09, 0.02], [0.07, 0.12, 0.025], [0.04, 0.08, 0.02]);
 		const lower = faceTerms([0.2, 0.25, 0.2], [0.07, 0.12, 0.025], [0.22, 0.28, 0.21]);
@@ -146,11 +183,56 @@ describe('the species header', () => {
 		}
 	});
 
-	test("writes the least width a card's stalk draws, or nothing where the record gives none", () => {
-		expect(texel(header, HEADER.cardStalk)[0]).toBe(0);
+	test("writes a card's stalk width, and where it draws at its twig's width", () => {
+		expect(texel(header, HEADER.cardStalk)).toEqual([0, 0, 0, 0]);
 		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
-		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
+		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)).toEqual([1.5, 0, 0, 0]);
+		const wide: Species = {
+			...record,
+			lod: { ...record.lod, cardStalk: 1.5, cardStalkWidth: true },
+		};
+		expect(texel(speciesHeader(wide, manifest, box), HEADER.cardStalk)).toEqual([1.5, 1, 0, 0]);
+		const pale: Species = {
+			...record,
+			lod: { ...record.lod, cardStalk: 1, cardStalkShade: 0.8 },
+		};
+		const paleTexel = texel(speciesHeader(pale, manifest, box), HEADER.cardStalk);
+		expect(paleTexel[0]).toBe(1);
+		expect(paleTexel[1]).toBe(0);
+		expect(paleTexel[2]).toBeCloseTo(0.8, 6);
+		expect(paleTexel[3]).toBe(0);
 	});
+	test("writes a fire scar's hollow and char into the header, or zeroes it where the record gives none", () => {
+		expect(texel(header, HEADER.scar)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.scarColour)).toEqual([0, 0, 0, 0]);
+		const scarred: Species = {
+			...record,
+			base: {
+				flare: { amount: 0.3, height: 0.5 },
+				scar: {
+					from: 0.2,
+					to: 4,
+					angle: 90,
+					width: 40,
+					depth: 0.5,
+					colour: [0.01, 0.012, 0.009],
+					shade: 0.8,
+				},
+			},
+		};
+		const written = speciesHeader(scarred, manifest, box);
+		const scar = texel(written, HEADER.scar);
+		expect(scar[0]).toBeCloseTo(0.2, 3);
+		expect(scar[1]).toBeCloseTo(4, 3);
+		expect(scar[2]).toBeCloseTo(Math.PI / 2, 4);
+		expect(scar[3]).toBeCloseTo((Math.PI * 40) / 180 / 2, 4);
+		const colour = texel(written, HEADER.scarColour);
+		expect(colour[0]).toBeCloseTo(0.01, 5);
+		expect(colour[1]).toBeCloseTo(0.012, 5);
+		expect(colour[2]).toBeCloseTo(0.009, 5);
+		expect(colour[3]).toBeCloseTo(0.8, 5);
+	});
+
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);
@@ -351,6 +433,35 @@ describe('the plant shader', () => {
 		return Number(match[1]);
 	};
 
+	test("draws a silhouette black at the colour picture's cut edge in both plant shaders", () => {
+		// The matte keeps each texel's own coverage, which on a coarse mip of fine leaflets is grey,
+		// a smear to the eye; a silhouette draws black with the colour picture's sharpened edge.
+		const viewFace = readFileSync(new URL('./plant-viewface.wgsl', import.meta.url), 'utf8');
+		for (const source of [wgsl, viewFace]) {
+			expect(source).toMatch(/let parts = material\.matte > 1\.5 && material\.matte < 2\.5;/);
+			expect(source).toMatch(/let silhouette = material\.matte > 2\.5;/);
+			expect(source).toMatch(/let matte = material\.matte > 0\.5 && material\.matte < 1\.5;/);
+			expect(source).toMatch(
+				/s\.baseColor = select\(base, vec3f\(0\.0\), matte \|\| parts \|\| silhouette\);/,
+			);
+			// Only the matte keeps the raw coverage: the alpha's choice names the matte alone.
+			expect(source).toMatch(/s\.alpha = select\([^;]*, matte\);/);
+		}
+	});
+
+	test("draws the review matte's soft coverage only where the colour picture draws", () => {
+		// A card drawn larger than its texels blurs: the colour picture cuts it at the cutoff into
+		// the fragments it shows, and a matte that kept every texel's soft coverage drew the blur as
+		// a smear. The matte keeps a texel's own coverage only where the sharpened coverage, the
+		// colour picture's, draws it.
+		expect(wgsl).toMatch(/let drawn = sharpen\(cut, width\);/);
+		expect(wgsl).toMatch(/s\.alpha = select\(drawn, select\(0\.0, alpha, drawn > 0\.0\), matte\);/);
+		// A placed piece's fine edges draw a pixel wide in the matte, as merged foliage's do.
+		expect(wgsl).toMatch(
+			/mode == MODE_SHOOTS &&\s*material\.matte > 0\.5 &&\s*material\.matte < 1\.5 &&\s*abs\(input\.colors\.b \* 255\.0 - KIND_PIECE\) < 0\.5/,
+		);
+	});
+
 	test('reads the texels that the header writes', () => {
 		const names: Record<string, number> = {
 			HEADER_UPPER: HEADER.upper,
@@ -385,8 +496,13 @@ describe('the plant shader', () => {
 			HEADER_WINTER_BARK: HEADER.winterBark,
 			HEADER_WINTER_REFLECTANCE: HEADER.winterReflectance,
 			HEADER_WINTER_TRANSMITTANCE: HEADER.winterTransmittance,
+			HEADER_SHEATH: HEADER.sheath,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			HEADER_CARD_STALK: HEADER.cardStalk,
+			HEADER_CARD_COVERAGE: HEADER.cardCoverage,
+			HEADER_SCAR: HEADER.scar,
+			HEADER_SCAR_COLOUR: HEADER.scarColour,
+			HEADER_CARD_LEVEL_MOST: HEADER.cardLevelMost,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,
@@ -395,6 +511,30 @@ describe('the plant shader', () => {
 		};
 		for (const [name, value] of Object.entries(names))
 			expect([name, constant(name)]).toEqual([name, value]);
+	});
+
+	test('names the surface kinds that the mesh writers give a vertex', () => {
+		const kind = (name: string) => {
+			const match = new RegExp(`const ${name}: f32 = ([\\d.]+);`).exec(wgsl);
+			if (!match) throw new Error(`the plant shader declares no ${name}`);
+			return Number(match[1]);
+		};
+		const names: Record<string, number> = {
+			KIND_STEM: SURFACE_STEM,
+			KIND_BUD: SURFACE_BUD,
+			KIND_SHEATH: SURFACE_SHEATH,
+			KIND_PIECE: SURFACE_PIECE,
+			KIND_PIECE_SHEATH: SURFACE_PIECE_SHEATH,
+		};
+		for (const [name, value] of Object.entries(names))
+			expect([name, kind(name)]).toEqual([name, value]);
+		// The material draws every kind below half the stem's as a leaf, and the pieces' are two of
+		// them that it can tell from a leaf and from each other.
+		expect(SURFACE_LEAF).toBeLessThan(SURFACE_PIECE);
+		expect(SURFACE_PIECE).toBeLessThan(SURFACE_PIECE_SHEATH);
+		expect(SURFACE_PIECE_SHEATH).toBeLessThan(SURFACE_STEM / 2);
+		expect(leafSurface(SURFACE_LEAF) && leafSurface(SURFACE_PIECE)).toBe(true);
+		expect(leafSurface(SURFACE_PIECE_SHEATH) || leafSurface(SURFACE_STEM)).toBe(false);
 	});
 
 	test("reads a part's positions as fractions of the box, as the plant geometry gives them", () => {
@@ -413,6 +553,15 @@ describe('the plant shader', () => {
 		expect(Math.abs(asFraction - metres)).toBeLessThan(0.000005);
 	});
 
+	test("draws a card's stalk at the tone the record names, or the default", () => {
+		// The stalk's tone must follow the header's third component where a record names one; a
+		// shader that ignored it would draw every species' line at the default shade.
+		for (const file of ['./plant.wgsl', './plant-viewface.wgsl'] as const) {
+			const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+			expect(source).toContain('header(HEADER_CARD_STALK).z');
+			expect(source).toContain('select(CARD_STALK_SHADE, shade, shade > 0.0)');
+		}
+	});
 	test('declares six textures and fits its uniforms beside them', () => {
 		expect(wgsl.match(/^var \w+: texture_2d(_array)?<f32>;/gm)?.length).toBe(6);
 		const block = /struct Uniforms \{([^}]*)\}/.exec(wgsl)?.[1] ?? '';

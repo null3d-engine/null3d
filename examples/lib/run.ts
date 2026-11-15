@@ -192,11 +192,37 @@ export async function startDemo({
 	let engineReaders: ((type: string, data: unknown) => void)[] = [];
 	// The page passes this handler at the start, so the sketch's loading messages arrive as its
 	// setup runs rather than all at once at the end: the overlay follows the scene's own progress.
+	/**
+	 * The bar a scene posts for work it does after its start, such as regrowing its meadow. It stands
+	 * in the demo's title under its scene line, filled as the work's own count moves and showing the
+	 * percentage beside it, and it is hidden when the scene posts no count.
+	 */
+	const growingBar = (data: unknown): void => {
+		const at = data as { done?: unknown; total?: unknown } | undefined;
+		const host = document.getElementById('demo-growth');
+		if (!host) return;
+		const counted = at !== undefined && typeof at.done === 'number' && typeof at.total === 'number';
+		host.hidden = !counted;
+		if (!counted || !at) return;
+		const share =
+			(at.total as number) > 0 ? Math.round(((at.done as number) / (at.total as number)) * 100) : 0;
+		// A finished count hides the bar: the work that it measured is done.
+		host.hidden = share >= 100;
+		if (share >= 100) return;
+		const fill = document.getElementById('demo-growth-fill');
+		const percent = document.getElementById('demo-growth-percent');
+		if (fill) fill.style.width = `${share}%`;
+		if (percent) percent.textContent = `${share}%`;
+	};
 	const handleMessage = (type: string, data: unknown): void => {
 		if (type === 'loading') {
 			if (!firstFrame) lastLoadingAt = performance.now();
 			loader.note(data);
 			hideWhenQuiet();
+			return;
+		}
+		if (type === 'growing') {
+			growingBar(data);
 			return;
 		}
 		if (type === 'starting') {

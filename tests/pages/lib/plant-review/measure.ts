@@ -3,8 +3,8 @@
 // orthographic projection, its crown box in metres, the share of the silhouette that foliage
 // covers, the trunk's diameter at 1.3 m, the crown base and the first fork's height. Every figure
 // is in metres or a share, so it compares across renders of any size.
-import type { Detail, PlantAsset, PlantPart, SpeciesBox, SpeciesKitData } from '@null3d/vegetation';
 import { firstForkHeight, placeOnRow, stemAt, type V3 } from './anatomy';
+import type { Detail, PlantAsset, PlantPart, SpeciesBox, SpeciesKitData } from './plant-types';
 
 /** Rows of the silhouette raster. */
 const ROWS = 128;

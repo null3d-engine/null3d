@@ -9,24 +9,51 @@ import {
 import {
 	alignTurn,
 	anchorColumn,
+	blankFrame,
+	cameraWidthShare,
+	colourRuleGap,
+	cropChecksSubject,
+	cropFault,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
+	emptySubject,
+	engineLevelAt,
+	fittedMaskClause,
+	frameFiguresHold,
+	frameIou,
+	frameScale,
+	frameTilt,
+	framingFault,
 	framingQuery,
+	hasSeparableOutline,
+	horizonTilt,
 	iou,
+	levelName,
+	MASK_GATE_NATURAL,
+	MASK_GATE_PLAIN,
+	maskCheckOf,
 	motionProfile,
 	NORMAL_HEIGHT,
 	NORMAL_WIDTH,
+	nearIou,
 	normalise,
 	patchDifference,
 	patchLab,
+	patchWoodLab,
+	plainTurnOf,
+	plantRows,
 	profileError,
 	rubricBand,
 	rubricFrames,
+	sameDrawing,
+	setAsideOf,
+	sheathDifference,
 	spread,
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
-import { boxOf, type PlantMask, type PlantMeasures, pieceCount } from './references.ts';
+import { boxOf, matteMask, type PlantMask, type PlantMeasures, pieceCount } from './references.ts';
+import { PART } from './subject-check.ts';
 
 /** A plant mask of a rectangle crown on a one-pixel trunk, with the background fields filled in. */
 function rectangle(
@@ -76,6 +103,29 @@ describe('the outline overlap', () => {
 		const b = normalOf(large);
 		expect(a.length).toBe(NORMAL_WIDTH * NORMAL_HEIGHT);
 		expect(iou(a, b)).toBeGreaterThan(0.97);
+	});
+});
+
+describe('whether a picture carries a plant outline', () => {
+	test('is false for a bark view, which photographs bark against bark', () => {
+		for (const view of ['bark-base', 'bark-mid', 'bark-limb'])
+			expect(hasSeparableOutline(view, 'still')).toBe(false);
+	});
+
+	test('is false for a bark texture, which is the material alone', () => {
+		expect(hasSeparableOutline('bark-mid', 'texture')).toBe(false);
+	});
+
+	test('is true for a leaf texture, which is a cut-out on a plain ground', () => {
+		expect(hasSeparableOutline('leaf-upper', 'texture')).toBe(true);
+	});
+
+	test('is true for a whole plant against a plain background', () => {
+		expect(hasSeparableOutline('whole', 'still')).toBe(true);
+	});
+
+	test('is false for a picture whose own background is the subject, which a slot names', () => {
+		expect(hasSeparableOutline('whole', 'still', true)).toBe(false);
 	});
 });
 
@@ -254,6 +304,7 @@ describe('the framing a render takes from a reference', () => {
 			horizon: 0.76,
 			top: 0.18,
 			targetX: 0.49,
+			widthShare: 0.9,
 			aspect: 16 / 9,
 			sky: '#d9dad5',
 			frames: 8,
@@ -263,8 +314,22 @@ describe('the framing a render takes from a reference', () => {
 			fill: 0.79 - 0.18,
 			targetY: (0.79 + 0.18) / 2,
 			horizon: 0.76,
+			widthShare: 0.9,
 		});
 		expect(framingQuery(shared)).toMatchObject({ top: 0.18, eye: 1.6 });
+	});
+
+	test("reads a clipped plant's width from the camera stand, so it responds and may exceed the frame", () => {
+		const stand = { distance: 1.862, fov: 38 };
+		const share = cameraWidthShare(2.416, stand, 768 / 516) as number;
+		expect(share).toBeCloseTo(1.2658, 3);
+		expect(cameraWidthShare(2.416, { ...stand, distance: 3.724 }, 768 / 516) as number).toBeCloseTo(
+			share / 2,
+			3,
+		);
+		expect(cameraWidthShare(0, stand, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 0, fov: 38 }, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 1, fov: 0 }, 1.5)).toBeNull();
 	});
 });
 
@@ -303,6 +368,19 @@ describe("the page's stand camera", () => {
 		expect(camera.height).toBeGreaterThan(0);
 		expect(projectRow(camera, 1.52, fov)).toBeCloseTo(0.193, 3);
 		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.8814, 3);
+	});
+
+	test("solves a hand-high plant's base row rather than standing back to eye height", () => {
+		const fov = 38;
+		const camera = standCamera(
+			{ fov, aspect: 1.5, horizon: 0.62, top: 0.5, base: 0.914, targetX: 0.5 },
+			0.56,
+		);
+		// The camera clears the ground by the floor and the foot lands on the row the framing asks
+		// for, so the plant does not run off the frame's foot.
+		expect(camera.height).toBeGreaterThan(0);
+		expect(camera.warning).toBeUndefined();
+		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.914, 5);
 	});
 
 	test('says what it gave up when the base would put the camera under the ground', () => {
@@ -465,6 +543,83 @@ describe('the patch colour of a texture source', () => {
 		expect(patchDifference(reference, render, true)).toBeLessThan(0.5);
 		expect(patchDifference(reference, render, false)).toBeGreaterThan(10);
 	});
+
+	test('reads a bark view on its own wood, not the corners the backdrop misses', () => {
+		// A young limb across the middle of the frame touches both side corners, so the corner rule
+		// keeps the sky above and the ground below. The parts picture names the limb's wood and its
+		// radius, and the wood read is the limb's own dark brown.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		const kind = new Uint8Array(size * size);
+		const radius = new Float32Array(size * size);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const at = (y * size + x) * 4;
+				const limb = y >= 350 && y < 650;
+				const trunk = y >= 800;
+				if (limb) {
+					kind[y * size + x] = PART.wood;
+					radius[y * size + x] = 0.02;
+					data.set([90, 70, 60, 255], at);
+				} else if (trunk) {
+					kind[y * size + x] = PART.wood;
+					radius[y * size + x] = 0.3;
+					data.set([70, 60, 55, 255], at);
+				} else {
+					data.set(y < 350 ? [200, 220, 240, 255] : [110, 120, 80, 255], at);
+				}
+			}
+		const image = { width: size, height: size, data };
+		const parts = { kind, radius, width: size, height: size };
+		const wood = patchWoodLab(image, parts, 0.015, 0.03) as number[];
+		expect(wood[0] as number).toBeLessThan(40);
+		expect(patchLab(image, true)[0] as number).toBeGreaterThan(45);
+		// The trunk's radius is outside the limb's window, and no wood of that thickness gives none.
+		expect(patchWoodLab(image, parts, 0.9, 1.2)).toBeUndefined();
+		expect(patchWoodLab(image, undefined, 0, 1)).toBeUndefined();
+	});
+
+	test('reads the bark alone across a limb picture that carries leaves', () => {
+		// A brown limb across the middle of a pale backdrop, with a band of leaves over it. The
+		// plant-filtered mean takes the leaves' green; the bark-only mean keeps the limb's own a*.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const leaf = y >= 420 && y < 580;
+				const limb = y >= 300 && y < 700;
+				const [r, g, b] = leaf ? [60, 140, 60] : limb ? [110, 100, 90] : [200, 220, 240];
+				const at = (y * size + x) * 4;
+				data[at] = r as number;
+				data[at + 1] = g as number;
+				data[at + 2] = b as number;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		const blended = patchLab(image, true)[1] as number;
+		const bark = patchLab(image, true, true)[1] as number;
+		expect(blended).toBeLessThan(-5);
+		expect(Math.abs(bark)).toBeLessThan(5);
+	});
+
+	test('falls back to the plant mean where the whole frame is leaf', () => {
+		// A picture with no bark surface has no bark mean to read. The bark-only request returns the
+		// plant-filtered mean rather than an empty average.
+		const size = 400;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const band = x >= 160 && x < 240;
+				const [r, g, b] = band ? [30, 100, 30] : [60, 140, 60];
+				const at = (y * size + x) * 4;
+				data[at] = r as number;
+				data[at + 1] = g as number;
+				data[at + 2] = b as number;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		expect(patchLab(image, true, true)).toEqual(patchLab(image, true));
+	});
 });
 
 describe('the pieces a plant is drawn as', () => {
@@ -560,5 +715,468 @@ describe('a cut piece framed in leaf lengths', () => {
 	test('lengthens the run only when the roll lays the piece across the frame', () => {
 		expect(leafFrame(2, 0.5, 0, 2, 20).run).toBeCloseTo(1, 6);
 		expect(leafFrame(2, 0.5, 90, 2, 20).run).toBeCloseTo(2, 6);
+	});
+});
+
+describe('a fitted-background outline', () => {
+	test('reports the sky fit and residual beside the figure', () => {
+		expect(
+			fittedMaskClause({
+				fittedMask: { kind: 'sky', skyFit: 0.9999, skyNoise: 17.1 },
+			}),
+		).toContain('fit 0.9999, residual 17.1');
+		expect(fittedMaskClause({})).toBe('');
+	});
+
+	test('reports the ground fit, residual and horizon share for a soil', () => {
+		const clause = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 24.19,
+				groundFit: 1,
+				groundNoise: 18.55,
+				horizonShare: 0.291,
+				plantToGround: 14.22,
+			},
+		});
+		expect(clause).toContain('fitted ground at horizon share 0.291, ground region 0.709');
+		expect(clause).toContain("the plant's median colour sits 14.2 CIEDE2000 steps from the ground");
+		expect(clause).toContain('ground fit 1.0000, residual 18.6');
+		expect(clause).toContain('sky fit 1.0000, residual 24.2');
+		expect(clause).toContain('the ground region holds 0.709 of the frame');
+		const meadow = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 26.41,
+				groundFit: 1,
+				groundNoise: 19.9,
+				horizonShare: 0.931,
+			},
+		});
+		expect(meadow).toContain('ground region 0.069');
+		expect(meadow).toContain('the ground region holds 0.069 of the frame');
+		const band = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 12,
+				groundFit: 1,
+				groundNoise: 10,
+				horizonShare: 0.7,
+			},
+		});
+		expect(band).not.toContain('outside a soil band');
+	});
+});
+
+describe('the sheath surface figure', () => {
+	const target = {
+		foot: [0.15, 0.08, 0.03] as const,
+		collar: [0.4, 0.4, 0.32] as const,
+		reach: 0.5,
+	};
+	// The record's linear colours as the sRGB bytes a copy stand shows.
+	const footSrgb = [108, 80, 48];
+	const collarSrgb = [170, 170, 153];
+
+	/** A square picture: the collar band above, the foot band below, leaf green between. */
+	function picture(size: number, foot: readonly number[], collar: readonly number[]) {
+		const image = blank(size, size, [70, 110, 40]);
+		const paint = (from: number, to: number, colour: readonly number[]) => {
+			for (let y = from; y <= to; y++)
+				for (let x = 0; x < size; x++) {
+					const at = (y * size + x) * 4;
+					for (let k = 0; k < 3; k++) image.data[at + k] = colour[k] as number;
+				}
+		};
+		const band = Math.round(size * 0.2) - 1;
+		paint(0, band, collar);
+		paint(size - 1 - band, size - 1, foot);
+		return image;
+	}
+
+	const whole = rectangle(100, 100, { left: 0, top: 0, right: 99, bottom: 99 });
+	const box = { left: 0, top: 0, right: 99, bottom: 99 };
+	const side = (image: ReturnType<typeof picture>, plant: PlantMask = whole) => ({
+		image,
+		box,
+		plant,
+	});
+
+	test('reads both ends against the photograph and the record', () => {
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.photograph?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.photograph?.collar ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+	});
+
+	test('separates a shaded sheath from the record', () => {
+		// A shade moves both pictures alike, so the photograph figure passes where the record cannot.
+		const shaded = [60, 45, 30];
+		const shadedCollar = [110, 110, 105];
+		const pictureAt = picture(100, shaded, shadedCollar);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.photograph?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.foot ?? 0).toBeGreaterThan(5);
+	});
+
+	test('reports a moved patch against both sides', () => {
+		const figure = sheathDifference(
+			side(picture(100, footSrgb, collarSrgb)),
+			side(picture(100, [255, 255, 255], collarSrgb)),
+			target,
+		);
+		expect(figure?.photograph?.foot ?? 0).toBeGreaterThan(20);
+		expect(figure?.record.foot ?? 0).toBeGreaterThan(20);
+		expect(figure?.photograph?.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('gives no photograph figure when its box cannot be isolated', () => {
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		const figure = sheathDifference(
+			{ image: pictureAt, box: null, plant: whole },
+			side(pictureAt),
+			target,
+		);
+		expect(figure?.photograph).toBeNull();
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+	});
+
+	test('finds the surface below the blades', () => {
+		const image = blank(100, 100, [70, 110, 40]);
+		const paint = (from: number, to: number, colour: readonly number[]) => {
+			for (let y = from; y <= to; y++)
+				for (let x = 0; x < 100; x++) {
+					const at = (y * 100 + x) * 4;
+					for (let k = 0; k < 3; k++) image.data[at + k] = colour[k] as number;
+				}
+		};
+		paint(50, 69, collarSrgb);
+		paint(70, 99, footSrgb);
+		const figure = sheathDifference(side(image), side(image), target);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('maps a larger picture onto the mask it was measured on', () => {
+		const pictureAt = picture(200, footSrgb, collarSrgb);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('gives no figure when the render holds no plant', () => {
+		const bare: PlantMask = { ...whole, mask: new Uint8Array(100 * 100) };
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		expect(sheathDifference(side(pictureAt), side(pictureAt, bare), target)).toBeNull();
+	});
+});
+
+describe('the mask check gate', () => {
+	const frame = (iou: number, subject = 0.2) => ({ iou, subject });
+	test('reads a turn on a natural background against its own gate', () => {
+		const sound = maskCheckOf([frame(0.75), frame(0.82), frame(0.71)], false);
+		expect(sound.value).toBeCloseTo(0.76, 2);
+		expect(sound.threshold).toBe(MASK_GATE_NATURAL);
+		expect(sound.failed).toBe(false);
+		const broken = maskCheckOf([frame(0.21), frame(0.34)], false);
+		expect(broken.threshold).toBe(MASK_GATE_NATURAL);
+		expect(broken.failed).toBe(true);
+	});
+
+	test('reads a plain-background cut piece against the higher gate', () => {
+		expect(maskCheckOf([frame(0.94), frame(0.96)], true).failed).toBe(false);
+		const below = maskCheckOf([frame(0.88), frame(0.9)], true);
+		expect(below.threshold).toBe(MASK_GATE_PLAIN);
+		expect(below.failed).toBe(true);
+	});
+
+	test('reports a plain-background subject that is too small to judge', () => {
+		// The holm oak's subbranch turn: 0.846 with the subject filling 3 per cent of the frame.
+		const small = maskCheckOf([frame(0.848, 0.03), frame(0.83, 0.02), frame(0.827, 0.02)], true);
+		expect(small.threshold).toBe(MASK_GATE_PLAIN);
+		expect(small.small).toBe(true);
+		expect(small.failed).toBe(false);
+		expect(small.subject).toBeCloseTo(0.023, 3);
+		// The same figure on a natural background is judged, since its gate is lower.
+		expect(maskCheckOf([frame(0.848, 0.03)], false).small).toBe(false);
+	});
+
+	test('reports a turn whose frames cannot be read as unmeasurable, not as a pass or a fail', () => {
+		const unreadable = maskCheckOf([null, null, null], false);
+		expect(unreadable.value).toBeNull();
+		expect(unreadable.frames).toBe(0);
+		expect(unreadable.unreadable).toBe(3);
+		expect(unreadable.failed).toBe(false);
+		expect(unreadable.small).toBe(false);
+		// A partly read turn keeps the readable frames and counts the rest.
+		const mixed = maskCheckOf([frame(0.95), null], true);
+		expect(mixed.value).toBeCloseTo(0.95, 2);
+		expect(mixed.frames).toBe(1);
+		expect(mixed.unreadable).toBe(1);
+	});
+
+	test('takes a plain background only where the frame names one', () => {
+		expect(plainTurnOf('studio-grey')).toBe(true);
+		expect(plainTurnOf('white')).toBe(true);
+		expect(plainTurnOf('sky-meadow')).toBe(false);
+		// The page's default background is the natural one.
+		expect(plainTurnOf(undefined)).toBe(false);
+	});
+});
+
+describe("a whole view's frame against its photograph's", () => {
+	/** A plant's box in a frame 640 by 480, from shares of the frame. */
+	const framed = (left: number, top: number, right: number, bottom: number) => ({
+		box: {
+			left: Math.round(left * 640),
+			top: Math.round(top * 480),
+			right: Math.round(right * 640) - 1,
+			bottom: Math.round(bottom * 480) - 1,
+		},
+		width: 640,
+		height: 480,
+	});
+	const photograph = framed(0.1, 0.2, 0.9, 0.9);
+
+	test('holds when the plant stands at the same size, whatever its own shape and place', () => {
+		expect(framingFault(photograph, framed(0.1, 0.2, 0.9, 0.9))).toBe(undefined);
+		// A plant a third narrower at the photograph's height is the plant's shape, not the frame's.
+		expect(framingFault(photograph, framed(0.25, 0.2, 0.75, 0.9))).toBe(undefined);
+		// A sixth smaller both ways is inside the band, and so is the same plant higher in the frame.
+		expect(framingFault(photograph, framed(0.17, 0.32, 0.83, 0.9))).toBe(undefined);
+		expect(framingFault(photograph, framed(0.1, 0.05, 0.9, 0.75))).toBe(undefined);
+	});
+
+	test("reads the drawn plant's scale against the photograph's, and holds frame figures within a twentieth", () => {
+		expect(frameScale(photograph, framed(0.1, 0.2, 0.9, 0.9))).toBe(1);
+		// A plant that stands back to 0.91 of the photograph's height: the frame's figures go.
+		const smaller = frameScale(photograph, framed(0.14, 0.263, 0.86, 0.9));
+		expect(smaller).toBeCloseTo(0.91, 2);
+		expect(frameFiguresHold(smaller)).toBe(false);
+		expect(frameFiguresHold(frameScale(photograph, framed(0.1, 0.23, 0.9, 0.9)))).toBe(true);
+		expect(frameFiguresHold(null)).toBe(false);
+	});
+
+	test('fails a plant drawn at a third of the size, and says both sizes', () => {
+		expect(framingFault(photograph, framed(0.37, 0.67, 0.63, 0.9))).toBe(
+			"the render's plant takes 0.23 of the frame's height and 0.26 of its width, against the photograph's 0.70 and 0.80, so it is drawn too small",
+		);
+		expect(framingFault(framed(0.3, 0.5, 0.7, 0.9), framed(0.05, 0.1, 0.95, 0.9))).toContain(
+			'so it is drawn too large',
+		);
+	});
+
+	test('fails a plant the frame crops where the photograph holds it whole', () => {
+		const clear = { left: false, top: false, right: false, bottom: false };
+		expect(cropFault(clear, clear)).toBe(undefined);
+		expect(cropFault(clear, { ...clear, bottom: true, right: true })).toBe(
+			"the render's plant runs off the frame's right and bottom edges, where the photograph holds it whole",
+		);
+		// A photograph that crops its own plant allows the same crop, and no other.
+		const cropped = { ...clear, bottom: true };
+		expect(cropFault(cropped, cropped)).toBe(undefined);
+		expect(cropFault(cropped, { ...clear, bottom: true, top: true })).toContain(
+			"frame's top edge,",
+		);
+	});
+});
+
+describe('a picture that answers nothing', () => {
+	test('is one whose subject takes none of the frame', () => {
+		const facts = (subject: number) => ({
+			subject: { kind: 'an arm seen from outside', clutter: { subject, front: 0, behind: 0 } },
+		});
+		expect(emptySubject(facts(0))).toBe(
+			'the subject, an arm seen from outside, takes 0.00 of the frame',
+		);
+		expect(emptySubject(facts(0.3))).toBe(undefined);
+		// A view that measured no share says nothing here.
+		expect(emptySubject({ subject: { kind: 'the whole plant' } })).toBe(undefined);
+	});
+
+	test('is one the page drew for another photograph that was asked for differently', () => {
+		const seen = new Map<string, { file: string; query: string }>();
+		const frame = (sunRise: number, sha256 = 'abc') =>
+			({ sha256, query: { view: 'leaf-upper', sunRise } }) as never;
+		expect(sameDrawing(seen, '11-leaf.png', frame(40))).toBe(undefined);
+		// The same picture for the same request is one drawing asked for twice.
+		expect(sameDrawing(seen, '11-leaf-copy.png', frame(40))).toBe(undefined);
+		expect(sameDrawing(seen, '12-leaf.png', frame(55))).toBe(
+			'the page drew the same picture as for 11-leaf.png, though the two were asked for differently',
+		);
+		expect(sameDrawing(seen, '13-leaf.png', frame(55, 'def'))).toBe(undefined);
+	});
+
+	test('is a whole view whose frame is all plant, or holds none', () => {
+		const frame = (covered: number) => ({
+			mask: new Uint8Array(100).fill(1, 0, covered),
+			width: 10,
+			height: 10,
+		});
+		expect(blankFrame(frame(100))).toBe(
+			'the plant covers 1.00 of the frame, so the frame holds no outline',
+		);
+		expect(blankFrame(frame(0))).toBe('the frame holds no plant');
+		expect(blankFrame(frame(40))).toBe(undefined);
+	});
+
+	test('names the level of detail its page posted', () => {
+		expect(levelName({ level: { name: 'first card level', forced: false } })).toBe(
+			'first card level',
+		);
+		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
+		expect(levelName({})).toBe(undefined);
+	});
+
+	test("reads the level the engine draws at a cell's distance, not the level the query forced", () => {
+		const starts = [0, 3.7, 156.6, 1e9];
+		const cell = (distance: number, forced?: number) => ({
+			level: {
+				distance,
+				starts,
+				forced: forced !== undefined,
+				...(forced !== undefined && { level: forced }),
+			},
+		});
+		expect(engineLevelAt(cell(86))).toBe(1);
+		expect(engineLevelAt(cell(2))).toBe(0);
+		expect(engineLevelAt(cell(200))).toBe(2);
+		// A forced leaf form at a whole view's distance is a diagnosis: the engine draws the card level.
+		expect(engineLevelAt(cell(86, 0))).toBe(1);
+		// A band with no start draws at no distance: the shaped plant's empty levels post nulls.
+		expect(engineLevelAt({ level: { distance: 86, starts: [0, null, null, 1e9] } })).toBe(0);
+		expect(engineLevelAt({})).toBe(undefined);
+		expect(engineLevelAt({ level: { distance: 86 } })).toBe(undefined);
+	});
+});
+
+describe("a picture's rows against its plant's own height", () => {
+	// A plant 10 m tall, 15 m from a camera 2 m up that tilts 12 degrees up, through a 45 degree lens.
+	const fov = 45;
+	const tilt = { pitch: (12 * Math.PI) / 180, fov };
+	const rowOf = (height: number) =>
+		0.5 - Math.tan(Math.atan2(height - 2, 15) - tilt.pitch) / (2 * Math.tan((fov * Math.PI) / 360));
+
+	test("reads the plant's share of its height from a tilted camera's rows", () => {
+		const rows = plantRows(rowOf(10), rowOf(0), tilt);
+		expect(rows?.share(rowOf(5)) as number).toBeCloseTo(0.5, 6);
+		expect(rows?.eye as number).toBeCloseTo(0.2, 6);
+		// The picture's share of the plant's rows down to its middle is not the plant's half.
+		const picture = (rowOf(5) - rowOf(10)) / (rowOf(0) - rowOf(10));
+		expect(Math.abs(picture - 0.5)).toBeGreaterThan(0.03);
+	});
+
+	test("takes a level camera's rows as the plant's shares", () => {
+		const rows = plantRows(0.2, 0.8, { pitch: 0, fov });
+		expect(rows?.share(0.35) as number).toBeCloseTo(0.25, 6);
+		expect(rows?.eye as number).toBeCloseTo(0.5, 6);
+	});
+
+	test("finds a photograph's tilt from its horizon's row, and a drawing's from its camera", () => {
+		expect(horizonTilt(rowOf(2), fov).pitch).toBeCloseTo(tilt.pitch, 6);
+		const frame = {
+			cell: {
+				camera: { position: [0, 2, 15], target: [0, 2 + 15 * Math.tan(tilt.pitch), 0], fov },
+			},
+		} as unknown as Parameters<typeof frameTilt>[0];
+		expect(frameTilt(frame)?.pitch as number).toBeCloseTo(tilt.pitch, 6);
+	});
+});
+
+describe("a whole view's sky gap, read like with like", () => {
+	const W = 160;
+	const H = 120;
+	const SKY = [196, 214, 236] as const;
+	const LEAF = [40, 80, 30] as const;
+	const linear = (b: number) => {
+		const c = b / 255;
+		return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+	};
+	const encode = (c: number) =>
+		Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055) * 255);
+	/** Whether a pixel is the crown's: an ellipse, with a grid of holes through it. */
+	const crown = (x: number, y: number) =>
+		((x - 80) / 50) ** 2 + ((y - 55) / 35) ** 2 <= 1 && !(x % 8 < 2 && y % 8 < 2);
+	const trunk = (x: number, y: number) => x >= 77 && x <= 83 && y > 85 && y < 112;
+
+	test('reads a still of half-covered plant pixels as a photograph of the same pixels', () => {
+		// Each crown pixel half leaf and half sky, mixed in linear light as a camera or the engine
+		// draws a texel half covered.
+		const half = LEAF.map((c, k) => encode((linear(c) + linear(SKY[k] as number)) / 2));
+		const still = blank(W, H, SKY);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++) {
+				const colour = trunk(x, y) ? LEAF : crown(x, y) ? half : undefined;
+				if (colour) still.data.set(colour, (y * W + x) * 4);
+			}
+		const photograph = { ...still, data: new Uint8Array(still.data) };
+		const byColour = colourRuleGap(still);
+		expect(byColour).toBe(colourRuleGap(photograph));
+		expect(byColour).toBeGreaterThan(0);
+		// The engine's matte of the same half cover is stored display-encoded, 188 on white: the
+		// half-dark rule reads it as sky, so a matte against a photograph's colour mask is unlike.
+		const matte = blank(W, H, [255, 255, 255]);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++) {
+				if (trunk(x, y)) matte.data.set([0, 0, 0], (y * W + x) * 4);
+				else if (crown(x, y)) matte.data.set([188, 188, 188], (y * W + x) * 4);
+			}
+		const read = matteMask(matte);
+		let crownPlant = 0;
+		for (let y = 0; y < read.height; y++)
+			for (let x = 0; x < read.width; x++)
+				if (crown(x, y) && !trunk(x, y) && read.mask[y * read.width + x]) crownPlant++;
+		expect(crownPlant).toBe(0);
+	});
+
+	test('checks a leaf picture by its crop share, as it checks a piece', () => {
+		// The two single-leaf views carry a crop share like a branch piece, and that share checks
+		// their subject; without an entry there is no check.
+		expect(cropChecksSubject(0.8491, true)).toBe(true);
+		expect(cropChecksSubject(undefined, true)).toBe(false);
+		// A share with no picture box to read it against checks nothing.
+		expect(cropChecksSubject(0.8491, false)).toBe(false);
+	});
+
+	test('sets a picture aside by any standing before it is read against the plant', () => {
+		// A recorded limit of the reference and another form both leave the plant's account, as a
+		// stand does; the compare must not reach the plant fault first.
+		expect(
+			setAsideOf({
+				standing: 'reference-limit',
+				reason: 'a limit of the reference',
+				ruling: 'lead',
+			}),
+		).toEqual({ kind: 'reference-limit', reason: 'a limit of the reference' });
+		expect(
+			setAsideOf({ standing: 'second-form', reason: 'another form', ruling: 'standard' }),
+		).toEqual({ kind: 'second-form', reason: 'another form' });
+		expect(setAsideOf({ standing: 'stand', reason: 'many plants' })?.kind).toBe('stand');
+		// A picture the review data does not set aside is read as before.
+		expect(setAsideOf({ outline: 'no plain background' })).toBeUndefined();
+		expect(setAsideOf(undefined)).toBeUndefined();
+	});
+});
+
+// A thresholded colour edge and an anti-aliased matte differ by about a pixel all round, so a thin
+// subject is mostly boundary. The mask gate must not fail a sound matte for that.
+describe('the mask gate on a thin subject', () => {
+	const card = (x0: number) => rectangle(40, 30, { left: x0, top: 4, right: x0 + 2, bottom: 25 });
+
+	test('passes a sound matte whose outline is one pixel out', () => {
+		const coloured = card(20);
+		const matte = card(21);
+		expect(frameIou(coloured, matte)).toBeLessThan(MASK_GATE_PLAIN);
+		expect(nearIou(coloured, matte)).toBeGreaterThanOrEqual(MASK_GATE_PLAIN);
+	});
+
+	test('fails a matte that is truly displaced', () => {
+		const coloured = card(20);
+		const matte = card(28);
+		expect(nearIou(coloured, matte)).toBeLessThan(MASK_GATE_PLAIN);
 	});
 });

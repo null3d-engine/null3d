@@ -129,6 +129,23 @@ export function standCamera(framing: ScreenFraming, height: number): StandCamera
 	};
 }
 
+/**
+ * The horizontal distance that keeps a plant point inside a share of the frame's width: `across`
+ * metres off the plant's axis and `toward` metres nearer than it. A reference picture leaves a
+ * margin round its plant, so a whole view stands back until the render's widest point keeps that
+ * margin rather than running off the frame's sides.
+ */
+export function widthDistance(
+	across: number,
+	toward: number,
+	share: number,
+	aspect: number,
+	fov: number,
+): number {
+	const half = Math.tan((fov * Math.PI) / 360);
+	return toward + across / (Math.max(0.05, Math.min(1, share)) * half * aspect);
+}
+
 /** The row share at which a point `y` metres up the plant's axis lands for a stand camera. */
 export function projectRow(camera: StandCamera, y: number, fov: number): number {
 	const elevation = Math.atan2(y - camera.height, camera.distance * Math.cos(camera.yaw));

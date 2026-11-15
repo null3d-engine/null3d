@@ -20,7 +20,10 @@ run('plant-determinism', async () => {
 			if (name === 'grown') resolve((data as { species: GrownDigest[] }).species);
 			else if (name === 'failed') reject(new Error((data as { message: string }).message));
 		});
-		setTimeout(() => reject(new Error('the sketch grew no plants')), 60_000);
+		// Twenty species plus the stand-in grow in 37 to 42 seconds on this Mac, and thirteen took
+		// 26.6 seconds before the catalogue filled; a runner 30 per cent slower lands at 98 to 117
+		// seconds, so the page waits above the slowest figure.
+		setTimeout(() => reject(new Error('the sketch grew no plants')), 120_000);
 	});
 	await engine.destroy();
 	return { species };

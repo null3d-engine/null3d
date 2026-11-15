@@ -4,12 +4,72 @@
 import type { MeshArrays, PrototypeArrays } from '../asset';
 import { cos, cross3, normalize3, sin, type Vector3 } from '../core/math';
 
+/** Steps a metre of a blade's keel offset is packed in, within a signed byte's range. */
+const KEEL_STEPS = 8192;
+
 /** Surface kinds in a prototype's third colour byte: leaf, stem or bud, extra. */
 export const SURFACE_LEAF = 0;
 export const SURFACE_STEM = 85;
+/**
+ * A brush card: crossed quads that picture a dense run of a piece's leaves, drawn from the card
+ * atlas where the bake keeps the run's own picture. It sways and takes light as a leaf does.
+ */
+export const SURFACE_BRUSH = 8;
+/**
+ * A placed piece's own surface: drawn as the leaf is, with its second coordinates the share along
+ * its part and its own browning, as a merged plant's foliage holds them.
+ */
+export const SURFACE_PIECE = 16;
+/** A placed piece's sheath column: drawn in the record's sheath colour, and it does not flutter. */
+export const SURFACE_PIECE_SHEATH = 32;
+/** The leaf's own petiole: a stalk thin enough that the shader widens it like fine wood. */
+export const SURFACE_PETIOLE = 42;
 /** A shoot's bud: drawn as its stem, in the record's bud colour where it gives one. */
 export const SURFACE_BUD = 128;
 export const SURFACE_EXTRA = 170;
+/**
+ * A merged plant's sheath column, marked in the byte that holds every other run's flutter phase:
+ * the material draws it in the record's sheath colour.
+ */
+export const SURFACE_SHEATH = 240;
+
+/** Every surface kind the plant shaders read from a vertex's third colour byte. */
+export const SURFACE_KINDS: readonly number[] = [
+	SURFACE_LEAF,
+	SURFACE_BRUSH,
+	SURFACE_PIECE,
+	SURFACE_PIECE_SHEATH,
+	SURFACE_PETIOLE,
+	SURFACE_STEM,
+	SURFACE_BUD,
+	SURFACE_EXTRA,
+	SURFACE_SHEATH,
+];
+
+/**
+ * A flutter phase byte from a hash, for a mesh whose third colour byte holds each run's phase:
+ * the shaders read some values of that byte as surface kinds, so a phase that lands on one takes
+ * the next free value, and a leaf never draws as a sheath column or widens as a petiole.
+ *
+ * @param hash Any whole number; its low byte is the phase.
+ * @returns The phase, 0 to 255, never a surface kind.
+ */
+export function phaseByte(hash: number): number {
+	let phase = hash & 255;
+	while (SURFACE_KINDS.includes(phase)) phase = (phase + 1) & 255;
+	return phase;
+}
+
+/**
+ * Whether a prototype's surface kind draws with the leaf's texture: a leaf, or a placed piece's
+ * own surface. The plant material draws every kind below half the stem's so.
+ *
+ * @param kind The surface kind.
+ * @returns Whether it is a leaf surface.
+ */
+export function leafSurface(kind: number): boolean {
+	return kind < SURFACE_STEM / 2 && kind !== SURFACE_PIECE_SHEATH;
+}
 
 /** A mesh under construction, in plain number lists. */
 export class MeshWriter {
@@ -18,6 +78,10 @@ export class MeshWriter {
 	readonly uvs: number[] = [];
 	readonly uvs1: number[] = [];
 	readonly colors: number[] = [];
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly keel: number[] = [];
+	/** True once a vertex names a keel, so a mesh without one writes no tangent attribute. */
+	private keelUsed = false;
 	readonly indices: number[] = [];
 	/** The first vertex of each part that `mark` began, so meshes of one plan match part by part. */
 	readonly parts: number[] = [];
@@ -39,6 +103,7 @@ export class MeshWriter {
 		uv: ArrayLike<number>,
 		uv1: ArrayLike<number>,
 		color: ArrayLike<number>,
+		keel?: ArrayLike<number>,
 	): number {
 		this.positions.push(p[0] as number, p[1] as number, p[2] as number);
 		this.normals.push(n[0] as number, n[1] as number, n[2] as number);
@@ -50,6 +115,13 @@ export class MeshWriter {
 			color[2] as number,
 			color[3] as number,
 		);
+		this.keel.push(
+			keel ? (keel[0] as number) : 0,
+			keel ? (keel[1] as number) : 0,
+			keel ? (keel[2] as number) : 0,
+			keel ? (keel[3] as number) : 0,
+		);
+		if (keel) this.keelUsed = true;
 		return this.vertices - 1;
 	}
 
@@ -73,6 +145,7 @@ export class MeshWriter {
 			uvs: new Float32Array(this.uvs),
 			uvs1: new Float32Array(this.uvs1),
 			colors: new Uint8Array(this.colors),
+			...(this.keelUsed && { tangents: new Int8Array(this.keel) }),
 			indices: new Uint16Array(this.indices),
 		};
 	}
@@ -85,6 +158,7 @@ export class MeshWriter {
 			uvs: new Float32Array(this.uvs),
 			uvs1: new Float32Array(this.uvs1),
 			colors: new Uint8Array(this.colors),
+			...(this.keelUsed && { tangents: new Int8Array(this.keel) }),
 			indices:
 				this.vertices > 0xffff ? new Uint32Array(this.indices) : new Uint16Array(this.indices),
 		};
@@ -103,20 +177,49 @@ export class MeshWriter {
 		const n: Vector3 = [0, 0, 0];
 		const bytes = [0, 0, 0, 0];
 		const second = [0, 0];
+		const from: Vector3 = [0, 0, 0];
+		const keel: Vector3 = [0, 0, 0];
+		const spare: Vector3 = [0, 0, 0];
+		const packed = [0, 0, 0, 0];
 		for (let i = 0; i < count; i++) {
-			p[0] = mesh.positions[i * 3] as number;
-			p[1] = mesh.positions[i * 3 + 1] as number;
-			p[2] = mesh.positions[i * 3 + 2] as number;
+			from[0] = mesh.positions[i * 3] as number;
+			from[1] = mesh.positions[i * 3 + 1] as number;
+			from[2] = mesh.positions[i * 3 + 2] as number;
+			p[0] = from[0];
+			p[1] = from[1];
+			p[2] = from[2];
 			n[0] = mesh.normals[i * 3] as number;
 			n[1] = mesh.normals[i * 3 + 1] as number;
 			n[2] = mesh.normals[i * 3 + 2] as number;
+			const packedKeel = mesh.tangents ? (mesh.tangents[i * 4 + 3] as number) : 0;
+			if (packedKeel > 0) {
+				for (let k = 0; k < 3; k++)
+					keel[k] = (from[k] as number) - (mesh.tangents?.[i * 4 + k] as number) / KEEL_STEPS;
+				transform(keel, spare);
+			}
 			transform(p, n);
+			if (packedKeel > 0) {
+				// The offset's direction and scale follow the piece, so the packed keel turns with it.
+				for (let k = 0; k < 3; k++)
+					packed[k] = Math.max(
+						-127,
+						Math.min(127, Math.round(((p[k] as number) - (keel[k] as number)) * KEEL_STEPS)),
+					);
+				packed[3] = 127;
+			}
 			for (let c = 0; c < 4; c++) bytes[c] = mesh.colors[i * 4 + c] as number;
 			colour?.(bytes, i);
 			second[0] = mesh.uvs1[i * 2] as number;
 			second[1] = mesh.uvs1[i * 2 + 1] as number;
 			uv1?.(second, i);
-			this.vertex(p, n, [mesh.uvs[i * 2] as number, mesh.uvs[i * 2 + 1] as number], second, bytes);
+			this.vertex(
+				p,
+				n,
+				[mesh.uvs[i * 2] as number, mesh.uvs[i * 2 + 1] as number],
+				second,
+				bytes,
+				packedKeel > 0 ? packed : undefined,
+			);
 		}
 		for (const index of mesh.indices) this.indices.push(base + (index as number));
 	}
@@ -161,6 +264,7 @@ export function tube(
 	colour: (ring: number) => ArrayLike<number>,
 	closeTip = false,
 	uv?: (around: number, ring: number) => readonly [number, number],
+	second?: (ring: number, radius: number) => readonly [number, number],
 ): void {
 	if (path.length < 2) return;
 	let previous = -1;
@@ -191,7 +295,7 @@ export function tube(
 				],
 				n,
 				uv ? uv(j, r) : [(j / sides) * around, point.along],
-				[0, 0],
+				second ? second(r, point.radius) : [0, 0],
 				colour(r),
 			);
 		}
@@ -235,6 +339,7 @@ export function tube(
  * @param sides Faces around.
  * @param colour The colour bytes.
  * @param hint A direction the shape's u seam leans toward.
+ * @param pointed Whether a ring of no radius closes the shape with one triangle a side.
  */
 export function lathe(
 	mesh: MeshWriter,
@@ -244,9 +349,11 @@ export function lathe(
 	sides: number,
 	colour: ArrayLike<number>,
 	hint: Readonly<Vector3> = [0, 0, 1],
+	pointed = false,
 ): void {
 	const [x, y] = sideAxes(direction, hint);
 	let previous = -1;
+	let previousRadius = -1;
 	const height = (profile[profile.length - 1] as readonly [number, number])[1] || 1;
 	for (let k = 0; k < profile.length; k++) {
 		const [radius, h] = profile[k] as readonly [number, number];
@@ -283,7 +390,12 @@ export function lathe(
 		}
 		if (previous >= 0)
 			for (let j = 0; j < sides; j++)
-				mesh.quad(previous + j, previous + j + 1, first + j + 1, first + j);
+				// A pointed lathe closes on a ring of no radius, at either end, with one triangle a
+				// side, not a quad whose second half has no area.
+				if (pointed && radius === 0) mesh.tri(previous + j, previous + j + 1, first + j + 1);
+				else if (pointed && previousRadius === 0) mesh.tri(previous + j, first + j + 1, first + j);
+				else mesh.quad(previous + j, previous + j + 1, first + j + 1, first + j);
 		previous = first;
+		previousRadius = radius;
 	}
 }

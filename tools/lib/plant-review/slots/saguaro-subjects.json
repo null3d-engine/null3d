@@ -1,0 +1,35 @@
+{
+	"08-arm-elbow.png": {
+		"bottom": 0.9496
+	},
+	"09-rib-pattern.png": {
+		"bottom": 1
+	},
+	"10-areoles-and-spines.png": {
+		"bottom": 0.9781
+	},
+	"11-spine-cluster.png": {
+		"bottom": 0.9079
+	},
+	"12-single-areole.png": {
+		"bottom": 0.9548
+	},
+	"13-rib-cross-section.png": {
+		"bottom": 0.912
+	},
+	"21-branch-studio.png": {
+		"bottom": 0.9212
+	},
+	"22-subbranch-studio.png": {
+		"bottom": 0.9911
+	},
+	"23-leaf-cluster-studio.png": {
+		"bottom": 0.9211
+	},
+	"24-spine-texture-face.png": {
+		"bottom": 0.6844
+	},
+	"25-spine-texture-side.png": {
+		"bottom": 1
+	}
+}

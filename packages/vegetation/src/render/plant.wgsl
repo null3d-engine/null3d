@@ -55,7 +55,9 @@ struct Uniforms {
     season: f32,
     // The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom.
     seasonKind: f32,
-    // 1 to draw the plant black, with its cut-outs and its sway, for an exact outline.
+    // 1 to draw the plant black, with its cut-outs and its sway, for an exact outline. 2 to draw
+    // each part in a flat colour of its own, cut and layered as the colour picture is, so a reader
+    // can tell which part of the plant covers each texel.
     matte: f32,
 }
 
@@ -63,7 +65,8 @@ struct Uniforms {
 var wind: texture_2d_array<f32>;
 // The species' constants and wind records, read with textureLoad only.
 var records: texture_2d<f32>;
-// Bark colour (one layer a zone), leaf colour (upper, lower) or card colour (front, back).
+// Bark colour (one layer a zone), leaf colour (upper, lower) or card colour (front, back). Shoot
+// rows whose pieces draw brush cards read the card atlas here, since they draw no leaf.
 var colour: texture_2d_array<f32>;
 // Bark normal, leaf normal or card surface, in the same layers.
 var relief: texture_2d_array<f32>;
@@ -101,10 +104,14 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
-// A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
+// A tuft's sheath colour at the column's foot, and its roughness, for the merged foliage.
 const HEADER_SHEATH: i32 = 65;
+// The share of a card's leaf groups that stays, where the record names one.
+const HEADER_CARD_COVERAGE: i32 = 68;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
+// A tuft's sheath colour at the column's collar, then the share of the column it takes.
+const HEADER_SHEATH_COLLAR: i32 = 67;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -128,7 +135,12 @@ const HEADER_EXTRA_BANDS: i32 = 43;
 const HEADER_EXTRA_SCALES: i32 = 47;
 // An extra's stalk colour and its band's roughness, per extra in record order.
 const HEADER_EXTRA_STALKS: i32 = 51;
-// The least width in pixels that a card's stalk draws, or 0 where the record gives none.
+const HEADER_SCAR: i32 = 69;
+const HEADER_SCAR_COLOUR: i32 = 70;
+/// The coarsest mip level a card's sample reads: the deepest where the species' smallest leaf cell
+/// still holds four texels a side.
+const HEADER_CARD_LEVEL_MOST: i32 = 71;
+// A card's stalk line: its least width in pixels, and 1 where the line draws at its twig's width.
 const HEADER_CARD_STALK: i32 = 55;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
@@ -144,12 +156,27 @@ const WOOD_UV_STEPS: f32 = 1024.0;
 const TEXTURE_UV_STEPS: f32 = 65535.0;
 // The radius that the wood's second coordinates count from 0 to 1.
 const WOOD_RADIUS_SPAN: f32 = 4.0;
+// The least width, in the drawn frame's pixels, that the wood draws: one pixel at the review's work
+// width, where the matte is measured, in a frame drawn at the stills' width. A twig thinner than
+// this rasterises as dots, and the piece measure then reads its join as a gap.
+const WOOD_LEAST_PIXELS: f32 = 1.2;
+// The least width, in the drawn frame's pixels, that a fine foliage edge draws in the matte: the
+// same figure as the wood's, for the same reason. A blade or a stem seen nearly edge-on is a line
+// thinner than a pixel, which rasterises as dots, and the piece measure then reads its join as a
+// gap. The colour image keeps the edge it draws; only the matte, whose outline the review reads,
+// widens the edge.
+const FOLIAGE_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
 // How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
 // the share of the texel that the leaves cover, so a small rise keeps a far card's thinnest leaves
 // from falling under the cutoff without inventing coverage that the mip does not hold.
 const CARD_MIP_LIFT: f32 = 0.05;
+// The steepest fall, a mip level, of the coverage a card's texel must reach to draw, which the card
+// surface's third byte holds as a share of it (the card bake's `CARD_CUT_FALL_MOST`).
+const CARD_CUT_FALL_MOST: f32 = 0.3;
+// The lowest coverage a card's texel must reach at any mip level, so faint averages never draw.
+const CARD_CUT_LEAST: f32 = 0.08;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
 // The wind speed at which a species' sway is measured: its record gives the metres at the top for
@@ -165,8 +192,17 @@ const MAX_BRANCH_DEPTH: i32 = 8;
 const KIND_STEM: f32 = 85.0;
 // The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
 const KIND_BUD: f32 = 128.0;
+// The surface kind byte of a leaf's own petiole, which is wood thin enough to need the least width.
+const KIND_PETIOLE: f32 = 42.0;
 /// A merged ground plant's sheath column, marked in the colour's third byte.
 const KIND_SHEATH: f32 = 240.0;
+/// A placed piece's own surface, which draws as a leaf: its second coordinates hold the share along
+/// its part and its own browning, as a merged plant's foliage holds them.
+const KIND_PIECE: f32 = 16.0;
+/// A placed piece's sheath column, which draws in the record's sheath colour and does not flutter.
+const KIND_PIECE_SHEATH: f32 = 32.0;
+// A brush card of a piece: crossed quads that picture a dense run of its leaves from the card atlas.
+const KIND_BRUSH: f32 = 8.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -590,12 +626,15 @@ fn bark_lift(input: VertexInput) -> f32 {
     return (luminance - tiling.z) * tiling.w * weight;
 }
 
-/// The plant-space offset that widens a card's stalk to the record's least width on screen. The two
-/// vertices at each end of the stalk start at one point, so the vertex stage gives the line its
-/// width: it turns the width across the stalk's own direction on screen, and brings it back into
-/// the plant's space through the frame's projection and the object's transform.
+/// The plant-space offset that widens a card's stalk to the record's least width on screen, or, where
+/// the record names the twig-width marker, to the width of the twig it stands for, floored at the
+/// record's least and the wood's least drawn width. The two vertices at each end of the stalk start
+/// at one point, so the vertex stage gives the line its width: it turns the width across the stalk's
+/// own direction on screen, and brings it back into the plant's space through the frame's projection
+/// and the object's transform.
 fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
-    let least = header(HEADER_CARD_STALK).x;
+    let stalk = header(HEADER_CARD_STALK);
+    let least = stalk.x;
     if (least <= 0.0 || frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
         return vec3f(0.0);
     }
@@ -616,13 +655,100 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     }
     let side = select(-1.0, 1.0, input.uv.x > 0.5 * TEXTURE_UV_STEPS);
     let across = vec2f(-along.y, along.x) * side;
-    // Half the least width, in normalized device coordinates.
-    let ndc = across * (least * 0.5) / frame.resolution * 2.0;
     let projection = camera.projection;
+    // The record's least width, and, where it names the twig-width marker, the twig's own width in
+    // pixels from the radius the card mesh writes in the second texture coordinate, floored at that
+    // least and at half the wood's least drawn width.
+    var half = least * 0.5;
+    if (stalk.y > 0.5) {
+        let scale = sqrt(max(dot(model[0].xyz, model[0].xyz), 0.000001));
+        let radius = input.uv.y / TEXTURE_UV_STEPS * WOOD_RADIUS_SPAN * scale;
+        let own = radius * projection[1][1] * frame.resolution.y * 0.5 / clip.w;
+        half = max(own, max(half, WOOD_LEAST_PIXELS * 0.5));
+    }
+    // That half-width, in normalized device coordinates.
+    let ndc = across * half / frame.resolution * 2.0;
     let view = vec3f(ndc.x * clip.w / projection[0][0], ndc.y * clip.w / projection[1][1], 0.0);
     let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
     // The object's linear part is a uniform scale and a turn, so its inverse is the transpose over
     // the square of the scale.
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
+/// The plant-space offset that widens wood thinner than the least drawn width: each side vertex
+/// moves out along its normal's screen direction until the tube's projected width reaches the
+/// figure. The conversion back to the plant's space is the card stalk's, since both offsets are a
+/// screen-space widening of a line.
+fn wood_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let clip = camera.viewProjection * (model * vec4f(plant, 1.0));
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let radius = max(input.uv1.x * WOOD_RADIUS_SPAN, 0.00001);
+    let normal = normalize(input.normal);
+    let clip_out = camera.viewProjection * (model * vec4f(plant + normal * radius, 1.0));
+    if (clip_out.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    // The tube's radius on the screen, in pixels, and the half-width the figure asks for.
+    let step = clip_out.xy / clip_out.w - clip.xy / clip.w;
+    let half_now = length(step * frame.resolution * 0.5);
+    let half_least = WOOD_LEAST_PIXELS * 0.5;
+    if (half_now >= half_least || length(step) <= 0.000001) {
+        return vec3f(0.0);
+    }
+    let across = normalize(step) * (half_least - half_now) * 2.0 / frame.resolution;
+    let projection = camera.projection;
+    let view = vec3f(across.x * clip.w / projection[0][0], across.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
+/// The plant-space offset that widens a fine foliage edge seen nearly edge-on in the matte: each
+/// vertex moves along its own normal's screen direction by the share the view foreshortens the face,
+/// so a blade or a stem thinner than the least drawn width still covers a pixel. A face turned
+/// square to the eye draws its whole width and moves nowhere. The offset comes back to the plant's
+/// space as the wood's does.
+fn foliage_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let normal = normalize(input.normal);
+    let world = (model * vec4f(plant, 1.0)).xyz;
+    // The eye's direction from the surface and the surface's own normal, both in view space, where
+    // the camera stands at the origin.
+    let to_eye = normalize((camera.view * vec4f(world, 1.0)).xyz);
+    let turned = (camera.view * vec4f(normal, 0.0)).xyz;
+    let grazing = 1.0 - abs(dot(normalize(turned), to_eye));
+    if (grazing <= 0.02) {
+        return vec3f(0.0);
+    }
+    let clip = camera.viewProjection * vec4f(world, 1.0);
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let clip_out = camera.viewProjection * (model * vec4f(plant + normal * 0.01, 1.0));
+    if (clip_out.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let step = clip_out.xy / clip_out.w - clip.xy / clip.w;
+    if (length(step) <= 0.000001) {
+        return vec3f(0.0);
+    }
+    let half_least = FOLIAGE_LEAST_PIXELS * 0.5 * grazing;
+    let across = normalize(step) * half_least * 2.0 / frame.resolution;
+    let projection = camera.projection;
+    let view = vec3f(across.x * clip.w / projection[0][0], across.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
     let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
     let squared = max(dot(linear[0], linear[0]), 0.000001);
     return transpose(linear) * world_offset / squared;
@@ -660,9 +786,21 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
                 let sideways = cross(downwind, vec3f(0.0, 1.0, 0.0));
                 let side = length(sideways);
                 if (side > 0.001) {
-                    let brisk = clamp(air.a / 10.0, 0.0, 1.5);
-                    let flap = sin(TURN * (frame.time * flutter.y + input.colors.b));
-                    swayed += (sideways / side) * (flutter.x * brisk * flap * input.uv1.x);
+                    // A tuft that gives its sheath columns a colour marks them in the top bit of
+                    // the phase byte, which those columns leave still. Every other foliage axis
+                    // then keeps its phase in the low seven bits.
+                    var phase = input.colors.b;
+                    var sheath = false;
+                    if (mode == MODE_FOLIAGE && header(HEADER_SHEATH).w > 0.5) {
+                        let raw = i32(round(input.colors.b * 255.0));
+                        sheath = (raw & 128) != 0;
+                        phase = f32(raw & 127) / 127.0;
+                    }
+                    if (!sheath) {
+                        let brisk = clamp(air.a / 10.0, 0.0, 1.5);
+                        let flap = sin(TURN * (frame.time * flutter.y + phase));
+                        swayed += (sideways / side) * (flutter.x * brisk * flap * input.uv1.x);
+                    }
                 }
             }
             moved = plant + (swayed - plant) * fade;
@@ -670,6 +808,36 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     }
     if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
+    }
+    if (mode == MODE_WOOD) {
+        moved += wood_widen(input, moved);
+    }
+    if (mode == MODE_FOLIAGE && material.matte > 0.5 && material.matte < 1.5) {
+        moved += foliage_widen(input, moved);
+    }
+    // A placed piece draws its fine edges a pixel wide in the matte too, as merged foliage does:
+    // under that, a flowering stalk thinner than a pixel rasterises as dots, and the heads that hang
+    // from it read as pieces in air while the colour picture draws the stalk whole.
+    if (
+        mode == MODE_SHOOTS &&
+        material.matte > 0.5 &&
+        material.matte < 1.5 &&
+        abs(input.colors.b * 255.0 - KIND_PIECE) < 0.5
+    ) {
+        moved += foliage_widen(input, moved);
+    }
+    // A shoot's stem is drawn a pixel wide too: under that, the matte drops the stalk a leaf
+    // cluster hangs from and the cluster reads as a piece in air.
+    if (mode == MODE_SHOOTS && input.colors.b * 255.0 >= KIND_STEM * 0.5) {
+        moved += wood_widen(input, moved);
+    }
+    // A leaf's own petiole is drawn at the least width too, where it is thin enough that the matte
+    // would drop it and the blade would read as a piece in air.
+    if (
+        (mode == MODE_SHOOTS || mode == MODE_FOLIAGE) &&
+        abs(input.colors.b * 255.0 - KIND_PETIOLE) < 0.5
+    ) {
+        moved += wood_widen(input, moved);
     }
     return moved - input.position;
 }
@@ -706,10 +874,12 @@ fn shoot_offset(input: VertexInput) -> vec3f {
     let bend = input.colors.r;
     local += local_wind * (bend * bend * length(input.position) * air.a * SHOOT_BEND);
     let kind = input.colors.b * 255.0;
-    if (kind < KIND_STEM * 0.5) {
+    if (kind < KIND_STEM * 0.5 && abs(kind - KIND_PIECE_SHEATH) >= 0.5) {
         let flutter = wind_record(own, 2);
         let leaf_length = max(header(HEADER_LOWER_REFLECTANCE).w, 0.01);
-        let along = clamp(input.uv1.x / leaf_length, 0.0, 1.0);
+        // A leaf holds its metres along, and a placed piece the share along its part.
+        let piece = abs(kind - KIND_PIECE) < 0.5;
+        let along = select(clamp(input.uv1.x / leaf_length, 0.0, 1.0), saturate(input.uv1.x), piece);
         let brisk = clamp(air.a / 10.0, 0.0, 1.5);
         let flap = sin(TURN * (frame.time * flutter.y + row.phase + input.colors.g));
         local += normalize(input.normal) * (flutter.x * brisk * flap * along / sqrt(squared));
@@ -827,15 +997,41 @@ fn uv_scale(mode: i32) -> f32 {
     return 1.0 / TEXTURE_UV_STEPS;
 }
 
-/// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
-/// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
-/// leaves would vanish; raising it by a quarter for each level keeps the share of the card that
-/// leaves cover near the full-size texture's.
-fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
+/// The mip level a card's sample reads: 0 where the card draws at full size or larger.
+fn card_level(gx: vec2f, gy: vec2f) -> f32 {
     let texels = vec2f(textureDimensions(colour).xy);
     let footprint = max(length(gx * texels), length(gy * texels));
-    let level = max(log2(max(footprint, 1.0)), 0.0);
-    return saturate(alpha * (1.0 + level * CARD_MIP_LIFT));
+    return max(log2(max(footprint, 1.0)), 0.0);
+}
+
+/// How much a card's texture gradients shrink so its sample reads no coarser mip level than the
+/// species' coarsest useful one. Past that level a cell holds under four texels a side and its
+/// average takes in the empty border and the cells beside it, so a card seen at a slant, whose
+/// footprint runs long across its cell, would read its neighbours' gaps and lose its cover.
+fn card_hold(gx: vec2f, gy: vec2f) -> f32 {
+    let most = header(HEADER_CARD_LEVEL_MOST).x;
+    if (most <= 0.0) {
+        return 1.0;
+    }
+    let texels = vec2f(textureDimensions(colour).xy);
+    let footprint = max(length(gx * texels), length(gy * texels));
+    return min(1.0, exp2(most) / max(footprint, 1.0));
+}
+
+/// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
+/// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
+/// leaves would vanish; raising it a little for each level keeps the share of the card that leaves
+/// cover nearer the full-size texture's. The shadow a card casts and its matte read this.
+fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
+    return saturate(alpha * (1.0 + card_level(gx, gy) * CARD_MIP_LIFT));
+}
+
+/// A card's alpha moved so the colour picture's cut at one half falls where the card's own cut lies
+/// at the mip level its sample reads: one half at full size, lower by the fall the bake measured for
+/// the card's cell at each coarser level, which keeps the share of the card that full size draws.
+fn card_cut_alpha(alpha: f32, fall_byte: f32, level: f32) -> f32 {
+    let cut = max(CARD_CUT_LEAST, CUTOFF - fall_byte * CARD_CUT_FALL_MOST * level);
+    return saturate(alpha - cut + CUTOFF);
 }
 
 /// The coverage a point casts: a leaf's or a card's texel, and wood and stems whole.
@@ -850,8 +1046,14 @@ fn coverage(input: SurfaceInput) -> f32 {
         // A card's stalk is a solid line that the vertex stage widens, so it casts its whole width.
         if (abs(input.uv1.y - STALK_PLANE) >= 0.1) {
             let layer = select(1, 0, input.frontFacing);
-            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+            let hold = card_hold(gx, gy);
+            let hx = gx * hold;
+            let hy = gy * hold;
+            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, hx, hy).a, hx, hy);
         }
+    } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
+        let layer = select(1, 0, input.frontFacing);
+        alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
         let layer = select(1, 0, input.frontFacing);
@@ -860,9 +1062,25 @@ fn coverage(input: SurfaceInput) -> f32 {
     return alpha;
 }
 
+/// The flat colour of a part in a picture of the parts. Wood is red, and its blue holds the
+/// square root of its radius as a share of the radius span, so a reader can tell a trunk from a
+/// twig. Shoot rows, cards and merged foliage are green. Extras are green and blue.
+fn part_colour(mode: i32, radius: f32) -> vec3f {
+    if (mode == MODE_WOOD) {
+        return vec3f(1.0, 0.0, sqrt(saturate(radius / WOOD_RADIUS_SPAN)));
+    }
+    if (mode == MODE_EXTRAS) {
+        return vec3f(0.0, 1.0, 1.0);
+    }
+    return vec3f(0.0, 1.0, 0.0);
+}
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let mode = plant_mode();
+    // The share of the open sky added to the leaf and card faces, the record's own extinction; 0
+    // where it names none, so the faces draw as before.
+    let leaf_sky = header(HEADER_SWAY).w;
     let upper = input.frontFacing;
     let facing = select(-1.0, 1.0, upper);
     // Derivatives first, in uniform control flow; the roles sample with explicit gradients.
@@ -886,6 +1104,9 @@ fn surface(input: SurfaceInput) -> Surface {
     var occlusion = 1.0;
     var sky_normal = vec3f(0.0);
     var sheen = 0.0;
+    // The alpha the colour picture cuts: a card's moves to its own cut for the mip level it reads;
+    // every other role cuts its own alpha.
+    var cut_alpha = -1.0;
 
     if (mode == MODE_WOOD) {
         let radius = input.uv1.x * WOOD_RADIUS_SPAN;
@@ -1019,6 +1240,23 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
+        // A fire scar's hollow: the bark chars to the record's colour between its foot and head, on
+        // one side of the first stem. The hollow's own geometry cuts the notch; this darkens it and
+        // keeps it matte, so the charred wood reads as the burnt surface the old trees carry.
+        let scar = header(HEADER_SCAR);
+        let scar_colour = header(HEADER_SCAR_COLOUR);
+        if (scar.y > scar.x && scar_colour.w > 0.0) {
+            let outward = normalize(vec2f(n.x, n.z) + vec2f(0.000001, 0.0));
+            let want = vec2f(cos(scar.z), sin(scar.z));
+            let half = max(scar.w, 0.0001);
+            let facing = dot(outward, want);
+            let angular = smoothstep(cos(half), 1.0, facing);
+            let up = (plant.y - scar.x) / max(scar.y - scar.x, 0.001);
+            let vertical = smoothstep(0.0, 0.08, up) * (1.0 - smoothstep(0.82, 1.0, up));
+            let burnt = angular * vertical * (1.0 - youth);
+            bark = mix(bark, scar_colour.rgb, burnt * scar_colour.w);
+            cavity = max(cavity, burnt);
+        }
         // A stem whose own colour turns with the year takes its season's tint, which multiplies the
         // bark it would otherwise draw. A season the record does not name multiplies by nothing.
         let autumn_bark = header(HEADER_AUTUMN_BARK);
@@ -1040,7 +1278,10 @@ fn surface(input: SurfaceInput) -> Surface {
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
             // A card's stalk: a shade of the young bark's tone, so the join the card's leaves stand
             // on shows without the line standing out pale against the leaves.
-            base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb * CARD_STALK_SHADE;
+            let shade = header(HEADER_CARD_STALK).z;
+            base =
+                header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb *
+                select(CARD_STALK_SHADE, shade, shade > 0.0);
             roughness = 0.85;
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
@@ -1048,8 +1289,11 @@ fn surface(input: SurfaceInput) -> Surface {
             }
         } else {
             let layer = select(1, 0, upper);
-            let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
-            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
+            let hold = card_hold(gx, gy);
+            let hx = gx * hold;
+            let hy = gy * hold;
+            let texel = textureSampleGrad(colour, colourSampler, uv, layer, hx, hy);
+            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, hx, hy);
             let kind = surface_texel.a * 255.0;
             let leaf = kind >= 127.5;
             let self_shade = (kind - select(0.0, 128.0, leaf)) * 2.0 / 255.0;
@@ -1062,15 +1306,28 @@ fn surface(input: SurfaceInput) -> Surface {
             } else {
                 base = texel.rgb;
             }
-            alpha = card_alpha(texel.a, gx, gy);
+            alpha = card_alpha(texel.a, hx, hy);
+            cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(hx, hy));
+            // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
+            // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
+            // record names none, the card draws whole.
+            let card_cover = header(HEADER_CARD_COVERAGE).x;
+            if (card_cover < 0.999) {
+                if (value3(input.relativePosition * 5.0) > card_cover) {
+                    alpha = 0.0;
+                    cut_alpha = 0.0;
+                }
+            }
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
+                cut_alpha = 0.0;
             }
             let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
             let card_normal = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
             // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
             mapped = card_normal;
             occlusion = input.vertexColor.a * saturate(self_shade);
+            occlusion = mix(occlusion, 1.0, leaf_sky);
         }
     } else if (mode == MODE_EXTRAS) {
         // An extra takes its kind's colour and roughness from the header, by the index in its
@@ -1148,18 +1405,55 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
-        } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
-            // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
-            // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
-            let body = header(HEADER_SHEATH);
-            base = body.rgb;
-            roughness = max(body.w, 0.5);
+        } else if ((mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5)
+            || (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_PIECE_SHEATH) < 0.5)) {
+            // A ground plant's sheath column, a merged one or a placed piece's, draws in the
+            // record's sheath colour. Its kind marks the colour's third byte, since the asset
+            // clamps a negative coordinate to zero.
+            // The leaf texture's stalk strip lies over it, divided by the face's mean, so the
+            // sheath shows the blade's ribbing and the record's colour stays the material's own.
+            // The column's second coordinates' x runs from its foot to its collar, so the record's
+            // two colours mix up the height and the stalk strip's ribbing lies over them.
+            let foot = header(HEADER_SHEATH);
+            let top = header(HEADER_SHEATH_COLLAR);
+            let up = saturate(input.uv1.x);
+            let reach = clamp(top.w, 0.05, 1.0);
+            let sheath_colour = mix(foot.rgb, top.rgb, smoothstep(1.0 - reach, 1.0, up));
+            let strip = textureSampleGrad(colour, colourSampler, uv, 0, gx, gy).rgb;
+            let face = max(header(HEADER_UPPER_MEAN).rgb, vec3f(0.0001));
+            base = sheath_colour * clamp(strip / face, vec3f(0.55), vec3f(1.45));
+            roughness = max(foot.w, 0.5);
+        } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
+            // A brush card: the card atlas's picture of a run of the piece's leaves, which a brush
+            // kit binds in the leaf's place, lit as a card of the first card level is, with the
+            // picture's own normals and shade.
+            let layer = select(1, 0, upper);
+            let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
+            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
+            let brush_kind = surface_texel.a * 255.0;
+            let brush_leaf = brush_kind >= 127.5;
+            let self_shade = (brush_kind - select(0.0, 128.0, brush_leaf)) * 2.0 / 255.0;
+            if (brush_leaf) {
+                let light = leaf_light(texel.rgb, upper, 0.0);
+                base = light.base;
+                share = light.share;
+                through = light.through;
+                roughness = light.roughness;
+            } else {
+                base = texel.rgb;
+            }
+            alpha = card_alpha(texel.a, gx, gy);
+            let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
+            mapped = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
+            occlusion = mix(input.vertexColor.a * saturate(self_shade), 1.0, leaf_sky);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
             let relief_texel = textureSampleGrad(relief, reliefSampler, uv, 0, gx, gy).rgb;
-            // A merged leaf browns on its own by its second coordinates' y, as a dying frond does.
-            let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE);
+            // A merged leaf, or a placed piece, browns on its own by its second coordinates' y, as
+            // a dying frond does.
+            let piece = mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_PIECE) < 0.5;
+            let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE || piece);
             let light = leaf_light(texel.rgb, upper, browning);
             base = light.base;
             share = light.share;
@@ -1179,8 +1473,10 @@ fn surface(input: SurfaceInput) -> Surface {
             through *= flatten;
             // A pale collar marks where the blade leaves its sheath, over the share the record
             // names at the blade's base.
+            // A shoot's leaf holds its metres along there, so the band is a merged leaf's or a
+            // placed piece's alone.
             let collar = header(HEADER_COLLAR);
-            if (collar.w > 0.0 && input.uv1.x < collar.w) {
+            if ((mode == MODE_FOLIAGE || piece) && collar.w > 0.0 && input.uv1.x < collar.w) {
                 base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
             }
             sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
@@ -1189,6 +1485,7 @@ fn surface(input: SurfaceInput) -> Surface {
             let row = shoot_row(object.values);
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
+            occlusion = mix(occlusion, 1.0, leaf_sky);
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;
@@ -1203,7 +1500,8 @@ fn surface(input: SurfaceInput) -> Surface {
     let variance = 0.5 * (dot(dnx, dnx) + dot(dny, dny));
     let a = roughness * roughness;
     let widened = sqrt(sqrt(a * a + min(2.0 * variance, 0.18)));
-    let width = fwidth(alpha);
+    let cut = select(alpha, cut_alpha, cut_alpha >= 0.0);
+    let width = fwidth(cut);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     through /= max(1.0 - gloss_albedo(widened, n_dot_v), 0.5);
 
@@ -1211,9 +1509,17 @@ fn surface(input: SurfaceInput) -> Surface {
     let grazing = 1.0 - saturate(dot(normal, input.viewDirection));
     base = min(base * (1.0 + sheen * grazing * grazing * grazing * grazing), vec3f(1.0));
 
-    // A matte keeps the outline, the cut-outs and the sway, and draws no light.
-    let matte = material.matte > 0.5;
-    s.baseColor = select(base, vec3f(0.0), matte);
+    // A matte keeps the outline, the cut-outs and the sway, and draws no light. A picture of the
+    // parts does the same in each part's own flat colour, and keeps the colour picture's cut edge.
+    // A silhouette draws black with the colour picture's cut edge, for the eye: a coarse texel that
+    // averages fine leaflets with their gaps draws solid, where the matte's own coverage is grey.
+    let parts = material.matte > 1.5 && material.matte < 2.5;
+    let silhouette = material.matte > 2.5;
+    let matte = material.matte > 0.5 && material.matte < 1.5;
+    s.baseColor = select(base, vec3f(0.0), matte || parts || silhouette);
+    if (parts) {
+        s.emissive = part_colour(mode, input.uv1.x * WOOD_RADIUS_SPAN);
+    }
     s.metalness = 0.0;
     s.roughness = widened;
     s.normal = normal;
@@ -1223,9 +1529,12 @@ fn surface(input: SurfaceInput) -> Surface {
     // A matte carries the texel's own coverage rather than a sharpened edge, so the review can weigh
     // a partly covered texel as the part of plant it is: the piece test joins a group through it, and
     // the openness test keeps the sky it does not cover. A sharpened edge would do the first and lose
-    // the second.
-    s.alpha = select(sharpen(alpha, width), alpha, matte);
-    s.diffuseTransmission = select(share, 0.0, matte);
-    s.diffuseTransmissionColor = select(through, vec3f(0.0), matte);
+    // the second. It carries it only where the colour picture draws the texel at all: a texel under
+    // the cut draws nothing there, and a faint ghost of it in the matte reads as plant the picture
+    // does not show, such as a piece hanging in air.
+    let drawn = sharpen(cut, width);
+    s.alpha = select(drawn, select(0.0, alpha, drawn > 0.0), matte);
+    s.diffuseTransmission = select(share, 0.0, matte || parts || silhouette);
+    s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts || silhouette);
     return s;
 }

@@ -2,7 +2,7 @@
 // the oak names. The generated registry loads this entry as a chunk of its own.
 import { files } from '@null3d/vegetation-textures/pedunculate-oak';
 import type { SpeciesModule } from '../../core/record';
-import { record } from './record';
+import { directed } from './directed';
 
-/** The pedunculate oak. */
-export const species: SpeciesModule = { record, textures: files };
+/** The pedunculate oak, grown as a directed frame that carries its branch ends at sockets. */
+export const species: SpeciesModule = { record: directed, textures: files };

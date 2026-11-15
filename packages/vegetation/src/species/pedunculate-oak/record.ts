@@ -88,7 +88,20 @@ export const record: Species = {
 		},
 		// Stills 01, 02, 17 and 18 show sky under the crown's base: a shoot the righting carried below
 		// it stands in the crown's shade and dies back.
-		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0.2, underCrown: 1 },
+		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0, underCrown: 1 },
+		// Fewer subbranches and twigs, thinned most at the finest orders, so the crown keeps its
+		// masses with fewer drawn branches.
+		branchingByOrder: [
+			[0, 1],
+			[1, 0.6],
+		],
+		// The steps bend gently instead of kinking, and the branches leave their parents at separate
+		// points rather than as a crowd within one internode.
+		maxTurn: 8,
+		lateralSpacing: 0.6,
+		// The great limbs hold the azimuths their fork gave them, so the crown reads balanced from
+		// above while their branches take the light.
+		limbAzimuth: 0.5,
 		// The crown's sag was fitted with the wood weighed at a 3.5 m bole; the bend keeps weighing it
 		// so, whatever width the trunk is drawn at.
 		bending: { strength: 0.5, upturn: 0.2, girth: 3.5 },
@@ -229,6 +242,30 @@ export const record: Species = {
 					[1, 60],
 				],
 				droop: 5,
+			},
+			{
+				// Stills 11 and 23: this year's short shoot, one rosette round its bud cluster. The
+				// crown's own short class cannot reach a cutting's kit, which holds the classes a cut
+				// piece draws alone, so the cluster piece repeats its figures here.
+				name: 'twig',
+				cutOnly: true,
+				vigor: [0, 0.04],
+				share: 0,
+				years: 1,
+				length: { mean: 0.14, spread: 0.02 },
+				nodes: { mean: 7, spread: 0.5 },
+				internode: ROSETTE,
+				leafScale: [
+					[0, 0.85],
+					[1, 1.05],
+				],
+				leafAngle: [
+					[0, 150],
+					[0.5, 95],
+					[1, 40],
+				],
+				leafAngleSpread: 30,
+				droop: 3,
 			},
 		],
 		phyllotaxis: { kind: 'spiral', divergence: 144 },
@@ -435,6 +472,11 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		woodOrders: [2, 1],
+		// Stills 01 and 02: the crown's box shows 0.37 and 0.33 of sky in the photographs and 0.48 and
+		// 0.43 at the first card level, whose kept cards stand sparse. The field's largest value that
+		// keeps the second card level within the card tests' sky band, 0.02, reads 0.1433 of sky
+		// against the leaf form's 0.1625 at the medium tier; 1.05 reads 0.1562, 1.2 reads 0.1263.
+		cardGrow: 1.1,
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
@@ -460,21 +502,22 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1121298234,
-	// A phone grows this oak lighter than a desktop: below about half the record's wood and leaf the
-	// open-grown dome closes into a ball, and past this coarsening the twigs it hangs its leaves on
-	// start to break. These floors are a first pass and are measured against the phone set.
-	sparse: { limbs: 0.35, leaves: 0.42, coarseness: 0.6 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.08 },
 	roundBand,
 	// The woodland oak of stills 30 and 31 and the young oak of still 32.
 	forms,
 	cuttings: {
 		// Stills 20, 21 and 22: the branch keeps the spray, whose length stills 20 and 21 ask for. The
-		// sub-branch takes the short dense class, which draws the photographs' tighter twigs.
+		// sub-branch takes the short dense class, which draws the photographs' tighter twigs. A
+		// cutting's kit holds no crown class, so both hints presently draw the kit's branch-end piece.
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'cut' },
-		// Stills 11 and 23 hold one rosette round its buds at the end of this year's shoot, as the
-		// short shoot draws it; the long shoot draws a sprig of two or three rosettes.
-		cluster: { shoot: 'short' },
+		// Stills 11 and 23 hold one rosette round its buds at the end of this year's shoot; the long
+		// shoot draws a sprig of two or three rosettes. The cutting's kit holds no crown class, so the
+		// twig class repeats the short shoot's figures for the cut.
+		cluster: { shoot: 'twig' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},

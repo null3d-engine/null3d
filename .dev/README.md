@@ -22,5 +22,7 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | [Technique review](technique-review.md) | null3D's techniques against eight engines' source: the open changes and gaps, the porting verdicts, the `three-compat` add-on, the prototypes and their pass rules, the web search results with their sources, and the newer techniques that other engines and three.js offer |
 | [Test memory](tests.md) | How the unit tests share one process, what the run costs in memory, the rules that keep a test small, and the ceiling the unit script sets |
 | [Tested devices](tested-devices.md) | Every device and browser that null3D has run on, with the facts and the known issues, a folder of runs for each, and how to add a run |
+| [Vegetation species](vegetation-species.md) | Where each of the vegetation add-on's twenty species stands: which plant ships, its side-by-side verdict and the round it rests on, its open faults with figures, its reference conflicts, its costs and what it needs next, and how to draw a round again |
+| [Vegetation process](vegetation-process.md) | How the species work runs: the design every species is built to, the helpers' lines and roles, the rules they follow, merges into the shared line, the owner's rulings in force, the landing, and how a new session resumes |
 
 A guide or a decision record follows AGENTS.md's writing rules, as a contributor file. It states what holds now, with the reasons, and keeps no log of what happened when ([hard rule 41](../AGENTS.md#hard-rules)).

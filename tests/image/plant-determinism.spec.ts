@@ -27,11 +27,14 @@ interface Result {
 test('every plant species grows the same bytes in a job worker as in the test', async ({
 	page,
 }) => {
-	test.setTimeout(120_000);
+	// This test's wait, the page result's and the page's own nest, each wider than the one inside it,
+	// so a slow runner meets the innermost limit first and the failure names the true wait. The page
+	// answers in 37 to 42 seconds here and a runner 30 per cent slower lands at 98 to 117 seconds.
+	test.setTimeout(240_000);
 	const workerUrls: string[] = [];
 	page.on('worker', (worker) => workerUrls.push(worker.url()));
 	await page.goto('plant-determinism.html');
-	const result = await pageResult<Result>(page, 90_000);
+	const result = await pageResult<Result>(page, 180_000);
 	expect(result.error).toBeUndefined();
 	expect(result.ok).toBe(true);
 	const here: GrownDigest[] = [];

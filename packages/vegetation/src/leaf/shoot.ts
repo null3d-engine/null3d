@@ -12,7 +12,7 @@
 //
 // Prototype space: the attach point at the origin, the shoot leaving along +Y, +Z toward the sky
 // side of the bud it grows from.
-import type { PrototypeArrays, ShootPrototype } from '../asset';
+import type { MeshArrays, PrototypeArrays, ShootPrototype } from '../asset';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	acos,
@@ -29,18 +29,21 @@ import {
 	sin,
 	type Vector3,
 } from '../core/math';
-import type { Phyllotaxis, ShootClass, Species } from '../core/record';
+import type { Phyllotaxis, ShootClass, ShootSpec, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import {
 	BEND_PIECE_LEAST,
+	type Curve,
 	curveAt,
 	DETAILS,
 	type Detail,
 	LATERAL_GAP_MOST,
 	SIDE_SHOOTS_MOST,
+	type Spread,
 	spreadAt,
 	spreadMean,
 } from '../core/types';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 import { shootOcclusion } from './occlusion';
 import { hasBareTwins } from './season';
 import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } from './writer';
@@ -50,7 +53,50 @@ import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } fr
  *
  * @category api/vegetation
  */
-export type UncardedPrototype = Omit<ShootPrototype, 'card'>;
+export type UncardedPrototype = Omit<ShootPrototype, 'card'> & {
+	/**
+	 * The brush cards a piece draws below its finest tier, which the card bake pictures and then
+	 * lays over the tiers' dense runs of leaves. Absent on a prototype that draws its leaves whole.
+	 */
+	readonly brushes?: PrototypeBrushes;
+	/**
+	 * A placed piece's whole mesh, for a piece whose tier holds only the neck it is cut at: the
+	 * card bake pictures this where it stands, rather than the tier's mesh. Absent, the bake draws
+	 * the tier's own mesh.
+	 */
+	readonly bake?: MeshArrays;
+};
+
+/**
+ * One dense run of a piece's leaves that draws as a brush card: its picture by index, the run's
+ * start on its stem and its own frame (along the stem, toward the sky, and the side square to both),
+ * its length, and the bend weight and flutter phase its card takes.
+ */
+export interface BrushRun {
+	readonly picture: number;
+	readonly start: Vector3;
+	readonly along: Vector3;
+	readonly sky: Vector3;
+	readonly side: Vector3;
+	readonly length: number;
+	readonly bend: number;
+	readonly phase: number;
+}
+
+/**
+ * The leaves of one dense run in the run's own frame, which the card bake pictures: x along its
+ * side, y along its stem from the run's start, z toward its sky. Its length is the run's.
+ */
+export interface BrushPicture {
+	readonly mesh: PrototypeArrays;
+	readonly length: number;
+}
+
+/** A piece's brush runs and the pictures they draw from. */
+export interface PrototypeBrushes {
+	readonly runs: readonly BrushRun[];
+	readonly pictures: readonly BrushPicture[];
+}
 
 /** The golden angle in degrees. */
 const GOLDEN = 137.50776405;
@@ -87,44 +133,103 @@ const Purpose = {
 	Spur: 11,
 	LeafAngle: 12,
 	Joint: 13,
+	LeafAzimuth: 14,
 } as const;
 
-/** Sides of stem tubes and buds by tier. */
-const STEM_SIDES: Readonly<Record<Detail, number>> = { low: 3, medium: 4, high: 5, ultra: 6 };
-/** A bud's mesh at a tier: faces around, and whether its profile is rounded or a plain cone. */
-interface BudShape {
+/**
+ * A bud's mesh at a tier: faces around, and whether its profile is rounded, swells to a point, or
+ * runs straight to its tip in one band.
+ */
+export interface BudShape {
 	readonly sides: number;
 	readonly round: boolean;
+	/** A plain cone in one band, for a bud a few pixels long at the distances the tier draws. */
+	readonly cone?: boolean;
+	/**
+	 * A closed double cone, a point at each end and the widest ring at the middle, for a fruit or
+	 * a cone that is seen whole and from below in one band each way.
+	 */
+	readonly double?: boolean;
+	/** The share of a double cone's length from its foot to its widest ring, a half where absent. */
+	readonly widest?: number;
 }
+
+/** How a tier meshes a shoot's wood and buds. */
+export interface ShootCut {
+	/** Sides of the stem tubes. */
+	readonly stemSides: number;
+	/** Whether a tube keeps only the rings at each year's end. */
+	readonly yearRings?: boolean;
+	/** A tip cluster's buds; absent, the cluster draws none. */
+	readonly cluster?: BudShape;
+	/** Whether a tip cluster is drawn as one cone over its stack, in the cluster's shape. */
+	readonly clusterCone?: boolean;
+	/** An axil's bud; absent, the axils draw none. */
+	readonly axil?: BudShape;
+	/**
+	 * Metres below which a bud draws as a plain cone of one band: a shorter one is a few pixels long
+	 * at the distances the tier draws. Absent, every bud takes its shape's own profile.
+	 */
+	readonly coneBelow?: number;
+	/**
+	 * Whether every bud draws as a plain cone of one band, whatever its length: a piece's own
+	 * picture shows a bud a few pixels wide, where its swell does not read. Absent, only a bud under
+	 * `coneBelow` draws as a cone.
+	 */
+	readonly coneAll?: boolean;
+	/**
+	 * Metres below which an axil's bud is left out: a smaller one hides under its leaf and spans a
+	 * pixel or two at the distances the tier draws. Absent, every axil's bud is drawn.
+	 */
+	readonly axilLeast?: number;
+	/** A thorn's and a fruiting body's shapes; absent, a thorn takes the axil's and a body the cluster's. */
+	readonly thorn?: BudShape;
+	readonly body?: BudShape;
+	/** A fruiting body's shape where its species keeps it round; absent, it takes `body`'s. */
+	readonly roundBody?: BudShape;
+	/** Whether a stem run that its leaves hide takes rings far apart, since no ring of it shows. */
+	readonly thinHidden?: boolean;
+	/**
+	 * Whether a tube of few sides stands wider than its stem's radius, so its outline is as wide as
+	 * the round stem's when averaged over a turn: a three-sided tube on the radius reads a sixth thin.
+	 */
+	readonly meanWidth?: boolean;
+	/**
+	 * Degrees a stem turns between two rings. Set, a ring stands only where the run from the last ring
+	 * meets the next run at that angle or more, so a straight run takes no rings between its ends.
+	 */
+	readonly ringTurn?: number;
+}
+
 /**
- * The buds of a tip cluster, which a close view reads, are rounder than those in the leaf axils.
- * The medium tier draws a whole cluster as one cone, and the low tier, whose shoots stand a few
- * pixels long, draws no buds.
+ * The crown's shoots at each tier. The buds of a tip cluster, which a close view reads, are rounder
+ * than those in the leaf axils. The medium tier draws a whole cluster as one cone, and the low tier,
+ * whose shoots stand a few pixels long, keeps one ring a year and draws no buds.
  */
-const CLUSTER_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
-	low: undefined,
-	medium: { sides: 3, round: false },
-	high: { sides: 5, round: true },
-	ultra: { sides: 6, round: true },
-};
-/** An axil's bud hides under its leaf, so the low tier leaves it out. */
-const AXIL_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
-	low: undefined,
-	medium: { sides: 3, round: false },
-	high: { sides: 4, round: false },
-	ultra: { sides: 5, round: true },
+export const SHOOT_CUTS: Readonly<Record<Detail, ShootCut>> = {
+	low: { stemSides: 3, yearRings: true },
+	medium: {
+		stemSides: 4,
+		cluster: { sides: 3, round: false },
+		clusterCone: true,
+		axil: { sides: 3, round: false },
+	},
+	high: { stemSides: 5, cluster: { sides: 5, round: true }, axil: { sides: 4, round: false } },
+	ultra: { stemSides: 6, cluster: { sides: 6, round: true }, axil: { sides: 5, round: true } },
 };
 /** The tier whose vertices cast the shoot's shade rays. */
 const SHADE_TIER = DETAILS.indexOf('medium');
 
 /** One point along an axis of the plan. */
-interface AxisPoint {
+export interface AxisPoint {
 	readonly at: Vector3;
 	readonly radius: number;
 	/** Metres along the shoot from the attach point. */
 	readonly along: number;
 	/** Whether a year's growth unit ends here, where the low tier keeps a ring. */
 	readonly unitEnd?: boolean;
+	/** Whether no tier keeps a ring here: a stem that rings by its bend rings only where it bends. */
+	readonly plain?: boolean;
 }
 
 /** One leaf of the plan. */
@@ -157,7 +262,7 @@ export interface PlannedLeaf {
 }
 
 /** One bud of the plan. */
-interface PlannedBud {
+export interface PlannedBud {
 	readonly at: Vector3;
 	readonly direction: Vector3;
 	readonly length: number;
@@ -170,6 +275,10 @@ interface PlannedBud {
 	 * tip, along which the medium tier draws the whole cluster as one cone.
 	 */
 	readonly stack?: number;
+	/** The species' mark it draws, a thorn or a fruiting body, where it is one and not a bud. */
+	readonly mark?: 'thorn' | 'body';
+	/** Whether a fruiting body keeps its rounded shape where the tier draws other bodies plainer. */
+	readonly round?: boolean;
 }
 
 /**
@@ -243,7 +352,7 @@ interface AxisStart {
 }
 
 /** Projects `v` square to the unit `axis`, then scales it to unit length; `fallback` when it vanishes. */
-function square(
+export function square(
 	v: Readonly<Vector3>,
 	axis: Readonly<Vector3>,
 	fallback: Readonly<Vector3>,
@@ -255,7 +364,7 @@ function square(
 }
 
 /** Turns `v` about the unit `axis` by `degrees`. */
-function turn(v: Readonly<Vector3>, axis: Readonly<Vector3>, degrees: number): Vector3 {
+export function turn(v: Readonly<Vector3>, axis: Readonly<Vector3>, degrees: number): Vector3 {
 	const q = [0, 0, 0, 1];
 	quatAxisAngle(axis, radians(degrees), q);
 	return quatRotate(q, 0, v, [0, 0, 0]);
@@ -521,6 +630,258 @@ function spreadRound(
 }
 
 /**
+ * A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky
+ * side by `share`. At a share of 1 the lamina squares across the shoot, which is how a rosette's
+ * blades stand: a camera looking down the twig sees every one of them face on.
+ *
+ * @param direction The way the leaf leaves, a unit vector.
+ * @param stem The stem's direction at the leaf's node.
+ * @param sky The sky side at the node.
+ * @param radial The way the stalk leaves the stem.
+ * @param share The share of the turn toward the sky side, 0 to 1.
+ * @returns The turn, x, y, z, w.
+ */
+export function leafTurn(
+	direction: Vector3,
+	stem: Vector3,
+	sky: Vector3,
+	radial: Vector3,
+	share: number,
+): number[] {
+	const adaxial = square(stem, direction, radial);
+	const skyward = square(sky, direction, adaxial);
+	const w = share;
+	const face = normalize3([
+		adaxial[0] * (1 - w) + skyward[0] * w,
+		adaxial[1] * (1 - w) + skyward[1] * w,
+		adaxial[2] * (1 - w) + skyward[2] * w,
+	]);
+	const rotation = [0, 0, 0, 1];
+	quatFromFrame(direction, face, rotation);
+	return rotation;
+}
+
+/** What a node's leaves are placed by: the species' leaf measures and the stem's own rule. */
+export interface LeafRule {
+	/** The species' salt and the hash key of the prototype the leaves belong to. */
+	readonly salt: number;
+	readonly key: number;
+	readonly phyllotaxis: Phyllotaxis;
+	/**
+	 * Degrees round the stem of every node's leaves, from the stem's first side toward its sky
+	 * side, in place of the arrangement's own: a frond's leaflets stand at the same places on both
+	 * sides at every node. At most eight, the leaves a node's draws tell apart.
+	 */
+	readonly azimuths?: readonly number[];
+	/** Degrees a leaf stands from its stem, base to tip, and the half-width of its spread. */
+	readonly leafAngle: Curve;
+	readonly leafAngleSpread: number;
+	/** Degrees each leaf's azimuth varies from the arrangement's own, 0 for none. */
+	readonly leafAzimuthSpread: number;
+	/** The angle a needle stands at, which replaces the leaf angle. */
+	readonly needleAngle: number | undefined;
+	/** The share by which needles turn toward the shoot's two sides. */
+	readonly ranks: number;
+	/** A leaf's size along the stem, base to tip, over the species' own spread of sizes. */
+	readonly leafScale: Curve;
+	readonly leafSpread: Spread;
+	readonly leafMean: number;
+	/** The blade's length in metres, 0 for a leaf that carries no axil bud. */
+	readonly leafLength: number;
+	/**
+	 * Whether a bud stands in each leaf's axil; it does where absent. A piece that leaves its axils
+	 * bare pays for the leaves and the wood alone.
+	 */
+	readonly axilBuds?: boolean;
+	/** The leaf meshes a leaf may draw. */
+	readonly leafMeshes: number;
+	readonly budLength: number;
+	readonly budWidth: number;
+	/** A leaf's turn from its direction and its node's frame. */
+	readonly rotate: (direction: Vector3, stem: Vector3, sky: Vector3, radial: Vector3) => number[];
+}
+
+/**
+ * Places the leaves of one node, each with its axillary bud.
+ *
+ * @param rule The leaf rule.
+ * @param leaves The plan's leaves, which gain the node's.
+ * @param buds The plan's buds, which gain the node's axil buds.
+ * @param axis The axis the node stands on.
+ * @param node The node's index along its axis.
+ * @param at The node's place.
+ * @param stem The stem's direction at the node.
+ * @param sky The sky side at the node.
+ * @param radius The stem's radius at the node.
+ * @param along Metres along the shoot from the attach point.
+ * @param t The node's share of its growth unit, 0 at its foot and 1 at its tip.
+ * @param azimuthStart Degrees about the stem where the axis's first leaf stands.
+ * @param crowded How much the node's internode shrinks below the shoot's own spacing, 0 to 1.
+ * @param plateFace The face a plate run holds its blades to, where the node belongs to one.
+ */
+export function placeNodeLeaves(
+	rule: LeafRule,
+	leaves: PlannedLeaf[],
+	buds: PlannedBud[],
+	axis: number,
+	node: number,
+	at: Vector3,
+	stem: Vector3,
+	sky: Vector3,
+	radius: number,
+	along: number,
+	t: number,
+	azimuthStart: number,
+	crowded: number,
+	plateFace?: Vector3,
+): void {
+	const { phyllotaxis, ranks, leafMean, leafSpread } = rule;
+	const draw = (purpose: number, a = 0, b = 0) => unitAt(rule.salt, rule.key, purpose, a, b);
+	// A plate run holds every blade to its own face, so the run reads as one shingle rather than
+	// a tuft that turns with the stem.
+	const face = plateFace ?? sky;
+	const side = normalize3(cross3(stem, face, [0, 0, 0]));
+	const azimuths =
+		rule.azimuths ??
+		nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
+			phyllotaxis.kind === 'rosette-spur'
+				? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
+				: 1,
+		);
+	const spread = rule.leafAngleSpread;
+	const leafAngle =
+		rule.needleAngle ??
+		curveAt(rule.leafAngle, t) +
+			(spread > 0 ? (draw(Purpose.LeafAngle, axis, node) * 2 - 1) * spread : 0);
+	for (let k = 0; k < azimuths.length; k++) {
+		let azimuth = radians(azimuths[k] as number);
+		// Two-ranked needles turn toward the shoot's two sides.
+		if (ranks > 0) {
+			const toward = cos(azimuth) >= 0 ? 0 : Math.PI;
+			let gap = toward - azimuth;
+			gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
+			azimuth += gap * ranks;
+		} else if (rule.leafAzimuthSpread > 0) {
+			// A two-ranked shoot's leaves turn a little out of its plane, so its fan keeps a width
+			// as the shoot turns edge-on.
+			const wobble =
+				(draw(Purpose.LeafAzimuth, axis, node * 8 + k) * 2 - 1) * rule.leafAzimuthSpread;
+			azimuth += radians(wobble);
+		}
+		const radial = normalize3([
+			side[0] * cos(azimuth) + face[0] * sin(azimuth),
+			side[1] * cos(azimuth) + face[1] * sin(azimuth),
+			side[2] * cos(azimuth) + face[2] * sin(azimuth),
+		]);
+		const a = radians(leafAngle);
+		const direction = normalize3([
+			stem[0] * cos(a) + radial[0] * sin(a),
+			stem[1] * cos(a) + radial[1] * sin(a),
+			stem[2] * cos(a) + radial[2] * sin(a),
+		]);
+		const rotation = rule.rotate(direction, stem, face, radial);
+		const key = node * 8 + k;
+		const size =
+			curveAt(rule.leafScale, t) *
+			(leafMean > 0 ? spreadAt(leafSpread, draw(Purpose.LeafSize, axis, key)) / leafMean : 1);
+		// A crowded node's leaves root inside the twig's own surface, so a rosette's inner blades
+		// meet the wood they stand on instead of stopping a hairline short of it.
+		const out = radius * (1 - CROWDED_ROOT * crowded);
+		leaves.push({
+			at: [at[0] + radial[0] * out, at[1] + radial[1] * out, at[2] + radial[2] * out],
+			rotation,
+			scale: Math.max(0.05, size),
+			mesh: hashAt(rule.salt, rule.key, Purpose.LeafMesh, axis, key) % rule.leafMeshes,
+			phase: hashAt(rule.salt, rule.key, Purpose.Phase, axis, key) & 255,
+			along,
+			axis,
+			node,
+			stem: [...stem],
+			sky: [...face],
+			radial,
+			direction,
+			crowded,
+		});
+		if (rule.leafLength > 0 && rule.budLength > 0 && rule.axilBuds !== false) {
+			const lean = radians(BUD_LEAN);
+			buds.push({
+				at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
+				direction: normalize3([
+					stem[0] * cos(lean) + radial[0] * sin(lean),
+					stem[1] * cos(lean) + radial[1] * sin(lean),
+					stem[2] * cos(lean) + radial[2] * sin(lean),
+				]),
+				cluster: false,
+				// Axil buds grow toward the tip cluster's size where the nodes crowd into a rosette.
+				length: rule.budLength * (0.55 + 0.35 * crowded),
+				width: rule.budWidth * (0.55 + 0.35 * crowded),
+				along,
+			});
+		}
+	}
+}
+
+/**
+ * Adds the bud cluster at an axis's tip: the terminal bud and the buds stacked below it.
+ *
+ * @param buds The plan's buds, which gain the cluster.
+ * @param bud The species' bud measures.
+ * @param tipRadius The twig's radius at its tip.
+ * @param at The tip.
+ * @param direction The twig's direction at its tip.
+ * @param sky The sky side at the tip.
+ * @param along Metres along the shoot from the attach point.
+ */
+export function addBudCluster(
+	buds: PlannedBud[],
+	bud: ShootSpec['bud'],
+	tipRadius: number,
+	at: Vector3,
+	direction: Vector3,
+	sky: Vector3,
+	along: number,
+): void {
+	const budLength = bud.length;
+	const budWidth = bud.width;
+	if (budLength <= 0) return;
+	const count = Math.max(0, Math.round(bud.tipCluster) - 1);
+	const step = bud.cluster?.step ?? CLUSTER_STEP;
+	const lean = radians(bud.cluster?.lean ?? CLUSTER_LEAN);
+	buds.push({
+		at: [...at],
+		direction: [...direction],
+		length: budLength,
+		width: budWidth,
+		along,
+		cluster: true,
+		stack: budLength * (count > 0 ? 0.35 + step * (count - 1) + 1 : 1),
+	});
+	for (let k = 0; k < count; k++) {
+		const outward = turn(sky, direction, k * GOLDEN);
+		// The cluster stacks down the twig's last centimetres, each bud a step below the last on a
+		// spiral, standing on the bark and leaning out from the terminal bud.
+		const back = budLength * (0.35 + step * k);
+		const out = tipRadius + budWidth * 0.2;
+		buds.push({
+			at: [
+				at[0] - direction[0] * back + outward[0] * out,
+				at[1] - direction[1] * back + outward[1] * out,
+				at[2] - direction[2] * back + outward[2] * out,
+			],
+			direction: normalize3([
+				direction[0] * cos(lean) + outward[0] * sin(lean),
+				direction[1] * cos(lean) + outward[1] * sin(lean),
+				direction[2] * cos(lean) + outward[2] * sin(lean),
+			]),
+			cluster: true,
+			length: budLength * 0.8,
+			width: budWidth * 0.85,
+			along: along - back,
+		});
+	}
+}
+
+/**
  * Plans one prototype from the record: its axes, its leaves and its buds.
  *
  * @param record The species record.
@@ -567,30 +928,22 @@ export function planShoot(
 	const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
 	/** A two-ranked shoot keeps its laterals in the plane of its leaf ranks. */
 	const twoRanked = phyllotaxis.kind === 'distichous';
-	/**
-	 * A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky
-	 * side. `flatToAxis` sets the share that instead squares the lamina across the shoot, which is how a
-	 * rosette's blades stand: a camera looking down the twig sees every one of them face on.
-	 */
+	// A leaf's upper face looks toward the shoot's tip, turned toward the sky side by the species'
+	// share. A rosette names its own share, which squares the lamina across the shoot.
 	const leafRotation = (
 		direction: Vector3,
 		stem: Vector3,
 		sky: Vector3,
 		radial: Vector3,
 		skyShare?: number,
-	): number[] => {
-		const adaxial = square(stem, direction, radial);
-		const skyward = square(sky, direction, adaxial);
-		const w = skyShare ?? Math.min(1, skyTurn + flatten * (1 - skyTurn));
-		const face = normalize3([
-			adaxial[0] * (1 - w) + skyward[0] * w,
-			adaxial[1] * (1 - w) + skyward[1] * w,
-			adaxial[2] * (1 - w) + skyward[2] * w,
-		]);
-		const rotation = [0, 0, 0, 1];
-		quatFromFrame(direction, face, rotation);
-		return rotation;
-	};
+	): number[] =>
+		leafTurn(
+			direction,
+			stem,
+			sky,
+			radial,
+			skyShare ?? Math.min(1, skyTurn + flatten * (1 - skyTurn)),
+		);
 	const [baseRadius, tipRadius] = shootClass.stem?.radius ?? shoots.stem.radius;
 	// Degrees a lateral of this class leans from its parent.
 	const leanAngle = shootClass.lateral ?? LATERAL_ANGLE;
@@ -618,7 +971,7 @@ export function planShoot(
 		let sky = square(start.sky, direction, [0, 0, 1]);
 		let along = start.along;
 		let node = 0;
-		const azimuthStart = draw(Purpose.Start, axis) * 360;
+		const azimuthStart = shootClass.azimuth ?? draw(Purpose.Start, axis) * 360;
 		const axisLength = start.unitLength * start.units;
 		// A plate run holds one face; it starts at the run's first crowded node and ends when the
 		// internodes open out again. A new growth unit starts a new run.
@@ -774,6 +1127,24 @@ export function planShoot(
 		}
 	};
 
+	const leafRule: LeafRule = {
+		salt,
+		key: 0x5400 + index,
+		phyllotaxis,
+		leafAngle: shootClass.leafAngle,
+		leafAngleSpread: shootClass.leafAngleSpread ?? 0,
+		leafAzimuthSpread: shootClass.leafAzimuthSpread ?? 0,
+		needleAngle,
+		ranks,
+		leafScale: shootClass.leafScale,
+		leafSpread,
+		leafMean,
+		leafLength,
+		leafMeshes,
+		budLength,
+		budWidth,
+		rotate: leafRotation,
+	};
 	/** The leaves of one node, each with its axillary bud. */
 	const placeLeaves = (
 		axis: number,
@@ -787,122 +1158,27 @@ export function planShoot(
 		azimuthStart: number,
 		crowded: number,
 		plateFace?: Vector3,
-	): void => {
-		// A plate run holds every blade to its own face, so the run reads as one shingle rather than
-		// a tuft that turns with the stem.
-		const face = plateFace ?? sky;
-		const side = normalize3(cross3(stem, face, [0, 0, 0]));
-		const azimuths = nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
-			phyllotaxis.kind === 'rosette-spur'
-				? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
-				: 1,
-		);
-		const spread = shootClass.leafAngleSpread ?? 0;
-		const leafAngle =
-			needleAngle ??
-			curveAt(shootClass.leafAngle, t) +
-				(spread > 0 ? (draw(Purpose.LeafAngle, axis, node) * 2 - 1) * spread : 0);
-		for (let k = 0; k < azimuths.length; k++) {
-			let azimuth = radians(azimuths[k] as number);
-			// Two-ranked needles turn toward the shoot's two sides.
-			if (ranks > 0) {
-				const toward = cos(azimuth) >= 0 ? 0 : Math.PI;
-				let gap = toward - azimuth;
-				gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
-				azimuth += gap * ranks;
-			}
-			const radial = normalize3([
-				side[0] * cos(azimuth) + face[0] * sin(azimuth),
-				side[1] * cos(azimuth) + face[1] * sin(azimuth),
-				side[2] * cos(azimuth) + face[2] * sin(azimuth),
-			]);
-			const a = radians(leafAngle);
-			const direction = normalize3([
-				stem[0] * cos(a) + radial[0] * sin(a),
-				stem[1] * cos(a) + radial[1] * sin(a),
-				stem[2] * cos(a) + radial[2] * sin(a),
-			]);
-			const rotation = leafRotation(direction, stem, face, radial);
-			const key = node * 8 + k;
-			const size =
-				curveAt(shootClass.leafScale, t) *
-				(leafMean > 0 ? spreadAt(leafSpread, draw(Purpose.LeafSize, axis, key)) / leafMean : 1);
-			// A crowded node's leaves root inside the twig's own surface, so a rosette's inner blades
-			// meet the wood they stand on instead of stopping a hairline short of it.
-			const out = radius * (1 - CROWDED_ROOT * crowded);
-			leaves.push({
-				at: [at[0] + radial[0] * out, at[1] + radial[1] * out, at[2] + radial[2] * out],
-				rotation,
-				scale: Math.max(0.05, size),
-				mesh: hashAt(salt, 0x5400 + index, Purpose.LeafMesh, axis, key) % leafMeshes,
-				phase: hashAt(salt, 0x5400 + index, Purpose.Phase, axis, key) & 255,
-				along,
-				axis,
-				node,
-				stem: [...stem],
-				sky: [...face],
-				radial,
-				direction,
-				crowded,
-			});
-			if (leafLength > 0 && budLength > 0) {
-				const lean = radians(BUD_LEAN);
-				buds.push({
-					at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
-					direction: normalize3([
-						stem[0] * cos(lean) + radial[0] * sin(lean),
-						stem[1] * cos(lean) + radial[1] * sin(lean),
-						stem[2] * cos(lean) + radial[2] * sin(lean),
-					]),
-					cluster: false,
-					// Axil buds grow toward the tip cluster's size where the nodes crowd into a rosette.
-					length: budLength * (0.55 + 0.35 * crowded),
-					width: budWidth * (0.55 + 0.35 * crowded),
-					along,
-				});
-			}
-		}
-	};
-
-	/** The bud cluster at an axis's tip: the terminal bud and the buds stacked below it. */
-	const addCluster = (at: Vector3, direction: Vector3, sky: Vector3, along: number): void => {
-		if (budLength <= 0) return;
-		const count = Math.max(0, Math.round(shoots.bud.tipCluster) - 1);
-		const step = shoots.bud.cluster?.step ?? CLUSTER_STEP;
-		const lean = radians(shoots.bud.cluster?.lean ?? CLUSTER_LEAN);
-		buds.push({
-			at: [...at],
-			direction: [...direction],
-			length: budLength,
-			width: budWidth,
+	): void =>
+		placeNodeLeaves(
+			leafRule,
+			leaves,
+			buds,
+			axis,
+			node,
+			at,
+			stem,
+			sky,
+			radius,
 			along,
-			cluster: true,
-			stack: budLength * (count > 0 ? 0.35 + step * (count - 1) + 1 : 1),
-		});
-		for (let k = 0; k < count; k++) {
-			const outward = turn(sky, direction, k * GOLDEN);
-			// The cluster stacks down the twig's last centimetres, each bud a step below the last on a
-			// spiral, standing on the bark and leaning out from the terminal bud.
-			const back = budLength * (0.35 + step * k);
-			const out = tipRadius + budWidth * 0.2;
-			buds.push({
-				at: [
-					at[0] - direction[0] * back + outward[0] * out,
-					at[1] - direction[1] * back + outward[1] * out,
-					at[2] - direction[2] * back + outward[2] * out,
-				],
-				direction: normalize3([
-					direction[0] * cos(lean) + outward[0] * sin(lean),
-					direction[1] * cos(lean) + outward[1] * sin(lean),
-					direction[2] * cos(lean) + outward[2] * sin(lean),
-				]),
-				cluster: true,
-				length: budLength * 0.8,
-				width: budWidth * 0.85,
-				along: along - back,
-			});
-		}
-	};
+			t,
+			azimuthStart,
+			crowded,
+			plateFace,
+		);
+
+	/** The bud cluster at an axis's tip. */
+	const addCluster = (at: Vector3, direction: Vector3, sky: Vector3, along: number): void =>
+		addBudCluster(buds, shoots.bud, tipRadius, at, direction, sky, along);
 
 	const units = years;
 	grow({
@@ -924,9 +1200,183 @@ export function planShoot(
 	return { axes, leaves, buds, reach, span: Math.max(span, 1e-6) };
 }
 
+/** The longest run between two rings of a cut that names a turn, in metres. */
+const RING_RUN_MOST = 0.08;
+
+/** Whether the run from `from` to `at` meets the run from `at` to `to` at `degrees` or more. */
+function turnsPast(
+	from: Readonly<Vector3>,
+	at: Readonly<Vector3>,
+	to: Readonly<Vector3>,
+	degrees: number,
+): boolean {
+	const ax = at[0] - from[0];
+	const ay = at[1] - from[1];
+	const az = at[2] - from[2];
+	const bx = to[0] - at[0];
+	const by = to[1] - at[1];
+	const bz = to[2] - at[2];
+	const lengths = length3(ax, ay, az) * length3(bx, by, bz);
+	if (lengths <= 0) return false;
+	return (ax * bx + ay * by + az * bz) / lengths <= cos(radians(degrees));
+}
+
 /** The bend weight byte of a point along the shoot. */
 function bendByte(along: number, span: number): number {
 	return Math.min(255, Math.max(0, Math.round((along / span) * 255)));
+}
+
+/** Metres between the rings of a stem run that its leaves hide. */
+const HIDDEN_RING_GAP = 0.04;
+
+/**
+ * The runs of each axis that its leaves hide, as metres along the shoot from and to: where one leaf
+ * stands within two of the stem's radii of the next, the leaves close round the stem between them.
+ * With a gap stated, the runs are where one leaf stands within that many metres of the next.
+ */
+function hiddenRuns(plan: ShootPlan, gap?: number): (readonly [number, number])[][] {
+	const alongs: number[][] = plan.axes.map(() => []);
+	for (const leaf of plan.leaves) alongs[leaf.axis]?.push(leaf.along);
+	return plan.axes.map((points, axis) => {
+		const runs: [number, number][] = [];
+		const leaves = (alongs[axis] as number[]).sort((a, b) => a - b);
+		let k = 0;
+		for (let i = 1; i < leaves.length; i++) {
+			const from = leaves[i - 1] as number;
+			const to = leaves[i] as number;
+			while (k < points.length - 1 && (points[k + 1] as AxisPoint).along <= from) k++;
+			if (to - from > (gap ?? 2 * ((points[k] as AxisPoint | undefined)?.radius ?? 0))) continue;
+			const last = runs[runs.length - 1];
+			if (last && last[1] >= from) last[1] = to;
+			else runs.push([from, to]);
+		}
+		return runs;
+	});
+}
+
+/** A plan's dense runs of leaves, each in its own frame, with the run's leaves by index into the plan. */
+export interface PlannedBrush extends Omit<BrushRun, 'picture'> {
+	/** The run's axis: 0 for the piece's own stem, and its side stems after it. */
+	readonly axis: number;
+	readonly leaves: readonly number[];
+}
+
+/**
+ * The dense runs of a plan's leaves, each with its frame. A run starts where its first leaf stands
+ * on its stem and ends at its last, runs along the straight way between them, and faces the mean
+ * sky of its leaves.
+ *
+ * @param plan The plan.
+ * @param gap The most metres between neighbouring leaves of a run; absent, two of the stem's radii.
+ * @returns The runs, axis by axis.
+ */
+export function plannedBrushes(plan: ShootPlan, gap?: number): PlannedBrush[] {
+	const runs = hiddenRuns(plan, gap);
+	const out: PlannedBrush[] = [];
+	plan.axes.forEach((points, axis) => {
+		/** The stem's point `along` metres from the attach point. */
+		const pointAt = (along: number): Vector3 => {
+			for (let k = 1; k < points.length; k++) {
+				const a = points[k - 1] as AxisPoint;
+				const b = points[k] as AxisPoint;
+				if (along > b.along && k < points.length - 1) continue;
+				const t = Math.max(0, Math.min(1, (along - a.along) / Math.max(1e-9, b.along - a.along)));
+				return [
+					a.at[0] + (b.at[0] - a.at[0]) * t,
+					a.at[1] + (b.at[1] - a.at[1]) * t,
+					a.at[2] + (b.at[2] - a.at[2]) * t,
+				];
+			}
+			const only = points[0] as AxisPoint;
+			return [only.at[0], only.at[1], only.at[2]];
+		};
+		for (const [from, to] of runs[axis] ?? []) {
+			const leaves: number[] = [];
+			plan.leaves.forEach((leaf, i) => {
+				if (leaf.axis === axis && leaf.along >= from - 1e-9 && leaf.along <= to + 1e-9)
+					leaves.push(i);
+			});
+			if (leaves.length === 0) continue;
+			const start = pointAt(from);
+			const end = pointAt(to);
+			const length = length3(end[0] - start[0], end[1] - start[1], end[2] - start[2]);
+			if (length < 1e-6) continue;
+			const along = normalize3([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
+			const mean: Vector3 = [0, 0, 0];
+			for (const i of leaves) {
+				const sky = (plan.leaves[i] as PlannedLeaf).sky;
+				mean[0] += sky[0];
+				mean[1] += sky[1];
+				mean[2] += sky[2];
+			}
+			const lean = mean[0] * along[0] + mean[1] * along[1] + mean[2] * along[2];
+			let sky: Vector3 = [
+				mean[0] - along[0] * lean,
+				mean[1] - along[1] * lean,
+				mean[2] - along[2] * lean,
+			];
+			if (length3(sky[0], sky[1], sky[2]) < 1e-6) {
+				const up: Vector3 = Math.abs(along[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+				const tilt = up[0] * along[0] + up[1] * along[1] + up[2] * along[2];
+				sky = [up[0] - along[0] * tilt, up[1] - along[1] * tilt, up[2] - along[2] * tilt];
+			}
+			sky = normalize3(sky);
+			const middle = plan.leaves[leaves[leaves.length >> 1] as number] as PlannedLeaf;
+			out.push({
+				axis,
+				leaves,
+				start,
+				along,
+				sky,
+				side: cross3(along, sky, [0, 0, 0]),
+				length,
+				bend: bendByte((from + to) / 2, plan.span),
+				phase: middle.phase,
+			});
+		}
+	});
+	return out;
+}
+
+/**
+ * One run's leaves meshed at a tier and laid in the run's own frame, for the card bake to picture.
+ *
+ * @param plan The plan the run belongs to.
+ * @param brush The run.
+ * @param leafMeshes The leaf meshes at the tier.
+ * @param detail The tier.
+ * @returns The picture.
+ */
+export function brushPicture(
+	plan: ShootPlan,
+	brush: PlannedBrush,
+	leafMeshes: readonly PrototypeArrays[],
+	detail: Detail,
+): BrushPicture {
+	const leaves = brush.leaves.map((i) => plan.leaves[i] as PlannedLeaf);
+	const mesh = meshShoot(
+		{ ...plan, axes: [], buds: [], leaves },
+		leafMeshes,
+		detail,
+	).finishPrototype();
+	const positions = new Float32Array(mesh.positions.length);
+	const normals = new Float32Array(mesh.normals.length);
+	const { start, along, sky, side } = brush;
+	for (let i = 0; i < mesh.positions.length; i += 3) {
+		const x = (mesh.positions[i] as number) - start[0];
+		const y = (mesh.positions[i + 1] as number) - start[1];
+		const z = (mesh.positions[i + 2] as number) - start[2];
+		positions[i] = x * side[0] + y * side[1] + z * side[2];
+		positions[i + 1] = x * along[0] + y * along[1] + z * along[2];
+		positions[i + 2] = x * sky[0] + y * sky[1] + z * sky[2];
+		const nx = mesh.normals[i] as number;
+		const ny = mesh.normals[i + 1] as number;
+		const nz = mesh.normals[i + 2] as number;
+		normals[i] = nx * side[0] + ny * side[1] + nz * side[2];
+		normals[i + 1] = nx * along[0] + ny * along[1] + nz * along[2];
+		normals[i + 2] = nx * sky[0] + ny * sky[1] + nz * sky[2];
+	}
+	return { mesh: { ...mesh, positions, normals }, length: brush.length };
 }
 
 /**
@@ -935,6 +1385,7 @@ function bendByte(along: number, span: number): number {
  * @param plan The plan.
  * @param leafMeshes The leaf meshes at this tier.
  * @param detail The tier.
+ * @param cut How the tier meshes the wood and buds; the crown's own cut by default.
  * @returns The mesh.
  * @category api/vegetation
  */
@@ -942,35 +1393,69 @@ export function meshShoot(
 	plan: ShootPlan,
 	leafMeshes: readonly PrototypeArrays[],
 	detail: Detail,
+	cut: ShootCut = SHOOT_CUTS[detail],
 ): MeshWriter {
 	const mesh = new MeshWriter();
-	const sides = STEM_SIDES[detail];
-	for (const points of plan.axes) {
-		// Rings no closer than twice the stem's radius; the low tier keeps one ring at each year's end.
+	const sides = cut.stemSides;
+	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
+	const widen = cut.meanWidth ? PI / (sides * sin(PI / sides)) : 1;
+	const hidden = cut.thinHidden ? hiddenRuns(plan) : undefined;
+	plan.axes.forEach((points, axis) => {
+		const runs = hidden?.[axis] ?? [];
+		/** Whether the stem between two places along the shoot lies inside one hidden run. */
+		const covered = (from: number, to: number): boolean =>
+			runs.some(([start, end]) => from >= start && to <= end);
+		// Rings no closer than twice the stem's radius, and far apart where leaves hide the stem. A cut
+		// of year rings keeps one at each year's end, and a cut that names a turn keeps one only where
+		// the stem bends that far from its last ring, or where the run from it grows long enough that
+		// wind would bend the stem between two rings.
 		const path: TubePoint[] = [];
 		for (let k = 0; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
 			const last = path[path.length - 1];
 			const end = k === points.length - 1;
 			if (last && !end) {
+				if (point.plain) continue;
 				const gap = point.along - last.along;
-				if (gap < point.radius * 2 || (detail === 'low' && !point.unitEnd)) continue;
+				const least = covered(last.along, point.along)
+					? Math.max(HIDDEN_RING_GAP, point.radius * 2)
+					: point.radius * 2;
+				if (gap < least || (cut.yearRings && !point.unitEnd)) continue;
+				if (
+					cut.ringTurn !== undefined &&
+					gap < RING_RUN_MOST &&
+					!turnsPast(last.at, point.at, (points[k + 1] as AxisPoint).at, cut.ringTurn)
+				)
+					continue;
 			}
-			path.push(point);
+			path.push(widen === 1 ? point : { ...point, radius: point.radius * widen });
 		}
 		mesh.mark();
-		tube(mesh, path, sides, (ring) => [
-			bendByte((path[ring] as TubePoint).along, plan.span),
-			0,
-			SURFACE_STEM,
-			255,
-		]);
-	}
+		tube(
+			mesh,
+			path,
+			sides,
+			(ring) => [bendByte((path[ring] as TubePoint).along, plan.span), 0, SURFACE_STEM, 255],
+			false,
+			undefined,
+			// The stem's radius in the wood's own units, so the shader can widen a stem thinner than
+			// the least drawn width, as it widens the wood.
+			(_ring, radius) => [Math.min(1, radius / WOOD_RADIUS_RANGE), 0],
+		);
+	});
 	for (const bud of plan.buds) {
-		const shape = (bud.cluster ? CLUSTER_BUD : AXIL_BUD)[detail];
+		const shape =
+			bud.mark === 'thorn'
+				? (cut.thorn ?? cut.axil)
+				: bud.mark === 'body'
+					? ((bud.round ? cut.roundBody : undefined) ?? cut.body ?? cut.cluster)
+					: bud.cluster
+						? cut.cluster
+						: cut.axil;
 		mesh.mark();
 		if (!shape) continue;
-		if (bud.cluster && detail === 'medium') {
+		if (!bud.cluster && !bud.mark && bud.length < (cut.axilLeast ?? 0)) continue;
+		if (bud.cluster && cut.clusterCone) {
 			// The whole cluster as one cone over its stack, drawn on its tip bud's part.
 			if (bud.stack === undefined) continue;
 			const foot = bud.stack - bud.length;
@@ -994,24 +1479,43 @@ export function meshShoot(
 		}
 		const w = bud.width / 2;
 		const l = bud.length;
-		const profile: [number, number][] = shape.round
+		const cone =
+			shape.cone === true ||
+			(!bud.mark && (cut.coneAll === true || bud.length < (cut.coneBelow ?? 0)));
+		const double = shape.double === true && !cone;
+		const profile: [number, number][] = cone
 			? [
-					[w * 0.6, 0],
-					[w, l * 0.35],
-					[w * 0.7, l * 0.72],
+					[w, 0],
 					[0, l],
 				]
-			: [
-					[w * 0.5, 0],
-					[w, l * 0.4],
-					[0, l],
-				];
-		lathe(mesh, profile, bud.at, bud.direction, shape.sides, [
-			bendByte(bud.along, plan.span),
-			0,
-			SURFACE_BUD,
-			255,
-		]);
+			: double
+				? [
+						[0, 0],
+						[w, l * (shape.widest ?? 0.5)],
+						[0, l],
+					]
+				: shape.round
+					? [
+							[w * 0.6, 0],
+							[w, l * 0.35],
+							[w * 0.7, l * 0.72],
+							[0, l],
+						]
+					: [
+							[w * 0.5, 0],
+							[w, l * 0.4],
+							[0, l],
+						];
+		lathe(
+			mesh,
+			profile,
+			bud.at,
+			bud.direction,
+			shape.sides,
+			[bendByte(bud.along, plan.span), 0, SURFACE_BUD, 255],
+			undefined,
+			cone || double,
+		);
 	}
 	for (const leaf of plan.leaves) {
 		const source = leafMeshes[leaf.mesh];
@@ -1043,15 +1547,22 @@ export function meshShoot(
 	return mesh;
 }
 
-/** One prototype from a plan: its tiers meshed and shaded, its reach and bounds measured. */
-function prototypeOf(
+/**
+ * A plan meshed at every tier and shaded, with its reach and its bounding radius measured.
+ *
+ * @param plan The plan.
+ * @param leaves The species' leaf meshes at every tier, low first.
+ * @param cuts How each tier meshes the wood and buds; the crown's own cuts by default.
+ * @returns The meshes and the measures.
+ */
+export function meshedPlan(
 	plan: ShootPlan,
 	leaves: readonly (readonly PrototypeArrays[])[],
-	index: number,
-	shootClass: ShootClass,
-	cutting = false,
-): UncardedPrototype {
-	const writers = DETAILS.map((detail, tier) => meshShoot(plan, leaves[tier] ?? [], detail));
+	cuts: Readonly<Record<Detail, ShootCut>> = SHOOT_CUTS,
+): Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
+	const writers = DETAILS.map((detail, tier) =>
+		meshShoot(plan, leaves[tier] ?? [], detail, cuts[detail]),
+	);
 	shootOcclusion(writers, SHADE_TIER);
 	const tiers = writers.map((writer) =>
 		writer.finishPrototype(),
@@ -1063,15 +1574,27 @@ function prototypeOf(
 			radius,
 			length3(positions[i] as number, positions[i + 1] as number, positions[i + 2] as number),
 		);
+	return { length: plan.reach, radius, leaves: plan.leaves.length, tiers };
+}
+
+/** One prototype from a plan: its tiers meshed and shaded, its reach and bounds measured. */
+function prototypeOf(
+	plan: ShootPlan,
+	leaves: readonly (readonly PrototypeArrays[])[],
+	index: number,
+	shootClass: ShootClass,
+	cutting = false,
+): UncardedPrototype {
+	// A class of cards draws its leaves alone, each as the low tier's cut-out card at every tier.
+	const cards = shootClass.cards === true;
+	const drawn = cards ? { ...plan, axes: [], buds: [] } : plan;
+	const meshes = cards ? leaves.map(() => leaves[0] ?? []) : leaves;
 	return {
 		index,
 		class: shootClass.name,
 		...(cutting ? { cutting: true as const } : {}),
 		vigor: shootClass.vigor,
-		length: plan.reach,
-		radius,
-		leaves: plan.leaves.length,
-		tiers,
+		...meshedPlan(drawn, meshes),
 	};
 }
 
@@ -1100,14 +1623,18 @@ export function shootPrototypes(
 		planShoot(record, index, leafMeshes),
 	);
 	const classes = plans.map((_, index) => classOf(shoots.classes, index, shoots.prototypes));
-	const out = plans.map((plan, index) =>
-		prototypeOf(
-			leafMeshes > 0 ? plan : { ...plan, leaves: [] },
-			leaves,
-			index,
-			classes[index] as ShootClass,
-		),
-	);
+	// A cutting's kit holds only the classes a cut piece draws, so the plant's own prototypes stay
+	// out of it: a kit carrying both roughly doubles, and the cap it must fit is the cut piece's own.
+	const out = cutting
+		? []
+		: plans.map((plan, index) =>
+				prototypeOf(
+					leafMeshes > 0 ? plan : { ...plan, leaves: [] },
+					leaves,
+					index,
+					classes[index] as ShootClass,
+				),
+			);
 	if (!cutting && leafMeshes > 0 && hasBareTwins(record))
 		for (const [index, plan] of plans.entries())
 			out.push(
@@ -1117,7 +1644,8 @@ export function shootPrototypes(
 	// its variants fall. It keeps a leafless twin beside it where the species has them, so a winter
 	// cutting of it still finds a piece. A kit of a kind holds only the classes of its kind: the
 	// plant's kit the crown's and the cutting classes both are drawn from, the cutting kit the classes
-	// that only a cut piece draws.
+	// that only a cut piece draws. Each prototype's seed is its place in this list, so the classes
+	// after a new one are redrawn: a new class belongs after every existing class.
 	for (const shootClass of (shoots.cuttingClasses ?? []).filter(
 		(shoot) => (shoot.cutOnly === true) === cutting,
 	))

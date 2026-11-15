@@ -17,6 +17,9 @@ import { MeshWriter, SURFACE_LEAF } from './writer';
 /** Rings between a needle's base and its point, by tier; the low tier draws a ribbon. */
 const RINGS: Readonly<Record<Detail, number>> = { low: 0, medium: 1, high: 1, ultra: 2 };
 
+/** A flat blade's width at its point over its width at its base. */
+const BLADE_TIP = 0.35;
+
 /** Colour bytes of a needle vertex before a shoot places it. */
 const NEEDLE_COLOUR = [0, 0, SURFACE_LEAF, 255] as const;
 
@@ -71,6 +74,35 @@ function textureSpan(
 	const base = leaf.frame.petiole[1];
 	const tip = leaf.frame.tip[1];
 	return { base, tip, scale: length / Math.max(1e-6, tip - base) };
+}
+
+/**
+ * One needle as a flat blade of two triangles in needle space: its base at the origin, its length
+ * up +Y, its face toward +Z, narrowing toward its point. It stands for a needle thinner than a
+ * pixel at a whole view.
+ *
+ * @param shape The record's needle.
+ * @param manifest The species' texture manifest.
+ * @param length The needle's length in metres; the record's mean by default.
+ * @returns The mesh.
+ * @category api/vegetation
+ */
+export function bladeMesh(
+	shape: NeedleShape,
+	manifest: TextureManifest,
+	length = spreadMean(shape.length),
+): PrototypeArrays {
+	const mesh = new MeshWriter();
+	const { base, scale } = textureSpan(manifest, length);
+	// A round needle shows its whole width from every side and a flat blade its width times the
+	// cosine of its turn, 2 over pi of it on average. The blade is wider by the inverse, so a brush
+	// of blades covers what a brush of round needles covers.
+	const half = (shape.width / 2) * (Math.PI / 2);
+	const tip = half * BLADE_TIP;
+	const corner = (x: number, y: number): number =>
+		mesh.vertex([x, y, 0], [0, 0, 1], [0.5 + x / scale, base + y / scale], [y, x], NEEDLE_COLOUR);
+	mesh.quad(corner(-half, 0), corner(half, 0), corner(tip, length), corner(-tip, length));
+	return mesh.finishPrototype();
 }
 
 /**

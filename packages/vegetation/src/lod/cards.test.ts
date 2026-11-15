@@ -4,16 +4,27 @@
 // level.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
-import type { SpeciesKitData } from '../asset';
+import type { PrototypeArrays, SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
 import { standInSpecies } from '../core/stand-in';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
+import type { UncardedPrototype } from '../leaf/shoot';
+import { SURFACE_LEAF, SURFACE_PIECE, SURFACE_STEM } from '../leaf/writer';
 import { record as oak } from '../species/pedunculate-oak/record';
-import { bakeCards, paletteOf } from './card-bake';
-import { cardKeep, cardMesh, cardRows, foliageHull } from './cards';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
+import {
+	bakeCards,
+	bakeCell,
+	CARD_CUT_FALL_MOST,
+	CARD_CUT_LEAST,
+	cardLevelMost,
+	type Palette,
+	paletteOf,
+} from './card-bake';
+import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull } from './cards';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -151,7 +162,7 @@ describe('the card bake', () => {
 		}
 	});
 
-	it("bakes stems in the young bark's mean, else in a stand-in's own colour", () => {
+	it("bakes stems in the young bark's mean and tint, else in a stand-in's own colour", () => {
 		const tint = oak.bark?.zones[0]?.tint as readonly [number, number, number];
 		expect(tint).toBeDefined();
 		const young = { tile: [0.2, 0.2] as const, mean: [0.3, 0.25, 0.2] as const };
@@ -161,6 +172,12 @@ describe('the card bake', () => {
 			bark: { size: 1024, layers: [{ ...layer, height: { offset: 0, depth: 0 } }], young },
 		} as TextureManifest;
 		expect(paletteOf(oak, barked).stem).toEqual([0.3, 0.25, 0.2]);
+		// A record that tints its thin wood tints a card's twigs the same way.
+		const tinted = {
+			...oak,
+			bark: { ...(oak.bark as NonNullable<typeof oak.bark>), youngTint: [0.5, 1, 2] as const },
+		};
+		expect(paletteOf(tinted, barked).stem).toEqual([0.15, 0.25, 0.4]);
 		// A stand-in species measures no bark and gives its colour in its tint, which its far cards
 		// keep; with neither a measured bark nor a tint, the stand-in colour stands.
 		const bare = { ...OAK_MANIFEST, bark: undefined } as TextureManifest;
@@ -174,6 +191,537 @@ describe('the card bake', () => {
 			},
 		};
 		expect(paletteOf(plain, bare).stem).toEqual([...STAND_IN_BARK]);
+	});
+
+	it('bakes white leaf texels for a species with no leaf texture, as the leaf form samples white', () => {
+		// The shader divides a card texel by its texture's mean and multiplies it by the record's
+		// reflectance. A textured species bakes the texture's own colour, so the division gives the
+		// reflectance back. A species with no leaf texture samples a white texel, so its cards must
+		// bake white too: baking the reflectance instead squares the leaf's colour and darkens the
+		// card level against the leaf form.
+		const textured = bakedKit().atlas;
+		let coloured = 0;
+		for (let i = 0; i < textured.size * textured.size; i++) {
+			if (textured.color[i * 4 + 3] !== 255) continue;
+			if ((textured.surface[i * 4 + 3] as number) < 128) continue;
+			if (textured.color[i * 4] !== 255 || textured.color[i * 4 + 1] !== 255) coloured++;
+		}
+		expect(coloured).toBeGreaterThan(100);
+		const bare = { ...OAK_MANIFEST, leaf: undefined } as TextureManifest;
+		const white = bakedKit(bare).atlas;
+		let leaves = 0;
+		let whiteTexels = 0;
+		for (let i = 0; i < white.size * white.size; i++) {
+			if (white.color[i * 4 + 3] !== 255) continue;
+			if ((white.surface[i * 4 + 3] as number) < 128) continue;
+			leaves++;
+			// A texel that a leaf covers alone holds white; one that a stem crosses holds their mean.
+			if (
+				white.color[i * 4] === 255 &&
+				white.color[i * 4 + 1] === 255 &&
+				white.color[i * 4 + 2] === 255
+			)
+				whiteTexels++;
+		}
+		expect(leaves).toBeGreaterThan(100);
+		expect(whiteTexels / leaves).toBeGreaterThan(0.9);
+	});
+
+	it("pictures a placed piece's whole mesh where it carries one", () => {
+		// A tier that holds only the small neck a piece is cut at, and the whole piece around it.
+		const neck = quads([[0.4, 0.6, 0.4, 0.6, SURFACE_LEAF]]);
+		const whole = quads([[-0.5, 0.5, -0.5, 0.5, SURFACE_LEAF]]);
+		const planesOf = (prototype: UncardedPrototype) =>
+			(
+				bakeCards(oakRecord(), OAK_MANIFEST, 'high', [prototype]).cells[0] as {
+					planes: readonly { right: readonly number[]; up: readonly number[] }[];
+				}
+			).planes;
+		const width = (planes: readonly { right: readonly number[] }[]): number =>
+			Math.hypot(...(planes[0] as { right: readonly number[] }).right);
+		const short = planesOf(prototypeOf(neck, 'piece', 1));
+		const full = planesOf({ ...prototypeOf(neck, 'piece', 1), bake: whole });
+		// The planes stand on the mesh the cards picture: the whole piece's card is wider than the
+		// neck's, though its own tier mesh is the same small one.
+		expect(width(full)).toBeGreaterThan(width(short));
+	});
+});
+
+/** Flat quads in the plane z = 0 facing +z, each `[x0, x1, y0, y1, kind]` in a unit square. */
+function quads(
+	list: readonly (readonly [number, number, number, number, number])[],
+): PrototypeArrays {
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const uvs: number[] = [];
+	const colors: number[] = [];
+	const indices: number[] = [];
+	list.forEach(([x0, x1, y0, y1, kind], q) => {
+		for (const [x, y] of [
+			[x0, y0],
+			[x1, y0],
+			[x1, y1],
+			[x0, y1],
+		] as const) {
+			positions.push(x, y, 0);
+			normals.push(0, 0, 1);
+			uvs.push(x, y);
+			colors.push(0, 0, kind, 255);
+		}
+		indices.push(q * 4, q * 4 + 1, q * 4 + 2, q * 4, q * 4 + 2, q * 4 + 3);
+	});
+	return {
+		positions: Float32Array.from(positions),
+		normals: Float32Array.from(normals),
+		uvs: Float32Array.from(uvs),
+		uvs1: new Float32Array(uvs.length),
+		colors: Uint8Array.from(colors),
+		indices: Uint16Array.from(indices),
+	};
+}
+
+/** Leaves of one green and stems of one brown, with no texture outline. */
+const FLAT: Palette = {
+	upper: [0.1, 0.3, 0.05],
+	lower: [0.1, 0.3, 0.05],
+	stem: [0.3, 0.1, 0.05],
+	profile: undefined,
+	base: 0,
+	tip: 1,
+	mask: undefined,
+	extras: [],
+};
+
+/**
+ * A unit square's one face plane, baked into a cell of `cell` texels a side drawn in an atlas with a
+ * border of two texels round it.
+ */
+function bakeSquare(mesh: PrototypeArrays, cell = 8): { color: Uint8Array; surface: Uint8Array } {
+	const size = cell + 4;
+	const color = new Uint8Array(size * size * 8);
+	const surface = new Uint8Array(size * size * 8);
+	const plane = { centre: [0.5, 0.5, 0], right: [0.5, 0, 0], up: [0, 0.5, 0], normal: [0, 0, 1] };
+	bakeCell(mesh, plane, [2, 2, cell, cell], size, FLAT, color, surface);
+	return { color, surface };
+}
+
+/** The front layer's texel at (x, y) from the drawn area's corner of a cell `cell` texels a side. */
+const texelAt = (x: number, y: number, cell = 8) => ((y + 2) * (cell + 4) + x + 2) * 4;
+
+describe('a cell of the card bake', () => {
+	it('draws each texel whole or clear, and keeps the cover of parts thinner than a texel', () => {
+		// Ten needles a fifth of a texel wide, across the whole square.
+		const needles = quads(
+			Array.from({ length: 10 }, (_, k) => {
+				const x = (k + 0.37) / 10;
+				return [x, x + 0.025, 0, 1, SURFACE_LEAF] as const;
+			}),
+		);
+		const { color } = bakeSquare(needles);
+		let whole = 0;
+		for (let y = 0; y < 8; y++)
+			for (let x = 0; x < 8; x++) {
+				const alpha = color[texelAt(x, y) + 3] as number;
+				expect(alpha === 0 || alpha === 255).toBe(true);
+				if (alpha === 255) whole++;
+			}
+		// The needles cover a quarter of the square: 16 of its 64 texels, give or take the rounding
+		// that error diffusion carries off the cell's edge.
+		expect(Math.abs(whole - 16)).toBeLessThanOrEqual(2);
+	});
+
+	it('keeps a thin leaflet whole to its end, and the cell its cover', () => {
+		// A broad leaf on whole texels with a leaflet under a quarter of a texel wide running from it
+		// through the middle of a row of texels, out to six tenths of the way across its fourteenth.
+		// The bake samples each texel four by four, so the leaflet holds one row of samples.
+		const CELL = 16;
+		const mesh = quads([
+			[1 / CELL, 5 / CELL, 5 / CELL, 11 / CELL, SURFACE_LEAF],
+			[5 / CELL, 13.6 / CELL, 7.3 / CELL, 7.45 / CELL, SURFACE_LEAF],
+		]);
+		const { color } = bakeSquare(mesh, CELL);
+		let reach = -1;
+		let whole = 0;
+		for (let y = 0; y < CELL; y++)
+			for (let x = 0; x < CELL; x++) {
+				if ((color[texelAt(x, y, CELL) + 3] as number) !== 255) continue;
+				whole++;
+				if (y === 7) reach = Math.max(reach, x);
+			}
+		expect(reach).toBe(13);
+		// The leaf and the leaflet cover 25.3 texels' worth; the dither keeps that, give or take two.
+		const cover = 4 * 6 + (13.6 - 5) * 0.15;
+		expect(Math.abs(whole - cover)).toBeLessThanOrEqual(2);
+	});
+
+	it('browns a placed piece by its own browning, as the nearest level does', () => {
+		// A placed piece across the square, green at its left edge and wholly browned at its right.
+		const mesh = quads([[0, 1, 0, 1, SURFACE_PIECE]]);
+		const uvs1 = new Float32Array(mesh.uvs1.length);
+		for (let v = 0; v < 4; v++) uvs1[v * 2 + 1] = mesh.positions[v * 3] as number;
+		const piece = { ...mesh, uvs1 };
+		const size = 12;
+		const color = new Uint8Array(size * size * 8);
+		const surface = new Uint8Array(size * size * 8);
+		const plane = { centre: [0.5, 0.5, 0], right: [0.5, 0, 0], up: [0, 0.5, 0], normal: [0, 0, 1] };
+		const browned = { ...FLAT, browned: { upper: [3, 0.5, 1] as Rgb, lower: [3, 0.5, 1] as Rgb } };
+		bakeCell(piece, plane, [2, 2, 8, 8], size, browned, color, surface);
+		const at = (x: number) => texelAt(x, 3);
+		// Each column's share of the way browned is its centre's place across the square.
+		for (const x of [0, 7]) {
+			const brown = (x + 0.5) / 8;
+			expect(linear(color[at(x)] as number)).toBeCloseTo(0.1 * (1 + 2 * brown), 2);
+			expect(linear(color[at(x) + 1] as number)).toBeCloseTo(0.3 * (1 - 0.5 * brown), 2);
+		}
+		// A leaf of the shoot's own, not a placed piece, keeps its colour.
+		const leaf = new Uint8Array(size * size * 8);
+		bakeCell(
+			quads([[0, 1, 0, 1, SURFACE_LEAF]]),
+			plane,
+			[2, 2, 8, 8],
+			size,
+			browned,
+			leaf,
+			surface,
+		);
+		expect(linear(leaf[at(7)] as number)).toBeCloseTo(0.1, 2);
+	});
+
+	it('gives a texel the kind that covers most of it, in the mean colour of what covers it', () => {
+		// In the fifth column of texels, leaf covers three quarters and twig the last quarter.
+		const mesh = quads([
+			[0, 0.59375, 0, 1, SURFACE_LEAF],
+			[0.59375, 0.625, 0, 1, SURFACE_STEM],
+		]);
+		const { color, surface } = bakeSquare(mesh);
+		const at = texelAt(4, 3);
+		expect(surface[at + 3] as number).toBeGreaterThanOrEqual(128);
+		const green = 0.75 * 0.3 + 0.25 * 0.1;
+		expect(linear(color[at + 1] as number)).toBeCloseTo(green, 2);
+	});
+
+	it('keeps the share a cell draws at full size as the mip levels coarsen, dense or sparse', () => {
+		const CELL = 32;
+		const SIZE = CELL + 4;
+		/**
+		 * The share of a baked square's drawn area that draws at a mip level, read as the plant shader
+		 * reads it: the level's texels blended at points a texel of that level apart, from four
+		 * offsets a side, against a cut.
+		 */
+		const share = (color: Uint8Array, level: number, cut: number) => {
+			let side = SIZE;
+			let alpha = Float64Array.from(
+				{ length: SIZE * SIZE },
+				(_, i) => (color[i * 4 + 3] as number) / 255,
+			);
+			for (let l = 0; l < level; l++) {
+				const next = side >> 1;
+				const coarse = new Float64Array(next * next);
+				for (let y = 0; y < next; y++)
+					for (let x = 0; x < next; x++)
+						coarse[y * next + x] =
+							((alpha[y * 2 * side + x * 2] as number) +
+								(alpha[y * 2 * side + x * 2 + 1] as number) +
+								(alpha[(y * 2 + 1) * side + x * 2] as number) +
+								(alpha[(y * 2 + 1) * side + x * 2 + 1] as number)) /
+							4;
+				alpha = coarse;
+				side = next;
+			}
+			const step = 1 << level;
+			const at = (x: number, y: number) =>
+				alpha[
+					Math.min(side - 1, Math.max(0, y)) * side + Math.min(side - 1, Math.max(0, x))
+				] as number;
+			let drawn = 0;
+			let count = 0;
+			for (let oy = 0; oy < 4; oy++)
+				for (let ox = 0; ox < 4; ox++)
+					for (let ty = 2 + ((oy + 0.5) / 4) * step; ty < 2 + CELL; ty += step)
+						for (let tx = 2 + ((ox + 0.5) / 4) * step; tx < 2 + CELL; tx += step) {
+							const x = tx / step - 0.5;
+							const y = ty / step - 0.5;
+							const x0 = Math.floor(x);
+							const y0 = Math.floor(y);
+							const fx = x - x0;
+							const fy = y - y0;
+							const value =
+								(at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
+								(at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
+							drawn += value >= cut ? 1 : 0;
+							count++;
+						}
+			return drawn / count;
+		};
+		const dense = quads([[0, 1, 0, 1, SURFACE_LEAF]]);
+		// Clumps of needles a third of a texel wide, as needles crowd round a twig: four clumps across,
+		// each four texels wide, in two bands, with as wide gaps between. A grey of evenly spread
+		// needles, the same at every point of a coarse level, could not be cut to any share but all
+		// or none; a real pad crowds as these do.
+		const sparse = quads(
+			[0.06, 0.31, 0.56, 0.81].flatMap((clump) =>
+				[0, 0.02, 0.04, 0.06, 0.08, 0.1].flatMap((offset) =>
+					[
+						[0.1, 0.4],
+						[0.6, 0.9],
+					].map(([from, to]) => {
+						const x = clump + offset;
+						return [x, x + 0.01, from as number, to as number, SURFACE_LEAF] as const;
+					}),
+				),
+			),
+		);
+		for (const mesh of [dense, sparse]) {
+			const { color, surface } = bakeSquare(mesh, CELL);
+			// The share full size draws: its whole texels.
+			let whole = 0;
+			for (let y = 0; y < CELL; y++)
+				for (let x = 0; x < CELL; x++)
+					whole += (color[texelAt(x, y, CELL) + 3] as number) === 255 ? 1 : 0;
+			const full = whole / (CELL * CELL);
+			const fall = ((surface[texelAt(5, 5, CELL) + 2] as number) / 255) * CARD_CUT_FALL_MOST;
+			// Where the cell spans several of a level's texels, it draws its full-size share.
+			let error = 0;
+			let before = 0;
+			for (const level of [1, 2, 3]) {
+				const drawn = share(color, level, Math.max(CARD_CUT_LEAST, 0.5 - fall * level));
+				if (level < 3) expect(Math.abs(drawn - full)).toBeLessThan(0.06);
+				error += Math.abs(drawn - full);
+				// The old cut: one half, the alpha raised five per cent a level.
+				before += Math.abs(share(color, level, 0.5 / (1 + 0.05 * level)) - full);
+			}
+			// Over the levels a whole view reads, it draws nearer the full-size share than the old cut;
+			// a level where the cell spans four texels reads nearly even, so no hard cut draws its share
+			// exactly there.
+			expect(error).toBeLessThanOrEqual(before + 1e-9);
+			if (mesh === sparse) expect(error).toBeLessThan(before * 0.75);
+		}
+	});
+});
+
+/** A prototype of one mesh at every tier. */
+function prototypeOf(mesh: PrototypeArrays, kind: UncardedPrototype['class'], leaves: number) {
+	let reach = 0;
+	for (let i = 0; i < mesh.positions.length; i += 3)
+		reach = Math.max(
+			reach,
+			Math.hypot(
+				mesh.positions[i] as number,
+				mesh.positions[i + 1] as number,
+				mesh.positions[i + 2] as number,
+			),
+		);
+	return {
+		index: 0,
+		class: kind,
+		vigor: [0, 1] as const,
+		length: reach,
+		radius: reach,
+		leaves,
+		tiers: [mesh, mesh, mesh, mesh] as const,
+	} as unknown as UncardedPrototype;
+}
+
+/**
+ * A ribbon of placed-piece surface along a path from the origin, `width` across in x, each vertex's
+ * second coordinates holding its share along the ribbon, as a placed piece's surface does.
+ */
+function ribbon(path: readonly (readonly [number, number])[], width: number): PrototypeArrays {
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const uvs: number[] = [];
+	const uvs1: number[] = [];
+	const colors: number[] = [];
+	const indices: number[] = [];
+	path.forEach(([y, z], k) => {
+		const share = k / (path.length - 1);
+		for (const x of [-width / 2, width / 2]) {
+			positions.push(x, y, z);
+			normals.push(0, 0, 1);
+			uvs.push(x / width + 0.5, share);
+			uvs1.push(share, 0);
+			colors.push(0, 0, SURFACE_PIECE, 255);
+		}
+		if (k > 0) {
+			const a = (k - 1) * 2;
+			indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
+		}
+	});
+	return {
+		positions: Float32Array.from(positions),
+		normals: Float32Array.from(normals),
+		uvs: Float32Array.from(uvs),
+		uvs1: Float32Array.from(uvs1),
+		colors: Uint8Array.from(colors),
+		indices: Uint16Array.from(indices),
+	};
+}
+
+describe('the coarsest mip level a card reads', () => {
+	// Cells of a whole and a half side, each drawn inside a border of two texels.
+	const cell = (side: number) =>
+		({
+			planes: [
+				{ front: [2, 2, side - 4, side - 4] },
+				{ front: [side + 2, 2, side / 2 - 4, side / 2 - 4] },
+			],
+		}) as unknown as SpeciesKitData['prototypes'][number]['card'];
+	it('is the deepest where the smallest leaf cell still holds four texels a side', () => {
+		expect(cardLevelMost([{ leaves: 4, card: cell(128) }])).toBe(4);
+		expect(cardLevelMost([{ leaves: 4, card: cell(64) }])).toBe(3);
+		expect(cardLevelMost([{ leaves: 4, card: cell(32) }])).toBe(2);
+	});
+	it('leaves out the cells of bare wood and of cuttings, and holds nothing without leaves', () => {
+		const leafy = { leaves: 4, card: cell(128) };
+		expect(cardLevelMost([leafy, { leaves: 0, card: cell(16) }])).toBe(4);
+		expect(cardLevelMost([leafy, { leaves: 4, cutting: true, card: cell(16) }])).toBe(4);
+		expect(cardLevelMost([{ leaves: 0, card: cell(64) }])).toBe(0);
+	});
+});
+
+describe('the card bake along a long piece', () => {
+	const plain = oakRecord();
+	const record = { ...plain, lod: { ...plain.lod, cardCuts: { most: 4 } } };
+	const planesOf = (prototype: UncardedPrototype) =>
+		(bakeCards(record, OAK_MANIFEST, 'high', [prototype]).cells[0] as { planes: CardPlanes })
+			.planes;
+	type CardPlanes = SpeciesKitData['prototypes'][number]['card']['planes'];
+
+	it('cuts a stouter piece where the record names a lower threshold', () => {
+		// A strip 0.3 m along and 0.12 m wide: its length over width is 2.5, under the class's own
+		// threshold for a shoot, so only a record that asks cuts it.
+		const stout = prototypeOf(
+			ribbon(
+				Array.from({ length: 13 }, (_, k) => [(k / 12) * 0.3, 0] as const),
+				0.12,
+			),
+			'long',
+			1,
+		);
+		const plain = { ...record, lod: { ...record.lod, cardCuts: { most: 4 } } };
+		const asked = {
+			...record,
+			lod: { ...record.lod, cardCuts: { most: 4 }, cardCutLength: 2 },
+		};
+		const count = (species: typeof plain) =>
+			(
+				bakeCards(species, OAK_MANIFEST, 'high', [stout]).cells[0] as {
+					planes: readonly unknown[];
+				}
+			).planes.length;
+		expect(count(plain)).toBe(3);
+		expect(count(asked)).toBeGreaterThan(3);
+	});
+
+	it('cuts a piece many times longer than wide into cards along it, each in cells of its own', () => {
+		// A strip 1.2 m long and 6 cm wide, straight up its line.
+		const strip = prototypeOf(
+			ribbon(
+				Array.from({ length: 25 }, (_, k) => [(k / 24) * 1.2, 0] as const),
+				0.06,
+			),
+			'piece',
+			1,
+		);
+		const planes = planesOf(strip);
+		expect(planes.length).toBeGreaterThanOrEqual(4);
+		expect(planes.length % 2).toBe(0);
+		const taken = new Set<string>();
+		let along = 0;
+		for (const [k, plane] of planes.entries()) {
+			expect(plane.role).toBe(k % 2 === 0 ? 0 : 1);
+			taken.add(plane.front.join(','));
+			if (k % 2 === 0) {
+				expect(plane.along[0]).toBeCloseTo(along, 6);
+				along = plane.along[1];
+			}
+		}
+		expect(along).toBeCloseTo(1, 6);
+		expect(taken.size).toBe(planes.length);
+		// Texels a metre along the strip: an uncut card holds its whole length in one cell.
+		const face = planes[0] as CardPlanes[number];
+		const perMetre = face.front[3] / (2 * Math.hypot(...(face.up as [number, number, number])));
+		const uncut = face.front[3] / 1.25;
+		expect(perMetre).toBeGreaterThan((planes.length / 2) * uncut * 0.8);
+	});
+
+	it('keeps a long piece whole where its record asks for no cut', () => {
+		const strip = prototypeOf(
+			ribbon(
+				Array.from({ length: 25 }, (_, k) => [(k / 24) * 1.2, 0] as const),
+				0.06,
+			),
+			'piece',
+			1,
+		);
+		const planes = (
+			bakeCards(plain, OAK_MANIFEST, 'high', [strip]).cells[0] as { planes: CardPlanes }
+		).planes;
+		expect(planes.map((plane) => plane.role)).toEqual([0, 1, 2]);
+	});
+
+	it('keeps three planes on a card about as long as it is wide', () => {
+		const square = prototypeOf(quads([[0, 0.5, 0, 0.5, SURFACE_LEAF]]), 'piece', 1);
+		const planes = planesOf(square);
+		expect(planes.map((plane) => plane.role)).toEqual([0, 1, 2]);
+		for (const plane of planes) expect([...plane.along]).toEqual([0, 1]);
+	});
+
+	it('keeps a shoot under four times longer than wide whole, where a piece would be cut', () => {
+		const path = Array.from({ length: 13 }, (_, k) => [(k / 12) * 0.6, 0] as const);
+		expect(planesOf(prototypeOf(ribbon(path, 0.2), 'piece', 1)).length).toBeGreaterThan(3);
+		expect(planesOf(prototypeOf(ribbon(path, 0.2), 'short', 1)).length).toBe(3);
+	});
+
+	it('follows a blade that arches over: its cards turn along the arch', () => {
+		// A quarter circle of 0.6 m from straight up to level.
+		const arch = Array.from({ length: 33 }, (_, k) => {
+			const angle = (k / 32) * (Math.PI / 2);
+			return [0.6 * Math.sin(angle), 0.6 * (1 - Math.cos(angle))] as const;
+		});
+		const planes = planesOf(prototypeOf(ribbon(arch, 0.04), 'piece', 1));
+		const up = (plane: CardPlanes[number]) => {
+			const [x, y, z] = plane.up as [number, number, number];
+			const l = Math.hypot(x, y, z);
+			return [x / l, y / l, z / l];
+		};
+		const first = up(planes[0] as CardPlanes[number]);
+		const last = up(planes[planes.length - 1] as CardPlanes[number]);
+		expect(Math.abs(first[1] as number)).toBeGreaterThan(0.8);
+		expect(Math.abs(last[2] as number)).toBeGreaterThan(0.8);
+	});
+
+	it('pictures a blade that arches over and lies along the ground out to its tip', () => {
+		// An arch 0.5 m high that comes down 0.7 m out, then a last stretch along the ground.
+		const arch = [
+			...Array.from({ length: 25 }, (_, k) => {
+				const angle = (k / 24) * Math.PI;
+				return [0.5 * Math.sin(angle), 0.35 * (1 - Math.cos(angle))] as const;
+			}),
+			...Array.from({ length: 4 }, (_, k) => [0.005, 0.7 + ((k + 1) / 4) * 0.15] as const),
+		];
+		const blade = prototypeOf(ribbon(arch, 0.05), 'piece', 1);
+		const { atlas, cells } = bakeCards(record, OAK_MANIFEST, 'high', [blade]);
+		const planes = (cells[0] as { planes: CardPlanes }).planes;
+		expect(planes.length).toBeGreaterThan(3);
+		// How far out the cards' picture reaches: the corners of every texel of half cover or more.
+		let reach = Number.NEGATIVE_INFINITY;
+		for (const plane of planes) {
+			const [x0, y0, w, h] = plane.front;
+			for (let j = 0; j < h; j++)
+				for (let i = 0; i < w; i++) {
+					if ((atlas.color[((y0 + j) * atlas.size + x0 + i) * 4 + 3] as number) < 128) continue;
+					for (const a of [(i / w) * 2 - 1, ((i + 1) / w) * 2 - 1])
+						for (const b of [(j / h) * 2 - 1, ((j + 1) / h) * 2 - 1])
+							reach = Math.max(
+								reach,
+								(plane.centre[2] as number) +
+									a * (plane.right[2] as number) +
+									b * (plane.up[2] as number),
+							);
+				}
+		}
+		expect(reach).toBeGreaterThan(0.85 - 0.02);
 	});
 });
 
@@ -195,24 +743,57 @@ describe('the card levels', () => {
 		detail: 'high' as const,
 	};
 
+	const drawnRows = (level: 1 | 2): number[] => {
+		const flags = connectedCards(mesh, level);
+		const out: number[] = [];
+		for (let r = 0; r < rows.count; r++) if (flags[r] === 1) out.push(r);
+		return out;
+	};
+	/** A level's card plane triangles, leaving out its stalks' lines. */
+	const planeTriangles = (arrays: { indices: ArrayLike<number>; uvs1: ArrayLike<number> }) => {
+		let count = 0;
+		for (let t = 0; t < arrays.indices.length; t += 3)
+			if (Math.abs((arrays.uvs1[(arrays.indices[t] as number) * 2 + 1] as number) - 0.75) >= 1e-6)
+				count++;
+		return count;
+	};
+
 	it("draws each row's three planes at the first level", () => {
 		const first = cardMesh(mesh, 1);
-		expect(first.indices.length / 3).toBe(rows.count * 6);
+		expect(planeTriangles(first)).toBe(drawnRows(1).length * 6);
 		for (let i = 0; i < first.uvs.length; i++) {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
 		}
 	});
 
+	it("grows a card further where the record asks, inside the leaf form's hull", () => {
+		const asked = {
+			...mesh,
+			record: { ...record, lod: { ...record.lod, cardGrow: 2 } },
+		};
+		const plain = cardMesh(mesh, 1);
+		const grown = cardMesh(asked, 1);
+		// The first card's quad: its first two corners are its plane's left and right edges.
+		const width = (arrays: { positions: Float32Array }) =>
+			Math.hypot(
+				(arrays.positions[3] as number) - (arrays.positions[0] as number),
+				(arrays.positions[4] as number) - (arrays.positions[1] as number),
+				(arrays.positions[5] as number) - (arrays.positions[2] as number),
+			);
+		expect(width(grown)).toBeGreaterThan(width(plain) * 1.01);
+	});
+
 	it("draws each card's stalk only where the record gives a least width", () => {
 		const plain = cardMesh(mesh, 1);
-		expect(plain.indices.length / 3).toBe(rows.count * 6);
+		expect(plain.indices.length / 3).toBe(drawnRows(1).length * 6);
 		const stalked = cardMesh(
 			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
 			1,
 		);
+		const drawn = drawnRows(1);
 		let stretched = 0;
-		for (let r = 0; r < rows.count; r++) {
+		for (const r of drawn) {
 			const bx = (rows.back?.[r * 3] as number) ?? 0;
 			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
 			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
@@ -220,7 +801,7 @@ describe('the card levels', () => {
 		}
 		expect(stretched).toBeGreaterThan(0);
 		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
-		expect(stalked.indices.length / 3).toBe(rows.count * 6 + stretched * 4);
+		expect(stalked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
 		let stalks = 0;
 		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
 			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
@@ -237,8 +818,73 @@ describe('the card levels', () => {
 		expect(stalks).toBe(stretched * 4);
 	});
 
-	it('reaches the carried foliage only where the record asks', () => {
-		const stalked = { ...record, lod: { ...record.lod, cardStalk: 1 } };
+	it('draws no card stalk where the record asks for none', () => {
+		const plain = cardMesh(mesh, 1);
+		expect(planeTriangles(plain)).toBe(drawnRows(1).length * 6);
+		expect(plain.indices.length / 3).toBe(drawnRows(1).length * 6);
+	});
+
+	it("draws each card's stalk where the record asks, at its twig's radius where it names so", () => {
+		const asked = {
+			...mesh,
+			record: { ...record, lod: { ...record.lod, cardStalk: 1 } },
+		};
+		const stalked = cardMesh(asked, 1);
+		// Without the marker a stalk's second coordinate holds no radius: the shader draws the
+		// record's least width.
+		for (let v = 0; v < stalked.uvs1.length / 2; v++)
+			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) < 1e-6)
+				expect(stalked.uvs[v * 2 + 1]).toBe(0);
+		const marked = cardMesh(
+			{
+				...mesh,
+				record: { ...record, lod: { ...record.lod, cardStalk: 1, cardStalkWidth: true } },
+			},
+			1,
+		);
+		const drawn = drawnRows(1);
+		const thickest = Math.max(...mesh.skeleton.radius);
+		let stretched = 0;
+		for (const r of drawn) {
+			const bx = (rows.back?.[r * 3] as number) ?? 0;
+			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
+			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
+			if (Math.hypot(bx, by, bz) > 1e-6) stretched++;
+		}
+		expect(stretched).toBeGreaterThan(0);
+		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
+		expect(marked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
+		let stalks = 0;
+		for (let v = 0; v < marked.uvs1.length / 2; v++) {
+			if (Math.abs((marked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
+			stalks++;
+			expect([0, 1]).toContain(marked.uvs[v * 2] as number);
+			// The second texture coordinate holds the twig's radius over the wood's radius span.
+			const radius = (marked.uvs[v * 2 + 1] as number) * WOOD_RADIUS_RANGE;
+			expect(radius).toBeGreaterThan(0);
+			expect(radius).toBeLessThanOrEqual(thickest);
+			expect(
+				Math.hypot(
+					marked.normals[v * 3] as number,
+					marked.normals[v * 3 + 1] as number,
+					marked.normals[v * 3 + 2] as number,
+				),
+			).toBeCloseTo(1, 5);
+		}
+		expect(stalks).toBe(stretched * 4);
+	});
+
+	it("joins a marked card's stalk to the wood and to the card, as the record asks", () => {
+		// The marker names the line's width; the join is what this test proves, so both sides name it.
+		const stalked = {
+			...record,
+			lod: {
+				...record.lod,
+				cardStalk: 1,
+				cardStalkWidth: true,
+				cardStalkToFoliage: false,
+			},
+		};
 		const reaching = { ...stalked, lod: { ...stalked.lod, cardStalkToFoliage: true } };
 		const off = cardMesh({ ...mesh, record: stalked }, 1);
 		const on = cardMesh({ ...mesh, record: reaching }, 1);
@@ -253,6 +899,7 @@ describe('the card levels', () => {
 			if (cardKeep(rows.order[r] as number, 1) === 0) continue;
 			const prototype = kit.prototypes[rows.prototype[r] as number];
 			if (!prototype) continue;
+			if (connectedCards(mesh, 1)[r] !== 1) continue;
 			const planes = prototype.card.planes.length;
 			const at = vertex + planes * 4;
 			vertex = at + 4;
@@ -298,7 +945,8 @@ describe('the card levels', () => {
 	it('keeps every second card in the thinned level, and every row of the rim', () => {
 		const second = cardMesh(mesh, 2);
 		const keeps = cardRows(mesh, 2);
-		expect(second.indices.length / 3).toBe(keeps.filter((grow) => grow > 0).length * 6);
+		const drawn = new Set(drawnRows(2));
+		expect(planeTriangles(second)).toBe(drawn.size * 6);
 		const rim = foliageHull(mesh).rim;
 		expect(rim.some((flag) => flag === 1)).toBe(true);
 		// Each step of two rows keeps its own row, or the row of the rim that stands in its place.
@@ -314,6 +962,48 @@ describe('the card levels', () => {
 		expect(cardKeep(4, 2)).toBeCloseTo(Math.SQRT2, 12);
 		expect(cardKeep(3, 2)).toBe(0);
 		expect(cardKeep(3, 1)).toBe(1);
+	});
+
+	it('thins a card level further by the same rule', () => {
+		for (const [share, every] of [
+			[0.5, 4],
+			[0.25, 8],
+		] as const) {
+			const thinned = { ...mesh, cards: share };
+			const level = cardMesh(thinned, 2);
+			const keeps = cardRows(thinned, 2);
+			const rim = foliageHull(thinned).rim;
+			const flags = connectedCards(thinned, 2);
+			let drawn = 0;
+			for (let r = 0; r < rows.count; r++) {
+				if (flags[r] === 1) drawn++;
+				// A row the step drops stays only where it stands on the rim.
+				if ((rows.order[r] as number) % every !== 0)
+					expect([share, r, (keeps[r] as number) > 0]).toEqual([share, r, rim[r] === 1]);
+			}
+			expect(planeTriangles(level)).toBe(drawn * 6);
+		}
+		expect(cardKeep(0, 2, 0.5)).toBe(2);
+		expect(cardKeep(2, 2, 0.5)).toBe(0);
+		expect(cardKeep(0, 2, 0.25)).toBeCloseTo(2 * Math.SQRT2, 12);
+		// A share of one keeps the level's own cards.
+		expect(cardKeep(0, 2, 1)).toBeCloseTo(Math.SQRT2, 12);
+	});
+});
+
+describe('a record that asks for a finer card cell', () => {
+	it('bakes each cell at the size its own tier names', () => {
+		const record = oakRecord();
+		const base = bakeCards(record, OAK_MANIFEST, 'high', testKit(record).prototypes);
+		const fineRecord = {
+			...record,
+			lod: { ...record.lod, cardCell: { low: 64, medium: 64, high: 128, ultra: 128 } },
+		};
+		const fine = bakeCards(fineRecord, OAK_MANIFEST, 'high', testKit(fineRecord).prototypes);
+		expect(fine.atlas.size).toBe(base.atlas.size * 2);
+		// The drawn area keeps its two-texel border at either size.
+		expect(fine.cells[0]?.planes[0]?.front).toEqual([2, 2, 124, 124]);
+		expect(base.cells[0]?.planes[0]?.front).toEqual([2, 2, 60, 60]);
 	});
 });
 

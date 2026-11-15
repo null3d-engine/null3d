@@ -58,6 +58,7 @@
 			"!docs/data",
 			"!tools/samples/manifest.json",
 			"!packages/vegetation-textures/textures/*/manifest.json",
+			"!tools/lib/plant-review/targets/*.json",
 			"!packages/vegetation-textures/textures/*/index.js",
 			"!packages/vegetation-textures/textures/*/index.d.ts",
 			"!packages/vegetation-textures/textures/*/leaf-coverage.json",

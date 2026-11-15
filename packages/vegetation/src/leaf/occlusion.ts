@@ -4,7 +4,7 @@
 // its rays stay on the side its normal faces. The triangles sit in a grid of cells that each ray
 // walks, so a shoot of a few thousand triangles takes a few milliseconds.
 import { cos, sin } from '../core/math';
-import { type MeshWriter, SURFACE_LEAF } from './writer';
+import { leafSurface, type MeshWriter } from './writer';
 
 /** Rays per vertex. */
 const RAYS = 16;
@@ -225,7 +225,7 @@ export function selfOcclusion(mesh: MeshWriter, occluder: MeshWriter): void {
 		const nx = mesh.normals[i * 3] as number;
 		const ny = mesh.normals[i * 3 + 1] as number;
 		const nz = mesh.normals[i * 3 + 2] as number;
-		const leaf = mesh.colors[i * 4 + 2] === SURFACE_LEAF;
+		const leaf = leafSurface(mesh.colors[i * 4 + 2] as number);
 		let open = 0;
 		for (const [rx, ry, rz] of DIRECTIONS) {
 			let dx = rx;

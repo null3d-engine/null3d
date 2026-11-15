@@ -22,14 +22,16 @@
 		"sunRise": 70,
 		"skyShare": 0.395,
 		"sky": "#d7e6f1",
-		"daylight": 1.739
+		"daylight": 1.739,
+		"forkRow": 0.64
 	},
 	"05-crown-underneath.png": {
 		"sunAzimuth": 45,
 		"sunRise": 65,
 		"skyShare": 0.19,
 		"sky": "#98bcec",
-		"daylight": 2.334
+		"daylight": 2.334,
+		"elevation": 45
 	},
 	"18-silhouette.png": {
 		"fov": 30,
@@ -53,11 +55,17 @@
 	"04-crown-outside.png": {
 		"skyShare": 0.19,
 		"daylight": 2.761,
-		"distance": 4
+		"limbRow": 0.85,
+		"limbShare": 0.1
 	},
 	"06-inside-crown.png": {
 		"skyShare": 0.395,
 		"daylight": 1.508
+	},
+	"07-limb-leaving-trunk.png": {
+		"limbShare": 0.5,
+		"collarColumn": 0.57,
+		"limbLie": 10
 	},
 	"17-trunk-taper.png": {
 		"skyShare": 0.702,
@@ -110,7 +118,7 @@
 		"lamp": "#f5f0b4"
 	},
 	"15-bark-mid-trunk.png": {
-		"barkMask": true
+		"daylight": 0.95
 	},
 	"16-bark-on-limb.png": {
 		"barkMask": true,
@@ -121,10 +129,12 @@
 	},
 	"28-young-bark.png": {
 		"barkMask": true,
-		"daylight": 1.2
+		"daylight": 1.2,
+		"thin": 0.025,
+		"span": 0.12
 	},
 	"26-bark-texture.png": {
-		"barkMask": true,
-		"daylight": 1.25
+		"daylight": 1.4,
+		"barkHeight": 2.4
 	}
 }

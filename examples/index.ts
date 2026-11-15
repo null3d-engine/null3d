@@ -80,13 +80,45 @@ function rememberNavScroll(): void {
 	);
 }
 
-/** A demo's title, then its scene as a smaller sub-title under it, on its own line. */
-function heading(demo: Demo): (string | HTMLElement)[] {
+/** A demo's title, then its scene as a smaller sub-title under it, on its own line, and a bar that
+ * shows the progress of work the scene does after its start, such as regrowing a meadow. */
+function heading(demo: Demo, growthBar = false): (string | HTMLElement)[] {
 	const name = element('span', demo.title);
 	name.className = 'name';
 	const scene = element('span', demo.scene);
 	scene.className = 'scene';
-	return [name, scene];
+	const growth = element('span');
+	growth.className = 'growth';
+	growth.id = 'demo-growth';
+	growth.hidden = true;
+	growth.style.cssText = ['display:flex', 'align-items:center', 'gap:8px', 'margin-top:6px'].join(
+		';',
+	);
+	const track = element('span');
+	track.style.cssText = [
+		'flex:1',
+		'height:4px',
+		'border-radius:2px',
+		'background:rgba(255,255,255,0.18)',
+		'overflow:hidden',
+	].join(';');
+	const fill = element('span');
+	fill.id = 'demo-growth-fill';
+	fill.style.cssText = [
+		'display:block',
+		'width:0%',
+		'height:100%',
+		'border-radius:2px',
+		'background:#8fbf8e',
+		'transition:width 120ms linear',
+	].join(';');
+	track.append(fill);
+	const percent = element('span');
+	percent.id = 'demo-growth-percent';
+	percent.textContent = '0%';
+	percent.style.cssText = 'font-variant-numeric:tabular-nums;font-size:11px;opacity:0.8';
+	growth.append(track, percent);
+	return growthBar ? [name, scene, growth] : [name, scene];
 }
 
 /** Lists the demos in the sidebar, group by group, and marks the one that runs. */
@@ -193,7 +225,7 @@ async function runDemo(demo: Demo): Promise<void> {
 	caption.className = 'caption';
 	const title = element('summary');
 	const h1 = element('h1');
-	h1.append(...heading(demo));
+	h1.append(...heading(demo, true));
 	// The chevron floats at the top right of the summary, in place of the native marker. It points
 	// down while the caption is folded and up while it is open, and the summary toggles it once.
 	const chevron = element('span');

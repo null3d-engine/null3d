@@ -106,7 +106,12 @@ function meshHash(kit: SpeciesKitData, asset: PlantAsset): MeshHash {
 		skeleton.age,
 		skeleton.flags,
 		...Object.values(skeleton.axes),
-		...Object.values(skeleton.buds),
+		// A socket plant's bud sites hold a table of their own, whose arrays are fed one by one.
+		...Object.values(skeleton.buds).flatMap((value) =>
+			typeof value === 'object' && value !== null && !ArrayBuffer.isView(value)
+				? Object.values(value as Record<string, ArrayBufferView>)
+				: [value as ArrayBufferView | number | undefined],
+		),
 	])
 		eatField(hash, array);
 	const rows = asset.shoots;
@@ -180,7 +185,7 @@ const module = await loadSpecies(named);
 await loadPlantCode(module.record);
 const season = (seasonName as Season | undefined) ?? module.record.seasons.default;
 const build = (): MeshHash => {
-	const kit = buildKitNow(module, { detail: DETAIL, placeholders: 'missing' });
+	const kit = buildKitNow(module, { detail: DETAIL, placeholders: 'missing', season });
 	const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true, season });
 	return meshHash(kit, asset);
 };

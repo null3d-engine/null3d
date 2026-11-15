@@ -1,6 +1,6 @@
 # The Island on phones: what costs, and what to change
 
-Branch `research/island-phones`, from `perf/beat-meshlets` at `746403737`. Date: 2026-11-05.
+Branch `research/island-phones`, from `perf/beat-meshlets` at `0df1bf2e2`. Date: 2026-11-05.
 
 This study asks why the Island's town view is slow on phones, and what would make it run well
 there. It uses the cloud phones' records from the terrain-batching runs, and new measurements on

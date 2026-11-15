@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { QualityPreset, SketchContext } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
-import { type Species } from '../core/record';
+import type { Species } from '../core/record';
 import { curveAt } from '../core/types';
 import { record as meadowRecord } from '../species/meadow-grass/record';
 import { grassCover } from './cover';

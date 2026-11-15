@@ -2,23 +2,17 @@
 // sedge and meadow grass by the tuft grower and its blades, through every built stage of the core
 // with stand-ins only for the stages not built yet. Each grows the same bytes twice and in a worker
 // that runs the job-worker task, has no wood, stays within its budget, and takes its references'
-// form: the hosta a mound about twice as wide as tall, the sedge bowed stems with spikes hanging one
-// below another and a spike at each tip, the grass panicles at about twice its leaves' height.
+// form: the hosta a mound about twice as wide as tall. The tufts' pieces and sockets have their own
+// tests (tuft.test.ts).
 import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
+import { nearTriangles } from '../coarseness';
 import { capsFor, variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
-import {
-	AXIS_CULM,
-	AXIS_LIMB,
-	AXIS_ROOT,
-	BUD_FLOWER,
-	BUD_TERMINAL,
-	type MacroSkeleton,
-} from '../core/graph';
+import { AXIS_CULM, AXIS_ROOT, BUD_FLOWER, BUD_TERMINAL, type MacroSkeleton } from '../core/graph';
 import type { GrassBlade, Species, ThickLeaf } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { noTextureFiles } from '../core/textures';
@@ -27,9 +21,12 @@ import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import type { PlantTaskInput } from '../generate-task';
 import { bladeHalf } from '../leaf/grass-blade';
 import { builder as thickBuilder } from '../leaf/thick-leaf';
+import { phaseByte, SURFACE_KINDS } from '../leaf/writer';
 import { dequantisePosition } from '../lod/quantise';
 import { AXIS_LEAF } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
+import { targetHeight } from './height';
+import { leafRoll } from './rosette';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
 const kits = new Map<string, SpeciesKitData>(
@@ -85,6 +82,16 @@ function drawnBounds(asset: PlantAsset, kit: SpeciesKitData): { min: number[]; m
 	return { min, max };
 }
 
+describe("a merged run's flutter phase", () => {
+	it('never takes a surface kind, and stays within a step of its hash', () => {
+		for (let hash = 0; hash < 65_536; hash++) {
+			const phase = phaseByte(hash);
+			expect(SURFACE_KINDS.includes(phase)).toBe(false);
+			expect((phase - (hash & 255) + 256) % 256).toBeLessThanOrEqual(1);
+		}
+	});
+});
+
 describe('the ground plants grown end to end', () => {
 	for (const { record } of GROUND_TEST_SPECIES) {
 		it(`${record.id}: passes the record check and grows the same bytes twice`, () => {
@@ -97,20 +104,22 @@ describe('the ground plants grown end to end', () => {
 			);
 		});
 
-		it(`${record.id}: has no wood, merged foliage at every level, and stays within its budget`, () => {
+		it(`${record.id}: has no wood, its own mesh at every level, and stays within its budget`, () => {
 			const asset = assetOf(record);
+			const kit = kitOf(record);
 			const budget = record.lod.budget;
 			for (const level of asset.levels) {
 				const names = level.parts.map((part) => part.name);
 				expect(names).not.toContain('wood');
 				expect(names).toContain('foliage');
 			}
-			expect(asset.levels[0].triangles).toBeLessThanOrEqual(budget.lod0Triangles);
+			// A plant of placed pieces draws them at the nearest level beside its own mesh.
+			const near = nearTriangles(kit, asset);
+			expect(near).toBeLessThanOrEqual(budget.lod0Triangles);
 			expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 			expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
-			expect(asset.levels[1].triangles).toBeLessThan(asset.levels[0].triangles);
+			expect(asset.levels[1].triangles).toBeLessThan(near);
 			expect(asset.levels[2].triangles).toBeLessThan(asset.levels[1].triangles);
-			const kit = kitOf(record);
 			let kitBytes = 0;
 			for (const leaf of kit.leaves) kitBytes += leaf.positions.byteLength * 3;
 			expect(kitBytes).toBeLessThanOrEqual(budget.kitBytes[kit.detail]);
@@ -193,6 +202,19 @@ self.onmessage = async (event) => {
 	});
 });
 
+describe("the hosta's rolled leaves", () => {
+	it('meshes no leaf rolled at or past the rolled share of its age', async () => {
+		const module = await loadSpecies('hosta');
+		const growth = module.record.growth;
+		if (growth.model !== 'rosette') throw new Error('the hosta is not a rosette');
+		for (let age = 0; age <= 1; age += 1 / 64) {
+			const roll = leafRoll(age, growth.rolled);
+			if (age >= growth.rolled) expect([age, roll]).toEqual([age, 0]);
+			else expect(roll).toBeGreaterThan(0);
+		}
+	});
+});
+
 describe('the hosta', () => {
 	it('is a mound about twice as wide as tall', () => {
 		const { min, max } = drawnBounds(assetOf(hostaRecord), kitOf(hostaRecord));
@@ -252,7 +274,11 @@ describe('the hosta', () => {
 		const foliage = autumn.levels[0].parts.find((part) => part.name === 'foliage');
 		expect(foliage?.arrays.uvs1[1]).toBe(65535);
 		const blossom = growPlantNow(kit, { ...OPTIONS, season: 'blossom' });
-		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeGreaterThan(0.6);
+		// The scapes carry the plant's drawn top, which the dressing aims at the record's sampled height.
+		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeCloseTo(
+			targetHeight(hostaRecord, blossom.seed, blossom.variant),
+			2,
+		);
 		expect(blossom.levels[0].parts.map((part) => part.name)).toContain('extras');
 		let flowers = 0;
 		for (let b = 0; b < blossom.skeleton.buds.count; b++)
@@ -274,104 +300,34 @@ describe('the hosta', () => {
 });
 
 describe('the pendulous sedge', () => {
-	it('bows its stems and hangs four or five spikes from each, with one at each tip', () => {
-		const { skeleton } = assetOf(sedgeRecord);
-		const { axes, buds } = skeleton;
-		let stems = 0;
-		for (let a = 0; a < axes.count; a++) if ((axes.kind[a] as number) === AXIS_CULM) stems++;
-		expect(stems).toBeGreaterThanOrEqual(5);
-		let hanging = 0;
-		let tips = 0;
-		for (let b = 0; b < buds.count; b++) {
-			const kind = buds.kind[b] as number;
-			if (kind === BUD_FLOWER) {
-				hanging++;
-				// The frame's +Y points down.
-				const x = buds.frame[b * 4] as number;
-				const z = buds.frame[b * 4 + 2] as number;
-				expect(1 - 2 * (x * x + z * z)).toBeLessThan(-0.9);
-			} else if (
-				kind === BUD_TERMINAL &&
-				(axes.kind[buds.axis[b] as number] as number) === AXIS_CULM
-			)
-				tips++;
-		}
-		expect(tips).toBe(stems);
-		expect(hanging / stems).toBeGreaterThanOrEqual(3);
-		expect(hanging / stems).toBeLessThanOrEqual(5);
-		const top = topOf(skeleton, AXIS_CULM);
-		expect(top).toBeGreaterThan(0.9);
-		expect(top).toBeLessThan(2);
-		expect(topOf(skeleton, AXIS_LEAF)).toBeGreaterThan(0.45);
-		expect(assetOf(sedgeRecord).levels[0].parts.map((part) => part.name)).toContain('extras');
-	});
-
-	it("gives each hanging spike's stalk the share of the stem's radius the record asks", () => {
-		const growth = sedgeRecord.growth;
-		if (growth.model !== 'tuft' || !growth.heads) throw new Error('the fixture is not a tuft');
-		const heads = { ...growth.heads, stalkShare: 0.6 };
-		const shared: Species = {
-			...sedgeRecord,
-			id: 'sedge-stalk-share',
-			growth: { ...growth, heads },
-		};
-		const kit = buildKitNow(
-			{ record: shared, textures: noTextureFiles(shared.id) },
-			{ placeholders: 'missing' },
-		);
-		const { skeleton } = growPlantNow(kit, OPTIONS);
-		let stalks = 0;
-		for (let a = 0; a < skeleton.axes.count; a++) {
-			const parent = skeleton.axes.parent[a] as number;
-			if (parent < 0) continue;
-			if ((skeleton.axes.kind[a] as number) !== AXIS_LIMB) continue;
-			if ((skeleton.axes.kind[parent] as number) !== AXIS_CULM) continue;
-			const radius = skeleton.radius[skeleton.axes.first[a] as number] as number;
-			expect(radius).toBeCloseTo(heads.radius * 0.6, 3);
-			stalks++;
-		}
-		expect(stalks).toBeGreaterThan(3);
-	});
-
-	it('draws the rhizome and its roots under the crown when the record names them', () => {
+	it('draws the rhizome and its roots under the stool at the nearest level alone', () => {
 		const growth = sedgeRecord.growth;
 		if (growth.model !== 'tuft') throw new Error('the fixture is not a tuft');
-		const soil = {
-			rhizome: { mean: 0.04, spread: 0.01 },
-			rhizomeRadius: 0.011,
-			roots: { mean: 15, spread: 3 },
-			rootLength: { mean: 0.14, spread: 0.05 },
-			rootRadius: 0.0018,
-			droop: { mean: 40, spread: 15 },
-		};
-		const rhizomed: Species = { ...sedgeRecord, id: 'sedge-rhizome', growth: { ...growth, soil } };
+		expect(growth.soil).toBeDefined();
+		const { soil: _soil, ...unrooted } = growth;
+		const bare: Species = { ...sedgeRecord, id: 'sedge-bare', growth: unrooted };
 		const kit = buildKitNow(
-			{ record: rhizomed, textures: noTextureFiles(rhizomed.id) },
+			{ record: bare, textures: noTextureFiles(bare.id) },
 			{ placeholders: 'missing' },
 		);
-		const bare = growPlantNow(kitOf(sedgeRecord), OPTIONS);
-		const { skeleton, levels } = growPlantNow(kit, OPTIONS);
+		const without = growPlantNow(kit, OPTIONS);
+		const { skeleton, levels } = assetOf(sedgeRecord);
 		let under = 0;
 		let lowest = 0;
-		let reach = 0;
-		// Axis 0 is the crown's own, which holds the shoots; the rest are the rhizome and its roots.
+		// Axis 0 is the stool's own, which holds the shoots; the rest are the rhizome and its roots.
 		for (let a = 1; a < skeleton.axes.count; a++) {
 			if ((skeleton.axes.kind[a] as number) !== AXIS_ROOT) continue;
 			under++;
-			for (let n = skeleton.axes.first[a] as number; n <= (skeleton.axes.last[a] as number); n++) {
+			for (let n = skeleton.axes.first[a] as number; n <= (skeleton.axes.last[a] as number); n++)
 				lowest = Math.min(lowest, skeleton.position[n * 3 + 1] as number);
-				reach = Math.max(
-					reach,
-					Math.hypot(skeleton.position[n * 3] as number, skeleton.position[n * 3 + 2] as number),
-				);
-			}
 		}
 		expect(under).toBeGreaterThan(5);
 		expect(lowest).toBeLessThan(-0.01);
-		expect(reach).toBeGreaterThan(0.1);
-		expect(levels[0].triangles).toBeGreaterThan(bare.levels[0].triangles);
-		expect(levels[1].triangles).toBe(bare.levels[1].triangles);
-		expect(levels[2].triangles).toBe(bare.levels[2].triangles);
+		expect(levels[0].triangles).toBeGreaterThan(without.levels[0].triangles);
+		expect(levels[1].triangles).toBe(without.levels[1].triangles);
+		expect(levels[2].triangles).toBe(without.levels[2].triangles);
+		// The plant above the soil is the same with and without it.
+		expect(assetOf(sedgeRecord).shoots.count).toBe(without.shoots.count);
 	});
 
 	it("leaves an unrhizomed plant's blades and stems byte-identical", async () => {
@@ -389,31 +345,39 @@ describe('the pendulous sedge', () => {
 		// [D-314](../../../../.dev/decisions/D-314-plant-coarseness.md) lists them. It does not
 		// read the impostor cards, so their mesh moving leaves it alone. A deliberate record
 		// change re-records the figure, and the growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('11b484f6e4855bcd');
+		// The record names the leaf-form height measure, the one its whole views were judged with,
+		// and it draws its cards' twig lines at the twigs' widths and on to the cards' centres; all
+		// of these move the sedge's blades' scale and its card levels.
+		// The forms merge joins those with this line's own sedge changes, the fine clump twigs and
+		// the first card start, so the soil-free plant is neither line's figure: d5639f211ed6d288
+		// before the merge, f1926c1fb4d54966 on the forms line, a5cc68968440acff after it.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('a5cc68968440acff');
 	});
 
 	it('ends its blades in long fine points', () => {
-		const blade = bladeOf(sedgeRecord);
+		// The point's own closing, read on a blade of even width so its outline does not mix in.
+		const shaped = bladeOf(sedgeRecord);
+		const blade: GrassBlade = {
+			...shaped,
+			profile: [
+				[0, 1],
+				[1, 1],
+			],
+		};
 		const form = { length: 0.8, width: blade.width, blade, twist: 0, browning: 0, dry: 0 };
 		expect(bladeHalf(form, 1)).toBeLessThan(1e-6);
-		expect(bladeHalf(form, 1 - blade.tipLength / 2)).toBeLessThan(
-			0.6 * bladeHalf(form, 1 - blade.tipLength),
-		);
+		// Still 12: half way along the point the leaf keeps about three quarters of the width it
+		// had where the point began, and nine tenths of the way along about a fifth.
+		const start = bladeHalf(form, 1 - blade.tipLength);
+		const into = (share: number) => bladeHalf(form, 1 - blade.tipLength * (1 - share)) / start;
+		expect(into(0.5)).toBeGreaterThan(0.7);
+		expect(into(0.5)).toBeLessThan(0.85);
+		expect(into(0.9)).toBeGreaterThan(0.15);
+		expect(into(0.9)).toBeLessThan(0.3);
 	});
 });
 
 describe('the meadow grass', () => {
-	it('carries its panicles at about twice the height of its leaves', () => {
-		const { skeleton } = assetOf(meadowGrassRecord);
-		const ratio = topOf(skeleton, AXIS_CULM) / topOf(skeleton, AXIS_LEAF);
-		expect(ratio).toBeGreaterThan(1.4);
-		expect(ratio).toBeLessThan(2.8);
-		let spikelets = 0;
-		for (let b = 0; b < skeleton.buds.count; b++)
-			if ((skeleton.buds.kind[b] as number) === BUD_FLOWER) spikelets++;
-		expect(spikelets).toBeGreaterThan(200);
-	});
-
 	it('keeps its blades of even width to a short blunt hood', () => {
 		const blade = bladeOf(meadowGrassRecord);
 		const form = { length: 0.2, width: blade.width, blade, twist: 0, browning: 0, dry: 0 };
@@ -423,14 +387,13 @@ describe('the meadow grass', () => {
 		expect(bladeHalf(form, 1)).toBeLessThan(1e-6);
 	});
 
-	it('draws nothing for its heads out of their seasons, and every tier from the same growth', () => {
-		const kit = kitOf(meadowGrassRecord);
-		const winter = growPlantNow(kit, { ...OPTIONS, season: 'winter' });
-		expect(topOf(winter.skeleton, AXIS_CULM)).toBe(0);
-		expect(winter.levels[0].parts.map((part) => part.name)).not.toContain('extras');
-		const triangles = DETAILS.map(
-			(detail) => growPlantNow(kit, { ...OPTIONS, detail }).levels[0].triangles,
-		);
+	it('draws no fewer triangles at a finer tier', () => {
+		const species = GROUND_TEST_SPECIES.find((entry) => entry.record === meadowGrassRecord);
+		if (!species) throw new Error('no species');
+		const triangles = DETAILS.map((detail) => {
+			const kit = buildKitNow(species, { placeholders: 'missing', detail });
+			return nearTriangles(kit, growPlantNow(kit, OPTIONS), detail);
+		});
 		for (let i = 1; i < triangles.length; i++)
 			expect(triangles[i] as number).toBeGreaterThanOrEqual(triangles[i - 1] as number);
 	});

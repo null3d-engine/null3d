@@ -5,10 +5,11 @@
 //
 // Outlines are compared after each is scaled to the same height and centred on its trunk, so the
 // overlap measures shape rather than framing; the frame overlap, as framed, is reported beside it.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { writePng } from '../../../packages/cli/src/png.js';
 import type { PlantReviewQuery } from '../../../tests/pages/lib/plant-review/query.ts';
+import { VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
 import {
 	blank,
 	deltaE2000,
@@ -30,20 +31,52 @@ import {
 	videoFrames,
 } from './image.ts';
 import {
+	anchorColumn,
 	anyPlantMask,
 	type Box,
 	boxOf,
+	type CrownRegion,
+	crownBalanceOf,
+	crownBandsOf,
+	crownFoliageOf,
+	halfDarkMask,
+	hangingParts,
+	LEAF_GREEN,
 	matteMask,
+	matteOwnMask,
 	measurePlant,
+	median,
+	PIECE_BRIDGE,
+	type PlantHabit,
 	type PlantMask,
 	type PlantMeasures,
+	type PlantPart,
 	pieceCount,
+	pieceParts,
 	plantMask,
 	type ReferenceSet,
+	SOIL_MASK_GROUND_SHARE,
+	skyMaskable,
+	soilMaskable,
 	type TurnVideo,
 	WORK_WIDTH,
 } from './references.ts';
 import type { RunFrame } from './render.ts';
+import { type PictureNote, type Standing, standReason } from './review-data.ts';
+import type { SheathTarget } from './sheath.ts';
+import {
+	areaCovers,
+	contractHeld,
+	holdsWholePlant,
+	lackReason,
+	PART,
+	type Parts,
+	partsFoliageShare,
+	partsOf,
+	regionsRead,
+	subjectWoodBounds,
+	voidReason,
+} from './subject-check.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -58,7 +91,93 @@ const EDGE_FLOOR = 6;
 const PIECE_AREA = 24;
 
 /** The views that photograph the bark close up, whatever words a species puts in its file names. */
-const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
+const BARK_VIEWS: ReadonlySet<string> = new Set([
+	'bark-base',
+	'bark-mid',
+	'bark-limb',
+	// A ground plant's bark is its sheath, so the sheath close view reads the material as a bark
+	// close view does.
+	'sheath',
+]);
+
+/**
+ * The measure's own figures live in the module that reads the picture: the green of a leaf, the
+ * column at a plant's foot, and the median of a list. The comparison reads them from there.
+ */
+export { anchorColumn, LEAF_GREEN, median };
+
+/**
+ * The close views of the wood from among the plant's own parts: a limb's join, a fork, the trunk
+ * inside the crown and the bole. Their photographs stand against leaves, woodland or the plant
+ * itself, so a sky or a ground fitted to such a picture's border is not there to find. Only a
+ * plain studio background gives one of them an outline.
+ */
+export const WOOD_CLOSE_VIEWS: ReadonlySet<string> = new Set([
+	'junction',
+	'fork',
+	'inside',
+	'trunk',
+]);
+
+/**
+ * The views for which the standard states no figure: their rows are judged on them by eye. A picture
+ * of one of them that gives no figure is drawn and not measured, which is its proper state. A
+ * picture of any other view that gives no figure is a fault of the tool.
+ */
+export const EYE_VIEWS: ReadonlySet<string> = new Set([
+	'below',
+	'limb',
+	'crown-underside',
+	'inside',
+	'junction',
+	'fork',
+	'trunk',
+]);
+
+/**
+ * The views whose camera is solved from the plant's subjects, each with a contract. A picture of
+ * one draws its matte too, so the contract's regions are checked on what was drawn.
+ */
+export const SOLVED_VIEWS: ReadonlySet<string> = new Set([
+	...EYE_VIEWS,
+	'bark-base',
+	'bark-mid',
+	'bark-limb',
+	// A hanging-shoot view now states its own contract, so its parts picture is drawn too.
+	'strands',
+]);
+
+/**
+ * Whether a comparison read any figure of its picture against its photograph: an outline, a
+ * surface or bark colour, or a leaf colour. The edge-direction share is not one: it is a note for
+ * the eye and no row's band.
+ */
+export function measured(pair: {
+	readonly masked: boolean;
+	readonly surfaceDeltaE: number | null;
+	readonly foliageDeltaE: number | null;
+	readonly barkDeltaE: number | null;
+}): boolean {
+	return (
+		pair.masked ||
+		pair.surfaceDeltaE !== null ||
+		pair.foliageDeltaE !== null ||
+		pair.barkDeltaE !== null
+	);
+}
+
+/**
+ * Whether a picture separates a plant from a plain background, so its outline can be read. A bark
+ * close view photographs the bark against bark, and a bark texture is a cut-out of the material:
+ * neither has a plant outline, and their rows read colour. A leaf texture is a cut-out on white
+ * and keeps its outline. A species' slot can also name a picture whose own background is the
+ * subject, such as a far scrub band that the fitted sky and ground admit; that picture carries no
+ * outline either, and the crown box and its gap, which `measurePlant` reads from the same mask, go
+ * with it rather than staying beside the null figures.
+ */
+export function hasSeparableOutline(view: string, kind: string, noOutline = false): boolean {
+	return !noOutline && !(BARK_VIEWS.has(view) || (kind === 'texture' && !view.startsWith('leaf')));
+}
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
@@ -67,6 +186,8 @@ export interface ReferenceFraming {
 	/** The plant base's row share, or undefined when the base is out of the frame. */
 	readonly base?: number;
 	readonly targetX: number;
+	/** The share of the frame's width that the reference's plant fills, margin included. */
+	readonly widthShare: number;
 	/** The frame's width over its height. */
 	readonly aspect: number;
 	/** The plain sky's and the meadow's colours, as sRGB hex. */
@@ -80,48 +201,9 @@ export interface ReferenceFraming {
 	readonly notes: readonly string[];
 }
 
-/** The median of a list of numbers, or undefined for an empty list. */
-export function median(values: readonly number[]): number | undefined {
-	if (values.length === 0) return undefined;
-	const sorted = [...values].sort((a, b) => a - b);
-	const mid = sorted.length >> 1;
-	return sorted.length % 2
-		? sorted[mid]
-		: ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
-}
-
 /** The mean of a list of numbers, or 0 for an empty list. */
 export function mean(values: readonly number[]): number {
 	return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-/**
- * The column of the plant's trunk at its base, or the box's middle when the base is cut off.
- *
- * A low limb that sweeps out near the foot merges with the trunk in a row's outer extent, so each
- * row of the base band gives the run nearest the plant's middle column, and the median of those
- * centres stands for the trunk. The lowest few rows of a broad crown are then outvoted.
- */
-export function anchorColumn(mask: Uint8Array, width: number, height: number, box: Box): number {
-	if (box.bottom >= height - 1) return (box.left + box.right) / 2;
-	const middle = (box.left + box.right) / 2;
-	const band = Math.max(2, Math.round((box.bottom - box.top + 1) * 0.15));
-	const centres: number[] = [];
-	for (let y = box.bottom; y > box.bottom - band; y--) {
-		let best: number | null = null;
-		let runStart = -1;
-		for (let x = 0; x <= width; x++) {
-			const on = x < width && mask[y * width + x] === 1;
-			if (on && runStart < 0) runStart = x;
-			if (!on && runStart >= 0) {
-				const centre = (runStart + x - 1) / 2;
-				if (best === null || Math.abs(centre - middle) < Math.abs(best - middle)) best = centre;
-				runStart = -1;
-			}
-		}
-		if (best !== null) centres.push(best);
-	}
-	return median(centres) ?? (box.left + box.right) / 2;
 }
 
 /**
@@ -230,11 +312,19 @@ export function estimateFraming(
 	const columns = usable.map(
 		({ m, mask }) => anchorColumn(mask.mask, mask.width, mask.height, m.box as Box) / m.width,
 	);
+	// The plant's width in its picture, margin included: a whole view stands back until the render
+	// fills no more of its frame's width, so a plant wider than its reference keeps the same margin
+	// instead of being cropped at the sides.
+	const widths = usable.map(({ m }) => {
+		const box = m.box as Box;
+		return (box.right - box.left + 1) / m.width;
+	});
 	return {
 		horizon: Number(horizon.toFixed(4)),
 		top: Number((median(tops) as number).toFixed(4)),
 		...(clipped ? {} : { base: Number((median(bases) as number).toFixed(4)) }),
 		targetX: Number((median(columns) as number).toFixed(4)),
+		widthShare: Number((median(widths) as number).toFixed(4)),
 		aspect: Number((first.width / first.height).toFixed(5)),
 		sky: meanHex(usable.map(({ m }) => m.sky)),
 		...(usable.some(({ m }) => m.ground)
@@ -276,11 +366,34 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 	return {
 		horizon: Math.min(1, framing.horizon),
 		targetX: framing.targetX,
+		widthShare: framing.widthShare,
 		sky: framing.sky,
 		...(framing.ground ? { ground: framing.ground } : {}),
 		...(framing.light ? { sunAzimuth: framing.light.azimuth, sunRise: framing.light.rise } : {}),
 		...placed,
 	};
+}
+
+/** A camera's stand from its target, in metres, and its vertical field of view, in degrees. */
+export interface CameraStand {
+	readonly distance: number;
+	readonly fov: number;
+}
+
+/**
+ * The share of the frame's width that a plant of `plantWidth` metres fills at the camera's target:
+ * the frame holds twice the stand's distance times the half field of view's tangent, times the
+ * aspect. A mask that runs off both side edges cannot report a width, so it reads this instead,
+ * and the figure responds to a redraw's stand rather than saturating at the frame's edge.
+ */
+export function cameraWidthShare(
+	plantWidth: number,
+	stand: CameraStand,
+	aspect: number,
+): number | null {
+	if (!(plantWidth > 0) || !(stand.distance > 0) || !(stand.fov > 0) || !(aspect > 0)) return null;
+	const height = 2 * stand.distance * Math.tan((stand.fov * Math.PI) / 360);
+	return plantWidth / (height * aspect);
 }
 
 /** The size of the canvas that outlines are compared on: the plant's height and the canvas width. */
@@ -342,8 +455,65 @@ export function frameIou(a: PlantMask, b: PlantMask): number {
 	return iou(a.mask, scaled);
 }
 
-/** The mean difference of two width profiles, in plant heights. */
-export function profileError(a: readonly number[], b: readonly number[]): number {
+/**
+ * The overlap of two masks, counted so that a boundary one pixel out does not count against them:
+ * each mask's pixels that lie within a pixel of the other count as shared. A thresholded colour
+ * edge and an anti-aliased matte differ by about a pixel all round, so a thin subject such as a
+ * leaf cluster or a spray of scales is mostly boundary and fails an exact overlap however sound its
+ * matte is. A matte that is truly displaced, rather than a pixel out, still falls far below the gate.
+ */
+export function nearIou(a: PlantMask, b: PlantMask): number {
+	const scaled = new Uint8Array(a.width * a.height);
+	for (let y = 0; y < a.height; y++)
+		for (let x = 0; x < a.width; x++) {
+			const sx = Math.min(b.width - 1, Math.floor(((x + 0.5) * b.width) / a.width));
+			const sy = Math.min(b.height - 1, Math.floor(((y + 0.5) * b.height) / a.height));
+			scaled[y * a.width + x] = b.mask[sy * b.width + sx] as number;
+		}
+	const { mask } = a;
+	const width = a.width;
+	const height = a.height;
+	const dilatedB = dilate(scaled, width, height);
+	const dilatedA = dilate(mask, width, height);
+	let nearA = 0;
+	let countA = 0;
+	let nearB = 0;
+	let countB = 0;
+	for (let i = 0; i < mask.length; i++) {
+		if (mask[i]) {
+			countA++;
+			if (dilatedB[i]) nearA++;
+		}
+		if (scaled[i]) {
+			countB++;
+			if (dilatedA[i]) nearB++;
+		}
+	}
+	const total = countA + countB;
+	return total === 0 ? 1 : (nearA + nearB) / total;
+}
+
+/** A mask with every pixel within one of a set pixel also set. */
+function dilate(mask: Uint8Array, width: number, height: number): Uint8Array {
+	const out = new Uint8Array(mask.length);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			if (!mask[y * width + x]) continue;
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dx = -1; dx <= 1; dx++) {
+					const nx = x + dx;
+					const ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+					out[ny * width + nx] = 1;
+				}
+		}
+	return out;
+}
+
+/** The mean difference of two width profiles, in plant heights. */ export function profileError(
+	a: readonly number[],
+	b: readonly number[],
+): number {
 	const n = Math.min(a.length, b.length);
 	if (n === 0) return 0;
 	let sum = 0;
@@ -454,15 +624,26 @@ function renderSide(
 	file: string,
 	matte: string | undefined,
 	bottomCut: boolean,
+	habit?: PlantHabit,
+	piece = false,
+	subject?: number,
 ): Side {
 	const image = readImage(file);
 	const plant = matte && existsSync(matte) ? matteMask(readImage(matte)) : plantMask(image);
-	return side(label, image, plant, bottomCut);
+	return side(label, image, plant, bottomCut, habit, piece, subject);
 }
 
 /** A side of a comparison from a picture and its outline. */
-function side(label: string, image: Rgba, plant: PlantMask, bottomCut: boolean): Side {
-	const measures = measurePlant(image, plant);
+function side(
+	label: string,
+	image: Rgba,
+	plant: PlantMask,
+	bottomCut: boolean,
+	habit?: PlantHabit,
+	piece = false,
+	subject?: number,
+): Side {
+	const measures = measurePlant(image, plant, habit, piece, subject);
 	const box = measures.box;
 	if (!box) return { label, image, plant, measures };
 	const bottom = bottomCut ? plant.height - 1 : box.bottom;
@@ -477,9 +658,83 @@ interface PairMetrics {
 	readonly shapeIou: number | null;
 	readonly frameIou: number | null;
 	readonly profileError: number | null;
-	readonly gap: { readonly reference: number; readonly render: number } | null;
+	/**
+	 * The sky enclosed by each crown's outline, a texel counted as sky or plant on both sides. The
+	 * render's reading by its clear share is kept beside it, as the figure was read before.
+	 */
+	readonly gap: {
+		readonly reference: number;
+		readonly render: number;
+		readonly renderByCoverage?: number;
+		/**
+		 * The drawing's gap read from its colour still by the photograph's own colour rule, against
+		 * the same kind of fitted sky. At a whole view this is the figure that compares like with
+		 * like: the photograph has no matte, and the engine's display-encoded matte counts a pixel as
+		 * plant only from about three quarters of cover.
+		 */
+		readonly renderByColour?: number;
+		/**
+		 * The rule both sides' gaps were read by, where they were read alike: `colour`, the
+		 * photograph's colour rule on the photograph and on the drawing's colour still; `half-dark`,
+		 * the half-dark rule on the photograph's silhouette and on the drawing's matte. Absent where
+		 * the drawing's matte stands against the photograph's colour mask, an instrument figure only.
+		 */
+		readonly rule?: 'colour' | 'half-dark';
+	} | null;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
+	/**
+	 * The crown's foliage share on each side: of the crown's own covered pixels, the share that is
+	 * foliage rather than wood. A side is null where its picture cannot give a share, with the
+	 * reason. It is read on the whole and crown views alone.
+	 */
+	readonly crownFoliage: {
+		readonly reference: number | null;
+		readonly referenceWhy?: string;
+		readonly render: number | null;
+		readonly renderWhy?: string;
+	} | null;
+	/**
+	 * The crown's covered area either side of the trunk's column, as shares of the whole crown, on
+	 * each side of the pair. It is read on the whole and crown views alone.
+	 */
+	readonly crownBalance: {
+		readonly reference: { readonly left: number; readonly right: number } | null;
+		readonly referenceWhy?: string;
+		readonly render: { readonly left: number; readonly right: number } | null;
+		readonly renderWhy?: string;
+	} | null;
+	/**
+	 * The crown's covered area in horizontal bands, each band split at the trunk's column, top
+	 * first. A hollow flank shows as a band whose split stands far from its reference's. The figure
+	 * the row is judged on is the band with the largest difference.
+	 */
+	readonly crownBands: {
+		readonly count: number;
+		readonly reference: readonly (number | null)[] | null;
+		readonly render: readonly (number | null)[] | null;
+		readonly referenceWhy?: string;
+		readonly renderWhy?: string;
+		readonly worst: {
+			readonly band: number;
+			readonly reference: number;
+			readonly render: number;
+			/** The drawing's left share less the photograph's, in that band. */
+			readonly difference: number;
+		} | null;
+	} | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
+	/**
+	 * The drawn plant's share of the frame's height over its photograph's: its scale against the
+	 * photograph's. Where it differs from 1 by more than the frame band, the figures read on the
+	 * frame as a whole, the overlap as framed and the whole frame's sky share, compare a larger or a
+	 * smaller plant with the photograph's and are left out; the frame-free figures stand.
+	 */
+	readonly frameScale: number | null;
+	/**
+	 * The row share of each plant's foot, the lowest row of its outline. Every figure that is a
+	 * share of the plant's height counts from this row, so it stands beside them.
+	 */
+	readonly footRow?: { readonly reference: number; readonly render: number } | null;
 	readonly foliageDeltaE: number | null;
 	readonly barkDeltaE: number | null;
 	readonly crownBox: {
@@ -489,9 +744,65 @@ interface PairMetrics {
 	readonly foliage: { readonly reference: string | null; readonly render: string | null };
 }
 
+/**
+ * The enclosed gap of a picture by the photograph's colour rule: its plant cut from its fitted
+ * background by colour distance, as a photograph of a whole plant is read. A drawing's colour still
+ * read this way compares like with like with its photograph.
+ */
+export function colourRuleGap(image: Rgba, habit?: PlantHabit): number {
+	return Number(measurePlant(image, plantMask(image), habit).gapFraction.toFixed(4));
+}
+
+/**
+ * The drawing's enclosed gap that compares like with like with its photograph's, and the rule both
+ * were read by: the colour still's by the photograph's colour rule at a whole view, the matte's by
+ * the half-dark rule at a silhouette. Undefined where the two sides were read by different rules,
+ * which is an instrument figure and is not quoted.
+ */
+export function rowGap(
+	gap: NonNullable<PairMetrics['gap']>,
+): { readonly value: number; readonly rule: 'colour' | 'half-dark' } | undefined {
+	if (gap.rule === 'colour' && gap.renderByColour !== undefined)
+		return { value: gap.renderByColour, rule: 'colour' };
+	if (gap.rule === 'half-dark') return { value: gap.render, rule: 'half-dark' };
+	return undefined;
+}
+
+/**
+ * How far a drawn plant's scale may stand from its photograph's before the figures read on the
+ * frame as a whole no longer compare like with like.
+ */
+export const FRAME_SCALE_BAND = 0.05;
+
+/**
+ * The drawn plant's share of the frame's height over its photograph's, from both outlines' boxes:
+ * its scale against the photograph's.
+ */
+export function frameScale(reference: FramedBox, render: FramedBox): number {
+	const tall = (side: FramedBox) => (side.box.bottom - side.box.top + 1) / side.height;
+	return Number((tall(render) / tall(reference)).toFixed(3));
+}
+
+/** Whether figures read on the frame as a whole compare like with like at a drawn plant's scale. */
+export function frameFiguresHold(scale: number | null): boolean {
+	return scale !== null && Math.abs(scale - 1) <= FRAME_SCALE_BAND;
+}
+
 /** Compares a reference frame with a render frame. */
 function pairMetrics(reference: Side, render: Side): PairMetrics {
 	const both = reference.measures.box !== null && render.measures.box !== null;
+	const scale =
+		reference.measures.box && render.measures.box
+			? frameScale(
+					{
+						box: reference.measures.box,
+						width: reference.plant.width,
+						height: reference.plant.height,
+					},
+					{ box: render.measures.box, width: render.plant.width, height: render.plant.height },
+				)
+			: null;
+	const framed = frameFiguresHold(scale);
 	const colour = (a: { lab: readonly number[] } | null, b: { lab: readonly number[] } | null) =>
 		a && b ? Number(deltaE2000(a.lab, b.lab).toFixed(2)) : null;
 	return {
@@ -501,21 +812,41 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			reference.normal && render.normal
 				? Number(iou(reference.normal, render.normal).toFixed(4))
 				: null,
-		frameIou: both ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		frameIou: both && framed ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		frameScale: scale,
+		footRow:
+			reference.measures.box && render.measures.box
+				? {
+						reference: Number(
+							((reference.measures.box.bottom + 1) / reference.plant.height).toFixed(4),
+						),
+						render: Number(((render.measures.box.bottom + 1) / render.plant.height).toFixed(4)),
+					}
+				: null,
 		profileError: both
 			? Number(
 					profileError(reference.measures.widthProfile, render.measures.widthProfile).toFixed(4),
 				)
 			: null,
 		gap: both
-			? { reference: reference.measures.gapFraction, render: render.measures.gapFraction }
+			? {
+					reference: reference.measures.gapFraction,
+					render: render.measures.gapFraction,
+					...(render.measures.gapByCoverage !== null && {
+						renderByCoverage: render.measures.gapByCoverage,
+					}),
+				}
 			: null,
 		crownBoxGap: both
 			? { reference: reference.measures.crownBoxGap, render: render.measures.crownBoxGap }
 			: null,
-		frameGap: both
-			? { reference: reference.measures.frameGap, render: render.measures.frameGap }
-			: null,
+		crownFoliage: null,
+		crownBalance: null,
+		crownBands: null,
+		frameGap:
+			both && framed
+				? { reference: reference.measures.frameGap, render: render.measures.frameGap }
+				: null,
 		foliageDeltaE: colour(reference.measures.foliage, render.measures.foliage),
 		barkDeltaE: colour(reference.measures.bark, render.measures.bark),
 		crownBox: both
@@ -525,6 +856,106 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			reference: reference.measures.foliage?.hex ?? null,
 			render: render.measures.foliage?.hex ?? null,
 		},
+	};
+}
+
+/**
+ * The crown's foliage share on both sides of a picture, or null where neither side gives one. The
+ * reference's side fits two colour clusters inside its crown box. The render's side reads the wood
+ * and foliage layers of its parts picture, whose pixels are scaled to the measure's work size.
+ */
+function crownFoliagePair(
+	refImage: Rgba,
+	refPlant: PlantMask,
+	refRegion: CrownRegion | null,
+	parts: Parts | undefined,
+	render: Side,
+): NonNullable<PairMetrics['crownFoliage']> | null {
+	const reference = refRegion ? crownFoliageOf(refImage, refPlant, refRegion) : null;
+	const region = render.measures.crownRegion;
+	const read =
+		region && parts ? partsFoliageShare(parts, region, parts.width / render.plant.width) : null;
+	if (!reference && !read) return null;
+	const referenceWhy = refRegion === null ? 'the photograph gives no crown box' : reference?.why;
+	const renderWhy =
+		region === null
+			? 'the drawing has no crown box'
+			: parts === undefined
+				? 'the run drew no picture of its parts'
+				: 'the parts picture covers none of the crown';
+	return {
+		reference: reference?.share ?? null,
+		...(referenceWhy && { referenceWhy }),
+		render: read?.share ?? null,
+		...(!read && { renderWhy }),
+	};
+}
+
+/**
+ * The crown's balance on both sides of a picture: the covered area either side of the trunk's
+ * column, as shares of the whole crown. The reference's side reads its outline; the render's side
+ * reads its matte, which is the same outline.
+ */
+function crownBalancePair(
+	refPlant: PlantMask,
+	refRegion: CrownRegion | null,
+	render: Side,
+): NonNullable<PairMetrics['crownBalance']> | null {
+	const reference = refRegion ? crownBalanceOf(refPlant, refRegion) : null;
+	const region = render.measures.crownRegion;
+	const read = region ? crownBalanceOf(render.plant, region) : null;
+	if (!reference && !read) return null;
+	const referenceWhy =
+		refRegion === null ? 'the photograph gives no crown box' : 'the crown box covers no plant';
+	const renderWhy =
+		region === null ? 'the drawing has no crown box' : 'the crown box covers no plant';
+	const side = (value: NonNullable<typeof reference>) => ({ left: value.left, right: value.right });
+	return {
+		reference: reference ? side(reference) : null,
+		...(reference === null && { referenceWhy }),
+		render: read ? side(read) : null,
+		...(read === null && { renderWhy }),
+	};
+}
+
+/** The band whose split stands furthest from its reference's, or null where no band pairs. */
+function worstBand(
+	reference: readonly (number | null)[],
+	render: readonly (number | null)[],
+): NonNullable<NonNullable<PairMetrics['crownBands']>['worst']> | null {
+	let worst: NonNullable<NonNullable<PairMetrics['crownBands']>['worst']> | null = null;
+	for (let band = 0; band < Math.min(reference.length, render.length); band++) {
+		const from = reference[band];
+		const to = render[band];
+		if (from === null || from === undefined || to === null || to === undefined) continue;
+		const difference = Number((to - from).toFixed(4));
+		if (worst === null || Math.abs(difference) > Math.abs(worst.difference))
+			worst = { band, reference: from, render: to, difference };
+	}
+	return worst;
+}
+
+/**
+ * The crown's balance in horizontal bands on both sides of a picture: each band's left share of
+ * its covered area, and the band that stands furthest from its reference's. The reference's side
+ * reads its outline; the render's side reads its matte.
+ */
+function crownBandsPair(
+	refPlant: PlantMask,
+	refRegion: CrownRegion | null,
+	render: Side,
+): NonNullable<PairMetrics['crownBands']> | null {
+	const reference = refRegion ? crownBandsOf(refPlant, refRegion) : null;
+	const region = render.measures.crownRegion;
+	const read = region ? crownBandsOf(render.plant, region) : null;
+	if (!reference && !read) return null;
+	return {
+		count: Math.max(reference?.left.length ?? 0, read?.left.length ?? 0),
+		reference: reference?.left ?? null,
+		render: read?.left ?? null,
+		...(reference === null && { referenceWhy: 'the photograph gives no crown box' }),
+		...(read === null && { renderWhy: 'the drawing has no crown box' }),
+		worst: reference && read ? worstBand(reference.left, read.left) : null,
 	};
 }
 
@@ -680,29 +1111,136 @@ export function fixed(value: number | null | undefined, digits = 2): string {
 	return value === null || value === undefined ? '-' : value.toFixed(digits);
 }
 
+/** A camera's tilt above the level, in radians, and its vertical lens, in degrees. */
+export interface CameraTilt {
+	readonly pitch: number;
+	readonly fov: number;
+}
+
+/** A drawn frame's camera tilt, as the page posted its camera; null where it posted none. */
+export function frameTilt(frame: RunFrame): CameraTilt | null {
+	const camera = (
+		frame.cell as { camera?: { position?: number[]; target?: number[]; fov?: number } } | undefined
+	)?.camera;
+	const p = camera?.position;
+	const t = camera?.target;
+	if (!p || !t || p.length < 3 || t.length < 3 || typeof camera?.fov !== 'number') return null;
+	const [px, py, pz] = p as [number, number, number];
+	const [tx, ty, tz] = t as [number, number, number];
+	return { pitch: Math.atan2(ty - py, Math.hypot(tx - px, tz - pz)), fov: camera.fov };
+}
+
+/** A photograph's camera tilt from its horizon's row share, through the lens its view is drawn with. */
+export function horizonTilt(horizon: number, fov: number): CameraTilt {
+	return { pitch: Math.atan((horizon - 0.5) * 2 * Math.tan((fov * Math.PI) / 360)), fov };
+}
+
+/** The tangent of the rise above the level of the ray through a row, a share of the frame from its top. */
+function riseAt(row: number, tilt: CameraTilt): number {
+	return Math.tan(tilt.pitch + Math.atan((0.5 - row) * 2 * Math.tan((tilt.fov * Math.PI) / 360)));
+}
+
+/**
+ * A picture's plant against its camera, read from the rows of its top and its foot as shares of the
+ * frame's height: the share of the plant's own height that lies between its top and a row, and the
+ * camera's eye as a share of the plant's height. The plant is taken to stand in one upright plane
+ * through its foot. A camera that tilts maps rows onto heights unevenly, so a picture's share of
+ * its plant's rows differs from the plant's share of its metres; a level camera maps them alike.
+ * Null where the rows span no rise.
+ */
+export function plantRows(
+	top: number,
+	foot: number,
+	tilt: CameraTilt,
+): { readonly share: (row: number) => number; readonly eye: number } | null {
+	const high = riseAt(top, tilt);
+	const low = riseAt(foot, tilt);
+	const span = high - low;
+	if (!(span > 1e-9)) return null;
+	return { share: (row) => (high - riseAt(row, tilt)) / span, eye: -low / span };
+}
+
+/** The camera's eye, as a share of the plant's height, below which a picture's heights are also given as the plant's. */
+export const LOW_EYE = 0.5;
+
+/** One side of a pair as a height figure reads it: its measures, its picture's rows and its camera's tilt. */
+interface HeightSide {
+	readonly measures: PlantMeasures;
+	readonly rows: number;
+	readonly tilt: CameraTilt | null;
+}
+
 /**
  * A note when a crown's box holds only a small share of its plant's own, which is the sign that the
  * crown's foot was found inside the foliage: a kit-cut piece has no bare stem below its leaves, and a
  * thick bole can fill the whole margin the finder looks for. The gap and crown figures then measure a
  * slice of the plant rather than its crown, so the run says so instead of letting a reader trust them.
+ * The share is the picture's, of the plant's rows. From a camera below the plant's middle, the plant's
+ * own share of its metres is given beside it.
  */
-function crownNote(reference: PlantMeasures, render: PlantMeasures): string | undefined {
-	const share = (measure: PlantMeasures): number => {
-		const box = measure.box;
+function crownNote(reference: HeightSide, render: HeightSide): string | undefined {
+	const share = (side: HeightSide): number => {
+		const box = side.measures.box;
 		if (!box) return 1;
 		const tall = box.bottom - box.top + 1;
-		return tall > 0 ? measure.crownBox.height / tall : 1;
+		return tall > 0 ? side.measures.crownBox.height / tall : 1;
 	};
-	const least = Math.min(share(reference), share(render));
+	const least = share(render) < share(reference) ? render : reference;
+	const picture = share(least);
 	// A view of the wood alone has no crown to measure, so nothing is being read from it.
-	if (least >= 0.4 || least <= 0.05) return undefined;
-	const percent = (least * 100).toFixed(0);
-	return `the crown's box holds ${percent} per cent of the plant's height, so its foot sits inside the foliage and its gap and crown figures measure a slice`;
+	if (picture >= 0.4 || picture <= 0.05) return undefined;
+	const percent = (value: number) => (value * 100).toFixed(0);
+	const box = least.measures.box as Box;
+	const rows =
+		least.tilt && plantRows(box.top / least.rows, (box.bottom + 1) / least.rows, least.tilt);
+	const own =
+		rows && rows.eye < LOW_EYE
+			? ` (${percent(rows.share((box.top + least.measures.crownBox.height) / least.rows))} per cent of the plant's own, from a camera at ${rows.eye.toFixed(2)} of its height)`
+			: '';
+	return `the crown's box holds ${percent(picture)} per cent of the plant's height in the picture${own}, so its foot sits inside the foliage and its gap and crown figures measure a slice`;
 }
 
 /** A CIELAB triple as three rounded figures, in the order light, red to green, blue to yellow. */
 function labTriple(lab: readonly number[]): string {
 	return lab.map((v) => v.toFixed(1)).join(' ');
+}
+
+/**
+ * A reference outlined against a fitted background rather than a plain one: the surface that
+ * separated the plant, its fit and residual, and — for a ground — the horizon's share and both
+ * surfaces' figures, so a bad model is on the record and never silently masked.
+ */
+export interface FittedMaskNote {
+	readonly kind: 'sky' | 'ground';
+	readonly skyFit: number;
+	readonly skyNoise: number;
+	readonly groundFit?: number;
+	readonly groundNoise?: number;
+	readonly horizonShare?: number;
+	readonly plantToGround?: number;
+}
+
+/** The summary's note when a reference's outline comes from a fitted background. */
+export function fittedMaskClause(pair: { readonly fittedMask?: FittedMaskNote }): string {
+	const note = pair.fittedMask;
+	if (!note) return '';
+	if (note.kind === 'sky')
+		return ` — the outline comes from a fitted sky (fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)})`;
+	const groundShare = 1 - (note.horizonShare ?? 0);
+	const ground =
+		note.groundFit === undefined
+			? ''
+			: `; ground fit ${note.groundFit.toFixed(4)}, residual ${(note.groundNoise ?? 0).toFixed(1)}`;
+	const [least, most] = SOIL_MASK_GROUND_SHARE;
+	const flagged =
+		groundShare < least || groundShare > most
+			? `; the ground region holds ${groundShare.toFixed(3)} of the frame, outside a soil band's usual share, so the fit may cover the plant`
+			: '';
+	const closeness =
+		note.plantToGround === undefined
+			? ''
+			: `; the plant's median colour sits ${note.plantToGround.toFixed(1)} CIEDE2000 steps from the ground`;
+	return ` — the outline comes from a fitted ground at horizon share ${(note.horizonShare ?? 0).toFixed(3)}, ground region ${groundShare.toFixed(3)} (sky fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)}${ground})${closeness}${flagged}`;
 }
 
 /** The labels of a compared pair. */
@@ -856,17 +1394,216 @@ export interface TurnResult {
 		readonly metres: readonly ({ readonly width: number; readonly height: number } | null)[];
 	};
 	readonly maskCheck: number | null;
+	/** The frames the check read, and the frames whose colour outline saw no plant to read. */
+	readonly maskCheckFrames: number;
+	readonly maskCheckUnreadable: number;
+	/** The gate the turn's background takes, and whether its check falls below the gate. */
+	readonly maskCheckThreshold: number | null;
+	readonly maskCheckFailed: boolean;
+	/** Whether the subject is too small for the figure to judge, so the check only reports. */
+	readonly maskCheckSmall: boolean;
+	readonly maskCheckSubject: number | null;
 	readonly sheets: readonly string[];
 	readonly error?: string;
 }
 
+/**
+ * The mask check's gates, measured over every turn check in the tree. A frame's
+ * colour outline can only be read against its matte when the outline is a plant outline, so the
+ * gates are set from the corpus of sound turns and give a margin under each kind's lowest reading.
+ * A turn on a natural background reads a frame as low as 0.717 and a sound turn as low as 0.750, so
+ * its gate sits 0.15 under that. A plain-background cut piece reads 0.941 to 0.978 a frame, so its
+ * gate sits 0.045 under. A colour outline under the plant mask's own fitted-subject floor cannot see
+ * the plant at all, so that frame is reported as unreadable rather than scored.
+ */
+export const MASK_GATE_NATURAL = 0.6;
+export const MASK_GATE_PLAIN = 0.9;
+export const MASK_SUBJECT_FLOOR = 0.02;
+
+/** A turning video's mask check: the readable frames' mean overlap, or none when no frame is read. */
+export interface MaskCheck {
+	readonly value: number | null;
+	readonly frames: number;
+	readonly unreadable: number;
+	readonly threshold: number | null;
+	readonly failed: boolean;
+	/** Whether the subject is too small for the figure to judge, and only reports. */
+	readonly small: boolean;
+	/** The matte's share of the frame, averaged over the readable frames. */
+	readonly subject: number | null;
+}
+
+/**
+ * A plain background's subject under this share of the frame reports rather than fails: the overlap
+ * is dominated by the boundary band at that size, so a one-pixel edge costs a large share of it. The
+ * holm oak's subbranch turn reads 0.846 with its colour outline at 2.7 to 4.0 per cent and its matte
+ * at 2 to 3, where a one-pixel band costs about 0.15 of the overlap.
+ */
+export const MASK_SMALL_SUBJECT = 0.05;
+
+/**
+ * The mask check a turning video's frames give. A null check is a frame whose colour outline covers
+ * under the subject floor, which the fitted background cannot see the plant in.
+ *
+ * @param checks Each frame's overlap and its matte's share of the frame, or null where unreadable.
+ * @param plain Whether the turn drew on a plain background, as a cut piece does.
+ * @returns The readable frames' mean overlap and the gate it is judged against.
+ */
+export function maskCheckOf(
+	checks: readonly ({ readonly iou: number; readonly subject: number } | null)[],
+	plain: boolean,
+): MaskCheck {
+	const readable = checks.filter(
+		(check): check is { readonly iou: number; readonly subject: number } => check !== null,
+	);
+	const unreadable = checks.length - readable.length;
+	if (readable.length === 0)
+		return {
+			value: null,
+			frames: 0,
+			unreadable,
+			threshold: null,
+			failed: false,
+			small: false,
+			subject: null,
+		};
+	const value = Number(mean(readable.map((check) => check.iou)).toFixed(4));
+	const subject = mean(readable.map((check) => check.subject));
+	const small = plain && subject < MASK_SMALL_SUBJECT;
+	const threshold = plain ? MASK_GATE_PLAIN : MASK_GATE_NATURAL;
+	return {
+		value,
+		frames: readable.length,
+		unreadable,
+		threshold,
+		failed: !small && value < threshold,
+		small,
+		subject: Number(subject.toFixed(4)),
+	};
+}
+
+/** Whether a turn's frames drew a plain background, as a cut piece does, rather than sky and ground. */
+export function plainTurnOf(background: string | undefined): boolean {
+	return background !== undefined && background !== 'sky-meadow';
+}
+
+/** The parts a picture draws that meet nothing inside its frame, as the gate reports them. */
+/** The rows the plant's feet land on, as the page posted them, in the picture's pixels. */
+export function groundBandOf(
+	frame: RunFrame,
+	height: number,
+): { top: number; base: number } | null {
+	const rows = (
+		frame.facts as { plant?: { groundRows?: { top: number; base: number } } } | undefined
+	)?.plant?.groundRows;
+	if (!rows || !Number.isFinite(rows.top) || !Number.isFinite(rows.base)) return null;
+	return { top: Math.round(rows.top * height), base: Math.round(rows.base * height) };
+}
+
+/** The band a read's pieces are grounded against, where the page named it. */
+function bandFor(frame: RunFrame, height: number): { top: number; base: number } | undefined {
+	return groundBandOf(frame, height) ?? undefined;
+}
+
+export function floatingParts(
+	list: readonly PlantPart[],
+	band?: { readonly top: number; readonly base: number },
+): readonly { readonly area: number; readonly box: string }[] {
+	return hangingParts(list, band).parts.map((part) => ({
+		area: part.area,
+		box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
+	}));
+}
+
+/** The row where the plant stands: the lowest row a piece reaches. */
+export function footRowOf(list: readonly PlantPart[]): number {
+	return hangingParts(list).footRow;
+}
+
+/**
+ * The piece test at a picture's own width: the work width's area and gap tolerance scaled to the
+ * picture, so its finer pixels neither add a part nor lose a join the work-width read keeps.
+ */
+export function piecePartsAtOwnWidth(mask: Uint8Array, width: number, height: number): PlantPart[] {
+	const scale = width / WORK_WIDTH;
+	return pieceParts(
+		mask,
+		width,
+		height,
+		Math.max(1, Math.round(PIECE_AREA * scale * scale)),
+		Math.max(PIECE_BRIDGE, Math.ceil(PIECE_BRIDGE * scale)),
+	);
+}
+
+/** A sweep picture's readings: its components and floating pieces, and the render's crown-box gap. */
+export interface SweepMeasures {
+	readonly components: number;
+	/** The row where the plant stands: a piece meeting it is rooted in the soil, not floating. */
+	readonly footRow: number;
+	/** The rows the plant's own feet land on, where the page named them: a piece inside it stands. */
+	readonly groundBand: { readonly top: number; readonly base: number } | null;
+	readonly floating: readonly { readonly area: number; readonly box: string }[];
+	/**
+	 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop a
+	 * hairline join the picture keeps. Only the picture's own read decides whether a piece floats.
+	 */
+	readonly workWidth: {
+		readonly components: number;
+		readonly floating: readonly { readonly area: number; readonly box: string }[];
+	} | null;
+	readonly crownBoxGap: number | null;
+}
+
+/**
+ * Reads one sweep picture: the matte's components and any piece that meets nothing inside the frame,
+ * read at the picture's own width, and the crown box's gap. The picture has no reference, so its
+ * figures stand alone and are read against the record's band and each other.
+ */
+export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
+	const render = renderSideOf(runDir, frame, `SWEEP ${frame.file}`, false);
+	const parts = pieceParts(
+		anyPlantMask(render.plant),
+		render.plant.width,
+		render.plant.height,
+		PIECE_AREA,
+	);
+	const own =
+		frame.matte === undefined
+			? null
+			: (() => {
+					const mask = matteOwnMask(readImage(join(runDir, frame.matte as string)));
+					return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
+				})();
+	const read = own ?? parts;
+	const band = bandFor(frame, render.plant.height);
+	return {
+		components: read.length,
+		footRow: footRowOf(read),
+		groundBand: band ?? null,
+		floating: floatingParts(read, band),
+		workWidth: own ? { components: parts.length, floating: floatingParts(parts, band) } : null,
+		crownBoxGap: render.measures.crownBoxGap ?? null,
+	};
+}
+
 /** A render frame's side of a comparison. */
-function renderSideOf(runDir: string, frame: RunFrame, label: string, bottomCut: boolean): Side {
+function renderSideOf(
+	runDir: string,
+	frame: RunFrame,
+	label: string,
+	bottomCut: boolean,
+	habit?: PlantHabit,
+	piece = false,
+	subject?: number,
+): Side {
 	return renderSide(
 		label,
 		join(runDir, frame.file),
 		frame.matte ? join(runDir, frame.matte) : undefined,
 		bottomCut,
+		habit,
+		piece,
+		subject,
 	);
 }
 
@@ -894,6 +1631,7 @@ export function compareTurn(
 	video: TurnVideo,
 	frames: readonly RunFrame[],
 	title: string,
+	habit?: PlantHabit,
 ): TurnResult {
 	const facts = probeVideo(video.path);
 	const references = videoFrames(video.path, facts, WORK_WIDTH);
@@ -920,23 +1658,58 @@ export function compareTurn(
 			metres: [],
 		},
 		maskCheck: null,
+		maskCheckFrames: 0,
+		maskCheckUnreadable: 0,
+		maskCheckThreshold: null,
+		maskCheckFailed: false,
+		maskCheckSmall: false,
+		maskCheckSubject: null,
 		sheets: [],
 	};
 	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
+	// A turn of a cut piece takes its subject share from the first reference frame, so every frame
+	// of the turn bounds the same part of the piece.
+	const piece = video.piece !== 'whole';
 	const refMasks = references.map((image) => plantMask(image));
-	const refMeasures = refMasks.map((mask, k) => measurePlant(references[k] as Rgba, mask));
+	const refMeasures = refMasks.map((mask, k) => measurePlant(references[k] as Rgba, mask, habit));
+	const firstBox = refMeasures[0]?.box;
+	const subject =
+		piece && firstBox
+			? refMeasures[0]!.crownBox.height / (firstBox.bottom - firstBox.top + 1)
+			: undefined;
 	const bottomCut = refMeasures.filter((measure) => measure.clipped.bottom).length > n / 2;
 	const refSides = references.map((image, k) =>
-		side(`REF ${(k * frameStep).toFixed(1)}`, image, refMasks[k] as PlantMask, bottomCut),
+		side(
+			`REF ${(k * frameStep).toFixed(1)}`,
+			image,
+			refMasks[k] as PlantMask,
+			bottomCut,
+			habit,
+			piece,
+			subject,
+		),
 	);
 	const renderSides = usable.map((frame) =>
-		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut),
+		renderSideOf(
+			runDir,
+			frame,
+			`RENDER ${frame.turn.toFixed(1)}`,
+			bottomCut,
+			habit,
+			piece,
+			subject,
+		),
 	);
 	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
 		const coloured = plantMask((renderSides[j] as Side).image);
-		return [frameIou(coloured, (renderSides[j] as Side).plant)];
+		const share = coloured.mask.reduce((sum, value) => sum + value, 0) / coloured.mask.length;
+		if (share < MASK_SUBJECT_FLOOR) return [null];
+		const matte = (renderSides[j] as Side).plant.mask;
+		const subject = matte.reduce((sum, value) => sum + value, 0) / matte.length;
+		return [{ iou: nearIou(coloured, (renderSides[j] as Side).plant), subject }];
 	});
+	const mask = maskCheckOf(checks, plainTurnOf((usable[0] as RunFrame).query?.background));
 	const refCoarse = refSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
 	const renderCoarse = renderSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
 	const scores = refCoarse.map((r) => renderCoarse.map((s) => (r && s ? iou(r, s) : 0)));
@@ -1004,7 +1777,13 @@ export function compareTurn(
 			render: spreadOf(renderAt),
 			metres: atAngle.map((k) => metresOf(usable[alignment.pairs[k] as number])),
 		},
-		maskCheck: checks.length > 0 ? Number(mean(checks).toFixed(4)) : null,
+		maskCheck: mask.value,
+		maskCheckFrames: mask.frames,
+		maskCheckUnreadable: mask.unreadable,
+		maskCheckThreshold: mask.threshold,
+		maskCheckFailed: mask.failed,
+		maskCheckSmall: mask.small,
+		maskCheckSubject: mask.subject,
 		sheets: writeSheets(runDir, group, pages),
 	};
 }
@@ -1120,12 +1899,47 @@ export function compareWind(
 	return { ...base, motion: { reference, render }, sheets: writeSheets(runDir, group, pages) };
 }
 
+/**
+ * The sheath target's shape and its parser live in the review-data module; a junction or crown-foot
+ * still of a species whose review data names one is read against it, because its subject is the
+ * sheath itself.
+ */
+export type { SheathTarget };
+
+/** A sheath surface's two ends as a picture shows them: mean CIELAB colour and pixels. */
+export interface SheathPatches {
+	readonly foot: { readonly colour: readonly number[]; readonly pixels: number };
+	readonly collar: { readonly colour: readonly number[]; readonly pixels: number };
+}
+
+/** A sheath surface's figure: the render against the photograph, and against the record. */
+export interface SheathDifference {
+	/**
+	 * The render's foot and collar against the photograph's, both lit by the view: the row's mark.
+	 * Null when the photograph's sheath cannot be isolated in its picture.
+	 */
+	readonly photograph: { readonly foot: number; readonly collar: number } | null;
+	/** The render's ends against the record's authored colours: the material check, not the row. */
+	readonly record: { readonly foot: number; readonly collar: number };
+	/** The pixels the render's two patches cover, so a reader can tell a figure from an empty patch. */
+	readonly footPixels: number;
+	readonly collarPixels: number;
+	/** The photograph's patch areas, when it gave a figure. */
+	readonly photographFootPixels?: number;
+	readonly photographCollarPixels?: number;
+}
+
 /** One still or texture source beside the render of its view. */
 export interface StillResult extends PairMetrics {
 	readonly file: string;
 	readonly kind: 'still' | 'texture';
 	readonly view: string;
 	readonly renderFile?: string;
+	/**
+	 * A reference outlined against a fitted background rather than a plain one: the surface, its
+	 * fit and residual, and the horizon share for a ground, so the figure's basis is on the record.
+	 */
+	readonly fittedMask?: FittedMaskNote;
 	/** Whether both pictures gave an outline on a plain background, so the outline measures hold. */
 	readonly masked: boolean;
 	/** For a bark texture: the CIEDE2000 difference of the middle of each picture. */
@@ -1148,10 +1962,246 @@ export interface StillResult extends PairMetrics {
 	 * A plant hangs together, so a part that meets nothing shows here as an extra piece.
 	 */
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
+	/**
+	 * The render matte's components and any piece that meets nothing inside the frame, read at the
+	 * picture's own width. A piece that touches the frame's border may run on outside the picture,
+	 * so it is not counted as floating.
+	 */
+	readonly connectivity: {
+		readonly components: number;
+		/** The row where the plant stands: a piece meeting it is rooted in the soil, not floating. */
+		readonly footRow: number;
+		/** The rows the plant's own feet land on, where the page named them: a piece inside it stands. */
+		readonly groundBand: { readonly top: number; readonly base: number } | null;
+		readonly floating: readonly { readonly area: number; readonly box: string }[];
+		/**
+		 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop
+		 * a hairline join the picture keeps, and so show a piece hanging free that the picture does
+		 * not. Only the picture's own read decides whether a piece floats.
+		 */
+		readonly workWidth: {
+			readonly components: number;
+			readonly floating: readonly { readonly area: number; readonly box: string }[];
+		} | null;
+	} | null;
+	/**
+	 * Why the connectivity check read no piece here: the picture was forced to a finer level than
+	 * the engine draws at its distance, where a support thinner than a pixel of the finer level
+	 * joins a piece that the card level ties with its stalk line.
+	 */
+	readonly connectivityWithheld?: { readonly drawn: string; readonly engine: string };
+	/** The sparseness the picture was drawn at, where its query names one above the record. */
+	readonly sparse?: number;
 	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
 	readonly framing?: CloseFraming;
+	/**
+	 * For a junction or crown-foot still of a species whose record names its sheath's colours: the
+	 * render's foot and collar patches, each read against the record under the view's own light.
+	 */
+	readonly sheath?: SheathDifference;
+	/**
+	 * Why the picture does not judge the primary plant, where the species' review data sets it
+	 * aside: it shows a second form, it is a recorded limit of the reference, or it shows a stand of
+	 * many plants. A stand is not measured at all; the others are measured and kept out of the rows.
+	 */
+	readonly standing?: { readonly kind: Standing; readonly reason: string };
+	/** Why the picture's outline is not read, where the review data says its reference's cannot be. */
+	readonly outlineVoid?: string;
+	/**
+	 * Why the plant fails the picture: it has no such part as the photograph shows, or the camera
+	 * holds the part's place and the picture does not show it. No figure is read from the picture
+	 * but its areas', and the rows it carries fail on it.
+	 */
+	readonly lacks?: string;
+	/**
+	 * The cover of each area of a solved view's contract, read from its picture of the parts: wood
+	 * of the subject's thickness, leaves over it, open sky. Figures for the eye beside the
+	 * photograph, and the reasons of a void or a fail.
+	 */
+	readonly areas?: readonly { readonly name: string; readonly cover: number }[];
+	/**
+	 * Whether a check confirmed that the picture shows its photograph's subject: a solved view
+	 * whose contract held and whose regions were read from the picture, or a whole view that passed
+	 * the framing check. A picture without one may show another subject, so no row passes on such
+	 * pictures alone.
+	 */
+	readonly subjectChecked?: boolean;
+	/**
+	 * The level of detail the page drew the picture at, as it posted it: the leaf form, a card
+	 * level or the far card. A figure read from the picture holds for that level alone.
+	 */
+	readonly level?: string;
+	/**
+	 * A cut branch's four density figures on both pictures, where the run measured them. A side
+	 * is null where its picture gave no measure. `bare` says the piece carries no leaf: two of the
+	 * figures are sound on bare wood only.
+	 */
+	readonly cutBranch?: {
+		readonly reference: CutBranchFigures | null;
+		readonly render: CutBranchFigures | null;
+		readonly bare?: boolean;
+	};
+	/**
+	 * Why the picture is void: its view has no subject in the plant, or the picture does not show
+	 * it. A void picture carries no figure and decides no row. It is a fault of the tool's camera or
+	 * of the reference's mapping to a view, never a judgement of the plant.
+	 */
+	readonly void?: string;
 	readonly note?: string;
 	readonly error?: string;
+}
+
+/**
+ * The four figures a cut branch's density is judged by, read on one picture of the piece. Lengths
+ * are in piece lengths, so a photograph and a drawing of one piece compare whatever their scale. A
+ * figure is null where the picture cannot give it.
+ */
+export interface CutBranchFigures {
+	/** Piece lengths of wood for each twig tip. */
+	readonly woodPerTip: number | null;
+	/** Twig tips for each square piece length of the piece's outline. */
+	readonly tipsPerArea: number | null;
+	/** The share of joints where four or more twigs leave one point; null where the piece has no joint. */
+	readonly fanShare: number | null;
+	/** Bends in the wood for each piece length of it. */
+	readonly kinks: number | null;
+}
+
+/** The least share of the frame a close view's subject takes to be in its picture at all. */
+const SUBJECT_LEAST_SHARE = 0.01;
+
+/**
+ * Why a close picture has no subject in it, where its page measured the subject's share of the
+ * frame and found none: a camera that stands in the plane of what it frames sees it edge on.
+ */
+export function emptySubject(facts: unknown): string | undefined {
+	const framing = closeFraming(facts);
+	return framing && framing.fill !== null && framing.fill < SUBJECT_LEAST_SHARE
+		? `the subject, ${framing.subject}, takes ${framing.fill.toFixed(2)} of the frame`
+		: undefined;
+}
+
+/**
+ * Why a picture answers no photograph of its own: the page drew the very picture it drew for an
+ * earlier reference, though the two were asked for differently. Each asked-for difference, such
+ * as a light or a height, then changed nothing, and one drawing must not count for two.
+ */
+export function sameDrawing(
+	seen: Map<string, { readonly file: string; readonly query: string }>,
+	file: string,
+	frame: RunFrame,
+): string | undefined {
+	if (frame.sha256 === undefined) return undefined;
+	const query = JSON.stringify(frame.query);
+	const first = seen.get(frame.sha256);
+	if (!first) {
+		seen.set(frame.sha256, { file, query });
+		return undefined;
+	}
+	return first.query === query
+		? undefined
+		: `the page drew the same picture as for ${first.file}, though the two were asked for differently`;
+}
+
+/** The share of a frame above which, or at none of which, the plant leaves no outline to read. */
+const BLANK_MOST = 0.98;
+
+/** Why a whole view's frame has no outline to read: the plant covers all of it, or none. */
+export function blankFrame(plant: {
+	readonly mask: Uint8Array;
+	readonly width: number;
+	readonly height: number;
+}): string | undefined {
+	let covered = 0;
+	for (let at = 0; at < plant.mask.length; at++) covered += plant.mask[at] ? 1 : 0;
+	const share = covered / Math.max(1, plant.mask.length);
+	if (share === 0) return 'the frame holds no plant';
+	return share > BLANK_MOST
+		? `the plant covers ${share.toFixed(2)} of the frame, so the frame holds no outline`
+		: undefined;
+}
+
+/** The level of detail a page posted for a cell, in words; undefined where it posted none. */
+export function levelName(cell: unknown): string | undefined {
+	const level = (cell as { level?: { name?: unknown; forced?: unknown } } | undefined)?.level;
+	if (!level || typeof level.name !== 'string') return undefined;
+	return level.forced === true ? `${level.name}, forced` : level.name;
+}
+
+/** The levels of detail, in level order, for a record that names them. */
+const LEVEL_NAMES = ['leaf form', 'first card level', 'second card level', 'far card'] as const;
+
+/**
+ * The level the engine draws at a cell's distance, from the levels' starts that the page posted:
+ * the last level whose start the distance reaches, and the far card past the last. Undefined where
+ * the cell posted no starts, as a page too old to record them.
+ */
+export function engineLevelAt(cell: unknown): number | undefined {
+	const level = (cell as { level?: { distance?: unknown; starts?: unknown } } | undefined)?.level;
+	if (!level || typeof level.distance !== 'number' || !Array.isArray(level.starts))
+		return undefined;
+	const starts = level.starts as readonly unknown[];
+	let drawn = 0;
+	// A band with no start is not drawn at any distance, as the shaped plant's starts read for the
+	// levels it left empty.
+	for (let at = 0; at < Math.min(3, starts.length); at++) {
+		const start = starts[at];
+		if (typeof start === 'number' && start <= level.distance) drawn = at;
+	}
+	return drawn;
+}
+
+/** How far a whole view's drawn plant may differ in size from its photograph's, as a share of it. */
+export const FRAME_SIZE_BAND = 0.2;
+
+/** A plant's box in a picture of a size. */
+export interface FramedBox {
+	readonly box: Box;
+	readonly width: number;
+	readonly height: number;
+}
+
+/** The edges of a frame, in the order a crop is named. */
+const EDGES = ['left', 'top', 'right', 'bottom'] as const;
+
+/**
+ * Why a whole view's render crops the plant, or undefined when it does not: the render's plant runs
+ * to an edge of the frame that the photograph's plant stands clear of. A cropped plant's outline,
+ * gap and width are the crop's, so no figure is read from it. A photograph that itself crops the
+ * plant at an edge allows the same crop.
+ */
+export function cropFault(
+	reference: Readonly<Record<(typeof EDGES)[number], boolean>>,
+	render: Readonly<Record<(typeof EDGES)[number], boolean>>,
+): string | undefined {
+	const cropped = EDGES.filter((edge) => render[edge] && !reference[edge]);
+	return cropped.length === 0
+		? undefined
+		: `the render's plant runs off the frame's ${cropped.join(' and ')} edge${cropped.length === 1 ? '' : 's'}, where the photograph holds it whole`;
+}
+
+/**
+ * Why a whole view's render does not hold the plant at its photograph's size, or undefined when it
+ * does. A render smaller in both height and width by more than the size band, or larger in both,
+ * was framed from the wrong distance, and every outline figure would then compare a small plant
+ * with a large one. One side alone may differ, since that is the plant's own shape. The plant's
+ * place in the frame is not compared: a photograph's outline can cut its foot short, and a render's
+ * can run on to the frame's lower edge, so neither foot row is a sound mark.
+ */
+export function framingFault(reference: FramedBox, render: FramedBox): string | undefined {
+	const shares = (side: FramedBox) => ({
+		tall: (side.box.bottom - side.box.top + 1) / side.height,
+		wide: (side.box.right - side.box.left + 1) / side.width,
+	});
+	const ref = shares(reference);
+	const ren = shares(render);
+	const tall = ren.tall / ref.tall;
+	const wide = ren.wide / ref.wide;
+	const small = tall < 1 - FRAME_SIZE_BAND && wide < 1 - FRAME_SIZE_BAND;
+	const large = tall > 1 + FRAME_SIZE_BAND && wide > 1 + FRAME_SIZE_BAND;
+	return small || large
+		? `the render's plant takes ${ren.tall.toFixed(2)} of the frame's height and ${ren.wide.toFixed(2)} of its width, against the photograph's ${ref.tall.toFixed(2)} and ${ref.wide.toFixed(2)}, so it is drawn too ${small ? 'small' : 'large'}`
+		: undefined;
 }
 
 /**
@@ -1192,8 +2242,13 @@ export function closeFraming(facts: unknown): CloseFraming | undefined {
  * picture a side, centred at a fifth, a half and four fifths each way, so the patches do not overlap
  * and together they cover different phases of a bark tile. Averaging them measures the material
  * rather than the one window the camera happens to frame.
+ *
+ * With `onPlant`, pixels as close to a corner colour as the backdrop are dropped. With `barkOnly`,
+ * leaf-green pixels are dropped as well: a limb close-up carries leaves across the bark, and the
+ * material the figure is about is the bark. A patch that is leaf from edge to edge has no bark to
+ * read, so it falls back to the plant-filtered mean.
  */
-export function patchLab(image: Rgba, onPlant = false): number[] {
+export function patchLab(image: Rgba, onPlant = false, barkOnly = false): number[] {
 	const lab = labImage(image);
 	// A picture's own background, read from its four corners: a close view lays a stem on sky or
 	// on a plain studio ground, so the corners are the backdrop wherever the stem does not reach.
@@ -1231,25 +2286,232 @@ export function patchLab(image: Rgba, onPlant = false): number[] {
 						);
 						if (backdrop) continue;
 					}
+					if (barkOnly && (lab[at + 1] as number) < LEAF_GREEN) continue;
 					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
 					n++;
 				}
 		}
+	if (n === 0 && barkOnly) return patchLab(image, onPlant);
 	return sum.map((v) => v / Math.max(1, n));
+}
+
+/**
+ * The mean CIELAB colour of a picture's own wood, read over the same nine patches as `patchLab`
+ * and selected from the picture of the parts. A bark close view draws the subject's wood against
+ * sky, ground or a trunk behind it, and the four corners are not always the backdrop: a limb across
+ * the frame can touch them, so the corner rule keeps the sky and drops the bark. The parts picture
+ * names each texel's part and its wood radius, so the material is read on the wood the picture is
+ * of. Returns undefined where the patches hold no wood of the named thickness, and the corner rule
+ * then answers.
+ */
+export function patchWoodLab(
+	image: Rgba,
+	parts: Parts | undefined,
+	least: number,
+	most: number,
+): number[] | undefined {
+	if (!parts || parts.width !== image.width || parts.height !== image.height) return undefined;
+	const lab = labImage(image);
+	const sum = [0, 0, 0];
+	let n = 0;
+	const share = 0.2;
+	for (const fy of [0.2, 0.5, 0.8])
+		for (const fx of [0.2, 0.5, 0.8]) {
+			const x0 = Math.round((fx - share / 2) * image.width);
+			const x1 = Math.round((fx + share / 2) * image.width);
+			const y0 = Math.round((fy - share / 2) * image.height);
+			const y1 = Math.round((fy + share / 2) * image.height);
+			for (let y = y0; y < y1; y++)
+				for (let x = x0; x < x1; x++) {
+					const texel = y * parts.width + x;
+					if (parts.kind[texel] !== PART.wood) continue;
+					const radius = parts.radius[texel] as number;
+					if (radius < least || radius > most) continue;
+					const at = (y * image.width + x) * 3;
+					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
+					n++;
+				}
+		}
+	return n === 0 ? undefined : sum.map((v) => v / n);
 }
 
 /**
  * The colour difference between two pictures' nine-patch means, read on the plant alone when asked.
  * A texture source and its render are cut out on different colours, so asking for the plant drops
- * both backdrops and compares the material.
+ * both backdrops and compares the material. With `barkOnly`, both sides drop their foliage too.
  */
-export function patchDifference(reference: Rgba, render: Rgba, onPlant = false): number {
-	return Number(deltaE2000(patchLab(reference, onPlant), patchLab(render, onPlant)).toFixed(2));
+export function patchDifference(
+	reference: Rgba,
+	render: Rgba,
+	onPlant = false,
+	barkOnly = false,
+): number {
+	return Number(
+		deltaE2000(patchLab(reference, onPlant, barkOnly), patchLab(render, onPlant, barkOnly)).toFixed(
+			2,
+		),
+	);
+}
+
+/**
+ * The share of a sheath's length, at each end, that a patch reads. The record's collar share caps
+ * it, so a colour that takes over only near the tip is not read a fifth of the way down.
+ */
+const SHEATH_PATCH_SHARE = 0.2;
+
+/** The views whose subject is the sheath surface at the crown's foot. */
+export const SHEATH_VIEWS: ReadonlySet<string> = new Set(['junction', 'crown-foot']);
+
+/** A blade's green in CIELAB: a leaf is green on the a axis and warm on b, where a sheath is not. */
+const GREEN_A = -8;
+const GREEN_B = 5;
+
+/** A linear reflectance as the sRGB byte the picture shows. */
+function srgbByte(value: number): number {
+	const v = Math.min(1, Math.max(0, value));
+	return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+}
+
+/**
+ * Reads a sheath surface's foot and collar off a picture, in the plant's own box. The surface's
+ * rows are the plant's pixels that are not leaf-green, since a sheath draws brown and pale where a
+ * blade draws green; a view whose surface fills the frame takes the whole box. A surface that draws
+ * green too — a record whose field the grower does not yet read — leaves the box as the surface.
+ *
+ * @param image The picture.
+ * @param box The plant's box in the mask's pixels, as the measures give it.
+ * @param plant The picture's mask, whose pixels are the plant's own.
+ * @returns The two patches and their pixel counts, or null when an end holds no plant.
+ */
+export function sheathPatches(
+	image: Rgba,
+	box: Box,
+	plant: PlantMask,
+	reach: number,
+): SheathPatches | null {
+	if (box.right < box.left || box.bottom < box.top) return null;
+	const work = image.width > plant.width ? resizeToWidth(image, plant.width) : image;
+	const width = Math.min(plant.width, work.width);
+	const height = Math.min(plant.height, work.height);
+	const lab = labImage(work);
+	const band = (top: number, bottom: number): { colour: number[]; pixels: number } => {
+		const sum = [0, 0, 0];
+		let pixels = 0;
+		for (let y = Math.max(0, top); y <= Math.min(height - 1, bottom); y++)
+			for (let x = Math.max(0, box.left); x <= Math.min(width - 1, box.right); x++) {
+				if (!plant.mask[y * plant.width + x]) continue;
+				const at = (y * width + x) * 3;
+				for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
+				pixels++;
+			}
+		return { colour: sum.map((v) => v / Math.max(1, pixels)), pixels };
+	};
+	let surfaceTop = Number.POSITIVE_INFINITY;
+	let surfaceBottom = Number.NEGATIVE_INFINITY;
+	for (let y = Math.max(0, box.top); y <= Math.min(height - 1, box.bottom); y++)
+		for (let x = Math.max(0, box.left); x <= Math.min(width - 1, box.right); x++) {
+			if (!plant.mask[y * plant.width + x]) continue;
+			const at = (y * width + x) * 3;
+			if ((lab[at + 1] as number) < GREEN_A && (lab[at + 2] as number) > GREEN_B) continue;
+			surfaceTop = Math.min(surfaceTop, y);
+			surfaceBottom = Math.max(surfaceBottom, y);
+		}
+	const rows = surfaceBottom - surfaceTop;
+	const top = rows >= 3 ? surfaceTop : Math.max(0, box.top);
+	const bottom = rows >= 3 ? surfaceBottom : Math.min(height - 1, box.bottom);
+	const surfaceHeight = bottom - top + 1;
+	const collarRows = Math.max(1, Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, reach)));
+	const footRows = Math.max(1, Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, 1 - reach)));
+	const collar = band(top, top + collarRows - 1);
+	const foot = band(bottom - footRows + 1, bottom);
+	if (collar.pixels === 0 || foot.pixels === 0) return null;
+	return { foot, collar };
+}
+
+/**
+ * The sheath surface's figure: the render's foot and collar against the photograph's, both lit by
+ * the view, which is the row's mark; and against the record's authored colours, which is the
+ * material check. A record is an albedo, so a shaded sheath cannot pass it; the photograph is the
+ * same lit surface the render draws.
+ *
+ * @param reference The photograph and its mask, or a null box when its sheath cannot be isolated.
+ * @param render The render and its mask.
+ * @param sheath The record's foot and collar colours and its collar share.
+ * @returns The photograph and record steps and the patch areas, or null when the render holds none.
+ */
+export function sheathDifference(
+	reference: { readonly image: Rgba; readonly box: Box | null; readonly plant: PlantMask },
+	render: { readonly image: Rgba; readonly box: Box; readonly plant: PlantMask },
+	sheath: SheathTarget,
+): SheathDifference | null {
+	const rendered = sheathPatches(render.image, render.box, render.plant, sheath.reach);
+	if (!rendered) return null;
+	const target = (rgb: readonly [number, number, number]) =>
+		labOf(srgbByte(rgb[0]), srgbByte(rgb[1]), srgbByte(rgb[2]));
+	const record = {
+		foot: Number(deltaE2000(rendered.foot.colour, target(sheath.foot)).toFixed(2)),
+		collar: Number(deltaE2000(rendered.collar.colour, target(sheath.collar)).toFixed(2)),
+	};
+	const photographed = reference.box
+		? sheathPatches(reference.image, reference.box, reference.plant, sheath.reach)
+		: null;
+	const photograph = photographed
+		? {
+				foot: Number(deltaE2000(rendered.foot.colour, photographed.foot.colour).toFixed(2)),
+				collar: Number(deltaE2000(rendered.collar.colour, photographed.collar.colour).toFixed(2)),
+			}
+		: null;
+	return {
+		photograph,
+		record,
+		footPixels: rendered.foot.pixels,
+		collarPixels: rendered.collar.pixels,
+		...(photographed
+			? {
+					photographFootPixels: photographed.foot.pixels,
+					photographCollarPixels: photographed.collar.pixels,
+				}
+			: {}),
+	};
 }
 
 /** A still or texture source as the comparison reads it: a cut-out laid on white. */
 function referencePicture(path: string): Rgba {
 	return onColour(readImage(path), [255, 255, 255]);
+}
+
+/** A picture's set-aside standing, with the reason it does not judge the primary plant. */
+export function setAsideOf(
+	note: PictureNote | undefined,
+): { readonly kind: Standing; readonly reason: string } | undefined {
+	if (note?.standing === undefined) return undefined;
+	return {
+		kind: note.standing,
+		reason: note.standing === 'stand' ? standReason(note) : (note.reason ?? ''),
+	};
+}
+
+/**
+ * Whether the reference pass's crop share checks a picture's subject. A picture whose subject the
+ * share bounds is checked by that share, whatever its view is called: a leaf close-up is cut out
+ * as a piece is, and its bottom share bounds the same subject.
+ */
+export function cropChecksSubject(crop: number | undefined, ownBox: boolean): boolean {
+	return crop !== undefined && ownBox;
+}
+
+/** The cut subjects a species' reference pass wrote, or undefined when it has none. */
+function subjectLoader(
+	species: string | undefined,
+): Record<string, { readonly bottom: number }> | undefined {
+	if (!species) return undefined;
+	try {
+		return JSON.parse(
+			readFileSync(join('tools/lib/plant-review/slots', `${species}-subjects.json`), 'utf8'),
+		) as Record<string, { readonly bottom: number }>;
+	} catch {
+		return undefined;
+	}
 }
 
 /** Compares each in-use still and texture source with the render of its view, and writes sheets. */
@@ -1258,12 +2520,18 @@ export function compareStills(
 	set: ReferenceSet,
 	frames: readonly RunFrame[],
 	title: string,
+	habit?: PlantHabit,
+	sheath?: SheathTarget,
+	pictures: Readonly<Record<string, PictureNote>> = {},
 ): { readonly pairs: readonly StillResult[]; readonly sheets: readonly string[] } {
 	const byReference = new Map(
 		frames.flatMap((frame) => (frame.reference ? [[frame.reference, frame]] : [])),
 	);
+	const subjectFile = subjectLoader(frames[0]?.query?.species);
 	const results: StillResult[] = [];
 	const rows: SheetRow[] = [];
+	// The first reference each drawn picture answered, by the picture's hash, with its query.
+	const drawnFor = new Map<string, { readonly file: string; readonly query: string }>();
 	for (const slot of set.stills) {
 		const refImage = referencePicture(join(set.folder, slot.file));
 		const frame = byReference.get(slot.file);
@@ -1276,7 +2544,11 @@ export function compareStills(
 			profileError: null,
 			gap: null,
 			crownBoxGap: null,
+			crownFoliage: null,
+			crownBalance: null,
+			crownBands: null,
 			frameGap: null,
+			frameScale: null,
 			foliageDeltaE: null,
 			barkDeltaE: null,
 			crownBox: null,
@@ -1294,24 +2566,215 @@ export function compareStills(
 				barkColour: null,
 				edgeDifference: null,
 				pieces: null,
+				connectivity: null,
 				error,
 			});
 			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
 			continue;
 		}
-		const refPlant = plantMask(refImage);
-		const refSide = side(slot.file, refImage, refPlant, false);
-		const render = renderSideOf(runDir, frame, frame.file, false);
-		const masked = refPlant.background.plain && frame.matte !== undefined;
-		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
+		// The matte at the picture's own width, which the subject check and the connectivity gate read.
+		const own =
+			frame.matte === undefined ? undefined : matteOwnMask(readImage(join(runDir, frame.matte)));
+		// A picture that no figure is read from: it is laid on the sheet beside its reference with
+		// the words that say why.
+		const unread = (why: Partial<StillResult>, lines: readonly string[]) => {
+			const framing = closeFraming(frame.facts);
+			results.push({
+				...blankPair,
+				render: frame.file,
+				file: slot.file,
+				kind: slot.kind,
+				view: slot.view,
+				renderFile: frame.file,
+				masked: false,
+				surfaceDeltaE: null,
+				barkColour: null,
+				edgeDifference: null,
+				pieces: null,
+				connectivity: null,
+				...why,
+				...(framing ? { framing } : {}),
+			});
+			rows.push({
+				reference: refImage,
+				render: readImage(join(runDir, frame.file)),
+				lines: [...head, ...lines],
+			});
+		};
+		const pictureNote = pictures[slot.file];
+		// A picture the review data sets aside does not judge the primary plant, whether it shows a
+		// stand, another form or a limit of the reference: it is not read against the plant.
+		const setAside = setAsideOf(pictureNote);
+		if (setAside !== undefined) {
+			unread({ standing: setAside }, [
+				'NOT JUDGED',
+				setAside.kind === 'stand' ? 'A STAND OF PLANTS' : 'SET ASIDE',
+			]);
+			continue;
+		}
+		// The parts in flat colours, where the run drew them: the areas of a solved view's contract
+		// are read from that picture, which is cut and layered as the colour picture is.
+		const partsPicture =
+			frame.parts === undefined ? undefined : partsOf(readImage(join(runDir, frame.parts)));
+		const areas = areaCovers(frame.facts, partsPicture);
+		// A part the photograph shows and the plant does not have, or hides where the camera holds
+		// its place, is the plant's fault: the picture carries no figure but its areas', and the
+		// rows it carries fail on it.
+		const lacks = lackReason(frame.facts, own, partsPicture);
+		if (lacks !== undefined) {
+			unread({ lacks, ...(areas.length > 0 && { areas }) }, [
+				'PLANT LACKS OR',
+				'HIDES THE SUBJECT',
+			]);
+			continue;
+		}
+		// A picture whose camera or framing failed decides nothing, and no figure is read from it.
+		const voided =
+			voidReason(frame.facts, own, partsPicture) ??
+			emptySubject(frame.facts) ??
+			sameDrawing(drawnFor, slot.file, frame);
+		if (voided !== undefined) {
+			unread({ void: voided }, ['VOID', 'SUBJECT MISSING']);
+			continue;
+		}
+		// A cut piece is measured on its picture's own subject share, written by --subjects.
+		const drawnEarly = frame.query?.view ?? slot.view;
+		const piece = VIEW_SPECS[drawnEarly]?.cutting !== undefined;
+		const subject = piece ? subjectFile?.[slot.file]?.bottom : undefined;
+		// A silhouette is black on white in both pictures, so the photograph is read by the matte's
+		// own rule: a texel is plant where it is darker than half.
+		const refPlant =
+			slot.view === 'silhouette'
+				? halfDarkMask(plantMask(refImage), refImage)
+				: plantMask(refImage);
+		const refSide = side(slot.file, refImage, refPlant, false, habit, piece, subject);
+		const render = renderSideOf(runDir, frame, frame.file, false, habit, piece, subject);
+		// A whole view whose plant is cropped by the frame, or stands at another size than its
+		// photograph's, compares unlike things, so it is void before any figure is read.
+		const framingChecked = Boolean(
+			slot.framed &&
+				(slot.view === 'whole' || slot.view === 'silhouette') &&
+				frame.matte !== undefined &&
+				pictureNote?.outline === undefined &&
+				refSide.measures.box &&
+				render.measures.box,
+		);
+		const misframed =
+			framingChecked && refSide.measures.box && render.measures.box
+				? (cropFault(refSide.measures.clipped, render.measures.clipped) ??
+					framingFault(
+						{ box: refSide.measures.box, width: refPlant.width, height: refPlant.height },
+						{ box: render.measures.box, width: render.plant.width, height: render.plant.height },
+					))
+				: undefined;
+		if (misframed !== undefined) {
+			unread({ void: `the frame does not hold the plant as its photograph does: ${misframed}` }, [
+				'VOID',
+				'FRAMING DIFFERS',
+			]);
+			continue;
+		}
+		// A whole view whose frame is all plant or holds none has no outline to read.
+		const blank =
+			(slot.view === 'whole' || slot.view === 'silhouette') && frame.matte !== undefined
+				? blankFrame(render.plant)
+				: undefined;
+		if (blank !== undefined) {
+			unread({ void: blank }, ['VOID', 'NO OUTLINE']);
+			continue;
+		}
+		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
+		// the material, so neither separates a plant from a background. Their rows read colour,
+		// never an outline: a mask fitted to a picture with no plain border invents one.
+		// The same holds for a picture whose slot names its own background as the subject,
+		// such as a far scrub band the fitted sky and ground admit.
+		const drawn = frame.query?.view ?? slot.view;
+		// The crown's foliage share is a whole or crown view's figure: the parts picture gives the
+		// drawing's side, and the photograph's crown box gives the reference's. A silhouette has no
+		// colour to fit, so its reference side names why it cannot read.
+		const crownView = drawn === 'whole' || drawn === 'crown' || drawn === 'silhouette';
+		const crownFoliage = crownView
+			? crownFoliagePair(refImage, refPlant, refSide.measures.crownRegion, partsPicture, render)
+			: null;
+		const crownBalance = crownView
+			? crownBalancePair(refPlant, refSide.measures.crownRegion, render)
+			: null;
+		const crownBands = crownView
+			? crownBandsPair(refPlant, refSide.measures.crownRegion, render)
+			: null;
+		// A reference whose outline joins its background, as the review data records, has none to read.
+		// A solved close view stands inside the plant, where the frame cuts it and a matte reads
+		// fuller than the picture. Its outline is not compared and its pieces are not counted, save
+		// where its camera holds the whole plant, as a low plant's does. A whole or crown view is
+		// framed on the whole plant, so the parts picture its share reads does not make it one.
+		const closeInside = partsPicture !== undefined && !crownView && !holdsWholePlant(frame.facts);
+		const noOutline =
+			closeInside ||
+			!hasSeparableOutline(
+				drawn,
+				slot.kind,
+				frame.query?.noOutline === true || pictureNote?.outline !== undefined,
+			);
+		// A close view of the wood takes no fitted sky or ground: its photograph has neither.
+		const fittedKind =
+			refPlant.background.plain || WOOD_CLOSE_VIEWS.has(drawn)
+				? null
+				: skyMaskable(refPlant.background)
+					? ('sky' as const)
+					: soilMaskable(refPlant.background, refPlant.height)
+						? ('ground' as const)
+						: null;
+		// An outline is compared only where the photograph separates its plant: on a plain
+		// background, or on a sky or a ground that the fit found.
+		const separable = refPlant.background.plain || fittedKind !== null;
+		const masked =
+			!noOutline &&
+			separable &&
+			(frame.matte !== undefined || (fittedKind !== null && render.measures.box !== undefined));
+		const paired = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
+		// A whole view's photograph has no matte: its plant is cut by colour from its fitted sky, so the
+		// drawing's colour still is read by the same rule. A silhouette is read by the half-dark rule
+		// on both sides.
+		const colourGap =
+			paired.gap && frame.matte !== undefined && drawn === 'whole'
+				? colourRuleGap(render.image, habit)
+				: undefined;
+		const rule: 'colour' | 'half-dark' | undefined =
+			drawn === 'silhouette' ? 'half-dark' : colourGap !== undefined ? 'colour' : undefined;
+		const pair = paired.gap
+			? {
+					...paired,
+					gap: {
+						...paired.gap,
+						...(colourGap !== undefined && { renderByColour: colourGap }),
+						...(rule && { rule }),
+					},
+				}
+			: paired;
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
 		// reaches; the reference rule's own query is a different thing and is often empty.
 		const barkMaskOn = frame.query?.barkMask === true;
+		// The wood a bark view's colour reads: the subject's own radius where the page posted a
+		// contract, or the radius its slot asks for where the view has none. A close view can draw
+		// sky, ground or another wood at the frame's corners, so the corner rule alone is not the
+		// material; the parts picture keeps the colour on the wood the picture is of.
+		const barkBounds = subjectWoodBounds(frame.facts, frame.query?.thin);
+		const renderBark =
+			(bark || BARK_VIEWS.has(drawn)) && partsPicture
+				? patchWoodLab(render.image, partsPicture, barkBounds.least, barkBounds.most)
+				: undefined;
 		// A texture source is a cut-out laid on one colour and the render stands on another, so an
 		// unmasked average lifts both sides and the lifts nearly cancel. With the flag set, the
 		// material is read on the bark alone.
-		const surfaceDeltaE = bark ? patchDifference(refImage, render.image, barkMaskOn) : null;
+		const surfaceDeltaE = bark
+			? Number(
+					deltaE2000(
+						patchLab(refImage, barkMaskOn),
+						renderBark ?? patchLab(render.image, barkMaskOn),
+					).toFixed(2),
+				)
+			: null;
 		// A bark close view photographs the bark against the bark, so neither picture separates
 		// from its own background and neither draws a matte. The patches compare the material.
 		// A close view of the bark is named by the view it draws, not by the words in its file name: a
@@ -1320,11 +2783,26 @@ export function compareStills(
 		// The view the picture was drawn at, from the shot's own query, is what decides whether its
 		// colour is a bark colour: a species that names a picture's view draws that view, and the
 		// reference's number must not overrule it.
-		const drawn = frame.query?.view ?? slot.view;
 		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(drawn);
+		// A limb close-up shows leaves over the bark, so a picture that names them reads the bark
+		// alone on both sides; the blend would otherwise be a leaf colour on one side of the pair.
+		const barkOnly = frame.query?.leafyBark === true;
 		const barkColour = barkClose
-			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
+			? {
+					reference: patchLab(refImage, barkMaskOn, barkOnly),
+					render: renderBark ?? patchLab(render.image, barkMaskOn, barkOnly),
+				}
 			: null;
+		// A junction or crown-foot still's subject is the sheath surface itself, so its foot and
+		// collar are read against the record's own colours. No other view takes this figure.
+		const sheathFigure =
+			sheath && SHEATH_VIEWS.has(drawn) && render.measures.box
+				? sheathDifference(
+						{ image: refImage, box: refSide.measures.box, plant: refPlant },
+						{ image: render.image, box: render.measures.box, plant: render.plant },
+						sheath,
+					)
+				: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
 		);
@@ -1332,36 +2810,96 @@ export function compareStills(
 		// reference's. A part that meets nothing, such as a fruit on a stalk, adds a piece here
 		// while every other figure stays sound. The render's own outline is exact wherever the run
 		// drew a matte, so the render's count stands on its own when the reference does not separate.
-		const pieces =
-			frame.matte !== undefined
-				? {
-						reference: refPlant.background.plain
+		const parts =
+			noOutline || frame.matte === undefined
+				? null
+				: pieceParts(
+						anyPlantMask(render.plant),
+						render.plant.width,
+						render.plant.height,
+						PIECE_AREA,
+					);
+		// The connectivity gate reads the matte at the picture's own width: a downscale to the work
+		// width can drop a hairline shoot the picture keeps and so invent a piece hanging free. The
+		// work-width read is kept beside it as a second figure.
+		// A fork's picture draws only the wood near the joint's depth, so the cut leaves pieces that
+		// hang free in it by design, and the gate does not read it.
+		// A picture forced to a finer level than the engine draws at its distance is a diagnosis: a
+		// support thinner than one pixel of that level is not drawn, while the card level ties the
+		// piece with a stalk line. The gate reads no piece there, and the summary names why.
+		const forcedLevel = (
+			frame.cell as { level?: { forced?: unknown; level?: unknown } } | undefined
+		)?.level;
+		const engineLevel = engineLevelAt(frame.cell);
+		const forcedFiner =
+			forcedLevel?.forced === true &&
+			typeof forcedLevel.level === 'number' &&
+			engineLevel !== undefined &&
+			forcedLevel.level < engineLevel;
+		const ownParts =
+			own && drawn !== 'fork' && !closeInside && !forcedFiner
+				? piecePartsAtOwnWidth(own.mask, own.width, own.height)
+				: null;
+		const pieces = parts
+			? {
+					reference:
+						refSide.measures.box !== null && separable
 							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
 							: null,
-						render: pieceCount(
-							anyPlantMask(render.plant),
-							render.plant.width,
-							render.plant.height,
-							PIECE_AREA,
-						),
-					}
-				: null;
-		const shown: PairMetrics = masked
-			? pair
-			: {
-					...pair,
-					shapeIou: null,
-					frameIou: null,
-					profileError: null,
-					gap: null,
-					crownBoxGap: null,
-					frameGap: null,
-					barkDeltaE: null,
-					crownBox: null,
-					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
-				};
+					render: parts.length,
+				}
+			: null;
+		// The largest run is the plant's body; any other run that the frame's border does not carry
+		// meets nothing inside the picture, which is a generator fault rather than a row's fault.
+		const band = bandFor(frame, render.plant.height);
+		const connectivity = ownParts
+			? {
+					components: ownParts.length,
+					footRow: footRowOf(ownParts),
+					groundBand: band ?? null,
+					floating: floatingParts(ownParts, band),
+					workWidth: parts
+						? { components: parts.length, floating: floatingParts(parts, band) }
+						: null,
+				}
+			: null;
+		const shown: PairMetrics = {
+			...(masked
+				? pair
+				: {
+						...pair,
+						shapeIou: null,
+						frameIou: null,
+						profileError: null,
+						gap: null,
+						crownBoxGap: null,
+						frameGap: null,
+						frameScale: null,
+						barkDeltaE: null,
+						crownBox: null,
+						foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
+					}),
+			crownFoliage,
+			crownBalance,
+			crownBands,
+		};
 		const framing = closeFraming(frame.facts);
-		const note = crownNote(refSide.measures, render.measures) ?? slot.note;
+		// The crown's box is read from an outline, so only a picture compared by outline has its note.
+		const tilt = frameTilt(frame);
+		const note =
+			(masked
+				? crownNote(
+						{
+							measures: refSide.measures,
+							rows: refPlant.height,
+							tilt:
+								tilt && refSide.measures.horizon !== null
+									? horizonTilt(refSide.measures.horizon, tilt.fov)
+									: null,
+						},
+						{ measures: render.measures, rows: render.plant.height, tilt },
+					)
+				: undefined) ?? slot.note;
 		results.push({
 			...shown,
 			file: slot.file,
@@ -1369,17 +2907,56 @@ export function compareStills(
 			view: slot.view,
 			renderFile: frame.file,
 			masked,
+			...(fittedKind === null
+				? {}
+				: {
+						fittedMask: {
+							kind: fittedKind,
+							skyFit: refPlant.background.sky.fit,
+							skyNoise: refPlant.background.sky.noise,
+							...(fittedKind === 'ground' && refPlant.background.ground
+								? {
+										groundFit: refPlant.background.ground.fit,
+										groundNoise: refPlant.background.ground.noise,
+										horizonShare: (refPlant.background.horizon ?? 0) / refPlant.height,
+										...(refPlant.plantToGround !== undefined
+											? { plantToGround: refPlant.plantToGround }
+											: {}),
+									}
+								: {}),
+						},
+					}),
 			surfaceDeltaE,
 			barkColour,
-			// A masked close view reads its bark difference off the same patches, since the page's own
-			// figure averages a plant mask that on a thin stem is mostly the backdrop.
-			barkDeltaE:
-				barkMaskOn && barkColour
-					? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
-					: shown.barkDeltaE,
+			// A bark close view reads its bark difference off the same patches: the page's own figure
+			// averages a plant mask, which a bark picture does not have and which on a thin stem is
+			// mostly the backdrop.
+			barkDeltaE: barkColour
+				? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
+				: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
+			connectivity,
+			...(forcedFiner && {
+				connectivityWithheld: {
+					drawn: LEVEL_NAMES[forcedLevel.level as number] ?? 'leaf form',
+					engine: LEVEL_NAMES[engineLevel as number] ?? 'far card',
+				},
+			}),
+			...(frame.query?.sparse !== undefined ? { sparse: frame.query.sparse } : {}),
+			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
+			...(levelName(frame.cell) !== undefined && { level: levelName(frame.cell) }),
+			...(areas.length > 0 && { areas }),
+			// A solved view whose contract held, or a whole view that passed the framing check.
+			subjectChecked:
+				(contractHeld(frame.facts) &&
+					regionsRead(frame.facts, own !== undefined, partsPicture !== undefined)) ||
+				framingChecked,
+			...(pictureNote?.outline !== undefined ? { outlineVoid: pictureNote.outline } : {}),
+			...(pictureNote?.standing !== undefined && pictureNote.reason !== undefined
+				? { standing: { kind: pictureNote.standing, reason: pictureNote.reason } }
+				: {}),
 			...(note ? { note } : {}),
 		});
 		rows.push({

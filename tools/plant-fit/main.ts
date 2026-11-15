@@ -11,8 +11,7 @@
 // video of the folder in place of the in-use turn, `--sheet` writes a contact sheet per species,
 // `--report` writes every figure as JSON and `--no-write` leaves the species' figures as they are.
 import { existsSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
-import { REPO_ROOT } from '../../tests/lib/server.ts';
+import { join, resolve } from 'node:path';
 import { flag, option, positionals } from '../lib/plant-review/cli.ts';
 import { rubricBand } from '../lib/plant-review/compare.ts';
 import { probeVideo, readImage, videoFrames } from '../lib/plant-review/image.ts';
@@ -22,14 +21,11 @@ import {
 	type TurnVideo,
 	WORK_WIDTH,
 } from '../lib/plant-review/references.ts';
+import { referenceFolder } from '../lib/plant-review/store.ts';
 import { roundBandOf, writeFit } from './fit-file.ts';
 import { checkLeaf, type LeafCheck } from './leaf.ts';
 import { writeTurnSheet } from './sheet.ts';
 import { fitTurn, type TurnFit } from './turn.ts';
-
-const REFERENCES =
-	process.env.NULL3D_PLANT_REFERENCES ??
-	join(REPO_ROOT, '.internal/coordination/tree-corpus/generated');
 
 const species = positionals(new Set(['--no-write']));
 if (species.length === 0) {
@@ -47,8 +43,7 @@ const write = !flag('no-write');
 
 /** The reference folder of a species. */
 function folderOf(id: string): string {
-	const name = refs ?? id;
-	const folder = isAbsolute(name) || name.includes('/') ? resolve(name) : join(REFERENCES, name);
+	const folder = referenceFolder(refs ?? id);
 	if (!existsSync(folder)) throw new Error(`${folder} does not exist: name the folder with --refs`);
 	return folder;
 }

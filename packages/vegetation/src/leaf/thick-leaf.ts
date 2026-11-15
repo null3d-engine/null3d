@@ -154,7 +154,11 @@ export interface ThickDetail {
 	readonly ribs: boolean;
 }
 
-/** The blade's grid by tier: two columns a rib at high, three at ultra, so the pleats light. */
+/**
+ * The blade's grid by tier: two columns a rib from medium up, so the pleats light, and at ultra
+ * more rows than at high, so the blade's curl reads smoother while a plant of a hundred leaves
+ * stays inside its class's nearest-level cap.
+ */
 export function thickDetail(leaf: ThickLeaf, detail: Detail): ThickDetail {
 	const count = Math.max(1, leaf.ribs.count);
 	switch (detail) {
@@ -165,7 +169,7 @@ export function thickDetail(leaf: ThickLeaf, detail: Detail): ThickDetail {
 		case 'high':
 			return { rows: 12, columns: count * 2, ribs: true };
 		case 'ultra':
-			return { rows: 20, columns: count * 3, ribs: true };
+			return { rows: 20, columns: count * 2, ribs: true };
 	}
 }
 

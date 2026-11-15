@@ -302,9 +302,10 @@ const OBJECT_IDS_DEF: &str = "OBJECT_IDS";
 /// The inputs that cost something: the second texture coordinates, a vertex attribute; the mesh's
 /// vertex color, another vertex attribute, which a vertex offset reads as data; the instance's
 /// index and the object's id, which the vertex shader finds in the table of object ranges; the
-/// object's matrices, which pass to the fragment shader as three more values; and the four-number
-/// vertex record, a vertex attribute that a generated shape's vertex offset reads.
-const INPUTS: [Input; 5] = [
+/// object's matrices, which pass to the fragment shader as three more values; the four-number
+/// vertex record, a vertex attribute that a generated shape's vertex offset reads; and the mesh's
+/// tangent, a vertex attribute that a foliage role packs a blade's keel in.
+const INPUTS: [Input; 6] = [
     Input {
         def: "CUSTOM_UV1",
         fields: &[(None, "uv1")],
@@ -327,6 +328,10 @@ const INPUTS: [Input; 5] = [
     Input {
         def: "CUSTOM_TARGET",
         fields: &[(None, "vertexRecord")],
+    },
+    Input {
+        def: "CUSTOM_TANGENT",
+        fields: &[(None, "tangent")],
     },
 ];
 

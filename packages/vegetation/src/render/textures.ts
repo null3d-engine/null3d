@@ -9,7 +9,8 @@ import { type CoarsenessOptions, checkCoarseness } from '../coarseness';
 import type { PlantByteCache } from '../core/cache';
 import type { SpeciesModule } from '../core/record';
 import type { SpeciesTextureFiles, TextureSet } from '../core/textures';
-import type { Detail } from '../core/types';
+import type { Detail, Season } from '../core/types';
+import type { CuttingPart } from '../cutting';
 import { buildKit } from '../tasks';
 import { VARIANT_RECORDS } from '../wind/records';
 import { RECORDS_WIDTH, recordsRows, writeSteadyWind, writeWindRecords } from './records';
@@ -79,6 +80,12 @@ export interface PrepareOptions extends CoarsenessOptions {
 	 */
 	readonly form?: string;
 	/**
+	 * The season the kit is built for. A plant whose crown is drawn from branch-end pieces rather
+	 * than from shoot rows takes its leaves from those pieces, so the kit itself must be built for
+	 * the season the page shows; without it the pieces are summer's whatever the grow asks for.
+	 */
+	readonly season?: Season;
+	/**
 	 * A store of bytes that keeps the kit, its variants and its far bakes across visits, such as the
 	 * engine's cache of derived data. Without one, they are kept in memory for the visit alone.
 	 */
@@ -87,7 +94,7 @@ export interface PrepareOptions extends CoarsenessOptions {
 	 * Build a cutting kit: the classes its cut pieces draw and no card levels, so a piece that is
 	 * only ever drawn close up does not pay for the crown's cards or for the classes it never uses.
 	 */
-	readonly cutting?: boolean;
+	readonly cutting?: boolean | CuttingPart;
 }
 
 /** Slots in a species' near table: the copies that may draw real shoots at once. */
@@ -299,8 +306,9 @@ export async function prepareSpecies(
 			detail: options?.detail ?? ctx.quality.preset,
 			...(options?.placeholders === 'missing' && { placeholders: 'missing' as const }),
 			...(options?.form !== undefined && { form: options.form }),
+			...(options?.season !== undefined && { season: options.season }),
 			...(options?.cache && { cache: options.cache }),
-			...(options?.cutting && { cutting: true }),
+			...(options?.cutting && { cutting: options.cutting }),
 		}),
 	]);
 	const textures = kitTextures(ctx, kit, set, loaded);

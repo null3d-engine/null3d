@@ -19,7 +19,7 @@ import { hashAt } from '../core/hash';
 import { cos, sin } from '../core/math';
 import type { TextureManifest } from '../core/textures';
 import { crownSkyAt } from '../crown/visibility';
-import type { MeshWriter } from '../leaf/writer';
+import { type MeshWriter, phaseByte, SURFACE_SHEATH } from '../leaf/writer';
 import type { CrownLight, MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '../wood/frames';
@@ -117,7 +117,7 @@ export interface AxisBytes {
 	readonly high: number;
 	/** The wind record's low byte. */
 	readonly low: number;
-	/** The flutter phase, 0 to 255. */
+	/** The flutter phase, 0 to 255, never a surface kind. */
 	readonly phase: number;
 }
 
@@ -133,7 +133,7 @@ export function axisBytes(input: MeshInput, axis: number): AxisBytes {
 	return {
 		high: (record >>> 8) & 255,
 		low: record & 255,
-		phase: hashAt(input.seed, axisKey(input.skeleton, axis), 7) & 255,
+		phase: phaseByte(hashAt(input.seed, axisKey(input.skeleton, axis), 7)),
 	};
 }
 
@@ -273,6 +273,11 @@ export interface StemRun {
 	 * much light, so it does not read as black wood among them.
 	 */
 	readonly leastSky?: number;
+	/**
+	 * Whether this run is a tuft's basal sheath column, which the plant material draws in the
+	 * record's sheath colour. Absent, the run draws as the leaf does.
+	 */
+	readonly sheath?: boolean;
 }
 
 const frame: PathFrame = emptyFrame();
@@ -289,7 +294,14 @@ export function writeStem(mesh: MeshWriter, run: StemRun): void {
 	const sides = Math.max(3, section.sides);
 	const firstVertex = mesh.vertices;
 	const firstIndex = mesh.indices.length;
-	const colour = [run.bytes.high, run.bytes.low, run.bytes.phase, 0];
+	// A sheath column's flutter byte is its marker, so the column stands still and the material
+	// reads the record's colour for it; every other run keeps its sway phase.
+	const colour = [
+		run.bytes.high,
+		run.bytes.low,
+		run.sheath === true ? SURFACE_SHEATH : run.bytes.phase,
+		0,
+	];
 	const p = [0, 0, 0];
 	for (let r = 0; r < rings; r++) {
 		const share = r / (rings - 1);

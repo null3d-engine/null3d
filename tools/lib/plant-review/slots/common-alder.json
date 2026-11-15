@@ -1,5 +1,6 @@
 {
 	"01-whole-distant.png": {
+		"form": "mature",
 		"sunAzimuth": 5.2,
 		"sunRise": 42.9,
 		"skyShare": 0.6,
@@ -7,10 +8,11 @@
 		"sky": "#d0dff1",
 		"ground": "#707a47",
 		"fov": 30,
-		"fill": 0.934,
+		"fill": 0.7,
 		"targetY": 0.483
 	},
 	"02-whole-profile.png": {
+		"form": "narrow",
 		"sunAzimuth": -13.3,
 		"sunRise": 43.3,
 		"skyShare": 0.6,
@@ -23,10 +25,11 @@
 	},
 	"18-silhouette.png": {
 		"fov": 30,
-		"fill": 0.923,
-		"targetY": 0.501
+		"fill": 0.73,
+		"targetY": 0.41
 	},
 	"30-whole-with-landmark.png": {
+		"form": "mature",
 		"sunAzimuth": 1.5,
 		"sunRise": 42.5,
 		"skyShare": 0.6,
@@ -52,8 +55,7 @@
 	},
 	"04-crown-outside.png": {
 		"skyShare": 0.65,
-		"daylight": 1.6,
-		"distance": 4
+		"daylight": 1.6
 	},
 	"05-crown-underside.png": {
 		"sunAzimuth": 30,
@@ -79,6 +81,9 @@
 		"distance": 0.3,
 		"daylight": 2.0
 	},
+	"20-roots-in-water.png": {
+		"daylight": 4.1
+	},
 	"common-alder-turntable.mp4": {
 		"skyShare": 0.6,
 		"daylight": 2.2
@@ -88,24 +93,26 @@
 		"daylight": 2.2
 	},
 	"14-bark-base.png": {
+		"daylight": 1.8,
 		"barkMask": true
 	},
 	"15-bark-mid-trunk.png": {
 		"barkMask": true
 	},
 	"16-bark-on-limb.png": {
-		"thin": 0.025,
-		"skyShare": 0.6,
-		"daylight": 1.5,
+		"girth": null,
+		"thin": 0.035,
+		"span": 0.086,
+		"along": 0.3,
 		"barkMask": true
 	},
 	"09-secondary-branching.png": {},
 	"10-fine-twigs.png": {},
 	"21-branch-studio.png": {
-		"roll": 90
+		"roll": 74
 	},
 	"22-subbranch-studio.png": {
-		"roll": 90
+		"roll": 120
 	},
 	"23-leaf-cluster-studio.png": {
 		"pick": 1
@@ -117,6 +124,13 @@
 	"28-young-bark.png": {
 		"thin": 0.015,
 		"span": 0.1,
+		"girth": 0.9,
 		"barkMask": true
+	},
+	"_pictures": {
+		"01-whole-distant.png": {
+			"outline": "the far river bank behind the tree joins its outline; picture 30 shows the same form on a clean ground",
+			"ruling": "the session lead ruled the outline void when the tree's specification found the bank inside it"
+		}
 	}
 }

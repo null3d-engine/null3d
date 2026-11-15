@@ -4,11 +4,11 @@
 // committed folder to its manifest.
 import { describe, expect, it } from 'bun:test';
 import { barkLayer, makeTile, seamRatio } from './bark.ts';
-import type { BarkLayerConfig } from './config.ts';
+import { type BarkLayerConfig, LEAF_DEFAULTS } from './config.ts';
 import { signedArea, simplifyTo, traceLoops } from './contour.ts';
 import { encodeKtx2 } from './encode.ts';
 import { type Picture, picture } from './image.ts';
-import { findFrame, leafFrame } from './leaf.ts';
+import { cleanFace, findFrame, leafFrame } from './leaf.ts';
 import { jobIds, type SourceFolder, Sources, supersededFiles } from './sources.ts';
 
 const INDEX = `| file | what it shows | why |
@@ -104,6 +104,35 @@ describe('the outline', () => {
 		const thinned = simplifyTo(loop, 24, 64);
 		expect(thinned.length).toBeGreaterThanOrEqual(24);
 		expect(thinned.length).toBeLessThanOrEqual(64);
+	});
+});
+
+describe('the gaps of a compound leaf', () => {
+	/** A square leaf of mid green with a dark stripe down its middle, as a gap between two lobes. */
+	const striped = () => {
+		const p = shape(32, () => true);
+		for (let y = 0; y < 32; y++)
+			for (let x = 15; x < 17; x++) {
+				const i = y * 32 + x;
+				p.r[i] = 0.01;
+				p.g[i] = 0.01;
+				p.b[i] = 0.01;
+			}
+		return p;
+	};
+	const covered = (p: Picture) => p.a.filter((a) => a > 0.5).length;
+
+	it('clears the covered texels darker than the stated luminance, and only those', () => {
+		const cleaned = cleanFace(striped(), {
+			...LEAF_DEFAULTS,
+			gaps: { luminance: 0.05, ramp: 0.5 },
+		});
+		expect(covered(cleaned)).toBe(32 * 30);
+		for (let y = 0; y < 32; y++) expect(cleaned.a[y * 32 + 15]).toBe(0);
+	});
+
+	it('keeps every covered texel where the leaf names no gaps', () => {
+		expect(covered(cleanFace(striped(), LEAF_DEFAULTS))).toBe(32 * 32);
 	});
 });
 

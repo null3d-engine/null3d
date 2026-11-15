@@ -24,9 +24,9 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 
 /** The silver birch's record. */
 export const record: Species = {
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.45, leaves: 0.55, coarseness: 0.5 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.11 },
 	id: 'silver-birch',
 	name: 'Silver birch',
 	latin: 'Betula pendula',
@@ -198,12 +198,14 @@ export const record: Species = {
 		// The close pictures show cut pieces with their leaves spaced along the wood, which the
 		// crown's own classes do not: a crown's spray crowds its leaves for the veil, and a cut piece
 		// wants the run between them bare. Each close piece takes a class of its own, which the crown
-		// never draws.
+		// never draws. Each class is cut-only, so the cutting kit holds it and the plant kit leaves it
+		// out; a class without the flag leaves the cut view drawing the crown's own shoots.
 		cuttingClasses: [
 			{
 				// Still 21: a cut branch divides into thin twigs that arch out and droop, the leaves
 				// alternating along their run and spaced apart.
 				name: 'whip',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -231,11 +233,11 @@ export const record: Species = {
 				droop: 55,
 			},
 			{
-				// Still 23: a short shoot of six large leaves spaced along its run, as its photograph shows
-				// it, and a side shoot at the joint below its newest year. The same class draws the close
-				// cluster, whose photograph holds eight over the same box. The blades run larger than the
-				// species' own, because six of them must cover what the pictures show.
+				// Stills 11 and 23: a short shoot of six leaves spaced along its run, and a side shoot
+				// at the joint below its newest year. The blades run a little larger than the species'
+				// own, so six of them carry the cluster's box without closing it.
 				name: 'cut',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -248,8 +250,8 @@ export const record: Species = {
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
 				leafScale: [
-					[0, 1.4],
-					[1, 1.6],
+					[0, 1.15],
+					[1, 1.35],
 				],
 				leafAngle: [
 					[0, 70],
@@ -261,6 +263,7 @@ export const record: Species = {
 				// Still 22: the same twig, its leaves two-ranked and held face on to the camera as its
 				// photograph shows them, which the cluster's own class does not take.
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -338,10 +341,11 @@ export const record: Species = {
 			crossCurl: 0,
 			twist: 6,
 			wave: [0.001, 4],
-			// Still 24: a fresh light green above and paler below, thin enough to glow in the light.
+			// Stills 24 and 25: a fresh light green above and a paler grey-green below, each the
+			// species' own texture mean less the light the blade passes; thin enough to glow.
 			optics: {
-				reflectance: [0.09, 0.16, 0.03],
-				reflectanceBack: [0.14, 0.2, 0.06],
+				reflectance: [0.081, 0.178, 0.008],
+				reflectanceBack: [0.224, 0.266, 0.135],
 				transmittance: [0.12, 0.22, 0.08],
 				roughness: [0.5, 0.65],
 			},
@@ -445,15 +449,24 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		// Stills 01 and 19: a card's twig is thinner than a pixel at a whole view, so its leaves read
-		// as a piece in air; each card draws its twig as a line and the join shows.
+		// as a piece in air; each card draws its twig as a line and the join shows. The line takes
+		// the twig's own width where that is wider than the least below, which at a whole view it is
+		// not: the least keeps the crown's mass.
 		cardStalk: 5,
+		// Still 01: the crown's box shows 0.45 of sky in the photograph and 0.69 at the first card
+		// level, whose weeping shoots stand open. At the medium tier 1.12 brings the card levels to
+		// 0.0251 and 0.0140 more sky than the leaf form, where each card pictures its shoot, and
+		// keeps the second level 0.0294 outside the leaf form's outline against the 0.03 allowed;
+		// 1.15 there stands 0.0312 outside.
+		cardGrow: 1.12,
+		cardStalkWidth: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
 			// The largest of the species and its three forms: 3.37, 5.52, 9.42 and 16.89 MB. The kit
-			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
-			// photographs.
+			// holds the long leafy shoots the fine leaf needs; the cutting classes stand in the
+			// cutting kit alone.
 			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_500_000, ultra: 17_000_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.

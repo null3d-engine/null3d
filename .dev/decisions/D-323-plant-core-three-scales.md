@@ -183,3 +183,23 @@ the owner ruled. Each change was either dropped with the generator or ported int
   the standard material until their species ship, and stay as they are.
 - **Dropped: the hosta's flower color** (`99300b5c`). It was a field of the first generator's record.
   The plant core's hosta grows its flowers as extras, from its own record and textures.
+
+## Gaps the species have found
+
+A species that cannot reach its references names the engine's own gap. It gives the field or the
+mechanism that is missing, so the next pass reads the gap rather than a mis-set record.
+
+- **A trunk's spiral, burrs and hollows are declared and unread.** `TrunkShape` in
+  `packages/vegetation/src/core/record.ts` holds `profile`, `twist` and `gnarl`. The shade
+  description names the olive's spiral twist and hollow. No stage reads the field. The wood
+  builder, the flare and the bark take the stem as the pipe model gives it. So the base's flutes
+  and the bark texture alone draw an old olive's fluted columns, and its hollow bole has no cavity.
+- **A divided bole ends in a cone.** Where `growth.divide` stops the stem at the fork, the wood
+  tapers to its last ring and ends as a sharp point inside the joint. At the plant review's
+  limb-junction view the point shows as dark shards of bark among the limbs. The limbs meet
+  correctly; the stem's own tip is what draws.
+- **A curved stem under the copy stand reads darker than a flat macro.** The review lights a bark
+  close-up from beside the camera, so a whole surface shows its albedo. A cylinder turned to that
+  light averages darker than the flat photograph of the same bark. Its flanks fall away from both
+  lamps. The olive's young bark reads 4.79 color steps from its picture, where its trunk tile reads
+  1.05. This is a fact about the measure, not a fault of the texture.

@@ -161,7 +161,10 @@ export const record: Species = {
 		],
 		// Stills 21 and 22: a cut twig forks at last year's joint into two long laterals, so the piece
 		// ends in three leafy sprays on a bare lower stem. The crown cannot carry twigs this bare, so
-		// the cuttings draw a class the crown never does. Its two prototypes differ in how widely they
+		// the cuttings draw a class the crown never does. The cluster's own class is cut-only, so a
+		// cutting kit holds it and the plant's kit leaves it out; the branch and sub-branch draw the
+		// cut class from the plant's kit, whose piece their photographs show, since the cutting kit's
+		// own seed draws that twig too open for them. Its two prototypes differ in how widely they
 		// spread, so the branch takes the wide piece and the sub-branch the tall one.
 		cuttingClasses: [
 			{
@@ -195,8 +198,10 @@ export const record: Species = {
 			},
 			{
 				// Stills 11 and 23: the cluster's own one-year spray, drawn only by the cluster cutting,
-				// with the crowding that stands its runs as plates. The crown never draws this class.
+				// with the crowding that stands its runs as plates. The crown never draws this class. It
+				// is cut-only, so a cutting kit holds it and the plant's kit leaves it out.
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
@@ -281,7 +286,15 @@ export const record: Species = {
 			// seven pairs of straight parallel veins, a wavy untoothed margin and a very short stalk.
 			// The stalk is a stub rather than the photograph's four millimetres, so a blade drawn on a
 			// twig at a cut view meets the wood instead of standing a pixel or two clear of it.
-			length: { mean: 0.13, spread: 0.02 },
+			// The beech has no fact sheet, so the photographs are the ruler: 24 full leaves on stills
+			// 11, 22 and 23 read 8 to 9 centimetres, and some full leaves on still 21 the same. The
+			// single leaves of stills 12 and 13 are 0.69 to 0.71 as wide as long, which is 0.89 of the
+			// texture contour's 0.75 once the 12-degree fold flattens the blade. The branch pieces wear
+			// that leaf (`PIECE_LEAF` in pieces.ts), and the crown wears it too; its leaves read 0.42 to
+			// 0.65 as wide as long in the photographs, median 0.55, and the same blade stands at the top
+			// of that range.
+			length: { mean: 0.09, spread: 0.014 },
+			breadth: 0.89,
 			outline: 'texture',
 			petiole: { length: 0.0015, radius: 0.0012, flat: 0, droop: 12 },
 			fold: 12,
@@ -300,16 +313,16 @@ export const record: Species = {
 	},
 	bark: {
 		// Still 26: thin, smooth, mottled silver-grey bark with no fissures. The shallow figure comes
-		// from the texture's own measured depth. Still 15 photographs the trunk 7.4 light units above
-		// the measured colour, while still 16's great limb already reads light: only the trunk takes
-		// the lift, and a limb stops short of its girth.
+		// from the texture's own measured depth. The trunk's photographs stand its bark in shade, under
+		// the albedo a copy stand shows, so a close view brings its own light; the lift raises the bole
+		// under the whole-plant light, where the shaded close views cannot reach, and keeps the bark's
+		// grey rather than a cast of its own.
 		zones: [
-			// The trunk's masked close view reads 0.8 light, 2.7 short on red and 2.1 long on yellow,
-			// so its lift carries a warmer, less yellow cast.
-			{ layer: 0, by: 'radius', from: 0.45, to: 5, blend: 0.05, tint: [1.48, 1.4, 1.58] },
-			// The limb's masked view reads 1.7 light and 5.0 short on yellow, so the thinner wood
-			// keeps a darker, yellower cast.
-			{ layer: 0, by: 'radius', from: 0, to: 0.45, blend: 0.05, tint: [0.95, 0.93, 0.72] },
+			// The trunk's bark is a neutral silver-grey: its lift raises the lightness and turns no hue.
+			{ layer: 0, by: 'radius', from: 0.5, to: 5, blend: 0.05, tint: [1.45, 1.45, 1.45] },
+			// A limb's masked view reads 1.7 light and 5.0 short on yellow, so the wood below the bole's
+			// own girth keeps a darker, yellower cast.
+			{ layer: 0, by: 'radius', from: 0, to: 0.5, blend: 0.05, tint: [0.95, 0.93, 0.72] },
 			// Still 14: the foot's bark reads lighter and yellower than the photograph's grey. The
 			// cast fades over 0.2 m centred at 1.1 m, so the fade ends at 1.2 m where the mid-trunk
 			// view's frame begins: the foot gains the cast without a hard seam and that view keeps
@@ -344,13 +357,14 @@ export const record: Species = {
 		scars: 1.5,
 	},
 	base: {
-		// Still 17: broad smooth buttress roots like an elephant's toes.
-		flare: { amount: 0.8, height: 0.5 },
+		// Still 17: broad smooth buttress roots like an elephant's toes, spreading about twice the
+		// bole's own girth at the ground.
+		flare: { amount: 0.55, height: 0.5 },
 		// Still 14: the toes rise from the meadow as rounded flanks with smooth creases between them,
 		// not as angular slabs.
 		buttress: {
 			lobes: { mean: 7, spread: 1 },
-			amount: 0.8,
+			amount: 0.55,
 			sharpness: 1.6,
 			height: 1.0,
 			round: 1,
@@ -500,6 +514,11 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
+		// The crown's card levels stand more open than its leaf form: read over the crown's outline at
+		// the medium tier, the first reads 0.2525 and the second 0.2986 of sky against the leaf
+		// form's 0.2323. A card grows about its middle inside the leaf form's hull, which brings the
+		// first to 0.2195 and the second to 0.2491, inside the review's band.
+		cardGrow: 1.1,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -526,9 +545,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 2357111317,
-	// The owner's ruling, and the floors the measured runs used: the broadleaf keeps little wood and
-	// less leaf, and coarsens more than any other species, because its crown carries the most.
-	sparse: { limbs: 0.32, leaves: 0.38, coarseness: 0.65 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.09 },
 	roundBand,
 	cuttings: {
 		// The wide prototype suits the branch's three sprays; the tall one suits the sub-branch.

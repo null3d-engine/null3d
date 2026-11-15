@@ -1,0 +1,28 @@
+{
+	"caps": "palm",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"relief": { "veins": 0.7, "pucker": 0.25, "depth": 0.0016 }
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "trunk",
+				"slot": 26,
+				"tile": [0.42, 0.42],
+				"depth": 0.035,
+				"smooth": 1
+			}
+		],
+		"young": {
+			"name": "rachis",
+			"slot": 26,
+			"tile": [0.12, 0.12],
+			"depth": 0.0008,
+			"smooth": 48,
+			"delight": { "radius": 0.3 },
+			"tint": [1.05, 1.12, 0.82]
+		}
+	}
+}

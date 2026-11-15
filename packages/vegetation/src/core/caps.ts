@@ -105,14 +105,24 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// The beech's second card level once each card draws its supporting twig: 27,666 triangles
 		// without the twig line and about 42,700 with one, which is above the holm oak's 37,723. A
 		// card that draws no twig floats free of the wood, so this cap follows the reading with it.
-		lod2Triangles: 43_000,
+		// The saguaro's areole cards, one at every rib crest, measure 50,452 triangles at the ultra
+		// tier, so the cap rises above them rather than leave the column thin of its spine clusters.
+		lod2Triangles: 52_000,
 		downloadBytes: 1 * MB,
 		downloadHalfBytes: 0.35 * MB,
 		growMilliseconds: 600,
 	},
 	palm: {
-		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 4 * MB },
-		variantBytes: { low: 3 * MB, medium: 3 * MB, high: 3 * MB, ultra: 3 * MB },
+		// The owner raised the ultra cap so the bamboo's directed clump keeps its fuller fan: the clump
+		// measures 6.32 MB with the fan and 5.25 MB without it, against the 4 MB that held every tier.
+		// The other tiers stay at 4 MB. Only the owner raises this cap.
+		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 6.64 * MB },
+		// The date palm's crown at twenty-two fronds and a hundred and twenty leaflets a side
+		// measures 3.15 MB. A crown of thirty fronds and a hundred and seventy leaflets measures
+		// 5.29 MB and closes its whole-view sky gap only from 0.74 to 0.66, so the greater figure
+		// buys no crown the photographs show: the cap stays here and the palm states that openness
+		// as its limit. The nearest wood measures 0.65 MB and its triangles 89,000.
+		variantBytes: { low: 4.2 * MB, medium: 4.2 * MB, high: 4.2 * MB, ultra: 4.2 * MB },
 		lod0WoodBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		lod0Triangles: 600_000,
 		lod1Triangles: 80_000,
@@ -123,17 +133,22 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	},
 	ground: {
 		kitBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
-		// The largest of hosta, pendulous sedge and meadow grass once measured 1.35, 1.39, 1.44 and
-		// 3.30 MB, with about 15 per cent to spare, so Hosta's ribs at the finest tier fit. The sedge's
-		// tussock needs more blades than the old figures held, so the batch raised the medium and high
-		// tiers in proportion: a species grows at every preset and may spend its blades at each.
-		variantBytes: { low: 1.6 * MB, medium: 2.3 * MB, high: 2.4 * MB, ultra: 3.8 * MB },
+		// The class covers hosta, pendulous sedge and meadow grass, and only the owner raises its caps.
+		// The pendulous sedge sets them: by the owner's ruling it keeps its spikelets, ligule and shoots
+		// and draws the photographs' twenty-two flowering stems, which measure 78,833, 40,987 and 23,409
+		// triangles at the nearest level and the two card levels. The byte caps govern every variant
+		// the species shows: at seed 11 the largest of the sedge's six (variant 3) reads 3,327,959,
+		// 3,658,322, 4,099,334 and 5,611,850 bytes from the low tier up, and each cap adds the class's
+		// 15 per cent to spare. The low tier also holds the packed blade keel, so a grass blade can turn
+		// its width to the view at the lowest memory tier. The meadow grass and the hosta stand well
+		// under these caps.
+		variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
 		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
 		lod0WoodBytes: { low: 0.06 * MB, medium: 0.066 * MB, high: 0.07 * MB, ultra: 0.074 * MB },
 		lod0Triangles: 200_000,
-		lod1Triangles: 30_000,
-		lod2Triangles: 8_000,
+		lod1Triangles: 80_000,
+		lod2Triangles: 25_000,
 		downloadBytes: 0.35 * MB,
 		downloadHalfBytes: 0.12 * MB,
 		growMilliseconds: 150,
@@ -147,13 +162,18 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
  */
 export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	'self-organizing': 'tree',
+	scaffold: 'tree',
+	frame: 'tree',
 	architectural: 'tree',
+	conifer: 'tree',
 	'crown-rosette': 'palm',
+	'frond-crown': 'palm',
 	culm: 'palm',
+	'culm-clump': 'palm',
 	rosette: 'ground',
 	'frond-colony': 'ground',
 	tuft: 'ground',
-	column: 'ground',
+	column: 'tree',
 };
 
 /**

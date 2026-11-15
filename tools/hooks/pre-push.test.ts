@@ -99,15 +99,15 @@ describe('the milestone status', () => {
 		expect(addedStatusLines([stale, owed], [stale])).toEqual([]);
 		const added = addedStatusLines([stale], [stale, owed]);
 		expect(added).toEqual([owed]);
-		expect(statusRefusal([], 'a3bbedbb5', undefined)).toBeUndefined();
-		const message = statusRefusal(added, 'a3bbedbb5', undefined);
-		expect(message).toContain('a3bbedbb5');
+		expect(statusRefusal([], 'bbc3e2d85', undefined)).toBeUndefined();
+		const message = statusRefusal(added, 'bbc3e2d85', undefined);
+		expect(message).toContain('bbc3e2d85');
 		expect(message).toContain(`  M3-G5: ${owed}`);
 		expect(message).toContain(STATUS_CHANGE_VARIABLE);
 	});
 
 	it('lets a landing that changes the status on purpose pass with a reason', () => {
-		expect(statusRefusal([owed], 'a3bbedbb5', 'the landing unticks M3-G5')).toBeUndefined();
+		expect(statusRefusal([owed], 'bbc3e2d85', 'the landing unticks M3-G5')).toBeUndefined();
 	});
 
 	it('says when the check did not run at the base, so every line counts as added', () => {
@@ -120,18 +120,18 @@ describe('the milestone status', () => {
 		expect(two?.split('\n')[0]).toContain(
 			"so each of the pushed commit's 2 problems counts as added:",
 		);
-		expect(statusRefusal([owed], 'a3bbedbb5', undefined)?.split('\n')[0]).toBe(
-			'pre-push: this landing adds a problem to the milestone status that a3bbedbb5 does not have:',
+		expect(statusRefusal([owed], 'bbc3e2d85', undefined)?.split('\n')[0]).toBe(
+			'pre-push: this landing adds a problem to the milestone status that bbc3e2d85 does not have:',
 		);
-		expect(statusRefusal([stale, owed], 'a3bbedbb5', undefined)?.split('\n')[0]).toBe(
-			'pre-push: this landing adds 2 problems to the milestone status that a3bbedbb5 does not have:',
+		expect(statusRefusal([stale, owed], 'bbc3e2d85', undefined)?.split('\n')[0]).toBe(
+			'pre-push: this landing adds 2 problems to the milestone status that bbc3e2d85 does not have:',
 		);
 	});
 
 	it('names a task whose id ends in a letter', () => {
 		const line =
 			'owed: M3-D9a landed with no entry in tools/task-evidence.ts, so its box stays empty';
-		expect(statusRefusal([line], 'a3bbedbb5', undefined)).toContain(`  M3-D9a: ${line}`);
+		expect(statusRefusal([line], 'bbc3e2d85', undefined)).toContain(`  M3-D9a: ${line}`);
 	});
 
 	it(

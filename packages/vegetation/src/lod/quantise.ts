@@ -80,6 +80,7 @@ export function splitMesh(arrays: MeshArrays): MeshArrays[] {
 			uvs: arrays.uvs.slice(low * 2, (high + 1) * 2),
 			uvs1: arrays.uvs1.slice(low * 2, (high + 1) * 2),
 			colors: arrays.colors.slice(low * 4, (high + 1) * 4),
+			...(arrays.tangents && { tangents: arrays.tangents.slice(low * 4, (high + 1) * 4) }),
 			indices: piece,
 		});
 		start = end;
@@ -171,6 +172,7 @@ export function quantise(
 		uvs,
 		uvs1,
 		colors: arrays.colors.slice(),
+		...(arrays.tangents && { tangents: arrays.tangents.slice() }),
 		indices: arrays.indices.slice(),
 	};
 }

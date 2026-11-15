@@ -183,7 +183,9 @@ export const record: Species = {
 		],
 		// Stills 20, 21 and 22: a cut twig forks at one joint into two shoots, each with a pair or two
 		// of leaves below its black bud and bare wood between the joints. The crown cannot carry a
-		// shoot this open, so the cuttings draw this class and the crown never does.
+		// shoot this open, so the cuttings draw this class and the crown never does. Each class is
+		// cut-only, so a cutting kit holds it and the plant's kit leaves it out; a class the cutting
+		// kit lacks leaves the cut view drawing the plant's own shoots.
 		cuttingClasses: [
 			{
 				// Still 23 and the cluster's turn: the video's piece carries six leaves in three
@@ -191,6 +193,7 @@ export const record: Species = {
 				// pairs. A cutting class never offers itself to the crown, so the tree keeps its own
 				// shoots, as the branch's cut class does.
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
@@ -213,6 +216,7 @@ export const record: Species = {
 			},
 			{
 				name: 'cut',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
@@ -324,15 +328,19 @@ export const record: Species = {
 		// as it is. A lighter layer over a drawn trunk reads three steps further from its photograph,
 		// so the tint stays at one.
 		zones: [
-			// Stills 14 and 15: the foot stands a shade lighter than the bole above it, and the bole
-			// reads lighter and yellower than its photograph, so each takes its own measured tone.
+			// Stills 14 and 15: the foot stands a shade lighter than the bole above it. The bole's two
+			// photographs part between a warm and a grey tone, so its tint lifts the red and the blue
+			// together and stands the drawn bark between them.
 			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [1.2, 1.15, 1] },
-			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.79, 0.79, 0.66] },
+			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.85, 0.79, 0.73] },
 			// Still 16: a great limb's bark reads darker than the limb in its photograph, so wood
 			// thinner than the bole takes a lighter tone of its own.
 			{ layer: 0, by: 'radius', from: 0, to: 0.3, blend: 0.05, tint: [1.38, 1.4, 1.22] },
 		],
 		young: 0,
+		// Still 28: the young layer's own colour reads darker and cooler than the photograph, so thin
+		// wood takes a lift toward its warm grey.
+		youngTint: [1.68, 1.497, 1.552],
 		// Still 16: the diamond net fades to smooth pale grey on wood thinner than about six
 		// centimetres across.
 		youngRadius: 0.03,
@@ -429,6 +437,9 @@ export const record: Species = {
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air. Each draws its twig as a line, and the join shows.
 		cardStalk: 1.5,
+		// A card grows a thirtieth past its shoot's own size, so the crown's gaps between cards read as
+		// its own cover rather than as sky.
+		cardGrow: 1.03,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -437,14 +448,18 @@ export const record: Species = {
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 5.84, 5.92, 6.00 and 6.09 MB, the keys'
-			// bunches of 34 taking close to half of it.
-			variantBytes: { low: 5_970_000, medium: 6_040_000, high: 6_120_000, ultra: 6_210_000 },
+			// The ash as its frame of branch ends, measured at seed 11 over every
+			// variant and the seasons the walk grows: its largest variant is 6.67, 6.73, 6.81 and 6.93
+			// MB from the coarsest tier up, the keys' bunches and its first card level's supporting
+			// wood among them; each cap is that measure and a twentieth, by the lead's ruling for a
+			// species that has passed its side-by-side.
+			variantBytes: { low: 7_002_000, medium: 7_063_000, high: 7_147_000, ultra: 7_273_000 },
 			lod0Triangles: 2_500_000,
-			// The heaviest variant's first card level draws 20,704, 23,700, 26,754 and 30,594
-			// triangles from the coarsest tier up, and its second 8,521, 9,181, 10,092 and 10,932.
-			lod1Triangles: 38_000,
-			lod2Triangles: 14_000,
+			// Its first card level draws 74,065, 76,322, 79,785 and 85,317 triangles
+			// from the coarsest tier up, every free card held on a shared supporting branch, and its
+			// second 20,294, 20,716, 21,100 and 21,638; each cap is the largest and a twentieth.
+			lod1Triangles: 89_600,
+			lod2Triangles: 22_800,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			// A variant grows in 156 to 260 ms.
@@ -454,9 +469,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20221107,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.45, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.26 },
 	roundBand,
 	cuttings: {
 		// Stills 20, 21 and 22: a cut piece is a bare stem that forks once into two leafy shoots, far

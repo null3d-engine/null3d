@@ -5,9 +5,13 @@
 // record's colours instead, which no wind moves.
 import type { Material, MeshGeometry, SketchContext, Texture, Textures } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
-import type { PrototypeArrays, QuantisedArrays } from '../asset';
+import type { PlantAsset, PrototypeArrays, QuantisedArrays, SpeciesKitData } from '../asset';
 import type { SpeciesBox } from '../core/box';
+import { DETAILS } from '../core/types';
+import { leafSurface, SURFACE_BRUSH } from '../leaf/writer';
+import { dequantisePosition } from '../lod/quantise';
 import plantShader from './plant.wgsl';
+import viewFaceShader from './plant-viewface.wgsl';
 import { foliageOptics, transmissionShare } from './records';
 import { standInMaterials } from './stand-in';
 import { type SpeciesKit, writeFieldSettings } from './textures';
@@ -33,6 +37,11 @@ export interface PlantMaterials {
 	readonly cards: PlantMaterial;
 	/** Merged fronds, blades and rosette leaves. */
 	readonly foliage: PlantMaterial;
+	/**
+	 * The card levels' foliage, drawn with the plain plant shader: its mesh carries no blade keel,
+	 * so those levels pay nothing for the nearest level's view-facing width.
+	 */
+	readonly foliageFar: PlantMaterial;
 	/** Cones, fruit, flowers, catkins, thorns and spines. */
 	readonly extras: PlantMaterial;
 }
@@ -49,9 +58,14 @@ export interface PlantMaterialOptions {
 	readonly swayDistance?: number;
 	/**
 	 * Draw the plants black, keeping their outline, their leaves' cut-outs and their sway, as a
-	 * review's matte needs for an exact silhouette.
+	 * review's matte needs for an exact silhouette: each texel carries its own partial coverage.
+	 * `'silhouette'` draws them black and cut at the leaf's edge, as the color picture cuts it, for
+	 * a silhouette to look at: a coarse texel that averages fine leaflets with their gaps draws
+	 * solid, not grey. `'parts'` draws each part in a flat color of its own instead, cut and
+	 * layered as the color picture is: wood red with its radius in the blue channel, foliage green,
+	 * extras green and blue.
 	 */
-	readonly matte?: boolean;
+	readonly matte?: boolean | 'parts' | 'silhouette';
 }
 
 /** The roles, as the shader's mode uniform names them. */
@@ -123,16 +137,19 @@ export function plantMaterials(
 	const t = kit.textures;
 	if (field) writeFieldSettings(t.records, field.air);
 	const swayDistance = Math.max(0, options?.swayDistance ?? 0);
+	const parts = options?.matte === 'parts';
 	const matte = options?.matte === true;
+	const silhouette = options?.matte === 'silhouette';
 	const optics = foliageOptics(kit.record);
 	const share = optics ? transmissionShare(optics.reflectance, optics.transmittance) : 0;
 	const make = (
 		role: keyof typeof MODE,
 		textures: { colour: Texture; relief: Texture; second?: Texture; third?: Texture },
 		leafy: boolean,
+		wgsl = plantShader,
 	) => {
 		const material = ctx.materials.shader({
-			wgsl: plantShader,
+			wgsl,
 			textures: {
 				wind: field?.texture ?? stillWind(ctx.textures),
 				records: t.records,
@@ -141,7 +158,7 @@ export function plantMaterials(
 			vertexColors: true,
 			roughness: 0.8,
 			metalness: 0,
-			specularIntensity: matte ? 0 : LEAF_SPECULAR,
+			specularIntensity: matte || parts || silhouette ? 0 : LEAF_SPECULAR,
 			doubleSided: leafy,
 			// A matte carries each texel's own coverage, so it blends that coverage over the white
 			// ground. A cut at the leaf's cutoff would turn a partly covered texel whole or clear,
@@ -165,7 +182,7 @@ export function plantMaterials(
 				displacement: 0,
 				season: 0,
 				seasonKind: 0,
-				matte: matte ? 1 : 0,
+				matte: silhouette ? 3 : parts ? 2 : matte ? 1 : 0,
 			},
 		});
 		BOUND.set(material, {
@@ -192,15 +209,51 @@ export function plantMaterials(
 			{ colour: t.barkColor, relief: t.barkNormal, second: t.youngColor, third: t.youngNormal },
 			false,
 		),
+		// Shoot rows that draw brush cards draw no leaf, so they read the card atlas in its place.
 		shoots: make(
 			'shoots',
-			{ colour: t.leafColor, relief: t.leafNormal, second: t.near, third: t.youngColor },
+			drawsBrushes(kit)
+				? { colour: t.cardColor, relief: t.cardSurface, second: t.near, third: t.youngColor }
+				: { colour: t.leafColor, relief: t.leafNormal, second: t.near, third: t.youngColor },
 			true,
 		),
 		cards: make('cards', { colour: t.cardColor, relief: t.cardSurface }, true),
-		foliage: make('foliage', { colour: t.leafColor, relief: t.leafNormal }, true),
+		foliage: make(
+			'foliage',
+			{ colour: t.leafColor, relief: t.leafNormal },
+			true,
+			kit.record.foliage.kind === 'grass-blade' ? viewFaceShader : plantShader,
+		),
+		foliageFar: make('foliage', { colour: t.leafColor, relief: t.leafNormal }, true),
 		extras: make('extras', { colour: t.leafColor, relief: t.leafNormal }, true),
 	};
+}
+
+/**
+ * Whether a kit's shoot rows draw brush cards at its tier. A kit's pieces draw either brush cards or
+ * leaves at a tier, since the shoots' material reads one texture or the other.
+ *
+ * @param kit The species' kit.
+ * @returns Whether its rows draw brush cards.
+ */
+function drawsBrushes(kit: SpeciesKit): boolean {
+	const tier = DETAILS.indexOf(kit.detail);
+	let brushes = false;
+	let leaves = false;
+	for (const prototype of kit.prototypes) {
+		const colors = prototype.tiers[tier]?.colors;
+		if (!colors) continue;
+		for (let v = 2; v < colors.length; v += 4) {
+			const kind = colors[v] as number;
+			if (kind === SURFACE_BRUSH) brushes = true;
+			else if (leafSurface(kind)) leaves = true;
+		}
+	}
+	if (brushes && leaves)
+		throw new Error(
+			`@null3d/vegetation: '${kit.record.id}' draws brush cards and leaves at its ${kit.detail} tier; a kit's rows draw one or the other`,
+		);
+	return brushes;
 }
 
 /**
@@ -264,6 +317,8 @@ export function plantGeometry(ctx: SketchContext, arrays: QuantisedArrays): Mesh
 		uvs: arrays.uvs,
 		uvs1: { array: arrays.uvs1, normalized: true },
 		colors: arrays.colors,
+		// The foliage's blade keels ride the tangent attribute, four packed bytes a vertex.
+		...(arrays.tangents && { tangents: arrays.tangents }),
 		indices: arrays.indices,
 		// The plant core grows its own levels, tiers and far cards from the skeleton, and the plant
 		// shader sways every vertex, so the engine plans no levels of its own for the mesh.
@@ -285,6 +340,7 @@ export function prototypeGeometry(ctx: SketchContext, arrays: PrototypeArrays): 
 		uvs: arrays.uvs,
 		uvs1: arrays.uvs1,
 		colors: arrays.colors,
+		...(arrays.tangents && { tangents: arrays.tangents }),
 		indices: arrays.indices,
 		// A prototype has a mesh for each tier, which the plant core picks, and the plant shader
 		// sways every vertex, so the engine plans no levels of its own for the mesh.
@@ -312,19 +368,44 @@ export function plantBounds(box: SpeciesBox): { center: [number, number, number]
 	return { center, radius: radius / 2 };
 }
 
+/** The room a variant's sphere leaves round its own reach for the wind's sway: a share and metres. */
+const SWAY_SHARE = 0.1;
+const SWAY_ROOM = 0.5;
+
 /**
- * The radius about a copy's origin that holds the whole species box, which a batch of quantised
- * parts gives `setBoundingRadius`: the mesh's own sphere holds the positions as the shader reads
- * them, fractions of the box, not metres. The engine keeps that sphere's center, under a metre from
- * the origin, and grows the radius by its distance, so each copy's sphere holds its box.
+ * The radius about a copy's origin that holds everything one variant draws, which a batch of its
+ * quantised parts gives `setBoundingRadius`: every vertex of each level's parts and the reach of
+ * each shoot row, with room for the wind's sway. The mesh's own sphere holds the positions as the
+ * shader reads them, fractions of the species box, not metres. The engine keeps that sphere's
+ * center, under a metre from the origin, and grows the radius by its distance, so each copy's
+ * sphere holds its plant. Culling and the level bands both read the sphere's nearest point, so a
+ * camera inside or beside the crown draws the nearest level, and the next level starts by the
+ * plant's own reach, not by the species box, which holds every variant with room to spare.
  *
- * @param box The species box.
+ * @param kit The species' kit.
+ * @param asset The grown variant.
  * @returns The radius in metres at scale 1.
  */
-export function plantBoundingRadius(box: SpeciesBox): number {
-	let widest = 0;
-	for (const x of [box.min[0], box.max[0]])
-		for (const y of [box.min[1], box.max[1]])
-			for (const z of [box.min[2], box.max[2]]) widest = Math.max(widest, Math.hypot(x, y, z));
-	return widest;
+export function plantBoundingRadius(kit: SpeciesKitData, asset: PlantAsset): number {
+	let farthest = 0;
+	const at: [number, number, number] = [0, 0, 0];
+	for (const level of asset.levels)
+		for (const part of level.parts) {
+			const positions = part.arrays.positions;
+			for (let i = 0; i < positions.length / 3; i++) {
+				dequantisePosition(positions, i, kit.box, at);
+				farthest = Math.max(farthest, at[0] * at[0] + at[1] * at[1] + at[2] * at[2]);
+			}
+		}
+	let reach = Math.sqrt(farthest);
+	const rows = asset.shoots;
+	for (let r = 0; r < rows.count; r++) {
+		const x = rows.position[r * 3] as number;
+		const y = rows.position[r * 3 + 1] as number;
+		const z = rows.position[r * 3 + 2] as number;
+		const shoot =
+			(kit.prototypes[rows.prototype[r] as number]?.radius ?? 0) * (rows.scale[r] as number);
+		reach = Math.max(reach, Math.hypot(x, y, z) + shoot);
+	}
+	return reach * (1 + SWAY_SHARE) + SWAY_ROOM;
 }

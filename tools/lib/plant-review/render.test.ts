@@ -1,7 +1,7 @@
 // How a turn is split into sheets of cells: how many cells a sheet takes at a cell's size, how its
 // cells are laid out, and that the turns run on from sheet to sheet.
 import { describe, expect, test } from 'bun:test';
-import { readPublished, sheetGrid, turnShots } from './render.ts';
+import { correctedScale, readPublished, sheetGrid, turnShots } from './render.ts';
 
 /** A page that answers each read with the next answer, and keeps what each read asked for. */
 function pageAnswering(answers: readonly unknown[]): {
@@ -96,4 +96,13 @@ describe('reading a page that published its result', () => {
 			'published a result, and the browser returned none of it',
 		);
 	});
+});
+
+test('takes a share of the width correction between the framing and the full stand', () => {
+	// A picture drawn at 0.8 of the reference's share takes a stand of 0.8 to reach it, and half
+	// the correction stands at 0.9: the fraction interpolates the stand, not the measured share.
+	expect(correctedScale(0.8, 1)).toBeCloseTo(0.8, 6);
+	expect(correctedScale(0.8, 1, 0.5)).toBeCloseTo(0.9, 6);
+	expect(correctedScale(1.2, 1, 0.25)).toBeCloseTo(1.05, 6);
+	expect(correctedScale(1, 1, 0.5)).toBe(1);
 });

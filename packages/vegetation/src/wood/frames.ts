@@ -504,3 +504,27 @@ export function sampleAt(path: AxisPath, s: number, out: PathSample): PathSample
 	out.height = height;
 	return out;
 }
+
+/** The arc length on a path nearest a point. */
+export function nearestArc(path: AxisPath, x: number, y: number, z: number): number {
+	let best = 0;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	const q = path.position;
+	for (let i = 0; i < path.count - 1; i++) {
+		const ax = q[i * 3] as number;
+		const ay = q[i * 3 + 1] as number;
+		const az = q[i * 3 + 2] as number;
+		const bx = (q[(i + 1) * 3] as number) - ax;
+		const by = (q[(i + 1) * 3 + 1] as number) - ay;
+		const bz = (q[(i + 1) * 3 + 2] as number) - az;
+		const l2 = bx * bx + by * by + bz * bz;
+		const t =
+			l2 > 0 ? Math.min(1, Math.max(0, ((x - ax) * bx + (y - ay) * by + (z - az) * bz) / l2)) : 0;
+		const d = (x - ax - t * bx) ** 2 + (y - ay - t * by) ** 2 + (z - az - t * bz) ** 2;
+		if (d < bestDistance) {
+			bestDistance = d;
+			best = (path.arc[i] as number) + t * ((path.arc[i + 1] as number) - (path.arc[i] as number));
+		}
+	}
+	return best;
+}

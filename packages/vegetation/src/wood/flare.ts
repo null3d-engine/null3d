@@ -4,7 +4,7 @@
 // the stem. Lobes stand at uneven angles with uneven sizes, as an old oak's foot does, so no two
 // variants share a ground line.
 import { hashAt, unitAt } from '../core/hash';
-import { cos, exp, PI, pow, sin } from '../core/math';
+import { cos, exp, PI, pow, radians, sin } from '../core/math';
 import type { BaseSpec } from '../core/record';
 import { spreadAt } from '../core/types';
 
@@ -132,6 +132,17 @@ export function stemSection(
 			)
 		: 0;
 	const flutePhase = (hashAt(seed, salt, variant, Purpose.Flutes, stem + 1) / 0x100000000) * 2 * PI;
+	const fluteTwist = flutes ? (flutes.twist ?? 0) * 2 * PI : 0;
+	const fluteHold = flutes ? Math.max(0, Math.min(0.99, flutes.hold ?? 0)) : 0;
+	// A fire scar carves the first stem alone: the strong trees carry one, and a multi-stemmed plant
+	// would not show the same hollow on every stem.
+	const scar = stem === 0 ? base.scar : undefined;
+	const scarAngle = scar ? radians(scar.angle) : 0;
+	const scarHalf = scar ? radians(scar.width) * 0.5 : 0;
+	const scarCos = scar ? cos(scarHalf) : 1;
+	const scarDepth = scar?.depth ?? 0;
+	const scarFrom = scar?.from ?? 0;
+	const scarSpan = scar ? scar.to - scar.from : 1;
 	const taper =
 		base.taper && base.taper.amount > 0 && base.taper.height > 0 ? base.taper : undefined;
 	let reach = flare.amount > 0 ? flare.height * 7 : 0;
@@ -143,6 +154,20 @@ export function stemSection(
 		lobes: lobes.map((lobe) => lobe.angle),
 		radius(h: number, theta: number, r: number): number {
 			const height = Math.max(0, h);
+			// The hollow's own share at this angle and height: full at its centre, zero at its edges
+			// and at its foot and head. It holds the charred face smooth, so the bark's ridges fade
+			// out inside it rather than running across it.
+			let hollow = 0;
+			if (scar && scarDepth > 0) {
+				const turn = (cos(angleBetween(theta, scarAngle)) - scarCos) / Math.max(1e-6, 1 - scarCos);
+				const across = Math.max(0, Math.min(1, turn));
+				const angular = across * across * (3 - 2 * across);
+				const up = (height - scarFrom) / scarSpan;
+				const vertical = up > 0 && up < 1 ? sin(PI * up) ** 2 : 0;
+				hollow = angular * vertical;
+			}
+			const smooth = 1 - hollow;
+			const smoothEnough = smooth > 0 ? smooth : 0;
 			let factor = 1 + (flare.height > 0 ? flare.amount * exp(-height / flare.height) : 0);
 			if (taper && height < taper.height) factor += taper.amount * (1 - height / taper.height);
 			let swell = 0;
@@ -154,13 +179,17 @@ export function stemSection(
 					pow(cos(d), sharpness * lobe.sharpness) *
 					lobeFade(height, lobe.height, round);
 			}
-			factor *= 1 + swell;
+			factor *= 1 + swell * smoothEnough;
 			let radius = r * factor;
 			if (flutes && fluteCount > 0 && height < flutes.height) {
-				const fade = 1 - height / flutes.height;
-				const groove = 0.5 + 0.5 * cos(fluteCount * theta + flutePhase);
-				radius -= flutes.depth * groove * groove * fade * fade;
+				// A groove keeps its depth up to the held share of its height, then fades to nothing at
+				// it; a twisting groove's place turns round the stem in step with the height.
+				const up = height / flutes.height;
+				const fade = up <= fluteHold ? 1 : 1 - (up - fluteHold) / (1 - fluteHold);
+				const groove = 0.5 + 0.5 * cos(fluteCount * (theta - fluteTwist * up) + flutePhase);
+				radius -= flutes.depth * groove * groove * fade * fade * smoothEnough;
 			}
+			radius -= scarDepth * hollow;
 			return Math.max(radius, r * 0.5);
 		},
 	};

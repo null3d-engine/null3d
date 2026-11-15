@@ -60,21 +60,15 @@ export function switchSizes(kit: SpeciesKitData): {
 } {
 	const record = kit.record;
 	const scale = record.shoots ? spreadMax(record.shoots.placement.scale) : 1;
-	let shoot = 0;
 	let card = 0;
-	for (const prototype of kit.prototypes) {
-		shoot = Math.max(shoot, prototype.length * scale);
-		card = Math.max(card, prototype.radius * 2 * scale);
-	}
-	if (shoot === 0)
-		for (const leaf of kit.leaves) {
-			const reach = meshReach(leaf.positions);
-			shoot = Math.max(shoot, reach);
-			card = Math.max(card, reach);
-		}
-	const least = 0.05;
-	return { shoot: Math.max(shoot, least), card: Math.max(card, least) };
+	for (const prototype of kit.prototypes) card = Math.max(card, prototype.radius * 2 * scale);
+	if (kit.prototypes.length === 0)
+		for (const leaf of kit.leaves) card = Math.max(card, meshReach(leaf.positions));
+	return { shoot: shootReach(kit), card: Math.max(card, LEAST_CARD) };
 }
+
+/** The narrowest shoot card the second card level's start is measured from, in metres. */
+const LEAST_CARD = 0.05;
 
 /**
  * Metres at which the first card level, the second card level and the impostor start, at a view.
@@ -96,6 +90,52 @@ export function levelDistances(
 	const second = Math.max(switchDistance(sizes.card, card, view), first * 1.25);
 	const impostor = Math.max(switchDistance(height, far, view), second * 1.25);
 	return [first, second, impostor];
+}
+
+/**
+ * The shortest shoot the first card level's start is measured from, in metres: a plant whose shoots
+ * are small tufts, such as a cactus's spine clusters, still draws its nearest wood near the camera.
+ */
+const LEAST_SHOOT = 0.4;
+
+/**
+ * The longest shoot of a kit at its largest placement scale, in metres, or the longest leaf's reach
+ * for a plant with merged foliage, and never shorter than the least the first card level's start is
+ * measured from. The page's hand-over to cards and the asset's level distances both read it.
+ *
+ * @param kit The species' kit.
+ * @returns Metres.
+ * @category api/vegetation
+ */
+export function shootReach(kit: Pick<SpeciesKitData, 'record' | 'prototypes' | 'leaves'>): number {
+	let longest = 0;
+	const shoots = kit.record.shoots;
+	const scale = shoots ? spreadMax(shoots.placement.scale) : 1;
+	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length * scale);
+	if (kit.prototypes.length === 0)
+		for (const leaf of kit.leaves) longest = Math.max(longest, meshReach(leaf.positions));
+	return Math.max(LEAST_SHOOT, longest);
+}
+
+/**
+ * Metres at which the first card level starts at a view: where the longest shoot, at its largest
+ * placement scale, spans the record's first switch pixels. The page's hand-over from real shoots to
+ * cards and the asset's own level distances both come from this one rule. Most records ask for more
+ * pixels than a card's cell holds texels, so near its start a card is drawn larger than its picture.
+ *
+ * @param kit The species' kit.
+ * @param view The render height in pixels and the vertical field of view in degrees.
+ * @returns Metres, at a copy's scale of 1.
+ * @category api/vegetation
+ */
+export function firstCardStart(
+	kit: Pick<SpeciesKitData, 'record' | 'prototypes' | 'leaves'>,
+	view: { readonly height: number; readonly fov: number },
+): number {
+	return (
+		(shootReach(kit) * view.height) /
+		(2 * tan(radians(view.fov / 2)) * kit.record.lod.switchPixels[0])
+	);
 }
 
 /**

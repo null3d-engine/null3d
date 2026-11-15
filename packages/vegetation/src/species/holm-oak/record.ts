@@ -33,9 +33,13 @@ export const record: Species = {
 		internode: { length: 0.25, ageFactor: 0.99 },
 		stems: {
 			count: { mean: 8, spread: 2 },
+			// The stems part just above the stool, so their lean sets how low the crown hangs round a
+			// standing eye beside the trunk. A wider lean closes the crown's sky gaps, but it brings
+			// the crown down round that eye, and the near band then draws about three times the
+			// triangles, over the species' own cap and the High preset's near pool.
 			lean: { mean: 22, spread: 6 },
 			stool: 0.45,
-			fused: 0.95,
+			fused: 0.2,
 		},
 		buds: {
 			arrangement: { kind: 'spiral', divergence: 137.5 },
@@ -90,7 +94,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.13, spread: 0.02 },
-				nodes: { mean: 8, spread: 0.5 },
+				nodes: { mean: 11, spread: 0.5 },
 				internode: SHOOT,
 				leafScale: [
 					[0, 1.28],
@@ -136,7 +140,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 3,
 				length: { mean: 1, spread: 0.15 },
-				nodes: { mean: 7, spread: 1 },
+				nodes: { mean: 9, spread: 1 },
 				internode: SHOOT,
 				stem: { radius: [0.026, 0.012] },
 				lateral: 72,
@@ -152,12 +156,41 @@ export const record: Species = {
 				droop: 7,
 			},
 		],
+		// The cluster stills' own rosette, drawn as the 'spur' class only by the cluster cutting: the
+		// references are whorls of about fifteen leaves crowded at the tip, where the crown's short
+		// shoot spreads eight along a twig. The crown never draws this class, and it is cut-only, so
+		// a cutting kit holds it and the plant's kit leaves it out.
+		cuttingClasses: [
+			{
+				name: 'spur',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.15, spread: 0.01 },
+				nodes: { mean: 14, spread: 0.5 },
+				internode: SHOOT,
+				leafScale: [
+					[0, 1.35],
+					[1, 1.6],
+				],
+				leafAngle: [
+					[0, 150],
+					[0.5, 95],
+					[1, 40],
+				],
+				leafAngleSpread: 30,
+				droop: 4,
+			},
+		],
 		phyllotaxis: { kind: 'spiral', divergence: 144 },
 		orders: 3,
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.01, 0.006], zigzag: 14 },
-		bud: { length: 0.01, width: 0.007, tipCluster: 7, colour: [0.28, 0.2, 0.12] },
+		// The leaf photographs' terminal cluster: seven buds about 1.4 cm long, where the drawn
+		// 1 cm buds read as one speck at the studio cluster's scale. The size moves no kit byte.
+		bud: { length: 0.014, width: 0.01, tipCluster: 7, colour: [0.28, 0.2, 0.12] },
 		placement: {
 			perMetre: [
 				[0, 4],
@@ -171,6 +204,11 @@ export const record: Species = {
 			shadePrune: 0.1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
+			// Row 6 is open: at the first card level picture 01's enclosed sky reads 0.050 against
+			// the photograph's 0.110. A third of the leaf groups giving way closes it to 0.0869, but
+			// the reviewer refused that value: it closes the figure only by shrinking the crown
+			// (shape overlap 0.80 to 0.67, width error 0.052 to 0.138, colour difference 7.1 to 11.7
+			// at 01 and 6.4 to 10.1 at 02) and reads as a dense ball on a thin trunk. No value is set.
 		},
 	},
 	foliage: {
@@ -197,7 +235,7 @@ export const record: Species = {
 		zones: [
 			// The stool: the photograph's bark reads light and yellow-green where the algae sit, and
 			// the moss over the foot pulls the drawn mean dark, so the foot takes its own tint.
-			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.3, tint: [1.75, 1.8, 1.15] },
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.3, tint: [2.65, 2.05, 1.45] },
 			// The trunk keeps the texture's measured colour, since the flat-lit texture view draws the
 			// same material: the mid-stem view takes its own light instead.
 			{ layer: 0, by: 'height', from: 1, to: 3.6, blend: 0.4, tint: [1, 1, 1] },
@@ -207,6 +245,7 @@ export const record: Species = {
 		],
 		young: 0,
 		youngRadius: 0.06,
+		youngTint: [0.8, 0.8, 0.5],
 		girthScale: [
 			[0, 0.55],
 			[1, 1],
@@ -286,7 +325,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
+			// The cluster cutting's own rosette adds a prototype: the high kit measures 5,397,680
+			// and the ultra 10,560,964, each with about five per cent spare and still under the
+			// owner's tree caps of 7.1 and 13 MB.
+			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_700_000, ultra: 11_200_000 },
 			// The densest variant sets each cap: variant 4 measures 10.18, 10.29, 10.50 and 10.85 MB
 			// at the four tiers. Each cap sits just above its figure. The crown's foliage stands in
 			// fewer, larger leaves, which carries the cover at fewer triangles.
@@ -306,13 +348,13 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1477281293,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.31 },
 	roundBand,
 	cuttings: {
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'long' },
-		cluster: { shoot: 'short' },
+		cluster: { shoot: 'spur' },
 	},
 };
