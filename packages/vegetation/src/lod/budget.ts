@@ -24,6 +24,7 @@ import type { ClusterCount, MeshArrays, PartTriangles, PrototypeArrays, ShootRow
 import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE } from '../core/graph';
 import { NotBuiltError } from '../core/not-built';
 import { DETAILS, type Detail } from '../core/types';
+import { type SilhouetteFrame, shootSilhouette, woodPartSilhouettes } from '../grow/envelope';
 import { grower } from '../grow/models';
 import { extrasMesh } from '../leaf/extras';
 import { writesPieces } from '../leaf/piece-rows';
@@ -296,6 +297,146 @@ export function referenceTriangles(input: BudgetInput): PartTriangles {
 	};
 }
 
+/** The side views at which a plant's outline is measured. */
+const OUTLINE_VIEWS = 4;
+
+/** Cells over a plant's height in the outline measure. */
+const OUTLINE_CELLS = 32;
+
+/** Each part's share of the visible outline, kept for its dressed variant. */
+const SHARES = new WeakMap<MeshInput, PartTriangles>();
+
+/**
+ * Each part's share of the plant's visible outline, from 0 to 1, which add to one: the cells a part
+ * covers over four side views, less the cells the leaf cards stand in front of. The extras have no
+ * outline of their own, so their share is their count at the plant's best look against the plant's.
+ * A plant whose outline measures nothing shares by its parts' best-look counts.
+ *
+ * @param input What the level is built from.
+ * @param reference What each part holds at the plant's best look.
+ * @returns Each part's share.
+ * @category api/vegetation
+ */
+export function visibleShares(input: BudgetInput, reference: PartTriangles): PartTriangles {
+	const known = SHARES.get(input.mesh);
+	if (known) return known;
+	const { mesh, parts } = input;
+	const { skeleton, rows } = mesh;
+	const height = Math.max(skeleton.height, 0.001);
+	const { min, max } = skeleton.bounds;
+	const reach =
+		Math.max(
+			Math.abs(min[0] as number),
+			Math.abs(max[0] as number),
+			Math.abs(min[2] as number),
+			Math.abs(max[2] as number),
+			height * 0.1,
+		) * 1.25;
+	const cell = height / OUTLINE_CELLS;
+	const frame: SilhouetteFrame = {
+		left: -reach,
+		cell,
+		cols: Math.ceil((2 * reach) / cell),
+		rows: Math.ceil((height * 1.1) / cell),
+	};
+	const lengths = mesh.kit.prototypes.map((prototype) => prototype.length);
+	const cells = { trunk: 0, limbs: 0, branches: 0, shoots: 0 };
+	for (let view = 0; view < OUTLINE_VIEWS; view++) {
+		const turn = (view * Math.PI) / 2;
+		const shoots = shootSilhouette(rows, lengths, turn, frame);
+		const wood = woodPartSilhouettes(skeleton, parts, turn, frame);
+		for (let k = 0; k < shoots.length; k++) {
+			const covered = shoots[k] as number;
+			cells.shoots += covered;
+			// The wood behind a card does not show.
+			const shown = 1 - covered;
+			cells.trunk += (wood[0][k] as number) & shown;
+			cells.limbs += (wood[1][k] as number) & shown;
+			cells.branches += (wood[2][k] as number) & shown;
+		}
+	}
+	const whole = Math.max(1, partTotal(reference));
+	const extras = Math.min(1, Math.max(0, reference.extras / whole));
+	const visible = 1 - extras;
+	const outline = cells.trunk + cells.limbs + cells.branches + cells.shoots;
+	let shares: PartTriangles;
+	if (outline > 0) {
+		const [leaves, twigs] = shootPartTriangles(mesh, rows, mesh.detail);
+		const leafShare = leaves + twigs > 0 ? leaves / (leaves + twigs) : 1;
+		const each = visible / outline;
+		shares = {
+			trunk: cells.trunk * each,
+			limbs: cells.limbs * each,
+			branches: cells.branches * each,
+			twigs: cells.shoots * (1 - leafShare) * each,
+			leaves: cells.shoots * leafShare * each,
+			extras,
+		};
+	} else
+		shares = {
+			trunk: reference.trunk / whole,
+			limbs: reference.limbs / whole,
+			branches: reference.branches / whole,
+			twigs: reference.twigs / whole,
+			leaves: reference.leaves / whole,
+			extras,
+		};
+	SHARES.set(input.mesh, shares);
+	return shares;
+}
+
+/** The parts a maximum allocates to, in the order of the record. */
+const ALLOCATED = ['trunk', 'limbs', 'branches', 'twigs', 'leaves', 'extras'] as const;
+
+/**
+ * A level's allowance for each part within a maximum. A level whose parts at the plant's best look
+ * already fit keeps those counts. Otherwise the maximum is shared by each part's visible share: each
+ * part takes a whole count, and the rounding remainder goes to the parts with the largest
+ * fractions, so the parts add to no more than the maximum.
+ *
+ * @param max The most triangles the level may draw.
+ * @param reference What each part holds at the plant's best look.
+ * @param shares Each part's share of the plant's visible outline, which add to one.
+ * @returns Each part's allowance.
+ * @category api/vegetation
+ */
+export function allocateLevel(
+	max: number,
+	reference: PartTriangles,
+	shares: PartTriangles,
+): PartTriangles {
+	if (partTotal(reference) <= max) return { ...reference };
+	const room = Math.max(0, Math.floor(max));
+	const weights = ALLOCATED.map((part) => Math.max(0, shares[part]));
+	let whole = 0;
+	for (const weight of weights) whole += weight;
+	if (whole <= 0)
+		for (let k = 0; k < ALLOCATED.length; k++)
+			weights[k] = Math.max(0, reference[ALLOCATED[k] as keyof PartTriangles]);
+	whole = 0;
+	for (const weight of weights) whole += weight;
+	const exact = weights.map((weight) => (whole > 0 ? (room * weight) / whole : 0));
+	const allocated = exact.map((value) => Math.floor(value));
+	let spent = 0;
+	for (const value of allocated) spent += value;
+	const order = exact
+		.map((value, k) => [value - Math.floor(value), k] as const)
+		.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+	for (let k = 0; spent < room && k < order.length; k++) {
+		const index = (order[k] as readonly [number, number])[1];
+		allocated[index] = (allocated[index] as number) + 1;
+		spent++;
+	}
+	return {
+		trunk: allocated[0] as number,
+		limbs: allocated[1] as number,
+		branches: allocated[2] as number,
+		twigs: allocated[3] as number,
+		leaves: allocated[4] as number,
+		extras: allocated[5] as number,
+	};
+}
+
 /**
  * The detail of a wood ladder step at a level: never finer than the plant's own options. A peeling
  * bark's strips stand only while the step keeps the tier's own edges or the step after them.
@@ -360,13 +501,11 @@ function rowLevel(
 	const { skeleton, rows } = mesh;
 	const axes = skeleton.axes;
 	const walk = input.walk ?? new Uint32Array(0);
-	// The shares: each part's count at the best look against the plant's, with the shoots' twigs
-	// beside their leaves, since one choice draws both.
-	const whole = Math.max(1, partTotal(reference));
-	const share = (part: Part): number => {
-		const held = part === 'leaves' ? reference.leaves + reference.twigs : reference[part];
-		return (max * held) / whole;
-	};
+	// The shares: each part's share of the plant's visible outline, with the shoots' twigs beside
+	// their leaves, since one choice draws both.
+	const allowance = allocateLevel(max, reference, visibleShares(input, reference));
+	const share = (part: Part): number =>
+		part === 'leaves' ? allowance.leaves + allowance.twigs : allowance[part];
 	// The wood's quick counts at each ladder step, and what its meshes then measured.
 	const tubes = WOOD_RUNGS.map((_, rung) => rungTube(mesh, level, rung));
 	const quick = woodLadderTriangles(

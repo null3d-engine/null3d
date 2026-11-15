@@ -550,9 +550,23 @@ export function skeletonSilhouette(
 /** A skeleton's wood seen from the side at a turn, as capsules of its radii. */
 function woodSilhouette(skeleton: MacroSkeleton, turn: number, frame: SilhouetteFrame): Uint8Array {
 	const mask = new Uint8Array(frame.cols * frame.rows);
+	addWood(mask, skeleton, turn, frame);
+	return mask;
+}
+
+/** A skeleton's wood, or one part of it, drawn onto a mask as capsules of its radii. */
+function addWood(
+	mask: Uint8Array,
+	skeleton: MacroSkeleton,
+	turn: number,
+	frame: SilhouetteFrame,
+	parts?: Uint8Array,
+	part?: number,
+): void {
 	const [ex, ez] = rightOf(turn);
 	const p = skeleton.position;
 	for (let n = 0; n < skeleton.nodeCount; n++) {
+		if (parts && (parts[skeleton.axisOf[n] as number] as number) !== part) continue;
 		const parent = skeleton.parent[n] as number;
 		const from = parent >= 0 ? parent : n;
 		capsule(
@@ -565,6 +579,80 @@ function woodSilhouette(skeleton: MacroSkeleton, turn: number, frame: Silhouette
 			skeleton.radius[n] as number,
 		);
 	}
+}
+
+/**
+ * A skeleton's wood seen from the side at a turn, split into the trunk, the great limbs and the
+ * branches, each on a mask of its own.
+ *
+ * @param skeleton The skeleton.
+ * @param parts The part of each skeleton axis: 0 its trunk, 1 a great limb, 2 a branch.
+ * @param turn Radians about the vertical axis; 0 looks from +Z.
+ * @param frame The grid.
+ * @returns One mask for each part, each with one byte per cell, 1 covered.
+ */
+export function woodPartSilhouettes(
+	skeleton: MacroSkeleton,
+	parts: Uint8Array,
+	turn: number,
+	frame: SilhouetteFrame,
+): readonly [Uint8Array, Uint8Array, Uint8Array] {
+	const masks = [0, 1, 2].map(() => new Uint8Array(frame.cols * frame.rows)) as [
+		Uint8Array,
+		Uint8Array,
+		Uint8Array,
+	];
+	for (let part = 0; part < 3; part++)
+		addWood(masks[part] as Uint8Array, skeleton, turn, frame, parts, part);
+	return masks;
+}
+
+/** Marks a disc on each shoot row, as wide as its shoot is long at its scale. */
+function addShoots(
+	mask: Uint8Array,
+	rows: ShootRows,
+	lengths: readonly number[],
+	turn: number,
+	frame: SilhouetteFrame,
+): void {
+	const [ex, ez] = rightOf(turn);
+	const q = rows.rotation;
+	for (let r = 0; r < rows.count; r++) {
+		const shoot = (lengths[rows.prototype[r] as number] ?? 0) * (rows.scale[r] as number);
+		const qx = q[r * 4] as number;
+		const qy = q[r * 4 + 1] as number;
+		const qz = q[r * 4 + 2] as number;
+		const qw = q[r * 4 + 3] as number;
+		const dx = 2 * (qx * qy - qz * qw);
+		const dy = 1 - 2 * (qx * qx + qz * qz);
+		const dz = 2 * (qy * qz + qx * qw);
+		const x = (rows.position[r * 3] as number) + dx * shoot * 0.5;
+		const y = (rows.position[r * 3 + 1] as number) + dy * shoot * 0.5;
+		const z = (rows.position[r * 3 + 2] as number) + dz * shoot * 0.5;
+		const across = x * ex + z * ez;
+		capsule(mask, frame, across, y, across, y, shoot * 0.8);
+	}
+}
+
+/**
+ * A plant's shoot rows seen from the side at a turn: a disc for each row, as wide as the row's shoot
+ * is long at its scale and centred halfway along it, as `skeletonSilhouette` draws the shoots it
+ * expects.
+ *
+ * @param rows The shoot rows.
+ * @param lengths Metres from the attach point to the farthest tip of each prototype, at scale 1.
+ * @param turn Radians about the vertical axis; 0 looks from +Z.
+ * @param frame The grid.
+ * @returns One byte per cell, 1 covered, rows from the ground up.
+ */
+export function shootSilhouette(
+	rows: ShootRows,
+	lengths: readonly number[],
+	turn: number,
+	frame: SilhouetteFrame,
+): Uint8Array {
+	const mask = new Uint8Array(frame.cols * frame.rows);
+	addShoots(mask, rows, lengths, turn, frame);
 	return mask;
 }
 
@@ -588,23 +676,7 @@ export function plantSilhouette(
 	frame: SilhouetteFrame,
 ): Uint8Array {
 	const mask = woodSilhouette(skeleton, turn, frame);
-	const [ex, ez] = rightOf(turn);
-	const q = rows.rotation;
-	for (let r = 0; r < rows.count; r++) {
-		const shoot = (lengths[rows.prototype[r] as number] ?? 0) * (rows.scale[r] as number);
-		const qx = q[r * 4] as number;
-		const qy = q[r * 4 + 1] as number;
-		const qz = q[r * 4 + 2] as number;
-		const qw = q[r * 4 + 3] as number;
-		const dx = 2 * (qx * qy - qz * qw);
-		const dy = 1 - 2 * (qx * qx + qz * qz);
-		const dz = 2 * (qy * qz + qx * qw);
-		const x = (rows.position[r * 3] as number) + dx * shoot * 0.5;
-		const y = (rows.position[r * 3 + 1] as number) + dy * shoot * 0.5;
-		const z = (rows.position[r * 3 + 2] as number) + dz * shoot * 0.5;
-		const across = x * ex + z * ez;
-		capsule(mask, frame, across, y, across, y, shoot * 0.8);
-	}
+	addShoots(mask, rows, lengths, turn, frame);
 	return mask;
 }
 
