@@ -1,4 +1,16 @@
 {
+	"_pictures": {
+		"30-young-willow-whole.png": {
+			"standing": "reference-limit",
+			"reason": "the picture shows the young form, whose habit the directed frame does not grow: it draws the mature plant, with shape overlap 0.35, width error 0.622 and crown width over height 1.4677 against the photograph's 0.7774",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"31-young-willow-crown.png": {
+			"standing": "reference-limit",
+			"reason": "the picture shows the young form's crown, and the directed frame draws the mature plant instead: balance band 1 differs 0.244 and the sky gap reads 0.11 against the photograph's 0.58",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
+	},
 	"07-limb-leaving-trunk.png": {
 		"limbShare": 0.25,
 		"collarColumn": 0.45,
@@ -8,7 +20,7 @@
 		"sunAzimuth": 40,
 		"sunRise": 48,
 		"skyShare": 0.5,
-		"daylight": 2.3,
+		"daylight": 1.72,
 		"fov": 30
 	},
 	"02-whole-profile.png": {
@@ -113,11 +125,22 @@
 		"span": 0.5,
 		"along": 0.3,
 		"barkMask": true,
-		"leafyBark": true
+		"leafyBark": true,
+		"daylight": 2.66
 	},
 	"28-young-bark.png": {
 		"thin": 0.015,
 		"span": 0.1,
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 1.06
+	},
+	"14-bark-base.png": {
+		"daylight": 1.66
+	},
+	"15-bark-mid-trunk.png": {
+		"daylight": 0.8
+	},
+	"26-bark-texture.png": {
+		"daylight": 0.94
 	}
 }
