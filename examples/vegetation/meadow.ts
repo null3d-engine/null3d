@@ -12,6 +12,14 @@ import {
 import type { MeadowControls } from './hud';
 import { plantSign } from './signage';
 
+/** One plant standing in the meadow: where its foot is and how tall it is. */
+export interface MeadowPlant {
+	readonly x: number;
+	readonly z: number;
+	readonly height: number;
+	readonly name: string;
+}
+
 /** What the meadow needs to know while it grows. */
 export interface MeadowOptions {
 	/** The controls as they stand at the moment of a build. */
@@ -21,6 +29,8 @@ export interface MeadowOptions {
 	 * species, as the live page does.
 	 */
 	species?: readonly SpeciesId[];
+	/** Told every plant the meadow stands, once they are all placed. */
+	onPlants?: (plants: readonly MeadowPlant[]) => void;
 }
 
 /** A plant piece the meadow can take down again. */
@@ -122,31 +132,37 @@ export function createMeadow(
 		// Make the materials and place the copies in the registry's order, so the signs, the objects and
 		// the draws that follow from them keep their order.
 		let index = 0;
-		for (const grown of prepared) {
-			if (!grown) {
+		const plants: MeadowPlant[] = [];
+		try {
+			for (const grown of prepared) {
+				if (!grown) {
+					index++;
+					continue;
+				}
+				const { kit, asset } = grown;
+				const materials = plantMaterials(ctx, kit, {});
+				const [x, z] = slotOf(index);
+				plants.push({ x, z, height: asset.skeleton.height, name: kit.record.name });
+				planted.push(
+					placePlants(
+						ctx,
+						kit,
+						[asset],
+						{
+							count: 1,
+							position: new Float32Array([x, 0, z]),
+							turn: new Float32Array([index * 0.4]),
+							scale: new Float32Array([1]),
+							variant: new Uint8Array([0]),
+						},
+						{ materials, view: { height: 1080, fov: 45 }, castShadows: true },
+					),
+				);
 				index++;
-				continue;
 			}
-			const { kit, asset } = grown;
-			const materials = plantMaterials(ctx, kit, {});
-			const [x, z] = slotOf(index);
-			planted.push(
-				placePlants(
-					ctx,
-					kit,
-					[asset],
-					{
-						count: 1,
-						position: new Float32Array([x, 0, z]),
-						turn: new Float32Array([index * 0.4]),
-						scale: new Float32Array([1]),
-						variant: new Uint8Array([0]),
-					},
-					{ materials, view: { height: 1080, fov: 45 }, castShadows: true },
-				),
-			);
-			index++;
+		} finally {
+			growing.end();
+			options.onPlants?.(plants);
 		}
-		growing.end();
 	};
 }

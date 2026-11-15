@@ -9,7 +9,7 @@ import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createGrass, grassCover, isSpeciesId, loadSpecies } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
 import { isPolygonStep, type MeadowControls, polygonMaximum, postHud } from './hud';
-import { createMeadow } from './meadow';
+import { createMeadow, type MeadowPlant } from './meadow';
 
 /**
  * The species a held picture draws, named in its switch by folder id; the live page names none and
@@ -83,8 +83,13 @@ export default defineSketch(async (ctx) => {
 	const controls: MeadowControls = { season: 'summer', sparse: 0, maxTriangles: undefined };
 
 	let seed = 11;
+	/** The plants the meadow stands, so a double-click can find the one under the pointer. */
+	let plants: readonly MeadowPlant[] = [];
 	const growMeadow = createMeadow(ctx, page, {
 		controls: () => controls,
+		onPlants: (list) => {
+			plants = list;
+		},
 		...(HELD_SPECIES.length > 0 && { species: HELD_SPECIES }),
 	});
 	const showHud = () => postHud(page, controls);
@@ -137,9 +142,91 @@ export default defineSketch(async (ctx) => {
 
 	let regrowing = false;
 	let announced = false;
+	/** A flight of the camera to a plant: where it starts, where it ends and when it began. */
+	let flight:
+		| {
+				from: [number, number, number];
+				fromAim: [number, number, number];
+				to: [number, number, number];
+				toAim: [number, number, number];
+				began: number;
+				length: number;
+		  }
+		| undefined;
+	let lastPress = Number.NEGATIVE_INFINITY;
+	let lastX = 0;
+	let lastY = 0;
+	let wasDown = false;
+	/** Ease in and out: slow at both ends, quickest halfway. */
+	const ease = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+	const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
+	/** Brings the camera to the plant that stands nearest the picture point under the pointer. */
+	const focusAt = (x: number, y: number): void => {
+		let best: MeadowPlant | undefined;
+		let nearest = 60 * 60;
+		const at: [number, number, number] = [0, 0, 0];
+		for (const plant of plants) {
+			camera.worldToScreen([plant.x, plant.height * 0.5, plant.z], at);
+			const d = (at[0] - x) ** 2 + (at[1] - y) ** 2;
+			if (d < nearest) {
+				nearest = d;
+				best = plant;
+			}
+		}
+		if (!best) return;
+		const spotted = best;
+		const height = Math.max(0.6, spotted.height);
+		// Close enough to read the leaves, and back far enough to hold the whole plant in the frame.
+		const away = height * 1.7 + 3;
+		const target: [number, number, number] = [spotted.x, height * 0.55, spotted.z];
+		const to: [number, number, number] = [
+			spotted.x + away * 0.4,
+			height * 0.55 + away * 0.5,
+			spotted.z + away * 0.75,
+		];
+		const from: [number, number, number] = [0, 0, 0];
+		camera.getPosition(from);
+		const fromAim = view.controls.target as unknown as [number, number, number];
+		flight = {
+			from,
+			fromAim: [fromAim[0], fromAim[1], fromAim[2]],
+			to,
+			toAim: target,
+			began: performance.now(),
+			length: Math.min(3000, 900 + away * 12),
+		};
+	};
 	return {
 		onUpdate(dt) {
 			view.update(dt);
+			// Two presses within a third of a second, near enough to be the same spot, focus a plant.
+			const pointer = input.pointer;
+			const down = pointer.buttons !== 0;
+			const now = performance.now();
+			if (down && !wasDown) {
+				const near = Math.hypot(pointer.x - lastX, pointer.y - lastY) < 8;
+				if (now - lastPress < 350 && near) {
+					void focusAt(pointer.x, pointer.y);
+					lastPress = Number.NEGATIVE_INFINITY;
+				} else lastPress = now;
+				lastX = pointer.x;
+				lastY = pointer.y;
+			}
+			wasDown = down;
+			if (flight) {
+				const t = Math.min(1, (now - flight.began) / flight.length);
+				const k = ease(t);
+				camera.setPosition(
+					mix(flight.from[0], flight.to[0], k),
+					mix(flight.from[1], flight.to[1], k),
+					mix(flight.from[2], flight.to[2], k),
+				);
+				const aim = view.controls.target as unknown as [number, number, number];
+				aim[0] = mix(flight.fromAim[0], flight.toAim[0], k);
+				aim[1] = mix(flight.fromAim[1], flight.toAim[1], k);
+				aim[2] = mix(flight.fromAim[2], flight.toAim[2], k);
+				if (t >= 1) flight = undefined;
+			}
 			if (!announced) {
 				announced = true;
 				showHud();
