@@ -357,13 +357,14 @@ export const record: Species = {
 		scars: 1.5,
 	},
 	base: {
-		// Still 17: broad smooth buttress roots like an elephant's toes.
-		flare: { amount: 0.8, height: 0.5 },
+		// Still 17: broad smooth buttress roots like an elephant's toes, spreading about twice the
+		// bole's own girth at the ground.
+		flare: { amount: 0.55, height: 0.5 },
 		// Still 14: the toes rise from the meadow as rounded flanks with smooth creases between them,
 		// not as angular slabs.
 		buttress: {
 			lobes: { mean: 7, spread: 1 },
-			amount: 0.8,
+			amount: 0.55,
 			sharpness: 1.6,
 			height: 1.0,
 			round: 1,
