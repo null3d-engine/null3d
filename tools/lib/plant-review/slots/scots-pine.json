@@ -1,10 +1,27 @@
 {
+	"_pictures": {
+		"30-young-conical-whole.png": {
+			"standing": "second-form",
+			"reason": "shows the species' young conical habit; the directed record carries no young form, so the picture draws the mature plant at 0.62 of its scale (shape IoU 0.23, width error 0.445)",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"31-young-low-branching.png": {
+			"standing": "second-form",
+			"reason": "shows the young plant's low whorls; the directed record carries no young form, and the frame finds no low limb (its subject is 0.11 of the frame's width against 0.13 to 0.35)",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"32-young-crown-close.png": {
+			"standing": "second-form",
+			"reason": "shows the young cone's crown surface; the directed record carries no young form, so the picture draws the mature crown at 2.13 of its scale (shape IoU 0.36)",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
+	},
 	"01-whole-distant.png": {
 		"sunAzimuth": -40,
 		"sunRise": 42,
 		"skyShare": 0.4,
 		"fov": 30,
-		"daylight": 3.0
+		"daylight": 1.53
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -60,
@@ -170,16 +187,28 @@
 		"skyShare": 0.4,
 		"daylight": 2.4
 	},
-	"26-bark-texture.png": {
-		"barkZone": 1,
-		"span": 0.8
+	"14-bark-base.png": {
+		"daylight": 1.85
+	},
+	"15-bark-mid-trunk.png": {
+		"barkHeight": 7,
+		"daylight": 1.46
 	},
 	"16-bark-upper-trunk.png": {
-		"barkZone": 1,
+		"barkHeight": 11,
+		"span": 0.8,
+		"daylight": 0.65
+	},
+	"26-bark-texture.png": {
+		"barkHeight": 11,
 		"span": 0.8
 	},
 	"27-bark-texture-zone2.png": {
-		"barkZone": 0,
+		"barkHeight": 2,
 		"span": 0.8
+	},
+	"28-young-bark.png": {
+		"thin": 0.012,
+		"barkMask": true
 	}
 }
