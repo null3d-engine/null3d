@@ -44,8 +44,7 @@
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null,
-		"span": 0.55,
-		"along": 0.375
+		"thin": 0.008
 	},
 	"09-pinna-subdivision.png": {
 		"skyShare": 0.357,
