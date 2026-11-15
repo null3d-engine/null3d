@@ -31,10 +31,9 @@ export const MERGE_RULE_SINCE = '2026-10-15T14:28:48+0800';
  * ran this check. By the owner's ruling they stay, named here, and the rule holds for every other
  * merge: their content is on the branch, and rewriting them would risk more than it fixes (D-259).
  *
- * The owner widened this set on 15 November 2026, answering a request that named the forty-three
- * merges bringing the vegetation branches into the range, in their words: "they're in". The work
- * each of those merges resolved stays on the branch, and the rule holds for every merge made from
- * now on.
+ * The owner widened this set, answering a request that named the forty-three merges bringing the
+ * vegetation branches into the range, in their words: "they're in" (D-359). The work each of those
+ * merges resolved stays on the branch, and the rule holds for every merge made from now on.
  */
 export const KNOWN_MERGES: ReadonlySet<string> = new Set([
 	'69cfc974716cd5db7a97407df87bddbfa1155865', // Merge commit '5f4aa0104' into m3-start
@@ -46,8 +45,8 @@ export const KNOWN_MERGES: ReadonlySet<string> = new Set([
 	'42ab5431afc23ada0ae62a4d3787f656744b0084', // Merge the milestone branch into the cluster levels branch
 	'5ff008ccecabafe143e32acf7fcf671078f7015c', // Merge the milestone branch into the cluster levels branch
 	'b989845376b971e376653a349bf6ed197e8452dd', // Merge origin/m3-start into feat/m3-l1-rest
-	// The owner's ruling of 15 November 2026: the vegetation integration merges, in their words
-	// "they're in". Each comment names the merge and the words of work it carries.
+	// The owner's ruling (D-359): the vegetation integration merges, in their words "they're in".
+	// Each comment names the merge and the words of work it carries.
 	'4fc9e01395627630dcb43cf7955fd71234567200', // Merge remote-tracking branch 'origin/veg/trees-b' into veg/integrate-m3-wip — 696 words
 	'da3c179f88fdfc1fbaa690533d6d5900d27f8645', // Merge remote-tracking branch 'origin/veg/trees' into veg/integrate-m3-wip — 135 words
 	'092914fb38b7e059bacb31c16e854eefa5712f53', // Merge remote-tracking branch 'origin/veg/frames' into veg/integrate-m3-wip — 126 words
