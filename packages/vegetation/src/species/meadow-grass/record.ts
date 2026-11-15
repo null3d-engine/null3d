@@ -140,7 +140,7 @@ export const record: Species = {
 			// by that face's mean, so these figures are the pictures' own means.
 			optics: {
 				reflectance: [0.1284, 0.272, 0.0218],
-				reflectanceBack: [0.318, 0.349, 0.24],
+				reflectanceBack: [0.0654, 0.158, 0.0104],
 				transmittance: [0.16, 0.33, 0.03],
 				roughness: [0.55, 0.6],
 			},
