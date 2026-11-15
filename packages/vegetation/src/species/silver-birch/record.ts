@@ -341,10 +341,11 @@ export const record: Species = {
 			crossCurl: 0,
 			twist: 6,
 			wave: [0.001, 4],
-			// Still 24: a fresh light green above and paler below, thin enough to glow in the light.
+			// Stills 24 and 25: a fresh light green above and a paler grey-green below, each the
+			// species' own texture mean less the light the blade passes; thin enough to glow.
 			optics: {
-				reflectance: [0.09, 0.16, 0.03],
-				reflectanceBack: [0.14, 0.2, 0.06],
+				reflectance: [0.081, 0.178, 0.008],
+				reflectanceBack: [0.224, 0.266, 0.135],
 				transmittance: [0.12, 0.22, 0.08],
 				roughness: [0.5, 0.65],
 			},
