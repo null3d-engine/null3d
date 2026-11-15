@@ -2423,6 +2423,15 @@ function referencePicture(path: string): Rgba {
 	return onColour(readImage(path), [255, 255, 255]);
 }
 
+/**
+ * Whether the reference pass's crop share checks a picture's subject. A picture whose subject the
+ * share bounds is checked by that share, whatever its view is called: a leaf close-up is cut out
+ * as a piece is, and its bottom share bounds the same subject.
+ */
+export function cropChecksSubject(crop: number | undefined, ownBox: boolean): boolean {
+	return crop !== undefined && ownBox;
+}
+
 /** The cut subjects a species' reference pass wrote, or undefined when it has none. */
 function subjectLoader(
 	species: string | undefined,
@@ -2561,7 +2570,8 @@ export function compareStills(
 		// A cut piece is measured on its picture's own subject share, written by --subjects.
 		const drawnEarly = frame.query?.view ?? slot.view;
 		const piece = VIEW_SPECS[drawnEarly]?.cutting !== undefined;
-		const subject = piece ? subjectFile?.[slot.file]?.bottom : undefined;
+		const cropShare = subjectFile?.[slot.file]?.bottom;
+		const subject = piece ? cropShare : undefined;
 		// A silhouette is black on white in both pictures, so the photograph is read by the matte's
 		// own rule: a texel is plant where it is darker than half.
 		const refPlant =
@@ -2869,11 +2879,13 @@ export function compareStills(
 			...(framing ? { framing } : {}),
 			...(levelName(frame.cell) !== undefined && { level: levelName(frame.cell) }),
 			...(areas.length > 0 && { areas }),
-			// A solved view whose contract held, or a whole view that passed the framing check.
+			// A solved view whose contract held, or a whole view that passed the framing check, or a
+			// picture whose subject share the reference pass wrote.
 			subjectChecked:
 				(contractHeld(frame.facts) &&
 					regionsRead(frame.facts, own !== undefined, partsPicture !== undefined)) ||
-				framingChecked,
+				framingChecked ||
+				cropChecksSubject(cropShare, own !== undefined && render.measures.box !== null),
 			...(pictureNote?.outline !== undefined ? { outlineVoid: pictureNote.outline } : {}),
 			...(pictureNote?.standing !== undefined && pictureNote.reason !== undefined
 				? { standing: { kind: pictureNote.standing, reason: pictureNote.reason } }
