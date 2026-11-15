@@ -1,4 +1,16 @@
 {
+	"07-frond-base-to-mid.png": {
+		"piece": "frond-straight",
+		"along": 0.12,
+		"span": 2.0,
+		"roll": -25
+	},
+	"10-frond-tip.png": {
+		"piece": "frond-straight",
+		"along": 0.93,
+		"span": 1.6,
+		"roll": -10
+	},
 	"11-leaflet-group.png": {
 		"roll": 50,
 		"cutFrom": 2.1,
@@ -35,7 +47,10 @@
 		"leaves": 1
 	},
 	"21-branch-studio.png": {
-		"cutFrom": 0,
-		"cutSpan": 4.2
+		"piece": "frond-straight",
+		"along": 0.5,
+		"span": 6.5,
+		"upright": true,
+		"alone": true
 	}
 }
