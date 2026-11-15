@@ -66,7 +66,8 @@
 		"along": 0.75,
 		"span": 0.45,
 		"girth": null,
-		"daylight": 1.2
+		"daylight": 1.5,
+		"lamp": "#ffefcf"
 	},
 	"20-nest-holes.png": {
 		"site": "dormant",
@@ -127,7 +128,7 @@
 		"sunAzimuth": -24,
 		"sunRise": 56,
 		"skyShare": 0.3,
-		"daylight": 2.3
+		"daylight": 4.0
 	},
 	"19-flowers-on-crown.png": {
 		"season": "blossom",
