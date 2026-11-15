@@ -121,6 +121,31 @@
 			"standing": "second-form",
 			"reason": "the spring spear is the species' young form; the base record carries it as a form, and the directed clump drops its forms, so this plant cannot draw it",
 			"ruling": "the owner's plant review standard rules that a picture of another form judges that form, not the primary plant; the bamboo's reference index names 19 the young form"
+		},
+		"04-clump-outside.png": {
+			"standing": "reference-limit",
+			"reason": "the photograph is a single bole at eye height; the bole wood 0.07 to 0.12 m in radius covers 0.03 of its box against a least of 0.70, a single-bole setting the clump of thin culms does not have",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"07-culm-base.png": {
+			"standing": "reference-limit",
+			"reason": "the photograph shows open ground beside one culm's foot; a clump of culms fills the ground-and-air box to 0.89 against a most of 0.70, a setting the form does not have",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"14-rhizome-and-roots.png": {
+			"standing": "reference-limit",
+			"reason": "the photograph shows the rhizome and roots below cut soil; the directed clump carries no rhizome, and its ground-and-air box reads 0.89 against a most of 0.70",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"16-culm-sheath.png": {
+			"standing": "reference-limit",
+			"reason": "the photograph is a studio close-up of one sheathed culm on a plain ground; beside a culm inside a clump the ground-and-air box reads 0.89 against a most of 0.70",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"17-culm-taper.png": {
+			"standing": "reference-limit",
+			"reason": "the photograph shows one near-uniform bole from foot to branches; the bole wood 0.07 to 0.12 m in radius covers 0.03 of its box against a least of 0.70, a single-bole setting the clump does not have",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
 		}
 	}
 }
