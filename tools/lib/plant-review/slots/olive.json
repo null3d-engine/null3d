@@ -65,11 +65,11 @@
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 1.15,
-		"roll": -35
+		"roll": -44
 	},
 	"13-single-leaf-underside.png": {
 		"leaves": 1.15,
-		"roll": -35
+		"roll": -44
 	},
 	"28-young-bark.png": {
 		"daylight": 1.25,
