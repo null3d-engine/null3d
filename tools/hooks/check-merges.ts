@@ -30,6 +30,11 @@ export const MERGE_RULE_SINCE = '2026-10-15T14:28:48+0800';
  * Merges on the milestone branch that hold new work beyond their resolutions, from before landings
  * ran this check. By the owner's ruling they stay, named here, and the rule holds for every other
  * merge: their content is on the branch, and rewriting them would risk more than it fixes (D-259).
+ *
+ * The owner widened this set on 15 November 2026, answering a request that named the forty-three
+ * merges bringing the vegetation branches into the range, in their words: "they're in". The work
+ * each of those merges resolved stays on the branch, and the rule holds for every merge made from
+ * now on.
  */
 export const KNOWN_MERGES: ReadonlySet<string> = new Set([
 	'69cfc974716cd5db7a97407df87bddbfa1155865', // Merge commit '5f4aa0104' into m3-start
@@ -41,6 +46,51 @@ export const KNOWN_MERGES: ReadonlySet<string> = new Set([
 	'42ab5431afc23ada0ae62a4d3787f656744b0084', // Merge the milestone branch into the cluster levels branch
 	'5ff008ccecabafe143e32acf7fcf671078f7015c', // Merge the milestone branch into the cluster levels branch
 	'b989845376b971e376653a349bf6ed197e8452dd', // Merge origin/m3-start into feat/m3-l1-rest
+	// The owner's ruling of 15 November 2026: the vegetation integration merges, in their words
+	// "they're in". Each comment names the merge and the words of work it carries.
+	'4fc9e01395627630dcb43cf7955fd71234567200', // Merge remote-tracking branch 'origin/veg/trees-b' into veg/integrate-m3-wip — 696 words
+	'da3c179f88fdfc1fbaa690533d6d5900d27f8645', // Merge remote-tracking branch 'origin/veg/trees' into veg/integrate-m3-wip — 135 words
+	'092914fb38b7e059bacb31c16e854eefa5712f53', // Merge remote-tracking branch 'origin/veg/frames' into veg/integrate-m3-wip — 126 words
+	'a74d82a63627fcd4930c2f18701196e8c5de272a', // Merge commit 'c038ad6ec' into veg/integrate — 67 words
+	'e81f8b5e64cba68e661fb96e6e636f76e9375c79', // Merge remote-tracking branch 'origin/veg/pieces' into veg/trees — 31 words
+	'54b623f129647e40591600ad5cd09116586dc309', // Merge remote-tracking branch 'origin/veg/conifers' into veg/integrate — 31 words
+	'6da77cc179994466a76e370222247d2e67324dd3', // Merge branch 'feat/date-palm-rows' into veg/integrate — 58 words
+	'5b54656812be56aca6d6d2eae17344300e87ec3c', // Merge remote-tracking branch 'origin/veg/lead' into feat/saguaro-rows — 275 words
+	'a2b23f5bb8e2db964fa355664b3518c02220b5b7', // Merge commit 'f92ce2cee' into feat/leaf-optics — 58 words
+	'1ff4bf1c88984007179af7f256bb256c6cd9c141', // Merge remote-tracking branch 'origin/veg/lead' into pkg/giant-sequoia — 36 words
+	'859bb84c555c92890d35d5c3266fafa7b7e22e0e', // Merge remote-tracking branch 'origin/veg/lead' into pkg/italian-cypress — 373 words
+	'1b52b0f87f75fc4623cc1f2f27599087d4b03777', // Merge origin/veg/lead into feat/crown-limb-mass — 2072 words
+	'cb777ff801328a2c4ad77bcacac96e1aa7db41f3', // Merge remote-tracking branch 'origin/veg/lead' into feat/sedge-cut-assembly — 347 words
+	'a078e150d1135224a34a95eccf7750a5eff6230b', // Merge origin/veg/lead into feat/crown-limb-mass — 2781 words
+	'aac88fb36a55c0ccb0fd645c8aa2c50d81d3115b', // Merge origin/veg/lead into feat/review-masks — 39 words
+	'3826fb7982bbdd2cb623aeae74e394beba50a400', // Merge remote-tracking branch 'origin/m3-start' into feat/review-masks — 846 words
+	'bc7397371d655bfb54d9ad065608dac27693c112', // Merge remote-tracking branch 'origin/landing/v5-answers' into feat/holm-oak-rows — 150 words
+	'b85a125ad846c74894ee575daac8b5d1e23d29eb', // Merge remote-tracking branch 'origin/m3-start' into feat/bracken-crown — 268 words
+	'9816da643fe0bd850fadbb540afd4c25f337ca16', // Merge remote-tracking branch 'origin/m3-start' into feat/olive-rows — 153 words
+	'0a9621885ba3cd1cbdf5f948c7a08044cd43ec57', // Merge remote-tracking branch 'origin/m3-start' into feat/close-subject — 84 words
+	'6da6e61c82996dd4abdc1127fed57636b79a9beb', // Merge remote-tracking branch 'origin/m3-start' into feat/review-masks — 1305 words
+	'57ad070d59e753bd3aba34a4d70d05d1a0d63afb', // Merge remote-tracking branch 'origin/m3-start' into pkg/weeping-willow — 150 words
+	'80b379b7014fc1df3dd642a25570e7e8fe167972', // fix(plant-review): let a whole view's crop correction ask for a 2.9 stand — 150 words
+	'03bcbaa4be3f5d32ad4a2a558e3f472061682332', // Merge remote-tracking branch 'origin/landing/v5-answers' into probe/bamboo-row6-cards — 35 words
+	'1d70e8953e098dc89d95fed4ed1432e9391741e2', // Merge remote-tracking branch 'origin/landing/v5-answers' into pkg/tree-fern — 707 words
+	'0e143d41d876c0f1ac3d8ac7c003aa6ad07d0d99', // Merge remote-tracking branch 'origin/m3-start' into pkg/saguaro — 3 words
+	'4a78200e9c490792206f9b1e16ef9c3e3aacf95c', // Merge remote-tracking branch 'origin/m3-start' into pkg/sedge — 3 words
+	'065c091abe3cae1b7ca78c431f620759b5348b3d', // Merge remote-tracking branch 'origin/m3-start' into pkg/date-palm-rows — 16 words
+	'588eeffe79f5c7c857ce5a3f265891c1868492ad', // Merge remote-tracking branch 'origin/m3-start' into pkg/giant-sequoia — 16 words
+	'2202991f0fbacd26ce963144e9ccdadd2b0ac365', // Merge remote-tracking branch 'origin/m3-start' into pkg/hawthorn-shrub — 3 words
+	'fdd3a1bb2c7876e435da7d4481b1c31808812849', // Merge remote-tracking branch 'origin/m3-start' into pkg/weeping-willow — 3 words
+	'ae5993609ecae4bd76ee369aaf15b5a4d8d0bb09', // Merge remote-tracking branch 'origin/m3-start' into probe/bamboo-row6-cards — 3 words
+	'd50c788a056742029bbbb1c17d19a115f14641c1', // Merge branch 'fix/review-subjects' into impl/mask-gate — 145 words
+	'13c06f213d925de8304ced0f678115afe07b5ac5', // Merge remote-tracking branch 'origin/m3-start' into pkg/tree-fern — 75 words
+	'bedc0001eb3e8e9cb0842fb43dfe5a0a6ea48572', // Merge remote-tracking branch 'origin/m3-start' into pkg/italian-cypress — 47 words
+	'f75e9e9fd7d7fd3f1cc589fa0dfd7e766e502191', // Merge remote-tracking branch 'origin/m3-start' into pkg/giant-sequoia — 47 words
+	'fa604c57e706ea213eedf33a6115771c554027fa', // Merge remote-tracking branch 'origin/m3-start' into pkg/meadow-grass — 445 words
+	'88cb8208b8c3face55770856dd8e70d23b3e83a8', // Merge remote-tracking branch 'origin/m3-start' into pkg/silver-birch — 141 words
+	'5328b2aff2f6a0038ff9d315a8906f5b36954096', // Merge remote-tracking branch 'origin/pkg/s0' into pkg/giant-sequoia — 97 words
+	'd098c3cb662b878e37ca011b0ceaffbedd381a3c', // Merge remote-tracking branch 'origin/pkg/s0' into pkg/sedge — 61 words
+	'951f8d690c4ab0e35081031a98483ba36ee3e802', // chore(vegetation): merge pkg/s0 and state the fork view's limits — 99 words
+	'e8c4d752da8980a006acaac98561dbf228995f60', // Merge remote-tracking branch 'origin/pkg/s0-bark' into pkg/s0 — 62 words
+	'7f11fa690042421df151ed630617ac1b09aee0c7', // Merge branch 'worktree-agent-a1d0dbe12ec441dcc' into pkg/r1 — 4481 words
 ]);
 
 /** Words of new work a merge may hold before the check refuses it: a line or two of glue. */

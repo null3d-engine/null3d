@@ -67,9 +67,11 @@ function mergeWith(files: Record<string, string>, message = 'Merge branch side')
 const resolved = BASE.replace('LIMIT = 16', 'LIMIT = 32; // the default');
 
 describe('KNOWN_MERGES', () => {
-	it('names the nine merges that the owner let stand, by full ids', () => {
+	it('names the merges that the owner let stand, by full ids', () => {
 		// A full id names one commit, so a merge with new work under another id is still refused.
-		expect(KNOWN_MERGES.size).toBe(9);
+		// The nine of D-259, and the forty-three integration merges the owner admitted on
+		// 15 November 2026.
+		expect(KNOWN_MERGES.size).toBe(52);
 		for (const sha of KNOWN_MERGES) expect(sha).toMatch(/^[0-9a-f]{40}$/);
 	});
 
