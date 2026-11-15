@@ -73,6 +73,8 @@ import {
 	baseSwell,
 	belowShot,
 	boleShot,
+	bundleShot,
+	type ContractRegion,
 	checkShot,
 	crownOutsideShot,
 	crownUndersideShot,
@@ -83,6 +85,7 @@ import {
 	limbShot,
 	placedPieceShot,
 	type Solved,
+	type SubjectCheck,
 	sectionCut,
 	sectionShot,
 	siteShot,
@@ -931,6 +934,8 @@ export default defineSketch(async (ctx) => {
 			readonly warning?: string;
 			readonly missing?: string;
 			readonly lacks?: true;
+			readonly contract?: SubjectCheck;
+			readonly regions?: readonly ContractRegion[];
 		}
 	>();
 	const closeLenses = new Map<string, Lens>();
@@ -1173,17 +1178,24 @@ export default defineSketch(async (ctx) => {
 				// crown clothes from low down, is framed beside its trunk.
 				if (!insideBesideTrunk(subjectsOf())) {
 					const middle = Math.max(0.05, 0.45 * main.crown.top);
-					plainSubjects.set(view, {
-						kind: 'the stalk bundle at the crown',
-						warning: 'the plant has no wood, so the inside view frames its own crown',
-					});
-					return orbit(
-						add(foot, [0, middle, 0]),
+					const target = add(foot, [0, middle, 0]);
+					const camera = orbit(
+						target,
 						QUERY.distance ?? Math.max(0.3, 1.6 * main.crown.radius),
 						e,
 						turn,
 						fov,
 					);
+					// The bundle is the subject, so the picture states what it must show: a picture with
+					// sky where the stalks stand has failed to show it.
+					const bundle = bundleShot(camera, target);
+					plainSubjects.set(view, {
+						kind: bundle.kind,
+						warning: 'the plant has no wood, so the inside view frames its own crown',
+						contract: checkShot(bundle, lens),
+						regions: bundle.regions,
+					});
+					return camera;
 				}
 				// Beside the trunk above the bole's top, looking up along it with the limbs round it.
 				const found = solvedAt(view, lens, () => insideShot(subjectsOf(), lens, { turn }), 0, 0.05);

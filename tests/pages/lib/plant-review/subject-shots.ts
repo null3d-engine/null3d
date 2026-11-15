@@ -1677,6 +1677,21 @@ export function insideBesideTrunk(subjects: PlantSubjects): boolean {
 	return !isAbsent(subjects.crownBase) && subjects.crownBase < CLOTHED_BASE_SHARE * top;
 }
 
+/**
+ * The subject a woodless plant's inside view shows: its stalks gather at the crown's own middle, so
+ * the picture is of that bundle. The contract asserts no wood — the form has none — only that the
+ * bundle stands in the frame's middle and that plant, not sky, stands where it is.
+ */
+export function bundleShot(camera: Camera, target: V3): SubjectShot {
+	return {
+		kind: 'the stalk bundle at the crown',
+		camera,
+		points: [{ name: 'the stalk bundle', at: target, within: [0.2, 0.2, 0.8, 0.8] }],
+		regions: [{ name: 'the bundle', box: [0.3, 0.3, 0.7, 0.7], min: 0.9 }],
+		facts: {},
+	};
+}
+
 /** How a view from inside the crown frames the wood it looks along. */
 export interface InsideOptions {
 	readonly turn: number;

@@ -11,6 +11,7 @@ import {
 	blockedBy,
 	boleShot,
 	branchPieceShot,
+	bundleShot,
 	type Camera,
 	cameraAxes,
 	checkShot,
@@ -1527,5 +1528,26 @@ describe('the fork a picture frames by thickness', () => {
 		const thick = forkOf({ at: [0, 9, 0], order: 3, radius: 0.2, armRadii: [0.15, 0.14] });
 		const shot = shotOf(forkShot(tree({ forks: [thin, thick] }), TALL));
 		expect(shot.facts.fork).toBe(1);
+	});
+});
+
+// A woodless plant's inside view is a bundle of stalks at the crown's middle. It must confirm that
+// bundle — a picture with sky where it stands has failed to show it — and assert no wood, which the
+// form does not have.
+describe("a woodless plant's inside view", () => {
+	test('confirms the bundle and asserts no wood', () => {
+		const target: V3 = [0, 4, 0];
+		const camera = { position: [0, 4.4, 2] as V3, target, fov: 40 };
+		const shot = bundleShot(camera, target);
+		expect(shot.points.map((point) => point.name)).toEqual(['the stalk bundle']);
+		expect(shot.regions.every((region) => region.of === undefined)).toBe(true);
+		expect(shot.regions.every((region) => region.thick === undefined)).toBe(true);
+		expect(checkShot(shot, TALL).present).toBe(true);
+	});
+
+	test('does not confirm a bundle the camera does not look at', () => {
+		const target: V3 = [0, 4, 0];
+		const camera = { position: [0, 4.4, 2] as V3, target: [3, 4, 0] as V3, fov: 40 };
+		expect(checkShot(bundleShot(camera, target), TALL).present).toBe(false);
 	});
 });
