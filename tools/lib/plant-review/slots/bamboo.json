@@ -74,7 +74,14 @@
 		"skyShare": 0.6,
 		"daylight": 2.4
 	},
-	"09-secondary-branching.png": {},
+	"09-secondary-branching.png": {
+		"view": "limb",
+		"piece": "pair-full",
+		"span": 0.4,
+		"along": 0,
+		"edge": true,
+		"upright": true
+	},
 	"11-leaf-spray.png": {},
 	"21-branch-studio.png": {
 		"piece": "pair-full"
