@@ -2,7 +2,13 @@
 // shot, and projects the subject's points through the solved camera: they must land where the
 // photograph of that view has them, at the size it has them.
 import { describe, expect, test } from 'bun:test';
-import { dot, normalize, type V3 } from '../../../tests/pages/lib/plant-review/anatomy.ts';
+import {
+	cross,
+	dot,
+	normalize,
+	step,
+	type V3,
+} from '../../../tests/pages/lib/plant-review/anatomy.ts';
 import {
 	barkBaseShot,
 	barkLimbShot,
@@ -12,14 +18,17 @@ import {
 	boleShot,
 	branchPieceShot,
 	type Camera,
+	type ContractRegion,
 	cameraAxes,
 	checkShot,
 	crownOutsideShot,
 	crownUndersideShot,
+	type FrameBox,
 	forkShot,
 	insideBesideTrunk,
 	insideShot,
 	junctionShot,
+	limbRegionOf,
 	limbShot,
 	lowShot,
 	placedPieceShot,
@@ -41,7 +50,7 @@ import {
 	sampleAlong,
 	type TrunkSubject,
 } from '../../../tests/pages/lib/plant-review/subjects.ts';
-import { PART, type Parts, partsCheck } from './subject-check.ts';
+import { PART, type Parts, partCover, partsCheck } from './subject-check.ts';
 
 const DEG = Math.PI / 180;
 /** A landscape still's lens and a portrait still's. */
@@ -133,6 +142,29 @@ function tree(over: Partial<PlantSubjects> = {}): PlantSubjects {
 function shotOf(solved: Solved): SubjectShot {
 	if (isAbsent(solved)) throw new Error(`no shot: ${solved.absent}`);
 	return solved;
+}
+
+/** A picture of the parts with one wood disc of a radius, its width the box's width. */
+function discParts(box: FrameBox, radius: number, size = 480): Parts {
+	const kind = new Uint8Array(size * size);
+	const radii = new Float32Array(size * size);
+	const left = Math.round(box[0] * size);
+	const right = Math.round(box[2] * size);
+	const top = Math.round(box[1] * size);
+	const bottom = Math.round(box[3] * size);
+	const cx = (left + right) / 2;
+	const cy = (top + bottom) / 2;
+	const across = Math.max(1, (right - left) / 2);
+	for (let y = top; y < bottom; y++)
+		for (let x = left; x < right; x++) {
+			const dx = (x + 0.5 - cx) / across;
+			const dy = (y + 0.5 - cy) / across;
+			if (dx * dx + dy * dy > 1) continue;
+			const at = y * size + x;
+			kind[at] = PART.wood;
+			radii[at] = radius;
+		}
+	return { kind, radius: radii, width: size, height: size };
 }
 
 /** Where a named point of a shot lands. */
@@ -776,6 +808,64 @@ describe("the view of the crown's underside", () => {
 			limbs: [limbOf(1, 0.1, [1, 0.1, 0], 0.05, 0.6, 0.1)],
 		});
 		expect(isAbsent(crownUndersideShot(ground, lens, { turn: 90 * DEG }))).toBe(true);
+	});
+
+	test('asks for a box the limb is wide, so a limb a hundredth of the frame can pass', () => {
+		// A limb four centimetres across, high under the crown: it projects about a hundredth of
+		// the frame, where a box of a fixed share could never be half covered.
+		const limb = limbOf(1, 5, [1, 0.25, 0], 0.04, 8, 0.4);
+		const shot = shotOf(crownUndersideShot(tree({ limbs: [limb] }), lens, { turn: 90 * DEG }));
+		const region = shot.regions.find(
+			(one) => one.name === 'the great limb 0.3 of the way along it',
+		);
+		expect(region).toBeDefined();
+		const sample = sampleAlong(limb.axis, 0.3);
+		const at = project(shot.camera, lens, sample.at);
+		// The limb's width across the view, taken where its own silhouette stands.
+		const view = normalize([
+			sample.at[0] - shot.camera.position[0],
+			sample.at[1] - shot.camera.position[1],
+			sample.at[2] - shot.camera.position[2],
+		]);
+		const edge = project(
+			shot.camera,
+			lens,
+			step(sample.at, normalize(cross(sample.direction, view)), sample.radius),
+		);
+		const projected = 2 * Math.max(Math.abs(edge.x - at.x), Math.abs(edge.y - at.y));
+		expect((region?.box[2] ?? 0) - (region?.box[0] ?? 0)).toBeCloseTo(projected, 6);
+		expect(projected).toBeLessThan(0.02);
+		expect(
+			partCover(discParts(region?.box as FrameBox, sample.radius), region as ContractRegion),
+		).toBeGreaterThanOrEqual(0.5);
+		// The drawn limb can stand a radius to one side of the skeleton's point, and the box finds it
+		// within its search; without the search the same picture reads under the least.
+		const box = region?.box as FrameBox;
+		const half = (box[2] - box[0]) / 2;
+		// At the search's edge, one limb width to the side, the box still finds the wood.
+		const shifted: FrameBox = [box[0] + 2 * half, box[1], box[2] + 2 * half, box[3]];
+		const off = discParts(shifted, sample.radius);
+		expect(partCover(off, region as ContractRegion)).toBeGreaterThanOrEqual(0.5);
+		expect(partCover(off, { ...(region as ContractRegion), search: 0 })).toBeLessThan(0.5);
+	});
+
+	test('gives no region for a sample that falls outside the picture', () => {
+		// The oak's picture 05 measured this: a point 0.6 along a long limb projected far outside the
+		// frame, its box read empty, and the picture failed a limb it never showed.
+		const limb = limbOf(1, 5, [1, 0.25, 0], 0.3, 8, 0.4);
+		const shot = shotOf(crownUndersideShot(tree({ limbs: [limb] }), lens, { turn: 90 * DEG }));
+		const away: Camera = {
+			position: shot.camera.position,
+			target: [shot.camera.position[0], shot.camera.position[1] - 20, shot.camera.position[2] - 20],
+		};
+		expect(limbRegionOf(limb, away, lens, 0.6)).toBeUndefined();
+		// Every region the picture does carry lies inside the frame.
+		for (const carried of shot.regions) {
+			expect(carried.box[0]).toBeGreaterThanOrEqual(0);
+			expect(carried.box[1]).toBeGreaterThanOrEqual(0);
+			expect(carried.box[2]).toBeLessThanOrEqual(1);
+			expect(carried.box[3]).toBeLessThanOrEqual(1);
+		}
 	});
 });
 

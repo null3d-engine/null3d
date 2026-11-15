@@ -89,6 +89,12 @@ export interface ContractRegion {
 	/** For wood, the greatest radius in metres that counts, so a trunk is not taken for a limb. */
 	readonly thickMost?: number;
 	/**
+	 * A share of the frame within which the box may move to find the part it asks for. A solved
+	 * camera projects the skeleton's point, and the drawn wood can stand a little to one side of it;
+	 * the box is read where the part stands nearest the named place, within this distance.
+	 */
+	readonly search?: number;
+	/**
 	 * Whether the area is only reported: its cover is a figure for the eye beside the photograph,
 	 * and it neither voids the picture nor fails the plant.
 	 */
@@ -1552,6 +1558,57 @@ const UNDER_LEAST_RISE = 0.3;
 const UNDER_REACH = 0.8;
 /** How far to the side of the limb's line the camera stands, as a share of its distance from the trunk. */
 const UNDER_ASIDE = 0.15;
+/**
+ * The box that asks whether a great limb stands at a point of its run is the limb's own projected
+ * width there. The least keeps a twig from a box under a few pixels, and the most keeps a limb that
+ * passes close to the lens from filling the frame. A box of a fixed share of the frame cannot be
+ * half covered by a limb a hundredth of the frame across, however well the limb is drawn.
+ */
+const LIMB_BOX_LEAST = 0.004;
+const LIMB_BOX_MOST = 0.2;
+
+/**
+ * The contract region that asks for a great limb at a share of its run. Its box is the limb's own
+ * projected width there, so a limb a hundredth of the frame across is asked for a hundredth of the
+ * frame. A sample that projects outside the picture gives no region: a point the picture does not
+ * show cannot decide whether the limb was drawn, and an empty box would read as a missing limb.
+ */
+export function limbRegionOf(
+	limb: GreatLimb,
+	camera: Camera,
+	lens: Lens,
+	share: number,
+): ContractRegion | undefined {
+	const sample = sampleAlong(limb.axis, share);
+	const at = project(camera, lens, sample.at);
+	if (at.depth <= 0) return undefined;
+	// The limb's width across the view, not its world diameter: a limb the camera looks along is
+	// foreshortened, and a box its world width wide would stand empty beside it.
+	const view = normalize([
+		sample.at[0] - camera.position[0],
+		sample.at[1] - camera.position[1],
+		sample.at[2] - camera.position[2],
+	]);
+	const edge = project(
+		camera,
+		lens,
+		step(sample.at, normalize(cross(sample.direction, view)), sample.radius),
+	);
+	const half = Math.max(
+		LIMB_BOX_LEAST,
+		Math.min(LIMB_BOX_MOST, Math.max(Math.abs(edge.x - at.x), Math.abs(edge.y - at.y))),
+	);
+	if (at.x - half < 0 || at.x + half > 1 || at.y - half < 0 || at.y + half > 1) return undefined;
+	return {
+		name: `the great limb ${share} of the way along it`,
+		box: [at.x - half, at.y - half, at.x + half, at.y + half] as const,
+		min: 0.5,
+		of: 'wood',
+		thick: SUBJECT_WOOD * sample.radius,
+		// The drawn limb can stand a limb's width to one side of the skeleton's point.
+		search: 2 * half,
+	};
+}
 
 /**
  * The view of the crown's underside, as picture 05 shows it: from under a great limb, out from the
@@ -1634,17 +1691,7 @@ export function crownUndersideShot(
 		regions: [
 			{ name: 'the crown against the sky', box: [0, 0, 1, 1], min: 0.15, max: 0.95 },
 			// The limb the camera looks up along is in the picture as wood of its own thickness.
-			...[0.3, 0.6].map((share) => {
-				const sample = sampleAlong(limb.axis, share);
-				const at = project(camera, lens, sample.at);
-				return {
-					name: `the great limb ${share} of the way along it`,
-					box: [at.x - 0.04, at.y - 0.04, at.x + 0.04, at.y + 0.04] as const,
-					min: 0.5,
-					of: 'wood' as const,
-					thick: SUBJECT_WOOD * sample.radius,
-				};
-			}),
+			...[0.3, 0.6].flatMap((share) => limbRegionOf(limb, camera, lens, share) ?? []),
 		],
 		facts: {
 			limb: limb.id,

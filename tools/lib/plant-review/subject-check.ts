@@ -105,6 +105,12 @@ export function partsOf(image: {
 	return { kind, radius, width, height };
 }
 
+/**
+ * The shifts the search tries, as shares of its distance from the named point: a quarter of it at a
+ * time, which lands a box on a limb that stands anywhere within the search.
+ */
+const SEARCH_STEPS = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1] as const;
+
 /** The texels of a frame box, cut to the frame: its bounds and its area. */
 function boxOf(width: number, height: number, box: FrameBox) {
 	const left = Math.max(0, Math.min(width, Math.round(box[0] * width)));
@@ -134,6 +140,27 @@ export function regionCover(
  * of the plant, the foliage, or the wood, which counts from the region's least radius up.
  */
 export function partCover(parts: Parts, region: ContractRegion): number {
+	const search = region.search ?? 0;
+	if (search <= 0) return partCoverAt(parts, region);
+	// The box is read where its part stands nearest the named place, within the search distance:
+	// a solved camera projects the skeleton's point, and the drawn wood can stand a little to one
+	// side of it. The best shift is the figure, so a limb a radius off the point still reads.
+	let best = 0;
+	for (const dx of SEARCH_STEPS)
+		for (const dy of SEARCH_STEPS) {
+			const box: FrameBox = [
+				region.box[0] + dx * search,
+				region.box[1] + dy * search,
+				region.box[2] + dx * search,
+				region.box[3] + dy * search,
+			];
+			best = Math.max(best, partCoverAt(parts, { ...region, box }));
+		}
+	return best;
+}
+
+/** The share of one box that a region's parts cover, with no shift. */
+function partCoverAt(parts: Parts, region: ContractRegion): number {
 	const { left, top, right, bottom, area } = boxOf(parts.width, parts.height, region.box);
 	if (area === 0) return 0;
 	const thick = region.thick ?? 0;
