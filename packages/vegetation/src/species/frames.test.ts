@@ -339,11 +339,13 @@ const HELD: readonly Held[] = [
 		},
 		// Two crossed pairs stand a quarter turn apart.
 		round: { rule: 'limb', gap: 110, lean: 0.2 },
-		base: { limb: 0.52, top: 0.62, branch: 0.45, side: 0.5, spur: 0.35 },
+		base: { limb: 0.52, top: 0.62, branch: 0.53, side: 0.5, spur: 0.35 },
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
 		through: 0,
-		crossings: [3, 3],
+		// A limb's first branch takes half its girth, which gives the fork picture its dominant
+		// division and costs one straight-run pair: four apart pairs, three descent pairs.
+		crossings: [4, 3],
 		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.95, 1.05],
