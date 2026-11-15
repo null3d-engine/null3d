@@ -1,25 +1,36 @@
 {
 	"04-tuft-from-above.png": { "elevation": 82, "distance": 0.45, "fov": 40 },
 	"06-inside-tuft.png": { "background": "studio-grey", "piece": "blade", "edge": true },
+	"08-blade-leaving-sheath.png": {
+		"view": "sheath",
+		"piece": "sheath",
+		"alone": true,
+		"edge": true,
+		"span": 0.026,
+		"along": 0.5,
+		"background": "studio-grey"
+	},
 	"11-blade-cluster.png": { "cut": 0.35 },
-	"12-single-blade-upper.png": { "leaves": 0.72, "roll": -45 },
-	"13-single-blade-underside.png": { "leaves": 0.72, "roll": -45 },
+	"12-single-blade-upper.png": { "span": 0.238, "along": 0.5, "roll": -45 },
+	"13-single-blade-underside.png": { "span": 0.238, "along": 0.5, "roll": -45 },
 	"14-roots.png": { "view": "soil", "lifted": true, "background": "studio-grey" },
 	"15-sheath-and-collar.png": {
-		"view": "branch",
-		"cut": 0.12,
-		"pick": 0,
-		"leaves": 0.75,
-		"leafLength": 0.1,
-		"roll": 0
+		"view": "sheath",
+		"piece": "sheath",
+		"alone": true,
+		"edge": true,
+		"span": 0.026,
+		"along": 0.5,
+		"background": "studio-grey"
 	},
 	"16-ligule-and-collar.png": {
-		"view": "branch",
-		"cut": 0.12,
-		"pick": 0,
-		"leaves": 0.75,
-		"leafLength": 0.1,
-		"roll": 0
+		"view": "sheath",
+		"piece": "sheath",
+		"alone": true,
+		"edge": true,
+		"span": 0.047,
+		"along": 0.8,
+		"background": "studio-grey"
 	},
 	"18-silhouette.png": { "horizon": 0.455 },
 	"19-seed-head.png": {
@@ -48,5 +59,6 @@
 			"reason": "the photograph shows a far larger and finer tuft than one plant grows",
 			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
 		}
-	}
+	},
+	"_sheath": { "foot": [0.366, 0.38, 0.309], "collar": [0.366, 0.38, 0.309], "reach": 0.85 }
 }
