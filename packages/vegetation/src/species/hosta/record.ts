@@ -35,8 +35,8 @@ export const record: Species = {
 		tilt: [
 			[0, 4],
 			[0.4, 20],
-			[0.8, 40],
-			[1, 58],
+			[0.8, 44],
+			[1, 68],
 		],
 		// Still 02: a stalk leaves upright, then arches out and down, the oldest bending furthest.
 		// Still 17: the stalks of the middle and outer leaves arch well over into the dome.
