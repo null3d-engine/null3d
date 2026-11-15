@@ -1,0 +1,32 @@
+{
+	"09-pinna.png": {
+		"bottom": 0.1798
+	},
+	"11-frond-group.png": {
+		"bottom": 1
+	},
+	"12-single-pinna-upper.png": {
+		"bottom": 0.9467
+	},
+	"13-single-pinna-underside.png": {
+		"bottom": 0.9035
+	},
+	"21-branch-studio.png": {
+		"bottom": 0.8862
+	},
+	"22-subbranch-studio.png": {
+		"bottom": 0.8922
+	},
+	"23-leaf-cluster-studio.png": {
+		"bottom": 0.9738
+	},
+	"24-leaf-texture-upper.png": {
+		"bottom": 0.945
+	},
+	"25-leaf-texture-underside.png": {
+		"bottom": 0.9005
+	},
+	"08-frond-division.png": {
+		"bottom": 0.9323
+	}
+}
