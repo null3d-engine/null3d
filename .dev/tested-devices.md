@@ -292,6 +292,17 @@ at `1c6785724` in Chrome 152.0.7977.54 on Android 15. Low, Medium and High read 
 30 Hz cap of 33.33 ms, and Ultra reads 66.65 against its 499.8 ceiling, so every row holds. The
 three at the cap hold by pacing rather than by work: the display sets the interval.
 
+### The wind governor's rows (M3-V16)
+
+The iPad Pro 13 ran the four wind-stress presets at `1c6785724`, in Safari 26.6.1:
+[20261115-114527-wind-stress](tested-devices/ipad-pro-13-safari/20261115-114527-wind-stress.md).
+Each preset holds its ceiling. The settled intervals read 15.54, 15.69, 15.64 and 15.66 ms from Low
+to Ultra. The heavier-load intervals rise to 19.90, 26.69, 33.31 and 35.35 ms. Each stays inside the
+tightest end of D-241's range for its preset: 30.8, 43.9, 62.5 and 71.1. The governor takes the
+render scale to 0.95 under load at Low, Medium and High and leaves it at 1.00 at Ultra. The device's
+GPU timer returns no usable figure, as its earlier wind-stress record says, so the rows rest on the
+frame interval and the governor's state.
+
 Two later runs put the final scene at High, which carries the wildflower clumps. One had the trunks
 in the depth prepass and one had them out. Both read a 208.29 ms median frame interval against the
 208.3 ceiling, so the frame measure passes. Their GPU medians are 231.67 and 224.85 ms, and the
