@@ -41,6 +41,17 @@ describe('the plant core with stand-ins', () => {
 		expect(kit.key).toBe(kitKey(stub.record, stub.textures.manifest, 'high'));
 	});
 
+	it('keys a kit by its season, and keeps the key it always had for the record’s own', () => {
+		const own = stub.record.seasons.default;
+		const other = own === 'winter' ? 'summer' : 'winter';
+		const plain = kitKey(stub.record, stub.textures.manifest, 'high');
+		expect(kitKey(stub.record, stub.textures.manifest, 'high', false, own)).toBe(plain);
+		expect(kitKey(stub.record, stub.textures.manifest, 'high', false, other)).not.toBe(plain);
+		// A kit built for another season carries its own key, so a page cannot take a summer kit back
+		// for a winter picture.
+		expect(buildKitNow(stub, { placeholders: true, season: other }).key).not.toBe(kit.key);
+	});
+
 	it('builds the kit of a form under a key of its own, and the record as it stands without one', () => {
 		const formed = {
 			...stub,
