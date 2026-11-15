@@ -56,5 +56,32 @@
 		"span": 6.5,
 		"upright": true,
 		"alone": true
+	},
+	"_pictures": {
+		"04-crown-outside.png": {
+			"standing": "reference-limit",
+			"reason": "the view asks for a limb-borne foliage lobe standing clear of the crown against open sky; a palm's fronds leave the growing point in a closed dome, so the sky regions cover 0.98, 0.99 and 0.96 against a most of 0.75 and 0.92",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"05-crown-underside.png": {
+			"standing": "reference-limit",
+			"reason": "the view asks for a great limb to stand under; a palm has frond sockets at a growing point and no great limb, so the plant has no such part",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"06-inside-crown.png": {
+			"standing": "reference-limit",
+			"reason": "the view asks for the bole with great limbs leaving round it; the palm's trunk ends at the growing point among frond bases, and its wood covers 0.80 of the region against a most of 0.70",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"08-young-crown.png": {
+			"standing": "second-form",
+			"reason": "a young palm's growing point: the directed design builds no juvenile variant",
+			"ruling": "lead, 14 Nov 09:30: the five young forms stay out of this landing, so the directed design does not build a juvenile variant for the date palm"
+		},
+		"16-frond-base-on-trunk.png": {
+			"standing": "reference-limit",
+			"reason": "the join view asks for a great limb leaving the trunk at a wide angle; a palm's frond bases clasp the trunk and no limb leaves it",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
 	}
 }
