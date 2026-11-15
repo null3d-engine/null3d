@@ -12,6 +12,7 @@ import {
 	blankFrame,
 	cameraWidthShare,
 	colourRuleGap,
+	cropChecksSubject,
 	cropFault,
 	crownBoxSpread,
 	edgeDifference,
@@ -46,6 +47,7 @@ import {
 	rubricBand,
 	rubricFrames,
 	sameDrawing,
+	setAsideOf,
 	sheathDifference,
 	spread,
 } from './compare.ts';
@@ -1129,6 +1131,34 @@ describe("a whole view's sky gap, read like with like", () => {
 			for (let x = 0; x < read.width; x++)
 				if (crown(x, y) && !trunk(x, y) && read.mask[y * read.width + x]) crownPlant++;
 		expect(crownPlant).toBe(0);
+	});
+
+	test('checks a leaf picture by its crop share, as it checks a piece', () => {
+		// The two single-leaf views carry a crop share like a branch piece, and that share checks
+		// their subject; without an entry there is no check.
+		expect(cropChecksSubject(0.8491, true)).toBe(true);
+		expect(cropChecksSubject(undefined, true)).toBe(false);
+		// A share with no picture box to read it against checks nothing.
+		expect(cropChecksSubject(0.8491, false)).toBe(false);
+	});
+
+	test('sets a picture aside by any standing before it is read against the plant', () => {
+		// A recorded limit of the reference and another form both leave the plant's account, as a
+		// stand does; the compare must not reach the plant fault first.
+		expect(
+			setAsideOf({
+				standing: 'reference-limit',
+				reason: 'a limit of the reference',
+				ruling: 'lead',
+			}),
+		).toEqual({ kind: 'reference-limit', reason: 'a limit of the reference' });
+		expect(
+			setAsideOf({ standing: 'second-form', reason: 'another form', ruling: 'standard' }),
+		).toEqual({ kind: 'second-form', reason: 'another form' });
+		expect(setAsideOf({ standing: 'stand', reason: 'many plants' })?.kind).toBe('stand');
+		// A picture the review data does not set aside is read as before.
+		expect(setAsideOf({ outline: 'no plain background' })).toBeUndefined();
+		expect(setAsideOf(undefined)).toBeUndefined();
 	});
 });
 
