@@ -1,8 +1,10 @@
 {
 	"04-tuft-from-above.png": { "elevation": 82, "distance": 0.45, "fov": 40 },
+	"06-inside-tuft.png": { "background": "studio-grey", "piece": "blade", "edge": true },
 	"11-blade-cluster.png": { "cut": 0.35 },
 	"12-single-blade-upper.png": { "leaves": 0.72, "roll": -45 },
 	"13-single-blade-underside.png": { "leaves": 0.72, "roll": -45 },
+	"14-roots.png": { "view": "soil", "lifted": true, "background": "studio-grey" },
 	"15-sheath-and-collar.png": {
 		"view": "branch",
 		"cut": 0.12,
@@ -20,7 +22,21 @@
 		"roll": 0
 	},
 	"18-silhouette.png": { "horizon": 0.455 },
-	"19-seed-head.png": { "distance": 0.32, "fov": 30 },
+	"19-seed-head.png": {
+		"background": "studio-grey",
+		"piece": "stalk",
+		"edge": true,
+		"span": 0.12,
+		"along": 0.9
+	},
+	"20-new-seedling.png": {
+		"view": "whole",
+		"background": "studio-grey",
+		"ground": "#2e2620",
+		"horizon": 0.05,
+		"fill": 0.32,
+		"targetY": 0.48
+	},
 	"21-branch-studio.png": { "view": "whole", "lifted": true, "background": "studio-grey" },
 	"22-subbranch-studio.png": { "pick": 2 },
 	"23-leaf-cluster-studio.png": { "cut": 0.35 },
