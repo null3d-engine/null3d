@@ -15,9 +15,9 @@
 		"skyShare": 0.8
 	},
 	"08-leaf-leaving-sheath.png": {
-		"distance": 0.25,
-		"elevation": 0,
-		"view": "junction"
+		"view": "sheath",
+		"span": 0.8,
+		"daylight": 1.9
 	},
 	"09-new-shoots.png": {
 		"background": "studio-grey",
@@ -25,13 +25,13 @@
 		"view": "soil"
 	},
 	"12-single-leaf-upper.png": {
-		"leaves": 1.1,
-		"leafLength": 0.2,
+		"span": 0.22,
+		"along": 0.9,
 		"roll": -45
 	},
 	"13-single-leaf-underside.png": {
-		"leaves": 1.1,
-		"leafLength": 0.2,
+		"span": 0.29,
+		"along": 0.85,
 		"roll": -45
 	},
 	"24-leaf-texture-upper.png": {
@@ -45,9 +45,9 @@
 		"roll": -46
 	},
 	"15-sheath-and-ligule.png": {
-		"distance": 0.25,
-		"elevation": 0,
-		"view": "junction"
+		"view": "sheath",
+		"span": 0.38,
+		"daylight": 1.6
 	},
 	"06-inside-tuft.png": { "background": "studio-grey", "piece": "stalk", "edge": true },
 	"19-flower-spikes.png": {
@@ -81,7 +81,8 @@
 		"elevation": -14
 	},
 	"10-fine-leaf-tips.png": {
-		"leafLength": 0.1
+		"span": 0.35,
+		"along": 0.9
 	},
 	"14-roots-and-rhizome.png": {
 		"background": "studio-grey",
