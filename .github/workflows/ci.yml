@@ -78,9 +78,11 @@ jobs:
     # sixteen minutes on the runner, which with this job's four minutes of doc checks passed twenty
     # and cancelled a push. The plant package's heaviest folder takes a group of its own now, but
     # the run's floor is its total time over its two lanes, not its longest group, so the split
-    # alone leaves the step at the limit's edge. The limit carries the measured step with room for a
-    # slower day: a red or hanging job still ends, a suite that needs its time does not.
-    timeout-minutes: 25
+    # alone leaves the step at the limit's edge. The slowest runner measured then took 22m20s of
+    # test time beside four minutes of doc checks, a minute inside twenty-five. The limit gives
+    # that runner room for a slower day, and a suite whose work grows again is a cut to make in the
+    # work rather than a ceiling to keep raising: a red or hanging job still ends.
+    timeout-minutes: 30
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
