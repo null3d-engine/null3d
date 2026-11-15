@@ -85,12 +85,27 @@ const SPECIES_SLICES: readonly string[] = readdirSync(
 	.map((name) => `packages/vegetation/src/species/${name}`)
 	.sort();
 
+/**
+ * The plant package's own folders that take a group each. The LOD folder holds the plant cases a
+ * triangle maximum is tried on, which run for minutes each and made the package one group of more
+ * than fifteen minutes: apart, they take a lane of their own and the two lanes finish nearer
+ * together.
+ */
+const PLANT_FOLDERS: readonly string[] = ['packages/vegetation/src/lod'];
+
 /** The groups one package folder takes: the folder, and a group per slice that the folder leaves out. */
 function groupsOfPackage(name: string): UnitGroup[] {
 	const paths = [`packages/${name}`];
 	if (name !== 'vegetation' || SPECIES_SLICES.length === 0) return [{ paths }];
-	const ignore = SPECIES_SLICES.map((slice) => `**/${slice.split('/').pop()}`);
-	return [{ paths, ignore }, ...SPECIES_SLICES.map((slice) => ({ paths: [slice] }))];
+	const ignore = [
+		...SPECIES_SLICES.map((slice) => `**/${slice.split('/').pop()}`),
+		...PLANT_FOLDERS.map((folder) => `**/${folder.split('/').slice(-2).join('/')}/**`),
+	];
+	return [
+		{ paths, ignore },
+		...SPECIES_SLICES.map((slice) => ({ paths: [slice] })),
+		...PLANT_FOLDERS.map((folder) => ({ paths: [folder] })),
+	];
 }
 
 /**
