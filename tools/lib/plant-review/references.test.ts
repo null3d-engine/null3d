@@ -590,6 +590,12 @@ describe('the slots', () => {
 		expect(classifySlot('07-limb-leaving-trunk.png')?.view).toBe('junction');
 		expect(classifySlot('08-limb-fork.png')?.view).toBe('fork');
 		expect(classifySlot('04-crown-outside.png')?.view).toBe('limb');
+		// A catkin picture is the species' fruit: the twig that carries it is the subject, so the
+		// picture takes the fruit view even where its number names no view of its own.
+		expect(classifySlot('35-catkins.png')).toMatchObject({
+			view: 'twigs',
+			query: { fruit: true },
+		});
 		// A branch and a twig on a plain ground, as their photographs show them: cut pieces.
 		expect(classifySlot('09-secondary-branching.png')).toMatchObject({
 			view: 'branch',

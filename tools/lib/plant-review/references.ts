@@ -370,6 +370,17 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			test: (n) => /flowers?.*crown|crown.*flowers?/.test(n),
 			slot: { view: 'flowers', framed: false },
 		},
+		{
+			// A catkin picture is the species' fruit, judged on the twig that carries it: the catkins
+			// hang at the shoot ends, and a whole view of the plant has no twig to judge them on.
+			test: (n) => n.includes('catkin'),
+			slot: {
+				view: 'twigs',
+				query: { fruit: true },
+				framed: false,
+				note: 'flowers, fruit or cones: judged on the shoot tip, in the season the name gives',
+			},
+		},
 		{ test: (n) => n.includes('crown'), slot: { view: 'crown', framed: false } },
 		{ test: (n) => n.includes('bark'), slot: { view: 'bark-mid', framed: false } },
 		{ test: (n) => /whole|distant|form|dome/.test(n), slot: { view: 'whole', framed: true } },
