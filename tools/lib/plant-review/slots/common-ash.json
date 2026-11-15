@@ -65,7 +65,7 @@
 		"season": "summer"
 	},
 	"14-bark-base.png": {
-		"daylight": 1.0,
+		"daylight": 0.9,
 		"barkMask": true
 	},
 	"28-young-bark.png": {
@@ -74,7 +74,12 @@
 		"barkMask": true
 	},
 	"15-bark-mid-trunk.png": {},
-	"16-bark-on-limb.png": {},
+	"16-bark-on-limb.png": {
+		"daylight": 1.32
+	},
+	"26-bark-texture.png": {
+		"daylight": 1.3
+	},
 	"_pictures": {
 		"21-branch-studio.png": {
 			"standing": "reference-limit",
