@@ -713,6 +713,9 @@ export default defineSketch(async (ctx) => {
 		detail: QUERY.preset ?? 'high',
 		placeholders,
 		...(form !== undefined && { form }),
+		// The kit carries the season, because a piece-crowned plant takes its leaves from the pieces
+		// the kit holds rather than from the shoots the grow places.
+		...(QUERY.season && { season: QUERY.season }),
 	} as const;
 	const kit = await prepareSpecies(ctx, module, prepare);
 	const grow = {
