@@ -185,6 +185,26 @@
 			"standing": "stand",
 			"reason": "stalks stand at eye level under a roof of leaves, seen from inside a stand",
 			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
+		},
+		"05-canopy-underside.png": {
+			"standing": "reference-limit",
+			"reason": "the crown-underside view asks for a great limb to stand under, and a frond colony has no limbs: its fronds rise alone from the rhizome",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"15-stipe-lower-black.png": {
+			"standing": "reference-limit",
+			"reason": "the bark view asks for a trunk's foot, and a frond colony has no trunk: the camera stands at the place and the stipes cover 0.12 of the trunk's box against the least 0.80",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"16-stipe-mid.png": {
+			"standing": "reference-limit",
+			"reason": "the bark view asks for a limb's bark, and a frond colony has no bark: wood of the stipe's radius covers 0.00 of the bark's box against the least 0.90",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"17-rhizome.png": {
+			"standing": "reference-limit",
+			"reason": "the trunk view asks for a bole, and a frond colony has none: its trunk divides at the ground, so there is no bole to show",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
 		}
 	}
 }
