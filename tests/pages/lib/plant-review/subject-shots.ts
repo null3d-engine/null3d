@@ -1176,7 +1176,7 @@ export function forkShot(subjects: PlantSubjects, lens: Lens, options: ForkOptio
 					.filter(({ fork }) => fork.radius >= least)
 					.sort(
 						(a, b) =>
-							a.fork.order - b.fork.order || worth(b.fork) - worth(a.fork) || a.index - b.index,
+							worth(b.fork) - worth(a.fork) || b.fork.radius - a.fork.radius || a.index - b.index,
 					)
 			: listed.filter(({ index }) => index === options.fork);
 	if (candidates.length === 0) {
