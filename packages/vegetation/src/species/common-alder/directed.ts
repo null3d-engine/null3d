@@ -160,8 +160,9 @@ export const frame: FrameSpec = {
 							],
 						},
 						vary: 0.12,
-						// Still 08: a low branch divides into arms of like width.
-						radius: 0.5,
+						// Still 08: a low branch divides into arms of like width, the thinner a little
+						// over half the thicker so the division reads as a fork.
+						radius: 0.55,
 						taper: 0.3,
 						bends: [{ from: 0.4, to: 1, by: -8 }],
 						sway: 10,
