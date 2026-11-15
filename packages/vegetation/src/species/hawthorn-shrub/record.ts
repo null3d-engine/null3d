@@ -303,10 +303,13 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 15 and 26: the sampled plates read darker than the photographs, so the zone lifts
-		// red, green and blue together, a little more blue, toward the grey-brown the photographs show.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [2.094, 2.366, 2.37] }],
+		// Stills 15 and 26: the sampled plates read darker than the photographs, so the zone lifts the
+		// measured colour, a little more in green and blue, toward the grey-brown the photographs show.
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [2.8, 3.2, 3.2] }],
 		young: 0,
+		// Still 16: the young bark draws redder than its photograph, so thin wood lifts green and blue
+		// more than red. Still 28's young stem asks for a neutral cast instead, a recorded conflict.
+		youngTint: [1.03, 1.34, 1.22],
 		// Still 16 and 28: the plates fade to smooth red-brown bark on wood thinner than about four
 		// centimetres across.
 		youngRadius: 0.02,
