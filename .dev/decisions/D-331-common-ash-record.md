@@ -705,3 +705,21 @@ Rejected:
   10. Row 11 is judged against the pedunculate oak, the catalogue's other built species. The two are
      told apart by silhouette: the ash is 0.9 of its height across with a cleaner, taller bole and
      opposite branching, where the oak is 1.53 across on a short low-forking bole. The row passes.
+
+### Re-read on the directed frame at `71a64f2e6` (15 November)
+
+The ash now grows as its directed frame, and the shared bark shading had moved its close views since
+the tints above were measured: the base read 3.46 steps and the limb 6.26, where they read 2.77 and
+2.08 on the old grower. Two changes stand them inside the band of 3 without moving a picture beyond
+row 8.
+
+The close views take their own light in the review data, so each picture's bark is drawn at its
+photograph's lightness: the base at a daylight of 0.9, the limb at 1.32 and the texture source at
+1.3. The figures fell to 2.92, 1.70 and 4.9.
+
+The bole's tint rises in red and blue together, from [0.79, 0.79, 0.66] to [0.85, 0.79, 0.73], which
+stands the drawn bark between the two mid-trunk photographs, one warm and one grey. The mid-trunk
+then read 2.48 and the texture source 2.1, against the source's 4.9 before the tint. The five bark
+pictures of row 8 read 2.92, 2.48, 1.70, 2.1 and 2.8, every one inside the band. The runs are
+`ash-fp-bark-2` at `71a64f2e6`, which carries the tint, and `ash-fp-bark-1`, which holds the lights
+without it.
