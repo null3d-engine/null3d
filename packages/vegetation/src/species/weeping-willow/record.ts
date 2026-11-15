@@ -290,8 +290,8 @@ export const record: Species = {
 					[1, 0.8],
 				],
 				leafAngle: [
-					[0, 35],
-					[1, 48],
+					[0, 55],
+					[1, 65],
 				],
 				leafAngleSpread: 12,
 				skyward: 0.25,
@@ -427,13 +427,13 @@ export const record: Species = {
 	},
 	bark: {
 		// Stills 14, 15 and 16: the foot, the mid-trunk and the great limbs draw under different light
-		// and read apart, so each takes its own tint of the one trunk layer. The foot stands too light
-		// and too yellow at the base picture, so it darkens and loses some yellow; the mid trunk and
-		// the limbs keep the measured colour until their own figures ask otherwise.
+		// and read apart, so each takes its own tint of the one trunk layer. The foot darkens to the
+		// base picture's own grey-brown; the mid trunk and the limbs carry the texture's measured
+		// colour.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.25, tint: [0.75, 0.72, 0.62] },
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.25, tint: [0.74, 0.74, 0.8] },
 			{ layer: 0, by: 'height', from: 1, to: 1.9, blend: 0.3, tint: [1, 1, 1] },
-			{ layer: 0, by: 'height', from: 1.9, to: 40, blend: 0.5, tint: [1.15, 1.05, 0.18] },
+			{ layer: 0, by: 'height', from: 1.9, to: 40, blend: 0.5, tint: [1, 1, 1] },
 		],
 		young: 0,
 		// Still 16: the deep ridges fade to smooth grey-green bark on wood thinner than about six
