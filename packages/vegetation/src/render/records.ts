@@ -124,7 +124,8 @@ export const HEADER = {
 	extraStalks: 51,
 	/**
 	 * A card's stalk line: its least width in pixels where the record gives one, and 1 where the
-	 * line draws at its twig's own width instead.
+	 * line draws at its twig's own width instead. The third number is the record's shade of the
+	 * young bark's tone, and the fourth is 1 where the line takes the foliage's tone instead.
 	 */
 	cardStalk: 55,
 	/** Young bark: the tint its thin wood takes, where the record gives one. */
@@ -426,7 +427,7 @@ export function speciesHeader(
 		record.lod.cardStalk ?? 0,
 		record.lod.cardStalkWidth ? 1 : 0,
 		record.lod.cardStalkShade ?? 0,
-		0,
+		record.lod.cardStalkFoliageTone ? 1 : 0,
 	]);
 	texel(header, HEADER.cardCoverage, [record.shoots?.placement.cardCoverage ?? 1, 0, 0, 0]);
 	const scar = record.base?.scar;

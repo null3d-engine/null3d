@@ -147,6 +147,10 @@ const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
 // leaves shade it, so it draws as shaded wood rather than at the young bark's full light.
 const CARD_STALK_SHADE: f32 = 0.35;
+// How much of a mean leaf's tone a card's stalk keeps where the record draws the line in the
+// foliage's tone: the line stands inside the crown, under the leaves, so it draws as foliage in
+// their shade.
+const CARD_STALK_FOLIAGE_SHADE: f32 = 0.25;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -1277,12 +1281,20 @@ fn surface(input: SurfaceInput) -> Surface {
         let near_copy = object.values.x > 0.5;
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
             // A card's stalk: a shade of the young bark's tone, so the join the card's leaves stand
-            // on shows without the line standing out pale against the leaves.
-            let shade = header(HEADER_CARD_STALK).z;
-            base =
-                header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb *
-                select(CARD_STALK_SHADE, shade, shade > 0.0);
-            roughness = 0.85;
+            // on shows without the line standing out pale against the leaves. A record that asks
+            // for the foliage's tone draws the line where the leaves would cover the twig, so a
+            // leafy shoot's card reads as foliage rather than as a bare line of wood.
+            let stalk = header(HEADER_CARD_STALK);
+            if (stalk.w > 0.5) {
+                let light = leaf_light(header(HEADER_UPPER_MEAN).rgb, true, 0.0);
+                base = light.base * CARD_STALK_FOLIAGE_SHADE;
+                roughness = light.roughness;
+            } else {
+                base =
+                    header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb *
+                    select(CARD_STALK_SHADE, stalk.z, stalk.z > 0.0);
+                roughness = 0.85;
+            }
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;

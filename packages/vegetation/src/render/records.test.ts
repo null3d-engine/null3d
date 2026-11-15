@@ -183,7 +183,7 @@ describe('the species header', () => {
 		}
 	});
 
-	test("writes a card's stalk width, and where it draws at its twig's width", () => {
+	test("writes a card's stalk width, and where it draws at its twig's width or in foliage", () => {
 		expect(texel(header, HEADER.cardStalk)).toEqual([0, 0, 0, 0]);
 		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
 		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)).toEqual([1.5, 0, 0, 0]);
@@ -201,6 +201,13 @@ describe('the species header', () => {
 		expect(paleTexel[1]).toBe(0);
 		expect(paleTexel[2]).toBeCloseTo(0.8, 6);
 		expect(paleTexel[3]).toBe(0);
+		const foliaged: Species = {
+			...record,
+			lod: { ...record.lod, cardStalk: 1, cardStalkFoliageTone: true },
+		};
+		const foliagedTexel = texel(speciesHeader(foliaged, manifest, box), HEADER.cardStalk);
+		expect(foliagedTexel[0]).toBe(1);
+		expect(foliagedTexel[3]).toBe(1);
 	});
 	test("writes a fire scar's hollow and char into the header, or zeroes it where the record gives none", () => {
 		expect(texel(header, HEADER.scar)).toEqual([0, 0, 0, 0]);
@@ -553,13 +560,15 @@ describe('the plant shader', () => {
 		expect(Math.abs(asFraction - metres)).toBeLessThan(0.000005);
 	});
 
-	test("draws a card's stalk at the tone the record names, or the default", () => {
-		// The stalk's tone must follow the header's third component where a record names one; a
-		// shader that ignored it would draw every species' line at the default shade.
+	test("draws a card's stalk at the tone the record names, the foliage's, or the default", () => {
+		// The stalk's tone must follow the header's third component where a record names one, and its
+		// fourth where the record asks for the foliage's tone; a shader that ignored either would
+		// draw every species' line at the default shade, or a leafy shoot's line as bare wood.
 		for (const file of ['./plant.wgsl', './plant-viewface.wgsl'] as const) {
 			const source = readFileSync(new URL(file, import.meta.url), 'utf8');
-			expect(source).toContain('header(HEADER_CARD_STALK).z');
-			expect(source).toContain('select(CARD_STALK_SHADE, shade, shade > 0.0)');
+			expect(source).toContain('let stalk = header(HEADER_CARD_STALK);');
+			expect(source).toContain('select(CARD_STALK_SHADE, stalk.z, stalk.z > 0.0)');
+			expect(source).toContain('if (stalk.w > 0.5) {');
 		}
 	});
 	test('declares six textures and fits its uniforms beside them', () => {

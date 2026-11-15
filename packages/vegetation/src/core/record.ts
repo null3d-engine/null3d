@@ -2927,7 +2927,8 @@ export interface LodSpec {
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
 	 * draws its supporting twig as a line of at least this width, in the young bark's tone, so the
 	 * join shows. 0 or absent, a card draws no stalk. A record that names `cardStalkWidth` draws
-	 * the line as wide as the twig instead.
+	 * the line as wide as the twig instead, and one that names `cardStalkFoliageTone` draws it in the
+	 * leaves' tone.
 	 */
 	readonly cardStalk?: number;
 	/**
@@ -2945,6 +2946,14 @@ export interface LodSpec {
 	 * may lighten the line toward the bark's own tone.
 	 */
 	readonly cardStalkShade?: number;
+	/**
+	 * Whether a card's stalk line takes the foliage's tone rather than the young bark's. The line
+	 * stands where the shoot's own leaves would cover its twig, so a leafy shoot's card reads as
+	 * foliage at a distance rather than as a bare line of wood across the crown. The tone follows the
+	 * leaf face's reflectance and the season's shift. Absent, the line keeps the young bark's shaded
+	 * tone.
+	 */
+	readonly cardStalkFoliageTone?: boolean;
 	/**
 	 * Whether the plant is scaled to its leaf form's top rather than its drawn card level's. The card
 	 * level's corners stand above the leaves that they picture, so a plant scaled to them can fall

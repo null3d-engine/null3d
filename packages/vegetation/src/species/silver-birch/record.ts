@@ -451,8 +451,11 @@ export const record: Species = {
 		// Stills 01 and 19: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air; each card draws its twig as a line and the join shows. The line takes
 		// the twig's own width where that is wider than the least below, which at a whole view it is
-		// not: the least keeps the crown's mass.
+		// not: the least keeps the crown's mass. The weeping shoots carry their leaves densely, so
+		// the line draws in the foliage's tone: the crown's distant colour follows its leaves rather
+		// than the twigs the card level stands on.
 		cardStalk: 5,
+		cardStalkFoliageTone: true,
 		// Still 01: the crown's box shows 0.45 of sky in the photograph and 0.69 at the first card
 		// level, whose weeping shoots stand open. At the medium tier 1.12 brings the card levels to
 		// 0.0251 and 0.0140 more sky than the leaf form, where each card pictures its shoot, and
