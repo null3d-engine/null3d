@@ -51,14 +51,18 @@
 	},
 	"16-young-hosta-plant.png": {
 		"view": "whole",
-		"fov": 24
+		"fov": 24,
+		"fill": 0.8,
+		"targetY": 0.45
 	},
 	"17-silhouette.png": {
 		"fov": 24
 	},
 	"18-flower-scape.png": {
 		"view": "whole",
-		"fov": 24
+		"fov": 24,
+		"fill": 0.95,
+		"targetY": 0.5
 	},
 	"20-autumn-collapse.png": {
 		"fov": 24
