@@ -1,0 +1,32 @@
+{
+	"09-secondary-branching.png": {
+		"bottom": 0.75
+	},
+	"10-fine-twigs.png": {
+		"bottom": 0.1922
+	},
+	"11-leaf-cluster.png": {
+		"bottom": 0.8199
+	},
+	"12-single-leaf-upper.png": {
+		"bottom": 0.8959
+	},
+	"13-single-leaf-underside.png": {
+		"bottom": 0.9228
+	},
+	"21-branch-studio.png": {
+		"bottom": 0.7197
+	},
+	"22-subbranch-studio.png": {
+		"bottom": 0.8714
+	},
+	"23-leaf-cluster-studio.png": {
+		"bottom": 0.864
+	},
+	"24-leaf-texture-upper.png": {
+		"bottom": 0.9268
+	},
+	"25-leaf-texture-underside.png": {
+		"bottom": 0.912
+	}
+}
