@@ -18,6 +18,10 @@
 	"23-leaf-cluster-studio.png": {
 		"cut": 0.5
 	},
+	"26-bark-texture.png": {
+		"barkHeight": 3.5,
+		"daylight": 0.73
+	},
 	"28-young-bark.png": {
 		"thin": 0.05,
 		"span": 0.1,
