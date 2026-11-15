@@ -43,8 +43,10 @@ export const directed: Species = {
 		fronds: {
 			// Picture 01 at full size: about 20 living fronds from one side (3 rising and 4 spreading
 			// on each side, 2 hanging on each side, 3 facing the lens), and the turning video 18 to 24
-			// a frame; the dome hides those behind it. About 32 in all, 28 to 36.
-			count: { mean: 32, spread: 4 },
+			// a frame. The frame sees the front of a radial crown, so the ring doubles that reading:
+			// about 37 living fronds, 36 to 38, where the crown's enclosed sky stands nearest the
+			// pictures'.
+			count: { mean: 37, spread: 1 },
 			divergence: 137.5,
 			// Picture 01 and the turning video: one even radiating fountain, every rank spread evenly
 			// round the trunk.
@@ -62,12 +64,14 @@ export const directed: Species = {
 				{ share: 0.35, leave: 5, spread: 15, piece: 'frond-arched', length: 1 },
 			],
 		},
-		// Pictures 01, 16 and 20: 14 to 16 dead fronds hang in a dense bell under the living crown, from
+		// Pictures 01 and 16: 14 to 16 dead fronds hang in a dense bell under the living crown, from
 		// 0.68 of the height down to 0.29 (picture 20, 175 of 450 px), so each is 0.39 of the height
 		// long, 0.65 of a living frond; the bell is 2.3 times the trunk wide, so the fronds hang 70
-		// degrees below level rather than flat against the trunk.
+		// degrees below level rather than flat against the trunk. Picture 20 shows the species' fuller
+		// bell, so the ring draws about twenty and the skirt closes the lower crown as the
+		// photographs' does.
 		dead: {
-			count: { mean: 16, spread: 2 },
+			count: { mean: 20, spread: 2 },
 			hang: { mean: 70, spread: 4 },
 			from: 0.12,
 			to: 0.3,

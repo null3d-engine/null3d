@@ -121,8 +121,10 @@ export const PIECES: readonly PieceRule[] = [
 		browning: 1,
 		stem: {
 			...rachis(8, [0, 1]),
-			// Picture 20: a dead frond is about 0.18 as wide as long, its pinnae hanging 40 degrees out.
-			leaves: { ...PINNA_LEAVES, ranked: [20], angle: 40, angleSpread: 6 },
+			// Pictures 16 and 20: a dead frond hangs in the brown curtain as a broad blade, its pinnae
+			// spread about 50 degrees out, so the dry fronds cover the lower crown as the photographs'
+			// curtain does.
+			leaves: { ...PINNA_LEAVES, ranked: [20], angle: 50, angleSpread: 6 },
 		},
 	},
 ];
