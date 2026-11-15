@@ -383,7 +383,7 @@ const HELD: readonly Held[] = [
 		// two, 103 degrees, where the rising limbs stand; each limb's end wanders with its elbows.
 		round: { rule: 'limb', gap: 120, lean: 0.25 },
 		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, so it is not held here.
-		base: { bough: 0.5, branch: 0.55 },
+		base: { bough: 0.55, branch: 0.55 },
 		plumb: ['trunk'],
 		through: 0,
 		crossings: [0, 0],

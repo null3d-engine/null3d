@@ -57,7 +57,7 @@ const boughs: FrameBranchRule = {
 	vary: 0.06,
 	least: 0.08,
 	most: 0.5,
-	radius: 0.5,
+	radius: 0.55,
 	taper: 0.35,
 	shed: 0.7,
 	// Still 01: the boughs of a low limb rise from it to the dome's surface, so the crown is as
