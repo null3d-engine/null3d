@@ -551,3 +551,5 @@ The iPad rows compare the tier with the flat layer within one session. The S25's
 30 Hz on this service as well, so its frame intervals are its floor; its WebGPU timer is what
 measures the tier there, at 0.066 ms for the High tier's 32 steps, and its WebGL2 path gives no
 timer.
+
+The occlusion switch's share on this device was measured at the same head: [20261115-142527-vegetation](tested-devices/ipad-pro-13-safari/20261115-142527-vegetation.md), at 52303fe23, draws Creek High with the effect off at 85.82 ms against 87.71 with it on, so the switch buys 1.89 ms and the opaque pass costs the same either way. The row still misses its ceiling by 18.72 ms at the kinder end, so ambient occlusion is not the lever that closes it.
