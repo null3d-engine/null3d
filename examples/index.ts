@@ -82,7 +82,7 @@ function rememberNavScroll(): void {
 
 /** A demo's title, then its scene as a smaller sub-title under it, on its own line, and a bar that
  * shows the progress of work the scene does after its start, such as regrowing a meadow. */
-function heading(demo: Demo): (string | HTMLElement)[] {
+function heading(demo: Demo, growthBar = false): (string | HTMLElement)[] {
 	const name = element('span', demo.title);
 	name.className = 'name';
 	const scene = element('span', demo.scene);
@@ -118,7 +118,7 @@ function heading(demo: Demo): (string | HTMLElement)[] {
 	percent.textContent = '0%';
 	percent.style.cssText = 'font-variant-numeric:tabular-nums;font-size:11px;opacity:0.8';
 	growth.append(track, percent);
-	return [name, scene, growth];
+	return growthBar ? [name, scene, growth] : [name, scene];
 }
 
 /** Lists the demos in the sidebar, group by group, and marks the one that runs. */
@@ -225,7 +225,7 @@ async function runDemo(demo: Demo): Promise<void> {
 	caption.className = 'caption';
 	const title = element('summary');
 	const h1 = element('h1');
-	h1.append(...heading(demo));
+	h1.append(...heading(demo, true));
 	// The chevron floats at the top right of the summary, in place of the native marker. It points
 	// down while the caption is folded and up while it is open, and the summary toggles it once.
 	const chevron = element('span');
