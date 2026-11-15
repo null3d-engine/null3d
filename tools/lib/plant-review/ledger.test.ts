@@ -4,7 +4,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ledgerOf, ledgerText, REVIEW_SPECIES, verdictPaths } from './ledger.ts';
+import { ledgerOf, ledgerText, REVIEW_SPECIES, rowState, verdictPaths } from './ledger.ts';
 import {
 	ROW_NAMES,
 	type RowVerdict,
@@ -107,8 +107,9 @@ describe('the ledger of a folder of runs', () => {
 			'olive             -  -  -  -  -  -  -  -  -  -  -  -    -     0  -         no verdict',
 		);
 		expect(text).toContain(
-			'Total: 13 of 240 rows pass; 6 fail, 2 void, 219 unjudged. 0 of 20 species are done.',
+			'Rows: 13 pass, 0 stated limits, 11 unexplained fails. 0 of 20 species are done, done meaning no unexplained fail.',
 		);
+		expect(text).toContain('Total: 13 of 240 rows pass; 6 fail, 2 void, 219 unjudged.');
 	});
 
 	test('calls a species done only with twelve passes, the balance passed and every reference compared', () => {
@@ -300,5 +301,35 @@ describe('what else stops the count', () => {
 		expect(faults[0]).toContain('olive has 2 verdict files');
 		expect(faults[1]).toBe("monkey-puzzle is not one of the standard's twenty species");
 		expect(REVIEW_SPECIES.length).toBe(20);
+	});
+});
+
+// The standard's hand-back step admits a miss only when its reason names a cause the tool can read:
+// an instrument's fault, a reference conflict, or a shared light or shading path. A reason that
+// names the plant is the grower's work, so it keeps the species out.
+describe('a row that cannot be fixed', () => {
+	test('counts a pass once, and only as a pass', () => {
+		expect(rowState({ verdict: 'pass' })).toBe('pass');
+	});
+
+	test('counts a stated limit with a readable cause as a limit, not a pass', () => {
+		expect(
+			rowState({
+				verdict: 'fail',
+				reason:
+					'Recorded limit: bark colour 7.5 against the most of 3; 14 is the shared light path and 16 the recorded reference conflict',
+			}),
+		).toBe('limit');
+	});
+
+	test('blocks an unexplained fail or void', () => {
+		expect(rowState({ verdict: 'fail' })).toBe('fail');
+		expect(rowState({ verdict: 'void' })).toBe('fail');
+	});
+
+	test('blocks a row whose reason names the plant', () => {
+		expect(
+			rowState({ verdict: 'fail', reason: 'Recorded limit: the plant grows too few shoots' }),
+		).toBe('fail');
 	});
 });

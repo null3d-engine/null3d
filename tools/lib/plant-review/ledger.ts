@@ -18,29 +18,49 @@ import {
 	verdictFaults,
 } from './verdict.ts';
 
-/** The twenty species the standard judges, which fix the total's base. */
-export const REVIEW_SPECIES = [
-	'bamboo',
-	'bracken',
-	'common-alder',
-	'common-ash',
-	'date-palm',
-	'european-beech',
-	'giant-sequoia',
-	'hawthorn-shrub',
-	'holm-oak',
-	'hosta',
-	'italian-cypress',
-	'meadow-grass',
-	'olive',
-	'pedunculate-oak',
-	'saguaro',
-	'scots-pine',
-	'sedge',
-	'silver-birch',
-	'tree-fern',
-	'weeping-willow',
-] as const;
+/**
+ * A row that cannot be fixed is still a fail of its row. It counts as a stated limit only when its
+ * reason names a cause the tool can read: an instrument's fault, a reference conflict, or a shared
+ * light or shading path. A reason that names the plant instead is the grower's work, and blocks.
+ */
+const READABLE_CAUSE =
+	/instrument|reference conflict|shared light|shared shading|shading path|light path/i;
+const NAMES_PLANT = /\bthe plant\b|\bthis plant\b|\bthe grower\b/i;
+
+/** Whether one row of a verdict is a pass, a stated limit, or an unexplained fail. */
+export function rowState(row: {
+	readonly verdict: RowVerdict;
+	readonly reason?: string;
+}): 'pass' | 'limit' | 'fail' {
+	if (row.verdict === 'pass') return 'pass';
+	const reason = row.reason ?? '';
+	if (!NAMES_PLANT.test(reason) && READABLE_CAUSE.test(reason)) return 'limit';
+	return 'fail';
+}
+
+/** The twenty species the standard judges, which fix the total's base. */ export const REVIEW_SPECIES =
+	[
+		'bamboo',
+		'bracken',
+		'common-alder',
+		'common-ash',
+		'date-palm',
+		'european-beech',
+		'giant-sequoia',
+		'hawthorn-shrub',
+		'holm-oak',
+		'hosta',
+		'italian-cypress',
+		'meadow-grass',
+		'olive',
+		'pedunculate-oak',
+		'saguaro',
+		'scots-pine',
+		'sedge',
+		'silver-birch',
+		'tree-fern',
+		'weeping-willow',
+	] as const;
 
 /** One species' line of the ledger. */
 export interface LedgerLine {
@@ -57,7 +77,11 @@ export interface LedgerLine {
 	readonly balance: RowVerdict;
 	readonly rows: readonly RowVerdict[];
 	readonly passes: number;
-	/** Whether the species is done: twelve passes, the balance passed and every reference compared. */
+	/** Rows that fail but state a cause the tool can read: an instrument, a reference, a shared light. */
+	readonly limits: number;
+	/** Rows that fail with no readable cause, which keep the species out. */
+	readonly fails: number;
+	/** Whether the species is done: no unexplained fail, the balance not failed, every reference compared. */
 	readonly complete: boolean;
 	/** The pictures out of each row: not compared, void, set aside, lacking their part, or not checked. */
 	readonly taken: readonly {
@@ -77,6 +101,10 @@ export interface Ledger {
 	readonly totals: Readonly<Record<RowVerdict, number>>;
 	/** The total's base: the standard's species times its rows. */
 	readonly rows: number;
+	/** Rows that pass, rows that state a readable limit, and rows that fail unexplained. */
+	readonly passes: number;
+	readonly limits: number;
+	readonly fails: number;
 	/** How many species are done. */
 	readonly complete: number;
 	/** What stops the count, one line each; none when the ledger is sound. */
@@ -244,6 +272,8 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 				balance: 'unjudged',
 				rows: ROW_NAMES.map(() => 'unjudged'),
 				passes: 0,
+				limits: 0,
+				fails: 0,
 				complete: false,
 				taken: [],
 			};
@@ -254,7 +284,10 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 		);
 		const rows = ordered.map((row) => row.verdict);
 		for (const row of rows) totals[row]++;
-		const passes = rows.filter((row) => row === 'pass').length;
+		const states = ordered.map(rowState);
+		const passes = states.filter((state) => state === 'pass').length;
+		const limits = states.filter((state) => state === 'limit').length;
+		const fails = states.filter((state) => state === 'fail').length;
 		return {
 			species: name,
 			run: verdict.run,
@@ -266,9 +299,12 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 			balance: verdict.balance.verdict,
 			rows,
 			passes,
+			limits,
+			fails,
 			complete:
-				passes === ROW_NAMES.length &&
-				verdict.balance.verdict === 'pass' &&
+				fails === 0 &&
+				passes + limits === ROW_NAMES.length &&
+				rowState(verdict.balance) !== 'fail' &&
 				verdict.coverage.complete,
 			taken: ordered
 				.map((row) => ({
@@ -288,6 +324,9 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 		species,
 		totals,
 		rows: REVIEW_SPECIES.length * ROW_NAMES.length,
+		passes: species.reduce((sum, line) => sum + line.passes, 0),
+		limits: species.reduce((sum, line) => sum + line.limits, 0),
+		fails: species.reduce((sum, line) => sum + line.fails, 0),
 		complete: species.filter((line) => line.complete).length,
 		faults,
 	};
@@ -345,7 +384,9 @@ export function ledgerText(ledger: Ledger): string {
 	lines.push(
 		'',
 		'P pass, F fail, V void (the camera did not frame a part the plant has), - unjudged. bal is the balance through eight angles.',
-		`Total: ${ledger.totals.pass} of ${ledger.rows} rows pass; ${ledger.totals.fail} fail, ${ledger.totals.void} void, ${ledger.totals.unjudged} unjudged. ${ledger.complete} of ${ledger.species.length} species are done.`,
+		`Rows: ${ledger.passes} pass, ${ledger.limits} stated limits, ${ledger.fails} unexplained fails. ${ledger.complete} of ${ledger.species.length} species are done, done meaning no unexplained fail.`,
+		'',
+		`Total: ${ledger.totals.pass} of ${ledger.rows} rows pass; ${ledger.totals.fail} fail, ${ledger.totals.void} void, ${ledger.totals.unjudged} unjudged.`,
 		'',
 	);
 	return lines.join('\n');
