@@ -206,6 +206,9 @@ export async function startDemo({
 		if (!counted || !at) return;
 		const share =
 			(at.total as number) > 0 ? Math.round(((at.done as number) / (at.total as number)) * 100) : 0;
+		// A finished count hides the bar: the work that it measured is done.
+		host.hidden = share >= 100;
+		if (share >= 100) return;
 		const fill = document.getElementById('demo-growth-fill');
 		const percent = document.getElementById('demo-growth-percent');
 		if (fill) fill.style.width = `${share}%`;

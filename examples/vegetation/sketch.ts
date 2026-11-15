@@ -39,9 +39,15 @@ export default defineSketch(async (ctx) => {
 
 	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.1, far: 600 });
 	// The start view, overridable from the address so a framing can be dialled in beside the page:
-	// ?cam=x,y,z sets the camera and ?look=x,y,z the point it aims at.
+	// ?cam=x,y,z sets the camera and ?look=x,y,z the point it aims at. The sketch runs in a worker,
+	// where the page's own address is what `location` holds, so the page's query is read first.
+	const query = ((): ((name: string) => string | null) => {
+		const page = typeof location === 'undefined' ? undefined : new URLSearchParams(location.search);
+		const own = new URL(import.meta.url).searchParams;
+		return (name) => page?.get(name) ?? own.get(name);
+	})();
 	const numbers = (name: string): [number, number, number] | undefined => {
-		const said = new URL(import.meta.url).searchParams.get(name);
+		const said = query(name);
 		if (!said) return undefined;
 		const parts = said.split(',').map(Number);
 		return parts.length === 3 && parts.every(Number.isFinite)
