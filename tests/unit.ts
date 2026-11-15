@@ -43,7 +43,10 @@ function runGroup(group: UnitGroup): Promise<void> {
 	// `--isolate` is not used: it gives each file a global of its own, which shrank the engine's
 	// group from 2,908 MB to 2,054 MB, but grew the group of the runner's tests from 1,220 MB to
 	// 3,822 MB and made it three times slower, so the run's peak was higher with it.
-	const factor = loadFactor();
+	// The run loads the machine itself: the lanes share the cores and the memory bandwidth from the
+	// first second, while the load average, which is a minute long, still reads idle. So a group's
+	// budget counts the lanes as load, or every early group runs on an idle machine's budget.
+	const factor = Math.max(loadFactor(), LANES);
 	const timeout = checkTimeoutMs(factor);
 	const args = [
 		'test',
