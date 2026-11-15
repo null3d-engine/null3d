@@ -553,3 +553,5 @@ measures the tier there, at 0.066 ms for the High tier's 32 steps, and its WebGL
 timer.
 
 The occlusion switch's share on this device was measured at the same head: [20261115-142527-vegetation](tested-devices/ipad-pro-13-safari/20261115-142527-vegetation.md), at 52303fe23, draws Creek High with the effect off at 85.82 ms against 87.71 with it on, so the switch buys 1.89 ms and the opaque pass costs the same either way. The row still misses its ceiling by 18.72 ms at the kinder end, so ambient occlusion is not the lever that closes it.
+
+The phone ran the same four wind-stress presets at `2aafb691c`, in Chrome 152.0.7977.54 on Android 15: [20261115-183629-wind-stress](tested-devices/galaxy-s25-sm-s931b-chrome/20261115-183629-wind-stress.md). Every preset reads the display's 30 Hz cap of 33.33 ms, so the rows hold by pacing; the GPU time inside that interval is the honest figure, 5.28, 6.82, 11.34 and 20.97 ms from Low to Ultra.
