@@ -40,8 +40,9 @@
 		"roll": -90
 	},
 	"14-petiole-section.png": {
-		"view": "cluster",
-		"pick": 0,
+		"view": "leaf-under",
+		"span": 0.06,
+		"along": 0.02,
 		"barkMask": true
 	},
 	"15-petiole-base.png": {
