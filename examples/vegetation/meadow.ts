@@ -40,8 +40,6 @@ export function createMeadow(
 	options: MeadowOptions,
 ) {
 	let planted: Piece[] = [];
-	/** Whether the meadow has been built once: its first build belongs to the sketch's own start. */
-	let grown = false;
 	/** The page's bar that shows while the meadow grows, counting the species it has finished. */
 	const growing = (() => {
 		// A sketch runs in a worker, where the page has no document, so the bar is the page's: it is
@@ -69,22 +67,30 @@ export function createMeadow(
 		const ids = options.species ?? speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
-		const first = !grown;
-		if (first) page.post('starting', { done: 0, total: ids.length });
-		else {
-			growing.begin();
-			growing.set(0, ids.length);
-		}
+		// The bar shows on the first build too, so the meadow's first plants announce their progress
+		// once the sketch has started rather than only on a regrow.
+		growing.begin();
+		growing.set(0, ids.length);
 		let done = 0;
 		/** Where one species' plant stands: its column and row in the meadow's grid. */
 		const slotOf = (index: number): [number, number] => [
 			((index % across) - (across - 1) / 2) * step,
 			(Math.floor(index / across) - (ids.length / across - 1) / 2) * step,
 		];
+		// The species load together, and every sign stands as soon as its record is in hand: the meadow
+		// is named before any plant starts to grow, so the names are there while the first build runs.
+		const modules = await Promise.all(ids.map((id) => loadSpecies(id)));
+		ids.forEach((_id, index) => {
+			const record = modules[index]?.record;
+			if (!record) return;
+			const [x, z] = slotOf(index);
+			// The sign stands beside the plant's foot, clear of its trunk.
+			plantSign(ctx, record.name, record.latin, [x + 13, z + 6]);
+		});
 		// Load, prepare and grow every species at once: the job workers run the stages side by side.
 		const prepared = await Promise.all(
 			ids.map(async (id, index) => {
-				const module = await loadSpecies(id);
+				const module = (modules[index] ?? (await loadSpecies(id))) as (typeof modules)[number];
 				// The meadow carries several species at once, and at close range every copy near the camera
 				// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
 				// level's triangles, which is what made a pan after a zoom crawl.
@@ -92,10 +98,6 @@ export function createMeadow(
 					detail: 'medium',
 					placeholders: 'missing',
 				});
-				// The sign stands as soon as the species is ready, so the meadow is named before any of
-				// its plants has grown. The sign stands beside the plant's foot, clear of its trunk.
-				const [x, z] = slotOf(index);
-				plantSign(ctx, kit.record.name, kit.record.latin, [x + 13, z + 6]);
 				const asset = await growPlant(kit, {
 					seed,
 					variant: index % Math.max(1, kit.record.variants),
@@ -106,8 +108,7 @@ export function createMeadow(
 				});
 				// Count each species as it finishes, so the bar moves while the rest still grow.
 				done++;
-				if (first) page.post('starting', { done, total: ids.length });
-				else growing.set(done, ids.length);
+				growing.set(done, ids.length);
 				return { kit, asset };
 			}),
 		);
@@ -135,6 +136,5 @@ export function createMeadow(
 			index++;
 		}
 		growing.end();
-		grown = true;
 	};
 }
