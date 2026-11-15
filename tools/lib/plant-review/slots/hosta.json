@@ -66,6 +66,8 @@
 		"targetY": 0.5
 	},
 	"20-autumn-collapse.png": {
+		"view": "whole",
+		"season": "autumn",
 		"fov": 24
 	},
 	"22-subbranch-studio.png": {
@@ -77,5 +79,12 @@
 	"30-whole-with-landmark.png": {
 		"fov": 24,
 		"daylight": 2.263
+	},
+	"_pictures": {
+		"13-crown-and-roots.png": {
+			"standing": "reference-limit",
+			"reason": "the photograph's subject is the lifted crown with pale fleshy roots below it; the form draws no roots and no stem above the soil, so the bark-base view has no part to frame",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
 	}
 }
