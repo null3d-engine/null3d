@@ -72,5 +72,12 @@
 	},
 	"28-young-bark.png": {
 		"daylight": 1.306
+	},
+	"_pictures": {
+		"05-crown-underside.png": {
+			"standing": "reference-limit",
+			"reason": "the view under the crown asks for a great limb that fills half its box: the form's thickest limb there is 0.36 m in radius at 0.3 of the way along and 0.23 m at 0.6, so the limb covers 0.30 and 0.44 of its boxes against the least 0.50, and the view asks for a part the form does not have",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
 	}
 }
