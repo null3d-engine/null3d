@@ -11,11 +11,12 @@
 		"background": "sky-meadow",
 		"meadow": true,
 		"elevation": -4.4,
-		"fill": 0.82,
-		"targetY": 0.51,
+		"fill": 0.69,
+		"targetY": 0.42,
 		"skyShare": 0.357,
 		"daylight": 1.524,
-		"fov": 24
+		"fov": 24,
+		"pick": 1
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.357,
