@@ -42,65 +42,22 @@ export function createMeadow(
 	let planted: Piece[] = [];
 	/** Whether the meadow has been built once: its first build belongs to the sketch's own start. */
 	let grown = false;
-	/** The bar that shows while the meadow grows, counting the species it has finished. */
+	/** The page's bar that shows while the meadow grows, counting the species it has finished. */
 	const growing = (() => {
-		// A sketch runs in a worker, where the page has no document, so the bar shows only on a
-		// thread that has one. The meadow grows either way.
-		const shows = typeof document !== 'undefined';
-		let box: HTMLElement | undefined;
-		let fill: HTMLElement | undefined;
-		let said: HTMLElement | undefined;
+		// A sketch runs in a worker, where the page has no document, so the bar is the page's: it is
+		// posted, drawn by the page's runner, and cleared when the last species lands.
+		let shown = false;
 		return {
 			begin(): void {
-				if (!shows || box) return;
-				box = document.createElement('div');
-				box.style.cssText = [
-					'position:fixed',
-					'left:50%',
-					'top:18px',
-					'transform:translateX(-50%)',
-					'width:min(420px,80vw)',
-					'padding:10px 14px 12px',
-					'border-radius:10px',
-					'background:rgba(16,18,20,0.86)',
-					'color:#e8eaec',
-					'font:13px/1.4 system-ui,sans-serif',
-					'letter-spacing:0.02em',
-					'z-index:20',
-					'pointer-events:none',
-				].join(';');
-				said = document.createElement('div');
-				said.textContent = 'Growing the meadow, 0%';
-				const track = document.createElement('div');
-				track.style.cssText = [
-					'margin-top:8px',
-					'height:6px',
-					'border-radius:3px',
-					'background:rgba(255,255,255,0.16)',
-					'overflow:hidden',
-				].join(';');
-				fill = document.createElement('div');
-				fill.style.cssText = [
-					'width:0%',
-					'height:100%',
-					'border-radius:3px',
-					'background:#8fbf8e',
-					'transition:width 120ms linear',
-				].join(';');
-				track.append(fill);
-				box.append(said, track);
-				document.body.append(box);
+				shown = true;
+				page.post('growing', { done: 0, total: 0 });
 			},
 			set(done: number, total: number): void {
-				const share = Math.round((done / Math.max(1, total)) * 100);
-				if (said) said.textContent = `Growing the meadow, ${share}%`;
-				if (fill) fill.style.width = `${share}%`;
+				if (shown) page.post('growing', { done, total });
 			},
 			end(): void {
-				box?.remove();
-				box = undefined;
-				fill = undefined;
-				said = undefined;
+				if (shown) page.post('growing', undefined);
+				shown = false;
 			},
 		};
 	})();
@@ -119,6 +76,11 @@ export function createMeadow(
 			growing.set(0, ids.length);
 		}
 		let done = 0;
+		/** Where one species' plant stands: its column and row in the meadow's grid. */
+		const slotOf = (index: number): [number, number] => [
+			((index % across) - (across - 1) / 2) * step,
+			(Math.floor(index / across) - (ids.length / across - 1) / 2) * step,
+		];
 		// Load, prepare and grow every species at once: the job workers run the stages side by side.
 		const prepared = await Promise.all(
 			ids.map(async (id, index) => {
@@ -130,6 +92,10 @@ export function createMeadow(
 					detail: 'medium',
 					placeholders: 'missing',
 				});
+				// The sign stands as soon as the species is ready, so the meadow is named before any of
+				// its plants has grown. The sign stands beside the plant's foot, clear of its trunk.
+				const [x, z] = slotOf(index);
+				plantSign(ctx, kit.record.name, kit.record.latin, [x + 13, z + 6]);
 				const asset = await growPlant(kit, {
 					seed,
 					variant: index % Math.max(1, kit.record.variants),
@@ -138,7 +104,7 @@ export function createMeadow(
 					sparse,
 					maxTriangles,
 				});
-				// Count each species as it finishes, so the note moves while the rest still grow.
+				// Count each species as it finishes, so the bar moves while the rest still grow.
 				done++;
 				if (first) page.post('starting', { done, total: ids.length });
 				else growing.set(done, ids.length);
@@ -150,10 +116,7 @@ export function createMeadow(
 		let index = 0;
 		for (const { kit, asset } of prepared) {
 			const materials = plantMaterials(ctx, kit, {});
-			const x = ((index % across) - (across - 1) / 2) * step;
-			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;
-			// The sign stands beside the plant's foot, clear of its trunk.
-			plantSign(ctx, kit.record.name, kit.record.latin, [x + 13, z + 6]);
+			const [x, z] = slotOf(index);
 			planted.push(
 				placePlants(
 					ctx,

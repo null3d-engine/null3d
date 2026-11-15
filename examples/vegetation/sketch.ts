@@ -24,13 +24,12 @@ export default defineSketch(async (ctx) => {
 	const day = timeOfDay('afternoon', { heading: 0.6 });
 	scene.setBackground({ sky: day.sky }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 0.8 });
-	scene.setFog({ ...day.fog, density: 0.0035 });
 	post.set({ exposure: day.exposure });
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 60 } });
 	scene.createAmbientLight(day.ambient);
 
-	// The ground: a field that reaches past the meadow's grass, so the eye finds the pasture then
-	// loses it to the haze rather than to an edge. The fog below closes the far ground to the sky.
+	// The ground: a field that reaches past the meadow's grass, so the pasture runs to the horizon
+	// rather than ending at the grass's edge.
 	scene.createMesh({
 		mesh: ctx.geometry.plane({ width: 460, height: 460 }),
 		material: ctx.materials.standard({ color: [0.3, 0.34, 0.16], roughness: 0.95 }),
@@ -39,11 +38,11 @@ export default defineSketch(async (ctx) => {
 	});
 
 	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.1, far: 600 });
-	camera.setPosition(0, 20, 66);
+	camera.setPosition(0, 42, 118);
 	scene.setActiveCamera(camera);
 	// The wheel steps a little further than the default, since a close approach makes each notch a
 	// small change in metres, and the shadows reach only as far as the meadow the camera can see.
-	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7, zoomSpeed: 1.5 });
+	const view = interact(ctx, camera, { target: [0, 4, 0], groundY: 1.7, zoomSpeed: 1.5 });
 
 	// The meadow's grass, grown by the add-on over the field that the camera frames, so the ground
 	// reads as pasture rather than as one flat colour. The cover takes the meadow grass's own blade,
@@ -52,7 +51,7 @@ export default defineSketch(async (ctx) => {
 	createGrass(ctx, {
 		height: () => 0,
 		area: { x: 0, z: 0, size: 220 },
-		count: 300_000,
+		count: 140_000,
 		seed: 11,
 		blades: 14,
 		...grassCover(meadow.record),
