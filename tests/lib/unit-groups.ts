@@ -71,6 +71,11 @@ export interface UnitGroup {
 	readonly paths: readonly string[];
 	/** Patterns under `paths` that the group leaves out, because a group of their own holds them. */
 	readonly ignore?: readonly string[];
+	/**
+	 * The seconds the group took in a whole run on the development Mac, from the run's own group
+	 * lines. A group the run does not name weighs a second, so it starts with the short work.
+	 */
+	readonly seconds?: number;
 }
 
 /**
@@ -93,29 +98,45 @@ const SPECIES_SLICES: readonly string[] = readdirSync(
  */
 const PLANT_FOLDERS: readonly string[] = ['packages/vegetation/src/lod'];
 
+/** The plant groups' measured seconds: the package's folder, its species slices in name order, and the LOD folder. */
+const PLANT_SECONDS = { folder: 356, slices: [27, 77, 135, 79], lod: 430 } as const;
+
+/** The seconds each other package's folder took in a whole run; a folder not named here weighs nothing. */
+const PACKAGE_SECONDS: Readonly<Record<string, number>> = { cli: 23, engine: 18, 'vite-plugin': 2 };
+
 /** The groups one package folder takes: the folder, and a group per slice that the folder leaves out. */
 function groupsOfPackage(name: string): UnitGroup[] {
 	const paths = [`packages/${name}`];
-	if (name !== 'vegetation' || SPECIES_SLICES.length === 0) return [{ paths }];
+	if (name !== 'vegetation' || SPECIES_SLICES.length === 0)
+		return [{ paths, seconds: PACKAGE_SECONDS[name] ?? 0 }];
 	const ignore = [
 		...SPECIES_SLICES.map((slice) => `**/${slice.split('/').pop()}`),
 		...PLANT_FOLDERS.map((folder) => `**/${folder.split('/').slice(-2).join('/')}/**`),
 	];
 	return [
-		{ paths, ignore },
-		...SPECIES_SLICES.map((slice) => ({ paths: [slice] })),
-		...PLANT_FOLDERS.map((folder) => ({ paths: [folder] })),
+		{ paths, ignore, seconds: PLANT_SECONDS.folder },
+		...SPECIES_SLICES.map((slice, index) => ({
+			paths: [slice],
+			seconds: PLANT_SECONDS.slices[index] ?? 0,
+		})),
+		...PLANT_FOLDERS.map((folder) => ({ paths: [folder], seconds: PLANT_SECONDS.lod })),
 	];
 }
 
 /**
  * The groups of the run: the tools, each package, the benchmark's scenes and pages, the test
  * helpers, and every demo folder that holds a test file.
+ *
+ * They go longest first, because a lane takes the next group as soon as the one it holds ends: with
+ * the long groups first both lanes stay busy to the end, and with them last one lane empties while
+ * the other still works.
  */
-export const UNIT_GROUPS: readonly UnitGroup[] = [
-	{ paths: ['tools'] },
-	...readdirSync(join(REPO_ROOT, 'packages')).flatMap((name) => groupsOfPackage(name)),
-	{ paths: ['bench/scenes', 'bench/pages', 'bench/lib'] },
-	{ paths: ['tests/lib'] },
-	{ paths: foldersHoldingTests('examples').map((name) => `examples/${name}`) },
-];
+export const UNIT_GROUPS: readonly UnitGroup[] = (
+	[
+		{ paths: ['tools'], seconds: 66 },
+		...readdirSync(join(REPO_ROOT, 'packages')).flatMap((name) => groupsOfPackage(name)),
+		{ paths: ['bench/scenes', 'bench/pages', 'bench/lib'], seconds: 11 },
+		{ paths: ['tests/lib'], seconds: 30 },
+		{ paths: foldersHoldingTests('examples').map((name) => `examples/${name}`), seconds: 25 },
+	] satisfies UnitGroup[]
+).sort((a, b) => (b.seconds ?? 1) - (a.seconds ?? 1));
