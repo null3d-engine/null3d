@@ -1,0 +1,26 @@
+{
+	"10-leaf-margin-detail.png": {
+		"bottom": 0.9661
+	},
+	"11-single-leaf-upper.png": {
+		"bottom": 0.8302
+	},
+	"12-single-leaf-underside.png": {
+		"bottom": 0.8362
+	},
+	"21-branch-studio.png": {
+		"bottom": 0.661
+	},
+	"22-subbranch-studio.png": {
+		"bottom": 0.5296
+	},
+	"23-leaf-cluster-studio.png": {
+		"bottom": 0.6422
+	},
+	"24-leaf-texture-upper.png": {
+		"bottom": 0.8254
+	},
+	"25-leaf-texture-underside.png": {
+		"bottom": 0.8288
+	}
+}
