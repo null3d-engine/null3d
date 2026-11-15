@@ -5,6 +5,7 @@
 // the species' range of 5 to 10; several full leaves read on still 21 at full size are 8 to 9. A
 // piece is written in shares of its photograph's height and sized by the leaf's share of that
 // height.
+import { cos, radians } from '../../core/math';
 import type { PieceLeaf, PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
 /** A leaf's length in metres. */
@@ -23,7 +24,7 @@ const CONTOUR_WIDTH = 0.75;
  * breadth below is widened by the same share.
  */
 const PIECE_FOLD = 35;
-const FOLD_FLATTEN = Math.cos((PIECE_FOLD * Math.PI) / 180);
+const FOLD_FLATTEN = cos(radians(PIECE_FOLD));
 
 /**
  * The leaf the pieces wear: 9 centimetres long, with the record's share of spread, and drawn at the
