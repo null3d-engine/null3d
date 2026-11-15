@@ -286,6 +286,12 @@ The S25's run: [20261102-132333-vegetation](tested-devices/galaxy-s25-sm-s931b-c
 Five pages passed, and none was skipped. Its High row reads 16.68 ms over the 208.3 ceiling. That
 reading did not hold: the phone was hot, and its later High runs read lower.
 
+A later run draws the landed scene at all four presets:
+[20261115-113547-vegetation](tested-devices/galaxy-s25-sm-s931b-chrome/20261115-113547-vegetation.md),
+at `1c6785724` in Chrome 152.0.7977.54 on Android 15. Low, Medium and High read the display's own
+30 Hz cap of 33.33 ms, and Ultra reads 66.65 against its 499.8 ceiling, so every row holds. The
+three at the cap hold by pacing rather than by work: the display sets the interval.
+
 Two later runs put the final scene at High, which carries the wildflower clumps. One had the trunks
 in the depth prepass and one had them out. Both read a 208.29 ms median frame interval against the
 208.3 ceiling, so the frame measure passes. Their GPU medians are 231.67 and 224.85 ms, and the
