@@ -313,16 +313,16 @@ export const record: Species = {
 	},
 	bark: {
 		// Still 26: thin, smooth, mottled silver-grey bark with no fissures. The shallow figure comes
-		// from the texture's own measured depth. Still 15 photographs the trunk 7.4 light units above
-		// the measured colour, while still 16's great limb already reads light: only the trunk takes
-		// the lift, and a limb stops short of its girth.
+		// from the texture's own measured depth. The trunk's photographs stand its bark in shade, under
+		// the albedo a copy stand shows, so a close view brings its own light; the lift raises the bole
+		// under the whole-plant light, where the shaded close views cannot reach, and keeps the bark's
+		// grey rather than a cast of its own.
 		zones: [
-			// The trunk's masked close view reads 0.8 light, 2.7 short on red and 2.1 long on yellow,
-			// so its lift carries a warmer, less yellow cast.
-			{ layer: 0, by: 'radius', from: 0.45, to: 5, blend: 0.05, tint: [1.48, 1.4, 1.58] },
-			// The limb's masked view reads 1.7 light and 5.0 short on yellow, so the thinner wood
-			// keeps a darker, yellower cast.
-			{ layer: 0, by: 'radius', from: 0, to: 0.45, blend: 0.05, tint: [0.95, 0.93, 0.72] },
+			// The trunk's bark is a neutral silver-grey: its lift raises the lightness and turns no hue.
+			{ layer: 0, by: 'radius', from: 0.5, to: 5, blend: 0.05, tint: [1.45, 1.45, 1.45] },
+			// A limb's masked view reads 1.7 light and 5.0 short on yellow, so the wood below the bole's
+			// own girth keeps a darker, yellower cast.
+			{ layer: 0, by: 'radius', from: 0, to: 0.5, blend: 0.05, tint: [0.95, 0.93, 0.72] },
 			// Still 14: the foot's bark reads lighter and yellower than the photograph's grey. The
 			// cast fades over 0.2 m centred at 1.1 m, so the fade ends at 1.2 m where the mid-trunk
 			// view's frame begins: the foot gains the cast without a hard seam and that view keeps
