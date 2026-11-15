@@ -74,12 +74,13 @@ jobs:
     runs-on: ubuntu-latest
     # The unit suite is this job's longest step and it has grown: eight minutes or more on the
     # milestone branch, where the same job took 4.4 minutes on 4fb343293. Ten minutes cut the
-    # suite off mid-run and cancelled the job, so the limit leaves room for a slower day. Moving
-    # the unit run into a job of its own is the better shape and is noted, not built: the suite's
-    # 536 seconds of test time sit in 5,710 passing tests, of which 21 take over five seconds and
-    # hold 217 between them, so a split buys isolation from this limit and takes no time off the
-    # suite itself.
-    timeout-minutes: 20
+    # suite off mid-run and cancelled the job. The plant suite's own group then reached fifteen to
+    # sixteen minutes on the runner, which with this job's four minutes of doc checks passed twenty
+    # and cancelled a push. The plant package's heaviest folder takes a group of its own now, but
+    # the run's floor is its total time over its two lanes, not its longest group, so the split
+    # alone leaves the step at the limit's edge. The limit carries the measured step with room for a
+    # slower day: a red or hanging job still ends, a suite that needs its time does not.
+    timeout-minutes: 25
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
