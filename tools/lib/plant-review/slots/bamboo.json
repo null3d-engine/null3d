@@ -8,7 +8,6 @@
 		"daylight": 2.4
 	},
 	"03-whole-from-below.png": {
-		"stand": 6,
 		"lod": 0,
 		"skyShare": 0.6,
 		"daylight": 2.2
@@ -19,7 +18,6 @@
 		"daylight": 1.8
 	},
 	"05-canopy-underside.png": {
-		"stand": 6,
 		"lod": 0,
 		"skyShare": 0.6,
 		"daylight": 2.2
@@ -89,5 +87,27 @@
 		"sunAzimuth": null,
 		"sunRise": null,
 		"pick": 1
+	},
+	"_pictures": {
+		"03-whole-from-below.png": {
+			"standing": "stand",
+			"reason": "many culms rise round the camera from the ground inside a stand, a picture of many plants that one record cannot grow",
+			"ruling": "the owner's plant review standard rules that a stand picture is not judged until the review page plants a stand, and .dev/plant-review.md names the bamboo's 03, 05 and 06 as stands"
+		},
+		"05-canopy-underside.png": {
+			"standing": "stand",
+			"reason": "the view looks up through the canopy of many culms, a picture of a stand that one record cannot grow",
+			"ruling": "the owner's plant review standard rules that a stand picture is not judged until the review page plants a stand, and .dev/plant-review.md names the bamboo's 03, 05 and 06 as stands"
+		},
+		"06-inside-thicket.png": {
+			"standing": "stand",
+			"reason": "the camera stands inside a thicket of many culms, a picture of a stand that one record cannot grow",
+			"ruling": "the owner's plant review standard rules that a stand picture is not judged until the review page plants a stand, and .dev/plant-review.md names the bamboo's 03, 05 and 06 as stands"
+		},
+		"19-new-shoot.png": {
+			"standing": "second-form",
+			"reason": "the spring spear is the species' young form; the base record carries it as a form, and the directed clump drops its forms, so this plant cannot draw it",
+			"ruling": "the owner's plant review standard rules that a picture of another form judges that form, not the primary plant; the bamboo's reference index names 19 the young form"
+		}
 	}
 }
