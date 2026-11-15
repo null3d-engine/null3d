@@ -93,5 +93,17 @@
 		"foot": [0.21, 0.123, 0.079],
 		"collar": [0.21, 0.107, 0.062],
 		"reach": 0.85
+	},
+	"_pictures": {
+		"16-stem-cross-section.png": {
+			"standing": "reference-limit",
+			"reason": "the section view asks for a trunk's cross-section, and a tuft has no trunk: its stems are flowering stalks, and the tool reads no stem reaching a tenth of the plant's height",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"20-hanging-spikes-habit.png": {
+			"standing": "reference-limit",
+			"reason": "the limb view asks for a great limb, and a tuft has none: the picture is drawn as the whole plant, and its leaf colour of 22.2 steps measures the whole plant's leaves against the photograph's",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
 	}
 }
