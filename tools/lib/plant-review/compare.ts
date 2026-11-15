@@ -2480,6 +2480,17 @@ function referencePicture(path: string): Rgba {
 	return onColour(readImage(path), [255, 255, 255]);
 }
 
+/** A picture's set-aside standing, with the reason it does not judge the primary plant. */
+export function setAsideOf(
+	note: PictureNote | undefined,
+): { readonly kind: Standing; readonly reason: string } | undefined {
+	if (note?.standing === undefined) return undefined;
+	return {
+		kind: note.standing,
+		reason: note.standing === 'stand' ? standReason(note) : (note.reason ?? ''),
+	};
+}
+
 /**
  * Whether the reference pass's crop share checks a picture's subject. A picture whose subject the
  * share bounds is checked by that share, whatever its view is called: a leaf close-up is cut out
@@ -2591,11 +2602,13 @@ export function compareStills(
 			});
 		};
 		const pictureNote = pictures[slot.file];
-		// A photograph of a stand needs several plants, which one plant cannot draw: it is not judged.
-		if (pictureNote?.standing === 'stand') {
-			unread({ standing: { kind: 'stand', reason: standReason(pictureNote) } }, [
+		// A picture the review data sets aside does not judge the primary plant, whether it shows a
+		// stand, another form or a limit of the reference: it is not read against the plant.
+		const setAside = setAsideOf(pictureNote);
+		if (setAside !== undefined) {
+			unread({ standing: setAside }, [
 				'NOT JUDGED',
-				'A STAND OF PLANTS',
+				setAside.kind === 'stand' ? 'A STAND OF PLANTS' : 'SET ASIDE',
 			]);
 			continue;
 		}

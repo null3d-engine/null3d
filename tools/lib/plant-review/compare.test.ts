@@ -47,6 +47,7 @@ import {
 	rubricBand,
 	rubricFrames,
 	sameDrawing,
+	setAsideOf,
 	sheathDifference,
 	spread,
 } from './compare.ts';
@@ -1139,6 +1140,25 @@ describe("a whole view's sky gap, read like with like", () => {
 		expect(cropChecksSubject(undefined, true)).toBe(false);
 		// A share with no picture box to read it against checks nothing.
 		expect(cropChecksSubject(0.8491, false)).toBe(false);
+	});
+
+	test('sets a picture aside by any standing before it is read against the plant', () => {
+		// A recorded limit of the reference and another form both leave the plant's account, as a
+		// stand does; the compare must not reach the plant fault first.
+		expect(
+			setAsideOf({
+				standing: 'reference-limit',
+				reason: 'a limit of the reference',
+				ruling: 'lead',
+			}),
+		).toEqual({ kind: 'reference-limit', reason: 'a limit of the reference' });
+		expect(
+			setAsideOf({ standing: 'second-form', reason: 'another form', ruling: 'standard' }),
+		).toEqual({ kind: 'second-form', reason: 'another form' });
+		expect(setAsideOf({ standing: 'stand', reason: 'many plants' })?.kind).toBe('stand');
+		// A picture the review data does not set aside is read as before.
+		expect(setAsideOf({ outline: 'no plain background' })).toBeUndefined();
+		expect(setAsideOf(undefined)).toBeUndefined();
 	});
 });
 
