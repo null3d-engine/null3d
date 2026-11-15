@@ -14,53 +14,79 @@
 	},
 	"08-frond-division.png": {
 		"view": "branch",
-		"turn": 270
+		"turn": 270,
+		"piece": "frond-arched",
+		"alone": true,
+		"span": 0.5,
+		"along": 0.5
 	},
 	"09-pinna.png": {
 		"view": "leaf-upper",
 		"background": "studio-grey",
-		"roll": 141
+		"roll": 141,
+		"leaves": 1
 	},
 	"12-single-pinna-upper.png": {
-		"roll": 141
+		"roll": 136,
+		"leaves": 1
 	},
 	"13-single-pinna-underside.png": {
-		"roll": 141
+		"roll": 136,
+		"leaves": 1
+	},
+	"19-sori.png": {
+		"view": "leaf-under",
+		"roll": 141,
+		"leaves": 1
+	},
+	"24-leaf-texture-upper.png": {
+		"roll": 136,
+		"leaves": 1
+	},
+	"25-leaf-texture-underside.png": {
+		"roll": 136,
+		"leaves": 1
+	},
+	"20-dead-frond-skirt.png": {
+		"view": "whole"
+	},
+	"10-pinnules.png": {
+		"turn": 90,
+		"piece": "frond-arched",
+		"alone": true,
+		"span": 0.2,
+		"along": 0.5
+	},
+	"11-frond-group.png": {
+		"turn": 270,
+		"piece": "frond-arched",
+		"alone": true,
+		"span": 0.4,
+		"along": 0.7
+	},
+	"23-leaf-cluster-studio.png": {
+		"turn": 270,
+		"piece": "frond-arched",
+		"alone": true,
+		"span": 0.25,
+		"along": 0.75
+	},
+	"14-trunk-base.png": {
+		"view": "bark-mid",
+		"barkHeight": 0.25,
+		"span": 0.9,
+		"barkMask": true,
+		"daylight": 1.44
 	},
 	"15-trunk-mid.png": {
 		"span": 0.45
 	},
 	"16-trunk-under-crown.png": {
 		"view": "bark-mid",
-		"along": 0.94,
 		"span": 0.45
-	},
-	"19-sori.png": {
-		"view": "leaf-under",
-		"roll": 141
-	},
-	"20-dead-frond-skirt.png": {
-		"view": "whole"
-	},
-	"24-leaf-texture-upper.png": {
-		"roll": 141
-	},
-	"25-leaf-texture-underside.png": {
-		"roll": 141
-	},
-	"14-trunk-base.png": {
-		"view": "bark-mid",
-		"along": 0.03,
-		"span": 0.9
 	},
 	"26-bark-texture.png": {
 		"span": 0.45
-	},
-	"10-pinnules.png": {
-		"turn": 90
-	},
-	"11-frond-group.png": {
-		"turn": 270
 	},
 	"21-branch-studio.png": {
 		"piece": "frond-arched",
@@ -72,7 +98,16 @@
 		"span": 2,
 		"along": 0.5
 	},
-	"23-leaf-cluster-studio.png": {
-		"turn": 270
+	"_pictures": {
+		"05-crown-underside.png": {
+			"standing": "reference-limit",
+			"reason": "the picture looks up into the crown along a great limb, and the tree fern's form has no limbs: the wood at the limb's 0.6 point covers 0.42 of its box against the contract's least 0.50",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"07-frond-leaving-trunk.png": {
+			"standing": "reference-limit",
+			"reason": "the picture asks for a great limb leaving the trunk, and the tree fern's form has no limbs: the thickest is 0.11 of the trunk's thickness against the contract's 0.15",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
 	}
 }
