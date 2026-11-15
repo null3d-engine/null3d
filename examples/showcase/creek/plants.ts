@@ -5,13 +5,25 @@
 // past the distance where a tree spans a few pixels; the hillsides carry ground cover and no trees.
 // Fallen lengths of dead wood lie where the rules leave them. Each species draws as the plant
 // core's stand-in, at its size and in its colours, until the species lands in the add-on.
-import { type MeshArrays, quat, type SketchContext } from '@null3d/engine';
+import { type MeshArrays, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
 import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../../lib/plants';
 import { random } from '../../lib/procedural';
 import { creekStandIn } from '../../lib/stand-ins';
 import { placeValley, SEED, SPECIES, VARIANTS } from './valley';
+
+/**
+ * The most triangles one tree may draw at each preset. The add-on shares a tree's ceiling across
+ * its parts by their share of the visible outline, so a tree keeps its silhouette as it grows
+ * cheaper. Ground cover grows without a ceiling.
+ */
+const TREE_TRIANGLES: Record<QualityPreset, number> = {
+	low: 400,
+	medium: 700,
+	high: 1100,
+	ultra: 1500,
+};
 
 /** The fallen lengths of dead wood: their longest and shortest length, and their girth, in meters. */
 const LOG_LONG = 4.5;
@@ -138,6 +150,7 @@ export async function createPlants(
 ): Promise<Plants> {
 	const points = placeValley(options);
 	const grouped = groupBySpecies(points);
+	const treeTriangles = TREE_TRIANGLES[ctx.quality.preset];
 	layDeadWood(ctx, points);
 	const planted = await Promise.all(
 		SPECIES.map((species) => {
@@ -153,6 +166,7 @@ export async function createPlants(
 				wind,
 				far: species.canopy,
 				castShadows: true,
+				...(species.canopy && { maxTriangles: treeTriangles }),
 			});
 		}),
 	);

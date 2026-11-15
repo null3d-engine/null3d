@@ -55,6 +55,12 @@ export interface PlantSpeciesOptions {
 	/** The camera's vertical field of view in degrees, which sets the switch distances. */
 	readonly fov?: number;
 	/**
+	 * The most triangles one copy may draw at any level. The add-on shares the ceiling across the
+	 * plant's parts by their share of the visible outline, so the plant keeps its shape as it grows
+	 * cheaper. A stand-in species grows as it is.
+	 */
+	readonly maxTriangles?: number;
+	/**
 	 * Keep this page's named stand-in even after the species lands. A page sets this when its
 	 * approved picture was drawn with the stand-in, so the picture stays comparable until the page
 	 * moves to the species. It is the page's own hold on its stand-in, not a fallback for a species
@@ -143,7 +149,13 @@ export async function plantSpecies(
 	const grown = (async () => {
 		const assets = await Promise.all(
 			Array.from({ length: variants }, (_, variant) =>
-				growPlant(kit, { seed: options.seed, variant, near: true, sparse: DEMO_SPARSENESS }),
+				growPlant(kit, {
+					seed: options.seed,
+					variant,
+					near: true,
+					sparse: DEMO_SPARSENESS,
+					...(options.maxTriangles !== undefined && { maxTriangles: options.maxTriangles }),
+				}),
 			),
 		);
 		const far = options.far
