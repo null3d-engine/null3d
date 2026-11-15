@@ -57,7 +57,9 @@ const branches: FrameBranchRule = {
 	vary: 0.06,
 	least: 0.08,
 	most: 0.5,
-	radius: 0.45,
+	// Still 08: a branch leaves at about half its limb's girth, which gives the crown the dominant
+	// fork its photograph shows; under half, the review reads the division as a thinner one.
+	radius: 0.53,
 	taper: 0.3,
 	bends: [
 		{
