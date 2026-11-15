@@ -1517,3 +1517,15 @@ describe('the fork a picture frames in its span', () => {
 		expect(shot.facts.fork).toBe(0);
 	});
 });
+
+// Thickness is what makes a limb great, so a thick fork on a higher branch order beats a thin one
+// on the trunk. Sorting by order first showed no fork at all where a species' only even fork sat
+// on a higher order, which voided whole pictures.
+describe('the fork a picture frames by thickness', () => {
+	test('takes the thick even fork over a thin one of a lower order', () => {
+		const thin = forkOf({ at: [0, 3, 0], order: 1, radius: 0.05, armRadii: [0.04, 0.03] });
+		const thick = forkOf({ at: [0, 9, 0], order: 3, radius: 0.2, armRadii: [0.15, 0.14] });
+		const shot = shotOf(forkShot(tree({ forks: [thin, thick] }), TALL));
+		expect(shot.facts.fork).toBe(1);
+	});
+});
