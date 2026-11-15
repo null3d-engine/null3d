@@ -185,7 +185,7 @@ const module = await loadSpecies(named);
 await loadPlantCode(module.record);
 const season = (seasonName as Season | undefined) ?? module.record.seasons.default;
 const build = (): MeshHash => {
-	const kit = buildKitNow(module, { detail: DETAIL, placeholders: 'missing' });
+	const kit = buildKitNow(module, { detail: DETAIL, placeholders: 'missing', season });
 	const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true, season });
 	return meshHash(kit, asset);
 };

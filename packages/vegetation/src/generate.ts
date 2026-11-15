@@ -155,6 +155,12 @@ export interface KitOptions {
 	/** The mesh tier; high by default. */
 	readonly detail?: Detail;
 	/**
+	 * The season the kit is built for; the record's own when not given. A plant whose crown is drawn
+	 * from branch-end pieces takes its leaves from those pieces rather than from the shoots the grow
+	 * places, so the kit must know the season the page shows.
+	 */
+	readonly season?: Season;
+	/**
 	 * Grow the stand-in of every stage, as the stand-in species that scenes place do; or with
 	 * `'missing'`, grow each built stage and a stand-in only for a stage that is not built yet.
 	 */
@@ -409,6 +415,9 @@ function stage<T>(
  * @param record The species record.
  * @param manifest The texture manifest.
  * @param detail The mesh tier.
+ * @param cutting The part a cutting's kit builds, or false for the plant's.
+ * @param season The season the kit is built for. A kit built for the record's own season keeps the
+ *   key it had before seasons reached the kit, so a summer kit is the same kit it always was.
  * @returns The key.
  * @category api/vegetation
  */
@@ -417,9 +426,11 @@ export function kitKey(
 	manifest: TextureManifest,
 	detail: Detail,
 	cutting: boolean | CuttingPart = false,
+	season?: Season,
 ): string {
+	const seasonKey = season === undefined || season === record.seasons.default ? '' : `:${season}`;
 	return hashText(
-		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${cutting ? `:cutting${typeof cutting === 'string' ? `:${cutting}` : ''}` : ''}`,
+		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${seasonKey}${cutting ? `:cutting${typeof cutting === 'string' ? `:${cutting}` : ''}` : ''}`,
 	);
 }
 
@@ -492,13 +503,18 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			: undefined;
 	if (record.shoots || written) {
 		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
+		// The season reaches a piece-crowned plant here and nowhere else: its crown is drawn from
+		// these pieces rather than from shoot rows, so a plant whose pieces are always leafy shows a
+		// summer crown whatever season is asked for. A cutting keeps its leafy pieces, because a cut
+		// piece is its studio photograph's.
+		const season = options.season ?? record.seasons.default;
 		const uncarded = written
 			? writtenPieces(written).map(kitPiece)
 			: stage(
 					placeholders,
 					() =>
 						pieces
-							? piecesOf(record, manifest, pieces, false).map(kitPiece)
+							? piecesOf(record, manifest, pieces, !inLeaf(record, season, 1, 1)).map(kitPiece)
 							: shootPrototypes(record, manifest, leavesByTier, cutting !== false),
 					() => placeholderPrototypes(record, leavesByTier),
 				);
@@ -543,7 +559,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	return {
 		record,
 		manifest,
-		key: kitKey(record, manifest, detail, cutting),
+		key: kitKey(record, manifest, detail, cutting, options.season),
 		detail,
 		box,
 		prototypes,
