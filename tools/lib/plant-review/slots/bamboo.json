@@ -53,6 +53,12 @@
 		"daylight": 1.0,
 		"lamp": "#fff3d8"
 	},
+	"15-culm-node.png": {
+		"daylight": 1.08
+	},
+	"26-bark-texture.png": {
+		"daylight": 1.72
+	},
 	"17-culm-taper.png": {
 		"lod": 0,
 		"skyShare": 0.3,
