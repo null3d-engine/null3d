@@ -88,34 +88,46 @@ export function createMeadow(
 			plantSign(ctx, record.name, record.latin, [x + 13, z + 6]);
 		});
 		// Load, prepare and grow every species at once: the job workers run the stages side by side.
+		// One species that fails to grow is named and left out; it must not hold the meadow or its bar.
 		const prepared = await Promise.all(
 			ids.map(async (id, index) => {
-				const module = (modules[index] ?? (await loadSpecies(id))) as (typeof modules)[number];
-				// The meadow carries several species at once, and at close range every copy near the camera
-				// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
-				// level's triangles, which is what made a pan after a zoom crawl.
-				const kit = await prepareSpecies(ctx, module, {
-					detail: 'medium',
-					placeholders: 'missing',
-				});
-				const asset = await growPlant(kit, {
-					seed,
-					variant: index % Math.max(1, kit.record.variants),
-					near: true,
-					season,
-					sparse,
-					maxTriangles,
-				});
-				// Count each species as it finishes, so the bar moves while the rest still grow.
-				done++;
-				growing.set(done, ids.length);
-				return { kit, asset };
+				try {
+					const module = (modules[index] ?? (await loadSpecies(id))) as (typeof modules)[number];
+					// The meadow carries several species at once, and at close range every copy near the camera
+					// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
+					// level's triangles, which is what made a pan after a zoom crawl.
+					const kit = await prepareSpecies(ctx, module, {
+						detail: 'medium',
+						placeholders: 'missing',
+					});
+					const asset = await growPlant(kit, {
+						seed,
+						variant: index % Math.max(1, kit.record.variants),
+						near: true,
+						season,
+						sparse,
+						maxTriangles,
+					});
+					return { kit, asset };
+				} catch (error) {
+					console.error(`the meadow could not grow ${id}`, error);
+					return undefined;
+				} finally {
+					// Count each species as it finishes, so the bar moves while the rest still grow.
+					done++;
+					growing.set(done, ids.length);
+				}
 			}),
 		);
 		// Make the materials and place the copies in the registry's order, so the signs, the objects and
 		// the draws that follow from them keep their order.
 		let index = 0;
-		for (const { kit, asset } of prepared) {
+		for (const grown of prepared) {
+			if (!grown) {
+				index++;
+				continue;
+			}
+			const { kit, asset } = grown;
 			const materials = plantMaterials(ctx, kit, {});
 			const [x, z] = slotOf(index);
 			planted.push(

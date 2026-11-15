@@ -54,8 +54,8 @@ export default defineSketch(async (ctx) => {
 			? [parts[0] as number, parts[1] as number, parts[2] as number]
 			: undefined;
 	};
-	const start = numbers('cam') ?? [0, 42, 118];
-	const aim = numbers('look') ?? [0, 4, 0];
+	const start = numbers('cam') ?? [0, 50, 140];
+	const aim = numbers('look') ?? [0, 0, 0];
 	camera.setPosition(...start);
 	scene.setActiveCamera(camera);
 	// The wheel steps a little further than the default, since a close approach makes each notch a
