@@ -69,7 +69,8 @@
 	},
 	"15-bark-mid-stem.png": {
 		"span": 0.4,
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 0.94
 	},
 	"16-bark-on-branch.png": {
 		"view": "bark-limb",
@@ -121,6 +122,24 @@
 		"daylight": 2.4
 	},
 	"14-base-and-roots.png": {
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 1.08
+	},
+	"_pictures": {
+		"05-crown-underside.png": {
+			"standing": "reference-limit",
+			"reason": "the view asks for a crown clear of the ground with a great limb to look up at; this form's foliage reaches the soil, so it has no crown underside for the camera to stand under",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"07-stems-leaving-base.png": {
+			"standing": "reference-limit",
+			"reason": "the limb where it leaves the trunk covers 0.00 of its box against the least 0.60, and the wood between trunk and limb 0.00 against 0.90; this form's stems leave the soil together, so it has no single bole for a junction",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"26-bark-texture.png": {
+			"standing": "reference-limit",
+			"reason": "the bark covers 0.30 of its box against the least 0.90; the view asks for the bark of a single trunk at mid-height, and this form's wood stands as a stool of stems with no bole to hold edge to edge",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
 	}
 }
