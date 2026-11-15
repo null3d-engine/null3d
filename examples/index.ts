@@ -80,13 +80,45 @@ function rememberNavScroll(): void {
 	);
 }
 
-/** A demo's title, then its scene as a smaller sub-title under it, on its own line. */
+/** A demo's title, then its scene as a smaller sub-title under it, on its own line, and a bar that
+ * shows the progress of work the scene does after its start, such as regrowing a meadow. */
 function heading(demo: Demo): (string | HTMLElement)[] {
 	const name = element('span', demo.title);
 	name.className = 'name';
 	const scene = element('span', demo.scene);
 	scene.className = 'scene';
-	return [name, scene];
+	const growth = element('span');
+	growth.className = 'growth';
+	growth.id = 'demo-growth';
+	growth.hidden = true;
+	growth.style.cssText = ['display:flex', 'align-items:center', 'gap:8px', 'margin-top:6px'].join(
+		';',
+	);
+	const track = element('span');
+	track.style.cssText = [
+		'flex:1',
+		'height:4px',
+		'border-radius:2px',
+		'background:rgba(255,255,255,0.18)',
+		'overflow:hidden',
+	].join(';');
+	const fill = element('span');
+	fill.id = 'demo-growth-fill';
+	fill.style.cssText = [
+		'display:block',
+		'width:0%',
+		'height:100%',
+		'border-radius:2px',
+		'background:#8fbf8e',
+		'transition:width 120ms linear',
+	].join(';');
+	track.append(fill);
+	const percent = element('span');
+	percent.id = 'demo-growth-percent';
+	percent.textContent = '0%';
+	percent.style.cssText = 'font-variant-numeric:tabular-nums;font-size:11px;opacity:0.8';
+	growth.append(track, percent);
+	return [name, scene, growth];
 }
 
 /** Lists the demos in the sidebar, group by group, and marks the one that runs. */

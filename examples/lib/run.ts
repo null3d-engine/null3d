@@ -194,69 +194,23 @@ export async function startDemo({
 	// setup runs rather than all at once at the end: the overlay follows the scene's own progress.
 	/**
 	 * The bar a scene posts for work it does after its start, such as regrowing its meadow. It stands
-	 * over the canvas at the top, filled as the work's own count moves, and is removed when the scene
-	 * posts no count.
+	 * in the demo's title under its scene line, filled as the work's own count moves and showing the
+	 * percentage beside it, and it is hidden when the scene posts no count.
 	 */
-	const growingBar = (() => {
-		let box: HTMLElement | undefined;
-		let fill: HTMLElement | undefined;
-		let said: HTMLElement | undefined;
-		const clear = (): void => {
-			box?.remove();
-			box = undefined;
-			fill = undefined;
-			said = undefined;
-		};
-		return (data: unknown): void => {
-			const at = data as { done?: unknown; total?: unknown } | undefined;
-			if (!at || typeof at.done !== 'number' || typeof at.total !== 'number') {
-				clear();
-				return;
-			}
-			if (!box) {
-				box = document.createElement('div');
-				box.style.cssText = [
-					'position:fixed',
-					'left:50%',
-					'top:18px',
-					'transform:translateX(-50%)',
-					'width:min(420px,80vw)',
-					'padding:10px 14px 12px',
-					'border-radius:10px',
-					'background:rgba(16,18,20,0.86)',
-					'color:#e8eaec',
-					'font:13px/1.4 system-ui,sans-serif',
-					'letter-spacing:0.02em',
-					'z-index:20',
-					'pointer-events:none',
-				].join(';');
-				said = document.createElement('div');
-				const track = document.createElement('div');
-				track.style.cssText = [
-					'margin-top:8px',
-					'height:6px',
-					'border-radius:3px',
-					'background:rgba(255,255,255,0.16)',
-					'overflow:hidden',
-				].join(';');
-				fill = document.createElement('div');
-				fill.style.cssText = [
-					'width:0%',
-					'height:100%',
-					'border-radius:3px',
-					'background:#8fbf8e',
-					'transition:width 120ms linear',
-				].join(';');
-				track.append(fill);
-				box.append(said, track);
-				document.body.append(box);
-			}
-			const share = at.total > 0 ? Math.round((at.done / at.total) * 100) : 0;
-			if (said)
-				said.textContent = at.total > 0 ? `Growing the meadow, ${share}%` : 'Growing the meadow…';
-			if (fill) fill.style.width = `${share}%`;
-		};
-	})();
+	const growingBar = (data: unknown): void => {
+		const at = data as { done?: unknown; total?: unknown } | undefined;
+		const host = document.getElementById('demo-growth');
+		if (!host) return;
+		const counted = at !== undefined && typeof at.done === 'number' && typeof at.total === 'number';
+		host.hidden = !counted;
+		if (!counted || !at) return;
+		const share =
+			(at.total as number) > 0 ? Math.round(((at.done as number) / (at.total as number)) * 100) : 0;
+		const fill = document.getElementById('demo-growth-fill');
+		const percent = document.getElementById('demo-growth-percent');
+		if (fill) fill.style.width = `${share}%`;
+		if (percent) percent.textContent = `${share}%`;
+	};
 	const handleMessage = (type: string, data: unknown): void => {
 		if (type === 'loading') {
 			if (!firstFrame) lastLoadingAt = performance.now();

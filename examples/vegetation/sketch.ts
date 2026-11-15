@@ -38,11 +38,23 @@ export default defineSketch(async (ctx) => {
 	});
 
 	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.1, far: 600 });
-	camera.setPosition(0, 42, 118);
+	// The start view, overridable from the address so a framing can be dialled in beside the page:
+	// ?cam=x,y,z sets the camera and ?look=x,y,z the point it aims at.
+	const numbers = (name: string): [number, number, number] | undefined => {
+		const said = new URL(import.meta.url).searchParams.get(name);
+		if (!said) return undefined;
+		const parts = said.split(',').map(Number);
+		return parts.length === 3 && parts.every(Number.isFinite)
+			? [parts[0] as number, parts[1] as number, parts[2] as number]
+			: undefined;
+	};
+	const start = numbers('cam') ?? [0, 42, 118];
+	const aim = numbers('look') ?? [0, 4, 0];
+	camera.setPosition(...start);
 	scene.setActiveCamera(camera);
 	// The wheel steps a little further than the default, since a close approach makes each notch a
 	// small change in metres, and the shadows reach only as far as the meadow the camera can see.
-	const view = interact(ctx, camera, { target: [0, 4, 0], groundY: 1.7, zoomSpeed: 1.5 });
+	const view = interact(ctx, camera, { target: aim, groundY: 1.7, zoomSpeed: 1.5 });
 
 	// The meadow's grass, grown by the add-on over the field that the camera frames, so the ground
 	// reads as pasture rather than as one flat colour. The cover takes the meadow grass's own blade,
