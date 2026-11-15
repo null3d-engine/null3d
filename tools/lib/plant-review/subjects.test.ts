@@ -132,6 +132,36 @@ function clump(): MacroSkeleton {
 	return b.finish(3);
 }
 
+/**
+ * A stem 3 m tall with a much thicker parentless axis standing round its line, as a columnar
+ * conifer's inner body does. The body carries no buds and no limbs of its own.
+ */
+function bodied(): MacroSkeleton {
+	const b = new SkeletonBuilder();
+	const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	run(b, stem, -1, [0, 0, 0], [0, 1, 0], 4, 0.2, 0.2);
+	const body = b.addAxis({ parent: -1, parentNode: -1, order: 1, kind: AXIS_LIMB });
+	run(b, body, -1, [0, 0, 0], [0, 1, 0], 4, 1.2, 0.2);
+	return b.finish(3);
+}
+
+describe('the trunk and the bark surface of a plant with an inner body', () => {
+	const subjects = subjectsOfSkeleton(bodied());
+
+	test('reads the marked stem as the trunk, not the thicker body that stands round it', () => {
+		const trunk = subjects.trunk as TrunkSubject;
+		expect(isAbsent(trunk)).toBe(false);
+		// The stem's own radius, under a quarter of a metre, not the body's.
+		expect(trunk.breast.radius).toBeLessThan(0.25);
+	});
+
+	test('reads the body as the bark surface, where the visible bark stands', () => {
+		const bark = subjects.barkTrunk as TrunkSubject;
+		expect(isAbsent(bark)).toBe(false);
+		expect(bark.breast.radius).toBeGreaterThan(0.9);
+	});
+});
+
 describe('the wood that stands at the ground', () => {
 	test('reads a single stem at its own base radius', () => {
 		expect(stoolRadius(oak())).toBeCloseTo(0.8, 6);

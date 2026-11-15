@@ -469,8 +469,13 @@ const LEAST_BOLE = 0.3;
  * with no trunk is seen from a low eye beside it instead.
  */
 export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOptions): Solved {
-	if (isAbsent(subjects.trunk)) return lowShot(subjects, lens, options.turn);
-	const trunk = subjects.trunk;
+	if (isAbsent(subjects.barkTrunk)) return lowShot(subjects, lens, options.turn);
+	const trunk = subjects.barkTrunk;
+	// A column whose visible bark surface stands proud of its stem clothes the bole to the ground:
+	// the view looks up the face, since no bare bole stands to look up.
+	const stem = subjects.trunk;
+	if (!isAbsent(stem) && trunk.breast.radius > stem.breast.radius * 1.05)
+		return faceShot(subjects, lens, options.turn);
 	const ended = boleTop(subjects, trunk);
 	if (isAbsent(ended)) return ended;
 	// Seen from below, the trunk's body ends where its limbs come out of its bark, which on a
@@ -1926,8 +1931,8 @@ export function barkBaseShot(
 	lens: Lens,
 	options: BarkBaseOptions,
 ): Solved {
-	if (isAbsent(subjects.trunk)) return subjects.trunk;
-	const trunk = subjects.trunk;
+	if (isAbsent(subjects.barkTrunk)) return subjects.barkTrunk;
+	const trunk = subjects.barkTrunk;
 	const ground = trunk.base[1];
 	// The foot's own width: the pipe swells at the ground by the record's flare, its bole taper and
 	// the crests of its buttresses. The frame follows the foot, so the ground beside it stays in the
@@ -2010,8 +2015,8 @@ const BARK_SPAN = 0.6;
  * its contract then asks only for the share of the frame that the trunk can fill.
  */
 export function barkMidShot(subjects: PlantSubjects, lens: Lens, options: BarkMidOptions): Solved {
-	if (isAbsent(subjects.trunk)) return subjects.trunk;
-	const trunk = subjects.trunk;
+	if (isAbsent(subjects.barkTrunk)) return subjects.barkTrunk;
+	const trunk = subjects.barkTrunk;
 	const ground = trunk.base[1];
 	const top = (trunk.axis[trunk.axis.length - 1] as AxisSample).at[1] - ground;
 	const height = options.height ?? Math.min(1.5, top * 0.3);

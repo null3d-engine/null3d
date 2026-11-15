@@ -111,13 +111,14 @@ function limbOf(
 /** A tree: an upright trunk, a great limb toward +X at its fork, and what a test adds to it. */
 function tree(over: Partial<PlantSubjects> = {}): PlantSubjects {
 	const trunk = trunkOf(14, 0.5, 5);
-	return {
+	const merged: PlantSubjects = {
 		source: 'test',
 		foot: [0, 0, 0],
 		height: 16,
 		reach: 8,
 		crownBase: 5,
 		trunk,
+		barkTrunk: trunk,
 		limbs: [limbOf(1, 5, [1, 0.25, 0], 0.3, 8, 0.4), limbOf(2, 7, [-1, 0.5, 0.2], 0.2, 6, 0.35)],
 		forks: [],
 		lobes: [],
@@ -127,6 +128,9 @@ function tree(over: Partial<PlantSubjects> = {}): PlantSubjects {
 		leaf: { length: 0.1 },
 		...over,
 	};
+	// A test that gives the plant a trunk gives the bark surface the same stem unless it says
+	// otherwise, as a plant with no inner body has.
+	return { ...merged, barkTrunk: over.barkTrunk ?? merged.trunk };
 }
 
 /** A solved shot, which the test expects the plant to give. */
@@ -175,6 +179,12 @@ describe('a point through a camera', () => {
 });
 
 describe('the view up the trunk', () => {
+	test("looks up a clothed column's face, where the bark stands proud of the stem", () => {
+		const subjects = tree({ trunk: trunkOf(14, 0.12, 5), barkTrunk: trunkOf(14, 0.9) });
+		const shot = shotOf(belowShot(subjects, { fov: 70, aspect: 4 / 3 }, { turn: 0 }));
+		expect(shot.kind).toBe("the crown's face from its foot, looking up it");
+	});
+
 	test("puts the bole's top on its row and the trunk on the lower edge, from under the limbs", () => {
 		const subjects = tree();
 		const shot = shotOf(belowShot(subjects, { fov: 70, aspect: 4 / 3 }, { turn: 0 }));
@@ -345,6 +355,7 @@ describe('the view up the trunk', () => {
 		reach: 0.6,
 		crownBase: 0,
 		trunk: absent('a tuft'),
+		barkTrunk: absent('a tuft'),
 		limbs: absent('a tuft'),
 	};
 
@@ -929,6 +940,13 @@ describe('the bark views', () => {
 		const great = shotOf(barkMidShot(tree({ trunk: trunkOf(14, 1, 5) }), lens, { turn: 0 }));
 		expect(great.facts.span).toBe(0.6);
 		expect(great.facts.height).toBe(1.5);
+	});
+
+	test('frames the bark surface where the plant marks a thicker body behind its stem', () => {
+		const subjects = tree({ trunk: trunkOf(14, 0.12, 5), barkTrunk: trunkOf(14, 0.9) });
+		const shot = shotOf(barkMidShot(subjects, { fov: 40, aspect: 1 }, { turn: 0 }));
+		// The body's radius, not the stem's, is the wood the photograph's bark is read on.
+		expect(shot.facts.radius as number).toBeGreaterThan(0.5);
 	});
 
 	test('the mid-trunk frame keeps a named span, and asks only for the bark the trunk can give', () => {

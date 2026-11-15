@@ -24,10 +24,11 @@ import {
 	nodeAt,
 	normalize,
 	placeOnRow,
+	stemAxis,
 	stemFoot,
 	type V3,
 } from './anatomy';
-import { departures, forks } from './close';
+import { type Departure, departures, forks } from './close';
 import type { MacroSkeleton } from './plant-types';
 
 /**
@@ -187,7 +188,13 @@ export interface PlantSubjects {
 	readonly reach: number;
 	/** Metres from the ground to the lowest foliage. */
 	readonly crownBase: Maybe<number>;
+	/** The plant's stem: the axis the generator marks as a stem, or the thickest axis it names. */
 	readonly trunk: Maybe<TrunkSubject>;
+	/**
+	 * The wood a bark close view's surface is read on: the thickest parentless axis, which on a
+	 * columnar conifer is the inner body that stands behind the foliage rather than the stem.
+	 */
+	readonly barkTrunk: Maybe<TrunkSubject>;
 	/** The great limbs, the thickest first. */
 	readonly limbs: Maybe<readonly GreatLimb[]>;
 	readonly forks: Maybe<readonly ForkSubject[]>;
@@ -444,30 +451,45 @@ export function subjectsOfSkeleton(
 		Math.abs((skeleton.bounds.max[2] as number) - foot[2]),
 		Math.abs((skeleton.bounds.min[2] as number) - foot[2]),
 	);
-	const stem = mainStem(skeleton);
-	const { limbs: leaving, leader } = stem >= 0 ? departures(skeleton) : { limbs: [] };
-	// The trunk runs on through the limb that carries its line past the first fork.
-	const nodes = stem >= 0 ? chainOf(skeleton, stem) : [];
-	if (leader) nodes.push(...chainOf(skeleton, leader.axis).slice(1));
-	const axis = samplesOf(skeleton, nodes);
-	const top = axis.length > 0 ? (axis[axis.length - 1] as AxisSample).at[1] : 0;
-	// A ground plant's crown axis looks like a stem at its base but reaches no height, where a tree
-	// that forks low still carries its stem a real share of the way up.
-	const hasTrunk = top >= Math.max(TRUNK_LEAST, TRUNK_HEIGHT_SHARE * skeleton.height);
-	const noTrunk = lacking('the plant has no stem that reaches a tenth of its height');
-
-	let trunk: Maybe<TrunkSubject> = noTrunk;
-	if (hasTrunk) {
+	/**
+	 * The trunk subject of one stem axis: its chain and the limb that carries its line on, where it
+	 * reaches a real share of the height, with the departures that leave it.
+	 */
+	const trunkOf = (
+		stem: number,
+	): { readonly trunk: Maybe<TrunkSubject>; readonly leaving: readonly Departure[] } => {
+		const noTrunk = lacking('the plant has no stem that reaches a tenth of its height');
+		if (stem < 0) return { trunk: noTrunk, leaving: [] };
+		const { limbs: leaving, leader } = departures(skeleton, stem);
+		// The trunk runs on through the limb that carries its line past the first fork.
+		const nodes = chainOf(skeleton, stem);
+		if (leader) nodes.push(...chainOf(skeleton, leader.axis).slice(1));
+		const axis = samplesOf(skeleton, nodes);
+		const top = axis.length > 0 ? (axis[axis.length - 1] as AxisSample).at[1] : 0;
+		// A ground plant's crown axis looks like a stem at its base but reaches no height, where a
+		// tree that forks low still carries its stem a real share of the way up.
+		if (!(top >= Math.max(TRUNK_LEAST, TRUNK_HEIGHT_SHARE * skeleton.height)))
+			return { trunk: noTrunk, leaving };
 		const breast = sampleAtHeight(axis, Math.min(BREAST, top * 0.3)) ?? (axis[0] as AxisSample);
 		const fork = firstForkHeight(skeleton);
 		const forkAt = fork === undefined ? undefined : sampleAtHeight(axis, fork);
-		trunk = {
-			base: foot,
-			axis,
-			breast,
-			firstFork: forkAt ?? lacking("no limb takes a fifth of the trunk's cross-section"),
+		return {
+			trunk: {
+				base: foot,
+				axis,
+				breast,
+				firstFork: forkAt ?? lacking("no limb takes a fifth of the trunk's cross-section"),
+			},
+			leaving,
 		};
-	}
+	};
+
+	const stemMarked = stemAxis(skeleton);
+	const stem = stemMarked >= 0 ? stemMarked : mainStem(skeleton);
+	const { trunk, leaving } = trunkOf(stem);
+	const barkTrunk = trunkOf(mainStem(skeleton)).trunk;
+	const hasTrunk = !isAbsent(trunk);
+	const noTrunk = lacking('the plant has no stem that reaches a tenth of its height');
 
 	const thickest = leaving[0]?.radius ?? 0;
 	const limbs: Maybe<readonly GreatLimb[]> = hasTrunk
@@ -514,6 +536,7 @@ export function subjectsOfSkeleton(
 		reach,
 		crownBase: skeleton.crownBase,
 		trunk,
+		barkTrunk,
 		limbs,
 		forks: divisions,
 		lobes,

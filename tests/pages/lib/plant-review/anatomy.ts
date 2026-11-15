@@ -210,6 +210,28 @@ export function mainStem(skeleton: MacroSkeleton): number {
 	return best;
 }
 
+/**
+ * The axis the generator marks as the plant's stem: the thickest parentless axis of kind stem, or
+ * -1 for a plant that marks none. A columnar conifer adds its dark inner body as a parentless axis
+ * of another kind, and that body can stand thicker than the stem it surrounds; this rule reads the
+ * stem itself where the generator named one.
+ */
+export function stemAxis(skeleton: MacroSkeleton): number {
+	const { axes } = skeleton;
+	let best = -1;
+	let thickest = -1;
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.parent[a] as number) >= 0) continue;
+		if ((axes.kind[a] as number) !== AXIS_STEM) continue;
+		const r = skeleton.radius[axes.first[a] as number] as number;
+		if (r > thickest) {
+			thickest = r;
+			best = a;
+		}
+	}
+	return best;
+}
+
 /** A point at a height along one axis, or undefined when the axis does not cross that height. */
 function pointAtHeight(skeleton: MacroSkeleton, axis: number, y: number): AxisPoint | undefined {
 	const chain = chainOf(skeleton, axis);

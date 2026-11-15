@@ -280,11 +280,13 @@ export interface Departure {
  * The limbs that leave the main stem, thickest first, and the one among them that carries the
  * stem's own line on past its fork, if one does.
  */
-export function departures(skeleton: MacroSkeleton): {
+export function departures(
+	skeleton: MacroSkeleton,
+	stem = mainStem(skeleton),
+): {
 	readonly limbs: Departure[];
 	readonly leader?: Departure;
 } {
-	const stem = mainStem(skeleton);
 	if (stem < 0) return { limbs: [] };
 	const { axes } = skeleton;
 	const list: Departure[] = [];
