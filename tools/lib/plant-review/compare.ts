@@ -455,8 +455,65 @@ export function frameIou(a: PlantMask, b: PlantMask): number {
 	return iou(a.mask, scaled);
 }
 
-/** The mean difference of two width profiles, in plant heights. */
-export function profileError(a: readonly number[], b: readonly number[]): number {
+/**
+ * The overlap of two masks, counted so that a boundary one pixel out does not count against them:
+ * each mask's pixels that lie within a pixel of the other count as shared. A thresholded colour
+ * edge and an anti-aliased matte differ by about a pixel all round, so a thin subject such as a
+ * leaf cluster or a spray of scales is mostly boundary and fails an exact overlap however sound its
+ * matte is. A matte that is truly displaced, rather than a pixel out, still falls far below the gate.
+ */
+export function nearIou(a: PlantMask, b: PlantMask): number {
+	const scaled = new Uint8Array(a.width * a.height);
+	for (let y = 0; y < a.height; y++)
+		for (let x = 0; x < a.width; x++) {
+			const sx = Math.min(b.width - 1, Math.floor(((x + 0.5) * b.width) / a.width));
+			const sy = Math.min(b.height - 1, Math.floor(((y + 0.5) * b.height) / a.height));
+			scaled[y * a.width + x] = b.mask[sy * b.width + sx] as number;
+		}
+	const { mask } = a;
+	const width = a.width;
+	const height = a.height;
+	const dilatedB = dilate(scaled, width, height);
+	const dilatedA = dilate(mask, width, height);
+	let nearA = 0;
+	let countA = 0;
+	let nearB = 0;
+	let countB = 0;
+	for (let i = 0; i < mask.length; i++) {
+		if (mask[i]) {
+			countA++;
+			if (dilatedB[i]) nearA++;
+		}
+		if (scaled[i]) {
+			countB++;
+			if (dilatedA[i]) nearB++;
+		}
+	}
+	const total = countA + countB;
+	return total === 0 ? 1 : (nearA + nearB) / total;
+}
+
+/** A mask with every pixel within one of a set pixel also set. */
+function dilate(mask: Uint8Array, width: number, height: number): Uint8Array {
+	const out = new Uint8Array(mask.length);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			if (!mask[y * width + x]) continue;
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dx = -1; dx <= 1; dx++) {
+					const nx = x + dx;
+					const ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+					out[ny * width + nx] = 1;
+				}
+		}
+	return out;
+}
+
+/** The mean difference of two width profiles, in plant heights. */ export function profileError(
+	a: readonly number[],
+	b: readonly number[],
+): number {
 	const n = Math.min(a.length, b.length);
 	if (n === 0) return 0;
 	let sum = 0;
@@ -1650,7 +1707,7 @@ export function compareTurn(
 		if (share < MASK_SUBJECT_FLOOR) return [null];
 		const matte = (renderSides[j] as Side).plant.mask;
 		const subject = matte.reduce((sum, value) => sum + value, 0) / matte.length;
-		return [{ iou: frameIou(coloured, (renderSides[j] as Side).plant), subject }];
+		return [{ iou: nearIou(coloured, (renderSides[j] as Side).plant), subject }];
 	});
 	const mask = maskCheckOf(checks, plainTurnOf((usable[0] as RunFrame).query?.background));
 	const refCoarse = refSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
