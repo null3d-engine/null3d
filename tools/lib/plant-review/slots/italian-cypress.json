@@ -40,7 +40,8 @@
 		"leafyBark": true
 	},
 	"28-young-bark.png": {
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 0.76
 	},
 	"11-single-spray.png": {
 		"view": "leaf-upper"
