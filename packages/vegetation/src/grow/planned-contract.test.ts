@@ -1069,12 +1069,16 @@ describe('the planned oak contract', () => {
 				const drawing: number[] = [];
 				for (const max of SWEEP) {
 					const capped = await plant(seed, { maturity: 1, sparse: 0, maxTriangles: max });
-					let leaves = 0;
+					// A plant of pieces draws its leaves as shoot rows, so the rows' drawn triangles
+					// are the leaf triangles; a merged plant's foliage parts count beside them.
+					let partLeaves = 0;
 					for (const part of capped.levels[0].parts)
-						if (part.name === 'foliage' || part.name === 'cards') leaves += part.arrays.indices.length / 3;
+						if (part.name === 'foliage' || part.name === 'cards') partLeaves += part.arrays.indices.length / 3;
+					const rowLeaves = (capped.stats.triangles[0] as number) - capped.levels[0].triangles;
+					const leaves = rowLeaves + partLeaves;
 					if (leaves > 0) drawing.push(max);
 					// A cap that draws no crown is a known fault, reported here rather than failed.
-					console.log(`X3 seed ${seed} cap ${max}: leaf triangles ${leaves}, rows ${capped.shoots.count}`);
+					console.log(`X3 seed ${seed} cap ${max}: leaf triangles ${leaves} (${rowLeaves} as rows, ${partLeaves} as parts), rows ${capped.shoots.count}`);
 					for (let level = 0; level < 3; level++)
 						expect([seed, max, level, (capped.stats.triangles[level] as number) <= max]).toEqual([seed, max, level, true]);
 					const share = overlap(plainOutline, outlineOf(capped));
