@@ -114,6 +114,7 @@ import {
 	NO_TRIANGLES,
 	partTotal,
 	referenceTriangles,
+	rowLevel,
 	shootPartTriangles,
 } from './lod/budget';
 import { cardLevelMost } from './lod/card-bake';
@@ -1333,11 +1334,16 @@ function builtLevels(
 			const shoots = rows ? shootPartTriangles(mesh, mesh.rows, mesh.detail) : ([0, 0] as const);
 			return { parts, triangles: countedParts(parts, shoots), clusters: NO_CLUSTERS };
 		};
+		// A planned plant grows straight to the asked state, so its capped level asks the allocator for
+		// what it may draw rather than stepping a ladder down from the full plant.
+		const planned = mesh.record.growth.model === 'planned';
 		const real = (): BuiltLevel => {
 			const build =
 				most === undefined || !reference
 					? levelBuild(input, at)
-					: levelWithin(input, at, most, reference);
+					: planned
+						? rowLevel(input, at, most, reference)
+						: levelWithin(input, at, most, reference);
 			return {
 				parts: [
 					...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
@@ -1479,9 +1485,14 @@ export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): read
 	const plant = dressed(kit, options);
 	const most = maxOf(kit, options);
 	if (most === undefined) return nearWood(plant.mesh);
-	// Under a maximum the nearest wood is the wood its level's shares leave it.
+	// Under a maximum the nearest wood is the wood its level's shares leave it. A planned plant grows
+	// straight to the asked state, so it asks the allocator rather than stepping a ladder.
 	const input = plant.budget(true);
-	const level = levelWithin(input, 0, most, referenceTriangles(input));
+	const reference = referenceTriangles(input);
+	const level =
+		kit.record.growth.model === 'planned'
+			? rowLevel(input, 0, most, reference)
+			: levelWithin(input, 0, most, reference);
 	return partOf(kit, 'wood', level.wood, WOOD_UV_STEPS);
 }
 

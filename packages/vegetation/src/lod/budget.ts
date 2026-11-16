@@ -511,8 +511,9 @@ function planesFor(budget: number): number {
  * @param max The most triangles the level may draw.
  * @param reference What each part holds at the plant's best look, which sets the shares.
  * @returns The level.
+ * @category api/vegetation
  */
-function rowLevel(
+export function rowLevel(
 	input: BudgetInput,
 	level: MeshLevel,
 	max: number,
