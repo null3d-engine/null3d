@@ -99,7 +99,7 @@ const SPECIES_SLICES: readonly string[] = readdirSync(
 const PLANT_FOLDERS: readonly string[] = ['packages/vegetation/src/lod'];
 
 /** The plant groups' measured seconds: the package's folder, its species slices in name order, and the LOD folder. */
-const PLANT_SECONDS = { folder: 356, slices: [27, 77, 135, 79], lod: 430 } as const;
+const PLANT_SECONDS = { folder: 356, slices: [27, 77, 135, 79], lod: 114 } as const;
 
 /** The seconds each other package's folder took in a whole run; a folder not named here weighs nothing. */
 const PACKAGE_SECONDS: Readonly<Record<string, number>> = { cli: 23, engine: 18, 'vite-plugin': 2 };

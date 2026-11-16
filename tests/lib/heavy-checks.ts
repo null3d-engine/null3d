@@ -82,6 +82,12 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// predates that range and is owed a study; the ceiling is raised to hold the measured figure with
 	// room rather than to let a re-run pass. It is now a bound on unexplained growth: a build that climbs towards it without a named cause is the fault the study exists to find, not a ceiling to move again. The server's own pair of runs is still owed.
 	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 1280 },
+	// The triangle maximum's sweep, and the checks that read its table: a plant grown for each
+	// species, sparseness and maximum. Alone, the file took 320 to 340 s on the Mac and held 3,166
+	// MiB in one run and 3,833 in another, near the unit run's own ceiling and most of a local unit
+	// run's time, so it takes a process and a ceiling of its own. The ceiling leaves about a fifth
+	// above the higher measurement for a busier machine.
+	{ file: 'packages/vegetation/src/lod/budget.test.ts', ceilingMiB: 4608 },
 	// The owner's byte caps over eleven seeds: every variant of each, at every tier, which builds a kit
 	// for each tier and grows a tree for each variant. The unit run sweeps one seed and this one the
 	// rest, and the whole measures 247 MiB and 55 s.

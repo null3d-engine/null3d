@@ -5,7 +5,7 @@ The unit tests run in a few processes, one for each group of them, so what each 
 ## How the unit run works
 
 - `bun run test` builds the shaders, then runs `bun test` over the tools, the packages, the benchmark scenes and pages, `tests/lib` and the demos.
-- That is a group for each package, and one each for the tools, the benchmark's scenes and pages, `tests/lib` and the demos (`tests/unit.ts`). The plant package adds a group for each slice of its species walk, and one for its LOD folder. The walk and the triangle-cap tests are each longer than the rest of the package (`tests/lib/unit-groups.ts`).
+- That is a group for each package, and one each for the tools, the benchmark's scenes and pages, `tests/lib` and the demos (`tests/unit.ts`). The plant package adds a group for each slice of its species walk, and one for its LOD folder. The walk's slices are the long groups (`tests/lib/unit-groups.ts`). The LOD folder's triangle maximum sweep grew a plant for each species, sparseness and maximum, and it took most of a local unit run's time. It now runs among the heavy checks, in a process of its own.
 - The groups go longest first, by the seconds each took in a whole run, which the list carries. A lane takes the next group as soon as the one it holds ends. Long groups first therefore keep both lanes busy to the end. With them last, one lane empties while the plant's still runs. A whole run took 833 s in tree order, over 1,300 s of group time, and its two-lane floor is 650 s. Longest first simulates to 641 s (`tests/lib/unit-groups.ts`).
 - The demos' group names every top-level folder under `examples/` that holds a test file, at any depth. A demo folder that arrives with a test then joins the run without an edit (`tests/lib/unit-groups.ts`).
 - Each group is a `bun test` of its own. One invocation holds everything it finds in one process, so a group's peak is what its files hold together. Two groups run at once, so the run's peak is those two together rather than one group's. The run lasts as long as its groups take, split across the two lanes. The ceiling applies to each group, so a full pair may reach twice it.
@@ -60,6 +60,7 @@ Several helper agents that each run such a unit run on one machine push it past 
 | `packages/engine/src/gpu/webgl2/programs.test.ts`, in a process of its own | 4.2 GB | 48 s |
 | `packages/engine/src/math/tree-shaking.test.ts`, in a process of its own | 7.8 GB | 30 s |
 | `packages/engine/src/debug/release.test.ts`, in a process of its own | 5.6 GB | 11 s |
+| `packages/vegetation/src/lod/budget.test.ts`, the triangle maximum's sweep, in a process of its own | 3.2 to 3.8 GB | 320 to 340 s |
 
 The checks that hold gigabytes run one process at a time, each under a ceiling set from its own
 figure. The bundler builds cost the most, because the engine's 890 MB of shader code is in
