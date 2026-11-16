@@ -30,7 +30,7 @@ import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
 const SLIM = 2.5;
 
 /** The share of its growth a clump has reached before any of its pieces show. */
-const CLUMP_FROM = 0.85;
+const CLUMP_FROM = 0.55;
 
 /** Adult plans kept a thread, by species, seed and variant. */
 const ADULTS = new Map<string, Adult>();

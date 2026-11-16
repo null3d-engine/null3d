@@ -67,8 +67,8 @@ export const plannedGrowth: Planned = {
 	// land there, and never under the contract's 0.08 floor.
 	leavesAt: [
 		[0, 1],
-		[0.5, 0.42],
-		[1, 0.18],
+		[0.5, 0.44],
+		[1, 0.2],
 	],
 	// The oak first bears acorns at about 40 years in the open (FACTS gives the fruit but no age;
 	// 40 of 150 model years is the usual open-grown figure), and the crop fills over 15 years.
