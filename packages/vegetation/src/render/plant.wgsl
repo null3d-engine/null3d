@@ -810,10 +810,13 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
             moved = plant + (swayed - plant) * fade;
         }
     }
-    if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
+    // The wood, its card stalks, its stems and its petioles widen to the least drawn width only in
+    // the outline pictures. The matte needs a joined line for its piece measure; the colour picture
+    // draws the tube's own width, so a thin bough does not grow into a painted band with distance.
+    if (mode == MODE_CARDS && material.matte > 0.5 && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
     }
-    if (mode == MODE_WOOD) {
+    if (mode == MODE_WOOD && material.matte > 0.5) {
         moved += wood_widen(input, moved);
     }
     if (mode == MODE_FOLIAGE && material.matte > 0.5 && material.matte < 1.5) {
@@ -830,15 +833,20 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     ) {
         moved += foliage_widen(input, moved);
     }
-    // A shoot's stem is drawn a pixel wide too: under that, the matte drops the stalk a leaf
-    // cluster hangs from and the cluster reads as a piece in air.
-    if (mode == MODE_SHOOTS && input.colors.b * 255.0 >= KIND_STEM * 0.5) {
+    // A shoot's stem is drawn a pixel wide in the outline pictures too: under that, the matte drops
+    // the stalk a leaf cluster hangs from and the cluster reads as a piece in air.
+    if (
+        mode == MODE_SHOOTS &&
+        material.matte > 0.5 &&
+        input.colors.b * 255.0 >= KIND_STEM * 0.5
+    ) {
         moved += wood_widen(input, moved);
     }
     // A leaf's own petiole is drawn at the least width too, where it is thin enough that the matte
     // would drop it and the blade would read as a piece in air.
     if (
         (mode == MODE_SHOOTS || mode == MODE_FOLIAGE) &&
+        material.matte > 0.5 &&
         abs(input.colors.b * 255.0 - KIND_PETIOLE) < 0.5
     ) {
         moved += wood_widen(input, moved);
