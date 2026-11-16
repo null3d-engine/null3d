@@ -631,7 +631,10 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		turn: growth.turn,
 		crown: { top, base: crownBaseValue, height: Math.max(0, top - crownBaseValue) },
 	};
-	const grown = fillClumps(sighted);
+	// The level draws a capped crown as clump cards from the clumps and nothing from rows, so a
+	// capped plan grows no rows at all.
+	const grown =
+		most === undefined ? fillClumps(sighted) : { made: 0, sockets: 0, socketOrigins: [] };
 
 	// Each element keeps its place in the plant as grown, so a younger or a sparser plant's element
 	// names the same place as the full one and the contract can pair them.
