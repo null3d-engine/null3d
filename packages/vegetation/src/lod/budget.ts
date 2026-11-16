@@ -512,7 +512,7 @@ function planesFor(budget: number): number {
  * @param reference What each part holds at the plant's best look, which sets the shares.
  * @returns The level.
  */
-function rowLevel(
+export function rowLevel(
 	input: BudgetInput,
 	level: MeshLevel,
 	max: number,
