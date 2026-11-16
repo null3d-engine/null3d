@@ -837,6 +837,10 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
             moved = plant + (swayed - plant) * fade;
         }
     }
+    // The wood, its card stalks, its stems and its petioles widen to the least drawn width in every
+    // picture, so a twig rasterises as a joined line rather than as dots. The colour picture takes
+    // the widened share back at the fragment stage, over the width the tube truly covers, so the
+    // crown keeps its own width with distance.
     if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
     }
