@@ -887,6 +887,33 @@ A figure checks the plant. A builder does not tune the plant to the figure.
 - A fix is proved by the picture it was for. A fix can move the plant and still leave its fault in
   place, as the hosta's roll fix left its black leaf. The next round's picture shows that.
 
+## What a review round draws
+
+A review round draws the species in the order its rows are judged. It draws every still the species
+has a reference for, at that picture's camera, framing and light. It draws the turn as sheets of
+frames at a still's size. It draws the wind clip where the species has one, and the cut pieces for the
+close rows. The round writes the color stills, the parts pictures, the matte pictures, the contact
+sheets, the coverage list and the figures.
+
+**The dolly is the round's walk through distance.** The same still is drawn at each distance where a
+level switches, and at the distances the references were taken from. A color or a cover that holds at
+one distance is read again at every distance it has to hold at. A walk of nine distances found a color
+fault that one still missed, so a color hold is read on the pull back and not on a single still.
+
+**How the connectivity figure is read.** The round counts the separate pieces in each picture, for the
+render and for the reference, and prints both. Read the count beside the picture, and give the count
+the last word. The eye passed a capped crown that the count found in nine pieces. A piece count above
+the reference's is a fault of row 1 and row 12 together, whatever the figure looks like.
+
+**How a color figure is read.** A color figure measures the item its row names. A far card's brown
+figure can stay under its bound while the crown reads pale and jumps in lightness, because the brown
+measured the wood in the picture. Read the figure, name what it measured, then read the picture the row
+is about.
+
+**Two traps.** A parts picture paints an impostor card's texels as wood, so a far crown can read as
+wood there while it is leaf. Judge a far card on the color still and the coverage list. And a figure
+can pass on one still while the fault stands at another distance, so read the walk and not one frame.
+
 ## Reading rules learned from the rounds
 
 - **A row needs every picture.** A row passes only when every picture behind it passes. A stated limit
@@ -909,6 +936,10 @@ A figure checks the plant. A builder does not tune the plant to the figure.
   change moves the picture.
 - **A share of pixels is not equality.** To say two drawings are the same, compare their bytes. Two
   pictures with the same bytes and different level labels mean one label is wrong.
+- **Connectivity is measured, not only seen.** Read the piece count for the render and the reference.
+  An eye that passes a crown can miss it standing in nine pieces.
+- **A color hold is read on the pull back.** Read the figure at every distance a level switches and
+  at the distances the references were taken from. One still cannot hold a color.
 
 ## The process
 
