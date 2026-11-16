@@ -461,7 +461,7 @@ const base = {
 		length: { mean: 1.3, spread: 0.3 },
 		radius: 0.2,
 		dive: 0.3,
-		ridge: 0.3,
+		ridge: 1,
 	},
 	flutes: { count: { mean: 7, spread: 1 }, depth: 0.16, height: 1.5, hold: 0.35 },
 } as const;
