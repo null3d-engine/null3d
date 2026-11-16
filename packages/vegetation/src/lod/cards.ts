@@ -1818,6 +1818,118 @@ export function clusterTriangles(clusters: readonly CardCluster[], planes: numbe
 }
 
 /**
+ * A card level's cards for a plant whose rows are cut far below its clumps: one card set at each
+ * planned clump's centre, its half-size the clump's radius, so the crown draws the clumps the plant's
+ * plan holds rather than the few shoots a small triangle maximum leaves. A clump takes the picture
+ * and the bytes of the nearest row it has; a plant with no rows at all draws its first leaf
+ * prototype's picture, unshaded.
+ *
+ * @param input The dressed variant.
+ * @param planes The card planes each clump draws, from 1 to 3: the two upright ones first.
+ * @param share The share of the plant's clumps to draw, from 0 to 1, spread through the crown.
+ * @returns The cards' mesh, or undefined on a plant that names no clumps.
+ * @category api/vegetation
+ */
+export function plannedClumpCards(
+	input: MeshInput,
+	planes = 3,
+	share = 1,
+): MeshArrays | undefined {
+	const clumps = input.skeleton.clumps;
+	if (!clumps || clumps.length === 0) return undefined;
+	const { kit } = input;
+	// A plant the maximum cut to no shoots still draws its clumps; each then takes the kit's first
+	// leaf prototype's picture and no row's own bytes.
+	const rows: MeshInput['rows'] =
+		input.rows.count > 0
+			? input.rows
+			: {
+					count: 1,
+					prototype: Uint8Array.of(0),
+					position: Float32Array.of(0, 0, 0),
+					rotation: Float32Array.of(0, 0, 0, 1),
+					scale: Float32Array.of(1),
+					record: Uint16Array.of(0),
+					phase: Uint8Array.of(0),
+					sky: Uint8Array.of(128),
+					bent: Uint8Array.of(0),
+					order: Uint32Array.of(0),
+				};
+	const wanted = Math.max(1, Math.round(clumps.length * Math.max(0, Math.min(1, share))));
+	const stride = Math.max(1, Math.round(clumps.length / wanted));
+	const kept = clumps.filter((_, at) => at % stride === 0);
+	/** The row whose picture and bytes a clump takes: the nearest one it has. */
+	const nearest = (centre: readonly number[]): number => {
+		let best = 0;
+		let least = Number.POSITIVE_INFINITY;
+		for (let r = 0; r < rows.count; r++) {
+			const dx = (rows.position[r * 3] as number) - (centre[0] as number);
+			const dy = (rows.position[r * 3 + 1] as number) - (centre[1] as number);
+			const dz = (rows.position[r * 3 + 2] as number) - (centre[2] as number);
+			const d = dx * dx + dy * dy + dz * dz;
+			if (d < least) {
+				least = d;
+				best = r;
+			}
+		}
+		return best;
+	};
+	const clusters: CardCluster[] = kept.map((clump) => {
+		const row = nearest(clump.centre);
+		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
+		const scale = rows.count > 0 ? (rows.scale[row] as number) : 1;
+		const half = plane
+			? scale *
+				Math.max(
+					Math.sqrt(plane.right[0] ** 2 + plane.right[1] ** 2 + plane.right[2] ** 2),
+					Math.sqrt(plane.up[0] ** 2 + plane.up[1] ** 2 + plane.up[2] ** 2),
+				)
+			: 0;
+		return {
+			row,
+			rows: 0,
+			centre: [clump.centre[0], clump.centre[1], clump.centre[2]] as Vector3,
+			grow: half > 1e-9 ? Math.max(1, clump.radius / half) : 1,
+			reach: clump.radius,
+			stalk: false,
+		};
+	});
+	const tiled = {
+		tiles: CLUMP_TILES,
+		row: (index: number, tile: number): number => {
+			const clump = kept[index];
+			if (!clump) return 0;
+			// The rows nearest the clump, spread across its picture's tiles.
+			const near: number[] = [];
+			for (let r = 0; r < rows.count; r++) {
+				const dx = (rows.position[r * 3] as number) - (clump.centre[0] as number);
+				const dy = (rows.position[r * 3 + 1] as number) - (clump.centre[1] as number);
+				const dz = (rows.position[r * 3 + 2] as number) - (clump.centre[2] as number);
+				if (dx * dx + dy * dy + dz * dz <= clump.radius * clump.radius) near.push(r);
+			}
+			const list = near.length > 0 ? near : [0];
+			return list[Math.floor((tile * list.length) / (CLUMP_TILES * CLUMP_TILES))] as number;
+		},
+	};
+	return clusterCardMesh(
+		{ ...input, rows },
+		clusters,
+		planes,
+		(index, height) => {
+			const clump = kept[index];
+			if (!clump) return 1;
+			const row = clusters[index]?.row ?? 0;
+			const sky = input.rows.count > 0 ? (rows.sky[row] as number) / 255 : 0.5;
+			return clumpSky(
+				{ lobe: clump.id, rows: [], middle: clump.centre[1], spread: clump.radius, sky },
+				height,
+			);
+		},
+		tiled,
+	);
+}
+
+/**
  * The cards of some clusters, as one mesh: each cluster's planes about its centre, and a stalk to
  * its anchor where it takes one.
  *
