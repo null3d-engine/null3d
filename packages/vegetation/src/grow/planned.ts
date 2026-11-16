@@ -302,7 +302,6 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	// trunk and the great limbs never thin.
 	const kept = expected.map((count, order) => count * (1 - sparse * (thin[order] ?? 0)));
 	// A maximum shares the count: the bones keep their own share, and the finer orders are cut.
-	const sides = max === undefined ? 10 : max >= 20_000 ? 8 : max >= 5_000 ? 6 : 3;
 	const clumpCard = max !== undefined && max < 2_000;
 	const piece = growth.prices.piece;
 	const tube = growth.prices.tubeSegment;
@@ -335,8 +334,14 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	// ranks first, so a card a clump is what stands when the crown is paid for. Below the least
 	// share the crown is never left, since under it the clumps read as tufts.
 	const crownKept = max === undefined ? 1 : Math.min(1, cards / socketsBound);
+	// A maximum above the plant's own cost never bites: it draws the plant the uncapped plan draws.
+	const bites =
+		max !== undefined &&
+		priced.trunk + priced.limbs + priced.branches + priced.twigs + priced.foliage + priced.fruit > max;
+	// The wood's own sides follow the maximum, and an unreached maximum keeps the plant's own.
+	const sides = !bites ? 10 : (max as number) >= 20_000 ? 8 : (max as number) >= 5_000 ? 6 : 3;
 	const cut = (order: number): number => {
-		if (max === undefined) return 1;
+		if (!bites) return 1;
 		if (order < 2) return 1;
 		return order >= 4 ? crownKept : woodKept;
 	};
@@ -399,6 +404,12 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const matureAge = ageAtHeight(growth.height, fullAge, adultHeight, adultHeight);
 	// A maximum coarsens each axis's own nodes: every second or fourth node stands.
 	const most = request.maxTriangles;
+	// A maximum bites only when the plant's best look costs more than it pays. A maximum above that
+	// cost must draw the plant the same as one with no maximum at all.
+	const price = detail.triangles;
+	const capped =
+		most !== undefined &&
+		price.trunk + price.limbs + price.branches + price.twigs + price.foliage + price.fruit > most;
 	const woodStep = most === undefined ? 1 : most >= 20_000 ? 1 : most >= 5_000 ? 2 : 8;
 
 	// Where every adult axis stands at this age, before sparseness or a maximum is read.
@@ -687,7 +698,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		// draws the skeleton shortened and a card past its drawn end hangs in the air. With no
 		// maximum the crown spreads as its patches state.
 		const centre: Vec3 =
-			most === undefined
+			!capped
 				? [
 						grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
 						grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
@@ -697,7 +708,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		clumps.push({
 			id,
 			centre,
-			radius: most === undefined ? radius : radius * CARD_MEET,
+			radius: capped ? radius * CARD_MEET : radius,
 			depth: 3,
 			birth: where.birth,
 		});
@@ -745,8 +756,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		Math.max(1, Math.round(boundsOf(input.record, growth).clumps)),
 		growth.prices.clumpCard,
 	);
-	if (most !== undefined) {
-		const keep = cardedSet(clumps, sizes, orders, cards, most <= CARD_SEEDS_MAX);
+	if (capped) {
+		const keep = cardedSet(clumps, sizes, orders, cards, most !== undefined && most <= CARD_SEEDS_MAX);
 		const kept = [...keep].sort((a, b) => a - b);
 		const keptIds = new Set(kept.map((index) => (clumps[index] as ClumpData).id));
 		clumps.splice(0, clumps.length, ...kept.map((index) => clumps[index] as ClumpData));
@@ -766,7 +777,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		(sum, clump) => sum + 1 + Math.round(6.5 * (2 * clump.radius) ** 2),
 		0,
 	);
-	const cutByMaximum = socketsAbout > 0 ? Math.min(1, carded / socketsAbout) : 1;
+	const cutByMaximum = capped && socketsAbout > 0 ? Math.min(1, carded / socketsAbout) : 1;
 	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
 	const crownBaseValue = Number.isFinite(crownBase) ? Math.max(0, crownBase) : height;
 	const sighted: FillInput & PlannedFillSight = {
@@ -776,7 +787,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		variant: input.variant,
 		clumps: fill,
 		leaves,
-		anchored: most !== undefined,
+		anchored: capped,
 		// Catkins hang on their own sites in the flowering season, ramped by the plan.
 		...(growth.flowers === undefined || input.season !== growth.flowers.season
 			? {}
