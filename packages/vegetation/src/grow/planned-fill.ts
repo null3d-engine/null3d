@@ -18,16 +18,13 @@ import type { Vec3 } from '../core/types';
  * clump is clothed through and not only at its rim.
  */
 const SHELLS: readonly (readonly [size: number, keep: number])[] = [
-	[1, 1],
-	[0.65, 0.85],
-	[0.35, 0.6],
+	[0.55, 1],
+	[0.36, 0.85],
+	[0.19, 0.6],
 ];
 
 /** The sum of the shells' sizes squared by their keeps: the sockets a clump's outer count makes. */
 const SHELL_TOTAL = SHELLS.reduce((sum, [size, keep]) => sum + size * size * keep, 0);
-
-/** Metres a socket stands inside its clump's surface: the reach of the piece it carries. */
-const INSET = 0.85;
 
 /** Sockets per square metre of a clump's own width, measured from today's oak at seeds 3, 11, 12. */
 const SOCKETS_PER_AREA = 6;
@@ -119,9 +116,9 @@ export function fillClumps(input: FillInput): FillCount {
 	const goals: Goal[] = [];
 	clumps.forEach((clump) => {
 		const radius = Math.max(1e-6, clump.radius);
-		// A socket stands inside the clump's surface by its piece's reach, so the shells shrink by
-		// that inset, never under a third of the clump's radius.
-		const inner = Math.max(radius - INSET, radius * 0.3);
+		// A socket stands at its shell's own share of the clump's radius, so a clump the size of its
+		// piece still clothes its whole width.
+		const inner = radius;
 		// The outer shell's own count; every shell together makes the socket count.
 		const count = Math.max(
 			LEAST_POINTS,
