@@ -47,6 +47,10 @@ function crownCards(max: number | undefined, clumps: number, cardCost: number): 
 	return Math.min(clumps, Math.floor(take / cardCost));
 }
 
+/** The height against the adult's below which a crown is young: every clump stands and only the
+ * leaves thin, since an octant there holds too few boughs to drop one evenly. */
+const YOUNG_CROWN = 0.8;
+
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
 
@@ -438,12 +442,15 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		if (axis.fine && axis.order > 2) return;
 		keptAxis.add(index);
 	});
+	// A young crown holds too few boughs in an octant to drop one evenly, so there every clump stands
+	// and only the leaves thin; a grown crown thins its clumps by their socket weight.
+	const clumpsThin = height / adultHeight >= YOUNG_CROWN;
 	for (let order = 2; order < 8; order++) {
 		const candidates = [...keptAxis].filter(
 			(index) =>
 				(bones.axes[index] as FrameAxis).order === order && (reveal[index] as Reveal).present,
 		);
-		const keepShare = Math.max(0, 1 - sparse * (thin[order] ?? 0));
+		const keepShare = clumpsThin ? Math.max(0, 1 - sparse * (thin[order] ?? 0)) : 1;
 		const byOctant = new Map<number, number[]>();
 		for (const index of candidates) {
 			const octant = octantOf(index);
