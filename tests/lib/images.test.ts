@@ -754,6 +754,28 @@ describe('comparing an image with its reference', () => {
 		expect(existsSync(dirs.candidates)).toBe(false);
 	});
 
+	it("prints a passing picture's share only when the run asks for it", () => {
+		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
+		const quiet: string[] = [];
+		const loud: string[] = [];
+		const print = console.log;
+		try {
+			console.log = (...parts: unknown[]) => void quiet.push(parts.join(' '));
+			delete process.env.NULL3D_IMAGE_SHARES;
+			compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs);
+			console.log = (...parts: unknown[]) => void loud.push(parts.join(' '));
+			process.env.NULL3D_IMAGE_SHARES = '0.000% should read the same';
+			const drawn = image([10, 20, 30], { at: 5, rgb: [10, 20, 31] });
+			expect(compareWithReference(boxes(), REAL, drawn, dirs)).toEqual([]);
+		} finally {
+			console.log = print;
+			delete process.env.NULL3D_IMAGE_SHARES;
+		}
+		expect(quiet.filter((line) => line.includes('of pixels differ'))).toEqual([]);
+		expect(loud.join('\n')).toContain('of pixels differ from');
+		expect(loud.join('\n')).toContain('the limit is');
+	});
+
 	it('fails a wrong reference with the new image, a diff and a copy of the reference', () => {
 		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
 		// One pixel of eight is another color: 12.5% of the image, far over the 0.1% allowed.

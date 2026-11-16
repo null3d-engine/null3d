@@ -994,6 +994,15 @@ export function saveDrawnImage(
  * reference, or beyond the tolerance, is saved as a candidate with the facts of the comparison, and
  * with the reference and the diff when there is one. Returns what is wrong, or nothing.
  */
+/**
+ * True when the run asks each passing picture to print its differing share: `NULL3D_IMAGE_SHARES`
+ * set to anything but an empty value. The output names the picture's own share and its limit, so a
+ * row that claims the look did not move can carry the figure it was judged by.
+ */
+function reportingShares(env: NodeJS.ProcessEnv): boolean {
+	return Boolean(env.NULL3D_IMAGE_SHARES);
+}
+
 export function compareWithReference(
 	run: ImageRun,
 	place: Place,
@@ -1078,6 +1087,12 @@ export function compareWithReference(
 			...(matched && { matched: matched.file }),
 			shares,
 		});
+	// A run that asks for the shares prints a passing picture's own share, so a change's picture claim
+	// can carry a number rather than a tick. The switch changes no file and no gate's output.
+	if (matched && reportingShares(process.env))
+		console.log(
+			`${run.test} on ${run.tier}: ${percent(matched.share)} of pixels differ from ${matched.file}, and the limit is ${percent(tolerance.maxDiffRatio)}`,
+		);
 	if (matched) return missing;
 	save(
 		{
