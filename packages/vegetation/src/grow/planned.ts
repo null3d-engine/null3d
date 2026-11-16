@@ -36,6 +36,17 @@ const CROWN_SHARE = 0.6;
 /** The least share of a maximum the crown may be left, under which its crown reads as tufts. */
 const CROWN_LEAST = 0.25;
 
+/**
+ * The clump cards a maximum pays for: the crown takes its share of the cap before the wood does, and
+ * that share buys a card a clump while it lasts. With no maximum every clump a card, and nothing of
+ * the cap is taken.
+ */
+function crownCards(max: number | undefined, clumps: number, cardCost: number): number {
+	if (max === undefined || !(cardCost > 0)) return clumps;
+	const take = Math.max(max * CROWN_LEAST, Math.min(clumps * cardCost, max * CROWN_SHARE));
+	return Math.min(clumps, Math.floor(take / cardCost));
+}
+
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
 
@@ -248,9 +259,7 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	// leaving the wood at least a tenth of it. Above that share the wood keeps the rest.
 	const clumps = Math.max(1, Math.round(bounds.clumps));
 	const cardCost = max === undefined ? 0 : growth.prices.clumpCard;
-	const crownNeed = cardCost > 0 ? clumps * cardCost : 0;
-	const crownTake = max === undefined ? 0 : Math.max(max * CROWN_LEAST, Math.min(crownNeed, max * CROWN_SHARE));
-	const cards = cardCost > 0 ? Math.min(clumps, Math.floor(crownTake / cardCost)) : 0;
+	const cards = crownCards(max, clumps, cardCost);
 	const socketsBound = Math.max(1, expected[4] as number);
 	const woodRoom = max === undefined ? 0 : Math.max(0, max - cards * cardCost);
 	const woodTotal = priced.trunk + priced.limbs + priced.branches;
@@ -567,6 +576,28 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			at: limb >= 0 && (axis.order === 1 || seatShare >= 0.9) ? 'limb-end' : 'limb-side',
 		});
 	});
+
+	// Under a maximum the crown stands only the clumps its share pays for: a card a clump is what the
+	// crown draws, so an unpayable clump would spend the wood's room on a card of its own. The kept
+	// clumps are an even rank over the crown's own centres, so a smaller cap keeps a subset of a
+	// larger one's clumps.
+	const cards = crownCards(
+		most,
+		Math.max(1, Math.round(boundsOf(input.record, growth).clumps)),
+		growth.prices.clumpCard,
+	);
+	if (cards < clumps.length) {
+		const ranks = thinningRanks(clumps.map((clump) => clump.centre));
+		const kept = new Set(
+			clumps
+				.map((clump, k) => ({ id: clump.id, rank: ranks[k] as number, k }))
+				.sort((a, b) => a.rank - b.rank || a.k - b.k)
+				.slice(0, cards)
+				.map((one) => one.id),
+		);
+		clumps.splice(0, clumps.length, ...clumps.filter((clump) => kept.has(clump.id)));
+		fill.splice(0, fill.length, ...fill.filter((clump) => kept.has(clump.id)));
+	}
 
 	// The sockets that clothe the clumps, at the share the sparseness and the plan leave.
 	const keepsItsShare = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
