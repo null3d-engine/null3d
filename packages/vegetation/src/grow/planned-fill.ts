@@ -177,66 +177,36 @@ export function fillClumps(input: FillInput): FillCount {
 		}
 	}
 
-	// The crown's own middle, about which its eight octants are read, and the octant each socket
-	// stands in: a share keeps the same share of every side of the crown, not of the crown as a whole.
-	const middle: [number, number, number] = [0, 0, 0];
-	for (const goal of goals) {
-		middle[0] += goal.point[0] / Math.max(1, goals.length);
-		middle[1] += goal.point[1] / Math.max(1, goals.length);
-		middle[2] += goal.point[2] / Math.max(1, goals.length);
-	}
-	const octants: { goal: Goal; k: number }[][] = Array.from({ length: 8 }, () => []);
+	// The sockets kept at this sparseness stand spread through the crown.
+	const ranks = thinningRanks(goals.map((goal) => goal.point));
 	goals.forEach((goal, k) => {
-		const [x, y, z] = goal.point;
-		const octant = (x > middle[0] ? 1 : 0) + (y > middle[1] ? 2 : 0) + (z > middle[2] ? 4 : 0);
-		(octants[octant] as { goal: Goal; k: number }[]).push({ goal, k });
+		goal.rank = ranks[k] as number;
 	});
-	// Each octant ranks its own sockets by the spread of their own places. Under a maximum a clump's
-	// own socket goes before any second socket anywhere, so a capped plant draws one card a kept clump
-	// over the whole crown rather than a few clumps and bare wood.
-	for (const list of octants) {
-		const ranks = thinningRanks(list.map(({ goal }) => goal.point));
-		const anchors = list.filter(({ goal }) => goal.anchor === true);
-		const anchorRanks = thinningRanks(anchors.map(({ goal }) => goal.point));
-		list.forEach(({ goal }, i) => {
-			goal.rank = ranks[i] as number;
-		});
-		anchors.forEach(({ goal }, i) => {
-			goal.anchorRank = anchorRanks[i] as number;
-		});
-	}
-	// How many sockets each octant keeps, so the eight add to the crown's share: a whole number each,
-	// and the remainder to the octants with the largest fractions.
+	// Under a maximum a clump's own socket goes before any second socket anywhere, so the plant draws
+	// one card a kept clump over the whole crown rather than a few clumps and bare wood. The anchors
+	// carry the crown's own spatial rank among themselves, never their order in the clump list, so a
+	// capped crown keeps the plant's share in every octant of it. Without a maximum the crown thins
+	// by its own spread alone.
+	const anchors = goals.filter((goal) => goal.anchor === true);
+	const anchorRanks = thinningRanks(anchors.map((goal) => goal.point));
+	anchors.forEach((goal, k) => {
+		goal.anchorRank = anchorRanks[k] as number;
+	});
 	const most = Math.max(0, Math.round(goals.length * Math.min(1, Math.max(0, leaves))));
-	const exact = octants.map((list) => (most * list.length) / Math.max(1, goals.length));
-	const take = exact.map((value) => Math.floor(value));
-	let spent = 0;
-	for (const value of take) spent += value;
-	const order = exact
-		.map((value, k) => [value - Math.floor(value), k] as const)
-		.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
-	for (let i = 0; spent < most && i < order.length; i++) {
-		take[(order[i] as readonly [number, number])[1]] =
-			(take[(order[i] as readonly [number, number])[1]] as number) + 1;
-		spent++;
-	}
-	const kept: { goal: Goal; k: number }[] = [];
-	octants.forEach((list, octant) => {
-		list
-			.sort((a, b) => {
-				const aAnchor = input.anchored === true && a.goal.anchor === true;
-				const bAnchor = input.anchored === true && b.goal.anchor === true;
-				if (aAnchor !== bAnchor) return aAnchor ? -1 : 1;
-				if (aAnchor)
-					return (a.goal.anchorRank as number) - (b.goal.anchorRank as number) || a.k - b.k;
-				return a.goal.rank - b.goal.rank || a.k - b.k;
-			})
-			.slice(0, take[octant] as number)
-			.forEach((entry) => kept.push(entry));
-	});
-	// The kept sockets stand in their own places' order, so a plant that keeps every socket draws
-	// each piece turned exactly as it was before any maximum was asked for.
-	kept.sort((a, b) => a.k - b.k);
+	const kept = goals
+		.map((goal, k) => ({ goal, k }))
+		.sort((a, b) => {
+			const aAnchor = input.anchored === true && a.goal.anchor === true;
+			const bAnchor = input.anchored === true && b.goal.anchor === true;
+			if (aAnchor !== bAnchor) return aAnchor ? -1 : 1;
+			if (aAnchor)
+				return (a.goal.anchorRank as number) - (b.goal.anchorRank as number) || a.k - b.k;
+			return a.goal.rank - b.goal.rank || a.k - b.k;
+		})
+		.slice(0, most)
+		// The kept sockets then stand in their own places' order, so a plant that keeps every socket
+		// draws each piece turned exactly as it was before any maximum was asked for.
+		.sort((a, b) => a.k - b.k);
 	let made = 0;
 	const socketOrigins: number[] = [];
 	const rollFrom = unitAt(seed, salt, variant, TURN, 0);
