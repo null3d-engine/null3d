@@ -650,6 +650,22 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The share of its drawn width that a stalk the vertex stage widened truly covers. The stalk is
+/// widened to the least drawn width, so the fragment takes the extra back: it keeps its twig's true
+/// width at a distance instead of drawing as a spoke.
+fn widened_cover(radius: f32, distance: f32) -> f32 {
+    let half =
+        radius * camera.projection[1][1] * frame.resolution.y * 0.5 / max(distance, 0.0001);
+    return clamp(half / (WOOD_LEAST_PIXELS * 0.5), 0.0, 1.0);
+}
+
+/// Whether a fragment of a widened stalk draws at its true width: a stable hash of its point in the
+/// plant's space drops it by the share the widening invented, so the stalk thins evenly and nothing
+/// crawls as the camera moves.
+fn widened_drawn(cover: f32, point: vec3f) -> bool {
+    return cover >= 0.999 || value3(point * 5.0) <= cover;
+}
+
 /// Metres a loose byte of the packed blade keel stands for: the attribute's fraction times the
 /// signed range the writer packed.
 const KEEL_SCALE: f32 = 127.0 / 8192.0;
@@ -1146,6 +1162,19 @@ fn surface(input: SurfaceInput) -> Surface {
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
+            }
+            // A stalk widened to its twig's true width on the screen takes that width back in the
+            // colour picture, over the share of it the twig itself covers.
+            if (material.matte < 0.5 && stalk.x > 0.0 && stalk.y > 0.5) {
+                let linear = object.worldMatrix[0].xyz;
+                let scale = sqrt(max(dot(linear, linear), 0.000001));
+                let cover = widened_cover(
+                    input.uv.y * WOOD_RADIUS_SPAN * scale,
+                    length(input.relativePosition),
+                );
+                if (!widened_drawn(cover, input.relativePosition)) {
+                    alpha = 0.0;
+                }
             }
         } else {
             let layer = select(1, 0, upper);

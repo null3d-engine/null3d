@@ -719,6 +719,22 @@ fn wood_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The share of its drawn width that a tube the vertex stage widened truly covers. A tube thinner
+/// than the least drawn width is widened to it, so the fragment takes the extra back: the wood keeps
+/// its true width at a distance instead of drawing as a spoke.
+fn widened_cover(radius: f32, distance: f32) -> f32 {
+    let half =
+        radius * camera.projection[1][1] * frame.resolution.y * 0.5 / max(distance, 0.0001);
+    return clamp(half / (WOOD_LEAST_PIXELS * 0.5), 0.0, 1.0);
+}
+
+/// Whether a fragment of a widened tube draws at its true width: a stable hash of its point in the
+/// plant's space drops it by the share the widening invented, so the tube thins evenly and nothing
+/// crawls as the camera moves.
+fn widened_drawn(cover: f32, point: vec3f) -> bool {
+    return cover >= 0.999 || value3(point * 5.0) <= cover;
+}
+
 /// The plant-space offset that widens a fine foliage edge seen nearly edge-on in the matte: each
 /// vertex moves along its own normal's screen direction by the share the view foreshortens the face,
 /// so a blade or a stem thinner than the least drawn width still covers a pixel. A face turned
@@ -1287,6 +1303,14 @@ fn surface(input: SurfaceInput) -> Surface {
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
         occlusion = mix(1.0, input.vertexColor.a, WOOD_SHADE);
+        // The vertex stage widened a tube thinner than the least drawn width, so the colour picture
+        // draws it over the share of its width that the tube truly covers.
+        if (material.matte < 0.5) {
+            let cover = widened_cover(max(radius, 0.0), length(input.relativePosition));
+            if (!widened_drawn(cover, input.relativePosition)) {
+                alpha = 0.0;
+            }
+        }
     } else if (mode == MODE_CARDS) {
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
@@ -1309,6 +1333,19 @@ fn surface(input: SurfaceInput) -> Surface {
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
+            }
+            // A stalk widened to its twig's true width on the screen takes that width back in the
+            // colour picture, over the share of it the twig itself covers.
+            if (material.matte < 0.5 && stalk.x > 0.0 && stalk.y > 0.5) {
+                let linear = object.worldMatrix[0].xyz;
+                let scale = sqrt(max(dot(linear, linear), 0.000001));
+                let cover = widened_cover(
+                    input.uv.y * WOOD_RADIUS_SPAN * scale,
+                    length(input.relativePosition),
+                );
+                if (!widened_drawn(cover, input.relativePosition)) {
+                    alpha = 0.0;
+                }
             }
         } else {
             let layer = select(1, 0, upper);
@@ -1433,6 +1470,17 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
+            // A stem thinner than the least drawn width is widened on the screen, so the colour
+            // picture draws it over the share of its width that the stem truly covers.
+            if (material.matte < 0.5) {
+                let cover = widened_cover(
+                    max(input.uv1.x * WOOD_RADIUS_SPAN, 0.0),
+                    length(input.relativePosition),
+                );
+                if (!widened_drawn(cover, input.relativePosition)) {
+                    alpha = 0.0;
+                }
+            }
         } else if ((mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5)
             || (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_PIECE_SHEATH) < 0.5)) {
             // A ground plant's sheath column, a merged one or a placed piece's, draws in the
@@ -1508,6 +1556,18 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
             }
             sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
+            // A leaf's own petiole is widened to the least drawn width too, so its colour picture
+            // draws it over the share of its width that the petiole truly covers.
+            if (mode == MODE_SHOOTS && material.matte < 0.5 &&
+                abs(input.vertexColor.b * 255.0 - KIND_PETIOLE) < 0.5) {
+                let cover = widened_cover(
+                    max(input.uv1.x * WOOD_RADIUS_SPAN, 0.0),
+                    length(input.relativePosition),
+                );
+                if (!widened_drawn(cover, input.relativePosition)) {
+                    alpha = 0.0;
+                }
+            }
         }
         if (mode == MODE_SHOOTS) {
             let row = shoot_row(object.values);
