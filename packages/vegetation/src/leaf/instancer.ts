@@ -358,7 +358,13 @@ export function dressShoots(input: DressInput): DressedShoots {
 	const placed = placedRows(input);
 	const rows = cappedRows(placed, input.record.shoots?.placement.rowsPerAxis);
 	const dropped = placed.length - rows.length;
-	const limit = Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
+	// A planned plant grew its crown's box and its bare wood as the plan states them, so no row of it
+	// moves the box and no twig of it is trimmed here: a box read from its rows would move with the
+	// sparseness, and the plant must be as tall at every sparseness.
+	const planned = input.record.growth.model === 'planned';
+	const limit = planned
+		? 0
+		: Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
 	let lowest = Number.POSITIVE_INFINITY;
 	for (const row of rows) lowest = Math.min(lowest, row.position[1]);
 	const trimmed =
@@ -374,7 +380,8 @@ export function dressShoots(input: DressInput): DressedShoots {
 			: undefined;
 	if (!trimmed) {
 		// A pruned crown stands on what it kept.
-		const pruned = (input.record.shoots?.placement.skyPrune ?? 0) > 0 && rows.length > 0;
+		const pruned =
+			!planned && (input.record.shoots?.placement.skyPrune ?? 0) > 0 && rows.length > 0;
 		const skeleton =
 			pruned && lowest !== input.skeleton.crownBase
 				? { ...input.skeleton, crownBase: lowest }
