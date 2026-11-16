@@ -531,7 +531,7 @@ const foliage =
 						// a lift in their red and green. The lower face keeps the pale blue that still 13
 						// shows, since cutting it greened the leaf away from its photograph.
 						reflectance: [0.0381, 0.0946, 0.0086] as const,
-						reflectanceBack: [0.1657, 0.2140, 0.1329] as const,
+						reflectanceBack: [0.1657, 0.214, 0.1329] as const,
 					},
 				},
 			}

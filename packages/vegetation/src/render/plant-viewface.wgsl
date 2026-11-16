@@ -162,6 +162,11 @@ const WOOD_RADIUS_SPAN: f32 = 4.0;
 const WOOD_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
+// The share of the bark that a lichen's rosettes cover, which its pattern gives way to where a
+// patch falls under a pixel and the pattern would shimmer.
+const LICHEN_COVER: f32 = 0.12;
+// The share of its rosettes' even tint that a far lichen keeps, 0 fading it out at a distance.
+const HEADER_LICHEN_FAR_TINT: i32 = 76;
 // The open-sky shares between which a clump's shade grades, from its dark core to its sunlit rim.
 const CROWN_SHADE_LOW: f32 = 0.15;
 const CROWN_SHADE_HIGH: f32 = 0.75;
@@ -1123,8 +1128,10 @@ fn surface(input: SurfaceInput) -> Surface {
         let footprint = max(length(dpx), length(dpy));
         let resolved = 1.0 - smoothstep(0.004, 0.012, footprint);
         let rosette = min(1.0, smoothstep(0.7, 0.73, grain) * 4.0);
-        let lichen_mask =
-            rosette * crest * upward * in_zone * lichen.w * (1.0 - youth) * resolved;
+        // Where a patch falls under a pixel the pattern gives way to the share of the bark the
+        // rosettes cover, so a far limb carries the lichen's even tint and never shimmers.
+        let pattern = mix(header(HEADER_LICHEN_FAR_TINT).x * LICHEN_COVER, rosette, resolved);
+        let lichen_mask = pattern * crest * upward * in_zone * lichen.w * (1.0 - youth);
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
