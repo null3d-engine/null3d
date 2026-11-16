@@ -441,8 +441,8 @@ export const frame: FrameSpec = {
 /**
  * The foot of the framed oak. The frame's trunk already flares to still 01's foot, so the stem base
  * adds no flare of its own. It keeps still 14's buttresses as rounded lobes that rise from the
- * ground as root flanks, with grooves between them, and short low roots that sink into the litter
- * close to the foot. The swell stays within the frame's guard on how far a foot may widen across its
+ * ground as root flanks, with grooves between them, and long roots that run out from the foot and
+ * sink into the litter. The swell stays within the frame's guard on how far a foot may widen across its
  * middle at the ground, so still 01's bell, which the trunk's own width states, sets the flare and
  * the lobes only break its hem.
  */
@@ -451,15 +451,15 @@ const base = {
 	flare: { amount: 0, height: 0.5 },
 	buttress: {
 		lobes: { mean: 9, spread: 1.5 },
-		amount: 0.14,
+		amount: 0.35,
 		sharpness: 3,
 		height: 1,
-		round: 1,
+		round: 0.4,
 	},
 	roots: {
 		count: { mean: 6, spread: 1 },
-		length: { mean: 0.35, spread: 0.1 },
-		radius: 0.07,
+		length: { mean: 1.3, spread: 0.3 },
+		radius: 0.2,
 		dive: 0.3,
 		ridge: 0.3,
 	},
