@@ -2,6 +2,10 @@
 // octahedral impostor atlases that the impostors add-on's cards read. The first card level holds the
 // same outline as the nearest one at a hundredth of its triangles, so it is the source.
 //
+// The bake draws the plant that was asked for, its own first card level, and it draws that level
+// finer than the atlas stores: its grid of texels and its supersampling follow the plant's triangles,
+// down and never up, so a capped plant bakes faster and a full one keeps the record's grid.
+//
 // The CPU cannot read the shipped KTX2 textures, so the colours come from what the kit holds: the
 // cards sample the card atlas's front layer, which the kit baked on the CPU from the leaves' means
 // and profiles; the wood takes its bark zone's mean colour; an extra takes its record colour. Each
@@ -9,13 +13,10 @@
 // inside reads darker from afar. The bake is arithmetic on the arrays, so every device gets the
 // same pixels.
 import type { ImpostorBakePart } from '@null3d/impostors/bake';
-import type { MeshArrays, PlantAsset, PlantPart, SpeciesKitData } from '../asset';
+import type { PlantAsset, PlantPart, SpeciesKitData } from '../asset';
 import type { Rgb } from '../core/types';
-import { lightCrown } from '../crown/visibility';
-import { GREAT_LIMB_SHARE, woodParts } from '../grow/sparse';
-import type { DressInput, FarBake, MeshInput } from '../stages';
-import { levelBuild } from './budget';
-import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './quantise';
+import type { FarBake } from '../stages';
+import { TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './quantise';
 
 /**
  * A variant's far cards on a page: its impostor bake, which the impostors add-on's cards draw.
@@ -82,42 +83,6 @@ function unpack(part: PlantPart, kit: SpeciesKitData): LevelPart {
 	return { name: part.name, positions, normals, uvs, colors: a.colors, indices: a.indices };
 }
 
-/**
- * The first card level as the plant's best look draws it, rebuilt from a grown asset: its wood, its
- * cards, its merged foliage and its extras, with the crown lit again on a copy of the rows, so the
- * sky visibility each vertex carries is the drawn level's, and each part quantised as the asset's
- * own parts are. A triangle maximum thins the level the asset draws, but the far card is two
- * triangles whatever it shows, so it pictures the best look.
- */
-function bestFirstLevel(kit: SpeciesKitData, asset: PlantAsset): LevelPart[] {
-	const dress: DressInput = {
-		record: kit.record,
-		seed: asset.seed,
-		variant: asset.variant,
-		season: asset.season,
-		kit,
-		skeleton: asset.skeleton,
-		coarseness: asset.coarseness,
-	};
-	const rows = { ...asset.shoots, sky: asset.shoots.sky.slice(), bent: asset.shoots.bent.slice() };
-	const mesh: MeshInput = { ...dress, rows, crown: lightCrown(dress, rows), detail: kit.detail };
-	const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
-	const build = levelBuild({ mesh, parts: woodParts(asset.skeleton, limbs), wood: false }, 1);
-	const parts: LevelPart[] = [];
-	const add = (name: PlantPart['name'], arrays: MeshArrays | undefined, rest = false): void => {
-		if (!arrays || arrays.indices.length === 0) return;
-		const steps = name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS;
-		for (const quantised of quantiseParts(arrays, kit.box, steps, rest))
-			parts.push(unpack({ name, arrays: quantised }, kit));
-	};
-	add('wood', build.wood);
-	add('foliage', build.foliage);
-	add('cards', build.cards);
-	// Fruit and cones are quantised in finer steps, as the asset's own extras are.
-	add('extras', build.extras, true);
-	return parts;
-}
-
 /** Widens a box to hold a part's positions. */
 function widen(positions: Float32Array, min: number[], max: number[]): void {
 	for (let i = 0; i < positions.length; i++) {
@@ -165,6 +130,44 @@ const FAR_SHARE = 0.3;
  */
 const SUPERSAMPLE = 4;
 
+/**
+ * The least the bake draws a far view at, and the least rays it casts a texel: the floor. A far view
+ * still meets the plant at the switch, where its height is the record's pixels, so the cell keeps
+ * half the record's texels: the crown's clumps stay apart there and the bake stays cheap.
+ */
+export const FAR_TEXELS_LEAST = 32;
+export const FAR_SUPERSAMPLE_LEAST = 1;
+
+/**
+ * The grid a plant's far atlas is baked at: the record's texels a view and the bake's supersampling,
+ * scaled down with the plant's own first card level against the level's budget, and never up. A
+ * plant with no maximum keeps the record's grid; a capped plant's crown holds less detail than a
+ * full one's, so a smaller cell and fewer rays a texel lose nothing it shows, and the bake's time
+ * follows the plant's triangles rather than the record's grid.
+ *
+ * @param kit The species' kit.
+ * @param asset The grown variant.
+ * @returns The texels a far view, and how many times finer the bake draws.
+ * @category api/vegetation
+ */
+function farGrid(
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+): { readonly texels: number; readonly supersample: number } {
+	const texels = asset.impostor.texels;
+	if (asset.maxTriangles === undefined) return { texels, supersample: SUPERSAMPLE };
+	const budget = kit.record.lod.budget.lod1Triangles;
+	const own = asset.stats.triangles[1];
+	if (!(budget > 0) || !(own > 0)) return { texels, supersample: SUPERSAMPLE };
+	const detail = Math.sqrt(Math.min(1, own / budget));
+	// A cell stays a power of two, as the atlas's mip levels expect.
+	const cells = Math.max(FAR_TEXELS_LEAST, 2 ** Math.floor(Math.log2(Math.max(1, texels * detail))));
+	return {
+		texels: Math.min(texels, cells),
+		supersample: Math.max(FAR_SUPERSAMPLE_LEAST, Math.round(SUPERSAMPLE * detail)),
+	};
+}
+
 /** The card atlas's front layer as a coverage map whose blue holds the coverage, as the bake reads it. */
 const COVERAGE = new WeakMap<Uint8Array, Uint8Array>();
 
@@ -185,8 +188,8 @@ function coverageOf(color: Uint8Array, texels: number): Uint8Array {
 function filtered(
 	fine: { readonly color: Uint8Array; readonly surface: Uint8Array },
 	side: number,
+	s: number,
 ): { readonly color: Uint8Array; readonly surface: Uint8Array } {
-	const s = SUPERSAMPLE;
 	const wide = side * s;
 	const color = new Uint8Array(side * side * 4);
 	const surface = new Uint8Array(side * side * 4);
@@ -233,17 +236,15 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			'@null3d/vegetation: the far baker is not loaded on this thread; await loadFarBaker() first',
 		);
 	const views = asset.impostor.views;
-	const texels = asset.impostor.texels;
+	const { texels, supersample } = farGrid(kit, asset);
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];
 	const parts: ImpostorBakePart[] = [];
 	const bark = barkMean(kit);
 	const size = kit.cards.size;
 	const cards: ImpostorBakePart[] = [];
-	const level =
-		asset.maxTriangles === undefined
-			? asset.levels[1].parts.map((part) => unpack(part, kit))
-			: bestFirstLevel(kit, asset);
+	// The plant that was asked for draws its own first card level into the atlas.
+	const level = asset.levels[1].parts.map((part) => unpack(part, kit));
 	for (const part of level) {
 		if (part.indices.length === 0) continue;
 		const { positions, normals, uvs } = part;
@@ -308,12 +309,12 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 	}
 	const bake = baker({
 		atlas: { columns: views, rows: views },
-		texels: texels * SUPERSAMPLE,
+		texels: texels * supersample,
 		parts,
 		min: [min[0] as number, min[1] as number, min[2] as number],
 		max: [max[0] as number, max[1] as number, max[2] as number],
 	});
-	const far = filtered({ color: bake.color.data, surface: bake.surface.data }, views * texels);
+	const far = filtered({ color: bake.color.data, surface: bake.surface.data }, views * texels, supersample);
 	return {
 		views,
 		texels,
