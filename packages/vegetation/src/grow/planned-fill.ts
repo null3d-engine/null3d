@@ -41,6 +41,7 @@ const SPREAD_TILT = 0.5698402909980532;
 /** The purpose of the draws that turn a socket's piece, which the frame model shares. */
 const TURN = 15;
 
+
 /** What the fill grows: the elements it made and the sockets it hung. */
 export interface FillCount {
 	/** The twig axes and their nodes, and the sockets: the elements the fill made. */
@@ -99,6 +100,12 @@ export interface FillInput {
 	readonly flowers?: number;
 	/** How far each socket's piece turns from the sky: its roll and its tilt, in degrees. */
 	readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
+	/**
+	 * Whether a triangle maximum is in force, so the crown keeps one socket a clump before any second
+	 * socket anywhere. Without a maximum the sockets thin by the crown's own spread alone, which keeps
+	 * every part of the crown at the same share.
+	 */
+	readonly anchored?: boolean;
 }
 
 /** One socket the fill places, its place and the clump it belongs to. */
@@ -176,22 +183,16 @@ export function fillClumps(input: FillInput): FillCount {
 	goals.forEach((goal, k) => {
 		goal.rank = ranks[k] as number;
 	});
-	// Each clump's own socket goes before any second socket anywhere, and the anchors are thinned
-	// evenly across the crown among themselves. Under a tight maximum the plant then draws one card a
-	// kept clump over the whole crown rather than a few clumps and bare wood.
-	const anchors = goals.filter((goal) => goal.anchor === true);
-	const anchorRanks = thinningRanks(anchors.map((goal) => goal.point));
-	anchors.forEach((goal, k) => {
-		goal.anchorRank = anchorRanks[k] as number;
-	});
+	// Under a maximum a clump's own socket goes before any second socket anywhere, so the plant draws
+	// one card a kept clump over the whole crown rather than a few clumps and bare wood. Without a
+	// maximum the crown thins by its own spread alone, which keeps every side of it at one share.
 	const most = Math.max(0, Math.round(goals.length * Math.min(1, Math.max(0, leaves))));
 	const kept = goals
 		.map((goal, k) => ({ goal, k }))
 		.sort((a, b) => {
-			const aAnchor = a.goal.anchor === true;
-			const bAnchor = b.goal.anchor === true;
+			const aAnchor = input.anchored === true && a.goal.anchor === true;
+			const bAnchor = input.anchored === true && b.goal.anchor === true;
 			if (aAnchor !== bAnchor) return aAnchor ? -1 : 1;
-			if (aAnchor) return (a.goal.anchorRank as number) - (b.goal.anchorRank as number) || a.k - b.k;
 			return a.goal.rank - b.goal.rank || a.k - b.k;
 		})
 		.slice(0, most)
