@@ -1861,7 +1861,10 @@ export function plannedClumpCards(
 			const x = input.skeleton.position[n * 3] as number;
 			const y = input.skeleton.position[n * 3 + 1] as number;
 			const z = input.skeleton.position[n * 3 + 2] as number;
-			const d = (x - (centre[0] as number)) ** 2 + (y - (centre[1] as number)) ** 2 + (z - (centre[2] as number)) ** 2;
+			const d =
+				(x - (centre[0] as number)) ** 2 +
+				(y - (centre[1] as number)) ** 2 +
+				(z - (centre[2] as number)) ** 2;
 			if (d < least) {
 				least = d;
 				best = [x, y, z];
@@ -1965,7 +1968,8 @@ export function clusterCardMesh(
 	const base = input.variant * VARIANT_RECORDS;
 	// A record that asks for the clump card shades a cluster by its own row's sky and its own
 	// height, which is the shade a clump card bakes, for the clusters a maximum draws.
-	const own = shade === undefined && (clumpShare(input.record, 1) > 0 || clumpShare(input.record, 2) > 0);
+	const own =
+		shade === undefined && (clumpShare(input.record, 1) > 0 || clumpShare(input.record, 2) > 0);
 	const lighting =
 		shade ??
 		(own

@@ -99,6 +99,12 @@ export interface FillInput {
 	readonly flowers?: number;
 	/** How far each socket's piece turns from the sky: its roll and its tilt, in degrees. */
 	readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
+	/**
+	 * Whether a triangle maximum is in force, so the crown keeps one socket a clump before any second
+	 * socket anywhere. Without a maximum the sockets thin by the crown's own spread alone, which keeps
+	 * every part of the crown at the same share.
+	 */
+	readonly anchored?: boolean;
 }
 
 /** One socket the fill places, its place and the clump it belongs to. */
@@ -176,9 +182,11 @@ export function fillClumps(input: FillInput): FillCount {
 	goals.forEach((goal, k) => {
 		goal.rank = ranks[k] as number;
 	});
-	// Each clump's own socket goes before any second socket anywhere, and the anchors are thinned
-	// evenly across the crown among themselves. Under a tight maximum the plant then draws one card a
-	// kept clump over the whole crown rather than a few clumps and bare wood.
+	// Under a maximum a clump's own socket goes before any second socket anywhere, so the plant draws
+	// one card a kept clump over the whole crown rather than a few clumps and bare wood. The anchors
+	// carry the crown's own spatial rank among themselves, never their order in the clump list, so a
+	// capped crown keeps the plant's share in every octant of it. Without a maximum the crown thins
+	// by its own spread alone.
 	const anchors = goals.filter((goal) => goal.anchor === true);
 	const anchorRanks = thinningRanks(anchors.map((goal) => goal.point));
 	anchors.forEach((goal, k) => {
@@ -188,10 +196,11 @@ export function fillClumps(input: FillInput): FillCount {
 	const kept = goals
 		.map((goal, k) => ({ goal, k }))
 		.sort((a, b) => {
-			const aAnchor = a.goal.anchor === true;
-			const bAnchor = b.goal.anchor === true;
+			const aAnchor = input.anchored === true && a.goal.anchor === true;
+			const bAnchor = input.anchored === true && b.goal.anchor === true;
 			if (aAnchor !== bAnchor) return aAnchor ? -1 : 1;
-			if (aAnchor) return (a.goal.anchorRank as number) - (b.goal.anchorRank as number) || a.k - b.k;
+			if (aAnchor)
+				return (a.goal.anchorRank as number) - (b.goal.anchorRank as number) || a.k - b.k;
 			return a.goal.rank - b.goal.rank || a.k - b.k;
 		})
 		.slice(0, most)
@@ -239,16 +248,20 @@ function dippedY(
 ): number {
 	if (clump.at !== 'limb-end' || crown === undefined || crown.height <= 0) return point[1];
 	// One at the crown's base, falling to none halfway up it: only the lowest limbs' ends droop.
-	const lowness = 1 - Math.min(1, Math.max(0, (clump.centre[1] - crown.base) / (crown.height * 0.5)));
+	const lowness =
+		1 - Math.min(1, Math.max(0, (clump.centre[1] - crown.base) / (crown.height * 0.5)));
 	if (lowness <= 0) return point[1];
 	const out =
-		Math.hypot(point[0] - clump.root[0], point[2] - clump.root[2]) /
-		Math.max(1e-6, clump.radius);
+		Math.hypot(point[0] - clump.root[0], point[2] - clump.root[2]) / Math.max(1e-6, clump.radius);
 	const dip = DIP_SHARE * clump.radius * Math.min(1, out) * lowness;
 	return Math.max(crown.base, point[1] - dip);
 }
 
-/** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */function flowerAt(seed: number, place: number, flowers: number | undefined): boolean {
+/** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */ function flowerAt(
+	seed: number,
+	place: number,
+	flowers: number | undefined,
+): boolean {
 	return flowers !== undefined && flowers > 0 && unitAt(seed, place, 2) < flowers;
 }
 

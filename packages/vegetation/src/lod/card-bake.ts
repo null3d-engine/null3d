@@ -722,7 +722,18 @@ export function bakeCards(
 		return {
 			planes: planes.map((plane, k) => {
 				const rect = inside(rects[p]?.[k] as [number, number, number, number]);
-				bakeCell(mesh, plane, rect, size, palette, color, surface, plane.triangles, round, roundWeight);
+				bakeCell(
+					mesh,
+					plane,
+					rect,
+					size,
+					palette,
+					color,
+					surface,
+					plane.triangles,
+					round,
+					roundWeight,
+				);
 				return {
 					centre: plane.centre as unknown as CardCell['planes'][number]['centre'],
 					right: plane.right as unknown as CardCell['planes'][number]['right'],
