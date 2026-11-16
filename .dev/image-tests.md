@@ -2,6 +2,12 @@
 
 This guide covers the image test manifest, its references, and the review that makes a new image a reference. [AGENTS.md](../AGENTS.md) lists the commands, and [Device sessions](devices.md) covers the runs on phones, tablets and the Mac's browser apps.
 
+## What only a device draw sees
+
+A generated shader that compiles against the mock backend can still fail the device's own compiler. The mock backend checks the pipeline graph; it does not compile the backend's shader language. Only a device draw sees that, so a change to shader source earns a device run before it is trusted.
+
+The example is real. A masked prepass fragment had an early return and a final return, and the Metal compiler emitted the fragment's result variable once for each. The tests passed and the tablet's page failed with E1404 and no frame. A shader fragment with more than one return is the shape a static read can find before the device does.
+
 ## The manifest
 
 - A full picture run asks the dev server for 1,915 pages, and the server keeps what it serves for the whole run: it reached **3,542 MB of resident memory** on the Mac before the set was done. Node's default heap limit sits below that, so a run at the default died partway through and every page after the death failed as `E1410` with a refused connection. Such a failure reads as a picture fault or a timeout, never as a server that is gone. Both page servers are therefore given `--max-old-space-size=8192`, and `tests/lib/page-server-heap.test.ts` fails if that limit is missing, or set at or below the measured peak. The figure is the dev server's own; the preview server is given the same limit rather than one of its own.
