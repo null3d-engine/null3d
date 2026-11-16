@@ -52,6 +52,11 @@ export interface PlantSpeciesOptions {
 	readonly far?: boolean;
 	/** Whether the copies cast shadows; true by default. */
 	readonly castShadows?: boolean;
+	/**
+	 * The most triangles one copy may draw at any level. Without it, each level draws what the
+	 * plant's best look needs.
+	 */
+	readonly maxTriangles?: number;
 	/** The camera's vertical field of view in degrees, which sets the switch distances. */
 	readonly fov?: number;
 	/**
@@ -143,7 +148,13 @@ export async function plantSpecies(
 	const grown = (async () => {
 		const assets = await Promise.all(
 			Array.from({ length: variants }, (_, variant) =>
-				growPlant(kit, { seed: options.seed, variant, near: true, sparse: DEMO_SPARSENESS }),
+				growPlant(kit, {
+					seed: options.seed,
+					variant,
+					near: true,
+					sparse: DEMO_SPARSENESS,
+					...(options.maxTriangles !== undefined && { maxTriangles: options.maxTriangles }),
+				}),
 			),
 		);
 		const far = options.far

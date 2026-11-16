@@ -897,11 +897,8 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Levels of detail',
 		scene: 'Mixed forest',
 		summary:
-			'56,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail, and an understory of bushes covers the ground between the trunks and fades out at its own distance. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards. The hero fir beside the flight keeps its detail by its own threshold bias, for comparison with the trees around it.',
-		controls: [
-			{ keys: ['B'], does: "The hero fir's own level-of-detail bias" },
-			{ keys: ['L'], does: 'Levels of detail on or off' },
-		],
+			"56,000 trees of four kinds over rolling hills at golden hour. The nearest 8,000 draw as the vegetation add-on's plants, each in no more triangles than the preset allows, and the rest as cut-out cards. An understory of bushes covers the ground between the trunks and fades out at its own distance. Each plant picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch.",
+		controls: [{ keys: ['L'], does: 'Levels of detail on or off' }],
 		hold: 2,
 		// The 56,000 trees and the understory need more than 300 s to draw and capture on CI's
 		// software GPU, so the wait takes the 600 s ceiling that the other large scenes use.

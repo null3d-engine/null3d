@@ -1,27 +1,10 @@
-// The forest's trees and land, made in code. Three firs and a broadleaf tree are each built from
-// one surface formula, sampled on finer or coarser grids for the four levels of detail. Each fir's
-// tiers keep their branch tips on every level, and every level has the same normals, so the outline
-// and the shading hold when a tree switches. A low understory of bushes covers the ground between
-// the trunks, in the same four levels. One texture holds bark, needles and leaves; another holds a
-// cut-out picture of each tree for the far cards. The hills rise into wooded ridges.
-//
-// The trees stay this demo's own, and the cost is measured rather than assumed. At the demo's own
-// count of 8,000 near trees their coarsest levels are 62, 56 and 30 triangles for the three firs and
-// 36 for the broadleaf, so the whole stand costs between 240,000 and 496,000 triangles whatever the
-// mix. The vegetation add-on's conifer is 3,079 triangles at its coarsest level, as the demo task's
-// evidence records it, so the same 8,000 through the add-on draw 24,600,000, fifty to a hundred times
-// as many. The demo does not load the add-on at all today, so the switch would also bring its wasm
-// and its memory with it; the neighbouring demo measured that at 248.8 MiB against 51.8. A generator
-// that costs a fiftieth of the triangles and none of the bytes is the demo's own.
-import {
-	type Geometry,
-	type InstanceBatch,
-	type Material,
-	type Mesh,
-	type MeshGeometry,
-	math,
-	type Scene,
-} from '@null3d/engine';
+// The forest's scenery, made in code. One texture holds bark, needles and leaves; another holds a
+// cut-out picture of each kind of tree for the far cards, whose outlines follow the kind's shape.
+// The far trees draw as those cards on every preset, and the near trees draw as the vegetation
+// add-on's plants (./addon.ts) within the preset's triangle maximum. A low understory of bushes
+// covers the ground between the trunks, in four levels of detail of its own. The hills rise into
+// wooded ridges.
+import { type Geometry, type InstanceBatch, math } from '@null3d/engine';
 
 const TURN = Math.PI * 2;
 const frac = (x: number) => x - Math.floor(x);
@@ -62,8 +45,8 @@ const trunk = (top: number, radius: number): Part => ({
 	],
 });
 
-/** A fir: its tiers, the height of its lowest branches, its width, branches per tier, droop. */
-export type Fir = { tiers: number; low: number; width: number; branches: number; droop: number };
+/** A fir: its tiers, the height of its lowest branches, its width, and its droop. */
+export type Fir = { tiers: number; low: number; width: number; droop: number };
 /** A broadleaf tree: the top of its bare trunk, its crown's width, and its crown's grids. */
 export type Broadleaf = {
 	crown: number;
@@ -71,36 +54,6 @@ export type Broadleaf = {
 	grids?: readonly (readonly [number, number])[];
 };
 export type Kind = Fir | Broadleaf;
-
-/** The tiers of a fir 1 high, each a ring of drooping branches around the trunk. */
-function firParts({ tiers, low, width, branches, droop }: Fir): Part[] {
-	const h = (1.8 * (1 - low)) / tiers;
-	const parts = Array.from({ length: tiers }, (_, k): Part => {
-		const tip = low + h + ((1 - low - h) * k) / (tiers - 1);
-		const radius = width * (1 - (0.85 * k) / tiers);
-		const turn = k * 1.7;
-		return {
-			at: (u, v) => {
-				// One branch per lobe: its tip sticks out and hangs lower than the gap beside it.
-				const s = (0.5 + 0.5 * Math.cos(branches * u * TURN)) ** 2;
-				const r = radius * v ** 0.9 * (0.68 + 0.32 * s);
-				const y = tip - h * v ** 1.2 - droop * radius * v * v * s;
-				const a = u * TURN + turn;
-				const shade = (0.4 + 0.6 * v ** 0.7) * (0.8 + 0.2 * s) * (0.8 + (0.3 * k) / tiers);
-				const uv = [u * branches + 0.5, band(NEEDLES, v)];
-				return [Math.cos(a) * r, y, Math.sin(a) * r, ...lean(a, 0.9 - 0.5 * v), ...uv, shade];
-			},
-			// The coarser levels keep a vertex at every branch tip, or at every other one.
-			grids: [
-				[branches * 4, 6],
-				[branches * 2, 3],
-				[branches, 2],
-				[branches / 2, 1],
-			],
-		};
-	});
-	return [trunk(0.95, 0.02 + width * 0.05), ...parts];
-}
 
 /** A crown's columns and rows at each level, from the base level down, for a tree of its size. */
 const CROWN_GRIDS = [
@@ -178,9 +131,9 @@ function error(parts: Part[], level: number) {
 	return worst;
 }
 
-/** A tree 1 high at each of its four levels: its arrays, and its error after the base level. */
-export function treeLevels(kind: Kind) {
-	const parts = 'tiers' in kind ? firParts(kind) : broadleafParts(kind);
+/** The understory's plant 1 high at each of its four levels: its arrays, and its error after the base level. */
+export function plantLevels(plant: Broadleaf) {
+	const parts = broadleafParts(plant);
 	let last = 0;
 	return [0, 1, 2, 3].map((level) => {
 		last = level === 0 ? 0 : Math.max(error(parts, level), last * 1.25);
@@ -189,11 +142,11 @@ export function treeLevels(kind: Kind) {
 }
 
 /**
- * A kind's costliest mesh, which names the three coarser ones with their errors. Every row of an
- * instance batch of this kind then picks its own level.
+ * The understory's costliest mesh, which names the three coarser ones with their errors. Every row
+ * of the instance batch then picks its own level.
  */
-export function meshOf(geometry: Geometry, kind: Kind) {
-	const [base, ...coarser] = treeLevels(kind).map(({ arrays, error }) => ({
+export function meshOf(geometry: Geometry, plant: Broadleaf) {
+	const [base, ...coarser] = plantLevels(plant).map(({ arrays, error }) => ({
 		mesh: geometry.fromArrays(arrays),
 		error,
 	}));
@@ -516,51 +469,19 @@ export function countRows(rows: Rows, near: number) {
 
 /** The four kinds: a tall narrow spruce, a fir, a young broad fir, and a broadleaf tree. */
 export const KINDS: readonly Kind[] = [
-	{ tiers: 7, low: 0.1, width: 0.225, branches: 8, droop: 0.3 },
-	{ tiers: 5, low: 0.14, width: 0.3, branches: 10, droop: 0.2 },
-	{ tiers: 4, low: 0.06, width: 0.4, branches: 6, droop: 0.35 },
+	{ tiers: 7, low: 0.1, width: 0.225, droop: 0.3 },
+	{ tiers: 5, low: 0.14, width: 0.3, droop: 0.2 },
+	{ tiers: 4, low: 0.06, width: 0.4, droop: 0.35 },
 	{ crown: 0.62, width: 0.3 },
 ];
 
-/** The forest's counts for a preset: the near trees in full and the rest as cards on Low. */
+/** The forest's counts for a preset: every far row as a card, and the understory that covers it. */
 export function fitCounts(
-	kinds: readonly { trees: InstanceBatch; cards: InstanceBatch; count: number; near: number }[],
+	kinds: readonly { cards: InstanceBatch; count: number; near: number }[],
 	undergrowth: InstanceBatch,
 	low: boolean,
 	bushes: { all: number; near: number },
 ): void {
-	for (const { trees, cards, count, near } of kinds) {
-		trees.setActiveCount(low ? near : count);
-		cards.setActiveCount(low ? count - near : 0);
-	}
+	for (const { cards, count, near } of kinds) cards.setActiveCount(count - near);
 	undergrowth.setActiveCount(low ? bushes.near : bushes.all);
-}
-
-/**
- * One hero fir beside the flight: an object rather than an instance row, whose bias keeps its finer
- * levels at a distance where the trees around it turn coarse. `setBias` toggles it for comparison.
- */
-export function addHero(
-	scene: Scene,
-	kind: { mesh: MeshGeometry },
-	material: Material,
-	ground: (x: number, z: number) => number,
-) {
-	const mesh: Mesh = scene.createMesh({
-		mesh: kind.mesh,
-		material,
-		position: [30, ground(30, 150), 150],
-		scale: [8, 8, 8],
-		castShadows: true,
-		receiveShadows: true,
-	});
-	let keen = true;
-	mesh.setLevelBias(0.25);
-	return {
-		setLevelBias: mesh.setLevelBias.bind(mesh),
-		setBias() {
-			keen = !keen;
-			mesh.setLevelBias(keen ? 0.25 : 1);
-		},
-	};
 }
