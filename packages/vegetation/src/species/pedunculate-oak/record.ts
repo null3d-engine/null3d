@@ -342,11 +342,11 @@ export const record: Species = {
 			// daylight, so this tint scales the sampled colour to match it. The flat-lit texture source
 			// drawing the same wood sits a little dark beside its photograph, but a texture source
 			// sets no row.
-			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.58, 0.55, 0.42] },
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.73, 0.69, 0.6] },
 			// The great limbs stand in brighter light than the bole and read a little lighter and
 			// warmer than still 16. Their tint stays close to the bole's and changes over a long blend,
 			// so a limb that crosses the zone's height keeps one colour along its length.
-			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2.5, tint: [0.28, 0.28, 0.1] },
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2.5, tint: [0.34, 0.34, 0.16] },
 		],
 		young: 0,
 		// The young bark is the smooth grey-green of a young shoot, and the photographs of it are
@@ -481,12 +481,15 @@ export const record: Species = {
 		// Stills 01, 02 and 18: the limbs inside the crown are lit on top and dark beneath, where the
 		// photographs show the wood in the crown's shade reading far darker than its bark alone.
 		woodShade: 0.7,
+		// Still 16, full size: the photographs show deep furrows with lit walls, so the bark's own
+		// relief is tilted and deepened beyond what its map alone gives.
+		barkRelief: 0.8,
 		// Still 18 at full size: the crown's rim is rounded lobes with clean notches of sky, so a far
 		// card's thinnest leaves keep their cover as its mip levels average them with their gaps.
 		cardMipLift: 0.12,
 		// Still 01, full size: inside a lit stretch of the crown, neighbouring pixels change gradually
 		// rather than each texel catching its own light, so a shoot's leaves shade as one rounded mass.
-		cardNormalRound: 0.35,
+		cardNormalRound: 0.6,
 		// Stills 01 and 02: the crown's box shows 0.37 and 0.33 of sky in the photographs and 0.48 and
 		// 0.43 at the first card level, whose kept cards stand sparse. The field's largest value that
 		// keeps the second card level within the card tests' sky band, 0.02, reads 0.1433 of sky

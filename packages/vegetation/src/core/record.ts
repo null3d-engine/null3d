@@ -2994,6 +2994,12 @@ export interface LodSpec {
 	 */
 	readonly woodShade?: number;
 	/**
+	 * How far the bark's own relief deepens, from 0 to 1: the furrow's cavity darkens and the bark's
+	 * normal tilts further from the trunk's round, so the grain reads at a distance. Absent or 0 draws
+	 * the relief as the wood's shared terms state it.
+	 */
+	readonly barkRelief?: number;
+	/**
 	 * The share of each card level's clumps drawn as one card each, for the first and the second
 	 * level, each from 0 to 1: a clump card stands for the foliage mass its clump holds, so a far
 	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.

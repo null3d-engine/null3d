@@ -453,7 +453,7 @@ const base = {
 		lobes: { mean: 9, spread: 1.5 },
 		amount: 0.35,
 		sharpness: 3,
-		height: 1,
+		height: 1.6,
 		round: 0.4,
 	},
 	roots: {
@@ -461,7 +461,7 @@ const base = {
 		length: { mean: 1.3, spread: 0.3 },
 		radius: 0.2,
 		dive: 0.3,
-		ridge: 0.3,
+		ridge: 1,
 	},
 	flutes: { count: { mean: 7, spread: 1 }, depth: 0.16, height: 1.5, hold: 0.35 },
 } as const;
@@ -527,8 +527,11 @@ const foliage =
 					...record.foliage.leaf,
 					optics: {
 						...record.foliage.leaf.optics,
-						reflectance: [0.0331, 0.0823, 0.0086] as const,
-						reflectanceBack: [0.1441, 0.1861, 0.1329] as const,
+						// Still 01: the crown reads greyer and duller than the picture, so both faces take
+						// a lift in their red and green. The lower face keeps the pale blue that still 13
+						// shows, since cutting it greened the leaf away from its photograph.
+						reflectance: [0.0381, 0.0946, 0.0086] as const,
+						reflectanceBack: [0.1657, 0.2140, 0.1329] as const,
 					},
 				},
 			}
