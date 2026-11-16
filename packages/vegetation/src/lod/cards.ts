@@ -1851,6 +1851,24 @@ export function plannedClumpCards(
 	// where the picture it shows is still about a clump's own scale; past that a card reads as one
 	// oversized leaf.
 	const cover = Math.min(2, Math.sqrt(clumps.length / Math.max(1, kept.length)));
+	// A small maximum draws coarse wood, so a clump's place may stand clear of it: the card then
+	// takes a stalk to the nearest wood it has, and never hangs in the air.
+	const nodes = input.skeleton.nodeCount;
+	const nearestWood = (centre: readonly number[]): Vector3 | undefined => {
+		let best: Vector3 | undefined;
+		let least = Number.POSITIVE_INFINITY;
+		for (let n = 0; n < nodes; n++) {
+			const x = input.skeleton.position[n * 3] as number;
+			const y = input.skeleton.position[n * 3 + 1] as number;
+			const z = input.skeleton.position[n * 3 + 2] as number;
+			const d = (x - (centre[0] as number)) ** 2 + (y - (centre[1] as number)) ** 2 + (z - (centre[2] as number)) ** 2;
+			if (d < least) {
+				least = d;
+				best = [x, y, z];
+			}
+		}
+		return best;
+	};
 	const clusters: CardCluster[] = kept.map((clump) => {
 		const row = nearest(clump.centre);
 		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
@@ -1862,13 +1880,23 @@ export function plannedClumpCards(
 					Math.sqrt(plane.up[0] ** 2 + plane.up[1] ** 2 + plane.up[2] ** 2),
 				)
 			: 0;
+		const anchor = nearestWood(clump.centre);
+		const clear =
+			anchor !== undefined
+				? Math.hypot(
+						(anchor[0] as number) - (clump.centre[0] as number),
+						(anchor[1] as number) - (clump.centre[1] as number),
+						(anchor[2] as number) - (clump.centre[2] as number),
+					)
+				: 0;
 		return {
 			row,
 			rows: 0,
 			centre: [clump.centre[0], clump.centre[1], clump.centre[2]] as Vector3,
 			grow: half > 1e-9 ? Math.max(1, (clump.radius / half) * cover) : cover,
 			reach: clump.radius,
-			stalk: false,
+			...(anchor !== undefined && clear > clump.radius ? { anchor } : {}),
+			stalk: anchor !== undefined && clear > clump.radius,
 		};
 	});
 	const tiled = {
