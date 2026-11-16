@@ -1773,6 +1773,21 @@ export function clusterCardMesh(
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
 	const base = input.variant * VARIANT_RECORDS;
+	// A record that asks for the clump card shades a cluster by its own row's sky and its own
+	// height, which is the shade a clump card bakes, for the clusters a maximum draws.
+	const own = shade === undefined && (clumpShare(kit, 1) > 0 || clumpShare(kit, 2) > 0);
+	const lighting =
+		shade ??
+		(own
+			? (index: number, height: number) => {
+					const cluster = clusters[index] as CardCluster;
+					const sky = (rows.sky[cluster.row] as number) / 255;
+					return clumpSky(
+						{ lobe: 0, rows: [cluster.row], middle: cluster.centre[1], spread: cluster.reach, sky },
+						height,
+					);
+				}
+			: undefined);
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
 	const first0: Vector3 = [0, 0, 0];
@@ -1789,7 +1804,7 @@ export function clusterCardMesh(
 			(record >>> 8) & 255,
 			record & 255,
 			rows.phase[r] as number,
-			shade ? Math.round(255 * shade(index, height)) : sky,
+			lighting ? Math.round(255 * lighting(index, height)) : sky,
 		];
 		const colour = colourAt(cluster.centre[1]);
 		const lead = prototype.card.planes[0];
