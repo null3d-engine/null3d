@@ -104,9 +104,9 @@ const boughs: FrameBranchRule = {
 			],
 			radius: 0.55,
 			taper: 0.35,
-			sway: 34,
-			elbows: 5,
-			crook: 0.4,
+			sway: 38,
+			elbows: 4,
+			crook: 0.65,
 			// A branch's wood passes through no other wood.
 			apart: 0.004,
 			patch: clump(0.13),

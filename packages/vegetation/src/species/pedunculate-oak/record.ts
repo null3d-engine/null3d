@@ -350,7 +350,7 @@ export const record: Species = {
 		// The young bark is the smooth grey-green of a young shoot, and the photographs of it are
 		// pale. Only truly thin wood keeps it, so a sub-branch the size of a sapling's stem reads as
 		// the same wood as the limb it leaves, a shade lighter, rather than turning pale grey.
-		youngRadius: 0.05,
+		youngRadius: 0.02,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
