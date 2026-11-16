@@ -41,6 +41,18 @@ const INCOMPLETE = new Set<string>([]);
 
 /** Tasks whose outcome a reader needs told, beyond the plan's own line. */
 const NOTES: Readonly<Record<string, string>> = {
+	'M3-V11':
+		'the species sheet is restored and redrawn at `1c5dc7acf`: the panels view grows the whole plant again, thirteen of twenty species had kept the old sheet after a stale module served their redraw, and Linux Firefox and this Mac agreed on the restored sheet at 40.260 and 40.367 per cent from the stored date palm. All plant pictures pass at zero, with the sparse oak moved 13.8 to 14.9 per cent and the coverage page 1.4 to 3.0, and the panel page reports its frame loop while it grows',
+	'M3-V12':
+		"the owner ruled the forest's ceilings stand and closed the task on D-364's row: the forest settles at 94.6, 116.8 and 134.7 ms against 54.8, 67.1 and 71.1, and the demo's own forest stays after the swap was reverted at 67.40, 85.12 and 97.74",
+	'M3-V16':
+		"the governor's ladder, including the occlusion removal at `df6788f3a`, is measured on the device; the scenes are over their ceilings, so no governed row holds them, and D-364 records that the tasks close on their rows rather than on a ceiling",
+	'M3-V14':
+		"both remaining clauses close by the owner's ruling of 16 November 2026. The smallest tier is the look he answered with 'low looks fine, close it'. The frame clause closes on D-364's row, not the ceiling: Creek settles at 704.8 to 796.6 ms against 90.8, 67.1 and 99.0, and the forest at 94.6, 116.8 and 134.7 against 54.8, 67.1 and 71.1",
+	'M3-V17':
+		"the clauses stand by the owner's ruling of 16 November 2026: the frame clause closes on D-364's forest row, 94.6, 116.8 and 134.7 ms against 54.8, 67.1 and 71.1, and the particle, picture and motion clauses hold their evidence in `tools/task-evidence.ts`",
+	'M3-D6':
+		'`packages/engine/src/shared/version.ts` compares the interface range an add-on declares with the engine that runs it, and `packages/engine/src/shared/version.test.ts` proves it: its test refuses a test add-on built for an interface above this engine and names both, with E1432 and E1433',
 	'M3-S1':
 		"every queue lane's peak is measured on the server with its conditions, the shader build's peak is the landing's outside-the-queue measurement (5,172 MiB at `96107e7a4` over fourteen threads and 1,180 seconds, free 18.3 GB before, 8.1 at its lowest and 14.5 after, a floor, with the queue's 17 GB booking named beside it), the page process links the built set rather than building it, its cut is proved in one sitting (15,311 MiB before against 14,336, 4 seconds under 1,280 after), the type check needs no cut at 3.0 GB against 7, and the lane pairs hold the reserve (free 29 to 28 GB of 36, the lowest share 69 to 79 per cent)",
 	'M3-C2':
