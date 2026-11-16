@@ -340,11 +340,11 @@ export const record: Species = {
 			// daylight, so this tint scales the sampled colour to match it. The flat-lit texture source
 			// drawing the same wood sits a little dark beside its photograph, but a texture source
 			// sets no row.
-			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.64, 0.61, 0.48] },
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.58, 0.55, 0.42] },
 			// The great limbs stand in brighter light than the bole and read a little lighter and
 			// warmer than still 16. Their tint stays close to the bole's and changes over a long blend,
 			// so a limb that crosses the zone's height keeps one colour along its length.
-			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2.5, tint: [0.4, 0.4, 0.14] },
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2.5, tint: [0.28, 0.28, 0.1] },
 		],
 		young: 0,
 		// The young bark is the smooth grey-green of a young shoot, and the photographs of it are
