@@ -476,6 +476,12 @@ export const record: Species = {
 		// underside, so a leaf deep in the crown takes most of the sun's light away and the clump
 		// reads as a cushion rather than as an even face.
 		crownDim: 0.6,
+		// Still 18 at full size: the crown's rim is rounded lobes with clean notches of sky, so a far
+		// card's thinnest leaves keep their cover as its mip levels average them with their gaps.
+		cardMipLift: 0.12,
+		// Still 01, full size: inside a lit stretch of the crown, neighbouring pixels change gradually
+		// rather than each texel catching its own light, so a shoot's leaves shade as one rounded mass.
+		cardNormalRound: 0.35,
 		// Stills 01 and 02: the crown's box shows 0.37 and 0.33 of sky in the photographs and 0.48 and
 		// 0.43 at the first card level, whose kept cards stand sparse. The field's largest value that
 		// keeps the second card level within the card tests' sky band, 0.02, reads 0.1433 of sky
