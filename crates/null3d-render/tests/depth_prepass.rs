@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use common::{World, grid};
 use null3d_gpu::drawlist::{Op, permutation, state_flags, template};
 use null3d_gpu::mock::MockBackend;
+use null3d_render::ao::Ao;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
@@ -89,7 +90,11 @@ fn frames(depth_prepass: bool) -> Frames {
         depth_prepass,
         ..RendererConfig::default()
     };
-    let mut world = world_with(GpuDrivenRenderer::new(config));
+    frames_of(world_with(GpuDrivenRenderer::new(config)))
+}
+
+/// The first frame and a steady frame of `world`, which is drawn by its builder.
+fn frames_of<B: FrameBuilder>(mut world: World<B>) -> Frames {
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
     let kinds = pipelines(&first);
@@ -114,6 +119,14 @@ fn frames(depth_prepass: bool) -> Frames {
     }
 }
 
+/// A world of a second camera view with ambient occlusion on, which makes the camera's view draw
+/// a depth prepass while the builder leaves it off for the other view.
+fn two_views_with_ao<B: FrameBuilder>(mut world: World<B>) -> Frames {
+    world.add_view([0.0, 0.0, 4.0]);
+    world.renderer.settings_mut().set_ao(Some(Ao::default()));
+    frames_of(world)
+}
+
 /// The commands of the first render pass of a list.
 fn first_render_pass(commands: &[(Op, Vec<u32>)]) -> &[(Op, Vec<u32>)] {
     let begin = commands
@@ -126,6 +139,40 @@ fn first_render_pass(commands: &[(Op, Vec<u32>)]) -> &[(Op, Vec<u32>)] {
             .position(|(op, _)| *op == Op::EndRenderPass)
             .unwrap();
     &commands[begin..end]
+}
+
+/// Each render pass's commands, in the order that the frame records them.
+fn render_passes(commands: &[(Op, Vec<u32>)]) -> Vec<&[(Op, Vec<u32>)]> {
+    let mut passes = Vec::new();
+    let mut from = None;
+    for (at, (op, _)) in commands.iter().enumerate() {
+        match op {
+            Op::BeginRenderPass => from = Some(at),
+            Op::EndRenderPass => {
+                if let Some(begin) = from.take() {
+                    passes.push(&commands[begin..=at]);
+                }
+            }
+            _ => {}
+        }
+    }
+    passes
+}
+
+/// The kinds of the pipelines that a frame sets in one render pass.
+fn pass_kinds(pass: &[(Op, Vec<u32>)], kinds: &HashMap<u32, Kind>) -> Vec<Kind> {
+    pass.iter()
+        .filter(|(op, _)| *op == Op::SetPipeline)
+        .map(|(_, o)| kinds[&o[0]])
+        .collect()
+}
+
+/// The bundles that a frame executes in one render pass.
+fn executed_bundles(pass: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    pass.iter()
+        .filter(|(op, _)| *op == Op::ExecuteBundles)
+        .map(|(_, o)| o[1])
+        .collect()
 }
 
 #[test]
@@ -178,6 +225,79 @@ fn without_the_prepass_no_pipeline_draws_depth_alone_or_tests_for_equal_depth() 
         .filter(|(op, _)| *op == Op::ExecuteBundles)
         .count();
     assert_eq!(executed, 1);
+}
+
+#[test]
+fn a_second_view_shades_without_the_prepass_while_the_camera_shades_after_it() {
+    let Frames {
+        kinds: _,
+        bundles,
+        steady,
+    } = two_views_with_ao(world_with(
+        GpuDrivenRenderer::new(RendererConfig::default()),
+    ));
+    let passes = render_passes(&steady);
+    // The second view draws before the camera's opaque pass, which reads its target.
+    let second = executed_bundles(passes[0]);
+    assert_eq!(second.len(), 1, "the second view draws no prepass bundle");
+    let second = &bundles[&second[0]];
+    assert!(
+        !second.is_empty() && second.iter().all(|&kind| kind == Kind::Shading),
+        "the second view tests and writes the depth that it shades: {second:?}"
+    );
+    // The camera's view draws its prepass, and shades only where it found the depth.
+    let executed: Vec<&Vec<Kind>> = passes
+        .iter()
+        .flat_map(|pass| executed_bundles(pass))
+        .map(|id| &bundles[&id])
+        .collect();
+    assert!(
+        executed
+            .iter()
+            .any(|bundle| bundle.iter().all(|&kind| kind == Kind::Depth)),
+        "the camera draws a prepass bundle"
+    );
+    assert!(
+        executed
+            .iter()
+            .any(|bundle| bundle.contains(&Kind::AfterPrepass)),
+        "the camera shades after its prepass"
+    );
+    assert_eq!(
+        executed
+            .iter()
+            .filter(|bundle| bundle.contains(&Kind::AfterPrepass))
+            .count(),
+        1,
+        "only the camera's view shades after a prepass"
+    );
+}
+
+#[test]
+fn a_second_view_shades_without_the_prepass_on_the_direct_draw_path() {
+    let Frames { kinds, steady, .. } =
+        two_views_with_ao(world_with(GpuDrivenRenderer::new(RendererConfig {
+            direct_draws: true,
+            ..RendererConfig::default()
+        })));
+    let passes = render_passes(&steady);
+    // The second view draws before the camera's opaque pass, which reads its target.
+    let second = pass_kinds(passes[0], &kinds);
+    assert!(
+        !second.is_empty() && second.iter().all(|&kind| kind == Kind::Shading),
+        "the second view tests and writes the depth that it shades: {second:?}"
+    );
+    // The camera's view draws its prepass, and shades only where it found the depth.
+    assert!(
+        passes
+            .iter()
+            .any(|pass| pass_kinds(pass, &kinds).contains(&Kind::Depth)),
+        "the camera draws a prepass"
+    );
+    assert!(
+        pass_kinds(passes.last().unwrap(), &kinds).contains(&Kind::AfterPrepass),
+        "the camera shades after its prepass"
+    );
 }
 
 /// The first frame and a steady frame of the WebGL2 builder, with the prepass or without it.
@@ -241,5 +361,39 @@ fn webgl2_without_the_prepass_draws_each_opaque_draw_once() {
         pipelines(&first)
             .values()
             .all(|&kind| kind == Kind::Shading)
+    );
+}
+
+#[test]
+fn webgl2_a_second_view_shades_without_the_prepass_while_the_camera_shades_after_it() {
+    let world = world_with(CpuCulledRenderer::new(CpuCulledConfig {
+        depth_prepass: false,
+        ..CpuCulledConfig::default()
+    }));
+    let Frames { kinds, steady, .. } = two_views_with_ao(world);
+    let passes = render_passes(&steady);
+    // The second view draws before the camera's opaque pass, which reads its target.
+    let second = pass_kinds(passes[0], &kinds);
+    assert!(
+        !second.is_empty() && second.iter().all(|&kind| kind == Kind::Shading),
+        "the second view tests and writes the depth that it shades: {second:?}"
+    );
+    // The camera's view draws its prepass, and shades only where it found the depth.
+    let camera = pass_kinds(passes.last().unwrap(), &kinds);
+    assert!(
+        camera.contains(&Kind::AfterPrepass),
+        "the camera shades after its prepass"
+    );
+    assert!(
+        passes[..passes.len() - 1]
+            .iter()
+            .all(|pass| !pass_kinds(pass, &kinds).contains(&Kind::AfterPrepass)),
+        "no view shades after a prepass before the camera's opaque pass"
+    );
+    // The camera's prepass draws each opaque pair's depth before it.
+    assert!(
+        passes
+            .iter()
+            .any(|pass| pass_kinds(pass, &kinds).contains(&Kind::OwnVertexShader))
     );
 }

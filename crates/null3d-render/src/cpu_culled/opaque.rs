@@ -104,6 +104,9 @@ struct ViewDraws {
 pub(super) enum Shading {
     /// Each draw's own pipeline, with the view's frame group of the light textures' ring slot.
     Lit { light_slot: u32 },
+    /// Each draw's pipeline without a depth prepass, which starts the depth that it tests, with
+    /// the same frame group as `Lit`: a view that the builder's `prepass` leaves without one.
+    LitWithoutPrepass { light_slot: u32 },
     /// Each draw's pipeline of the depth prepass, with the same frame group as `Lit`. Draws
     /// without one are left out.
     Prepass { light_slot: u32 },
@@ -888,12 +891,13 @@ impl Opaque {
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
         // The prepass's pipelines and the tiles' pipelines both sit in each draw's second slot.
-        let (light_slot, second, pick) = match shading {
-            Shading::Lit { light_slot } => (light_slot, false, false),
-            Shading::Prepass { light_slot } => (light_slot, true, false),
-            Shading::Depth => (0, false, false),
-            Shading::Tile => (0, true, false),
-            Shading::Pick => (0, false, true),
+        let (light_slot, second, pick, plain) = match shading {
+            Shading::Lit { light_slot } => (light_slot, false, false, false),
+            Shading::LitWithoutPrepass { light_slot } => (light_slot, false, false, true),
+            Shading::Prepass { light_slot } => (light_slot, true, false, false),
+            Shading::Depth => (0, false, false, false),
+            Shading::Tile => (0, true, false, false),
+            Shading::Pick => (0, false, true, false),
         };
         self.bind_view(list, view, light_slot, scene)?;
         let mut pipeline = None;
@@ -908,6 +912,8 @@ impl Opaque {
                 first.pick
             } else if second {
                 first.prepass
+            } else if plain {
+                first.shading
             } else {
                 first.pipeline
             };
@@ -1039,6 +1045,7 @@ mod tests {
     fn draw(pipeline: u32, page: u32) -> Draw {
         Draw {
             pipeline,
+            shading: pipeline,
             prepass: 0,
             textures: 0,
             motion: 0,

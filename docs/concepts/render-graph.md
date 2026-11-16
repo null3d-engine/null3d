@@ -44,7 +44,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Light depth | Compute, on WebGPU only, while the camera sees a local light | The camera view's scene depth | The nearest and farthest depth that the next frame's light clustering fits its slices to |
 | Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Shadow | Scene, one pass per shadow cascade and per tile of the shadow atlas, in the frames in which it draws | The visible casters of its view | Its layer of the shadow map or of the shadow atlas |
-| Depth prepass | Scene, one pass per view, with the `depthPrepass` setting | The view's visible instances | The scene depth |
+| Depth prepass | Scene, one pass for each view that has one: the camera's from the `depthPrepass` setting or a screen step, another view's from `depthPrepass` alone | The view's visible instances | The scene depth |
 | Opaque | Scene, one pass per view | The view's visible instances (on WebGPU), the lights of each cluster, and the shadow map and atlas | The scene color and depth |
 | Occluders | Scene, one pass per camera view, on WebGPU with the `gpuOcclusion` setting | The instances that showed in the view's last frame | The occluders' depth |
 | Depth pyramid | Compute, one pass per camera view, on WebGPU with the `gpuOcclusion` setting | The occluders' depth | The view's depth pyramid |
@@ -65,7 +65,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 
 On WebGL2 the job workers cull the objects and list the lights of each cluster before the frame draws. So the graph has no compute passes there. A shadow pass draws its casters' depth from the light. The opaque pass reads that depth, so every shadow pass runs before it. [Shadows](shadows.md) says when each cascade and each tile draws.
 
-With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. The opaque pass then shades only the nearest surface at each pixel. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
+With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. The opaque pass then shades only the nearest surface at each pixel. The camera's view also draws it while a screen step reads its depth, such as ambient occlusion, contact shadows or screen-space reflections. Another view takes no prepass from them, as they read the camera's depth alone. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
 
 With GPU occlusion culling on, each camera view's culling pass keeps the large objects that showed in its last frame. The occluders' pass draws their depth into a target of its own, and the depth pyramid pass reads it. The late culling pass tests every object in view against the pyramid, and writes the visible instances again. The occluders' pass must read them before that write. The graph runs a pass that reads a resource "so far" after the writers declared before it, and before the writers declared after it. The depth prepass, where it runs, and the opaque pass then draw what the late culling pass kept. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the method.
 

@@ -289,6 +289,10 @@ pub(super) enum Bundle {
     /// The view's objects, each bucket with its pipeline and its material's maps: a camera view's
     /// opaque pass, or a shadow pass.
     Opaque,
+    /// The view's objects, each bucket with the pipeline that shades without a depth prepass,
+    /// whose depth test writes the depth that it shades: a view that the builder's `prepass` leaves
+    /// without one.
+    OpaqueWithoutPrepass,
     /// The depth of the camera view's opaque objects, for the depth prepass.
     Prepass,
     /// The depth of a camera view's occluders, for the occluders' pass of occlusion culling, into
@@ -314,9 +318,12 @@ pub(super) enum Bundle {
 impl Bundle {
     fn id(self, view: ViewId) -> u32 {
         match self {
-            Self::Opaque | Self::Outline | Self::Tone | Self::Tile | Self::Subsurface => {
-                ids::bundle(view)
-            }
+            Self::Opaque
+            | Self::OpaqueWithoutPrepass
+            | Self::Outline
+            | Self::Tone
+            | Self::Tile
+            | Self::Subsurface => ids::bundle(view),
             Self::Prepass => ids::prepass_bundle(view),
             Self::Occluders => ids::occluders_bundle(view),
             Self::Motion(parity) => ids::motion_bundle(parity),
@@ -543,6 +550,10 @@ impl<'a> Draws<'a> {
                 // the color of the surfaces behind them.
                 self.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| b.holdout)?;
                 self.record(list, |b| b.pipeline, |_| true, |b| b.group, |b| !b.holdout)
+            }
+            Bundle::OpaqueWithoutPrepass => {
+                self.record(list, |b| b.shading, |_| true, |b| b.group, |b| b.holdout)?;
+                self.record(list, |b| b.shading, |_| true, |b| b.group, |b| !b.holdout)
             }
             Bundle::Subsurface => {
                 self.record(list, |b| b.pipeline, |_| true, |b| b.group, |_| true)

@@ -1019,8 +1019,9 @@ pub struct GpuDrivenRenderer {
     layouts_toned: bool,
     /// True once the tone view's GPU objects exist.
     tone_made: bool,
-    /// True when the scene's layout was built with the depth prepass's pipelines.
-    layout_prepass: bool,
+    /// The prepass that the scene's layout was built with, for the camera's view and for every
+    /// other view.
+    layout_depth: (Prepass, Prepass),
     /// The views whose depth prepass has its bind group.
     prepass_views: usize,
     /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
@@ -1344,7 +1345,7 @@ impl GpuDrivenRenderer {
             tone: Layout::new(Drawn::Tone, config.index_instances, fixed),
             layouts_toned: false,
             tone_made: false,
-            layout_prepass: false,
+            layout_depth: (Prepass::Off, Prepass::Off),
             prepass_views: 0,
             cells: CellCulling::new(config.cell_culling, config.direct_draws),
             culling: Culling::new(config.index_instances),
@@ -1863,6 +1864,9 @@ impl GpuDrivenRenderer {
             .settings
             .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
+        // The prepass that the camera's view and every other view draw with, which the layout's
+        // pipelines follow.
+        let depth_passes = self.graph.depth_passes(Prepass::DepthTemplate);
         let upload_everything = particles_changed
             || std::mem::take(&mut self.pieces_switched)
             || input.structure_changed
@@ -1874,7 +1878,7 @@ impl GpuDrivenRenderer {
             || scatters != self.layouts_scattered
             || tones != self.layouts_toned
             || motion != self.layouts_moving
-            || self.graph.depth_prepass() != self.layout_prepass
+            || depth_passes != self.layout_depth
             || self.redraws_wanted() != self.redraws_built
             || picking != self.layouts_picked
             || skinned_appear
@@ -1909,14 +1913,15 @@ impl GpuDrivenRenderer {
                 parity,
                 limit,
                 passes,
-                self.graph.depth_pass(Prepass::DepthTemplate),
+                depth_passes.0,
+                depth_passes.1,
                 &self.skinning,
                 &mut self.key_counts,
                 self.graph.pick_targets(),
                 picking,
                 cluster_binding,
             )?;
-            self.layout_prepass = self.graph.depth_prepass();
+            self.layout_depth = depth_passes;
             self.layout_epoch = self.layout_epoch.wrapping_add(1);
             self.occluder_buckets.reset(&self.layout);
             let (skinning, layout) = (&self.skinning, &self.layout);
@@ -2004,6 +2009,7 @@ impl GpuDrivenRenderer {
                     limit,
                     passes,
                     Prepass::Off,
+                    Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
                     self.graph.pick_targets(),
@@ -2026,6 +2032,7 @@ impl GpuDrivenRenderer {
                     parity,
                     limit,
                     passes,
+                    Prepass::Off,
                     Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
@@ -2050,6 +2057,7 @@ impl GpuDrivenRenderer {
                     limit,
                     passes,
                     Prepass::Off,
+                    Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
                     self.graph.pick_targets(),
@@ -2072,6 +2080,7 @@ impl GpuDrivenRenderer {
                     limit,
                     passes,
                     Prepass::Off,
+                    Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
                     self.graph.pick_targets(),
@@ -2093,6 +2102,7 @@ impl GpuDrivenRenderer {
                     parity,
                     limit,
                     passes,
+                    Prepass::Off,
                     Prepass::Off,
                     &self.skinning,
                     &mut self.key_counts,
@@ -2313,9 +2323,8 @@ impl GpuDrivenRenderer {
             .shadow_atlas()
             .expect("the builder's graph binds a shadow atlas");
         let first_new = self.views_made;
-        let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
         // The depth prepass and the occluders' pass both draw with the depth template's group.
-        let depth_group = depth_pass != Prepass::Off || occlusion;
+        let depth_group = depth_passes.0 != Prepass::Off || occlusion;
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
         // Only the camera's view copies its opaque color for surfaces that let light through.
         // The probes own the frame group's shared array, which the light tables write into, so they
@@ -2864,7 +2873,13 @@ impl GpuDrivenRenderer {
             let hidden_targets = self.settings.hidden_targets(view);
             let textures = self.settings.textures();
             let hidden = |group| textures.group_pass_views(group) & hidden_targets != 0;
-            let kind = Bundle::Opaque;
+            let prepass = self.graph.view_depth_prepass(index);
+            // A view without a prepass shades with the pipeline that starts the depth it tests.
+            let kind = if prepass {
+                Bundle::Opaque
+            } else {
+                Bundle::OpaqueWithoutPrepass
+            };
             opaque::record_bundle(
                 list,
                 view,
@@ -2875,7 +2890,7 @@ impl GpuDrivenRenderer {
                 first_draw,
                 &hidden,
             )?;
-            if depth_pass != Prepass::Off {
+            if prepass {
                 let depth = Bundle::Prepass;
                 opaque::record_bundle(
                     list,
@@ -3608,6 +3623,11 @@ impl GpuDrivenRenderer {
         for (index, group) in scene_groups.iter_mut().enumerate() {
             *group = self.graph.material_scene_group(ViewId::from_index(index));
         }
+        // The views that draw a depth prepass, which the direct path's opaque draws follow.
+        let mut view_prepass = [false; MAX_VIEWS];
+        for (index, on) in view_prepass.iter_mut().enumerate() {
+            *on = self.graph.view_depth_prepass(index);
+        }
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -3645,7 +3665,29 @@ impl GpuDrivenRenderer {
                 Role::Occluders(view) if drawn(view) => {
                     opaque::record(list, view, Bundle::Occluders)
                 }
-                Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
+                Role::Opaque(view) if drawn(view) => {
+                    let backdrop = settings.draws_background(view);
+                    if backdrop {
+                        background.record(list, ids::frame_group(view), &[], Place::First)?;
+                    }
+                    if direct_draws {
+                        // A view without a prepass shades with the pipeline that starts the depth
+                        // it tests, as its bundle does.
+                        let kind = if view_prepass[view.index()] {
+                            Bundle::Opaque
+                        } else {
+                            Bundle::OpaqueWithoutPrepass
+                        };
+                        record_direct_view(list, view, kind)?;
+                    } else {
+                        opaque::record(list, view, Bundle::Opaque)?;
+                    }
+                    if backdrop {
+                        background.record(list, ids::frame_group(view), &[], Place::Last)?;
+                    }
+                    Ok(())
+                }
+                Role::Shadow(view) if drawn(view) => {
                     let backdrop = settings.draws_background(view);
                     if backdrop {
                         background.record(list, ids::frame_group(view), &[], Place::First)?;

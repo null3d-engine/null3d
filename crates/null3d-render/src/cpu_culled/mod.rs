@@ -664,8 +664,9 @@ pub struct CpuCulledRenderer {
     /// True when the check of what pieces cull changed a mesh's mode in the frame before, which
     /// rebuilds the layouts.
     pieces_switched: bool,
-    /// True when the scene's layout was built with the depth prepass's pipelines.
-    layout_prepass: bool,
+    /// The prepass that the scene's layout was built with, for the camera's view and for every
+    /// other view.
+    layout_depth: (Prepass, Prepass),
     clusters: Clusters,
     /// Each mesh's tree of cluster patches, as its GPU buffers, by the mesh's id minus one.
     patch_buffers: Vec<PatchBuffers>,
@@ -952,7 +953,7 @@ impl CpuCulledRenderer {
             motion_moving: Vec::new(),
             layouts_picked: false,
             pieces_switched: false,
-            layout_prepass: false,
+            layout_depth: (Prepass::Off, Prepass::Off),
             clusters: Clusters::default(),
             patch_buffers: Vec::new(),
             cells: CellCulling::new(config.cell_culling, true),
@@ -1239,8 +1240,8 @@ impl CpuCulledRenderer {
             split_trees: self.config.first_provoking_vertex,
         };
         let targets = self.with_draw_index(self.graph.scene_targets());
-        self.layout_prepass = self.graph.depth_prepass();
-        let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
+        let depth_passes = self.graph.depth_passes(Prepass::OwnVertexShader);
+        self.layout_depth = depth_passes;
         let motion_targets = motion.then(|| self.with_draw_index(self.graph.motion_targets()));
         let pick_targets = self.with_draw_index(self.graph.pick_targets());
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
@@ -1253,7 +1254,8 @@ impl CpuCulledRenderer {
             limit,
             draws,
             shadows,
-            prepass,
+            depth_passes.0,
+            depth_passes.1,
             motion_targets,
             &mut self.key_counts,
             pick_targets,
@@ -1273,6 +1275,7 @@ impl CpuCulledRenderer {
                 limit,
                 draws,
                 shadows,
+                Prepass::Off,
                 Prepass::Off,
                 None,
                 &mut self.key_counts,
@@ -1297,6 +1300,7 @@ impl CpuCulledRenderer {
                 draws,
                 shadows,
                 Prepass::Off,
+                Prepass::Off,
                 None,
                 &mut self.key_counts,
                 pick_targets,
@@ -1319,6 +1323,7 @@ impl CpuCulledRenderer {
                 limit,
                 draws,
                 shadows,
+                Prepass::Off,
                 Prepass::Off,
                 None,
                 &mut self.key_counts,
@@ -1343,6 +1348,7 @@ impl CpuCulledRenderer {
                 limit,
                 draws,
                 shadows,
+                Prepass::Off,
                 Prepass::Off,
                 None,
                 &mut self.key_counts,
@@ -2561,6 +2567,11 @@ impl CpuCulledRenderer {
         for (index, group) in scene_groups.iter_mut().enumerate() {
             *group = self.graph.material_scene_group(ViewId::from_index(index));
         }
+        // The views that draw a depth prepass, whose opaque draws follow it.
+        let mut view_prepass = [false; MAX_VIEWS];
+        for (index, on) in view_prepass.iter_mut().enumerate() {
+            *on = self.graph.view_depth_prepass(index);
+        }
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
@@ -2585,7 +2596,13 @@ impl CpuCulledRenderer {
                         background.record(list, group, &[slot, slot], Place::First)?;
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
-                    let shading = Shading::Lit { light_slot };
+                    // A view without a prepass shades with the pipeline that starts the depth it
+                    // tests.
+                    let shading = if view_prepass[view.index()] {
+                        Shading::Lit { light_slot }
+                    } else {
+                        Shading::LitWithoutPrepass { light_slot }
+                    };
                     let hidden = hidden_in(view);
                     // The opaque pass runs before the copy of its depth, so a material that reads
                     // the depth binds the blank texel here and the copy in the transparent pass.
@@ -3156,7 +3173,8 @@ impl FrameBuilder for CpuCulledRenderer {
             .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
         self.graph
             .set_bounce(settings.bounce_frame(canvas, scene, parity));
-        let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
+        let prepass_changed =
+            self.graph.depth_passes(Prepass::OwnVertexShader) != self.layout_depth;
         // A pick that waits declares the pick's passes, and builds the layout again with their
         // pipelines, so the frame draws them with the camera's culling. The passes stay declared
         // for a few frames after a read, while its copy may still wait.

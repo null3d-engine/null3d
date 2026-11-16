@@ -195,12 +195,36 @@ fn local_sphere(
     }
 }
 
+/// The shading pipelines of a scene key, by the prepass that the camera's view and every other
+/// view draw with: the pipeline that shades after a prepass, the one that shades without one,
+/// and the pipeline that draws its depth. The second equals the first while the views agree, so
+/// a frame whose views share a choice builds no pipeline of its own.
+fn scene_pipelines(
+    pipelines: &mut PipelineCache,
+    key: DrawKey,
+    targets: PassTargets,
+    prepass: Prepass,
+    other_prepass: Prepass,
+) -> (u32, u32, u32) {
+    let (shading, depth) = pipelines.opaque(key, targets, prepass);
+    let plain = if other_prepass == prepass {
+        shading
+    } else {
+        pipelines.id(key.in_pass(targets))
+    };
+    (shading, plain, depth)
+}
+
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Bucket {
     /// The id of its render pipeline. In the casters' layout, the pipeline that draws into the
     /// shadow cascades, or 0 while the cascades are off.
     pub(super) pipeline: u32,
+    /// The id of the render pipeline that shades its surfaces in a view without a depth prepass,
+    /// which tests and writes depth as it would without one. It equals `pipeline` where the frame
+    /// gives every view a prepass, or none.
+    pub(super) shading: u32,
     /// The id of the render pipeline that draws its depth in the depth prepass or the occluders'
     /// pass, or 0 for a bucket that the pass leaves out. In the outlined layout, the pipeline that
     /// marks the parts that nothing hides, after `pipeline` marked every part. In the casters'
@@ -1170,7 +1194,9 @@ impl Layout {
     /// and the casters' buckets get a pipeline for each pass of `shadows` in place of `targets`.
     /// With a `prepass`, the buckets that the depth prepass or the occluders' pass draws get its
     /// pipelines too. The outlined layout's buckets get both pipelines of the outline mask, and the
-    /// subsurface layout's the skin pass's pipelines.
+    /// subsurface layout's the skin pass's pipelines. `other_prepass` is the prepass that every
+    /// view other than the camera's draws with: where it differs from `prepass`, each scene bucket
+    /// gets a shading pipeline without the prepass too, which the views without one draw with.
     /// Skinned objects draw the skinned vertices that `skinning` lays out; the skinned objects that
     /// it hides get no bucket, and the layout asks only for their pipelines (see
     /// [`Self::waiting`]). It reuses the layout's tables and scratch space, which grow only with
@@ -1189,6 +1215,7 @@ impl Layout {
         limit: u32,
         shadows: CasterPasses,
         prepass: Prepass,
+        other_prepass: Prepass,
         skinning: &Skinning,
         key_counts: &mut KeyCounts,
         pick_targets: PassTargets,
@@ -1557,21 +1584,31 @@ impl Layout {
             }
             if let Some((pipeline, ..)) = any_key(slot as usize) {
                 // The outlined layout's buckets draw with both pipelines of the outline mask.
-                let (pipeline, second) = match drawn {
+                let (pipeline, second, plain) = match drawn {
                     Drawn::Outlined => {
                         let (every, visible) = mask_keys(pipeline);
                         (
                             pipelines.id(every.in_pass(targets)),
                             pipelines.id(visible.in_pass(targets)),
+                            0,
                         )
                     }
-                    Drawn::Casters => shadows.pipelines(pipelines, pipeline),
-                    Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0),
-                    Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
-                    Drawn::Subsurface | Drawn::Tone => (pipelines.id(pipeline.in_pass(targets)), 0),
+                    Drawn::Casters => {
+                        let (cascades, tiles) = shadows.pipelines(pipelines, pipeline);
+                        (cascades, tiles, 0)
+                    }
+                    Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0, 0),
+                    Drawn::Scene => {
+                        let (shading, plain, depth) =
+                            scene_pipelines(pipelines, pipeline, targets, prepass, other_prepass);
+                        (shading, depth, plain)
+                    }
+                    Drawn::Subsurface | Drawn::Tone => {
+                        (pipelines.id(pipeline.in_pass(targets)), 0, 0)
+                    }
                 };
                 self.waiting
-                    .extend([pipeline, second].into_iter().filter(|&id| id != 0));
+                    .extend([pipeline, second, plain].into_iter().filter(|&id| id != 0));
             }
         }
 
@@ -1770,27 +1807,30 @@ impl Layout {
                 (0, false)
             };
             // The mask's second pipeline binds as the depth template does.
-            let (pipeline, prepass, prepass_own) = match drawn {
+            let (pipeline, prepass, prepass_own, shading) = match drawn {
                 Drawn::Outlined => {
                     let (every, visible) = mask_keys(pipeline);
-                    (
-                        pipelines.id(every.in_pass(targets)),
-                        pipelines.id(visible.in_pass(targets)),
-                        false,
-                    )
+                    let shading = pipelines.id(every.in_pass(targets));
+                    let second = pipelines.id(visible.in_pass(targets));
+                    (shading, second, false, shading)
                 }
                 Drawn::Casters => {
                     let (cascades, tiles) = shadows.pipelines(pipelines, pipeline);
-                    (cascades, tiles, false)
+                    (cascades, tiles, false, cascades)
                 }
-                Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0, false),
+                Drawn::Motion => {
+                    let motion = pipelines.id(pipeline.in_pass(targets));
+                    (motion, 0, false, motion)
+                }
                 Drawn::Scene => {
                     let own = pipeline.places_own_vertices();
-                    let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
-                    (pipeline, prepass, own)
+                    let (shading, plain, prepass) =
+                        scene_pipelines(pipelines, pipeline, targets, prepass, other_prepass);
+                    (shading, prepass, own, plain)
                 }
                 Drawn::Subsurface | Drawn::Tone => {
-                    (pipelines.id(pipeline.in_pass(targets)), 0, false)
+                    let shading = pipelines.id(pipeline.in_pass(targets));
+                    (shading, 0, false, shading)
                 }
             };
             let base = if by_index { &mut indexed } else { &mut copied };
@@ -1813,6 +1853,7 @@ impl Layout {
             let record = feature.and_then(|id| settings.feature_instances().record(id));
             self.buckets.push(Bucket {
                 pipeline,
+                shading,
                 prepass,
                 prepass_own,
                 // A feature-instance draw takes the count that its add-on gives, which the
@@ -2770,6 +2811,7 @@ mod tests {
                 u32::MAX,
                 CasterPasses::default(),
                 Prepass::Off,
+                Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
                 targets,
@@ -2864,6 +2906,7 @@ mod tests {
                 u32::MAX,
                 CasterPasses::default(),
                 Prepass::Off,
+                Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
                 targets,
@@ -2925,6 +2968,7 @@ mod tests {
                 scene.parity(),
                 u32::MAX,
                 CasterPasses::default(),
+                Prepass::Off,
                 Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
@@ -3005,6 +3049,7 @@ mod tests {
                     scene.parity(),
                     u32::MAX,
                     CasterPasses::default(),
+                    Prepass::Off,
                     Prepass::Off,
                     &Skinning::default(),
                     &mut KeyCounts::new(),
@@ -3098,6 +3143,7 @@ mod tests {
                 u32::MAX,
                 CasterPasses::default(),
                 Prepass::Off,
+                Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
                 targets,
@@ -3184,6 +3230,7 @@ mod tests {
                 u32::MAX,
                 CasterPasses::default(),
                 Prepass::Off,
+                Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
                 targets,
@@ -3250,6 +3297,7 @@ mod tests {
                     scene.parity(),
                     u32::MAX,
                     CasterPasses::default(),
+                    Prepass::Off,
                     Prepass::Off,
                     &Skinning::default(),
                     &mut KeyCounts::new(),
@@ -3382,6 +3430,7 @@ mod tests {
                 scene.parity(),
                 u32::MAX,
                 CasterPasses::default(),
+                Prepass::Off,
                 Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),
@@ -3532,6 +3581,7 @@ mod tests {
                 scene.parity(),
                 u32::MAX,
                 CasterPasses::default(),
+                Prepass::Off,
                 Prepass::Off,
                 &Skinning::default(),
                 &mut KeyCounts::new(),

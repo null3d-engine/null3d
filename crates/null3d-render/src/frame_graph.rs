@@ -20,10 +20,12 @@
 //! late pass writes them again. With the depth prepass too, the prepass reads what the late pass
 //! kept, so it runs after it.
 //!
-//! With the depth prepass, a depth prepass comes before each view's opaque pass. It creates the
+//! With the depth prepass, a depth prepass comes before a view's opaque pass. It creates the
 //! view's depth and draws the opaque objects' depth into it, and the opaque pass then writes into
 //! that depth (see [`crate::pipelines`]). Both draw in one render pass, which has the color from
-//! the start. The prepass is fixed when the builder starts.
+//! the start. The camera's view takes the prepass from the builder's start, or while a screen
+//! step reads its depth; every other view takes it from the builder's start alone, as no screen
+//! step reads another view's depth.
 //!
 //! A builder that binds a shadow map keeps one texture array for it (see [`crate::shadows`]),
 //! which every opaque pass samples. While a directional light casts shadows, each cascade has a
@@ -106,8 +108,8 @@
 //! the blur draws, once its steps' pipelines are built.
 //!
 //! While the sketch turns ambient occlusion on, the camera's view has three ambient occlusion
-//! passes between its depth prepass and its opaque pass (see [`crate::ao`]), and the prepass runs
-//! for every view even where the builder started without it. The first reads the scene depth as
+//! passes between its depth prepass and its opaque pass (see [`crate::ao`]), and the camera's
+//! prepass runs even where the builder started without it. The first reads the scene depth as
 //! the prepass leaves it, before the opaque pass draws into it again, so the prepass and the
 //! opaque pass draw in two render passes. Each step draws into a target of its own at half the
 //! render size, and the camera's opaque pass reads the last one. They are declared only while
@@ -1632,7 +1634,9 @@ impl FrameGraph {
         self.declared = false;
     }
 
-    /// Gives each view a depth prepass before its opaque pass, or none.
+    /// Gives each view a depth prepass before its opaque pass, or none. The camera's view also
+    /// has one while a screen step reads its depth, as [`Self::depth_prepass`] describes; every
+    /// other view takes this switch alone.
     pub(crate) fn set_depth_prepass(&mut self, on: bool) {
         self.prepass = on;
         self.declared = false;
@@ -1678,10 +1682,29 @@ impl FrameGraph {
         self.occlusion && self.gpu_culling
     }
 
-    /// True when each view has a depth prepass: from the builder's start, or while ambient
-    /// occlusion's steps run or screen-space reflections draw, as they read the prepass's depth.
+    /// True when the camera's view has a depth prepass: from the builder's start, or while
+    /// ambient occlusion's steps run or screen-space reflections draw, as they read the camera's
+    /// depth.
     pub(crate) fn depth_prepass(&self) -> bool {
         self.prepass || self.screen_steps() || self.ssr.is_some()
+    }
+
+    /// True when the view at `index` has a depth prepass. The camera's view follows
+    /// [`Self::depth_prepass`], and every other view follows the builder's switch alone, as no
+    /// screen step reads another view's depth.
+    pub(crate) fn view_depth_prepass(&self, index: usize) -> bool {
+        if index == ViewId::CAMERA.index() {
+            self.depth_prepass()
+        } else {
+            self.prepass
+        }
+    }
+
+    /// The way that a depth prepass draws ([`Self::depth_pass`]) for the camera's view and for
+    /// every other view, which the opaque pass's pipelines follow: another view draws with the
+    /// builder's switch alone, and without one its opaque pass starts the depth that it shades.
+    pub(crate) fn depth_passes(&self, prepass: Prepass) -> (Prepass, Prepass) {
+        (self.depth_pass(prepass), prepass.if_on(self.prepass))
     }
 
     /// True while ambient occlusion's steps run: while ambient occlusion, contact shadows or
@@ -3272,7 +3295,6 @@ impl FrameGraph {
         self.shadow_passes.clear();
         self.bloom_passes.clear();
         self.outline_passes.clear();
-        let prepass = self.depth_prepass();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.shadow_map {
@@ -3491,7 +3513,7 @@ impl FrameGraph {
             } else {
                 pass.writes(names.color.clone())
             };
-            if prepass {
+            if self.view_depth_prepass(index) {
                 let mut prepass = Pass::new(names.prepass.clone(), PassKind::Scene)
                     .size(size)
                     .layers(view.layers())
@@ -10634,11 +10656,14 @@ mod tests {
                 [Some(prepass + 1), Some(prepass + 2), Some(prepass + 3)]
             );
             assert_eq!(opaque, prepass + 4);
-            // The other view keeps one render pass for its prepass and its opaque pass.
+            // No screen step reads the other view's depth, so it draws no prepass: its opaque pass
+            // starts the depth that it shades.
+            assert!(names.iter().any(|step| step[..] == ["Opaque1"]));
             assert!(
-                names
+                !names
                     .iter()
-                    .any(|step| step[..] == ["DepthPrepass1", "Opaque1"])
+                    .flatten()
+                    .any(|name| name.starts_with("DepthPrepass1"))
             );
             // The prepass stores the depth that the depth step reads and the opaque pass loads. On
             // WebGL2 it attaches no color, so it never holds one that it does not write (D-269).
@@ -10781,6 +10806,64 @@ mod tests {
     }
 
     #[test]
+    fn a_view_other_than_the_camera_takes_a_prepass_only_from_the_builders_switch() {
+        let lens = ([1.0; 16], [1.0; 16]);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, true);
+        frames.sync(&[View::default(), shown()]);
+        let mut list = DrawList::with_capacity(4096);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        // The builder starts without a prepass, so neither view draws one.
+        assert!(!frames.view_depth_prepass(0));
+        assert!(!frames.view_depth_prepass(1));
+
+        // A screen step reads the camera's depth, so the camera's view draws a prepass. Nothing
+        // reads the other view's depth, so it draws none.
+        frames.set_ao(Some(Ao::default()), None, Some(lens), 0.5);
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert!(frames.view_depth_prepass(0));
+        assert!(!frames.view_depth_prepass(1));
+        let names = steps(&frames);
+        assert!(names.iter().any(|step| step[..] == ["DepthPrepass"]));
+        assert!(
+            !names
+                .iter()
+                .flatten()
+                .any(|name| name.starts_with("DepthPrepass1"))
+        );
+        // The other view's opaque pass starts the depth that it shades.
+        let plan = frames.graph().plan().unwrap();
+        let opaque = frames.graph().find_pass("Opaque1").unwrap();
+        let step = plan.step_of(opaque).unwrap();
+        let attachments = plan.attachments(&plan.steps()[step]);
+        let depth = attachments
+            .iter()
+            .find(|a| a.depth)
+            .expect("the opaque pass has a depth");
+        assert_eq!(depth.load, LoadOp::Clear);
+
+        // The builder's switch gives every view a prepass.
+        frames.set_depth_prepass(true);
+        frames.sync(&[View::default(), shown()]);
+        frames
+            .prepare(&mut list, (320, 180), RenderScale::FULL)
+            .unwrap();
+        assert!(frames.view_depth_prepass(0));
+        assert!(frames.view_depth_prepass(1));
+        let names = steps(&frames);
+        assert!(
+            names
+                .iter()
+                .any(|step| step[..] == ["DepthPrepass1", "Opaque1"])
+        );
+    }
+
+    #[test]
     fn a_view_on_the_canvas_gives_its_split_prepass_a_stand_in_color_where_the_gpu_culls() {
         let lens = ([1.0; 16], [1.0; 16]);
         let inset = View::canvas(CanvasRect {
@@ -10790,6 +10873,9 @@ mod tests {
             height: 1.0,
         });
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, true);
+        // The inset draws a prepass only from the builder's switch, as no screen step reads its
+        // depth.
+        frames.set_depth_prepass(true);
         frames.sync(&[View::default(), inset]);
         let mut list = DrawList::with_capacity(65536);
         frames

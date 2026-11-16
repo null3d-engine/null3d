@@ -115,6 +115,10 @@ pub(super) struct Draw {
     /// The id of its render pipeline. In the casters' layout, the pipeline that draws into the
     /// shadow cascades, or 0 while the cascades are off.
     pub(super) pipeline: u32,
+    /// The id of the render pipeline that shades its surface in a view without a depth prepass,
+    /// which tests and writes depth as it would without one. It equals `pipeline` where the frame
+    /// gives every view a prepass, or none.
+    pub(super) shading: u32,
     /// The id of the render pipeline that draws its depth in the depth prepass, or 0 for a draw
     /// that the prepass leaves out. In the casters' layout, the pipeline that draws into the
     /// shadow atlas's tiles, or 0 while the tiles are off.
@@ -428,7 +432,10 @@ impl Layout {
     /// whose draws get a pipeline for each pass of `shadows` in place of `targets`. The objects
     /// that `skins` skins draw with pipelines that skin in the vertex shader; those that it hides get
     /// no bucket, and the layout asks only for their pipelines. With a `prepass`, the
-    /// scene's draws that the depth prepass draws get its pipelines too. The caller marks the
+    /// scene's draws that the depth prepass draws get its pipelines too. `other_prepass` is the
+    /// prepass that every view other than the camera's draws with: where it differs from
+    /// `prepass`, each scene draw gets a shading pipeline without the prepass too, which the
+    /// views without one draw with. The caller marks the
     /// layout built once the room it needs is made. While the motion pass draws into `motion`'s
     /// targets, the scene's draws get their motion pipelines too. The scene's layout picks the
     /// meshes that draw their trees of cluster patches; the casters' layout draws the trees of
@@ -445,6 +452,7 @@ impl Layout {
         draws: DeviceDraws,
         shadows: CasterPasses,
         prepass: Prepass,
+        other_prepass: Prepass,
         motion: Option<PassTargets>,
         key_counts: &mut KeyCounts,
         pick_targets: PassTargets,
@@ -785,18 +793,42 @@ impl Layout {
             Drawn::Casters => shadows.pipelines(pipelines, key),
             _ => pipelines.opaque(key, targets, prepass),
         };
+        // The scene's pipelines by its prepass: the shading that follows a prepass, the shading
+        // that starts the depth it tests, and the pipeline that draws that depth.
+        let scene_pipelines = move |pipelines: &mut PipelineCache, key: DrawKey| {
+            let (shading, depth) = pipelines.opaque(key, targets, prepass);
+            let plain = if other_prepass == prepass {
+                shading
+            } else {
+                pipelines.id(key.in_pass(targets))
+            };
+            (shading, plain, depth)
+        };
         self.waiting.clear();
         for slot in 0..self.scene_rows as usize {
             if !skins.hides(slot) {
                 continue;
             }
             if let Some((pipeline, ..)) = any_key(slot) {
-                let (first, prepass) = pipelines_of(pipelines, pipeline);
+                let (first, depth, plain) = match drawn {
+                    Drawn::Casters => {
+                        let (cascades, tiles) = pipelines_of(pipelines, pipeline);
+                        (cascades, tiles, 0)
+                    }
+                    Drawn::Scene => {
+                        let (shading, plain, depth) = scene_pipelines(pipelines, pipeline);
+                        (shading, depth, plain)
+                    }
+                    _ => {
+                        let (first, second) = pipelines_of(pipelines, pipeline);
+                        (first, second, 0)
+                    }
+                };
                 // The outlined layout's buckets draw with both pipelines of the outline mask.
                 let second = (drawn == Drawn::Outlined)
                     .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
                 self.waiting.extend(
-                    [first, prepass, second.unwrap_or(0)]
+                    [first, depth, second.unwrap_or(0), plain]
                         .into_iter()
                         .filter(|&id| id != 0),
                 );
@@ -852,7 +884,16 @@ impl Layout {
                 }
                 _ => (0, 0),
             };
-            let (first, prepass) = pipelines_of(pipelines, pipeline);
+            let (first, prepass, plain) = match drawn {
+                Drawn::Scene => {
+                    let (shading, plain, depth) = scene_pipelines(pipelines, pipeline);
+                    (shading, depth, plain)
+                }
+                _ => {
+                    let (first, prepass) = pipelines_of(pipelines, pipeline);
+                    (first, prepass, first)
+                }
+            };
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
             let bands = |key: &BucketKey| fades && ranged(key);
@@ -965,6 +1006,7 @@ impl Layout {
                     crate::pieces::piece_parts(meshes.piece_parts(mesh - 1), pieces, |k, part| {
                         self.draws.push(Draw {
                             pipeline,
+                            shading: plain,
                             prepass,
                             textures,
                             motion: motion_pipeline,
@@ -992,6 +1034,7 @@ impl Layout {
                 for part in parts {
                     let draw = Draw {
                         pipeline,
+                        shading: plain,
                         prepass,
                         textures,
                         motion: motion_pipeline,

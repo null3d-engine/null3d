@@ -222,7 +222,7 @@ A custom tone curve replaces the built-in curves. Its WGSL declares `fn toneCurv
 
 Ambient occlusion darkens the light that comes from all around where nearby surfaces hide a surface from it. That happens in corners, in creases and under objects that rest on the ground. It follows three.js's `GTAOPass` step by step, at half the render size:
 
-1. The depth prepass draws the opaque objects' depth. Ambient occlusion turns the prepass on while it draws.
+1. The depth prepass draws the opaque objects' depth. Ambient occlusion turns the prepass on for the camera's view while it draws.
 2. A first step copies the depth of one pixel under each texel.
 3. The horizon step rebuilds each surface's normal from the depth around it. Then it searches 3 slices around the view for the surfaces that hide the sky, and finds how open the surface is.
 4. A blur over a disk of 16 taps smooths the result along each surface, and keeps it apart from other surfaces.
@@ -272,7 +272,7 @@ Ambient occlusion adds the depth prepass and three small passes at half the rend
 
 Screen-space reflections make shiny opaque surfaces reflect what the screen shows along their mirror direction. A wet street shows the lamps and windows above it, a polished floor the furniture on it, and a metal pipe the wall beside it. They work in four steps, the first three at the size of ambient occlusion's grid:
 
-1. The depth prepass draws the opaque objects' depth, and a first step copies the depth of one pixel under each texel, as for ambient occlusion.
+1. The depth prepass draws the opaque objects' depth, and a first step copies the depth of one pixel under each texel, as for ambient occlusion. Screen-space reflections turn the prepass on for the camera's view while they draw.
 2. Six small steps build a depth pyramid. Each texel of a level keeps the nearest depth of the four texels under it, so a level shows where nothing stands in front of a ray.
 3. The trace rebuilds each surface's normal from the depth, and marches its mirror ray through the pyramid. Where a cell holds nothing nearer than the ray, the ray crosses the whole cell and climbs to a larger one. Where it does, the ray drops to a smaller cell, until it meets a surface. A hit counts only where the ray passes no further behind that surface than `thickness`. The trace keeps the ray's length.
 4. The opaque pass casts each pixel's own reflected ray, along its shading normal, for the length of the hits around it. So a normal map's ripples bend the reflection. It reads the frame before's colors where the ray ends, from the copy of the opaque colors that transmission samples too. The rougher the surface and the longer the ray, the blurrier the mip level it reads.
