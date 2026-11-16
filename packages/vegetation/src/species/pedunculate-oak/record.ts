@@ -472,6 +472,10 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		woodOrders: [2, 1],
+		// Stills 01, 02 and 18: each clump of the crown runs from a yellow-green top to a near-black
+		// underside, so a leaf deep in the crown takes most of the sun's light away and the clump
+		// reads as a cushion rather than as an even face.
+		crownDim: 0.6,
 		// Stills 01 and 02: the crown's box shows 0.37 and 0.33 of sky in the photographs and 0.48 and
 		// 0.43 at the first card level, whose kept cards stand sparse. The field's largest value that
 		// keeps the second card level within the card tests' sky band, 0.02, reads 0.1433 of sky

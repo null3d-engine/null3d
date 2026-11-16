@@ -140,6 +140,8 @@ const HEADER_SCAR_COLOUR: i32 = 70;
 /// The coarsest mip level a card's sample reads: the deepest where the species' smallest leaf cell
 /// still holds four texels a side.
 const HEADER_CARD_LEVEL_MOST: i32 = 71;
+const HEADER_CROWN_DIM: i32 = 72;
+const HEADER_CARD_MIP_LIFT: i32 = 73;
 // A card's stalk line: its least width in pixels, and 1 where the line draws at its twig's width.
 const HEADER_CARD_STALK: i32 = 55;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
@@ -172,10 +174,6 @@ const WOOD_LEAST_PIXELS: f32 = 1.2;
 const FOLIAGE_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
-// How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
-// the share of the texel that the leaves cover, so a small rise keeps a far card's thinnest leaves
-// from falling under the cutoff without inventing coverage that the mip does not hold.
-const CARD_MIP_LIFT: f32 = 0.05;
 // The steepest fall, a mip level, of the coverage a card's texel must reach to draw, which the card
 // surface's third byte holds as a share of it (the card bake's `CARD_CUT_FALL_MOST`).
 const CARD_CUT_FALL_MOST: f32 = 0.3;
@@ -219,6 +217,11 @@ const CAVITY_ROUGH: f32 = 0.2;
 // but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
 // alone would give it.
 const WOOD_SHADE: f32 = 0.35;
+// The open-sky shares between which a clump's shade grades, from its dark core to its sunlit rim:
+// a row deep in the crown sees a small share of the sky and a rim row most of it, so the shade
+// runs across each clump rather than stepping at one figure.
+const CROWN_SHADE_LOW: f32 = 0.15;
+const CROWN_SHADE_HIGH: f32 = 0.75;
 
 /// One texel of the header row.
 /// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
@@ -1022,12 +1025,20 @@ fn card_hold(gx: vec2f, gy: vec2f) -> f32 {
     return min(1.0, exp2(most) / max(footprint, 1.0));
 }
 
+/// How much a clump's own shade dims a leaf or a card there: the row's open-sky share, from none at
+/// the clump's dark core to all at its sunlit rim, times the record's dim. At 0 the record dims
+/// nothing, so a species that names none draws its leaves as before.
+fn crown_shade(sky: f32) -> f32 {
+    let dim = header(HEADER_CROWN_DIM).x;
+    return mix(1.0, smoothstep(CROWN_SHADE_LOW, CROWN_SHADE_HIGH, sky), dim);
+}
+
 /// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
 /// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
 /// leaves would vanish; raising it a little for each level keeps the share of the card that leaves
 /// cover nearer the full-size texture's. The shadow a card casts and its matte read this.
 fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
-    return saturate(alpha * (1.0 + card_level(gx, gy) * CARD_MIP_LIFT));
+    return saturate(alpha * (1.0 + card_level(gx, gy) * header(HEADER_CARD_MIP_LIFT).x));
 }
 
 /// A card's alpha moved so the colour picture's cut at one half falls where the card's own cut lies
@@ -1318,6 +1329,11 @@ fn surface(input: SurfaceInput) -> Surface {
             } else {
                 base = texel.rgb;
             }
+            // The leaves deep in a clump take less of the sun and of the light through them than its
+            // rim does, so the card draws the clump's own dark underside rather than an even face.
+            let crown = crown_shade(input.vertexColor.a);
+            base *= crown;
+            through *= crown;
             alpha = card_alpha(texel.a, hx, hy);
             cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(hx, hy));
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
@@ -1498,6 +1514,11 @@ fn surface(input: SurfaceInput) -> Surface {
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
             occlusion = mix(occlusion, 1.0, leaf_sky);
+            // A leaf deep in a clump takes less of the sun and of the light through it, as the card
+            // levels draw it, so the nearest level carries the same shaded clumps.
+            let crown = crown_shade(saturate(row.sky / 250.0));
+            base *= crown;
+            through *= crown;
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;
