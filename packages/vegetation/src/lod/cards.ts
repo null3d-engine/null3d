@@ -1025,8 +1025,12 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	// A clump is clothed through its depth, not by one sheet: its outer shoots draw one card set and
 	// its inner ones another, so the crown reads as foliage rather than as lace over bare limbs.
 	const { position } = input.rows;
-	const shells: Clump[][] = [[], []];
+	const shells: Clump[][] = level === 1 ? [[], []] : [[]];
 	for (const clump of kept) {
+		if (level !== 1) {
+			(shells[0] as Clump[]).push(clump);
+			continue;
+		}
 		const middle: Vector3 = [0, 0, 0];
 		for (const row of clump.rows)
 			for (let c = 0; c < 3; c++) middle[c] = (middle[c] as number) + (position[row * 3 + c] as number) / clump.rows.length;
