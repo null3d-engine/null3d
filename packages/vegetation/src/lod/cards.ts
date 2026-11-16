@@ -1020,7 +1020,10 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const drawn = (axis: number): DrawnWood => ((orders[axis] as number) <= keep ? 2 : 0);
 	const planes = 3;
-	const clusters = cardClusters(input, walk, kept.length, drawn, planes);
+	// A clump's cards grow to make up the cover of the wood the level does not draw, as a shoot's
+	// cards do, so the crown keeps the mass that wood gave it.
+	const more = woodMakeUp(input, (axis) => drawn(axis) !== 0) * (input.record.lod.cardGrow ?? 1);
+	const clusters = cardClusters(input, walk, kept.length, drawn, planes, undefined, more);
 	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
 	// own scale rather than one shoot's picture grown over the clump.
 	const tiled = {
@@ -1544,6 +1547,8 @@ function nearestOnTriangle(
  * @param planes The card planes each cluster draws, from 1 to 3.
  * @param surface The nearest point of the drawn wood's surface to a point, so a cluster hangs on
  *   wood that is drawn and not on an axis inside it; the axis's own place when absent.
+ * @param more How much further a cluster's cards grow to make up the cover of the wood that the
+ *   level does not draw; 1 grows them to cover their own rows.
  * @returns The clusters.
  * @category api/vegetation
  */
@@ -1554,6 +1559,7 @@ export function cardClusters(
 	drawn: (axis: number) => DrawnWood,
 	planes = 3,
 	surface?: (point: Vector3) => Vector3,
+	more = 1,
 ): CardCluster[] {
 	const { rows, kit } = input;
 	const total = walk.length;
@@ -1688,11 +1694,13 @@ export function cardClusters(
 		// The cluster's cards stand at the middle of its rows and grow to make up their cover, as far
 		// as the leaf form's hull lets them.
 		cardCentre(row, centre);
-		const grow = growthInHull(input, row, Math.max(1, Math.min(Math.sqrt(members), fit)), planes, [
-			middle[0] - centre[0],
-			middle[1] - centre[1],
-			middle[2] - centre[2],
-		]);
+		const grow = growthInHull(
+			input,
+			row,
+			Math.max(1, Math.min(Math.sqrt(members) * more, fit * more)),
+			planes,
+			[middle[0] - centre[0], middle[1] - centre[1], middle[2] - centre[2]],
+		);
 		const onAxis = anchorOf(input, row, drawn);
 		const anchor = onAxis && surface ? surface(onAxis) : onAxis;
 		const joined =
