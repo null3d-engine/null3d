@@ -1,18 +1,18 @@
-// The trees' sway: the material that draws the forest, whose trunk and crown bend in the wind
-// add-on's one field, and the settings that material reads.
+// The understory's sway: the material that draws the forest floor's bushes, whose trunk and crown
+// bend in the wind add-on's one field, and the settings that material reads.
 import type { Material, SketchContext, Texture } from '@null3d/engine';
 import type { Wind } from '@null3d/wind';
 
-/** The distance from the camera out to which the trees sway, in meters. */
+/** The distance from the camera out to which the understory sways, in meters. */
 export const SWAY_DISTANCE = 120;
 
 /**
- * The trees' material: the wood and leaf map, lit as the standard material lights it, with the
- * trunk bending in the wind add-on's field. One field moves every tree whose material names it, and
- * the offset fades out by the sway distance so a far tree stands still and keeps its shadow in the
- * cached far cascade.
+ * The understory's material: the wood and leaf map, lit as the standard material lights it, with
+ * the trunk bending in the wind add-on's field. One field moves every bush whose material names it,
+ * and the offset fades out by the sway distance so a far bush stands still and keeps its shadow in
+ * the cached far cascade.
  */
-const treeShader = /* wgsl */ `
+const bushShader = /* wgsl */ `
 #import null3d::noise::{value3}
 
 var wood: texture_2d<f32>;
@@ -28,7 +28,7 @@ struct Uniforms {
     windLayer: f32,
     // The height over which the trunk's bend grows, in meters.
     height: f32,
-    // How far from the camera the tree sways, in meters.
+    // How far from the camera the bush sways, in meters.
     swayDistance: f32,
     // The most that the top of the trunk moves in a brisk wind, as a share of its height.
     sway: f32,
@@ -245,7 +245,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
         return vec3f(0.0);
     }
     let dir = across / speed;
-    // A trunk bends as a cantilever, most at its top, and each tree flutters a little on its own.
+    // A trunk bends as a cantilever, most at its top, and each bush flutters a little on its own.
     let rise = clamp(input.position.y / max(material.height, 0.001), 0.0, 1.0);
     let flutter = 0.8 + 0.2 * sin(frame.time * 1.7 + dot(root.xz, vec2f(0.37, 0.11)));
     let bend = rise * rise * material.sway * min(speed, 14.0) * flutter;
@@ -260,7 +260,7 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-/** The forest's material, and the frame that keeps its wind layer current. */
+/** The understory's material, and the frame that keeps its wind layer current. */
 export function createSway(
 	ctx: SketchContext,
 	options: { readonly wood: Texture; readonly wind: Wind },
@@ -276,7 +276,7 @@ export function createSway(
 		data: airSettingsData(wind.field.air),
 	});
 	const material = materials.shader({
-		wgsl: treeShader,
+		wgsl: bushShader,
 		roughness: 0.85,
 		vertexColors: true,
 		doubleSided: true,

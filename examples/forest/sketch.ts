@@ -1,18 +1,28 @@
 // Levels of detail: a mixed forest of 56,000 trees over rolling hills at golden hour, climbing to
-// wooded ridges in the haze, in one static instance batch per kind of tree. Three firs and a
-// broadleaf tree are made in code at four levels of detail each (./woods.ts), and each base mesh
-// names its three coarser levels with their errors. Every tree then picks its own level in each
-// frame, on the GPU or on the job workers: the coarsest whose error covers less than a pixel. Near
-// a switch the two levels share the pixels through a dither, so no tree pops, and the shadows draw
-// a coarser level still. An understory of bushes hides the ground between the trunks, in a batch of
-// its own. On phones, the nearest 8,000 trees draw in full and the rest as cut-out cards. Press L to
-// draw every tree at its full detail, and compare the stats.
+// wooded ridges in the haze. The nearest 8,000 draw as the vegetation add-on's plants, each in no
+// more triangles than the preset allows for one tree, and the rest draw as cut-out cards. An
+// understory of bushes hides the ground between the trunks, in a batch of its own with four levels.
+// The add-on's plants pick their own level in each frame, and the levels share the pixels through a
+// dither at a switch, so no tree pops. Press L to draw every tree at its nearest level, and compare
+// the stats.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
-import { plantForest, RADIUS } from './planting';
+import { plantAddon } from './addon';
+import { plantForest, RADIUS, TREES } from './planting';
 import { createSway } from './sway';
-import { cardTexture, ground, KINDS, landArrays, litterTexture, woodTexture } from './woods';
+import {
+	cardTexture,
+	ground,
+	KINDS,
+	landArrays,
+	litterTexture,
+	plantRows,
+	woodTexture,
+} from './woods';
+
+/** The most triangles one near tree may draw at each preset. */
+const TREE_TRIANGLES = { low: 400, medium: 700, high: 1100, ultra: 1500 } as const;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
@@ -30,7 +40,7 @@ export default defineSketch(async (ctx) => {
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 160 } });
 	scene.createAmbientLight(day.ambient);
 
-	// Textures made in code: bark, needles and leaves for the trees, litter for the land, and a
+	// Textures made in code: bark, needles and leaves for the understory, litter for the land, and a
 	// cut-out picture of each kind of tree for the far cards.
 	const look = { colorSpace: 'srgb', mipmaps: true, anisotropy: 8 } as const;
 	const wood = textures.fromData({ ...woodTexture(), ...look, wrap: ['repeat', 'clamp'] });
@@ -42,8 +52,9 @@ export default defineSketch(async (ctx) => {
 		material: land,
 		receiveShadows: true,
 	});
-	// The forest's one wind field. The trees bend in it, read at each tree's root, and the offset
-	// fades out by the sway distance so the far trees and their cached shadow cascades stand still.
+	// The forest's one wind field. The add-on's plants and the understory read it at their roots,
+	// and the understory's offset fades out by the sway distance so the far bushes and their cached
+	// shadow cascades stand still.
 	const wind = createWind(ctx, { camera, box: 256 });
 	const sway = createSway(ctx, { wood, wind });
 	const bark = sway.material;
@@ -55,17 +66,23 @@ export default defineSketch(async (ctx) => {
 		doubleSided: true,
 	});
 
-	const forest = plantForest(ctx, { bark, card });
+	const rows = plantRows(TREES, RADIUS);
+	const forest = plantForest(ctx, { bark, card, rows });
 	quality.onChange(forest.fit);
-	// L draws every tree's base level, and the preset's threshold again on the next press.
+	const addon = await plantAddon(ctx, {
+		rows,
+		wind: wind.field,
+		maxTriangles: TREE_TRIANGLES[quality.preset],
+	});
+	// L draws every plant's nearest level, and the preset's threshold again on the next press.
 	let threshold = quality.settings.lodThreshold;
 
 	return {
 		onUpdate(dt) {
 			// The field's box follows the camera, so it steps before the trees read it.
 			wind.update();
+			addon.setWindLayer(wind.field);
 			sway.update();
-			if (input.wasPressed('KeyB')) forest.hero.setBias();
 
 			if (input.wasPressed('KeyL')) {
 				const levels = quality.settings.lodThreshold > 0;
