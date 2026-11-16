@@ -674,7 +674,9 @@ for (const held of HELD)
 		});
 
 		// A plan of five seeds takes 6.2 seconds beside the file's other tests and 7.0 to 7.3 alone on
-		// the reference Mac, over the default five seconds, so it takes this limit.
+		// the reference Mac, over the default five seconds, so it takes this limit. CI's runner is
+		// slower than the Mac by more than the run's two-lane factor allows for: the check took 21.5
+		// seconds there against a budget of 20, so its limit leaves the same room the Mac's does.
 		it(
 			'ends every axis in a socket or in a fork',
 			() => {
@@ -698,7 +700,7 @@ for (const held of HELD)
 					expect(bareEnds(plan)).toEqual([]);
 				}
 			},
-			scaledBudget(10_000),
+			scaledBudget(20_000),
 		);
 
 		it('gives its sockets as bud sites in the socket record, ranked once across the plant', () => {
