@@ -80,6 +80,13 @@ const HAND_ROUNDS = 4;
 const EXTRAS_STEPS = 20;
 const LEAST_EXTRAS_SHARE = 0.25;
 
+/**
+ * The share of a maximum that the crown takes before any part: a crown is what makes the plant read
+ * as a tree, so it is bought first and the wood, the branches and the extras share what is left. The
+ * clump cards that draw it are priced at the record's own clump-card price.
+ */
+const CROWN_SHARE = 0.6;
+
 /** No triangles in any part. */
 export const NO_TRIANGLES: PartTriangles = {
 	trunk: 0,
@@ -416,7 +423,20 @@ export function allocateLevel(
 			weights[k] = Math.max(0, reference[ALLOCATED[k] as keyof PartTriangles]);
 	whole = 0;
 	for (const weight of weights) whole += weight;
-	const exact = weights.map((weight) => (whole > 0 ? (room * weight) / whole : 0));
+	// The crown's share comes off the top; the other parts share what is left by their own weights.
+	const crown = Math.min(room, Math.floor(room * CROWN_SHARE));
+	const rest = room - crown;
+	const wholeRest = ALLOCATED.reduce(
+		(sum, part, k) => (part === 'leaves' ? sum : sum + Math.max(0, shares[part])),
+		0,
+	);
+	const exact = weights.map((weight, k) =>
+		ALLOCATED[k] === 'leaves'
+			? crown
+			: wholeRest > 0
+				? (rest * Math.max(0, weight)) / wholeRest
+				: 0,
+	);
 	const allocated = exact.map((value) => Math.floor(value));
 	let spent = 0;
 	for (const value of allocated) spent += value;
