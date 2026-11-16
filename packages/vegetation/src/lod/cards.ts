@@ -1013,7 +1013,6 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	const wanted = Math.max(1, Math.round(clumps.length * share));
 	const stride = Math.max(1, Math.round(clumps.length / wanted));
 	const kept = clumps.filter((_, at) => at % stride === 0);
-	const walk = clumpWalk(kept);
 	// The level draws the wood that its own wood orders keep, so a clump joins the plant where that
 	// wood reaches it.
 	const orders = input.skeleton.axes.order;
@@ -1023,26 +1022,58 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	// A clump's cards grow to make up the cover of the wood the level does not draw, as a shoot's
 	// cards do, so the crown keeps the mass that wood gave it.
 	const more = woodMakeUp(input, (axis) => drawn(axis) !== 0) * (input.record.lod.cardGrow ?? 1);
-	const clusters = cardClusters(input, walk, kept.length, drawn, planes, undefined, more);
-	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
-	// own scale rather than one shoot's picture grown over the clump.
-	const tiled = {
-		tiles: CLUMP_TILES,
-		row: (index: number, tile: number): number => {
-			const list = kept[index]?.rows ?? [];
-			return list.length > 0 ? (list[Math.floor((tile * list.length) / (CLUMP_TILES * CLUMP_TILES))] as number) : 0;
-		},
-	};
-	return clusterCardMesh(
-		input,
-		clusters,
-		planes,
-		(index, height) => {
-			const clump = kept[index];
-			return clump ? clumpSky(clump, height) : 1;
-		},
-		tiled,
-	);
+	// A clump is clothed through its depth, not by one sheet: its outer shoots draw one card set and
+	// its inner ones another, so the crown reads as foliage rather than as lace over bare limbs.
+	const { position } = input.rows;
+	const shells: Clump[][] = [[], []];
+	for (const clump of kept) {
+		const middle: Vector3 = [0, 0, 0];
+		for (const row of clump.rows)
+			for (let c = 0; c < 3; c++) middle[c] = (middle[c] as number) + (position[row * 3 + c] as number) / clump.rows.length;
+		const far = clump.rows.map((row) =>
+			Math.hypot(
+				(position[row * 3] as number) - middle[0],
+				(position[row * 3 + 1] as number) - middle[1],
+				(position[row * 3 + 2] as number) - middle[2],
+			),
+		);
+		const sorted = [...far].sort((a, b) => a - b);
+		const half = (sorted[Math.floor(sorted.length / 2)] ?? 0) as number;
+		const outer = clump.rows.filter((_, at) => (far[at] as number) >= half);
+		const inner = clump.rows.filter((_, at) => (far[at] as number) < half);
+		if (outer.length === 0) (shells[0] as Clump[]).push(clump);
+		else (shells[0] as Clump[]).push({ ...clump, rows: outer });
+		if (inner.length > 0) (shells[1] as Clump[]).push({ ...clump, rows: inner });
+	}
+	const mesh = new MeshWriter();
+	for (const shell of shells) {
+		if (shell.length === 0) continue;
+		const walk = clumpWalk(shell);
+		const clusters = cardClusters(input, walk, shell.length, drawn, planes, undefined, more);
+		// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at
+		// their own scale rather than one shoot's picture grown over the clump.
+		const tiled = {
+			tiles: CLUMP_TILES,
+			row: (index: number, tile: number): number => {
+				const list = shell[index]?.rows ?? [];
+				return list.length > 0
+					? (list[Math.floor((tile * list.length) / (CLUMP_TILES * CLUMP_TILES))] as number)
+					: 0;
+			},
+		};
+		clusterCardMesh(
+			input,
+			clusters,
+			planes,
+			(index, height) => {
+				const clump = shell[index];
+				return clump ? clumpSky(clump, height) : 1;
+			},
+			tiled,
+			mesh,
+		);
+	}
+	return mesh.finishMesh();
 }
 
 /**
@@ -1805,9 +1836,10 @@ export function clusterCardMesh(
 		readonly tiles: number;
 		readonly row: (cluster: number, tile: number) => number;
 	},
+	into?: MeshWriter,
 ): MeshArrays {
 	const { rows, kit } = input;
-	const mesh = new MeshWriter();
+	const mesh = into ?? new MeshWriter();
 	const size = kit.cards.size || 1;
 	const base = input.variant * VARIANT_RECORDS;
 	// A record that asks for the clump card shades a cluster by its own row's sky and its own
