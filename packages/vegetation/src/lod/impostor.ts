@@ -46,8 +46,12 @@ export async function loadFarBaker(): Promise<void> {
 	baker ??= (await import('@null3d/impostors/bake')).bakeImpostorAtlas;
 }
 
-/** The share of its colour that a vertex keeps where the crown hides all of its sky. */
-const SHADED = 0.4;
+/**
+ * The share of its colour that a vertex keeps where the crown hides all of its sky: the crown's
+ * dark underside, which the far card must keep because the impostor's card is lit again without the
+ * near form's shadows.
+ */
+const SHADED = 0.15;
 
 /**
  * The share of its baked colour that a far texel keeps: the card the impostors add-on draws is lit
