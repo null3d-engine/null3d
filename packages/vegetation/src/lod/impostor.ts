@@ -50,6 +50,14 @@ export async function loadFarBaker(): Promise<void> {
 const SHADED = 0.4;
 
 /**
+ * The share of its baked colour that a far texel keeps: the card the impostors add-on draws is lit
+ * again by the scene's lights, so the bake carries the crown's own shade on top of its albedo. The
+ * near form's cards are lit once, and this is the share that leaves the far card at the same own
+ * shade the card levels show.
+ */
+const FAR_LIT = 0.7;
+
+/**
  * The open-sky shares between which a clump's dim runs, from its dark core to its sunlit rim, as the
  * plant shader's own bounds: the far card reads the same record value that draws the card levels.
  */
@@ -125,7 +133,7 @@ function shadedColours(
 	const out = new Float32Array(count * 3);
 	for (let v = 0; v < count; v++) {
 		const sky = (bytes[v * 4 + 3] as number) / 255;
-		const keep = (SHADED + (1 - SHADED) * sky) * crownShade(kit, sky);
+		const keep = (SHADED + (1 - SHADED) * sky) * crownShade(kit, sky) * FAR_LIT;
 		const c = colour(v);
 		out[v * 3] = (c[0] as number) * keep;
 		out[v * 3 + 1] = (c[1] as number) * keep;
