@@ -62,11 +62,13 @@ export const plannedGrowth: Planned = {
 	// never thin; at sparseness 1 about two thirds of the boughs and a third of the branches and
 	// twigs stay, for a thinned, stag-like crown on the full scaffold.
 	thin: [0, 0, 0.34, 0.67, 0.72],
-	// Leaf area left at sparseness 1 is a tenth of the full crown's, and never under the 0.08 floor.
+	// The share of each kept clump's sockets that stays, by sparseness. Thinning already takes most
+	// clumps away, so the socket share at sparseness 1 is set above the crown's tenth of leaf area to
+	// land there, and never under the contract's 0.08 floor.
 	leavesAt: [
 		[0, 1],
-		[0.5, 0.45],
-		[1, 0.1],
+		[0.5, 0.42],
+		[1, 0.18],
 	],
 	// The oak first bears acorns at about 40 years in the open (FACTS gives the fruit but no age;
 	// 40 of 150 model years is the usual open-grown figure), and the crop fills over 15 years.

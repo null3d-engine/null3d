@@ -251,7 +251,9 @@ function ramp(maturity: number, from: number, band: number): number {
 export function growPlanned(input: GrowInput): MacroSkeleton {
 	const growth = input.record.growth as Planned;
 	const request = input.request ?? { maturity: 1, sparse: 0 };
-	const age = input.plan?.age ?? request.maturity * growth.fullAge;
+	// The generator hands the plan as a stage input; a probe that grows without it plans here.
+	const planDetail = input.plan ?? planTree(input.record, request);
+	const age = planDetail.age;
 	if (!(age > 0)) return emptyPlant();
 	const adult = adultFor(input.record, growth, input.seed, input.variant);
 	if (!adult) return emptyPlant();
@@ -267,6 +269,9 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const slim = Math.pow(Math.min(1, height / adultHeight), SLIM);
 	// The age the plant reaches its adult height: the end of every axis's growth in length.
 	const maturityAge = ageAtHeight(growth.height, fullAge, adultHeight, adultHeight);
+	// A maximum coarsens each axis's own nodes: every second or fourth node stands.
+	const most = request.maxTriangles;
+	const woodStep = most === undefined ? 1 : most >= 20_000 ? 1 : most >= 5_000 ? 2 : 4;
 
 	const builder = new SkeletonBuilder();
 	const placed: Placed[] = [];
@@ -324,7 +329,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			continue;
 		}
 		// The nodes that stand: the trunk is cut where the plant's height reaches, and every other
-		// axis shows the first part of its fixed adult path.
+		// axis shows the first part of its fixed adult path. A triangle maximum takes every second or
+		// fourth node of an axis, so the wood it draws costs a share of the whole.
 		const kept: FrameNode[] = [];
 		const places: Vec3[] = [];
 		let travelled = 0;
@@ -333,6 +339,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			const along = (axis.along[k] as number) * axis.length;
 			const inside = axis.parent < 0 ? node.y <= height + 1e-9 : along <= axis.length * growthShare + 1e-9;
 			if (k > 0 && !inside) break;
+			if (k > 0 && k % woodStep !== 0) continue;
 			kept.push(node);
 			places.push([node.x, node.y, node.z]);
 			travelled = along;
@@ -428,10 +435,11 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	});
 
 	// The sockets that clothe the clumps, at the share the sparseness and the plan leave.
-	const leaves = Math.min(
-		1,
-		Math.max(0.08, curveAt(growth.leavesAt, sparse) * (input.plan?.rankCut[(input.plan?.rankCut.length ?? 1) - 1] ?? 1)),
-	);
+	// Sparseness keeps its share of the leaf area, never under the contract's floor; a maximum can
+	// take the share below it, since a maximum may legitimately leave a crown of a few clump cards.
+	const keepsItsShare = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
+	const cutByMaximum = Math.max(0, Math.min(1, planDetail.rankCut[planDetail.rankCut.length - 1] ?? 1));
+	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
 	const planScale = plan.scale / Math.max(1e-9, spreadMean(input.record.size.height));
 	const grown = fillClumps({
 		builder,
