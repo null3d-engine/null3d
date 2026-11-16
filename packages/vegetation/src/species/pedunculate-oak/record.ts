@@ -326,7 +326,9 @@ export const record: Species = {
 				reflectance: [0.0429, 0.0864, 0.0194],
 				reflectanceBack: [0.2344, 0.2975, 0.212],
 				transmittance: [0.091, 0.195, 0.0195],
-				roughness: [0.45, 0.6],
+				// Still 01: the crown's pale haze comes from the sky's gloss on every leaf, which a
+				// matte leaf keeps little of, so the faces stay near-matte.
+				roughness: [0.75, 0.75],
 			},
 		},
 	},
