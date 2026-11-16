@@ -5,7 +5,7 @@
 //
 // W owns this file from the crown-fill handover: the rows per clump, the depth through each clump,
 // the rim clumps with sky bays, the inner layer and the branch kinks all live here.
-import { AXIS_LIMB, BUD_TERMINAL, type SkeletonBuilder } from '../core/graph';
+import { AXIS_LIMB, BUD_FLOWER, BUD_TERMINAL, type SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
 import { quatAxisAngle, quatFromFrame, quatMultiply, radians, type Vector3 } from '../core/math';
 import { thinningRanks } from '../core/rank';
@@ -122,6 +122,8 @@ export interface FillInput {
 	readonly pieceScale: number;
 	/** The record's salt, which keys the draws that turn each socket's piece. */
 	readonly salt: number;
+	/** The share of the sockets that also carries a flower site, 0 to 1: the catkins' ramp. */
+	readonly flowers?: number;
 	/** How far each socket's piece turns from the sky: its roll and its tilt, in degrees. */
 	readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
 }
@@ -150,7 +152,7 @@ interface Goal {
  * @category api/vegetation
  */
 export function fillClumps(input: FillInput): FillCount {
-	const { builder, seed, variant, clumps, extra, leaves, pieceScale, salt, turn } = input;
+	const { builder, seed, variant, clumps, extra, leaves, pieceScale, salt, turn, flowers } = input;
 	const goals: Goal[] = [];
 	for (const clump of clumps) {
 		if (!(clump.growth > 0)) continue;
@@ -232,7 +234,14 @@ export function fillClumps(input: FillInput): FillCount {
 	kept.forEach(({ goal }, socket) => {
 		socketOrigins.push(goal.place);
 		if (goal.extra) {
-			hangBud(builder, goal.extra, goal.rank, goal.scale, turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom });
+			hangBud(
+				builder,
+				goal.extra,
+				goal.rank,
+				goal.scale,
+				turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom },
+				flowerAt(seed, goal.place, flowers),
+			);
 			made++;
 			return;
 		}
@@ -244,9 +253,15 @@ export function fillClumps(input: FillInput): FillCount {
 			goal.rank,
 			goal.scale,
 			turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom },
+			flowerAt(seed, goal.place, flowers),
 		);
 	});
 	return { made, sockets: kept.length, axisOrigins, socketOrigins };
+}
+
+/** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */
+function flowerAt(seed: number, place: number, flowers: number | undefined): boolean {
+	return flowers !== undefined && flowers > 0 && unitAt(seed, place, 2) < flowers;
 }
 
 /** Hangs one socket on the end of a piece of the frame's own wood, with no axis of its own. */
@@ -263,6 +278,7 @@ function hangBud(
 				readonly tiltFrom: number;
 		  }
 		| undefined,
+	flower: boolean,
 ): void {
 	const frame = new Float32Array(4);
 	quatFromFrame(socket.out, [0, 1, 0], frame);
@@ -280,6 +296,20 @@ function hangBud(
 		woodRadius: 0.004,
 		socket: { scale, rank, lobe: socket.id },
 	});
+	// A blossom season's catkins hang on their own sites beside the leaves, so the leaf piece stays.
+	if (flower)
+		builder.addBud({
+			node: socket.node,
+			x: socket.point[0],
+			y: socket.point[1],
+			z: socket.point[2],
+			frame,
+			kind: BUD_FLOWER,
+			vigor: 1,
+			light: 1,
+			axis: socket.axis,
+			woodRadius: 0.004,
+		});
 }
 
 /** Turns a socket's frame about its own line and off it, by its place in two spread runs. */
@@ -322,6 +352,7 @@ function hangTwig(
 				readonly tiltFrom: number;
 		  }
 		| undefined,
+	flower: boolean,
 ): number {
 	const axis = builder.addAxis({
 		parent: clump.axis,
@@ -377,5 +408,19 @@ function hangTwig(
 		woodRadius: radius,
 		socket: { scale: pieceScale, rank, lobe: clump.id },
 	});
+	// A blossom season's catkins hang on their own sites beside the leaves, so the leaf piece stays.
+	if (flower)
+		builder.addBud({
+			node,
+			x: point[0],
+			y: point[1],
+			z: point[2],
+			frame,
+			kind: BUD_FLOWER,
+			vigor: 1,
+			light: 1,
+			axis,
+			woodRadius: radius,
+		});
 	return steps + 2;
 }
