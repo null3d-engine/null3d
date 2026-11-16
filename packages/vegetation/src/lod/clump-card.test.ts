@@ -6,10 +6,10 @@ import type { MacroSkeleton } from '../core/graph';
 import {
 	CLUMP_OVER_SHADE,
 	CLUMP_UNDER_SHADE,
+	type ClumpPlant,
 	clumpSky,
 	clumpsOf,
 	clumpWalk,
-	type ClumpPlant,
 } from './clump-card';
 
 /** A plant of two clumps: each socket stands in a foliage mass, and the first three sockets one. */
@@ -85,9 +85,8 @@ describe('the clumps of a plant', () => {
 
 	it('gives nothing where every row stands in a clump of its own', () => {
 		const plant = twoClumps();
-		const sockets = (
-			plant.skeleton as unknown as { buds: { sockets: { lobe: Uint16Array } } }
-		).buds.sockets;
+		const sockets = (plant.skeleton as unknown as { buds: { sockets: { lobe: Uint16Array } } }).buds
+			.sockets;
 		sockets.lobe = Uint16Array.from([0, 1, 2, 3, 4, 5]);
 		expect(clumpsOf(plant)).toBeUndefined();
 	});
@@ -130,7 +129,10 @@ describe('the shade a clump card bakes', () => {
 	});
 
 	it('keeps a clump with no height even, at its own sky share over the brightened top', () => {
-		expect(clumpSky({ ...clump, spread: 0 }, 100)).toBeCloseTo(Math.min(1, 0.8 * CLUMP_OVER_SHADE), 10);
+		expect(clumpSky({ ...clump, spread: 0 }, 100)).toBeCloseTo(
+			Math.min(1, 0.8 * CLUMP_OVER_SHADE),
+			10,
+		);
 	});
 });
 
@@ -148,8 +150,12 @@ describe('the clumps of a plant that names none', () => {
 		const rows: ShootRows = {
 			count,
 			prototype: new Uint8Array(count),
-			position: Float32Array.from(Array.from({ length: count * 3 }, (_, i) => (i % 3 === 1 ? 5 : 0))),
-			rotation: Float32Array.from(Array.from({ length: count * 4 }, (_, i) => (i % 4 === 3 ? 1 : 0))),
+			position: Float32Array.from(
+				Array.from({ length: count * 3 }, (_, i) => (i % 3 === 1 ? 5 : 0)),
+			),
+			rotation: Float32Array.from(
+				Array.from({ length: count * 4 }, (_, i) => (i % 4 === 3 ? 1 : 0)),
+			),
 			scale: new Float32Array(count).fill(1),
 			record: new Uint16Array(count),
 			phase: new Uint8Array(count),
