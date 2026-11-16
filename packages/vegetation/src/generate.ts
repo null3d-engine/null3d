@@ -382,7 +382,8 @@ export async function loadPlantCode(record: Species): Promise<void> {
 	// A form may hand its plant to another growth model, which its own code walks, so every model a
 	// record or one of its forms names is loaded here.
 	const models = new Set<GrowthModel>([record.growth.model]);
-	for (const name of Object.keys(record.forms ?? {})) models.add(formRecord(record, name).growth.model);
+	for (const name of Object.keys(record.forms ?? {}))
+		models.add(formRecord(record, name).growth.model);
 	await Promise.all([
 		...[...models].map((model) => loadGrower(model)),
 		loadFoliage(record.foliage.kind),
@@ -765,9 +766,10 @@ export function forgetGrownPlants(): void {
 function grownPlant(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	const stand = kit.placeholders === 'missing' ? ':missing' : kit.placeholders ? ':stand-ins' : '';
 	const planned = kit.record.growth.model === 'planned';
-	const key = `${
-		variantKey(kit, planned ? options : { ...options, sparse: 0, maxTriangles: undefined })
-	}${stand}`;
+	const key = `${variantKey(
+		kit,
+		planned ? options : { ...options, sparse: 0, maxTriangles: undefined },
+	)}${stand}`;
 	const kept = GROWN.get(key);
 	if (kept) {
 		GROWN.delete(key);
