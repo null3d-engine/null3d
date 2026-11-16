@@ -5,7 +5,7 @@
 //
 // W owns this file from the crown-fill handover: the rows per clump, the depth through each clump,
 // the rim clumps with sky bays, the inner layer and the branch kinks all live here.
-import { AXIS_LIMB, BUD_FLOWER, BUD_TERMINAL, type SkeletonBuilder } from '../core/graph';
+import { BUD_FLOWER, BUD_TERMINAL, type SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
 import { quatAxisAngle, quatFromFrame, quatMultiply, radians, type Vector3 } from '../core/math';
 import { thinningRanks } from '../core/rank';
@@ -30,9 +30,6 @@ const SOCKET_BASE = 100_000;
 
 /** The slots one clump may carry, which fix each socket's place in its clump. */
 const SLOTS = 320;
-
-/** Metres from one twig node to the next, at the longest. */
-const STEP = 1.0;
 
 /** The steps of the two shares that turn each socket's piece about its own line. */
 const SPREAD_ROLL = 0.7548776662466927;
@@ -161,7 +158,7 @@ export function fillClumps(input: FillInput): FillCount {
 		const variety = 1 + 0.6 * (unitAt(seed, clump.id, variant, 2) - 0.5);
 		const count = Math.round(SOCKETS_PER_AREA * (2 * radius) ** 2 * variety);
 		// Each slot is a fixed point of the clump; as the clump opens, more of them fill.
-		const filled = Math.min(1, (count * clump.open * clump.open) / SLOTS);
+		const filled = Math.min(1, (count * clump.open) / SLOTS);
 		for (let k = 0; k < SLOTS; k++) {
 			if ((k + 0.5) / SLOTS > filled) continue;
 			// An evenly spread direction and depth, fixed by the slot alone so it never moves with age.
@@ -215,36 +212,34 @@ export function fillClumps(input: FillInput): FillCount {
 		.sort((a, b) => a.goal.rank - b.goal.rank || a.k - b.k)
 		.slice(0, most);
 	let made = 0;
-	const axisOrigins: number[] = [];
 	const socketOrigins: number[] = [];
 	const rollFrom = unitAt(seed, salt, variant, TURN, 0);
 	const tiltFrom = unitAt(seed, salt, variant, TURN, 1);
 	kept.forEach(({ goal }, socket) => {
 		socketOrigins.push(goal.place);
-		if (goal.extra) {
-			hangBud(
-				builder,
-				goal.extra,
-				goal.rank,
-				goal.scale,
-				turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom },
-				flowerAt(seed, goal.place, flowers),
-			);
-			made++;
-			return;
-		}
-		axisOrigins.push(goal.place);
-		made += hangTwig(
+		const direction: Vector3 =
+			goal.extra === undefined
+				? unitFrom(goal.clump.centre, goal.point)
+				: ([goal.extra.out[0], goal.extra.out[1], goal.extra.out[2]] as Vector3);
+		const seat: SocketSeat = {
+			node: goal.extra === undefined ? goal.clump.node : goal.extra.node,
+			axis: goal.extra === undefined ? goal.clump.axis : goal.extra.axis,
+			point: goal.point,
+			direction,
+			id: goal.extra === undefined ? goal.clump.id : goal.extra.id,
+			woodRadius: 0.004,
+		};
+		hangBud(
 			builder,
-			goal.clump,
-			goal.point,
+			seat,
 			goal.rank,
 			goal.scale,
 			turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom },
 			flowerAt(seed, goal.place, flowers),
 		);
+		made++;
 	});
-	return { made, sockets: kept.length, axisOrigins, socketOrigins };
+	return { made, sockets: kept.length, axisOrigins: [], socketOrigins };
 }
 
 /** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */
@@ -252,10 +247,35 @@ function flowerAt(seed: number, place: number, flowers: number | undefined): boo
 	return flowers !== undefined && flowers > 0 && unitAt(seed, place, 2) < flowers;
 }
 
-/** Hangs one socket on the end of a piece of the frame's own wood, with no axis of its own. */
+/** The unit direction from one point toward another, or straight up for one point. */
+function unitFrom(from: Vec3, to: Vec3): Vector3 {
+	const dx = to[0] - from[0];
+	const dy = to[1] - from[1];
+	const dz = to[2] - from[2];
+	const long = Math.sqrt(dx * dx + dy * dy + dz * dz);
+	return long > 1e-9 ? [dx / long, dy / long, dz / long] : [0, 1, 0];
+}
+
+/** A socket's place on the wood: the node it stands on and where its piece stands. */
+interface SocketSeat {
+	/** The SkeletonBuilder node it hangs on. */
+	readonly node: number;
+	/** The axis that node belongs to. */
+	readonly axis: number;
+	/** Where the socket stands. */
+	readonly point: Vector3;
+	/** The direction its piece stands out along. */
+	readonly direction: Vector3;
+	/** The clump its piece belongs to. */
+	readonly id: number;
+	/** The wood's radius where it stands. */
+	readonly woodRadius: number;
+}
+
+/** Hangs one socket on a node of the carrying wood, with no axis of its own. */
 function hangBud(
 	builder: SkeletonBuilder,
-	socket: ExtraSocket,
+	seat: SocketSeat,
 	rank: number,
 	scale: number,
 	turning:
@@ -269,34 +289,34 @@ function hangBud(
 	flower: boolean,
 ): void {
 	const frame = new Float32Array(4);
-	quatFromFrame(socket.out, [0, 1, 0], frame);
+	quatFromFrame(seat.direction, [0, 1, 0], frame);
 	turnFrame(frame, turning);
 	builder.addBud({
-		node: socket.node,
-		x: socket.point[0],
-		y: socket.point[1],
-		z: socket.point[2],
+		node: seat.node,
+		x: seat.point[0],
+		y: seat.point[1],
+		z: seat.point[2],
 		frame,
 		kind: BUD_TERMINAL,
 		vigor: 1,
 		light: 1,
-		axis: socket.axis,
-		woodRadius: 0.004,
-		socket: { scale, rank, lobe: socket.id },
+		axis: seat.axis,
+		woodRadius: seat.woodRadius,
+		socket: { scale, rank, lobe: seat.id },
 	});
 	// A blossom season's catkins hang on their own sites beside the leaves, so the leaf piece stays.
 	if (flower)
 		builder.addBud({
-			node: socket.node,
-			x: socket.point[0],
-			y: socket.point[1],
-			z: socket.point[2],
+			node: seat.node,
+			x: seat.point[0],
+			y: seat.point[1],
+			z: seat.point[2],
 			frame,
 			kind: BUD_FLOWER,
 			vigor: 1,
 			light: 1,
-			axis: socket.axis,
-			woodRadius: 0.004,
+			axis: seat.axis,
+			woodRadius: seat.woodRadius,
 		});
 }
 
@@ -320,95 +340,4 @@ function turnFrame(
 	quatMultiply(frame, 0, spin, 0, frame);
 	quatAxisAngle([1, 0, 0], radians(share(turning.tiltFrom, SPREAD_TILT) * turning.turn.tilt), spin);
 	quatMultiply(frame, 0, spin, 0, frame);
-}
-
-/**
- * Hangs one socket on a short twig from its clump's carrying wood to its point, and returns the
- * elements it made.
- */
-function hangTwig(
-	builder: SkeletonBuilder,
-	clump: FillClump,
-	point: Vector3,
-	rank: number,
-	pieceScale: number,
-	turning:
-		| {
-				readonly turn: { readonly roll: number; readonly tilt: number; readonly out?: number };
-				readonly socket: number;
-				readonly rollFrom: number;
-				readonly tiltFrom: number;
-		  }
-		| undefined,
-	flower: boolean,
-): number {
-	const axis = builder.addAxis({
-		parent: clump.axis,
-		parentNode: clump.node,
-		// A socket's twig stands below the boughs, never among the bones the contract compares.
-		order: Math.max(3, clump.order + 1),
-		kind: AXIS_LIMB,
-		fine: true,
-	});
-	// The twig runs from the clump's root out to its point, along a line fixed with the clump.
-	const from = clump.root;
-	const dx = point[0] - from[0];
-	const dy = point[1] - from[1];
-	const dz = point[2] - from[2];
-	const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-	const steps = Math.max(1, Math.min(2, Math.ceil(length / STEP)));
-	let parent = clump.node;
-	let node = clump.node;
-	let radius = 0;
-	for (let k = 1; k <= steps; k++) {
-		const share = k / steps;
-		node = builder.addNode({
-			x: from[0] + dx * share,
-			y: from[1] + dy * share,
-			z: from[2] + dz * share,
-			radius: 0.004,
-			parent,
-			axis,
-			light: 1,
-			age: Math.round(clump.birth),
-		});
-		parent = node;
-		radius = 0.004;
-	}
-	// The socket's own frame: +Y out of the clump, +Z toward the sky.
-	const out =
-		length > 1e-9
-			? ([dx / length, dy / length, dz / length] as Vector3)
-			: ([0, 1, 0] as Vector3);
-	const frame = new Float32Array(4);
-	quatFromFrame(out, [0, 1, 0], frame);
-	turnFrame(frame, turning);
-	builder.addBud({
-		node,
-		x: point[0],
-		y: point[1],
-		z: point[2],
-		frame,
-		kind: BUD_TERMINAL,
-		vigor: 1,
-		light: 1,
-		axis,
-		woodRadius: radius,
-		socket: { scale: pieceScale, rank, lobe: clump.id },
-	});
-	// A blossom season's catkins hang on their own sites beside the leaves, so the leaf piece stays.
-	if (flower)
-		builder.addBud({
-			node,
-			x: point[0],
-			y: point[1],
-			z: point[2],
-			frame,
-			kind: BUD_FLOWER,
-			vigor: 1,
-			light: 1,
-			axis,
-			woodRadius: radius,
-		});
-	return steps + 2;
 }
