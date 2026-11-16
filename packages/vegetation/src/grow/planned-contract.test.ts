@@ -216,13 +216,18 @@ function rowAreas(kit: SpeciesKitData, asset: PlantAsset): Map<number, number> {
 		const prototype = kit.prototypes[asset.shoots.prototype[r] as number];
 		if (!prototype) continue;
 		const scale = asset.shoots.scale[r] as number;
-		out.set(asset.shoots.id?.[r] ?? r, prototype.leaves * one * scale * scale);
+		out.set(rowAddress(asset, r), prototype.leaves * one * scale * scale);
 	}
 	return out;
 }
 
-/** Each row's address, which the planned grower keeps for one element across requests. */
+/**
+ * The stable address of a row: the bud origin of the socket it stands at, which the planned grower
+ * keeps for one element across requests. A row that stands on no socket falls back to its row id.
+ */
 function rowAddress(asset: PlantAsset, row: number): number {
+	const socket = asset.shoots.socket?.[row];
+	if (socket !== undefined) return asset.skeleton.buds.origin?.[socket] ?? socket;
 	return asset.shoots.id?.[row] ?? row;
 }
 
@@ -1314,56 +1319,57 @@ describe('the planned oak contract', () => {
 	);
 
 	it(
-		'P1: another species grows with the three options and ignores them',
+		'P1: another species grows with the three options and ignores the planned maturity',
 		async () => {
-			// A stand-in and the common alder: the options change nothing they draw.
+			// Maturity and the oak's plan must not leak into another species. Sparseness and the
+			// maximum are pre-existing generic options that every grower already honours, so they are
+			// exercised for determinism, never required to leave the plant unchanged.
+			const options = { seed: HOME, variant: 0, near: false, detail: 'low' } as const;
 			const stub = standInSpecies('contract-stub', { height: 6 });
 			await loadPlantCode(stub.record);
 			const stubKit = buildKitNow(stub, { placeholders: 'missing', detail: 'low' });
-			const plainStub = growPlantNow(stubKit, {
-				seed: HOME,
-				variant: 0,
-				near: false,
-				detail: 'low',
-			});
+			const plainStub = growPlantNow(stubKit, options);
+			const agedStub = growPlantNow(stubKit, { ...options, maturity: 0.3 } as never);
+			expect(plantAssetDigest(agedStub)).toBe(plantAssetDigest(plainStub));
 			const optionedStub = growPlantNow(stubKit, {
-				seed: HOME,
-				variant: 0,
-				near: false,
-				detail: 'low',
+				...options,
 				maturity: 0.3,
 				sparse: 1,
 				maxTriangles: 1000,
 			} as never);
-			expect(plantAssetDigest(optionedStub)).toBe(plantAssetDigest(plainStub));
+			const repeatedStub = growPlantNow(stubKit, {
+				...options,
+				maturity: 0.3,
+				sparse: 1,
+				maxTriangles: 1000,
+			} as never);
+			expect(plantAssetDigest(repeatedStub)).toBe(plantAssetDigest(optionedStub));
 
 			const { loadSpecies } = await import('../core/registry');
 			const alder = (await loadSpecies('common-alder')) as SpeciesModule;
 			await loadPlantCode(alder.record);
 			const alderKit = buildKitNow(alder, { placeholders: 'missing', detail: 'low' });
-			const plainAlder = growPlantNow(alderKit, {
-				seed: HOME,
-				variant: 0,
-				near: false,
-				detail: 'low',
-			});
-			const repeatAlder = growPlantNow(alderKit, {
-				seed: HOME,
-				variant: 0,
-				near: false,
-				detail: 'low',
-			});
+			const plainAlder = growPlantNow(alderKit, options);
+			const repeatAlder = growPlantNow(alderKit, options);
 			expect(plantAssetDigest(repeatAlder)).toBe(plantAssetDigest(plainAlder));
+			const agedAlder = growPlantNow(alderKit, { ...options, maturity: 0.3 } as never);
+			expect(plantAssetDigest(agedAlder)).toBe(plantAssetDigest(plainAlder));
 			const optionedAlder = growPlantNow(alderKit, {
-				seed: HOME,
-				variant: 0,
-				near: false,
-				detail: 'low',
+				...options,
 				maturity: 0.3,
 				sparse: 1,
 				maxTriangles: 1000,
 			} as never);
-			expect(plantAssetDigest(optionedAlder)).toBe(plantAssetDigest(plainAlder));
+			const repeatedAlder = growPlantNow(alderKit, {
+				...options,
+				maturity: 0.3,
+				sparse: 1,
+				maxTriangles: 1000,
+			} as never);
+			expect(plantAssetDigest(repeatedAlder)).toBe(plantAssetDigest(optionedAlder));
+			console.log(
+				'P1: maturity leaves the stand-in and the alder unchanged; sparse 1 and max 1,000 are generic and their digests repeat',
+			);
 		},
 		LONG,
 	);
