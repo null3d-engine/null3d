@@ -395,8 +395,47 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	/** Each stated axis's grown end, read before sparseness, so a clump never moves with it. */
 	const planTips: Vec3[] = bones.axes.map((axis, index) => tipAt(axis, reveal[index] as Reveal));
 
-	// Sparseness keeps a spread rank of each thinned order, so the counts fall at every step and the
-	// kept elements are a subset of a denser plant's.
+	// Each stated axis's grown clump, at its grown place and size: the crown's own spread, which
+	// sparseness keeps even round it.
+	const grownClump = new Map<number, { centre: Vec3; radius: number }>();
+	bones.patches.forEach((patch) => {
+		const where = reveal[patch.axis] as Reveal | undefined;
+		if (where === undefined || !where.present) return;
+		const axis = bones.axes[patch.axis] as FrameAxis;
+		const tip = axis.nodes[axis.nodes.length - 1] as FrameNode;
+		const grownTip = planTips[patch.axis] as Vec3;
+		grownClump.set(patch.axis, {
+			centre: [
+				grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
+				grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
+				grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
+			],
+			radius: (patch.width / 2) * where.growth,
+		});
+	});
+	// The crown's mean place, weighted as its sockets are: each clump carries about six sockets a
+	// square metre of its width.
+	const middle: [number, number, number] = [0, 0, 0];
+	let weight = 0;
+	for (const clump of grownClump.values()) {
+		const many = Math.max(1, 6 * (2 * clump.radius) ** 2);
+		weight += many;
+		for (let c = 0; c < 3; c++)
+			middle[c] = (middle[c] as number) + (clump.centre[c] as number) * many;
+	}
+	for (let c = 0; c < 3; c++) middle[c] = (middle[c] as number) / Math.max(1e-9, weight);
+	const octantOf = (index: number): number => {
+		const axis = bones.axes[index] as FrameAxis;
+		const at = grownClump.get(index)?.centre ?? [
+			axis.nodes[0]?.x ?? 0,
+			axis.nodes[0]?.y ?? 0,
+			axis.nodes[0]?.z ?? 0,
+		];
+		return (at[0] > middle[0] ? 1 : 0) + (at[1] > middle[1] ? 2 : 0) + (at[2] > middle[2] ? 4 : 0);
+	};
+
+	// Sparseness keeps a spread rank of each thinned order, and keeps each octant of the crown's own
+	// box its fair share, so the sparse crown stays even at every maturity and not only the full one.
 	const keptAxis = new Set<number>();
 	bones.axes.forEach((axis, index) => {
 		if (axis.fine && axis.order > 2) return;
@@ -404,23 +443,53 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	});
 	for (let order = 2; order < 8; order++) {
 		const candidates = [...keptAxis].filter(
-			(index) => (bones.axes[index] as FrameAxis).order === order,
-		);
-		const ranks = thinningRanks(
-			candidates.map((index) => {
-				const node = (bones.axes[index] as FrameAxis).nodes[0] as FrameNode;
-				return [node.x, node.y, node.z];
-			}),
+			(index) =>
+				(bones.axes[index] as FrameAxis).order === order && (reveal[index] as Reveal).present,
 		);
 		// A crown thins its boughs from half grown up. A younger crown holds a few dozen, and dropping
 		// one of those opens a hole a third of its side wide, so it keeps its boughs and loses leaves
 		// instead: the owner's sparse look is a thin crown on the full trunk and limbs.
 		const thins = request.maturity >= ADULT_MATURITY;
 		const keepShare = thins ? Math.max(0, 1 - sparse * (thin[order] ?? 0)) : 1;
-		const count = Math.max(0, Math.round(candidates.length * keepShare));
-		candidates.forEach((index, at) => {
-			if ((ranks[at] as number) >= count) keptAxis.delete(index);
-		});
+		const byOctant = new Map<number, number[]>();
+		for (const index of candidates) {
+			const octant = octantOf(index);
+			const held = byOctant.get(octant);
+			if (held) held.push(index);
+			else byOctant.set(octant, [index]);
+		}
+		for (const held of byOctant.values()) {
+			// The octant keeps its fair share of the crown's sockets, not of its clumps: a clump's
+			// weight is the sockets it carries, so a heavy clump kept where a light one went does not
+			// tilt the octant.
+			const weightOf = (index: number): number => {
+				const clump = grownClump.get(index);
+				return Math.max(1, 6 * (2 * (clump?.radius ?? 0)) ** 2);
+			};
+			const ranks = thinningRanks(
+				held.map((index) => {
+					const node = (bones.axes[index] as FrameAxis).nodes[0] as FrameNode;
+					return [node.x, node.y, node.z];
+				}),
+			);
+			const order = held
+				.map((index, at) => ({ index, rank: ranks[at] as number, weight: weightOf(index) }))
+				.sort((a, b) => a.rank - b.rank);
+			const total = order.reduce((sum, one) => sum + one.weight, 0);
+			let kept = 0;
+			for (const one of order) {
+				if (kept + one.weight / 2 > total * keepShare) break;
+				kept += one.weight;
+			}
+			let spent = 0;
+			for (const one of order) {
+				if (spent + one.weight / 2 > kept) {
+					keptAxis.delete(one.index);
+					continue;
+				}
+				spent += one.weight;
+			}
+		}
 	}
 
 	// The scale of a socket's piece against the species' own, from the frame's own scale.
