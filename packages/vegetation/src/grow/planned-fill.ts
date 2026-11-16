@@ -20,7 +20,7 @@ const DEPTH_FROM = 0.41;
 const DEPTH_TO = 0.89;
 
 /** Sockets per square metre of a clump's own width, measured from today's oak at seeds 3, 11, 12. */
-const SOCKETS_PER_AREA = 8;
+const SOCKETS_PER_AREA = 8.5;
 
 /** The clump's vertical radius against its horizontal one: an oak clump is flatter than a ball. */
 const DEPTH_SHARE = 0.7;
