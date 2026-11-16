@@ -1008,7 +1008,11 @@ const CLUMP_TILES = 3;
  */
 function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2): MeshArrays {
 	const share = clumpShare(input.record, level);
-	const kept = clumps.slice(0, Math.max(1, Math.round(clumps.length * share)));
+	// A share below every clump keeps every so many of them in the walk's order, which is spread
+	// through the crown, so a thinned level holds the plant's outline rather than one side of it.
+	const wanted = Math.max(1, Math.round(clumps.length * share));
+	const stride = Math.max(1, Math.round(clumps.length / wanted));
+	const kept = clumps.filter((_, at) => at % stride === 0);
 	const walk = clumpWalk(kept);
 	// The level draws the wood that its own wood orders keep, so a clump joins the plant where that
 	// wood reaches it.
