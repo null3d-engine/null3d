@@ -513,6 +513,7 @@ describe('the plant shader', () => {
 			HEADER_CROWN_DIM: HEADER.crownDim,
 			HEADER_CARD_MIP_LIFT: HEADER.cardMipLift,
 			HEADER_WOOD_SHADE: HEADER.woodShade,
+			HEADER_BARK_RELIEF: HEADER.barkRelief,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,
