@@ -129,6 +129,11 @@ const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean)
  */
 const CASCADE_PROBE = params.has('cascade-probe');
 /**
+ * True holds the route at its opening shot without the cascade probe's extra shadow work, so a
+ * governed row can compare one view before and after the governor's steps.
+ */
+const STILL_ROUTE = params.has('still-route');
+/**
  * The render scale that the address fixes, for the picture tests that draw below the whole canvas,
  * or undefined to leave the scale to the governor.
  */
@@ -551,7 +556,7 @@ export default defineSketch(async (ctx) => {
 					showLook(next);
 			}
 			// The cascade probe times one view, so its route holds the opening pose.
-			film.update(CASCADE_PROBE ? 0 : dt);
+			film.update(CASCADE_PROBE || STILL_ROUTE ? 0 : dt);
 			// After the camera moves, so the view under the water turns the frame the camera dips.
 			underwater?.update(t, stage.airColor, caustics);
 			const lens = controls.lens();

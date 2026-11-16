@@ -189,6 +189,9 @@ run('demo-device', async () => {
 		'governor',
 		'render-scale',
 		'without',
+		// Freezes the camera route at its opening shot, for a governed row that must compare one
+		// view with itself before and after the governor's steps.
+		'still-route',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };

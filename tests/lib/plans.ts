@@ -1944,6 +1944,79 @@ export function vegetationPlan(): PlanItem<Check>[] {
 						},
 					),
 				);
+	// The same scenes with the display as the governor's target, so the governor's own steps run and
+	// the row says what the device actually holds. The settle gives the steps time to answer, and
+	// three windows say whether the answer held. Only the core WebGPU path takes these: the others
+	// cap the preset at Medium, where the governor's heavy steps have nothing to do.
+	for (const demo of VEGETATION_DEMOS)
+		for (const preset of ['medium', 'high', 'ultra'] as const)
+			items.push(
+				pageItem(
+					`vegetation-${demo}-${preset}-governed`,
+					'demo-device',
+					{ kind: 'probe', tier: 'webgpu' },
+					{
+						switches: [
+							'gpu=webgpu',
+							`demo=${demo}`,
+							`preset=${preset}`,
+							'target-fps=display',
+							'seconds=5',
+							'settle=90',
+							'windows=3',
+							'still-route=on',
+						],
+						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+					},
+				),
+			);
+	// The settled page's control: the same held camera with no settle, so a reader can tell scene
+	// growth from the camera's movement.
+	items.push(
+		pageItem(
+			'vegetation-creek-high-still',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=creek',
+					'preset=high',
+					'target-fps=1',
+					'seconds=5',
+					'still-route=on',
+				],
+				timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+			},
+		),
+	);
+	// The settled pages: a held camera, the whole render scale, and time for the scene to finish
+	// building, so a row measures the scene a player holds rather than its first frames. The
+	// immediate pages above measure five seconds after the first frame, and the Creek High pair says
+	// how far apart the two scenes are: 12,200 objects and 2,000,000 triangles against 24,800 and
+	// 8,050,000.
+	for (const demo of VEGETATION_DEMOS)
+		for (const preset of ['medium', 'high', 'ultra'] as const)
+			items.push(
+				pageItem(
+					`vegetation-${demo}-${preset}-settled`,
+					'demo-device',
+					{ kind: 'probe', tier: 'webgpu' },
+					{
+						switches: [
+							'gpu=webgpu',
+							`demo=${demo}`,
+							`preset=${preset}`,
+							'target-fps=1',
+							'seconds=5',
+							'settle=90',
+							'windows=3',
+							'still-route=on',
+						],
+						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+					},
+				),
+			);
 	return items;
 }
 
