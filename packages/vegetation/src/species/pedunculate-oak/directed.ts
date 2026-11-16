@@ -453,7 +453,7 @@ const base = {
 		lobes: { mean: 9, spread: 1.5 },
 		amount: 0.35,
 		sharpness: 3,
-		height: 1,
+		height: 1.6,
 		round: 0.4,
 	},
 	roots: {
