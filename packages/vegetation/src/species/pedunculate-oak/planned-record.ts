@@ -77,7 +77,8 @@ export const plannedGrowth: Planned = {
 	// Catkins hang in the blossom season, from the same age as the acorns and over the same band.
 	flowers: { season: 'blossom', from: 0.27, band: 0.1 },
 	// Priced at the nearest level's own draw: a branch end's leaves, a leaf card's triangles, one
-	// clump card and one wood tube segment. The plan shares a maximum out from these. A clump card is
-	// six triangles, two a plane of the three pictures the clump card draws (`lod/budget.ts`).
-	prices: { piece: 24, card: 6, clumpCard: 6, tubeSegment: 14 },
+	// clump card and one wood tube segment. The plan shares a maximum out from these. A branch end at
+	// the lowest tier measures 109 triangles (22,314 over 205 rows of the capped oak), and a clump
+	// card is six, two a plane of the three pictures it draws (`lod/budget.ts`).
+	prices: { piece: 109, card: 6, clumpCard: 6, tubeSegment: 14 },
 };

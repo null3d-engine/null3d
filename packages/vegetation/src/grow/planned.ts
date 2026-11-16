@@ -36,6 +36,9 @@ const CROWN_SHARE = 0.6;
 /** The least share of a maximum the crown may be left, under which its crown reads as tufts. */
 const CROWN_LEAST = 0.25;
 
+/** How much the cap's row budget over-provisions its rows, so no row outlives the drawn share. */
+const ROW_SAFETY = 1.2;
+
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
 
@@ -226,7 +229,8 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const kept = expected.map((count, order) => count * (1 - sparse * (thin[order] ?? 0)));
 	// A maximum shares the count: the bones keep their own share, and the finer orders are cut.
 	const sides = max === undefined ? 10 : max >= 20_000 ? 8 : max >= 5_000 ? 6 : 3;
-	const clumpCard = max !== undefined && max < 2_000;
+	// Under any maximum the crown is drawn as clump cards: a piece a socket cannot fit a cap.
+	const clumpCard = max !== undefined;
 	const piece = growth.prices.piece;
 	const tube = growth.prices.tubeSegment;
 	// The price of each part at this state: wood segments by order, and one piece a socket.
@@ -249,9 +253,12 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const clumps = Math.max(1, Math.round(bounds.clumps));
 	const cardCost = max === undefined ? 0 : growth.prices.clumpCard;
 	const crownNeed = cardCost > 0 ? clumps * cardCost : 0;
-	const crownTake = max === undefined ? 0 : Math.max(max * CROWN_LEAST, Math.min(crownNeed, max * CROWN_SHARE));
+	const crownTake =
+		max === undefined ? 0 : Math.max(max * CROWN_LEAST, Math.min(crownNeed, max * CROWN_SHARE));
 	const cards = cardCost > 0 ? Math.min(clumps, Math.floor(crownTake / cardCost)) : 0;
 	const socketsBound = Math.max(1, expected[4] as number);
+	// The crown's price at a cap is the cards it actually draws; without one it is the pieces.
+	if (max !== undefined) priced.foliage = cards * cardCost + fruit;
 	const woodRoom = max === undefined ? 0 : Math.max(0, max - cards * cardCost);
 	const woodTotal = priced.trunk + priced.limbs + priced.branches;
 	const woodKept =
@@ -400,7 +407,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 				return [node.x, node.y, node.z];
 			}),
 		);
-		const keepShare = Math.max(0, 1 - sparse * (thin[order] ?? 0));
+		const capShare = most === undefined ? 1 : Math.max(0, Math.min(1, detail.rankCut[order] ?? 1));
+		const keepShare = Math.max(0, 1 - sparse * (thin[order] ?? 0)) * capShare;
 		const count = Math.max(0, Math.round(candidates.length * keepShare));
 		candidates.forEach((index, at) => {
 			if ((ranks[at] as number) >= count) keptAxis.delete(index);
@@ -570,13 +578,16 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 
 	// The sockets that clothe the clumps, at the share the sparseness and the plan leave.
 	const keepsItsShare = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
-	// Under a maximum the plan pays for a count of sockets, one for each carded clump; the fill's
-	// own sockets are about six and a half a square metre of clump width, so the share that keeps
-	// that many is the plan's count over the crown's own count.
-	const carded = Math.round(
-		Math.max(0, Math.min(1, detail.rankCut[detail.rankCut.length - 1] ?? 1)) *
-			(detail.expected[4] ?? 0),
-	);
+	// Under a maximum the plan pays for a count of sockets from the cap itself: the rows it can mesh
+	// stay inside the crown's share of the cap, which is what the level draws, so no row is grown
+	// for the cap to cut. The fill's own sockets are about six and a half a square metre of clump
+	// width, so the share that keeps the plan's count is that count over the crown's own count.
+	const rowCost = Math.max(1, Math.round(growth.prices.piece));
+	const mostRows =
+		most === undefined
+			? Number.POSITIVE_INFINITY
+			: Math.floor((most * CROWN_SHARE) / (ROW_SAFETY * rowCost));
+	const carded = Math.min(Math.round(detail.expected[4] ?? 0), mostRows);
 	const socketsAbout = fill.reduce(
 		(sum, clump) => sum + 1 + Math.round(6.5 * (2 * clump.radius) ** 2),
 		0,
