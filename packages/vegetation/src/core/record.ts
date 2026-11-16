@@ -2971,6 +2971,30 @@ export interface LodSpec {
 	 */
 	readonly cardShare?: readonly [lod1: number, lod2: number];
 	/**
+	 * How far the card bake lifts each texel's coverage, from 0 to 1, so a crown keeps its cover as
+	 * its cards draw smaller on screen. 0.05 by default; 0 bakes every texel at its leaf area's own
+	 * coverage.
+	 */
+	readonly cardMipLift?: number;
+	/**
+	 * How far the sun's light thins inside the crown, from 0 to 1: each shoot row dims by its own
+	 * share of the sky, so a row under other rows reads dark and a row on the crown's top reads lit.
+	 * Absent or 0 lights every row alike.
+	 */
+	readonly crownDim?: number;
+	/**
+	 * How far a card texel's normal leans from its own toward its shoot's rounded normal, from 0 to
+	 * 1: a crown of flat cards otherwise lights in speckled patches where a card's face catches the
+	 * sun. Absent or 0 bakes each texel's own normal.
+	 */
+	readonly cardNormalRound?: number;
+	/**
+	 * The share of each card level's clumps drawn as one card each, for the first and the second
+	 * level, each from 0 to 1: a clump card stands for the foliage mass its clump holds, so a far
+	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.
+	 */
+	readonly clumpCard?: readonly [lod1: number, lod2: number];
+	/**
 	 * The first card level that draws no extras: 1 for both card levels, 2 for the second alone. A
 	 * cone or a fruit that the nearest level draws whole may still cost many triangles at a card
 	 * level where it spans a few pixels. Absent, a card level leaves out only the extras too small to

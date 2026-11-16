@@ -123,6 +123,7 @@ import { levelStarts } from './lod/levels';
 import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import { speciesHeader } from './render/records';
 import type {
+	DetailPlan,
 	DressInput,
 	FarBake,
 	GrowInput,
@@ -381,7 +382,8 @@ export async function loadPlantCode(record: Species): Promise<void> {
 	// A form may hand its plant to another growth model, which its own code walks, so every model a
 	// record or one of its forms names is loaded here.
 	const models = new Set<GrowthModel>([record.growth.model]);
-	for (const name of Object.keys(record.forms ?? {})) models.add(formRecord(record, name).growth.model);
+	for (const name of Object.keys(record.forms ?? {}))
+		models.add(formRecord(record, name).growth.model);
 	await Promise.all([
 		...[...models].map((model) => loadGrower(model)),
 		loadFoliage(record.foliage.kind),
@@ -764,9 +766,10 @@ export function forgetGrownPlants(): void {
 function grownPlant(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	const stand = kit.placeholders === 'missing' ? ':missing' : kit.placeholders ? ':stand-ins' : '';
 	const planned = kit.record.growth.model === 'planned';
-	const key = `${
-		variantKey(kit, planned ? options : { ...options, sparse: 0, maxTriangles: undefined })
-	}${stand}`;
+	const key = `${variantKey(
+		kit,
+		planned ? options : { ...options, sparse: 0, maxTriangles: undefined },
+	)}${stand}`;
 	const kept = GROWN.get(key);
 	if (kept) {
 		GROWN.delete(key);
@@ -791,8 +794,9 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		sparse: sparseLevel(kit, options),
 		...(most === undefined ? {} : { maxTriangles: most }),
 	};
-	// A model that plans its grown state states the plan's numbers before any geometry is built.
-	const plan = placeholders ? undefined : grower(model).plan?.(record, request);
+	// A model that plans its grown state states the plan's numbers before any geometry is built. A kit
+	// that asks for the missing stages' stand-ins is still a real plant, so it plans.
+	const plan = placeholders === true ? undefined : grower(model).plan?.(record, request);
 	const growInput: GrowInput = {
 		record,
 		seed: options.seed >>> 0,
@@ -1117,9 +1121,11 @@ function growCutting(
 	let rows: ShootRows = emptyRows();
 	let single: ReturnType<typeof clusterRow> | undefined;
 	let coarseness = 0;
+	let plan: DetailPlan | undefined;
 	if (cutsSkeleton(kit, cutting)) {
 		const mesh = dress(kit, options);
 		coarseness = mesh.coarseness ?? 0;
+		plan = mesh.plan;
 		wind = stage(
 			kit.placeholders,
 			() => windRecords(mesh),
@@ -1161,6 +1167,7 @@ function growCutting(
 		season,
 		coarseness,
 		cutting,
+		...(plan === undefined ? {} : { plan }),
 		skeleton,
 		shoots: rows,
 		levels: [near, emptyLevel(1), emptyLevel(2)],
@@ -1415,6 +1422,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		variant: options.variant,
 		season: mesh.season,
 		coarseness: mesh.coarseness ?? 0,
+		...(mesh.plan === undefined ? {} : { plan: mesh.plan }),
 		skeleton,
 		shoots: mesh.rows,
 		levels,
