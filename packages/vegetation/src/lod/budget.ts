@@ -811,10 +811,11 @@ function rowLevel(
 			// one card each, as many as its leaves' share pays for. A clump's card is two triangles a
 			// plane, with one picture rather than a grid at this size.
 			const clumps = input.mesh.skeleton.clumps.length;
-			// One clump's card stands under the budget, so rounding never tips the level past it.
-			const share = Math.min(1, (budget - 6) / (6 * clumps));
+			// A clump's card is a crossed pair of planes with one picture, four triangles; one card
+			// stands under the budget, so rounding never tips the level past it.
+			const share = Math.min(1, (budget - 4) / (4 * clumps));
 			if (share > 0) {
-				const made = plannedClumpCards(input.mesh, 3, share, 1);
+				const made = plannedClumpCards(input.mesh, 2, share, 1);
 				if (made) {
 					cards = made;
 					leaves = trianglesOf(made);
