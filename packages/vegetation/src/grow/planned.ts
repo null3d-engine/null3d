@@ -24,7 +24,7 @@ import type { DetailPlan, GrowInput, GrowRequest } from '../stages';
 import type { FrameAxis, FrameNode, FramePlan } from './frame';
 import { planFrame } from './frame';
 import type { Grower } from './models';
-import { type FillClump, fillClumps } from './planned-fill';
+import { type FillClump, type FillInput, fillClumps } from './planned-fill';
 
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
@@ -50,6 +50,27 @@ interface Adult {
 	readonly plan: FramePlan;
 	/** The height of the adult's bones, in metres. */
 	readonly height: number;
+}
+
+/**
+ * What the crown fill needs beyond the clumps: the crown's own box at this state, and on each clump
+ * the limb it belongs to, that limb's reach from the plant's centre line and whether the clump sits
+ * at the limb's end or on its side. A low limb's end clump is the one that dips; a shoulder clump is
+ * the one that clothes the limb's side.
+ */
+export interface PlannedFillSight {
+	/** The crown's box at this state, in metres. */
+	readonly crown: { readonly top: number; readonly base: number; readonly height: number };
+}
+
+/** The limb a clump belongs to, its reach, and whether the clump sits at the limb's end. */
+export interface ClumpSight {
+	/** The limb axis's index in the adult plan, or -1 for a clump on the trunk. */
+	readonly limb: number;
+	/** How far the limb's adult tip stands from the plant's centre line, in metres. */
+	readonly limbReach: number;
+	/** Where the clump sits: at the limb's end, or on its side. */
+	readonly at: 'limb-end' | 'limb-side';
 }
 
 /** What one order's expected elements are bounded by, from the frame's own stated rules. */
@@ -446,11 +467,30 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		builtNodes[index] = nodes;
 	}
 
+	// Which limb each axis belongs to, and how far each limb reaches from the centre line: the
+	// fill's sight of the crown, read from the adult plan alone.
+	const limbOf: number[] = [];
+	bones.axes.forEach((axis, index) => {
+		if (axis.parent < 0) {
+			limbOf.push(-1);
+			return;
+		}
+		const parent = bones.axes[axis.parent] as FrameAxis;
+		limbOf.push(parent.order === 1 ? axis.parent : (limbOf[axis.parent] as number));
+	});
+	const limbReach = new Map<number, number>();
+	bones.axes.forEach((axis, index) => {
+		if (axis.order !== 1) return;
+		let reach = 0;
+		for (const node of axis.nodes) reach = Math.max(reach, Math.hypot(node.x, node.z));
+		limbReach.set(index, reach);
+	});
+
 	// The clumps the adult ends in, at the places their carrying axes have reached. They stand in the skeleton as soon as
 	// their carrying axis is reached, whatever sparseness thins, so the crown's box and base never
 	// move with sparseness.
 	const clumps: ClumpData[] = [];
-	const fill: FillClump[] = [];
+	const fill: (FillClump & ClumpSight)[] = [];
 	let crownBase = Number.POSITIVE_INFINITY;
 	let top = height;
 	bones.patches.forEach((patch, id) => {
@@ -477,6 +517,14 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		if (open <= 0) return;
 		const grown = PIECE_START + (1 - PIECE_START) * open;
 		const builtAt = builtNodes[patch.axis] as number[];
+		const limb = limbOf[patch.axis] as number;
+		// A bough that leaves in the limb's last tenth, and the limb's own clump, stand at its end.
+		const seatShare =
+			axis.order === 1
+				? 1
+				: axis.order === 2 && axis.parent === limb
+					? ((bones.axes[limb] as FrameAxis).along[axis.parentNode] as number)
+					: 0;
 		fill.push({
 			id,
 			centre,
@@ -488,6 +536,9 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			node: builtAt[builtAt.length - 1] as number,
 			order: axis.order,
 			root: grownTip,
+			limb,
+			limbReach: limbReach.get(limb) ?? 0,
+			at: limb >= 0 && (axis.order === 1 || seatShare >= 0.9) ? 'limb-end' : 'limb-side',
 		});
 	});
 
@@ -495,7 +546,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const keepsItsShare = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
 	const cutByMaximum = Math.max(0, Math.min(1, detail.rankCut[detail.rankCut.length - 1] ?? 1));
 	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
-	const grown = fillClumps({
+	const crownBaseValue = Number.isFinite(crownBase) ? Math.max(0, crownBase) : height;
+	const sighted: FillInput & PlannedFillSight = {
 		builder,
 		seed,
 		salt: input.record.seedSalt >>> 0,
@@ -508,7 +560,9 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			: { flowers: detail.flowers }),
 		pieceScale: pieceScale,
 		turn: growth.turn,
-	});
+		crown: { top, base: crownBaseValue, height: Math.max(0, top - crownBaseValue) },
+	};
+	const grown = fillClumps(sighted);
 
 	// Each element keeps its place in the plant as grown, so a younger or a sparser plant's element
 	// names the same place as the full one and the contract can pair them.
