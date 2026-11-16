@@ -7,11 +7,13 @@ import { plannedGrowth } from './planned-record';
 
 /**
  * The oak grown by the planned model: straight to the asked maturity, sparseness and triangle
- * maximum. The record as it stands stays the oak grown by its frame.
+ * maximum. The record as it stands stays the oak grown by its frame. Its card levels draw one card
+ * set per clump, which its fill clothes at sockets, so a clump carries its own baked shade.
  */
 const planned: SpeciesForm = {
 	form: 'the oak grown straight to the asked state, at any maturity, sparseness or maximum',
 	growth: plannedGrowth,
+	lod: { clumpCard: [1, 1] },
 };
 
 /** The pedunculate oak, grown as a directed frame that carries its branch ends at sockets. */

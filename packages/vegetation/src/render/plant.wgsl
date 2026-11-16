@@ -144,6 +144,8 @@ const HEADER_CROWN_DIM: i32 = 72;
 const HEADER_CARD_MIP_LIFT: i32 = 73;
 // How much of the crown's baked sky visibility darkens bark, 0 leaving the wood unshaded.
 const HEADER_WOOD_SHADE: i32 = 74;
+// How much more the bark's relief tilts its normal and deepens its furrows than its map gives.
+const HEADER_BARK_RELIEF: i32 = 75;
 // A card's stalk line: its least width in pixels, and 1 where the line draws at its twig's width.
 const HEADER_CARD_STALK: i32 = 55;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
@@ -733,6 +735,16 @@ fn widened_drawn(cover: f32, point: vec3f) -> bool {
     return cover >= 0.999 || value3(point * 5.0) <= cover;
 }
 
+/// A widened tube's alpha at its true width: the alpha it had where the fragment draws, and none
+/// where the hash drops it. A tube whose radius the shader cannot measure keeps its alpha.
+fn widened_alpha(alpha: f32, radius: f32, point: vec3f) -> f32 {
+    if (alpha <= 0.0) {
+        return alpha;
+    }
+    let cover = widened_cover(radius, length(point));
+    return select(0.0, alpha, widened_drawn(cover, point));
+}
+
 /// The plant-space offset that widens a fine foliage edge seen nearly edge-on in the matte: each
 /// vertex moves along its own normal's screen direction by the share the view foreshortens the face,
 /// so a blade or a stem thinner than the least drawn width still covers a pixel. A face turned
@@ -827,6 +839,10 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
             moved = plant + (swayed - plant) * fade;
         }
     }
+    // The wood, its card stalks, its stems and its petioles widen to the least drawn width in every
+    // picture, so a twig rasterises as a joined line rather than as dots. The colour picture takes
+    // the widened share back at the fragment stage, over the width the tube truly covers, so the
+    // crown keeps its own width with distance.
     if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
     }
@@ -1202,7 +1218,8 @@ fn surface(input: SurfaceInput) -> Surface {
             textureSampleGrad(colour, colourSampler, a_uv, a_layer, a_gx * 8.0, a_gy * 8.0).rgb;
         var bark = a_colour * a_tint.rgb;
         var bark_normal = tangent_normal(a_relief);
-        var cavity = saturate((luminance_of(a_coarse) - luminance_of(a_colour)) * 4.0);
+        let bark_relief = header(HEADER_BARK_RELIEF).x;
+        var cavity = saturate((luminance_of(a_coarse) - luminance_of(a_colour)) * 4.0 * (1.0 + bark_relief));
         if (second_weight > 0.001) {
             let b_at = HEADER_BARK_ZONES + second_zone * BARK_ZONE_TEXELS;
             let b_tint = header(b_at);
@@ -1298,6 +1315,10 @@ fn surface(input: SurfaceInput) -> Surface {
         }
         base = bark * season_bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
+        // A deeper relief tilts the normal more, so each furrow's wall takes the light and reads.
+        if (bark_relief > 0.0) {
+            bark_normal = normalize(vec3f(bark_normal.xy * (1.0 + bark_relief), max(bark_normal.z, 0.05)));
+        }
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
         // The crown's baked sky visibility darkens the wood: a tree's own leaves shade its limbs,
@@ -1307,10 +1328,7 @@ fn surface(input: SurfaceInput) -> Surface {
         // The vertex stage widened a tube thinner than the least drawn width, so the colour picture
         // draws it over the share of its width that the tube truly covers.
         if (material.matte < 0.5) {
-            let cover = widened_cover(max(radius, 0.0), length(input.relativePosition));
-            if (!widened_drawn(cover, input.relativePosition)) {
-                alpha = 0.0;
-            }
+            alpha = widened_alpha(alpha, max(radius, 0.0), input.relativePosition);
         }
     } else if (mode == MODE_CARDS) {
         // In the shell where a near copy draws its real shoots, its cards give way.
@@ -1340,13 +1358,11 @@ fn surface(input: SurfaceInput) -> Surface {
             if (material.matte < 0.5 && stalk.x > 0.0 && stalk.y > 0.5) {
                 let linear = object.worldMatrix[0].xyz;
                 let scale = sqrt(max(dot(linear, linear), 0.000001));
-                let cover = widened_cover(
+                alpha = widened_alpha(
+                    alpha,
                     input.uv.y * WOOD_RADIUS_SPAN * scale,
-                    length(input.relativePosition),
+                    input.relativePosition,
                 );
-                if (!widened_drawn(cover, input.relativePosition)) {
-                    alpha = 0.0;
-                }
             }
         } else {
             let layer = select(1, 0, upper);
@@ -1474,13 +1490,11 @@ fn surface(input: SurfaceInput) -> Surface {
             // A stem thinner than the least drawn width is widened on the screen, so the colour
             // picture draws it over the share of its width that the stem truly covers.
             if (material.matte < 0.5) {
-                let cover = widened_cover(
+                alpha = widened_alpha(
+                    alpha,
                     max(input.uv1.x * WOOD_RADIUS_SPAN, 0.0),
-                    length(input.relativePosition),
+                    input.relativePosition,
                 );
-                if (!widened_drawn(cover, input.relativePosition)) {
-                    alpha = 0.0;
-                }
             }
         } else if ((mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5)
             || (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_PIECE_SHEATH) < 0.5)) {
@@ -1561,13 +1575,11 @@ fn surface(input: SurfaceInput) -> Surface {
             // draws it over the share of its width that the petiole truly covers.
             if (mode == MODE_SHOOTS && material.matte < 0.5 &&
                 abs(input.vertexColor.b * 255.0 - KIND_PETIOLE) < 0.5) {
-                let cover = widened_cover(
+                alpha = widened_alpha(
+                    alpha,
                     max(input.uv1.x * WOOD_RADIUS_SPAN, 0.0),
-                    length(input.relativePosition),
+                    input.relativePosition,
                 );
-                if (!widened_drawn(cover, input.relativePosition)) {
-                    alpha = 0.0;
-                }
             }
         }
         if (mode == MODE_SHOOTS) {

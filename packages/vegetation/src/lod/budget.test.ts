@@ -254,10 +254,11 @@ describe('the triangle maximum option', () => {
 	});
 
 	it(
-		"bakes a capped plant's far card as the plant at its best look bakes it",
+		"bakes a capped plant's far card from the plant that was asked for",
 		async () => {
-			// The far card is two triangles whatever it shows, so a maximum that thins the first card
-			// level's wood leaves the far card as the best look draws it.
+			// The far card shows the asked plant's own first card level, and its grid follows that
+			// level's triangles: a capped plant bakes a smaller atlas than the plant at its best look,
+			// and it still shows a crown.
 			const kit = await kitOf('hawthorn-shrub');
 			await loadFarBaker();
 			const base = { seed: 11, variant: 0 } as const;
@@ -265,11 +266,13 @@ describe('the triangle maximum option', () => {
 			const capped = growPlantNow(kit, { ...base, maxTriangles: 2_000 });
 			const wood = (plant: PlantAsset) =>
 				plant.levels[1].parts.find((part) => part.name === 'wood')?.arrays.indices.length ?? 0;
-			// The maximum does thin the level's wood, so the far card's wood is the restored one.
+			// The maximum does thin the level's wood, so the two bakes show different plants.
 			expect(wood(capped)).toBeLessThan(wood(growPlantNow(kit, base)));
 			const far = bakeFarNow(kit, capped);
-			expect(far.color).toEqual(best.color);
-			expect(far.surface).toEqual(best.surface);
+			expect(far.texels).toBeLessThan(best.texels);
+			expect(far.color).not.toEqual(best.color);
+			// The crown still draws: some texel of some view covers leaves.
+			expect(far.color.some((byte, at) => at % 4 === 3 && byte > 0)).toBe(true);
 		},
 		LONG,
 	);

@@ -170,6 +170,8 @@ export const HEADER = {
 	cardMipLift: 73,
 	/** How much of the crown's baked sky visibility darkens bark, from 0 to 1. */
 	woodShade: 74,
+	/** How much more the bark's relief tilts its normal and deepens its furrows, from 0 up. */
+	barkRelief: 75,
 } as const;
 
 /**
@@ -179,7 +181,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.woodShade + 1;
+export const HEADER_TEXELS = HEADER.barkRelief + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -457,6 +459,7 @@ export function speciesHeader(
 	texel(header, HEADER.crownDim, [record.lod.crownDim ?? 0, 0, 0, 0]);
 	texel(header, HEADER.cardMipLift, [record.lod.cardMipLift ?? CARD_MIP_LIFT, 0, 0, 0]);
 	texel(header, HEADER.woodShade, [record.lod.woodShade ?? WOOD_SHADE, 0, 0, 0]);
+	texel(header, HEADER.barkRelief, [record.lod.barkRelief ?? 0, 0, 0, 0]);
 	return header;
 }
 
