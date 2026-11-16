@@ -117,7 +117,10 @@ export const TASK_EVIDENCE: Readonly<Record<string, string>> = {
 	'M3-A3':
 		'A custom material declares `texture_2d_array<f32>` and picks the layer in each texture function: `packages/vite-plugin/src/shader-types.ts`, the docs `docs/guides/custom-shaders.md` and `custom-passes.md`; D-239',
 	'M3-A5':
-		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:4931`; `examples/rain/sketch.ts`',
+		'`createVertexDraw` in `packages/engine/src/scene/scene.ts:5086`; `examples/rain/sketch.ts`; and the ' +
+		'upload case its Done-when asks for: `tests/image/vertex-draw.spec.ts` runs a test on each GPU path ' +
+		"that pins the second frame's vertex upload within 4 KiB of the first, 16 KiB at its 99th percentile " +
+		'and under 256 KiB in all',
 	'M3-A7':
 		"`limit_hdr` maps NaN to zero (`crates/null3d-shaders/wgsl/lib/color.wgsl:35-38`), and the bounce light's 16-bit target now takes the same limit at the trace's irradiance and at `indirect_diffuse`, so a gather of a bright emissive sphere can no longer saturate the target to infinity and turn a metal's zero diffuse into the NaN that drew the highlight black. `tests/image/hdr-limit.spec.ts` failed the highlight at 158,90 with 0 against at least 250 on WebGPU and WebGL2 under CI=1 before the change, passes 5 of 5 after it on this Mac's software GPU, and passes on both sides with the bounce light off, which names the light as the source. CI's full run 43135521024 at `5fce55a83`, a dispatch of 206 jobs, passed the spec: shard 8, which carries it, succeeded, and the four reds lie in other shards",
 	'M3-B1':
