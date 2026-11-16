@@ -634,6 +634,10 @@ fn a_masked_material_has_a_depth_prepass_build_that_keeps_whole_fragments() {
         let wgsl = &variant.wgsl.as_ref().expect("WGSL").source;
         // It tests the surface's alpha, as the build that shades the pair does.
         assert!(wgsl.contains("discard"), "{name}: {wgsl}");
+        // Metal declares a fragment's result once for each return it finds, so the prepass
+        // fragment makes one.
+        let fragment = wgsl.split("fn fs(").nth(1).expect("the prepass fragment");
+        assert_eq!(fragment.matches("return ").count(), 1, "{name}: {wgsl}");
     }
 }
 

@@ -3112,13 +3112,15 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
+    // A fragment has one return: the Metal backend declares the fragment's result once for each
+    // return it finds, and refuses a program whose paths each declare it.
 #ifdef SAMPLE_MASK
     // Every sample of the fragment, which the opaque pass covers alike where the mask keeps it whole.
     return MaskedFragment(vec4f(0.0, 0.0, 0.0, 1.0), 0xfu);
 #else
     return vec4f(0.0, 0.0, 0.0, 1.0);
 #endif
-#endif
+#else
 #ifdef CUSTOM_UNLIT
 #ifdef SAMPLE_MASK
     return masked_fragment(shade_unlit(s, input, in.clip));
@@ -3149,6 +3151,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     );
 #else
     return shade(s, input, in.clip);
+#endif
 #endif
 #endif
 }
