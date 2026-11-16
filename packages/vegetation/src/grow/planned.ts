@@ -62,6 +62,13 @@ const CLUMP_OPEN = 0.55;
 /** The size a clump's pieces start at, as a share of their full size, when they first show. */
 const PIECE_START = 0.35;
 
+/**
+ * The drawn clump card's size against the clump the fill clothes: the card takes this share of the
+ * clump table's scale, so neighbouring cards meet over the sky bays between them while the fill's
+ * sockets keep their own places and density.
+ */
+const CLUMP_CARD_SCALE = 1.3;
+
 /** Adult plans kept a thread, by species, seed and variant. */
 const ADULTS = new Map<string, Adult>();
 
@@ -604,6 +611,10 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const fill: (FillClump & ClumpSight)[] = [];
 	let crownBase = Number.POSITIVE_INFINITY;
 	let top = height;
+	// The crown box the fill reads, from the clumps at their fill size: the drawn card's scale moves
+	// the written clump data and the plant's box, never the fill's own crown.
+	let fillBase = Number.POSITIVE_INFINITY;
+	let fillTop = height;
 	bones.patches.forEach((patch, id) => {
 		const axis = bones.axes[patch.axis] as FrameAxis;
 		const where = reveal[patch.axis] as Reveal;
@@ -619,9 +630,12 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
 			grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
 		];
-		clumps.push({ id, centre, radius, depth: 3, birth: where.birth });
-		crownBase = Math.min(crownBase, centre[1] - radius);
-		top = Math.max(top, centre[1] + radius);
+		const clumpRadius = radius * CLUMP_CARD_SCALE;
+		clumps.push({ id, centre, radius: clumpRadius, depth: 3, birth: where.birth });
+		crownBase = Math.min(crownBase, centre[1] - clumpRadius);
+		top = Math.max(top, centre[1] + clumpRadius);
+		fillBase = Math.min(fillBase, centre[1] - radius);
+		fillTop = Math.max(fillTop, centre[1] + radius);
 		const builtAxis = built[patch.axis] as number;
 		if (builtAxis < 0) return;
 		const open = Math.max(0, Math.min(1, (where.growth - CLUMP_FROM) / (CLUMP_OPEN - CLUMP_FROM)));
@@ -691,6 +705,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const cutByMaximum = socketsAbout > 0 ? Math.min(1, carded / socketsAbout) : 1;
 	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
 	const crownBaseValue = Number.isFinite(crownBase) ? Math.max(0, crownBase) : height;
+	const fillBaseValue = Number.isFinite(fillBase) ? Math.max(0, fillBase) : height;
 	const sighted: FillInput & PlannedFillSight = {
 		builder,
 		seed,
@@ -705,7 +720,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			: { flowers: detail.flowers }),
 		pieceScale: pieceScale,
 		turn: growth.turn,
-		crown: { top, base: crownBaseValue, height: Math.max(0, top - crownBaseValue) },
+		crown: { top: fillTop, base: fillBaseValue, height: Math.max(0, fillTop - fillBaseValue) },
 	};
 	const grown = fillClumps(sighted);
 
