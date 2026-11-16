@@ -2983,6 +2983,12 @@ export interface LodSpec {
 	 */
 	readonly crownDim?: number;
 	/**
+	 * How far a card texel's normal leans from its own toward its shoot's rounded normal, from 0 to
+	 * 1: a crown of flat cards otherwise lights in speckled patches where a card's face catches the
+	 * sun. Absent or 0 bakes each texel's own normal.
+	 */
+	readonly cardNormalRound?: number;
+	/**
 	 * The share of each card level's clumps drawn as one card each, for the first and the second
 	 * level, each from 0 to 1: a clump card stands for the foliage mass its clump holds, so a far
 	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.
