@@ -326,7 +326,9 @@ export const record: Species = {
 				reflectance: [0.0429, 0.0864, 0.0194],
 				reflectanceBack: [0.2344, 0.2975, 0.212],
 				transmittance: [0.091, 0.195, 0.0195],
-				roughness: [0.45, 0.6],
+				// Still 01: the crown's pale haze comes from the sky's gloss on every leaf, which a
+				// matte leaf keeps little of, so the faces stay near-matte.
+				roughness: [0.75, 0.75],
 			},
 		},
 	},
@@ -472,6 +474,19 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		woodOrders: [2, 1],
+		// Stills 01, 02 and 18: each clump of the crown runs from a yellow-green top to a near-black
+		// underside, so a leaf deep in the crown takes most of the sun's light away and the clump
+		// reads as a cushion rather than as an even face.
+		crownDim: 0.6,
+		// Stills 01, 02 and 18: the limbs inside the crown are lit on top and dark beneath, where the
+		// photographs show the wood in the crown's shade reading far darker than its bark alone.
+		woodShade: 0.7,
+		// Still 18 at full size: the crown's rim is rounded lobes with clean notches of sky, so a far
+		// card's thinnest leaves keep their cover as its mip levels average them with their gaps.
+		cardMipLift: 0.12,
+		// Still 01, full size: inside a lit stretch of the crown, neighbouring pixels change gradually
+		// rather than each texel catching its own light, so a shoot's leaves shade as one rounded mass.
+		cardNormalRound: 0.35,
 		// Stills 01 and 02: the crown's box shows 0.37 and 0.33 of sky in the photographs and 0.48 and
 		// 0.43 at the first card level, whose kept cards stand sparse. The field's largest value that
 		// keeps the second card level within the card tests' sky band, 0.02, reads 0.1433 of sky

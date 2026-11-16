@@ -714,13 +714,15 @@ export function bakeCards(
 	const color = new Uint8Array(layerBytes * 2);
 	const surface = new Uint8Array(layerBytes * 2);
 	const palette = paletteOf(record, manifest);
+	const roundWeight = record.lod.cardNormalRound ?? 0;
 	const cells: CardCell[] = prototypes.map((prototype, p) => {
 		const mesh = bakeMeshOf(prototype);
 		const planes = planned[p] as PlannedPlane[];
+		const round = roundWeight > 0 ? meshCentre(mesh) : undefined;
 		return {
 			planes: planes.map((plane, k) => {
 				const rect = inside(rects[p]?.[k] as [number, number, number, number]);
-				bakeCell(mesh, plane, rect, size, palette, color, surface, plane.triangles);
+				bakeCell(mesh, plane, rect, size, palette, color, surface, plane.triangles, round, roundWeight);
 				return {
 					centre: plane.centre as unknown as CardCell['planes'][number]['centre'],
 					right: plane.right as unknown as CardCell['planes'][number]['right'],
@@ -734,6 +736,22 @@ export function bakeCards(
 		};
 	});
 	return { atlas: { size, color, surface }, cells };
+}
+
+/** The middle of a prototype's drawn mesh, in its own space. */
+function meshCentre(mesh: MeshArrays): readonly [number, number, number] {
+	const lo = [Infinity, Infinity, Infinity];
+	const hi = [-Infinity, -Infinity, -Infinity];
+	for (let i = 0; i < mesh.positions.length; i += 3)
+		for (let c = 0; c < 3; c++) {
+			lo[c] = Math.min(lo[c] as number, mesh.positions[i + c] as number);
+			hi[c] = Math.max(hi[c] as number, mesh.positions[i + c] as number);
+		}
+	return [0, 1, 2].map((c) => ((lo[c] as number) + (hi[c] as number)) / 2) as [
+		number,
+		number,
+		number,
+	];
 }
 
 /** A cell's drawn area: the cell less its border. */
@@ -947,6 +965,9 @@ export interface CardPlane {
  * @param surface The atlas's surface layers, which this writes.
  * @param triangles The triangles the plane pictures, three indices each; every triangle of the mesh
  * where absent.
+ * @param round The middle of the prototype, which the texels' normals lean toward; absent leaves
+ * every normal as the leaves give it.
+ * @param roundWeight How far each texel's normal moves toward the shoot's rounded normal, from 0.
  */
 export function bakeCell(
 	mesh: MeshArrays,
@@ -957,6 +978,8 @@ export function bakeCell(
 	color: Uint8Array,
 	surface: Uint8Array,
 	triangles: ArrayLike<number> = mesh.indices,
+	round?: readonly [number, number, number],
+	roundWeight = 0,
 ): void {
 	const drawn: [number, number, number, number] = [rect[0], rect[1], rect[2], rect[3]];
 	const left = Math.max(0, drawn[0] - BORDER);
@@ -972,7 +995,21 @@ export function bakeCell(
 	for (let layer = 0; layer < 2; layer++) {
 		cover.fill(0);
 		centred.fill(0);
-		drawPlane(mesh, triangles, plane, drawn, size, layer, palette, color, surface, cover, centred);
+		drawPlane(
+			mesh,
+			triangles,
+			plane,
+			drawn,
+			size,
+			layer,
+			palette,
+			color,
+			surface,
+			cover,
+			centred,
+			round,
+			roundWeight,
+		);
 		spread(surface, color, size, layer, bordered, false);
 		spread(color, color, size, layer, bordered, true);
 		keepRunEnds(cover, centred, drawn[2], drawn[3]);
@@ -1003,6 +1040,8 @@ function drawPlane(
 	surface: Uint8Array,
 	cover: Float32Array,
 	centred: Uint8Array,
+	round?: readonly [number, number, number],
+	roundWeight = 0,
 ): void {
 	const [rx, ry, rw, rh] = rect;
 	const w = rw * SAMPLES;
@@ -1124,13 +1163,50 @@ function drawPlane(
 		const ty = (nx * ux0 + ny * ux1 + nz * ux2) / upLength;
 		const tz = (nx * normal[0] + ny * normal[1] + nz * normal[2]) * toward;
 		const length = length3(tx, ty, tz) || 1;
+		let ox = tx / length;
+		let oy = ty / length;
+		let oz = tz / length;
+		// A texel's normal may lean toward the shoot's rounded normal, the line from the shoot's
+		// middle to the texel's point, so the leaves of one shoot shade as one rounded mass and
+		// neighbouring pixels change gradually rather than each leaf catching its own light.
+		if (round && roundWeight > 0) {
+			const px =
+				(mesh.positions[a * 3] as number) * w0 +
+				(mesh.positions[b * 3] as number) * w1 +
+				(mesh.positions[c * 3] as number) * w2;
+			const py =
+				(mesh.positions[a * 3 + 1] as number) * w0 +
+				(mesh.positions[b * 3 + 1] as number) * w1 +
+				(mesh.positions[c * 3 + 1] as number) * w2;
+			const pz =
+				(mesh.positions[a * 3 + 2] as number) * w0 +
+				(mesh.positions[b * 3 + 2] as number) * w1 +
+				(mesh.positions[c * 3 + 2] as number) * w2;
+			const qx = px - (round[0] as number);
+			const qy = py - (round[1] as number);
+			const qz = pz - (round[2] as number);
+			// The rounded normal turns toward this face's viewer, as the leaf's own does.
+			const side = (qx * normal[0] + qy * normal[1] + qz * normal[2]) * toward;
+			const turn = side < 0 ? -1 : 1;
+			const wx = (qx * turn * rx0 + qy * turn * rx1 + qz * turn * rx2) / rightLength;
+			const wy = (qx * turn * ux0 + qy * turn * ux1 + qz * turn * ux2) / upLength;
+			const wz = side * turn;
+			const width = length3(wx, wy, wz) || 1;
+			ox = ox * (1 - roundWeight) + (wx / width) * roundWeight;
+			oy = oy * (1 - roundWeight) + (wy / width) * roundWeight;
+			oz = oz * (1 - roundWeight) + (wz / width) * roundWeight;
+			const blend = length3(ox, oy, oz) || 1;
+			ox /= blend;
+			oy /= blend;
+			oz /= blend;
+		}
 		const at = f.y * w + f.x;
 		rgbAt[at * 3] = rgb[0];
 		rgbAt[at * 3 + 1] = rgb[1];
 		rgbAt[at * 3 + 2] = rgb[2];
-		normalAt[at * 3] = tx / length;
-		normalAt[at * 3 + 1] = ty / length;
-		normalAt[at * 3 + 2] = tz / length;
+		normalAt[at * 3] = ox;
+		normalAt[at * 3 + 1] = oy;
+		normalAt[at * 3 + 2] = oz;
 		shadeAt[at] = Math.min(255, Math.max(0, lerp(mesh.colors, 4, 3)));
 		kindAt[at] = leaf ? 1 : 0;
 		return true;
