@@ -566,6 +566,9 @@ export const directed = {
 			variantBytes: VARIANT_BYTES,
 			lod2Triangles: LEVEL_2_TRIANGLES,
 		},
+		// The candidate crown route: each clump draws as one card at both card levels, so a leaf
+		// keeps a believable size on screen where the rows' cards shrink to dots.
+		clumpCard: [1, 1] as const,
 	},
 	extras: record.extras?.map(acorn),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
