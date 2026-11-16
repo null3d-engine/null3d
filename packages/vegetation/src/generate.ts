@@ -123,6 +123,7 @@ import { levelStarts } from './lod/levels';
 import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import { speciesHeader } from './render/records';
 import type {
+	DetailPlan,
 	DressInput,
 	FarBake,
 	GrowInput,
@@ -1117,9 +1118,11 @@ function growCutting(
 	let rows: ShootRows = emptyRows();
 	let single: ReturnType<typeof clusterRow> | undefined;
 	let coarseness = 0;
+	let plan: DetailPlan | undefined;
 	if (cutsSkeleton(kit, cutting)) {
 		const mesh = dress(kit, options);
 		coarseness = mesh.coarseness ?? 0;
+		plan = mesh.plan;
 		wind = stage(
 			kit.placeholders,
 			() => windRecords(mesh),
@@ -1161,6 +1164,7 @@ function growCutting(
 		season,
 		coarseness,
 		cutting,
+		...(plan === undefined ? {} : { plan }),
 		skeleton,
 		shoots: rows,
 		levels: [near, emptyLevel(1), emptyLevel(2)],
@@ -1415,6 +1419,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		variant: options.variant,
 		season: mesh.season,
 		coarseness: mesh.coarseness ?? 0,
+		...(mesh.plan === undefined ? {} : { plan: mesh.plan }),
 		skeleton,
 		shoots: mesh.rows,
 		levels,

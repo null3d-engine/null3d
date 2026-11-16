@@ -2977,6 +2977,18 @@ export interface LodSpec {
 	 */
 	readonly cardMipLift?: number;
 	/**
+	 * How far the sun's light thins inside the crown, from 0 to 1: each shoot row dims by its own
+	 * share of the sky, so a row under other rows reads dark and a row on the crown's top reads lit.
+	 * Absent or 0 lights every row alike.
+	 */
+	readonly crownDim?: number;
+	/**
+	 * The share of each card level's clumps drawn as one card each, for the first and the second
+	 * level, each from 0 to 1: a clump card stands for the foliage mass its clump holds, so a far
+	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.
+	 */
+	readonly clumpCard?: readonly [lod1: number, lod2: number];
+	/**
 	 * The first card level that draws no extras: 1 for both card levels, 2 for the second alone. A
 	 * cone or a fruit that the nearest level draws whole may still cost many triangles at a card
 	 * level where it spans a few pixels. Absent, a card level leaves out only the extras too small to
