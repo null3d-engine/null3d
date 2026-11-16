@@ -997,6 +997,9 @@ function clumpShare(record: SpeciesKitData['record'], level: 1 | 2): number {
 	return Math.max(0, Math.min(1, share));
 }
 
+/** The pictures a side that one clump card shows of its own rows. */
+const CLUMP_TILES = 3;
+
 /**
  * A card level's clump cards: one card set for each clump of sockets, at the clump's middle and
  * grown to cover its rows, so the clump reads with the shade its card bakes rather than as many
@@ -1014,10 +1017,25 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	const drawn = (axis: number): DrawnWood => ((orders[axis] as number) <= keep ? 2 : 0);
 	const planes = 3;
 	const clusters = cardClusters(input, walk, kept.length, drawn, planes);
-	return clusterCardMesh(input, clusters, planes, (index, height) => {
-		const clump = kept[index];
-		return clump ? clumpSky(clump, height) : 1;
-	});
+	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
+	// own scale rather than one shoot's picture grown over the clump.
+	const tiled = {
+		tiles: CLUMP_TILES,
+		row: (index: number, tile: number): number => {
+			const list = kept[index]?.rows ?? [];
+			return list.length > 0 ? (list[Math.floor((tile * list.length) / (CLUMP_TILES * CLUMP_TILES))] as number) : 0;
+		},
+	};
+	return clusterCardMesh(
+		input,
+		clusters,
+		planes,
+		(index, height) => {
+			const clump = kept[index];
+			return clump ? clumpSky(clump, height) : 1;
+		},
+		tiled,
+	);
 }
 
 /**
@@ -1759,6 +1777,10 @@ export function clusterTriangles(clusters: readonly CardCluster[], planes: numbe
  * @param input The dressed variant.
  * @param clusters The clusters.
  * @param planes The card planes each cluster draws, from 1 to 3: the two upright ones first.
+ * @param shade The sky share a cluster's card carries at a height, for a baked clump shade.
+ * @param tiled How a cluster's plane is cut into pictures of its own rows, which keeps a card that
+ *   stands for many shoots at their own leaf scale: the tiles a side, and the row whose picture each
+ *   tile shows.
  * @returns The cards' mesh.
  * @category api/vegetation
  */
@@ -1767,6 +1789,10 @@ export function clusterCardMesh(
 	clusters: readonly CardCluster[],
 	planes: number,
 	shade?: (cluster: number, height: number) => number,
+	tiled?: {
+		readonly tiles: number;
+		readonly row: (cluster: number, tile: number) => number;
+	},
 ): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = new MeshWriter();
@@ -1821,29 +1847,52 @@ export function clusterCardMesh(
 				plane.right[0] * plane.up[1] - plane.right[1] * plane.up[0],
 			]);
 			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
-			const first = mesh.vertices;
-			const [rx, ry, rw, rh] = plane.front;
-			for (const [sx, sy] of CARD_CORNERS) {
-				for (let c = 0; c < 3; c++)
-					local[c] =
-						((plane.centre[c] as number) +
-							cluster.grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
-						scale;
-				quatRotate(rows.rotation, r * 4, local, world);
-				const at: Vector3 = [
-					cluster.centre[0] + world[0] - first0[0],
-					cluster.centre[1] + world[1] - first0[1],
-					cluster.centre[2] + world[2] - first0[2],
-				];
-				mesh.vertex(
-					at,
-					normal,
-					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
-					colourAt(at[1]),
-				);
+			const tiles = tiled?.tiles ?? 1;
+			for (let tile = 0; tile < tiles * tiles; tile++) {
+				// A tile shows one of the cluster's rows' pictures at its own scale, so a card that
+				// stands for many shoots reads as their clump rather than as one shoot grown large.
+				const shown = tiles > 1 ? (tiled as NonNullable<typeof tiled>).row(index, tile) : r;
+				const shownPrototype = kit.prototypes[rows.prototype[shown] as number];
+				const cell =
+					shownPrototype?.card.planes.find((other) => other.role === plane.role) ??
+					shownPrototype?.card.planes[0] ??
+					plane;
+				const [rx, ry, rw, rh] = cell.front;
+				const across = tile % tiles;
+				const up = Math.floor(tile / tiles);
+				const x0 = (across / tiles) * 2 - 1;
+				const x1 = ((across + 1) / tiles) * 2 - 1;
+				const y0 = (up / tiles) * 2 - 1;
+				const y1 = ((up + 1) / tiles) * 2 - 1;
+				const first = mesh.vertices;
+				const corners = [
+					[x0, y0, -1, -1],
+					[x1, y0, 1, -1],
+					[x1, y1, 1, 1],
+					[x0, y1, -1, 1],
+				] as const;
+				for (const [sx, sy, us, vt] of corners) {
+					for (let c = 0; c < 3; c++)
+						local[c] =
+							((plane.centre[c] as number) +
+								cluster.grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+							scale;
+					quatRotate(rows.rotation, r * 4, local, world);
+					const at: Vector3 = [
+						cluster.centre[0] + world[0] - first0[0],
+						cluster.centre[1] + world[1] - first0[1],
+						cluster.centre[2] + world[2] - first0[2],
+					];
+					mesh.vertex(
+						at,
+						normal,
+						[(rx + ((us + 1) / 2) * rw) / size, (ry + ((vt + 1) / 2) * rh) / size],
+						[plane.along[0] + ((vt + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
+						colourAt(at[1]),
+					);
+				}
+				mesh.quad(first, first + 1, first + 2, first + 3);
 			}
-			mesh.quad(first, first + 1, first + 2, first + 3);
 		});
 		if (!cluster.stalk || !cluster.anchor) continue;
 		const from = cluster.centre;
