@@ -1027,9 +1027,10 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const drawn = (axis: number): DrawnWood => ((orders[axis] as number) <= keep ? 2 : 0);
 	const planes = 3;
-	// A clump's card covers the rows it stands for: the crown already holds the cover the picture
-	// shows, and a card grown past its rows only deepens the gaps between clumps.
-	const clusters = cardClusters(input, walk, kept.length, drawn, planes);
+	// A clump's card covers the rows it stands for, grown by the record's own card growth as a
+	// shoot's card is, so the level recovers the cover the record asks it to.
+	const more = input.record.lod.cardGrow ?? 1;
+	const clusters = cardClusters(input, walk, kept.length, drawn, planes, undefined, more);
 	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
 	// own scale rather than one shoot's picture grown over the clump.
 	const tiled = {
