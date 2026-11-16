@@ -37,7 +37,11 @@ function spotsOf(rows: Rows, kind: number, variant: number): PlantSpot[] {
 export async function plantAddon(
 	ctx: SketchContext,
 	options: { readonly rows: Rows; readonly wind: WindField; readonly maxTriangles: number },
-): Promise<{ readonly materials: readonly PlantMaterial[]; setWindLayer(field: WindField): void }> {
+): Promise<{
+	readonly materials: readonly PlantMaterial[];
+	setWindLayer(field: WindField): void;
+	destroy(): void;
+}> {
 	const { rows, wind, maxTriangles } = options;
 	const firs = [0, 1, 2].flatMap((kind) => spotsOf(rows, kind, kind));
 	const broadleaves = spotsOf(rows, 3, 0);
@@ -66,6 +70,10 @@ export async function plantAddon(
 		materials,
 		setWindLayer(field) {
 			setWindLayer(materials, field);
+		},
+		destroy() {
+			pine.placed.destroy();
+			beech.placed.destroy();
 		},
 	};
 }
