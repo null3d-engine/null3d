@@ -992,8 +992,8 @@ export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
  * clumps by the space-filling order until the share is spent, and grows their cards to hold the
  * crown.
  */
-function clumpShare(kit: SpeciesKitData, level: 1 | 2): number {
-	const shares = (kit.record.lod as { readonly clumpCard?: readonly [number, number] }).clumpCard;
+function clumpShare(record: SpeciesKitData['record'], level: 1 | 2): number {
+	const shares = (record.lod as { readonly clumpCard?: readonly [number, number] }).clumpCard;
 	const share = shares?.[level - 1] ?? 0;
 	return Math.max(0, Math.min(1, share));
 }
@@ -1005,7 +1005,7 @@ function clumpShare(kit: SpeciesKitData, level: 1 | 2): number {
  * cuts them into one run per clump.
  */
 function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2): MeshArrays {
-	const share = clumpShare(input.kit, level);
+	const share = clumpShare(input.record, level);
 	const kept = clumps.slice(0, Math.max(1, Math.round(clumps.length * share)));
 	const walk = clumpWalk(kept);
 	// The level draws the wood that its own wood orders keep, so a clump joins the plant where that
@@ -1032,7 +1032,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { rows, kit } = input;
 	// A record that asks for the clump card draws one card set for each clump of sockets in place
 	// of a card for each shoot.
-	const clumps = clumpShare(kit, level) > 0 ? clumpsOf(input) : undefined;
+	const clumps = clumpShare(input.record, level) > 0 ? clumpsOf(input) : undefined;
 	if (clumps) return clumpCardMesh(input, clumps, level);
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
@@ -1775,7 +1775,7 @@ export function clusterCardMesh(
 	const base = input.variant * VARIANT_RECORDS;
 	// A record that asks for the clump card shades a cluster by its own row's sky and its own
 	// height, which is the shade a clump card bakes, for the clusters a maximum draws.
-	const own = shade === undefined && (clumpShare(kit, 1) > 0 || clumpShare(kit, 2) > 0);
+	const own = shade === undefined && (clumpShare(input.record, 1) > 0 || clumpShare(input.record, 2) > 0);
 	const lighting =
 		shade ??
 		(own
