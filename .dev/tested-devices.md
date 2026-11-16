@@ -130,6 +130,15 @@ and reverted: at `d57918816` the same pages read 670.08, 911.80 and 1052.30 ms, 
 seconds to the first frame
 ([20261116-011152-vegetation](tested-devices/ipad-pro-13-safari/20261116-011152-vegetation.md)).
 
+The occlusion effect's share was measured as a pair at `229501911`: Creek High reads 86.58 ms with
+it drawing and 73.69 with the page's own `off=ao` switch
+([on](tested-devices/ipad-pro-13-safari/20261116-024243-vegetation.md),
+[off](tested-devices/ipad-pro-13-safari/20261116-024454-vegetation.md)). That is 12.89 ms of the
+frame, and it includes the camera's depth prepass, which only that effect forces. The off run proves
+its switch: its draws fall from 258 to 173, and its prepass row disappears. The effect's whole share
+is smaller than the 19.48 ms by which the row misses its ceiling at the kinder end, so switching it
+off is not a route to the ceiling on its own.
+
 The forest's GPU time at High and Ultra goes into the last render pass, which draws the far cards.
 Its triangle count is higher at High than at Ultra, because each preset picks its own levels.
 
