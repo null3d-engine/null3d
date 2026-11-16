@@ -8,14 +8,20 @@
 import { describe, expect, it, spyOn } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
-import { leafArea } from '../crown/density';
 import { BUD_FLOWER } from '../core/graph';
 import type { SpeciesModule } from '../core/record';
 import { standInSpecies } from '../core/stand-in';
-import { buildKitNow, forgetGrownPlants, growPlantNow, loadPlantCode, plantsGrown } from '../generate';
-import { rowSockets } from '../grow/sparse';
-import * as sparseModule from '../grow/sparse';
+import { leafArea } from '../crown/density';
+import {
+	buildKitNow,
+	forgetGrownPlants,
+	growPlantNow,
+	loadPlantCode,
+	plantsGrown,
+} from '../generate';
 import { planFrame } from '../grow/frame';
+import * as sparseModule from '../grow/sparse';
+import { rowSockets } from '../grow/sparse';
 import * as budgetModule from '../lod/budget';
 
 /** Whether the run states the full set of seeds. */
@@ -51,8 +57,8 @@ const FLOORS: Readonly<Record<number, number>> = {
 	1100: 0.26,
 	1500: 0.26,
 	5000: 0.3,
-	20_000: 0.5,
-	100_000: 0.685,
+	20000: 0.5,
+	100000: 0.685,
 };
 
 /** The caps of the owner's maximum sweep, falling. */
@@ -64,12 +70,12 @@ const SWEEP: readonly number[] = [50_000, 20_000, 10_000, 5_000, 2_000, 1_000, 5
  * from 500; 500 from 100.
  */
 const SWEEP_FLOORS: Readonly<Record<number, number>> = {
-	50_000: 0.5,
-	20_000: 0.5,
-	10_000: 0.3,
-	5_000: 0.3,
-	2_000: 0.26,
-	1_000: 0.26,
+	50000: 0.5,
+	20000: 0.5,
+	10000: 0.3,
+	5000: 0.3,
+	2000: 0.26,
+	1000: 0.26,
 	500: 0.17,
 };
 
@@ -132,7 +138,11 @@ interface Request {
 const grown = new Map<string, PlantAsset>();
 
 /** One plant of the planned oak, kept by its request. */
-async function plant(seed: number, request: Request, kind: 'planned' | 'anchor' = 'planned'): Promise<PlantAsset> {
+async function plant(
+	seed: number,
+	request: Request,
+	kind: 'planned' | 'anchor' = 'planned',
+): Promise<PlantAsset> {
 	const key = `${kind}|${seed}|${request.maturity ?? 1}|${request.sparse ?? 0}|${request.maxTriangles ?? 'none'}|${request.season ?? 'default'}`;
 	const kept = grown.get(key);
 	if (kept) return kept;
@@ -170,7 +180,8 @@ function median(values: readonly number[]): number {
 function spreadOf(values: readonly number[]): number {
 	const sorted = [...values].sort((a, b) => a - b);
 	if (sorted.length === 0) return 0;
-	const at = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] as number;
+	const at = (p: number) =>
+		sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] as number;
 	return at(0.75) - at(0.25);
 }
 
@@ -233,7 +244,11 @@ function nodeAt(asset: PlantAsset, node: number): [number, number, number] {
 
 /** The distance between two points. */
 function away(a: readonly number[], b: readonly number[]): number {
-	return Math.hypot((a[0] as number) - (b[0] as number), (a[1] as number) - (b[1] as number), (a[2] as number) - (b[2] as number));
+	return Math.hypot(
+		(a[0] as number) - (b[0] as number),
+		(a[1] as number) - (b[1] as number),
+		(a[2] as number) - (b[2] as number),
+	);
 }
 
 /** A unit direction between two points. */
@@ -249,7 +264,10 @@ function direction(from: readonly number[], to: readonly number[]): [number, num
 
 /** The angle in degrees between two unit directions. */
 function angleBetween(a: readonly number[], b: readonly number[]): number {
-	const dot = (a[0] as number) * (b[0] as number) + (a[1] as number) * (b[1] as number) + (a[2] as number) * (b[2] as number);
+	const dot =
+		(a[0] as number) * (b[0] as number) +
+		(a[1] as number) * (b[1] as number) +
+		(a[2] as number) * (b[2] as number);
 	return (Math.acos(Math.min(1, Math.max(-1, dot))) * 180) / Math.PI;
 }
 
@@ -322,7 +340,10 @@ function extrasOf(asset: PlantAsset): number {
  */
 function outlineOf(asset: PlantAsset, cells = 64): Uint8Array {
 	const { bounds, position, radius, axes, nodeCount } = asset.skeleton;
-	const width = Math.max(1e-6, Math.max(bounds.max[0] - bounds.min[0], bounds.max[2] - bounds.min[2]));
+	const width = Math.max(
+		1e-6,
+		Math.max(bounds.max[0] - bounds.min[0], bounds.max[2] - bounds.min[2]),
+	);
 	const height = Math.max(1e-6, bounds.max[1] - bounds.min[1]);
 	const mask = new Uint8Array(cells * cells);
 	const splat = (x: number, y: number, r: number): void => {
@@ -371,13 +392,19 @@ interface Clump {
  * The adult plan's clumps: the frame's own bough-end patches, before the fine fill replaces them.
  * The planned grower names its own clumps the same way, one `lobe` id to a clump.
  */
-async function anchorClumps(seed: number): Promise<{ clumps: readonly Clump[]; ofBud: Map<number, number> }> {
+async function anchorClumps(
+	seed: number,
+): Promise<{ clumps: readonly Clump[]; ofBud: Map<number, number> }> {
 	const module = await moduleOf('anchor');
 	const record = module.record;
 	const input = { record, seed, variant: 0, season: record.seasons.default } as never;
 	// The third argument asks for the stated patches, before the fine fill replaces them. A head
 	// that does not take it yet reports every fine patch, which the fill target notes.
-	const planOf = planFrame as unknown as (spec: never, input: never, fill?: boolean) => ReturnType<typeof planFrame>;
+	const planOf = planFrame as unknown as (
+		spec: never,
+		input: never,
+		fill?: boolean,
+	) => ReturnType<typeof planFrame>;
 	const plan = planOf((record.growth as unknown as { frame: never }).frame, input, false);
 	const clumps: Clump[] = plan.patches.map((patch, id) => ({
 		id,
@@ -389,7 +416,11 @@ async function anchorClumps(seed: number): Promise<{ clumps: readonly Clump[]; o
 	const { buds } = asset.skeleton;
 	const ofBud = new Map<number, number>();
 	for (let b = 0; b < buds.count; b++) {
-		const at: [number, number, number] = [buds.position[b * 3] as number, buds.position[b * 3 + 1] as number, buds.position[b * 3 + 2] as number];
+		const at: [number, number, number] = [
+			buds.position[b * 3] as number,
+			buds.position[b * 3 + 1] as number,
+			buds.position[b * 3 + 2] as number,
+		];
 		let nearest = 0;
 		let distance = Number.POSITIVE_INFINITY;
 		for (let c = 0; c < clumps.length; c++) {
@@ -406,7 +437,9 @@ async function anchorClumps(seed: number): Promise<{ clumps: readonly Clump[]; o
 }
 
 /** The planned plant's clumps, from its own table, and the clump each socket fills. */
-function plannedClumps(asset: PlantAsset): { clumps: readonly Clump[]; ofBud: Map<number, number> } | undefined {
+function plannedClumps(
+	asset: PlantAsset,
+): { clumps: readonly Clump[]; ofBud: Map<number, number> } | undefined {
 	const table = asset.skeleton.clumps;
 	const sockets = asset.skeleton.buds.sockets;
 	if (!table || !sockets) return undefined;
@@ -495,7 +528,11 @@ function growthOf(kit: SpeciesKitData): GrowthOptions {
 }
 
 /** A fresh growth of one request, uncached, so a case that measures growth itself starts clean. */
-async function freshPlant(kind: 'planned' | 'anchor', seed: number, request: Request): Promise<PlantAsset> {
+async function freshPlant(
+	kind: 'planned' | 'anchor',
+	seed: number,
+	request: Request,
+): Promise<PlantAsset> {
 	const kit = await kitOf(kind);
 	forgetGrownPlants();
 	return growPlantNow(kit, {
@@ -526,39 +563,47 @@ describe('the planned oak contract', () => {
 		expect(asset.shoots.id !== undefined).toBe(true);
 	});
 
-	it('M0: m 0 is empty and returns in under a millisecond', async () => {
-		const kit = await kitOf('planned');
-		const empty = await freshPlant('planned', HOME, { maturity: 0 });
-		expect([empty.skeleton.axes.count, empty.shoots.count]).toEqual([0, 0]);
-		expect(empty.stats.triangles).toEqual([0, 0, 0]);
-		expect(extrasOf(empty)).toBe(0);
-		// Time the growth stage alone: the plan's numbers, then the skeleton they allow.
-		const { grower } = await import('../grow/models');
-		const growth = grower('planned');
-		expect(growth?.plan !== undefined).toBe(true);
-		const request = { maturity: 0, sparse: 0 } as const;
-		const started = performance.now();
-		const plan = growth.plan?.(kit.record, request);
-		const skeleton = growth.grow({
-			record: kit.record,
-			seed: HOME,
-			variant: 0,
-			season: kit.record.seasons.default,
-			request,
-			plan,
-		});
-		const ms = performance.now() - started;
-		expect([skeleton.axes.count, skeleton.buds.count]).toEqual([0, 0]);
-		console.log(`M0: empty in ${ms.toFixed(3)} ms, plan and growth`);
-		expect(ms).toBeLessThan(1);
-	}, LONG);
+	it(
+		'M0: m 0 is empty and returns in under a millisecond',
+		async () => {
+			const kit = await kitOf('planned');
+			const empty = await freshPlant('planned', HOME, { maturity: 0 });
+			expect([empty.skeleton.axes.count, empty.shoots.count]).toEqual([0, 0]);
+			expect(empty.stats.triangles).toEqual([0, 0, 0]);
+			expect(extrasOf(empty)).toBe(0);
+			// Time the growth stage alone: the plan's numbers, then the skeleton they allow.
+			const { grower } = await import('../grow/models');
+			const growth = grower('planned');
+			expect(growth?.plan !== undefined).toBe(true);
+			const request = { maturity: 0, sparse: 0 } as const;
+			const started = performance.now();
+			const plan = growth.plan?.(kit.record, request);
+			const skeleton = growth.grow({
+				record: kit.record,
+				seed: HOME,
+				variant: 0,
+				season: kit.record.seasons.default,
+				request,
+				plan,
+			});
+			const ms = performance.now() - started;
+			expect([skeleton.axes.count, skeleton.buds.count]).toEqual([0, 0]);
+			console.log(`M0: empty in ${ms.toFixed(3)} ms, plan and growth`);
+			expect(ms).toBeLessThan(1);
+		},
+		LONG,
+	);
 
-	it('D0: no maturity given is the same bytes as m 1', async () => {
-		const kit = await kitOf('planned');
-		const plain = growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low' });
-		const one = await freshPlant('planned', HOME, { maturity: 1 });
-		expect(plantAssetDigest(plain)).toBe(plantAssetDigest(one));
-	}, LONG);
+	it(
+		'D0: no maturity given is the same bytes as m 1',
+		async () => {
+			const kit = await kitOf('planned');
+			const plain = growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low' });
+			const one = await freshPlant('planned', HOME, { maturity: 1 });
+			expect(plantAssetDigest(plain)).toBe(plantAssetDigest(one));
+		},
+		LONG,
+	);
 
 	it(
 		'M1: the maturity curve rises in height, width and girth, and leaf area falls only by what sheds',
@@ -572,15 +617,32 @@ describe('the planned oak contract', () => {
 					const leaf = leafShare(kit, asset);
 					if (before) {
 						const p = before;
-						expect([seed, maturity, heightOf(asset) >= heightOf(p) - 1e-6]).toEqual([seed, maturity, true]);
-						expect([seed, maturity, crownOf(asset) >= crownOf(p) - 1e-6]).toEqual([seed, maturity, true]);
-						expect([seed, maturity, girthOf(asset) >= girthOf(p) - 1e-6]).toEqual([seed, maturity, true]);
+						expect([seed, maturity, heightOf(asset) >= heightOf(p) - 1e-6]).toEqual([
+							seed,
+							maturity,
+							true,
+						]);
+						expect([seed, maturity, crownOf(asset) >= crownOf(p) - 1e-6]).toEqual([
+							seed,
+							maturity,
+							true,
+						]);
+						expect([seed, maturity, girthOf(asset) >= girthOf(p) - 1e-6]).toEqual([
+							seed,
+							maturity,
+							true,
+						]);
 						// The fall from the younger tree is at most the leaf area of rows it no longer holds.
 						const olderRows = new Set<number>();
 						for (let r = 0; r < asset.shoots.count; r++) olderRows.add(rowAddress(asset, r));
 						let dropped = 0;
-						for (const [address, area] of rowAreas(kit, p)) if (!olderRows.has(address)) dropped += area;
-						expect([seed, maturity, beforeLeaf - leaf <= dropped + 1e-6]).toEqual([seed, maturity, true]);
+						for (const [address, area] of rowAreas(kit, p))
+							if (!olderRows.has(address)) dropped += area;
+						expect([seed, maturity, beforeLeaf - leaf <= dropped + 1e-6]).toEqual([
+							seed,
+							maturity,
+							true,
+						]);
 					}
 					before = asset;
 					beforeLeaf = leaf;
@@ -601,11 +663,26 @@ describe('the planned oak contract', () => {
 						const b = await plant(seed, { maturity: maturity + 0.01, maxTriangles: max });
 						const leafA = leafShare(kit, a);
 						const leafB = leafShare(kit, b);
-						expect([seed, maturity, max, off(leafB, leafA) <= 0.05 || Math.abs(leafB - leafA) <= 1e-9]).toEqual([seed, maturity, max, true]);
+						expect([
+							seed,
+							maturity,
+							max,
+							off(leafB, leafA) <= 0.05 || Math.abs(leafB - leafA) <= 1e-9,
+						]).toEqual([seed, maturity, max, true]);
 						const triA = a.stats.triangles[0] as number;
 						const triB = b.stats.triangles[0] as number;
-						expect([seed, maturity, max, Math.abs(triB - triA) <= 0.05 * Math.max(1, triA)]).toEqual([seed, maturity, max, true]);
-						expect([seed, maturity, max, overlap(outlineOf(a), outlineOf(b)) >= 0.9]).toEqual([seed, maturity, max, true]);
+						expect([
+							seed,
+							maturity,
+							max,
+							Math.abs(triB - triA) <= 0.05 * Math.max(1, triA),
+						]).toEqual([seed, maturity, max, true]);
+						expect([seed, maturity, max, overlap(outlineOf(a), outlineOf(b)) >= 0.9]).toEqual([
+							seed,
+							maturity,
+							max,
+							true,
+						]);
 						// No bone node moves by more than 2 per cent of the height.
 						const moving = new Map<number, number>();
 						for (let x = 0; x < a.skeleton.axes.count; x++) {
@@ -618,7 +695,12 @@ describe('the planned oak contract', () => {
 							if (x === undefined) continue;
 							const from = nodeAt(a, a.skeleton.axes.first[x] as number);
 							const to = nodeAt(b, b.skeleton.axes.first[y] as number);
-							expect([seed, maturity, max, away(from, to) <= 0.02 * heightOf(a)]).toEqual([seed, maturity, max, true]);
+							expect([seed, maturity, max, away(from, to) <= 0.02 * heightOf(a)]).toEqual([
+								seed,
+								maturity,
+								max,
+								true,
+							]);
 						}
 					}
 		},
@@ -636,7 +718,8 @@ describe('the planned oak contract', () => {
 						const p = younger;
 						const at = `${seed} ${maturity}`;
 						const olderAxes = new Map<number, number>();
-						for (let x = 0; x < older.skeleton.axes.count; x++) olderAxes.set(axisAddress(older, x), x);
+						for (let x = 0; x < older.skeleton.axes.count; x++)
+							olderAxes.set(axisAddress(older, x), x);
 						for (let y = 0; y < p.skeleton.axes.count; y++) {
 							const address = axisAddress(p, y);
 							const order = p.skeleton.axes.order[y] as number;
@@ -651,8 +734,14 @@ describe('the planned oak contract', () => {
 							expect([at, address, away(fromP, fromO) <= 0.01]).toEqual([at, address, true]);
 							const pFirst = p.skeleton.axes.first[y] as number;
 							const oFirst = older.skeleton.axes.first[x] as number;
-							const pDir = direction(fromP, nodeAt(p, Math.min(p.skeleton.axes.last[y] as number, pFirst + 1)));
-							const oDir = direction(fromO, nodeAt(older, Math.min(older.skeleton.axes.last[x] as number, oFirst + 1)));
+							const pDir = direction(
+								fromP,
+								nodeAt(p, Math.min(p.skeleton.axes.last[y] as number, pFirst + 1)),
+							);
+							const oDir = direction(
+								fromO,
+								nodeAt(older, Math.min(older.skeleton.axes.last[x] as number, oFirst + 1)),
+							);
 							expect([at, address, angleBetween(pDir, oDir) <= 2]).toEqual([at, address, true]);
 						}
 					}
@@ -676,11 +765,18 @@ describe('the planned oak contract', () => {
 			// Below the fruiting maturity nothing draws; through the band every 0.01 step rises by at
 			// most a twentieth of the final count.
 			for (const maturity of [0, Math.max(0, from - 0.05), Math.max(0, from - 0.01)])
-				expect([maturity, extrasOf(await plant(HOME, { maturity, season: kit.record.seasons.default }))]).toEqual([maturity, 0]);
-			let previous = extrasOf(await plant(HOME, { maturity: from, season: kit.record.seasons.default }));
+				expect([
+					maturity,
+					extrasOf(await plant(HOME, { maturity, season: kit.record.seasons.default })),
+				]).toEqual([maturity, 0]);
+			let previous = extrasOf(
+				await plant(HOME, { maturity: from, season: kit.record.seasons.default }),
+			);
 			for (let i = 1; i <= Math.max(1, Math.ceil(band / 0.01)); i++) {
 				const maturity = Math.min(1, from + i * 0.01);
-				const extras = extrasOf(await plant(HOME, { maturity, season: kit.record.seasons.default }));
+				const extras = extrasOf(
+					await plant(HOME, { maturity, season: kit.record.seasons.default }),
+				);
 				expect([maturity, extras - previous <= 0.05 * full]).toEqual([maturity, true]);
 				previous = extras;
 			}
@@ -694,7 +790,12 @@ describe('the planned oak contract', () => {
 					if (last >= 0) expect([maturity, extras >= last - 1e-9]).toEqual([maturity, true]);
 					last = extras;
 				}
-				const before = extrasOf(await plant(HOME, { maturity: Math.max(0, flowers.from - 0.05), season: flowers.season as never }));
+				const before = extrasOf(
+					await plant(HOME, {
+						maturity: Math.max(0, flowers.from - 0.05),
+						season: flowers.season as never,
+					}),
+				);
 				expect([flowers.from, before]).toEqual([flowers.from, 0]);
 			}
 			// Catkins draw as flower buds, which the growth marks.
@@ -718,15 +819,26 @@ describe('the planned oak contract', () => {
 					for (const sparse of levels) plants.push(await plant(seed, { maturity, sparse }));
 					const full = plants[0] as PlantAsset;
 					const fullLeaf = leafShare(kit, full);
-					const fine = (asset: PlantAsset) => axesByOrder(asset).slice(3).reduce((s, n) => s + n, 0);
+					const fine = (asset: PlantAsset) =>
+						axesByOrder(asset)
+							.slice(3)
+							.reduce((s, n) => s + n, 0);
 					for (let i = 1; i < plants.length; i++) {
 						const sparser = plants[i] as PlantAsset;
 						const denser = plants[i - 1] as PlantAsset;
-						expect([seed, maturity, sparser.shoots.count < denser.shoots.count]).toEqual([seed, maturity, true]);
+						expect([seed, maturity, sparser.shoots.count < denser.shoots.count]).toEqual([
+							seed,
+							maturity,
+							true,
+						]);
 						expect([seed, maturity, fine(sparser) < fine(denser)]).toEqual([seed, maturity, true]);
 					}
 					const sparsest = plants[plants.length - 1] as PlantAsset;
-					expect([seed, maturity, fine(sparsest) <= fine(full) / 3 + 1e-9]).toEqual([seed, maturity, true]);
+					expect([seed, maturity, fine(sparsest) <= fine(full) / 3 + 1e-9]).toEqual([
+						seed,
+						maturity,
+						true,
+					]);
 					const share = leafShare(kit, sparsest) / Math.max(1e-9, fullLeaf);
 					expect([seed, maturity, share <= 0.1 + 1e-9]).toEqual([seed, maturity, true]);
 					expect([seed, maturity, share >= 0.08 - 1e-9]).toEqual([seed, maturity, true]);
@@ -744,11 +856,13 @@ describe('the planned oak contract', () => {
 					const thin = await freshPlant('planned', seed, { maturity, sparse: 1 });
 					const at = `${seed} ${maturity}`;
 					const plainAxes = new Map<number, number>();
-					for (let a = 0; a < plain.skeleton.axes.count; a++) plainAxes.set(axisAddress(plain, a), a);
+					for (let a = 0; a < plain.skeleton.axes.count; a++)
+						plainAxes.set(axisAddress(plain, a), a);
 					for (let b = 0; b < thin.skeleton.axes.count; b++) {
 						if ((thin.skeleton.axes.order[b] as number) > 2) continue;
 						const a = plainAxes.get(axisAddress(thin, b));
-						if (a === undefined) throw new Error(`${at}: the sparser plant lost a bone at ${axisAddress(thin, b)}`);
+						if (a === undefined)
+							throw new Error(`${at}: the sparser plant lost a bone at ${axisAddress(thin, b)}`);
 						const first = thin.skeleton.axes.first[b] as number;
 						const compare = plain.skeleton.axes.first[a] as number;
 						expect([at, nodeAt(thin, first)]).toEqual([at, nodeAt(plain, compare)]);
@@ -768,18 +882,26 @@ describe('the planned oak contract', () => {
 		async () => {
 			for (const seed of SEEDS) {
 				const plants = [] as PlantAsset[];
-				for (const sparse of [0, 0.25, 0.5, 0.75, 1]) plants.push(await freshPlant('planned', seed, { maturity: 1, sparse }));
+				for (const sparse of [0, 0.25, 0.5, 0.75, 1])
+					plants.push(await freshPlant('planned', seed, { maturity: 1, sparse }));
 				for (let i = 1; i < plants.length; i++) {
 					const denser = plants[i - 1] as PlantAsset;
 					const sparser = plants[i] as PlantAsset;
 					const place = new Map<number, string>();
 					for (let b = 0; b < denser.skeleton.buds.count; b++)
-						place.set(budAddress(denser, b), nodeAt(denser, denser.skeleton.buds.node[b] as number).join(','));
+						place.set(
+							budAddress(denser, b),
+							nodeAt(denser, denser.skeleton.buds.node[b] as number).join(','),
+						);
 					for (let b = 0; b < sparser.skeleton.buds.count; b++) {
 						const address = budAddress(sparser, b);
 						const kept = place.get(address);
 						if (kept === undefined) continue;
-						expect([seed, address, nodeAt(sparser, sparser.skeleton.buds.node[b] as number).join(',')]).toEqual([seed, address, kept]);
+						expect([
+							seed,
+							address,
+							nodeAt(sparser, sparser.skeleton.buds.node[b] as number).join(','),
+						]).toEqual([seed, address, kept]);
 					}
 				}
 			}
@@ -801,13 +923,21 @@ describe('the planned oak contract', () => {
 						// Every row stands on a skeleton node, and every node reaches one base.
 						for (let r = 0; r < asset.shoots.count; r++) {
 							const node = asset.shoots.node?.[r];
-							expect([at, node !== undefined && (node as number) < asset.skeleton.nodeCount]).toEqual([at, true]);
+							expect([
+								at,
+								node !== undefined && (node as number) < asset.skeleton.nodeCount,
+							]).toEqual([at, true]);
 						}
 						let roots = 0;
 						const { parent } = asset.skeleton;
-						for (let n = 0; n < asset.skeleton.nodeCount; n++) if ((parent[n] as number) < 0) roots++;
+						for (let n = 0; n < asset.skeleton.nodeCount; n++)
+							if ((parent[n] as number) < 0) roots++;
 						expect([at, roots]).toEqual([at, 1]);
-						expect([at, asset.skeleton.height, asset.skeleton.crownBase]).toEqual([at, full.skeleton.height, full.skeleton.crownBase]);
+						expect([at, asset.skeleton.height, asset.skeleton.crownBase]).toEqual([
+							at,
+							full.skeleton.height,
+							full.skeleton.crownBase,
+						]);
 						expect([at, asset.skeleton.bounds]).toEqual([at, full.skeleton.bounds]);
 						// Each octant keeps the plant's share of its own foliage.
 						const middle: [number, number, number] = [0, 0, 0];
@@ -824,7 +954,8 @@ describe('the planned oak contract', () => {
 							const x = full.shoots.position[r * 3] as number;
 							const y = full.shoots.position[r * 3 + 1] as number;
 							const z = full.shoots.position[r * 3 + 2] as number;
-							const octant = (x > middle[0] ? 1 : 0) + (y > middle[1] ? 2 : 0) + (z > middle[2] ? 4 : 0);
+							const octant =
+								(x > middle[0] ? 1 : 0) + (y > middle[1] ? 2 : 0) + (z > middle[2] ? 4 : 0);
 							grown[octant] = (grown[octant] as number) + 1;
 							if (keptRows.has(rowAddress(full, r))) kept[octant] = (kept[octant] as number) + 1;
 						}
@@ -861,15 +992,30 @@ describe('the planned oak contract', () => {
 				let distance = Number.POSITIVE_INFINITY;
 				for (const b of plannedBones) {
 					if ((planned.skeleton.axes.order[b] as number) !== order) continue;
-					const d = away(nodeAt(anchor, first), nodeAt(planned, planned.skeleton.axes.first[b] as number));
+					const d = away(
+						nodeAt(anchor, first),
+						nodeAt(planned, planned.skeleton.axes.first[b] as number),
+					);
 					if (d < distance) {
 						distance = d;
 						nearest = b;
 					}
 				}
 				expect([a, distance <= 0.01]).toEqual([a, true]);
-				expect([a, away(nodeAt(anchor, last), nodeAt(planned, planned.skeleton.axes.last[nearest] as number)) <= 0.01]).toEqual([a, true]);
-				expect([a, off(planned.skeleton.radius[planned.skeleton.axes.last[nearest] as number] as number, anchor.skeleton.radius[last] as number) <= 0.01]).toEqual([a, true]);
+				expect([
+					a,
+					away(
+						nodeAt(anchor, last),
+						nodeAt(planned, planned.skeleton.axes.last[nearest] as number),
+					) <= 0.01,
+				]).toEqual([a, true]);
+				expect([
+					a,
+					off(
+						planned.skeleton.radius[planned.skeleton.axes.last[nearest] as number] as number,
+						anchor.skeleton.radius[last] as number,
+					) <= 0.01,
+				]).toEqual([a, true]);
 			}
 			// The clumps are the adult plan's own bough-end patches, at the same centres and radii,
 			// and the planned plant names each socket's clump by `lobe`.
@@ -880,8 +1026,15 @@ describe('the planned oak contract', () => {
 			for (let i = 0; i < anchorTable.clumps.length; i++) {
 				const anchorClump = anchorTable.clumps[i] as Clump;
 				const clump = plannedTable?.clumps[i];
-				expect([i, clump?.id, clump !== undefined ? away(clump.centre, anchorClump.centre) <= 0.01 : false]).toEqual([i, clump?.id, true]);
-				expect([i, clump !== undefined ? Math.abs(clump.radius - anchorClump.radius) <= 0.01 : false]).toEqual([i, true]);
+				expect([
+					i,
+					clump?.id,
+					clump !== undefined ? away(clump.centre, anchorClump.centre) <= 0.01 : false,
+				]).toEqual([i, clump?.id, true]);
+				expect([
+					i,
+					clump !== undefined ? Math.abs(clump.radius - anchorClump.radius) <= 0.01 : false,
+				]).toEqual([i, true]);
 			}
 		},
 		LONG,
@@ -896,14 +1049,18 @@ describe('the planned oak contract', () => {
 			const plannedTable = plannedClumps(planned);
 			const candidate = plannedTable ? fillFigures(planned, plannedTable) : undefined;
 			console.log(`F1 target (the frame's clumps): ${JSON.stringify(target)}`);
-			console.log(`F1 candidate (planned): ${candidate ? JSON.stringify(candidate) : 'no clumps on the skeleton'}`);
+			console.log(
+				`F1 candidate (planned): ${candidate ? JSON.stringify(candidate) : 'no clumps on the skeleton'}`,
+			);
 			if (candidate) {
 				// The target is for the grower, not a gate: print the distance and let the eye decide.
 				console.log(
 					`F1 distances: median ${(off(candidate.medianRows, target.medianRows) * 100).toFixed(1)}%, spread ${(off(candidate.spreadRows, target.spreadRows) * 100).toFixed(1)}%, inner ${Math.abs(candidate.inner - target.inner).toFixed(3)}, sky ${candidate.sky.map((v, i) => Math.abs(v - (target.sky[i] as number)).toFixed(3)).join('/')}`,
 				);
 			}
-			console.log(`F1 crown cover tolerance ${FILL.cover}: read from the CPU preview over 01 in the verdict.`);
+			console.log(
+				`F1 crown cover tolerance ${FILL.cover}: read from the CPU preview over 01 in the verdict.`,
+			);
 			expect(target.clumps).toBeGreaterThan(0);
 		},
 		LONG,
@@ -923,7 +1080,11 @@ describe('the planned oak contract', () => {
 					const delivered = asset.skeleton.axes.count + asset.skeleton.buds.count;
 					// Every element made is one delivered, one the growth shed, or one the dressing dropped.
 					const dropped = asset.dropped ?? 0;
-					expect([seed, request, made]).toEqual([seed, request, delivered + (shed as number) + dropped]);
+					expect([seed, request, made]).toEqual([
+						seed,
+						request,
+						delivered + (shed as number) + dropped,
+					]);
 					const { grower } = await import('../grow/models');
 					const planned = grower('planned');
 					const plan = planned.plan?.(kit.record, {
@@ -933,7 +1094,11 @@ describe('the planned oak contract', () => {
 					});
 					expect(plan !== undefined).toBe(true);
 					const expected = (plan?.expected ?? []).reduce((s, n) => s + n, 0);
-					expect([seed, request, (made as number) <= expected * 1.1 + 1e-9]).toEqual([seed, request, true]);
+					expect([seed, request, (made as number) <= expected * 1.1 + 1e-9]).toEqual([
+						seed,
+						request,
+						true,
+					]);
 					void kit;
 				}
 		},
@@ -944,17 +1109,35 @@ describe('the planned oak contract', () => {
 		'G2: no cut path runs, and the kept plant is keyed by maturity, sparseness and the maximum',
 		async () => {
 			const kit = await kitOf('planned');
-			const requests: readonly Request[] = [{}, { maturity: 0.3, sparse: 1 }, { maxTriangles: 1000 }, { maturity: 0.3, sparse: 1, maxTriangles: 1000 }];
+			const requests: readonly Request[] = [
+				{},
+				{ maturity: 0.3, sparse: 1 },
+				{ maxTriangles: 1000 },
+				{ maturity: 0.3, sparse: 1, maxTriangles: 1000 },
+			];
 			for (const request of requests) {
 				forget();
 				sparseSpy.mockClear();
 				ladderSpy.mockClear();
-				growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low', ...request } as never);
+				growPlantNow(kit, {
+					seed: HOME,
+					variant: 0,
+					near: false,
+					detail: 'low',
+					...request,
+				} as never);
 				expect([request, sparseSpy.mock.calls.length]).toEqual([request, 0]);
 				expect([request, ladderSpy.mock.calls.length]).toEqual([request, 0]);
 			}
 			forget();
-			const once = { seed: HOME, variant: 0, near: false, detail: 'low', maturity: 0.5, sparse: 0.5 } as const;
+			const once = {
+				seed: HOME,
+				variant: 0,
+				near: false,
+				detail: 'low',
+				maturity: 0.5,
+				sparse: 0.5,
+			} as const;
 			const grownOnce = growPlantNow(kit, once as never);
 			let count = plantsGrown();
 			const again = growPlantNow(kit, once as never);
@@ -978,11 +1161,20 @@ describe('the planned oak contract', () => {
 		'G3: the plant meshes at most 1.1 times the triangles it draws',
 		async () => {
 			for (const seed of SEEDS)
-				for (const request of [{}, { maturity: 0.3, sparse: 1 }, { maxTriangles: 1000 }, { maturity: 0.3, sparse: 1, maxTriangles: 1000 }] as const) {
+				for (const request of [
+					{},
+					{ maturity: 0.3, sparse: 1 },
+					{ maxTriangles: 1000 },
+					{ maturity: 0.3, sparse: 1, maxTriangles: 1000 },
+				] as const) {
 					const asset = await plant(seed, request);
 					const meshedRows = asset.stats.shoots;
 					const drawnRows = (asset.stats.triangles[0] as number) - asset.levels[0].triangles;
-					expect([seed, request, meshedRows <= 1.1 * Math.max(1, drawnRows)]).toEqual([seed, request, true]);
+					expect([seed, request, meshedRows <= 1.1 * Math.max(1, drawnRows)]).toEqual([
+						seed,
+						request,
+						true,
+					]);
 				}
 		},
 		LONG,
@@ -1005,7 +1197,13 @@ describe('the planned oak contract', () => {
 				for (let i = 0; i < 3; i++) {
 					forgetGrownPlants();
 					const started = performance.now();
-					growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low', ...request } as never);
+					growPlantNow(kit, {
+						seed: HOME,
+						variant: 0,
+						near: false,
+						detail: 'low',
+						...request,
+					} as never);
 					runs.push(performance.now() - started);
 				}
 				times.set(name, median(runs));
@@ -1018,9 +1216,9 @@ describe('the planned oak contract', () => {
 			if (FULL) {
 				// The bar is the frozen base divided by the plan's ratios; the live default is reported,
 				// never used as the denominator.
-				expect((base / (times.get('(0.3, 1)') as number))).toBeGreaterThanOrEqual(5 - 1e-9);
-				expect((base / (times.get('max 1,000') as number))).toBeGreaterThanOrEqual(10 - 1e-9);
-				expect((base / (times.get('(0.3, 1, 1,000)') as number))).toBeGreaterThanOrEqual(20 - 1e-9);
+				expect(base / (times.get('(0.3, 1)') as number)).toBeGreaterThanOrEqual(5 - 1e-9);
+				expect(base / (times.get('max 1,000') as number)).toBeGreaterThanOrEqual(10 - 1e-9);
+				expect(base / (times.get('(0.3, 1, 1,000)') as number)).toBeGreaterThanOrEqual(20 - 1e-9);
 			}
 		},
 		LONG,
@@ -1034,14 +1232,14 @@ describe('the planned oak contract', () => {
 					for (const max of MAXIMA) {
 						const asset = await plant(seed, { maturity, sparse, maxTriangles: max });
 						for (let level = 0; level < 3; level++)
-							expect([seed, maturity, sparse, max, level, (asset.stats.triangles[level] as number) <= max]).toEqual([
+							expect([
 								seed,
 								maturity,
 								sparse,
 								max,
 								level,
-								true,
-							]);
+								(asset.stats.triangles[level] as number) <= max,
+							]).toEqual([seed, maturity, sparse, max, level, true]);
 					}
 		},
 		LONG,
@@ -1058,14 +1256,14 @@ describe('the planned oak contract', () => {
 						const capped = await plant(seed, { maturity, sparse, maxTriangles: max });
 						const share = overlap(plainOutline, outlineOf(capped));
 						const floor = FLOORS[max] as number;
-						expect([seed, maturity, sparse, max, Number(share.toFixed(3)), share >= floor - 1e-9]).toEqual([
+						expect([
 							seed,
 							maturity,
 							sparse,
 							max,
 							Number(share.toFixed(3)),
-							true,
-						]);
+							share >= floor - 1e-9,
+						]).toEqual([seed, maturity, sparse, max, Number(share.toFixed(3)), true]);
 					}
 				}
 		},
@@ -1085,21 +1283,29 @@ describe('the planned oak contract', () => {
 					// are the leaf triangles; a merged plant's foliage parts count beside them.
 					let partLeaves = 0;
 					for (const part of capped.levels[0].parts)
-						if (part.name === 'foliage' || part.name === 'cards') partLeaves += part.arrays.indices.length / 3;
+						if (part.name === 'foliage' || part.name === 'cards')
+							partLeaves += part.arrays.indices.length / 3;
 					const rowLeaves = (capped.stats.triangles[0] as number) - capped.levels[0].triangles;
 					const leaves = rowLeaves + partLeaves;
 					if (leaves > 0) drawing.push(max);
 					// A cap that draws no crown is a known fault, reported here rather than failed.
-					console.log(`X3 seed ${seed} cap ${max}: leaf triangles ${leaves} (${rowLeaves} as rows, ${partLeaves} as parts), rows ${capped.shoots.count}`);
+					console.log(
+						`X3 seed ${seed} cap ${max}: leaf triangles ${leaves} (${rowLeaves} as rows, ${partLeaves} as parts), rows ${capped.shoots.count}`,
+					);
 					for (let level = 0; level < 3; level++)
-						expect([seed, max, level, (capped.stats.triangles[level] as number) <= max]).toEqual([seed, max, level, true]);
+						expect([seed, max, level, (capped.stats.triangles[level] as number) <= max]).toEqual([
+							seed,
+							max,
+							level,
+							true,
+						]);
 					const share = overlap(plainOutline, outlineOf(capped));
-					expect([seed, max, Number(share.toFixed(3)), share >= (SWEEP_FLOORS[max] as number) - 1e-9]).toEqual([
+					expect([
 						seed,
 						max,
 						Number(share.toFixed(3)),
-						true,
-					]);
+						share >= (SWEEP_FLOORS[max] as number) - 1e-9,
+					]).toEqual([seed, max, Number(share.toFixed(3)), true]);
 				}
 				console.log(`X3 seed ${seed}: caps drawing leaf triangles ${drawing.join(', ') || 'none'}`);
 			}
@@ -1114,7 +1320,12 @@ describe('the planned oak contract', () => {
 			const stub = standInSpecies('contract-stub', { height: 6 });
 			await loadPlantCode(stub.record);
 			const stubKit = buildKitNow(stub, { placeholders: 'missing', detail: 'low' });
-			const plainStub = growPlantNow(stubKit, { seed: HOME, variant: 0, near: false, detail: 'low' });
+			const plainStub = growPlantNow(stubKit, {
+				seed: HOME,
+				variant: 0,
+				near: false,
+				detail: 'low',
+			});
 			const optionedStub = growPlantNow(stubKit, {
 				seed: HOME,
 				variant: 0,
@@ -1130,8 +1341,18 @@ describe('the planned oak contract', () => {
 			const alder = (await loadSpecies('common-alder')) as SpeciesModule;
 			await loadPlantCode(alder.record);
 			const alderKit = buildKitNow(alder, { placeholders: 'missing', detail: 'low' });
-			const plainAlder = growPlantNow(alderKit, { seed: HOME, variant: 0, near: false, detail: 'low' });
-			const repeatAlder = growPlantNow(alderKit, { seed: HOME, variant: 0, near: false, detail: 'low' });
+			const plainAlder = growPlantNow(alderKit, {
+				seed: HOME,
+				variant: 0,
+				near: false,
+				detail: 'low',
+			});
+			const repeatAlder = growPlantNow(alderKit, {
+				seed: HOME,
+				variant: 0,
+				near: false,
+				detail: 'low',
+			});
 			expect(plantAssetDigest(repeatAlder)).toBe(plantAssetDigest(plainAlder));
 			const optionedAlder = growPlantNow(alderKit, {
 				seed: HOME,
