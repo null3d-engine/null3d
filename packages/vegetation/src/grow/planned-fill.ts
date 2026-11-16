@@ -100,10 +100,6 @@ interface Goal {
 	rank: number;
 	/** The scale of its piece. */
 	readonly scale: number;
-	/** Whether it is its clump's own socket, which stands before any second socket anywhere. */
-	readonly anchor?: boolean;
-	/** Its rank among the anchors, so a tight maximum thins the clumps evenly. */
-	anchorRank?: number;
 }
 
 /**
@@ -128,7 +124,6 @@ export function fillClumps(input: FillInput): FillCount {
 			place: SOCKET_BASE + clump.id * (SLOTS + 1),
 			rank: 0,
 			scale: pieceScale * clump.growth,
-			anchor: true,
 		});
 		// A clump's own share of the sockets, keyed on the clump, so the crown has clumps of many
 		// sizes as today's does rather than an even mesh.
@@ -163,28 +158,11 @@ export function fillClumps(input: FillInput): FillCount {
 	goals.forEach((goal, k) => {
 		goal.rank = ranks[k] as number;
 	});
-	// Each clump's own socket goes before any second socket anywhere, and the anchors are thinned
-	// evenly across the crown among themselves. Under a tight maximum the plant then draws one card a
-	// kept clump over the whole crown rather than a few clumps and bare wood.
-	const anchors = goals.filter((goal) => goal.anchor === true);
-	const anchorRanks = thinningRanks(anchors.map((goal) => goal.point));
-	anchors.forEach((goal, k) => {
-		goal.anchorRank = anchorRanks[k] as number;
-	});
 	const most = Math.max(0, Math.round(goals.length * Math.min(1, Math.max(0, leaves))));
 	const kept = goals
 		.map((goal, k) => ({ goal, k }))
-		.sort((a, b) => {
-			const aAnchor = a.goal.anchor === true;
-			const bAnchor = b.goal.anchor === true;
-			if (aAnchor !== bAnchor) return aAnchor ? -1 : 1;
-			if (aAnchor) return (a.goal.anchorRank as number) - (b.goal.anchorRank as number) || a.k - b.k;
-			return a.goal.rank - b.goal.rank || a.k - b.k;
-		})
-		.slice(0, most)
-		// The kept sockets then stand in their own places' order, so a plant that keeps every socket
-		// draws each piece turned exactly as it was before any maximum was asked for.
-		.sort((a, b) => a.k - b.k);
+		.sort((a, b) => a.goal.rank - b.goal.rank || a.k - b.k)
+		.slice(0, most);
 	let made = 0;
 	const socketOrigins: number[] = [];
 	const rollFrom = unitAt(seed, salt, variant, TURN, 0);
