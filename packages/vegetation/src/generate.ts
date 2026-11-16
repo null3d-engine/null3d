@@ -794,8 +794,9 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		sparse: sparseLevel(kit, options),
 		...(most === undefined ? {} : { maxTriangles: most }),
 	};
-	// A model that plans its grown state states the plan's numbers before any geometry is built.
-	const plan = placeholders ? undefined : grower(model).plan?.(record, request);
+	// A model that plans its grown state states the plan's numbers before any geometry is built. A kit
+	// that asks for the missing stages' stand-ins is still a real plant, so it plans.
+	const plan = placeholders === true ? undefined : grower(model).plan?.(record, request);
 	const growInput: GrowInput = {
 		record,
 		seed: options.seed >>> 0,
