@@ -47,6 +47,9 @@ function crownCards(max: number | undefined, clumps: number, cardCost: number): 
 	return Math.min(clumps, Math.floor(take / cardCost));
 }
 
+/** The maturity from which a crown thins its branches with sparseness: younger crowns keep them. */
+const ADULT_MATURITY = 0.5;
+
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
 
@@ -409,7 +412,11 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 				return [node.x, node.y, node.z];
 			}),
 		);
-		const keepShare = Math.max(0, 1 - sparse * (thin[order] ?? 0));
+		// A crown thins its boughs from half grown up. A younger crown holds a few dozen, and dropping
+		// one of those opens a hole a third of its side wide, so it keeps its boughs and loses leaves
+		// instead: the owner's sparse look is a thin crown on the full trunk and limbs.
+		const thins = request.maturity >= ADULT_MATURITY;
+		const keepShare = thins ? Math.max(0, 1 - sparse * (thin[order] ?? 0)) : 1;
 		const count = Math.max(0, Math.round(candidates.length * keepShare));
 		candidates.forEach((index, at) => {
 			if ((ranks[at] as number) >= count) keptAxis.delete(index);
