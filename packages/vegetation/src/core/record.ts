@@ -2989,6 +2989,11 @@ export interface LodSpec {
 	 */
 	readonly cardNormalRound?: number;
 	/**
+	 * How far the crown's shade darkens the wood inside it, from 0 to 1, where the wood's own bark
+	 * tint cannot go dark enough under the light. 0.35 by default; 0 lights the wood as it stands.
+	 */
+	readonly woodShade?: number;
+	/**
 	 * The share of each card level's clumps drawn as one card each, for the first and the second
 	 * level, each from 0 to 1: a clump card stands for the foliage mass its clump holds, so a far
 	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.
