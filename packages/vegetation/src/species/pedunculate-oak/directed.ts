@@ -57,7 +57,7 @@ const boughs: FrameBranchRule = {
 	vary: 0.06,
 	least: 0.08,
 	most: 0.5,
-	radius: 0.5,
+	radius: 0.38,
 	taper: 0.35,
 	shed: 0.7,
 	// Still 01: the boughs of a low limb rise from it to the dome's surface, so the crown is as
@@ -104,9 +104,9 @@ const boughs: FrameBranchRule = {
 			],
 			radius: 0.55,
 			taper: 0.35,
-			sway: 34,
-			elbows: 5,
-			crook: 0.4,
+			sway: 38,
+			elbows: 4,
+			crook: 0.65,
 			// A branch's wood passes through no other wood.
 			apart: 0.004,
 			patch: clump(0.13),
@@ -268,21 +268,21 @@ export const frame: FrameSpec = {
 		// a third as thick as at its foot to where it divides.
 		width: [
 			[0, 0.262],
-			[0.012, 0.25],
-			[0.022, 0.24],
-			[0.032, 0.229],
-			[0.043, 0.212],
-			[0.054, 0.194],
-			[0.075, 0.168],
-			[0.1, 0.157],
-			[0.24, 0.152],
-			[0.294, 0.0984],
-			[0.35, 0.071],
+			[0.01, 0.235],
+			[0.02, 0.21],
+			[0.03, 0.19],
+			[0.05, 0.17],
+			[0.08, 0.155],
+			[0.11, 0.158],
+			[0.14, 0.17],
+			[0.17, 0.185],
+			[0.2, 0.19],
+			[0.22, 0.17],
 		],
 		// The real tree: the low limbs leave over a zone between 0.15 and 0.25 of the height. Stills 01
 		// and 03: the bole runs on above them and divides into rising limbs, and none runs on as a
 		// stem to the top.
-		length: { share: 0.35 },
+		length: { share: 0.22 },
 		sway: 2,
 		elbows: 2,
 		children: [
@@ -294,7 +294,7 @@ export const frame: FrameSpec = {
 				// trunk, its angle, its reach and its course are each a figure by its place. The shares
 				// here are of the bole's own length, which runs on past them.
 				count: 6,
-				along: [0.5, 0.6786],
+				along: [0.6, 0.95],
 				stagger: 0,
 				// Still 01, where +X is the picture's right: the fourth limb is the long low limb on
 				// the right, which leaves at 0.21 of the height, and the fifth is the low limb on the
@@ -306,12 +306,12 @@ export const frame: FrameSpec = {
 				// Still 01: the right limb leaves 21 degrees above level and the left one nearly level;
 				// the steeper two rise at half that from plumb.
 				angle: [
-					[0, 72],
-					[0.2, 74],
-					[0.4, 44],
-					[0.6, 69],
-					[0.8, 82],
-					[1, 40],
+					[0, 52],
+					[0.2, 55],
+					[0.4, 38],
+					[0.6, 50],
+					[0.8, 60],
+					[1, 36],
 				],
 				from: 'plumb',
 				angleSpread: 2,
@@ -338,15 +338,15 @@ export const frame: FrameSpec = {
 				// limb leaves at half the bole's width. Each share here gives its limb that thickness
 				// beside the left limb's, on a bole that holds its width over the zone the limbs leave in.
 				radius: [
-					[0, 0.254],
-					[0.2, 0.2526],
-					[0.4, 0.2877],
-					[0.6, 0.3663],
-					[0.8, 0.4221],
-					[1, 0.247],
+					[0, 0.45],
+					[0.2, 0.45],
+					[0.4, 0.49],
+					[0.6, 0.5],
+					[0.8, 0.5],
+					[1, 0.45],
 				],
-				taper: 0.3,
-				shed: 0.7,
+				taper: 0.45,
+				shed: 0.5,
 				// Still 01: the right limb rises to 0.29 of the height over its first third, then runs
 				// level and dips a little at its end. The real tree: the low limbs run out near level
 				// and dip at their ends, and no foliage lies on the ground. Still 02 shows the two
@@ -354,34 +354,27 @@ export const frame: FrameSpec = {
 				// crown's widest band a third of the way up.
 				bends: [
 					{
-						from: 0.1,
-						to: 0.4,
+						from: 0.08,
+						to: 0.35,
 						level: [
-							[0, 18],
-							[0.2, 16],
-							[0.4, 50],
-							[0.6, 4],
-							[0.8, 6],
-							[1, 54],
+							[0, 8],
+							[0.2, 6],
+							[0.4, 30],
+							[0.6, 2],
+							[0.8, 4],
+							[1, 34],
 						],
 					},
 					{
-						from: 0.75,
+						from: 0.7,
 						to: 1,
-						by: [
-							[0, 8],
-							[0.2, 8],
-							[0.4, 0],
-							[0.6, 6],
-							[0.8, 6],
-							[1, 0],
-						],
+						by: 14,
 					},
 				],
 				// The real tree: crooked all the way, a gentle elbow every metre or two.
-				sway: 28,
-				elbows: 9,
-				crook: 0.5,
+				sway: 40,
+				elbows: 3,
+				crook: 0.65,
 				// Still 03, from below: the limbs spread to every side and none lies along another.
 				apart: 0.02,
 				patch: clump(0.2),
@@ -418,9 +411,8 @@ export const frame: FrameSpec = {
 				// Still 03: the bole above the low limbs divides into limbs a little over half its
 				// width, none of them near the bole's thickness.
 				radius: [
-					[0, 0.62],
-					[0.5, 0.58],
-					[1, 0.6],
+					[0, 0.48],
+					[1, 0.48],
 				],
 				taper: 0.3,
 				shed: 0.7,
@@ -435,9 +427,9 @@ export const frame: FrameSpec = {
 						],
 					},
 				],
-				sway: 26,
-				elbows: 8,
-				crook: 0.5,
+				sway: 36,
+				elbows: 3,
+				crook: 0.65,
 				apart: 0.02,
 				patch: clump(0.18),
 				children: [boughs],
@@ -449,8 +441,8 @@ export const frame: FrameSpec = {
 /**
  * The foot of the framed oak. The frame's trunk already flares to still 01's foot, so the stem base
  * adds no flare of its own. It keeps still 14's buttresses as rounded lobes that rise from the
- * ground as root flanks, with grooves between them, and short low roots that sink into the litter
- * close to the foot. The swell stays within the frame's guard on how far a foot may widen across its
+ * ground as root flanks, with grooves between them, and long roots that run out from the foot and
+ * sink into the litter. The swell stays within the frame's guard on how far a foot may widen across its
  * middle at the ground, so still 01's bell, which the trunk's own width states, sets the flare and
  * the lobes only break its hem.
  */
@@ -459,15 +451,15 @@ const base = {
 	flare: { amount: 0, height: 0.5 },
 	buttress: {
 		lobes: { mean: 9, spread: 1.5 },
-		amount: 0.14,
+		amount: 0.35,
 		sharpness: 3,
 		height: 1,
-		round: 1,
+		round: 0.4,
 	},
 	roots: {
 		count: { mean: 6, spread: 1 },
-		length: { mean: 0.35, spread: 0.1 },
-		radius: 0.07,
+		length: { mean: 1.3, spread: 0.3 },
+		radius: 0.2,
 		dive: 0.3,
 		ridge: 0.3,
 	},

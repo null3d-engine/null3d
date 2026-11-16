@@ -21,7 +21,13 @@ import type { UncardedPrototype } from './shoot';
 export const PROTOTYPES_MOST = 255;
 
 /** The growth models that end their wood in sockets. */
-const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame', 'frond-crown', 'culm-clump', 'planned'];
+const DIRECTED: readonly GrowthModel[] = [
+	'conifer',
+	'frame',
+	'frond-crown',
+	'culm-clump',
+	'planned',
+];
 /** The growth models whose growers write the pieces their sockets carry. */
 const WRITTEN: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 

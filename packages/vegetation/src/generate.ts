@@ -123,6 +123,7 @@ import { levelStarts } from './lod/levels';
 import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import { speciesHeader } from './render/records';
 import type {
+	DetailPlan,
 	DressInput,
 	FarBake,
 	GrowInput,
@@ -381,7 +382,8 @@ export async function loadPlantCode(record: Species): Promise<void> {
 	// A form may hand its plant to another growth model, which its own code walks, so every model a
 	// record or one of its forms names is loaded here.
 	const models = new Set<GrowthModel>([record.growth.model]);
-	for (const name of Object.keys(record.forms ?? {})) models.add(formRecord(record, name).growth.model);
+	for (const name of Object.keys(record.forms ?? {}))
+		models.add(formRecord(record, name).growth.model);
 	await Promise.all([
 		...[...models].map((model) => loadGrower(model)),
 		loadFoliage(record.foliage.kind),
@@ -729,6 +731,8 @@ interface GrownPlant {
 	readonly detail: Detail;
 	/** The order its foliage goes in as it thins, found when a sparseness first asks for it. */
 	order?: SparseOrder;
+	/** The shoot rows the dressing dropped, being over the record's rows for each axis. */
+	readonly dropped: number;
 }
 
 /** The plants as grown that this thread keeps, by key, the one read last at the end. */
@@ -764,9 +768,10 @@ export function forgetGrownPlants(): void {
 function grownPlant(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	const stand = kit.placeholders === 'missing' ? ':missing' : kit.placeholders ? ':stand-ins' : '';
 	const planned = kit.record.growth.model === 'planned';
-	const key = `${
-		variantKey(kit, planned ? options : { ...options, sparse: 0, maxTriangles: undefined })
-	}${stand}`;
+	const key = `${variantKey(
+		kit,
+		planned ? options : { ...options, sparse: 0, maxTriangles: undefined },
+	)}${stand}`;
 	const kept = GROWN.get(key);
 	if (kept) {
 		GROWN.delete(key);
@@ -791,8 +796,9 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		sparse: sparseLevel(kit, options),
 		...(most === undefined ? {} : { maxTriangles: most }),
 	};
-	// A model that plans its grown state states the plan's numbers before any geometry is built.
-	const plan = placeholders ? undefined : grower(model).plan?.(record, request);
+	// A model that plans its grown state states the plan's numbers before any geometry is built. A kit
+	// that asks for the missing stages' stand-ins is still a real plant, so it plans.
+	const plan = placeholders === true ? undefined : grower(model).plan?.(record, request);
 	const growInput: GrowInput = {
 		record,
 		seed: options.seed >>> 0,
@@ -881,10 +887,10 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 					() =>
 						record.shoots || carriesPieces(record)
 							? dressShoots(dressInput)
-							: { rows: emptyRows(), skeleton: dressInput.skeleton },
-					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
+							: { rows: emptyRows(), skeleton: dressInput.skeleton, dropped: 0 },
+					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton, dropped: 0 }),
 				)
-			: { rows: emptyRows(), skeleton: dressInput.skeleton };
+			: { rows: emptyRows(), skeleton: dressInput.skeleton, dropped: 0 };
 	let rows = dressed.rows;
 	let skeleton = dressed.skeleton;
 	// The reach is an estimate from the kit, so the drawn top is measured once the shoots stand. A
@@ -911,7 +917,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 			rows = scaledRows(rows, corrective);
 		}
 	}
-	return { input: { ...dressInput, skeleton }, rows, detail };
+	return { input: { ...dressInput, skeleton }, rows, detail, dropped: dressed.dropped };
 }
 
 /** A copy of shoot rows, which a growth may light and renumber without touching the rows it read. */
@@ -939,6 +945,8 @@ interface Dressed {
 	readonly mesh: MeshInput;
 	/** What a level is built from: the variant, its wood's parts and the walk of its shoot rows. */
 	readonly budget: (wood: boolean) => BudgetInput;
+	/** The shoot rows the dressing dropped, which a growth's balance counts. */
+	readonly dropped: number;
 }
 
 /** The order a grown plant's foliage goes in, found once and kept beside the plant. */
@@ -1032,7 +1040,7 @@ function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 				: {}),
 		};
 	};
-	return { mesh, budget: (wood) => budgetOf(mesh, wood) };
+	return { mesh, budget: (wood) => budgetOf(mesh, wood), dropped: grown.dropped };
 }
 
 /** The dressed variant alone, for the stages that read no more. */
@@ -1117,9 +1125,11 @@ function growCutting(
 	let rows: ShootRows = emptyRows();
 	let single: ReturnType<typeof clusterRow> | undefined;
 	let coarseness = 0;
+	let plan: DetailPlan | undefined;
 	if (cutsSkeleton(kit, cutting)) {
 		const mesh = dress(kit, options);
 		coarseness = mesh.coarseness ?? 0;
+		plan = mesh.plan;
 		wind = stage(
 			kit.placeholders,
 			() => windRecords(mesh),
@@ -1161,6 +1171,7 @@ function growCutting(
 		season,
 		coarseness,
 		cutting,
+		...(plan === undefined ? {} : { plan }),
 		skeleton,
 		shoots: rows,
 		levels: [near, emptyLevel(1), emptyLevel(2)],
@@ -1415,6 +1426,8 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		variant: options.variant,
 		season: mesh.season,
 		coarseness: mesh.coarseness ?? 0,
+		...(mesh.plan === undefined ? {} : { plan: mesh.plan }),
+		...(plant.dropped === 0 ? {} : { dropped: plant.dropped }),
 		skeleton,
 		shoots: mesh.rows,
 		levels,
