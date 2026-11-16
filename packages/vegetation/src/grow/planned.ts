@@ -517,10 +517,6 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	origins.forEach((origin, at) => {
 		if (at < axesOrigin.length) axesOrigin[at] = origin;
 	});
-	grown.axisOrigins.forEach((origin, at) => {
-		const held = origins.length + at;
-		if (held < axesOrigin.length) axesOrigin[held] = origin;
-	});
 	const budsOrigin = new Uint32Array(finished.buds.count);
 	grown.socketOrigins.forEach((origin, at) => {
 		if (at < budsOrigin.length) budsOrigin[at] = origin;

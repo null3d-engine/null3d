@@ -44,8 +44,6 @@ export interface FillCount {
 	readonly made: number;
 	/** The sockets that carry a piece. */
 	readonly sockets: number;
-	/** Each twig axis's place in the plant as grown, in the order the axes were made. */
-	readonly axisOrigins: number[];
 	/** Each socket's place in the plant as grown, in the order the sockets were hung. */
 	readonly socketOrigins: number[];
 }
@@ -74,36 +72,12 @@ export interface FillClump {
 	readonly root: Vec3;
 }
 
-/** A socket that hangs on a piece of the frame's own wood, at its end. */
-export interface ExtraSocket {
-	/** The clump its piece belongs to. */
-	readonly id: number;
-	/** The SkeletonBuilder axis of the twig it hangs on. */
-	readonly axis: number;
-	/** The SkeletonBuilder node at that twig's end. */
-	readonly node: number;
-	/** The twig's botanical order, so its socket's piece stands one order deeper. */
-	readonly order: number;
-	/** Where it stands, at its twig's end. */
-	readonly point: Vec3;
-	/** The direction its piece stands out along, from its twig's last run. */
-	readonly out: Vec3;
-	/** Its place in the plant as grown. */
-	readonly place: number;
-	/** The scale of its piece. */
-	readonly scale: number;
-	/** The model age of the clump it belongs to. */
-	readonly birth: number;
-}
-
 /** What the fill takes. */
 export interface FillInput {
 	readonly builder: SkeletonBuilder;
 	readonly seed: number;
 	readonly variant: number;
 	readonly clumps: readonly FillClump[];
-	/** The sockets that hang on the frame's own fine wood, which the fill keeps and thins alike. */
-	readonly extra?: readonly ExtraSocket[];
 	/** The share of the crown's rows kept at this sparseness, from 0 to 1. */
 	readonly leaves: number;
 	/** The scale of a socket's piece against the species' own. */
@@ -124,8 +98,6 @@ interface Goal {
 	readonly place: number;
 	/** Its rank across the crown, which sparseness keeps by. */
 	rank: number;
-	/** The frame twig it hangs on, where it is a socket of the frame's own fill. */
-	extra?: ExtraSocket;
 	/** The scale of its piece. */
 	readonly scale: number;
 }
@@ -140,7 +112,7 @@ interface Goal {
  * @category api/vegetation
  */
 export function fillClumps(input: FillInput): FillCount {
-	const { builder, seed, variant, clumps, extra, leaves, pieceScale, salt, turn, flowers } = input;
+	const { builder, seed, variant, clumps, leaves, pieceScale, salt, turn, flowers } = input;
 	const goals: Goal[] = [];
 	for (const clump of clumps) {
 		if (!(clump.growth > 0)) continue;
@@ -180,27 +152,7 @@ export function fillClumps(input: FillInput): FillCount {
 			});
 		}
 	}
-	for (const socket of extra ?? []) {
-		goals.push({
-			clump: {
-				id: socket.id,
-				centre: socket.point,
-				radius: 0,
-				birth: socket.birth,
-				growth: 1,
-				open: 1,
-				axis: socket.axis,
-				node: socket.node,
-				order: socket.order,
-				root: socket.point,
-			},
-			point: [socket.point[0], socket.point[1], socket.point[2]],
-			place: socket.place,
-			rank: 0,
-			scale: socket.scale,
-			extra: socket,
-		});
-	}
+
 	// The sockets kept at this sparseness stand spread through the crown.
 	const ranks = thinningRanks(goals.map((goal) => goal.point));
 	goals.forEach((goal, k) => {
@@ -217,16 +169,12 @@ export function fillClumps(input: FillInput): FillCount {
 	const tiltFrom = unitAt(seed, salt, variant, TURN, 1);
 	kept.forEach(({ goal }, socket) => {
 		socketOrigins.push(goal.place);
-		const direction: Vector3 =
-			goal.extra === undefined
-				? unitFrom(goal.clump.centre, goal.point)
-				: ([goal.extra.out[0], goal.extra.out[1], goal.extra.out[2]] as Vector3);
 		const seat: SocketSeat = {
-			node: goal.extra === undefined ? goal.clump.node : goal.extra.node,
-			axis: goal.extra === undefined ? goal.clump.axis : goal.extra.axis,
+			node: goal.clump.node,
+			axis: goal.clump.axis,
 			point: goal.point,
-			direction,
-			id: goal.extra === undefined ? goal.clump.id : goal.extra.id,
+			direction: unitFrom(goal.clump.centre, goal.point),
+			id: goal.clump.id,
 			woodRadius: 0.004,
 		};
 		hangBud(
@@ -239,7 +187,7 @@ export function fillClumps(input: FillInput): FillCount {
 		);
 		made++;
 	});
-	return { made, sockets: kept.length, axisOrigins: [], socketOrigins };
+	return { made, sockets: kept.length, socketOrigins };
 }
 
 /** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */
