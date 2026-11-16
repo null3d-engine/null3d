@@ -622,6 +622,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		variant: input.variant,
 		clumps: fill,
 		leaves,
+		anchored: most !== undefined,
 		// Catkins hang on their own sites in the flowering season, ramped by the plan.
 		...(growth.flowers === undefined || input.season !== growth.flowers.season
 			? {}
