@@ -760,7 +760,9 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.age !== undefined && { age: QUERY.age }),
 		...(QUERY.young !== undefined && { young: QUERY.young }),
 	};
-	const needsWhole = !cuttingPart;
+	// The panels view frames its cluster on the plant itself and stands the piece apart from it, so
+	// that view grows the plant beside its piece; every other piece view grows the piece alone.
+	const needsWhole = VIEW === 'panels' || cuttingPart === undefined;
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
 	// own, which holds that class and no cards: the piece is only ever drawn at the nearest level.
 	const cutHint = cutting ? record.cuttings?.[cutting.part] : undefined;
