@@ -478,6 +478,9 @@ export const record: Species = {
 		// underside, so a leaf deep in the crown takes most of the sun's light away and the clump
 		// reads as a cushion rather than as an even face.
 		crownDim: 0.6,
+		// Stills 01, 02 and 18: the limbs inside the crown are lit on top and dark beneath, where the
+		// photographs show the wood in the crown's shade reading far darker than its bark alone.
+		woodShade: 0.7,
 		// Still 18 at full size: the crown's rim is rounded lobes with clean notches of sky, so a far
 		// card's thinnest leaves keep their cover as its mip levels average them with their gaps.
 		cardMipLift: 0.12,
