@@ -1,153 +1,126 @@
-# Vegetation process
+# Vegetation generation
 
-This guide says how the vegetation add-on's species work runs. It gives the design every species is
-built to, the helpers' roles and rules, and the owner's rulings that bind the work. It also says how a
-new session picks the work up from the repository alone. [Plant review](plant-review.md) holds the standard a
-species is judged by, and [the vegetation species guide](vegetation-species.md) holds where each species
-stands.
+This note says how the vegetation add-on builds a plant, from the record that describes a species to
+the meshes a frame draws. It covers the planned grower, its three options, the level system and its
+card levels, the far card, the crown's sparseness and the triangle maximum's path, the connectivity and
+colour bars, and the approximations a low maximum may use. [The vegetation species guide](vegetation-species.md)
+says which species exist and where each one stands; [Plant review](plant-review.md) holds the standard
+a plant is judged by.
 
-## The design
+Code is named by file, under `packages/vegetation/src/`. A behaviour that matters is named with the file
+that holds it.
 
-Every species is one structure, built by a habit module for its form. The tree forms are dome and
-vase trees, weeping trees and conifers. The others are a column with arms, a crown of fronds, a clump
-of culms, and ground tufts, rosettes and colonies.
+## The planned grower
 
-- **The frame.** A trunk, great limbs balanced round it, and a counted set of crown lobes with sky
-  between them. The frame is planned from the species' own outline by height, with each side's reach and
-  the crown's lower boundary under each limb. Every branch ends in a socket.
-- **Ranked sockets.** Each socket's rank is set once across the whole plant. A rank that restarts in each
-  pad or patch is another field and is not called rank.
-- **Branch pieces.** A socket carries one branch piece: a cut branch end with its leaves, a frond or a
-  shoot. A placed piece never carries placed pieces; a large piece is split into parts at one socket. A
-  piece's flat side has a stated heading at its socket, never a random roll, and the piece keeps its
-  measured depth.
-- **The leaf is the ruler.** On a whole plant the one scale is the height from the species' fact sheet,
-  and every other size is the photographs' measured proportion. A piece seen without its plant, such as
-  a cut branch on a studio ground, takes its size from its leaf.
-- **The levels.** The nearest level draws the real pieces. The first and second card levels draw each
-  piece as crossed card planes. A card holds its piece's own size within three hundredths in height,
-  width and depth. The far level is the impostor. A card is cut by a hard line that keeps the bake's measured
-  cover at every mip level. A card's free neighbors share one support branch per clump, so every card set
-  touches drawn wood.
-- **Sparseness removes.** It thins the same grown plant by whole sockets in rank order, and wood that
-  carries no kept socket goes. At its maximum the trunk, the great limbs and a stated least of foliage
-  remain.
-- **The triangle maximum simplifies.** It never removes what sparseness would keep. It makes parts
-  coarser, then draws them as cards, then as the far card, and each part keeps a stated least. A plant
-  refuses a maximum below its least, with an error that names it.
-- **The scene's budget of real pieces.** Near the eye a card would draw larger than its texels, so the
-  nearest copies draw real pieces inside one budget for the scene. Its first stage hands the budget out
-  nearest copy first.
+A species states its planned growth in its record (`core/record.ts`, the `Planned` type; the oak's
+figures are in `species/pedunculate-oak/planned-record.ts`). The grower is `grow/planned.ts`.
 
-## The lines and their roles
+- **The plan is made first.** The species' frame is planned once for a seed with its fine fill switched
+  off (`grow/frame.ts`). Its stated axes are the bones: a trunk, the great limbs and their boughs. Each
+  axis ends in a clump, whose size and depth the frame states. The adult plan is kept per species, seed
+  and variant.
+- **Growth reveals the adult; it never grows and then cuts.** An age maps to a share of the adult's
+  height by the record's height curve. A limb shows the first part of its fixed path, and a clump appears
+  as the axis that carries it reaches it. A young plant is the adult at a smaller reveal, with its wood
+  slimmed against its height, not a separate plant.
+- **The fill clothes each clump.** `grow/planned-fill.ts` grows the twigs inside every clump through its
+  depth and places the sockets that carry branch ends. Sockets stand at fixed places for a seed, so an
+  element is the same element in every request.
+- **Addresses are stable.** An axis keeps its plan index and a socket keeps an address built from its
+  clump's id and its slot. A sparser or younger plant's element therefore names the same place as the
+  full one's, and the contract pairs them by address.
 
-Each helper works on its own branch, its line, and never in another's copy.
+## The three options
 
-| Role | Line | Work |
-| --- | --- | --- |
-| Builders, by species | `veg/frames` (pedunculate oak, silver birch), `veg/trees` (holm oak, weeping willow), `veg/trees-b` (common ash, common alder, hawthorn), `veg/conifers` (Scots pine, Italian cypress, giant sequoia), `veg/forms` (sedge, meadow grass, hosta, bracken, saguaro), `veg/fronds` (date palm, tree fern, bamboo), `veg/pieces` (the branch pieces, the beech and the olive) | Each species' frame, pieces, record, textures and tints, and its rounds |
-| Merge helper | `veg/integrate`, the shared line | Merges the lines, runs the checks and the digests, and hands the landing its head |
-| Card bake | `veg/bake` | The card atlas and the card cut |
-| Limit | `veg/limit` | Sparseness, the triangle maximum, the card join and the scene budget |
-| Review tool | `veg/review-next` | The review page, its cameras, slots and figures |
-| Independent reviewer | none | Judges rounds and audits tests and merges; builds nothing |
-| Lead | none | Orders the work, rules where the owner has not, and relays between roles |
-| Landing session | the milestone branch | Gates the shared line and lands it |
+Every planned species takes three options on the same grown structure. A request asks for one state and
+the grower builds that state directly.
 
-A species switches to its new structure once the reviewer passes it under the gate. A ready branch then
-switches that species alone, as judged.
+- **Maturity, from 0 to 1,** is the age share. It sets the reveal, the height, the crown's spread, when
+  fruit and flowers appear, and, in the oak, when the crown starts to thin its boughs. A mature plant is
+  the full planned adult.
+- **Sparseness, from 0 to 1,** thins the grown plant by whole sockets in rank order. Wood that carries
+  no kept socket goes. The record states the share each order keeps. At sparseness 1 the trunk, the
+  great limbs and the stated least of foliage remain. A sparser plant is a subset of a denser one by
+  address and by place.
+- **The triangle maximum** is a ceiling on the triangles a level may draw. The plan states what each
+  part costs and how far it may be simplified; the level's budget (`lod/budget.ts`) shares the maximum
+  out. Every level stays at or under it, and a smaller maximum keeps a subset of a larger one's parts.
 
-## Rules every helper follows
+A grower refuses no request silently: a maximum below what a plant's least costs is an error that names
+the part.
 
-1. **Every bun process goes through the machine's job queue**, the script the git setting
-   `null3d.jobQueue` names. A targeted `bun test --conditions=null3d-source <files>` books 4 GB; any other
-   unit run or script takes the CPU lane at a 4 GB peak. One short test file, under 30 seconds and 1 GB,
-   may take the quick lane. No unit run lasts over three minutes: split it by file, by species or by
-   habit.
-2. **Drawings run one at a time** and are never chained in a script. Check the queue first. A plant round
-   books 8 GB.
-3. **Push after each finished item.** Work on one disk cannot be merged or judged.
-4. **A figure names its commit, its picture, its level and which gap it is.** "Inside" means inside the
-   review standard's band, in both views for a branch piece.
-5. **A helper does not change a budget or a cap the owner set.** It asks the lead.
-6. **Do the items in order and stop when the list is done.** Start no work that is not ordered.
-7. **Never merge or push into the milestone branch.** Only the landing session lands.
-8. **Begin every report with your exact model name.**
-9. **A real round is drawn by its builder**, at the builder's newest pushed head, after merging the shared
-   line. Name it `<species>-<commit>`. A run drawn on another line judges cameras only and says so with
-   `-cameras-`. A plant whose whole views draw at the leaf form adds one picture at a card level.
-10. **Count before you draw**, as [Plant review](plant-review.md#count-before-you-draw) says.
-11. **Before each push, run the maths-rule test** (`core/math-use.test.ts`) through the queue. The
-    browser's own maths, such as `Math.hypot`, `Math.cos` or powers, never reaches a plant's numbers; use
-    the core's functions.
-12. **Shaders.** Before committing a shader change, run `bun tools/shaders.ts` outside the queue
-    under its own lock, while more than 12 GB are free. The commit hook then rebuilds nothing. Never queue `bun run shaders`, and never skip a hook.
-13. **Color** follows [the color method](plant-review.md#color-found-by-isolating-its-cause). Measure
-    first and isolate the cause. Change only your species' own textures and tints, and take a shared
-    change to the lead first.
-14. **Caps are ceilings** until every species is done, when all twenty species' caps are reset together
-    to their measures plus a twentieth. A species that has passed the gate may raise its own caps once,
-    to its measure plus a twentieth, by the lead's ruling. No raise passes an owner's class-wide cap.
+## The level system
 
-## Merges into the shared line
+A plant is drawn at three levels of detail, plus the far card.
 
-- **Resolve a conflict hunk by hunk.** Never take one side of a whole file. Taking one side drops every
-  change the other side made in that file, the changes that do not clash among them.
-- **Check every line either parent added.** For each parent, read every line the merge removes, or
-  compare the merge with git's own merge (`git show --remerge-diff`). Then run the tests of each file
-  that conflicted.
-- **Check every species entry after the merge.** A merge of the shared line into a builder's line can
-  put an old record back over the builder's entry with no conflict shown. The shared line keeps a species
-  that has not passed on its old grower, and that hold is a change after the merge base.
-- **Compare all twenty species' digests before and after**, for each variant the species walk grows, on
-  exports. A species that moves and is not the one the merge switches is named in the merge's message.
-  The message gives the commit and file that move it, and whether its look moved. A switched species whose look moves
-  stops the merge until its owner makes the change opt-in or the reviewer judges it again.
-- A merge commit holds only conflict resolutions and mechanical fixes, as AGENTS.md says.
+- **The leaf form, level 0,** draws the real branch pieces: a cut branch end with its leaves, a frond or
+  a shoot, each on its socket.
+- **The first and second card levels, levels 1 and 2,** draw each piece or each clump as crossed card
+  planes. A card holds its piece's own size within three hundredths in height, width and depth. A card
+  is cut by a hard line that keeps the bake's measured cover at every mip level, so a card set does not
+  grow as the eye moves away.
+- **The far card** is the impostor: one billboard per plant, drawn from the plant's own bake, at the
+  distance where a card set would cost more than it shows. Its bake carries the plant's cover and its
+  shade by height; the impostor shader relights it flat, which is why its own bake fixes how dark it
+  reads.
+- **Clump cards.** Where a maximum cannot pay for rows, a clump is drawn as one clump card centred on
+  the clump and grown to cover it. The card shows pictures of the clump's own nearest rows, so a card
+  that stands for many shoots reads at their leaf scale.
 
-## The owner's rulings in force
+## The crown's sparseness
 
-- **The primary plant.** The whole plant's turning video and picture `01` define the one individual;
-  the other pictures are matched on form and proportion.
-- **One structure for every species**, with the pedunculate oak as the gate the trees followed.
-- **Sparseness removes parts** from the same grown plant; at its maximum the trunk, the great limbs and a
-  least of foliage remain.
-- **Size.** One scale per species, from its fact sheet; every other size is a measured proportion. Where a
-  fact sheet's proportion disagrees with the pictures, the pictures govern.
-- **Crowns are built nearly round**: the narrow side of the plan is at least 0.75 of the wide side.
-- **Color counts** in the side-by-side gate and in the rows.
-- **Caps** stay ceilings until all twenty species are done, then are reset together.
-- **Near the eye, plants draw real pieces** inside a scene budget of triangles, nearest first, and cards
-  beyond it.
-- **Species choices:** the saguaro's primary plant keeps its four arms in one plane. The sedge follows
-  its turning video. The hawthorn's default season is autumn with fruit. The olive's trunk has the dark
-  opening of picture `01`. The birch's picture `33` is a second form, and the ash's picture `21` is a
-  limit of the reference.
-- **The vegetation work lands in the milestone branch** once the shared line is green, by the landing below.
+Sparseness is a construction, not a cut.
 
-## The landing
+- Each order's sockets take ranks once across the whole plant (`core/rank.ts`). A kept share takes the
+  lowest ranks, so a sparser plant is a subset of a denser one.
+- The crown's clumps are kept by octant, each octant holding the plant's own share of the sockets within
+  a stated bound. A clump's weight is the sockets it carries, so a heavy clump kept where a light one
+  went does not thin one side of the crown.
+- The oak keeps every bough below maturity 0.5 and thins boughs from 0.5 upward; the crown's leaves
+  thin at every maturity. One rule acts on the crown, not two.
 
-The landing session gates and lands the shared line. Until it is handed over, the shared line takes only
-the landing's steps, and builders keep working on their own lines.
+## The triangle maximum's path
 
-1. The ready branches that switch passed species merge, each by the merge rules above.
-2. The milestone branch merges into the shared line.
-3. A full run at the head: the type check, the shaders and the unit tests. Then the species walk, the
-   plant picture tests, and the docs and limits checks.
-4. The species digests against the milestone branch: every species whose drawn data moves, with its cause.
-5. The limit line joins only if its GPU walk has passed by then. The hawthorn's first card level must
-   also fit 155,000 triangles. Otherwise the limit line lands next.
+A maximum is spent in this order.
 
-## Resume from the repository
+1. **The crown is paid first.** A clump card costs six triangles. The plan gives the crown its share of
+   the maximum before the wood takes its share, so a small maximum still draws a crown.
+2. **The wood takes its room.** The trunk and the great limbs draw first, then boughs and branches as
+   the maximum allows. The plan states the share each order keeps; the level's allocator fits the parts.
+3. **The leaves take what is left,** as rows where they fit and as clump cards below them. A maximum
+   down to 500 draws leaf triangles at every maturity.
+4. **Every level is checked against its own maximum** by the contract's X cases, and each cap stays
+   under it.
 
-A new session needs only the repository and the reference pictures.
+## Connectivity and colour
 
-1. Read AGENTS.md, this guide, [Plant review](plant-review.md) and [the vegetation species
-   guide](vegetation-species.md).
-2. List the lines with `git branch -r --list 'origin/veg/*'` and read each line's newest commits. A
-   species' newest work is on its own line; the shared line holds what ships.
-3. Pick the species with the lowest floor or the nearest open fault, from the species guide.
-4. Draw its round as [the species guide](vegetation-species.md#draw-a-round-again) says, and judge it as
-   [Plant review](plant-review.md) says.
-5. Write the verdict into that species' section of the species guide, in place of what it held. Give the
-   gate, the open faults with their figures, and what comes next.
+Two bars apply to every level and every setting.
+
+- **Connectivity: a plant hangs together.** The review tool counts the picture's pieces and the pieces
+  that meet nothing. A plant is one piece with no floating piece at any level, any sparseness and any
+  maximum. A piece that meets only the sky is a generator fault, not a review row.
+- **Colour is measured, then isolated.** A colour figure is the review's CIEDE2000 difference between
+  picture and drawing, where about 2 is one visible step. A colour change follows a measurement that
+  isolates its cause; a species changes only its own textures and tints.
+
+## The approximations a low maximum may use
+
+The owner allows whatever approximation keeps the tree reading as a tree at a low maximum, and the
+foliage may be drawn a completely different way there. The grower uses this in three ways, all inside
+the grower's own file and all only where a maximum is set:
+
+- A capped clump's card stands at the middle of the wood that draws it, so its picture meets that wood.
+- A clump is written to the level larger than its fill, so neighbouring cards meet over the sky bays
+  between them.
+- Below about 800 triangles the crown keeps only the clumps carried by the trunk and the great limbs,
+  which every cap draws. Every cap from 5,000 down to 400 then draws one piece with no floating piece.
+
+With no maximum, a clump's place and size are its patch's own, so the default plant is unchanged.
+
+## Where the work lands
+
+A change to shared generation code is one item on its own line, drawn and judged on that line, and it
+lands only by the landing session's word. A merge is resolved hunk by hunk, never by taking one side of
+a whole file, and every line either parent added is checked. The twenty species' digests are compared
+before and after a merge; a species whose drawn data moves is named in the merge's message with the
+cause.

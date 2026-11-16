@@ -3,7 +3,7 @@
 This guide states where each of the vegetation add-on's twenty species stands. For each it gives the
 plant that ships, its side-by-side verdict and its open faults with their figures. It also gives its
 reference conflicts, its costs against its caps, and what it needs next. [Plant review](plant-review.md) holds the
-standard these verdicts apply, and [the vegetation process](vegetation-process.md) says how the work runs.
+standard these verdicts apply, and [the vegetation process](vegetation-process.md) says how a plant is generated.
 
 Read the figures this way. A round is named by its species and the commit it was drawn at, such as
 `pedunculate-oak-963981822`. A sky gap gives the photograph's figure first and the drawing's second.
@@ -43,7 +43,7 @@ its new structure passes the gate and a ready branch switches it.
 ## Draw a round again
 
 1. Merge the shared line into the species' own line first, so the round has the review tool's camera
-   fixes and the shared code. Resolve hunk by hunk, as [the process](vegetation-process.md#merges-into-the-shared-line) says.
+   fixes and the shared code. Resolve hunk by hunk, as [the process](vegetation-process.md#where-the-work-lands) says.
 2. Draw from a clean tree at the line's newest pushed head. The manifest names the commit, and a figure
    holds only for the tree that drew it.
 3. Run `bun run plants:review <species> --run <species>-<commit> --out <folder>` through the machine's job

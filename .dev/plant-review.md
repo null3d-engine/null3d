@@ -870,7 +870,7 @@ confirming round after the shared supports holds its win, and its cards that han
 read as foliage on wood.
 
 Every merge into the shared line also compares all twenty species' digests before and after, as
-[the vegetation process guide](vegetation-process.md#merges-into-the-shared-line) says. A switched
+[the vegetation process guide](vegetation-process.md#where-the-work-lands) says. A switched
 species whose look moves stops the merge until the change is made opt-in or the reviewer judges it.
 
 ## Closing a figure without fitting it
