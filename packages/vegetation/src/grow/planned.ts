@@ -359,7 +359,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			const along = (axis.along[k] as number) * axis.length;
 			const inside =
 				axis.parent < 0 ? node.y <= height + 1e-9 : along <= axis.length * where.growth + 1e-9;
-			if (k > 0 && !inside) break;
+			// Every axis keeps its first full adult segment, so its start direction is the adult's.
+			if (k > (axis.parent < 0 ? 0 : 1) && !inside) break;
 			if (k > 0 && k % woodStep !== 0) continue;
 			keptNodes.push(node);
 			travelled = along;
