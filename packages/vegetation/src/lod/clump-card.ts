@@ -8,7 +8,7 @@
 // of a card cluster (see `cardClusters` in ./cards); this module groups them and gives each group
 // the shade that its card bakes.
 import type { ShootRows } from '../asset';
-import type { MacroSkeleton } from '../core/graph';
+import type { MacroSkeleton, SocketSites } from '../core/graph';
 
 /**
  * The share of its sky-lit tone that a clump's lowest leaves keep: the clump's own leaves stand
@@ -52,20 +52,28 @@ export interface ClumpPlant {
 export function clumpsOf(plant: ClumpPlant): Clump[] | undefined {
 	const { rows, skeleton } = plant;
 	const sockets = skeleton.buds.sockets;
-	const at = rows.socket;
-	if (!sockets || !at || rows.count <= 1) return undefined;
-	const byLobe = new Map<number, number[]>();
-	for (let r = 0; r < rows.count; r++) {
-		const socket = at[r] as number;
-		if (socket >= sockets.lobe.length) continue;
-		const lobe = sockets.lobe[socket] as number;
-		const list = byLobe.get(lobe);
-		if (list) list.push(r);
-		else byLobe.set(lobe, [r]);
+	if (rows.count <= 1) return undefined;
+	const groups = new Map<number, number[]>();
+	// A plant whose sockets share a foliage mass names it with their lobe. A plant that gives each
+	// socket a mass of its own, as the frame's twigs do, has no clump to read, and its rows group by
+	// the branch that carries them instead.
+	const lobes = socketLobes(rows, sockets);
+	if (lobes) {
+		for (let r = 0; r < rows.count; r++) {
+			const lobe = lobes(r);
+			const list = groups.get(lobe);
+			if (list) list.push(r);
+			else groups.set(lobe, [r]);
+		}
+		if (groups.size < 2 || groups.size === rows.count) groups.clear();
 	}
-	if (byLobe.size < 2 || byLobe.size === rows.count) return undefined;
+	if (groups.size === 0) {
+		const byBranch = branchGroups(rows, skeleton);
+		if (!byBranch) return undefined;
+		for (const [branch, list] of byBranch) groups.set(branch, list);
+	}
 	const clumps: Clump[] = [];
-	for (const [lobe, list] of byLobe) {
+	for (const [lobe, list] of groups) {
 		list.sort((a, b) => (rows.order[a] as number) - (rows.order[b] as number) || a - b);
 		let middle = 0;
 		let sky = 0;
@@ -83,6 +91,73 @@ export function clumpsOf(plant: ClumpPlant): Clump[] | undefined {
 		(a, b) => (rows.order[a.rows[0] as number] as number) - (rows.order[b.rows[0] as number] as number),
 	);
 	return clumps;
+}
+
+/** The fewest shoot rows a branch carries before it stands for a clump on a plant without clumps. */
+export const CLUMP_ROWS_LEAST = 8;
+
+/**
+ * The foliage mass that each row's socket names, where the plant's sockets share them; undefined
+ * where every socket names a mass of its own.
+ */
+function socketLobes(rows: ShootRows, sockets: SocketSites | undefined): ((row: number) => number) | undefined {
+	const at = rows.socket;
+	if (!sockets || !at) return undefined;
+	const used = new Set<number>();
+	const named = new Set<number>();
+	for (let r = 0; r < rows.count; r++) {
+		const socket = at[r] as number;
+		if (socket >= sockets.lobe.length) continue;
+		used.add(socket);
+		named.add(sockets.lobe[socket] as number);
+	}
+	if (named.size < 2 || named.size === used.size) return undefined;
+	return (row: number): number => sockets.lobe[at[row] as number] as number;
+}
+
+/**
+ * The rows of a plant that names no foliage mass, grouped by the branch that carries them: each
+ * row's own axis, climbed until it stands for a clump's worth of shoots. This is a stand-in for the
+ * clump a plant without clumps does not state, so a picture drawn with it says so.
+ */
+function branchGroups(
+	rows: ShootRows,
+	skeleton: MacroSkeleton,
+): Map<number, number[]> | undefined {
+	const { axisOf } = skeleton;
+	const at = rows.node;
+	if (!at) return undefined;
+	const parent = skeleton.axes.parent;
+	const own = new Uint32Array(rows.count);
+	// The rows under each axis, counted up the tree, so a climb knows when it has reached a clump.
+	const under = new Map<number, number>();
+	for (let r = 0; r < rows.count; r++) {
+		const axis = axisOf[at[r] as number] as number;
+		own[r] = axis;
+		for (let up: number = axis; up >= 0; up = parent[up] as number) {
+			under.set(up, (under.get(up) ?? 0) + 1);
+			if (parent[up] === up) break;
+		}
+	}
+	const chosen = new Map<number, number>();
+	const groups = new Map<number, number[]>();
+	for (let r = 0; r < rows.count; r++) {
+		let axis = own[r] as number;
+		let kept = chosen.get(axis);
+		if (kept === undefined) {
+			while ((under.get(axis) ?? 0) < CLUMP_ROWS_LEAST) {
+				const up = parent[axis] as number;
+				if (up < 0 || up === axis) break;
+				axis = up;
+			}
+			kept = axis;
+			chosen.set(own[r] as number, kept);
+		}
+		const list = groups.get(kept);
+		if (list) list.push(r);
+		else groups.set(kept, [r]);
+	}
+	return groups.size >= 2 ? groups : undefined;
 }
 
 /**

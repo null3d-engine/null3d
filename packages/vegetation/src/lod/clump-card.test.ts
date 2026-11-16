@@ -126,3 +126,58 @@ describe('the shade a clump card bakes', () => {
 		expect(clumpSky({ ...clump, spread: 0 }, 100)).toBeCloseTo(0.8, 10);
 	});
 });
+
+describe('the clumps of a plant that names none', () => {
+	/** A plant of twigs, each carrying one row, under two boughs: nine shoots and two. */
+	function branchedRows(): ClumpPlant {
+		// Axes: 0 the trunk, 1 a bough of nine twigs, 2..10 those twigs, 11 a bough of two twigs,
+		// 12 and 13 those twigs.
+		const parent = Int32Array.from([-1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 11, 11]);
+		const twigs = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13];
+		const count = twigs.length;
+		const nodeOf = Uint32Array.from(twigs);
+		const axisOf = Uint32Array.from([0, 1, ...twigs.map(() => 0), 11, 0, 0]);
+		for (let t = 0; t < twigs.length; t++) axisOf[twigs[t] as number] = twigs[t] as number;
+		const rows: ShootRows = {
+			count,
+			prototype: new Uint8Array(count),
+			position: Float32Array.from(Array.from({ length: count * 3 }, (_, i) => (i % 3 === 1 ? 5 : 0))),
+			rotation: Float32Array.from(Array.from({ length: count * 4 }, (_, i) => (i % 4 === 3 ? 1 : 0))),
+			scale: new Float32Array(count).fill(1),
+			record: new Uint16Array(count),
+			phase: new Uint8Array(count),
+			sky: new Uint8Array(count).fill(200),
+			bent: new Uint8Array(count),
+			order: Uint32Array.from(Array.from({ length: count }, (_, i) => i)),
+			socket: Uint32Array.from(Array.from({ length: count }, (_, i) => i)),
+			node: nodeOf,
+		};
+		const skeleton = {
+			axisOf,
+			axes: { count: parent.length, parent },
+			buds: {
+				sockets: {
+					scale: new Float32Array(count).fill(1),
+					rank: new Uint32Array(count),
+					// Every socket names a mass of its own, as the frame's twigs do.
+					lobe: Uint16Array.from(Array.from({ length: count }, (_, i) => i)),
+				},
+			},
+		} as unknown as MacroSkeleton;
+		return { rows, skeleton };
+	}
+
+	it('groups the rows by the branch that carries a clump’s worth of shoots', () => {
+		const clumps = clumpsOf(branchedRows());
+		expect(clumps?.length).toBe(2);
+		const sizes = clumps?.map((clump) => clump.rows.length).sort((a, b) => a - b);
+		expect(sizes).toEqual([2, 9]);
+	});
+
+	it('gives nothing for a plant with neither lobes nor branches', () => {
+		const plant = branchedRows();
+		const rows = plant.rows as { node?: Uint32Array };
+		rows.node = undefined;
+		expect(clumpsOf(plant)).toBeUndefined();
+	});
+});
