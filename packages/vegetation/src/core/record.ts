@@ -2899,6 +2899,12 @@ export interface LodSpec {
 	 */
 	readonly cardShare?: readonly [lod1: number, lod2: number];
 	/**
+	 * How far the card bake lifts each texel's coverage, from 0 to 1, so a crown keeps its cover as
+	 * its cards draw smaller on screen. 0.05 by default; 0 bakes every texel at its leaf area's own
+	 * coverage.
+	 */
+	readonly cardMipLift?: number;
+	/**
 	 * The first card level that draws no extras: 1 for both card levels, 2 for the second alone. A
 	 * cone or a fruit that the nearest level draws whole may still cost many triangles at a card
 	 * level where it spans a few pixels. Absent, a card level leaves out only the extras too small to
