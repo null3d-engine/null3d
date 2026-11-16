@@ -41,6 +41,7 @@ const MODELS: readonly GrowthModel[] = [
 	'frond-colony',
 	'tuft',
 	'column',
+	'planned',
 ];
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const SEASONS = ['summer', 'autumn', 'winter', 'blossom'];
@@ -1111,9 +1112,11 @@ function formProblems(record: Species, out: string[]): void {
 			if (!Object.hasOwn(FORM_FIELDS, key))
 				out.push(`${path}.${key} is not a field a form changes; a form keeps the species' own`);
 		const grown = formRecord(record, name);
-		if (grown.growth?.model !== record.growth.model)
+		// The planned model grows every species' maturity, sparseness and maximum, so a form may hand
+		// its plant to it; any other model change would be a different species.
+		if (grown.growth?.model !== record.growth.model && grown.growth?.model !== 'planned')
 			out.push(
-				`${path}.growth.model is '${grown.growth?.model}'; a form grows by its species' model, '${record.growth.model}'`,
+				`${path}.growth.model is '${grown.growth?.model}'; a form grows by its species' model, '${record.growth.model}', or by 'planned'`,
 			);
 		if (grown.foliage?.kind !== record.foliage.kind)
 			out.push(

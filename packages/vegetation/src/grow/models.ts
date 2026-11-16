@@ -8,7 +8,7 @@ import type { MacroSkeleton } from '../core/graph';
 import type { GrowthModel, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import type { WrittenPiece } from '../leaf/ground-piece';
-import type { GrowInput, MeshInput, MeshLevel } from '../stages';
+import type { DetailPlan, GrowInput, GrowRequest, MeshInput, MeshLevel } from '../stages';
 
 /**
  * One growth model's code: the skeleton it grows, the merged foliage of a species whose nearest
@@ -20,6 +20,11 @@ import type { GrowInput, MeshInput, MeshLevel } from '../stages';
 export interface Grower {
 	/** Grows a variant's skeleton and bud sites. */
 	grow(input: GrowInput): MacroSkeleton;
+	/**
+	 * What one state of the plant costs, as numbers, before any geometry is built: the plan a model
+	 * that grows straight to the asked state builds to. Absent on a model that plans as it grows.
+	 */
+	plan?(record: Species, request: GrowRequest): DetailPlan;
 	/** Meshes a 'merged' species' foliage at a level: fronds, rosette leaves, blades. */
 	foliage?(input: MeshInput, level: MeshLevel): MeshArrays;
 	/**
@@ -44,6 +49,7 @@ const GROWERS: Readonly<Record<GrowthModel, () => Promise<{ readonly grower: Gro
 	'frond-colony': () => import('./frond-colony'),
 	tuft: () => import('./tuft'),
 	column: () => import('./column'),
+	planned: () => import('./planned'),
 };
 
 /** The growers this thread has loaded. */

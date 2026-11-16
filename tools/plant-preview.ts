@@ -5,6 +5,7 @@
 // the review tool's sky gap and outline overlap beside it.
 //
 //   bun run plants:preview <species> [--seed <n>] [--variant <n>] [--form <name>] [--season <name>]
+//     [--maturity <0..1>] [--sparse <0..1>] [--max <triangles>]
 //     [--refs <folder or slug>] [--out <dir>] [--name <prefix>] [--no-match] [--level <0|1|2>]
 //
 // A species' reference folder is `<id>` under the corpus that NULL3D_PLANT_REFERENCES names, or the
@@ -82,6 +83,9 @@ const species: SpeciesId = named;
 const seed = Number(option('seed', '11'));
 const variant = Number(option('variant', '0'));
 const form = flag('form') ? option('form') : undefined;
+const maturity = flag('maturity') ? Number(option('maturity')) : undefined;
+const sparse = flag('sparse') ? Number(option('sparse')) : undefined;
+const maxTriangles = flag('max') ? Number(option('max')) : undefined;
 const out = resolve(option('out', join(REPO_ROOT, 'target/plant-preview', species)));
 const matchLevel = Math.min(2, Math.max(0, Math.round(Number(option('level', '1'))))) as 0 | 1 | 2;
 const prefix = option('name', `${species}-s${seed}-v${variant}${form ? `-${form}` : ''}`);
@@ -154,7 +158,15 @@ const kit = buildKitNow(module, {
 	...(form ? { form } : {}),
 });
 const season = (flag('season') ? option('season') : kit.record.seasons.default) as Season;
-const asset = growPlantNow(kit, { seed, variant, season, near: true });
+const asset = growPlantNow(kit, {
+	seed,
+	variant,
+	season,
+	near: true,
+	...(maturity === undefined ? {} : { maturity }),
+	...(sparse === undefined ? {} : { sparse }),
+	...(maxTriangles === undefined ? {} : { maxTriangles }),
+});
 const grown = performance.now() - started;
 const { skeleton } = asset;
 const top = Math.max(skeleton.height, drawShoots(canvas(1, 1), undefined, kit, asset.shoots));

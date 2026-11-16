@@ -727,6 +727,8 @@ export default defineSketch(async (ctx) => {
 		near: true,
 		...(QUERY.season && { season: QUERY.season }),
 		...(QUERY.sparse !== undefined && { sparse: QUERY.sparse }),
+		...(QUERY.maturity !== undefined && { maturity: QUERY.maturity }),
+		...(QUERY.maxTriangles !== undefined && { maxTriangles: QUERY.maxTriangles }),
 		...(QUERY.sections !== undefined && { sections: QUERY.sections }),
 		...(QUERY.cards !== undefined && { cards: QUERY.cards }),
 		...(QUERY.cardJoin !== undefined && { cardJoin: QUERY.cardJoin }),
@@ -788,6 +790,11 @@ export default defineSketch(async (ctx) => {
 	]);
 	const main = (whole ?? piece) as PlantAsset;
 	const mainKit = whole ? kit : pieceKit;
+	// The far cards are baked whenever they can draw: a forced far card, or an unforced picture
+	// that draws for the eye, whose second card level otherwise reaches the horizon. A matte or a
+	// picture of the parts draws the card geometry rather than the baked card, so it keeps the
+	// level its own distance would choose.
+	const bakedFar = whole !== undefined && (LOD === 3 || (LOD === undefined && !PLAIN));
 	const bounds = boundsOf(main, mainKit);
 	const skeleton = main.skeleton;
 	const stemFootPoint = stemFoot(skeleton);
@@ -908,7 +915,7 @@ export default defineSketch(async (ctx) => {
 		if (LOD !== undefined) return view;
 		for (let pass = 0; pass < 2; pass++) {
 			const distance = Math.hypot(...sub(view.position, [0, 0, 0]));
-			const drawnAt = drawnLevel(mainKit, main, placedView, distance, false).level;
+			const drawnAt = drawnLevel(mainKit, main, placedView, distance, bakedFar).level;
 			if (drawnAt === level) break;
 			level = drawnAt;
 			view = stand(level);
@@ -2064,7 +2071,7 @@ export default defineSketch(async (ctx) => {
 					main,
 					placedView,
 					Math.hypot(...sub(cells[0].view.position, [0, 0, 0])),
-					false,
+					bakedFar,
 				).level
 			: undefined;
 	// A placed piece drawn alone stands on the background as its studio photograph's cut piece does.
@@ -2078,7 +2085,7 @@ export default defineSketch(async (ctx) => {
 	);
 	if (QUERY.alone && !socket)
 		notes.push('the view frames no placed piece, so it draws the plant, not a piece alone');
-	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
+	const far = bakedFar && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
 	if (

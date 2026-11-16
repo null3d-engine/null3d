@@ -370,6 +370,16 @@ export interface PlantReviewQuery {
 	 */
 	readonly leaves?: number;
 	/**
+	 * How far the plant has grown, from 0 for nothing grown to 1 for the full-grown tree: the parts
+	 * arrive over their own bands rather than by steps. Absent grows the full-grown plant.
+	 */
+	readonly maturity?: number;
+	/**
+	 * The most triangles one copy of the plant may draw at any of its levels, a whole number of 1 or
+	 * more, shared out across its parts. Absent draws what each level's best look needs.
+	 */
+	readonly maxTriangles?: number;
+	/**
 	 * How far toward its sparse form the plant grows, from 0 to 1, the level a phone or a tablet
 	 * asks for: the species' floors hold it at what still reads as itself. 0 grows the record's own.
 	 */
@@ -461,6 +471,8 @@ const NUMBER_FIELDS = [
 	'crownRow',
 	'leaves',
 	'leafLength',
+	'maturity',
+	'maxTriangles',
 	'sparse',
 	'sections',
 	'cards',
@@ -486,6 +498,7 @@ const SHARE_FIELDS = new Set([
 	'top',
 	'along',
 	'skyShare',
+	'maturity',
 	'sparse',
 	'sections',
 	'cards',
@@ -493,7 +506,7 @@ const SHARE_FIELDS = new Set([
 ]);
 
 /** The fields that are whole numbers of at least one. */
-const COUNT_FIELDS = new Set(['turns', 'columns', 'limbRank']);
+const COUNT_FIELDS = new Set(['turns', 'columns', 'limbRank', 'maxTriangles']);
 
 /** The switches, written as 1 when on. */
 const SWITCHES = [
