@@ -38,13 +38,14 @@ use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::{self, DataTexture, TextureRows, write_row_values};
 use crate::debug_view::DebugView;
 use crate::frame::{
-    FrameInput, HIDDEN, KeyCounts, REBUILD_BYTES_PER_SOURCE, RecordError, SceneSettings,
-    UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size,
-    joined_rows, words_as_bytes,
+    FrameInput, HIDDEN, KeyCounts, NO_MATERIAL, REBUILD_BYTES_PER_SOURCE, RecordError,
+    SceneSettings, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
+    floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
 use crate::levels::{
     BucketKey, KeyLinks, expand_level_keys, is_fade_key, key_level, level_key, links_of,
 };
+use crate::materials::feature;
 use crate::meshes::MeshStorage;
 use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
@@ -1336,6 +1337,17 @@ impl Layout {
                 any_key(slot)
             }
         };
+        // A custom material whose WGSL names its mask has a build of its shader that returns the
+        // surface's alpha, which the camera's depth prepass draws its depth with. A shadow catcher
+        // shades without that test, so it stays out.
+        let cuts_mask = |material: u32| {
+            if material == NO_MATERIAL {
+                return false;
+            }
+            let features = settings.materials().features(material - 1);
+            features & (feature::CASTER_COVERAGE | feature::SHADOW_CATCHER)
+                == feature::CASTER_COVERAGE
+        };
         // Instance batches cast and receive shadows as their shadow bits say, and take no
         // outlines. Sprites sized in pixels of the screen have no bounds in the world, so culling
         // keeps them; sprites cast no shadows.
@@ -1555,7 +1567,7 @@ impl Layout {
             if !skinning.hides(slot) {
                 continue;
             }
-            if let Some((pipeline, ..)) = any_key(slot as usize) {
+            if let Some((pipeline, _, _, _, material, _)) = any_key(slot as usize) {
                 // The outlined layout's buckets draw with both pipelines of the outline mask.
                 let (pipeline, second) = match drawn {
                     Drawn::Outlined => {
@@ -1567,7 +1579,10 @@ impl Layout {
                     }
                     Drawn::Casters => shadows.pipelines(pipelines, pipeline),
                     Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0),
-                    Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
+                    Drawn::Scene => {
+                        let masked = pipeline.mask_prepass_fits() && cuts_mask(material);
+                        pipelines.opaque_with(pipeline, targets, prepass, masked)
+                    }
                     Drawn::Subsurface | Drawn::Tone => (pipelines.id(pipeline.in_pass(targets)), 0),
                 };
                 self.waiting
@@ -1786,7 +1801,9 @@ impl Layout {
                 Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0, false),
                 Drawn::Scene => {
                     let own = pipeline.places_own_vertices();
-                    let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
+                    let masked = pipeline.mask_prepass_fits() && cuts_mask(material);
+                    let (pipeline, prepass) =
+                        pipelines.opaque_with(pipeline, targets, prepass, masked);
                     (pipeline, prepass, own)
                 }
                 Drawn::Subsurface | Drawn::Tone => {

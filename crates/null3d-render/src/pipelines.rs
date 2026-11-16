@@ -244,6 +244,23 @@ impl DrawKey {
         })
     }
 
+    /// True for a masked pair whose own template's build can draw its depth in the camera's depth
+    /// prepass: a custom material that places its own vertices and names the mask that its shader
+    /// tests. The build keeps a fragment only where the mask keeps every sample of it, so the depth
+    /// it writes never hides a surface that the opaque pass draws. A pair that blends, skips the
+    /// depth test or write, draws lines or lets light through stays out.
+    pub const fn mask_prepass_fits(self) -> bool {
+        self.template >= template::CUSTOM_FIRST
+            && self.permutation & permutation::ALPHA_MASK != 0
+            && self.permutation & (permutation::TRANSMISSION | permutation::WEIGHTED) == 0
+            && self.state
+                & (state_flags::BLEND
+                    | state_flags::LINE_LIST
+                    | state_flags::NO_DEPTH_WRITE
+                    | state_flags::NO_DEPTH_TEST)
+                == 0
+    }
+
     /// True for a pair whose template places its vertices in a way that the depth template does not
     /// follow: a custom material, whose vertex offset may move them, a displaced standard material,
     /// or a sprite material, whose quads turn to face the camera. The prepass draws such a pair
@@ -565,6 +582,38 @@ impl PipelineCache {
     /// pair that stays out of it. After a depth prepass the pair shades only at the depth that the
     /// prepass found.
     pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: Prepass) -> (u32, u32) {
+        self.opaque_with(key, targets, prepass, false)
+    }
+
+    /// [`Self::opaque`], with a masked pair of a custom material that names its own mask
+    /// (`masked`) joining the depth prepass through a build that keeps a fragment only where the
+    /// mask keeps every sample of it. The prepass depth is then never nearer than a surface that
+    /// the opaque pass draws, so the pair shades at that depth or nearer, an edge that the mask
+    /// cuts keeps its samples, and a fragment hidden behind one that wrote pays no light. Only the
+    /// WebGPU prepass takes it, whose pass keeps a color; a pair whose depth the prepass cannot
+    /// draw the same way keeps out, as without `masked`.
+    pub fn opaque_with(
+        &mut self,
+        key: DrawKey,
+        targets: PassTargets,
+        prepass: Prepass,
+        masked: bool,
+    ) -> (u32, u32) {
+        if masked && prepass == Prepass::DepthTemplate && key.mask_prepass_fits() {
+            let shading = key.in_pass(targets);
+            let shading = PipelineKey {
+                state: shading.state | state_flags::DEPTH_OR_EQUAL,
+                ..shading
+            };
+            let faces = state_flags::CULL_NONE | state_flags::CULL_FRONT;
+            let depth = PipelineKey {
+                color_format: shading.color_format,
+                permutation: shading.permutation | permutation::PREPASS,
+                state: (key.state & faces) | state_flags::NO_COLOR_WRITE,
+                ..shading
+            };
+            return (self.id(shading), self.id(depth));
+        }
         let depth = match key.prepass() {
             Some(depth) if prepass != Prepass::Off => depth,
             _ => return (self.id(key.in_pass(targets)), 0),
@@ -1322,8 +1371,90 @@ mod tests {
             ..TARGETS
         });
         assert!(permutation::buildable(key.permutation));
-        // A masked pair never joins the prepass.
+        // A masked pair never joins the prepass through the depth template.
         assert_eq!(covered.prepass(), None);
+    }
+
+    #[test]
+    fn a_masked_custom_pair_joins_the_prepass_with_a_build_that_tests_its_mask() {
+        let masked = DrawKey {
+            template: template::CUSTOM_FIRST,
+            permutation: permutation::ALPHA_MASK | permutation::RECEIVE_SHADOWS,
+            state: state_flags::CULL_NONE | state_flags::ALPHA_TO_COVERAGE,
+            ..lit(vertex::UV0)
+        };
+        assert!(masked.mask_prepass_fits());
+        let mut cache = PipelineCache::default();
+        let (shading, depth) = cache.opaque_with(masked, TARGETS, Prepass::DepthTemplate, true);
+        assert_eq!((shading, depth), (1, 2));
+        let keys = cache.keys();
+        // The opaque pass writes depth as it does without a prepass, and draws at the prepass's
+        // depth or nearer, which keeps a partly covered edge's samples.
+        let ready = masked.in_pass(TARGETS);
+        assert_eq!(
+            keys[0],
+            PipelineKey {
+                state: ready.state | state_flags::DEPTH_OR_EQUAL,
+                ..ready
+            }
+        );
+        assert!(keys[0].state & state_flags::DEPTH_OR_EQUAL != 0);
+        assert!(keys[0].state & state_flags::NO_DEPTH_WRITE == 0);
+        // The prepass draws the pair's own template's build with the PREPASS bit, keeps the mask's
+        // bits, and writes depth alone, for every sample of a fragment that the mask keeps whole.
+        let depth = keys[1];
+        assert_eq!(depth.template, template::CUSTOM_FIRST);
+        assert_eq!(depth.permutation, ready.permutation | permutation::PREPASS);
+        assert!(depth.permutation & permutation::ALPHA_COVERAGE != 0);
+        assert_eq!(
+            depth.state,
+            state_flags::CULL_NONE | state_flags::NO_COLOR_WRITE
+        );
+        assert_eq!(
+            (depth.color_format, depth.samples),
+            (format::CANVAS, TARGETS.samples)
+        );
+        // Without a build that tests the mask, or where the pair keeps out, nothing draws depth.
+        assert_eq!(cache.opaque_with(masked, TARGETS, Prepass::Off, true).1, 0);
+        assert_eq!(
+            cache
+                .opaque_with(masked, TARGETS, Prepass::DepthTemplate, false)
+                .1,
+            0
+        );
+        let stays_out = [
+            DrawKey {
+                state: state_flags::BLEND_NORMAL,
+                ..masked
+            },
+            DrawKey {
+                state: state_flags::NO_DEPTH_WRITE,
+                ..masked
+            },
+            DrawKey {
+                state: state_flags::NO_DEPTH_TEST,
+                ..masked
+            },
+            DrawKey {
+                permutation: permutation::ALPHA_MASK | permutation::TRANSMISSION,
+                ..masked
+            },
+            // The engine's own masked templates still have no build that tests their mask.
+            DrawKey {
+                template: template::INSTANCED_LIT,
+                ..masked
+            },
+        ];
+        for key in stays_out {
+            assert!(!key.mask_prepass_fits(), "{key:?}");
+            assert_eq!(
+                cache
+                    .opaque_with(key, TARGETS, Prepass::DepthTemplate, true)
+                    .1,
+                0,
+                "{key:?}"
+            );
+        }
     }
 
     #[test]

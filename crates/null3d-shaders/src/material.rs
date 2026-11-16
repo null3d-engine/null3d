@@ -115,6 +115,9 @@ const LIT_ONLY: [&str; 2] = ["surface", "lobe"];
 const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
 /// The shader def that makes a custom material's shadow caster test the material's coverage.
 const COVERAGE_DEF: &str = "CUSTOM_COVERAGE";
+/// The shader def that makes a masked build return the surface's alpha for the camera's depth
+/// prepass, which keeps only the fragments that the alpha test or alpha to coverage keeps.
+const PREPASS_COVERAGE_DEF: &str = "PREPASS_COVERAGE";
 /// A field of the surface that only WGSL which names it pays for: naming it adds a shader def to
 /// the material's builds, never a permutation bit, so the material keeps its count of builds and
 /// every other build keeps its text.
@@ -214,6 +217,30 @@ fn caster_variant(shading: &Variant, alpha: bool, coverage: bool) -> Variant {
         required: vec!["CASTER".to_owned()],
         targets: shading.targets.clone(),
     }
+}
+
+/// The variant of a custom material's depth prepass builds beside one of its shading variants: the
+/// same bits, every build with the PREPASS bit, and a fragment stage that keeps a fragment only
+/// where the mask keeps every sample of it, writes its depth for all of them and draws no light.
+/// Only a masked build makes one, and only where the material cuts its own shape, with a coverage
+/// function or the surface's alpha. The build draws on WebGPU alone, where the camera's prepass
+/// keeps a color that its pipelines name.
+fn prepass_variant(shading: &Variant) -> Option<Variant> {
+    let masked = shading.permutations.iter().any(|bit| bit == "ALPHA_MASK");
+    if !masked || !shading.targets.contains(&Target::Wgsl) {
+        return None;
+    }
+    let mut permutations = shading.permutations.clone();
+    permutations.push("PREPASS".to_owned());
+    let mut defs = without_scene_depth(&shading.defs);
+    defs.push(PREPASS_COVERAGE_DEF.to_owned());
+    defs.sort();
+    Some(Variant {
+        defs,
+        permutations,
+        required: vec!["ALPHA_MASK".to_owned(), "PREPASS".to_owned()],
+        targets: vec![Target::Wgsl],
+    })
 }
 
 /// The bits of a custom material's shading builds that its motion builds keep: the draw index.
@@ -898,6 +925,13 @@ impl Compiler {
                             motion_variant(variant, alpha, coverage),
                         ));
                         made.push((format!("{name}_pick"), pick_variant(variant)));
+                    }
+                    // The camera's depth prepass tests the material's own mask, where the material
+                    // names it, so only such a material has its build.
+                    if (alpha || coverage)
+                        && let Some(prepass) = prepass_variant(variant)
+                    {
+                        made.push((format!("{name}_prepass"), prepass));
                     }
                     made
                 })

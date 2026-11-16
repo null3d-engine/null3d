@@ -582,6 +582,61 @@ fn a_coverage_function_builds_its_shadow_casters_and_no_motion_or_pick_builds() 
     assert!(!shading.contains("if coverage("), "{shading}");
 }
 
+/// A masked material that names the opacity its depth prepass tests, without a vertex offset.
+const MASKED: &str = "fn coverage(input: SurfaceInput) -> f32 {
+    return 1.0 - input.uv.x;
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.alpha = input.uv.y;
+    return s;
+}
+";
+
+#[test]
+fn a_masked_material_has_a_depth_prepass_build_that_keeps_whole_fragments() {
+    let mask = permutation::ALPHA_MASK | permutation::PREPASS;
+    // The plain mask, alpha to coverage, the samples that the shader writes itself, and a vertex
+    // color: the builds that a preset's multisampled target and a leafy mesh pick.
+    let words = [
+        mask,
+        mask | permutation::ALPHA_COVERAGE,
+        mask | permutation::ALPHA_COVERAGE | permutation::SAMPLE_MASK,
+        mask | permutation::VERTEX_COLOR,
+    ];
+    let built = compile_with(MASKED, None, &words).expect("the masked material builds");
+    let prepass: Vec<&String> = built
+        .variants
+        .keys()
+        .filter(|name| name.contains("_prepass"))
+        .collect();
+    assert!(!prepass.is_empty(), "{:?}", built.variants.keys());
+    // Each asked word makes a build, and the tone-mapping twin of each, which a device's 8-bit
+    // path picks.
+    let made: Vec<u32> = prepass
+        .iter()
+        .map(|name| built.variants[*name].permutation)
+        .collect();
+    for word in words {
+        assert!(made.contains(&word), "{word:#x} is not built: {made:#x?}");
+        assert!(
+            made.contains(&(word | permutation::TONE_MAP)),
+            "{word:#x} has no tone-mapping twin: {made:#x?}"
+        );
+    }
+    for name in &prepass {
+        let variant = &built.variants[*name];
+        // The prepass draws on WebGPU alone, where the camera's prepass keeps the color that
+        // alpha to coverage reads.
+        assert!(name.starts_with("webgpu"), "{name}");
+        assert_eq!(variant.permutation & mask, mask, "{name}");
+        let wgsl = &variant.wgsl.as_ref().expect("WGSL").source;
+        // It tests the surface's alpha, as the build that shades the pair does.
+        assert!(wgsl.contains("discard"), "{name}: {wgsl}");
+    }
+}
+
 #[test]
 fn a_coverage_function_with_the_wrong_signature_is_refused() {
     let source = "fn coverage(input: SurfaceInput) -> vec3f {\n    return vec3f(0.0);\n}\n";

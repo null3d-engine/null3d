@@ -302,6 +302,13 @@ export interface RenderTemplate {
 	 */
 	readonly ownPrepass?: boolean;
 	/**
+	 * True for a template whose shader has a masked build of its own depth prepass, whose fragment
+	 * stage returns the surface's alpha: a custom material that names its mask. A masked pair then
+	 * draws the prepass with that build, which keeps the fragments that the opaque pass keeps, and
+	 * a pair without it keeps the empty fragment.
+	 */
+	readonly prepassCutout?: boolean;
+	/**
 	 * True for a template whose fragment shader runs in pipelines that draw depth only, as the
 	 * masked casters' does: it discards the fragments that their alpha cuts. Other templates draw
 	 * depth only with no fragment stage.
@@ -1980,6 +1987,9 @@ export class Pipelines {
 			// surface's alpha, draws its casters' depth with a fragment stage, which drops the
 			// pixels that its cutoff leaves out.
 			depthFragment: shader.coverage === true || shader.alpha === true,
+			// A material that names its mask draws the camera's depth prepass with a build of its
+			// shader that returns that alpha, so the prepass keeps the same fragments.
+			prepassCutout: shader.coverage === true || shader.alpha === true,
 			...(shader.meshless === true
 				? { vertexBuffers: [] }
 				: {
@@ -2096,7 +2106,12 @@ export class Pipelines {
 		// A displaced material's prepass moves its vertices as its shading does.
 		const places = t.ownPrepass === true || (permutation & PERMUTATION_DISPLACEMENT) !== 0;
 		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
-		const build = ownPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
+		// A masked pair of a material that names its mask draws the prepass with the shader's own
+		// build, which returns the surface's alpha; every other pair draws the empty fragment.
+		const cutoutPrepass =
+			ownPrepass && t.prepassCutout === true && (permutation & PERMUTATION_ALPHA_MASK) !== 0;
+		const build =
+			ownPrepass && !cutoutPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
 		if (!shader) throw new Error(`render template ${template}: ${missingVariant(permutation)}`);
 		const module = this.module(t.label, shader);
@@ -2162,8 +2177,8 @@ export class Pipelines {
 			},
 			fragment: colorFormat
 				? {
-						module: ownPrepass ? this.emptyFragmentModule() : module,
-						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
+						module: ownPrepass && !cutoutPrepass ? this.emptyFragmentModule() : module,
+						entryPoint: ownPrepass && !cutoutPrepass ? 'fs' : entryPoints?.fragment,
 						targets: colorTargets(colorFormat, template, permutation, stateFlags),
 					}
 				: t.depthFragment && !ownPrepass

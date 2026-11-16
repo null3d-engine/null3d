@@ -14,11 +14,14 @@ enable draw_index;
 // lights, shadows, fogs or blends the surface belongs in `shade`, so custom materials get all of
 // it. The ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's
 // cutoff, the ALPHA_COVERAGE builds fade it there for alpha to coverage, and the ALPHA_HASH builds
-// test it against the alpha hash (null3d::cutout). A material that blends writes premultiplied
-// color. The RECEIVE_SHADOWS builds dim the
-// sun's light where the main directional light's shadows fall. The SKIN builds skin each vertex by
-// its joints (null3d::mesh), before the instance's world matrix places it, and the MORPH builds
-// of WebGL2 add its morph targets' deltas before that.
+// test it against the alpha hash (null3d::cutout). The PREPASS_COVERAGE builds draw no light: they
+// keep a fragment only where the mask keeps every sample of it, and write that fragment's depth for
+// all of them, so the opaque pass drops a fragment hidden behind one of them before it pays for the
+// surface's light, and a partly covered edge draws as it does without a prepass. A material that
+// blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the sun's light where the main
+// directional light's shadows fall. The SKIN builds skin each vertex by its joints (null3d::mesh),
+// before the instance's world matrix places it, and the MORPH builds of WebGL2 add its morph
+// targets' deltas before that.
 //
 // The TRANSMISSION builds let light through the surface, as three.js's MeshPhysicalMaterial does
 // (null3d::refraction): the light from behind it takes the share of its diffuse light that the
@@ -3084,6 +3087,37 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let s = surface(input);
 #else
     let s = defaultSurface(input);
+#endif
+#ifdef PREPASS_COVERAGE
+    // The depth prepass's fragment: it keeps a fragment only where the shading keeps every sample
+    // of it, and writes its depth for all of them. A fragment behind one that wrote pays no light in
+    // the opaque pass, and a partly covered edge writes its own depth in that pass as it does
+    // without a prepass. It draws no light.
+    let alpha = s.alpha;
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(hash_place) {
+        discard;
+    }
+#else ifdef ALPHA_COVERAGE
+    if alpha_coverage(alpha, fwidth(alpha), material_row.emissive.w) < 1.0 {
+        discard;
+    }
+#else ifdef ALPHA_MASK
+    if alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
+#ifdef LOD_FADE
+    if !lod_kept(lod.x, in.clip.xy, u32(lod.y)) {
+        discard;
+    }
+#endif
+#ifdef SAMPLE_MASK
+    // Every sample of the fragment, which the opaque pass covers alike where the mask keeps it whole.
+    return MaskedFragment(vec4f(0.0, 0.0, 0.0, 1.0), 0xfu);
+#else
+    return vec4f(0.0, 0.0, 0.0, 1.0);
+#endif
 #endif
 #ifdef CUSTOM_UNLIT
 #ifdef SAMPLE_MASK
