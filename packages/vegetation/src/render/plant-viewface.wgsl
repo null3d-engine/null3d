@@ -136,6 +136,8 @@ const HEADER_EXTRA_STALKS: i32 = 51;
 const HEADER_CARD_STALK: i32 = 55;
 // How much a row's own share of the open sky dims its foliage, 0 dimming none.
 const HEADER_CROWN_DIM: i32 = 72;
+// How much more the bark's relief tilts its normal and deepens its furrows than its map gives.
+const HEADER_BARK_RELIEF: i32 = 75;
 // How much a card's alpha rises for each mip level its sample reads, 0 raising none.
 const HEADER_CARD_MIP_LIFT: i32 = 73;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
@@ -1057,8 +1059,9 @@ fn surface(input: SurfaceInput) -> Surface {
         let a_coarse =
             textureSampleGrad(colour, colourSampler, a_uv, a_layer, a_gx * 8.0, a_gy * 8.0).rgb;
         var bark = a_colour * a_tint.rgb;
+        let bark_relief = header(HEADER_BARK_RELIEF).x;
         var bark_normal = tangent_normal(a_relief);
-        var cavity = saturate((luminance_of(a_coarse) - luminance_of(a_colour)) * 4.0);
+        var cavity = saturate((luminance_of(a_coarse) - luminance_of(a_colour)) * 4.0 * (1.0 + bark_relief));
         if (second_weight > 0.001) {
             let b_at = HEADER_BARK_ZONES + second_zone * BARK_ZONE_TEXELS;
             let b_tint = header(b_at);
@@ -1137,6 +1140,10 @@ fn surface(input: SurfaceInput) -> Surface {
         }
         base = bark * season_bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
+        // A deeper relief tilts the normal more, so each furrow's wall takes the light and reads.
+        if (bark_relief > 0.0) {
+            bark_normal = normalize(vec3f(bark_normal.xy * (1.0 + bark_relief), max(bark_normal.z, 0.05)));
+        }
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
         occlusion = input.vertexColor.a;
