@@ -167,6 +167,11 @@ export interface Row {
 export interface DressedShoots {
 	readonly rows: ShootRows;
 	readonly skeleton: MacroSkeleton;
+	/**
+	 * The rows the dressing dropped, being over the record's rows for each axis. A growth's balance
+	 * counts them: made = the rows delivered plus those the growth shed plus these.
+	 */
+	readonly dropped: number;
 }
 
 /**
@@ -350,8 +355,16 @@ function cappedRows(rows: Row[], cap: number | undefined): Row[] {
 }
 
 export function dressShoots(input: DressInput): DressedShoots {
-	const rows = cappedRows(placedRows(input), input.record.shoots?.placement.rowsPerAxis);
-	const limit = Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
+	const placed = placedRows(input);
+	const rows = cappedRows(placed, input.record.shoots?.placement.rowsPerAxis);
+	const dropped = placed.length - rows.length;
+	// A planned plant grew its crown's box and its bare wood as the plan states them, so no row of it
+	// moves the box and no twig of it is trimmed here: a box read from its rows would move with the
+	// sparseness, and the plant must be as tall at every sparseness.
+	const planned = input.record.growth.model === 'planned';
+	const limit = planned
+		? 0
+		: Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
 	let lowest = Number.POSITIVE_INFINITY;
 	for (const row of rows) lowest = Math.min(lowest, row.position[1]);
 	const trimmed =
@@ -367,12 +380,13 @@ export function dressShoots(input: DressInput): DressedShoots {
 			: undefined;
 	if (!trimmed) {
 		// A pruned crown stands on what it kept.
-		const pruned = (input.record.shoots?.placement.skyPrune ?? 0) > 0 && rows.length > 0;
+		const pruned =
+			!planned && (input.record.shoots?.placement.skyPrune ?? 0) > 0 && rows.length > 0;
 		const skeleton =
 			pruned && lowest !== input.skeleton.crownBase
 				? { ...input.skeleton, crownBase: lowest }
 				: input.skeleton;
-		return { rows: finishedRows(rows, skeleton), skeleton };
+		return { rows: finishedRows(rows, skeleton), skeleton, dropped };
 	}
 	const { skeleton, axisOut, nodeOut, budOut } = trimmed;
 	for (const row of rows) {
@@ -383,7 +397,7 @@ export function dressShoots(input: DressInput): DressedShoots {
 		if (row.socket !== undefined) row.socket = budOut[row.socket] as number;
 		if (row.site !== undefined) row.site = budOut[row.site] as number;
 	}
-	return { rows: finishedRows(rows, skeleton), skeleton };
+	return { rows: finishedRows(rows, skeleton), skeleton, dropped };
 }
 
 /** The rows as the table, in the space-filling order of a skeleton's bounds. */

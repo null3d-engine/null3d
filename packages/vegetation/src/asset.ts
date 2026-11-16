@@ -336,6 +336,11 @@ export interface PlantAsset {
 	 * was expected to cost by order and by part. Absent on a model that plans as it grows.
 	 */
 	readonly plan?: DetailPlan;
+	/**
+	 * The shoot rows the dressing dropped, being over the record's rows for each axis, so a growth's
+	 * balance reads made = the rows delivered + the growth's shed + these. Absent when none dropped.
+	 */
+	readonly dropped?: number;
 	/** Its grown structure. */
 	readonly skeleton: MacroSkeleton;
 	/** The nearest level's foliage of an 'instanced' species; empty for a 'merged' one. */
