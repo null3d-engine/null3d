@@ -20,10 +20,13 @@ const DEPTH_FROM = 0.41;
 const DEPTH_TO = 0.89;
 
 /** Sockets per square metre of a clump's own width, measured from today's oak at seeds 3, 11, 12. */
-const SOCKETS_PER_AREA = 6.6;
+const SOCKETS_PER_AREA = 8;
 
 /** The clump's vertical radius against its horizontal one: an oak clump is flatter than a ball. */
 const DEPTH_SHARE = 0.7;
+
+/** The droop of a low limb's end clump, as a share of its radius at its outer face. */
+const DIP_SHARE = 0.6;
 
 /** The first place of the fill's sockets in the plant as grown, clear of every stated axis. */
 const SOCKET_BASE = 100_000;
@@ -70,6 +73,12 @@ export interface FillClump {
 	readonly order: number;
 	/** Its root in plant space: where its twigs start, at its adult place. */
 	readonly root: Vec3;
+	/** The limb it belongs to in the adult plan, or -1 for a clump on the trunk. */
+	readonly limb?: number;
+	/** How far that limb's adult tip stands from the plant's centre line, in metres. */
+	readonly limbReach?: number;
+	/** Where it sits: at its limb's end, or on the limb's side. */
+	readonly at?: 'limb-end' | 'limb-side';
 }
 
 /** What the fill takes. */
@@ -78,6 +87,8 @@ export interface FillInput {
 	readonly seed: number;
 	readonly variant: number;
 	readonly clumps: readonly FillClump[];
+	/** The crown's box at this state, in metres, when the grower states it. */
+	readonly crown?: { readonly top: number; readonly base: number; readonly height: number };
 	/** The share of the crown's rows kept at this sparseness, from 0 to 1. */
 	readonly leaves: number;
 	/** The scale of a socket's piece against the species' own. */
@@ -139,13 +150,15 @@ export function fillClumps(input: FillInput): FillCount {
 			const spin = unitAt(seed, clump.id, variant, 1) * 2 * Math.PI;
 			const angle = spin + k * radians(137.507);
 			const depth = DEPTH_FROM + (DEPTH_TO - DEPTH_FROM) * unitAt(seed, clump.id, k, 1);
+			const point: [number, number, number] = [
+				clump.centre[0] + radius * depth * ring * Math.cos(angle),
+				clump.centre[1] + radius * DEPTH_SHARE * depth * y,
+				clump.centre[2] + radius * depth * ring * Math.sin(angle),
+			];
+			point[1] = dippedY(clump, point, input.crown);
 			goals.push({
 				clump,
-				point: [
-					clump.centre[0] + radius * depth * ring * Math.cos(angle),
-					clump.centre[1] + radius * DEPTH_SHARE * depth * y,
-					clump.centre[2] + radius * depth * ring * Math.sin(angle),
-				],
+				point,
 				place: SOCKET_BASE + clump.id * (SLOTS + 1) + 1 + k,
 				rank: 0,
 				scale: pieceScale * clump.growth,
@@ -190,8 +203,30 @@ export function fillClumps(input: FillInput): FillCount {
 	return { made, sockets: kept.length, socketOrigins };
 }
 
-/** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */
-function flowerAt(seed: number, place: number, flowers: number | undefined): boolean {
+/**
+ * The height a socket stands at, after the dip of a low limb's end. Stills 01, 02 and 18 hang the
+ * skirt of the crown below the fork: the clumps at the ends of the lowest limbs droop, and the
+ * droop grows toward the clump's outer face, so the lobe hangs rather than slides down whole. A
+ * clump on a limb's side, or in the crown's upper half, keeps its own height, and no socket falls
+ * under the crown's base.
+ */
+function dippedY(
+	clump: FillClump,
+	point: readonly [number, number, number],
+	crown: { readonly top: number; readonly base: number; readonly height: number } | undefined,
+): number {
+	if (clump.at !== 'limb-end' || crown === undefined || crown.height <= 0) return point[1];
+	// One at the crown's base, falling to none halfway up it: only the lowest limbs' ends droop.
+	const lowness = 1 - Math.min(1, Math.max(0, (clump.centre[1] - crown.base) / (crown.height * 0.5)));
+	if (lowness <= 0) return point[1];
+	const out =
+		Math.hypot(point[0] - clump.root[0], point[2] - clump.root[2]) /
+		Math.max(1e-6, clump.radius);
+	const dip = DIP_SHARE * clump.radius * Math.min(1, out) * lowness;
+	return Math.max(crown.base, point[1] - dip);
+}
+
+/** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */function flowerAt(seed: number, place: number, flowers: number | undefined): boolean {
 	return flowers !== undefined && flowers > 0 && unitAt(seed, place, 2) < flowers;
 }
 
