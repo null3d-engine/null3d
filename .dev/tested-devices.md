@@ -96,8 +96,9 @@ Ten pages passed, and none was skipped.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Creek Low | WebGL2 | 32.0 | 30.8 | 28.3 | n/a | 2,748,900 | 139 | 120.6 | 14.7 | 71.3 |
 | Creek Medium | WebGL2 | 10.8 | 90.8 | 85.2 | n/a | 6,364,500 | 153 | 537.5 | 18.4 | 79.6 |
-| Creek High | WebGPU | 8.6 | 87.71 | 1.02 | 76.42 | 3,130,000 | 461 | 422.3 | 72.5 | 139.3 |
-| Creek Ultra | WebGPU | 8.6 | 118.10 | 0.94 | 107.22 | 3,760,000 | 168 | 584.1 | 35.6 | 89.9 |
+| Creek Medium | WebGPU | 22.6 | 60.10 | 0.84 | 49.42 | 903,000 | 147 | n/a | n/a | 68.5 |
+| Creek High | WebGPU | 12.2 | 85.87 | 0.94 | 76.16 | 2,200,000 | 436 | n/a | n/a | 63.6 |
+| Creek Ultra | WebGPU | 8.6 | 117.95 | 1.02 | 107.66 | 3,800,000 | 157 | n/a | n/a | 89.9 |
 | Forest Low | WebGPU | 60.0 | 15.6 | 1.9 | 6.9 | 7,160,900 | 88 | 57.4 | 34.4 | 328.8 |
 | Forest Low | Compatibility | 59.6 | 15.6 | 1.9 | 6.9 | 6,962,000 | 88 | 57.4 | 34.4 | 328.8 |
 | Forest Low | WebGL2 | 60.1 | 15.5 | 1.5 | n/a | 4,839,200 | 35 | 95.8 | 11.0 | 69.5 |
@@ -110,11 +111,16 @@ Ten pages passed, and none was skipped.
 The run: [20261024-105210-vegetation](tested-devices/ipad-pro-13-safari/20261024-105210-vegetation.md).
 Ten pages passed, and none was skipped.
 
-Creek's High and Ultra rows come from a later run on the landed head:
+Creek's Medium, High and Ultra rows come from the run on the head that carries the per-preset tree
+triangle budget: [20261116-004436-vegetation](tested-devices/ipad-pro-13-safari/20261116-004436-vegetation.md),
+at `650b60fa6` in Safari 26.6.1. Medium holds inside its 43.9 to 90.8 band. High reads 85.87 against
+62.5 to 67.1, and Ultra 117.95 against 71.1 to 99.0, so both still miss. The budget cut the High
+window's triangles from 3,130,000 to 2,200,000 and left its frame where it was. That frame read 87.71
+to 85.87, and the GPU timer 76.42 to 76.16. The cost is in the later passes, which hold the opaque
+pass and what follows. The pages run no wind reader, so the misses are the Creek scene's own cost on
+this device. Its pixels rather than its triangles carry that cost. The earlier run's rows are in
 [20261115-112412-vegetation](tested-devices/ipad-pro-13-safari/20261115-112412-vegetation.md), at
-`1c6785724` in Safari 26.6.1. That run drew Creek only. Both rows miss D-241's lines for this
-device: High reads 87.71 against a ceiling of 62.5 to 67.1, and Ultra 118.10 against 71.1 to 99.0.
-The pages run no wind reader, so the misses are the Creek scene's own cost on this device.
+`1c6785724`.
 
 The forest's GPU time at High and Ultra goes into the last render pass, which draws the far cards.
 Its triangle count is higher at High than at Ultra, because each preset picks its own levels.
