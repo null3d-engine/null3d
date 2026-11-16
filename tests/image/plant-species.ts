@@ -47,6 +47,25 @@ const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
 	'weeping-willow': 240,
 };
 
+/**
+ * Species whose sheet Firefox on Linux draws another way than this Mac's Chrome does. A dense
+ * crown of thin leaves lands past the half-per-cent device tolerance, from the bamboo's 0.533 to
+ * the common alder's 1.752 per cent, all measured in CI run 43864156371. The drawing repeats from
+ * run to run, so each keeps its own reference, which still shows a change to the sheet and no
+ * longer measures one rasteriser against another.
+ */
+const LINUX_DEVICE_SPECIES: ReadonlySet<string> = new Set([
+	'bamboo',
+	'common-alder',
+	'common-ash',
+	'date-palm',
+	'european-beech',
+	'hawthorn-shrub',
+	'holm-oak',
+	'pedunculate-oak',
+	'silver-birch',
+]);
+
 /** The picture test of each species folder. */
 export function plantSpeciesTests(root = ROOT): ImageTest[] {
 	return speciesFolders(root).map(({ id }) => ({
@@ -54,6 +73,7 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
+		...(LINUX_DEVICE_SPECIES.has(id) && { devices: ['linux'] }),
 		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
 		// A dense crown takes longer than the default limit on the software GPU's slower path, so the
 		// panels draw the low preset's lighter meshes there; a species measured slower still takes its
