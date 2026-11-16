@@ -21,7 +21,7 @@ import type { FrameAxis, FrameNode, FramePlan } from './frame';
 import { planFrame } from './frame';
 import { thinningRanks } from '../core/rank';
 import type { Grower } from './models';
-import { type FillClump, fillClumps } from './planned-fill';
+import { type ExtraSocket, type FillClump, fillClumps } from './planned-fill';
 import type { Planned, Species } from '../core/record';
 import type { DetailPlan, GrowInput, GrowRequest } from '../stages';
 import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
@@ -30,7 +30,10 @@ import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
 const SLIM = 2.5;
 
 /** The share of its growth a clump has reached before any of its pieces show. */
-const CLUMP_FROM = 0.55;
+const CLUMP_FROM = 0.25;
+
+/** The size a clump's pieces start at, as a share of their full size, when they first show. */
+const PIECE_START = 0.35;
 
 /** Adult plans kept a thread, by species, seed and variant. */
 const ADULTS = new Map<string, Adult>();
@@ -238,6 +241,17 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	};
 }
 
+/**
+ * How far a clump's pieces have come, from nothing before its carrying axis is a quarter grown to
+ * their full size when the axis is grown: a clump first shows at a share of its piece size, so the
+ * crown opens without a step.
+ */
+function clumpReveal(growth: number): number {
+	if (!(growth > CLUMP_FROM)) return 0;
+	const ramp = Math.min(1, (growth - CLUMP_FROM) / (1 - CLUMP_FROM));
+	return PIECE_START + (1 - PIECE_START) * ramp;
+}
+
 /** A ramp from nothing to one over a band, from the maturity a thing starts at. */
 function ramp(maturity: number, from: number, band: number): number {
 	if (!(maturity > from)) return 0;
@@ -322,17 +336,9 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const builtNodes: number[][] = new Array(bones.axes.length).fill(undefined);
 	const origins: number[] = [];
 	const addresses: number[] = [];
-	/** Sockets that hang on the frame's own fine twigs, which keep those twigs from standing bare. */
-	const extraSockets: Array<{
-		id: number;
-		axis: number;
-		node: number;
-		order: number;
-		point: Vec3;
-		place: number;
-		scale: number;
-		birth: number;
-	}> = [];
+	/** Sockets on the frame's own fine twigs, which keep those twigs from standing bare. */
+	const extraSockets: ExtraSocket[] = [];
+
 	// Every adult axis in plan order, parents before children.
 	for (let index = 0; index < bones.axes.length; index++) {
 		const axis = bones.axes[index] as FrameAxis;
@@ -410,22 +416,30 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		});
 		builtNodes[index] = nodes;
 		// A fine twig of the frame's own fill carries a socket as today's does; hung without its
-		// deeper twigs it would stand bare, and the dressing would trim it away.
+		// deeper twigs it would stand bare, and the dressing would trim it away. The socket stands
+		// on the twig's own end, with no axis of its own, so no moving node becomes a bone.
 		const clumpId = axis.parent < 0 ? undefined : patchOf.get(axis.parent);
 		if (axis.fine && axis.order <= 2 && nodes.length > 0 && clumpId !== undefined) {
-			const last = keptNodes[keptNodes.length - 1] as FrameNode;
-			const parentGrowth = (reveal[axis.parent] as Reveal).growth;
-			const clumpGrowth = Math.max(0, Math.min(1, (parentGrowth - CLUMP_FROM) / (1 - CLUMP_FROM)));
-			extraSockets.push({
-				id: clumpId,
-				axis: builderAxis,
-				node: nodes[nodes.length - 1] as number,
-				order: axis.order,
-				point: [last.x, last.y, last.z],
-				place: 1_000_000 + index,
-				scale: pieceScale * clumpGrowth,
-				birth: where.birth,
-			});
+			const clumpGrowth = clumpReveal((reveal[axis.parent] as Reveal).growth);
+			if (clumpGrowth > 0) {
+				const last = keptNodes[keptNodes.length - 1] as FrameNode;
+				const prior = keptNodes.length > 1 ? (keptNodes[keptNodes.length - 2] as FrameNode) : last;
+				const dx = last.x - prior.x;
+				const dy = last.y - prior.y;
+				const dz = last.z - prior.z;
+				const long = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				extraSockets.push({
+					id: clumpId,
+					axis: builderAxis,
+					node: nodes[nodes.length - 1] as number,
+					order: axis.order,
+					point: [last.x, last.y, last.z],
+					out: long > 1e-9 ? [dx / long, dy / long, dz / long] : [0, 1, 0],
+					place: 1_000_000 + index,
+					scale: pieceScale * clumpGrowth,
+					birth: where.birth,
+				});
+			}
 		}
 	}
 
@@ -448,8 +462,9 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		top = Math.max(top, centre[1] + radius);
 		const builtAxis = built[patch.axis] as number;
 		if (builtAxis < 0) return;
-		const grown = Math.max(0, Math.min(1, (where.growth - CLUMP_FROM) / (1 - CLUMP_FROM)));
-		if (grown <= 0) return;
+		const open = Math.max(0, Math.min(1, (where.growth - CLUMP_FROM) / (1 - CLUMP_FROM)));
+		if (open <= 0) return;
+		const grown = PIECE_START + (1 - PIECE_START) * open;
 		const tip = axis.nodes[axis.nodes.length - 1] as FrameNode;
 		fill.push({
 			id,
@@ -457,6 +472,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			radius,
 			birth: where.birth,
 			growth: grown,
+			open,
 			axis: builtAxis,
 			node: (builtNodes[patch.axis] as number[])[
 				(builtNodes[patch.axis] as number[]).length - 1

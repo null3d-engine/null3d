@@ -74,6 +74,8 @@ export interface FillClump {
 	readonly birth: number;
 	/** How far the clump has come, 0 to 1: 0 hides it, 1 brings its pieces to full size. */
 	readonly growth: number;
+	/** How far its sockets have opened, 0 to 1: the share of its sockets that stand, squared. */
+	readonly open: number;
 	/** The SkeletonBuilder axis that carries it. */
 	readonly axis: number;
 	/** The SkeletonBuilder node where its carrying axis ends. */
@@ -96,6 +98,8 @@ export interface ExtraSocket {
 	readonly order: number;
 	/** Where it stands, at its twig's end. */
 	readonly point: Vec3;
+	/** The direction its piece stands out along, from its twig's last run. */
+	readonly out: Vec3;
 	/** Its place in the plant as grown. */
 	readonly place: number;
 	/** The scale of its piece. */
@@ -130,6 +134,8 @@ interface Goal {
 	readonly place: number;
 	/** Its rank across the crown, which sparseness keeps by. */
 	rank: number;
+	/** The frame twig it hangs on, where it is a socket of the frame's own fill. */
+	extra?: ExtraSocket;
 	/** The scale of its piece. */
 	readonly scale: number;
 }
@@ -165,7 +171,7 @@ export function fillClumps(input: FillInput): FillCount {
 			const widest =
 				(Math.round((SOCKETS_PER_AREA * (2 * radius) ** 2) / SHELL_TOTAL) * size * size * keep);
 			// Each slot is a fixed point of the shell; as the clump grows, more of them fill.
-			const filled = Math.min(1, widest / slots);
+			const filled = Math.min(1, (widest * clump.open * clump.open) / slots);
 			for (let k = 0; k < slots; k++) {
 				if ((k + 0.5) / slots > filled) continue;
 				// An evenly spread direction, fixed by the slot alone so it never moves with age.
@@ -195,6 +201,7 @@ export function fillClumps(input: FillInput): FillCount {
 				radius: 0,
 				birth: socket.birth,
 				growth: 1,
+				open: 1,
 				axis: socket.axis,
 				node: socket.node,
 				order: socket.order,
@@ -204,6 +211,7 @@ export function fillClumps(input: FillInput): FillCount {
 			place: socket.place,
 			rank: 0,
 			scale: socket.scale,
+			extra: socket,
 		});
 	}
 	// The sockets kept at this sparseness stand spread through the crown.
@@ -222,8 +230,13 @@ export function fillClumps(input: FillInput): FillCount {
 	const rollFrom = unitAt(seed, salt, variant, TURN, 0);
 	const tiltFrom = unitAt(seed, salt, variant, TURN, 1);
 	kept.forEach(({ goal }, socket) => {
-		axisOrigins.push(goal.place);
 		socketOrigins.push(goal.place);
+		if (goal.extra) {
+			hangBud(builder, goal.extra, goal.rank, goal.scale, turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom });
+			made++;
+			return;
+		}
+		axisOrigins.push(goal.place);
 		made += hangTwig(
 			builder,
 			goal.clump,
@@ -234,6 +247,61 @@ export function fillClumps(input: FillInput): FillCount {
 		);
 	});
 	return { made, sockets: kept.length, axisOrigins, socketOrigins };
+}
+
+/** Hangs one socket on the end of a piece of the frame's own wood, with no axis of its own. */
+function hangBud(
+	builder: SkeletonBuilder,
+	socket: ExtraSocket,
+	rank: number,
+	scale: number,
+	turning:
+		| {
+				readonly turn: { readonly roll: number; readonly tilt: number; readonly out?: number };
+				readonly socket: number;
+				readonly rollFrom: number;
+				readonly tiltFrom: number;
+		  }
+		| undefined,
+): void {
+	const frame = new Float32Array(4);
+	quatFromFrame(socket.out, [0, 1, 0], frame);
+	turnFrame(frame, turning);
+	builder.addBud({
+		node: socket.node,
+		x: socket.point[0],
+		y: socket.point[1],
+		z: socket.point[2],
+		frame,
+		kind: BUD_TERMINAL,
+		vigor: 1,
+		light: 1,
+		axis: socket.axis,
+		woodRadius: 0.004,
+		socket: { scale, rank, lobe: socket.id },
+	});
+}
+
+/** Turns a socket's frame about its own line and off it, by its place in two spread runs. */
+function turnFrame(
+	frame: Float32Array,
+	turning:
+		| {
+				readonly turn: { readonly roll: number; readonly tilt: number; readonly out?: number };
+				readonly socket: number;
+				readonly rollFrom: number;
+				readonly tiltFrom: number;
+		  }
+		| undefined,
+): void {
+	if (!turning) return;
+	const spin = new Float32Array(4);
+	const share = (shareFrom: number, step: number): number =>
+		((shareFrom + turning.socket * step) % 1) * 2 - 1;
+	quatAxisAngle([0, 1, 0], radians(share(turning.rollFrom, SPREAD_ROLL) * turning.turn.roll), spin);
+	quatMultiply(frame, 0, spin, 0, frame);
+	quatAxisAngle([1, 0, 0], radians(share(turning.tiltFrom, SPREAD_TILT) * turning.turn.tilt), spin);
+	quatMultiply(frame, 0, spin, 0, frame);
 }
 
 /**
@@ -295,17 +363,7 @@ function hangTwig(
 			: ([0, 1, 0] as Vector3);
 	const frame = new Float32Array(4);
 	quatFromFrame(out, [0, 1, 0], frame);
-	// A piece turns about its own line and tilts off it, by its socket's place in two spread runs
-	// of shares, as the frame model turns the pieces at its own sockets.
-	if (turning) {
-		const spin = new Float32Array(4);
-		const share = (shareFrom: number, step: number): number =>
-			((shareFrom + turning.socket * step) % 1) * 2 - 1;
-		quatAxisAngle([0, 1, 0], radians(share(turning.rollFrom, SPREAD_ROLL) * turning.turn.roll), spin);
-		quatMultiply(frame, 0, spin, 0, frame);
-		quatAxisAngle([1, 0, 0], radians(share(turning.tiltFrom, SPREAD_TILT) * turning.turn.tilt), spin);
-		quatMultiply(frame, 0, spin, 0, frame);
-	}
+	turnFrame(frame, turning);
 	builder.addBud({
 		node,
 		x: point[0],
