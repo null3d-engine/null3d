@@ -27,7 +27,7 @@ const SHELLS: readonly (readonly [size: number, keep: number])[] = [
 const SHELL_TOTAL = SHELLS.reduce((sum, [size, keep]) => sum + size * size * keep, 0);
 
 /** Sockets per square metre of a clump's own width, measured from today's oak at seeds 3, 11, 12. */
-const SOCKETS_PER_AREA = 6;
+const SOCKETS_PER_AREA = 7;
 
 /** The clump's depth against its width: an oak clump is about seven tenths as deep as it is wide. */
 const DEPTH_SHARE = 0.35;
