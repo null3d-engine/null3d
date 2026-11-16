@@ -62,6 +62,13 @@ const SHADED = 0.15;
 const FAR_LIT = 0.7;
 
 /**
+ * How far a capped plant's card planes grow in the far bake, about their middles. A maximum keeps
+ * only the clumps on the trunk and the great limbs, and a far picture built from those alone would
+ * read as wood; the far picture shows the crown, where the approximation is allowed.
+ */
+const CAPPED_CARD_LIFT = 2.2;
+
+/**
  * The open-sky shares between which a clump's dim runs, from its dark core to its sunlit rim, as the
  * plant shader's own bounds: the far card reads the same record value that draws the card levels.
  */
@@ -115,6 +122,21 @@ function unpack(part: PlantPart, kit: SpeciesKitData): LevelPart {
 	const uvs = new Float32Array(a.uvs.length);
 	for (let i = 0; i < uvs.length; i++) uvs[i] = (a.uvs[i] as number) / uvSteps;
 	return { name: part.name, positions, normals, uvs, colors: a.colors, indices: a.indices };
+}
+
+/** Grows each four-vertex card plane about its middle, which leaves its picture and turn alone. */
+function growPlanes(positions: Float32Array, scale: number): void {
+	for (let at = 0; at + 11 < positions.length; at += 12) {
+		const middle = [0, 0, 0];
+		for (let v = 0; v < 4; v++)
+			for (let k = 0; k < 3; k++)
+				middle[k] = (middle[k] as number) + (positions[at + v * 3 + k] as number) / 4;
+		for (let v = 0; v < 4; v++)
+			for (let k = 0; k < 3; k++)
+				positions[at + v * 3 + k] =
+					(middle[k] as number) +
+					((positions[at + v * 3 + k] as number) - (middle[k] as number)) * scale;
+	}
 }
 
 /** Widens a box to hold a part's positions. */
@@ -354,6 +376,10 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 				indices: part.indices,
 			});
 		} else if (part.name === 'cards' && size > 0) {
+			// A capped plant's level draws a bare frame under a few large clumps, so its own level
+			// bakes a wood-coloured far picture. The far picture shows the crown, so under a maximum
+			// its cards grow about their middles until the crown bakes as leaves.
+			if (asset.maxTriangles !== undefined) growPlanes(positions, CAPPED_CARD_LIFT);
 			widen(positions, min, max);
 			cards.push({
 				positions,
