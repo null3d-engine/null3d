@@ -11,10 +11,12 @@ import type { ShootRows } from '../asset';
 import type { MacroSkeleton, SocketSites } from '../core/graph';
 
 /**
- * The share of its sky-lit tone that a clump's lowest leaves keep: the clump's own leaves stand
- * over its underside, so its foot reads dark and its top reads open to the sky.
+ * The shares of its own open sky that a clump card wears at its foot and at its top: the clump's own
+ * leaves stand over its underside, so its foot reads dark and its top reads open to the sky. The two
+ * average about one, so the card keeps the clump's own mean tone while it gains its depth.
  */
-export const CLUMP_UNDER_SHADE = 0.5;
+export const CLUMP_UNDER_SHADE = 0.8;
+export const CLUMP_OVER_SHADE = 1.2;
 
 /** One foliage mass of a plant, and the rows that stand in it. */
 export interface Clump {
@@ -195,6 +197,7 @@ function rise(t: number): number {
  */
 export function clumpSky(clump: Clump, height: number): number {
 	const t = clump.spread > 1e-6 ? (height - clump.middle) / clump.spread : 1;
-	const keep = CLUMP_UNDER_SHADE + (1 - CLUMP_UNDER_SHADE) * rise(t);
+	const up = rise(t);
+	const keep = CLUMP_UNDER_SHADE + (CLUMP_OVER_SHADE - CLUMP_UNDER_SHADE) * up;
 	return Math.max(0, Math.min(1, clump.sky * keep));
 }
