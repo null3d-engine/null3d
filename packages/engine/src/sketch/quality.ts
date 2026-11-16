@@ -102,7 +102,8 @@ export interface QualityGovernor {
 	readonly bloomSize: number;
 	/**
 	 * The size of ambient occlusion's targets now: `settings.aoScale`, or half as large after the
-	 * governor's step that follows bloom's while ambient occlusion draws.
+	 * governor's step that follows bloom's while ambient occlusion draws, and then 0 when the frames
+	 * still run long, which draws none.
 	 */
 	readonly aoScale: number;
 	/**

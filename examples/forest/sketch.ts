@@ -9,6 +9,15 @@
 // draw every tree at its full detail, and compare the stats.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createWind } from '@null3d/wind';
+
+/** The address's switches, which the demo page forwards. */
+const params = new URL(import.meta.url).searchParams;
+/**
+ * True holds the flight at its opening view, so a governed or settled row compares one view with
+ * itself. The demo page forwards the id.
+ */
+const STILL_ROUTE = params.has('still-route');
+
 import { interact } from '../lib/interact';
 import { plantForest, RADIUS } from './planting';
 import { createSway } from './sway';
@@ -74,7 +83,7 @@ export default defineSketch(async (ctx) => {
 			}
 			// A slow flight above the canopy, looking out over the forest toward the ridges.
 			if (!view.userCamera) {
-				const t = time.now * 0.03;
+				const t = (STILL_ROUTE ? 0 : time.now) * 0.03;
 				const [x, z] = [Math.sin(t) * 120, Math.cos(t) * 120];
 				camera.setPosition(x, ground(x, z) + 30, z);
 				camera.lookAt(Math.sin(t + 0.6) * 260, 8, Math.cos(t + 0.6) * 260);
