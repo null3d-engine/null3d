@@ -47,6 +47,10 @@ function crownCards(max: number | undefined, clumps: number, cardCost: number): 
 	return Math.min(clumps, Math.floor(take / cardCost));
 }
 
+/** The height against the adult's below which a crown is young: every clump stands and only the
+ * leaves thin, since an octant there holds too few boughs to drop one evenly. */
+const YOUNG_CROWN = 0.8;
+
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
 
