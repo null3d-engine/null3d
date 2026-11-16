@@ -993,8 +993,7 @@ export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
  * crown.
  */
 function clumpShare(record: SpeciesKitData['record'], level: 1 | 2): number {
-	const shares = (record.lod as { readonly clumpCard?: readonly [number, number] }).clumpCard;
-	const share = shares?.[level - 1] ?? 0;
+	const share = record.lod.clumpCard?.[level - 1] ?? 0;
 	return Math.max(0, Math.min(1, share));
 }
 
