@@ -3,7 +3,14 @@
 import { describe, expect, it } from 'bun:test';
 import type { ShootRows } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
-import { CLUMP_UNDER_SHADE, clumpSky, clumpsOf, clumpWalk, type ClumpPlant } from './clump-card';
+import {
+	CLUMP_OVER_SHADE,
+	CLUMP_UNDER_SHADE,
+	clumpSky,
+	clumpsOf,
+	clumpWalk,
+	type ClumpPlant,
+} from './clump-card';
 
 /** A plant of two clumps: each socket stands in a foliage mass, and the first three sockets one. */
 function twoClumps(): ClumpPlant {
@@ -96,11 +103,11 @@ describe('the clump walk', () => {
 describe('the shade a clump card bakes', () => {
 	const clump = { lobe: 0, rows: [0], middle: 2, spread: 1, sky: 0.8 };
 
-	it('darkens the clump’s underside and keeps its top open', () => {
+	it('darkens the clump’s underside and brightens its top', () => {
 		const under = clumpSky(clump, 1);
 		const top = clumpSky(clump, 3);
 		expect(under).toBeCloseTo(0.8 * CLUMP_UNDER_SHADE, 10);
-		expect(top).toBeCloseTo(0.8, 10);
+		expect(top).toBeCloseTo(Math.min(1, 0.8 * CLUMP_OVER_SHADE), 10);
 	});
 
 	it('rises from the foot to the top without a step', () => {
@@ -114,16 +121,16 @@ describe('the shade a clump card bakes', () => {
 		expect(clumpSky(clump, 2)).toBeLessThan(clumpSky(clump, 3));
 	});
 
-	it('keeps the shade inside the clump’s own sky and the dark underside', () => {
+	it('keeps the shade between the darkened foot and the brightened top', () => {
 		for (const y of [-5, 0, 1, 2, 3, 9]) {
 			const shade = clumpSky(clump, y);
 			expect(shade).toBeGreaterThanOrEqual(0.8 * CLUMP_UNDER_SHADE - 1e-9);
-			expect(shade).toBeLessThanOrEqual(0.8 + 1e-9);
+			expect(shade).toBeLessThanOrEqual(Math.min(1, 0.8 * CLUMP_OVER_SHADE) + 1e-9);
 		}
 	});
 
-	it('keeps a clump with no height even, at its own sky share', () => {
-		expect(clumpSky({ ...clump, spread: 0 }, 100)).toBeCloseTo(0.8, 10);
+	it('keeps a clump with no height even, at its own sky share over the brightened top', () => {
+		expect(clumpSky({ ...clump, spread: 0 }, 100)).toBeCloseTo(Math.min(1, 0.8 * CLUMP_OVER_SHADE), 10);
 	});
 });
 

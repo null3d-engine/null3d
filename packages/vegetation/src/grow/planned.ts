@@ -26,6 +26,27 @@ import { planFrame } from './frame';
 import type { Grower } from './models';
 import { type FillClump, type FillInput, fillClumps } from './planned-fill';
 
+/**
+ * The share of a triangle maximum that the crown is paid before the wood takes its share: a clump
+ * card is six triangles, so a crown costs six for each clump it shows. Below about a quarter the
+ * crown reads as tufts rather than a crown.
+ */
+const CROWN_SHARE = 0.6;
+
+/** The least share of a maximum the crown may be left, under which its crown reads as tufts. */
+const CROWN_LEAST = 0.25;
+
+/**
+ * The clump cards a maximum pays for: the crown takes its share of the cap before the wood does, and
+ * that share buys a card a clump while it lasts. With no maximum every clump a card, and nothing of
+ * the cap is taken.
+ */
+function crownCards(max: number | undefined, clumps: number, cardCost: number): number {
+	if (max === undefined || !(cardCost > 0)) return clumps;
+	const take = Math.max(max * CROWN_LEAST, Math.min(clumps * cardCost, max * CROWN_SHARE));
+	return Math.min(clumps, Math.floor(take / cardCost));
+}
+
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
 
@@ -216,8 +237,7 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const kept = expected.map((count, order) => count * (1 - sparse * (thin[order] ?? 0)));
 	// A maximum shares the count: the bones keep their own share, and the finer orders are cut.
 	const sides = max === undefined ? 10 : max >= 20_000 ? 8 : max >= 5_000 ? 6 : 3;
-	// Under any maximum the crown is drawn as clump cards: a piece a socket cannot fit a cap.
-	const clumpCard = max !== undefined;
+	const clumpCard = max !== undefined && max < 2_000;
 	const piece = growth.prices.piece;
 	const tube = growth.prices.tubeSegment;
 	// The price of each part at this state: wood segments by order, and one piece a socket.
@@ -234,9 +254,26 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 		foliage: foliage + fruit,
 		fruit,
 	};
-	// The parts' prices are the plan's own share of a maximum: the crown's cards and the wood's
-	// segments at the best look, which the level allocates from. The plan does not divide the cap
-	// itself; the level's allocation does, from these shares and the foliage forms below.
+	// Under a maximum the crown is served before the wood takes its share: each clump draws one
+	// card below about 2,000 triangles, and the crown keeps a card a clump while the cap allows,
+	// leaving the wood at least a tenth of it. Above that share the wood keeps the rest.
+	const clumps = Math.max(1, Math.round(bounds.clumps));
+	const cardCost = max === undefined ? 0 : growth.prices.clumpCard;
+	const cards = crownCards(max, clumps, cardCost);
+	const socketsBound = Math.max(1, expected[4] as number);
+	const woodRoom = max === undefined ? 0 : Math.max(0, max - cards * cardCost);
+	const woodTotal = priced.trunk + priced.limbs + priced.branches;
+	const woodKept =
+		max === undefined ? 1 : woodTotal > 0 ? Math.max(0, Math.min(1, woodRoom / woodTotal)) : 1;
+	// The fill keeps the plan's share of the crown: one anchor socket a carded clump, its lowest
+	// ranks first, so a card a clump is what stands when the crown is paid for. Below the least
+	// share the crown is never left, since under it the clumps read as tufts.
+	const crownKept = max === undefined ? 1 : Math.min(1, cards / socketsBound);
+	const cut = (order: number): number => {
+		if (max === undefined) return 1;
+		if (order < 2) return 1;
+		return order >= 4 ? crownKept : woodKept;
+	};
 	return {
 		age,
 		finestOrder: 4,
@@ -260,14 +297,7 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 			growth.flowers === undefined
 				? 0
 				: ramp(request.maturity, growth.flowers.from, growth.flowers.band),
-		// The plan's rank cut, as an input for the level's allocation: the deepest order's own cut,
-		// in closed form from its expected count and the price of one piece, leaving the shallower
-		// orders whole. The level decides how the cap is divided; this is the plan's own threshold.
-		rankCut: expected.map((count, order) =>
-			order < 4 || max === undefined || count <= 0
-				? 1
-				: Math.max(0, Math.min(1, max / (count * piece))),
-		),
+		rankCut: expected.map((_, order) => (order < 2 ? 1 : cut(order))),
 	};
 }
 
@@ -547,11 +577,43 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		});
 	});
 
+	// Under a maximum the crown stands only the clumps its share pays for: a card a clump is what the
+	// crown draws, so an unpayable clump would spend the wood's room on a card of its own. The kept
+	// clumps are an even rank over the crown's own centres, so a smaller cap keeps a subset of a
+	// larger one's clumps.
+	const cards = crownCards(
+		most,
+		Math.max(1, Math.round(boundsOf(input.record, growth).clumps)),
+		growth.prices.clumpCard,
+	);
+	if (cards < clumps.length) {
+		const ranks = thinningRanks(clumps.map((clump) => clump.centre));
+		const kept = new Set(
+			clumps
+				.map((clump, k) => ({ id: clump.id, rank: ranks[k] as number, k }))
+				.sort((a, b) => a.rank - b.rank || a.k - b.k)
+				.slice(0, cards)
+				.map((one) => one.id),
+		);
+		clumps.splice(0, clumps.length, ...clumps.filter((clump) => kept.has(clump.id)));
+		fill.splice(0, fill.length, ...fill.filter((clump) => kept.has(clump.id)));
+	}
+
 	// The sockets that clothe the clumps, at the share the sparseness and the plan leave.
 	const keepsItsShare = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
-	// A maximum is the level's own allocation, from the plan's shares and foliage forms; the grower
-	// keeps the crown that sparseness leaves and grows no row for a cap to cut.
-	const leaves = keepsItsShare;
+	// Under a maximum the plan pays for a count of sockets, one for each carded clump; the fill's
+	// own sockets are about six and a half a square metre of clump width, so the share that keeps
+	// that many is the plan's count over the crown's own count.
+	const carded = Math.round(
+		Math.max(0, Math.min(1, detail.rankCut[detail.rankCut.length - 1] ?? 1)) *
+			(detail.expected[4] ?? 0),
+	);
+	const socketsAbout = fill.reduce(
+		(sum, clump) => sum + 1 + Math.round(6.5 * (2 * clump.radius) ** 2),
+		0,
+	);
+	const cutByMaximum = socketsAbout > 0 ? Math.min(1, carded / socketsAbout) : 1;
+	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
 	const crownBaseValue = Number.isFinite(crownBase) ? Math.max(0, crownBase) : height;
 	const sighted: FillInput & PlannedFillSight = {
 		builder,
