@@ -987,12 +987,14 @@ export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
 }
 
 /**
- * The clump card a record asks for, as the share of a card level that it draws, 1 for the whole
- * level; 0, the default, draws a card for each shoot. A level between the two thins its clumps by
- * the space-filling order until the share is spent, and grows their cards to hold the crown.
+ * The clump card a record asks for, as the share of a card level's clumps that it draws, 1 for
+ * every clump; 0, the default, draws a card for each shoot. A level between the two thins its
+ * clumps by the space-filling order until the share is spent, and grows their cards to hold the
+ * crown.
  */
-function clumpShare(kit: SpeciesKitData): number {
-	const share = (kit.record.lod as { readonly clumpCard?: number }).clumpCard ?? 0;
+function clumpShare(kit: SpeciesKitData, level: 1 | 2): number {
+	const shares = (kit.record.lod as { readonly clumpCard?: readonly [number, number] }).clumpCard;
+	const share = shares?.[level - 1] ?? 0;
 	return Math.max(0, Math.min(1, share));
 }
 
@@ -1003,7 +1005,7 @@ function clumpShare(kit: SpeciesKitData): number {
  * cuts them into one run per clump.
  */
 function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2): MeshArrays {
-	const share = clumpShare(input.kit);
+	const share = clumpShare(input.kit, level);
 	const kept = clumps.slice(0, Math.max(1, Math.round(clumps.length * share)));
 	const walk = clumpWalk(kept);
 	// The level draws the wood that its own wood orders keep, so a clump joins the plant where that
@@ -1030,7 +1032,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { rows, kit } = input;
 	// A record that asks for the clump card draws one card set for each clump of sockets in place
 	// of a card for each shoot.
-	const clumps = clumpShare(kit) > 0 ? clumpsOf(input) : undefined;
+	const clumps = clumpShare(kit, level) > 0 ? clumpsOf(input) : undefined;
 	if (clumps) return clumpCardMesh(input, clumps, level);
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
