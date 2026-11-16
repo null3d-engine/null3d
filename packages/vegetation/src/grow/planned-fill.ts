@@ -12,33 +12,24 @@ import { thinningRanks } from '../core/rank';
 import type { Vec3 } from '../core/types';
 
 /**
- * The shells a clump's sockets stand on, from the outermost in: each shell's size as a share of
- * the clump's inner radius, and the share of the outermost's spacing of points it keeps. Measured
- * from today's oak: its sockets stand through the clump's depth, not only at its rim.
+ * How deep inside its clump's radius a socket stands, as a keyed draw: today's oak's sockets fill
+ * the inner half of its clumps about half the time, so their depth runs from a third of the radius
+ * out toward the surface, more of them shallow than deep.
  */
-const SHELLS: readonly (readonly [size: number, keep: number])[] = [
-	[1, 1],
-	[0.65, 0.85],
-	[0.35, 0.6],
-];
-
-/** The sum of the shells' sizes squared by their keeps: the sockets a clump's outer count makes. */
-const SHELL_TOTAL = SHELLS.reduce((sum, [size, keep]) => sum + size * size * keep, 0);
-
-/** Metres a socket stands inside its clump's surface: the reach of the piece it carries. */
-const INSET = 0.85;
+const DEPTH_FROM = 0.41;
+const DEPTH_TO = 0.89;
 
 /** Sockets per square metre of a clump's own width, measured from today's oak at seeds 3, 11, 12. */
 const SOCKETS_PER_AREA = 6;
 
-/** The clump's depth against its width: an oak clump is about seven tenths as deep as it is wide. */
-const DEPTH_SHARE = 0.35;
+/** The clump's vertical radius against its horizontal one: an oak clump is flatter than a ball. */
+const DEPTH_SHARE = 0.7;
 
 /** The first place of the fill's sockets in the plant as grown, clear of every stated axis. */
 const SOCKET_BASE = 100_000;
 
-/** The slots one shell may carry, which fix each socket's place in its clump. */
-const SLOTS = [160, 136, 96] as const;
+/** The slots one clump may carry, which fix each socket's place in its clump. */
+const SLOTS = 320;
 
 /** Metres from one twig node to the next, at the longest. */
 const STEP = 1.0;
@@ -157,43 +148,40 @@ export function fillClumps(input: FillInput): FillCount {
 	for (const clump of clumps) {
 		if (!(clump.growth > 0)) continue;
 		const radius = Math.max(1e-6, clump.radius);
-		// A socket stands inside the clump's surface by its piece's reach, never under a third of
-		// the clump's radius.
-		const inner = Math.max(radius - INSET, radius * 0.3);
 		// One socket ends the clump's own axis, as every twig does.
 		goals.push({
 			clump,
 			point: [clump.root[0], clump.root[1], clump.root[2]],
-			place: SOCKET_BASE + clump.id * 512,
+			place: SOCKET_BASE + clump.id * (SLOTS + 1),
 			rank: 0,
 			scale: pieceScale * clump.growth,
 		});
-		SHELLS.forEach(([size, keep], shell) => {
-			const slots = SLOTS[shell] as number;
-			const widest =
-				(Math.round((SOCKETS_PER_AREA * (2 * radius) ** 2) / SHELL_TOTAL) * size * size * keep);
-			// Each slot is a fixed point of the shell; as the clump grows, more of them fill.
-			const filled = Math.min(1, (widest * clump.open * clump.open) / slots);
-			for (let k = 0; k < slots; k++) {
-				if ((k + 0.5) / slots > filled) continue;
-				// An evenly spread direction, fixed by the slot alone so it never moves with age.
-				const y = 1 - (2 * (k + 0.5)) / slots;
-				const ring = Math.sqrt(Math.max(0, 1 - y * y));
-				const spin = unitAt(seed, clump.id, variant, 1) * 2 * Math.PI;
-				const angle = spin + shell * radians(137.507) + k * radians(137.507);
-				goals.push({
-					clump,
-					point: [
-						clump.centre[0] + inner * size * ring * Math.cos(angle),
-						clump.centre[1] + inner * DEPTH_SHARE * 2 * size * y,
-						clump.centre[2] + inner * size * ring * Math.sin(angle),
-					],
-					place: SOCKET_BASE + clump.id * 512 + 1 + shell * 160 + k,
-					rank: 0,
-					scale: pieceScale * clump.growth,
-				});
-			}
-		});
+		// A clump's own share of the sockets, keyed on the clump, so the crown has clumps of many
+		// sizes as today's does rather than an even mesh.
+		const variety = 1 + 0.6 * (unitAt(seed, clump.id, variant, 2) - 0.5);
+		const count = Math.round(SOCKETS_PER_AREA * (2 * radius) ** 2 * variety);
+		// Each slot is a fixed point of the clump; as the clump opens, more of them fill.
+		const filled = Math.min(1, (count * clump.open * clump.open) / SLOTS);
+		for (let k = 0; k < SLOTS; k++) {
+			if ((k + 0.5) / SLOTS > filled) continue;
+			// An evenly spread direction and depth, fixed by the slot alone so it never moves with age.
+			const y = 1 - (2 * (k + 0.5)) / SLOTS;
+			const ring = Math.sqrt(Math.max(0, 1 - y * y));
+			const spin = unitAt(seed, clump.id, variant, 1) * 2 * Math.PI;
+			const angle = spin + k * radians(137.507);
+			const depth = DEPTH_FROM + (DEPTH_TO - DEPTH_FROM) * unitAt(seed, clump.id, k, 1);
+			goals.push({
+				clump,
+				point: [
+					clump.centre[0] + radius * depth * ring * Math.cos(angle),
+					clump.centre[1] + radius * DEPTH_SHARE * depth * y,
+					clump.centre[2] + radius * depth * ring * Math.sin(angle),
+				],
+				place: SOCKET_BASE + clump.id * (SLOTS + 1) + 1 + k,
+				rank: 0,
+				scale: pieceScale * clump.growth,
+			});
+		}
 	}
 	for (const socket of extra ?? []) {
 		goals.push({
