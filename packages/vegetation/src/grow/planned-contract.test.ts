@@ -73,6 +73,15 @@ const SWEEP_FLOORS: Readonly<Record<number, number>> = {
 	500: 0.17,
 };
 
+/**
+ * The default growth's median time at the frozen commit, measured on this machine with the queue:
+ * 2,308 ms at `2ffb51377` and 2,349 ms at `19ddeed75`, the same tree. The speed ratios divide by
+ * this frozen figure rather than by the live default, so an improvement to the default cannot
+ * tighten the gate. The live default and its own ratio are printed beside each setting, and the
+ * load is printed with them.
+ */
+const T1_BASE_MS = 2308;
+
 /** The fill target's tolerances, frozen at C1: the median rows a clump holds, and its spread. */
 const FILL = { median: 0.15, spread: 0.25, inner: 0.05, sky: 0.05, cover: 0.02 } as const;
 
@@ -1001,11 +1010,14 @@ describe('the planned oak contract', () => {
 				}
 				times.set(name, median(runs));
 			}
-			const base = times.get('default') as number;
+			const live = times.get('default') as number;
+			const base = T1_BASE_MS;
 			console.log(
-				`T1: ${[...times].map(([name, ms]) => `${name} ${ms.toFixed(0)} ms`).join(', ')}; ratios ${[...times].map(([name, ms]) => `${name} 1/${(base / ms).toFixed(1)}`).join(', ')}`,
+				`T1: ${[...times].map(([name, ms]) => `${name} ${ms.toFixed(0)} ms`).join(', ')}; live default ${live.toFixed(0)} ms (1/${(live / live).toFixed(1)}); ratios to the frozen base ${base} ms ${[...times].map(([name, ms]) => `${name} 1/${(base / ms).toFixed(1)}`).join(', ')}; bars at 1/5 ${(base / 5).toFixed(0)} ms, 1/10 ${(base / 10).toFixed(0)} ms, 1/20 ${(base / 20).toFixed(0)} ms`,
 			);
 			if (FULL) {
+				// The bar is the frozen base divided by the plan's ratios; the live default is reported,
+				// never used as the denominator.
 				expect((base / (times.get('(0.3, 1)') as number))).toBeGreaterThanOrEqual(5 - 1e-9);
 				expect((base / (times.get('max 1,000') as number))).toBeGreaterThanOrEqual(10 - 1e-9);
 				expect((base / (times.get('(0.3, 1, 1,000)') as number))).toBeGreaterThanOrEqual(20 - 1e-9);
