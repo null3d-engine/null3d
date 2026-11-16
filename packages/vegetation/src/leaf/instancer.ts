@@ -401,18 +401,24 @@ export function dressShoots(input: DressInput): DressedShoots {
 }
 
 /**
- * The rows as the table, in the space-filling order of a skeleton's bounds. A planned plant grew
- * exactly the rows it delivers, so each row carries its own index as its place in the plant: the
- * grown plant and the delivered plant are the same one.
+ * The rows as the table, in the space-filling order of a skeleton's bounds. A planned plant grows
+ * exactly the rows it delivers, so each row carries the stable place of the socket it stands at: the
+ * same socket names the same row of the same plant at every sparseness and every maximum.
  */
 function finishedRows(rows: Row[], skeleton: MacroSkeleton, planned = false): ShootRows {
 	// The coarseness dial keeps every shoot row: it changes how smoothly the plant is drawn, not how
 	// many leaves the plant grows.
 	const kept = rows;
 	const packed = packRows(kept, skeleton.bounds);
-	return planned
-		? { ...packed, id: Uint32Array.from({ length: packed.count }, (_, i) => i) }
-		: packed;
+	if (!planned) return packed;
+	const origins = skeleton.buds.origin;
+	return {
+		...packed,
+		id: Uint32Array.from(kept, (row, at) => {
+			const socket = row.site ?? row.socket;
+			return (socket === undefined ? undefined : origins?.[socket]) ?? at;
+		}),
+	};
 }
 
 /**
