@@ -8,6 +8,7 @@
 // mode's switches.
 import { createEngine, type EngineOptions, type HoldResult } from '@null3d/engine';
 import { depthFacts } from './lib/depth';
+import { watchEngine } from './lib/engine-watch';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -34,6 +35,10 @@ function sketchUrl(path: string): URL {
 }
 
 run('image', async () => {
+	// A sketch that builds a whole plant can work for minutes without a step of its own, and a runner
+	// page that sends nothing for too long is stopped as if it had hung. The watch notes the frame
+	// loop's counters while the work runs, so the page keeps reporting what it is doing.
+	watchEngine();
 	const sketch = params.get('sketch');
 	if (!sketch?.startsWith('/'))
 		throw new Error('Add ?sketch= with the path of a sketch module from the server root.');

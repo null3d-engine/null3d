@@ -15,7 +15,11 @@ const ROOT = join(import.meta.dirname, '../..');
  * every shoot row inside that band is real geometry; a dense crown draws about six million triangles
  * a frame, which a software rasteriser needs far longer for than the default sixty seconds allows.
  */
-const PANELS_SECONDS = 120;
+// A whole plant grown beside its piece is the work these pages do, and on the slowest runner that
+// measured more than four minutes: the European beech's page was still running at 245 seconds when
+// the former limit stopped it. The limit contains that reading with room, and the drawn run's own
+// slowest-page figures tighten it once they are recorded.
+const PANELS_SECONDS = 420;
 
 /**
  * Species whose own four panels need longer than the shared limit, with the seconds each was
