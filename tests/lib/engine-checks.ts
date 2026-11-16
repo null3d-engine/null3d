@@ -281,8 +281,8 @@ export function engineProblems(
 	const timestamps = tier === 'webgpu' && result.capabilities.features.includes('timestamp-query');
 	const sampled = Math.floor(stats.frames / SAMPLED_EVERY);
 	const gpuTimes = stats.gpuMs?.count ?? 0;
-	// A window too short for one sampled frame cannot judge the GPU timer: on 20 October 2026 a
-	// software GPU measured six frames, none of them a sampled one, and reported no GPU times.
+	// A window too short for one sampled frame cannot judge the GPU timer: a software GPU can
+	// measure six frames, none of them a sampled one, and report no GPU times.
 	if (timestamps && sampled >= 1 && gpuTimes < Math.max(1, sampled / 2))
 		problems.push(
 			`GPU times for ${gpuTimes} of about ${sampled} sampled frames, although the device has timestamp queries`,
@@ -315,7 +315,7 @@ export function engineProblems(
 		problems.push('the time the GPU finished the first frame is missing');
 	if (!(stats.load.probeMs > 0 && stats.load.coreMs > 0))
 		problems.push('the probe or core load time is missing');
-	if (result.stages.join(',') !== 'core,sketch,first-frame')
+	if (result.stages.join(',') !== 'core-download,core,sketch,first-frame')
 		problems.push(`the start reported the stages ${result.stages.join(', ')}`);
 	if (result.messages.join(',') !== 'setup,count')
 		problems.push(`the page received the sketch's messages ${result.messages.join(', ')}`);

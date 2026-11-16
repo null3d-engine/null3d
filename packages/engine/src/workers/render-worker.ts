@@ -5,6 +5,7 @@
 // the engine's memory, and the next engine on the same canvas starts it again with its own.
 
 import { messageOf } from '../errors/message';
+import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { captureFrame, captureImage, preloadDeviceFiles, startDrawing } from '../render/draw';
 import { controlViews } from '../shared/control';
 import { setWakeByMessage } from '../shared/wake';
@@ -39,6 +40,9 @@ startWorker(
 			try {
 				canvas = message.canvas ?? canvas;
 				if (!canvas) throw new Error('the page gave the render worker no canvas');
+				// A recording starts here, before the scene's draws ask for their pipelines, and the
+				// page stops it once the held frame has drawn them.
+				if (message.recordPermutations) recordPermutations();
 				host = new DrawingHost();
 				imagePort = message.imagePort;
 				controlSlots = controlViews(message.control).slots;
@@ -73,6 +77,8 @@ startWorker(
 		} else if (message.type === 'capture' && host.drawing && controlSlots) {
 			const capture = message.image ? captureImage : captureFrame;
 			await replyWithCapture(capture(host.drawing, controlSlots));
+		} else if (message.type === 'stop-recording') {
+			replyToPage({ type: 'recorded', role: 'render', permutations: stopRecordingPermutations() });
 		} else if (message.type === 'lose-gpu') {
 			host.drawing?.simulateLoss();
 		} else if (message.type === 'stop-drawing') {

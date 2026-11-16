@@ -3,12 +3,33 @@
 // on their tops, stepping stones, pebbles, tufts of grass and a stone lantern stand on it, inside a
 // granite curb on a moss lawn. A plaster wall closes the back and the left side, with bamboo and
 // pines beyond it. Each object in the garden casts and receives shadows, so contact shadows show
-// wherever things touch.
-import { type MeshArrays, math, quat, type SketchContext } from '@null3d/engine';
+// wherever things touch. The pines and the grass come from the vegetation add-on, and draw as the
+// plant core's stand-ins until their species land.
+import { type Camera, math, quat, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
-import { type Arrays, grid, TURN } from '../lib/pines';
+import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
+import { createWind } from '@null3d/wind';
+import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { random } from '../lib/procedural';
+import { CONTACT_SHADOWS_GRASS, CONTACT_SHADOWS_PINE } from '../lib/stand-ins';
 
+/**
+ * The garden's pines: Scots pines, whose crowns show above the wall as a dark skyline. Their
+ * needles stay dark, as a backlit conifer's do.
+ */
+const PINE = {
+	id: CONTACT_SHADOWS_PINE.id,
+	height: 15,
+	standIn: CONTACT_SHADOWS_PINE.standIn,
+} as const;
+/** The tufts of grass at the rocks and the lantern: meadow grass, about a hand high at scale 1. */
+const GRASS = {
+	id: CONTACT_SHADOWS_GRASS.id,
+	standIn: CONTACT_SHADOWS_GRASS.standIn,
+} as const;
+
+/** A full turn of the circle, in radians, which the scene's own scattering works in. */
+const TURN = Math.PI * 2;
 /** The sand bed's side in meters, its texels along each side, and the rake's spacing in meters. */
 const BED = 10;
 const SIZE = 512;
@@ -35,8 +56,6 @@ const PINES = [
 	[-21, -3, 6.5],
 	[-19, 4, 4.5],
 ] as const;
-/** The pines' tiers of boughs, lowest first, for a tree 1 high: base height, radius and height. */
-const TIERS = [0, 1, 2, 3, 4, 5, 6].map((k) => [0.16 + k * 0.11, 0.36 - k * 0.042, 0.2] as const);
 /**
  * The wall's two runs, behind the garden and along its left side: middle x and z, width, depth
  * and height. The low sun stands on the left, so the left run is low enough to leave the bed lit.
@@ -76,42 +95,8 @@ function noise(size: number, cells: number): Float32Array {
 	return out;
 }
 
-/**
- * A pine 1 high: a trunk under tiers of boughs, each tier ragged around its edge and drooping at
- * its tips, in mottled greens that lighten toward the tips' new growth.
- */
-function pine(): MeshArrays {
-	const next = random(7);
-	const out: Arrays = { positions: [], colors: [], indices: [] };
-	grid(out, 8, 1, (u, h) => {
-		const a = u * TURN;
-		return [Math.cos(a) * 0.03, h * 0.4, Math.sin(a) * 0.03, 0.16, 0.09, 0.05];
-	});
-	const around = 30;
-	TIERS.forEach(([y, radius, height], k) => {
-		const reach = Array.from({ length: around }, (_, c) => {
-			return 0.8 + 0.25 * Math.sin((c / around) * TURN * 5 + k * 2) + 0.3 * next();
-		});
-		grid(out, around, 4, (u, h) => {
-			const bough = reach[Math.round(u * around) % around] as number;
-			const e = radius * (1 - h) ** 1.3 * math.lerp(bough, 1, h);
-			const a = u * TURN + k;
-			const [tone, fresh] = [(0.55 + 0.45 * h) * (0.6 + 0.8 * next()), (1 - h) ** 3];
-			return [
-				Math.cos(a) * e,
-				y + height * h - 0.1 * bough * (1 - h) ** 2,
-				Math.sin(a) * e,
-				(0.008 + 0.03 * fresh) * tone,
-				(0.1 + 0.1 * fresh) * tone,
-				(0.03 + 0.01 * fresh) * tone,
-			];
-		});
-	});
-	return { ...out, computeNormals: true };
-}
-
-/** Builds the garden in the scene of `ctx`. */
-export function garden(ctx: SketchContext): void {
+/** Builds the garden in the scene of `ctx`, with its plants swaying in the field of `camera`. */
+export async function garden(ctx: SketchContext, camera: Camera): Promise<{ update(): void }> {
 	const { scene, geometry, materials, textures } = ctx;
 	const solid = { castShadows: true, receiveShadows: true } as const;
 	const flat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
@@ -211,27 +196,36 @@ export function garden(ctx: SketchContext): void {
 			...solid,
 		});
 	}
-	const pines = scene.createInstances(geometry.fromArrays(pine()), PINES.length, {
-		material: materials.standard({
-			color: '#ffffff',
-			roughness: 0.85,
-			vertexColors: true,
-			doubleSided: true,
-		}),
+	// The pines beyond the wall grow in the job workers, in the scene's one wind field: one
+	// variant, each copy its own height and turn.
+	const wind = createWind(ctx, { camera, box: 32, grid: 64 });
+	const plantMaterials: PlantMaterial[] = [];
+	const pines = await plantSpecies(ctx, {
+		id: PINE.id,
+		standIn: PINE.standIn,
+		seed: 5,
+		// The garden's approved picture shows the pine's stand-in above the wall, so this page keeps
+		// the stand-in even after the species lands. This is the page's own hold on the picture, not
+		// a wait for the species.
+		keepStandIn: true,
+		spots: PINES.map(([x, z, height], i) => ({
+			x,
+			y: 0,
+			z,
+			turn: 2 * i,
+			scale: height / PINE.height,
+			variant: 0,
+		})),
+		wind: wind.field,
 	});
-	PINES.forEach(([x, z, height], i) => {
-		pines.positions.set([x, 0, z], i * 3);
-		pines.scales.set([height, height, height], i * 3);
-		pines.rotations.set([0, Math.sin(i), 0, Math.cos(i)], i * 4);
-	});
-	pines.markDirty();
+	plantMaterials.push(...pines.materials);
 	// Bamboo: tall jointless stalks that lean a little, with narrow leaves that hang from their
 	// upper halves.
 	const next = random(3);
 	const stalks = scene.createInstances(
 		geometry.cylinder({ radiusTop: 1, radiusBottom: 1, height: 1, radialSegments: 6 }),
 		STALKS,
-		{ material: materials.standard({ color: '#ffffff', roughness: 0.45 }), colors: true },
+		{ material: materials.standard({ color: '#ffffff', roughness: 0.45 }), colors: true, ...solid },
 	);
 	const leaves = scene.createInstances(
 		geometry.cone({ radius: 1, height: 1, radialSegments: 4 }),
@@ -239,6 +233,7 @@ export function garden(ctx: SketchContext): void {
 		{
 			material: materials.standard({ color: '#ffffff', roughness: 0.7, doubleSided: true }),
 			colors: true,
+			...solid,
 		},
 	);
 	const [turn, twist] = [quat.create(), quat.create()];
@@ -364,41 +359,26 @@ export function garden(ctx: SketchContext): void {
 		);
 	}
 	pebbles.markDirty();
-	// Tufts of grass: thin blades that lean out from a root, at the rocks and the lantern.
-	const BLADES = 12;
-	const roots = [
+	// Tufts of grass at the rocks and the lantern, one to a root, each its own size and turn, in
+	// the same wind field.
+	const roots: (readonly [number, number])[] = [
 		...ROCKS.map(([x, z, r]) => [x + r * 0.9, z + r * 0.5] as const),
 		[LANTERN[0] - 0.3, LANTERN[1] + 0.3] as const,
 	];
-	const grass = scene.createInstances(
-		geometry.cone({ radius: 0.012, height: 1, radialSegments: 4 }),
-		roots.length * BLADES,
-		{
-			material: materials.standard({ color: '#ffffff', roughness: 0.8 }),
-			colors: true,
-			...solid,
-		},
-	);
-	roots.forEach(([x, z], tuft) => {
-		for (let b = 0; b < BLADES; b++) {
-			const i = tuft * BLADES + b;
-			const [a, lean, h] = [
-				math.randFloat(0, Math.PI * 2),
-				math.randFloat(0.1, 0.6),
-				math.randFloat(0.2, 0.4),
-			];
-			const [s, c] = [Math.sin(a), Math.cos(a)];
-			const tip = [-s * Math.sin(lean), Math.cos(lean), c * Math.sin(lean)];
-			grass.positions.set([x + (tip[0] * h) / 2, (tip[1] * h) / 2, z + (tip[2] * h) / 2], i * 3);
-			grass.rotations.set(
-				[Math.sin(lean / 2) * c, 0, Math.sin(lean / 2) * s, Math.cos(lean / 2)],
-				i * 4,
-			);
-			grass.scales.set([1, h, 1], i * 3);
-			grass.colors?.set([math.randFloat(0.08, 0.2), math.randFloat(0.22, 0.35), 0.04, 1], i * 4);
-		}
+	const tufts: PlantSpot[] = roots.map(([x, z]) => {
+		// A tuft stands about a hand high at the rocks: tall enough to read against the sand at the
+		// camera's distance, and low enough to stay under the pines beyond the wall.
+		const scale = math.randFloat(1.1, 1.9);
+		return { x, y: 0, z, turn: math.randFloat(0, Math.PI * 2), scale, variant: 0 };
 	});
-	grass.markDirty();
+	const grass = await plantSpecies(ctx, {
+		id: GRASS.id,
+		standIn: GRASS.standIn,
+		seed: 5,
+		spots: tufts,
+		wind: wind.field,
+	});
+	plantMaterials.push(...grass.materials);
 	// A stone lantern with a warm light in its fire box.
 	const [lx, lz] = LANTERN;
 	const parts = [
@@ -427,4 +407,12 @@ export function garden(ctx: SketchContext): void {
 		intensity: 1.5,
 		range: 3,
 	});
+	return {
+		update() {
+			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
+			wind.update();
+			// The field keeps two states, so the plants read the one that this frame's run wrote.
+			setWindLayer(plantMaterials, wind.field);
+		},
+	};
 }

@@ -21,7 +21,7 @@ try {
   const engine = await createEngine({
     canvas,
     sketch: new URL('./sketch.ts', import.meta.url),
-    onProgress: (stage) => console.log('start:', stage), // core, sketch, first-frame
+    onProgress: (stage, progress) => console.log('start:', stage, progress), // core-download, core, sketch, first-frame
   });
   engine.onFailure((error) => console.error(error.code, error.message));
   await engine.firstFrame; // the first frame is on the screen: remove the loading screen
@@ -36,11 +36,19 @@ try {
 
 `onProgress` reports each stage of the start, in this order:
 
+- `core-download`, as the engine core's file downloads, with the bytes that have arrived and the
+  length that the server announced;
 - `core`, once the engine core is compiled and the GPU paths are tested;
 - `sketch`, after the sketch's setup, and after the preset check when one runs;
 - `first-frame`, once the GPU has finished the first frame.
 
+The handler's second argument carries a stage's figures: `done` and `total`, in bytes, for
+`core-download`. The handler gets it only while the stage has figures. The total is 0 when the
+response announced no length, so a page shows no fraction then.
+
 Before `core`, `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. A browser can hold memory that an earlier engine used for a while after it stops, and Safari at times held it for 40 seconds. The engine keeps trying for about 45 seconds in all, then fails with E1109. Show the user that the start takes longer than usual.
+
+A worker's script, or a file that the script imports, can fail to load now and then. The engine starts one more copy of such a worker before it reports the failure. It calls `onWorkerRetry` with the worker's role and the address of its script, and warns in the console. When the second copy fails too, the start rejects with [E1405](../errors/E1405.md), whose message names the worker and its script.
 
 An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` stops the engine's threads and rejects with the signal's reason.
 
@@ -50,7 +58,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
-| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `targetFps`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass` or `maxLabels`. The options table gives each range. |
+| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `targetFps`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass`, `maxLabels` or `maxLabels3d`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1306](../errors/E1306.md) | The browser runs the WebKit engine of a Safari before 18: Safari 17 or older, or any browser on iOS or iPadOS 17 or older. |
@@ -84,8 +92,10 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `targetFps` | The display's rate, at most 60 | The frame rate that the engine defends. `'display'` defends the display's full rate, such as 120 or 144 for a game. A whole number caps the target at that rate: [Quality presets](../concepts/quality-presets.md#the-target-frame-rate). The `?target-fps=` switch wins over it. Another value fails with [E1213](../errors/E1213.md). |
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
+| `hdr` | The device's path | `false` draws the scene into 8-bit color, where each material's shader applies the output transform, instead of HDR color, which the final pass tone maps. Both paths honour a material's `toneMapped: false`, and the 8-bit path also honours it on a blended surface: [Materials that keep their display color](../concepts/color-management.md#materials-that-keep-their-display-color). The `?hdr=off` switch takes that path too. |
 | `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
-| `shadowCascades`, `shadowMapSize`, `gpuOcclusion`, `morphTargets`, `softwareOcclusion`, `textureMemoryMiB` | The preset's values | These settings, in place of the preset's values: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
+| `cloudSteps` | The preset's value | The steps of each ray of the sky's volumetric cloud tier, in place of the preset's value: 0 draws the flat layer, and a number above 0 the volumetric clouds, at that many steps. WebGL2 and compatibility mode stop at Medium, so a page there reaches the tier with this option or with `quality.set`. The tier's noise and shaders load at its first use: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
+| `shadowCascades`, `shadowMapSize`, `heroTileSize`, `gpuOcclusion`, `morphTargets`, `softwareOcclusion`, `textureMemoryMiB` | The preset's values | These settings, in place of the preset's values: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
 | `depthPrepass` | `true` on WebGL2 and `false` on WebGPU, on every preset | `true` draws the depth of the opaque objects before they are shaded: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
 | `keepTextureCopies` | `true` on phones and tablets, `false` on desktops | `true` keeps the engine's copy of each texture's texels after their upload, so a texture draws with its map again after the browser takes the GPU away. It costs about one more copy of each image in memory: [When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away). |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it, and also takes `compat` for WebGPU's compatibility mode. |
@@ -97,9 +107,11 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `expectedObjects` | None | The objects that the scene starts with room for, from 1 to 1,048,575, in place of 1,023. A scene that knows its size never grows its tables during play: [Scene limits](scene.md#limits). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [UI overlays and labels](ui.md). Another value fails with [E1213](../errors/E1213.md). |
-| `onProgress` | None | Reports each stage of the start |
+| `maxLabels3d` | `256` | The most labels whose `transform` is `'world'` or `'billboard'`, which are planes of the scene, from 0 to 65,536: [Labels as planes of the scene](ui.md#labels-as-planes-of-the-scene). Another value fails with [E1213](../errors/E1213.md). |
+| `onProgress` | None | Reports each stage of the start, and a download stage's bytes |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `onSketchError` | None | Receives each distinct error that the sketch's frame code throws while the engine runs: [The running engine](#the-running-engine) |
+| `onWorkerRetry` | None | Called when the engine starts a second copy of a worker whose script did not load: [The start](#the-start) |
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
 | `preload` | None | Features whose shaders load before the first frame, such as `['skinning', 'bloom']`, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: [Loading screens](../guides/loading-screens.md). A name that the engine does not know throws [E1421](../errors/E1421.md). |
@@ -130,13 +142,13 @@ const engine = await createEngine({ canvas, sketch, memory: { maximumMiB: 2048 }
 
 The browser reserves address space for the whole maximum when the engine starts, and the memory grows into it as the scene needs. Every other engine and WebAssembly module on the page, such as a physics engine, shares the address space that is left. So a larger maximum leaves less room for them. In Safari on an iPad Pro, a page holds the memories of 6 engines at 1024 MiB, and of 3 at 4096 MiB.
 
-Ask for more only when a scene needs it. Each instance row takes about 210 bytes of engine memory, so 1024 MiB holds about 5 million rows with the rest of the scene. Each place for an object takes about 263 bytes in the scene's tables. While the tables grow, the old and the new ones both take memory for a moment. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
+Ask for more only when a scene needs it. Each instance row takes about 210 bytes of engine memory, so 1024 MiB holds about 5 million rows with the rest of the scene. Each place for an object takes about 267 bytes in the scene's tables. While the tables grow, the old and the new ones both take memory for a moment. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
 
 The single-threaded build's memory is not shared. It grows as the scene needs, so the option does not change it. The `?memory=<MiB>` switch in the page's address wins over the option, for tests.
 
 ## What the engine reports
 
-- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `directDraws` field says whether the device draws buckets directly, as its start-up measurement chose. The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `directDraws` field says whether the device draws buckets directly. A start-up measurement picks that path only on an Apple GPU in Safari, or in any browser on iPhone and iPad. The `drawPath` field says why the engine took its path, such as `not-apple-gpu-in-webkit`. The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
 - `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum. The `keepTextureCopies` field says whether the engine keeps each texture's copy. It restores a map after a GPU loss ([When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away)). `renderFallback` says why the page draws where a worker was meant to, or is null.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
@@ -144,15 +156,16 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 
 - `setPaused(true)` stops the sketch's frames, and `setPaused(false)` resumes them. The first step after a pause is 0 seconds.
 - `detach()` takes the canvas off the page and pauses the engine, and `attach(container)` puts it back. Use them when a single-page app leaves the view with the canvas and comes back. The engine keeps its threads, its GPU resources and the scene.
-- `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). It can be a file of a custom material's builds that a pipeline needs and that did not download ([E1424](../errors/E1424.md)). After E1404 or E1424 the engine stops drawing new frames, and the canvas keeps the last one: destroy the engine and start a new one. It can also be a job worker that did not start ([E1405](../errors/E1405.md)). On WebGPU it can be a GPU that ran out of memory ([E1304](../errors/E1304.md)) or rejected the engine's work ([E1305](../errors/E1305.md)). The engine then draws on without the objects that failed. Without a handler, the engine logs the failure to the console. The handler is the only place where these failures show: no promise rejects for them.
+- `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). It can be a file of a custom shader's builds that a pipeline needs and that did not download ([E1424](../errors/E1424.md)). After E1404 or E1424 the engine stops drawing new frames, and the canvas keeps the last one: destroy the engine and start a new one. It can also be a job worker that did not start ([E1405](../errors/E1405.md)). On WebGPU it can be a GPU that ran out of memory ([E1304](../errors/E1304.md)) or rejected the engine's work ([E1305](../errors/E1305.md)). The engine then draws on without the objects that failed. The first handler that attaches after a failure that no handler heard still receives it, and the engine also logs the failure to the console. The handler is the only place where these failures show: no promise rejects for them.
 - `onSketchError(handler)` receives each distinct error that the sketch's frame code threw, or a core call in a frame. The engine keeps drawing frames, so such an error does not stop it. `measure()` counts each frame whose update failed in `updateErrors`, and leaves it out of `updatedFps`. Without a handler, the error reaches the console. The `onSketchError` option adds a handler from the start.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
-- `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
+- `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers. It measures whatever build the page runs. In a development build, the development checks add to the CPU times, so time a production build ([Measure fairly](../guides/performance.md#measure-fairly)).
 - `stats(true)` shows the stats overlay over the canvas, and `stats(false)` hides it: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). Options in place of `true` set whether the card starts closed, on a shown overlay too. The sketch's `debug.stats` shows and hides the same overlay, and the last call from either side wins.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
 - `captureFrame()` returns the pixels of the next frame that the engine draws, as RGBA8 rows, top row first. The thread that draws waits for its frame loop to take a new frame, then draws that frame again offscreen and reads it back. So captures back to back give newer frames, even on a slow GPU whose readback holds that thread up. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `labels.bind(id, element)` moves an HTML element over the label that the sketch tracks under `id`: [UI overlays and labels](ui.md).
+- `registerVideo(video, { name, maxSize, frameRate })` shows a video element on the page as a texture in the sketch, which makes it with `textures.fromVideo(name)`: [Video textures](../guides/video-textures.md). The page sends one image per frame that the video presents, scaled to `maxSize`, 512 texels by default. The call returns a function that stops the frames.
 - `requestPointerLock()` locks the pointer to the canvas, for [first-person controls](controls.md#pointer-lock) and games that turn with the mouse. Call it in a click or key handler: browsers lock the pointer only right after the user acts. It resolves once the lock begins. It fails with [E1425](../errors/E1425.md) when the browser refuses the lock: on a phone, in a frame without `allow-pointer-lock`, or just after the user pressed Esc. The option `{ unadjustedMovement: true }` asks for the mouse's raw movement, which some browsers cannot give. While the lock holds, the sketch's `input.pointer.locked` is true. The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Destroying the engine ends it too.
 - `destroy()` stops the engine and its threads, and the engine cannot start again. The sketch's `onDestroy` runs first, and every later call from the sketch's code fails with [E1420](../errors/E1420.md). Wait for its promise before you start another engine on the same page.
 - The page keeps the memory that a stopped engine's threads shared, for about 30 seconds. The next engine with the same memory maximum takes it. React's StrictMode, route changes and hot reloads destroy and create the engine again. Such a page then asks the browser for no new memory. Safari can refuse a new memory for some seconds after a page drops one. The page keeps at most 2 memories. Their RAM stays in use until a new engine takes one, the 30 seconds end or the page goes away. Call `destroy({ release: true })` when the page will not start the engine again soon: the browser can then free the memory at once. An engine whose threads did not all stop cleanly leaves no memory to reuse. The single-threaded build's memory is not shared, and the page keeps its core for the next engine.
@@ -185,6 +198,40 @@ The thread that draws reads the frame back from the GPU and encodes the image. W
 - When no new frame comes within a second or two, such as after an error stopped the sketch, the image shows the frame drawn last.
 - After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md). So does a capture whose frame the engine could not read back or encode. On WebGPU, the message names the cause when the GPU gives one: a lost device with its reason, or too little GPU memory.
 - A capture also fails when the thread that draws gives no answer within the engine's wait. That wait is twice the time that a frame's pipelines may take, and the message names it and the time. The wait counts only the time that the page shows. A page in a hidden tab draws no frames, so it keeps its whole wait until the tab shows again.
+
+## Add-on versions
+
+An add-on package ships in step with the engine and pins the version that it was built for. It reads the engine's `VERSION` as it loads, and a page that mixes two versions stops with [E1432](../errors/E1432.md) before it draws. The message names the add-on, its version and the engine version.
+
+```sh
+bunx @null3d/cli upgrade   # every null3D package takes one version
+```
+
+[The `null3d` command](../cli/null3d.md#upgrade) says what the command reads and writes.
+
+An add-on of your own makes the same check as it loads, so that a page which runs another engine version stops the same way:
+
+```ts
+import { checkAddonVersion } from '@null3d/engine';
+
+checkAddonVersion('my-addon', '0.2.0'); // the engine version this build was made for
+```
+
+### Add-ons from other developers
+
+An add-on that ships on its own schedule declares the range of plugin interface versions that it works with, instead of one engine version. The plugin interface is the set of public calls and hooks that an add-on builds against. Its version is a whole number, `PLUGIN_INTERFACE_VERSION`, which changes only when a stable hook changes. It does not change with every engine release.
+
+```ts
+import { checkPluginInterface } from '@null3d/engine';
+
+checkPluginInterface('my-addon', { min: 1, max: 2 }); // the interface versions this build works with
+```
+
+A page whose engine has an interface version outside that range stops with [E1433](../errors/E1433.md) before it draws. The message names the add-on, the range it declares and the engine's interface version. Install the add-on release that matches the engine's interface, or run the engine version that the add-on declares. A single-version range, such as `{ min: 1, max: 1 }`, pins one interface exactly.
+
+An add-on that claims a namespace gives the range in [`declareAddonNamespace()`](features.md#namespaces) instead, as `pluginInterface: { min, max }`, and the claim runs the same check. Use the direct call for an add-on that claims no namespace.
+
+The engine's own add-ons need no range. They ship in step with the engine and use `checkAddonVersion`, above.
 
 ## Related pages
 

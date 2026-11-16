@@ -1,0 +1,84 @@
+// One picture test per species of the vegetation add-on's plant core, made from the species folders,
+// so a species adds its folder and its references and no line of the manifest. Each test, plant-<id>,
+// draws one 1024 by 1024 frame of four panels from the plant review sketch: the whole plant at a
+// turn of 30 degrees, a close view of the crown, a leaf-cluster cutting and the bark at mid height.
+// `bun run check` refuses a test without its references, so a species lands with its pictures.
+import { join } from 'node:path';
+import { speciesFolders } from '../../tools/lib/vegetation-folders.ts';
+import type { ImageTest } from '../lib/images.ts';
+
+/** The repository's root. */
+const ROOT = join(import.meta.dirname, '../..');
+
+/**
+ * Seconds a species' four-panel picture may take. The panels stand three metres from the crown, so
+ * every shoot row inside that band is real geometry; a dense crown draws about six million triangles
+ * a frame, which a software rasteriser needs far longer for than the default sixty seconds allows.
+ */
+// A whole plant grown beside its piece is the work these pages do, and on the slowest runner that
+// measured more than four minutes: the European beech's page was still running at 245 seconds when
+// the former limit stopped it. The limit contains that reading with room, and the drawn run's own
+// slowest-page figures tighten it once they are recorded.
+const PANELS_SECONDS = 420;
+
+/**
+ * Species whose own four panels need longer than the shared limit, with the seconds each was
+ * measured at.
+ *
+ * The measurement is taken with the load the picture run applies: a project's three tiers drawing
+ * together. The common alder's dense crown finished those in under four minutes and overran the
+ * shared two, so its value is 240 and a run against its accepted references passed all three tiers
+ * in three and a half minutes.
+ *
+ * Timing one tier alone is the trap: the same crown drew in 96 seconds that way, which says nothing
+ * about the load the suite runs under. It is the second figure this species corrected after taking
+ * it on the wrong load, the first being its young-bark color read against a picture that framed a
+ * great limb rather than young wood.
+ *
+ * A tree fern's crown carries about two thousand pinnae, each a leaf of its own, and the software
+ * GPU drew three of the four panels within the shared limit and stopped before the last.
+ */
+const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
+	'common-alder': 240,
+	'tree-fern': 180,
+	// The willow's four panels drew in 138 seconds on WebGL2 and 192 on compatibility mode and
+	// WebGPU, with the three tiers drawing together under a machine loaded to 47 at its peak, so
+	// this keeps the same quarter margin the alder's 240 does.
+	'weeping-willow': 240,
+};
+
+/**
+ * Species whose sheet Firefox on Linux draws another way than this Mac's Chrome does. A dense
+ * crown of thin leaves lands past the half-per-cent device tolerance, from the bamboo's 0.533 to
+ * the common alder's 1.752 per cent, all measured in CI run 43864156371. The drawing repeats from
+ * run to run, so each keeps its own reference, which still shows a change to the sheet and no
+ * longer measures one rasteriser against another.
+ */
+const LINUX_DEVICE_SPECIES: ReadonlySet<string> = new Set([
+	'bamboo',
+	'common-alder',
+	'common-ash',
+	'date-palm',
+	'european-beech',
+	'hawthorn-shrub',
+	'holm-oak',
+	'pedunculate-oak',
+	'silver-birch',
+]);
+
+/** The picture test of each species folder. */
+export function plantSpeciesTests(root = ROOT): ImageTest[] {
+	return speciesFolders(root).map(({ id }) => ({
+		name: `plant-${id}`,
+		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
+		hold: 1,
+		size: [1024, 1024],
+		...(LINUX_DEVICE_SPECIES.has(id) && { devices: ['linux'] }),
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// A dense crown takes longer than the default limit on the software GPU's slower path, so the
+		// panels draw the low preset's lighter meshes there; a species measured slower still takes its
+		// own limit.
+		timeoutSeconds: PANELS_SECONDS_BY_SPECIES[id] ?? PANELS_SECONDS,
+		swiftShaderSwitches: ['preset=low'],
+	}));
+}

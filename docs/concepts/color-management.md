@@ -70,6 +70,16 @@ Effects that need HDR color, such as bloom, move compatibility mode to HDR color
 
 `engine.capabilities.hdr` says which path the engine started on. Both paths show the same colors, and differ only at the edges of objects. With MSAA, the 8-bit path averages the samples of an edge after tone mapping, and the HDR path before it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) lists the path of each tier and anti-aliasing mode.
 
+### Materials that keep their display color
+
+A material with `toneMapped: false` keeps its color as the display shows it, as three.js's `toneMapped: false` does. Use it for a panel, a sign or another object whose colors are set for the screen, such as a heads-up display in the world.
+
+The 8-bit path honours it in each material's own shader, which tone maps there: the shader encodes the color without the curve. The HDR path tone maps the whole image once, in its final pass. While a material keeps its display color, that pass also reads a mask of the surfaces whose material does so, and it skips the curve for those pixels. A blended surface keeps the curve on the HDR path, because a blended pixel mixes two surfaces and the mask cannot say which one owns it. Draw such a surface on the 8-bit path with `createEngine({ hdr: false })` if it needs the exact color. [The post-processing chain](post-processing.md) explains what else that path changes.
+
+The vignette and the sRGB encoding still apply to such a material. The exposure scales its colors before them, as it scales every other color.
+
+[The tone mapping opt-out demo](https://github.com/null3d-engine/null3d/tree/main/examples/tone-mapped) draws the same seven bright colors twice, with the flag and without, on the 8-bit path.
+
 ## Exposure and tone mapping
 
 Set both from the sketch with [`post.set`](../api/post.md):

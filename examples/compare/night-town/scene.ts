@@ -91,8 +91,8 @@ export const OBJECTS_PER_BLOCK =
 	CARS_PER_BLOCK * (4 + LIGHTS_PER_CAR) + // body, cabin, headlamps, tail lamps and lights
 	PARKED_PER_BLOCK * 2; // body and cabin
 
-/** The town's own objects: the street, the moon and the ambient light. */
-export const TOWN_OBJECTS = 3;
+/** The town's own objects: the street, the moon, the ambient light and the two window batches. */
+export const TOWN_OBJECTS = 5;
 
 /** The flying cars' batches: the body, the nose strip and the tail strips. */
 const FLYER_OBJECTS = 3;
@@ -1429,6 +1429,264 @@ export const FACADE_WINDOW: Readonly<
 
 /** How far the room behind a window reaches back from its glass, in meters. */
 export const ROOM_DEPTH = 2.4;
+
+// The windows, as panes that the facades add-on draws. Each pane is a quad on a wall, as wide as
+// the glass of its opening, with a room behind it and its own light in the row's values.
+
+/** The share of the ground floor's windows that are lit, where a shop shows its room. */
+export const GROUND_LIT_SHARE = 0.85;
+
+/** How far a pane stands off its wall, in meters, so it never fights the wall's own surface. */
+const PANE_LIFT = 0.01;
+
+/** The glass of a window of `kind` at the aimed bay width, as width and height in meters. */
+function paneGlass(kind: FacadeKind, ground: boolean): readonly [number, number] {
+	const box = windowBox(kind, ground);
+	return [(box[1] - box[0]) * BAY, (box[3] - box[2]) * (ground ? GROUND_FLOOR : FLOOR_HEIGHT)];
+}
+
+/**
+ * The glass of an upper window at the aimed bay width, as width and height in meters: the shape of
+ * the room that the add-on draws behind a pane. The walls' openings differ a little by kind, and
+ * each pane takes its own width and height from its wall, so this is the room's own size.
+ */
+export const PANE_GLASS: readonly [number, number] = paneGlass('concrete', false);
+
+/** The glass of a shop window at the aimed bay width, as width and height in meters. */
+export const PANE_GLASS_GROUND: readonly [number, number] = paneGlass('brick', true);
+
+/** One window of a building, as a pane that a scene places on the wall. */
+export interface WindowPane {
+	/** The block and the building lot that the window belongs to. */
+	block: number;
+	lot: number;
+	/** True for a shop window on the ground floor, false for a floor above it. */
+	ground: boolean;
+	/** The middle of the glass in world space. */
+	x: number;
+	y: number;
+	z: number;
+	/** The quad's turn about +Y, so its face looks out of the wall. */
+	yaw: number;
+	/** The glass's width and height in meters. */
+	width: number;
+	height: number;
+	/** Whether the pane is lit, how warm its light is, its flicker's phase in turns, and whether a screen lights it. */
+	lit: number;
+	warm: number;
+	phase: number;
+	cool: number;
+}
+
+/** The windows of one block: its shop windows or its floors above the ground floor. */
+function blockWindows(town: NightTown, block: number, ground: boolean): number {
+	let count = 0;
+	for (let l = 0; l < LOTS_PER_BLOCK; l++) {
+		const design = town.designs[
+			town.lotDesign[block * LOTS_PER_BLOCK + l] as number
+		] as BuildingDesign;
+		for (let w = 0; w < 4; w++) {
+			const length = w % 2 === 0 ? design.width : design.depth;
+			count += baysOf(length) * (ground ? 1 : design.floors);
+		}
+	}
+	return count;
+}
+
+/** The windows that blocks 0..blocks-1 hold, on the ground floor or above it. */
+export function paneWindows(town: NightTown, blocks: number, ground: boolean): number {
+	let count = 0;
+	for (let b = 0; b < blocks; b++) count += blockWindows(town, b, ground);
+	return count;
+}
+
+/**
+ * Visits every window of blocks 0..blocks-1 in row order: its place, size, turn and the own values
+ * that the add-on's pane form lights it by at simulation time `seconds`. The pane's light repeats
+ * the shader that used to draw the windows: a hash of its bay, its floor and its building's lot
+ * picks whether it is lit, its warmth and a few rooms whose light goes on and off every so often.
+ */
+export function eachWindow(
+	town: NightTown,
+	blocks: number,
+	seconds: number,
+	visit: (pane: WindowPane) => void,
+): void {
+	const at = new Float64Array(3);
+	const lot = new Int32Array(2);
+	const pane: WindowPane = {
+		block: 0,
+		lot: 0,
+		ground: false,
+		x: 0,
+		y: 0,
+		z: 0,
+		yaw: 0,
+		width: 0,
+		height: 0,
+		lit: 0,
+		warm: 0,
+		phase: 0,
+		cool: 0,
+	};
+	for (let b = 0; b < blocks; b++)
+		for (let l = 0; l < LOTS_PER_BLOCK; l++) {
+			lotPlace(town, b, l, at);
+			const cx = at[0] as number;
+			const cz = at[1] as number;
+			const yaw = at[2] as number;
+			const cos = Math.cos(yaw);
+			const sin = Math.sin(yaw);
+			const design = town.designs[
+				town.lotDesign[b * LOTS_PER_BLOCK + l] as number
+			] as BuildingDesign;
+			const kind = design.facade;
+			const hw = design.width / 2;
+			const hd = design.depth / 2;
+			for (let w = 0; w < 4; w++) {
+				const length = w % 2 === 0 ? design.width : design.depth;
+				const bays = baysOf(length);
+				const bay = length / bays;
+				// The wall's outward direction in the building's own frame.
+				const nx = w === 1 ? 1 : w === 3 ? -1 : 0;
+				const nz = w === 0 ? 1 : w === 2 ? -1 : 0;
+				for (let k = 0; k < bays; k++) {
+					const middle = (k + 0.5) * bay;
+					for (let f = 0; f <= design.floors; f++) {
+						const ground = f === 0;
+						pane.block = b;
+						pane.lot = l;
+						pane.ground = ground;
+						const box = ground ? windowBox(kind, true) : FACADE_WINDOW[kind];
+						const floorHeight = ground ? GROUND_FLOOR : FLOOR_HEIGHT;
+						const base = ground ? 0 : GROUND_FLOOR + (f - 1) * FLOOR_HEIGHT;
+						// The glass's middle in the building's frame, and its place on the wall.
+						let lx = 0;
+						let lz = 0;
+						if (w === 0) {
+							lx = middle - length / 2;
+							lz = hd;
+						} else if (w === 1) {
+							lx = hw;
+							lz = hd - middle;
+						} else if (w === 2) {
+							lx = hw - middle;
+							lz = -hd;
+						} else {
+							lx = -hw;
+							lz = -hd + middle;
+						}
+						lx += nx * PANE_LIFT;
+						lz += nz * PANE_LIFT;
+						pane.x = cx + cos * lx + sin * lz;
+						pane.y = SLAB_HEIGHT + base + ((box[2] + box[3]) / 2) * floorHeight;
+						pane.z = cz - sin * lx + cos * lz;
+						pane.yaw = yaw + (w * Math.PI) / 2;
+						pane.width = (box[1] - box[0]) * bay;
+						pane.height = (box[3] - box[2]) * floorHeight;
+						// The window's numbers, as the wall shader used to read them.
+						lotOf(pane.x, pane.z, lot);
+						const bayX = w * WALL_U_STRIDE + k;
+						const bayY = f;
+						windowValues(
+							pane,
+							bayX,
+							bayY,
+							lot[0] as number,
+							lot[1] as number,
+							ground,
+							kind,
+							seconds,
+						);
+						visit(pane);
+					}
+				}
+			}
+		}
+}
+
+/**
+ * Writes a pane's own light for simulation time `seconds`: whether it is lit, how warm, the phase
+ * of its flicker and whether a screen lights it.
+ */
+export function windowValues(
+	pane: WindowPane,
+	bayX: number,
+	bayY: number,
+	lotX: number,
+	lotZ: number,
+	ground: boolean,
+	kind: FacadeKind,
+	seconds: number,
+): void {
+	const pick = townHash(bayX + lotX * 4096, bayY, lotZ);
+	const kindValue = townHash(bayX, bayY + 977, lotX * 131 + lotZ);
+	// A few windows go on and off every so often: the period of 23 seconds and the room's own hash
+	// decide one of them.
+	const period = Math.floor(seconds / 23 + kindValue * 7);
+	const toggles = kindValue > 0.9 && townHash(bayX, bayY, period + lotX * 7 + lotZ * 13) < 0.5;
+	const share = ground ? GROUND_LIT_SHARE : FACADE_LIT_SHARE[kind];
+	pane.lit = pick < share !== toggles ? 1 : 0;
+	// Warm amber through soft white, and the blue of a screen in the rooms that show one.
+	pane.warm = kindValue > 0.45 ? 1 : 0;
+	pane.cool = kindValue > 0.78 ? 1 : 0;
+	pane.phase = (pick * 7) % 1;
+}
+
+/**
+ * Writes the panes of blocks 0..blocks-1 on the ground floor or above it, with their places, turns,
+ * sizes and row values, into a batch's arrays.
+ */
+export function writeWindowPanes(
+	town: NightTown,
+	blocks: number,
+	ground: boolean,
+	positions: Float32Array,
+	rotations: Float32Array,
+	scales: Float32Array,
+	values: Float32Array,
+): number {
+	let row = 0;
+	eachWindow(town, blocks, 0, (pane) => {
+		if (pane.ground !== ground) return;
+		positions[row * 3] = pane.x;
+		positions[row * 3 + 1] = pane.y;
+		positions[row * 3 + 2] = pane.z;
+		rotations[row * 4] = 0;
+		rotations[row * 4 + 1] = Math.sin(pane.yaw / 2);
+		rotations[row * 4 + 2] = 0;
+		rotations[row * 4 + 3] = Math.cos(pane.yaw / 2);
+		scales[row * 3] = pane.width;
+		scales[row * 3 + 1] = pane.height;
+		scales[row * 3 + 2] = 1;
+		values[row * 4] = pane.lit;
+		values[row * 4 + 1] = pane.warm;
+		values[row * 4 + 2] = pane.phase;
+		values[row * 4 + 3] = pane.cool;
+		row++;
+	});
+	return row;
+}
+
+/**
+ * Writes the lit value of each pane of blocks 0..blocks-1 at simulation time `seconds`, so a room
+ * that goes on or off does so. The other row values stay as they were.
+ */
+export function writeWindowLight(
+	town: NightTown,
+	blocks: number,
+	ground: boolean,
+	values: Float32Array,
+	seconds: number,
+): number {
+	let row = 0;
+	eachWindow(town, blocks, seconds, (pane) => {
+		if (pane.ground !== ground) return;
+		values[row * 4] = pane.lit;
+		row++;
+	});
+	return row;
+}
 
 /** The distance from a place to the nearest of some lines across one axis. */
 function nearLine(at: number, lines: readonly number[]): number {

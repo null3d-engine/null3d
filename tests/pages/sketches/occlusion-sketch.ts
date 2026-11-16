@@ -4,7 +4,8 @@
 // city. The image tests draw it with occlusion culling on and off, which must give one image; the
 // occlusion cost page times it. ?fixed holds the render scale at 1 with the governor off, for
 // timing. The page's 'occlusion-on' and 'occlusion-off' messages turn the culling on and off, and
-// the sketch answers each with 'occlusion' once the next frame has the new setting. ?light keeps a
+// the sketch answers each with 'occlusion' once the next frame has the new setting, with the frame
+// and whether the engine culls occluded objects on the GPU, as WebGPU does. ?light keeps a
 // tenth of the spheres and boxes, which a software GPU draws in time for the image tests.
 import { defineSketch } from '@null3d/engine';
 
@@ -116,7 +117,7 @@ export default defineSketch(({ scene, geometry, materials, quality, time, page }
 			camera.lookAt(x + Math.cos(look) * 10, 2, STREET_Z + Math.sin(look) * 10);
 			if (answer) {
 				answer = false;
-				page.post('occlusion', time.frame);
+				page.post('occlusion', { frame: time.frame, gpuOcclusion: quality.settings.gpuOcclusion });
 			}
 		},
 	};

@@ -1,8 +1,8 @@
 # D-69: The texture memory budget
 
-Status: decided for the method, 2026-10-05, and for HDR textures, 2026-10-07. The drop order waits for prototype A6's device runs. The start-time cost waits for the owner's view. Task: M2-A4.
+Status: decided and built, for the method and for HDR textures. The drop order waits for prototype A6's device runs. The start-time cost waits for the owner's view. Task: M2-A4.
 
-Summary: Past each preset's budget, textures from files drop up to 3 mip levels, with a band of 5%. The order is Godot's: more detail than any view needs, then unseen the longest, then the largest. Levels come back by loading the file again into a hidden texture. Arrays start at 8 MiB, stop at 128 MiB and shrink. The 129th texture of 1,024 texels now holds 768 MiB for a frame, not 2,048.
+Summary: Past each preset's budget, textures from files drop up to 3 mip levels, with a band of 5%, and reload them later. The order is Godot's: more detail than any view needs, then unseen the longest, then the largest. Arrays start at 8 MiB, stop at 128 MiB and shrink, so a 129th texture of 1,024 texels holds 768 MiB for a frame.
 
 ## Question
 
@@ -28,7 +28,7 @@ How does the engine hold the GPU memory of textures under each preset's budget f
 | The 129th texture arrives | 256 new layers beside 128 old for a frame: 2,048 MiB | the last array grows from 8 to 16: 768 MiB for a frame |
 | 128 of 129 destroyed | the 256-layer array stays: 1,365 MiB | 1 layer: 5.3 MiB |
 
-The memory count before the change left out the old array in the frame that it held both. Now `textures.memoryBytes` counts it until the next frame's list destroys it.
+In the frame that holds an old array and its new one, `textures.memoryBytes` counts both, until the next frame's list destroys the old one.
 
 **What drops in the test page.** The image test `texture-budget` loads two 512 x 512 PNG textures and a 64 x 64 one, then sets a budget of 1 MiB. On all three GPU paths and in all five thread modes, on Chrome on the Mac's GPU and on SwiftShader:
 
@@ -36,7 +36,7 @@ The memory count before the change left out the old array in the frame that it h
 - Raised to 64 MiB, the budget gave both levels back from the PNG file, and the textures took 1,398,100 bytes each again.
 - At a budget of 64 KiB, the large textures dropped 3 levels each. A 512 x 512 KTX2 file of ETC1S data loaded again without its largest levels. It became BC7 on WebGPU and dropped 2 levels, from 349,552 bytes to 21,872. It became ETC2 on WebGL2 and dropped 1 level, from 174,776 bytes to 43,704.
 
-**Size and start time.** Against main at df80eb92, on 2026-10-07, after Brotli:
+**Size and start time.** Against main at df80eb92, after Brotli:
 
 | File | Main | With the budget | Growth |
 | --- | --- | --- | --- |
@@ -45,11 +45,11 @@ The memory count before the change left out the old array in the frame that it h
 | Core glue, threaded | 11,200 B | 11,295 B | +95 B (+0.8%) |
 | Start JavaScript, pipelined | 126.1 KB | 127.1 KB of 140 KB | +1.0 KB |
 
-[D-83](D-83-gate-rulings-2026-10-06.md) gives about 6.5 ms of the S24+'s cold start on Slow 4G for each KB of start download. So the core's growth costs about 43 ms. The whole start download grows about 7.7 KB, which costs about 50 ms. That is about 0.9% of D-83's cold start target of 5.5 s. The core keeps 52% of its 600 KB budget. Most of the growth is the budget's order, its estimate of need and the arrays' moves and shrinks. All of them run in the core every frame. None of it can load on first use: the budget must hold from the first texture. The owner sees the figure in pull request #346.
+[D-83](D-83-m1-gate-rulings.md) gives about 6.5 ms of the S24+'s cold start on Slow 4G for each KB of start download. So the core's growth costs about 43 ms. The whole start download grows about 7.7 KB, which costs about 50 ms. That is about 0.9% of D-83's cold start target of 5.5 s. The core keeps 52% of its 600 KB budget. Most of the growth is the budget's order, its estimate of need and the arrays' moves and shrinks. All of them run in the core every frame. None of it can load on first use: the budget must hold from the first texture. The start-time cost waits for the owner's view (pull request #346).
 
-**The owner's iPad.** On 2026-10-07 the same page passed on both GPU paths in Safari on the owner's iPad Pro (run 20261007-062131-checks, [tested devices](../tested-devices.md)). The KTX2 texture became ETC2 on both paths and dropped a level by loading its file again. The WebGPU page ran at High and started with a budget of 1008 MiB, the tablet cap, not High's 1024 MiB. The WebGL2 page ran at Medium, WebGL2's highest preset, and started with Medium's 512 MiB. The test sets its own budgets with `quality.set`, so the preset does not change what it checks.
+**The owner's iPad.** The same page passed on both GPU paths in Safari on the owner's iPad Pro (run 20261007-062131-checks, [tested devices](../tested-devices.md)). The KTX2 texture became ETC2 on both paths and dropped a level by loading its file again. The WebGPU page ran at High and started with a budget of 1008 MiB, the tablet cap, not High's 1024 MiB. The WebGL2 page ran at Medium, WebGL2's highest preset, and started with Medium's 512 MiB. The test sets its own budgets with `quality.set`, so the preset does not change what it checks.
 
-How the data was produced: on 2026-10-05, `NULL3D_PORT=17373 bun run test:images -g texture-budget`, then the same with `CI=1`. The size figures come from `bun run build:check-size` on 2026-10-07. The unit tests in `crates/null3d-render/src/textures.rs` and `textures/budget.rs` give the table's array figures.
+How the data was produced: `NULL3D_PORT=17373 bun run test:images -g texture-budget`, then the same with `CI=1`. The size figures come from `bun run build:check-size`. The unit tests in `crates/null3d-render/src/textures.rs` and `textures/budget.rs` give the table's array figures.
 
 ## Decision
 
@@ -63,7 +63,7 @@ How the data was produced: on 2026-10-05, `NULL3D_PORT=17373 bun run test:images
 
 - Uncompressed texels on the GPU move to the array of the next smaller size. The frame's list copies every level but the largest. The old layer frees after the copy.
 - Texels that bring their own levels, and wait in engine memory for their upload, lose their largest level there.
-- Compressed texels on the GPU load again from the file without their largest levels. Neither compatibility mode nor WebGL2 copies compressed texels. Since pull request #381, KTX2 files of UASTC HDR data transcode to `rgb9e5ufloat`. Those HDR texels load again the same way. WebGL2 cannot copy that format, so each such texture has an array of its own, as a compressed one has. The store applies this to any format that takes writes only, compressed or shared-exponent. A format added to that rule drops by loading again too.
+- Compressed texels on the GPU load again from the file without their largest levels. Neither compatibility mode nor WebGL2 copies compressed texels. KTX2 files of UASTC HDR data transcode to `rgb9e5ufloat` (pull request #381). Those HDR texels load again the same way. WebGL2 cannot copy that format, so each such texture has an array of its own, as a compressed one has. The store applies this to any format that takes writes only, compressed or shared-exponent. A format added to that rule drops by loading again too.
 
 **Giving levels back.** The engine asks the page to load the file again. The page fetches it with `cache: 'force-cache'`, so the HTTP cache usually answers. An image decodes at the size of the levels that stay, with `resizeQuality: 'high'`. A KTX2 file transcodes and keeps its smaller levels. Where the cache of transcoded textures is on ([D-24](D-24-transcode-cache.md)), the load again reads the file's texels from it. It skips the transcoder, as the first load does. An image inside a glTF file reads its byte range again. The parser notes the file that holds each buffer, and where the image lies in it. The texels go to a hidden texture of their size. Once they are on the GPU, the texture swaps places with it, so it draws with its old levels until then. Two loads run at once. A file that no longer loads keeps the texture at the levels it holds, and it drops no more. The same path loads a file's texture again after the browser takes the GPU away.
 
@@ -73,12 +73,12 @@ How the data was produced: on 2026-10-05, `NULL3D_PORT=17373 bun run test:images
 
 Rejected:
 
-- The first plan's order, the largest mip levels of the largest textures first. It is Godot's third key. With it, a large texture on screen loses detail before a small one that nothing shows.
+- The largest mip levels of the largest textures first. It is Godot's third key. With it, a large texture on screen loses detail before a small one that nothing shows.
 - Godot's GPU feedback: it needs storage atomics in fragment shaders, which WebGL2 and compatibility mode lack (above).
 - Keeping each texture's texels on the CPU to give levels back. The iPad's CPU and GPU share one memory, so the copy would cost what the budget saves.
 - Dropping levels of the sketch's own textures with no way back. Their detail would be lost for good after a short burst of loads.
 - An array per texture, which never wastes a layer. Materials whose maps share an array share a bind group, and the GPU switches textures less often between draws (`api/textures`).
-- For `rgb9e5ufloat` textures: decoding them to `rgba16float`, which the GPU can copy. That doubles their memory, 8 bytes a texel against 4, and the budget exists to save memory. Leaving them out of the drops was rejected too: an HDR map from a file can be one of the largest textures in a scene. Decided on 2026-10-07, when #381 merged into this work.
+- For `rgb9e5ufloat` textures: decoding them to `rgba16float`, which the GPU can copy. That doubles their memory, 8 bytes a texel against 4, and the budget exists to save memory. Leaving them out of the drops was rejected too: an HDR map from a file can be one of the largest textures in a scene.
 - Destroying an array's old GPU texture in the frame that copies from it. A capture plays the list twice, and the second copy would read a destroyed texture.
 
 ## How three.js handles it
@@ -89,8 +89,8 @@ three.js sets no texture budget. Its `renderer.info.memory.textures` counts the 
 
 - `crates/null3d-render/src/textures/budget.rs` holds the budget, the order, the estimate of need and the loads again. `textures.rs` holds the arrays' growth, the moves and the shrinks.
 - `packages/engine/src/scene/textures.ts` starts the loads again that the core asks for. `assets.ts` and `gltf.ts` note each texture's file.
-- The preset row moved from `quality/preset-docs.ts` into `quality/presets.ts`. It changes during play, and `quality/chooser.ts` holds the cap of phones and tablets.
+- The preset row lives in `quality/presets.ts`, since it changes during play, and `quality/chooser.ts` holds the cap of phones and tablets.
 - The docs pages `concepts/quality-presets`, `api/quality`, `api/textures`, `concepts/assets` and `guides/phones` describe the budget. The develop skill's `performance.md` and `api-quickref.md` show it, and the three.js mapping has a `texture-memory` entry.
 - Prototype A6 checks the order on the iPad and on BrowserStack's Galaxy S25. It runs the `texture-budget` page through the runner, and the S6 scene once its textures pass a phone's budget. If a texture on screen loses detail before one off screen, the estimate of need changes, not the order.
 - The test page's KTX2 file `budget-checker-etc1s.ktx2` joins the files whose transcoder output `packages/engine/src/scene/ktx2.test.ts` compares with the official Basis Universal 2.50 build. Its 5 hashes came from that official build, as [Image tests](../image-tests.md#the-manifest) says.
-- `bun run decisions` lists the record ([D-84](D-84-generated-decision-list.md)). D-12's texture budgets now apply.
+- D-12's texture budgets apply.

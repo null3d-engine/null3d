@@ -8,11 +8,12 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { copyInPlace, partialName, replaceFolder } from './atomic-files.ts';
+import { copyInPlace, linkInPlace, partialName, replaceFolder } from './atomic-files.ts';
 
 let dir: string;
 beforeEach(() => {
@@ -44,6 +45,48 @@ describe('copyInPlace', () => {
 		writeFileSync(source, 'a');
 		copyInPlace(source, join(dir, 'dist/tools/a.wasm'));
 		expect(readFileSync(join(dir, 'dist/tools/a.wasm'), 'utf8')).toBe('a');
+	});
+});
+
+describe('linkInPlace', () => {
+	it('links a file in one step, and leaves a path that names the same file as it is', () => {
+		const source = join(dir, 'shaders.ts');
+		writeFileSync(source, 'export {};\n');
+		const path = join(dir, 'generated/shaders.ts');
+		for (let i = 0; i < 3; i++) linkInPlace(source, path);
+		expect(statSync(path).ino).toBe(statSync(source).ino);
+		expect(readdirSync(join(dir, 'generated'))).toEqual(['shaders.ts']);
+	});
+
+	it('links over a temporary name that an earlier run left, and leaves none behind', () => {
+		const source = join(dir, 'shaders.ts');
+		writeFileSync(source, 'export {};\n');
+		const path = join(dir, 'shaders-linked.ts');
+		writeFileSync(partialName(path), 'left over\n');
+		linkInPlace(source, path);
+		expect(statSync(path).ino).toBe(statSync(source).ino);
+		expect(existsSync(partialName(path))).toBe(false);
+	});
+
+	it('leaves no link to the source under the temporary name when the rename fails', () => {
+		const source = join(dir, 'shaders.ts');
+		writeFileSync(source, 'export {};\n');
+		// A folder in the path's place makes the rename fail after the link has been made.
+		const path = join(dir, 'taken');
+		mkdirSync(join(path, 'inside'), { recursive: true });
+		expect(() => linkInPlace(source, path)).toThrow();
+		expect(existsSync(partialName(path))).toBe(false);
+		expect(readFileSync(source, 'utf8')).toBe('export {};\n');
+	});
+
+	it('replaces a file of other bytes with the link', () => {
+		const source = join(dir, 'shaders.ts');
+		writeFileSync(source, 'export const NEW = 1;\n');
+		const path = join(dir, 'shaders-copy.ts');
+		writeFileSync(path, 'export const OLD = 1;\n');
+		linkInPlace(source, path);
+		expect(readFileSync(path, 'utf8')).toBe('export const NEW = 1;\n');
+		expect(statSync(path).ino).toBe(statSync(source).ino);
 	});
 });
 

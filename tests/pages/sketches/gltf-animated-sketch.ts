@@ -23,7 +23,11 @@ const ACCESSORIES = [
 	'Spike_Shield',
 ];
 
-export default defineSketch(async ({ scene, assets, post, page }) => {
+export default defineSketch(async ({ scene, assets, post, page, quality }) => {
+	// A test compares two of this page's frames, so the picture must not move between them. The
+	// frame-budget governor may lower the render scale and raise it again on a slow renderer, which
+	// redraws the scene at another scale; a capture keeps the settings as set instead (D-237).
+	await quality.set({ governor: false });
 	post.set({ toneMapping: 'none' });
 	scene.setBackground('#60666e');
 	scene.createDirectionalLight({ direction: [-1, -2, -1.5], intensity: 3 });

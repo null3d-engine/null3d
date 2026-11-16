@@ -7,6 +7,7 @@
 // ?reverse reverses their render order, which changes the sorted image and leaves the weighted one
 // as it is.
 import { defineSketch } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 const blending = params.has('sorted') ? 'normal' : 'weighted';
@@ -22,7 +23,8 @@ const PUFFS = [
 	[-0.5, 1.45, 0.25, 0.42, '#b1aaa3'],
 ] as const;
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#1c2129');
 	scene.createDirectionalLight({ direction: [-1, -2, -1.5], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.5 });

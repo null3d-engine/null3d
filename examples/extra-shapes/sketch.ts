@@ -111,7 +111,7 @@ export default defineSketch(async (ctx) => {
 	// faces, so it stays in view when the camera orbits behind it.
 	const looks = [
 		{ color: '#f2c14e', metalness: 1, roughness: 0.15 },
-		{ color: '#ffffff', ...GLASS },
+		{ color: '#ffffff', ...GLASS, dispersion: 0.6 },
 		{ color: '#3fb8af', roughness: 0.35 },
 		{ color: '#e8e8ec', metalness: 1, roughness: 0.05 },
 		{ color: '#d98a5f', metalness: 1, roughness: 0.45 },

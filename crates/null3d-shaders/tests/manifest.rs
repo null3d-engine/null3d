@@ -44,3 +44,18 @@ fn a_count_past_the_figure_is_a_problem_that_names_the_figure_and_the_guide() {
         "{problems:?}"
     );
 }
+
+/// A CI shard builds a few of the manifest's entries, from a manifest narrowed to those entries.
+/// The narrowed manifest must parse: a first-use bit's list of shaders names entries that this
+/// shard does not hold, and the narrowing takes those names out rather than leaving a check to
+/// refuse the shard.
+#[test]
+fn a_shards_narrowed_manifest_parses() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let inputs = Inputs::read(&root).expect("the repository's shaders");
+    for names in [&["cull"][..], &["moment_lit"][..], &["lit", "sprite"][..]] {
+        let narrowed = null3d_shaders::narrowed(&inputs, names);
+        Manifest::parse(&narrowed.manifest)
+            .unwrap_or_else(|problems| panic!("a shard of {names:?}: {problems:#?}"));
+    }
+}

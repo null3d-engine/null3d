@@ -1,11 +1,15 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
+import { moduleShare, wgslModules } from '../../../tools/lib/wgsl-modules';
 import { CompilerPool } from './compile-pool';
 import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
+import { ShaderCache, shaderCacheOff } from './shader-cache';
+import type { ShaderCompiler } from './shader-compiler';
 import type { CompiledMaterial, CompiledWgsl, GlslProgram, ShaderVariant } from './shader-types';
-import { compileLiteral, compileWgslFile, findTaggedWgsl, WGSL_TAG } from './wgsl';
+import { compileLiteral, compileWgslFile, findTaggedWgsl } from './wgsl';
 
 /** Library text that every build shares, as the engine's standard material's builds do. */
 const LIBRARY = Array.from(
@@ -51,6 +55,8 @@ function material(variants: number): CompiledMaterial {
 		attributes: 0,
 		baseColor: true,
 		objectIds: false,
+		sceneDepth: false,
+		alpha: false,
 	};
 }
 
@@ -108,7 +114,7 @@ describe('ShaderPack', () => {
 		const shader = material(2);
 		const set = new ShaderPack();
 		const records = [{}, { standard_skin: variant(7) }];
-		const code = `export default ${pack.value(shader, undefined, 1)};\n${pack.unpacker()}\nfunction ${LOAD_BUILDS}(target, set) {\n\treturn import('./set.mjs').then((module) => ({ default: target + ' ' + set === 'wgsl 64' ? module.default : [] }));\n}\n`;
+		const code = `export default ${pack.value(shader, undefined, 1, 'material')};\n${pack.unpacker()}\nfunction ${LOAD_BUILDS}(kind, target, set) {\n\treturn import('./set.mjs').then((module) => ({ default: kind + ' ' + target + ' ' + set === 'material wgsl 64' ? module.default : [] }));\n}\n`;
 		const setCode = `export default ${set.value(records)};\n${set.unpacker()}`;
 		const loaded = (await run(code, { 'set.mjs': setCode })) as CompiledMaterial;
 		const { builds, ...rest } = loaded;
@@ -132,30 +138,20 @@ describe('ShaderPack', () => {
  */
 const COMPILES = process.env.NULL3D_SHADER_COMPILER !== undefined;
 
-/** The folders whose modules hold the repository's own WGSL: the test sketches and the demos. */
-const WGSL_FOLDERS = ['tests/pages', 'tests/fixtures', 'examples'];
+/**
+ * The share of the repository's modules that this run compiles, `k/n` for part k of n, as CI's
+ * parts of the test take them, or every module without it.
+ */
+const SHARE = process.env.NULL3D_PACK_SHARE || undefined;
 
-/** Every module of those folders with WGSL, as the plugin compiles it: scripts and `.wgsl` files. */
-function wgslModules(root: string): string[] {
-	const files: string[] = [];
-	for (const folder of WGSL_FOLDERS)
-		for (const file of readdirSync(join(root, folder), { recursive: true, encoding: 'utf8' })) {
-			if (file.includes('node_modules')) continue;
-			const path = join(root, folder, file);
-			if (
-				path.endsWith('.wgsl') ||
-				(/\.[cm]?[jt]sx?$/.test(path) && WGSL_TAG.test(readFileSync(path, 'utf8')))
-			)
-				files.push(path);
-		}
-	return files.sort();
-}
+/** The parts that the modules split into, 1 without a share. */
+const PARTS = SHARE ? Number(SHARE.split('/')[1]) : 1;
 
 /** The time that compiling every module of the repository may take on a CI runner. */
-const COMPILE_ALL_MS = 600_000;
+const COMPILE_ALL_MS = scaledBudget(600_000);
 
 /** A module's compiled shaders, as the plugin compiles them. Shaders that do not compile are left out. */
-async function compiledShaders(file: string, compiler: CompilerPool): Promise<CompiledWgsl[]> {
+async function compiledShaders(file: string, compiler: ShaderCompiler): Promise<CompiledWgsl[]> {
 	const code = readFileSync(file, 'utf8');
 	const compiled = file.endsWith('.wgsl')
 		? [await compileWgslFile(file, file, code, compiler)]
@@ -168,15 +164,22 @@ async function compiledShaders(file: string, compiler: CompilerPool): Promise<Co
 }
 
 describe.skipIf(!COMPILES)('ShaderPack with the compiler', () => {
-	const compiler = new CompilerPool();
-	afterAll(() => compiler.close());
+	const root = join(import.meta.dir, '../../..');
+	// The test runs no dev server beside the compiles, so its pool takes every core. The compiles go
+	// through the plugin's cache in the repository's own cache folder, whose entries name their
+	// source and the compiler's version, so a run after a change to a few modules compiles only
+	// theirs. Turning the build cache off compiles every one.
+	const pool = new CompilerPool(availableParallelism());
+	const compiler = new ShaderCache(() => root, pool, { disabled: shaderCacheOff });
+	afterAll(() => pool.close());
 
 	it(
 		"gives back every byte of each compiled shader in the repository's modules",
 		async () => {
-			const root = join(import.meta.dir, '../../..');
 			const modules = await Promise.all(
-				wgslModules(root).map((file) => compiledShaders(file, compiler)),
+				moduleShare(wgslModules(root), SHARE).map((file) =>
+					compiledShaders(join(root, file), compiler),
+				),
 			);
 			let full = 0;
 			let packed = 0;
@@ -190,7 +193,7 @@ describe.skipIf(!COMPILES)('ShaderPack with the compiler', () => {
 				packed += module.length;
 				shaders += values.length;
 			}
-			expect(shaders).toBeGreaterThan(30);
+			expect(shaders).toBeGreaterThan(Math.floor(30 / PARTS));
 			console.log(
 				`${shaders} compiled shaders: ${(full / 1e6).toFixed(1)} MB in full, ${(packed / 1e6).toFixed(1)} MB packed`,
 			);

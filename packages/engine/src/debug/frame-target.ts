@@ -23,6 +23,15 @@ export function workLevel(ms: number, targetMs: number): Level {
 	return ms <= targetMs * WORK_OK_SHARE ? 'ok' : ms <= targetMs ? 'warn' : 'bad';
 }
 
+/**
+ * How a feature's GPU time stands against the allowance it may take now. A feature that reports no
+ * time, or that declares no budget, has no level.
+ */
+export function featureLevel(gpuMs: number | null, allowedMs: number | null): Level | undefined {
+	if (gpuMs === null || allowedMs === null) return undefined;
+	return workLevel(gpuMs, allowedMs);
+}
+
 /** How a frame rate stands against the target frame rate. */
 export function rateLevel(fps: number, target: number): Level {
 	return fps >= target * RATE_OK_SHARE ? 'ok' : fps >= target * RATE_BAD_SHARE ? 'warn' : 'bad';

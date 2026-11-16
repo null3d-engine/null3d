@@ -1,0 +1,19 @@
+[package]
+name = "null3d-terrain"
+description = "The terrain add-on's per-frame work: the height field's quadtree selection and block build, as a WebAssembly module for the add-on's job workers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The two float operations that core leaves to the standard library: its square root and its
+# floor. The WebAssembly build keeps no standard library, so it takes them from here.
+libm = "0.2.16"
+
+[lints]
+workspace = true

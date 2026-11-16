@@ -45,6 +45,9 @@ pub const LENS: Perspective = Perspective {
 
 pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub jobs: JobSystem,
+    /// A job system whose workers run on threads of their own, which the frames then use in place
+    /// of `jobs`, which has none.
+    pub workers: Option<&'static JobSystem>,
     pub scene: SceneStorage,
     pub batches: BatchTable,
     pub snapshot: FrameSnapshot,
@@ -81,6 +84,15 @@ impl World {
     /// by the WebGPU frame builder.
     pub fn new() -> World {
         World::with_config(RendererConfig::default())
+    }
+
+    /// The same world, whose frames count the copies of every level set, small ones included, as
+    /// the tests of the count and of the slices that it sizes ask.
+    pub fn counting() -> World {
+        World::with_config(RendererConfig {
+            fixed_level_slots: 0,
+            ..RendererConfig::default()
+        })
     }
 
     /// The same world, drawn by a WebGPU frame builder with `config`.
@@ -187,6 +199,7 @@ impl<B: FrameBuilder> World<B> {
         settings.set_ambient([0.4, 0.4, 0.4]);
         World {
             jobs,
+            workers: None,
             scene,
             batches,
             snapshot: FrameSnapshot::with_capacity(256),
@@ -217,10 +230,13 @@ impl<B: FrameBuilder> World<B> {
             map_size: 1024,
             bias: 0.5,
             normal_bias: 1.0,
+            intensity: 1.0,
             distance: 40.0,
             auto: false,
             contact: 0.0,
             layers: DEFAULT_LAYERS,
+            hero: None,
+            hero_size: 0,
         }));
     }
 
@@ -336,11 +352,12 @@ impl<B: FrameBuilder> World<B> {
     /// As [`World::record`], returning the renderer's error.
     pub fn try_record(&mut self, structure_changed: bool) -> Result<bool, RecordError> {
         let frame = self.frame;
+        let jobs = self.workers.unwrap_or(&self.jobs);
         if frame > 1 {
             self.scene.begin_frame(frame);
         }
         if let Some(animations) = self.animations.as_mut() {
-            animations.update(&self.jobs, self.animation_step);
+            animations.update(jobs, self.animation_step);
         }
         let settings = self.renderer.settings();
         skinning::update_bounds(
@@ -349,10 +366,11 @@ impl<B: FrameBuilder> World<B> {
             &self.morphs,
             settings.meshes(),
             settings.materials(),
+            settings.override_material(),
         );
-        self.scene.update_transforms(&self.jobs);
+        self.scene.update_transforms(jobs);
         self.batches
-            .update(&self.jobs, frame, self.scene.cell_table_mut());
+            .update(jobs, frame, self.scene.cell_table_mut());
         self.snapshot.record(frame, &self.scene, &self.batches);
         // The newest frame that the thread that draws drew with every pipeline built, as the page
         // reports it: the whole frame from the start, unless the test names a frame.
@@ -378,7 +396,7 @@ impl<B: FrameBuilder> World<B> {
             canvas: self.canvas,
             render_scale: self.render_scale,
             structure_changed,
-            jobs: &self.jobs,
+            jobs,
             lines: self.lines.lines(),
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
@@ -443,6 +461,33 @@ impl<B: FrameBuilder> World<B> {
         mesh
     }
 
+    /// As [`World::add_object_with`], with the object at `position`, and returns the object's
+    /// handle, which a test needs to give it a flag such as casting shadows.
+    pub fn add_object_at(
+        &mut self,
+        mesh: &Geometry,
+        shading: Shading,
+        features: u32,
+        position: [f32; 3],
+    ) -> Handle {
+        let settings = self.renderer.settings_mut();
+        let mesh = settings.meshes_mut().add(mesh).unwrap() + 1;
+        let material = settings
+            .materials_mut()
+            .create(shading, features, [1.0, 1.0, 1.0, 1.0])
+            .unwrap()
+            + 1;
+        let object = self.scene.reserve().unwrap();
+        self.scene.set_local_radius(object, 1.0).unwrap();
+        self.scene.set_position(object, position).unwrap();
+        let commands = [
+            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+            Command::set_material(object, material),
+        ];
+        self.scene.apply_commands(&commands, self.frame).unwrap();
+        object
+    }
+
     /// Adds a texture of `size` texels on each side with an image on its way, a material that maps
     /// it, and a grid object that draws with the material, in the current frame. Returns the
     /// texture, and the engine ids of the mesh and the material.
@@ -485,13 +530,18 @@ impl<B: FrameBuilder> World<B> {
             .sync(count, taken);
     }
 
-    /// Records the current frame and replays it twice on the mock, as a capture replays a frame's
-    /// list again, then moves on to the next frame. Returns the frame's operations.
+    /// Records the current frame and replays it twice on the mock: once as the frame loop draws it,
+    /// then again as a capture does, while the reads of the first replay still wait, as in hold
+    /// mode, whose capture follows the frame's draw at once. Then moves on to the next frame.
+    /// Returns the frame's operations.
     pub fn step(&mut self, mock: &mut MockBackend, structure_changed: bool) -> Vec<(Op, Vec<u32>)> {
         self.record(structure_changed);
-        for _ in 0..2 {
-            mock.replay(self.renderer.list(self.frame).words()).unwrap();
-        }
+        let words = self.renderer.list(self.frame).words();
+        mock.replay(words).unwrap();
+        mock.replay_capture(words).unwrap();
+        // The thread that draws raises a read's slot a frame or two later, and the mock holds the
+        // buffer until it does.
+        mock.finish_reads();
         let commands = self.commands();
         self.frame += 1;
         commands
@@ -567,6 +617,11 @@ pub fn base_format(g: Geometry) -> Geometry {
 /// A whole sphere from the engine's generator, in the base vertex format.
 pub fn base_sphere(radius: f64, segments: [u32; 2]) -> Geometry {
     base_format(sphere_geometry(radius, segments, (0.0, TAU), (0.0, PI)).unwrap())
+}
+
+/// A unit box from the engine's generator, in the base vertex format.
+pub fn base_box() -> Geometry {
+    base_format(box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
 }
 
 pub fn count(commands: &[(Op, Vec<u32>)], op: Op) -> usize {

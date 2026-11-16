@@ -1,8 +1,8 @@
 # D-15: Where the directional light's cascades split
 
-Status: decided. Date: 2026-10-03. Pull request: #211.
+Status: decided and built (pull request #211). Not measured yet: the iPad's rows on WebGPU, at a lean of 80% and of 65%.
 
-Summary: Lean 65% toward the logarithmic spread: S4's ground gets texels 3.5 times finer, and shadows at eye height stay under twice as coarse. The filter keeps its weighting.
+Summary: Lean 65% toward the logarithmic spread. Against a lean of 80%, S4's ground gets texels 3.5 times finer, and shadows at eye height stay under twice as coarse. The filter keeps its weighting.
 
 ## Question
 
@@ -12,7 +12,7 @@ A second question came with it: can another weighting of the shadow map's texels
 
 ## Rule
 
-The split must give finer texels to the middle distance, where a raised camera such as S4's sees the ground. It must not make the shadows at the feet of a camera at eye height more than twice as coarse as before. It must not cost frame time on the Mac or the S24+.
+The split must give finer texels to the middle distance, where a raised camera such as S4's sees the ground. At the feet of a camera at eye height, shadows may be at most twice as coarse as with a lean of 80%. It must not cost frame time on the Mac or the S24+.
 
 ## Data
 
@@ -22,22 +22,22 @@ The light's defaults are 3 cascades of 2,048 texels on each side, over 200 m. Wi
 
 | Lean toward logarithmic | First cascade | Second cascade | Third cascade |
 | --- | --- | --- | --- |
-| 80%, before | 0.1 to 14 m: 1.65 cm | 14 to 39 m: 4.53 cm | 39 to 200 m: 23 cm |
+| 80% | 0.1 to 14 m: 1.65 cm | 14 to 39 m: 4.53 cm | 39 to 200 m: 23 cm |
 | 65%, chosen | 0.1 to 24 m: 2.78 cm | 24 to 57 m: 6.55 cm | 57 to 200 m: 23 cm |
 | 50%, three.js's practical split | 0.1 to 34 m: 3.91 cm | 34 to 75 m: 8.58 cm | 75 to 200 m: 23 cm |
 
 The last cascade always ends at the shadow distance, so its texels depend only on the distance and the map size.
 
-- S4's camera flies 42 m up and sees no ground nearer than about 40 m. At 80%, all its ground drew from the last cascade, with 23 cm texels. Its diagonal shadow edges showed steps on the iPad and on the Mac.
+- S4's camera flies 42 m up and sees no ground nearer than about 40 m. At 80%, all its ground draws from the last cascade, with 23 cm texels. Its diagonal shadow edges then show steps on the iPad and on the Mac.
 - At 65%, S4's ground from 40 to 57 m gets texels 3.5 times finer.
-- A camera at eye height (1.7 m up) sees the ground a few meters ahead. At 50%, its shadows were 2.4 times as coarse as at 80%, and they looked soft and streaked. At 65% they are 1.7 times as coarse, and they look close to 80%.
+- A camera at eye height (1.7 m up) sees the ground a few meters ahead. At 50%, its shadows are 2.4 times as coarse as at 80%, and they look soft and streaked. At 65% they are 1.7 times as coarse, and they look close to 80%.
 
 three.js's cascaded shadow addon (`CSM`) splits with its "practical" mode at a lean of 50% by default. Its twin of S4 uses it, with cascades that end at 200 m as null3D's do.
 
 ### Cost
 
-- Chrome on the MacBook Pro's GPU, `bun run bench:run --compare` against main: S4's nearest cascade pass took 0.087 ms of GPU time instead of 0.070 ms. That cascade now reaches 24 m instead of 14 m, so it holds more casters. The frame's GPU time stayed at 1.33 ms. S2 with 3 cascades changed in no GPU pass. CPU times stayed within the noise.
-- S4 on the Galaxy S24+ in Chrome on WebGL2, 5 runs of 30 seconds at 60 Hz, then the governor's run, 3 October 2026:
+- Chrome on the MacBook Pro's GPU, `bun run bench:run --compare` between the leans of 80% and 65%. At 65%, S4's nearest cascade pass takes 0.087 ms of GPU time, against 0.070 ms. That cascade reaches 24 m instead of 14 m, so it holds more casters. The frame's GPU time is 1.33 ms at both leans. S2 with 3 cascades changes in no GPU pass. CPU times stay within the noise.
+- S4 on the Galaxy S24+ in Chrome on WebGL2, 5 runs of 30 seconds at 60 Hz, then the governor's run:
 
 | Measure | 80% | 65% |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ WebGL2 on this phone has no GPU timer. The GPU delay stayed at one frame interva
 
 ### Parity with three.js
 
-The shadow scene of `bun run parity` moved closer to three.js. Chrome on the Mac's GPU: 0.229%, 0.264% and 0.235% of the pixels differ on WebGPU, compatibility mode and WebGL2, from 0.313%, 0.351% and 0.317%. SwiftShader: 0.243%, 0.282% and 0.256%, from 0.326%, 0.363% and 0.331%. [Image tests](../image-tests.md#parity-with-threejs) gives the limit.
+The shadow scene of `bun run parity` lies closer to three.js at 65% than at 80%. Chrome on the Mac's GPU: 0.229%, 0.264% and 0.235% of the pixels differ on WebGPU, compatibility mode and WebGL2, against 0.313%, 0.351% and 0.317%. SwiftShader: 0.243%, 0.282% and 0.256%, against 0.326%, 0.363% and 0.331%. [Image tests](../image-tests.md#parity-with-threejs) gives the limit.
 
 ### The filter's weighting
 
@@ -69,7 +69,7 @@ The filter keeps Castaño's weighting. The shadows page tells developers to shor
 
 - The lean is `SPLIT_LAMBDA` in `crates/null3d-render/src/shadows.rs`. The Rust tests of turning and moving cameras check every cascade that holds a point, so shadow edges still stay still.
 - `concepts/shadows` gives the texel table and says why steps remain at shallow angles.
-- The shadow image tests with 2 to 4 cascades, the 5 x 5 filter and custom materials, and S4, have new references in both sets. The one-cascade test did not change.
-- In S4's view the second cascade now hands over to the third at 57 m, where the texels grow from 6.55 cm to 23 cm. A blend between cascades could hide that hand-over.
-- The iPad's rows, before and after the change on WebGPU, are still to come.
-- The visual checks now measure what this choice fixed. With the lean back at 80%, the long shadow edge of the shadow check scene showed stair steps of 0.53 px, against 0.29 px. S4's shadow edges strayed 0.14 px from a reference with the largest map, against 0.095 px. After biases in meters ([D-16](D-16-moving-casters-and-bias.md)), the lean of 80% gave stair steps of 0.23 px against 0.15 px. S4's edges strayed 0.116 px to 0.123 px against 0.100 px. The limits of those checks fail a return to 80% ([Image tests](../image-tests.md#visual-checks)).
+- Both reference sets draw S4 and the shadow tests with 2 to 4 cascades, the 5 x 5 filter and custom materials at 65%. The one-cascade test does not depend on the lean.
+- In S4's view the second cascade hands over to the third at 57 m, where the texels grow from 6.55 cm to 23 cm. A blend between cascades could hide that hand-over.
+- Not measured yet: the iPad's rows on WebGPU, at 80% and at 65%.
+- The visual checks measure what this choice fixes. The checks use the biases in meters of [D-16](D-16-moving-casters-and-bias.md). On the long shadow edge of the shadow check scene, a lean of 80% gives stair steps of 0.23 px, against 0.15 px at 65%. S4's shadow edges stray 0.116 px to 0.123 px from a reference with the largest map, against 0.100 px. The limits of those checks fail a return to 80% ([Image tests](../image-tests.md#visual-checks)).

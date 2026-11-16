@@ -199,8 +199,7 @@ export function checkLinkTree(
 /**
  * Whether a link target exists. A page that git ignores is written by a generator, so it is absent
  * until the generators have run. A link to such a page is valid either way: without this, a fresh
- * worktree rejects every commit that links to a generated page, which is what the first-use shader
- * page did on 15 October 2026.
+ * worktree rejects every commit that links to a generated page, such as the first-use shader page.
  */
 export function linkTargetExists(root: string, repoRelativePath: string): boolean {
 	if (existsSync(join(root, repoRelativePath))) return true;

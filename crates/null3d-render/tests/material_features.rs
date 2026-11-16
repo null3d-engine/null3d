@@ -1,8 +1,9 @@
 //! Material features that choose a pipeline, drawn by both frame builders: double-sided materials
 //! cull no faces, vertex colors pick their shader variant on meshes that have colors, masked
 //! materials pick the variant that discards fragments, and the depth options and the depth bias
-//! set the pipeline's depth state. Checked through the mock backend, which rejects what a real GPU
-//! would, and by decoding the lists.
+//! set the pipeline's depth state. A material that writes no color draws before the materials that
+//! do, so its depth holds back their color. Checked through the mock backend, which rejects what a
+//! real GPU would, and by decoding the lists.
 
 mod common;
 
@@ -74,8 +75,8 @@ fn triangle_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
 }
 
 /// The triangles: colored ones with vertex colors on the standard and the unlit material, one
-/// that is double-sided too, one without the feature, and an uncolored one that asks for vertex
-/// colors it cannot have.
+/// that is double-sided too, one without the feature, one that keeps its display color, and an
+/// uncolored one that asks for vertex colors it cannot have.
 fn feature_world<B: FrameBuilder>(world: &mut World<B>) {
     let colored = triangle(true);
     add(world, &colored, Shading::Lit, feature::VERTEX_COLORS);
@@ -83,6 +84,14 @@ fn feature_world<B: FrameBuilder>(world: &mut World<B>) {
     let both = feature::VERTEX_COLORS | feature::DOUBLE_SIDED;
     add(world, &colored, Shading::Lit, both);
     add(world, &colored, Shading::Lit, 0);
+    // A material that keeps its display color is a row flag, so it draws with the same pipeline
+    // as the material beside it and adds none.
+    add(
+        world,
+        &colored,
+        Shading::Lit,
+        feature::VERTEX_COLORS | feature::NO_TONE_MAP,
+    );
     add(world, &triangle(false), Shading::Lit, both);
 }
 
@@ -181,7 +190,8 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
     add(&mut world, &triangle(true), full, colors_and_mask);
     let masked = CustomShading::standard(first + 4);
     add(&mut world, &mapped, masked, feature::ALPHA_MASK);
-    // A custom material has no builds that fade or hash its alpha, so it tests the cutoff.
+    // A custom material tests a mask by coverage or by the hash where the engine gives it those
+    // features, which it does only for WGSL that sets the surface's alpha.
     let mask_ways = feature::ALPHA_TO_COVERAGE | feature::ALPHA_HASH;
     add(
         &mut world,
@@ -211,6 +221,16 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
             (first + 1, tone_map, state_flags::CULL_NONE),
             (first + 3, tone_map, 0),
             (first + 4, tone_map | permutation::ALPHA_MASK, 0),
+            (
+                first + 4,
+                tone_map | permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE,
+                state_flags::ALPHA_TO_COVERAGE,
+            ),
+            (
+                first + 4,
+                tone_map | permutation::ALPHA_MASK | permutation::ALPHA_HASH,
+                0,
+            ),
         ]
     );
 }
@@ -323,6 +343,71 @@ fn masks_and_depth_options_choose_the_pipeline_on_webgl2() {
             ..CpuCulledConfig::default()
         };
         check_mask_and_depth(World::build(CpuCulledRenderer::new(config)));
+    }
+}
+
+/// The place in a frame's commands of the first draw with the pipeline `id`: a bundle's indirect
+/// draw on WebGPU, or a draw or multi-draw of a run on WebGL2.
+fn first_draw_with(commands: &[(Op, Vec<u32>)], id: u32) -> Option<usize> {
+    let mut current = None;
+    commands.iter().enumerate().find_map(|(k, (op, o))| {
+        match op {
+            Op::SetPipeline => current = Some(o[0]),
+            Op::DrawIndexed | Op::MultiDrawIndexed | Op::DrawIndexedIndirect
+                if current == Some(id) =>
+            {
+                return Some(k);
+            }
+            _ => {}
+        }
+        None
+    })
+}
+
+/// A surface that writes no color draws before the surfaces that write color, whatever order their
+/// pipeline keys sort in, so the depth it writes holds back their color.
+fn check_holdout<B: FrameBuilder>(mut world: World<B>) {
+    let plain = triangle(false);
+    add(&mut world, &plain, Shading::Lit, 0);
+    add(&mut world, &plain, Shading::Lit, feature::NO_COLOR_WRITE);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+    let pipeline = |state: u32| {
+        commands
+            .iter()
+            .find_map(|(op, o)| {
+                (*op == Op::CreateRenderPipeline
+                    && o[1] == template::INSTANCED_LIT
+                    && o[6] == state)
+                    .then_some(o[0])
+            })
+            .unwrap_or_else(|| panic!("no lit pipeline with state {state}: {commands:?}"))
+    };
+    let colored = first_draw_with(&commands, pipeline(0)).expect("the colored surface draws");
+    let holdout = first_draw_with(&commands, pipeline(state_flags::NO_COLOR_WRITE))
+        .expect("the depth-only surface draws");
+    assert!(
+        holdout < colored,
+        "the depth-only surface draws first: {holdout} against {colored}"
+    );
+}
+
+#[test]
+fn a_holdout_draws_before_the_colored_surfaces_on_webgpu() {
+    check_holdout(World::new());
+}
+
+#[test]
+fn a_holdout_draws_before_the_colored_surfaces_on_webgl2() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        check_holdout(World::build(CpuCulledRenderer::new(config)));
     }
 }
 

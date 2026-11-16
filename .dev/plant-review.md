@@ -1,0 +1,986 @@
+# Plant review
+
+A species is judged by a reviewer who wrote none of its work, against the reference set for that
+species, row by row. This page states the standard, the twelve rows, the coverage rules and the
+process. It also says how the review lights and frames each picture, the judging rules where the
+standard is silent, and how to tune a crown. The plant references guide, `.dev/plant-references.md`,
+says how each measure works and what it cannot see.
+
+## The rule
+
+A species is judged as though it will be seen close up. Its anatomy, its branch subdivision in three
+dimensions, its leaf clusters, its bark and its crown have to match the real plant, because a viewer
+will walk up to it. A render that reads as a tree from twenty meters and as a bundle of cards from
+two has failed, whatever it looks like from far away.
+
+A species passes only when its structure, anatomy, appearance and quality match every reference
+picture it has. Not a majority, and not the ones that flatter it. One failing row fails the species.
+
+A species must also resemble its reference from a distance, and that is judged on shape, not on
+color. Put the two whole views side by side and compare the silhouettes: where the crown's outer edge
+runs, how far the widest part sits below the top, how far the lowest limbs reach, what angle the
+major limbs leave at, how much trunk shows before the first fork, and whether the mass is one dome, a
+vase, a spire or a set of separate pieces. Two pictures can hold the same colors and the same share
+of foliage and still be different trees. A pixel-difference figure or a color match is not this test
+and never substitutes for it.
+
+One plant of the set is the primary individual: the plant of the whole-plant turning video and of
+picture `01`. The species is built to be that plant. Every other whole view is matched on form and
+proportions, not outline for outline, because it may show another plant of the species. Where the
+turning video and a still disagree about the primary plant's shape, the turning video governs. The
+saguaro and the sedge are judged this way. The saguaro's arms spread round its trunk as its video
+shows. The flat arrangement of its picture `01` is a variant.
+
+Each species needs at least twenty reference pictures, most of them taken near the plant. They cover
+the whole habit at distance and in profile, the crown from outside and from underneath, the major
+limbs where they leave the trunk, how a limb forks and how it subdivides again, the fine twig
+structure, leaf clusters at the end of a shoot, single leaves on both faces, bark at the base, at
+mid-trunk and on a limb, the trunk's taper and root flare, and the silhouette. The set also carries
+turning videos and usually a wind clip.
+
+## No piece hangs free
+
+At every level and at every sparseness setting, every drawn piece is connected to the plant's body.
+A leaf, twig, card or bough that loses its parent when a level thins or a share drops is either joined
+back to the piece it belonged to or removed; nothing is left standing in the air.
+
+This binds the generator and the reading. A level that thins its wood, drops its axes or thins its
+cards must prune whatever loses its parent, so the drawn plant stays one connected body at that level,
+and the unit tests hold that: a plant built at each sparseness setting has one connected component that
+reaches its root, whatever its density. The reading counts the pieces as the row requires, and where a
+picture shows a piece standing free, the shader and the generator are at fault whichever row is being
+read; the picture fails, and the fault is a generator fault, not a row to judge.
+
+## Sparseness and polygon count are different dials
+
+Sparseness is about how much foliage and how many limbs the plant carries: a sparse plant has fewer
+leaves and fewer limbs, and every one of them still connects to the trunk and the root. It changes how
+much plant there is, never whether the plant holds together.
+
+Polygon count is about how finely the plant is defined, not about how much plant there is. A dense crown
+can be drawn with very few polygons, and then it looks blocky: its forms are coarse and its surfaces
+faceted while its foliage stays as full as the photographs show. A high polygon count buys smoothness of
+form: round trunks, blended joins and rounded leaf clusters, not density.
+
+So a species is set twice: its density by what its pictures show, and its polygon budget by the target
+its level must hold, with the blockiness that budget buys accepted at the distance the level is seen. A
+coarse setting that thins the plant, or a density setting that changes how smooth it looks, has mixed
+the two dials and is wrong.
+
+Sparseness removes parts from one grown plant: a sparser plant is a subset of the denser one, with
+whole shoots and whole branches taken out evenly, and no leaf scaled
+([D-355](decisions/D-355-sparseness-by-removal.md)).
+
+Sparseness is where the connectedness rule shows first, because thinning is when parents are lost. A
+sparse picture that scatters leaf clumps through air is a failed picture even where its density figure
+sits inside its band.
+
+## The branch structure
+
+The silhouette is judged on how the branches fill the space, not only on the outline they trace.
+The owner's ruling sets five points, and they bind every tree and every species in the catalogue,
+including any species added later:
+
+- **The sky is spread evenly through the silhouette.** Openings sit throughout the crown, in the
+  share the species' own reference shows. Sky gathered into a few large holes in one place fails,
+  and so does a crown with an open rim and a solid middle.
+- **No branch ends bare.** A branch carries foliage at its end, or it is pruned away. A thin bare
+  tip against the sky fails at any view, even when the recorded figures are inside their bands.
+- **Bends are gentle and progress upward.** A branch curves as it grows, and each bend carries it
+  up and out from the trunk. An odd kink, a bend back toward the trunk, or a zigzag between joints
+  fails.
+- **The branch count fits the species.** Too many branches and subbranches fill the crown with wood
+  the plant does not have; too few leave it thin. The reviewer counts the visible limbs at the
+  skeleton view against the reference, and the subbranch orders at the crown close-up.
+- **Laterals are spaced along their parent.** Subbranches leave the parent at separate points, with
+  a clear gap between one and the next. Several laterals from one point, or a crowd of them within
+  one internode, fails unless the species shows that clustering. Most trees carry one lateral at a
+  node in a spiral, or a pair at opposite nodes, and do not bunch their subbranches; a tiered whorl
+  is natural in a conifer, and clustered shoots in some shrubs. Even spacing carries the crown's
+  foliage with less wood, so a crown that reaches its density by crowding laterals fails this point
+  as well as the row 6 reading.
+- **The structure is balanced through 360 degrees.** Branches and subbranches are spread around the
+  trunk in every direction, so the tree reads balanced from above and from the side. One heavy side
+  and one thin side fails, even when the foliage's outline is regular.
+
+The rows carry the points:
+
+| Point | Judged on |
+| --- | --- |
+| even sky through the crown | row 6, with row 12's plausibility |
+| no bare termination | row 12, subdivision and no strays |
+| gentle upward bends | row 7, with row 1's limb angles |
+| branch count | row 2 |
+| lateral spacing along the parent | row 2, with row 12's neatness |
+| balance through 360 degrees | the coverage rule below |
+
+A species that fails a point fails the row that carries it.
+
+## The twelve rows
+
+| # | Row | What is judged | Evidence |
+| --- | --- | --- | --- |
+| 1 | Structure | The skeleton: one stem or many, where the first limbs leave, the angles they leave at, how they fork, where the crown begins, whether the silhouette is one solid shape or a set of pieces, and how the crown's mass balances either side of the trunk | The whole view against its reference, plus the skeleton view, and the balance figure beside each whole view |
+| 2 | Branch density | How many branches there are, how they are spaced along the trunk and along each parent branch, and whether the spacing follows the species: whorled tiers for a conifer, alternate for a broadleaf, a fan for a palm | The skeleton view, counting the visible limbs and their gaps along each parent |
+| 3 | Branch length and taper | Whether a branch reaches far enough before it forks, and whether it thins along its length | The skeleton view and a close view of a limb |
+| 4 | Leaf shape | The painted silhouette of one leaf: entire, toothed or lobed, its proportion, its tip and its base | The leaf close-up against the reference leaf picture |
+| 5 | Leaf cluster density | How many leaves a cluster carries, how tightly they sit, and how a cluster meets its shoot | The leaf close-up and the crown close-up |
+| 6 | Foliage density and see-through | How much of the crown's volume the foliage fills, and how much background shows through the crown at the default whole view. A crown denser than its reference fails, and so does one more open than the species is; the reference's own openness is the mark, in both directions | The whole and crown views against the reference's own openness, with the sky gap beside each |
+| 7 | Bark curviness | Whether the trunk and the limbs run straight, bend or curve, and whether the bark's surface reads as its own species | The skeleton view, and the trunk and limb close views |
+| 8 | Bark color and texture | Whether the bark's color and figure match the species, or whether it is generic tinted bark | The trunk at close range: base, mid-trunk and limb |
+| 9 | Proportions | Height against width, the crown's share of the height, and the trunk's diameter against its height | The whole view, measured rather than eyeballed |
+| 10 | Color and season | Whether the foliage's color is the species' own, and whether a season variant is a variant of that color rather than a different hue pretending to be one | The whole view |
+| 11 | Distinctness | Whether the species can be told from its nearest neighbor in the catalogue by silhouette alone | The two whole views side by side |
+| 12 | Plausibility, neatness and pattern | Whether what is drawn is a plant that could exist: every part joined to the wood it grows from, every order dividing into the next, no stray twigs, no parts crossing where no plant crosses, no scatter of loose shapes, and a branch pattern the eye can follow through the crown | Every view, and the whole view at close range |
+
+Row 11 is judged against a built neighbor, named in the verdict. A species with no built neighbor
+states that instead of passing.
+
+Row 1 is read from the silhouette and the balance figure together. The balance figure reads the
+crown's covered area in horizontal bands, each band split at the trunk's column, so a hollow flank
+shows as a band where one side carries far less than its reference does. The row passes when no band
+differs from its reference's by more than ten hundredths. A whole-crown split is not enough: a drawing
+whose fuller left flank is balanced by a limb reaching far out on the right reads an even split while
+the eye still sees a lean, which is what the common alder's still 02 did. A species that is normally
+one-sided names that in its record, and the reference's own split is then the mark, in either
+direction.
+
+Row 4 is read from the leaf outline overlap: the share of one leaf's painted silhouette that its
+reference leaf covers, both scaled to one width, on the upper and the underside face. It passes at
+0.85 or better on each face. A species whose leaf covers fewer than eight pixels in its own reference
+close-up is judged at the cluster instead, because the leaf outline cannot be read that small.
+
+Row 5 is read from the cluster's sky: the share of the cluster's own box that shows background,
+measured on the render's cluster close-up and on the reference's. It passes when the render is no more
+than ten hundredths above its reference and no more than two hundredths below it. A cluster that reads
+as separate leaves on a visible shoot where the reference is a closed mass fails, however well each
+leaf is drawn.
+
+Row 6 is read from the sky gap: the share of background enclosed by the crown's own outline, on both
+pictures at each whole view. Each side is read by the rule in [Sky read like for like](#sky-read-like-for-like); at a
+whole view the drawing's matte figures are instrument only. The verdict names this figure beside each value. Both pictures are
+read one way: a texel is sky or plant. A render's matte also holds each texel's clear share, and a
+figure read by that share is about 0.015 more closed than the same outline read as a photograph's
+is. The summary prints that reading beside the figure, since earlier figures were read by it. Both
+pictures are also read at one size: each is shrunk to 640 pixels wide first. A photograph's figure
+moves with its size, since fine gaps close when a picture shrinks: read at its own 1,024 pixels, a
+silhouette's sky gap stands 0.02 to 0.10 higher, and a daylight whole view's up to 0.03 higher. The
+band is drawn round the figure at the work size, and a figure read at another size is not the
+row's figure. The summary also prints each plant's foot row, since a reference outline that loses
+its trunk's foot below the horizon reads the plant short and moves every share of its height. The share of
+the crown's box that shows background is a different figure, and it does not judge this row. Some
+plants do not fill their box by shape: a spire, a cone, or any crown seen from below. Sky stands
+beside such a plant inside its box, so the box figure measures its taper. The Italian cypress read
+0.59 on that figure in its view from below, with no sky inside its column in any level view. A plant with no bare stem below its foliage, such as a sedge or a
+hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. A
+photograph whose lowest boughs sweep beside the stem can read as such a plant. Where the row's outer
+span hides the stem, the tool reads the stem's own central run and puts the crown's foot above it. The
+reviewer writes the render's figure beside the reference's for
+every whole view. The row passes when the render's sky gap is no more than five hundredths above its
+reference's and no more than two hundredths below it. The small allowance below covers the measure:
+a reference outline comes from color against a plain background and can lose its thinnest foliage.
+Anything more closed than that fails, and so does anything more open than the species. A crown
+denser than its reference is as much a fail as a thin one. The eye is the judge and the figure is
+the check: when the two disagree the reviewer says so and names which it followed. The figure
+measures the share of sky, not where it sits: a crown whose openings gather in a few large holes
+fails under the branch structure section, whatever the share reads.
+
+Row 6 takes a second figure, because the sky gap cannot tell a mass of leaves from a lace of twigs.
+The crown's foliage share is the share of the crown's own covered area that is foliage rather than
+wood: measured on the render from the parts picture, which draws wood and foliage as separate layers,
+and on the reference from the foliage and bark colors inside its crown box. It passes when the render
+is no more than ten hundredths above its reference's share of wood. A crown that reads with its limbs
+and twigs showing through the mass fails on this figure however little sky its gap shows.
+
+Row 12 carries a checklist, and one entry on it fails the row. The reviewer writes the entry's
+picture beside it:
+
+- **Connectivity.** Every limb, twig, leaf, bud, fruit and root meets the wood it grows from, with
+  nothing between them. A part that hangs from nothing is the clearest case; a twig that springs
+  from the middle of another without a join is the same fault.
+- **Subdivision.** A branch of one order divides into smaller orders. Those divide again, down to
+  the twigs that carry the leaves. A limb that ends in a stub fails. So does a twig that carries
+  nothing, or a jump from a thick limb straight to a leaf cluster. A branch that ends bare fails
+  wherever it shows, inside the crown as well as outside it.
+- **Neatness.** The wood runs as limbs, then branches, then twigs, each clearing the last. A tangle
+  of parts crossing at odd angles is not a plant. It is the meshes laid over each other. It fails
+  however well the silhouette scores.
+- **Readable pattern.** A viewer traces the branch pattern through the crown: the limbs into their
+  branches, and the branches into the twigs that carry the leaves. The pattern is the species' own,
+  alternate, opposite, whorled or tiered, and it repeats in a way the eye can follow. A crown that
+  reads as an even green mass, with no branch pattern to find, fails. So does a crown whose pattern
+  is visible but irregular, one limb to the next with no order.
+- **No strays.** Nothing thin and bare stands outside the foliage at a whole view. A viewer at
+  twenty meters sees a crown, not whiskers. The reference photographs show none, so a render that
+  shows them has drawn something the plant does not have.
+- **No scatter.** The parts read as one plant. A picture that looks like a pile of loose shapes,
+  however correct each shape is, fails on this row.
+- **Plausibility of the whole.** Set the render beside its reference. Ask whether a person who knows
+  the species would accept it as that species grown, not as a model of it. If not, name the first
+  thing that gives it away, in the owner's own terms.
+
+
+## Coverage
+
+A plant's appendages are spread around its three dimensions in equal proportion, so that turning
+around it never shows a lopsided tree. Its branches are spread the same way: branching and
+subbranching run through 360 degrees around the trunk, so the tree reads balanced from above and
+from the side, not only in outline. A crown that is full from the front and thin from the side, or
+a set of limbs that all leave in one plane, fails even when every other row passes, because a viewer
+walks round it.
+
+The exception is a plant that is normally lopsided. It is named per species and never assumed: a
+wind-sculpted tree, a willow leaning over water, a plant grown against a wall. A species claiming the
+exception says so in its record and says why.
+
+The same species is drawn at eight equal angles, and two figures are measured at each.
+
+- **The crown's box is the rule.** Its width and height are the widest and tallest run of foliage in
+  the picture, measured per angle. The largest and smallest of each must fall inside a tolerance that
+  the growth form sets: 15 per cent either way for a conifer, 25 per cent either way for a broad dome
+  or an open crown. A species of another form takes the broader band unless its reference shows a
+  regular outline.
+- **When the reference is less regular than the band, the reference sets the band.** A render more
+  regular than its own reference is not a fault. The reviewer states the reference's spread beside the
+  render's whenever it uses this.
+- **Crowns are built nearly round.** The narrow side of a crown's plan is at least 0.75 of its wide
+  side. A turning video can narrow more than that: the silver birch's reads 0.58 and the Scots
+  pine's 0.59. That narrowing is not copied, and a plant rounder than its turning video does not
+  fail this check.
+- **The foliage area is a note, not a pass mark.** It says how solid the crown reads from each side.
+  It moves with the orientation of the cards rather than with the plant's balance, so an open crown's
+  area swings widely while its outline does not.
+
+Every reference file must be compared, at its own angle for a video. A run that leaves a file
+undrawn fails the species for coverage, whatever the rows say.
+
+## Light and framing
+
+A comparison is fair only when the render stands in its photograph's light and framing. The
+[review tool's guide](../tools/lib/plant-review/README.md) lists the page's fields. These are the
+rules that set them.
+
+- Each daylit picture is lit as its photograph is lit. The sun stands where the photograph's shadows
+  put it (`sunAzimuth` and `sunRise`).
+- The sky's strength comes from the photograph's own sky: pi times the luminance of the sky pixels in
+  its upper half. This calibrates the light to the picture, since a photograph's tone curve squeezes
+  a bright sky more than the plant.
+- The sun's strength is a chosen prior from the photograph's shadows, as a multiple of the sky's
+  light on a level face. Hard sun takes 5, haze 1.8, and shade or overcast 0.5. The photographs'
+  trunks stand in crown or wood shade, so their lit and shaded bark cannot measure the sun. A prior
+  stands in for that measurement.
+- A picture whose upper half shows under 5 % sky and no clear shadows keeps the page's own light.
+  Studio, copy-stand and silhouette pictures keep their own lights.
+- A view up the stem stands its camera at a person's eye height, below the stem's first fork. Under
+  a lower fork, the camera drops to under half the bole's height. The lens then never stands among
+  the limbs. A plant with no trunk is seen from a low eye beside it, at 0.15 of its height. Its foot
+  stands on the frame's lower edge. Without the drop the view looks over the plant at the sky.
+- A close view is solved from its subject: the trunk, a limb's joint, a fork or a foliage mass. The
+  camera stands where that subject lands at the place and the size its photograph gives it. The
+  [review tool's guide](../tools/lib/plant-review/README.md#how-the-measures-work) gives each view's
+  contract.
+- The turning videos and the wind clip keep the light beside the camera, as the reference videos
+  keep it. The oak's turntable holds its light about 9 degrees right of the camera and 41 degrees up
+  in every frame. A sun fixed in the world would light half of each turn from behind.
+- A video's frames are drawn at a still's size, with the sun's shadows, and measured at a still's
+  work width. A turn frame and a still from the same camera then agree within 0.0014 in sky gap.
+  Frames 480 pixels wide draw a farther detail level, and read the oak's crown about 0.025 more
+  open.
+- The slot file holds each picture's own page fields, keyed by the reference file's name. They are
+  its light, and any framing or backdrop that its photograph needs. Pass it with
+  `--slot-query <file>`, and draw both sides of a comparison with the same file. The oak's is
+  [`slots/pedunculate-oak.json`](../tools/lib/plant-review/slots/pedunculate-oak.json), so its
+  review runs as
+  `bun run plants:review pedunculate-oak --refs <the oak's reference folder> --slot-query tools/lib/plant-review/slots/pedunculate-oak.json`.
+
+The light moves the color figures, not the outlines, which come from a matte. Under the page's soft
+daylight the oak's distant leaves read 8.9 color steps from their photograph. Under the photograph's
+own light they read 1.9, and the head's oak reads 2.2, so the light makes most of that gain.
+
+## Judging rules where the standard is silent
+
+- A cut branch's density is judged against a picture of the same piece at the same scale, by four
+  figures. The wood per tip and the tips per area must fall within a quarter of the reference's. The
+  share of fan joints, where four or more twigs leave one point, may stand at most a tenth above it.
+  The kinks must reach at least half of the reference's. The wood per tip and the kinks are sound
+  on bare wood only: a winter piece, or a drawing's wood drawn alone against a hand count on the
+  photograph. On a piece in leaf, a leaf across a stem makes false tips and a straight twig passes
+  the kinks, so no verdict on a leafy piece quotes either.
+- The oak's winter branch is judged on the cut branch of the winter oak's own set. Still 20's outline
+  is void. It shows a limb end about 35 cm across, and a limb that enters the frame's side reads as a
+  horizon.
+- The trunk's width is judged on the reference pictures, not on a fact sheet that disagrees with
+  them. The oak's photographs stand its bole 0.116 to 0.178 of the height across at breast height.
+  The fact sheet's 1.5 to 2 m is the width at the flare.
+- Where the standard gives no band, the judge takes working bands. A color difference passes at 3
+  or less, where about 2 is one visible step. A view with no outline passes when its sky share lies
+  within 0.05 of the reference's.
+- A video is judged on frames drawn at a still's size, lit beside the camera, as the light rules
+  above say.
+- A close view of one kind of wood is judged only once its frame holds that wood. A camera that
+  picks its own subject can draw a great limb where the photograph shows a young branch, and the
+  color figure then measures the wrong material whatever its value. The alder's young-bark picture
+  read 16.13 while it drew a great limb's old plates; setting the slot's `thin` to the photograph's
+  own branch size and its `span` to the photograph's width took it to 3.7 before any material
+  changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
+  a tint chosen before the frame is right measures the camera, not the plant.
+- **A camera that crops the plant is a void frame.** Measure the view's width at the plant's distance.
+  It must be at least the plant's width before any outline, gap or piece count is read. A camera that
+  keeps only part of the plant's width draws a crop. Its piece count then counts the crop, and its
+  outline and gap compare unlike things. The picture is void for every row. The reviewer reports the
+  frame and the share it keeps, never the figure. A wide plant needs its slot's `fill` set from its
+  width rather than its height. Where one fill cannot match both of the reference's shares, match the
+  width, because the silhouette's spread is the figure. The bracken's silhouette picture kept 65 per
+  cent of its 2.61 m colony in a 1.71 m view. Two rounds read its piece count as a structure fault
+  before anyone measured the frame.
+- A ground plant's flowering heads are drawn as one stem's hanging spikes, seen close and level,
+  because a twig view has no woody stem to frame and falls back to the whole plant. A picture that
+  lifts the plant from the ground grows its soil and stands the plant on its lowest root, so a
+  lifted whole plant shows the root ball its photograph shows; a lifted whole picture may also look
+  up from below, where the crown's arch would otherwise hide the roots. A sheath, collar or ligule
+  picture is drawn as one tiller's sheath column at the photograph's span, or as the species' own
+  tiller cutting where the photograph shows a cut stalk, because a bark view has no stem to frame
+  and falls back to the crown's foot culms. A plant that flowers at its crown, such as a cactus, is
+  framed on the ring of flower sites at its stem's top, not on a single shoot tip and not on the
+  plant's middle.
+
+## Pictures that do not judge the primary plant
+
+Some reference pictures are compared and shown, and still do not judge the plant. The species'
+review data names each one with its reason, in its slot file under `_pictures`. Each entry cites
+the ruling that took the picture out: who ruled, and what. The tool refuses an entry with no
+ruling, so no picture leaves a row by the tool's own choice. The tool keeps such a picture out of
+every row's evidence and figures, the verdict lists it beside the row, and the count prints each
+one under its species with its ruling.
+
+- **A second form.** A picture of another form of the species judges that form, not the primary
+  plant. The silver birch's picture `33`, the dense old tree, is a second form.
+- **A limit of the reference.** A picture that shows the species badly is recorded as a limit until
+  it is remade. The common ash's picture `21`, a weak cut branch, is one.
+- **A stand.** One plant cannot draw a picture of many plants, or of a far larger plant than one
+  record grows. Such a picture is not judged until the review page plants a stand for it, with the
+  count and the spacing its slot states. The bracken's `03`, `04` and `06`, the bamboo's `03`, `05` and
+  `06`, and the meadow grass's `05` are stands. A stand picture does not hold back the coverage.
+- **An outline that joins its background.** The picture stays in the rows for its color and for the
+  eye, and its outline figures are void, with the reason. The common alder's picture `01` joins the
+  far river bank behind the tree; its picture `30` shows the same form on a clean ground.
+
+The hawthorn's default season is autumn with fruit, as its whole views show it. Summer leaf is a
+variant. Its thorn-tipped leafy leading shoots outside the mass pass the rule that no branch ends
+bare.
+
+## What a reviewer must see for the picture-judged rows
+
+Six rows are judged on a picture, not only on a band: 1 structure, 2 branch density, 3 branch
+length and taper, 7 bark curviness, 11 distinctness, and 12 plausibility, neatness and pattern. Rows
+4, 5, 6, 8, 9 and 10 carry a numeric band, and their picture check is named beside the band.
+
+For each picture row the reviewer writes three things: what must be seen, which reference picture it
+is set beside, and what makes it fail. The same three apply in the same way at every round. The
+standard picture map:
+
+| View | Reference pictures |
+| --- | --- |
+| Whole plant | `01` distant, `02` profile, `03` from below, `18` silhouette, and any other whole view in the set |
+| Wood and joins | `07` limb leaving the trunk, `08` limb fork, `09` secondary branching, `10` fine twigs, `17` trunk taper |
+| Leaf cluster | `11` field cluster, `23` studio cluster |
+| Cut piece | `21` branch, `22` sub-branch, and `09` and `10` where the species uses them |
+| Single leaf | `12` upper, `13` underside, `24` and `25` texture sources |
+| Bark | `14` base, `15` mid-trunk, `16` limb, `26` and `28` texture sources |
+| Season and marks | `19` fruit, cones or keys; `20` the species' own mark, such as roots, a skirt, thorns or a scar |
+
+| Row | Must see | Beside | Fails if |
+| --- | --- | --- | --- |
+| 1 Structure | The species' stem count and habit, where the first limbs leave and at what angle, the crown base, one solid silhouette or the reference's own piece count, and the crown's balance either side of the trunk | `01`, `02`, `18`, and `03` where it exists; the skeleton view for the wood alone | The habit differs, the limb angle or arrangement differs, the crown base leaves the reference's, the silhouette breaks into more pieces than the reference's, or the balance leaves the reference's by more than ten hundredths |
+| 2 Branch density | The count of visible first-order limbs and their spacing: whorled, opposite, alternate, spiral or a fan | The skeleton view; count on `03` and the whole views at a matched framing | The count leaves the reference's visible count by more than a quarter, or the spacing is the wrong pattern |
+| 3 Branch length and taper | A branch reaching far enough before it forks and thinning along its length; a cut piece with the photograph's side shoots and scale | `07`, `08`, `09`, `17`; the cut pieces `21` and `22` | The branch forks too early or late, the taper is wrong, the piece is one leafy stem where the photograph has side shoots, or the piece is at the wrong scale |
+| 5 Leaf cluster density | The photograph's leaf count, the cluster's spread and tightness, the terminal bud where the species has one, and one joined piece | `11`, `23`, and `04` for the crown close-up | The count differs beyond the photograph's own spread, the gap leaves its band, or the cluster breaks into pieces |
+| 7 Bark curviness | The stem plumb or bending as the species does; the surface's own figure, such as plates, strips, lenticels, a sheath or fibres; the collar and the fork | `03`, `05`, `07`, `08`, `14`, `15`, `16`, `17`, as the species has them | The stem is kinked where the reference is straight, the limb angle is wrong, the surface reads as generic bark, or the join is hard |
+| 11 Distinctness | A silhouette that differs from the named built neighbour in aspect, fork height, crown form or branching | The species' `01`, `02`, `18` beside the neighbour's whole view | The two share the neighbour's aspect, fork or crown, and only the leaf differs; or the row is passed with no neighbour named |
+| 12 Plausibility, neatness and pattern | Every part joined to its wood; each order dividing into the next; no crossing; a readable species pattern; no bare strays; no scatter | Every view; the species' own review names the pictures where its fault shows | Any one entry of the checklist fails |
+
+**A picture that cannot show the subject decides nothing.** A bark view with no bark, a cut turn
+whose crown box is void, a silhouette with no recorded angle, or a piece at the wrong subject is
+stated as a slot limit. It is not used to pass or fail the row. A row fails when a picture that can
+show the subject shows the fault.
+
+**A picture whose subject is missing is void, and the tool says so before any measure.** Each close
+view has a contract. It names the points of its subject, the place each must land in the frame, and
+the size each must take. The tool checks the contract on the camera that drew. Where the run drew a
+matte, it checks the picture too. A picture is void in three cases:
+
+- The plant has no subject for the view.
+- The subject is not in the frame.
+- The frame shows a wall of plant where the photograph has open ground.
+
+A whole view is void too when the frame crops its plant. The tool voids a render whose plant runs
+to an edge of the frame that the photograph's plant stands clear of, and names the edges. On the
+saved runs the oak's profile ran off the right and lower edges, and the Scots pine's and the weeping
+willow's whole views ran off the lower edge.
+
+Three more pictures are void, each a fault of the camera or of the file's view and none a
+judgement of the plant:
+
+- A close view whose subject takes none of the frame. A camera that stands in the plane of an arm
+  or a fan sees it edge on, and the picture holds no subject.
+- A picture the page also drew for another photograph that was asked for differently. The light or
+  the height that one of them asked for then changed nothing, and one drawing does not count for
+  two.
+- A whole view whose frame the plant covers from edge to edge, or holds no plant at all. It has no
+  outline, so no overlap or gap is read from it.
+
+**A figure names the level it was drawn at.** A plant draws as its leaf form near the camera, then
+as two card levels, then as a far card. The page reports the level of each picture, the run's
+record keeps it, and the summary and the verdict print it beside each figure. A figure with no
+level named is a note, since the same view reads differently at another level.
+
+A whole view is void as well when its plant is not drawn at its photograph's size. The plant's box must
+match the photograph's within a fifth, in height or in width. A render smaller in both, or larger in
+both, was framed from the wrong distance. Its figures would compare a small plant with a large one.
+The olive's whole views drew the plant at 0.34 of the frame's height against the photograph's 0.86,
+and every figure read from them was void.
+
+The tool reads no figure from a void picture and writes the reason beside it. A void picture is a
+fault to fix in the tool's camera or in the file's mapping to a view. It never passes a row and
+never fails one. A row whose pictures are all void is void, and a void row is not a pass.
+
+**A part the plant lacks or hides is a fail, not a void.** A void is for a camera or a framing
+failure on a plant that has the part. Where the species' reference shows a part and the grown plant
+has none, the plant is wrong: the tool fails the rows that the picture carries and names the missing
+part. A plant with no trunk fork under its crown fails the fork picture's rows. It does not void them.
+The same holds where the camera took its stand and holds the part's place, and the picture does not
+show the part there: leaves hang across the limb's bark, a hub of limbs stands in front of the join,
+or a crown shows no sky. The tool tells the two apart on the picture itself:
+
+- **Void**: the view cannot name its subject, the camera does not hold the subject's points, the
+  solve said that it could take no clear stand, or the frame crops the plant or holds none of it.
+- **Fail**: the solve held, and an area of the picture does not show what its contract names. The
+  tool writes the fail with each area's figure.
+
+An area can also be reported only. The share of wood above the fork in the view up the trunk is one:
+it is a figure for the eye beside the photograph, and rows 1 and 2 judge the form it measures.
+
+**A picture with no subject check passes no row alone.** A solved view is checked by its contract,
+and a whole view by the crop and size checks. A view with neither may show another subject than its
+photograph. The verdict lists such pictures as not checked, and a row that rests only on them cannot
+pass.
+
+**A picture with no figure is drawn, not compared.** Some pictures have no figure to give: a limb's
+join against leaves has no outline and no band. The tool lists such a picture as drawn and not
+measured, and the eye judges it. Two limits hold:
+
+- The state applies only where this standard states no figure for the picture's view: the view up
+  the trunk, the crown's outside and underside, the inside of the crown, a limb's join, a fork and
+  the bole. Where a figure exists and the tool did not read it, that is a fault of the tool, and
+  the run is not complete.
+- Such a picture never carries a pass alone. Its row needs the named reviewer's reading in the
+  review file, as every pass does. The count prints how many such pictures a species has and names
+  them.
+
+**A same-angle conflict is a reference conflict; a cross-angle comparison is not.** When two
+reference pictures disagree, read the turn each is drawn at. Compare only figures at the same turn,
+and intersect their bands. A figure at turn 0 and a figure at turn 90 do not bind one projection.
+The meadow grass's row 6 is a true same-angle conflict: both pictures draw at turn 0 and their bands
+do not intersect. The alder's row 6 compared a turn-90 profile with a turn-0 silhouette; the bands at
+one turn do intersect, and the silhouette was the outlier against the species' own turntable.
+
+**A per-still choice may pick a different subject; it may not rotate the tree.** A slot may draw a
+different shoot for a still whose photograph shows a different shoot, as the hawthorn's second
+prototype did. It may not move one tree to a view its photographs never show: the camera turn is the
+comparison's basis, not a species input.
+
+## What a fail looks like
+
+Each of these is a fail on its own, and each is a fault an earlier standard let through.
+
+- A crown whose silhouette is a different shape from the reference's, whatever the foliage does.
+- Limbs that bend or fork differently from the reference's.
+- Cards visible as cards at close range, or a branch that reads as a bundle rather than a limb.
+- A trunk of the wrong proportion or taper, or a bark figure that is a pattern rather than bark.
+- A leaf, a bud or a shoot twice the size the species has. A record value moved to win an outline
+  or color figure can leave a plant that scores well and is not the plant. Check the value against
+  the species' own size in the reference's leaf picture, not against the figure it improved.
+- A part that hangs from nothing. A fruit, a flower or a catkin must meet the wood it grows from, in
+  the record and in the picture. A part that floats has a sound outline, color and edge mixture, so
+  no single figure catches it: the reviewer looks at what it is attached to and says so.
+- **A thin bare twig or branch standing outside the foliage at a whole view.** The reference
+  photographs show a crown; a render that shows whiskers around it has drawn something the plant
+  does not have. This fails row 1 and row 3, whatever the silhouette figure says.
+- **A crown thinner than its reference.** Foliage density is a band, not a floor: a crown that shows
+  more sky than its reference fails row 6 even when every other figure passes. A viewer reads a thin
+  crown as a sick tree, and the species' own density is the mark.
+- **A crown that hides more background than its reference.** The other side of the same row. At the
+  default whole view the reference lets the background show through it: sky between the limbs, and
+  light between the leaf masses. A render whose crown closes into a solid dome shows less of the
+  background than the reference does, and fails row 6, however well its outline scores. Being denser
+  than the reference is not a pass by itself.
+- **A crown with no pattern to follow.** The reference's own branch pattern is visible through the
+  foliage: a viewer sees limbs, then branches, then twigs, in an order that repeats. A render that
+  reads as an even green mass fails row 12 on the pattern, even when every limb is joined and every
+  order divides: the plant is orderly, and the order cannot be seen.
+- **A tangle where the reference has a structure.** The winter branch is the test that catches it:
+  the reference is one limb dividing into smaller branches, those into twigs, and the twigs carrying
+  buds, each part clearing the last. A picture of parts laid over one another at odd angles fails
+  row 12 on neatness, however plausible each part is alone.
+- **A picture that looks like a pile of loose shapes.** Set it beside the reference and ask whether
+  a person who knows the species would take it for that species grown. If not, it fails row 12, and
+  the reviewer names the first thing that gives it away.
+
+## What a rebuilt leaf changes
+
+A leaf texture built upside down can pass by accident. The reviewers' proportions and a half turn of
+the still can line up with the picture. A leaf still then reads well without the leaf being right.
+When a species rebuilds its leaf upright, expect its leaf stills to move in both directions. Read
+that movement as the measure catching up, not the plant changing.
+
+The silver birch rebuilt its leaf upright and stays at 8 of 12. Row 6 passes with the sky lever at
+0.4. Its three whole views read 0.18/0.21, 0.17/0.17 and 0.20/0.19 against their photographs. Its
+pictures 12 and 13 rose from 0.48 and 0.15 shape overlap to 0.72 and 0.64. Pictures 24 and 25 fell
+from 0.88 and 0.79 to 0.72 and 0.54. The two that fell had been measured through the inverted leaf and a
+half turn that happened to match. Row 4, the row those four stills carry, still passes at the new
+figures. The fall costs no row, and the species stays at 8 of 12.
+
+## What a crown fill costs
+
+A rebuilt leaf can leave a crown too open, and a fuller crown is the obvious answer. It carries a
+price, and the picture guard measures it.
+
+The willow rebuilt its leaf upright, then three fills were tried. Their near bands read 2,138,953,
+1,818,093 and 1,442,596 triangles at densities 5.6, 4.4 and 2.9. They read about 700,000 before
+the rebuild. The fills at 5.6 and 4.4 were dropped once the software guard was at risk. Neither was
+given a quiet run. The 2.9 fill is the one kept, because it is the one proved inside the guard.
+Three software tiers drew in 1.8, 1.8 and 1.0 minutes.
+
+Row 6 is a stated limit at every fill. Two measured attempts at the rebuilt leaf leave picture 01
+above every reference, and picture 18 four hundredths past its band. The fuller fills were never
+proved inside the guard. No fill wins a row, so the guard alone decides.
+
+The guard was nearly blamed for stale pictures. Three software tiers reported "no result within
+120 s" while the machine carried other work. The same tiers drew inside two minutes once it was
+quiet. Each failure had been a comparison against a stale reference, which reads alike in a
+summary line. A timeout is not evidence of a plant's cost until the run has a quiet machine and its
+own failure line is read.
+
+## When a lever fails its own row
+
+The hosta's last attempt is a clean case of a lever that fails the row it aims at and costs another.
+
+Its from-above view read 0.0049 against a floor of 0.0496. That floor is its photograph's own
+reading, 0.0996, less half a tenth, which is the allowance row 6 gives every view. The three side
+views sat inside their bands. Cutting the leaves from nine to seven per eye raised the
+from-above view to 0.0204. The sides stayed inside at 0.1445, 0.1543 and 0.1419 against 0.1098,
+0.1262 and 0.1171. The top still needed 0.0292, and the sides had only 0.0153, 0.0219 and 0.0252 of
+ceiling left.
+
+The same cut dropped three shape overlaps, from 0.7391 to 0.6835, 0.5848 to 0.5384 and 0.8017 to
+0.6988. It also returned a second piece to the whole-with-landmark view. So it was reverted, and nine leaves
+stand. Row 6 is a stated limit carrying those figures, the lever and the cost. The species stays
+at 5 of 12.
+
+A species' result lands with its own range. A record that trails its pictures by a range leaves the
+next reader unable to tell what those pictures show.
+
+## When a figure is void
+
+Some figures cannot decide a row. The reviewer says so and quotes the figure that survives, rather
+than turning a fault of the measure into a pass or a fail.
+
+- **A cutting view's gap when the crown box covers a leaf patch.** The crown box starts where the
+  crown starts. The tool finds that row in `crownStartRow` in `tools/lib/plant-review/references.ts`,
+  by looking for a bare stem under the foliage. A cut piece has foliage down to its foot, so the box
+  can land on a dense leaf patch. The gap is then read inside that patch. Three cases so far: the
+  common alder's two cluster stills, the hawthorn's studio cluster, and the silver birch's
+  branch-studio piece 21. On the birch the box fell from 186 by 284 pixels to 25 by 46. The piece's
+  own box and rows did not move, on a mask change of eleven per cent. The outline overlap and the
+  piece count survive such a move, and they are what to quote. The fix is tool work in that file,
+  not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
+  lives under `tools/`.
+
+## The crown start of a clump
+
+A clump is several bare stems from one stool, such as the holm oak. Its stems spread as they rise,
+so a row through them spans wide while it holds little plant. The outline rule takes that span for
+crown and starts the crown among the bare stems. A species' review data can name the habit `clump`.
+Each row then counts by the plant it holds, and the crown starts where the rows fill with foliage. The holm oak's picture `01` reads 0.253 of the height by the outline rule and 0.347 by the
+clump rule, against 0.34 to 0.42 by eye. Its pictures `02` and `18` read 0.289 and 0.228, where the
+hanging rim's foliage begins.
+
+## The central-run crown start's reach
+
+A row's central run is the stem where its boughs stand apart from it. The crown start reads that run where the row's outer span is wider than half the plant's widest row. A reference whose boughs sweep beside the stem moves; a reference whose outer span is the stem does not. The change is `3972fd3cc`.
+
+The mound guard is `36fe37843`. A species the record grows as a tuft or a rosette keeps the outer span, and its crown starts at its foot. The sedge's 25 in-use stills, the hosta's 26 and the meadow grass's 25 are byte-identical before and after the guard. The oak's 30 are byte-identical too.
+
+The in-use references that still move, by species, their number and the start before and after. The figures follow the review's reference path: each picture is flattened onto white before its mask:
+
+| Species | References that move |
+| --- | --- |
+| agave | 02 0 to 0.0345, 09 0 to 0.019 |
+| apple-tree | 02 0 to 0.2607 |
+| bamboo | 17 0 to 0.0266, 26 0 to 0.0566 |
+| banyan | 02 0.0042 to 0.2881, 08 0 to 0.2857, 18 0.0041 to 0.0248 |
+| bracken | 01 0 to 0.1084, 18 0 to 0.033 |
+| cedar-of-lebanon | 14 0 to 0.0338 |
+| clipped-box-hedge | 17 0 to 0.0938, 19 0.0031 to 0.0453 |
+| coconut-palm | 09 0 to 0.0696, 14 0.0057 to 0.0324 |
+| common-alder | 01 0 to 0.0493, 09 0.0042 to 0.0063 |
+| common-ash | 10 0 to 0.1135, 14 0 to 0.0269, 15 0 to 0.0203 |
+| common-juniper | 04 0 to 0.0073, 10 0 to 0.0449, 18 0.0106 to 0.2624 |
+| douglas-fir | 10 0 to 0.0178, 14 0 to 0.0136, 17 0 to 0.0356 |
+| english-elm | 10 0 to 0.0247, 19 0 to 0.0456 |
+| english-yew | 18 0 to 0.0544 |
+| eucalyptus | 14 0 to 0.1024, 19 0 to 0.163 |
+| european-beech | 02 0 to 0.1086, 15 0 to 0.0266, 18 0.0028 to 0.1567 |
+| european-larch | 03 0 to 0.0769, 05 0 to 0.0191, 19 0 to 0.1212 |
+| fan-palm | 11 0.0102 to 0.0969 |
+| flowering-cherry | 04 0 to 0.0267, 17 0.0016 to 0.0125 |
+| giant-sequoia | 11 0.005 to 0.2137, 14 0.0029 to 0.0172 |
+| hawthorn-shrub | 04 0 to 0.1096 |
+| holm-oak | 20 0 to 0.0254 |
+| horse-chestnut | 04 0 to 0.0179, 08 0 to 0.0537, 14 0 to 0.0027, 15 0 to 0.0078, 17 0 to 0.0224, 19 0 to 0.0153, 28 0.0769 to 0.1538 |
+| italian-cypress | 09 0 to 0.0141 |
+| japanese-maple | 04 0 to 0.008, 15 0 to 0.0094 |
+| lavender | 10 0 to 0.0575 |
+| live-oak | 01 0 to 0.1524, 06 0 to 0.0068, 16 0 to 0.0103, 18 0 to 0.1481 |
+| lombardy-poplar | 04 0 to 0.0357, 07 0 to 0.0109, 14 0 to 0.0076, 15 0 to 0.0187, 16 0 to 0.0203, 17 0 to 0.0109, 19 0 to 0.25 |
+| london-plane | 20 0 to 0.0266 |
+| norway-maple | 14 0 to 0.0054, 15 0 to 0.0797 |
+| norway-spruce | 02 0 to 0.0673, 03 0 to 0.0782, 31 0 to 0.0459 |
+| oleander | 03 0 to 0.0043, 19 0 to 0.0607 |
+| olive | 14 0 to 0.0081 |
+| quaking-aspen | 16 0 to 0.0259, 30 0.0034 to 0.0952, 31 0 to 0.3284 |
+| rush | 05 0 to 0.2984 |
+| saguaro | 25 0 to 0.0382 |
+| scots-pine | 04 0 to 0.0506, 17 0 to 0.0352 |
+| silver-birch | 14 0 to 0.0216, 34 0 to 0.0453 |
+| small-leaved-lime | 15 0 to 0.0187 |
+| stone-pine | 14 0 to 0.0128 |
+| tree-fern | 07 0 to 0.0175 |
+| weeping-willow | 01 0.0034 to 0.055, 09 0 to 0.0156, 18 0.0033 to 0.32, 31 0 to 0.0289 |
+| winter-oak-bare | 14 0 to 0.0918 |
+
+A cut piece's subject crop sets its crown bottom. The crown-start move does not reach such a picture: the sequoia's `11` keeps its box 506×596 and its figures, and the raw reading above is not its row figure.
+
+The affected owners are told. The beech and the alder were told first; the oak keeps its figures.
+## The rows a species still owes
+
+**M3-V4 is ticked, and it carries 67 of the 78 owed rows: the 17 engine items and 50 of the limits.
+Its tick does not cover them.** A reader who meets that task in a list sees a tick; this section is
+the only place that says most of the batch's remaining work sits behind it.
+
+A batch leaves 78 of its 144 look rows unpassed. Classed by what would move each one: **17 engine
+items, 5 recorded reference conflicts, 54 measured limits and 2 void by ruling**.
+
+The 17 engine rows are named to their work and to the task that carries the fix. All seventeen are
+M3-V4's: ten in the package's own code, and seven in the review tool, which M3-V4 carries because the
+review rows are its evidence.
+
+- **The shared crown shade**, four rows: the birch's, holm oak's, hosta's and sedge's whole views.
+  The term lives in the package's crown model.
+- **The joint surface the engine does not draw**, three rows: the birch's and beech's winter wood
+  and the willow's cut pieces. The wood geometry is the package's.
+- **The cut-piece crown box**, five rows, in `crownStartRow` in
+  `tools/lib/plant-review/references.ts`: the hawthorn's rows 3 and 12, the willow's row 3 and the
+  hosta's rows 3 and 12. The code is the review tool's; the debt is M3-V4's.
+- **The flower fix**, one row: the hawthorn's row 10, where its blossom draws nothing. The extras
+  builder is the package's.
+- **The matte tool change**, two rows: the alder's rows 3 and 12, where a cut piece's groups and
+  pieces are read from the matte. The code is the review tool's; the debt is M3-V4's.
+- **The coupled stem**, two rows: the sedge's rows 9 and 10. The generator couples the stem to the
+  leaf.
+
+A row with both a record lever and an engine blocker is classed by its next available lever. That is
+why the limit count is large and the engine count small. Four of the 54 limits also name an engine
+work as their next lever. All four are the bark color: the birch's, the holm oak's, the alder's
+plain pair and the bracken's. That next lever is the bark's shared shading, which belongs to the
+materials task M3-V7. So those four are the only owed rows outside M3-V4's debt. The other 50 name a
+record value already spent, which is what makes them limits.
+
+The per-row list, with each figure, sits in the maintainers' batch handoff, which is not kept in the
+repository. This section is a summary of that record, not a second copy of it.
+
+## What the reviewer reports
+
+For each species: pass or fail, row by row, with the picture that shows it and the figure where a
+number exists. Then one sentence for the species as a whole. Faults are listed in the order the owner
+would notice them, not the order they are cheapest to fix.
+
+The reviewer writes the rows into the run's verdict file, `verdict.json`, beside the tool's own.
+Each row is `pass`, `fail`, `void` or `unjudged`. It names its pictures, its figures and their
+bands, and its judge. The file names the run and the commit the pictures were drawn at.
+
+A pass names the reviewer, the day of the reading and the review file that holds it, and gives its
+reason. The review file must exist and must name the row.
+
+Rows 1 to 3 are judged on the picture of the wood alone, which the verdict names among their
+evidence. None of them passes without it.
+
+The verdict holds the balance through eight angles beside the twelve rows. Its figures are the
+spread of the crown box's width and of its height over the whole-plant turning video. The balance is
+judged like a row, and a species is not done until it passes.
+
+The tool passes no row. A plant can hold every figure and still not look like its photograph, so
+only a reviewer's entry passes a row. For rows 6, 8 and 10, whose bands this page states, the tool
+records the figures and a proposal: figures in band, or figures out of band with the ones outside.
+A row with only a proposal is unjudged, and the count reads it as unjudged. The tool fails row 12
+alone where a piece hangs free, and it marks a row void where every picture of it is void.
+
+## The count is generated
+
+Every count of passing rows comes from `bun run plants:ledger`, which reads the verdict files and
+prints the species by row table and the total. No count is kept by hand in a report, a record or a
+handoff. Discard any count that the command cannot rebuild from the files it names.
+
+The total's base is fixed: the standard's twenty species times its twelve rows, 240. A species
+with no verdict counts as none of its twelve, so a count over a few species cannot read as a count
+over all. Under each species the command prints how many pictures each row lost: not compared, void,
+of a part the plant lacks, set aside, or with no subject check.
+
+The command refuses to count in each of these cases:
+
+- A verdict lacks a row.
+- A figure names another run than its file.
+- A judged row names no judge, or a failed or void row gives no reason.
+- A verdict file is not in its run folder, or the folder's manifest is absent or names another run,
+  commit or species.
+- The commit is not a commit's full name, or a picture the verdict names is not in the folder.
+- A pass lacks its reason, its reviewer, its day or its review file, or the review file does not
+  exist or does not name the row.
+- A pass rests on no picture, only on void ones, or only on pictures with no subject check.
+- A pass stands on a run drawn from a tree with changes, or on a run that did not compare every
+  reference file.
+- A row passes though the plant lacks a part its photograph shows.
+- Two files name one species, or a file names a species outside the twenty.
+
+A report quotes the command's total with the folder it read.
+
+A reviewer does not accept an argument about what a species should look like without a reference
+picture or a measurement that shows it. A claim without evidence is a row left unjudged, and unjudged
+is not passed.
+
+Limits are reported singly, each with its figure, its reason and the alternative that was tried. A
+limit is never a reason to stop work on the pictures it names.
+
+## The side-by-side gate
+
+A species moves to a new structure only when its new drawing reads nearer its photographs than the
+old grower's drawing of the same pictures. Until then the old grower stays registered, and the new
+record waits beside it. The gate decides which plant ships. It passes no row of the twelve.
+
+- **Both drawings are real engine drawings.** A CPU preview or a frame sheet can show that a plant is
+  fit for its round. It never stands for the round, because the card levels and the light differ.
+- **The old drawing is the fair floor.** Draw the old grower again with the current review tool where
+  you can, so both drawings meet one tool. Where that is not possible, take the old grower's newest
+  clean whole-view run, and do not set its outline figures beside the new tool's.
+- **Eye first.** Lay the photograph, the old drawing and the new drawing side by side at one size.
+  Say in one sentence what a person would take each drawing for. Then read the figures.
+- **The floor names its points.** For each species, write what the old drawing reads as and the two or
+  three things it gets right. The new plant must keep or beat each point, and the verdict says which.
+- **Color counts.** Leaf, bark and fruit color are judged with the shape. A new plant that is nearer
+  in shape and behind in color is judged on both, and the verdict says which side wins.
+- **A pass keeps an open fault list.** The gate's pass names the views it wins and the views it loses.
+  Its open faults stay in the species' entry in [the vegetation species guide](vegetation-species.md).
+- **A pass may carry a condition.** When one fault would stop a person at once, the pass names it. The
+  switch waits for a round that shows it mended. The hosta's black leaf and the alder's pink haze are
+  such conditions.
+- **The eye beats a passing test.** When a change makes a test pass and the eye reads the plant as
+  further from its photograph, revert the change. Then mend the test until the worse plant fails it.
+
+## Sky read like for like
+
+Row 6 compares two sky gaps, so both sides must be read by the same rule. A gap with no shared rule
+is not quoted.
+
+| Still | The photograph | The drawing |
+| --- | --- | --- |
+| A whole view, `01` or `02` | Each pixel far enough in color from its fitted sky is plant | The same rule on the drawing's color still: the color-still gap |
+| A silhouette, `18` | The half-dark rule | The half-dark rule on the drawing's matte |
+
+The drawing's matte at a whole view is instrument only. The engine writes it display-encoded, so the
+half-dark rule counts a pixel as plant only from about 0.78 cover. A photograph's mask counts a pixel
+from a small cover. So the matte reads every whole view too open: the ash by 0.12 to 0.15, the
+meadow grass's `01` by 0.32. The run's summary prints the like-for-like figure first and the matte's
+as "instrument only".
+
+The band stays as row 6 states it. A builder does not raise density or move spacing to close a whole
+view's gap that the matte reads. Read the like-for-like figure first.
+
+## Reference conflicts
+
+The pictures of one species are generated one by one, so they show different individuals. The whole
+plant's turning video and picture `01` define the one primary plant. The other pictures are matched
+on form and proportion.
+
+When two pictures at one turn ask for opposite things, record a reference conflict. Name the picture
+that governs, and judge the other by eye for the plant's build, never by its figure. The recorded
+conflicts:
+
+| Species | Pictures | What governs |
+| --- | --- | --- |
+| Sedge | `01`, an upright fountain, against `02`, a wide mound | `02` and the turning video; `01`'s width and gap are recorded, not targets |
+| Saguaro | `18`, two tiers of arms; `07`, one arm on its own collar | Still `01` and the one plane of arms the owner chose |
+| Silver birch | `18`, a narrower tree than `01` at the same turn | `01`; `18` judges the build by eye |
+| Common alder | `02` and `18`, a narrow cone with a low crown base, against `30`, a broader crown based higher | `30` and the turning video set the build; `02`'s crown base and width are judged by eye |
+| Leaves on a cut twig | A face-on still against the narrowest frame of its video | The still sets the blade's face; the edge-on figure is recorded |
+
+Read the turn each picture is drawn at before calling a conflict. Two figures at different turns do
+not bind one projection, as [a same-angle conflict](#what-a-reviewer-must-see-for-the-picture-judged-rows) says.
+
+## Count before you draw
+
+A plant of pieces reports its counts with every preview and every real round:
+
+- each piece's triangles at each tier;
+- all its pieces placed, at the kit's tier;
+- the most triangles drawn at once from the worst stated eye, at the tallest view the quality
+  presets allow.
+
+A plant's own triangle figure that leaves its pieces out is wrong, and it can hide a plant far over
+its cap. With its pieces counted, the pine's near form drew 11.3 million triangles against a cap of
+2.8 million. The oak's sparse pieces drew 7.3 million against 2.5 million.
+
+A plant's near cap is held at the reference view, 1,080 pixels tall at 60 degrees. At taller views
+the engine scales the switch, so a near plant can draw whole. There the scene's budget of real pieces
+governs, not the plant's own cap. Builders still report the tallest view's count.
+
+## Color found by isolating its cause
+
+A color figure is measured before anything changes. Read the leaf and bark figures per still, at the
+level drawn, beside the photograph and the fair floor. The cause is then found by a test that changes one
+thing at a time:
+
+1. the species' own texture, its albedo;
+2. the record's tints;
+3. the leaf material's light through the blade and its back faces;
+4. the card bake's color;
+5. the review's own light.
+
+A species' own textures and tints are its builder's to change. A shared material, light or bake change
+goes to the lead first. A color is never fitted to one picture's light. A color that reads wrong across
+a whole crown is first tested for what the crown draws at all. The hosta's black leaf came from its
+flutter phase byte, which landed on a surface kind's value. A crown that reads rust at a card
+level may draw its young bark and few leaves.
+
+## A confirming round after a shared change
+
+A species that has passed the gate is drawn again when a shared change moves its card levels or its
+wood after the judged round. The shared support branches are one such change. The confirming round
+answers two questions: does the win hold, and does anything new read wrong. The pedunculate oak's
+confirming round after the shared supports holds its win, and its cards that hang from other cards
+read as foliage on wood.
+
+Every merge into the shared line also compares all twenty species' digests before and after, as
+[the vegetation process guide](vegetation-process.md#merges-into-the-shared-line) says. A switched
+species whose look moves stops the merge until the change is made opt-in or the reviewer judges it.
+
+## Closing a figure without fitting it
+
+A figure checks the plant. A builder does not tune the plant to the figure.
+
+- Do not fit a spacing, a density or a tint to one figure from one picture. A lever that closes the
+  figure and moves the plant away from its photograph by eye is reverted.
+- Read the figure by the rule both sides share before acting on it. A figure inside the tool's own
+  drift between versions decides nothing.
+- A test is proved by putting its fault back. Restore the fault in a copy of the commit and run the
+  test: it must fail. A test that counts by the code's own rule is true by construction
+  and proves nothing. A count of the cards that a join rule keeps is one such test.
+- A fix is proved by the picture it was for. A fix can move the plant and still leave its fault in
+  place, as the hosta's roll fix left its black leaf. The next round's picture shows that.
+
+## Reading rules learned from the rounds
+
+- **A row needs every picture.** A row passes only when every picture behind it passes. A stated limit
+  is still a fail of the row.
+- **A stills pass can fail on its turn.** Before a cluster or crown row passes on stills, read the
+  same run's turn: its crown box's spread can sit far outside the reference's.
+- **Limb crossings are row 12.** A crossing changes no outline and no gap. Open the views from below,
+  under the crown and inside it, and trace each great limb past its neighbors.
+- **Row 9 reads the drawn width.** The trunk check is the drawn silhouette's width at breast height
+  over the height. The skeleton's radius is another measure.
+- **A card level flatters a sparse plant.** Cards grow about their centers, so a crown can read inside
+  its band at a card level while its leaf form is a bare frame. Read both levels.
+- **The matte overstates cover close up.** Inside a crown the matte blends soft coverage from every
+  level. Read a close view's cover from its parts picture.
+- **Measure from the true foot.** A script that takes the horizon row as the foot measures heights
+  against two rulers. Pass the foot row.
+- **Open the parts picture before disputing a void.** A color still can hide a second part in front
+  of the subject.
+- **An inert cut proves nothing.** Before trusting identical figures from a change, show that the
+  change moves the picture.
+- **A share of pixels is not equality.** To say two drawings are the same, compare their bytes. Two
+  pictures with the same bytes and different level labels mean one label is wrong.
+
+## The process
+
+1. **Draw a clean run.** The working tree must be clean, because the manifest names the commit it was
+   drawn at and a reference holds only for the tree that drew it. Name every part: stills, every
+   turning video and the wind clip.
+2. **Record the run** in the species review file: run name, manifest commit, seed, variant and preset.
+3. **Look before you measure.** Open the whole view and its reference at the same size and say, in one
+   sentence, what a person would take the drawing for. Then walk row 12's checklist over the same
+   picture. A figure does not answer this step and never stands in for it.
+4. **Judge** row by row, against the run's own figures and the reference pictures. Where a figure and
+   the eye disagree, the eye wins and the figure is explained. Read the void pictures first: a row
+   that rests on one waits for the camera's fix and is not judged on it.
+5. **Write the verdict** to the run's `verdict.json` and to the species review file. Add the pass
+   list for the next round in priority order. Name every stray part, crossing and loose shape you
+   saw, with the picture it appears in. Run `bun run plants:ledger` on the run folder: it must
+   accept the file.
+6. **Hand back.** A species is done when every row passes, or when each limit it misses is stated with
+   its measured reason. The reviewer accepts a limit; it does not accept a limit as a reason to stop,
+   and it never accepts one for row 12: a picture that is a tangle or a pile of shapes is a fault to
+   fix, not a limit to state.
+
+The reviewer is independent: it wrote none of the species' work. The figures it quotes name the commit
+they were measured at, and a figure from another base is a note, not evidence.
+
+## A batch re-read reads each species at its own branch
+
+A species' record lives on its own branch, so the land head draws a stale plant for every species that
+has not merged it. The beech, the hosta and the hawthorn read there with crowns and gaps far from
+their photographs. Those figures say nothing about the species. Read each species at its own tip.
+Check that the tip reaches the land head before you quote it. Name both commits beside every figure:
+the branch tip it was drawn at, and the land commit the branch includes. A figure from a branch
+without that merge is void, not wrong. The land commit names the measure; the branch tip names the
+plant.
+
+## Tune a crown against its pictures
+
+Move one record field at a time. After each move, draw stills 01, 02 and 18 and the whole-plant
+turning video, and read the sky gap and the crown measures. Then run the vegetation tests and the
+byte budgets on all six variants at every tier, not only on the drawn plant. The figures are the
+pedunculate oak's ([D-330](decisions/D-330-oak-crown-by-its-own-light.md)).
+
+| Fault | Move first | What it does on the oak |
+| --- | --- | --- |
+| Crown too open | `shoots.placement.density` up 0.05 to 0.1, or `skyPrune` down 0.02 | Each 0.1 of density closes the sky gap by 0.004 to 0.007, and each 0.01 of sky prune by about 0.002 |
+| Crown too closed, with still 18 first to go | `skyPrune` up 0.02 to 0.04 | 0.34 to 0.42 opens 18 by 0.019 |
+| An even shell round a closed core | `skyPrune` up, with `skyPruneLayer` kept | 0.34 to 0.42 raises the inner sky share by 0.06 to 0.08 |
+| Loose specks at the edge | The spray's tight rosette, then longer `bend` pieces | Together they take 01's specks from 32 to 15 |
+| Loose leaf groups hanging off the crown's edge | `growth.pipe.tipRadius` up | The groups were foliage on twigs too thin to draw. 02's loose pieces fall from 11 to 7, at a small cost in the young bark's color |
+| Too much sky in the top third | `growth.light.surface` on | 01's top-third share falls from 0.233 to 0.188 |
+| Trunk hidden under the crown | `growth.floor` up 0.005 | 0.165 loses the clear trunk, and 0.175 keeps it |
+| Leaves hanging under the limbs | `shoots.placement.lift` up | At 30 degrees the hanging leaf area falls from 0.156 to 0.055, but 02's gap leaves its band |
+| Limbs too steep | `growth.divide.angle` up 4 degrees at a time | The bole-and-crown test counts the great limbs over the variants. 68 degrees costs 02's outline 0.08, and 72 costs every whole view |
+| Twigs fan from one point | `laterals` with a `lateralGap` of 0.3 | The winter branch's fan share falls from 0.42 to 0.09 |
+| Twigs read as straight rods | `bend` at 34 degrees | 26 degrees fails the kink band |
+| Kit over its cap | Longer `bend` pieces, `leafYears` 1, or fewer rosette leaves | Fuller rosettes cost 18 to 33 % of the kit |
+| A crown that draws as bare stalks at distance | The leaf ribbon's colour sample | A thin leaf ribbon sampled at the picture's silhouette loses its alpha to the coarse mip, so the leaf vanishes and the crown reads as wood. Sample where the picture is solid, at the midrib or inside the blade, and let the ribbon's own columns give the leaf's shape |
+| A rosette that reads as a heap of blades | `shoots.placement.rosette` 'fan' | The tip stops spreading its leaves round the stem and stands them in one face, as the close photographs show. Outlines rise 0.02 to 0.05 at the cut views: 10 to 0.39, 22 to 0.39, 23 to 0.55 |
+| Blades drawn smaller than the record's leaf | The shoot class's `leafScale` to 1.0 | Every blade at the record's own length. Raise the scale, never the leaf: a longer leaf takes row 4 past the species' own size |
+| A cut piece that reads as one bare stem | The cutting class's `laterals`, with `lateralGap` at its most | The sub-branch forks into shoots with a rosette at each end, as its photograph shows. Its sky gap opens from 0.14 to 0.21 against the photograph's 0.26 |
+| A fruit's cup that reads as a smooth cone | The cup's lathe profile, its `scales`, then `scaleShade` and `scaleJitter` | The cup stands wider and deeper than the nut, its rows read as scales, and no two scales take the same shade. A flat cup still fails row 12: a viewer close enough to see it sees its surface before its outline |
+| A crown of fine leaves that draws as bare boughs, however many shoots stand on it | The shoot's length, then the leaf's width, then `lod.cardCell` | A shoot's card bakes its leaves into the tier's texel cell. A leaf narrower than a texel bakes away. A giant sequoia's 1.6 mm scale on a 0.42 m shoot left the crown bare at a 128-texel cell. Shoots of 0.11 and 0.24 m, scales 2.2 mm wide and the same cell brought the foliage back. The crown's gap fell from 0.16 to 0.06 |
+| A leaf group or a limb standing in the air | The join it should make, then the pruning that left it | A piece the reference does not have fails row 12 whatever its size. The piece counts in the review name it, and the builders' test walks every axis back to a stem |
+
+Each floor value grows a different tree, so read all six variants after a floor change. Do not bring
+back the clump field for the specks: its holes fall at random through the wood.
+
+## A shader's cell counts are computed, not written
+
+The plant shader draws a fruit's scales from its own coordinates. A cell count written as a literal
+(`vec2f(1, 2)`) has failed to compile in the browser while the same count computed
+(`vec2f(max(2.0, floor(rows * 0.5)), ...)`) compiles. The local shader check compares the modules
+with their sources rather than compiling them, so it passes either way and the page fails instead.
+Until the compiler is pinned down, keep the cell counts computed and read the page after any shader
+change, not only the check.

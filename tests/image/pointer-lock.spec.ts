@@ -10,10 +10,12 @@ import { pageResult } from '../lib/page-result.ts';
 // Linux, as in CI, each move under the lock reports the pointer's position as its movement, and then
 // the same movement back, so the moves add up to nothing. On a Mac it refuses the lock. Playwright's
 // full Chromium build, in Chrome's own headless mode, locks and reports the movement as Google Chrome
-// does. So these tests run in it, where the environment names no browser of its own.
+// does. So these tests run in it, where the environment names no browser of its own, by channel or
+// by executable.
 test.use({
 	channel: [
-		async ({ launchOptions }, use) => use(launchOptions.channel ?? 'chromium'),
+		async ({ launchOptions }, use) =>
+			use(launchOptions.channel ?? (launchOptions.executablePath ? undefined : 'chromium')),
 		{ scope: 'worker' },
 	],
 });

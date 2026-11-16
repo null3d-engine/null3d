@@ -1,0 +1,42 @@
+{
+	"caps": "tree",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"crop": [168, 462, 60, 110],
+		"lowerCrop": [792, 462, 60, 110],
+		"frame": { "petiole": [34, 109], "tip": [9, 15] },
+		"alpha": { "floor": 16, "solid": 240 },
+		"erode": 1,
+		"margin": 0.04,
+		"delight": { "radius": 0.06, "strength": 1 },
+		"relief": { "veins": 0.6, "pucker": 0.35, "depth": 0.0012 }
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "lower",
+				"slot": 27,
+				"tile": [0.8, 0.8],
+				"depth": 0.06,
+				"smooth": 8,
+				"delight": { "radius": 0.2, "strength": 1 }
+			},
+			{
+				"name": "upper",
+				"slot": 26,
+				"tile": [0.38, 0.38],
+				"depth": 0.018,
+				"smooth": 4,
+				"delight": { "radius": 0.2, "strength": 1 }
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 28,
+			"tile": [0.12, 0.12],
+			"depth": 0.0008,
+			"delight": { "radius": 0.12 }
+		}
+	}
+}

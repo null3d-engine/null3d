@@ -3,8 +3,9 @@
 // that the scene supports.
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
-import { TIME_NAMES, TIME_SKY } from './controls';
-import { createShowcaseEffects, shadowStep } from './showcase-effects';
+import { type HudGroup, TIME_NAMES, TIME_SKY } from './controls';
+import { shadowStep } from './shadow-range';
+import { createShowcaseEffects } from './showcase-effects';
 
 /** A cinematic that records how the page's camera picks reach it. */
 function stubFilm() {
@@ -19,13 +20,29 @@ function stubFilm() {
 }
 
 /** A scene whose every part records what the controls write to it. */
-function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {}) {
+function stub(
+	options: {
+		dslr?: boolean;
+		start?: Record<string, boolean>;
+		own?: readonly string[];
+		extra?: () => readonly HudGroup[];
+		lodThreshold?: number;
+		preset?: string;
+		highest?: string;
+		supported?: {
+			atmosphere: readonly string[];
+			lighting: readonly string[];
+			post: readonly string[];
+		};
+	} = {},
+) {
 	const seen: string[] = [];
 	const posts: unknown[] = [];
 	const shown: string[] = [];
 	const quality = {
-		preset: 'high' as string,
-		settings: { lodThreshold: 0 },
+		preset: options.preset ?? 'high',
+		highest: options.highest ?? 'ultra',
+		settings: { lodThreshold: options.lodThreshold ?? 0 },
 		set: (settings: { lodThreshold?: number }) => {
 			if (settings.lodThreshold !== undefined) {
 				quality.settings.lodThreshold = settings.lodThreshold;
@@ -100,12 +117,14 @@ function stub(options: { dslr?: boolean; start?: Record<string, boolean> } = {})
 			dof: false,
 			exposure: false,
 		},
-		supported: {
+		supported: options.supported ?? {
 			atmosphere: ['sky', 'fog'],
 			lighting: ['shadows', 'ao'],
 			post: ['dof', 'exposure'],
 		},
 		apply: (id, on) => seen.push(`${id} ${on}`),
+		...(options.own !== undefined && { own: options.own }),
+		...(options.extra !== undefined && { extra: options.extra }),
 		mood: (mood) => seen.push(`mood ${mood}`),
 		hour: (hours) => seen.push(`hour ${hours}`),
 		film: () => film,
@@ -187,13 +206,27 @@ describe('createShowcaseEffects', () => {
 		expect(seen).toContain('lodThreshold 1');
 	});
 
-	it('keeps the level of detail off when a preset is picked', () => {
-		const { effects, scene, seen, quality } = stub();
+	it("keeps a scene's levels of detail on at the start, unless its start list turns them off", () => {
+		const on = stub({ lodThreshold: 1 });
+		expect(on.seen).not.toContain('lodThreshold 0');
+		expect(on.effects.groups().find((group) => group.name === 'quality')?.extras?.[0]?.active).toBe(
+			true,
+		);
+		const off = stub({ lodThreshold: 1, start: { lod: false } });
+		expect(off.seen).toContain('lodThreshold 0');
+		expect(
+			off.effects.groups().find((group) => group.name === 'quality')?.extras?.[0]?.active,
+		).toBe(false);
+	});
+
+	it('keeps the level of detail on when a preset is picked', () => {
+		// A page that starts with the levels of detail on, which is every showcase's default.
+		const { effects, scene, seen, quality } = stub({ lodThreshold: 1 });
 		scene.handler?.('quality', 'medium');
-		expect(quality.settings.lodThreshold).toBe(0);
-		expect(seen).toEqual(['preset medium', 'lodThreshold 0']);
+		expect(quality.settings.lodThreshold).toBe(1);
+		expect(seen).toEqual(['preset medium']);
 		const group = effects.groups().find((entry) => entry.name === 'quality');
-		expect(group?.extras?.[0]?.active).toBe(false);
+		expect(group?.extras?.[0]?.active).toBe(true);
 	});
 
 	it("turns the level of detail on at the preset's threshold", () => {
@@ -267,6 +300,88 @@ describe('createShowcaseEffects', () => {
 		expect(groups[3]?.buttons.map((button) => button.active)).toEqual([false, false]);
 	});
 
+	it('keeps a preset above the GPU path’s highest, disabled, with its reason', () => {
+		const { effects } = stub({ preset: 'medium', highest: 'medium' });
+		const group = effects.groups().find((entry) => entry.name === 'quality');
+		const buttons = group?.buttons ?? [];
+		// Every preset stays in the row; the ones that this device cannot run are disabled.
+		expect(buttons.map((button) => button.id)).toEqual(['low', 'medium', 'high', 'ultra']);
+		expect(buttons.find((button) => button.id === 'medium')?.disabled).toBeUndefined();
+		const high = buttons.find((button) => button.id === 'high');
+		expect(high?.disabled).toBe(true);
+		expect(high?.reason).toContain('held to Medium');
+		const ultra = buttons.find((button) => button.id === 'ultra');
+		expect(ultra?.disabled).toBe(true);
+		expect(ultra?.reason).toContain('held to Medium');
+	});
+
+	it('keeps a feature that needs a heavier preset, disabled, with its reason', () => {
+		const { effects } = stub({
+			preset: 'medium',
+			highest: 'ultra',
+			supported: {
+				atmosphere: ['sky', 'fog', 'shafts'],
+				lighting: ['shadows'],
+				post: ['dof'],
+			},
+		});
+		const group = effects.groups().find((entry) => entry.name === 'atmosphere');
+		const shafts = group?.buttons.find((button) => button.id === 'shafts');
+		expect(shafts).toBeDefined();
+		expect(shafts?.disabled).toBe(true);
+		expect(shafts?.reason).toContain('Needs High or Ultra');
+		expect(shafts?.reason).toContain('Choose a higher quality preset');
+	});
+
+	it('names the device’s cap when a feature needs a preset that is above it', () => {
+		const { effects } = stub({
+			preset: 'medium',
+			highest: 'medium',
+			supported: {
+				atmosphere: ['sky', 'fog', 'shafts'],
+				lighting: ['shadows'],
+				post: ['dof'],
+			},
+		});
+		const group = effects.groups().find((entry) => entry.name === 'atmosphere');
+		const shafts = group?.buttons.find((button) => button.id === 'shafts');
+		expect(shafts?.disabled).toBe(true);
+		expect(shafts?.reason).toContain('Needs High or Ultra');
+		expect(shafts?.reason).toContain('held to Medium');
+	});
+
+	it('disables an effect that the preset leaves out, and enables it at the preset it needs', () => {
+		const medium = stub({ preset: 'medium', highest: 'ultra' });
+		const lighting = medium.effects.groups().find((entry) => entry.name === 'lighting');
+		const ao = lighting?.buttons.find((button) => button.id === 'ao');
+		expect(ao?.disabled).toBe(true);
+		expect(ao?.reason).toContain('Needs High or Ultra');
+		const post = medium.effects.groups().find((entry) => entry.name === 'post');
+		expect(post?.buttons.find((button) => button.id === 'dof')?.disabled).toBeUndefined();
+
+		const low = stub({ preset: 'low', highest: 'ultra' });
+		const lowPost = low.effects.groups().find((entry) => entry.name === 'post');
+		const dof = lowPost?.buttons.find((button) => button.id === 'dof');
+		expect(dof?.disabled).toBe(true);
+		expect(dof?.reason).toContain('Needs Medium, High or Ultra');
+	});
+
+	it('enables a feature at a preset that reaches it', () => {
+		const { effects } = stub({
+			preset: 'high',
+			highest: 'ultra',
+			supported: {
+				atmosphere: ['sky', 'fog', 'shafts'],
+				lighting: ['shadows'],
+				post: ['dof'],
+			},
+		});
+		const group = effects.groups().find((entry) => entry.name === 'atmosphere');
+		const shafts = group?.buttons.find((button) => button.id === 'shafts');
+		expect(shafts?.disabled).toBeUndefined();
+		expect(shafts?.reason).toBeUndefined();
+	});
+
 	it("routes the page's picks to the scene, its effects and its route", () => {
 		const { scene, seen, calls, effects, quality } = stub();
 		const send = (name: string, value: string) => scene.handler?.(name, value);
@@ -311,6 +426,13 @@ describe('the shadow range', () => {
 		expect(held).toBe(70);
 	});
 
+	it('keeps the base range when the core lies behind the camera', () => {
+		// A camera that looks away from the core needs no reach beyond the base, and never a NaN.
+		expect(shadowStep(-11, 70, 70)).toBe(70);
+		expect(shadowStep(-11, 87.5, 70)).toBe(70);
+		expect(shadowStep(0, 109.375, 70)).toBe(70);
+	});
+
 	it('follows the camera as it draws back from the core and comes in again', () => {
 		const { effects, ranges, place } = stub();
 		expect(ranges).toEqual([70]);
@@ -327,5 +449,29 @@ describe('the shadow range', () => {
 		const writes = ranges.length;
 		effects.update(0);
 		expect(ranges.length).toBe(writes);
+	});
+});
+
+describe('a scene’s own effects', () => {
+	it('lets the scene answer a switch that a shared case would take', () => {
+		const { effects, seen, posts } = stub({ own: ['vignette'] });
+		effects.set('vignette', true);
+		// The scene's own answer runs, and the shared vignette case writes nothing.
+		expect(seen).toEqual(['vignette true']);
+		expect(posts).toEqual([]);
+	});
+
+	it('shows the scene’s own groups before Quality', () => {
+		const { effects } = stub({
+			extra: () => [{ name: 'traffic', title: 'Traffic', radio: true, buttons: [] }],
+		});
+		expect(effects.groups().map((group) => group.name)).toEqual([
+			'hour',
+			'atmosphere',
+			'lighting',
+			'post',
+			'traffic',
+			'quality',
+		]);
 	});
 });

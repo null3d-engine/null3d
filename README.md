@@ -124,14 +124,16 @@ bun run build
 bun run dev
 ```
 
-Then open one of these pages in Chrome:
+The dev server serves HTTPS by default. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. On a network address, a demo served over plain HTTP silently falls back to WebGL2 at Medium. `bun run dev-cert` makes the local certificate once. Then open one of these pages in Chrome:
 
 | Page | What it shows |
 | --- | --- |
-| `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
-| `http://localhost:5173/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
-| `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
-| `http://localhost:5173/examples/` | The feature demos: one short sketch for each feature |
+| `https://localhost:5174/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
+| `https://localhost:5174/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
+| `https://localhost:5174/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
+| `https://localhost:5174/examples/` | The feature demos: one short sketch for each feature |
+
+To open a demo from a second machine, use `https://<mac>.local:5174/` and accept the local certificate warning. `NULL3D_HTTPS=0 bun run dev` serves plain HTTP on port 5173. That suits a run that only this machine reaches.
 
 `bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
 
@@ -192,9 +194,9 @@ On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays t
 | The engine's own CPU time per frame on its busiest thread, 100,000 moving instances, desktop Chrome on WebGPU | At most 50% of three.js's |
 | CPU time per frame at phone scale, on WebGPU and WebGL2 phones and tablets | At most 100% of three.js |
 | Core download size | At most 600 KB after Brotli compression |
-| The engine's JavaScript that a page downloads at its start | At most 176 KB after Brotli compression, 448 KB after gzip |
-| Each file of the engine's JavaScript that loads on a feature's first use | At most 16 KB after Brotli compression, 24 KB after gzip |
-| Each shader file that loads on a feature's first use, such as the morph target shaders of WebGL2 | At most 49 KB after Brotli compression, 320 KB after gzip |
+| The engine's JavaScript that a page downloads at its start | At most 190 KB after Brotli compression, 448 KB after gzip |
+| Each file of the engine's JavaScript that loads on a feature's first use | At most 18 KB after Brotli compression, 24 KB after gzip |
+| Each shader file that loads on a feature's first use, such as the morph target shaders of WebGL2 | At most 56 KB after Brotli compression, 320 KB after gzip |
 
 An engine's own time leaves out the sketch code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
 
@@ -318,6 +320,7 @@ The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The 
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds. A physical sky, decals, area lights, a light probe grid, clearcoat and sheen, automatic exposure, reflection probes, order-independent transparency and pixel-exact picking. Stand-in images and merged meshes for far objects, light through leaves and skin, still views, per-object motion vectors, direct draws where a start-up measurement finds them faster, and add-ons for particles and terrain |
 | 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling, the porting tools, motion blur, and global illumination from a probe volume that light does not leak through. Video textures and light maps that store direction. Add-ons for Gaussian splats with detail levels and streaming, MSDF text, physics, water and three.js's tone curves. Property animation, glTF's iridescence and anisotropy, multiple views, gizmos, spot-light cookies, CSS3D labels, a tone-mapping flag per material, an ocean for the water add-on, and a build for a plain script tag |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
+| after 1.0 | The content packs that demanding scenes ask for: OpenPBR materials, distance-field shadows, hair and GPU grass, each taken up when a real scene needs it |
 
 ## Development
 
@@ -326,17 +329,18 @@ Requirements:
 - [Bun](https://bun.sh/) 1.4.3 or newer
 - The Rust toolchain through [rustup](https://rustup.rs/). The repository pins a nightly compiler, and rustup installs it on the first build.
 - Node.js 24 or newer, which runs the browser tests
-- Google Chrome, which the browser tests drive on your real GPU
-- [mkcert](https://github.com/FiloSottile/mkcert), only to test on phones and tablets over HTTPS
+- Chrome for Testing, which the browser tests drive on your real GPU. `bun run chrome:install` installs the pinned build, which every copy of the repository shares
+- [mkcert](https://github.com/FiloSottile/mkcert), which `bun run dev-cert` uses to make the local HTTPS certificate
 
 ```sh
 git clone https://github.com/null3d-engine/null3d.git
 cd null3d
 bun install              # installs the tools and the git hooks
 bun run build            # builds both WebAssembly files and prints their sizes
+bun run dev-cert         # makes the local HTTPS certificate that the dev server uses
 bun run test             # unit tests for the engine, the docs and the repository tools
 bun run test:browser     # image tests on WebGPU and WebGL2 in Chrome
-bun run dev              # serves the test pages, benchmark pages and demos with the isolation headers
+bun run dev              # serves the test pages, benchmark pages and demos over HTTPS with the isolation headers
 bun run bench:run        # measures S1 in null3d and three.js in Chrome and prints a table
 ```
 

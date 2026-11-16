@@ -30,6 +30,14 @@ const translate = (x: number, y: number, z: number) => [
 ];
 
 describe('mergeFarGeometry', () => {
+	test('makes arrays whose mesh plans no levels on top of the copies', () => {
+		const merged = mergeFarGeometry([
+			{ arrays: triangle },
+			{ arrays: { ...triangle, levels: true } },
+		]);
+		expect(merged.levels).toBe('pieces');
+	});
+
 	test('keeps every vertex and moves each copy', () => {
 		const merged = mergeFarGeometry([
 			{ arrays: triangle },

@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { SHADING_CUSTOM_FIRST } from '../../generated/core';
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
+import { ImageTable } from '../../shared/images';
 import { MemoryViews } from '../../shared/memory-views';
 import { ReadSink } from '../readback';
 import { WebGPUBackend } from './backend';
@@ -63,6 +65,16 @@ function fakeDevice() {
 			log.push('end pass');
 		},
 	};
+	const computePass = {
+		setPipeline() {},
+		setBindGroup() {},
+		dispatchWorkgroups(x: number, y: number, z: number) {
+			log.push(`dispatch ${x} x ${y} x ${z}`);
+		},
+		end() {
+			log.push('end compute pass');
+		},
+	};
 	const pipeline = { getBindGroupLayout: () => ({}) };
 	const device = {
 		createBindGroupLayout: () => ({}),
@@ -70,6 +82,14 @@ function fakeDevice() {
 		createShaderModule: () => ({}),
 		createSampler: () => ({}),
 		createBindGroup: () => ({}),
+		createComputePipeline() {
+			log.push('build compute');
+			return pipeline;
+		},
+		createComputePipelineAsync() {
+			log.push('background build compute');
+			return Promise.resolve(pipeline);
+		},
 		createRenderPipeline(descriptor: GPURenderPipelineDescriptor) {
 			log.push(`build ${descriptor.fragment?.targets[0]?.format}`);
 			return pipeline;
@@ -121,6 +141,10 @@ function fakeDevice() {
 			return buffer;
 		},
 		createCommandEncoder: () => ({
+			beginComputePass() {
+				log.push('begin compute pass');
+				return computePass;
+			},
 			beginRenderPass(descriptor: GPURenderPassDescriptor) {
 				// The backend fills one descriptor again for each pass, so the log keeps copies.
 				const colors = [...descriptor.colorAttachments].map((color) => ({ ...color }));
@@ -147,6 +171,8 @@ function fakeDevice() {
 			submit() {
 				log.push('submit');
 			},
+			// The backend frees a texture that a later creation replaced once this settles.
+			onSubmittedWorkDone: () => Promise.resolve(),
 		},
 	};
 	return { device: device as unknown as GPUDevice, log, buffers, passes, textures };
@@ -162,6 +188,11 @@ function drawList(...commands: [number, ...number[]][]): Uint32Array {
 
 function replay(backend: WebGPUBackend, words: Uint32Array): void {
 	backend.replay(words, new Float32Array(words.buffer), 0, words.length, new ArrayBuffer(0));
+}
+
+/** Replays a draw list from `from`, after the pipelines that its front creates. */
+function replayFrom(backend: WebGPUBackend, words: Uint32Array, from: number): void {
+	backend.replay(words, new Float32Array(words.buffer), from, words.length, new ArrayBuffer(0));
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -191,10 +222,76 @@ describe('WebGPUBackend', () => {
 	it('builds the mip level pipelines in the background when it starts, and the first upload uses them', async () => {
 		const { device, log } = fakeDevice();
 		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
-		expect(log).toEqual(['background build rgba8unorm', 'background build rgba8unorm-srgb']);
+		// The mip build and the cookie copy's own build, each for both formats.
+		expect(log).toEqual([
+			'background build rgba8unorm',
+			'background build rgba8unorm',
+			'background build rgba8unorm-srgb',
+			'background build rgba8unorm-srgb',
+		]);
 		await settle();
 		replay(backend, drawList(texture(1, 64, 1, 3, G.VIEW_2D_ARRAY), [G.OP_GENERATE_MIPMAPS, 1, 0]));
 		expect(log.filter((entry) => entry.startsWith('build'))).toEqual([]);
+	});
+
+	it('skips a compute pass’s dispatches while its pipeline is pending, and runs them once it is built', async () => {
+		const { device, log } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		await settle();
+		log.length = 0;
+		// A compute pass whose pipeline the list's front creates: it builds in the background, so the
+		// pass sets a pipeline that is still pending and dispatches into nothing.
+		const words = drawList(
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_SKIN, 0],
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_SET_COMPUTE_PIPELINE, 1],
+			[G.OP_DISPATCH, 2, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual([]);
+		expect(backend.counts.dispatches).toBe(0);
+		await settle();
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual(['dispatch 2 x 1 x 1']);
+		expect(backend.counts.dispatches).toBe(1);
+	});
+
+	it('skips an add-on compute pass’s dispatches while its pipeline is pending, as it does a built-in pass’s', async () => {
+		const { device, log } = fakeDevice();
+		// An add-on's pass brings a whole WGSL module of its own, under a template id of its own.
+		const images = new ImageTable();
+		images.setShader(SHADING_CUSTOM_FIRST, {
+			kind: 'compute',
+			variants: {
+				compute: {
+					permutation: 0,
+					wgsl: { source: '@compute @workgroup_size(1) fn main() {}', pipelines: {} },
+					glsl: null,
+				},
+			},
+			locations: [],
+			textures: 0,
+		});
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS, undefined, images);
+		await settle();
+		log.length = 0;
+		const words = drawList(
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, SHADING_CUSTOM_FIRST, G.FORMAT_RGBA16_FLOAT],
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_SET_COMPUTE_PIPELINE, 1],
+			[G.OP_DISPATCH, 3, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual([]);
+		expect(backend.counts.dispatches).toBe(0);
+		await settle();
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual(['dispatch 3 x 1 x 1']);
+		expect(backend.counts.dispatches).toBe(1);
 	});
 
 	it('draws a capture of a frame that resolves into the canvas into color targets of its own', () => {
@@ -228,6 +325,51 @@ describe('WebGPUBackend', () => {
 		expect(drawn).toEqual([scene, standIn, standIn, scene]);
 		expect(textures[standIn]?.destroyed).toBe(true);
 		expect(textures[scene]?.destroyed).toBe(false);
+	});
+
+	it('makes a bind group again when a texture it names is made again on the same id', () => {
+		const { device } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		const made: GPUBindGroupDescriptor[] = [];
+		const groups: GPUBindGroup[] = [];
+		device.createBindGroup = (descriptor) => {
+			made.push(descriptor);
+			const group = {} as GPUBindGroup;
+			groups.push(group);
+			return group;
+		};
+		const usage = G.TEXTURE_USAGE_TEXTURE_BINDING;
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_TEXTURE, 1, 8, 8, 1, G.FORMAT_RGBA32_FLOAT, usage, 1, 1, G.VIEW_2D],
+				[G.OP_CREATE_BIND_GROUP, 1, G.LAYOUT_FRAME, 1, 0, G.RESOURCE_TEXTURE, 1, 0, 0],
+			),
+		);
+		expect(made).toHaveLength(1);
+		// The scene grows: a data texture is made again on its id, as its rows grow.
+		replay(
+			backend,
+			drawList([G.OP_CREATE_TEXTURE, 1, 16, 16, 1, G.FORMAT_RGBA32_FLOAT, usage, 1, 1, G.VIEW_2D]),
+		);
+		const set = (
+			backend as unknown as {
+				setBindGroup(
+					pass: { setBindGroup(...args: unknown[]): void },
+					words: Uint32Array,
+					at: number,
+				): void;
+			}
+		).setBindGroup.bind(backend);
+		const seen: unknown[] = [];
+		set(
+			{ setBindGroup: (_slot: unknown, group: unknown) => seen.push(group) },
+			Uint32Array.from([0, 1, 0]),
+			0,
+		);
+		// The group is made again from its words, with the texture's new view.
+		expect(made).toHaveLength(2);
+		expect(seen).toEqual([groups[1]]);
 	});
 
 	it('makes no layout with storage buffers in vertex shaders at the start, which compatibility mode refuses', () => {
@@ -317,7 +459,7 @@ describe('WebGPUBackend', () => {
 		expect(backend.gpuMemory.bytes[1]).toBe(256 * 32);
 	});
 
-	it('keeps a running total of the GPU memory that its textures and buffers take', () => {
+	it('keeps a running total of the GPU memory that its textures and buffers take', async () => {
 		const { device, textures } = fakeDevice();
 		const canvas = device.createTexture({ size: [64, 64], format: 'rgba8unorm', usage: 0 });
 		const context = { getCurrentTexture: () => canvas } as unknown as GPUCanvasContext;
@@ -351,6 +493,8 @@ describe('WebGPUBackend', () => {
 				[G.OP_DESTROY_TEXTURE, 6],
 			),
 		);
+		// A texture's bytes leave the total once the GPU reports the work that named it done.
+		await settle();
 		expect([...backend.gpuMemory.bytes]).toEqual([layered + multisampled, 4000]);
 		// A capture's stand-in for a target that resolved into the canvas counts while it lasts.
 		const frame = drawList(
@@ -425,6 +569,22 @@ describe('WebGPUBackend', () => {
 		]);
 	});
 
+	it('marks a frame that draws an indirect draw, so a page that draws none asks for no counts', () => {
+		const { device } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		backend.canvasTarget = { createView: () => ({}) } as unknown as GPUTexture;
+		const begin: [number, ...number[]] = [
+			G.OP_BEGIN_RENDER_PASS,
+			...[0, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_CLEAR_COLOR],
+		];
+		expect(backend.culledDrawn).toBe(false);
+		replay(backend, drawList([G.OP_CREATE_BUFFER, 1, 40, INDIRECT], begin, [G.OP_END_RENDER_PASS]));
+		expect(backend.culledDrawn).toBe(false);
+		replay(backend, drawList(begin, [G.OP_DRAW_INDEXED_INDIRECT, 1, 0], [G.OP_END_RENDER_PASS]));
+		expect(backend.culledDrawn).toBe(true);
+		backend.destroy();
+	});
+
 	it('draws straight from the shared buffer of arguments in other browsers', () => {
 		const { usage, log } = drawIndirect(MAC_CHROME);
 		expect(usage).toBe(INDIRECT | G.BUFFER_USAGE_COPY_SRC);
@@ -451,6 +611,41 @@ describe('WebGPUBackend', () => {
 		expect(needsOwnArguments(iPhoneChrome)).toBe(true);
 		for (const userAgent of [MAC_CHROME, macFirefox, androidChrome, ''])
 			expect(needsOwnArguments(userAgent), userAgent).toBe(false);
+	});
+
+	it("leaves a capture's copies into a buffer that a read maps out, and keeps its other copies", () => {
+		const { device, log, buffers } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		const copies = G.BUFFER_USAGE_COPY_SRC | G.BUFFER_USAGE_COPY_DST;
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_BUFFER, 1, 256, G.BUFFER_USAGE_STORAGE | G.BUFFER_USAGE_COPY_SRC],
+				[G.OP_CREATE_BUFFER, 2, 256, G.BUFFER_USAGE_STORAGE | copies],
+				[G.OP_CREATE_BUFFER, 3, 256, G.BUFFER_USAGE_MAP_READ | G.BUFFER_USAGE_COPY_DST],
+			),
+		);
+		const [source, kept, read] = [3, 2, 1].map((back) => `buffer ${buffers.length - back}`);
+		// The frame copies counts into a GPU buffer and into the buffer that its read maps.
+		const frame = drawList(
+			[G.OP_COPY_BUFFER_TO_BUFFER, 1, 0, 2, 0, 16],
+			[G.OP_COPY_BUFFER_TO_BUFFER, 1, 0, 3, 0, 16],
+			[G.OP_READ_BUFFER, 3, 0, 16, 64, 5],
+		);
+		log.length = 0;
+		replay(backend, frame);
+		expect(log).toEqual([
+			`copy ${source} at 0 to ${kept}`,
+			`copy ${source} at 0 to ${read}`,
+			'submit',
+			`map ${read} at 0, 16 bytes`,
+		]);
+		// A capture draws the frame again while that map may still be under way.
+		log.length = 0;
+		backend.canvasTarget = device.createTexture({ size: [8, 8], format: 'rgba8unorm', usage: 0 });
+		replay(backend, frame);
+		backend.endCapture();
+		expect(log).toEqual([`copy ${source} at 0 to ${kept}`, 'submit']);
 	});
 
 	it('reads a copied box into engine memory once the frame is submitted, and raises its slot after the unmap', async () => {

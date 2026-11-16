@@ -4,19 +4,24 @@
 // device that the engine will use: once with the indirect draws that the engine records today, and
 // once with direct draws. It picks the direct path only when that arm is clearly faster.
 //
+// The cost belongs to one combination, an Apple GPU in Apple's WebKit, so the probe runs only
+// there (hard rule 14). Elsewhere a noisy measurement, as on a busy machine, could pick a path that
+// draws no cluster trees and removes no cost. A software renderer never takes the direct path
+// either: its draws are not the GPU work that the path removes, and its pictures must stay the
+// ones that the engine's current path draws.
+//
 // The indirect arm copies the engine's own shape: each draw's arguments in a buffer of their own
 // on Apple's WebKit, whose indirect draws from one buffer race (see `indirect-arguments.ts`), and
-// one buffer for every draw elsewhere. The browser's user agent decides that shape, as it already
-// does for the engine's copies; the path itself is chosen from the measurement alone.
-//
-// A software renderer never takes the direct path. Its draws are not the GPU work that this path
-// removes, and its pictures must stay the ones that the engine's current path draws.
+// one buffer for every draw elsewhere.
 //
 // The probe runs in the probe worker, on the device it creates to test WebGPU, so it costs the
 // render worker no device and the page's first frame no time. Its work is a few hundred draws in a
 // 64 pixel target: some tens of milliseconds on a slow device. It is part of the worker's own
 // script, not a file that loads on demand: every page starts that worker, so a file of its own
 // would load on every page and count outside the start's budget.
+
+import { softwareRendererName } from '../../shared/software';
+import { appleGpuInWebKit } from '../../shared/webkit';
 
 /** The draws of each arm: enough that a per-draw cost of a few microseconds shows over the noise. */
 const DRAWS = 512;
@@ -44,30 +49,79 @@ const SHADER = `@vertex fn v(@location(0) p: vec2f) -> @builtin(position) vec4f 
 @fragment fn f() -> @location(0) vec4f { return vec4f(1.0); }`;
 
 /**
- * Measures the device's two draw paths and returns true when the direct path is clearly faster. An
- * arm that cannot run, a device lost during the probe, or an inconclusive result keeps the
- * engine's current path: the answer is false.
+ * Why WebGPU draws on the path that the engine takes, in `engine.capabilities.drawPath`:
+ *
+ * - `probe-faster`: the start-up probe ran on an Apple GPU in WebKit and measured direct draws to
+ *   be clearly faster, so the engine draws directly.
+ * - `probe-not-faster`: the probe ran there, and direct draws were not clearly faster.
+ * - `probe-failed`: the probe ran there and could not measure, as when the device was too slow or
+ *   was lost.
+ * - `not-apple-gpu-in-webkit`: the device is not an Apple GPU in Safari or in a browser on iPhone
+ *   or iPad. The probe did not run, and the engine draws indirectly.
+ * - `software-renderer`: the browser draws on the CPU. The probe did not run.
+ * - `no-probe`: the worker's WebGPU check gave no answer.
+ * - `forced`: `?direct=on` or `?direct=off` chose the path.
+ * - `webgl2`: the engine draws with WebGL2, which always draws directly.
+ *
+ * @category api/engine
  */
-export async function probeDirectDraws(
+export type DrawPathReason =
+	| 'probe-faster'
+	| 'probe-not-faster'
+	| 'probe-failed'
+	| 'not-apple-gpu-in-webkit'
+	| 'software-renderer'
+	| 'no-probe'
+	| 'forced'
+	| 'webgl2';
+
+/** The probe's answer: whether to draw directly, and why. */
+export interface DrawPathProbe {
+	directDraws: boolean;
+	reason: DrawPathReason;
+}
+
+/**
+ * Why the probe does not run on a device with the adapter names `info`, in a browser with
+ * `userAgent`. Undefined where it runs: on an Apple GPU in Apple's WebKit that is no software
+ * renderer.
+ */
+export function skipDrawPathProbe(
+	info: GPUAdapterInfo,
+	userAgent: string,
+): DrawPathReason | undefined {
+	if (softwareRendererName(info.vendor, info.architecture, info.device, info.description))
+		return 'software-renderer';
+	if (!appleGpuInWebKit(info, userAgent)) return 'not-apple-gpu-in-webkit';
+	return undefined;
+}
+
+/**
+ * Picks the draw path of a device with the adapter names `info`, in a browser with `userAgent`. On
+ * an Apple GPU in WebKit it measures both paths, and takes the direct one only when it is clearly
+ * faster. `own` gives each indirect draw its own argument buffer, as the engine does on Apple's
+ * WebKit. An arm that cannot run, a device lost during the probe, or an inconclusive result keeps
+ * the engine's current path.
+ */
+export async function probeDrawPath(
 	device: GPUDevice,
 	info: GPUAdapterInfo,
+	userAgent: string,
 	own: boolean,
-): Promise<boolean> {
-	// Compose the words that name a software renderer. Its slow indirect draws say nothing about
-	// the per-draw GPU cost that the direct path removes, and its pictures must not change.
-	const words = [info.vendor, info.architecture, info.device, info.description].join(' ');
-	if (/swiftshader|llvmpipe|software/i.test(words)) return false;
+): Promise<DrawPathProbe> {
+	const skipped = skipDrawPathProbe(info, userAgent);
+	if (skipped) return { directDraws: false, reason: skipped };
 	try {
 		return await measure(device, own);
 	} catch {
-		return false;
+		return { directDraws: false, reason: 'probe-failed' };
 	}
 }
 
 /** What one arm draws, in the probe's target. */
 type Arm = (pass: GPURenderPassEncoder) => void;
 
-async function measure(device: GPUDevice, own: boolean): Promise<boolean> {
+async function measure(device: GPUDevice, own: boolean): Promise<DrawPathProbe> {
 	// Each draw's arguments: the index count, one instance, and zeros for the rest.
 	const argumentsOf = new Uint32Array(DRAWS * 5);
 	for (let d = 0; d < DRAWS; d++) {
@@ -165,10 +219,8 @@ async function measure(device: GPUDevice, own: boolean): Promise<boolean> {
 	};
 	const indirectMs = await fastest(indirect);
 	const directMs = await fastest(direct);
-	return (
-		Number.isFinite(indirectMs) &&
-		Number.isFinite(directMs) &&
-		directMs * MARGIN < indirectMs &&
-		indirectMs - directMs >= MIN_GAIN_MS
-	);
+	if (!Number.isFinite(indirectMs) || !Number.isFinite(directMs))
+		return { directDraws: false, reason: 'probe-failed' };
+	const faster = directMs * MARGIN < indirectMs && indirectMs - directMs >= MIN_GAIN_MS;
+	return { directDraws: faster, reason: faster ? 'probe-faster' : 'probe-not-faster' };
 }

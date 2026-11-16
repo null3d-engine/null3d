@@ -47,3 +47,16 @@ fn view_position(uv: vec2f, depth: f32, inverse_projection: mat4x4f) -> vec3f {
     let p = inverse_projection * clip;
     return p.xyz / p.w;
 }
+
+/// True for an orthographic projection matrix. Its rays run parallel, so it keeps w at 1 and its
+/// last element is 1, where a perspective projection's is 0.
+fn is_orthographic(projection: mat4x4f) -> bool {
+    return projection[3][3] > 0.5;
+}
+
+/// The unit direction from a view-space position toward the camera that `projection` belongs to:
+/// back along the ray to the eye for a perspective camera, and the view's own +z for an
+/// orthographic camera, whose rays all run along the view.
+fn toward_camera(position: vec3f, projection: mat4x4f) -> vec3f {
+    return select(normalize(-position), vec3f(0.0, 0.0, 1.0), is_orthographic(projection));
+}

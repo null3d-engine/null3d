@@ -6,7 +6,7 @@
 // the pieces turn by the sketch's time, so a held frame is the same each run.
 import { defineSketch, mat4, math, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
-import { createScreen } from './screen';
+import { createScreenDisplay } from './screen';
 
 /** The ring's radius, in meters, and the height of the plinth's top. */
 const RING = 2.2;
@@ -136,13 +136,14 @@ export default defineSketch(async (ctx) => {
 		});
 	}
 	select(items[0]);
-	createScreen(ctx);
+	const display = createScreenDisplay(ctx);
 
 	return {
 		onUpdate(dt) {
 			table.setRotationEuler(0, 0.15 * time.now, 0);
 			for (const { object } of items) object.setRotationEuler(0, 0.8 * time.now, 0);
 			view.update(dt);
+			display.update();
 		},
 	};
 });

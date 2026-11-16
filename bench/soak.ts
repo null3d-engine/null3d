@@ -19,8 +19,10 @@ import { parseArgs } from 'node:util';
 import type { Page } from '@playwright/test';
 import { launchChromium } from '../packages/cli/src/browser.js';
 import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import {
 	type AttachedWorker,
 	attachEveryWorker,
@@ -59,7 +61,7 @@ const WHOLE_TIMEOUT_MS = 300_000;
 /**
  * How long the page's job workers may take to start. The engine grows them over frames, by the
  * work each window hands out, so a software GPU that draws a frame in seconds reaches the full set
- * only after minutes. On 20 October 2026 S6 showed 6 of its 18 workers at the default limit.
+ * only after minutes. With the default limit, S6 shows 6 of its 18 workers on such a GPU.
  */
 const WORKERS_START_MS = 300_000;
 
@@ -201,15 +203,20 @@ function measureEnd(page: Page): Promise<{ frames: number; presentedFps: number 
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The soak run');
 	const options = readOptions(process.argv.slice(2));
 	refuseBackgroundPriority();
 	const server = await serveBenchPages({ dev: options.dev });
 	const browser = await launchChromium({
-		channel: 'chrome',
+		...chromeForTesting(),
 		args: [`--remote-debugging-port=${DEBUG_PORT}`],
 	});
 	try {
-		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
+		// The dev server serves the local certificate, which this browser has not been told to trust.
+		const page = await browser.newPage({
+			viewport: { width: 1400, height: 800 },
+			ignoreHTTPSErrors: true,
+		});
 		const pageErrors: string[] = [];
 		page.on('pageerror', (error) => pageErrors.push(error.message));
 		page.on('console', (message) => {

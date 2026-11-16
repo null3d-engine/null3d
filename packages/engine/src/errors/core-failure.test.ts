@@ -56,6 +56,18 @@ describe('failures of calls', () => {
 			'E1501: the frame failed: the skinned meshes fill more than 32 mesh pages, the most that GPU skinning reads.',
 		);
 	});
+
+	test('state the shadow atlas that a frame refused, and the settings that fix it', () => {
+		expect(detail(coreFailure(failedCore(1501, 18, 1600), 'the frame'))).toBe(
+			'E1501: the frame failed: the shadow atlas would need 1,600 MB, more than the 1,024 MB it may take; name a smaller heroTileSize or fewer shadowTiles.',
+		);
+	});
+
+	test('name a draw that arrived after the first frame on a device that draws directly', () => {
+		expect(detail(coreFailure(failedCore(1506), 'the frame'))).toBe(
+			'E1506: the frame failed: a draw whose instance count the GPU writes arrived after the first frame, and this device draws directly.',
+		);
+	});
 });
 
 test('failures of queued changes name the change and the slot of the object', () => {

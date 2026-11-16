@@ -1,13 +1,16 @@
 // Impostors of the impostors add-on, in hold mode: a grid of cards that face the camera, each
-// showing the atlas cell nearest the direction from the card toward the eye, and a row of merged
-// far geometry. The atlas is made in code: each cell holds a disc tinted by the direction its view
-// was drawn from, so a card's color shows which view it picked. The cards' positions are relative
-// to an origin far from the world's, which `update` must subtract. The merged row holds a plain, a
-// turned and a mirrored copy of one panel; the mirrored one draws only when the merge reverses its
-// winding. The camera stands still, so every run draws the same frame on every GPU path.
+// blending the three atlas views nearest the direction from the card toward the eye, and a row of
+// merged far geometry. Both atlases are made in code: the colour of each cell is tinted by the
+// direction its view was drawn from, so a card's colour shows the views it blends, and its surface
+// holds the normal and the depth of the disc, so the sun lights the card from that side. The cards
+// stand far from the world's origin, which the engine's camera-relative drawing keeps precise. The
+// merged row holds a plain, a turned and a mirrored copy of one panel; the mirrored one draws only
+// when the merge reverses its winding. The camera stands still, so every run draws the same frame
+// on every GPU path.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
 import {
 	createImpostors,
+	encodeImpostorSurface,
 	frameDirection,
 	mergeFarGeometry,
 	octahedralAtlas,
@@ -75,21 +78,58 @@ export default defineSketch(async (ctx) => {
 				data[at + 3] = r < 0.9 ? 255 : 0;
 			}
 	}
+	// The surface of the same cells: a disc of a sphere, whose normal points out of the picture's
+	// plane toward the viewer at its middle and across it at its outline, and whose depth runs from
+	// the front of the sphere, 0, to its back, 1.
+	const surfaceData = new Uint8Array(width * height * 4);
+	const normal: [number, number, number] = [0, 0, 1];
+	const texel = new Uint8Array(4);
+	for (let frame = 0; frame < atlas.columns * atlas.rows; frame++) {
+		const left = (frame % atlas.columns) * CELL;
+		const bottom = (atlas.rows - 1 - Math.floor(frame / atlas.columns)) * CELL;
+		for (let y = 0; y < CELL; y++)
+			for (let x = 0; x < CELL; x++) {
+				const nx = (x + 0.5) / CELL - 0.5;
+				const ny = (y + 0.5) / CELL - 0.5;
+				const r = Math.hypot(nx, ny) * 2;
+				if (r >= 0.9) continue;
+				const nz = Math.sqrt(Math.max(0, 1 - r * r));
+				normal[0] = nx;
+				normal[1] = ny;
+				normal[2] = nz;
+				encodeImpostorSurface(normal, 1 - nz, 1, texel);
+				const at = ((bottom + y) * width + left + x) * 4;
+				surfaceData[at] = texel[0] as number;
+				surfaceData[at + 1] = texel[1] as number;
+				surfaceData[at + 2] = texel[2] as number;
+				surfaceData[at + 3] = texel[3] as number;
+			}
+	}
 	const texture = textures.fromData({ width, height, data, colorSpace: 'srgb', wrap: 'clamp' });
+	const surface = textures.fromData({
+		width,
+		height,
+		data: surfaceData,
+		colorSpace: 'linear',
+		wrap: 'clamp',
+	});
 
 	// A grid of cards on both sides of the eye and below it, so they pick many views.
 	const positions: number[] = [];
 	for (let row = 0; row < 5; row++)
-		for (let column = 0; column < 7; column++) positions.push((column - 3) * 3, 0, -row * 3);
-	const cards = await createImpostors(scene, {
-		texture,
-		atlas,
-		positions,
-		size: 1.6,
-		alphaMode: 'mask',
-		origin: ORIGIN,
-	});
-	cards.update(eye);
+		for (let column = 0; column < 7; column++)
+			positions.push(ORIGIN[0] + (column - 3) * 3, ORIGIN[1], ORIGIN[2] - row * 3);
+	const cards = createImpostors(
+		{ scene, materials, geometry },
+		{
+			color: texture,
+			surface,
+			atlas,
+			positions,
+			size: 1.6,
+			alphaMode: 'mask',
+		},
+	);
 
 	// The merged row in front of the cards: a plain, a turned and a mirrored copy of the panel.
 	const merged = mergeFarGeometry([

@@ -17,11 +17,15 @@ import {
 	PERMUTATION_HALF,
 	PERMUTATION_TONE_MAP,
 } from '../generated/gpu';
+import type { DrawPathProbe, DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
+import { softwareRenderer } from '../shared/software';
 import type {
 	CompressionFamily,
 	DepthMode,
+	DirectSwitch,
+	PrepassColor,
 	ShadowDepthBits,
 	SkinningSwitch,
 	Switches,
@@ -46,6 +50,13 @@ const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
 	msaa: C.ANTIALIAS_MSAA,
 };
 
+/** The core's code of each way that a prepass starts its stand-in color, and the default. */
+const PREPASS_COLOR_CODES: Record<PrepassColor, number> = {
+	load: C.PREPASS_COLOR_LOAD,
+	clear: C.PREPASS_COLOR_CLEAR,
+	none: C.PREPASS_COLOR_NONE,
+};
+
 /** The parts of the capability report that decide how the engine uses the device. */
 export interface DeviceReport {
 	webgpu: {
@@ -53,12 +64,22 @@ export interface DeviceReport {
 		features: string[];
 		transientAttachments: boolean;
 		directDraws: boolean;
+		drawPath: DrawPathReason;
+		/** The adapter's reported names, which tell a software renderer (D-174, D-237). */
+		adapterInfo?: {
+			vendor: string;
+			architecture: string;
+			device: string;
+			description: string;
+		} | null;
 	};
 	webgl2: {
 		extensions: Record<string, boolean>;
 		maxTextureSize: number | null;
 		maxRenderbufferSize: number | null;
 		maxViewportDims: [width: number, height: number] | null;
+		/** The renderer that the browser reports, which tells a software renderer (D-237). */
+		renderer?: string | null;
 		sharedMemoryUploads: {
 			bufferSubData: boolean;
 			texSubImage2D: boolean;
@@ -74,6 +95,8 @@ export interface DeviceReport {
 
 /** What the engine core and the thread that draws need to know about the device and the canvas. */
 export interface CoreDevice {
+	/** The shared memory's declared maximum in MiB, in a build whose memory has one. */
+	memoryMaximumMiB?: number;
 	/** True on the WebGL2 path, false on WebGPU. */
 	webgl2: boolean;
 	/** WebGPU: the largest storage binding to request, which sizes the scene the core can draw. */
@@ -90,6 +113,11 @@ export interface CoreDevice {
 	 * thread that draws copies the data out first.
 	 */
 	sharedUploads: boolean;
+	/**
+	 * WebGL2: true when the context draws many ranges in one call, so a cluster mesh draws its
+	 * chosen patches; false draws the mesh's whole levels.
+	 */
+	multiDraw: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
 	/**
@@ -105,10 +133,16 @@ export interface CoreDevice {
 	 */
 	sceneColor: number;
 	/**
-	 * True when the start-up probe measured the device's direct draws to be clearly faster than
-	 * its indirect draws, so the core culls on the CPU and draws each bucket directly.
+	 * True when the core culls on the CPU and draws each WebGPU bucket directly: where the start-up
+	 * probe measured an Apple GPU in WebKit to draw that way clearly faster, or where `?direct=on`
+	 * forces it.
 	 */
 	directDraws: boolean;
+	/**
+	 * True when the device's reported names say that the browser draws on the CPU, which keeps the
+	 * whole render scale once a step below it failed (D-237).
+	 */
+	softwareRenderer: boolean;
 	/** The anti-aliasing mode's code in the core. */
 	antialias: number;
 	/**
@@ -148,6 +182,11 @@ export interface CoreDevice {
 	 */
 	depthPrepass: boolean;
 	/**
+	 * How a depth prepass that a screen step splits from the opaque pass starts the stand-in color
+	 * that it never draws, from the ?prepass-color= switch (`PREPASS_COLOR_*`).
+	 */
+	prepassColor: number;
+	/**
 	 * The core's code of WebGPU's skinning mode: the vertex shader of each pass, or the skinning
 	 * pass, with or without its savings.
 	 */
@@ -174,12 +213,14 @@ export interface CoreDevice {
 	 */
 	gpuOcclusion: boolean;
 	/**
-	 * True when KTX2 files keep their transcoded texels in the browser's Cache Storage, so later
-	 * loads of the same file skip the transcoder.
+	 * True when the cache of derived data keeps what loads make, such as transcoded KTX2 textures,
+	 * in the browser's storage, so a later load of the same input skips the work.
 	 */
-	textureCache: boolean;
+	derivedCache: boolean;
 	/** The pixels that software occlusion culling's buffer holds about, or 0 for the core's default. */
 	occlusionBuffer: number;
+	/** False to hold GPU occlusion culling's passes on in every frame, without its check. */
+	occlusionCheck: boolean;
 }
 
 /**
@@ -229,12 +270,14 @@ export type DeviceOptions = Pick<
 	| 'compression'
 	| 'cells'
 	| 'join'
+	| 'prepassColor'
 	| 'skinning'
 	| 'indexInstances'
 	| 'direct'
 	| 'shadowDepthBits'
-	| 'textureCache'
+	| 'derivedCache'
 	| 'occlusionBuffer'
+	| 'occlusionCheck'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -407,13 +450,24 @@ export function halfPrecision(
 }
 
 /**
+ * The draw path of a tier and why: WebGL2 always draws directly, `?direct=on` or `?direct=off`
+ * forces a WebGPU path, and otherwise the start-up probe's answer holds. The probe draws directly
+ * only on an Apple GPU in WebKit that it measured faster that way.
+ */
+export function drawPath(tier: Tier, report: DeviceReport, direct: DirectSwitch): DrawPathProbe {
+	if (tier === 'webgl2') return { directDraws: false, reason: 'webgl2' };
+	if (direct !== 'auto') return { directDraws: direct === 'on', reason: 'forced' };
+	return { directDraws: report.webgpu.directDraws, reason: report.webgpu.drawPath };
+}
+
+/**
  * The device and the canvas as the engine uses them on a tier, from the capability report and the
  * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
  * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
  * the 8-bit path, so tests reach every route. `freshShaders` makes the browser compile every
  * shader again, as on a first visit. `compression` limits the compressed texture families,
  * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
- * `textureCache` off makes KTX2 files transcode on every load, to time the cache against it.
+ * `derivedCache` off makes every load make its data again, to time the cache against it.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
@@ -424,9 +478,8 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		parallelCompile: options.parallelCompile,
 		freshShaders: options.freshShaders,
 		sceneColor,
-		directDraws:
-			tier !== 'webgl2' &&
-			(options.direct === 'on' || (options.direct === 'auto' && report.webgpu.directDraws)),
+		directDraws: drawPath(tier, report, options.direct).directDraws,
+		softwareRenderer: softwareRenderer(report),
 		antialias: ANTIALIAS_CODES[options.antialias],
 		effectsSceneColor: effects.sceneColor,
 		effectsAntialias: ANTIALIAS_CODES[effects.antialias],
@@ -436,13 +489,15 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		cellCulling: options.cells,
 		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
+		prepassColor: PREPASS_COLOR_CODES[options.prepassColor ?? 'none'],
 		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
 		expectedObjects: options.expectedObjects,
 		gpuOcclusion: options.gpuOcclusion,
-		textureCache: options.textureCache,
+		derivedCache: options.derivedCache,
 		occlusionBuffer: options.occlusionBuffer ?? 0,
+		occlusionCheck: options.occlusionCheck,
 	};
 	if (tier !== 'webgl2') {
 		return {
@@ -454,6 +509,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 				C.CAPABILITY_FLOAT16_TARGETS,
 			maxTextureSize: 0,
 			sharedUploads: true,
+			multiDraw: false,
 			depth: 'reversed',
 			shaderBits: toneMap | half,
 			indexInstances: tier === 'webgpu' && options.indexInstances,
@@ -468,11 +524,13 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 		capabilities:
 			(multiDraw ? C.CAPABILITY_MULTI_DRAW : 0) |
+			(gl.extensions.WEBGL_provoking_vertex === true ? C.CAPABILITY_FIRST_PROVOKING_VERTEX : 0) |
 			(gl.floatRenderTargets?.rgba16f.complete === true ? C.CAPABILITY_FLOAT16_TARGETS : 0) |
 			compression((_, extension) => gl.extensions[extension] === true, options.compression),
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
+		multiDraw,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap | half,
 		indexInstances: false,

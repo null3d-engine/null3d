@@ -1,12 +1,12 @@
 # D-102: Offline play: the build's file list and the game's own service worker
 
-Status: decided, 2026-10-08. Date: 2026-10-08. Task: M2-R20.
+Status: decided and built. Task: M2-R20.
 
 Summary: Each production build with the Vite plugin writes `null3d-files.json` beside the page. It holds a `start` group, a group per feature that loads on first use, and a version. A game's own service worker caches the start and the features that it uses. On the engine test page's build, the start is 6.7 MB, skinning 5.2 MB and the whole build 17.8 MB, uncompressed. The hosting guide shows a 25-line worker, and the fresh-project test proves that it starts the threaded engine with the server stopped.
 
 ## Question
 
-Games must play with no network after their first visit (owner, 4 October 2026). The owner ruled that the game's own service worker does the caching and that null3D ships none. What must the engine and the Vite plugin give such a worker, so that it caches what the game needs and no more? And how does the page stay cross-origin isolated when the worker answers it?
+Games must play with no network after their first visit, by the owner's ruling. The owner also ruled that the game's own service worker does the caching and that null3D ships none. What must the engine and the Vite plugin give such a worker, so that it caches what the game needs and no more? And how does the page stay cross-origin isolated when the worker answers it?
 
 ## Rule
 
@@ -17,7 +17,7 @@ Games must play with no network after their first visit (owner, 4 October 2026).
 
 ## Data
 
-The engine test page's production build (`bunx vite build`, Vite 8.3.1, main at efead8b5d), sizes of the files as they are and after gzip at level 9. Cache Storage keeps the bodies as they arrive, without the transfer's compression.
+The engine test page's production build (`bunx vite build`, Vite 8.3.1, at efead8b5d), sizes of the files as they are and after gzip at level 9. Cache Storage keeps the bodies as they arrive, without the transfer's compression.
 
 | Group | Files | Uncompressed | gzip |
 | --- | --- | --- | --- |
@@ -47,7 +47,7 @@ The offline reload in each browser. The fresh project's production build has the
 | Safari 26.6.2, the owner's Mac | Threaded, isolated; 59 files cached | Threaded, isolated, under the worker's control | offline-check-1791390521124 |
 | Firefox 157, the owner's Mac | Threaded, isolated; 59 files cached | Threaded, isolated, under the worker's control; only the browser's own `favicon.ico` request failed | offline-check-1791390669975 |
 
-How the browser runs were made: a script served the build with the isolation headers. It added a reporting script to the page, which posted to a second port. The page reported its first start once the cache held the page. The script then stopped the server, and the page reloaded itself and reported again. Last, the page removed its worker and caches and closed its window. Safari and Firefox ran on 2026-10-08 from the branch at 95aa3f907.
+How the browser runs were made: a script served the build with the isolation headers. It added a reporting script to the page, which posted to a second port. The page reported its first start once the cache held the page. The script then stopped the server, and the page reloaded itself and reported again. Last, the page removed its worker and caches and closed its window. Safari and Firefox ran at 95aa3f907.
 
 ## Decision
 
@@ -55,7 +55,7 @@ How the browser runs were made: a script served the build with the isolation hea
 2. How the plugin groups files. The plugin reads the bundler's facts, not file names, so a project's own naming of files cannot move a file. Vite builds each worker in a bundle of its own, and copies its files into the main bundle without their modules. So the plugin adds a small plugin to each worker build that records them. A file's group then follows from the files that name it, starting at the pages and the entry scripts. The walk does not enter a feature's files from the start. It always follows a static import, which loads with its importer. In a script, Vite writes the list of files to fetch beside each import on demand (`__vite__mapDeps`). Those files load only with the import, which the walk follows itself, so the walk skips that list. A file that no walk reaches goes to the start, so a list errs toward caching more.
 3. The service worker is the game's. The guide gives a worker of about 25 lines, not a tool. Its call to `cache.addAll` caches the page by its own address. That call keeps each response's headers, so the cached page stays isolated. The cache's name holds the list's `version`. On each visit with a network, the worker checks the list and caches a new build in one step. When one download fails, `cache.addAll` stores nothing, so a half-cached build never runs. Tools that write workers, such as vite-plugin-pwa, need more settings for the engine: its `.wasm` files, and files over their size limits. Their versions also move on their own, so the guide does not depend on one.
 4. Lost isolation. A development build of the engine warns once when a service worker controls the page and the page is not isolated. That is the one sign of a worker that dropped the headers. Production builds drop the check with the other development checks. The guide says to check `crossOriginIsolated` after an offline reload.
-5. Stable addresses. Vite already names every engine file with a content hash, on the page's origin. The engine starts its workers from `blob:` scripts that it makes in the page. The offline test checks that no request fails with the server stopped.
+5. Stable addresses. Every engine file that a browser takes at an address carries a content hash on the page's origin. Vite names the page's own files, and the plugin names the generated shader files' copies. The tables of shared paragraphs keep fixed names, so a changed table can still be served from an immutable cache. The engine starts its workers from `blob:` scripts that it makes in the page. The offline test checks that no request fails with the server stopped.
 6. The engine's own cache. The KTX2 loader keeps transcoded textures in Cache Storage, in caches whose names start with `null3d-` ([D-24](D-24-transcode-cache.md)). The guide's worker deletes only its own caches. The transcoder stays in the `ktx2` group, because a texture that the engine's cache does not hold still needs it.
 
 Rejected:

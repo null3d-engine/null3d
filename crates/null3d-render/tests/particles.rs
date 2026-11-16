@@ -89,6 +89,16 @@ fn check<B: FrameBuilder>(mut world: World<B>) {
         !blank.is_empty(),
         "the camera's depth group binds the blank texel"
     );
+    // A system without a field binds the blank wind texel, which its shader never reads.
+    assert!(
+        all.iter().any(|(op, _)| *op == Op::CreateSampler),
+        "the blank wind texel has a sampler"
+    );
+    assert!(
+        all.iter()
+            .any(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::PARTICLE && o[2] == 4),
+        "the system group binds its values, its views and its wind texel"
+    );
 
     // A soft system: the camera copies its opaque depth, and its depth group binds the copy.
     let particles = world.renderer.settings_mut().particles_mut();

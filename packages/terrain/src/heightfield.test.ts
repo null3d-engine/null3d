@@ -54,6 +54,36 @@ describe('heightfield', () => {
 		expect(out[2]).toBeCloseTo(0, 6);
 	});
 
+	test('writes the normals as x and z, which rebuild y and agree with normalAt', () => {
+		// A ramp that rises with x, so every normal leans the same way.
+		const ramp = createHeightfield({ size: 8, resolution: 9, height: (x) => x });
+		const data = new Uint8Array(4 * 4 * 4);
+		ramp.writeNormalMap(4, data);
+		const out = [0, 0, 0];
+		for (let texel = 0; texel < 16; texel++) {
+			ramp.normalAt(-4 + ((texel % 4) + 0.5) * 2, -4 + (Math.floor(texel / 4) + 0.5) * 2, out);
+			expect(data[texel * 4]).toBe(Math.round(((out[0] as number) * 0.5 + 0.5) * 255));
+			expect(data[texel * 4 + 1]).toBe(Math.round(((out[2] as number) * 0.5 + 0.5) * 255));
+			// The encoded pair stays inside the circle that a unit y needs.
+			const x = ((data[texel * 4] as number) / 255) * 2 - 1;
+			const z = ((data[texel * 4 + 1] as number) / 255) * 2 - 1;
+			expect(x * x + z * z).toBeLessThanOrEqual(1.001);
+		}
+		const flat = createHeightfield({ size: 4, resolution: 3, height: () => 2 });
+		const level = new Uint8Array(2 * 2 * 4);
+		flat.writeNormalMap(2, level);
+		for (let texel = 0; texel < 4; texel++) {
+			expect(level[texel * 4]).toBe(128);
+			expect(level[texel * 4 + 1]).toBe(128);
+		}
+	});
+
+	test('refuses a normal map of a size that does not fit', () => {
+		const field = createHeightfield({ size: 4, resolution: 3, height: () => 0 });
+		expect(() => field.writeNormalMap(0, new Uint8Array(0))).toThrow(/whole number/);
+		expect(() => field.writeNormalMap(2, new Uint8Array(4))).toThrow(/need 16/);
+	});
+
 	test('refuses a size, a resolution or a height map that does not fit', () => {
 		expect(() => createHeightfield({ size: 0, height: () => 0 })).toThrow(/positive/);
 		expect(() => createHeightfield({ size: 1, resolution: 1, height: () => 0 })).toThrow(

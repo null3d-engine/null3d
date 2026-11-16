@@ -55,8 +55,6 @@ struct FogStep {
     /// The fog's density at the camera's height, its height falloff, the weight of the last frame's
     /// grid (0 when there is none), and the shortest distance at which a lamp's light counts.
     medium: vec4f,
-    /// The frame's offset of each cell's point from the cell's center, in cells, in `xyz`.
-    jitter: vec4f,
     /// The matrix from positions relative to this frame's camera into the clip space of the last
     /// frame's camera.
     history_view_proj: mat4x4f,

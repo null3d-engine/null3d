@@ -14,7 +14,7 @@
 // The composite (weighted.wgsl) divides the first sum by its alpha and blends the average color
 // over the scene by the share that the surfaces cover.
 
-#import null3d::mesh::{frame}
+#import null3d::mesh::{view_depth}
 
 /// The two sums that a weighted surface adds into the targets of the weighted layer.
 struct WeightedFragment {
@@ -27,17 +27,6 @@ struct WeightedFragment {
 const WEIGHT_SCALE: f32 = 1.0 / 32.0;
 /// The most alpha that the coverage counts, so a fully opaque fragment adds a finite amount.
 const MOST_ALPHA: f32 = 0.9995;
-
-/// The depth along the view of a position relative to the camera: the clip position's w for a
-/// perspective camera, and the distance from the camera's plane for an orthographic one, whose
-/// `camera_position` holds the unit direction toward it.
-fn view_depth(relative: vec3f) -> f32 {
-    let eye = frame.camera_position;
-    if eye.w == 0.0 {
-        return -dot(relative, eye.xyz);
-    }
-    return (frame.view_proj * vec4f(relative, 1.0)).w;
-}
 
 /// The sums that a fragment of premultiplied `color` adds, at `relative` from the camera.
 fn weighted_fragment(color: vec4f, relative: vec3f) -> WeightedFragment {

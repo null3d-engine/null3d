@@ -1,8 +1,8 @@
 # D-46: Wide lines
 
-Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-G3.
+Status: decided and built. Task: M2-G3.
 
-Summary: A line batch is an instance batch with one row per segment between its points, which packs the segment's middle, half, end colors in 8-bit sRGB, dash distance and width into the row's world matrix. The `LINE` template follows three.js's `LineMaterial`, and matches `Line2` exactly on WebGL2; lit lines add the `LINE_LIT` template. Both add 2.0 to 2.9 KB to each shader file, and the line code loads on first use.
+Summary: Line batches are instance batches with one row per segment, whose matrix packs its middle, half, end colors, dash distance and width. The `LINE` template follows three.js's `LineMaterial`, and matches `Line2` exactly on WebGL2. Lit lines add the `LINE_LIT` template, and the line code and both templates load on first use.
 
 ## Question
 
@@ -24,7 +24,7 @@ Summary: A line batch is an instance batch with one row per segment between its 
 
 ### Parity with three.js
 
-Pixels that differ from three.js by its rule, Chrome on the Mac's GPU, 4 October 2026. Each tier compares with three.js's renderer on the same API, as `bun run parity` does: WebGPU and compatibility mode with `WebGPURenderer`, WebGL2 with `WebGLRenderer`.
+Pixels that differ from three.js by its rule, Chrome on the Mac's GPU. Each tier compares with three.js's renderer on the same API, as `bun run parity` does: WebGPU and compatibility mode with `WebGPURenderer`, WebGL2 with `WebGLRenderer`.
 
 | Scene | Core WebGPU | Compatibility mode | WebGL2 | three.js's two renderers |
 | --- | --- | --- | --- | --- |
@@ -46,22 +46,13 @@ Lit lines need a second template, `LINE_LIT` (30), and shading code 7, with the 
 
 ### Download size
 
-A page downloads one shader file, and every shader file holds both line templates. Each file's growth against main at a8bf5ed (#272), after Brotli at quality 11, 4 October 2026:
+Both line templates load on first use with the line code ([D-56](D-56-first-use-shader-files.md)), in files of 5.6 to 7.6 KB after Brotli. The start shader files hold neither. The `LINE` template's own vertex and fragment code is about 1.8 KB after Brotli, against 0.7 KB for both sprite templates. Its vertex stage uses constants and selects. A stage that changes variables in place makes the shader compiler write each change out as new temporaries, about 0.3 KB more per file.
 
-| Shader files | Both templates | `LINE_LIT` alone |
-| --- | --- | --- |
-| The 8 files without half precision | 1.97 to 2.54 KB, 8 to 10% | 0.38 to 0.52 KB |
-| The 4 half precision files | 2.46 to 2.93 KB, 10 to 12% | 0.79 to 0.96 KB |
-
-The `LINE` template's own vertex and fragment code is about 1.8 KB of it, against 0.7 KB for both sprite templates. A first version of the vertex stage changed variables in place, and the shader compiler wrote each change out as new temporaries. Written with constants and selects instead, it saves about 0.3 KB per file. The half precision files grow more for lit lines. Their lit template uses `null3d::half`'s lighting, so the full-precision lighting of lit lines shares no text with it. A pipelined page's start grows from 100.6 KB to about 103.6 KB of its 140 KB budget. The coordinator accepted this on 4 October 2026, and noted a later change: shader text of features that load on first use could load with them.
-
-Since [D-56](D-56-first-use-shader-files.md), both templates load on first use with the line code, in files of 5.6 to 7.6 KB after Brotli. The start shader files no longer hold them.
-
-The line code that loads on first use is one file of 0.9 KB after Brotli, which both threads load from one address. Each WebAssembly file of the core grows by 2.0 to 2.1%, about 4.5 KB after Brotli, for the line rows of the batch update.
+The line code that loads on first use is one file of 0.9 KB after Brotli, which both threads load from one address. The line rows of the batch update add 2.0 to 2.1% to each WebAssembly file of the core, about 4.5 KB after Brotli.
 
 ### Allocation
 
-`bun run bench:allocation --lines` draws S1's swarm as one dynamic batch of 100,000 dashed segments, whose points move and whose dashes move every frame. On 4 October 2026 both GPU paths passed. On WebGPU the sketch worker allocated 263.6 bytes per frame and the render worker 492.0. On WebGL2 they allocated 332.3 and 139.4. Each place is one that every frame of S1 has, and no place of the line code showed in the samples.
+`bun run bench:allocation --lines` draws S1's swarm as one dynamic batch of 100,000 dashed segments, whose points move and whose dashes move every frame. Both GPU paths pass. On WebGPU the sketch worker allocated 263.6 bytes per frame and the render worker 492.0. On WebGL2 they allocated 332.3 and 139.4. Each place is one that every frame of S1 has, and no place of the line code showed in the samples.
 
 ## Decision
 
@@ -70,10 +61,10 @@ The line code that loads on first use is one file of 0.9 KB after Brotli, which 
 3. Each end's color is three 8-bit sRGB codes in one 24-bit whole number, which a float holds exactly. Two colors, the distance, the width, the look bits and the reach fill the 6 floats that the middle and the half segment leave. The update encodes each channel with a binary search over the 255 bounds between the sRGB codes, so it needs no power function per channel. Colors given as sRGB hex strings come back exactly.
 4. Culling takes a row's radius from its longest column, times the radius of the batch's mesh. The segment mesh's corners lie within one unit of its origin. The reach is half the segment's length, plus half a width in world units. So the sphere holds the segment and its width exactly. A width in pixels has no size in the world, so the sphere holds the center line alone, as three.js's bounds do.
 5. A dashed batch keeps each segment's distance along the line. The update finds the distances again from the first segment that a change reached to the end, one after another, in 64-bit floats. A dynamic dashed batch finds all of them every frame.
-6. The `LINE` template (29) draws each segment as a quad with round caps, the method of `LineMaterial`'s shader. The GPU's own lines are one pixel wide on WebGPU and on most WebGL2 drivers. A quad holds any width on every tier, and the round caps close the joins at sharp corners with no geometry for the joins. The template trims a segment that ends behind the camera. It offsets each corner in CSS pixels, at right angles to the segment and out along it at the ends. It discards a cap's fragments outside a half disc. With world units, it moves the corners in the world, and keeps the fragments within half the width of the segment. Dashes discard fragments, and dashed lines have no caps. The material's custom values hold the dash size, gap size, dash scale and dash offset, in the fourth texel: a standard material's displacement map keeps its values in the first three, which every material's row holds, so the dashes take the texel after them. So a change of the dashes writes one row, and needs no update of the segments. The width lives in the core, because culling needs it, so `lines.setWidth` packs every segment again.
-7. Lines take the scene's fog, as three.js's lines do. With `lit: true` they draw with `LINE_LIT` (30). It shades the line's color as a standard material shades a surface that faces the camera. The sun, the clustered point and spot lights, the ambient light and the emissive color all count. The coordinator approved the size on 4 October 2026, while the owner was away.
+6. The `LINE` template (29) draws each segment as a quad with round caps, the method of `LineMaterial`'s shader. The GPU's own lines are one pixel wide on WebGPU and on most WebGL2 drivers. A quad holds any width on every tier, and the round caps close the joins at sharp corners with no geometry for the joins. The template trims a segment that ends behind the camera. It offsets each corner in CSS pixels, at right angles to the segment and out along it at the ends. It discards a cap's fragments outside a half disc. With world units, it moves the corners in the world, and keeps the fragments within half the width of the segment. Dashes discard fragments, and dashed lines have no caps. The material's custom values hold the dash size, gap size, dash scale and dash offset, in the fourth texel. A standard material's displacement map keeps its values in the first three, which every material's row holds, so the dashes take the texel after them. So a change of the dashes writes one row, and needs no update of the segments. The width lives in the core, because culling needs it, so `lines.setWidth` packs every segment again.
+7. Lines take the scene's fog, as three.js's lines do. With `lit: true` they draw with `LINE_LIT` (30). It shades the line's color as a standard material shades a surface that faces the camera. The sun, the clustered point and spot lights, the ambient light and the emissive color all count.
 8. The line code loads on first use, as sprites do. `scene.createLines` checks the points and options, then imports `scene/lines.ts` and returns a promise of the batch.
-9. Line batches stay out of the depth prepass, because their fragment shader cuts out the round caps and the dashes, The prepass's fragment shader cuts nothing out, so it would write depth where the line draws nothing. They stay out of the raycast trees too, as sprite batches do. The debug lines stay one pixel wide, in development builds only.
+9. Line batches stay out of the depth prepass, because their fragment shader cuts out the round caps and the dashes. The prepass's fragment shader cuts nothing out, so it would write depth where the line draws nothing. They stay out of the raycast trees too, as sprite batches do. The debug lines stay one pixel wide, in development builds only.
 
 ## Options rejected
 

@@ -1,0 +1,48 @@
+{
+	"01-whole-clump-distant.png": {
+		"skyShare": 0.357,
+		"daylight": 1.925
+	},
+	"02-whole-clump-profile.png": {
+		"skyShare": 0.357,
+		"daylight": 1.487
+	},
+	"14-bark-base.png": {
+		"barkMask": true,
+		"daylight": 2.24
+	},
+	"15-bark-mid-stem.png": {
+		"barkMask": true,
+		"daylight": 0.89
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true,
+		"daylight": 1.2
+	},
+	"26-bark-texture.png": {
+		"daylight": 0.67,
+		"lamp": "#d2e3ff"
+	},
+	"holm-oak-turntable.mp4": {
+		"skyShare": 0.357,
+		"daylight": 1.925
+	},
+	"28-young-bark.png": {
+		"background": "studio-grey",
+		"daylight": 1.301,
+		"lamp": "#e3dbff"
+	},
+	"07-stems-leaving-base.png": {
+		"view": "bark-base",
+		"barkMask": true,
+		"daylight": 1.896
+	},
+	"09-secondary-branching.png": {
+		"leaves": 23
+	},
+	"12-single-leaf-upper.png": {
+		"leaves": 1.1,
+		"roll": -43
+	},
+	"_habit": "clump"
+}

@@ -1,0 +1,189 @@
+{
+	"01-whole-colony-distant.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"fov": 24,
+		"fill": 0.55,
+		"targetY": 0.45
+	},
+	"02-whole-plant-profile.png": {
+		"view": "branch",
+		"background": "sky-meadow",
+		"meadow": true,
+		"elevation": -4.4,
+		"fill": 0.82,
+		"targetY": 0.51,
+		"skyShare": 0.357,
+		"daylight": 1.524,
+		"fov": 24
+	},
+	"03-whole-from-below.png": {
+		"skyShare": 0.357,
+		"daylight": 1.519
+	},
+	"04-canopy-from-above.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"elevation": 85,
+		"distance": 2.6
+	},
+	"05-canopy-underside.png": {
+		"skyShare": 0.357,
+		"daylight": 1.445
+	},
+	"06-inside-stand.png": {
+		"skyShare": 0.357,
+		"daylight": 1.477
+	},
+	"07-frond-base-and-stipe.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"08-stipe-forks-into-pinnae.png": {
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null,
+		"span": 0.55,
+		"along": 0.375
+	},
+	"09-pinna-subdivision.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"span": 0.5
+	},
+	"11-crozier-unfurling.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"view": "branch",
+		"cut": 0.35
+	},
+	"12-single-frond-whole.png": {
+		"view": "leaf-upper",
+		"background": "white"
+	},
+	"13-single-pinna-upper.png": {
+		"view": "leaf-upper",
+		"background": "white",
+		"span": 0.5
+	},
+	"14-pinna-underside-sori.png": {
+		"view": "leaf-under",
+		"background": "white",
+		"span": 0.5
+	},
+	"15-stipe-lower-black.png": {
+		"view": "bark-base",
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"barkMask": true
+	},
+	"16-stipe-mid.png": {
+		"view": "bark-mid",
+		"skyShare": 0.357,
+		"span": 0.09,
+		"barkMask": true
+	},
+	"17-rhizome.png": {
+		"skyShare": 0.357,
+		"daylight": 1.459
+	},
+	"18-silhouette.png": {
+		"skyShare": 0.357,
+		"daylight": 1.959,
+		"fill": null,
+		"targetY": null,
+		"top": 0.425,
+		"eye": 0.1
+	},
+	"19-autumn-colour.png": {
+		"view": "whole",
+		"background": "sky-meadow",
+		"skyShare": 0.357,
+		"daylight": 1.612,
+		"fill": 0.75,
+		"targetY": 0.48
+	},
+	"20-winter-dead-fronds.png": {
+		"view": "whole",
+		"background": "sky-meadow",
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"elevation": 30,
+		"fov": 40
+	},
+	"21-branch-studio.png": {
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"22-subbranch-studio.png": {
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"23-leaf-cluster-studio.png": {
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"bracken-turntable-halfturn.mp4": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"fov": 24,
+		"fill": 0.55,
+		"targetY": 0.45
+	},
+	"bracken-wind-motion.mp4": {
+		"skyShare": 0.357,
+		"daylight": 1.459,
+		"fov": 24,
+		"fill": 0.55,
+		"targetY": 0.45
+	},
+	"branch-turntable-halfturn.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"subbranch-turntable-halfturn.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"leaf-cluster-turntable-halfturn.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null
+	},
+	"10-ultimate-segments.png": {
+		"span": 0.3
+	},
+	"24-leaf-texture-upper.png": {
+		"fill": 0.985,
+		"targetY": 0.5
+	},
+	"25-leaf-texture-underside.png": {
+		"fill": 0.985,
+		"targetY": 0.5
+	},
+	"_pictures": {
+		"03-whole-from-below.png": {
+			"standing": "stand",
+			"reason": "many stalks rise from the lower edge under a roof of leaves, seen from the ground inside a stand",
+			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
+		},
+		"04-canopy-from-above.png": {
+			"standing": "stand",
+			"reason": "leaves overlap into a closed carpet with no ground showing, seen from above a stand",
+			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
+		},
+		"06-inside-stand.png": {
+			"standing": "stand",
+			"reason": "stalks stand at eye level under a roof of leaves, seen from inside a stand",
+			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
+		}
+	}
+}

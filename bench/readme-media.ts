@@ -8,8 +8,10 @@ import { join, relative } from 'node:path';
 import type { Page } from '@playwright/test';
 import { applyPalette, GIFEncoder, quantize } from 'gifenc';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { chromeForTesting } from '../tests/lib/chrome-for-testing.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { pagePath } from './lib/parity';
 
 /** Where the README takes the animation from. */
@@ -103,8 +105,9 @@ function shrink(frame: Frame, width: number): Frame {
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The README media capture');
 	const server = await startServer();
-	const browser = await launchInWindow({ channel: 'chrome' });
+	const browser = await launchInWindow(chromeForTesting());
 	const frames: Frame[] = [];
 	try {
 		const page = await newParkedPage(browser);

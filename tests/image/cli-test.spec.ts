@@ -129,6 +129,24 @@ test('null3d test passes a project whose images match their references, on each 
 	]);
 });
 
+test('null3d test draws each shot of a script, and prints what a dump reads', async () => {
+	// The script holds at the reference's time, so its state is the picture that the reference has.
+	const tier: Tier = 'webgl2';
+	const project = projectCopy({
+		tests: [{ name: 'drive', sketch: 'sketch.ts', script: 'hold.script', tiers: [tier] }],
+		references: [['drive-start', tier]],
+	});
+	writeFileSync(join(project.root, 'hold.script'), '0.5 dump ball.position\n1.5 shot start\n');
+	const { code, stdout, output } = await runCli(project.root, ['test']);
+	expect(code, output).toBe(0);
+	const lines = printed(stdout);
+	expect(lines).toContain(
+		`PASS  drive-start on webgl2: it matches the reference (image ${project.file('image', tier, 'drive-start')})`,
+	);
+	expect(lines.find((line) => line.startsWith('Dump at 0.5 s: "ball" position is'))).toBeDefined();
+	expect(lines.at(-1)).toBe('1 passed, 2 skipped.');
+});
+
 test('null3d test fails an image that differs from its reference, and saves the diff', async () => {
 	// The reference holds the sketch at 1.5 seconds, and the test at 1, when the box and the ball
 	// stand elsewhere.

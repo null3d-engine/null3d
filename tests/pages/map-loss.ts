@@ -4,6 +4,7 @@
 // alone, so the pixel turns white. `?copies=on` and `?copies=off` set the option; without it the
 // engine's default for the device runs. The pixel is read back through the engine each time.
 import { createEngine, type Engine, type EngineError } from '@null3d/engine';
+import { framesDrawn } from './lib/measure';
 import { run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -33,6 +34,13 @@ function isMap(pixel: readonly number[]): boolean {
  * still gets there.
  */
 async function waitForMap(engine: Engine): Promise<number[]> {
+	// A simulated loss destroys the device at once and returns, so a capture issued before the
+	// engine has its replacement reads back from a device that is gone. It fails with "the GPU
+	// device was lost during the readback (destroyed: Device was destroyed.)". A device that the
+	// browser reclaims reports "unknown" where that one says "destroyed", so the word in the
+	// message tells a loss the page asked for from one it did not. A frame drawn again means the
+	// replacement is there to read back from.
+	await framesDrawn(engine, 0.5);
 	let pixel: number[] = [0, 0, 0, 0];
 	let seconds = 0.25;
 	for (let round = 0; round <= DOUBLINGS; round++) {

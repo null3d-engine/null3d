@@ -1,0 +1,22 @@
+{
+	"14-base.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.3,
+		"daylight": 4.0
+	},
+	"15-skin-mid-trunk.png": {
+		"span": 0.72,
+		"barkHeight": 4,
+		"daylight": 0.9
+	},
+	"16-skin-on-arm.png": {
+		"view": "bark-limb",
+		"thin": 0.19,
+		"along": 0.75,
+		"span": 0.45,
+		"girth": null,
+		"daylight": 1.5,
+		"lamp": "#ffefcf"
+	}
+}

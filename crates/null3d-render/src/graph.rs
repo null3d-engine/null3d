@@ -399,6 +399,9 @@ pub struct Target {
     /// True for a target that a copy reads into a buffer, as GPU picking's result does: its
     /// texture takes the copy usage, and it cannot live in tile memory alone.
     pub copy_source: bool,
+    /// True for a target that a pass clears outside a render pass, which a compute pass asks for
+    /// when the page starts its state again: its texture takes the attachment usage.
+    pub clearable: bool,
 }
 
 impl Target {
@@ -413,6 +416,7 @@ impl Target {
             mipmapped: false,
             shown: false,
             copy_source: false,
+            clearable: false,
         }
     }
 
@@ -427,6 +431,7 @@ impl Target {
             mipmapped: false,
             shown: false,
             copy_source: false,
+            clearable: false,
         }
     }
 
@@ -461,6 +466,15 @@ impl Target {
     pub const fn copy_source(self) -> Self {
         Self {
             copy_source: true,
+            ..self
+        }
+    }
+
+    /// The same target, which a pass clears outside a render pass, as a compute pass whose state
+    /// starts again.
+    pub const fn clearable(self) -> Self {
+        Self {
+            clearable: true,
             ..self
         }
     }

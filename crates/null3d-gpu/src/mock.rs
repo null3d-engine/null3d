@@ -56,6 +56,19 @@ pub enum MockError {
         what: &'static str,
         id: u32,
     },
+    /// A buffer made again or destroyed after a command in the same submit used it. WebGPU
+    /// rejects the submit, since the buffer that the command recorded is destroyed.
+    DestroyedInUse {
+        op: Op,
+        id: u32,
+    },
+    /// A bind group used after a buffer it binds was made again or destroyed. The group still
+    /// binds the destroyed buffer, so WebGPU rejects each submit that uses the group.
+    StaleGroup {
+        op: Op,
+        group: u32,
+        buffer: u32,
+    },
 }
 
 /// A texture, as its creation described it.
@@ -114,13 +127,18 @@ struct RenderPipeline {
     /// The template the pipeline was made from.
     template: u32,
     formats: Formats,
+    /// True when the pipeline writes no color: its fragment stage has no output, so the pass's
+    /// color target, or its absence, does not apply to it.
+    ignores_color: bool,
 }
 
-/// A bind group: the layout it was made with, and the buffers and textures it binds.
+/// A bind group: the layout it was made with, the buffers and textures it binds, and the
+/// generation that each buffer had when the group was made.
 #[derive(Clone, Debug)]
 struct BindGroup {
     layout: u32,
     resources: Vec<Resource>,
+    buffers: Vec<(u32, u32)>,
 }
 
 /// A render target of a pass: the texture it draws into, and what the pass checks it against.
@@ -205,11 +223,18 @@ pub struct MockBackend {
     /// What the device offers beyond the portable budget.
     caps: Capabilities,
     buffers: HashMap<u32, Buffer>,
+    /// How many times each buffer id was made or destroyed, so a bind group can tell that a
+    /// buffer it binds is gone.
+    buffer_generations: HashMap<u32, u32>,
     /// The buffers whose `ReadBuffer` has not finished: no command may use them until the thread
     /// that draws raises the read's slot, which [`MockBackend::finish_reads`] stands for.
     reading: HashSet<u32>,
+    /// True while a list replays as a capture replays it, which leaves out its reads.
+    capturing: bool,
     textures: HashMap<u32, Texture>,
     views: HashMap<u32, View>,
+    /// The texture that each bind view of a layer range names, by the view's id.
+    bind_views: HashMap<u32, u32>,
     /// How many times each texture id was made or released, so a view can tell that its texture
     /// is gone.
     generations: HashMap<u32, u32>,
@@ -247,6 +272,9 @@ pub struct MockBackend {
     index_buffer_set: bool,
     /// The resources that commands used since the last submit.
     used: HashSet<Resource>,
+    /// The buffers that commands recorded for the GPU used since the last submit. A read is not
+    /// one: the backends drop a buffer's read before they destroy it.
+    recorded: HashSet<u32>,
     pub draws: u32,
     pub dispatches: u32,
     pub submits: u32,
@@ -300,6 +328,30 @@ impl MockBackend {
         self.reading.clear();
     }
 
+    /// Replays a list again as a capture does, while the reads of its first replay may still wait.
+    /// The WebGPU backend then leaves out every command that would touch a buffer that a read
+    /// maps: the creation of a buffer that exists, the copies into a buffer that a read maps, and
+    /// the reads themselves.
+    pub fn replay_capture(&mut self, words: &[u32]) -> Result<(), MockError> {
+        self.capturing = true;
+        let replayed = self.replay(words);
+        self.capturing = false;
+        replayed
+    }
+
+    /// True when a capture's replay leaves out the command.
+    fn capture_skips(&self, op: Op, o: &[u32]) -> bool {
+        match op {
+            Op::CreateBuffer => self.buffers.contains_key(&o[0]),
+            Op::CopyTextureToBuffer | Op::ReadBuffer => true,
+            Op::CopyBufferToBuffer => self
+                .buffers
+                .get(&o[2])
+                .is_some_and(|buffer| buffer.usage & buffer_usage::MAP_READ != 0),
+            _ => false,
+        }
+    }
+
     pub fn replay(&mut self, words: &[u32]) -> Result<(), MockError> {
         for command in decode(words) {
             let command = command.map_err(|e| MockError::Decode(format!("{e:?}")))?;
@@ -337,6 +389,9 @@ impl MockBackend {
             Some((_, uses)) => uses.push(BundleUse::Resource(resource)),
             None => {
                 self.used.insert(resource);
+                if let Resource::Buffer(id) = resource {
+                    self.recorded.insert(id);
+                }
             }
         }
     }
@@ -365,6 +420,39 @@ impl MockBackend {
             Resource::Texture(id) => ("texture", id),
         };
         Err(MockError::WriteAfterUse { op, what, id })
+    }
+
+    /// Starts a new generation of a buffer id that is made again or destroyed. Fails when a
+    /// command in this submit used the buffer that the id named.
+    fn replace_buffer(&mut self, op: Op, id: u32) -> Result<(), MockError> {
+        if self.buffers.contains_key(&id) && self.recorded.contains(&id) {
+            return Err(MockError::DestroyedInUse { op, id });
+        }
+        *self.buffer_generations.entry(id).or_default() += 1;
+        Ok(())
+    }
+
+    /// The resources of a bind group that a command uses. Fails when a buffer it binds was made
+    /// again or destroyed after the group.
+    fn group_resources(&self, op: Op, id: u32) -> Result<Vec<Resource>, MockError> {
+        let group = self
+            .bind_groups
+            .get(&id)
+            .ok_or(missing(op, "bind group", id))?;
+        if let Some(&(buffer, _)) = group.buffers.iter().find(|&&(buffer, generation)| {
+            self.buffer_generations
+                .get(&buffer)
+                .copied()
+                .unwrap_or_default()
+                != generation
+        }) {
+            return Err(MockError::StaleGroup {
+                op,
+                group: id,
+                buffer,
+            });
+        }
+        Ok(group.resources.clone())
     }
 
     /// A buffer by id. A buffer whose read is in flight fails: WebGPU is mapping it, and a write
@@ -675,6 +763,18 @@ impl MockBackend {
         Ok(())
     }
 
+    /// Names a range of one texture's array layers, which a bind group binds as the texture.
+    fn create_bind_view(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        let texture = self.texture(op, o[1])?;
+        check(
+            o[3] >= 1 && o[2] + o[3] <= texture.layers,
+            op,
+            "a bind view names layers inside its texture",
+        )?;
+        self.bind_views.insert(o[0], o[1]);
+        Ok(())
+    }
+
     fn write_texture(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let at = Location::read(o);
         let texture = self.texel_box(op, at, o[5], o[6], o[7])?;
@@ -876,6 +976,53 @@ impl MockBackend {
         Ok(())
     }
 
+    fn copy_into_image(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        self.outside_passes(op)?;
+        check(o.len() == 6, op, "a copy into an image takes 6 words")?;
+        let source = self.texture(op, o[0])?;
+        let destination = self.texture(op, o[2])?;
+        check(
+            source.binding_view == view::D2_ARRAY,
+            op,
+            "a copy into an image reads a 2d-array texture",
+        )?;
+        check(
+            source.usage & texture_usage::TEXTURE_BINDING != 0,
+            op,
+            "a copy into an image reads a texture with TEXTURE_BINDING usage",
+        )?;
+        let usage = texture_usage::TEXTURE_BINDING | texture_usage::RENDER_ATTACHMENT;
+        check(
+            destination.usage & usage == usage,
+            op,
+            "a copy into an image writes a texture with TEXTURE_BINDING and RENDER_ATTACHMENT usage",
+        )?;
+        check(
+            destination.binding_view == view::D2_ARRAY && destination.samples == 1,
+            op,
+            "a copy into an image writes a 2d-array texture of one sample",
+        )?;
+        check(
+            format::draws_mipmaps(destination.format),
+            op,
+            "a copy into an image writes a texture whose format draws mip levels",
+        )?;
+        let (source_layer, destination_layer) = (o[1], o[3]);
+        let (size, levels) = (o[4], o[5]);
+        if source_layer >= source.layers
+            || destination_layer >= destination.layers
+            || size > destination.width
+            || size > destination.height
+            || levels == 0
+            || levels > destination.mips
+        {
+            return Err(MockError::OutOfRange { op, id: o[2] });
+        }
+        self.use_resource(Resource::Texture(o[0]));
+        self.use_resource(Resource::Texture(o[2]));
+        Ok(())
+    }
+
     fn generate_texture(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         self.outside_passes(op)?;
         let texture = self.texture(op, o[0])?;
@@ -957,6 +1104,7 @@ impl MockBackend {
 
     fn create_bind_group(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let mut resources = Vec::new();
+        let mut buffers = Vec::new();
         // Only the group's own entries: the operands may hold a spare word or more after them.
         let count = o[2] as usize;
         for entry in o[3..3 + 5 * count].chunks(5) {
@@ -965,15 +1113,18 @@ impl MockBackend {
                 resource_kind::BUFFER => {
                     Self::require(self.buffers.contains_key(&id), op, "buffer", id)?;
                     resources.push(Resource::Buffer(id));
+                    let generation = self.buffer_generations.get(&id).copied();
+                    buffers.push((id, generation.unwrap_or_default()));
                 }
                 resource_kind::TEXTURE => {
-                    let texture = self.texture(op, id)?;
+                    let base = self.bind_views.get(&id).copied().unwrap_or(id);
+                    let texture = self.texture(op, base)?;
                     check(
                         texture.usage & texture_usage::TEXTURE_BINDING != 0,
                         op,
                         "a bound texture needs TEXTURE_BINDING usage",
                     )?;
-                    resources.push(Resource::Texture(id));
+                    resources.push(Resource::Texture(base));
                 }
                 resource_kind::SAMPLER => {
                     Self::require(self.samplers.contains(&id), op, "sampler", id)?;
@@ -986,6 +1137,7 @@ impl MockBackend {
             BindGroup {
                 layout: o[1],
                 resources,
+                buffers,
             },
         );
         Ok(())
@@ -1049,9 +1201,20 @@ impl MockBackend {
             }
         };
         let (color, resolve, depth) = (optional(o[0])?, optional(o[1])?, optional(o[2])?);
-        let second = match o.get(9) {
-            Some(&id) => Some(self.target(op, id)?),
-            None => None,
+        // The second color target's word, the pass's label and its scope follow the flags. A pass
+        // without a second target leaves its word out, and a list that a test makes by hand may
+        // name even fewer.
+        check(
+            o.len() <= 12,
+            op,
+            "a render pass names its targets, its label and its scope",
+        )?;
+        let second = match o.len() {
+            0..=11 => None,
+            _ => match o[9] {
+                NO_TARGET => None,
+                id => Some(self.target(op, id)?),
+            },
         };
         if let Some(second) = second {
             let Some(color) = color else {
@@ -1140,6 +1303,9 @@ impl MockBackend {
     }
 
     fn execute(&mut self, Command { op, operands: o }: Command<'_>) -> Result<(), MockError> {
+        if self.capturing && self.capture_skips(op, o) {
+            return Ok(());
+        }
         match op {
             Op::CreateBuffer => {
                 let usage = o[2];
@@ -1149,6 +1315,7 @@ impl MockBackend {
                     op,
                     "a buffer with MAP_READ usage has no other usage than COPY_DST",
                 )?;
+                self.replace_buffer(op, o[0])?;
                 self.buffers.insert(o[0], Buffer { size: o[1], usage });
                 self.reading.remove(&o[0]);
             }
@@ -1170,6 +1337,7 @@ impl MockBackend {
             Op::WriteTexture => self.write_texture(op, o)?,
             Op::DestroyBuffer => {
                 // Destroying a buffer drops its read, whose slot then never rises.
+                self.replace_buffer(op, o[0])?;
                 self.buffers.remove(&o[0]);
                 self.reading.remove(&o[0]);
             }
@@ -1178,10 +1346,12 @@ impl MockBackend {
             Op::DestroyTexture => {
                 self.textures.remove(&o[0]);
                 self.views.remove(&o[0]);
+                self.bind_views.remove(&o[0]);
                 *self.generations.entry(o[0]).or_default() += 1;
             }
             Op::UploadImage => self.upload_image(op, o)?,
             Op::GenerateMipmaps => self.generate_mipmaps(op, o)?,
+            Op::CopyIntoImage => self.copy_into_image(op, o)?,
             Op::ReleaseImage => {
                 self.images.remove(&o[0]);
                 self.generators.remove(&o[0]);
@@ -1190,7 +1360,7 @@ impl MockBackend {
             Op::SkyMapStep => {
                 self.generate_texture(op, o)?;
                 self.texture(op, o[0])?;
-                check(o.len() == 20, op, "a sky map's stage takes 20 words")?;
+                check(o.len() == 31, op, "a sky map's stage takes 31 words")?;
                 if o[3] != 0 {
                     self.texture(op, o[3])?;
                 }
@@ -1222,7 +1392,7 @@ impl MockBackend {
                 if !fits(o[1], o[2], buffer.size) {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
-                self.use_resource(Resource::Buffer(o[0]));
+                self.used.insert(Resource::Buffer(o[0]));
                 self.reading.insert(o[0]);
             }
             Op::CreateSampler => self.create_sampler(op, o)?,
@@ -1290,6 +1460,11 @@ impl MockBackend {
                                 format::NONE
                             },
                         },
+                        // A prepass pipeline draws with a shading build whose fragment stage writes
+                        // nothing. WebGL2 draws it into the opaque pass's color, or into a
+                        // depth-only pass of its own, and one build fits both (D-269).
+                        ignores_color: o[3] == format::NONE
+                            && o[6] & state_flags::NO_COLOR_WRITE != 0,
                     },
                 );
             }
@@ -1297,6 +1472,20 @@ impl MockBackend {
                 self.compute_pipelines.insert(o[0], o[1]);
             }
             Op::CreateBindGroup => self.create_bind_group(op, o)?,
+            Op::CreateBindView => self.create_bind_view(op, o)?,
+            Op::ClearTexture => {
+                let texture = self.texture(op, o[0])?;
+                check(
+                    texture.usage & texture_usage::RENDER_ATTACHMENT != 0,
+                    op,
+                    "a cleared texture needs RENDER_ATTACHMENT usage",
+                )?;
+                check(
+                    o[2] >= 1 && o[1] + o[2] <= texture.layers,
+                    op,
+                    "a clear names layers inside its texture",
+                )?;
+            }
             Op::BeginRenderPass => self.begin_render_pass(op, o)?,
             Op::BeginBundle => {
                 self.outside_passes(op)?;
@@ -1334,7 +1523,10 @@ impl MockBackend {
                     None => self.pass.expect("in a render pass").formats,
                 };
                 check(
-                    pipeline.formats == drawn,
+                    pipeline.formats.samples == drawn.samples
+                        && pipeline.formats.depth == drawn.depth
+                        && pipeline.formats.second == drawn.second
+                        && (pipeline.formats.color == drawn.color || pipeline.ignores_color),
                     op,
                     "a pipeline draws into the formats and sample count of its pass or bundle",
                 )?;
@@ -1349,11 +1541,11 @@ impl MockBackend {
                         needs: "a render pass, bundle or compute pass",
                     });
                 }
-                let group =
-                    self.bind_groups
-                        .get(&o[1])
-                        .cloned()
-                        .ok_or(missing(op, "bind group", o[1]))?;
+                let layout = self
+                    .bind_groups
+                    .get(&o[1])
+                    .ok_or(missing(op, "bind group", o[1]))?
+                    .layout;
                 if let Some(&offset) = o[3..3 + o[2] as usize]
                     .iter()
                     .find(|&&offset| offset % OFFSET_ALIGNMENT != 0)
@@ -1361,12 +1553,12 @@ impl MockBackend {
                     return Err(MockError::Unaligned { op, offset });
                 }
                 if let Some(slot) = self.bound.get_mut(o[0] as usize) {
-                    *slot = group.layout;
+                    *slot = layout;
                 }
                 match &mut self.recording {
                     Some((_, uses)) => uses.push(BundleUse::Group(o[1])),
                     None => {
-                        for resource in group.resources {
+                        for resource in self.group_resources(op, o[1])? {
                             self.read_resource(op, resource)?;
                         }
                     }
@@ -1453,12 +1645,7 @@ impl MockBackend {
                         match used {
                             BundleUse::Resource(resource) => self.read_resource(op, resource)?,
                             BundleUse::Group(group) => {
-                                let resources = self
-                                    .bind_groups
-                                    .get(&group)
-                                    .map(|group| group.resources.clone())
-                                    .ok_or(missing(op, "bind group", group))?;
-                                for resource in resources {
+                                for resource in self.group_resources(op, group)? {
                                     self.read_resource(op, resource)?;
                                 }
                             }
@@ -1538,6 +1725,7 @@ impl MockBackend {
             Op::Submit => {
                 self.outside_passes(op)?;
                 self.used.clear();
+                self.recorded.clear();
                 self.submits += 1;
             }
         }
@@ -1943,6 +2131,57 @@ mod tests {
             ),
             "the one-sample canvas cannot pair with multisampled depth"
         );
+    }
+
+    #[test]
+    fn a_pipeline_that_names_no_color_fits_a_pass_with_or_without_one() {
+        // The WebGL2 prepass draws with a shading build that writes nothing: into the opaque
+        // pass's color, or into a depth-only pass of its own when a screen step splits them
+        // (D-269).
+        let run = |pipeline: [u32; 10], pass: [u32; 9]| {
+            let mut list = DrawList::with_capacity(256);
+            setup(&mut list);
+            list.push(Op::CreateRenderPipeline, &pipeline).unwrap();
+            list.push(Op::BeginRenderPass, &pass).unwrap();
+            list.push(Op::SetPipeline, &[pipeline[0]]).unwrap();
+            MockBackend::default().replay(list.words())
+        };
+        let prepass = [
+            2,
+            template::INSTANCED_LIT,
+            permutation::PREPASS,
+            format::NONE,
+            format::DEPTH32_FLOAT,
+            4,
+            state_flags::NO_COLOR_WRITE,
+            0,
+            0,
+            0,
+        ];
+        let depth_only = [NO_TARGET, NO_TARGET, MSAA_DEPTH, 0, 0, 0, 0, 0, 0];
+        let with_color = [MSAA_COLOR, NO_TARGET, MSAA_DEPTH, 0, 0, 0, 0, 0, 0];
+        assert!(run(prepass, depth_only).is_ok());
+        assert!(run(prepass, with_color).is_ok());
+        // A pipeline that does write color still needs the pass to name that color.
+        let shading = [
+            2,
+            template::INSTANCED_LIT,
+            0,
+            format::CANVAS,
+            format::DEPTH32_FLOAT,
+            4,
+            0,
+            0,
+            0,
+            0,
+        ];
+        assert!(matches!(
+            run(shading, depth_only),
+            Err(MockError::Invalid {
+                op: Op::SetPipeline,
+                ..
+            })
+        ));
     }
 
     // Ids of the texture test below.
@@ -2703,6 +2942,131 @@ mod tests {
         assert!(
             matches!(loop_back, Err(MockError::Invalid { rule, .. }) if rule.contains("draws into")),
             "{loop_back:?}"
+        );
+    }
+
+    /// Replays the shared setup, then `build`'s commands, then a submit.
+    fn run_buffers(build: &dyn Fn(&mut DrawList)) -> Result<(), MockError> {
+        let mut list = DrawList::with_capacity(256);
+        setup(&mut list);
+        list.push(Op::ResizeCanvas, &[64, 64]).unwrap();
+        build(&mut list);
+        list.push(Op::Submit, &[]).unwrap();
+        MockBackend::default().replay(list.words())
+    }
+
+    /// Draws the setup's bucket in a scene pass of its own.
+    fn draw_in_a_pass(list: &mut DrawList) {
+        begin_scene_pass(list);
+        draw_bucket(list);
+        list.push(Op::EndRenderPass, &[]).unwrap();
+    }
+
+    #[test]
+    fn a_bind_group_of_a_buffer_made_again_is_rejected_until_it_is_made_again_too() {
+        let remake_uniforms = |l: &mut DrawList| {
+            l.push(
+                Op::CreateBuffer,
+                &[3, 1024, buffer_usage::UNIFORM | buffer_usage::COPY_DST],
+            )
+            .unwrap();
+        };
+        let stale = MockError::StaleGroup {
+            op: Op::SetBindGroup,
+            group: 1,
+            buffer: 3,
+        };
+        assert_eq!(
+            run_buffers(&|l| {
+                remake_uniforms(l);
+                draw_in_a_pass(l);
+            }),
+            Err(stale)
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                l.push(Op::DestroyBuffer, &[3]).unwrap();
+                remake_uniforms(l);
+                draw_in_a_pass(l);
+            }),
+            Err(MockError::StaleGroup {
+                op: Op::SetBindGroup,
+                group: 1,
+                buffer: 3,
+            }),
+            "a destroy and a new buffer under the same id leave the group stale"
+        );
+        // A bundle looks its groups up when it runs, so the group it names must be current then.
+        assert_eq!(
+            run_buffers(&|l| {
+                l.push(
+                    Op::BeginBundle,
+                    &[9, format::CANVAS, format::DEPTH32_FLOAT, 4],
+                )
+                .unwrap();
+                draw_bucket(l);
+                l.push(Op::EndBundle, &[]).unwrap();
+                remake_uniforms(l);
+                begin_scene_pass(l);
+                l.push(Op::ExecuteBundles, &[1, 9]).unwrap();
+                l.push(Op::EndRenderPass, &[]).unwrap();
+            }),
+            Err(MockError::StaleGroup {
+                op: Op::ExecuteBundles,
+                group: 1,
+                buffer: 3,
+            })
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                remake_uniforms(l);
+                l.push(Op::CreateBindGroup, &[1, layout::FRAME, 1, 0, 0, 3, 0, 256])
+                    .unwrap();
+                draw_in_a_pass(l);
+            }),
+            Ok(()),
+            "a group made again binds the new buffer"
+        );
+    }
+
+    #[test]
+    fn a_buffer_made_again_after_a_use_in_the_same_submit_is_rejected() {
+        let remake_vertices = |l: &mut DrawList| {
+            l.push(
+                Op::CreateBuffer,
+                &[1, 8192, buffer_usage::VERTEX | buffer_usage::COPY_DST],
+            )
+            .unwrap();
+        };
+        assert_eq!(
+            run_buffers(&|l| {
+                draw_in_a_pass(l);
+                remake_vertices(l);
+            }),
+            Err(MockError::DestroyedInUse {
+                op: Op::CreateBuffer,
+                id: 1
+            })
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                draw_in_a_pass(l);
+                l.push(Op::DestroyBuffer, &[1]).unwrap();
+            }),
+            Err(MockError::DestroyedInUse {
+                op: Op::DestroyBuffer,
+                id: 1
+            })
+        );
+        assert_eq!(
+            run_buffers(&|l| {
+                draw_in_a_pass(l);
+                l.push(Op::Submit, &[]).unwrap();
+                remake_vertices(l);
+                draw_in_a_pass(l);
+            }),
+            Ok(()),
+            "a submit ends the uses, and the GPU keeps a destroyed buffer for the work it holds"
         );
     }
 

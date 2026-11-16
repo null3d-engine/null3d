@@ -1,12 +1,12 @@
 # D-139: Joint overrides and look-at
 
-Status: decided by the helper of M2-EX24 on 11 October 2026, for the owner's review. The owner asked for the feature on 11 October 2026. Built: joint overrides are on main (`a150d94b4`). The owner's review of the design is pending. Date: 2026-10-11. Task: M2-EX24.
+Status: decided by the helper of M2-EX24, for the owner's review of the design. The owner asked for the feature. Built: joint overrides are on main (`a150d94b4`). Task: M2-EX24.
 
-Summary: The animator gains `joint(name)`, `setJointRotation`, `addJointRotation`, `clearJoint` and `lookAt`. Game code sets or adds a joint's rotation with a weight, on top of the clips. It also turns a chain of up to 4 joints toward a point in the world, each within a limit. The job workers apply them in the frame step, after the clips blend and before the skinning matrices compose. The calls write engine memory, allocate nothing, and hold until cleared. The table that holds them exists only from the first call, so a scene without them pays nothing.
+Summary: The animator's joint calls, `setJointRotation`, `addJointRotation`, `clearJoint` and `lookAt`, set or add a joint's rotation over the clips and aim a chain of up to 4 joints. The job workers apply them in the frame step, after the clips blend and before the skinning matrices compose. The calls write engine memory, allocate nothing and hold until cleared, and a scene without them pays nothing.
 
 ## Question
 
-The engine animates joints in its core, and joints are not objects. Game code could not turn a joint. So Battle's soldiers turned their whole bodies to aim, and heads could not look at things. three.js code sets `bone.quaternion` after `mixer.update`, or calls `bone.lookAt`. How does a null3D sketch turn joints each frame, on top of the clips, in a crowd, at low cost?
+The engine animates joints in its core, and joints are not objects. Without a way to turn a joint, Battle's soldiers must turn their whole bodies to aim, and heads cannot look at things. three.js code sets `bone.quaternion` after `mixer.update`, or calls `bone.lookAt`. How does a null3D sketch turn joints each frame, on top of the clips, in a crowd, at low cost?
 
 ## Rule
 
@@ -61,7 +61,7 @@ The target is a point in the world. The animation step runs before the transform
 | Core unit tests: set, add, weights, bad slots, chains, limits, weight, a joint off the chain, slerp | 6 of 6 pass | Mac, native Rust |
 | Core tests: overrides in a full frame step turn only their joints and those below; a look-at from an object moved and turned a quarter matches one at the origin within 1e-4, and aims within 1e-4 of the target; a removed object's overrides go with it | 2 of 2 pass | Mac, native Rust |
 
-How the data was produced: `cargo test -p null3d-core --lib --test animation -- joint look slerp chain`, 11 October 2026.
+How the data was produced: `cargo test -p null3d-core --lib --test animation -- joint look slerp chain`.
 
 ## Decision
 
@@ -73,6 +73,6 @@ Option A in each part: rotation overrides and a chain look-at, which the job wor
 - Glue: `createAnimatedInstance` takes the object's handle; `enableJointOverrides` makes the table; `animationArrays` returns its two arrays. The generated constants gain `JOINT_OVERRIDE_*`.
 - TypeScript: the animator's joint calls and `LookAtOptions`.
 - Docs: [api/animation](../../docs/api/animation.md#joint-overrides), and the three.js mapping's `bone-rotation` entry. Skills: the develop skill's quick reference and character recipe.
-- Tests: the core tests above, the animator's unit tests, the browser test's soldier, and the `skinning-joints` image test on every GPU path. The core's allocation test and `bench:allocation --animated 64` now turn joints too.
+- Tests: the core tests above, the animator's unit tests, the browser test's soldier, and the `skinning-joints` image test on every GPU path. The core's allocation test and `bench:allocation --animated 64` turn joints too.
 - The demo `examples/look-at` shows knights that watch a wisp of light that the pointer leads.
-- A weight passed as a call argument boxes when the browser does not inline the call. `bench:allocation --animated 64` first failed with 183 to 247 bytes per frame in the crowd's frame step, against a budget of 4. With inlining off (`--no-inline`), no engine function allocated: all of it was at the crowd's call sites. Its frame step was too large for the browser to inline the new calls. The crowd now makes the joint calls from a small step that takes only the animator and its index, and reads the time from an array. Inside the engine, the private helper that finds a slot takes no weight. `lookAt` keeps its options path in a helper of its own. So the public calls stay small enough to inline. A game with a large frame step meets the same limit. So the [animation docs](../../docs/api/animation.md#order-and-cost) show the small-step pattern. Changing the weight into an array was rejected. `setLayerWeight`, `setWeight` and `setPosition` take fractions as arguments too. And the default weight of 1 never boxes.
+- A weight passed as a call argument boxes when the browser does not inline the call. A crowd's frame step too large for the browser to inline the joint calls allocates 183 to 247 bytes per frame in `bench:allocation --animated 64`, against a budget of 4. With inlining off (`--no-inline`), no engine function allocates: all of it is at the crowd's call sites. So the crowd makes the joint calls from a small step that takes only the animator and its index, and reads the time from an array. Inside the engine, the private helper that finds a slot takes no weight. `lookAt` keeps its options path in a helper of its own. So the public calls stay small enough to inline. A game with a large frame step meets the same limit. So the [animation docs](../../docs/api/animation.md#order-and-cost) show the small-step pattern. Changing the weight into an array was rejected. `setLayerWeight`, `setWeight` and `setPosition` take fractions as arguments too. And the default weight of 1 never boxes.

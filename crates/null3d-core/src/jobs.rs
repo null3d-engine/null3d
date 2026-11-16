@@ -87,6 +87,8 @@
 //! worker returns [`LoopExit::Yielded`] in place of spinning or blocking, whenever no frame chunk
 //! is left to claim. The host lets the thread run its tasks, waits a moment on the wake word
 //! without blocking, and calls the loop again, so the worker still helps with the frame jobs.
+//! Such a wait does not register as a sleeper, so while the yield word is not zero every new
+//! frame job wakes the wake word's waiters whether or not a sleeper is registered.
 //! The host that measures adds one to the word, bumps the wake word and wakes every sleeper, as
 //! for a stop, and takes the one off again when the measurement ends.
 //!
@@ -390,7 +392,7 @@ impl JobSystem {
             .filter(|_| self.time_handed.load(Ordering::Relaxed))
             .map(|now| now());
         self.dispatched.store(true, Ordering::Relaxed);
-        self.wake_workers(true);
+        self.wake_workers(true, true);
 
         while let Some(chunk) = self.try_claim() {
             self.run_chunk(chunk, me);
@@ -415,7 +417,7 @@ impl JobSystem {
     pub fn prepare_frame(&self) -> bool {
         let woke = self.dispatched.swap(false, Ordering::Relaxed);
         if woke {
-            self.wake_workers(true);
+            self.wake_workers(true, false);
         }
         woke
     }
@@ -443,7 +445,7 @@ impl JobSystem {
         {
             want();
         }
-        self.wake_workers(false);
+        self.wake_workers(false, false);
         Ok(())
     }
 
@@ -544,7 +546,7 @@ impl JobSystem {
     pub fn call_worker(&self, worker_index: u32) {
         if let Some(calls) = self.calls.get(worker_index as usize) {
             calls.0.fetch_add(1, Ordering::SeqCst);
-            self.wake_workers(true);
+            self.wake_workers(true, false);
         }
     }
 
@@ -680,10 +682,15 @@ impl JobSystem {
     }
 
     /// Makes new work visible to sleeping workers: bumps the wake word, then wakes one or all
-    /// sleepers when any are registered.
-    fn wake_workers(&self, all: bool) {
+    /// sleepers when any are registered. While the host lets idle workers leave the loop, each such
+    /// worker waits on the wake word too, without blocking and without registering. So a wake for
+    /// a frame job (`frame_job`) goes out then as well: without it, a worker that left would miss
+    /// the job until its host's wait times out. Other wakes leave such workers waiting, as a worker
+    /// that left takes no work but a frame job's.
+    fn wake_workers(&self, all: bool, frame_job: bool) {
         self.wake.0.fetch_add(1, Ordering::SeqCst);
-        if self.sleepers.load(Ordering::SeqCst) > 0 {
+        let left = frame_job && self.yielding.0.load(Ordering::SeqCst) != 0;
+        if left || self.sleepers.load(Ordering::SeqCst) > 0 {
             if all {
                 wait::wake_all(&self.wake.0);
             } else {
@@ -1068,5 +1075,42 @@ mod tests {
             worker.join().expect("the job worker panicked"),
             LoopExit::Stopped
         );
+    }
+
+    /// A worker that left the loop for the host waits on the wake word without registering as a
+    /// sleeper, as the browser's job worker does while the page measures its memory. A frame job
+    /// must wake it, or it misses the job until its wait times out.
+    #[test]
+    #[allow(clippy::disallowed_methods)] // The test runs the waiting host on a native thread.
+    fn a_frame_job_wakes_a_worker_that_left_for_the_host() {
+        use std::time::Duration;
+        let jobs = std::sync::Arc::new(JobSystem::with_config(JobConfig {
+            workers: 1,
+            spin_rounds: 0,
+            ..JobConfig::default()
+        }));
+        jobs.yield_word().fetch_add(1, Ordering::SeqCst);
+        let (sent, got) = std::sync::mpsc::channel();
+        let waiter = {
+            let jobs = std::sync::Arc::clone(&jobs);
+            std::thread::spawn(move || {
+                let (wake, _) = jobs.stop_words();
+                let seen = wake.load(Ordering::SeqCst);
+                sent.send(()).expect("the test listens");
+                crate::wait::wait(wake, seen);
+                sent.send(()).expect("the test listens");
+            })
+        };
+        got.recv().expect("the waiter starts");
+        // Time for the waiter to block, so the frame job's wake is what ends its wait.
+        std::thread::sleep(Duration::from_millis(50));
+        jobs.parallel_for(8, 1, &|_, _| {});
+        let woke = got.recv_timeout(Duration::from_secs(5)).is_ok();
+        if !woke {
+            let (wake, _) = jobs.stop_words();
+            crate::wait::wake_all(wake);
+        }
+        waiter.join().expect("the waiter panicked");
+        assert!(woke, "the frame job left the waiting worker asleep");
     }
 }

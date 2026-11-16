@@ -1,0 +1,2 @@
+# The species textures are binary files that the plant texture tool writes; git keeps them whole.
+*.ktx2 binary

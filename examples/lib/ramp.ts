@@ -48,7 +48,7 @@ export function renderPixelRatio(cls: DeviceClass, devicePixelRatio: number): nu
 }
 
 /**
- * The scene's update rate, in frames a second, below which a step misses (owner, 13 October 2026).
+ * The scene's update rate, in frames a second, below which a step misses (owner's ruling).
  * The ramp runs heavy scenes to find where each engine gives way, not where it leaves the display.
  */
 export const FLOOR_FPS = 20;

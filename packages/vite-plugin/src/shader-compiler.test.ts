@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { MIRROR_FLOOR, WET_ROAD } from '../../../examples/showroom/floor';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import {
 	type ShaderVariant as EngineShaderVariant,
 	everyShader,
 } from '../../engine/src/generated/shaders';
 import {
 	buildShaders,
+	compileMaterial,
 	compileShader,
+	type MaterialSource,
 	type ShaderBuildInputs,
 	type ShaderProblem,
 	type ShaderSource,
@@ -128,6 +132,39 @@ function engineShaderInputs(names?: readonly string[]): ShaderBuildInputs {
 	};
 }
 
+/**
+ * The type a generated shader declares at a group and binding, as its WGSL writes it, or undefined
+ * when it declares nothing there. The declaration may put a newline between the attributes and
+ * `var`.
+ */
+function bindingType(source: string, group: number, binding: number): string | undefined {
+	const pattern = new RegExp(
+		`@group\\(${group}\\)\\s*@binding\\(${binding}\\)\\s*var\\s+[^:]*:\\s*([^;]+);`,
+	);
+	return pattern.exec(source)?.[1]?.trim();
+}
+
+/**
+ * The number of bindings a generated shader declares in one group. Two shaders that declare
+ * different counts do not put the same resource at the same index, so one index means nothing
+ * across them.
+ */
+function bindingCount(source: string, group: number): number {
+	return source.match(new RegExp(`@group\\(${group}\\)\\s*@binding\\(`, 'g'))?.length ?? 0;
+}
+
+/**
+ * The frame group's binding that a material compiled against an older frame layout gets wrong: the
+ * ambient occlusion map's texture array. The failure messages read it too, so a message cannot
+ * name an index other than the one compared.
+ */
+const FRAME_BINDING = 11;
+
+/** A material's problems as one line, for a test's failure message. */
+function materialProblems(name: string, problems: readonly ShaderProblem[]): string {
+	return `${name}: ${problems.map((problem) => problem.message).join('; ')}`;
+}
+
 describe.skipIf(!ENABLED)('the shader compiler', () => {
 	it('writes the records that the engine takes', () => {
 		expect(SAME_RECORDS).toBe(true);
@@ -230,19 +267,91 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 		);
 	});
 
-	// A few of the engine's shaders, which is the scale a build tool passes: a project's own
+	// A few of the engine's small shaders, which is the scale a build tool passes: a project's own
 	// manifest. The whole engine manifest takes the module about twelve minutes, past this test's
-	// limit. `standard_maps` alone holds 11,456 builds. The shader crate's own test compares every
-	// entry of the repository through the module, one entry at a time, and the module hands an
-	// entry's answer over in pieces (`.dev/implementation-notes.md`).
-	const ENGINE_SHADERS = ['decal', 'final', 'line', 'texcoords', 'unlit', 'probe_grid'];
+	// limit. `standard_maps` alone holds 11,456 builds, and `probe_grid`, at 2.4% of the builds,
+	// would take most of this test's time. The shader crate's own test compares every entry of the
+	// repository through the module, one entry at a time, and the module hands an entry's answer
+	// over in pieces (`.dev/implementation-notes.md`).
+	const ENGINE_SHADERS = ['decal', 'final', 'line', 'texcoords', 'unlit'];
 
-	it("gives the native build's output for the engine's shaders", async () => {
-		const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
-		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
-		const whole = await everyShader();
-		// Every name asked for is an entry of the engine's own manifest, so its variants are there.
-		const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
-		expect(result.output.shaders).toEqual(expected);
-	}, 180_000);
+	it(
+		"gives the native build's output for the engine's shaders",
+		async () => {
+			const result = buildShaders(engineShaderInputs(ENGINE_SHADERS));
+			if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
+			const whole = await everyShader();
+			// Every name asked for is an entry of the engine's own manifest, so its variants are there.
+			const expected = Object.fromEntries(ENGINE_SHADERS.map((name) => [name, whole[name]!]));
+			expect(result.output.shaders).toEqual(expected);
+		},
+		scaledBudget(180_000),
+	);
+	it(
+		'builds the showroom floors with the frame bindings the standard material declares',
+		() => {
+			// A material that compiled against an older frame group keeps its own binding declarations.
+			// The pipeline then fails to build with E1404, which reads like an engine fault. Compare every
+			// variant of the demo's own custom materials with a plain material built by the same compiler:
+			// a binding that differs names the binding and both dimensions here, not in a browser.
+			const plain: MaterialSource = {
+				path: 'standard-material.wgsl',
+				source:
+					'fn surface(input: SurfaceInput) -> Surface {\n    return defaultSurface(input);\n}',
+			};
+			const standard = compileMaterial(plain);
+			if (!standard.ok) throw new Error(materialProblems(plain.path, standard.problems));
+			// A rename or a reformat in the generated WGSL leaves both sides undefined, and two
+			// undefined readings compare equal. The comparison needs a reference to agree with.
+			const reads = Object.values(standard.material.variants).some(
+				(declaration) => declaration.wgsl && bindingType(declaration.wgsl.source, 0, FRAME_BINDING),
+			);
+			if (!reads)
+				throw new Error(
+					`the standard material declares a type at @group(0) @binding(${FRAME_BINDING}) in no variant, so there is nothing for the demo to compare against`,
+				);
+			for (const [name, source] of [
+				['the mirror floor', MIRROR_FLOOR],
+				['the wet road', WET_ROAD],
+			] as const) {
+				const built = compileMaterial({ path: `showroom ${name}`, source });
+				if (!built.ok) throw new Error(materialProblems(name, built.problems));
+				// A variant without WGSL on either side is skipped, and a skipped variant is not
+				// checked. So every variant that has WGSL must be compared, not merely one of them.
+				const withWgsl = Object.values(built.material.variants).filter(
+					(declaration) => declaration.wgsl,
+				).length;
+				let compared = 0;
+				for (const [variant, declaration] of Object.entries(built.material.variants)) {
+					const expectedVariant = standard.material.variants[variant];
+					if (!declaration.wgsl || !expectedVariant?.wgsl) continue;
+					compared += 1;
+					const ownCount = bindingCount(declaration.wgsl.source, 0);
+					const expectedCount = bindingCount(expectedVariant.wgsl.source, 0);
+					const at = `@group(0) @binding(${FRAME_BINDING})`;
+					if (ownCount !== expectedCount)
+						throw new Error(
+							`${name} declares ${ownCount} bindings in group 0 in its ${variant} variant, where the standard material declares ${expectedCount}, so ${at} need not name the same resource`,
+						);
+					const own = bindingType(declaration.wgsl.source, 0, FRAME_BINDING);
+					const expected = bindingType(expectedVariant.wgsl.source, 0, FRAME_BINDING);
+					if (own === undefined && expected === undefined)
+						throw new Error(
+							`neither ${name} nor the standard material declares a type at ${at} in its ${variant} variant, so the comparison has nothing to check`,
+						);
+					if (own === expected) continue;
+					throw new Error(
+						`${name} declares ${own ?? 'nothing'} at ${at} in its ${variant} variant, where the standard material declares ${expected ?? 'nothing'}`,
+					);
+				}
+				if (withWgsl === 0)
+					throw new Error(`${name} has no variant with WGSL, so the guard compared nothing`);
+				if (compared !== withWgsl)
+					throw new Error(
+						`${name} compared ${compared} of its ${withWgsl} variants with WGSL, because the standard material has no variant of the rest by name`,
+					);
+			}
+		},
+		scaledBudget(300_000),
+	);
 });

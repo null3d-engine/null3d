@@ -16,6 +16,7 @@ import {
 	unrealLevelWeights,
 	weighted,
 } from '../../skills/null3d-port-threejs/scripts/map-bloom.mjs';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 
 /** The bloom scene's settings in UnrealBloomPass's meanings, and three.js's bloom example. */
 const SOFT = { strength: 0.5, radius: 0.2, threshold: 1 };
@@ -34,7 +35,7 @@ const SMOOTHING_GAP = 0.005;
  * so a loaded machine takes seconds where a quiet one takes under one, and the five-second default
  * fails for whoever runs the suite while something else is busy.
  */
-const TABLE_MS = 30_000;
+const TABLE_MS = scaledBudget(30_000);
 
 type Fit = ReturnType<typeof mapUnrealBloomPass>['fit'];
 

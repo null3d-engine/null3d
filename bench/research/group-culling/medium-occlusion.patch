@@ -1,0 +1,122 @@
+diff --git a/docs/concepts/culling.md b/docs/concepts/culling.md
+index 5bff0de26..ff38e3198 100644
+--- a/docs/concepts/culling.md
++++ b/docs/concepts/culling.md
+@@ -88,7 +88,7 @@ The extra passes cost GPU time: a depth draw of the occluders, a depth pyramid a
+ 
+ ### Where it runs
+ 
+-- High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset, unless the page asks for it: several mobile GPU drivers fail at GPU culling in other engines.
++- Medium, High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset, unless the page asks for it: several mobile GPU drivers fail at GPU culling in other engines.
+ - The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and the `?occlusion=on` and `?occlusion=off` switches win over the option. It is fixed while the engine runs. Compare the scene's `gpuMs` with each switch to see what it saves.
+ - It runs on WebGPU, in compatibility mode too, with or without the depth prepass. Shadow cascades, shadow tiles and scene passes cull with the frustum test alone. See-through objects draw from the sorted list of the transparent pass, and hide nothing.
+ - Its shaders download the first time the scene holds an object that may hide others. Until they are built, each camera culls once, as without occlusion culling. A game that must fetch nothing during play lists `'occlusion'` in `createEngine`'s `preload` ([loading screens](../guides/loading-screens.md#loading-everything-up-front)).
+diff --git a/docs/concepts/quality-presets.md b/docs/concepts/quality-presets.md
+index af4d292e4..dee6ca3fd 100644
+--- a/docs/concepts/quality-presets.md
++++ b/docs/concepts/quality-presets.md
+@@ -218,7 +218,7 @@ const plain = await createEngine({ canvas, sketch, depthPrepass: false });
+ 
+ ### GPU occlusion culling
+ 
+-With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the large opaque objects that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset. A check during play turns its passes off while they hide too little or make the GPU's frame longer, so a scene where they do not pay loses almost nothing.
++With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the large opaque objects that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. Medium, High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset. A check during play turns its passes off while they hide too little or make the GPU's frame longer, so a scene where they do not pay loses almost nothing.
+ 
+ The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, so `quality.settings.gpuOcclusion` is false on WebGL2. It runs beside the depth prepass, which ambient occlusion and screen-space bounce light turn on.
+ 
+diff --git a/docs/guides/performance.md b/docs/guides/performance.md
+index 4df16461a..67e72a966 100644
+--- a/docs/guides/performance.md
++++ b/docs/guides/performance.md
+@@ -287,7 +287,7 @@ On WebGL2, the `softwareOcclusion` option of `createEngine` turns occlusion cull
+ 
+ ### Occlusion culling on the GPU
+ 
+-On WebGPU, occlusion culling runs on the GPU, in two phases for each camera, and High and Ultra turn it on for desktops. The GPU picks the large opaque objects that hide others itself. It adds a depth draw of those objects, a depth pyramid and a second culling pass. A check during play keeps these passes only while they hide at least a tenth of the objects in view and the GPU's frame gets no longer. `setOccluder(false)` keeps an object whose depth costs more than it hides out of the occluders. Compare `gpuMs` with `?occlusion=on` and `?occlusion=off` to see what it saves ([Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu)).
++On WebGPU, occlusion culling runs on the GPU, in two phases for each camera, and Medium, High and Ultra turn it on for desktops. The GPU picks the large opaque objects that hide others itself. It adds a depth draw of those objects, a depth pyramid and a second culling pass. A check during play keeps these passes only while they hide at least a tenth of the objects in view and the GPU's frame gets no longer. `setOccluder(false)` keeps an object whose depth costs more than it hides out of the occluders. Compare `gpuMs` with `?occlusion=on` and `?occlusion=off` to see what it saves ([Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu)).
+ 
+ ## The depth prepass
+ 
+diff --git a/packages/engine/src/quality/presets.test.ts b/packages/engine/src/quality/presets.test.ts
+index f83729815..2c521b5a7 100644
+--- a/packages/engine/src/quality/presets.test.ts
++++ b/packages/engine/src/quality/presets.test.ts
+@@ -381,7 +381,7 @@ describe('presetSettings', () => {
+ 			shadowTileSize: 512,
+ 			heroTileSize: 2048,
+ 			pointLightShadows: false,
+-			gpuOcclusion: false,
++			gpuOcclusion: true,
+ 			lightFit: true,
+ 			morphTargets: 16,
+ 		});
+@@ -507,6 +507,7 @@ describe('presetSettings', () => {
+ 			shadowMapSize: 2048,
+ 			shadowTiles: 8,
+ 			heroTileSize: 2048,
++			gpuOcclusion: true,
+ 			morphTargets: 16,
+ 		});
+ 	});
+diff --git a/packages/engine/src/quality/presets.ts b/packages/engine/src/quality/presets.ts
+index 18d18a05d..02e604fef 100644
+--- a/packages/engine/src/quality/presets.ts
++++ b/packages/engine/src/quality/presets.ts
+@@ -431,11 +431,11 @@ export const QUALITY_SETTINGS = {
+ 	// Two-phase occlusion culling on WebGPU: objects that large opaque objects hide do not draw. It
+ 	// costs a depth-only draw of the occluders, a depth pyramid and a second culling dispatch, and
+ 	// a check during play turns those passes off while they hide too little or make the GPU's frame
+-	// longer, as another program's GPU work can. High and Ultra, which desktops run, turn it on.
++	// longer, as another program's GPU work can. Medium, High and Ultra turn it on for desktops.
+ 	// Phones and tablets keep it off on every preset until it passes on the phone GPUs whose
+ 	// drivers other engines block for GPU culling (chooser.ts, D-22).
+ 	gpuOcclusion: {
+-		presets: [false, false, true, true],
++		presets: [false, true, true, true],
+ 		changes: 'start',
+ 		values: 'flag',
+ 	},
+@@ -778,7 +778,7 @@ export interface QualitySettings {
+ 	 * objects that showed in the last frame and look large on the screen, and skips every object
+ 	 * that lies wholly behind them. `setOccluder(false)` keeps an object out of them. A check during
+ 	 * play turns the extra passes off while they hide too little or make the GPU's frame longer,
+-	 * and on again when they pay. High and Ultra turn it on for desktops, and phones and tablets
++	 * and on again when they pay. Medium, High and Ultra turn it on for desktops, and phones and tablets
+ 	 * keep it off unless the page asks for it. The page's `gpuOcclusion` option of `createEngine`
+ 	 * sets it, and `set` does not take it. It is always false on WebGL2, and when the depth prepass
+ 	 * is on.
+diff --git a/skills/null3d-develop/references/api-quickref.md b/skills/null3d-develop/references/api-quickref.md
+index ca180ffcb..5b98ce031 100644
+--- a/skills/null3d-develop/references/api-quickref.md
++++ b/skills/null3d-develop/references/api-quickref.md
+@@ -39,7 +39,7 @@ const engine = await createEngine({
+   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
+   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
+   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
+-  gpuOcclusion: false,   // false keeps the GPU from skipping what large opaque objects hide (WebGPU only); on at High and Ultra on desktops
++  gpuOcclusion: false,   // false keeps the GPU from skipping what large opaque objects hide (WebGPU only); on at Medium, High and Ultra on desktops
+   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
+   keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
+   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
+@@ -730,7 +730,7 @@ quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // tex
+ quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
+ quality.settings.depthPrepass;          // true when opaque depth draws first; fixed at the start, as antialias is
+ await createEngine({ canvas, sketch, momentTransparency: true });  // (0.3) blend the blended surfaces in the moment layer, without the sort; fixed at the start, off on every preset
+-quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects (High and Ultra on desktops); fixed at the start
++quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque objects (Medium, High and Ultra on desktops); fixed at the start
+ quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
+ quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
+ quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)
+diff --git a/skills/null3d-develop/references/performance.md b/skills/null3d-develop/references/performance.md
+index 1ce0ddf8e..23f02c896 100644
+--- a/skills/null3d-develop/references/performance.md
++++ b/skills/null3d-develop/references/performance.md
+@@ -181,7 +181,7 @@ Two opaque surfaces at exactly the same depth show the one drawn last with the p
+ 
+ ### GPU occlusion culling
+ 
+-With `gpuOcclusion` on, each camera draws the depth of the large opaque objects and instance rows that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. The GPU picks the objects that hide others, so nothing needs a mark; `setOccluder(false)` keeps one out. High and Ultra turn it on for desktops, and phones and tablets keep it off. It runs only on WebGPU. Engine docs: `concepts/culling`.
++With `gpuOcclusion` on, each camera draws the depth of the large opaque objects and instance rows that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. The image matches the image without it, and no object shows a frame late. The GPU picks the objects that hide others, so nothing needs a mark; `setOccluder(false)` keeps one out. Medium, High and Ultra turn it on for desktops, and phones and tablets keep it off. It runs only on WebGPU. Engine docs: `concepts/culling`.
+ 
+ A check during play turns its passes off while they hide less than a tenth of the objects in view or make the GPU's frame longer, so open scenes lose almost nothing. It pays where walls, hills and large objects hide many detailed objects, such as the streets of a city. Compare the scene's GPU time with `?occlusion=on` and `?occlusion=off`. Shadow passes and see-through objects do not use it.
+ 

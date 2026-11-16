@@ -1,0 +1,380 @@
+[
+	{
+		"scene": "s1",
+		"kind": "null3d-webgpu",
+		"summary": {
+			"runs": 1,
+			"cpuMs": {
+				"median": 2.694999933242798,
+				"min": 2.694999933242798,
+				"max": 2.694999933242798
+			},
+			"cpuP95Ms": 3.5899999141693115,
+			"intervalP95Ms": 3.674999952316284,
+			"intervalP99Ms": 5.170000076293945,
+			"presentedFps": 346.875192849625,
+			"allThreadsMs": 3.686000071000308,
+			"gpuMs": 1.8017639517784119,
+			"uploadBytes": 4801548,
+			"drawCalls": 2,
+			"visibleEntries": null,
+			"completedFps": 346.8955570048599,
+			"gpuLatencyMs": 3.072499990463257,
+			"refreshHz": 48,
+			"phases": {
+				"sketch-worker.update": 2.4100000858306885,
+				"sketch-worker.commands": 0.004999995231628418,
+				"sketch-worker.transforms": 0,
+				"sketch-worker.batches": 0.23499999940395355,
+				"sketch-worker.cull": 0.005000010132789612,
+				"sketch-worker.record": 0.030000001192092896,
+				"render-worker.replay": 0.17000000178813934
+			},
+			"threadsMs": {
+				"sketch-worker": 2.694999933242798,
+				"render-worker": 0.17499999701976776,
+				"job-0": 0.02500000037252903,
+				"job-1": 0.014999999664723873,
+				"job-2": 0.014999999664723873,
+				"job-3": 0.02500000037252903,
+				"job-4": 0.02500000037252903,
+				"job-5": 0.01899999938905239,
+				"job-6": 0.02500000037252903,
+				"job-7": 0.024000000208616257,
+				"job-8": 0.024000000208616257,
+				"job-9": 0.02500000037252903,
+				"job-10": 0.02500000037252903,
+				"job-11": 0.024000000208616257,
+				"job-12": 0.02500000037252903,
+				"job-13": 0.01899999938905239,
+				"job-14": 0.029999999329447746,
+				"job-15": 0.01899999938905239
+			},
+			"updateMs": 2.4100000858306885
+		},
+		"machineLoad": {
+			"lowest": 5.3740234375,
+			"highest": 6.171875
+		}
+	},
+	{
+		"scene": "s2",
+		"kind": "null3d-webgpu",
+		"summary": {
+			"runs": 1,
+			"cpuMs": {
+				"median": 0.11499999463558197,
+				"min": 0.11499999463558197,
+				"max": 0.11499999463558197
+			},
+			"cpuP95Ms": 0.14999999105930328,
+			"intervalP95Ms": 0.6100000143051147,
+			"intervalP99Ms": 1.690000057220459,
+			"presentedFps": 2379.5820715508926,
+			"allThreadsMs": 0.1550000011920929,
+			"gpuMs": 0.25591200590133667,
+			"uploadBytes": 250116,
+			"drawCalls": 101,
+			"visibleEntries": null,
+			"completedFps": 2379.582074745209,
+			"gpuLatencyMs": 0.7300000190734863,
+			"refreshHz": 48,
+			"phases": {
+				"sketch-worker.update": 0,
+				"sketch-worker.commands": 0,
+				"sketch-worker.transforms": 0.08500000834465027,
+				"sketch-worker.batches": 0,
+				"sketch-worker.cull": 0,
+				"sketch-worker.record": 0.024999991059303284,
+				"render-worker.replay": 0.040000006556510925
+			},
+			"threadsMs": {
+				"sketch-worker": 0.11499999463558197,
+				"render-worker": 0.040000006556510925
+			},
+			"updateMs": 0
+		},
+		"machineLoad": {
+			"lowest": 6.171875,
+			"highest": 6.53955078125
+		}
+	},
+	{
+		"scene": "s3",
+		"kind": "null3d-webgpu",
+		"summary": {
+			"runs": 1,
+			"cpuMs": {
+				"median": 0.1850000023841858,
+				"min": 0.1850000023841858,
+				"max": 0.1850000023841858
+			},
+			"cpuP95Ms": 0.2549999952316284,
+			"intervalP95Ms": 2.744999885559082,
+			"intervalP99Ms": 3.450000047683716,
+			"presentedFps": 656.0568050463079,
+			"allThreadsMs": 0.33500000834465027,
+			"gpuMs": 1.147691011428833,
+			"uploadBytes": 21748,
+			"drawCalls": 5,
+			"visibleEntries": null,
+			"completedFps": 656.0572422940227,
+			"gpuLatencyMs": 2.6600000858306885,
+			"refreshHz": 48,
+			"phases": {
+				"sketch-worker.update": 0.025000005960464478,
+				"sketch-worker.commands": 0.004999995231628418,
+				"sketch-worker.transforms": 0.019999995827674866,
+				"sketch-worker.batches": 0.004999995231628418,
+				"sketch-worker.cull": 0.030000001192092896,
+				"sketch-worker.record": 0.08999998867511749,
+				"render-worker.replay": 0.1550000011920929
+			},
+			"threadsMs": {
+				"sketch-worker": 0.17500001192092896,
+				"render-worker": 0.1599999964237213
+			},
+			"updateMs": 0.025000005960464478
+		},
+		"machineLoad": {
+			"lowest": 6.53955078125,
+			"highest": 12.4580078125
+		}
+	},
+	{
+		"scene": "s4",
+		"kind": "null3d-webgpu",
+		"summary": {
+			"runs": 1,
+			"cpuMs": {
+				"median": 0.32999998331069946,
+				"min": 0.32999998331069946,
+				"max": 0.32999998331069946
+			},
+			"cpuP95Ms": 0.6800000071525574,
+			"intervalP95Ms": 4.925000190734863,
+			"intervalP99Ms": 8.992100229263297,
+			"presentedFps": 483.7660306966123,
+			"allThreadsMs": 0.627999983727932,
+			"gpuMs": 1.0163595080375671,
+			"uploadBytes": 20692,
+			"drawCalls": 112,
+			"visibleEntries": null,
+			"completedFps": 483.76554803713884,
+			"gpuLatencyMs": 3.065000057220459,
+			"refreshHz": 48,
+			"phases": {
+				"sketch-worker.update": 0.015000000596046448,
+				"sketch-worker.commands": 0.004999995231628418,
+				"sketch-worker.transforms": 0.04500000178813934,
+				"sketch-worker.batches": 0,
+				"sketch-worker.cull": 0.015000000596046448,
+				"sketch-worker.record": 0.2199999988079071,
+				"render-worker.replay": 0.16500000655651093
+			},
+			"threadsMs": {
+				"sketch-worker": 0.32499998807907104,
+				"render-worker": 0.17000000178813934,
+				"job-0": 0.03400000184774399,
+				"job-1": 0.03400000184774399,
+				"job-2": 0,
+				"job-3": 0,
+				"job-4": 0,
+				"job-5": 0,
+				"job-6": 0,
+				"job-7": 0,
+				"job-8": 0,
+				"job-9": 0,
+				"job-10": 0,
+				"job-11": 0,
+				"job-12": 0,
+				"job-13": 0,
+				"job-14": 0,
+				"job-15": 0
+			},
+			"updateMs": 0.015000000596046448
+		},
+		"trace": {
+			"seconds": 30,
+			"targetFps": 48,
+			"heldSeconds": 30,
+			"lowestFps": 289,
+			"lowestRenderScale": 1,
+			"steps": 0
+		},
+		"machineLoad": {
+			"lowest": 12.4580078125,
+			"highest": 16.39501953125
+		}
+	},
+	{
+		"scene": "s5",
+		"kind": "null3d-webgpu",
+		"summary": {
+			"runs": 1,
+			"cpuMs": {
+				"median": 2.4700000286102295,
+				"min": 2.4700000286102295,
+				"max": 2.4700000286102295
+			},
+			"cpuP95Ms": 2.984999895095825,
+			"intervalP95Ms": 5.630000114440918,
+			"intervalP99Ms": 6.459200019836427,
+			"presentedFps": 233.3362983589833,
+			"allThreadsMs": 4.98799994494766,
+			"gpuMs": 4.375891447067261,
+			"uploadBytes": 1616356,
+			"drawCalls": 45,
+			"visibleEntries": null,
+			"completedFps": 233.3376513336496,
+			"gpuLatencyMs": 6.900000095367432,
+			"refreshHz": 48,
+			"phases": {
+				"sketch-worker.update": 0.10499998927116394,
+				"sketch-worker.commands": 0.009999990463256836,
+				"sketch-worker.transforms": 1.75,
+				"sketch-worker.batches": 0.004999995231628418,
+				"sketch-worker.cull": 0.04500000178813934,
+				"sketch-worker.record": 0.5049999952316284,
+				"render-worker.replay": 1.225000023841858
+			},
+			"threadsMs": {
+				"sketch-worker": 2.4700000286102295,
+				"render-worker": 1.2350000143051147,
+				"job-0": 0.04399999976158142,
+				"job-1": 0.04399999976158142,
+				"job-2": 0.04399999976158142,
+				"job-3": 0.04899999871850014,
+				"job-4": 0.04899999871850014,
+				"job-5": 0.04399999976158142,
+				"job-6": 0.04399999976158142,
+				"job-7": 0.039000000804662704,
+				"job-8": 0.04399999976158142,
+				"job-9": 0.04899999871850014,
+				"job-10": 0.04899999871850014,
+				"job-11": 0.04399999976158142,
+				"job-12": 0.04399999976158142,
+				"job-13": 0.03500000014901161,
+				"job-14": 0.04399999976158142,
+				"job-15": 0.04399999976158142
+			},
+			"updateMs": 0.10499998927116394
+		},
+		"trace": {
+			"seconds": 30,
+			"targetFps": 48,
+			"heldSeconds": 30,
+			"lowestFps": 178,
+			"lowestRenderScale": 1,
+			"steps": 0
+		},
+		"machineLoad": {
+			"lowest": 16.39501953125,
+			"highest": 17.18115234375
+		}
+	},
+	{
+		"scene": "s6",
+		"kind": "null3d-webgpu",
+		"summary": {
+			"runs": 1,
+			"cpuMs": {
+				"median": 0.2549999952316284,
+				"min": 0.2549999952316284,
+				"max": 0.2549999952316284
+			},
+			"cpuP95Ms": 0.41000002473592756,
+			"intervalP95Ms": 3.055000066757202,
+			"intervalP99Ms": 3.9800000190734863,
+			"presentedFps": 470.46784108829144,
+			"allThreadsMs": 0.48900000378489494,
+			"gpuMs": 1.3697705268859863,
+			"uploadBytes": 31940,
+			"drawCalls": 1134,
+			"visibleEntries": null,
+			"completedFps": 470.4677626451076,
+			"gpuLatencyMs": 3.875,
+			"refreshHz": 48,
+			"phases": {
+				"sketch-worker.update": 0.005000010132789612,
+				"sketch-worker.commands": 0.004999995231628418,
+				"sketch-worker.transforms": 0.07500000298023224,
+				"sketch-worker.batches": 0,
+				"sketch-worker.cull": 0.019999995827674866,
+				"sketch-worker.record": 0.07500000298023224,
+				"render-worker.replay": 0.25
+			},
+			"threadsMs": {
+				"sketch-worker": 0.1850000023841858,
+				"render-worker": 0.2549999952316284,
+				"job-0": 0.008999999612569809,
+				"job-1": 0.008999999612569809,
+				"job-2": 0.008999999612569809,
+				"job-3": 0.008999999612569809
+			},
+			"updateMs": 0.005000010132789612
+		},
+		"trace": {
+			"seconds": 30,
+			"targetFps": 48,
+			"heldSeconds": 30,
+			"lowestFps": 352,
+			"lowestRenderScale": 1,
+			"steps": 0
+		},
+		"load": {
+			"runs": 1,
+			"firstFrameMs": 3192.8799999952316,
+			"wholeMs": 3214.7999999970198,
+			"kitSeconds": 2.1702600000053645,
+			"towersSeconds": 2.206405000001192,
+			"bytes": 54207994
+		},
+		"machineLoad": {
+			"lowest": 13.31005859375,
+			"highest": 17.18115234375
+		}
+	},
+	{
+		"scene": "s7",
+		"kind": "null3d-webgpu",
+		"summary": {
+			"runs": 1,
+			"cpuMs": {
+				"median": 0.04500000178813934,
+				"min": 0.04500000178813934,
+				"max": 0.04500000178813934
+			},
+			"cpuP95Ms": 0.13500000536441803,
+			"intervalP95Ms": 1.2649999856948853,
+			"intervalP99Ms": 1.9850000143051147,
+			"presentedFps": 1536.8669558705492,
+			"allThreadsMs": 0.07499998807907104,
+			"gpuMs": 0.3656190037727356,
+			"uploadBytes": 1548,
+			"drawCalls": 5,
+			"visibleEntries": null,
+			"completedFps": 1536.8777057269012,
+			"gpuLatencyMs": 1.0449999570846558,
+			"refreshHz": 48,
+			"phases": {
+				"sketch-worker.update": 0,
+				"sketch-worker.commands": 0,
+				"sketch-worker.transforms": 0,
+				"sketch-worker.batches": 0,
+				"sketch-worker.cull": 0.004999995231628418,
+				"sketch-worker.record": 0.019999995827674866,
+				"render-worker.replay": 0.040000006556510925
+			},
+			"threadsMs": {
+				"sketch-worker": 0.030000001192092896,
+				"render-worker": 0.040000006556510925
+			},
+			"updateMs": 0
+		},
+		"machineLoad": {
+			"lowest": 11.18212890625,
+			"highest": 13.31005859375
+		}
+	}
+]

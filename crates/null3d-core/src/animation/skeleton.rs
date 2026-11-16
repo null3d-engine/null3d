@@ -2,6 +2,7 @@
 
 use super::{AnimationError, MATRIX_FLOATS, Pose, filled};
 use crate::math::Affine;
+use crate::memory::{MemoryUse, buffer_bytes};
 
 /// The parent of a joint that has none, a root of the skeleton: the scene's value for an object
 /// with no parent.
@@ -26,6 +27,14 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
+    /// The bytes that the skeleton's arrays hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = buffer_bytes(&self.parents);
+        use_.add(self.rest.memory_use());
+        use_.add(buffer_bytes(&self.inverse_bind));
+        use_
+    }
+
     /// A skeleton of `parents.len()` joints. Each parent is [`NO_PARENT`] or an earlier joint.
     /// `rest` holds [`REST_FLOATS`] values per joint, and `inverse_bind` one row-major 3 × 4
     /// matrix of 12 values per joint: the inverse of the joint's matrix in the skeleton's space

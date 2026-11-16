@@ -4,6 +4,7 @@
 // process so that the bundle holds the memory that it needs.
 import { describe, expect, it } from 'bun:test';
 import { bundleOne, holds } from '../../../../tests/lib/release-build.ts';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 
 /** Text that only the lines' shader holds: its color input in WGSL and in GLSL. */
 const LINES_SHADER = /srgb: vec4<f32>|vec4 srgb;/;
@@ -11,9 +12,13 @@ const LINES_SHADER = /srgb: vec4<f32>|vec4 srgb;/;
 const VIEWS_SHADER = 'depth_gray';
 
 describe('the release build of the renderer', () => {
-	it('holds none of the debug views or their shaders', async () => {
-		const release = await bundleOne('render/draw.ts', 'production');
-		expect(holds(release, LINES_SHADER)).toBe(false);
-		expect(holds(release, VIEWS_SHADER)).toBe(false);
-	}, 120_000);
+	it(
+		'holds none of the debug views or their shaders',
+		async () => {
+			const release = await bundleOne('render/draw.ts', 'production');
+			expect(holds(release, LINES_SHADER)).toBe(false);
+			expect(holds(release, VIEWS_SHADER)).toBe(false);
+		},
+		scaledBudget(120_000),
+	);
 });

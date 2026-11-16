@@ -11,6 +11,7 @@
 // surface, which must draw as the standard material does. ?noenv leaves the room out, for the test
 // of the files that the first layered material downloads.
 import { defineSketch, type StandardOptions } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 
@@ -49,7 +50,8 @@ function texels(texel: (x: number, y: number) => readonly number[]): Uint8Array 
 	return data;
 }
 
-export default defineSketch(async ({ scene, materials, geometry, textures, assets }) => {
+export default defineSketch(async ({ scene, materials, geometry, textures, assets, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#1b1e24');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({

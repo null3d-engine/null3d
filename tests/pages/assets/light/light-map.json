@@ -1,0 +1,10 @@
+{
+	"format": "null3d.baked-light",
+	"version": 1,
+	"kind": "light-map",
+	"width": 2,
+	"height": 2,
+	"encoding": "rgb8",
+	"radiance": "/wAAAP8AAAD/////",
+	"direction": "AH8AfwAAAAB/gQAA"
+}

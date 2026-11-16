@@ -21,15 +21,20 @@ const WINDOW_SECONDS = 0.5;
  */
 const SETTLE_LIMIT_SECONDS = 150;
 
+/** The fog that the page asks for: the volumetric fog with ?fog=off left out, for comparison. */
+const FOG = new URLSearchParams(location.search).get('fog') === 'off' ? 'off' : 'on';
+
 run('fog-live', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	const sketch = new URL('./sketches/fog-volume-sketch.ts', import.meta.url);
+	sketch.searchParams.set('fog', FOG);
+	sketch.searchParams.set('slices', '32');
+	sketch.searchParams.set('scale', '1');
+	sketch.searchParams.set('fixed', '');
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL(
-			'./sketches/fog-volume-sketch.ts?fog=on&slices=32&scale=1&fixed',
-			import.meta.url,
-		),
+		sketch,
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];
@@ -38,8 +43,8 @@ run('fog-live', async () => {
 	// The blend settles per frame, not per second, so wait for a count of frames. A software
 	// renderer draws only a few frames a second, and a fixed time would capture too few.
 	// Each window counts the frames that finish inside it, so a window shorter than one frame
-	// misses most of them: on 20 October 2026 a software GPU whose frames took seconds was counted
-	// at 19 frames in the whole cap. A window that counted none doubles until it holds whole
+	// misses most of them: a software GPU whose frames take seconds is counted at 19 frames in the
+	// whole cap. A window that counted none doubles until it holds whole
 	// frames, so the count follows the device's pace and still stops at the cap.
 	const started = performance.now();
 	let frames = 0;
@@ -53,6 +58,9 @@ run('fog-live', async () => {
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
+		// The path the engine started on. The volumetric fog draws on the HDR path alone, so a
+		// compatibility path that stays 8-bit draws none, and its frame cannot be compared.
+		hdr: engine.capabilities.hdr,
 		width: frame.width,
 		height: frame.height,
 		frames,

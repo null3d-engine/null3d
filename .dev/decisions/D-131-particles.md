@@ -1,12 +1,12 @@
 # D-131: Particles in closed form on the GPU
 
-Status: decided by the helper of M2-EX20 on 11 October 2026, for the owner's review. Built: the particles add-on is on main (`24f500d5a`). The owner's review is pending. Date: 2026-10-11. Task: M2-EX20.
+Status: decided by the helper of M2-EX20, for the owner's review. Built: the particles add-on is on main (`24f500d5a`). Task: M2-EX20.
 
-Summary: The `@null3d/particles` add-on makes particle systems that the GPU works out in closed form, from each particle's birth and age. The motion takes gravity, drag toward the wind, simplex-noise turbulence and a ground; the look takes curves of color, alpha and size over life. The CPU writes a 32-byte record once per birth. No pass simulates particles, so the same shaders run on WebGPU, compatibility mode and WebGL2. Soft particles read a copy of the camera's opaque depth, which the frame makes only while a soft system draws. Nothing downloads or runs until a sketch makes its first system.
+Summary: The `@null3d/particles` add-on makes particle systems that the GPU works out in closed form from each particle's birth and age, with gravity, drag, turbulence, a ground and curves over life. The CPU writes a 32-byte record once per birth and no pass simulates, so the same shaders run on all three GPU paths. Soft particles read a depth copy that exists only while a soft system draws, and nothing loads before the first system.
 
 ## Question
 
-The owner's ruling of 11 October 2026 ([D-132](D-132-showcase-look-and-features-2026-10-11.md), after [D-117](D-117-showcase-features-before-1-0.md)) asks for very beautiful showcase scenes. Creek, Battle and Night town need sparks, smoke, leaves, fireflies and magic. How do particles move, where does their state live, and how do they reach the screen on all three GPU paths? What does a scene without particles pay?
+The owner's look bar ([D-132](D-132-showcase-look-and-features.md), after [D-117](D-117-showcase-features-before-1-0.md)) asks for very beautiful showcase scenes. Creek, Battle and Night town need sparks, smoke, leaves, fireflies and magic. How do particles move, where does their state live, and how do they reach the screen on all three GPU paths? What does a scene without particles pay?
 
 ## Rule
 
@@ -33,7 +33,7 @@ Option A gives up forces that depend on a particle's own state, such as collisio
 
 ### How a system reaches the frame
 
-A system is a scene object with a material of the particle shading. It culls, takes layers and sorts among the blended objects as one object, by its bounding sphere. The sorted layout gives it a bucket of its own. Both frame builders record its draw: six vertices for each record, from the system's own vertex buffer, with the record as instance data. The engine had no instance-step vertex buffers on WebGL2: its vertex arrays now take a divisor for an instance-step layout and integer attributes.
+A system is a scene object with a material of the particle shading. It culls, takes layers and sorts among the blended objects as one object, by its bounding sphere. The sorted layout gives it a bucket of its own. Both frame builders record its draw: six vertices for each record, from the system's own vertex buffer, with the record as instance data. On WebGL2 the vertex arrays take a divisor for an instance-step layout, and integer attributes.
 
 ### Soft particles
 
@@ -53,7 +53,7 @@ The copy splits the camera's opaque and transparent passes into two render passe
 
 ## Data
 
-Route benchmark, 11 October 2026: MacBook Pro M5 Max, Chrome, headless, in the quiet window (1-minute load 3.2 to 3.4). The target is 1280 x 720, with additive quads of 0.03 m. Each figure is the median time of one iteration, a clear and a draw, with the GPU's work:
+Route benchmark: MacBook Pro M5 Max, Chrome, headless, in a quiet window (1-minute load 3.2 to 3.4). The target is 1280 x 720, with additive quads of 0.03 m. Each figure is the median time of one iteration, a clear and a draw, with the GPU's work:
 
 | Particles | A: closed form, WebGPU | B: compute and draw, WebGPU | A: closed form, WebGL2 | B: transform feedback and draw, WebGL2 | C: CPU, one thread, with upload |
 | --- | --- | --- | --- | --- | --- |
@@ -63,13 +63,13 @@ Route benchmark, 11 October 2026: MacBook Pro M5 Max, Chrome, headless, in the q
 
 An empty pass took 0.08 ms on WebGPU and 0.03 ms on WebGL2. The closed form costs about what a simulation pass and its draw cost together. At a million particles it is within 10% on WebGPU. On WebGL2 it costs 16% more, where the transform feedback route draws a simpler vertex shader. It needs no simulation pass, no second state buffer and no readback, on every path. The CPU route is 20 to 30 times slower.
 
-The first runs of B and of the WebGL2 rows measured nothing real. The compute route bound its records as writable storage in the draw's render pass, which WebGPU rejected. The WebGL2 page read a float target back as bytes, so it never waited for the GPU. Both bugs were fixed before these figures.
+Two faults make such a page measure nothing. A compute route that binds its records as writable storage in the draw's render pass fails, because WebGPU refuses it. A WebGL2 page that reads a float target back as bytes never waits for the GPU. The page has neither fault.
 
 How the data was produced: a scratch page draws each route with raw WebGPU and WebGL2, served with the isolation headers. Playwright runs it in headless Chrome: 3 warm-up rounds, then 12 rounds of 8 iterations, and the median of the rounds.
 
-**Allocation.** `bun run bench:allocation --particles` on the Mac's GPU on 11 October 2026, S1 with two systems that emit 5,500 particles per second, one of them soft. The first version of the add-on allocated 3,671 bytes per frame on the sketch's thread: it passed each particle's numbers as arguments to calls that the engine did not inline, which boxed every number. The add-on now keeps them in typed arrays and fields, and the buffer's `write` takes a typed array. The thread then allocated 345 bytes per frame on WebGPU and 342 on WebGL2, the same as S1 without particles within a few bytes, apart from the sample's own loop. The culling sphere changes only when the births outgrow it or shrink well inside it, as a call that sets it boxes its radius. The soft system's depth copy adds one render pass, whose encoder takes 64 bytes on WebGPU, as each of bloom's passes does.
+**Allocation.** `bun run bench:allocation --particles` on the Mac's GPU, S1 with two systems that emit 5,500 particles per second, one of them soft. The add-on keeps each particle's numbers in typed arrays and fields, and the buffer's `write` takes a typed array. Passed as arguments to calls that the engine does not inline, every number boxes: 3,671 bytes per frame on the sketch's thread. The thread allocates 345 bytes per frame on WebGPU and 342 on WebGL2, the same as S1 without particles within a few bytes, apart from the sample's own loop. The culling sphere changes only when the births outgrow it or shrink well inside it, as a call that sets it boxes its radius. The soft system's depth copy adds one render pass, whose encoder takes 64 bytes on WebGPU, as each of bloom's passes does.
 
-**Cost per preset.** `bun run bench:run` on S1, with and without the `particles` switch, on the Mac's GPU in the quiet window on 11 October 2026 (1-minute load 3.1 to 6.4). The switch adds about 12,500 live particles in two systems, one of them soft. Each figure is the median of 3 runs of 10 seconds:
+**Cost per preset.** `bun run bench:run` on S1, with and without the `particles` switch, on the Mac's GPU in a quiet window (1-minute load 3.1 to 6.4). The switch adds about 12,500 live particles in two systems, one of them soft. Each figure is the median of 3 runs of 10 seconds:
 
 | Preset | Page | CPU ms, without | CPU ms, with | GPU ms, without | GPU ms, with |
 | --- | --- | --- | --- | --- | --- |
@@ -95,15 +95,13 @@ Option A for the motion, the soft particles' depth copy for soft particles, and 
 
 The particle record layout adds data to the shared GPU modules of the page, sketch worker and render worker. Built-in template tables read this layout when a GPU path starts. Particle shader text and the particle add-on still load on first use.
 
-On 13 October 2026, the page module grew from 3,406 to 3,476 bytes after Brotli compression, a 70-byte increase. The branch already records the same cause for the two worker modules. Deferring all built-in template definitions would require a separate engine change.
+It adds 70 bytes after Brotli to the page module, which takes 3,476 bytes in place of 3,406, and the same cause grows the two worker modules. Loading every built-in template definition on first use would need an engine change of its own.
 
-## Addendum, 15 October 2026: the time base moves over many frames
+## Long runs
 
-The code review of 15 October found two costs in long runs, and one fault in a destroyed buffer.
-
-- **The rebase.** Birth times are 32-bit floats, so every 1,024 seconds a system moves the time that its buffer's time counts from. The first version read and rewrote every record up to the capacity in one frame, and marked them all for upload. A rain system of 1,000,000 particles then spent about 1,000,000 reads and writes and a 32 MB upload in one frame, every 17 minutes.
+- **The rebase.** Birth times are 32-bit floats, so every 1,024 seconds a system moves the time that its buffer's time counts from. Rewriting every record up to the capacity in one frame would cost a rain system of 1,000,000 particles about 1,000,000 reads and writes and a 32 MB upload in one frame, every 17 minutes.
 - **Rewriting only the live records does not work.** A record that the move skips keeps its old birth time, so its age falls by the shift. A particle that died less than one lifetime before the move then comes back to life. A system at its default capacity also has about 90% of its records live, so the saving would be small.
-- **The fix.** The two spare frame values now carry the rebase: the first record whose birth time still counts from the old base, and the shift in seconds. The particle vertex shader takes the shift off the birth times of the records from that one up (`@builtin(instance_index)`, the record's index, since a system draws from its first record). The emitter rewrites 16,384 records per frame, and writes a new birth in a record that the rewrite has not reached with the old base's time. A million records move in 62 frames, about 512 KB of upload each. The unit test `long runs` in `packages/particles/src/system.test.ts` checks every particle's age, as the GPU works it out, in every frame of a move.
-- **The event table.** A system with sub-emitters reserved its table of pending events, 80 bytes per event, for one event per sub-emitter for each record at creation: 80 MB for a capacity of 1,000,000. The table now starts at 64 events and doubles when it fills, up to the same limit. It grows while the system warms up, so `update` allocates only then.
-- **A destroyed buffer kept its views.** `ParticleBuffer.destroy` marked the views stale without dropping them, and `dropViews` then skipped the buffer, so a sketch that held a destroyed buffer kept a view of the engine's memory past a growth, against hard rule 20. `destroy` now drops them, and `packages/engine/src/scene/particles.test.ts` checks both the growth and the destroy.
-- **One cell offset per system.** The render worker computed the offset of every cell in use from each view's camera, for each system in each view, and read one. It now computes the system's own cell's offset (`CellTable::offset`).
+- **The rebase over many frames.** The two spare frame values carry the rebase: the first record whose birth time still counts from the old base, and the shift in seconds. The particle vertex shader takes the shift off the birth times of the records from that one up (`@builtin(instance_index)`, the record's index, since a system draws from its first record). The emitter rewrites 16,384 records per frame, and writes a new birth in a record that the rewrite has not reached with the old base's time. A million records move in 62 frames, about 512 KB of upload each. The unit test `long runs` in `packages/particles/src/system.test.ts` checks every particle's age, as the GPU works it out, in every frame of a move.
+- **The event table.** A system with sub-emitters keeps a table of pending events, 80 bytes per event. It starts at 64 events and doubles when it fills, up to one event per sub-emitter for each record. Reserved at that limit at creation, it would take 80 MB for a capacity of 1,000,000. It grows while the system warms up, so `update` allocates only then.
+- **A destroyed buffer drops its views.** `ParticleBuffer.destroy` drops the buffer's views. Views that it only marked stale would stay, because `dropViews` skips a destroyed buffer. A sketch that held a destroyed buffer would then keep a view of the engine's memory past a growth, against hard rule 20. `packages/engine/src/scene/particles.test.ts` checks both the growth and the destroy.
+- **One cell offset per system.** The render worker computes the offset of the system's own cell (`CellTable::offset`), not the offset of every cell in use from each view's camera.

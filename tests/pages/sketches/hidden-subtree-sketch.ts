@@ -14,7 +14,11 @@ const MOVES = 8;
 /** Frames after the show before the 'after' message. */
 const SETTLE = 6;
 
-export default defineSketch(({ scene, geometry, materials, page, time }) => {
+export default defineSketch(async ({ scene, geometry, materials, page, time, quality }) => {
+	// A test compares two of this page's frames once the scene holds still, so the picture must not
+	// move for another reason. The frame-budget governor may lower the render scale and raise it
+	// again on a slow renderer; a capture keeps the settings as set instead (D-237).
+	await quality.set({ governor: false });
 	scene.setBackground('#101418');
 	scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 2 });
 	scene.createAmbientLight({ intensity: 0.3 });

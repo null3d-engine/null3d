@@ -46,5 +46,11 @@ export const SKY_MAP = {
 	size: 256,
 	levels: 6,
 	stages: 20,
+	/**
+	 * The stage at which the map captures the light of a sky layer over it: two stages before the
+	 * last, so that the read lands before the levels that the last stage copies in. A frame then
+	 * never draws the map's levels beside the core sky's light alone.
+	 */
+	capture: 17,
 	sh: new Float32Array(27),
-} as const satisfies BuiltinEnvironment & { stages: number };
+} as const satisfies BuiltinEnvironment & { stages: number; capture: number };

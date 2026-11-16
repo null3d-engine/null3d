@@ -7,8 +7,10 @@
 //!
 //! A bucket of a weighted material draws each run once more, with its weighted pipeline, from the
 //! same records, in a call that only the camera's weighted pass records (see [`crate::weighted`]).
-//! While the camera draws that layer, its transparent pass leaves out the bucket's own calls. The
-//! records do not change with the layer, so a view's index list that stays the same keeps them.
+//! A bucket of the one-sample layer does the same with its pipelines of that layer, in calls that
+//! only the layer's pass records (see [`crate::single_layer`]). While the camera draws such a
+//! layer, its transparent pass leaves out the bucket's own calls. The records do not change with
+//! the layer, so a view's index list that stays the same keeps them.
 //!
 //! Neighboring draws that share a pipeline, a map group and a vertex page go out in one call:
 //! one multi-draw call of up to a block of records where the device has `WEBGL_multi_draw`, or one
@@ -24,6 +26,7 @@ use super::layout::{MULTI_DRAW_BLOCK_BYTES, RESIDENT};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, put_u32};
 use crate::particles::ParticlePass;
 use crate::sorted::{SortedLayout, SortedRows, SortedView};
+use crate::vertex_draws::VertexDrawTable;
 use crate::view::ViewId;
 
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
@@ -60,10 +63,13 @@ struct Call {
     /// The id of the particle system that the call draws, with its own records and groups, or 0
     /// for a call of mesh parts.
     particles: u32,
+    /// The id of the vertex draw that the call draws, which makes its vertices from its counts, or
+    /// 0 for a call of mesh parts.
+    draws: u32,
 }
 
-/// Which passes record a call: the transparent pass, which leaves out a weighted bucket's own
-/// calls while the camera draws its weighted layer, or the weighted pass.
+/// Which passes record a call: the transparent pass, which leaves out a layered bucket's own calls
+/// while the camera draws its layer, or the pass of a layer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum CallKind {
     /// A call of a bucket without a weighted pipeline.
@@ -73,17 +79,46 @@ enum CallKind {
     WeightedSorted,
     /// A weighted bucket's call in the weighted layer.
     Weighted,
+    /// A bucket's call in the moment layer's moment pass.
+    Moment,
+    /// A bucket's call in the moment layer's colour pass.
+    MomentColour,
+    /// A bucket's own call where the one-sample layer draws it, which draws it back to front in
+    /// the transparent pass while the camera draws no such layer.
+    SingleSorted,
+    /// A bucket's call in the one-sample layer.
+    Single,
 }
 
 impl CallKind {
     /// True when a pass that draws `rows` records a call of this kind.
     fn drawn_in(self, rows: SortedRows) -> bool {
         match rows {
-            SortedRows::All => self != CallKind::Weighted,
-            SortedRows::Sorted => self == CallKind::Sorted,
+            SortedRows::All => !matches!(
+                self,
+                CallKind::Weighted | CallKind::Moment | CallKind::MomentColour | CallKind::Single
+            ),
+            SortedRows::Sorted { blended, single } => match self {
+                CallKind::Sorted => true,
+                CallKind::WeightedSorted => !blended,
+                CallKind::SingleSorted => !single,
+                _ => false,
+            },
             SortedRows::Weighted => self == CallKind::Weighted,
+            SortedRows::Moment => self == CallKind::Moment,
+            SortedRows::MomentColour => self == CallKind::MomentColour,
+            SortedRows::Single => self == CallKind::Single,
         }
     }
+}
+
+/// The aligned offset after the records of the last call, where the next call that writes records
+/// starts: 0 for no calls. A call that writes no records, of a particle system or a vertex draw,
+/// leaves the offset where the call before it left it.
+fn records_after(calls: &[Call]) -> u32 {
+    calls.last().map_or(0, |call| {
+        call.records + (call.count * sizes::DRAW_RECORD_BYTES).next_multiple_of(OFFSET_ALIGNMENT)
+    })
 }
 
 /// A view's draws of the frame.
@@ -91,6 +126,9 @@ impl CallKind {
 struct ViewDraws {
     parts: Vec<PartDraw>,
     calls: Vec<Call>,
+    /// Bytes of draw records that the calls write, each call's block aligned for its dynamic
+    /// offset: the end of the last call that writes records.
+    records_bytes: u32,
 }
 
 /// Each view's draws of the transparent pass, and how the device draws many at once.
@@ -169,16 +207,17 @@ impl Transparent {
         let state = &mut self.views[view];
         state.parts.clear();
         state.calls.clear();
+        state.records_bytes = 0;
         let per_call = if self.multi_draw {
             sizes::MULTI_DRAW_RECORDS
         } else {
             1
         };
         let storage = settings.meshes();
-        let mut records = 0;
         for run in sorted.draws() {
             let bucket = layout.buckets[run.bucket as usize];
             if let Some(system) = bucket.particle_system() {
+                let records = records_after(&state.calls);
                 state.calls.push(Call {
                     pipeline: bucket.pipeline,
                     textures: bucket.textures,
@@ -189,23 +228,44 @@ impl Transparent {
                     repeat: false,
                     kind: CallKind::Sorted,
                     particles: system,
+                    draws: 0,
+                });
+                continue;
+            }
+            if let Some(id) = bucket.vertex_draw() {
+                let records = records_after(&state.calls);
+                state.calls.push(Call {
+                    pipeline: bucket.pipeline,
+                    textures: bucket.textures,
+                    page: u32::MAX,
+                    first: state.parts.len() as u32,
+                    count: 0,
+                    records,
+                    repeat: false,
+                    kind: CallKind::Sorted,
+                    particles: 0,
+                    draws: id,
                 });
                 continue;
             }
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            // A run that draws its back faces, then its front faces, or once more in the weighted
-            // layer, starts calls of its own, so its later passes can draw the same parts with the
-            // same records.
+            // A run that draws its back faces, then its front faces, or once more in a layer,
+            // starts calls of its own, so its later passes can draw the same parts with the same
+            // records.
             let first_call = state.calls.len();
             let weighted = bucket.weighted != 0;
-            let kind = if weighted {
+            let moment = bucket.moment != 0;
+            let single = bucket.single != 0;
+            let kind = if weighted || moment {
                 CallKind::WeightedSorted
+            } else if single {
+                CallKind::SingleSorted
             } else {
                 CallKind::Sorted
             };
-            let mut alone = bucket.back != 0 || weighted;
+            let mut alone = bucket.back != 0 || weighted || moment || single;
             let pipeline = if bucket.back != 0 {
                 bucket.back
             } else {
@@ -218,6 +278,7 @@ impl Transparent {
                             && !call.repeat
                             && call.kind == kind
                             && call.particles == 0
+                            && call.draws == 0
                             && call.textures == bucket.textures
                             && call.page == part.page
                             && call.count < per_call
@@ -228,11 +289,7 @@ impl Transparent {
                         call.count += 1;
                     }
                 } else {
-                    if let Some(call) = state.calls.last() {
-                        records = call.records
-                            + (call.count * sizes::DRAW_RECORD_BYTES)
-                                .next_multiple_of(OFFSET_ALIGNMENT);
-                    }
+                    let records = records_after(&state.calls);
                     state.calls.push(Call {
                         pipeline,
                         textures: bucket.textures,
@@ -243,6 +300,7 @@ impl Transparent {
                         repeat: false,
                         kind,
                         particles: 0,
+                        draws: 0,
                     });
                 }
                 state.parts.push(PartDraw {
@@ -267,7 +325,7 @@ impl Transparent {
                 }
             }
             if weighted {
-                for k in own {
+                for k in own.clone() {
                     let first = state.calls[k];
                     state.calls.push(Call {
                         pipeline: bucket.weighted,
@@ -277,7 +335,45 @@ impl Transparent {
                     });
                 }
             }
+            // The one-sample layer draws the run's back faces, then its front faces, as the
+            // transparent pass does.
+            if single {
+                let back = (bucket.single_back != 0).then_some(bucket.single_back);
+                for pipeline in back.into_iter().chain([bucket.single]) {
+                    for k in own.clone() {
+                        let first = state.calls[k];
+                        state.calls.push(Call {
+                            pipeline,
+                            repeat: true,
+                            kind: CallKind::Single,
+                            ..first
+                        });
+                    }
+                }
+            }
+            if moment {
+                for k in own.clone() {
+                    let first = state.calls[k];
+                    state.calls.push(Call {
+                        pipeline: bucket.moment,
+                        repeat: true,
+                        kind: CallKind::Moment,
+                        ..first
+                    });
+                }
+                for k in own {
+                    let first = state.calls[k];
+                    state.calls.push(Call {
+                        pipeline: bucket.moment_colour,
+                        repeat: true,
+                        kind: CallKind::MomentColour,
+                        ..first
+                    });
+                }
+            }
         }
+        let total = records_after(&state.calls);
+        state.records_bytes = total;
     }
 
     /// Writes a view's draw records into the ring slot at `slot`, from its transparent part at
@@ -292,10 +388,10 @@ impl Transparent {
         at: u32,
     ) -> Result<(), RecordError> {
         let state = &self.views[view];
-        let Some(last) = state.calls.last() else {
+        if state.calls.last().is_none() {
             return Ok(());
-        };
-        let bytes = last.records + last.count * sizes::DRAW_RECORD_BYTES;
+        }
+        let bytes = state.records_bytes;
         let (from, records) = arena.push_zeroed(bytes as usize)?;
         for call in state.calls.iter().filter(|call| !call.repeat) {
             let parts = &state.parts[call.first as usize..][..call.count as usize];
@@ -317,7 +413,7 @@ impl Transparent {
     /// offset of the transparent part of the view's ring slot of draw records. It leaves out each
     /// call whose maps' group `hidden` names: a group that binds a target that the view draws
     /// into, or one that it does not read. `rows` picks the calls: those of the transparent pass,
-    /// or of the camera's weighted layer.
+    /// or of one of the camera's layers.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
@@ -331,6 +427,7 @@ impl Transparent {
         groups: impl Fn(&mut DrawList) -> Result<(), RecordError>,
         hidden: &dyn Fn(u32) -> bool,
         particles: &ParticlePass,
+        vertex_draws: &VertexDrawTable,
     ) -> Result<(), RecordError> {
         let state = &self.views[view];
         if !state.calls.iter().any(|call| call.kind.drawn_in(rows)) {
@@ -349,6 +446,20 @@ impl Transparent {
                 if particles.record(list, id, call.particles, call.pipeline, call.textures)? {
                     groups(list)?;
                     (pipeline, textures, page) = (None, 0, None);
+                }
+                continue;
+            }
+            // A vertex draw makes its vertices and its copies from its two counts, so it sets no
+            // vertex buffer and no index buffer. The next mesh draw binds its own.
+            if call.draws != 0 {
+                let (count, instances) = vertex_draws.counts(call.draws);
+                if count > 0 && instances > 0 {
+                    if pipeline != Some(call.pipeline) {
+                        list.push(Op::SetPipeline, &[call.pipeline])?;
+                        pipeline = Some(call.pipeline);
+                    }
+                    list.push(Op::Draw, &[count, instances, 0, 0])?;
+                    page = None;
                 }
                 continue;
             }

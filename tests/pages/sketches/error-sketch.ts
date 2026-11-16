@@ -1,10 +1,11 @@
-// When the page asks, raises six engine errors and catches each. It posts each error's code,
+// When the page asks, raises seven engine errors and catches each. It posts each error's code,
 // message and name to the page, and whether the sketch sees it as an EngineError. The scene API
 // rejects the color itself. The engine core rejects the active count past the batch's capacity,
 // and two meshes from arrays: one with an index past its vertices, and one with a texture
 // coordinate that is not a number. The sketch makes the fifth error with the EngineError class that
-// it imports. The core's render graph rejects the last: a scene pass that reads a texture no pass
-// writes. In a production build, the sketch's bundle holds its own copy of the engine's error
+// it imports. The core's render graph rejects the next: a scene pass that reads a texture no pass
+// writes. The engine refuses a sky layer whose feature description names the wrong frame. In a
+// production build, the sketch's bundle holds its own copy of the engine's error
 // code, apart from the copy in the engine's worker code. A thread's first error loads the text of
 // the fixes, so the sketch reports the caught errors at once, and again after that text has had
 // time to arrive: the second report shows the messages that the errors end with.
@@ -26,8 +27,8 @@ const caught: unknown[] = [];
 const FIX_WAIT_MS = 250;
 /**
  * The most the sketch waits for the fixes' text. A thread's first error fetches the text, and a
- * loaded machine or a production build can take longer than a second over it: on 20 October 2026
- * a run reported the short messages after the fixed wait.
+ * loaded machine or a production build can take longer than a second over it, so a fixed wait can
+ * report the short messages.
  */
 const FIX_LIMIT_MS = 15_000;
 /** A phrase that every message holds only once the fixes' text has arrived. */
@@ -95,6 +96,20 @@ export default defineSketch(({ scene, materials, geometry, page, render }) => {
 					size: [64, 64],
 					reads: ['nothing'],
 				}),
+			),
+			// A sky layer's description must record at the background point. Every other value is
+			// right, so only the frame makes the error.
+			raised(() =>
+				scene.setSkyLayer(
+					{
+						name: 'broken-layer',
+						frame: 'opaque',
+						kind: 'draw',
+						provides: ['sky'],
+						views: ['main', 'scenePass', 'reflection'],
+					} as never,
+					{ wgsl: {} as never },
+				),
 			),
 		]);
 		const deadline = performance.now() + FIX_LIMIT_MS;

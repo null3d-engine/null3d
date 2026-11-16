@@ -31,8 +31,8 @@ run('bloom-switch', async () => {
 		});
 	});
 	// A software GPU draws a frame in hundreds of milliseconds, and building bloom's pipelines holds
-	// the frame loop for longer still: on 20 October 2026 the settle alone outlasted the window, so
-	// no frame ran inside it and the objects those frames make went uncounted. The windows that
+	// the frame loop for longer still: the settle alone can outlast the window, so no frame runs
+	// inside it and the objects those frames make go uncounted. The windows that
 	// follow stretch to hold whole frames past the settle.
 	const slow = before.intervalMs.p99 > 100;
 	const across = engine.measure(slow ? SECONDS * 20 : SECONDS * 3);

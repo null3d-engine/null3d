@@ -1,0 +1,8 @@
+{
+	"caps": "ground",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"alpha": { "floor": 32, "solid": 240 }
+	}
+}

@@ -275,7 +275,12 @@ The sketch downloads its files at once, and posts how far the downloads have com
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets, page }) => {
-  assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+  assets.onProgress((loaded, total) =>
+    page.post('loading', {
+      text: 'Downloading the scene files',
+      value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+    }),
+  );
   await assets.preload(['/models/knight.glb', '/env/sunset.hdr']);
 
   // Both files come from memory now.
@@ -451,27 +456,86 @@ export default defineSketch(({ scene, geometry, materials, textures, render, tim
   const above = scene.createOrthographicCamera({ height: 16, near: 1, far: 40, position: [0, 20, 0] });
   above.setRotationEuler(-Math.PI / 2, 0, 0);
   const map = render.addPass({ kind: 'scene', camera: above, writes: 'map', size: [256, 256] });
+  // The map needs a new image only every third frame.
+  render.setPassEvery(map, 3);
   scene.createMesh({
     mesh: geometry.plane({ width: 2.5, height: 2.5 }),
     material: materials.unlit({ map: textures.fromPass(map) }),
     position: [0, 2, -3],
   });
 
-  let frame = 0;
   return {
     onUpdate() {
       carts.forEach((cart, k) => {
         const angle = time.now * 0.5 + (k * Math.PI * 2) / carts.length;
         cart.setPosition(Math.cos(angle) * 6, 0.5, Math.sin(angle) * 6);
       });
-      frame++;
-      render.setPassEnabled(map, frame % 3 === 0);
     },
   };
 });
 ```
 
 A pass never draws the objects that show its own texture, so the screen does not show itself. A pass that nothing shows costs nothing. [Render graph API](../api/render.md) says what a scene pass draws in this version.
+
+## Screens in the world
+
+An `OffscreenCanvas` in the sketch is a texture. Draw on it with the 2D context, and refresh only the rectangle that changed. Here the screen shows a score that counts up, on a panel in the world.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+/** The screen's texture, in texels. */
+const SIZE = 512;
+/** The score's rectangle, in texels, from the canvas's top-left corner. */
+const SCORE = { x: 32, y: 32, width: 448, height: 96 };
+
+export default defineSketch(({ scene, geometry, materials, textures, time }) => {
+  scene.setBackground('#141a22');
+  const camera = scene.createPerspectiveCamera({ fov: 45, position: [0, 0, 3.4], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+  scene.createAmbientLight({ intensity: 0.8 });
+
+  const canvas = new OffscreenCanvas(SIZE, SIZE);
+  // willReadFrequently keeps the pixels where the engine reads them cheaply.
+  const context = canvas.getContext('2d', { willReadFrequently: true })!;
+  const board = textures.fromCanvas(canvas, { refreshHz: 30 });
+
+  // Paint the board once. The panel stands upright, because fromCanvas puts the canvas's last
+  // row at the bottom of a plane.
+  context.fillStyle = '#0c1420';
+  context.fillRect(0, 0, SIZE, SIZE);
+  context.strokeStyle = '#2a6df0';
+  context.lineWidth = 8;
+  context.strokeRect(4, 4, SIZE - 8, SIZE - 8);
+  context.fillStyle = '#7fb0ff';
+  context.font = 'bold 88px sans-serif';
+  context.textBaseline = 'top';
+
+  scene.createMesh({
+    mesh: geometry.plane({ width: 2.2, height: 2.2 }),
+    material: materials.unlit({ map: board }),
+  });
+
+  let shown = -1;
+  return {
+    onUpdate() {
+      const score = Math.floor(time.now * 10);
+      if (score === shown) return;
+      shown = score;
+      // Only the score's rectangle changes, so only it uploads.
+      context.fillStyle = '#0c1420';
+      context.fillRect(SCORE.x, SCORE.y, SCORE.width, SCORE.height);
+      context.fillStyle = '#7fb0ff';
+      context.fillText(String(score), SCORE.x, SCORE.y);
+      board.refresh(SCORE);
+    },
+  };
+});
+```
+
+The `refreshHz` option caps the refreshes, so a frame rate above the cap costs no canvas read. A refresh costs one `ImageData` of the rectangle and its upload, which stays within the frame's upload budget. [Textures](../api/textures.md#canvases) covers the rectangle's coordinates and what `texture.refresh` does to the rest of the texture.
+
+The screens example add-on in `examples/addons/screens` builds this pattern into one call. It adds a refresh rate for each screen, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas's coordinates. [In-world screens](../guides/screens.md) covers it.
 
 ## A trail behind a moving object
 
@@ -555,7 +619,7 @@ A point batch that you never change is static, and costs no uploads after its fi
 
 ## Hide what walls hide
 
-Mark large, solid objects as occluders. The engine then skips the objects that lie wholly behind them. Here a wall hides a field of crates from the camera. Every quality preset leaves occlusion culling off. On WebGL2, `createEngine`'s `softwareOcclusion` option turns it on, and on WebGPU its `gpuOcclusion` option.
+Large, solid objects hide the objects that lie wholly behind them, and the engine skips those. Here a wall hides a field of crates from the camera. On WebGPU, High and Ultra cull them on desktops without a mark, and `createEngine`'s `gpuOcclusion` option turns it on or off. On WebGL2, mark the wall with `occluder: true`, and `createEngine`'s `softwareOcclusion` option turns the culling on.
 
 ```ts
 import { defineSketch } from '@null3d/engine';

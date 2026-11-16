@@ -2,6 +2,7 @@ import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { ktx2Header, transcodeLevel } from '../../../../tests/lib/basis-transcoder.ts';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { encodePng } from '../png.js';
 import { ENCODER_FILES, encodeTexture, texturePixels } from './encoder.js';
 import {
@@ -14,7 +15,7 @@ import {
 } from './images.js';
 
 // Texture encodes take seconds each on a busy machine or a CI runner of four cores.
-setDefaultTimeout(60_000);
+setDefaultTimeout(scaledBudget(60_000));
 
 /**
  * The files of the official Basis Universal v2.50 encoder build (tag v2_50, commit 9bebe16, the

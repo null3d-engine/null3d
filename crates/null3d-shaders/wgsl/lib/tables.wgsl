@@ -1,7 +1,7 @@
 #define_import_path null3d::tables
 
 // The engine's tables in the frame's group: the material table, three.js's table of the split-sum
-// terms of specular light, the two tables of area lights, the images of rectangle lights, and the
+// terms of specular light, the two tables of area lights, the images of lights, and the
 // reflection probes' maps. Binding 3 is one texture array of half floats (the light_tables module
 // of the render crate): layer 0 is spare, layers 1 and 2 hold the area lights' tables in their
 // corner, the reflection probes' maps take the layers after them, and an image follows in each
@@ -22,7 +22,7 @@
 #endif
 
 /// The first column of the split-sum table in its data texture: one past a material's texels.
-const DFG_COLUMN: u32 = 15u;
+const DFG_COLUMN: u32 = 37u;
 
 /// The light tables and the probes' maps, at binding 3 of the frame's group: see the module notes.
 @group(0) @binding(3) var light_tables: texture_2d_array<f32>;
@@ -38,11 +38,27 @@ const DFG_SIZE: u32 = 16u;
 /// Entries along each side of each area light table.
 const AREA_SIZE: u32 = 64u;
 
-/// Texels along each side of a rectangle light's image.
-const IMAGE_SIZE: u32 = 128u;
+/// Texels along each side of a light's image at the smallest size that a picture takes.
+const IMAGE_SIZE: f32 = 128.0;
 
-/// Mip levels of a rectangle light's image, down to one texel.
-const IMAGE_LEVELS: f32 = 8.0;
+/// Mip levels of an image at `IMAGE_SIZE`, down to one texel.
+const IMAGE_BASE_LEVELS: f32 = 8.0;
+
+/// Bits of a light's record that hold its image's layer, above the bits that hold the number of
+/// its size. The record holds the layer plus one, so 0 names an image that the light lacks.
+const IMAGE_LAYER_BITS: u32 = 6u;
+
+/// The image that `record` names, which is the value in a light's image place: its layer in the
+/// light tables plus one at `x`, 0 for a light without one, the texels across its largest level at
+/// `y`, and the level that holds one texel at `z`.
+fn image_of(record: f32) -> vec3f {
+    let index = u32(record) >> IMAGE_LAYER_BITS;
+    return vec3f(
+        f32(u32(record) & ((1u << IMAGE_LAYER_BITS) - 1u)),
+        IMAGE_SIZE * f32(1u << index),
+        IMAGE_BASE_LEVELS - 1.0 + f32(index),
+    );
+}
 
 /// The split-sum table's entry at column `at.x` and row `at.y`: the scale and the bias.
 fn dfg_entry(at: vec2u) -> vec2f {
@@ -79,11 +95,12 @@ fn table(layer: i32, uv: vec2f) -> vec4f {
     return textureSampleLevel(light_tables, environment_sampler, uv, layer, 0.0);
 }
 
-/// A rectangle light's image in layer `layer`, at `uv` from its corner at +X and -Y, at mip level
-/// `level`: 0 is the sharpest. The image fills the corner of its layer, which the probes' maps may
-/// make larger than the image.
-fn light_image(layer: i32, uv: vec2f, level: f32) -> vec3f {
-    let at = clamp(level, 0.0, IMAGE_LEVELS - 1.0);
-    let scale = f32(IMAGE_SIZE) / f32(textureDimensions(light_tables).x);
-    return textureSampleLevel(light_tables, environment_sampler, saturate(uv) * scale, layer, at).rgb;
+/// A light's image from `record`, in its layer, at `uv` from its corner at +X and -Y, at mip
+/// level `level`: 0 is the sharpest. The image fills the corner of its layer, which the probes'
+/// maps may make larger than the image.
+fn light_image(record: f32, uv: vec2f, level: f32) -> vec3f {
+    let image = image_of(record);
+    let scale = image.y / f32(textureDimensions(light_tables).x);
+    let at = clamp(level, 0.0, image.z);
+    return textureSampleLevel(light_tables, environment_sampler, saturate(uv) * scale, i32(image.x) - 1, at).rgb;
 }

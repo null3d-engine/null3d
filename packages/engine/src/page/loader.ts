@@ -168,12 +168,14 @@ export async function createSharedMemory(
  * the maximum that the module's import declares. The loader reads those from the start of the
  * download while the browser compiles the rest. The limits need no file of their own, so a strict
  * Content-Security-Policy has no inline address to block. `memoryWait` hears when the browser has
- * refused a new memory for 10 seconds and the loader still tries.
+ * refused a new memory for 10 seconds and the loader still tries. `downloaded` hears the file's
+ * bytes as they arrive, with the length that the server announced.
  */
 export async function loadCore(
 	build: Build,
 	maximumMiB = DEFAULT_MAXIMUM_MIB,
 	memoryWait?: () => void,
+	downloaded?: (loaded: number, total: number) => void,
 ): Promise<LoadedCore> {
 	const threaded = build === 'threaded';
 	const url = coreUrls(build).wasm;
@@ -183,6 +185,7 @@ export async function loadCore(
 		coreError,
 		threaded ? readMemoryLimits : undefined,
 		takeEarlyCore(url),
+		downloaded,
 	);
 	if (!threaded) return { build, module };
 	if (!limits)

@@ -3,8 +3,8 @@
 // with the rows that are planned as well as the ones the engine applies, so the twin follows the
 // engine as its settings change.
 import type { QualityPreset, Tier } from '@null3d/engine';
-import { readDeviceHints } from '../../../packages/engine/src/page/capabilities';
 import { choosePreset } from '../../../packages/engine/src/quality/chooser';
+import { readDeviceHints } from '../../../packages/engine/src/quality/device-hints';
 import { PLANNED_SETTINGS } from '../../../packages/engine/src/quality/preset-docs';
 import {
 	presetIndex,

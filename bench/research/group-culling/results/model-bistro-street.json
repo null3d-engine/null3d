@@ -1,0 +1,6232 @@
+{
+	"name": "bistro-street",
+	"views": 1,
+	"sizes": [64, 128],
+	"ks": [1],
+	"globalKs": [16, 32, 64, 128, 256],
+	"summary": {
+		"camera.coveredShare": {
+			"mean": 0.9875569058641975,
+			"median": 0.9875569058641975
+		},
+		"camera.all.street.copies": {
+			"mean": 28,
+			"median": 28
+		},
+		"camera.all.street.now": {
+			"mean": 69577,
+			"median": 69577
+		},
+		"camera.all.street.g64.offscreen": {
+			"mean": 43064,
+			"median": 43064
+		},
+		"camera.all.street.g64.facing": {
+			"mean": 652,
+			"median": 652
+		},
+		"camera.all.street.g64.hiddenFull": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.all.street.g64.hiddenD40": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.all.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"camera.all.street.g64.visible": {
+			"mean": 187,
+			"median": 187
+		},
+		"camera.all.street.g64.hiddenGroupsFull": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.all.street.g64.hiddenGroupsD40": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.all.street.g128.offscreen": {
+			"mean": 40999,
+			"median": 40999
+		},
+		"camera.all.street.g128.facing": {
+			"mean": 99,
+			"median": 99
+		},
+		"camera.all.street.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.all.street.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.all.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"camera.all.street.g128.visible": {
+			"mean": 117,
+			"median": 117
+		},
+		"camera.all.street.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.all.street.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.all.building.copies": {
+			"mean": 160,
+			"median": 160
+		},
+		"camera.all.building.now": {
+			"mean": 456213,
+			"median": 456213
+		},
+		"camera.all.building.g64.offscreen": {
+			"mean": 165312,
+			"median": 165312
+		},
+		"camera.all.building.g64.facing": {
+			"mean": 9896,
+			"median": 9896
+		},
+		"camera.all.building.g64.hiddenFull": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.all.building.g64.hiddenD40": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.all.building.g64.tested": {
+			"mean": 5934,
+			"median": 5934
+		},
+		"camera.all.building.g64.visible": {
+			"mean": 3187,
+			"median": 3187
+		},
+		"camera.all.building.g64.hiddenGroupsFull": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.all.building.g64.hiddenGroupsD40": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.all.building.g128.offscreen": {
+			"mean": 155925,
+			"median": 155925
+		},
+		"camera.all.building.g128.facing": {
+			"mean": 8695,
+			"median": 8695
+		},
+		"camera.all.building.g128.hiddenFull": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.all.building.g128.hiddenD40": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.all.building.g128.tested": {
+			"mean": 2977,
+			"median": 2977
+		},
+		"camera.all.building.g128.visible": {
+			"mean": 1684,
+			"median": 1684
+		},
+		"camera.all.building.g128.hiddenGroupsFull": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.all.building.g128.hiddenGroupsD40": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.all.prop.copies": {
+			"mean": 115,
+			"median": 115
+		},
+		"camera.all.prop.now": {
+			"mean": 343857,
+			"median": 343857
+		},
+		"camera.all.prop.g64.offscreen": {
+			"mean": 27432,
+			"median": 27432
+		},
+		"camera.all.prop.g64.facing": {
+			"mean": 14927,
+			"median": 14927
+		},
+		"camera.all.prop.g64.hiddenFull": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.all.prop.g64.hiddenD40": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.all.prop.g64.tested": {
+			"mean": 3823,
+			"median": 3823
+		},
+		"camera.all.prop.g64.visible": {
+			"mean": 3157,
+			"median": 3157
+		},
+		"camera.all.prop.g64.hiddenGroupsFull": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.all.prop.g64.hiddenGroupsD40": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.all.prop.g128.offscreen": {
+			"mean": 24672,
+			"median": 24672
+		},
+		"camera.all.prop.g128.facing": {
+			"mean": 10443,
+			"median": 10443
+		},
+		"camera.all.prop.g128.hiddenFull": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.all.prop.g128.hiddenD40": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.all.prop.g128.tested": {
+			"mean": 1907,
+			"median": 1907
+		},
+		"camera.all.prop.g128.visible": {
+			"mean": 1631,
+			"median": 1631
+		},
+		"camera.all.prop.g128.hiddenGroupsFull": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.all.prop.g128.hiddenGroupsD40": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.all.foliage.copies": {
+			"mean": 105,
+			"median": 105
+		},
+		"camera.all.foliage.now": {
+			"mean": 300360,
+			"median": 300360
+		},
+		"camera.all.foliage.g64.offscreen": {
+			"mean": 47909,
+			"median": 47909
+		},
+		"camera.all.foliage.g64.facing": {
+			"mean": 1254,
+			"median": 1254
+		},
+		"camera.all.foliage.g64.hiddenFull": {
+			"mean": 42024,
+			"median": 42024
+		},
+		"camera.all.foliage.g64.hiddenD40": {
+			"mean": 41192,
+			"median": 41192
+		},
+		"camera.all.foliage.g64.tested": {
+			"mean": 3394,
+			"median": 3394
+		},
+		"camera.all.foliage.g64.visible": {
+			"mean": 2624,
+			"median": 2624
+		},
+		"camera.all.foliage.g64.hiddenGroupsFull": {
+			"mean": 658,
+			"median": 658
+		},
+		"camera.all.foliage.g64.hiddenGroupsD40": {
+			"mean": 645,
+			"median": 645
+		},
+		"camera.all.foliage.g128.offscreen": {
+			"mean": 47139,
+			"median": 47139
+		},
+		"camera.all.foliage.g128.facing": {
+			"mean": 20,
+			"median": 20
+		},
+		"camera.all.foliage.g128.hiddenFull": {
+			"mean": 39701,
+			"median": 39701
+		},
+		"camera.all.foliage.g128.hiddenD40": {
+			"mean": 39445,
+			"median": 39445
+		},
+		"camera.all.foliage.g128.tested": {
+			"mean": 1704,
+			"median": 1704
+		},
+		"camera.all.foliage.g128.visible": {
+			"mean": 1334,
+			"median": 1334
+		},
+		"camera.all.foliage.g128.hiddenGroupsFull": {
+			"mean": 312,
+			"median": 312
+		},
+		"camera.all.foliage.g128.hiddenGroupsD40": {
+			"mean": 310,
+			"median": 310
+		},
+		"camera.K1.street.copies": {
+			"mean": 28,
+			"median": 28
+		},
+		"camera.K1.street.now": {
+			"mean": 69577,
+			"median": 69577
+		},
+		"camera.K1.street.g64.offscreen": {
+			"mean": 43064,
+			"median": 43064
+		},
+		"camera.K1.street.g64.facing": {
+			"mean": 652,
+			"median": 652
+		},
+		"camera.K1.street.g64.hiddenFull": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.K1.street.g64.hiddenD40": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.K1.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"camera.K1.street.g64.visible": {
+			"mean": 187,
+			"median": 187
+		},
+		"camera.K1.street.g64.hiddenGroupsFull": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.K1.street.g64.hiddenGroupsD40": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.K1.street.g128.offscreen": {
+			"mean": 40999,
+			"median": 40999
+		},
+		"camera.K1.street.g128.facing": {
+			"mean": 99,
+			"median": 99
+		},
+		"camera.K1.street.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.K1.street.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.K1.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"camera.K1.street.g128.visible": {
+			"mean": 117,
+			"median": 117
+		},
+		"camera.K1.street.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.K1.street.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.K1.building.copies": {
+			"mean": 160,
+			"median": 160
+		},
+		"camera.K1.building.now": {
+			"mean": 456213,
+			"median": 456213
+		},
+		"camera.K1.building.g64.offscreen": {
+			"mean": 165312,
+			"median": 165312
+		},
+		"camera.K1.building.g64.facing": {
+			"mean": 9896,
+			"median": 9896
+		},
+		"camera.K1.building.g64.hiddenFull": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.K1.building.g64.hiddenD40": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.K1.building.g64.tested": {
+			"mean": 5934,
+			"median": 5934
+		},
+		"camera.K1.building.g64.visible": {
+			"mean": 3187,
+			"median": 3187
+		},
+		"camera.K1.building.g64.hiddenGroupsFull": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.K1.building.g64.hiddenGroupsD40": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.K1.building.g128.offscreen": {
+			"mean": 155925,
+			"median": 155925
+		},
+		"camera.K1.building.g128.facing": {
+			"mean": 8695,
+			"median": 8695
+		},
+		"camera.K1.building.g128.hiddenFull": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.K1.building.g128.hiddenD40": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.K1.building.g128.tested": {
+			"mean": 2977,
+			"median": 2977
+		},
+		"camera.K1.building.g128.visible": {
+			"mean": 1684,
+			"median": 1684
+		},
+		"camera.K1.building.g128.hiddenGroupsFull": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.K1.building.g128.hiddenGroupsD40": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.K1.prop.copies": {
+			"mean": 115,
+			"median": 115
+		},
+		"camera.K1.prop.now": {
+			"mean": 343857,
+			"median": 343857
+		},
+		"camera.K1.prop.g64.offscreen": {
+			"mean": 27432,
+			"median": 27432
+		},
+		"camera.K1.prop.g64.facing": {
+			"mean": 14927,
+			"median": 14927
+		},
+		"camera.K1.prop.g64.hiddenFull": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.K1.prop.g64.hiddenD40": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.K1.prop.g64.tested": {
+			"mean": 3823,
+			"median": 3823
+		},
+		"camera.K1.prop.g64.visible": {
+			"mean": 3157,
+			"median": 3157
+		},
+		"camera.K1.prop.g64.hiddenGroupsFull": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.K1.prop.g64.hiddenGroupsD40": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.K1.prop.g128.offscreen": {
+			"mean": 24672,
+			"median": 24672
+		},
+		"camera.K1.prop.g128.facing": {
+			"mean": 10443,
+			"median": 10443
+		},
+		"camera.K1.prop.g128.hiddenFull": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.K1.prop.g128.hiddenD40": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.K1.prop.g128.tested": {
+			"mean": 1907,
+			"median": 1907
+		},
+		"camera.K1.prop.g128.visible": {
+			"mean": 1631,
+			"median": 1631
+		},
+		"camera.K1.prop.g128.hiddenGroupsFull": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.K1.prop.g128.hiddenGroupsD40": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.K1.foliage.copies": {
+			"mean": 105,
+			"median": 105
+		},
+		"camera.K1.foliage.now": {
+			"mean": 300360,
+			"median": 300360
+		},
+		"camera.K1.foliage.g64.offscreen": {
+			"mean": 47909,
+			"median": 47909
+		},
+		"camera.K1.foliage.g64.facing": {
+			"mean": 1254,
+			"median": 1254
+		},
+		"camera.K1.foliage.g64.hiddenFull": {
+			"mean": 42024,
+			"median": 42024
+		},
+		"camera.K1.foliage.g64.hiddenD40": {
+			"mean": 41192,
+			"median": 41192
+		},
+		"camera.K1.foliage.g64.tested": {
+			"mean": 3394,
+			"median": 3394
+		},
+		"camera.K1.foliage.g64.visible": {
+			"mean": 2624,
+			"median": 2624
+		},
+		"camera.K1.foliage.g64.hiddenGroupsFull": {
+			"mean": 658,
+			"median": 658
+		},
+		"camera.K1.foliage.g64.hiddenGroupsD40": {
+			"mean": 645,
+			"median": 645
+		},
+		"camera.K1.foliage.g128.offscreen": {
+			"mean": 47139,
+			"median": 47139
+		},
+		"camera.K1.foliage.g128.facing": {
+			"mean": 20,
+			"median": 20
+		},
+		"camera.K1.foliage.g128.hiddenFull": {
+			"mean": 39701,
+			"median": 39701
+		},
+		"camera.K1.foliage.g128.hiddenD40": {
+			"mean": 39445,
+			"median": 39445
+		},
+		"camera.K1.foliage.g128.tested": {
+			"mean": 1704,
+			"median": 1704
+		},
+		"camera.K1.foliage.g128.visible": {
+			"mean": 1334,
+			"median": 1334
+		},
+		"camera.K1.foliage.g128.hiddenGroupsFull": {
+			"mean": 312,
+			"median": 312
+		},
+		"camera.K1.foliage.g128.hiddenGroupsD40": {
+			"mean": 310,
+			"median": 310
+		},
+		"camera.N16.building.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"camera.N16.building.now": {
+			"mean": 250141,
+			"median": 250141
+		},
+		"camera.N16.building.g64.offscreen": {
+			"mean": 103319,
+			"median": 103319
+		},
+		"camera.N16.building.g64.facing": {
+			"mean": 9832,
+			"median": 9832
+		},
+		"camera.N16.building.g64.hiddenFull": {
+			"mean": 2880,
+			"median": 2880
+		},
+		"camera.N16.building.g64.hiddenD40": {
+			"mean": 2880,
+			"median": 2880
+		},
+		"camera.N16.building.g64.tested": {
+			"mean": 3927,
+			"median": 3927
+		},
+		"camera.N16.building.g64.visible": {
+			"mean": 2153,
+			"median": 2153
+		},
+		"camera.N16.building.g64.hiddenGroupsFull": {
+			"mean": 45,
+			"median": 45
+		},
+		"camera.N16.building.g64.hiddenGroupsD40": {
+			"mean": 45,
+			"median": 45
+		},
+		"camera.N16.building.g128.offscreen": {
+			"mean": 96886,
+			"median": 96886
+		},
+		"camera.N16.building.g128.facing": {
+			"mean": 8695,
+			"median": 8695
+		},
+		"camera.N16.building.g128.hiddenFull": {
+			"mean": 2944,
+			"median": 2944
+		},
+		"camera.N16.building.g128.hiddenD40": {
+			"mean": 2944,
+			"median": 2944
+		},
+		"camera.N16.building.g128.tested": {
+			"mean": 1971,
+			"median": 1971
+		},
+		"camera.N16.building.g128.visible": {
+			"mean": 1141,
+			"median": 1141
+		},
+		"camera.N16.building.g128.hiddenGroupsFull": {
+			"mean": 23,
+			"median": 23
+		},
+		"camera.N16.building.g128.hiddenGroupsD40": {
+			"mean": 23,
+			"median": 23
+		},
+		"camera.N16.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"camera.N16.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"camera.N16.street.g64.offscreen": {
+			"mean": 34384,
+			"median": 34384
+		},
+		"camera.N16.street.g64.facing": {
+			"mean": 652,
+			"median": 652
+		},
+		"camera.N16.street.g64.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.street.g64.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"camera.N16.street.g64.visible": {
+			"mean": 127,
+			"median": 127
+		},
+		"camera.N16.street.g64.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.street.g64.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.street.g128.offscreen": {
+			"mean": 33227,
+			"median": 33227
+		},
+		"camera.N16.street.g128.facing": {
+			"mean": 99,
+			"median": 99
+		},
+		"camera.N16.street.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.street.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"camera.N16.street.g128.visible": {
+			"mean": 80,
+			"median": 80
+		},
+		"camera.N16.street.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.street.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.prop.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"camera.N16.prop.now": {
+			"mean": 176090,
+			"median": 176090
+		},
+		"camera.N16.prop.g64.offscreen": {
+			"mean": 20096,
+			"median": 20096
+		},
+		"camera.N16.prop.g64.facing": {
+			"mean": 8591,
+			"median": 8591
+		},
+		"camera.N16.prop.g64.hiddenFull": {
+			"mean": 18779,
+			"median": 18779
+		},
+		"camera.N16.prop.g64.hiddenD40": {
+			"mean": 18779,
+			"median": 18779
+		},
+		"camera.N16.prop.g64.tested": {
+			"mean": 2818,
+			"median": 2818
+		},
+		"camera.N16.prop.g64.visible": {
+			"mean": 2367,
+			"median": 2367
+		},
+		"camera.N16.prop.g64.hiddenGroupsFull": {
+			"mean": 302,
+			"median": 302
+		},
+		"camera.N16.prop.g64.hiddenGroupsD40": {
+			"mean": 302,
+			"median": 302
+		},
+		"camera.N16.prop.g128.offscreen": {
+			"mean": 18378,
+			"median": 18378
+		},
+		"camera.N16.prop.g128.facing": {
+			"mean": 6603,
+			"median": 6603
+		},
+		"camera.N16.prop.g128.hiddenFull": {
+			"mean": 18663,
+			"median": 18663
+		},
+		"camera.N16.prop.g128.hiddenD40": {
+			"mean": 18663,
+			"median": 18663
+		},
+		"camera.N16.prop.g128.tested": {
+			"mean": 1404,
+			"median": 1404
+		},
+		"camera.N16.prop.g128.visible": {
+			"mean": 1208,
+			"median": 1208
+		},
+		"camera.N16.prop.g128.hiddenGroupsFull": {
+			"mean": 148,
+			"median": 148
+		},
+		"camera.N16.prop.g128.hiddenGroupsD40": {
+			"mean": 148,
+			"median": 148
+		},
+		"camera.N16.foliage.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"camera.N16.foliage.now": {
+			"mean": 18196,
+			"median": 18196
+		},
+		"camera.N16.foliage.g64.offscreen": {
+			"mean": 17812,
+			"median": 17812
+		},
+		"camera.N16.foliage.g64.facing": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g64.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g64.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g64.tested": {
+			"mean": 285,
+			"median": 285
+		},
+		"camera.N16.foliage.g64.visible": {
+			"mean": 6,
+			"median": 6
+		},
+		"camera.N16.foliage.g64.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g64.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g128.offscreen": {
+			"mean": 17792,
+			"median": 17792
+		},
+		"camera.N16.foliage.g128.facing": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g128.tested": {
+			"mean": 143,
+			"median": 143
+		},
+		"camera.N16.foliage.g128.visible": {
+			"mean": 4,
+			"median": 4
+		},
+		"camera.N16.foliage.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N16.foliage.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.building.copies": {
+			"mean": 11,
+			"median": 11
+		},
+		"camera.N32.building.now": {
+			"mean": 300244,
+			"median": 300244
+		},
+		"camera.N32.building.g64.offscreen": {
+			"mean": 121493,
+			"median": 121493
+		},
+		"camera.N32.building.g64.facing": {
+			"mean": 9832,
+			"median": 9832
+		},
+		"camera.N32.building.g64.hiddenFull": {
+			"mean": 10752,
+			"median": 10752
+		},
+		"camera.N32.building.g64.hiddenD40": {
+			"mean": 10752,
+			"median": 10752
+		},
+		"camera.N32.building.g64.tested": {
+			"mean": 4711,
+			"median": 4711
+		},
+		"camera.N32.building.g64.visible": {
+			"mean": 2652,
+			"median": 2652
+		},
+		"camera.N32.building.g64.hiddenGroupsFull": {
+			"mean": 168,
+			"median": 168
+		},
+		"camera.N32.building.g64.hiddenGroupsD40": {
+			"mean": 168,
+			"median": 168
+		},
+		"camera.N32.building.g128.offscreen": {
+			"mean": 112974,
+			"median": 112974
+		},
+		"camera.N32.building.g128.facing": {
+			"mean": 8695,
+			"median": 8695
+		},
+		"camera.N32.building.g128.hiddenFull": {
+			"mean": 9728,
+			"median": 9728
+		},
+		"camera.N32.building.g128.hiddenD40": {
+			"mean": 9728,
+			"median": 9728
+		},
+		"camera.N32.building.g128.tested": {
+			"mean": 2364,
+			"median": 2364
+		},
+		"camera.N32.building.g128.visible": {
+			"mean": 1408,
+			"median": 1408
+		},
+		"camera.N32.building.g128.hiddenGroupsFull": {
+			"mean": 76,
+			"median": 76
+		},
+		"camera.N32.building.g128.hiddenGroupsD40": {
+			"mean": 76,
+			"median": 76
+		},
+		"camera.N32.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"camera.N32.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"camera.N32.street.g64.offscreen": {
+			"mean": 34384,
+			"median": 34384
+		},
+		"camera.N32.street.g64.facing": {
+			"mean": 652,
+			"median": 652
+		},
+		"camera.N32.street.g64.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.street.g64.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"camera.N32.street.g64.visible": {
+			"mean": 127,
+			"median": 127
+		},
+		"camera.N32.street.g64.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.street.g64.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.street.g128.offscreen": {
+			"mean": 33227,
+			"median": 33227
+		},
+		"camera.N32.street.g128.facing": {
+			"mean": 99,
+			"median": 99
+		},
+		"camera.N32.street.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.street.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"camera.N32.street.g128.visible": {
+			"mean": 80,
+			"median": 80
+		},
+		"camera.N32.street.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.street.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N32.prop.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"camera.N32.prop.now": {
+			"mean": 176090,
+			"median": 176090
+		},
+		"camera.N32.prop.g64.offscreen": {
+			"mean": 20096,
+			"median": 20096
+		},
+		"camera.N32.prop.g64.facing": {
+			"mean": 8591,
+			"median": 8591
+		},
+		"camera.N32.prop.g64.hiddenFull": {
+			"mean": 18779,
+			"median": 18779
+		},
+		"camera.N32.prop.g64.hiddenD40": {
+			"mean": 18779,
+			"median": 18779
+		},
+		"camera.N32.prop.g64.tested": {
+			"mean": 2818,
+			"median": 2818
+		},
+		"camera.N32.prop.g64.visible": {
+			"mean": 2367,
+			"median": 2367
+		},
+		"camera.N32.prop.g64.hiddenGroupsFull": {
+			"mean": 302,
+			"median": 302
+		},
+		"camera.N32.prop.g64.hiddenGroupsD40": {
+			"mean": 302,
+			"median": 302
+		},
+		"camera.N32.prop.g128.offscreen": {
+			"mean": 18378,
+			"median": 18378
+		},
+		"camera.N32.prop.g128.facing": {
+			"mean": 6603,
+			"median": 6603
+		},
+		"camera.N32.prop.g128.hiddenFull": {
+			"mean": 18663,
+			"median": 18663
+		},
+		"camera.N32.prop.g128.hiddenD40": {
+			"mean": 18663,
+			"median": 18663
+		},
+		"camera.N32.prop.g128.tested": {
+			"mean": 1404,
+			"median": 1404
+		},
+		"camera.N32.prop.g128.visible": {
+			"mean": 1208,
+			"median": 1208
+		},
+		"camera.N32.prop.g128.hiddenGroupsFull": {
+			"mean": 148,
+			"median": 148
+		},
+		"camera.N32.prop.g128.hiddenGroupsD40": {
+			"mean": 148,
+			"median": 148
+		},
+		"camera.N32.foliage.copies": {
+			"mean": 13,
+			"median": 13
+		},
+		"camera.N32.foliage.now": {
+			"mean": 206006,
+			"median": 206006
+		},
+		"camera.N32.foliage.g64.offscreen": {
+			"mean": 47909,
+			"median": 47909
+		},
+		"camera.N32.foliage.g64.facing": {
+			"mean": 806,
+			"median": 806
+		},
+		"camera.N32.foliage.g64.hiddenFull": {
+			"mean": 38120,
+			"median": 38120
+		},
+		"camera.N32.foliage.g64.hiddenD40": {
+			"mean": 37608,
+			"median": 37608
+		},
+		"camera.N32.foliage.g64.tested": {
+			"mean": 3227,
+			"median": 3227
+		},
+		"camera.N32.foliage.g64.visible": {
+			"mean": 2464,
+			"median": 2464
+		},
+		"camera.N32.foliage.g64.hiddenGroupsFull": {
+			"mean": 597,
+			"median": 597
+		},
+		"camera.N32.foliage.g64.hiddenGroupsD40": {
+			"mean": 589,
+			"median": 589
+		},
+		"camera.N32.foliage.g128.offscreen": {
+			"mean": 47139,
+			"median": 47139
+		},
+		"camera.N32.foliage.g128.facing": {
+			"mean": 20,
+			"median": 20
+		},
+		"camera.N32.foliage.g128.hiddenFull": {
+			"mean": 36757,
+			"median": 36757
+		},
+		"camera.N32.foliage.g128.hiddenD40": {
+			"mean": 36629,
+			"median": 36629
+		},
+		"camera.N32.foliage.g128.tested": {
+			"mean": 1620,
+			"median": 1620
+		},
+		"camera.N32.foliage.g128.visible": {
+			"mean": 1250,
+			"median": 1250
+		},
+		"camera.N32.foliage.g128.hiddenGroupsFull": {
+			"mean": 289,
+			"median": 289
+		},
+		"camera.N32.foliage.g128.hiddenGroupsD40": {
+			"mean": 288,
+			"median": 288
+		},
+		"camera.N64.building.copies": {
+			"mean": 25,
+			"median": 25
+		},
+		"camera.N64.building.now": {
+			"mean": 389584,
+			"median": 389584
+		},
+		"camera.N64.building.g64.offscreen": {
+			"mean": 165312,
+			"median": 165312
+		},
+		"camera.N64.building.g64.facing": {
+			"mean": 9896,
+			"median": 9896
+		},
+		"camera.N64.building.g64.hiddenFull": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.N64.building.g64.hiddenD40": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.N64.building.g64.tested": {
+			"mean": 5934,
+			"median": 5934
+		},
+		"camera.N64.building.g64.visible": {
+			"mean": 3187,
+			"median": 3187
+		},
+		"camera.N64.building.g64.hiddenGroupsFull": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.N64.building.g64.hiddenGroupsD40": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.N64.building.g128.offscreen": {
+			"mean": 155925,
+			"median": 155925
+		},
+		"camera.N64.building.g128.facing": {
+			"mean": 8695,
+			"median": 8695
+		},
+		"camera.N64.building.g128.hiddenFull": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.N64.building.g128.hiddenD40": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.N64.building.g128.tested": {
+			"mean": 2977,
+			"median": 2977
+		},
+		"camera.N64.building.g128.visible": {
+			"mean": 1684,
+			"median": 1684
+		},
+		"camera.N64.building.g128.hiddenGroupsFull": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.N64.building.g128.hiddenGroupsD40": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.N64.street.copies": {
+			"mean": 3,
+			"median": 3
+		},
+		"camera.N64.street.now": {
+			"mean": 54402,
+			"median": 54402
+		},
+		"camera.N64.street.g64.offscreen": {
+			"mean": 43064,
+			"median": 43064
+		},
+		"camera.N64.street.g64.facing": {
+			"mean": 652,
+			"median": 652
+		},
+		"camera.N64.street.g64.hiddenFull": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.N64.street.g64.hiddenD40": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.N64.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"camera.N64.street.g64.visible": {
+			"mean": 187,
+			"median": 187
+		},
+		"camera.N64.street.g64.hiddenGroupsFull": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.N64.street.g64.hiddenGroupsD40": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.N64.street.g128.offscreen": {
+			"mean": 40999,
+			"median": 40999
+		},
+		"camera.N64.street.g128.facing": {
+			"mean": 99,
+			"median": 99
+		},
+		"camera.N64.street.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N64.street.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N64.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"camera.N64.street.g128.visible": {
+			"mean": 117,
+			"median": 117
+		},
+		"camera.N64.street.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N64.street.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N64.prop.copies": {
+			"mean": 21,
+			"median": 21
+		},
+		"camera.N64.prop.now": {
+			"mean": 247828,
+			"median": 247828
+		},
+		"camera.N64.prop.g64.offscreen": {
+			"mean": 27432,
+			"median": 27432
+		},
+		"camera.N64.prop.g64.facing": {
+			"mean": 14927,
+			"median": 14927
+		},
+		"camera.N64.prop.g64.hiddenFull": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.N64.prop.g64.hiddenD40": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.N64.prop.g64.tested": {
+			"mean": 3823,
+			"median": 3823
+		},
+		"camera.N64.prop.g64.visible": {
+			"mean": 3157,
+			"median": 3157
+		},
+		"camera.N64.prop.g64.hiddenGroupsFull": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.N64.prop.g64.hiddenGroupsD40": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.N64.prop.g128.offscreen": {
+			"mean": 24672,
+			"median": 24672
+		},
+		"camera.N64.prop.g128.facing": {
+			"mean": 10443,
+			"median": 10443
+		},
+		"camera.N64.prop.g128.hiddenFull": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.N64.prop.g128.hiddenD40": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.N64.prop.g128.tested": {
+			"mean": 1907,
+			"median": 1907
+		},
+		"camera.N64.prop.g128.visible": {
+			"mean": 1631,
+			"median": 1631
+		},
+		"camera.N64.prop.g128.hiddenGroupsFull": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.N64.prop.g128.hiddenGroupsD40": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.N64.foliage.copies": {
+			"mean": 15,
+			"median": 15
+		},
+		"camera.N64.foliage.now": {
+			"mean": 220508,
+			"median": 220508
+		},
+		"camera.N64.foliage.g64.offscreen": {
+			"mean": 47909,
+			"median": 47909
+		},
+		"camera.N64.foliage.g64.facing": {
+			"mean": 1254,
+			"median": 1254
+		},
+		"camera.N64.foliage.g64.hiddenFull": {
+			"mean": 42024,
+			"median": 42024
+		},
+		"camera.N64.foliage.g64.hiddenD40": {
+			"mean": 41192,
+			"median": 41192
+		},
+		"camera.N64.foliage.g64.tested": {
+			"mean": 3394,
+			"median": 3394
+		},
+		"camera.N64.foliage.g64.visible": {
+			"mean": 2624,
+			"median": 2624
+		},
+		"camera.N64.foliage.g64.hiddenGroupsFull": {
+			"mean": 658,
+			"median": 658
+		},
+		"camera.N64.foliage.g64.hiddenGroupsD40": {
+			"mean": 645,
+			"median": 645
+		},
+		"camera.N64.foliage.g128.offscreen": {
+			"mean": 47139,
+			"median": 47139
+		},
+		"camera.N64.foliage.g128.facing": {
+			"mean": 20,
+			"median": 20
+		},
+		"camera.N64.foliage.g128.hiddenFull": {
+			"mean": 39701,
+			"median": 39701
+		},
+		"camera.N64.foliage.g128.hiddenD40": {
+			"mean": 39445,
+			"median": 39445
+		},
+		"camera.N64.foliage.g128.tested": {
+			"mean": 1704,
+			"median": 1704
+		},
+		"camera.N64.foliage.g128.visible": {
+			"mean": 1334,
+			"median": 1334
+		},
+		"camera.N64.foliage.g128.hiddenGroupsFull": {
+			"mean": 312,
+			"median": 312
+		},
+		"camera.N64.foliage.g128.hiddenGroupsD40": {
+			"mean": 310,
+			"median": 310
+		},
+		"camera.N128.building.copies": {
+			"mean": 38,
+			"median": 38
+		},
+		"camera.N128.building.now": {
+			"mean": 421058,
+			"median": 421058
+		},
+		"camera.N128.building.g64.offscreen": {
+			"mean": 165312,
+			"median": 165312
+		},
+		"camera.N128.building.g64.facing": {
+			"mean": 9896,
+			"median": 9896
+		},
+		"camera.N128.building.g64.hiddenFull": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.N128.building.g64.hiddenD40": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.N128.building.g64.tested": {
+			"mean": 5934,
+			"median": 5934
+		},
+		"camera.N128.building.g64.visible": {
+			"mean": 3187,
+			"median": 3187
+		},
+		"camera.N128.building.g64.hiddenGroupsFull": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.N128.building.g64.hiddenGroupsD40": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.N128.building.g128.offscreen": {
+			"mean": 155925,
+			"median": 155925
+		},
+		"camera.N128.building.g128.facing": {
+			"mean": 8695,
+			"median": 8695
+		},
+		"camera.N128.building.g128.hiddenFull": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.N128.building.g128.hiddenD40": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.N128.building.g128.tested": {
+			"mean": 2977,
+			"median": 2977
+		},
+		"camera.N128.building.g128.visible": {
+			"mean": 1684,
+			"median": 1684
+		},
+		"camera.N128.building.g128.hiddenGroupsFull": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.N128.building.g128.hiddenGroupsD40": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.N128.street.copies": {
+			"mean": 5,
+			"median": 5
+		},
+		"camera.N128.street.now": {
+			"mean": 60599,
+			"median": 60599
+		},
+		"camera.N128.street.g64.offscreen": {
+			"mean": 43064,
+			"median": 43064
+		},
+		"camera.N128.street.g64.facing": {
+			"mean": 652,
+			"median": 652
+		},
+		"camera.N128.street.g64.hiddenFull": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.N128.street.g64.hiddenD40": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.N128.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"camera.N128.street.g64.visible": {
+			"mean": 187,
+			"median": 187
+		},
+		"camera.N128.street.g64.hiddenGroupsFull": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.N128.street.g64.hiddenGroupsD40": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.N128.street.g128.offscreen": {
+			"mean": 40999,
+			"median": 40999
+		},
+		"camera.N128.street.g128.facing": {
+			"mean": 99,
+			"median": 99
+		},
+		"camera.N128.street.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N128.street.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N128.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"camera.N128.street.g128.visible": {
+			"mean": 117,
+			"median": 117
+		},
+		"camera.N128.street.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N128.street.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N128.prop.copies": {
+			"mean": 48,
+			"median": 48
+		},
+		"camera.N128.prop.now": {
+			"mean": 317903,
+			"median": 317903
+		},
+		"camera.N128.prop.g64.offscreen": {
+			"mean": 27432,
+			"median": 27432
+		},
+		"camera.N128.prop.g64.facing": {
+			"mean": 14927,
+			"median": 14927
+		},
+		"camera.N128.prop.g64.hiddenFull": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.N128.prop.g64.hiddenD40": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.N128.prop.g64.tested": {
+			"mean": 3823,
+			"median": 3823
+		},
+		"camera.N128.prop.g64.visible": {
+			"mean": 3157,
+			"median": 3157
+		},
+		"camera.N128.prop.g64.hiddenGroupsFull": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.N128.prop.g64.hiddenGroupsD40": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.N128.prop.g128.offscreen": {
+			"mean": 24672,
+			"median": 24672
+		},
+		"camera.N128.prop.g128.facing": {
+			"mean": 10443,
+			"median": 10443
+		},
+		"camera.N128.prop.g128.hiddenFull": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.N128.prop.g128.hiddenD40": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.N128.prop.g128.tested": {
+			"mean": 1907,
+			"median": 1907
+		},
+		"camera.N128.prop.g128.visible": {
+			"mean": 1631,
+			"median": 1631
+		},
+		"camera.N128.prop.g128.hiddenGroupsFull": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.N128.prop.g128.hiddenGroupsD40": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.N128.foliage.copies": {
+			"mean": 37,
+			"median": 37
+		},
+		"camera.N128.foliage.now": {
+			"mean": 282062,
+			"median": 282062
+		},
+		"camera.N128.foliage.g64.offscreen": {
+			"mean": 47909,
+			"median": 47909
+		},
+		"camera.N128.foliage.g64.facing": {
+			"mean": 1254,
+			"median": 1254
+		},
+		"camera.N128.foliage.g64.hiddenFull": {
+			"mean": 42024,
+			"median": 42024
+		},
+		"camera.N128.foliage.g64.hiddenD40": {
+			"mean": 41192,
+			"median": 41192
+		},
+		"camera.N128.foliage.g64.tested": {
+			"mean": 3394,
+			"median": 3394
+		},
+		"camera.N128.foliage.g64.visible": {
+			"mean": 2624,
+			"median": 2624
+		},
+		"camera.N128.foliage.g64.hiddenGroupsFull": {
+			"mean": 658,
+			"median": 658
+		},
+		"camera.N128.foliage.g64.hiddenGroupsD40": {
+			"mean": 645,
+			"median": 645
+		},
+		"camera.N128.foliage.g128.offscreen": {
+			"mean": 47139,
+			"median": 47139
+		},
+		"camera.N128.foliage.g128.facing": {
+			"mean": 20,
+			"median": 20
+		},
+		"camera.N128.foliage.g128.hiddenFull": {
+			"mean": 39701,
+			"median": 39701
+		},
+		"camera.N128.foliage.g128.hiddenD40": {
+			"mean": 39445,
+			"median": 39445
+		},
+		"camera.N128.foliage.g128.tested": {
+			"mean": 1704,
+			"median": 1704
+		},
+		"camera.N128.foliage.g128.visible": {
+			"mean": 1334,
+			"median": 1334
+		},
+		"camera.N128.foliage.g128.hiddenGroupsFull": {
+			"mean": 312,
+			"median": 312
+		},
+		"camera.N128.foliage.g128.hiddenGroupsD40": {
+			"mean": 310,
+			"median": 310
+		},
+		"camera.N256.building.copies": {
+			"mean": 84,
+			"median": 84
+		},
+		"camera.N256.building.now": {
+			"mean": 450182,
+			"median": 450182
+		},
+		"camera.N256.building.g64.offscreen": {
+			"mean": 165312,
+			"median": 165312
+		},
+		"camera.N256.building.g64.facing": {
+			"mean": 9896,
+			"median": 9896
+		},
+		"camera.N256.building.g64.hiddenFull": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.N256.building.g64.hiddenD40": {
+			"mean": 20106,
+			"median": 20106
+		},
+		"camera.N256.building.g64.tested": {
+			"mean": 5934,
+			"median": 5934
+		},
+		"camera.N256.building.g64.visible": {
+			"mean": 3187,
+			"median": 3187
+		},
+		"camera.N256.building.g64.hiddenGroupsFull": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.N256.building.g64.hiddenGroupsD40": {
+			"mean": 315,
+			"median": 315
+		},
+		"camera.N256.building.g128.offscreen": {
+			"mean": 155925,
+			"median": 155925
+		},
+		"camera.N256.building.g128.facing": {
+			"mean": 8695,
+			"median": 8695
+		},
+		"camera.N256.building.g128.hiddenFull": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.N256.building.g128.hiddenD40": {
+			"mean": 17536,
+			"median": 17536
+		},
+		"camera.N256.building.g128.tested": {
+			"mean": 2977,
+			"median": 2977
+		},
+		"camera.N256.building.g128.visible": {
+			"mean": 1684,
+			"median": 1684
+		},
+		"camera.N256.building.g128.hiddenGroupsFull": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.N256.building.g128.hiddenGroupsD40": {
+			"mean": 137,
+			"median": 137
+		},
+		"camera.N256.street.copies": {
+			"mean": 16,
+			"median": 16
+		},
+		"camera.N256.street.now": {
+			"mean": 68909,
+			"median": 68909
+		},
+		"camera.N256.street.g64.offscreen": {
+			"mean": 43064,
+			"median": 43064
+		},
+		"camera.N256.street.g64.facing": {
+			"mean": 652,
+			"median": 652
+		},
+		"camera.N256.street.g64.hiddenFull": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.N256.street.g64.hiddenD40": {
+			"mean": 128,
+			"median": 128
+		},
+		"camera.N256.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"camera.N256.street.g64.visible": {
+			"mean": 187,
+			"median": 187
+		},
+		"camera.N256.street.g64.hiddenGroupsFull": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.N256.street.g64.hiddenGroupsD40": {
+			"mean": 2,
+			"median": 2
+		},
+		"camera.N256.street.g128.offscreen": {
+			"mean": 40999,
+			"median": 40999
+		},
+		"camera.N256.street.g128.facing": {
+			"mean": 99,
+			"median": 99
+		},
+		"camera.N256.street.g128.hiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N256.street.g128.hiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N256.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"camera.N256.street.g128.visible": {
+			"mean": 117,
+			"median": 117
+		},
+		"camera.N256.street.g128.hiddenGroupsFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N256.street.g128.hiddenGroupsD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.N256.prop.copies": {
+			"mean": 96,
+			"median": 96
+		},
+		"camera.N256.prop.now": {
+			"mean": 342097,
+			"median": 342097
+		},
+		"camera.N256.prop.g64.offscreen": {
+			"mean": 27432,
+			"median": 27432
+		},
+		"camera.N256.prop.g64.facing": {
+			"mean": 14927,
+			"median": 14927
+		},
+		"camera.N256.prop.g64.hiddenFull": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.N256.prop.g64.hiddenD40": {
+			"mean": 19547,
+			"median": 19547
+		},
+		"camera.N256.prop.g64.tested": {
+			"mean": 3823,
+			"median": 3823
+		},
+		"camera.N256.prop.g64.visible": {
+			"mean": 3157,
+			"median": 3157
+		},
+		"camera.N256.prop.g64.hiddenGroupsFull": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.N256.prop.g64.hiddenGroupsD40": {
+			"mean": 314,
+			"median": 314
+		},
+		"camera.N256.prop.g128.offscreen": {
+			"mean": 24672,
+			"median": 24672
+		},
+		"camera.N256.prop.g128.facing": {
+			"mean": 10443,
+			"median": 10443
+		},
+		"camera.N256.prop.g128.hiddenFull": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.N256.prop.g128.hiddenD40": {
+			"mean": 19383,
+			"median": 19383
+		},
+		"camera.N256.prop.g128.tested": {
+			"mean": 1907,
+			"median": 1907
+		},
+		"camera.N256.prop.g128.visible": {
+			"mean": 1631,
+			"median": 1631
+		},
+		"camera.N256.prop.g128.hiddenGroupsFull": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.N256.prop.g128.hiddenGroupsD40": {
+			"mean": 154,
+			"median": 154
+		},
+		"camera.N256.foliage.copies": {
+			"mean": 60,
+			"median": 60
+		},
+		"camera.N256.foliage.now": {
+			"mean": 297186,
+			"median": 297186
+		},
+		"camera.N256.foliage.g64.offscreen": {
+			"mean": 47909,
+			"median": 47909
+		},
+		"camera.N256.foliage.g64.facing": {
+			"mean": 1254,
+			"median": 1254
+		},
+		"camera.N256.foliage.g64.hiddenFull": {
+			"mean": 42024,
+			"median": 42024
+		},
+		"camera.N256.foliage.g64.hiddenD40": {
+			"mean": 41192,
+			"median": 41192
+		},
+		"camera.N256.foliage.g64.tested": {
+			"mean": 3394,
+			"median": 3394
+		},
+		"camera.N256.foliage.g64.visible": {
+			"mean": 2624,
+			"median": 2624
+		},
+		"camera.N256.foliage.g64.hiddenGroupsFull": {
+			"mean": 658,
+			"median": 658
+		},
+		"camera.N256.foliage.g64.hiddenGroupsD40": {
+			"mean": 645,
+			"median": 645
+		},
+		"camera.N256.foliage.g128.offscreen": {
+			"mean": 47139,
+			"median": 47139
+		},
+		"camera.N256.foliage.g128.facing": {
+			"mean": 20,
+			"median": 20
+		},
+		"camera.N256.foliage.g128.hiddenFull": {
+			"mean": 39701,
+			"median": 39701
+		},
+		"camera.N256.foliage.g128.hiddenD40": {
+			"mean": 39445,
+			"median": 39445
+		},
+		"camera.N256.foliage.g128.tested": {
+			"mean": 1704,
+			"median": 1704
+		},
+		"camera.N256.foliage.g128.visible": {
+			"mean": 1334,
+			"median": 1334
+		},
+		"camera.N256.foliage.g128.hiddenGroupsFull": {
+			"mean": 312,
+			"median": 312
+		},
+		"camera.N256.foliage.g128.hiddenGroupsD40": {
+			"mean": 310,
+			"median": 310
+		},
+		"camera.cfg.all.g64.viewFacing": {
+			"mean": 859561,
+			"median": 859561
+		},
+		"camera.cfg.all.g64.groupHiddenFull": {
+			"mean": 777756,
+			"median": 777756
+		},
+		"camera.cfg.all.g64.groupHiddenD40": {
+			"mean": 778588,
+			"median": 778588
+		},
+		"camera.cfg.all.g64.allHiddenFull": {
+			"mean": 776738,
+			"median": 776738
+		},
+		"camera.cfg.all.g64.allHiddenD40": {
+			"mean": 777938,
+			"median": 777938
+		},
+		"camera.cfg.all.g64.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.all.g64.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.all.g64.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.all.g128.viewFacing": {
+			"mean": 882015,
+			"median": 882015
+		},
+		"camera.cfg.all.g128.groupHiddenFull": {
+			"mean": 805395,
+			"median": 805395
+		},
+		"camera.cfg.all.g128.groupHiddenD40": {
+			"mean": 805651,
+			"median": 805651
+		},
+		"camera.cfg.all.g128.allHiddenFull": {
+			"mean": 804377,
+			"median": 804377
+		},
+		"camera.cfg.all.g128.allHiddenD40": {
+			"mean": 805001,
+			"median": 805001
+		},
+		"camera.cfg.all.g128.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.all.g128.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.all.g128.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.K1.g64.viewFacing": {
+			"mean": 859561,
+			"median": 859561
+		},
+		"camera.cfg.K1.g64.groupHiddenFull": {
+			"mean": 777756,
+			"median": 777756
+		},
+		"camera.cfg.K1.g64.groupHiddenD40": {
+			"mean": 778588,
+			"median": 778588
+		},
+		"camera.cfg.K1.g64.allHiddenFull": {
+			"mean": 776738,
+			"median": 776738
+		},
+		"camera.cfg.K1.g64.allHiddenD40": {
+			"mean": 777938,
+			"median": 777938
+		},
+		"camera.cfg.K1.g64.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.K1.g64.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.K1.g64.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.K1.g128.viewFacing": {
+			"mean": 882015,
+			"median": 882015
+		},
+		"camera.cfg.K1.g128.groupHiddenFull": {
+			"mean": 805395,
+			"median": 805395
+		},
+		"camera.cfg.K1.g128.groupHiddenD40": {
+			"mean": 805651,
+			"median": 805651
+		},
+		"camera.cfg.K1.g128.allHiddenFull": {
+			"mean": 804377,
+			"median": 804377
+		},
+		"camera.cfg.K1.g128.allHiddenD40": {
+			"mean": 805001,
+			"median": 805001
+		},
+		"camera.cfg.K1.g128.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.K1.g128.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.K1.g128.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N16.g64.viewFacing": {
+			"mean": 975321,
+			"median": 975321
+		},
+		"camera.cfg.N16.g64.groupHiddenFull": {
+			"mean": 953662,
+			"median": 953662
+		},
+		"camera.cfg.N16.g64.groupHiddenD40": {
+			"mean": 953662,
+			"median": 953662
+		},
+		"camera.cfg.N16.g64.allHiddenFull": {
+			"mean": 934448,
+			"median": 934448
+		},
+		"camera.cfg.N16.g64.allHiddenD40": {
+			"mean": 934816,
+			"median": 934816
+		},
+		"camera.cfg.N16.g64.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N16.g64.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N16.g64.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N16.g128.viewFacing": {
+			"mean": 988327,
+			"median": 988327
+		},
+		"camera.cfg.N16.g128.groupHiddenFull": {
+			"mean": 966720,
+			"median": 966720
+		},
+		"camera.cfg.N16.g128.groupHiddenD40": {
+			"mean": 966720,
+			"median": 966720
+		},
+		"camera.cfg.N16.g128.allHiddenFull": {
+			"mean": 947506,
+			"median": 947506
+		},
+		"camera.cfg.N16.g128.allHiddenD40": {
+			"mean": 947874,
+			"median": 947874
+		},
+		"camera.cfg.N16.g128.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N16.g128.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N16.g128.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N32.g64.viewFacing": {
+			"mean": 926244,
+			"median": 926244
+		},
+		"camera.cfg.N32.g64.groupHiddenFull": {
+			"mean": 858593,
+			"median": 858593
+		},
+		"camera.cfg.N32.g64.groupHiddenD40": {
+			"mean": 859105,
+			"median": 859105
+		},
+		"camera.cfg.N32.g64.allHiddenFull": {
+			"mean": 857575,
+			"median": 857575
+		},
+		"camera.cfg.N32.g64.allHiddenD40": {
+			"mean": 858455,
+			"median": 858455
+		},
+		"camera.cfg.N32.g64.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N32.g64.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N32.g64.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N32.g128.viewFacing": {
+			"mean": 942872,
+			"median": 942872
+		},
+		"camera.cfg.N32.g128.groupHiddenFull": {
+			"mean": 877724,
+			"median": 877724
+		},
+		"camera.cfg.N32.g128.groupHiddenD40": {
+			"mean": 877852,
+			"median": 877852
+		},
+		"camera.cfg.N32.g128.allHiddenFull": {
+			"mean": 876706,
+			"median": 876706
+		},
+		"camera.cfg.N32.g128.allHiddenD40": {
+			"mean": 877202,
+			"median": 877202
+		},
+		"camera.cfg.N32.g128.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N32.g128.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N32.g128.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N64.g64.viewFacing": {
+			"mean": 859561,
+			"median": 859561
+		},
+		"camera.cfg.N64.g64.groupHiddenFull": {
+			"mean": 777756,
+			"median": 777756
+		},
+		"camera.cfg.N64.g64.groupHiddenD40": {
+			"mean": 778588,
+			"median": 778588
+		},
+		"camera.cfg.N64.g64.allHiddenFull": {
+			"mean": 776738,
+			"median": 776738
+		},
+		"camera.cfg.N64.g64.allHiddenD40": {
+			"mean": 777938,
+			"median": 777938
+		},
+		"camera.cfg.N64.g64.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N64.g64.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N64.g64.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N64.g128.viewFacing": {
+			"mean": 882015,
+			"median": 882015
+		},
+		"camera.cfg.N64.g128.groupHiddenFull": {
+			"mean": 805395,
+			"median": 805395
+		},
+		"camera.cfg.N64.g128.groupHiddenD40": {
+			"mean": 805651,
+			"median": 805651
+		},
+		"camera.cfg.N64.g128.allHiddenFull": {
+			"mean": 804377,
+			"median": 804377
+		},
+		"camera.cfg.N64.g128.allHiddenD40": {
+			"mean": 805001,
+			"median": 805001
+		},
+		"camera.cfg.N64.g128.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N64.g128.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N64.g128.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N128.g64.viewFacing": {
+			"mean": 859561,
+			"median": 859561
+		},
+		"camera.cfg.N128.g64.groupHiddenFull": {
+			"mean": 777756,
+			"median": 777756
+		},
+		"camera.cfg.N128.g64.groupHiddenD40": {
+			"mean": 778588,
+			"median": 778588
+		},
+		"camera.cfg.N128.g64.allHiddenFull": {
+			"mean": 776738,
+			"median": 776738
+		},
+		"camera.cfg.N128.g64.allHiddenD40": {
+			"mean": 777938,
+			"median": 777938
+		},
+		"camera.cfg.N128.g64.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N128.g64.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N128.g64.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N128.g128.viewFacing": {
+			"mean": 882015,
+			"median": 882015
+		},
+		"camera.cfg.N128.g128.groupHiddenFull": {
+			"mean": 805395,
+			"median": 805395
+		},
+		"camera.cfg.N128.g128.groupHiddenD40": {
+			"mean": 805651,
+			"median": 805651
+		},
+		"camera.cfg.N128.g128.allHiddenFull": {
+			"mean": 804377,
+			"median": 804377
+		},
+		"camera.cfg.N128.g128.allHiddenD40": {
+			"mean": 805001,
+			"median": 805001
+		},
+		"camera.cfg.N128.g128.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N128.g128.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N128.g128.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N256.g64.viewFacing": {
+			"mean": 859561,
+			"median": 859561
+		},
+		"camera.cfg.N256.g64.groupHiddenFull": {
+			"mean": 777756,
+			"median": 777756
+		},
+		"camera.cfg.N256.g64.groupHiddenD40": {
+			"mean": 778588,
+			"median": 778588
+		},
+		"camera.cfg.N256.g64.allHiddenFull": {
+			"mean": 776738,
+			"median": 776738
+		},
+		"camera.cfg.N256.g64.allHiddenD40": {
+			"mean": 777938,
+			"median": 777938
+		},
+		"camera.cfg.N256.g64.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N256.g64.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N256.g64.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.cfg.N256.g128.viewFacing": {
+			"mean": 882015,
+			"median": 882015
+		},
+		"camera.cfg.N256.g128.groupHiddenFull": {
+			"mean": 805395,
+			"median": 805395
+		},
+		"camera.cfg.N256.g128.groupHiddenD40": {
+			"mean": 805651,
+			"median": 805651
+		},
+		"camera.cfg.N256.g128.allHiddenFull": {
+			"mean": 804377,
+			"median": 804377
+		},
+		"camera.cfg.N256.g128.allHiddenD40": {
+			"mean": 805001,
+			"median": 805001
+		},
+		"camera.cfg.N256.g128.copyHiddenFullOnly": {
+			"mean": 1150793,
+			"median": 1150793
+		},
+		"camera.cfg.N256.g128.copyHiddenD40Only": {
+			"mean": 1151161,
+			"median": 1151161
+		},
+		"camera.cfg.N256.g128.now": {
+			"mean": 1170007,
+			"median": 1170007
+		},
+		"camera.occlusion.street.copies": {
+			"mean": 28,
+			"median": 28
+		},
+		"camera.occlusion.street.now": {
+			"mean": 69577,
+			"median": 69577
+		},
+		"camera.occlusion.street.pieceHiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.occlusion.street.pieceHiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.occlusion.street.occluderTris": {
+			"mean": 69561,
+			"median": 69561
+		},
+		"camera.occlusion.street.occluders": {
+			"mean": 26,
+			"median": 26
+		},
+		"camera.occlusion.building.copies": {
+			"mean": 160,
+			"median": 160
+		},
+		"camera.occlusion.building.now": {
+			"mean": 456213,
+			"median": 456213
+		},
+		"camera.occlusion.building.pieceHiddenFull": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.occlusion.building.pieceHiddenD40": {
+			"mean": 0,
+			"median": 0
+		},
+		"camera.occlusion.building.occluderTris": {
+			"mean": 451727,
+			"median": 451727
+		},
+		"camera.occlusion.building.occluders": {
+			"mean": 152,
+			"median": 152
+		},
+		"camera.occlusion.prop.copies": {
+			"mean": 115,
+			"median": 115
+		},
+		"camera.occlusion.prop.now": {
+			"mean": 343857,
+			"median": 343857
+		},
+		"camera.occlusion.prop.pieceHiddenFull": {
+			"mean": 230,
+			"median": 230
+		},
+		"camera.occlusion.prop.pieceHiddenD40": {
+			"mean": 230,
+			"median": 230
+		},
+		"camera.occlusion.prop.occluderTris": {
+			"mean": 321853,
+			"median": 321853
+		},
+		"camera.occlusion.prop.occluders": {
+			"mean": 70,
+			"median": 70
+		},
+		"camera.occlusion.foliage.copies": {
+			"mean": 105,
+			"median": 105
+		},
+		"camera.occlusion.foliage.now": {
+			"mean": 300360,
+			"median": 300360
+		},
+		"camera.occlusion.foliage.pieceHiddenFull": {
+			"mean": 18984,
+			"median": 18984
+		},
+		"camera.occlusion.foliage.pieceHiddenD40": {
+			"mean": 18616,
+			"median": 18616
+		},
+		"camera.occlusion.foliage.occluderTris": {
+			"mean": 156228,
+			"median": 156228
+		},
+		"camera.occlusion.foliage.occluders": {
+			"mean": 43,
+			"median": 43
+		},
+		"camera.occlusion.foliage.copyHiddenFull": {
+			"mean": 12,
+			"median": 12
+		},
+		"camera.occlusion.foliage.copyHiddenFullTris": {
+			"mean": 18984,
+			"median": 18984
+		},
+		"camera.occlusion.foliage.copyHiddenD40": {
+			"mean": 7,
+			"median": 7
+		},
+		"camera.occlusion.foliage.copyHiddenD40Tris": {
+			"mean": 18616,
+			"median": 18616
+		},
+		"camera.occlusion.prop.copyHiddenFull": {
+			"mean": 1,
+			"median": 1
+		},
+		"camera.occlusion.prop.copyHiddenFullTris": {
+			"mean": 230,
+			"median": 230
+		},
+		"camera.occlusion.prop.copyHiddenD40": {
+			"mean": 1,
+			"median": 1
+		},
+		"camera.occlusion.prop.copyHiddenD40Tris": {
+			"mean": 230,
+			"median": 230
+		},
+		"shadow0.texel": {
+			"mean": 0.018942000403269713,
+			"median": 0.018942000403269713
+		},
+		"shadow0.radius": {
+			"mean": 19.396608412948186,
+			"median": 19.396608412948186
+		},
+		"shadow0.all.street.copies": {
+			"mean": 30,
+			"median": 30
+		},
+		"shadow0.all.street.now": {
+			"mean": 70303,
+			"median": 70303
+		},
+		"shadow0.all.street.g64.offscreen": {
+			"mean": 37164,
+			"median": 37164
+		},
+		"shadow0.all.street.g128.offscreen": {
+			"mean": 34870,
+			"median": 34870
+		},
+		"shadow0.all.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.all.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow0.all.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow0.all.building.copies": {
+			"mean": 695,
+			"median": 695
+		},
+		"shadow0.all.building.now": {
+			"mean": 639301,
+			"median": 639301
+		},
+		"shadow0.all.building.g64.offscreen": {
+			"mean": 117580,
+			"median": 117580
+		},
+		"shadow0.all.building.g128.offscreen": {
+			"mean": 107486,
+			"median": 107486
+		},
+		"shadow0.all.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.all.building.g64.tested": {
+			"mean": 7246,
+			"median": 7246
+		},
+		"shadow0.all.building.g128.tested": {
+			"mean": 3637,
+			"median": 3637
+		},
+		"shadow0.all.prop.copies": {
+			"mean": 276,
+			"median": 276
+		},
+		"shadow0.all.prop.now": {
+			"mean": 467421,
+			"median": 467421
+		},
+		"shadow0.all.prop.g64.offscreen": {
+			"mean": 1152,
+			"median": 1152
+		},
+		"shadow0.all.prop.g128.offscreen": {
+			"mean": 512,
+			"median": 512
+		},
+		"shadow0.all.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.all.prop.g64.tested": {
+			"mean": 4003,
+			"median": 4003
+		},
+		"shadow0.all.prop.g128.tested": {
+			"mean": 1997,
+			"median": 1997
+		},
+		"shadow0.all.foliage.copies": {
+			"mean": 177,
+			"median": 177
+		},
+		"shadow0.all.foliage.now": {
+			"mean": 579541,
+			"median": 579541
+		},
+		"shadow0.all.foliage.g64.offscreen": {
+			"mean": 26826,
+			"median": 26826
+		},
+		"shadow0.all.foliage.g128.offscreen": {
+			"mean": 25267,
+			"median": 25267
+		},
+		"shadow0.all.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
+		"shadow0.all.foliage.g64.tested": {
+			"mean": 6785,
+			"median": 6785
+		},
+		"shadow0.all.foliage.g128.tested": {
+			"mean": 3407,
+			"median": 3407
+		},
+		"shadow0.K1.street.copies": {
+			"mean": 30,
+			"median": 30
+		},
+		"shadow0.K1.street.now": {
+			"mean": 70303,
+			"median": 70303
+		},
+		"shadow0.K1.street.g64.offscreen": {
+			"mean": 37164,
+			"median": 37164
+		},
+		"shadow0.K1.street.g128.offscreen": {
+			"mean": 34870,
+			"median": 34870
+		},
+		"shadow0.K1.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.K1.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow0.K1.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow0.K1.building.copies": {
+			"mean": 695,
+			"median": 695
+		},
+		"shadow0.K1.building.now": {
+			"mean": 639301,
+			"median": 639301
+		},
+		"shadow0.K1.building.g64.offscreen": {
+			"mean": 117580,
+			"median": 117580
+		},
+		"shadow0.K1.building.g128.offscreen": {
+			"mean": 107486,
+			"median": 107486
+		},
+		"shadow0.K1.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.K1.building.g64.tested": {
+			"mean": 7246,
+			"median": 7246
+		},
+		"shadow0.K1.building.g128.tested": {
+			"mean": 3637,
+			"median": 3637
+		},
+		"shadow0.K1.prop.copies": {
+			"mean": 276,
+			"median": 276
+		},
+		"shadow0.K1.prop.now": {
+			"mean": 467421,
+			"median": 467421
+		},
+		"shadow0.K1.prop.g64.offscreen": {
+			"mean": 1152,
+			"median": 1152
+		},
+		"shadow0.K1.prop.g128.offscreen": {
+			"mean": 512,
+			"median": 512
+		},
+		"shadow0.K1.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.K1.prop.g64.tested": {
+			"mean": 4003,
+			"median": 4003
+		},
+		"shadow0.K1.prop.g128.tested": {
+			"mean": 1997,
+			"median": 1997
+		},
+		"shadow0.K1.foliage.copies": {
+			"mean": 177,
+			"median": 177
+		},
+		"shadow0.K1.foliage.now": {
+			"mean": 579541,
+			"median": 579541
+		},
+		"shadow0.K1.foliage.g64.offscreen": {
+			"mean": 26826,
+			"median": 26826
+		},
+		"shadow0.K1.foliage.g128.offscreen": {
+			"mean": 25267,
+			"median": 25267
+		},
+		"shadow0.K1.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
+		"shadow0.K1.foliage.g64.tested": {
+			"mean": 6785,
+			"median": 6785
+		},
+		"shadow0.K1.foliage.g128.tested": {
+			"mean": 3407,
+			"median": 3407
+		},
+		"shadow0.N16.building.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"shadow0.N16.building.now": {
+			"mean": 281175,
+			"median": 281175
+		},
+		"shadow0.N16.building.g64.offscreen": {
+			"mean": 42448,
+			"median": 42448
+		},
+		"shadow0.N16.building.g128.offscreen": {
+			"mean": 36591,
+			"median": 36591
+		},
+		"shadow0.N16.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N16.building.g64.tested": {
+			"mean": 4418,
+			"median": 4418
+		},
+		"shadow0.N16.building.g128.tested": {
+			"mean": 2219,
+			"median": 2219
+		},
+		"shadow0.N16.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow0.N16.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow0.N16.street.g64.offscreen": {
+			"mean": 30322,
+			"median": 30322
+		},
+		"shadow0.N16.street.g128.offscreen": {
+			"mean": 28747,
+			"median": 28747
+		},
+		"shadow0.N16.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N16.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow0.N16.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow0.N16.foliage.copies": {
+			"mean": 2,
+			"median": 2
+		},
+		"shadow0.N16.foliage.now": {
+			"mean": 63420,
+			"median": 63420
+		},
+		"shadow0.N16.foliage.g64.offscreen": {
+			"mean": 21629,
+			"median": 21629
+		},
+		"shadow0.N16.foliage.g128.offscreen": {
+			"mean": 20467,
+			"median": 20467
+		},
+		"shadow0.N16.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
+		"shadow0.N16.foliage.g64.tested": {
+			"mean": 998,
+			"median": 998
+		},
+		"shadow0.N16.foliage.g128.tested": {
+			"mean": 500,
+			"median": 500
+		},
+		"shadow0.N16.prop.copies": {
+			"mean": 6,
+			"median": 6
+		},
+		"shadow0.N16.prop.now": {
+			"mean": 139633,
+			"median": 139633
+		},
+		"shadow0.N16.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N16.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N16.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N16.prop.g64.tested": {
+			"mean": 2244,
+			"median": 2244
+		},
+		"shadow0.N16.prop.g128.tested": {
+			"mean": 1115,
+			"median": 1115
+		},
+		"shadow0.N32.building.copies": {
+			"mean": 8,
+			"median": 8
+		},
+		"shadow0.N32.building.now": {
+			"mean": 300235,
+			"median": 300235
+		},
+		"shadow0.N32.building.g64.offscreen": {
+			"mean": 44048,
+			"median": 44048
+		},
+		"shadow0.N32.building.g128.offscreen": {
+			"mean": 37999,
+			"median": 37999
+		},
+		"shadow0.N32.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N32.building.g64.tested": {
+			"mean": 4716,
+			"median": 4716
+		},
+		"shadow0.N32.building.g128.tested": {
+			"mean": 2368,
+			"median": 2368
+		},
+		"shadow0.N32.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow0.N32.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow0.N32.street.g64.offscreen": {
+			"mean": 30322,
+			"median": 30322
+		},
+		"shadow0.N32.street.g128.offscreen": {
+			"mean": 28747,
+			"median": 28747
+		},
+		"shadow0.N32.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N32.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow0.N32.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow0.N32.foliage.copies": {
+			"mean": 16,
+			"median": 16
+		},
+		"shadow0.N32.foliage.now": {
+			"mean": 315819,
+			"median": 315819
+		},
+		"shadow0.N32.foliage.g64.offscreen": {
+			"mean": 21629,
+			"median": 21629
+		},
+		"shadow0.N32.foliage.g128.offscreen": {
+			"mean": 20467,
+			"median": 20467
+		},
+		"shadow0.N32.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
+		"shadow0.N32.foliage.g64.tested": {
+			"mean": 4952,
+			"median": 4952
+		},
+		"shadow0.N32.foliage.g128.tested": {
+			"mean": 2484,
+			"median": 2484
+		},
+		"shadow0.N32.prop.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"shadow0.N32.prop.now": {
+			"mean": 157860,
+			"median": 157860
+		},
+		"shadow0.N32.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N32.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N32.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N32.prop.g64.tested": {
+			"mean": 2529,
+			"median": 2529
+		},
+		"shadow0.N32.prop.g128.tested": {
+			"mean": 1258,
+			"median": 1258
+		},
+		"shadow0.N64.building.copies": {
+			"mean": 22,
+			"median": 22
+		},
+		"shadow0.N64.building.now": {
+			"mean": 437075,
+			"median": 437075
+		},
+		"shadow0.N64.building.g64.offscreen": {
+			"mean": 104140,
+			"median": 104140
+		},
+		"shadow0.N64.building.g128.offscreen": {
+			"mean": 95370,
+			"median": 95370
+		},
+		"shadow0.N64.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N64.building.g64.tested": {
+			"mean": 6860,
+			"median": 6860
+		},
+		"shadow0.N64.building.g128.tested": {
+			"mean": 3443,
+			"median": 3443
+		},
+		"shadow0.N64.street.copies": {
+			"mean": 3,
+			"median": 3
+		},
+		"shadow0.N64.street.now": {
+			"mean": 54402,
+			"median": 54402
+		},
+		"shadow0.N64.street.g64.offscreen": {
+			"mean": 37164,
+			"median": 37164
+		},
+		"shadow0.N64.street.g128.offscreen": {
+			"mean": 34870,
+			"median": 34870
+		},
+		"shadow0.N64.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N64.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow0.N64.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow0.N64.foliage.copies": {
+			"mean": 25,
+			"median": 25
+		},
+		"shadow0.N64.foliage.now": {
+			"mean": 407361,
+			"median": 407361
+		},
+		"shadow0.N64.foliage.g64.offscreen": {
+			"mean": 26698,
+			"median": 26698
+		},
+		"shadow0.N64.foliage.g128.offscreen": {
+			"mean": 25267,
+			"median": 25267
+		},
+		"shadow0.N64.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
+		"shadow0.N64.foliage.g64.tested": {
+			"mean": 6391,
+			"median": 6391
+		},
+		"shadow0.N64.foliage.g128.tested": {
+			"mean": 3208,
+			"median": 3208
+		},
+		"shadow0.N64.prop.copies": {
+			"mean": 14,
+			"median": 14
+		},
+		"shadow0.N64.prop.now": {
+			"mean": 196984,
+			"median": 196984
+		},
+		"shadow0.N64.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N64.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N64.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N64.prop.g64.tested": {
+			"mean": 3144,
+			"median": 3144
+		},
+		"shadow0.N64.prop.g128.tested": {
+			"mean": 1566,
+			"median": 1566
+		},
+		"shadow0.N128.building.copies": {
+			"mean": 36,
+			"median": 36
+		},
+		"shadow0.N128.building.now": {
+			"mean": 492405,
+			"median": 492405
+		},
+		"shadow0.N128.building.g64.offscreen": {
+			"mean": 117580,
+			"median": 117580
+		},
+		"shadow0.N128.building.g128.offscreen": {
+			"mean": 107486,
+			"median": 107486
+		},
+		"shadow0.N128.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N128.building.g64.tested": {
+			"mean": 7246,
+			"median": 7246
+		},
+		"shadow0.N128.building.g128.tested": {
+			"mean": 3637,
+			"median": 3637
+		},
+		"shadow0.N128.street.copies": {
+			"mean": 4,
+			"median": 4
+		},
+		"shadow0.N128.street.now": {
+			"mean": 57814,
+			"median": 57814
+		},
+		"shadow0.N128.street.g64.offscreen": {
+			"mean": 37164,
+			"median": 37164
+		},
+		"shadow0.N128.street.g128.offscreen": {
+			"mean": 34870,
+			"median": 34870
+		},
+		"shadow0.N128.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N128.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow0.N128.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow0.N128.foliage.copies": {
+			"mean": 55,
+			"median": 55
+		},
+		"shadow0.N128.foliage.now": {
+			"mean": 519421,
+			"median": 519421
+		},
+		"shadow0.N128.foliage.g64.offscreen": {
+			"mean": 26826,
+			"median": 26826
+		},
+		"shadow0.N128.foliage.g128.offscreen": {
+			"mean": 25267,
+			"median": 25267
+		},
+		"shadow0.N128.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
+		"shadow0.N128.foliage.g64.tested": {
+			"mean": 6785,
+			"median": 6785
+		},
+		"shadow0.N128.foliage.g128.tested": {
+			"mean": 3407,
+			"median": 3407
+		},
+		"shadow0.N128.prop.copies": {
+			"mean": 33,
+			"median": 33
+		},
+		"shadow0.N128.prop.now": {
+			"mean": 276903,
+			"median": 276903
+		},
+		"shadow0.N128.prop.g64.offscreen": {
+			"mean": 1152,
+			"median": 1152
+		},
+		"shadow0.N128.prop.g128.offscreen": {
+			"mean": 512,
+			"median": 512
+		},
+		"shadow0.N128.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N128.prop.g64.tested": {
+			"mean": 4003,
+			"median": 4003
+		},
+		"shadow0.N128.prop.g128.tested": {
+			"mean": 1997,
+			"median": 1997
+		},
+		"shadow0.N256.building.copies": {
+			"mean": 69,
+			"median": 69
+		},
+		"shadow0.N256.building.now": {
+			"mean": 554829,
+			"median": 554829
+		},
+		"shadow0.N256.building.g64.offscreen": {
+			"mean": 117580,
+			"median": 117580
+		},
+		"shadow0.N256.building.g128.offscreen": {
+			"mean": 107486,
+			"median": 107486
+		},
+		"shadow0.N256.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N256.building.g64.tested": {
+			"mean": 7246,
+			"median": 7246
+		},
+		"shadow0.N256.building.g128.tested": {
+			"mean": 3637,
+			"median": 3637
+		},
+		"shadow0.N256.street.copies": {
+			"mean": 6,
+			"median": 6
+		},
+		"shadow0.N256.street.now": {
+			"mean": 62007,
+			"median": 62007
+		},
+		"shadow0.N256.street.g64.offscreen": {
+			"mean": 37164,
+			"median": 37164
+		},
+		"shadow0.N256.street.g128.offscreen": {
+			"mean": 34870,
+			"median": 34870
+		},
+		"shadow0.N256.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N256.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow0.N256.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow0.N256.foliage.copies": {
+			"mean": 68,
+			"median": 68
+		},
+		"shadow0.N256.foliage.now": {
+			"mean": 544275,
+			"median": 544275
+		},
+		"shadow0.N256.foliage.g64.offscreen": {
+			"mean": 26826,
+			"median": 26826
+		},
+		"shadow0.N256.foliage.g128.offscreen": {
+			"mean": 25267,
+			"median": 25267
+		},
+		"shadow0.N256.foliage.g0.offscreen": {
+			"mean": 4315,
+			"median": 4315
+		},
+		"shadow0.N256.foliage.g64.tested": {
+			"mean": 6785,
+			"median": 6785
+		},
+		"shadow0.N256.foliage.g128.tested": {
+			"mean": 3407,
+			"median": 3407
+		},
+		"shadow0.N256.prop.copies": {
+			"mean": 113,
+			"median": 113
+		},
+		"shadow0.N256.prop.now": {
+			"mean": 418681,
+			"median": 418681
+		},
+		"shadow0.N256.prop.g64.offscreen": {
+			"mean": 1152,
+			"median": 1152
+		},
+		"shadow0.N256.prop.g128.offscreen": {
+			"mean": 512,
+			"median": 512
+		},
+		"shadow0.N256.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow0.N256.prop.g64.tested": {
+			"mean": 4003,
+			"median": 4003
+		},
+		"shadow0.N256.prop.g128.tested": {
+			"mean": 1997,
+			"median": 1997
+		},
+		"shadow1.texel": {
+			"mean": 0.04513657595650593,
+			"median": 0.04513657595650593
+		},
+		"shadow1.radius": {
+			"mean": 46.21985377946207,
+			"median": 46.21985377946207
+		},
+		"shadow1.all.street.copies": {
+			"mean": 34,
+			"median": 34
+		},
+		"shadow1.all.street.now": {
+			"mean": 71897,
+			"median": 71897
+		},
+		"shadow1.all.street.g64.offscreen": {
+			"mean": 22430,
+			"median": 22430
+		},
+		"shadow1.all.street.g128.offscreen": {
+			"mean": 21070,
+			"median": 21070
+		},
+		"shadow1.all.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow1.all.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow1.all.building.copies": {
+			"mean": 884,
+			"median": 884
+		},
+		"shadow1.all.building.now": {
+			"mean": 832949,
+			"median": 832949
+		},
+		"shadow1.all.building.g64.offscreen": {
+			"mean": 59004,
+			"median": 59004
+		},
+		"shadow1.all.building.g128.offscreen": {
+			"mean": 53154,
+			"median": 53154
+		},
+		"shadow1.all.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.building.g64.tested": {
+			"mean": 9385,
+			"median": 9385
+		},
+		"shadow1.all.building.g128.tested": {
+			"mean": 4708,
+			"median": 4708
+		},
+		"shadow1.all.prop.copies": {
+			"mean": 316,
+			"median": 316
+		},
+		"shadow1.all.prop.now": {
+			"mean": 422321,
+			"median": 422321
+		},
+		"shadow1.all.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.prop.g64.tested": {
+			"mean": 2694,
+			"median": 2694
+		},
+		"shadow1.all.prop.g128.tested": {
+			"mean": 1341,
+			"median": 1341
+		},
+		"shadow1.all.foliage.copies": {
+			"mean": 220,
+			"median": 220
+		},
+		"shadow1.all.foliage.now": {
+			"mean": 638831,
+			"median": 638831
+		},
+		"shadow1.all.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.all.foliage.g64.tested": {
+			"mean": 7522,
+			"median": 7522
+		},
+		"shadow1.all.foliage.g128.tested": {
+			"mean": 3777,
+			"median": 3777
+		},
+		"shadow1.K1.street.copies": {
+			"mean": 34,
+			"median": 34
+		},
+		"shadow1.K1.street.now": {
+			"mean": 71897,
+			"median": 71897
+		},
+		"shadow1.K1.street.g64.offscreen": {
+			"mean": 22430,
+			"median": 22430
+		},
+		"shadow1.K1.street.g128.offscreen": {
+			"mean": 21070,
+			"median": 21070
+		},
+		"shadow1.K1.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow1.K1.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow1.K1.building.copies": {
+			"mean": 884,
+			"median": 884
+		},
+		"shadow1.K1.building.now": {
+			"mean": 832949,
+			"median": 832949
+		},
+		"shadow1.K1.building.g64.offscreen": {
+			"mean": 59004,
+			"median": 59004
+		},
+		"shadow1.K1.building.g128.offscreen": {
+			"mean": 53154,
+			"median": 53154
+		},
+		"shadow1.K1.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.building.g64.tested": {
+			"mean": 9385,
+			"median": 9385
+		},
+		"shadow1.K1.building.g128.tested": {
+			"mean": 4708,
+			"median": 4708
+		},
+		"shadow1.K1.prop.copies": {
+			"mean": 316,
+			"median": 316
+		},
+		"shadow1.K1.prop.now": {
+			"mean": 422321,
+			"median": 422321
+		},
+		"shadow1.K1.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.prop.g64.tested": {
+			"mean": 2694,
+			"median": 2694
+		},
+		"shadow1.K1.prop.g128.tested": {
+			"mean": 1341,
+			"median": 1341
+		},
+		"shadow1.K1.foliage.copies": {
+			"mean": 220,
+			"median": 220
+		},
+		"shadow1.K1.foliage.now": {
+			"mean": 638831,
+			"median": 638831
+		},
+		"shadow1.K1.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.K1.foliage.g64.tested": {
+			"mean": 7522,
+			"median": 7522
+		},
+		"shadow1.K1.foliage.g128.tested": {
+			"mean": 3777,
+			"median": 3777
+		},
+		"shadow1.N16.building.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"shadow1.N16.building.now": {
+			"mean": 281175,
+			"median": 281175
+		},
+		"shadow1.N16.building.g64.offscreen": {
+			"mean": 960,
+			"median": 960
+		},
+		"shadow1.N16.building.g128.offscreen": {
+			"mean": 768,
+			"median": 768
+		},
+		"shadow1.N16.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.building.g64.tested": {
+			"mean": 4418,
+			"median": 4418
+		},
+		"shadow1.N16.building.g128.tested": {
+			"mean": 2219,
+			"median": 2219
+		},
+		"shadow1.N16.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow1.N16.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow1.N16.street.g64.offscreen": {
+			"mean": 19267,
+			"median": 19267
+		},
+		"shadow1.N16.street.g128.offscreen": {
+			"mean": 18227,
+			"median": 18227
+		},
+		"shadow1.N16.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow1.N16.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow1.N16.foliage.copies": {
+			"mean": 2,
+			"median": 2
+		},
+		"shadow1.N16.foliage.now": {
+			"mean": 63420,
+			"median": 63420
+		},
+		"shadow1.N16.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.foliage.g64.tested": {
+			"mean": 998,
+			"median": 998
+		},
+		"shadow1.N16.foliage.g128.tested": {
+			"mean": 500,
+			"median": 500
+		},
+		"shadow1.N16.prop.copies": {
+			"mean": 6,
+			"median": 6
+		},
+		"shadow1.N16.prop.now": {
+			"mean": 139633,
+			"median": 139633
+		},
+		"shadow1.N16.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N16.prop.g64.tested": {
+			"mean": 2244,
+			"median": 2244
+		},
+		"shadow1.N16.prop.g128.tested": {
+			"mean": 1115,
+			"median": 1115
+		},
+		"shadow1.N32.building.copies": {
+			"mean": 10,
+			"median": 10
+		},
+		"shadow1.N32.building.now": {
+			"mean": 339319,
+			"median": 339319
+		},
+		"shadow1.N32.building.g64.offscreen": {
+			"mean": 19286,
+			"median": 19286
+		},
+		"shadow1.N32.building.g128.offscreen": {
+			"mean": 16982,
+			"median": 16982
+		},
+		"shadow1.N32.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.building.g64.tested": {
+			"mean": 5328,
+			"median": 5328
+		},
+		"shadow1.N32.building.g128.tested": {
+			"mean": 2674,
+			"median": 2674
+		},
+		"shadow1.N32.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow1.N32.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow1.N32.street.g64.offscreen": {
+			"mean": 19267,
+			"median": 19267
+		},
+		"shadow1.N32.street.g128.offscreen": {
+			"mean": 18227,
+			"median": 18227
+		},
+		"shadow1.N32.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow1.N32.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow1.N32.foliage.copies": {
+			"mean": 14,
+			"median": 14
+		},
+		"shadow1.N32.foliage.now": {
+			"mean": 281772,
+			"median": 281772
+		},
+		"shadow1.N32.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.foliage.g64.tested": {
+			"mean": 4418,
+			"median": 4418
+		},
+		"shadow1.N32.foliage.g128.tested": {
+			"mean": 2216,
+			"median": 2216
+		},
+		"shadow1.N32.prop.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"shadow1.N32.prop.now": {
+			"mean": 157860,
+			"median": 157860
+		},
+		"shadow1.N32.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N32.prop.g64.tested": {
+			"mean": 2529,
+			"median": 2529
+		},
+		"shadow1.N32.prop.g128.tested": {
+			"mean": 1258,
+			"median": 1258
+		},
+		"shadow1.N64.building.copies": {
+			"mean": 29,
+			"median": 29
+		},
+		"shadow1.N64.building.now": {
+			"mean": 532219,
+			"median": 532219
+		},
+		"shadow1.N64.building.g64.offscreen": {
+			"mean": 49428,
+			"median": 49428
+		},
+		"shadow1.N64.building.g128.offscreen": {
+			"mean": 45346,
+			"median": 45346
+		},
+		"shadow1.N64.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.building.g64.tested": {
+			"mean": 8349,
+			"median": 8349
+		},
+		"shadow1.N64.building.g128.tested": {
+			"mean": 4187,
+			"median": 4187
+		},
+		"shadow1.N64.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow1.N64.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow1.N64.street.g64.offscreen": {
+			"mean": 19267,
+			"median": 19267
+		},
+		"shadow1.N64.street.g128.offscreen": {
+			"mean": 18227,
+			"median": 18227
+		},
+		"shadow1.N64.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow1.N64.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow1.N64.foliage.copies": {
+			"mean": 27,
+			"median": 27
+		},
+		"shadow1.N64.foliage.now": {
+			"mean": 447301,
+			"median": 447301
+		},
+		"shadow1.N64.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.foliage.g64.tested": {
+			"mean": 7012,
+			"median": 7012
+		},
+		"shadow1.N64.foliage.g128.tested": {
+			"mean": 3519,
+			"median": 3519
+		},
+		"shadow1.N64.prop.copies": {
+			"mean": 7,
+			"median": 7
+		},
+		"shadow1.N64.prop.now": {
+			"mean": 157860,
+			"median": 157860
+		},
+		"shadow1.N64.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N64.prop.g64.tested": {
+			"mean": 2529,
+			"median": 2529
+		},
+		"shadow1.N64.prop.g128.tested": {
+			"mean": 1258,
+			"median": 1258
+		},
+		"shadow1.N128.building.copies": {
+			"mean": 49,
+			"median": 49
+		},
+		"shadow1.N128.building.now": {
+			"mean": 623268,
+			"median": 623268
+		},
+		"shadow1.N128.building.g64.offscreen": {
+			"mean": 59004,
+			"median": 59004
+		},
+		"shadow1.N128.building.g128.offscreen": {
+			"mean": 53154,
+			"median": 53154
+		},
+		"shadow1.N128.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.building.g64.tested": {
+			"mean": 9385,
+			"median": 9385
+		},
+		"shadow1.N128.building.g128.tested": {
+			"mean": 4708,
+			"median": 4708
+		},
+		"shadow1.N128.street.copies": {
+			"mean": 4,
+			"median": 4
+		},
+		"shadow1.N128.street.now": {
+			"mean": 57814,
+			"median": 57814
+		},
+		"shadow1.N128.street.g64.offscreen": {
+			"mean": 22430,
+			"median": 22430
+		},
+		"shadow1.N128.street.g128.offscreen": {
+			"mean": 21070,
+			"median": 21070
+		},
+		"shadow1.N128.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow1.N128.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow1.N128.foliage.copies": {
+			"mean": 61,
+			"median": 61
+		},
+		"shadow1.N128.foliage.now": {
+			"mean": 577344,
+			"median": 577344
+		},
+		"shadow1.N128.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.foliage.g64.tested": {
+			"mean": 7522,
+			"median": 7522
+		},
+		"shadow1.N128.foliage.g128.tested": {
+			"mean": 3777,
+			"median": 3777
+		},
+		"shadow1.N128.prop.copies": {
+			"mean": 14,
+			"median": 14
+		},
+		"shadow1.N128.prop.now": {
+			"mean": 184643,
+			"median": 184643
+		},
+		"shadow1.N128.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N128.prop.g64.tested": {
+			"mean": 2694,
+			"median": 2694
+		},
+		"shadow1.N128.prop.g128.tested": {
+			"mean": 1341,
+			"median": 1341
+		},
+		"shadow1.N256.building.copies": {
+			"mean": 93,
+			"median": 93
+		},
+		"shadow1.N256.building.now": {
+			"mean": 716267,
+			"median": 716267
+		},
+		"shadow1.N256.building.g64.offscreen": {
+			"mean": 59004,
+			"median": 59004
+		},
+		"shadow1.N256.building.g128.offscreen": {
+			"mean": 53154,
+			"median": 53154
+		},
+		"shadow1.N256.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.building.g64.tested": {
+			"mean": 9385,
+			"median": 9385
+		},
+		"shadow1.N256.building.g128.tested": {
+			"mean": 4708,
+			"median": 4708
+		},
+		"shadow1.N256.street.copies": {
+			"mean": 5,
+			"median": 5
+		},
+		"shadow1.N256.street.now": {
+			"mean": 60599,
+			"median": 60599
+		},
+		"shadow1.N256.street.g64.offscreen": {
+			"mean": 22430,
+			"median": 22430
+		},
+		"shadow1.N256.street.g128.offscreen": {
+			"mean": 21070,
+			"median": 21070
+		},
+		"shadow1.N256.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow1.N256.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow1.N256.foliage.copies": {
+			"mean": 73,
+			"median": 73
+		},
+		"shadow1.N256.foliage.now": {
+			"mean": 600872,
+			"median": 600872
+		},
+		"shadow1.N256.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.foliage.g64.tested": {
+			"mean": 7522,
+			"median": 7522
+		},
+		"shadow1.N256.foliage.g128.tested": {
+			"mean": 3777,
+			"median": 3777
+		},
+		"shadow1.N256.prop.copies": {
+			"mean": 85,
+			"median": 85
+		},
+		"shadow1.N256.prop.now": {
+			"mean": 330237,
+			"median": 330237
+		},
+		"shadow1.N256.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow1.N256.prop.g64.tested": {
+			"mean": 2694,
+			"median": 2694
+		},
+		"shadow1.N256.prop.g128.tested": {
+			"mean": 1341,
+			"median": 1341
+		},
+		"shadow2.texel": {
+			"mean": 0.15553939997952418,
+			"median": 0.15553939997952418
+		},
+		"shadow2.radius": {
+			"mean": 159.27234557903276,
+			"median": 159.27234557903276
+		},
+		"shadow2.all.street.copies": {
+			"mean": 51,
+			"median": 51
+		},
+		"shadow2.all.street.now": {
+			"mean": 81189,
+			"median": 81189
+		},
+		"shadow2.all.street.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow2.all.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow2.all.building.copies": {
+			"mean": 933,
+			"median": 933
+		},
+		"shadow2.all.building.now": {
+			"mean": 828172,
+			"median": 828172
+		},
+		"shadow2.all.building.g64.offscreen": {
+			"mean": 186,
+			"median": 186
+		},
+		"shadow2.all.building.g128.offscreen": {
+			"mean": 122,
+			"median": 122
+		},
+		"shadow2.all.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.building.g64.tested": {
+			"mean": 8942,
+			"median": 8942
+		},
+		"shadow2.all.building.g128.tested": {
+			"mean": 4486,
+			"median": 4486
+		},
+		"shadow2.all.prop.copies": {
+			"mean": 261,
+			"median": 261
+		},
+		"shadow2.all.prop.now": {
+			"mean": 408766,
+			"median": 408766
+		},
+		"shadow2.all.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.prop.g64.tested": {
+			"mean": 3325,
+			"median": 3325
+		},
+		"shadow2.all.prop.g128.tested": {
+			"mean": 1653,
+			"median": 1653
+		},
+		"shadow2.all.foliage.copies": {
+			"mean": 233,
+			"median": 233
+		},
+		"shadow2.all.foliage.now": {
+			"mean": 938139,
+			"median": 938139
+		},
+		"shadow2.all.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.all.foliage.g64.tested": {
+			"mean": 11846,
+			"median": 11846
+		},
+		"shadow2.all.foliage.g128.tested": {
+			"mean": 5945,
+			"median": 5945
+		},
+		"shadow2.K1.street.copies": {
+			"mean": 51,
+			"median": 51
+		},
+		"shadow2.K1.street.now": {
+			"mean": 81189,
+			"median": 81189
+		},
+		"shadow2.K1.street.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow2.K1.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow2.K1.building.copies": {
+			"mean": 933,
+			"median": 933
+		},
+		"shadow2.K1.building.now": {
+			"mean": 828172,
+			"median": 828172
+		},
+		"shadow2.K1.building.g64.offscreen": {
+			"mean": 186,
+			"median": 186
+		},
+		"shadow2.K1.building.g128.offscreen": {
+			"mean": 122,
+			"median": 122
+		},
+		"shadow2.K1.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.building.g64.tested": {
+			"mean": 8942,
+			"median": 8942
+		},
+		"shadow2.K1.building.g128.tested": {
+			"mean": 4486,
+			"median": 4486
+		},
+		"shadow2.K1.prop.copies": {
+			"mean": 261,
+			"median": 261
+		},
+		"shadow2.K1.prop.now": {
+			"mean": 408766,
+			"median": 408766
+		},
+		"shadow2.K1.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.prop.g64.tested": {
+			"mean": 3325,
+			"median": 3325
+		},
+		"shadow2.K1.prop.g128.tested": {
+			"mean": 1653,
+			"median": 1653
+		},
+		"shadow2.K1.foliage.copies": {
+			"mean": 233,
+			"median": 233
+		},
+		"shadow2.K1.foliage.now": {
+			"mean": 938139,
+			"median": 938139
+		},
+		"shadow2.K1.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.K1.foliage.g64.tested": {
+			"mean": 11846,
+			"median": 11846
+		},
+		"shadow2.K1.foliage.g128.tested": {
+			"mean": 5945,
+			"median": 5945
+		},
+		"shadow2.N16.building.copies": {
+			"mean": 6,
+			"median": 6
+		},
+		"shadow2.N16.building.now": {
+			"mean": 295895,
+			"median": 295895
+		},
+		"shadow2.N16.building.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.building.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.building.g64.tested": {
+			"mean": 4644,
+			"median": 4644
+		},
+		"shadow2.N16.building.g128.tested": {
+			"mean": 2329,
+			"median": 2329
+		},
+		"shadow2.N16.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow2.N16.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow2.N16.street.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow2.N16.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow2.N16.foliage.copies": {
+			"mean": 3,
+			"median": 3
+		},
+		"shadow2.N16.foliage.now": {
+			"mean": 89817,
+			"median": 89817
+		},
+		"shadow2.N16.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.foliage.g64.tested": {
+			"mean": 1411,
+			"median": 1411
+		},
+		"shadow2.N16.foliage.g128.tested": {
+			"mean": 707,
+			"median": 707
+		},
+		"shadow2.N16.prop.copies": {
+			"mean": 6,
+			"median": 6
+		},
+		"shadow2.N16.prop.now": {
+			"mean": 139633,
+			"median": 139633
+		},
+		"shadow2.N16.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N16.prop.g64.tested": {
+			"mean": 2244,
+			"median": 2244
+		},
+		"shadow2.N16.prop.g128.tested": {
+			"mean": 1115,
+			"median": 1115
+		},
+		"shadow2.N32.building.copies": {
+			"mean": 8,
+			"median": 8
+		},
+		"shadow2.N32.building.now": {
+			"mean": 335055,
+			"median": 335055
+		},
+		"shadow2.N32.building.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.building.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.building.g64.tested": {
+			"mean": 5257,
+			"median": 5257
+		},
+		"shadow2.N32.building.g128.tested": {
+			"mean": 2636,
+			"median": 2636
+		},
+		"shadow2.N32.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow2.N32.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow2.N32.street.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow2.N32.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow2.N32.foliage.copies": {
+			"mean": 14,
+			"median": 14
+		},
+		"shadow2.N32.foliage.now": {
+			"mean": 289973,
+			"median": 289973
+		},
+		"shadow2.N32.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.foliage.g64.tested": {
+			"mean": 4546,
+			"median": 4546
+		},
+		"shadow2.N32.foliage.g128.tested": {
+			"mean": 2280,
+			"median": 2280
+		},
+		"shadow2.N32.prop.copies": {
+			"mean": 9,
+			"median": 9
+		},
+		"shadow2.N32.prop.now": {
+			"mean": 202970,
+			"median": 202970
+		},
+		"shadow2.N32.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N32.prop.g64.tested": {
+			"mean": 3259,
+			"median": 3259
+		},
+		"shadow2.N32.prop.g128.tested": {
+			"mean": 1620,
+			"median": 1620
+		},
+		"shadow2.N64.building.copies": {
+			"mean": 13,
+			"median": 13
+		},
+		"shadow2.N64.building.now": {
+			"mean": 396810,
+			"median": 396810
+		},
+		"shadow2.N64.building.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.building.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.building.g64.tested": {
+			"mean": 6225,
+			"median": 6225
+		},
+		"shadow2.N64.building.g128.tested": {
+			"mean": 3121,
+			"median": 3121
+		},
+		"shadow2.N64.street.copies": {
+			"mean": 1,
+			"median": 1
+		},
+		"shadow2.N64.street.now": {
+			"mean": 41912,
+			"median": 41912
+		},
+		"shadow2.N64.street.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.street.g64.tested": {
+			"mean": 760,
+			"median": 760
+		},
+		"shadow2.N64.street.g128.tested": {
+			"mean": 383,
+			"median": 383
+		},
+		"shadow2.N64.foliage.copies": {
+			"mean": 41,
+			"median": 41
+		},
+		"shadow2.N64.foliage.now": {
+			"mean": 694106,
+			"median": 694106
+		},
+		"shadow2.N64.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.foliage.g64.tested": {
+			"mean": 10877,
+			"median": 10877
+		},
+		"shadow2.N64.foliage.g128.tested": {
+			"mean": 5458,
+			"median": 5458
+		},
+		"shadow2.N64.prop.copies": {
+			"mean": 9,
+			"median": 9
+		},
+		"shadow2.N64.prop.now": {
+			"mean": 202970,
+			"median": 202970
+		},
+		"shadow2.N64.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N64.prop.g64.tested": {
+			"mean": 3259,
+			"median": 3259
+		},
+		"shadow2.N64.prop.g128.tested": {
+			"mean": 1620,
+			"median": 1620
+		},
+		"shadow2.N128.building.copies": {
+			"mean": 48,
+			"median": 48
+		},
+		"shadow2.N128.building.now": {
+			"mean": 603129,
+			"median": 603129
+		},
+		"shadow2.N128.building.g64.offscreen": {
+			"mean": 186,
+			"median": 186
+		},
+		"shadow2.N128.building.g128.offscreen": {
+			"mean": 122,
+			"median": 122
+		},
+		"shadow2.N128.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.building.g64.tested": {
+			"mean": 8942,
+			"median": 8942
+		},
+		"shadow2.N128.building.g128.tested": {
+			"mean": 4486,
+			"median": 4486
+		},
+		"shadow2.N128.street.copies": {
+			"mean": 3,
+			"median": 3
+		},
+		"shadow2.N128.street.now": {
+			"mean": 54402,
+			"median": 54402
+		},
+		"shadow2.N128.street.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow2.N128.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow2.N128.foliage.copies": {
+			"mean": 67,
+			"median": 67
+		},
+		"shadow2.N128.foliage.now": {
+			"mean": 817455,
+			"median": 817455
+		},
+		"shadow2.N128.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.foliage.g64.tested": {
+			"mean": 11846,
+			"median": 11846
+		},
+		"shadow2.N128.foliage.g128.tested": {
+			"mean": 5945,
+			"median": 5945
+		},
+		"shadow2.N128.prop.copies": {
+			"mean": 10,
+			"median": 10
+		},
+		"shadow2.N128.prop.now": {
+			"mean": 207172,
+			"median": 207172
+		},
+		"shadow2.N128.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N128.prop.g64.tested": {
+			"mean": 3325,
+			"median": 3325
+		},
+		"shadow2.N128.prop.g128.tested": {
+			"mean": 1653,
+			"median": 1653
+		},
+		"shadow2.N256.building.copies": {
+			"mean": 93,
+			"median": 93
+		},
+		"shadow2.N256.building.now": {
+			"mean": 699466,
+			"median": 699466
+		},
+		"shadow2.N256.building.g64.offscreen": {
+			"mean": 186,
+			"median": 186
+		},
+		"shadow2.N256.building.g128.offscreen": {
+			"mean": 122,
+			"median": 122
+		},
+		"shadow2.N256.building.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.building.g64.tested": {
+			"mean": 8942,
+			"median": 8942
+		},
+		"shadow2.N256.building.g128.tested": {
+			"mean": 4486,
+			"median": 4486
+		},
+		"shadow2.N256.street.copies": {
+			"mean": 10,
+			"median": 10
+		},
+		"shadow2.N256.street.now": {
+			"mean": 67639,
+			"median": 67639
+		},
+		"shadow2.N256.street.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.street.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.street.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.street.g64.tested": {
+			"mean": 958,
+			"median": 958
+		},
+		"shadow2.N256.street.g128.tested": {
+			"mean": 482,
+			"median": 482
+		},
+		"shadow2.N256.foliage.copies": {
+			"mean": 104,
+			"median": 104
+		},
+		"shadow2.N256.foliage.now": {
+			"mean": 907379,
+			"median": 907379
+		},
+		"shadow2.N256.foliage.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.foliage.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.foliage.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.foliage.g64.tested": {
+			"mean": 11846,
+			"median": 11846
+		},
+		"shadow2.N256.foliage.g128.tested": {
+			"mean": 5945,
+			"median": 5945
+		},
+		"shadow2.N256.prop.copies": {
+			"mean": 49,
+			"median": 49
+		},
+		"shadow2.N256.prop.now": {
+			"mean": 295131,
+			"median": 295131
+		},
+		"shadow2.N256.prop.g64.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.prop.g128.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.prop.g0.offscreen": {
+			"mean": 0,
+			"median": 0
+		},
+		"shadow2.N256.prop.g64.tested": {
+			"mean": 3325,
+			"median": 3325
+		},
+		"shadow2.N256.prop.g128.tested": {
+			"mean": 1653,
+			"median": 1653
+		}
+	},
+	"perView": [
+		{
+			"label": "street",
+			"figures": {
+				"camera.coveredShare": 0.9875569058641975,
+				"camera.all.street.copies": 28,
+				"camera.all.street.now": 69577,
+				"camera.all.street.g64.offscreen": 43064,
+				"camera.all.street.g64.facing": 652,
+				"camera.all.street.g64.hiddenFull": 128,
+				"camera.all.street.g64.hiddenD40": 128,
+				"camera.all.street.g64.tested": 958,
+				"camera.all.street.g64.visible": 187,
+				"camera.all.street.g64.hiddenGroupsFull": 2,
+				"camera.all.street.g64.hiddenGroupsD40": 2,
+				"camera.all.street.g128.offscreen": 40999,
+				"camera.all.street.g128.facing": 99,
+				"camera.all.street.g128.hiddenFull": 0,
+				"camera.all.street.g128.hiddenD40": 0,
+				"camera.all.street.g128.tested": 482,
+				"camera.all.street.g128.visible": 117,
+				"camera.all.street.g128.hiddenGroupsFull": 0,
+				"camera.all.street.g128.hiddenGroupsD40": 0,
+				"camera.all.building.copies": 160,
+				"camera.all.building.now": 456213,
+				"camera.all.building.g64.offscreen": 165312,
+				"camera.all.building.g64.facing": 9896,
+				"camera.all.building.g64.hiddenFull": 20106,
+				"camera.all.building.g64.hiddenD40": 20106,
+				"camera.all.building.g64.tested": 5934,
+				"camera.all.building.g64.visible": 3187,
+				"camera.all.building.g64.hiddenGroupsFull": 315,
+				"camera.all.building.g64.hiddenGroupsD40": 315,
+				"camera.all.building.g128.offscreen": 155925,
+				"camera.all.building.g128.facing": 8695,
+				"camera.all.building.g128.hiddenFull": 17536,
+				"camera.all.building.g128.hiddenD40": 17536,
+				"camera.all.building.g128.tested": 2977,
+				"camera.all.building.g128.visible": 1684,
+				"camera.all.building.g128.hiddenGroupsFull": 137,
+				"camera.all.building.g128.hiddenGroupsD40": 137,
+				"camera.all.prop.copies": 115,
+				"camera.all.prop.now": 343857,
+				"camera.all.prop.g64.offscreen": 27432,
+				"camera.all.prop.g64.facing": 14927,
+				"camera.all.prop.g64.hiddenFull": 19547,
+				"camera.all.prop.g64.hiddenD40": 19547,
+				"camera.all.prop.g64.tested": 3823,
+				"camera.all.prop.g64.visible": 3157,
+				"camera.all.prop.g64.hiddenGroupsFull": 314,
+				"camera.all.prop.g64.hiddenGroupsD40": 314,
+				"camera.all.prop.g128.offscreen": 24672,
+				"camera.all.prop.g128.facing": 10443,
+				"camera.all.prop.g128.hiddenFull": 19383,
+				"camera.all.prop.g128.hiddenD40": 19383,
+				"camera.all.prop.g128.tested": 1907,
+				"camera.all.prop.g128.visible": 1631,
+				"camera.all.prop.g128.hiddenGroupsFull": 154,
+				"camera.all.prop.g128.hiddenGroupsD40": 154,
+				"camera.all.foliage.copies": 105,
+				"camera.all.foliage.now": 300360,
+				"camera.all.foliage.g64.offscreen": 47909,
+				"camera.all.foliage.g64.facing": 1254,
+				"camera.all.foliage.g64.hiddenFull": 42024,
+				"camera.all.foliage.g64.hiddenD40": 41192,
+				"camera.all.foliage.g64.tested": 3394,
+				"camera.all.foliage.g64.visible": 2624,
+				"camera.all.foliage.g64.hiddenGroupsFull": 658,
+				"camera.all.foliage.g64.hiddenGroupsD40": 645,
+				"camera.all.foliage.g128.offscreen": 47139,
+				"camera.all.foliage.g128.facing": 20,
+				"camera.all.foliage.g128.hiddenFull": 39701,
+				"camera.all.foliage.g128.hiddenD40": 39445,
+				"camera.all.foliage.g128.tested": 1704,
+				"camera.all.foliage.g128.visible": 1334,
+				"camera.all.foliage.g128.hiddenGroupsFull": 312,
+				"camera.all.foliage.g128.hiddenGroupsD40": 310,
+				"camera.K1.street.copies": 28,
+				"camera.K1.street.now": 69577,
+				"camera.K1.street.g64.offscreen": 43064,
+				"camera.K1.street.g64.facing": 652,
+				"camera.K1.street.g64.hiddenFull": 128,
+				"camera.K1.street.g64.hiddenD40": 128,
+				"camera.K1.street.g64.tested": 958,
+				"camera.K1.street.g64.visible": 187,
+				"camera.K1.street.g64.hiddenGroupsFull": 2,
+				"camera.K1.street.g64.hiddenGroupsD40": 2,
+				"camera.K1.street.g128.offscreen": 40999,
+				"camera.K1.street.g128.facing": 99,
+				"camera.K1.street.g128.hiddenFull": 0,
+				"camera.K1.street.g128.hiddenD40": 0,
+				"camera.K1.street.g128.tested": 482,
+				"camera.K1.street.g128.visible": 117,
+				"camera.K1.street.g128.hiddenGroupsFull": 0,
+				"camera.K1.street.g128.hiddenGroupsD40": 0,
+				"camera.K1.building.copies": 160,
+				"camera.K1.building.now": 456213,
+				"camera.K1.building.g64.offscreen": 165312,
+				"camera.K1.building.g64.facing": 9896,
+				"camera.K1.building.g64.hiddenFull": 20106,
+				"camera.K1.building.g64.hiddenD40": 20106,
+				"camera.K1.building.g64.tested": 5934,
+				"camera.K1.building.g64.visible": 3187,
+				"camera.K1.building.g64.hiddenGroupsFull": 315,
+				"camera.K1.building.g64.hiddenGroupsD40": 315,
+				"camera.K1.building.g128.offscreen": 155925,
+				"camera.K1.building.g128.facing": 8695,
+				"camera.K1.building.g128.hiddenFull": 17536,
+				"camera.K1.building.g128.hiddenD40": 17536,
+				"camera.K1.building.g128.tested": 2977,
+				"camera.K1.building.g128.visible": 1684,
+				"camera.K1.building.g128.hiddenGroupsFull": 137,
+				"camera.K1.building.g128.hiddenGroupsD40": 137,
+				"camera.K1.prop.copies": 115,
+				"camera.K1.prop.now": 343857,
+				"camera.K1.prop.g64.offscreen": 27432,
+				"camera.K1.prop.g64.facing": 14927,
+				"camera.K1.prop.g64.hiddenFull": 19547,
+				"camera.K1.prop.g64.hiddenD40": 19547,
+				"camera.K1.prop.g64.tested": 3823,
+				"camera.K1.prop.g64.visible": 3157,
+				"camera.K1.prop.g64.hiddenGroupsFull": 314,
+				"camera.K1.prop.g64.hiddenGroupsD40": 314,
+				"camera.K1.prop.g128.offscreen": 24672,
+				"camera.K1.prop.g128.facing": 10443,
+				"camera.K1.prop.g128.hiddenFull": 19383,
+				"camera.K1.prop.g128.hiddenD40": 19383,
+				"camera.K1.prop.g128.tested": 1907,
+				"camera.K1.prop.g128.visible": 1631,
+				"camera.K1.prop.g128.hiddenGroupsFull": 154,
+				"camera.K1.prop.g128.hiddenGroupsD40": 154,
+				"camera.K1.foliage.copies": 105,
+				"camera.K1.foliage.now": 300360,
+				"camera.K1.foliage.g64.offscreen": 47909,
+				"camera.K1.foliage.g64.facing": 1254,
+				"camera.K1.foliage.g64.hiddenFull": 42024,
+				"camera.K1.foliage.g64.hiddenD40": 41192,
+				"camera.K1.foliage.g64.tested": 3394,
+				"camera.K1.foliage.g64.visible": 2624,
+				"camera.K1.foliage.g64.hiddenGroupsFull": 658,
+				"camera.K1.foliage.g64.hiddenGroupsD40": 645,
+				"camera.K1.foliage.g128.offscreen": 47139,
+				"camera.K1.foliage.g128.facing": 20,
+				"camera.K1.foliage.g128.hiddenFull": 39701,
+				"camera.K1.foliage.g128.hiddenD40": 39445,
+				"camera.K1.foliage.g128.tested": 1704,
+				"camera.K1.foliage.g128.visible": 1334,
+				"camera.K1.foliage.g128.hiddenGroupsFull": 312,
+				"camera.K1.foliage.g128.hiddenGroupsD40": 310,
+				"camera.N16.building.copies": 7,
+				"camera.N16.building.now": 250141,
+				"camera.N16.building.g64.offscreen": 103319,
+				"camera.N16.building.g64.facing": 9832,
+				"camera.N16.building.g64.hiddenFull": 2880,
+				"camera.N16.building.g64.hiddenD40": 2880,
+				"camera.N16.building.g64.tested": 3927,
+				"camera.N16.building.g64.visible": 2153,
+				"camera.N16.building.g64.hiddenGroupsFull": 45,
+				"camera.N16.building.g64.hiddenGroupsD40": 45,
+				"camera.N16.building.g128.offscreen": 96886,
+				"camera.N16.building.g128.facing": 8695,
+				"camera.N16.building.g128.hiddenFull": 2944,
+				"camera.N16.building.g128.hiddenD40": 2944,
+				"camera.N16.building.g128.tested": 1971,
+				"camera.N16.building.g128.visible": 1141,
+				"camera.N16.building.g128.hiddenGroupsFull": 23,
+				"camera.N16.building.g128.hiddenGroupsD40": 23,
+				"camera.N16.street.copies": 1,
+				"camera.N16.street.now": 41912,
+				"camera.N16.street.g64.offscreen": 34384,
+				"camera.N16.street.g64.facing": 652,
+				"camera.N16.street.g64.hiddenFull": 0,
+				"camera.N16.street.g64.hiddenD40": 0,
+				"camera.N16.street.g64.tested": 760,
+				"camera.N16.street.g64.visible": 127,
+				"camera.N16.street.g64.hiddenGroupsFull": 0,
+				"camera.N16.street.g64.hiddenGroupsD40": 0,
+				"camera.N16.street.g128.offscreen": 33227,
+				"camera.N16.street.g128.facing": 99,
+				"camera.N16.street.g128.hiddenFull": 0,
+				"camera.N16.street.g128.hiddenD40": 0,
+				"camera.N16.street.g128.tested": 383,
+				"camera.N16.street.g128.visible": 80,
+				"camera.N16.street.g128.hiddenGroupsFull": 0,
+				"camera.N16.street.g128.hiddenGroupsD40": 0,
+				"camera.N16.prop.copies": 7,
+				"camera.N16.prop.now": 176090,
+				"camera.N16.prop.g64.offscreen": 20096,
+				"camera.N16.prop.g64.facing": 8591,
+				"camera.N16.prop.g64.hiddenFull": 18779,
+				"camera.N16.prop.g64.hiddenD40": 18779,
+				"camera.N16.prop.g64.tested": 2818,
+				"camera.N16.prop.g64.visible": 2367,
+				"camera.N16.prop.g64.hiddenGroupsFull": 302,
+				"camera.N16.prop.g64.hiddenGroupsD40": 302,
+				"camera.N16.prop.g128.offscreen": 18378,
+				"camera.N16.prop.g128.facing": 6603,
+				"camera.N16.prop.g128.hiddenFull": 18663,
+				"camera.N16.prop.g128.hiddenD40": 18663,
+				"camera.N16.prop.g128.tested": 1404,
+				"camera.N16.prop.g128.visible": 1208,
+				"camera.N16.prop.g128.hiddenGroupsFull": 148,
+				"camera.N16.prop.g128.hiddenGroupsD40": 148,
+				"camera.N16.foliage.copies": 1,
+				"camera.N16.foliage.now": 18196,
+				"camera.N16.foliage.g64.offscreen": 17812,
+				"camera.N16.foliage.g64.facing": 0,
+				"camera.N16.foliage.g64.hiddenFull": 0,
+				"camera.N16.foliage.g64.hiddenD40": 0,
+				"camera.N16.foliage.g64.tested": 285,
+				"camera.N16.foliage.g64.visible": 6,
+				"camera.N16.foliage.g64.hiddenGroupsFull": 0,
+				"camera.N16.foliage.g64.hiddenGroupsD40": 0,
+				"camera.N16.foliage.g128.offscreen": 17792,
+				"camera.N16.foliage.g128.facing": 0,
+				"camera.N16.foliage.g128.hiddenFull": 0,
+				"camera.N16.foliage.g128.hiddenD40": 0,
+				"camera.N16.foliage.g128.tested": 143,
+				"camera.N16.foliage.g128.visible": 4,
+				"camera.N16.foliage.g128.hiddenGroupsFull": 0,
+				"camera.N16.foliage.g128.hiddenGroupsD40": 0,
+				"camera.N32.building.copies": 11,
+				"camera.N32.building.now": 300244,
+				"camera.N32.building.g64.offscreen": 121493,
+				"camera.N32.building.g64.facing": 9832,
+				"camera.N32.building.g64.hiddenFull": 10752,
+				"camera.N32.building.g64.hiddenD40": 10752,
+				"camera.N32.building.g64.tested": 4711,
+				"camera.N32.building.g64.visible": 2652,
+				"camera.N32.building.g64.hiddenGroupsFull": 168,
+				"camera.N32.building.g64.hiddenGroupsD40": 168,
+				"camera.N32.building.g128.offscreen": 112974,
+				"camera.N32.building.g128.facing": 8695,
+				"camera.N32.building.g128.hiddenFull": 9728,
+				"camera.N32.building.g128.hiddenD40": 9728,
+				"camera.N32.building.g128.tested": 2364,
+				"camera.N32.building.g128.visible": 1408,
+				"camera.N32.building.g128.hiddenGroupsFull": 76,
+				"camera.N32.building.g128.hiddenGroupsD40": 76,
+				"camera.N32.street.copies": 1,
+				"camera.N32.street.now": 41912,
+				"camera.N32.street.g64.offscreen": 34384,
+				"camera.N32.street.g64.facing": 652,
+				"camera.N32.street.g64.hiddenFull": 0,
+				"camera.N32.street.g64.hiddenD40": 0,
+				"camera.N32.street.g64.tested": 760,
+				"camera.N32.street.g64.visible": 127,
+				"camera.N32.street.g64.hiddenGroupsFull": 0,
+				"camera.N32.street.g64.hiddenGroupsD40": 0,
+				"camera.N32.street.g128.offscreen": 33227,
+				"camera.N32.street.g128.facing": 99,
+				"camera.N32.street.g128.hiddenFull": 0,
+				"camera.N32.street.g128.hiddenD40": 0,
+				"camera.N32.street.g128.tested": 383,
+				"camera.N32.street.g128.visible": 80,
+				"camera.N32.street.g128.hiddenGroupsFull": 0,
+				"camera.N32.street.g128.hiddenGroupsD40": 0,
+				"camera.N32.prop.copies": 7,
+				"camera.N32.prop.now": 176090,
+				"camera.N32.prop.g64.offscreen": 20096,
+				"camera.N32.prop.g64.facing": 8591,
+				"camera.N32.prop.g64.hiddenFull": 18779,
+				"camera.N32.prop.g64.hiddenD40": 18779,
+				"camera.N32.prop.g64.tested": 2818,
+				"camera.N32.prop.g64.visible": 2367,
+				"camera.N32.prop.g64.hiddenGroupsFull": 302,
+				"camera.N32.prop.g64.hiddenGroupsD40": 302,
+				"camera.N32.prop.g128.offscreen": 18378,
+				"camera.N32.prop.g128.facing": 6603,
+				"camera.N32.prop.g128.hiddenFull": 18663,
+				"camera.N32.prop.g128.hiddenD40": 18663,
+				"camera.N32.prop.g128.tested": 1404,
+				"camera.N32.prop.g128.visible": 1208,
+				"camera.N32.prop.g128.hiddenGroupsFull": 148,
+				"camera.N32.prop.g128.hiddenGroupsD40": 148,
+				"camera.N32.foliage.copies": 13,
+				"camera.N32.foliage.now": 206006,
+				"camera.N32.foliage.g64.offscreen": 47909,
+				"camera.N32.foliage.g64.facing": 806,
+				"camera.N32.foliage.g64.hiddenFull": 38120,
+				"camera.N32.foliage.g64.hiddenD40": 37608,
+				"camera.N32.foliage.g64.tested": 3227,
+				"camera.N32.foliage.g64.visible": 2464,
+				"camera.N32.foliage.g64.hiddenGroupsFull": 597,
+				"camera.N32.foliage.g64.hiddenGroupsD40": 589,
+				"camera.N32.foliage.g128.offscreen": 47139,
+				"camera.N32.foliage.g128.facing": 20,
+				"camera.N32.foliage.g128.hiddenFull": 36757,
+				"camera.N32.foliage.g128.hiddenD40": 36629,
+				"camera.N32.foliage.g128.tested": 1620,
+				"camera.N32.foliage.g128.visible": 1250,
+				"camera.N32.foliage.g128.hiddenGroupsFull": 289,
+				"camera.N32.foliage.g128.hiddenGroupsD40": 288,
+				"camera.N64.building.copies": 25,
+				"camera.N64.building.now": 389584,
+				"camera.N64.building.g64.offscreen": 165312,
+				"camera.N64.building.g64.facing": 9896,
+				"camera.N64.building.g64.hiddenFull": 20106,
+				"camera.N64.building.g64.hiddenD40": 20106,
+				"camera.N64.building.g64.tested": 5934,
+				"camera.N64.building.g64.visible": 3187,
+				"camera.N64.building.g64.hiddenGroupsFull": 315,
+				"camera.N64.building.g64.hiddenGroupsD40": 315,
+				"camera.N64.building.g128.offscreen": 155925,
+				"camera.N64.building.g128.facing": 8695,
+				"camera.N64.building.g128.hiddenFull": 17536,
+				"camera.N64.building.g128.hiddenD40": 17536,
+				"camera.N64.building.g128.tested": 2977,
+				"camera.N64.building.g128.visible": 1684,
+				"camera.N64.building.g128.hiddenGroupsFull": 137,
+				"camera.N64.building.g128.hiddenGroupsD40": 137,
+				"camera.N64.street.copies": 3,
+				"camera.N64.street.now": 54402,
+				"camera.N64.street.g64.offscreen": 43064,
+				"camera.N64.street.g64.facing": 652,
+				"camera.N64.street.g64.hiddenFull": 128,
+				"camera.N64.street.g64.hiddenD40": 128,
+				"camera.N64.street.g64.tested": 958,
+				"camera.N64.street.g64.visible": 187,
+				"camera.N64.street.g64.hiddenGroupsFull": 2,
+				"camera.N64.street.g64.hiddenGroupsD40": 2,
+				"camera.N64.street.g128.offscreen": 40999,
+				"camera.N64.street.g128.facing": 99,
+				"camera.N64.street.g128.hiddenFull": 0,
+				"camera.N64.street.g128.hiddenD40": 0,
+				"camera.N64.street.g128.tested": 482,
+				"camera.N64.street.g128.visible": 117,
+				"camera.N64.street.g128.hiddenGroupsFull": 0,
+				"camera.N64.street.g128.hiddenGroupsD40": 0,
+				"camera.N64.prop.copies": 21,
+				"camera.N64.prop.now": 247828,
+				"camera.N64.prop.g64.offscreen": 27432,
+				"camera.N64.prop.g64.facing": 14927,
+				"camera.N64.prop.g64.hiddenFull": 19547,
+				"camera.N64.prop.g64.hiddenD40": 19547,
+				"camera.N64.prop.g64.tested": 3823,
+				"camera.N64.prop.g64.visible": 3157,
+				"camera.N64.prop.g64.hiddenGroupsFull": 314,
+				"camera.N64.prop.g64.hiddenGroupsD40": 314,
+				"camera.N64.prop.g128.offscreen": 24672,
+				"camera.N64.prop.g128.facing": 10443,
+				"camera.N64.prop.g128.hiddenFull": 19383,
+				"camera.N64.prop.g128.hiddenD40": 19383,
+				"camera.N64.prop.g128.tested": 1907,
+				"camera.N64.prop.g128.visible": 1631,
+				"camera.N64.prop.g128.hiddenGroupsFull": 154,
+				"camera.N64.prop.g128.hiddenGroupsD40": 154,
+				"camera.N64.foliage.copies": 15,
+				"camera.N64.foliage.now": 220508,
+				"camera.N64.foliage.g64.offscreen": 47909,
+				"camera.N64.foliage.g64.facing": 1254,
+				"camera.N64.foliage.g64.hiddenFull": 42024,
+				"camera.N64.foliage.g64.hiddenD40": 41192,
+				"camera.N64.foliage.g64.tested": 3394,
+				"camera.N64.foliage.g64.visible": 2624,
+				"camera.N64.foliage.g64.hiddenGroupsFull": 658,
+				"camera.N64.foliage.g64.hiddenGroupsD40": 645,
+				"camera.N64.foliage.g128.offscreen": 47139,
+				"camera.N64.foliage.g128.facing": 20,
+				"camera.N64.foliage.g128.hiddenFull": 39701,
+				"camera.N64.foliage.g128.hiddenD40": 39445,
+				"camera.N64.foliage.g128.tested": 1704,
+				"camera.N64.foliage.g128.visible": 1334,
+				"camera.N64.foliage.g128.hiddenGroupsFull": 312,
+				"camera.N64.foliage.g128.hiddenGroupsD40": 310,
+				"camera.N128.building.copies": 38,
+				"camera.N128.building.now": 421058,
+				"camera.N128.building.g64.offscreen": 165312,
+				"camera.N128.building.g64.facing": 9896,
+				"camera.N128.building.g64.hiddenFull": 20106,
+				"camera.N128.building.g64.hiddenD40": 20106,
+				"camera.N128.building.g64.tested": 5934,
+				"camera.N128.building.g64.visible": 3187,
+				"camera.N128.building.g64.hiddenGroupsFull": 315,
+				"camera.N128.building.g64.hiddenGroupsD40": 315,
+				"camera.N128.building.g128.offscreen": 155925,
+				"camera.N128.building.g128.facing": 8695,
+				"camera.N128.building.g128.hiddenFull": 17536,
+				"camera.N128.building.g128.hiddenD40": 17536,
+				"camera.N128.building.g128.tested": 2977,
+				"camera.N128.building.g128.visible": 1684,
+				"camera.N128.building.g128.hiddenGroupsFull": 137,
+				"camera.N128.building.g128.hiddenGroupsD40": 137,
+				"camera.N128.street.copies": 5,
+				"camera.N128.street.now": 60599,
+				"camera.N128.street.g64.offscreen": 43064,
+				"camera.N128.street.g64.facing": 652,
+				"camera.N128.street.g64.hiddenFull": 128,
+				"camera.N128.street.g64.hiddenD40": 128,
+				"camera.N128.street.g64.tested": 958,
+				"camera.N128.street.g64.visible": 187,
+				"camera.N128.street.g64.hiddenGroupsFull": 2,
+				"camera.N128.street.g64.hiddenGroupsD40": 2,
+				"camera.N128.street.g128.offscreen": 40999,
+				"camera.N128.street.g128.facing": 99,
+				"camera.N128.street.g128.hiddenFull": 0,
+				"camera.N128.street.g128.hiddenD40": 0,
+				"camera.N128.street.g128.tested": 482,
+				"camera.N128.street.g128.visible": 117,
+				"camera.N128.street.g128.hiddenGroupsFull": 0,
+				"camera.N128.street.g128.hiddenGroupsD40": 0,
+				"camera.N128.prop.copies": 48,
+				"camera.N128.prop.now": 317903,
+				"camera.N128.prop.g64.offscreen": 27432,
+				"camera.N128.prop.g64.facing": 14927,
+				"camera.N128.prop.g64.hiddenFull": 19547,
+				"camera.N128.prop.g64.hiddenD40": 19547,
+				"camera.N128.prop.g64.tested": 3823,
+				"camera.N128.prop.g64.visible": 3157,
+				"camera.N128.prop.g64.hiddenGroupsFull": 314,
+				"camera.N128.prop.g64.hiddenGroupsD40": 314,
+				"camera.N128.prop.g128.offscreen": 24672,
+				"camera.N128.prop.g128.facing": 10443,
+				"camera.N128.prop.g128.hiddenFull": 19383,
+				"camera.N128.prop.g128.hiddenD40": 19383,
+				"camera.N128.prop.g128.tested": 1907,
+				"camera.N128.prop.g128.visible": 1631,
+				"camera.N128.prop.g128.hiddenGroupsFull": 154,
+				"camera.N128.prop.g128.hiddenGroupsD40": 154,
+				"camera.N128.foliage.copies": 37,
+				"camera.N128.foliage.now": 282062,
+				"camera.N128.foliage.g64.offscreen": 47909,
+				"camera.N128.foliage.g64.facing": 1254,
+				"camera.N128.foliage.g64.hiddenFull": 42024,
+				"camera.N128.foliage.g64.hiddenD40": 41192,
+				"camera.N128.foliage.g64.tested": 3394,
+				"camera.N128.foliage.g64.visible": 2624,
+				"camera.N128.foliage.g64.hiddenGroupsFull": 658,
+				"camera.N128.foliage.g64.hiddenGroupsD40": 645,
+				"camera.N128.foliage.g128.offscreen": 47139,
+				"camera.N128.foliage.g128.facing": 20,
+				"camera.N128.foliage.g128.hiddenFull": 39701,
+				"camera.N128.foliage.g128.hiddenD40": 39445,
+				"camera.N128.foliage.g128.tested": 1704,
+				"camera.N128.foliage.g128.visible": 1334,
+				"camera.N128.foliage.g128.hiddenGroupsFull": 312,
+				"camera.N128.foliage.g128.hiddenGroupsD40": 310,
+				"camera.N256.building.copies": 84,
+				"camera.N256.building.now": 450182,
+				"camera.N256.building.g64.offscreen": 165312,
+				"camera.N256.building.g64.facing": 9896,
+				"camera.N256.building.g64.hiddenFull": 20106,
+				"camera.N256.building.g64.hiddenD40": 20106,
+				"camera.N256.building.g64.tested": 5934,
+				"camera.N256.building.g64.visible": 3187,
+				"camera.N256.building.g64.hiddenGroupsFull": 315,
+				"camera.N256.building.g64.hiddenGroupsD40": 315,
+				"camera.N256.building.g128.offscreen": 155925,
+				"camera.N256.building.g128.facing": 8695,
+				"camera.N256.building.g128.hiddenFull": 17536,
+				"camera.N256.building.g128.hiddenD40": 17536,
+				"camera.N256.building.g128.tested": 2977,
+				"camera.N256.building.g128.visible": 1684,
+				"camera.N256.building.g128.hiddenGroupsFull": 137,
+				"camera.N256.building.g128.hiddenGroupsD40": 137,
+				"camera.N256.street.copies": 16,
+				"camera.N256.street.now": 68909,
+				"camera.N256.street.g64.offscreen": 43064,
+				"camera.N256.street.g64.facing": 652,
+				"camera.N256.street.g64.hiddenFull": 128,
+				"camera.N256.street.g64.hiddenD40": 128,
+				"camera.N256.street.g64.tested": 958,
+				"camera.N256.street.g64.visible": 187,
+				"camera.N256.street.g64.hiddenGroupsFull": 2,
+				"camera.N256.street.g64.hiddenGroupsD40": 2,
+				"camera.N256.street.g128.offscreen": 40999,
+				"camera.N256.street.g128.facing": 99,
+				"camera.N256.street.g128.hiddenFull": 0,
+				"camera.N256.street.g128.hiddenD40": 0,
+				"camera.N256.street.g128.tested": 482,
+				"camera.N256.street.g128.visible": 117,
+				"camera.N256.street.g128.hiddenGroupsFull": 0,
+				"camera.N256.street.g128.hiddenGroupsD40": 0,
+				"camera.N256.prop.copies": 96,
+				"camera.N256.prop.now": 342097,
+				"camera.N256.prop.g64.offscreen": 27432,
+				"camera.N256.prop.g64.facing": 14927,
+				"camera.N256.prop.g64.hiddenFull": 19547,
+				"camera.N256.prop.g64.hiddenD40": 19547,
+				"camera.N256.prop.g64.tested": 3823,
+				"camera.N256.prop.g64.visible": 3157,
+				"camera.N256.prop.g64.hiddenGroupsFull": 314,
+				"camera.N256.prop.g64.hiddenGroupsD40": 314,
+				"camera.N256.prop.g128.offscreen": 24672,
+				"camera.N256.prop.g128.facing": 10443,
+				"camera.N256.prop.g128.hiddenFull": 19383,
+				"camera.N256.prop.g128.hiddenD40": 19383,
+				"camera.N256.prop.g128.tested": 1907,
+				"camera.N256.prop.g128.visible": 1631,
+				"camera.N256.prop.g128.hiddenGroupsFull": 154,
+				"camera.N256.prop.g128.hiddenGroupsD40": 154,
+				"camera.N256.foliage.copies": 60,
+				"camera.N256.foliage.now": 297186,
+				"camera.N256.foliage.g64.offscreen": 47909,
+				"camera.N256.foliage.g64.facing": 1254,
+				"camera.N256.foliage.g64.hiddenFull": 42024,
+				"camera.N256.foliage.g64.hiddenD40": 41192,
+				"camera.N256.foliage.g64.tested": 3394,
+				"camera.N256.foliage.g64.visible": 2624,
+				"camera.N256.foliage.g64.hiddenGroupsFull": 658,
+				"camera.N256.foliage.g64.hiddenGroupsD40": 645,
+				"camera.N256.foliage.g128.offscreen": 47139,
+				"camera.N256.foliage.g128.facing": 20,
+				"camera.N256.foliage.g128.hiddenFull": 39701,
+				"camera.N256.foliage.g128.hiddenD40": 39445,
+				"camera.N256.foliage.g128.tested": 1704,
+				"camera.N256.foliage.g128.visible": 1334,
+				"camera.N256.foliage.g128.hiddenGroupsFull": 312,
+				"camera.N256.foliage.g128.hiddenGroupsD40": 310,
+				"camera.cfg.all.g64.viewFacing": 859561,
+				"camera.cfg.all.g64.groupHiddenFull": 777756,
+				"camera.cfg.all.g64.groupHiddenD40": 778588,
+				"camera.cfg.all.g64.allHiddenFull": 776738,
+				"camera.cfg.all.g64.allHiddenD40": 777938,
+				"camera.cfg.all.g64.copyHiddenFullOnly": 1150793,
+				"camera.cfg.all.g64.copyHiddenD40Only": 1151161,
+				"camera.cfg.all.g64.now": 1170007,
+				"camera.cfg.all.g128.viewFacing": 882015,
+				"camera.cfg.all.g128.groupHiddenFull": 805395,
+				"camera.cfg.all.g128.groupHiddenD40": 805651,
+				"camera.cfg.all.g128.allHiddenFull": 804377,
+				"camera.cfg.all.g128.allHiddenD40": 805001,
+				"camera.cfg.all.g128.copyHiddenFullOnly": 1150793,
+				"camera.cfg.all.g128.copyHiddenD40Only": 1151161,
+				"camera.cfg.all.g128.now": 1170007,
+				"camera.cfg.K1.g64.viewFacing": 859561,
+				"camera.cfg.K1.g64.groupHiddenFull": 777756,
+				"camera.cfg.K1.g64.groupHiddenD40": 778588,
+				"camera.cfg.K1.g64.allHiddenFull": 776738,
+				"camera.cfg.K1.g64.allHiddenD40": 777938,
+				"camera.cfg.K1.g64.copyHiddenFullOnly": 1150793,
+				"camera.cfg.K1.g64.copyHiddenD40Only": 1151161,
+				"camera.cfg.K1.g64.now": 1170007,
+				"camera.cfg.K1.g128.viewFacing": 882015,
+				"camera.cfg.K1.g128.groupHiddenFull": 805395,
+				"camera.cfg.K1.g128.groupHiddenD40": 805651,
+				"camera.cfg.K1.g128.allHiddenFull": 804377,
+				"camera.cfg.K1.g128.allHiddenD40": 805001,
+				"camera.cfg.K1.g128.copyHiddenFullOnly": 1150793,
+				"camera.cfg.K1.g128.copyHiddenD40Only": 1151161,
+				"camera.cfg.K1.g128.now": 1170007,
+				"camera.cfg.N16.g64.viewFacing": 975321,
+				"camera.cfg.N16.g64.groupHiddenFull": 953662,
+				"camera.cfg.N16.g64.groupHiddenD40": 953662,
+				"camera.cfg.N16.g64.allHiddenFull": 934448,
+				"camera.cfg.N16.g64.allHiddenD40": 934816,
+				"camera.cfg.N16.g64.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N16.g64.copyHiddenD40Only": 1151161,
+				"camera.cfg.N16.g64.now": 1170007,
+				"camera.cfg.N16.g128.viewFacing": 988327,
+				"camera.cfg.N16.g128.groupHiddenFull": 966720,
+				"camera.cfg.N16.g128.groupHiddenD40": 966720,
+				"camera.cfg.N16.g128.allHiddenFull": 947506,
+				"camera.cfg.N16.g128.allHiddenD40": 947874,
+				"camera.cfg.N16.g128.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N16.g128.copyHiddenD40Only": 1151161,
+				"camera.cfg.N16.g128.now": 1170007,
+				"camera.cfg.N32.g64.viewFacing": 926244,
+				"camera.cfg.N32.g64.groupHiddenFull": 858593,
+				"camera.cfg.N32.g64.groupHiddenD40": 859105,
+				"camera.cfg.N32.g64.allHiddenFull": 857575,
+				"camera.cfg.N32.g64.allHiddenD40": 858455,
+				"camera.cfg.N32.g64.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N32.g64.copyHiddenD40Only": 1151161,
+				"camera.cfg.N32.g64.now": 1170007,
+				"camera.cfg.N32.g128.viewFacing": 942872,
+				"camera.cfg.N32.g128.groupHiddenFull": 877724,
+				"camera.cfg.N32.g128.groupHiddenD40": 877852,
+				"camera.cfg.N32.g128.allHiddenFull": 876706,
+				"camera.cfg.N32.g128.allHiddenD40": 877202,
+				"camera.cfg.N32.g128.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N32.g128.copyHiddenD40Only": 1151161,
+				"camera.cfg.N32.g128.now": 1170007,
+				"camera.cfg.N64.g64.viewFacing": 859561,
+				"camera.cfg.N64.g64.groupHiddenFull": 777756,
+				"camera.cfg.N64.g64.groupHiddenD40": 778588,
+				"camera.cfg.N64.g64.allHiddenFull": 776738,
+				"camera.cfg.N64.g64.allHiddenD40": 777938,
+				"camera.cfg.N64.g64.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N64.g64.copyHiddenD40Only": 1151161,
+				"camera.cfg.N64.g64.now": 1170007,
+				"camera.cfg.N64.g128.viewFacing": 882015,
+				"camera.cfg.N64.g128.groupHiddenFull": 805395,
+				"camera.cfg.N64.g128.groupHiddenD40": 805651,
+				"camera.cfg.N64.g128.allHiddenFull": 804377,
+				"camera.cfg.N64.g128.allHiddenD40": 805001,
+				"camera.cfg.N64.g128.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N64.g128.copyHiddenD40Only": 1151161,
+				"camera.cfg.N64.g128.now": 1170007,
+				"camera.cfg.N128.g64.viewFacing": 859561,
+				"camera.cfg.N128.g64.groupHiddenFull": 777756,
+				"camera.cfg.N128.g64.groupHiddenD40": 778588,
+				"camera.cfg.N128.g64.allHiddenFull": 776738,
+				"camera.cfg.N128.g64.allHiddenD40": 777938,
+				"camera.cfg.N128.g64.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N128.g64.copyHiddenD40Only": 1151161,
+				"camera.cfg.N128.g64.now": 1170007,
+				"camera.cfg.N128.g128.viewFacing": 882015,
+				"camera.cfg.N128.g128.groupHiddenFull": 805395,
+				"camera.cfg.N128.g128.groupHiddenD40": 805651,
+				"camera.cfg.N128.g128.allHiddenFull": 804377,
+				"camera.cfg.N128.g128.allHiddenD40": 805001,
+				"camera.cfg.N128.g128.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N128.g128.copyHiddenD40Only": 1151161,
+				"camera.cfg.N128.g128.now": 1170007,
+				"camera.cfg.N256.g64.viewFacing": 859561,
+				"camera.cfg.N256.g64.groupHiddenFull": 777756,
+				"camera.cfg.N256.g64.groupHiddenD40": 778588,
+				"camera.cfg.N256.g64.allHiddenFull": 776738,
+				"camera.cfg.N256.g64.allHiddenD40": 777938,
+				"camera.cfg.N256.g64.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N256.g64.copyHiddenD40Only": 1151161,
+				"camera.cfg.N256.g64.now": 1170007,
+				"camera.cfg.N256.g128.viewFacing": 882015,
+				"camera.cfg.N256.g128.groupHiddenFull": 805395,
+				"camera.cfg.N256.g128.groupHiddenD40": 805651,
+				"camera.cfg.N256.g128.allHiddenFull": 804377,
+				"camera.cfg.N256.g128.allHiddenD40": 805001,
+				"camera.cfg.N256.g128.copyHiddenFullOnly": 1150793,
+				"camera.cfg.N256.g128.copyHiddenD40Only": 1151161,
+				"camera.cfg.N256.g128.now": 1170007,
+				"camera.occlusion.street.copies": 28,
+				"camera.occlusion.street.now": 69577,
+				"camera.occlusion.street.pieceHiddenFull": 0,
+				"camera.occlusion.street.pieceHiddenD40": 0,
+				"camera.occlusion.street.occluderTris": 69561,
+				"camera.occlusion.street.occluders": 26,
+				"camera.occlusion.building.copies": 160,
+				"camera.occlusion.building.now": 456213,
+				"camera.occlusion.building.pieceHiddenFull": 0,
+				"camera.occlusion.building.pieceHiddenD40": 0,
+				"camera.occlusion.building.occluderTris": 451727,
+				"camera.occlusion.building.occluders": 152,
+				"camera.occlusion.prop.copies": 115,
+				"camera.occlusion.prop.now": 343857,
+				"camera.occlusion.prop.pieceHiddenFull": 230,
+				"camera.occlusion.prop.pieceHiddenD40": 230,
+				"camera.occlusion.prop.occluderTris": 321853,
+				"camera.occlusion.prop.occluders": 70,
+				"camera.occlusion.foliage.copies": 105,
+				"camera.occlusion.foliage.now": 300360,
+				"camera.occlusion.foliage.pieceHiddenFull": 18984,
+				"camera.occlusion.foliage.pieceHiddenD40": 18616,
+				"camera.occlusion.foliage.occluderTris": 156228,
+				"camera.occlusion.foliage.occluders": 43,
+				"camera.occlusion.foliage.copyHiddenFull": 12,
+				"camera.occlusion.foliage.copyHiddenFullTris": 18984,
+				"camera.occlusion.foliage.copyHiddenD40": 7,
+				"camera.occlusion.foliage.copyHiddenD40Tris": 18616,
+				"camera.occlusion.prop.copyHiddenFull": 1,
+				"camera.occlusion.prop.copyHiddenFullTris": 230,
+				"camera.occlusion.prop.copyHiddenD40": 1,
+				"camera.occlusion.prop.copyHiddenD40Tris": 230,
+				"shadow0.texel": 0.018942000403269713,
+				"shadow0.radius": 19.396608412948186,
+				"shadow0.all.street.copies": 30,
+				"shadow0.all.street.now": 70303,
+				"shadow0.all.street.g64.offscreen": 37164,
+				"shadow0.all.street.g128.offscreen": 34870,
+				"shadow0.all.street.g0.offscreen": 0,
+				"shadow0.all.street.g64.tested": 958,
+				"shadow0.all.street.g128.tested": 482,
+				"shadow0.all.building.copies": 695,
+				"shadow0.all.building.now": 639301,
+				"shadow0.all.building.g64.offscreen": 117580,
+				"shadow0.all.building.g128.offscreen": 107486,
+				"shadow0.all.building.g0.offscreen": 0,
+				"shadow0.all.building.g64.tested": 7246,
+				"shadow0.all.building.g128.tested": 3637,
+				"shadow0.all.prop.copies": 276,
+				"shadow0.all.prop.now": 467421,
+				"shadow0.all.prop.g64.offscreen": 1152,
+				"shadow0.all.prop.g128.offscreen": 512,
+				"shadow0.all.prop.g0.offscreen": 0,
+				"shadow0.all.prop.g64.tested": 4003,
+				"shadow0.all.prop.g128.tested": 1997,
+				"shadow0.all.foliage.copies": 177,
+				"shadow0.all.foliage.now": 579541,
+				"shadow0.all.foliage.g64.offscreen": 26826,
+				"shadow0.all.foliage.g128.offscreen": 25267,
+				"shadow0.all.foliage.g0.offscreen": 4315,
+				"shadow0.all.foliage.g64.tested": 6785,
+				"shadow0.all.foliage.g128.tested": 3407,
+				"shadow0.K1.street.copies": 30,
+				"shadow0.K1.street.now": 70303,
+				"shadow0.K1.street.g64.offscreen": 37164,
+				"shadow0.K1.street.g128.offscreen": 34870,
+				"shadow0.K1.street.g0.offscreen": 0,
+				"shadow0.K1.street.g64.tested": 958,
+				"shadow0.K1.street.g128.tested": 482,
+				"shadow0.K1.building.copies": 695,
+				"shadow0.K1.building.now": 639301,
+				"shadow0.K1.building.g64.offscreen": 117580,
+				"shadow0.K1.building.g128.offscreen": 107486,
+				"shadow0.K1.building.g0.offscreen": 0,
+				"shadow0.K1.building.g64.tested": 7246,
+				"shadow0.K1.building.g128.tested": 3637,
+				"shadow0.K1.prop.copies": 276,
+				"shadow0.K1.prop.now": 467421,
+				"shadow0.K1.prop.g64.offscreen": 1152,
+				"shadow0.K1.prop.g128.offscreen": 512,
+				"shadow0.K1.prop.g0.offscreen": 0,
+				"shadow0.K1.prop.g64.tested": 4003,
+				"shadow0.K1.prop.g128.tested": 1997,
+				"shadow0.K1.foliage.copies": 177,
+				"shadow0.K1.foliage.now": 579541,
+				"shadow0.K1.foliage.g64.offscreen": 26826,
+				"shadow0.K1.foliage.g128.offscreen": 25267,
+				"shadow0.K1.foliage.g0.offscreen": 4315,
+				"shadow0.K1.foliage.g64.tested": 6785,
+				"shadow0.K1.foliage.g128.tested": 3407,
+				"shadow0.N16.building.copies": 7,
+				"shadow0.N16.building.now": 281175,
+				"shadow0.N16.building.g64.offscreen": 42448,
+				"shadow0.N16.building.g128.offscreen": 36591,
+				"shadow0.N16.building.g0.offscreen": 0,
+				"shadow0.N16.building.g64.tested": 4418,
+				"shadow0.N16.building.g128.tested": 2219,
+				"shadow0.N16.street.copies": 1,
+				"shadow0.N16.street.now": 41912,
+				"shadow0.N16.street.g64.offscreen": 30322,
+				"shadow0.N16.street.g128.offscreen": 28747,
+				"shadow0.N16.street.g0.offscreen": 0,
+				"shadow0.N16.street.g64.tested": 760,
+				"shadow0.N16.street.g128.tested": 383,
+				"shadow0.N16.foliage.copies": 2,
+				"shadow0.N16.foliage.now": 63420,
+				"shadow0.N16.foliage.g64.offscreen": 21629,
+				"shadow0.N16.foliage.g128.offscreen": 20467,
+				"shadow0.N16.foliage.g0.offscreen": 4315,
+				"shadow0.N16.foliage.g64.tested": 998,
+				"shadow0.N16.foliage.g128.tested": 500,
+				"shadow0.N16.prop.copies": 6,
+				"shadow0.N16.prop.now": 139633,
+				"shadow0.N16.prop.g64.offscreen": 0,
+				"shadow0.N16.prop.g128.offscreen": 0,
+				"shadow0.N16.prop.g0.offscreen": 0,
+				"shadow0.N16.prop.g64.tested": 2244,
+				"shadow0.N16.prop.g128.tested": 1115,
+				"shadow0.N32.building.copies": 8,
+				"shadow0.N32.building.now": 300235,
+				"shadow0.N32.building.g64.offscreen": 44048,
+				"shadow0.N32.building.g128.offscreen": 37999,
+				"shadow0.N32.building.g0.offscreen": 0,
+				"shadow0.N32.building.g64.tested": 4716,
+				"shadow0.N32.building.g128.tested": 2368,
+				"shadow0.N32.street.copies": 1,
+				"shadow0.N32.street.now": 41912,
+				"shadow0.N32.street.g64.offscreen": 30322,
+				"shadow0.N32.street.g128.offscreen": 28747,
+				"shadow0.N32.street.g0.offscreen": 0,
+				"shadow0.N32.street.g64.tested": 760,
+				"shadow0.N32.street.g128.tested": 383,
+				"shadow0.N32.foliage.copies": 16,
+				"shadow0.N32.foliage.now": 315819,
+				"shadow0.N32.foliage.g64.offscreen": 21629,
+				"shadow0.N32.foliage.g128.offscreen": 20467,
+				"shadow0.N32.foliage.g0.offscreen": 4315,
+				"shadow0.N32.foliage.g64.tested": 4952,
+				"shadow0.N32.foliage.g128.tested": 2484,
+				"shadow0.N32.prop.copies": 7,
+				"shadow0.N32.prop.now": 157860,
+				"shadow0.N32.prop.g64.offscreen": 0,
+				"shadow0.N32.prop.g128.offscreen": 0,
+				"shadow0.N32.prop.g0.offscreen": 0,
+				"shadow0.N32.prop.g64.tested": 2529,
+				"shadow0.N32.prop.g128.tested": 1258,
+				"shadow0.N64.building.copies": 22,
+				"shadow0.N64.building.now": 437075,
+				"shadow0.N64.building.g64.offscreen": 104140,
+				"shadow0.N64.building.g128.offscreen": 95370,
+				"shadow0.N64.building.g0.offscreen": 0,
+				"shadow0.N64.building.g64.tested": 6860,
+				"shadow0.N64.building.g128.tested": 3443,
+				"shadow0.N64.street.copies": 3,
+				"shadow0.N64.street.now": 54402,
+				"shadow0.N64.street.g64.offscreen": 37164,
+				"shadow0.N64.street.g128.offscreen": 34870,
+				"shadow0.N64.street.g0.offscreen": 0,
+				"shadow0.N64.street.g64.tested": 958,
+				"shadow0.N64.street.g128.tested": 482,
+				"shadow0.N64.foliage.copies": 25,
+				"shadow0.N64.foliage.now": 407361,
+				"shadow0.N64.foliage.g64.offscreen": 26698,
+				"shadow0.N64.foliage.g128.offscreen": 25267,
+				"shadow0.N64.foliage.g0.offscreen": 4315,
+				"shadow0.N64.foliage.g64.tested": 6391,
+				"shadow0.N64.foliage.g128.tested": 3208,
+				"shadow0.N64.prop.copies": 14,
+				"shadow0.N64.prop.now": 196984,
+				"shadow0.N64.prop.g64.offscreen": 0,
+				"shadow0.N64.prop.g128.offscreen": 0,
+				"shadow0.N64.prop.g0.offscreen": 0,
+				"shadow0.N64.prop.g64.tested": 3144,
+				"shadow0.N64.prop.g128.tested": 1566,
+				"shadow0.N128.building.copies": 36,
+				"shadow0.N128.building.now": 492405,
+				"shadow0.N128.building.g64.offscreen": 117580,
+				"shadow0.N128.building.g128.offscreen": 107486,
+				"shadow0.N128.building.g0.offscreen": 0,
+				"shadow0.N128.building.g64.tested": 7246,
+				"shadow0.N128.building.g128.tested": 3637,
+				"shadow0.N128.street.copies": 4,
+				"shadow0.N128.street.now": 57814,
+				"shadow0.N128.street.g64.offscreen": 37164,
+				"shadow0.N128.street.g128.offscreen": 34870,
+				"shadow0.N128.street.g0.offscreen": 0,
+				"shadow0.N128.street.g64.tested": 958,
+				"shadow0.N128.street.g128.tested": 482,
+				"shadow0.N128.foliage.copies": 55,
+				"shadow0.N128.foliage.now": 519421,
+				"shadow0.N128.foliage.g64.offscreen": 26826,
+				"shadow0.N128.foliage.g128.offscreen": 25267,
+				"shadow0.N128.foliage.g0.offscreen": 4315,
+				"shadow0.N128.foliage.g64.tested": 6785,
+				"shadow0.N128.foliage.g128.tested": 3407,
+				"shadow0.N128.prop.copies": 33,
+				"shadow0.N128.prop.now": 276903,
+				"shadow0.N128.prop.g64.offscreen": 1152,
+				"shadow0.N128.prop.g128.offscreen": 512,
+				"shadow0.N128.prop.g0.offscreen": 0,
+				"shadow0.N128.prop.g64.tested": 4003,
+				"shadow0.N128.prop.g128.tested": 1997,
+				"shadow0.N256.building.copies": 69,
+				"shadow0.N256.building.now": 554829,
+				"shadow0.N256.building.g64.offscreen": 117580,
+				"shadow0.N256.building.g128.offscreen": 107486,
+				"shadow0.N256.building.g0.offscreen": 0,
+				"shadow0.N256.building.g64.tested": 7246,
+				"shadow0.N256.building.g128.tested": 3637,
+				"shadow0.N256.street.copies": 6,
+				"shadow0.N256.street.now": 62007,
+				"shadow0.N256.street.g64.offscreen": 37164,
+				"shadow0.N256.street.g128.offscreen": 34870,
+				"shadow0.N256.street.g0.offscreen": 0,
+				"shadow0.N256.street.g64.tested": 958,
+				"shadow0.N256.street.g128.tested": 482,
+				"shadow0.N256.foliage.copies": 68,
+				"shadow0.N256.foliage.now": 544275,
+				"shadow0.N256.foliage.g64.offscreen": 26826,
+				"shadow0.N256.foliage.g128.offscreen": 25267,
+				"shadow0.N256.foliage.g0.offscreen": 4315,
+				"shadow0.N256.foliage.g64.tested": 6785,
+				"shadow0.N256.foliage.g128.tested": 3407,
+				"shadow0.N256.prop.copies": 113,
+				"shadow0.N256.prop.now": 418681,
+				"shadow0.N256.prop.g64.offscreen": 1152,
+				"shadow0.N256.prop.g128.offscreen": 512,
+				"shadow0.N256.prop.g0.offscreen": 0,
+				"shadow0.N256.prop.g64.tested": 4003,
+				"shadow0.N256.prop.g128.tested": 1997,
+				"shadow1.texel": 0.04513657595650593,
+				"shadow1.radius": 46.21985377946207,
+				"shadow1.all.street.copies": 34,
+				"shadow1.all.street.now": 71897,
+				"shadow1.all.street.g64.offscreen": 22430,
+				"shadow1.all.street.g128.offscreen": 21070,
+				"shadow1.all.street.g0.offscreen": 0,
+				"shadow1.all.street.g64.tested": 958,
+				"shadow1.all.street.g128.tested": 482,
+				"shadow1.all.building.copies": 884,
+				"shadow1.all.building.now": 832949,
+				"shadow1.all.building.g64.offscreen": 59004,
+				"shadow1.all.building.g128.offscreen": 53154,
+				"shadow1.all.building.g0.offscreen": 0,
+				"shadow1.all.building.g64.tested": 9385,
+				"shadow1.all.building.g128.tested": 4708,
+				"shadow1.all.prop.copies": 316,
+				"shadow1.all.prop.now": 422321,
+				"shadow1.all.prop.g64.offscreen": 0,
+				"shadow1.all.prop.g128.offscreen": 0,
+				"shadow1.all.prop.g0.offscreen": 0,
+				"shadow1.all.prop.g64.tested": 2694,
+				"shadow1.all.prop.g128.tested": 1341,
+				"shadow1.all.foliage.copies": 220,
+				"shadow1.all.foliage.now": 638831,
+				"shadow1.all.foliage.g64.offscreen": 0,
+				"shadow1.all.foliage.g128.offscreen": 0,
+				"shadow1.all.foliage.g0.offscreen": 0,
+				"shadow1.all.foliage.g64.tested": 7522,
+				"shadow1.all.foliage.g128.tested": 3777,
+				"shadow1.K1.street.copies": 34,
+				"shadow1.K1.street.now": 71897,
+				"shadow1.K1.street.g64.offscreen": 22430,
+				"shadow1.K1.street.g128.offscreen": 21070,
+				"shadow1.K1.street.g0.offscreen": 0,
+				"shadow1.K1.street.g64.tested": 958,
+				"shadow1.K1.street.g128.tested": 482,
+				"shadow1.K1.building.copies": 884,
+				"shadow1.K1.building.now": 832949,
+				"shadow1.K1.building.g64.offscreen": 59004,
+				"shadow1.K1.building.g128.offscreen": 53154,
+				"shadow1.K1.building.g0.offscreen": 0,
+				"shadow1.K1.building.g64.tested": 9385,
+				"shadow1.K1.building.g128.tested": 4708,
+				"shadow1.K1.prop.copies": 316,
+				"shadow1.K1.prop.now": 422321,
+				"shadow1.K1.prop.g64.offscreen": 0,
+				"shadow1.K1.prop.g128.offscreen": 0,
+				"shadow1.K1.prop.g0.offscreen": 0,
+				"shadow1.K1.prop.g64.tested": 2694,
+				"shadow1.K1.prop.g128.tested": 1341,
+				"shadow1.K1.foliage.copies": 220,
+				"shadow1.K1.foliage.now": 638831,
+				"shadow1.K1.foliage.g64.offscreen": 0,
+				"shadow1.K1.foliage.g128.offscreen": 0,
+				"shadow1.K1.foliage.g0.offscreen": 0,
+				"shadow1.K1.foliage.g64.tested": 7522,
+				"shadow1.K1.foliage.g128.tested": 3777,
+				"shadow1.N16.building.copies": 7,
+				"shadow1.N16.building.now": 281175,
+				"shadow1.N16.building.g64.offscreen": 960,
+				"shadow1.N16.building.g128.offscreen": 768,
+				"shadow1.N16.building.g0.offscreen": 0,
+				"shadow1.N16.building.g64.tested": 4418,
+				"shadow1.N16.building.g128.tested": 2219,
+				"shadow1.N16.street.copies": 1,
+				"shadow1.N16.street.now": 41912,
+				"shadow1.N16.street.g64.offscreen": 19267,
+				"shadow1.N16.street.g128.offscreen": 18227,
+				"shadow1.N16.street.g0.offscreen": 0,
+				"shadow1.N16.street.g64.tested": 760,
+				"shadow1.N16.street.g128.tested": 383,
+				"shadow1.N16.foliage.copies": 2,
+				"shadow1.N16.foliage.now": 63420,
+				"shadow1.N16.foliage.g64.offscreen": 0,
+				"shadow1.N16.foliage.g128.offscreen": 0,
+				"shadow1.N16.foliage.g0.offscreen": 0,
+				"shadow1.N16.foliage.g64.tested": 998,
+				"shadow1.N16.foliage.g128.tested": 500,
+				"shadow1.N16.prop.copies": 6,
+				"shadow1.N16.prop.now": 139633,
+				"shadow1.N16.prop.g64.offscreen": 0,
+				"shadow1.N16.prop.g128.offscreen": 0,
+				"shadow1.N16.prop.g0.offscreen": 0,
+				"shadow1.N16.prop.g64.tested": 2244,
+				"shadow1.N16.prop.g128.tested": 1115,
+				"shadow1.N32.building.copies": 10,
+				"shadow1.N32.building.now": 339319,
+				"shadow1.N32.building.g64.offscreen": 19286,
+				"shadow1.N32.building.g128.offscreen": 16982,
+				"shadow1.N32.building.g0.offscreen": 0,
+				"shadow1.N32.building.g64.tested": 5328,
+				"shadow1.N32.building.g128.tested": 2674,
+				"shadow1.N32.street.copies": 1,
+				"shadow1.N32.street.now": 41912,
+				"shadow1.N32.street.g64.offscreen": 19267,
+				"shadow1.N32.street.g128.offscreen": 18227,
+				"shadow1.N32.street.g0.offscreen": 0,
+				"shadow1.N32.street.g64.tested": 760,
+				"shadow1.N32.street.g128.tested": 383,
+				"shadow1.N32.foliage.copies": 14,
+				"shadow1.N32.foliage.now": 281772,
+				"shadow1.N32.foliage.g64.offscreen": 0,
+				"shadow1.N32.foliage.g128.offscreen": 0,
+				"shadow1.N32.foliage.g0.offscreen": 0,
+				"shadow1.N32.foliage.g64.tested": 4418,
+				"shadow1.N32.foliage.g128.tested": 2216,
+				"shadow1.N32.prop.copies": 7,
+				"shadow1.N32.prop.now": 157860,
+				"shadow1.N32.prop.g64.offscreen": 0,
+				"shadow1.N32.prop.g128.offscreen": 0,
+				"shadow1.N32.prop.g0.offscreen": 0,
+				"shadow1.N32.prop.g64.tested": 2529,
+				"shadow1.N32.prop.g128.tested": 1258,
+				"shadow1.N64.building.copies": 29,
+				"shadow1.N64.building.now": 532219,
+				"shadow1.N64.building.g64.offscreen": 49428,
+				"shadow1.N64.building.g128.offscreen": 45346,
+				"shadow1.N64.building.g0.offscreen": 0,
+				"shadow1.N64.building.g64.tested": 8349,
+				"shadow1.N64.building.g128.tested": 4187,
+				"shadow1.N64.street.copies": 1,
+				"shadow1.N64.street.now": 41912,
+				"shadow1.N64.street.g64.offscreen": 19267,
+				"shadow1.N64.street.g128.offscreen": 18227,
+				"shadow1.N64.street.g0.offscreen": 0,
+				"shadow1.N64.street.g64.tested": 760,
+				"shadow1.N64.street.g128.tested": 383,
+				"shadow1.N64.foliage.copies": 27,
+				"shadow1.N64.foliage.now": 447301,
+				"shadow1.N64.foliage.g64.offscreen": 0,
+				"shadow1.N64.foliage.g128.offscreen": 0,
+				"shadow1.N64.foliage.g0.offscreen": 0,
+				"shadow1.N64.foliage.g64.tested": 7012,
+				"shadow1.N64.foliage.g128.tested": 3519,
+				"shadow1.N64.prop.copies": 7,
+				"shadow1.N64.prop.now": 157860,
+				"shadow1.N64.prop.g64.offscreen": 0,
+				"shadow1.N64.prop.g128.offscreen": 0,
+				"shadow1.N64.prop.g0.offscreen": 0,
+				"shadow1.N64.prop.g64.tested": 2529,
+				"shadow1.N64.prop.g128.tested": 1258,
+				"shadow1.N128.building.copies": 49,
+				"shadow1.N128.building.now": 623268,
+				"shadow1.N128.building.g64.offscreen": 59004,
+				"shadow1.N128.building.g128.offscreen": 53154,
+				"shadow1.N128.building.g0.offscreen": 0,
+				"shadow1.N128.building.g64.tested": 9385,
+				"shadow1.N128.building.g128.tested": 4708,
+				"shadow1.N128.street.copies": 4,
+				"shadow1.N128.street.now": 57814,
+				"shadow1.N128.street.g64.offscreen": 22430,
+				"shadow1.N128.street.g128.offscreen": 21070,
+				"shadow1.N128.street.g0.offscreen": 0,
+				"shadow1.N128.street.g64.tested": 958,
+				"shadow1.N128.street.g128.tested": 482,
+				"shadow1.N128.foliage.copies": 61,
+				"shadow1.N128.foliage.now": 577344,
+				"shadow1.N128.foliage.g64.offscreen": 0,
+				"shadow1.N128.foliage.g128.offscreen": 0,
+				"shadow1.N128.foliage.g0.offscreen": 0,
+				"shadow1.N128.foliage.g64.tested": 7522,
+				"shadow1.N128.foliage.g128.tested": 3777,
+				"shadow1.N128.prop.copies": 14,
+				"shadow1.N128.prop.now": 184643,
+				"shadow1.N128.prop.g64.offscreen": 0,
+				"shadow1.N128.prop.g128.offscreen": 0,
+				"shadow1.N128.prop.g0.offscreen": 0,
+				"shadow1.N128.prop.g64.tested": 2694,
+				"shadow1.N128.prop.g128.tested": 1341,
+				"shadow1.N256.building.copies": 93,
+				"shadow1.N256.building.now": 716267,
+				"shadow1.N256.building.g64.offscreen": 59004,
+				"shadow1.N256.building.g128.offscreen": 53154,
+				"shadow1.N256.building.g0.offscreen": 0,
+				"shadow1.N256.building.g64.tested": 9385,
+				"shadow1.N256.building.g128.tested": 4708,
+				"shadow1.N256.street.copies": 5,
+				"shadow1.N256.street.now": 60599,
+				"shadow1.N256.street.g64.offscreen": 22430,
+				"shadow1.N256.street.g128.offscreen": 21070,
+				"shadow1.N256.street.g0.offscreen": 0,
+				"shadow1.N256.street.g64.tested": 958,
+				"shadow1.N256.street.g128.tested": 482,
+				"shadow1.N256.foliage.copies": 73,
+				"shadow1.N256.foliage.now": 600872,
+				"shadow1.N256.foliage.g64.offscreen": 0,
+				"shadow1.N256.foliage.g128.offscreen": 0,
+				"shadow1.N256.foliage.g0.offscreen": 0,
+				"shadow1.N256.foliage.g64.tested": 7522,
+				"shadow1.N256.foliage.g128.tested": 3777,
+				"shadow1.N256.prop.copies": 85,
+				"shadow1.N256.prop.now": 330237,
+				"shadow1.N256.prop.g64.offscreen": 0,
+				"shadow1.N256.prop.g128.offscreen": 0,
+				"shadow1.N256.prop.g0.offscreen": 0,
+				"shadow1.N256.prop.g64.tested": 2694,
+				"shadow1.N256.prop.g128.tested": 1341,
+				"shadow2.texel": 0.15553939997952418,
+				"shadow2.radius": 159.27234557903276,
+				"shadow2.all.street.copies": 51,
+				"shadow2.all.street.now": 81189,
+				"shadow2.all.street.g64.offscreen": 0,
+				"shadow2.all.street.g128.offscreen": 0,
+				"shadow2.all.street.g0.offscreen": 0,
+				"shadow2.all.street.g64.tested": 958,
+				"shadow2.all.street.g128.tested": 482,
+				"shadow2.all.building.copies": 933,
+				"shadow2.all.building.now": 828172,
+				"shadow2.all.building.g64.offscreen": 186,
+				"shadow2.all.building.g128.offscreen": 122,
+				"shadow2.all.building.g0.offscreen": 0,
+				"shadow2.all.building.g64.tested": 8942,
+				"shadow2.all.building.g128.tested": 4486,
+				"shadow2.all.prop.copies": 261,
+				"shadow2.all.prop.now": 408766,
+				"shadow2.all.prop.g64.offscreen": 0,
+				"shadow2.all.prop.g128.offscreen": 0,
+				"shadow2.all.prop.g0.offscreen": 0,
+				"shadow2.all.prop.g64.tested": 3325,
+				"shadow2.all.prop.g128.tested": 1653,
+				"shadow2.all.foliage.copies": 233,
+				"shadow2.all.foliage.now": 938139,
+				"shadow2.all.foliage.g64.offscreen": 0,
+				"shadow2.all.foliage.g128.offscreen": 0,
+				"shadow2.all.foliage.g0.offscreen": 0,
+				"shadow2.all.foliage.g64.tested": 11846,
+				"shadow2.all.foliage.g128.tested": 5945,
+				"shadow2.K1.street.copies": 51,
+				"shadow2.K1.street.now": 81189,
+				"shadow2.K1.street.g64.offscreen": 0,
+				"shadow2.K1.street.g128.offscreen": 0,
+				"shadow2.K1.street.g0.offscreen": 0,
+				"shadow2.K1.street.g64.tested": 958,
+				"shadow2.K1.street.g128.tested": 482,
+				"shadow2.K1.building.copies": 933,
+				"shadow2.K1.building.now": 828172,
+				"shadow2.K1.building.g64.offscreen": 186,
+				"shadow2.K1.building.g128.offscreen": 122,
+				"shadow2.K1.building.g0.offscreen": 0,
+				"shadow2.K1.building.g64.tested": 8942,
+				"shadow2.K1.building.g128.tested": 4486,
+				"shadow2.K1.prop.copies": 261,
+				"shadow2.K1.prop.now": 408766,
+				"shadow2.K1.prop.g64.offscreen": 0,
+				"shadow2.K1.prop.g128.offscreen": 0,
+				"shadow2.K1.prop.g0.offscreen": 0,
+				"shadow2.K1.prop.g64.tested": 3325,
+				"shadow2.K1.prop.g128.tested": 1653,
+				"shadow2.K1.foliage.copies": 233,
+				"shadow2.K1.foliage.now": 938139,
+				"shadow2.K1.foliage.g64.offscreen": 0,
+				"shadow2.K1.foliage.g128.offscreen": 0,
+				"shadow2.K1.foliage.g0.offscreen": 0,
+				"shadow2.K1.foliage.g64.tested": 11846,
+				"shadow2.K1.foliage.g128.tested": 5945,
+				"shadow2.N16.building.copies": 6,
+				"shadow2.N16.building.now": 295895,
+				"shadow2.N16.building.g64.offscreen": 0,
+				"shadow2.N16.building.g128.offscreen": 0,
+				"shadow2.N16.building.g0.offscreen": 0,
+				"shadow2.N16.building.g64.tested": 4644,
+				"shadow2.N16.building.g128.tested": 2329,
+				"shadow2.N16.street.copies": 1,
+				"shadow2.N16.street.now": 41912,
+				"shadow2.N16.street.g64.offscreen": 0,
+				"shadow2.N16.street.g128.offscreen": 0,
+				"shadow2.N16.street.g0.offscreen": 0,
+				"shadow2.N16.street.g64.tested": 760,
+				"shadow2.N16.street.g128.tested": 383,
+				"shadow2.N16.foliage.copies": 3,
+				"shadow2.N16.foliage.now": 89817,
+				"shadow2.N16.foliage.g64.offscreen": 0,
+				"shadow2.N16.foliage.g128.offscreen": 0,
+				"shadow2.N16.foliage.g0.offscreen": 0,
+				"shadow2.N16.foliage.g64.tested": 1411,
+				"shadow2.N16.foliage.g128.tested": 707,
+				"shadow2.N16.prop.copies": 6,
+				"shadow2.N16.prop.now": 139633,
+				"shadow2.N16.prop.g64.offscreen": 0,
+				"shadow2.N16.prop.g128.offscreen": 0,
+				"shadow2.N16.prop.g0.offscreen": 0,
+				"shadow2.N16.prop.g64.tested": 2244,
+				"shadow2.N16.prop.g128.tested": 1115,
+				"shadow2.N32.building.copies": 8,
+				"shadow2.N32.building.now": 335055,
+				"shadow2.N32.building.g64.offscreen": 0,
+				"shadow2.N32.building.g128.offscreen": 0,
+				"shadow2.N32.building.g0.offscreen": 0,
+				"shadow2.N32.building.g64.tested": 5257,
+				"shadow2.N32.building.g128.tested": 2636,
+				"shadow2.N32.street.copies": 1,
+				"shadow2.N32.street.now": 41912,
+				"shadow2.N32.street.g64.offscreen": 0,
+				"shadow2.N32.street.g128.offscreen": 0,
+				"shadow2.N32.street.g0.offscreen": 0,
+				"shadow2.N32.street.g64.tested": 760,
+				"shadow2.N32.street.g128.tested": 383,
+				"shadow2.N32.foliage.copies": 14,
+				"shadow2.N32.foliage.now": 289973,
+				"shadow2.N32.foliage.g64.offscreen": 0,
+				"shadow2.N32.foliage.g128.offscreen": 0,
+				"shadow2.N32.foliage.g0.offscreen": 0,
+				"shadow2.N32.foliage.g64.tested": 4546,
+				"shadow2.N32.foliage.g128.tested": 2280,
+				"shadow2.N32.prop.copies": 9,
+				"shadow2.N32.prop.now": 202970,
+				"shadow2.N32.prop.g64.offscreen": 0,
+				"shadow2.N32.prop.g128.offscreen": 0,
+				"shadow2.N32.prop.g0.offscreen": 0,
+				"shadow2.N32.prop.g64.tested": 3259,
+				"shadow2.N32.prop.g128.tested": 1620,
+				"shadow2.N64.building.copies": 13,
+				"shadow2.N64.building.now": 396810,
+				"shadow2.N64.building.g64.offscreen": 0,
+				"shadow2.N64.building.g128.offscreen": 0,
+				"shadow2.N64.building.g0.offscreen": 0,
+				"shadow2.N64.building.g64.tested": 6225,
+				"shadow2.N64.building.g128.tested": 3121,
+				"shadow2.N64.street.copies": 1,
+				"shadow2.N64.street.now": 41912,
+				"shadow2.N64.street.g64.offscreen": 0,
+				"shadow2.N64.street.g128.offscreen": 0,
+				"shadow2.N64.street.g0.offscreen": 0,
+				"shadow2.N64.street.g64.tested": 760,
+				"shadow2.N64.street.g128.tested": 383,
+				"shadow2.N64.foliage.copies": 41,
+				"shadow2.N64.foliage.now": 694106,
+				"shadow2.N64.foliage.g64.offscreen": 0,
+				"shadow2.N64.foliage.g128.offscreen": 0,
+				"shadow2.N64.foliage.g0.offscreen": 0,
+				"shadow2.N64.foliage.g64.tested": 10877,
+				"shadow2.N64.foliage.g128.tested": 5458,
+				"shadow2.N64.prop.copies": 9,
+				"shadow2.N64.prop.now": 202970,
+				"shadow2.N64.prop.g64.offscreen": 0,
+				"shadow2.N64.prop.g128.offscreen": 0,
+				"shadow2.N64.prop.g0.offscreen": 0,
+				"shadow2.N64.prop.g64.tested": 3259,
+				"shadow2.N64.prop.g128.tested": 1620,
+				"shadow2.N128.building.copies": 48,
+				"shadow2.N128.building.now": 603129,
+				"shadow2.N128.building.g64.offscreen": 186,
+				"shadow2.N128.building.g128.offscreen": 122,
+				"shadow2.N128.building.g0.offscreen": 0,
+				"shadow2.N128.building.g64.tested": 8942,
+				"shadow2.N128.building.g128.tested": 4486,
+				"shadow2.N128.street.copies": 3,
+				"shadow2.N128.street.now": 54402,
+				"shadow2.N128.street.g64.offscreen": 0,
+				"shadow2.N128.street.g128.offscreen": 0,
+				"shadow2.N128.street.g0.offscreen": 0,
+				"shadow2.N128.street.g64.tested": 958,
+				"shadow2.N128.street.g128.tested": 482,
+				"shadow2.N128.foliage.copies": 67,
+				"shadow2.N128.foliage.now": 817455,
+				"shadow2.N128.foliage.g64.offscreen": 0,
+				"shadow2.N128.foliage.g128.offscreen": 0,
+				"shadow2.N128.foliage.g0.offscreen": 0,
+				"shadow2.N128.foliage.g64.tested": 11846,
+				"shadow2.N128.foliage.g128.tested": 5945,
+				"shadow2.N128.prop.copies": 10,
+				"shadow2.N128.prop.now": 207172,
+				"shadow2.N128.prop.g64.offscreen": 0,
+				"shadow2.N128.prop.g128.offscreen": 0,
+				"shadow2.N128.prop.g0.offscreen": 0,
+				"shadow2.N128.prop.g64.tested": 3325,
+				"shadow2.N128.prop.g128.tested": 1653,
+				"shadow2.N256.building.copies": 93,
+				"shadow2.N256.building.now": 699466,
+				"shadow2.N256.building.g64.offscreen": 186,
+				"shadow2.N256.building.g128.offscreen": 122,
+				"shadow2.N256.building.g0.offscreen": 0,
+				"shadow2.N256.building.g64.tested": 8942,
+				"shadow2.N256.building.g128.tested": 4486,
+				"shadow2.N256.street.copies": 10,
+				"shadow2.N256.street.now": 67639,
+				"shadow2.N256.street.g64.offscreen": 0,
+				"shadow2.N256.street.g128.offscreen": 0,
+				"shadow2.N256.street.g0.offscreen": 0,
+				"shadow2.N256.street.g64.tested": 958,
+				"shadow2.N256.street.g128.tested": 482,
+				"shadow2.N256.foliage.copies": 104,
+				"shadow2.N256.foliage.now": 907379,
+				"shadow2.N256.foliage.g64.offscreen": 0,
+				"shadow2.N256.foliage.g128.offscreen": 0,
+				"shadow2.N256.foliage.g0.offscreen": 0,
+				"shadow2.N256.foliage.g64.tested": 11846,
+				"shadow2.N256.foliage.g128.tested": 5945,
+				"shadow2.N256.prop.copies": 49,
+				"shadow2.N256.prop.now": 295131,
+				"shadow2.N256.prop.g64.offscreen": 0,
+				"shadow2.N256.prop.g128.offscreen": 0,
+				"shadow2.N256.prop.g0.offscreen": 0,
+				"shadow2.N256.prop.g64.tested": 3325,
+				"shadow2.N256.prop.g128.tested": 1653
+			},
+			"ms": 592.241542
+		}
+	]
+}

@@ -19,7 +19,7 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 
 | Content | For |
 | --- | --- |
-| 35 Khronos glTF sample models (`sources/khronos/`): skins, clips, morph targets, materials, and a model for each glTF extension that the loader reads | The loader's image tests and parity (M2-A2, M2-L4), skinning and clips from files (M2-C7), morph targets (M2-C5), quantized vertices (M2-A1), meshopt (M2-A3), Draco (M2-A6), and clear coats and sheens (M2-EX30: ClearCoatTest, ClearCoatCarPaint, ClearcoatWicker, SheenChair, SheenCloth, SheenTestGrid and ToyCar, added on 11 October 2026) |
+| 36 Khronos glTF sample models (`sources/khronos/`): skins, clips, morph targets, materials, and a model for each glTF extension that the loader reads | The loader's image tests and parity (M2-A2, M2-L4), skinning and clips from files (M2-C7), morph targets (M2-C5), quantized vertices (M2-A1), meshopt (M2-A3), Draco (M2-A6), clear coats and sheens (M2-EX30: ClearCoatTest, ClearCoatCarPaint, ClearcoatWicker, SheenChair, SheenCloth, SheenTestGrid and ToyCar), and the animation-pointer samples' property tracks (M3-G1: AnimationPointerUVs) |
 | The KayKit Knight (`sources/characters/kaykit-knight/`): 7,024 vertices, 41 joints, 76 clips | The crowd scene, S5 (M2-L2). The asset tool's simplifier can bring it near S5's 2,500 vertices |
 | Four Kenney city kits (`sources/city/kenney-*/`), with one building in FBX and OBJ form | The city scene, S6 (M2-L3), and the convert command (M2-B3) |
 | 40 ambientCG texture sets at 1024 x 1024 (`sources/materials/ambientcg/`) | S6's materials and a real KTX2 load (M2-B1) |
@@ -27,8 +27,10 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | Four Poly Haven environments at 2048 x 1024, with one OpenEXR copy | Environment light and backgrounds (M2-B2, M2-E2, M2-E3) and the HDR readers (M2-E4) |
 | Colour grading tables in `.cube` and `.3dl` form | Colour grading (M2-F3) |
 | The Creek's trees, plants and cave mouth (`sources/showcase/creek/`), built by script in Blender | The Creek showcase scene (M2-EX8) |
+| Dok11's drone scan of Bolton Priory (`sources/splats/bolton-priory/`): 1,710,551 Gaussian splats, as the SOG file that SuperSplat publishes | The source of the splat stream below |
+| The same scan as a splat stream (`sources/splats/bolton-priory-stream/`): an index and 84 SPZ chunk files, 27.6 MB, made by script | The Gaussian splats demo, and a real scan for the splats add-on's devices |
 
-No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `tests/lib/meshopt-fixtures.ts` compresses SimpleInstancing (CC0) with gltfpack 1.3, `-cc -ce ext`, into `tests/pages/assets/models/simple-instancing-meshopt.glb`. `bun tests/lib/meshopt-fixtures.ts` writes it again. A unit test checks that the committed file matches what gltfpack builds. [D-34](decisions/D-34-meshopt-decoding.md) records why. The sample content's one Draco model, RiggedSimple, has no texture coordinates. So `tests/lib/draco-fixtures.ts` compresses TextureCoordinateTest (CC0) with Draco's own encoder through glTF-Transform, into `tests/pages/assets/models/texture-coordinates-draco.glb`. A unit test checks that file the same way ([D-112](decisions/D-112-draco-decoding.md)). Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references.
+No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `tests/lib/meshopt-fixtures.ts` compresses SimpleInstancing (CC0) with gltfpack 1.3, `-cc -ce ext`, into `tests/pages/assets/models/simple-instancing-meshopt.glb`. `bun tests/lib/meshopt-fixtures.ts` writes it again. A unit test checks that the committed file matches what gltfpack builds. [D-34](decisions/D-34-meshopt-decoding.md) records why. The sample content's one Draco model, RiggedSimple, has no texture coordinates. So `tests/lib/draco-fixtures.ts` compresses TextureCoordinateTest (CC0) with Draco's own encoder through glTF-Transform, into `tests/pages/assets/models/texture-coordinates-draco.glb`. A unit test checks that file the same way ([D-112](decisions/D-112-draco-decoding.md)). Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references. Khronos's AnisotropyStrengthTest is one: its `glTF-Binary` file is 94,444 bytes and under CC0 by Ed Mackey, so the image tests keep it at `tests/pages/assets/models/sources/khronos/AnisotropyStrengthTest/`, beside the two animation-pointer samples that are kept the same way.  The same holds for Khronos's TextureLinearInterpolationTest: 13,468 bytes under CC0, at `tests/pages/assets/models/sources/khronos/TextureLinearInterpolationTest/`. Its scene checks that a texture samples linearly after its texels decode, a fault that no synthetic scene caught. Khronos's DispersionTest is another: its `glTF-Binary` file is 2,310,944 bytes, SHA-256 `bbac38386632b5a7a27289737963314c2f92095074dfdf0e8c0c1c25270b3e37`, and under CC BY 4.0 by AGI, so the image tests keep it at `tests/pages/assets/models/sources/khronos/DispersionTest/`. Each is the Khronos original, byte for byte.
 
 ## Use a sample file
 
@@ -42,39 +44,39 @@ No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `t
 
 The city layout holds rows of objects, not models. S6 needs model files, so `bench/lib/city-files.ts` builds two from the layout. The kit file holds each part of the Kenney models that the layout uses. The tower file holds one mesh per material with every box in that material, and the layout's 200 materials. The files go into the shared cache, in `city/<key>` beside the commits' folders. The key is the layout's SHA-256, the pinned commit and the module's own source, so a change to any of them builds them again. Their images stay in the commit's folder, and the files name them by relative paths. Only the packed images of occlusion, roughness and metalness are new files.
 
-The key must hold the pinned commit, because the files name images in that commit's folder. Until 12 October 2026 it held only the layout and the module. #520 moved the pin and kept the layout. On main, the benchmark job's next run built the city files for its baseline, under the old pin, and its new build took the same folder. The Actions cache then kept those files for the new pin, without the old pin's folder. The next benchmark run that restored them failed before its first page, because the files named images that the machine did not have. A computer that keeps every pin's folder, as a developer's does, never shows the fault. A unit test in `bench/lib/city-files.test.ts` checks that two pins with one layout get two folders.
+The key must hold the pinned commit, because the files name images in that commit's folder. Take a change that moves the pin and keeps the layout. Without the pin in the key, the benchmark job builds its baseline's city files under the old pin, and its new build takes the same folder. The Actions cache then keeps those files for the new pin, without the old pin's folder. The next benchmark run that restores them fails before its first page, because the files name images that the machine does not have. A computer that keeps every pin's folder, as a developer's does, never shows the fault. A unit test in `bench/lib/city-files.test.ts` checks that two pins with one layout get two folders.
 
 A page imports them as `/s6-city/kit.gltf?optimized` and `/s6-city/towers.gltf?optimized`. The `cityServer` plugin of the module resolves each import to the built file, and the null3D plugin optimizes it as any model. The benchmark pages' build and the dev server both use it. The first build takes about 27 seconds, and the optimization about 100 more on the owner's Mac. `bun bench/lib/city-files.ts` does both ahead of time. In CI, the `city` job runs it once per run through `.github/actions/city`, after the samples action, and keeps both results in the Actions cache. Its key covers the pinned sample content, the module and the asset tool. The job hands both results to the jobs that load S6 as artifacts. A build without the cache took 6.2 minutes on GitHub's Linux machines ([D-106](decisions/D-106-s6-city.md#ci)). [Benchmarks](benchmarks.md#the-city) describes S6.
 
-## Models built in Blender
+## Splat scans converted by script
 
-Some showcase models are organic shapes that code in a sketch would make poorly, such as trees and a cave. A Python script builds them in Blender, with no hand work and no downloads, and the sample-assets repository keeps its output. The scripts live in this repository, in `tools/samples/blender/`, so a change to a model is a reviewed change to code.
+The splats add-on reads SPZ files and splat streams, and the scans that sites publish come in other forms. A script in this repository converts a published scan into a stream, and the sample-assets repository keeps both the published file and the stream. The published file keeps the author's own bytes, and the manifest records the stream with the origin kind `converted`, which names the script and the asset it reads.
 
 | Script | Builds |
 | --- | --- |
-| `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers and a cave mouth with boulders. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss |
-| `creek.ts` | Runs `creek.py` in Blender, optimizes each model with the asset tool, and packs each model's KTX2 textures into its own file |
+| `tools/samples/splats/bolton-priory.ts` | The Bolton Priory stream from the SOG file that SuperSplat publishes |
 
-Build the Creek's models with `bun tools/samples/blender/creek.ts <folder>`. It needs Blender 5.2, at the macOS app's place or where `BLENDER` names it, and takes about 10 seconds. It prints each part's triangles and each file's size. To publish them:
+Build the stream with `bun tools/samples/splats/bolton-priory.ts <folder>`. It needs libwebp's `dwebp` (`brew install webp`), or the executable that `DWEBP` names, and takes about a second. A SOG file is a zip of lossless WebP images, and `dwebp` gives every byte exactly. A browser's decoder may multiply a pixel's color by its alpha, and every splat's color pixel in a SOG file is partly transparent, so a browser would change the colors. The script turns the cloud upright, since the training wrote it with its vertical axis pointing down, moves the ground to height 0 and the site over the origin, keeps the first spherical-harmonic band, and cuts and writes the chunks with the add-on's own `chunkSplats` and `encodeSpz`. To publish it:
 
-1. Copy the three files into `sources/showcase/creek/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
+1. Copy the folder into `sources/splats/bolton-priory-stream/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
 2. Commit, push, and pin the commit here, as "Add or change an asset" says.
 
-The sample-assets repository records these models with the origin kind `blender`, which links to the script. Its import script has nothing to download for them, and its check does not build them again, because the check would need Blender.
+SuperSplat lets only a signed-in account download a scan, so the published file's origin kind is `manual`, which names the page to download it from. A page names only the stream's index, and the add-on reads the chunks from it. So `copyNamedSamples` copies the chunk files that a named stream index lists beside it.
 
-The models are optimized before they go into the sample-assets repository, unlike the other sources there. A sketch loads them with `sampleUrl`, so a website's build copies one file for each model. The asset tool writes its KTX2 textures as separate files, and the build would not copy those. So `creek.ts` moves each texture into the model's binary chunk, as an image with a buffer view.
+## Splat scans converted by script
 
-Each model draws with few triangles, so a scene can place many copies:
+The splats add-on reads SPZ files and splat streams, and the scans that sites publish come in other forms. A script in this repository converts a published scan into a stream, and the sample-assets repository keeps both the published file and the stream. The published file keeps the author's own bytes, and the manifest records the stream with the origin kind `converted`, which names the script and the asset it reads.
 
-| Part | Triangles |
+| Script | Builds |
 | --- | --- |
-| Oak: wood, leaves | 5,048, 9,100 |
-| Beech: wood, leaves | 5,276, 10,400 |
-| Birch: wood, leaves | 3,882, 5,760 |
-| Fern, hosta, shrub, wildflowers | 416, 560, 252, 244 |
-| Cave mouth | 9,863 |
+| `tools/samples/splats/bolton-priory.ts` | The Bolton Priory stream from the SOG file that SuperSplat publishes |
 
-The trees file takes 1,793 KB with its levels of detail, the plants file 443 KB, and the cave file 778 KB. The trees' leaves are cards. Each card holds a cluster of 22 to 28 small leaves from a 2 by 2 atlas of 2048 texels, and its alpha cuts their outline. The alpha fades over two texels at each leaf's edge, which softens the outline where alpha to coverage runs. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided. Each tree part also has two lower levels of detail, in the MSFT_lod extension. Level 1 keeps a third of the cards, made larger, and drops the finest twigs. Level 2 keeps an eighth of the cards, and only the trunk and the main boughs. Each level's error in `NULL3D_lod_error` makes it switch in about 25 m and 50 m away on a screen 1,080 pixels high. The asset tool keeps each level in its base mesh's frame (M2-I4), and the levels add 317 KB to the trees file.
+Build the stream with `bun tools/samples/splats/bolton-priory.ts <folder>`. It needs libwebp's `dwebp` (`brew install webp`), or the executable that `DWEBP` names, and takes about a second. A SOG file is a zip of lossless WebP images, and `dwebp` gives every byte exactly. A browser's decoder may multiply a pixel's color by its alpha, and every splat's color pixel in a SOG file is partly transparent, so a browser would change the colors. The script turns the cloud upright, since the training wrote it with its vertical axis pointing down, moves the ground to height 0 and the site over the origin, keeps the first spherical-harmonic band, and cuts and writes the chunks with the add-on's own `chunkSplats` and `encodeSpz`. To publish it:
+
+1. Copy the folder into `sources/splats/bolton-priory-stream/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
+2. Commit, push, and pin the commit here, as "Add or change an asset" says.
+
+SuperSplat lets only a signed-in account download a scan, so the published file's origin kind is `manual`, which names the page to download it from. A page names only the stream's index, and the add-on reads the chunks from it. So `copyNamedSamples` copies the chunk files that a named stream index lists beside it.
 
 ## The sample check
 
@@ -84,7 +86,7 @@ The trees file takes 1,793 KB with its levels of detail, the plants file 443 KB,
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 207 MB now.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 268 MB now.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -102,7 +104,7 @@ Well-known sample models that may not go into the sample-assets repository, and 
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 207 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 268 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.

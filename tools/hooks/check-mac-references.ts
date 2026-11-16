@@ -35,7 +35,7 @@ export function macReferencesProblem(commits: readonly CommitWithFiles[]): strin
 	const unmatched = unmatchedSwiftShaderReferences(commits);
 	if (unmatched.length === 0) return null;
 	const values = commits.flatMap((commit) =>
-		findAckValues(effectiveMessage(commit.message), MAC_REFERENCES_TRAILER),
+		findAckValues(effectiveMessage(commit.message), MAC_REFERENCES_TRAILER, commit.authoredAt),
 	);
 	if (values.some((value) => !isBareAck(value))) return null;
 	const shown = unmatched.slice(0, 3).map((file) => file.slice(SWIFTSHADER.length));

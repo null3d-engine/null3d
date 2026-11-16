@@ -66,7 +66,9 @@
 //                       count of S1's objects or S5's characters at which three.js holds 30
 //                       frames per second, or texture-cache, which times first and repeat visits
 //                       that load the city scene's 120 KTX2 textures, with the cache of
-//                       transcoded textures off and on, or object-growth, which times the create
+//                       transcoded textures off and on, or storage-speed, which reports the
+//                       storage allowance and times each browser store's writes and reads from a
+//                       worker, or object-growth, which times the create
 //                       calls that grow the scene's object tables, and the engine memory of a
 //                       small scene, on each GPU path, or occlusion-s6, T-36, which times S6 on
 //                       WebGL2 with software occlusion culling off and on in turns at the Low,
@@ -74,9 +76,40 @@
 //                       stops along the route that it hides nothing that shows, or sky, which
 //                       times each stage of a sky map's refresh and counts the frames from a sun
 //                       move to the new light on each GPU path, or reflection, which times S1 with
-//                       a reflection pass at a quarter and at half the render size against none
+//                       a reflection pass at a quarter and at half the render size against none,
+//                       or alpha-mask-cost, which times masked lit quads against opaque ones with
+//                       MSAA and without on each GPU path, or car-paint-cost, which times a
+//                       full-screen panel of the car paint against plain clear-coated metal at
+//                       each preset on each GPU path, or car-paint-loop, which times the flake
+//                       count's own steps, or canvas-cost, which times the frames
+//                       that refresh a canvas texture's rectangle against the same frames without
+//                       the refresh, or demos, which plays the Skyway and
+//                       Island showcases at the chosen preset and at High on each GPU path,
+//                       and reports their frame rate, display rate and first-frame time, or
+//                       splats, which draws a large splat
+//                       cloud on each GPU path and reports how much of it draws against the
+//                       preset's budget, with the frame rate, the first-frame time and the bytes
+//                       the page downloaded, or vegetation, which times Creek and the forest demo
+//                       at every preset on each GPU path with the triangles and the memory, or
+//                       terrain, which times the terrain demo at each preset that a GPU path draws,
+//                       the same way, and beside each page a held-camera pair with the morph on and
+//                       off for the offset's own cost, or terrain-shadow, which draws the demo from
+//                       a still camera with the morph on, with it off and with the far cascades kept
+//                       to their turns, for the shadow redraw that a morphing caster causes, or
+//                       island-phones, which times the Island's town view on a phone with each
+//                       part of the scene hidden in turn and with trial changes, from the
+//                       phones study's page (bench/research/island-phones), or
+//                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
+//                       ecological rules and checks the placement against the reference, or
+//                       history-cost, which times a compute pass that keeps its state between frames,
+//                       with the pass off and on
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
+//   --allow-image-faults
+//                       a browser whose image buffers fail the capabilities page's check skips
+//                       every page that draws, instead of failing them, and the summary names the
+//                       faults. For CI's virtual machines only: on a real device, such a fault is a
+//                       browser bug that users meet, and its pages must fail
 //   --n <count>         the instance count of the bench plan's pages
 //   --runs <count>      fresh runs of each bench or showcase plan page, the protocol's 5 by
 //                       default, loads at each maximum of the memory plan, 20 by default, where 0
@@ -108,11 +141,19 @@
 //                       device lacks
 //   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
 //                       earlier run, with the items whose results their checks compare with
+//   --prebuilt only|none
+//                       run only the items of a fixed plan that load what CI's load pages job
+//                       makes, a production build or S6's city files, or only the other items, so
+//                       that CI's shards of the others need not wait for that job
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
 //                       that comes only now and then
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary. No
-//                       plan tests Brave any more; it runs only where a run names it
+//                       plan tests Brave; it runs only where a run names it
+//   --quiet-cap <s>     a runner page that sends nothing for this many seconds on a page counts as
+//                       stopped, however long the page may take, so a new runner page takes over
+//                       sooner. For a browser in front, as on CI's machines, whose runner page
+//                       writes its heartbeat on time; a page with a quiet time of its own keeps it
 //   --switches <q>      page switches that every page of the plan gets, such as half=on or
 //                       half=on&preset=ultra: the checks plan's image tests then compare the
 //                       scene shaders at half precision with the usual references
@@ -196,10 +237,17 @@ import {
 	noFramesText,
 	testedDeviceEntry,
 } from './lib/device-record.ts';
-import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './lib/gpu-paths.ts';
+import {
+	GPU_PATH_NAMES,
+	type GpuPath,
+	skippedForImages,
+	skippedForImagesText,
+	skippedPath,
+	skippedPathsText,
+} from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
-import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
+import { buildsForLoads, makeLoadBuild, prepareLoads } from './lib/load-server.ts';
 import { objectGrowthSummary } from './lib/object-growth.ts';
 import { occlusionS6Summary } from './lib/occlusion-s6.ts';
 import {
@@ -234,6 +282,7 @@ import {
 import { endTurnClaim, RUNS_DIR } from './lib/report-collector.ts';
 import {
 	addToResult,
+	cappedQuietLimitMs,
 	type ItemResult,
 	inLanes,
 	keepsRefusingMemory,
@@ -288,6 +337,7 @@ import {
 	REPO_ROOT,
 	startServer,
 } from './lib/server.ts';
+import { storageSpeedSummary } from './lib/storage-speed.ts';
 import { progressName, tabEndedResult } from './lib/tab-end.ts';
 import { textureCacheSummary } from './lib/texture-cache.ts';
 
@@ -295,6 +345,8 @@ export interface Options {
 	plan: string;
 	/** GPU paths a browser may lack, whose pages it then skips. */
 	missing: MissingAllowed;
+	/** A browser's image buffers may fail, and it then skips the pages that draw. */
+	imageFaults?: boolean;
 	/** The instance count of the bench plan's pages, when given. */
 	count?: number;
 	/** Fresh runs of each bench plan page, or loads at each memory maximum, when given. */
@@ -317,10 +369,14 @@ export interface Options {
 	shard?: Shard;
 	/** The ids of the only items of a fixed plan to run, when given. */
 	only?: string[];
+	/** Only the items that load what CI's load pages job makes, or only the others, when given. */
+	prebuilt?: (typeof PREBUILT_CHOICES)[number];
 	/** How many times over to run the items, when given. */
 	rounds?: number;
 	/** Page switches that every page of the plan gets, joined by `&`, when given. */
 	switches?: string;
+	/** The most seconds that a runner page may send nothing on a page, when given. */
+	quietCap?: number;
 	/** Someone is at the network devices, to reopen a runner page that a crash closed. */
 	attended?: boolean;
 	/** At most this many runners at once, when given. */
@@ -340,7 +396,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--allow-image-faults] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--prebuilt only|none] [--rounds <n>] [--shields on|off] [--quiet-cap <s>] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -383,6 +439,7 @@ export function parseArgs(args: readonly string[]): Options {
 		const arg = args[i] as string;
 		if (arg === '--allow-no-webgpu') missing.webgpu = true;
 		else if (arg === '--allow-no-webgl2') missing.webgl2 = true;
+		else if (arg === '--allow-image-faults') options.imageFaults = true;
 		else if (arg === '--n') options.count = wholeNumber(arg, args[++i]);
 		else if (arg === '--runs') options.runs = wholeNumber(arg, args[++i], 0);
 		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
@@ -393,9 +450,11 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--shaders') options.shaders = oneOf(arg, args[++i], SHADER_PLANS);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--only') options.only = list(args[++i]);
+		else if (arg === '--prebuilt') options.prebuilt = oneOf(arg, args[++i], PREBUILT_CHOICES);
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--switches') options.switches = readSwitches(args[++i], arg);
+		else if (arg === '--quiet-cap') options.quietCap = wholeNumber(arg, args[++i]);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -413,6 +472,7 @@ export function parseArgs(args: readonly string[]): Options {
 	for (const [flag, given] of [
 		['--shard', options.shard],
 		['--only', options.only],
+		['--prebuilt', options.prebuilt],
 		['--rounds', options.rounds],
 	] as const)
 		if (given && options.plan === SCALE_PLAN)
@@ -547,6 +607,8 @@ export interface RunnerSummary {
 	unreliableTiming?: string;
 	/** The GPU paths that the device lacks, whose pages its runner page skipped. */
 	skippedPaths?: GpuPath[];
+	/** The faults of the browser's image buffers, for which its runner page skipped the pages that draw. */
+	imageFault?: string;
 	/** Brave only: the state of its Shields, or null when the run did not record it. */
 	braveShields?: ShieldsState | null;
 }
@@ -563,6 +625,7 @@ export function summaryLine(runner: string, summary: RunnerSummary): string {
 		`${runner}${browser}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed${notRun}`,
 		...(summary.braveShields === undefined ? [] : [shieldsText(summary.braveShields)]),
 		...(summary.skippedPaths?.length ? [skippedPathsText(summary.skippedPaths)] : []),
+		...(summary.imageFault ? [skippedForImagesText(summary.imageFault)] : []),
 		...(summary.endedEarly ? [`ended early: ${summary.endedEarly.reason}`] : []),
 		...(summary.unreliableTiming ? [`timing figures unreliable: ${summary.unreliableTiming}`] : []),
 	].join('; ');
@@ -1080,7 +1143,9 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'contact',
 	'effects',
 	'effects-joined',
+	'sharpen',
 	'physical-sky',
+	'clouds',
 	'occlusion',
 	'gpu-occlusion',
 	'occlusion-s6',
@@ -1088,6 +1153,27 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'soak',
 	'texture-cache',
 	'reflection',
+	'alpha-mask-cost',
+	'car-paint-cost',
+	'car-paint-loop',
+	'impostor-cost',
+	'impostor-frame',
+	'wind-reader-cost',
+	'leaves-wind-cost',
+	'canvas-cost',
+	'cluster-cost',
+	'lod-cost',
+	'probe-cost',
+	'splats',
+	'demos',
+	'showroom-shadow',
+	'showroom-fps',
+	'vegetation',
+	'terrain',
+	'terrain-shadow',
+	'island-phones',
+	'vegetation-scatter',
+	'webgpu-stall',
 ]);
 
 /**
@@ -1322,6 +1408,20 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
  * only with --attended: a phone over USB gets a new runner page from the runner tool, but a
  * tablet's runner page that Safari did not reload stays closed.
  */
+/** The choices of `--prebuilt`. */
+const PREBUILT_CHOICES = ['only', 'none'] as const;
+
+/** S6's pages, which load the city's files. */
+const CITY_PAGE = /\/bench\/pages\/[\w-]+\/s6\.html/;
+
+/**
+ * True when an item loads what CI's load pages job makes: a production build that the load routes
+ * serve, or S6's city files.
+ */
+export function loadsPrebuilt(item: { path: string }): boolean {
+	return buildsForLoads([item.path]).length > 0 || CITY_PAGE.test(item.path);
+}
+
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
 	const planned = PLANS[options.plan]?.({
 		count: options.count,
@@ -1343,20 +1443,32 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 					path: `${item.path}${item.path.includes('?') ? '&' : '?'}${switches}`,
 				}));
 	const needs = (item: PlanItem<Check>) => itemsNeeded(item.check);
-	const items = only ? pickItems(all, only, needs) : all;
+	const picked = only ? pickItems(all, only, needs) : all;
+	const items =
+		options.prebuilt === undefined
+			? picked
+			: options.prebuilt === 'only'
+				? pickItems(
+						picked,
+						picked.filter(loadsPrebuilt).map(({ id }) => id),
+						needs,
+					)
+				: picked.filter((item) => !loadsPrebuilt(item));
 	if (options.lan.length > 0 && !options.attended && items.some((item) => item.endsTab))
 		throw new Error(
 			`the ${options.plan} plan crashes the tab on purpose, and after a crash soon after another, Safari on a tablet stops reloading the runner page; run it on --lan devices with --attended, while someone can reopen the page`,
 		);
 	if (!shard) return repeatItems(items, rounds);
-	const part = shardItems(items, shard, itemsTogether, expectedSeconds);
+	const part = shardItems(items, shard, itemsTogether, (item) =>
+		expectedSeconds(item, options.apps[0]),
+	);
 	if (part.length === 0)
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
 		);
 	// Every shard loads the capabilities page first, so its runner page can skip the pages of the GPU
 	// paths that the device lacks.
-	const report = items.find((item) => item.check.kind === 'capabilities');
+	const report = all.find((item) => item.check.kind === 'capabilities');
 	return repeatItems(report && !part.includes(report) ? [report, ...part] : part, rounds);
 }
 
@@ -1378,7 +1490,7 @@ async function runPlan(
 	const run = runName(options.plan);
 	const reruns = new Map<string, { item: PlanItem<Check>; verdict: string[] }[]>();
 	const timed = TIMED_PLANS.has(options.plan);
-	const paths = withGpuPaths(items, options.missing);
+	const paths = withGpuPaths(items, options.missing, options.imageFaults);
 	const plan = writePlan(run, paths.items, {
 		...(REPORT_ON_TOP_PLANS.has(options.plan) && { reportOnTop: true }),
 		...(timed && { measureRefresh: true }),
@@ -1410,6 +1522,11 @@ async function runPlan(
 					return recovery.onQuiet(runner, seconds, at);
 				},
 				onHandover: recovery.onHandover,
+				...(options.quietCap !== undefined && { quietMs: cappedQuietLimitMs(options.quietCap) }),
+				onSilence: (runner, ms, item) =>
+					console.log(
+						`${runner}: its runner page's longest silence was ${(ms / 1000).toFixed(1)} s${item ? `, on ${item}` : ''}`,
+					),
 				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
 				...(remote && {
 					startMs: CLOUD_START_MS,
@@ -1539,6 +1656,12 @@ async function runPlan(
 			if (Object.keys(facts).length > 0) addToResult(run, name, item.id, facts);
 			if (verdict === 'skip') {
 				counts.skip++;
+				const imageFault = result && skippedForImages(result);
+				if (imageFault) {
+					counts.imageFault = imageFault;
+					console.log(`skip  ${name}: ${item.id}, the browser's image buffers fail`);
+					continue;
+				}
 				const path = (result && skippedPath(result)) ?? gpuPathOf(item) ?? 'webgpu';
 				const skipped = counts.skippedPaths ?? [];
 				if (!skipped.includes(path)) counts.skippedPaths = [...skipped, path];
@@ -1593,6 +1716,7 @@ async function runPlan(
 			warmUpTimeSummary,
 			governorSummary,
 			textureCacheSummary,
+			storageSpeedSummary,
 			objectGrowthSummary,
 			occlusionS6Summary,
 		].map((summary) => summary(plan.items, resultOf));
@@ -1604,6 +1728,12 @@ async function runPlan(
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}
 	for (const [name, counts] of Object.entries(summary)) console.log(summaryLine(name, counts));
+	// On GitHub's machines, pages skipped for the browser's image buffers show on the run's page too,
+	// so a run that tested no drawing in that browser does not pass unnoticed.
+	if (process.env.GITHUB_ACTIONS)
+		for (const [name, { imageFault }] of Object.entries(summary))
+			if (imageFault)
+				console.log(`::warning title=${name} skipped the pages that draw::${imageFault}`);
 	if (cloud) {
 		for (const [name, counts] of Object.entries(summary))
 			await cloud.mark(name, counts.fail === 0 && !counts.endedEarly, summaryLine(name, counts));
@@ -1854,8 +1984,11 @@ async function main(): Promise<void> {
 		(item) => item.path,
 	);
 	const builds = buildsForLoads(paths);
-	for (const { build } of builds) build();
-	const local = await startServer();
+	for (const load of builds) makeLoadBuild(load);
+	// The plain server carries the phone's USB-forwarded port and the browser apps on this machine,
+	// which reach the loopback, a secure origin already. The secure server serves the devices that
+	// reach this Mac over the local network and through the cloud tunnel.
+	const local = await startServer(false);
 	const lan =
 		options.lan.length > 0 || options.cloud.length > 0 ? await startServer(true) : undefined;
 	const forgetCloud = cloud && onStopSignal(() => cloud.closeAll());
@@ -1881,8 +2014,8 @@ async function main(): Promise<void> {
 	} finally {
 		await cloud?.closeAll();
 		forgetCloud?.();
-		local.stop();
-		lan?.stop();
+		await local.stop();
+		await lan?.stop();
 	}
 	process.exit(failures > 0 ? 1 : 0);
 }

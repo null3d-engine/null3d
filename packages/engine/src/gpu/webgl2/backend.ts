@@ -26,9 +26,16 @@ import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
+import {
+	CLOUD_FIELD_WORD,
+	CLOUD_STEPS_WORD,
+	LAYER_WORD,
+	LIGHT_BUFFER_WORD,
+} from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
+import { variantFor } from '../variants';
 import {
 	forEachFallbackAttribute,
 	forEachVertexAttribute,
@@ -64,6 +71,15 @@ const MIP_UNIT = 0;
 const MIP_PROGRAM = 'mipmap';
 /** The key of the program that copies a layer texel by texel. */
 const COPY_PROGRAM = 'mipmap copy';
+/** The key of the program that draws a texture into a corner of another at a size of its own. */
+const SCALE_PROGRAM = 'mipmap scale';
+
+/**
+ * Bits of the scale draw's instance that hold the texels across the destination: a light's image
+ * takes at most 512, so they fit in ten. The source's layer sits above them. The mipmap shader's
+ * scale pipeline reads both.
+ */
+const SCALE_SIZE_BITS = 10;
 
 // Attachment names, for invalidating what a pass does not store.
 const COLOR_ATTACHMENT0 = 0x8ce0;
@@ -74,7 +90,11 @@ const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
 const COLOR_ATTACHMENT1 = 0x8ce1;
 /** The draw buffers of a framebuffer with two color targets. */
 const TWO_DRAW_BUFFERS = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1];
+/** The draw buffer of a pass that draws into depth alone. */
+const NO_DRAW_BUFFERS = [0];
 const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
+/** The color that a cleared texture's layer takes: black, fully transparent. */
+const CLEAR_ZERO = new Float32Array([0, 0, 0, 0]);
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
 /** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
@@ -264,6 +284,25 @@ const GL_VERTEX_TYPES: Readonly<Record<number, number>> = {
 	[G.VERTEX_TYPE_SINT16]: GL_SHORT,
 };
 
+/** The provoking vertex extension, which the DOM types may lack. */
+interface ProvokingVertex {
+	readonly FIRST_VERTEX_CONVENTION_WEBGL: number;
+	provokingVertexWEBGL(convention: number): void;
+}
+
+/**
+ * Makes each primitive's flat values come from its first vertex, where the device has
+ * `WEBGL_provoking_vertex`. The shaders' flat values come from WGSL's `@interpolate(flat, either)`,
+ * so any vertex of a primitive may give them. GLSL's default is the last vertex, which Metal does not
+ * have, so ANGLE on Metal rewrites the bound index buffer into a new buffer before each draw that
+ * reads a flat value, and that buffer is as large as the whole index buffer. The first vertex is
+ * Metal's own convention, which needs no rewrite.
+ */
+export function useFirstProvokingVertex(gl: WebGL2RenderingContext): void {
+	const provoking = gl.getExtension('WEBGL_provoking_vertex') as ProvokingVertex | null;
+	provoking?.provokingVertexWEBGL(provoking.FIRST_VERTEX_CONVENTION_WEBGL);
+}
+
 /**
  * Points a vertex array's location at a mesh attribute. Attributes that shaders read as whole
  * numbers take the integer pointer. The others take the float pointer, which reads normalized
@@ -408,6 +447,17 @@ function glTexture(
 export class WebGL2Backend {
 	private readonly buffers: (GlBuffer | undefined)[] = [];
 	private readonly textures: (GlTexture | undefined)[] = [];
+	/**
+	 * The targets that hold a framebuffer with another target in it, and the texture views. The table
+	 * of textures is sparse and long, and a target's release must find these without walking it.
+	 */
+	private readonly joined = new Set<GlTexture>();
+	private readonly views = new Set<GlTexture>();
+	/**
+	 * The texture that each bind view of a layer range names. GL binds a texture array whole, so a
+	 * view's layer range reaches the shader through the pass's block instead.
+	 */
+	private readonly bindViewBase: (number | undefined)[] = [];
 	private readonly samplers: (WebGLSampler | undefined)[] = [];
 	/** Images for uploads, by id, which outlive the backend when the drawing thread owns them. */
 	private readonly images: ImageTable;
@@ -419,6 +469,7 @@ export class WebGL2Backend {
 	/** The template of the program that draws mip levels. */
 	private readonly mipTemplate: GlslTemplate;
 	private readonly copyTemplate: GlslTemplate;
+	private readonly scaleTemplate: GlslTemplate;
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
 	/** Vertex arrays of the buffers that templates with their own vertex layout draw from, by id. */
@@ -441,6 +492,9 @@ export class WebGL2Backend {
 	readonly joins: JoinedBuilds;
 	/** True once a list has replayed, after which no frame waits for a joined shader's compile. */
 	private replayed = false;
+	/** The opcode and word of the command that the replay is carrying out. */
+	private replayOp = -1;
+	private replayWord = -1;
 	/**
 	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
 	 * this thread yet, by pipeline id. Each is created once its shader arrives; until then, its
@@ -487,6 +541,8 @@ export class WebGL2Backend {
 	private unpackUsed = 0;
 	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
 	private mipFramebuffer: WebGLFramebuffer | null = null;
+	/** The framebuffer that clears a range of a texture's layers. */
+	private clearFramebuffer: WebGLFramebuffer | null = null;
 	private mipSampler: WebGLSampler | null = null;
 	/** How the texture generators draw with programs of their own. */
 	private readonly programHost: ProgramHost;
@@ -599,7 +655,8 @@ export class WebGL2Backend {
 	 * `images` holds the images that uploads read, which the thread that draws keeps across GPU
 	 * devices; by default the backend has its own. `parallelCompile` lets programs compile in the
 	 * background where the context has `KHR_parallel_shader_compile`. `canvasAlpha` says whether
-	 * the canvas's context has alpha.
+	 * the canvas's context has alpha. `multiDraw` says whether the device draws many ranges in one
+	 * call, and defaults to the context's own answer.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
@@ -610,19 +667,22 @@ export class WebGL2Backend {
 		images?: ImageTable,
 		parallelCompile = true,
 		canvasAlpha = false,
+		multiDraw = gl.getExtension('WEBGL_multi_draw') !== null,
 	) {
 		this.templates = engineTemplates(shaders);
 		this.mipTemplate = mipmapTemplate(shaders, 'main');
 		this.copyTemplate = mipmapTemplate(shaders, 'copy');
+		this.scaleTemplate = mipmapTemplate(shaders, 'scale');
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.joins = new JoinedBuilds(this.images.shaders);
-		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
+		this.multiDraw = multiDraw ? gl.getExtension('WEBGL_multi_draw') : null;
 		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
 		// Float render targets, for HDR color, where the device draws them: WebGL turns them on only
 		// when the extensions are asked for by name.
 		gl.getExtension('EXT_color_buffer_float');
 		gl.getExtension('EXT_color_buffer_half_float');
+		useFirstProvokingVertex(gl);
 		this.anisotropic = gl.getExtension('EXT_texture_filter_anisotropic');
 		this.maxAnisotropy = this.anisotropic
 			? (gl.getParameter(this.anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number)
@@ -660,7 +720,10 @@ export class WebGL2Backend {
 
 	private need<T>(table: (T | undefined)[], id: number, what: string): T {
 		const value = table[id];
-		if (value === undefined) throw new Error(`draw list names ${what} ${id}, which does not exist`);
+		if (value === undefined)
+			throw new Error(
+				`draw list names ${what} ${id}, which does not exist${this.replayWord < 0 ? '' : `, in command ${this.replayOp} at word ${this.replayWord}`}`,
+			);
 		return value;
 	}
 
@@ -686,6 +749,7 @@ export class WebGL2Backend {
 	 * first draw waits for its compile.
 	 */
 	prepare(words: Uint32Array, start: number, end: number): number {
+		this.replayWord = -1;
 		let i = start;
 		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
 			this.createPipeline(words, i + 1, true);
@@ -703,6 +767,16 @@ export class WebGL2Backend {
 		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE)
 			i += (words[i] as number) >>> 8;
 		return i;
+	}
+
+	/** The programs that may still be compiling in the background, for the two-step probe. */
+	get compilingCount(): number {
+		return this.compiling.length;
+	}
+
+	/** True when the context has `KHR_parallel_shader_compile` and the device compiles with it. */
+	get parallelCompile(): boolean {
+		return this.parallel !== null;
 	}
 
 	/**
@@ -929,8 +1003,13 @@ export class WebGL2Backend {
 			const length = header >>> 8;
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
+			this.replayOp = op;
+			this.replayWord = i;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
+					// A capture draws the frame again, and the buffers of that frame exist already:
+					// making one again would destroy the buffer that a read waits on.
+					if (this.canvasTarget && this.buffers[words[a] as number]) break;
 					this.counts.objects++;
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;
@@ -958,6 +1037,12 @@ export class WebGL2Backend {
 					this.counts.objects++;
 					this.createView(words, a);
 					break;
+				case G.OP_CREATE_BIND_VIEW:
+					this.createBindView(words, a);
+					break;
+				case G.OP_CLEAR_TEXTURE:
+					this.clearTexture(words, a);
+					break;
 				case G.OP_DESTROY_TEXTURE:
 					this.destroyTexture(words[a] as number);
 					break;
@@ -982,6 +1067,9 @@ export class WebGL2Backend {
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
+					break;
+				case G.OP_COPY_INTO_IMAGE:
+					this.copyIntoImage(words, a);
 					break;
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
@@ -1121,10 +1209,17 @@ export class WebGL2Backend {
 	 * The program that draws mip levels, or the one that copies a layer, which starts compiling the
 	 * first time.
 	 */
-	private spareProgramOf(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+	private spareProgramOf(
+		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM | typeof SCALE_PROGRAM,
+	): Program {
 		let program = this.programs.get(key);
 		if (!program) {
-			const template = key === MIP_PROGRAM ? this.mipTemplate : this.copyTemplate;
+			const template =
+				key === MIP_PROGRAM
+					? this.mipTemplate
+					: key === COPY_PROGRAM
+						? this.copyTemplate
+						: this.scaleTemplate;
 			program = createProgram(this.gl, template, 0);
 			this.programs.set(key, program);
 		}
@@ -1132,12 +1227,13 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Starts compiling the programs that draw mip levels and copy layers, so that the driver can
-	 * compile them before the first texture upload needs them. Nothing waits for their link here.
-	 * A program that fails to start is made again at first use, which reports the failure.
+	 * Starts compiling the programs that draw mip levels, copy layers and scale one texture into
+	 * another, so that the driver can compile them before the first texture needs them. Nothing
+	 * waits for their link here. A program that fails to start is made again at first use, which
+	 * reports the failure.
 	 */
 	private prebuildSparePrograms(): void {
-		for (const key of [MIP_PROGRAM, COPY_PROGRAM] as const) {
+		for (const key of [MIP_PROGRAM, COPY_PROGRAM, SCALE_PROGRAM] as const) {
 			try {
 				this.spareProgramOf(key);
 			} catch {}
@@ -1148,7 +1244,9 @@ export class WebGL2Backend {
 	 * The program that draws mip levels, or the one that copies a layer, in use. Its first use
 	 * waits for its link when the driver has not finished it.
 	 */
-	private spareProgram(key: typeof MIP_PROGRAM | typeof COPY_PROGRAM): Program {
+	private spareProgram(
+		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM | typeof SCALE_PROGRAM,
+	): Program {
 		const program = this.spareProgramOf(key);
 		this.useProgram(program);
 		return program;
@@ -1481,12 +1579,52 @@ export class WebGL2Backend {
 		return record;
 	}
 
+	/** The texture that a bind group entry names, following a bind view to its texture. */
+	private boundTextureOf(id: number): GlTexture {
+		const base = this.bindViewBase[id];
+		return this.textureOf(base === undefined ? id : base);
+	}
+
+	/**
+	 * Names a range of a texture's array layers as a bind view. GL binds the whole array, so the
+	 * recorded base texture is what a bind group sees.
+	 */
+	private createBindView(words: Uint32Array, a: number): void {
+		const id = words[a] as number;
+		this.bindViewBase[id] = words[a + 1] as number;
+	}
+
+	/** Clears a range of a texture's layers to zero, one layer at a time, outside the passes. */
+	private clearTexture(words: Uint32Array, a: number): void {
+		const gl = this.gl;
+		const texture = this.textureOf(words[a] as number);
+		const base = words[a + 1] as number;
+		const count = words[a + 2] as number;
+		if (!this.clearFramebuffer) this.clearFramebuffer = gl.createFramebuffer();
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.clearFramebuffer);
+		const scissor = gl.isEnabled(gl.SCISSOR_TEST);
+		gl.disable(gl.SCISSOR_TEST);
+		gl.colorMask(true, true, true, true);
+		for (let layer = 0; layer < count; layer++) {
+			gl.framebufferTextureLayer(
+				gl.FRAMEBUFFER,
+				texture.format.attachment,
+				texture.texture,
+				0,
+				base + layer,
+			);
+			gl.clearBufferfv(gl.COLOR, 0, CLEAR_ZERO);
+		}
+		if (scissor) gl.enable(gl.SCISSOR_TEST);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	}
+
 	private createView(words: Uint32Array, a: number): void {
 		const id = words[a] as number;
 		this.destroyTexture(id);
 		const texture = this.textureOf(words[a + 1] as number);
 		const level = words[a + 2] as number;
-		this.textures[id] = glTexture(
+		const view = glTexture(
 			texture.texture,
 			null,
 			texture.target,
@@ -1499,20 +1637,24 @@ export class WebGL2Backend {
 			true,
 			0,
 		);
+		this.textures[id] = view;
+		this.views.add(view);
 	}
 
 	private destroyTexture(id: number): void {
 		const gl = this.gl;
+		this.bindViewBase[id] = undefined;
 		const old = this.textures[id];
 		if (!old) return;
 		this.textures[id] = undefined;
 		this.forgetFramebuffers(old);
+		this.views.delete(old);
 		if (old.view) return;
 		this.gpuMemory.addTextures(-old.bytes);
 		if (old.texture) {
 			this.generators?.release(gl, old.texture, this.gpuMemory);
-			for (const other of this.textures)
-				if (other?.view && other.texture === old.texture) this.forgetFramebuffers(other);
+			for (const other of this.views)
+				if (other.texture === old.texture) this.forgetFramebuffers(other);
 			gl.deleteTexture(old.texture);
 			for (let unit = 0; unit < this.unitTextures.length; unit++)
 				if (this.unitTextures[unit] === old.texture) this.unitTextures[unit] = null;
@@ -1533,13 +1675,15 @@ export class WebGL2Backend {
 		target.framebufferDepth = null;
 		target.soloFramebuffer = null;
 		this.forgetPair(target);
-		for (const other of this.textures) {
-			if (!other) continue;
+		this.joined.delete(target);
+		for (const other of this.joined) {
 			if (other.pairSecond === target || other.pairDepth === target) this.forgetPair(other);
-			if (other.framebufferDepth !== target) continue;
-			gl.deleteFramebuffer(other.framebuffer);
-			other.framebuffer = null;
-			other.framebufferDepth = null;
+			if (other.framebufferDepth === target) {
+				gl.deleteFramebuffer(other.framebuffer);
+				other.framebuffer = null;
+				other.framebufferDepth = null;
+			}
+			if (!other.framebufferDepth && !other.pairFramebuffer) this.joined.delete(other);
 		}
 	}
 
@@ -1749,23 +1893,53 @@ export class WebGL2Backend {
 	 * it averages the stored bytes of sRGB texels, not their linear values. `generateMipmap` would
 	 * remake every layer. A frame's render target of one layer in a linear format takes
 	 * `generateMipmap` instead. Its levels are made in every frame, as the copy behind glass is, and
-	 * a draw and a copy per level cost far more GPU time than the levels' own work.
+	 * a draw and a copy per level cost far more GPU time than the levels' own work. `levels` holds
+	 * how many levels an image needs, or 0 for the texture's own count.
 	 */
-	private generateMipmaps(id: number, layer: number): void {
+	private generateMipmaps(id: number, layer: number, levels = 0): void {
 		const texture = this.textureOf(id);
 		if (texture.nativeMips) {
 			this.editTexture(MIP_UNIT, texture.target, texture.texture);
 			this.gl.generateMipmap(texture.target);
 			return;
 		}
-		const program = this.beginSpareDraws(MIP_PROGRAM, texture, texture.width, texture.height);
-		for (let level = 1; level < texture.mips; level++) {
+		const program = this.beginSpareDraws(
+			MIP_PROGRAM,
+			texture,
+			texture.format,
+			texture.width,
+			texture.height,
+		);
+		const count = levels === 0 ? texture.mips : Math.min(levels, texture.mips);
+		for (let level = 1; level < count; level++) {
 			const width = Math.max(1, texture.width >> level);
 			const height = Math.max(1, texture.height >> level);
 			this.drawIntoSpare(program, texture, level - 1, layer, width, height);
 			this.copyFromSpare(texture, level, 0, 0, layer, 0, 0, width, height);
 		}
-		this.endSpareDraws(texture);
+		this.endSpareDraws(texture, texture.format);
+	}
+
+	/**
+	 * Draws one layer of a source texture into the first texels of one layer of a light's image,
+	 * at a size of its own, then makes that layer's mip levels: a spot light's picture that a
+	 * sketch set as a texture. The image's corner is the smallest `size` by `size` texels of the
+	 * layer, which the light tables' shaders read, so a source larger than the corner is reduced.
+	 */
+	private copyIntoImage(words: Uint32Array, a: number): void {
+		const sourceId = words[a] as number;
+		const sourceLayer = words[a + 1] as number;
+		const destId = words[a + 2] as number;
+		const destLayer = words[a + 3] as number;
+		const size = words[a + 4] as number;
+		const levels = words[a + 5] as number;
+		const source = this.textureOf(sourceId);
+		const dest = this.textureOf(destId);
+		const program = this.beginSpareDraws(SCALE_PROGRAM, source, dest.format, size, size);
+		this.drawScaleIntoSpare(program, source, size | (sourceLayer << SCALE_SIZE_BITS), size, size);
+		this.copyFromSpare(dest, 0, 0, 0, destLayer, 0, 0, size, size);
+		this.endSpareDraws(source, dest.format);
+		this.generateMipmaps(destId, destLayer, levels);
 	}
 
 	/** The generators' code once a generator ran, which frees a sky map with its texture. */
@@ -1789,8 +1963,40 @@ export class WebGL2Backend {
 		if (op === G.OP_SKY_MAP_STEP) {
 			const from = words[a + 3] as number;
 			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			// The cloud tier's noise field exists once the tier's first frame made it, and the
+			// generator reads it only while the tier draws.
+			const cloudSteps = words[a + CLOUD_STEPS_WORD] as number;
+			const field = words[a + CLOUD_FIELD_WORD] as number;
+			const noise = cloudSteps > 0 && field !== 0 ? this.textureOf(field).texture : null;
 			const host = this.programHost;
-			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
+			// The page's sky layer, once its shader is here: the map's texels then hold the layer
+			// that the background shows, and so do the reflections and the light taken from them.
+			const template = words[a + LAYER_WORD] as number;
+			const layer =
+				template === 0
+					? undefined
+					: variantFor(this.images.shaders.get(template)?.variants ?? {}, 0, 'glsl');
+			const capture = words[a + LIGHT_BUFFER_WORD] as number;
+			// A capture draws the frame again to read it back, and the light capture already ran in
+			// the frame that it draws again.
+			const readback =
+				capture === 0 || this.canvasTarget
+					? undefined
+					: (this.need(this.buffers, capture, 'buffer').buffer as WebGLBuffer);
+			code.skyStage(
+				host,
+				target,
+				width,
+				mips,
+				words,
+				floats,
+				a,
+				this.gpuMemory,
+				panorama,
+				layer,
+				readback,
+				noise,
+			);
 		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();
 	}
@@ -1841,17 +2047,19 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Gets ready to draw layers of `source` into the spare texture of its format, at least `width`
-	 * by `height`, with the program that `key` names. The source is bound for sampling.
+	 * Gets ready to draw layers of `source` into the spare texture of `format`, at least `width`
+	 * by `height`, with the program that `key` names. The source is bound for sampling. The spare
+	 * takes the format of what the draws go into, which a scale draw writes into another texture.
 	 */
 	private beginSpareDraws(
-		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM,
+		key: typeof MIP_PROGRAM | typeof COPY_PROGRAM | typeof SCALE_PROGRAM,
 		source: GlTexture,
+		format: GlFormat,
 		width: number,
 		height: number,
 	): Program {
 		const gl = this.gl;
-		const spare = this.spareOf(source.format, width, height);
+		const spare = this.spareOf(format, width, height);
 		const program = this.spareProgram(key);
 		if (!this.mipFramebuffer) this.mipFramebuffer = gl.createFramebuffer();
 		if (!this.mipSampler) {
@@ -1862,7 +2070,7 @@ export class WebGL2Backend {
 		}
 		// The copies read the spare through the same framebuffer that the draws write.
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.mipFramebuffer);
-		const attachment = source.format.attachment;
+		const attachment = format.attachment;
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, spare.texture, 0);
 		this.useVertexArray(this.emptyVertexArray());
 		this.setScissorTest(false);
@@ -1901,6 +2109,30 @@ export class WebGL2Backend {
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
 	}
 
+	/**
+	 * Draws the source into the spare's lower-left `width` by `height` texels at a size of its
+	 * own: `instance` holds the destination's size and the source's layer, as the scale program
+	 * reads them. The program reads the source's first level.
+	 */
+	private drawScaleIntoSpare(
+		program: Program,
+		source: GlTexture,
+		instance: number,
+		width: number,
+		height: number,
+	): void {
+		const gl = this.gl;
+		if (program.firstInstance && program.firstInstanceValue !== instance) {
+			gl.uniform1ui(program.firstInstance, instance);
+			program.firstInstanceValue = instance;
+		}
+		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, 0);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, 0);
+		this.setGlViewport(0, 0, width, height);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+	}
+
 	/** Copies a rectangle of the spare into a level of `into`: a layer, a cube face or a 3D slice. */
 	private copyFromSpare(
 		into: GlTexture,
@@ -1923,14 +2155,14 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** Gives the source back all its levels, and takes the spare out of the framebuffer. */
-	private endSpareDraws(source: GlTexture): void {
+	/** Gives the source back all its levels, and takes the spare of `format` out of the framebuffer. */
+	private endSpareDraws(source: GlTexture, format: GlFormat): void {
 		const gl = this.gl;
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, 0);
 		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, source.mips - 1);
 		// A framebuffer that is not bound keeps what it holds alive, so the spare leaves it.
-		const attachment = source.format.attachment;
+		const attachment = format.attachment;
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
 	}
 
@@ -2002,12 +2234,12 @@ export class WebGL2Backend {
 		if (source.target === gl.TEXTURE_2D_ARRAY && attachment === gl.COLOR_ATTACHMENT0) {
 			const right = sourceX + width;
 			const top = sourceY + height;
-			const program = this.beginSpareDraws(COPY_PROGRAM, source, right, top);
+			const program = this.beginSpareDraws(COPY_PROGRAM, source, source.format, right, top);
 			for (let k = 0; k < layers; k++) {
 				this.drawIntoSpare(program, source, sourceLevel, sourceLayer + k, right, top);
 				this.copyFromSpare(destination, level, x, y, layer + k, sourceX, sourceY, width, height);
 			}
-			this.endSpareDraws(source);
+			this.endSpareDraws(source, source.format);
 			return;
 		}
 		if (!this.copyFramebuffer) this.copyFramebuffer = gl.createFramebuffer();
@@ -2254,6 +2486,7 @@ export class WebGL2Backend {
 		if (color.framebuffer) this.gl.deleteFramebuffer(color.framebuffer);
 		color.framebuffer = this.makeFramebuffer(color, depth);
 		color.framebufferDepth = depth;
+		if (depth) this.joined.add(color);
 		return color.framebuffer;
 	}
 
@@ -2272,12 +2505,23 @@ export class WebGL2Backend {
 		color.pairFramebuffer = this.makeFramebuffer(color, depth, second);
 		color.pairSecond = second;
 		color.pairDepth = depth;
+		this.joined.add(color);
 		return color.pairFramebuffer;
 	}
 
-	/** The framebuffer with only `target` in it. */
+	/**
+	 * The framebuffer with only `target` in it. A depth target draws with no draw buffer, so the
+	 * pass never names a color that it does not write. Safari's WebGL2 path costs time for a color
+	 * that a pass binds and invalidates without writing it, and that time follows the target's
+	 * size (WebKit bug 328158).
+	 */
 	private soloFramebuffer(target: GlTexture): WebGLFramebuffer {
-		if (!target.soloFramebuffer) target.soloFramebuffer = this.makeFramebuffer(target, null);
+		if (!target.soloFramebuffer) {
+			const framebuffer = this.makeFramebuffer(target, null);
+			if (target.format.attachment === this.gl.DEPTH_ATTACHMENT)
+				this.gl.drawBuffers(NO_DRAW_BUFFERS);
+			target.soloFramebuffer = framebuffer;
+		}
 		return target.soloFramebuffer;
 	}
 
@@ -2286,8 +2530,9 @@ export class WebGL2Backend {
 		this.skipDraws = false;
 		const color = words[a] as number;
 		const depth = words[a + 2] as number;
-		// The weighted layer's pass names a second color target after the flags.
-		const second = length > 10 ? (words[a + 9] as number) : G.NO_TARGET;
+		// The weighted layer's pass names a second color target after the flags, before the label
+		// and the scope. A pass without one leaves its word out, so the command is shorter.
+		const second = length > 12 ? (words[a + 9] as number) : G.NO_TARGET;
 		const flags = words[a + 8] as number;
 		this.passResolve = words[a + 1] as number;
 		this.passFlags = flags;
@@ -2630,7 +2875,7 @@ export class WebGL2Backend {
 					this.unitsChanged = true;
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
-				const texture = this.textureOf(entry.resource);
+				const texture = this.boundTextureOf(entry.resource);
 				if (this.slotTextures[slot] !== texture.texture) {
 					this.slotTextures[slot] = texture.texture;
 					this.slotTargets[slot] = texture.target;

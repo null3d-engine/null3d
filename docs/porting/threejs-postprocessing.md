@@ -16,7 +16,7 @@ three.js builds post-processing from passes in an `EffectComposer`. null3D has t
 flowchart LR
     scene["Scene passes:<br/>linear HDR color,<br/>after the exposure"] --> effects["Custom effects:<br/>lowest order first,<br/>joined into few passes"]
     effects --> bloom["Bloom"]
-    bloom --> final["Final pass: vignette,<br/>tone curve, FXAA, sRGB,<br/>outlines, color grading,<br/>dithering"]
+    bloom --> final["Final pass: vignette,<br/>tone curve, FXAA, sRGB,<br/>outlines, color grading,<br/>sharpening, dithering"]
     effects --> final
     final --> canvas["Canvas"]
 ```
@@ -53,18 +53,19 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1
 | --- | --- | --- |
 | `RenderPass`, `OutputPass` | Nothing | The scene pass and the final pass are built in. |
 | `GammaCorrectionShader`, `SRGBShader` | Delete | The final pass encodes sRGB once. Keeping the pass applies it twice. |
-| `renderer.toneMapping`, `toneMappingExposure` | `toneMapping`, `exposure` | `'aces'`, `'agx'`, `'neutral'` and `'none'` use three.js's formulas. `'agx-punchy'`, the default, is AgX with more contrast and color, and three.js has no match for it. Other curves become a [custom tone curve](#port-a-tone-mapping). |
+| `renderer.toneMapping`, `toneMappingExposure` | `toneMapping`, `exposure` | `'aces'`, `'agx'`, `'neutral'` and `'none'` use three.js's formulas. `'agx-punchy'`, the default, is AgX with more contrast and color, and three.js has no match for it. `ReinhardToneMapping` and `CineonToneMapping` become the `reinhard` and `cineon` curves of `@null3d/three-compat`. Other curves become a [custom tone curve](#port-a-tone-mapping). |
 | `AdaptiveToneMappingPass` | `autoExposure: { metering: 'mean', speedUp, speedDown, compensation }`, and a custom tone curve for its Reinhard curve | `adaptationRate` becomes about `speedUp` and `speedDown`. `middleGrey` becomes `compensation`, `log2(middleGrey / 0.18)` stops. |
 | `UnrealBloomPass` | `bloom` with `blend: 'add'` and `knee: 0.01` | Keep the threshold. The intensity is about 8.8 times `strength`, and `radius` becomes the `weights`. |
 | `GTAOPass` | `ao` | The settings keep their names. `distanceFallOff` becomes `distanceFalloff`, and `blendIntensity` becomes `intensity`. |
 | `SSAOPass`, `SAOPass`, N8AO | `ao` | Their settings mean other things. Start from the defaults and tune `radius` and `scale` by eye. |
 | `SSRPass`, the WebGPU `ssr()` node | `ssr` | `maxDistance` and `thickness` keep their names, and `opacity` becomes `intensity`. Smooth materials reflect, so `selects` and `blur` have no setting. The reflections take the place of the environment's, so give the scene one. `resolutionScale` becomes the quality setting `ssrScale`. |
 | `ReflectorForSSRPass` | A reflection pass | A flat floor mirrors through a reflection pass, which wins over `ssr` on its plane. |
-| `OutlinePass` | `outline` and `mesh.setOutlined(true)` | `visibleEdgeColor` becomes `color`, and `hiddenEdgeColor` becomes `hiddenColor`. Set `width` to about twice `edgeThickness`. |
+| `OutlinePass` | `outline` and `mesh.setOutlined(true)`, or the `@null3d/three-compat` outline | For the crisp line, `visibleEdgeColor` becomes `color`, `hiddenEdgeColor` becomes `hiddenColor`, and `width` is about twice `edgeThickness`. For the soft edge, the glow and the pulse, call `createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod })` from `@null3d/three-compat`: `edgeStrength`, `edgeThickness`, `edgeGlow` and `pulsePeriod` keep their names, and the visible and hidden colors become `color` and `hiddenColor`. |
 | `LUTPass` | `lut: await assets.loadLut(url)`, `lutIntensity` | Load the same `.cube` or `.3dl` file. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`, with floats from 0 to 1 in the same order. |
 | `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs in the final pass. |
 | `SMAAPass`, `SSAARenderPass`, `TAARenderPass` | MSAA, which the presets from Medium up use | null3D has no SMAA, SSAA or TAA. |
+| `SharpenNode`, the `sharpen()` node | `sharpen` | Both sharpen display color with FSR 1's RCAS in the final pass, so the port needs no render target and no pass of its own. three.js scales the sharpening by `2^-sharpness`, where 0 sharpens the most and 2 does nothing. Set `sharpen` to that factor, so three.js's default of 0.2 is `sharpen: 0.87`. null3D damps the sharpening where the ring around a pixel is noise, which three.js does only with `denoise: true`. |
 | `BokehPass` | `dof: { focusDistance: focus, aperture, maxBlur }` and `camera.setFocalLength(mm)` | `focus` becomes `focusDistance`. null3D's `aperture` is an f-number of a camera's lens, so pick one by eye, such as 2.8, with the camera's focal length. `maxblur` is a share of the canvas's width, and `maxBlur` of its height: multiply by the aspect ratio. null3D blurs the near and far fields apart, so sharp objects spread no halo. |
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | A custom effect for each | Port each shader as a `ShaderPass`. |
 | `AfterimagePass` | No port | It blends in the frame before, which an effect cannot read. |
@@ -196,36 +197,39 @@ Some composers render into targets of their own: a blur at half size that a late
 
 ## Port a tone mapping
 
-`post.set` takes the WGSL of a custom tone curve in place of a curve's name. The WGSL declares `fn toneCurve(color: vec3f) -> vec3f`. The engine calls it with the exposed linear color of each pixel, after bloom. It clamps the result to 0 to 1, then encodes sRGB, grades and dithers as usual. The vignette has darkened the color already. A tone curve takes no uniforms.
-
-three.js's `ReinhardToneMapping` multiplies the color by `toneMappingExposure` first. null3D's color arrives exposed, so leave that step out and copy the exposure. A three.js renderer with Reinhard's curve:
-
-```js
-renderer.toneMapping = THREE.ReinhardToneMapping;
-renderer.toneMappingExposure = 1.5;
-```
-
-The port:
+`ReinhardToneMapping` and `CineonToneMapping` come from `@null3d/three-compat`, with three.js's formulas:
 
 ```ts
-const reinhard = /* wgsl */ `
+import { cineon, reinhard } from '@null3d/three-compat';
+
+post.set({ toneMapping: reinhard, exposure: 1.5 });
+// A scene that sets renderer.toneMapping = THREE.CineonToneMapping:
+post.set({ toneMapping: cineon });
+```
+
+For any other curve, `post.set` takes the WGSL of a custom tone curve in place of a curve's name. The WGSL declares `fn toneCurve(color: vec3f) -> vec3f`. The engine calls it with the exposed linear color of each pixel, after bloom. It clamps the result to 0 to 1, then encodes sRGB, grades and dithers as usual. The vignette has darkened the color already. A tone curve takes no uniforms.
+
+three.js's tone mapping functions multiply the color by `toneMappingExposure` first. null3D's color arrives exposed, so leave that step out and copy the exposure. A port that writes its own curve uses this shape, which is the add-on's Reinhard formula:
+
+```ts
+const reinhardWgsl = /* wgsl */ `
   fn toneCurve(color: vec3f) -> vec3f {
     return color / (vec3f(1.0) + color);
   }`;
 
-post.set({ toneMapping: reinhard, exposure: 1.5 });
+post.set({ toneMapping: reinhardWgsl, exposure: 1.5 });
 ```
 
-`CineonToneMapping` ports the same way:
+Cineon's formula has the same shape:
 
 ```ts
-const cineon = /* wgsl */ `
+const cineonWgsl = /* wgsl */ `
   fn toneCurve(color: vec3f) -> vec3f {
     let c = max(vec3f(0.0), color - vec3f(0.004));
     return pow((c * (6.2 * c + vec3f(0.5))) / (c * (6.2 * c + vec3f(1.7)) + vec3f(0.06)), vec3f(2.2));
   }`;
 
-post.set({ toneMapping: cineon });
+post.set({ toneMapping: cineonWgsl });
 ```
 
 For `CustomToneMapping`, copy the body of the app's `CustomToneMapping` function into `toneCurve`, without the exposure step. `post.set({ toneMapping: 'aces' })` returns to a built-in curve.

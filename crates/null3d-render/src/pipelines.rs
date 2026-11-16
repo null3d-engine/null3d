@@ -152,9 +152,6 @@ pub enum Prepass {
     /// both mark the position invariant: ANGLE on Metal did so in Chrome on a Mac. Two programs
     /// with the same vertex shader gave the same depths.
     OwnVertexShader,
-    /// The occluders' pass of occlusion culling: a render pass of its own with no color target,
-    /// whose depth the depth pyramid reads. The pairs then shade as they would without it.
-    Occluders,
 }
 
 impl Prepass {
@@ -247,6 +244,23 @@ impl DrawKey {
         })
     }
 
+    /// True for a masked pair whose own template's build can draw its depth in the camera's depth
+    /// prepass: a custom material that places its own vertices and names the mask that its shader
+    /// tests. The build keeps a fragment only where the mask keeps every sample of it, so the depth
+    /// it writes never hides a surface that the opaque pass draws. A pair that blends, skips the
+    /// depth test or write, draws lines or lets light through stays out.
+    pub const fn mask_prepass_fits(self) -> bool {
+        self.template >= template::CUSTOM_FIRST
+            && self.permutation & permutation::ALPHA_MASK != 0
+            && self.permutation & (permutation::TRANSMISSION | permutation::WEIGHTED) == 0
+            && self.state
+                & (state_flags::BLEND
+                    | state_flags::LINE_LIST
+                    | state_flags::NO_DEPTH_WRITE
+                    | state_flags::NO_DEPTH_TEST)
+                == 0
+    }
+
     /// True for a pair whose template places its vertices in a way that the depth template does not
     /// follow: a custom material, whose vertex offset may move them, a displaced standard material,
     /// or a sprite material, whose quads turn to face the camera. The prepass draws such a pair
@@ -295,6 +309,83 @@ impl DrawKey {
     pub const fn weighted(self) -> DrawKey {
         DrawKey {
             permutation: (self.permutation & !permutation::TRANSLUCENCY) | permutation::WEIGHTED,
+            state: (self.state & !state_flags::BLEND)
+                | state_flags::BLEND_ADDITIVE
+                | state_flags::NO_DEPTH_WRITE,
+            ..self
+        }
+    }
+
+    /// The permutation bits that the moment layer's builds carry for a pair of `template`, or 0
+    /// for a template that has none. A pair whose key holds any other bit keeps the transparent
+    /// pass's sort: the moment layer has no build for it, and a shader build cannot be asked for
+    /// one that it does not make (decision record D-261).
+    pub const fn moment_bits(template: u32) -> u32 {
+        let lit = permutation::TONE_MAP
+            | permutation::VERTEX_COLOR
+            | permutation::RECEIVE_SHADOWS
+            | permutation::AREA_LIGHTS
+            | permutation::SKIN
+            | permutation::MORPH
+            | permutation::DRAW_INDEX
+            | permutation::ROW_VALUES
+            | permutation::TRANSLUCENCY;
+        match template {
+            template::INSTANCED_LIT => lit,
+            template::INSTANCED_STANDARD_MAPS => lit | permutation::DISPLACEMENT,
+            template::INSTANCED_UNLIT | template::INSTANCED_UNLIT_MAP => {
+                permutation::TONE_MAP
+                    | permutation::VERTEX_COLOR
+                    | permutation::SKIN
+                    | permutation::MORPH
+                    | permutation::DRAW_INDEX
+                    | permutation::ROW_VALUES
+            }
+            template::SPRITE | template::SPRITE_MAP => {
+                permutation::TONE_MAP | permutation::DRAW_INDEX
+            }
+            _ => 0,
+        }
+    }
+
+    /// True for a pair that the moment layer draws: a blended pair of a template that has moment
+    /// builds, whose key holds only the bits that those builds carry. A double-sided pair draws
+    /// both faces in one draw, and a pair that lets light through, tests no depth or blends
+    /// additively or by multiplication keeps the sort.
+    pub const fn moment_drawn(self) -> bool {
+        let bits = Self::moment_bits(self.template);
+        bits != 0
+            && self.blends()
+            && !self.transmits()
+            && self.permutation & !bits == 0
+            && self.state & state_flags::NO_DEPTH_TEST == 0
+            && self.state & (state_flags::BLEND & !state_flags::BLEND_NORMAL) == 0
+    }
+
+    /// The key of the pipeline that writes a pair of [`Self::moment_drawn`] into the moment layer's
+    /// moment store (see [`crate::moment`]): four power moments of the fragment's optical depth,
+    /// which add into the target, so the order of the draws does not matter. It uses the outline
+    /// mask's permutation value, which no template with a moment build lists otherwise, so its
+    /// builds load with the moment layer alone. It writes no depth, and a double-sided pair draws
+    /// both faces in one draw.
+    pub const fn moment(self) -> DrawKey {
+        DrawKey {
+            permutation: (self.permutation & Self::moment_bits(self.template))
+                | permutation::OUTLINE_VISIBLE,
+            state: (self.state & !state_flags::BLEND)
+                | state_flags::BLEND_ADDITIVE
+                | state_flags::NO_DEPTH_WRITE,
+            ..self
+        }
+    }
+
+    /// The key of the pipeline that draws the same pair again into the moment layer's colour sum,
+    /// from the moment store's transmittance at the fragment's own depth. Its template is the
+    /// template's own moment colour template, a shader entry of its own (decision record D-261).
+    pub const fn moment_colour(self) -> DrawKey {
+        DrawKey {
+            template: template::moment_colour(self.template),
+            permutation: self.permutation & Self::moment_bits(self.template),
             state: (self.state & !state_flags::BLEND)
                 | state_flags::BLEND_ADDITIVE
                 | state_flags::NO_DEPTH_WRITE,
@@ -376,6 +467,14 @@ pub fn built_by(created: u32, pipelines_built: u32) -> bool {
     !frame_after(created, pipelines_built)
 }
 
+/// True when the thread that draws has built the pipelines that frame `created` made, or has not
+/// drawn a frame yet: until it has drawn one, each frame waits for its pipelines, so every pipeline
+/// draws then. A held scene records every frame before the thread that draws draws one, so no held
+/// frame needs work kept back for that alone.
+pub fn built_by_or_first(created: u32, pipelines_built: u32) -> bool {
+    pipelines_built == 0 || built_by(created, pipelines_built)
+}
+
 /// True when a pipeline of `template` reads the frame's clock from the frame's values: the physical
 /// sky, whose stars twinkle, and every custom material, whose shaders may read the time. The
 /// still-camera comparison leaves the clock out (see [`crate::still`]), so a frame that draws with
@@ -454,29 +553,84 @@ impl PipelineCache {
         }
     }
 
+    /// The id of the pipeline that draws an opaque pair with `key` into the occluders' pass of
+    /// occlusion culling, a pass of depth alone of one sample beside a scene pass's `targets`, and
+    /// whether it is the pair's own template's build; or 0 for a pair that hides nothing, as one
+    /// that blends or cuts holes. Most pairs draw with the depth template. A pair that places its
+    /// own vertices, such as a custom material that moves them, draws with its own template's
+    /// prepass build, as the depth prepass does, so its depth lies where its surface does.
+    pub fn occluder(&mut self, key: DrawKey, targets: PassTargets) -> (u32, bool) {
+        let Some(depth) = key.prepass() else {
+            return (0, false);
+        };
+        let targets = targets.occluder_depth();
+        if !key.places_own_vertices() {
+            return (self.id(depth.in_pass(targets)), false);
+        }
+        let shading = key.after_prepass().in_pass(targets);
+        let own = PipelineKey {
+            color_format: format::NONE,
+            permutation: shading.permutation | permutation::PREPASS,
+            state: depth.state,
+            ..shading
+        };
+        (self.id(own), true)
+    }
+
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
     /// the one that shades it, and with a `prepass`, the one that draws its depth first, or 0 for a
     /// pair that stays out of it. After a depth prepass the pair shades only at the depth that the
-    /// prepass found; the occluders' pass leaves its shading as it is. A pair that places its own
-    /// vertices hides nothing in the occluders' pass, which draws with the depth template: its
-    /// moved vertices would hide what the pair does not.
+    /// prepass found.
     pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: Prepass) -> (u32, u32) {
+        self.opaque_with(key, targets, prepass, false)
+    }
+
+    /// [`Self::opaque`], with a masked pair of a custom material that names its own mask
+    /// (`masked`) joining the depth prepass through a build that keeps a fragment only where the
+    /// mask keeps every sample of it. The prepass depth is then never nearer than a surface that
+    /// the opaque pass draws, so the pair shades at that depth or nearer, an edge that the mask
+    /// cuts keeps its samples, and a fragment hidden behind one that wrote pays no light. Only the
+    /// WebGPU prepass takes it, whose pass keeps a color; a pair whose depth the prepass cannot
+    /// draw the same way keeps out, as without `masked`.
+    pub fn opaque_with(
+        &mut self,
+        key: DrawKey,
+        targets: PassTargets,
+        prepass: Prepass,
+        masked: bool,
+    ) -> (u32, u32) {
+        if masked && prepass == Prepass::DepthTemplate && key.mask_prepass_fits() {
+            let shading = key.in_pass(targets);
+            let shading = PipelineKey {
+                state: shading.state | state_flags::DEPTH_OR_EQUAL,
+                ..shading
+            };
+            let faces = state_flags::CULL_NONE | state_flags::CULL_FRONT;
+            let depth = PipelineKey {
+                color_format: shading.color_format,
+                permutation: shading.permutation | permutation::PREPASS,
+                state: (key.state & faces) | state_flags::NO_COLOR_WRITE,
+                ..shading
+            };
+            return (self.id(shading), self.id(depth));
+        }
         let depth = match key.prepass() {
-            Some(_) if prepass == Prepass::Occluders && key.places_own_vertices() => {
-                return (self.id(key.in_pass(targets)), 0);
-            }
             Some(depth) if prepass != Prepass::Off => depth,
             _ => return (self.id(key.in_pass(targets)), 0),
         };
-        if prepass == Prepass::Occluders {
-            return (
-                self.id(key.in_pass(targets)),
-                self.id(depth.in_pass(targets.occluder_depth())),
-            );
-        }
         let shading = key.after_prepass().in_pass(targets);
         let depth = if prepass == Prepass::OwnVertexShader || key.places_own_vertices() {
+            // The WebGL2 prepass draws with the shading build's own shader, whose fragment stage
+            // writes nothing. Its pipeline therefore names no color target: a screen step may split
+            // the prepass from the opaque pass into a framebuffer of depth alone, and the pipeline
+            // fits either pass (D-269).
+            let color_format = if prepass == Prepass::OwnVertexShader {
+                format::NONE
+            } else {
+                shading.color_format
+            };
             PipelineKey {
+                color_format,
                 permutation: shading.permutation | permutation::PREPASS,
                 state: depth.state,
                 ..shading
@@ -553,6 +707,40 @@ mod tests {
         }
     }
 
+    /// The permutation names that a `[shaders.<name>]` table of shaders.toml lists for the variant
+    /// `variant` (see the manifest).
+    fn listed(toml: &str, shader: &str, variant: &str) -> Vec<String> {
+        let table = toml
+            .split(&format!("[shaders.{shader}]\n"))
+            .nth(1)
+            .expect("the shader's table");
+        let line = table
+            .lines()
+            .find(|line| line.starts_with(&format!("variants.{variant} ")))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{shader} has no variant {variant}:\n{}",
+                    &table[..table.len().min(800)]
+                )
+            });
+        let list = line.split("permutations = [").nth(1).expect("a list");
+        let list = &list[..list.find(']').expect("the list's end")];
+        list.split(',')
+            .map(|name| name.trim().trim_matches('"').to_owned())
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
+
+    /// The bits of a manifest list, apart from a device's half-precision bit, which changes no
+    /// permutation of a draw.
+    fn listed_bits(names: &[String]) -> u32 {
+        names
+            .iter()
+            .filter(|name| name.as_str() != "HALF")
+            .map(|name| permutation::bit(name).expect("a permutation bit"))
+            .fold(0, |all, bit| all | bit)
+    }
+
     /// The operands of each command in a list.
     fn commands(list: &DrawList) -> Vec<(Op, Vec<u32>)> {
         decode(list.words())
@@ -588,6 +776,150 @@ mod tests {
                 1.5f32.to_bits(),
             ]
         );
+    }
+
+    #[test]
+    fn the_manifest_lists_the_bits_that_a_moment_build_carries() {
+        // A pipeline whose bits a shader entry does not list finds no build and draws nothing, so
+        // the renderer's bit mask and the manifest's lists must agree.
+        let toml = include_str!("../../null3d-shaders/shaders.toml");
+        for (entry, template) in [
+            ("moment_lit", template::INSTANCED_LIT),
+            ("moment_standard_maps", template::INSTANCED_STANDARD_MAPS),
+            ("moment_unlit", template::INSTANCED_UNLIT),
+            ("moment_unlit_map", template::INSTANCED_UNLIT_MAP),
+            ("moment_sprite", template::SPRITE),
+            ("moment_sprite_map", template::SPRITE_MAP),
+        ] {
+            for (device, absent) in [
+                // A WebGPU build reads no draw index and morphs in the skinning pass instead.
+                ("webgpu", permutation::DRAW_INDEX | permutation::MORPH),
+                ("webgl2", 0),
+            ] {
+                let bits = listed_bits(&listed(toml, entry, device));
+                let carried = DrawKey::moment_bits(template);
+                assert_eq!(
+                    bits & !carried,
+                    0,
+                    "{entry}.{device} lists a bit that a moment build does not carry"
+                );
+                assert_eq!(
+                    carried & !bits & !absent,
+                    0,
+                    "{entry}.{device} lacks a bit that a moment build needs"
+                );
+            }
+        }
+        // The moment pass's own builds, in the mesh entries, list the same bits and the outline
+        // mask's value.
+        for (entry, template) in [
+            ("lit", template::INSTANCED_LIT),
+            ("standard_maps", template::INSTANCED_STANDARD_MAPS),
+            ("unlit", template::INSTANCED_UNLIT),
+            ("unlit_map", template::INSTANCED_UNLIT_MAP),
+            ("sprite", template::SPRITE),
+            ("sprite_map", template::SPRITE_MAP),
+        ] {
+            for (device, absent) in [
+                ("webgpu", permutation::DRAW_INDEX | permutation::MORPH),
+                ("webgl2", 0),
+            ] {
+                let names = listed(
+                    toml,
+                    entry,
+                    &format!(
+                        "moment_{}",
+                        if device == "webgpu" { "wgpu" } else { device }
+                    ),
+                );
+                assert!(
+                    names.iter().any(|name| name == "OUTLINE_VISIBLE"),
+                    "{entry}.moment_{device} holds the outline mask's value"
+                );
+                let bits = listed_bits(&names) & !permutation::OUTLINE_VISIBLE;
+                let carried = DrawKey::moment_bits(template);
+                assert_eq!(
+                    bits & !carried,
+                    0,
+                    "{entry}.moment_{device} lists a bit that a moment build does not carry"
+                );
+                assert_eq!(
+                    carried & !bits & !absent,
+                    0,
+                    "{entry}.moment_{device} lacks a bit that a moment build needs"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_moment_layer_draws_only_the_pairs_whose_bits_its_builds_carry() {
+        // A blended lit pair with the bits that a moment build has draws in both passes.
+        let pair = DrawKey {
+            state: state_flags::BLEND_NORMAL | state_flags::CULL_NONE,
+            permutation: permutation::TONE_MAP | permutation::VERTEX_COLOR,
+            ..lit(vertex::UV0)
+        };
+        assert!(pair.moment_drawn());
+        let moment = pair.moment();
+        assert_eq!(
+            moment.permutation,
+            permutation::TONE_MAP | permutation::VERTEX_COLOR | permutation::OUTLINE_VISIBLE
+        );
+        assert_eq!(
+            moment.state & state_flags::BLEND,
+            state_flags::BLEND_ADDITIVE
+        );
+        let colour = pair.moment_colour();
+        assert_eq!(colour.template, template::MOMENT_LIT);
+        assert_eq!(
+            colour.permutation,
+            permutation::TONE_MAP | permutation::VERTEX_COLOR
+        );
+        // Each of these keeps the transparent pass's sort.
+        for unsupported in [
+            // A feature that no moment build carries.
+            DrawKey {
+                permutation: permutation::COAT_SHEEN,
+                ..pair
+            },
+            // A pair that lets light through.
+            DrawKey {
+                permutation: permutation::TRANSMISSION,
+                ..pair
+            },
+            // A mask, an additive pair, a pair that skips the depth test, and a template with no
+            // moment build.
+            DrawKey {
+                permutation: permutation::ALPHA_MASK,
+                ..pair
+            },
+            DrawKey {
+                state: state_flags::BLEND_ADDITIVE,
+                ..pair
+            },
+            DrawKey {
+                state: state_flags::BLEND_NORMAL | state_flags::NO_DEPTH_TEST,
+                ..pair
+            },
+            DrawKey {
+                template: template::LINE,
+                ..pair
+            },
+        ] {
+            assert!(!unsupported.moment_drawn(), "{unsupported:?}");
+        }
+        // The bit set of each template that has builds matches its manifest entries.
+        for (template, bits) in [
+            (
+                template::INSTANCED_LIT,
+                permutation::VERTEX_COLOR | permutation::SKIN,
+            ),
+            (template::SPRITE, permutation::TONE_MAP),
+            (template::LINE, 0),
+        ] {
+            assert_eq!(DrawKey::moment_bits(template) & bits, bits);
+        }
     }
 
     #[test]
@@ -927,11 +1259,11 @@ mod tests {
     }
 
     #[test]
-    fn occluders_draw_depth_alone_and_shade_as_without_them() {
+    fn occluders_draw_depth_alone_of_one_sample() {
         let mut cache = PipelineCache::default();
-        let (shading, depth) = cache.opaque(lit(0), TARGETS, Prepass::Occluders);
+        let (depth, own) = cache.occluder(lit(0), TARGETS);
+        assert!(!own);
         let keys = cache.keys();
-        assert_eq!(keys[shading as usize - 1], lit(0).in_pass(TARGETS));
         let depth = keys[depth as usize - 1];
         assert_eq!(depth.template, template::SHADOW_DEPTH);
         assert_eq!(
@@ -958,10 +1290,13 @@ mod tests {
         let (shading, depth) = (cache.keys()[0], cache.keys()[1]);
         assert_eq!(shading, key.after_prepass().in_pass(targets));
         // The same template and bits, so the same vertex shader, with the faces and the bias of
-        // the pair, and no color.
+        // the pair. The build's fragment shader writes nothing, so its pipeline names no color
+        // target: the prepass draws into the opaque pass's color, or into a depth-only pass of its
+        // own, and one pipeline fits both (D-269).
         assert_eq!(
             depth,
             PipelineKey {
+                color_format: format::NONE,
                 permutation: shading.permutation | permutation::PREPASS,
                 state: state_flags::CULL_NONE | state_flags::NO_COLOR_WRITE,
                 ..shading
@@ -973,6 +1308,24 @@ mod tests {
             ..lit(0)
         };
         assert_eq!(cache.opaque(masked, targets, Prepass::OwnVertexShader).1, 0);
+    }
+
+    #[test]
+    fn the_depth_template_prepass_keeps_the_color_that_webgpu_attaches() {
+        let key = DrawKey {
+            template: template::CUSTOM_FIRST,
+            ..lit(0)
+        };
+        let mut cache = PipelineCache::default();
+        let (_, depth) = cache.opaque(key, TARGETS, Prepass::DepthTemplate);
+        // The pair draws with its own vertex shader, but the depth template's pass keeps the
+        // scene's color on WebGPU, so the pipeline names it.
+        let depth = cache.keys()[depth as usize - 1];
+        assert_eq!(depth.color_format, TARGETS.color_format);
+        assert_eq!(
+            depth.state & state_flags::NO_COLOR_WRITE,
+            state_flags::NO_COLOR_WRITE
+        );
     }
 
     #[test]
@@ -1018,8 +1371,90 @@ mod tests {
             ..TARGETS
         });
         assert!(permutation::buildable(key.permutation));
-        // A masked pair never joins the prepass.
+        // A masked pair never joins the prepass through the depth template.
         assert_eq!(covered.prepass(), None);
+    }
+
+    #[test]
+    fn a_masked_custom_pair_joins_the_prepass_with_a_build_that_tests_its_mask() {
+        let masked = DrawKey {
+            template: template::CUSTOM_FIRST,
+            permutation: permutation::ALPHA_MASK | permutation::RECEIVE_SHADOWS,
+            state: state_flags::CULL_NONE | state_flags::ALPHA_TO_COVERAGE,
+            ..lit(vertex::UV0)
+        };
+        assert!(masked.mask_prepass_fits());
+        let mut cache = PipelineCache::default();
+        let (shading, depth) = cache.opaque_with(masked, TARGETS, Prepass::DepthTemplate, true);
+        assert_eq!((shading, depth), (1, 2));
+        let keys = cache.keys();
+        // The opaque pass writes depth as it does without a prepass, and draws at the prepass's
+        // depth or nearer, which keeps a partly covered edge's samples.
+        let ready = masked.in_pass(TARGETS);
+        assert_eq!(
+            keys[0],
+            PipelineKey {
+                state: ready.state | state_flags::DEPTH_OR_EQUAL,
+                ..ready
+            }
+        );
+        assert!(keys[0].state & state_flags::DEPTH_OR_EQUAL != 0);
+        assert!(keys[0].state & state_flags::NO_DEPTH_WRITE == 0);
+        // The prepass draws the pair's own template's build with the PREPASS bit, keeps the mask's
+        // bits, and writes depth alone, for every sample of a fragment that the mask keeps whole.
+        let depth = keys[1];
+        assert_eq!(depth.template, template::CUSTOM_FIRST);
+        assert_eq!(depth.permutation, ready.permutation | permutation::PREPASS);
+        assert!(depth.permutation & permutation::ALPHA_COVERAGE != 0);
+        assert_eq!(
+            depth.state,
+            state_flags::CULL_NONE | state_flags::NO_COLOR_WRITE
+        );
+        assert_eq!(
+            (depth.color_format, depth.samples),
+            (format::CANVAS, TARGETS.samples)
+        );
+        // Without a build that tests the mask, or where the pair keeps out, nothing draws depth.
+        assert_eq!(cache.opaque_with(masked, TARGETS, Prepass::Off, true).1, 0);
+        assert_eq!(
+            cache
+                .opaque_with(masked, TARGETS, Prepass::DepthTemplate, false)
+                .1,
+            0
+        );
+        let stays_out = [
+            DrawKey {
+                state: state_flags::BLEND_NORMAL,
+                ..masked
+            },
+            DrawKey {
+                state: state_flags::NO_DEPTH_WRITE,
+                ..masked
+            },
+            DrawKey {
+                state: state_flags::NO_DEPTH_TEST,
+                ..masked
+            },
+            DrawKey {
+                permutation: permutation::ALPHA_MASK | permutation::TRANSMISSION,
+                ..masked
+            },
+            // The engine's own masked templates still have no build that tests their mask.
+            DrawKey {
+                template: template::INSTANCED_LIT,
+                ..masked
+            },
+        ];
+        for key in stays_out {
+            assert!(!key.mask_prepass_fits(), "{key:?}");
+            assert_eq!(
+                cache
+                    .opaque_with(key, TARGETS, Prepass::DepthTemplate, true)
+                    .1,
+                0,
+                "{key:?}"
+            );
+        }
     }
 
     #[test]
@@ -1085,8 +1520,17 @@ mod tests {
         walk(&wgsl, &mut found);
         found.sort();
         // The physical sky draws with its own template; the frame values that custom materials
-        // read come from the builtins.
-        assert_eq!(found, ["builtins.wgsl", "sky_physical.wgsl"]);
+        // read come from the builtins. A sky layer moves its clouds with the clock, so the layer
+        // shader reads it too. A particle's field gust travels on the clock, so its shader reads it.
+        assert_eq!(
+            found,
+            [
+                "background_layer.wgsl",
+                "builtins.wgsl",
+                "particle.wgsl",
+                "sky_physical.wgsl"
+            ]
+        );
         assert!(reads_frame_clock(template::BACKGROUND_ATMOSPHERE));
         assert!(reads_frame_clock(template::CUSTOM_FIRST));
         assert!(!reads_frame_clock(template::FINAL));

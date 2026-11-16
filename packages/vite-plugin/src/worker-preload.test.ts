@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import MagicString from 'magic-string';
+import type { Rollup } from 'vite';
+import { emptyWorkerPreloads } from './index';
 import { preloadImports, staticImports } from './worker-preload';
 
 /** A worker bundle's chunks: the render worker, which loads either GPU path's file on demand. */
@@ -55,5 +57,31 @@ describe('preloadImports', () => {
 		expect(edited.toString()).toBe(
 			'(import(`./common/shared.js`).catch(()=>{}),import(`./paths/webgpu.js`))',
 		);
+	});
+});
+
+describe('emptyWorkerPreloads', () => {
+	it('empties the preload lists of a worker chunk and the chunks it imports', () => {
+		const chunk = (code: string, imports: string[] = [], dynamicImports: string[] = []) =>
+			({ type: 'chunk', imports, dynamicImports, code }) as unknown as Rollup.OutputChunk;
+		const bundle = {
+			'assets/sketch.js': chunk(
+				'const a=__vitePreload(()=>import("./x.js"),__vite__mapDeps([0,1]),import.meta.url);',
+				['assets/common.js'],
+			),
+			'assets/common.js': chunk(
+				'const b=__vitePreload(()=>import("./task.js"),__vite__mapDeps([2,3]));',
+				[],
+				['assets/task.js'],
+			),
+			'assets/task.js': chunk('export function run() {}'),
+			'assets/page.js': chunk('const c=__vitePreload(()=>import("./y.js"),__vite__mapDeps([4]));'),
+		} as unknown as Rollup.OutputBundle;
+		emptyWorkerPreloads(bundle, ['assets/sketch.js']);
+		const code = (file: string) => (bundle[file] as Rollup.OutputChunk).code;
+		expect(code('assets/sketch.js')).not.toContain('__vite__mapDeps(');
+		expect(code('assets/common.js')).not.toContain('__vite__mapDeps(');
+		// A chunk that no worker imports keeps its lists, so the page still preloads.
+		expect(code('assets/page.js')).toContain('__vite__mapDeps([4])');
 	});
 });

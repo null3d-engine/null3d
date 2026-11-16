@@ -8,6 +8,9 @@
 
 import {
 	CHECK_GRACE_MS,
+	CHECK_SETTLE_FRAMES,
+	CHECK_SETTLE_INTERVAL_MS,
+	CHECK_SETTLE_WAIT_MS,
 	CHECK_UPLOAD_WAIT_MS,
 	CHECK_WINDOW_MS,
 	frameRate,
@@ -43,6 +46,30 @@ export interface CheckHost {
 /** Draws frames until `until` returns false; resolves with false when the engine stopped. */
 async function drawWhile(host: CheckHost, until: () => boolean): Promise<boolean> {
 	while (until()) if (!(await host.drawFrame())) return false;
+	return true;
+}
+
+/**
+ * Draws frames after a lowering until the GPU has finished enough frames at play's rate, so the
+ * frame that carries the new preset's pipelines and remade shadow map does not fall inside the
+ * next measured window. Resolves false when the engine stopped.
+ */
+async function settle(host: CheckHost): Promise<boolean> {
+	const completed = new RingSums(host.metrics, Role.Completion);
+	const end = performance.now() + CHECK_SETTLE_WAIT_MS;
+	let settled = 0;
+	while (performance.now() < end) {
+		if (!(await host.drawFrame())) return false;
+		const frames = completed.sums[SUM_RECORDS] as number;
+		const interval = completed.sums[SUM_INTERVAL_MS] as number;
+		completed.add();
+		const added = (completed.sums[SUM_RECORDS] as number) - frames;
+		if (added === 0) continue;
+		const mean = ((completed.sums[SUM_INTERVAL_MS] as number) - interval) / added;
+		if (mean > CHECK_SETTLE_INTERVAL_MS) settled = 0;
+		else settled += added;
+		if (settled >= CHECK_SETTLE_FRAMES) break;
+	}
 	return true;
 }
 
@@ -94,6 +121,7 @@ export async function checkPreset(
 		rounds.push(round);
 		if (host.preset === 'low' || holdsTarget(round, targetFps)) break;
 		await host.lower();
+		if (!(await settle(host))) return undefined;
 		start = performance.now();
 	}
 	return { from, targetFps, rounds, reused: false };

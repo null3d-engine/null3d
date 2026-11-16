@@ -1,0 +1,19 @@
+{
+	"name": "{{name}}",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@null3d/engine": "{{null3dVersion}}"
+	},
+	"devDependencies": {
+		"@null3d/cli": "{{null3dVersion}}",
+		"@null3d/vite-plugin": "{{null3dVersion}}",
+		"typescript": "~6.0.3",
+		"vite": "8.3.1"
+	}
+}

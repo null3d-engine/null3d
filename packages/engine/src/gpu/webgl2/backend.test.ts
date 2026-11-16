@@ -52,11 +52,32 @@ function fakeContext(
 }
 
 describe('WebGL2Backend', () => {
+	it('takes flat values from the first vertex where the device lets it choose', async () => {
+		// ANGLE on Metal rewrites the whole bound index buffer before each draw with a flat value
+		// under GLSL's last-vertex rule, which took a 52.6 MB tree index list to over 100 GB.
+		const conventions: number[] = [];
+		const provoking = {
+			FIRST_VERTEX_CONVENTION_WEBGL: 0x8e4d,
+			provokingVertexWEBGL: (convention: number) => conventions.push(convention),
+		};
+		const { gl } = fakeContext(false, (name, args) =>
+			name === 'getExtension' && args[0] === 'WEBGL_provoking_vertex' ? provoking : undefined,
+		);
+		const canvas = { width: 1, height: 1 } as OffscreenCanvas;
+		new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		expect(conventions).toEqual([0x8e4d]);
+		// A device without the extension keeps GL's own rule, and the backend still starts.
+		const { gl: plain, log } = fakeContext();
+		new WebGL2Backend(plain, canvas, await loadGlslShaders(0), true, 'reversed');
+		expect(log).toContainEqual(['getExtension', 'WEBGL_provoking_vertex']);
+	});
+
 	it('starts to link the mip level and layer copy programs when it starts, without waiting for them', async () => {
 		const { gl, calls } = fakeContext();
 		const canvas = { width: 1, height: 1 } as OffscreenCanvas;
 		new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
-		expect(calls.filter((name) => name === 'linkProgram')).toHaveLength(2);
+		// The mip and layer copy programs, and the cookie copy's own.
+		expect(calls.filter((name) => name === 'linkProgram')).toHaveLength(3);
 		expect(calls).not.toContain('getProgramParameter');
 	});
 
@@ -82,6 +103,38 @@ describe('WebGL2Backend', () => {
 		backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
 		expect(calls.filter((name) => name === 'createFramebuffer')).toHaveLength(2);
 		expect(calls.filter((name) => name === 'checkFramebufferStatus')).toHaveLength(2);
+	});
+
+	it('names no draw buffer on a pass that draws into depth alone', async () => {
+		const { gl, log } = fakeContext();
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const replay = (...commands: [number, ...number[]][]) => {
+			const words: number[] = [];
+			for (const [op, ...operands] of commands)
+				words.push(op | ((operands.length + 1) << 8), ...operands);
+			const list = new Uint32Array(words);
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		};
+		const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		replay(
+			[G.OP_CREATE_TEXTURE, 1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D],
+			[G.OP_CREATE_TEXTURE, 2, 4, 4, 1, G.FORMAT_DEPTH24_PLUS, usage, 1, 1, G.VIEW_2D],
+		);
+		const pass = (color: number, depth: number) =>
+			replay(
+				[G.OP_BEGIN_RENDER_PASS, color, G.NO_TARGET, depth, 0, 0, 0, 0, 0, 0],
+				[G.OP_END_RENDER_PASS],
+			);
+		// A depth-only pass attaches no color, so it names no draw buffer: Safari's WebGL2 path
+		// charges for a color that a pass holds without writing it (D-269).
+		log.length = 0;
+		pass(G.NO_TARGET, 2);
+		expect(log.filter(([name]) => name === 'drawBuffers')).toEqual([['drawBuffers', [0]]]);
+		// A pass into color alone keeps the framebuffer's own draw buffer, the first attachment.
+		log.length = 0;
+		pass(1, G.NO_TARGET);
+		expect(log.filter(([name]) => name === 'drawBuffers')).toEqual([]);
 	});
 
 	it('invalidates exactly the attachments that a pass has and does not store', async () => {
@@ -199,6 +252,60 @@ describe('WebGL2Backend', () => {
 		expect([...backend.gpuMemory.bytes]).toEqual([cube + color, 3000]);
 		backend.destroy();
 		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
+	});
+
+	it('releases targets without walking the sparse table of textures, and frees what they join', async () => {
+		const { gl, log } = fakeContext(true);
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const inside = backend as unknown as {
+			textures: unknown[];
+			textureOf(id: number): unknown;
+			colorFramebuffer(color: unknown, depth: unknown): object;
+		};
+		const words: number[] = [];
+		const push = (op: number, operands: number[]) =>
+			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const replay = () => {
+			const list = new Uint32Array(words.splice(0));
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		};
+		const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		// The ids of the render graph's targets lie far along the table, as they do in a scene.
+		const FIRST = 1_000_000;
+		const color = (id: number) => [id, 32, 32, 1, G.FORMAT_RGBA8_UNORM, target, 1, 1, G.VIEW_2D];
+		push(G.OP_CREATE_TEXTURE, color(FIRST));
+		push(G.OP_CREATE_TEXTURE, [
+			FIRST + 1,
+			32,
+			32,
+			1,
+			G.FORMAT_DEPTH24_PLUS,
+			target,
+			1,
+			1,
+			G.VIEW_2D,
+		]);
+		replay();
+		const table = inside.textures as (object | undefined)[];
+		const joined = inside.colorFramebuffer(table[FIRST], table[FIRST + 1]);
+
+		let reads = 0;
+		inside.textures = new Proxy(table, {
+			get(all, name, receiver) {
+				reads++;
+				return Reflect.get(all, name, receiver);
+			},
+		});
+		push(G.OP_DESTROY_TEXTURE, [FIRST + 1]);
+		replay();
+		// A walk of the table would read each of its million places.
+		expect(reads).toBeLessThan(100);
+		// The framebuffer that held the depth target goes with it, so no pass draws into a freed target.
+		expect(log.some(([name, value]) => name === 'deleteFramebuffer' && value === joined)).toBe(
+			true,
+		);
+		backend.destroy();
 	});
 
 	it('reads a uniform buffer range that a shader takes as a texture from a copy, made again after each write', async () => {

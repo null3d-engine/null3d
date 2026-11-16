@@ -36,11 +36,11 @@ soak 2026-10-02: 12 of 12.
 startup 2026-10-03: 55 of 55, twice.
 warm-up-time 2026-10-03: 120 of 120.
 animation 2026-10-03: 2 of 2 ([D-26](../../decisions/D-26-animation-clips.md)).
-bench 2026-10-06: S4 at Medium with one setting changed per run, 26 of 26 runs ([D-16](../../decisions/D-16-moving-casters-and-bias.md#addendum-2026-10-06-the-shadow-reads-on-webgl2-on-apple-gpus)).
+bench 2026-10-06: S4 at Medium with one setting changed per run, 26 of 26 runs ([D-16](../../decisions/D-16-moving-casters-and-bias.md#the-shadow-reads-on-webgl2-on-apple-gpus)).
 Shadow fix 2026-10-06, on iPadOS 26.7: the S4 soak with the engine's preset (Low) ran 5 of 5 minutes at a median of 59.6 fps, and the owner saw the shadows stay under the cars (run 20261006-090211-soak).
 The moving shadow page: 8 of 8 runs within 5 px, the largest gap 4.11 px.
 S4 at Low on WebGPU, governor off: main 11.42 and 11.64 ms of GPU time, the fix 11.73, 11.70 and 11.99 ms, all at 60 fps; one slow run of main (55.5 fps) was left out (runs 20261006-093959 to 20261006-102909-bench).
-Governor on for 300 s: 22 steps on main and 21 on the fix, both 98% of seconds at 60 fps ([D-16](../../decisions/D-16-moving-casters-and-bias.md#the-owners-ipad-check-and-the-cost-ruling-6-october-2026)).
+Governor on for 300 s: 22 steps on main and 21 on the fix, both 98% of seconds at 60 fps ([D-16](../../decisions/D-16-moving-casters-and-bias.md#the-cost-on-the-ipads)).
 2026-10-05, charging, with Limit Frame Rate on: checks on 03a1ad198, 831 of 831 (run 20261005-135655-checks).
 S4 at Low for 10 minutes: 295 of 300 seconds at 60 fps on WebGPU, and 299 of 299 with WebGL2 forced after a 10-minute rest (runs 20261005-111656-bench, 20261005-130618-bench).
 governor: 4 of 4.

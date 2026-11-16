@@ -9,5 +9,5 @@
 
 ## Known issues
 
-WebGL2 made 2 framebuffers a frame for custom effects, and each completeness check took about 1.5 ms.
-Fixed the same day ([D-71](../../decisions/D-71-custom-effects.md))
+Each new WebGL2 framebuffer's completeness check takes about 1.5 ms here, because it waits for the browser's GPU process.
+So a color target keeps its framebuffer without depth apart, and custom effects make no new framebuffers each frame ([D-71](../../decisions/D-71-custom-effects.md)).

@@ -41,8 +41,8 @@ test('the guard stops a move into a wall', () => {
 
 test('the guard stops a step shorter than the margin, so a per-frame move keeps it', () => {
 	const out = vec3.create();
-	// A frame of the route moves far less than the margin. The guard used to skip such a step, so
-	// the camera drew closer to the wall every frame; it now stops at the margin.
+	// A frame of the route moves far less than the margin. A guard that skipped such a step would let
+	// the camera draw closer to the wall every frame, so it stops at the margin.
 	expect(guardAt(10).move(point(9.2, 0, 0), point(9.55, 0, 0), out)).toBe(true);
 	expect(out[0]).toBeCloseTo(9.5, 5);
 	// A short step whose end already keeps the margin is not clamped.

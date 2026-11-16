@@ -1,0 +1,10 @@
+{
+	"14-bark-base.png": {
+		"barkMask": true,
+		"daylight": 1.24
+	},
+	"15-bark-mid-trunk.png": {
+		"barkMask": true,
+		"daylight": 1.19
+	}
+}

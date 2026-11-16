@@ -1,8 +1,8 @@
 # D-180: One module per renderer feature
 
-Status: decided. Proposed on 15 October 2026, and approved by the owner the same day ("approved"). Nothing is built yet. Step 1, the safety-net tests, may start at once. The other steps start after the open feature branches EX22, EX25, EX32, EX36, F11 and J4 have landed. Task: code review findings M-9, R-16, R-17 and GPU-8 of 15 October 2026.
+Status: decided by the owner, and deferred by the owner until after 1.0 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). Built: the shared helpers of step 2 (one per-compile cache, one built-state update and one clamp sampler). Not built: the other eleven steps, the fingerprint test of step 1 among them. When the plan restarts, it starts after the open feature branches EX22, EX25, EX32, EX36, F11 and J4 have landed. Task: code review findings M-9, R-16, R-17 and GPU-8.
 
-Summary: A renderer feature today touches 10 to 15 Rust files, 20 to 30 places in `frame_graph.rs`, two hand-chained id tables and two hand-written template lists. In 117 merges with hand resolutions, 200 of the 305 conflict hunks in renderer files (66%) fell in those places. The proposal gives each frame-graph step one module behind one internal trait. GPU ids come from one table with an overlap test, and both GPU backends read one template descriptor with a parity test. Twelve small landings, each with unchanged draw lists and image references, take about 14 helper-days.
+Summary: Each frame-graph step gets one module behind one internal trait, with GPU ids from one table and one template descriptor for both GPU paths. A feature touches 20 to 30 places in `frame_graph.rs` and four hand-kept tables, where 200 of 305 renderer conflict hunks (66%) fell. The twelve landings take about 14 helper-days and wait until after 1.0.
 
 ## Question
 
@@ -20,7 +20,7 @@ The design and each step of the migration must meet all of these:
 
 ## Data
 
-The figures come from `origin/main` at `dcd0b8e2b`, 15 October 2026.
+The figures come from `origin/main` at commit `dcd0b8e2b`.
 
 ### What a feature touches today
 
@@ -57,7 +57,7 @@ The 23 places of the fog in `frame_graph.rs` repeat one shape. Every step of the
 - a line in `reset_gpu`;
 - an entry in the test fixture's ids.
 
-The fog also changed two lines of the effects' code, because the effects now read the fog's output. So the order of the post chain is spread over `scene_output`, `effects_output` and `color_output`.
+The fog also changed two lines of the effects' code, because the effects read the fog's output. So the order of the post chain is spread over `scene_output`, `effects_output` and `color_output`.
 
 The pass modules already have one shape: `new(ids, ...)`, `request_pipelines`, `pipeline_ids`, `prepare`, `record(list, step)`, `reset_gpu`, `UPLOAD_BYTES` and `GROUPS`. Only the code around them repeats.
 
@@ -75,7 +75,7 @@ The two builders share 335 distinct lines of more than 25 characters. They call 
 
 ### Merge conflicts
 
-`git merge-tree` ran each of the 117 merges with hand resolutions again. These are the merges that reached main between 7 and 15 October 2026, which the code review of 15 October listed. 111 of them conflicted, with 617 file conflicts in all. 41 merges conflicted in the renderer's registration files, with 305 conflict hunks. Each hunk was sorted by the item that holds it.
+`git merge-tree` ran each of the 117 merges with hand resolutions again. These are the merges up to `dcd0b8e2b` that the code review behind findings M-9, R-16, R-17 and GPU-8 listed. 111 of them conflicted, with 617 file conflicts in all. 41 merges conflicted in the renderer's registration files, with 305 conflict hunks. Each hunk was sorted by the item that holds it.
 
 | Where the hunk was | Hunks | Removed by this plan |
 | --- | --- | --- |
@@ -90,7 +90,7 @@ The two builders share 335 distinct lines of more than 25 characters. They call 
 | `drawlist.rs`: permutation bits and sizes | 14 | no ([D-156](D-156-template-scoped-permutation-bits.md) owns the bits) |
 | Shader manifest, `frame.rs` settings, `materials.rs` feature bits, the WebAssembly setters, `generated/core.ts`, backend details | 76 | `frame.rs` partly, step 10 |
 
-So 200 of the 305 hunks (66%) fell in places that this plan removes or makes regenerate-only. The id tables alone conflicted in 27 merges. The review also names eight merges that chained `SAMPLERS`, `FOG_GROUPS`, `EXPOSURE_*` or `SKY_*` again by hand. And `9130ce783` fixed two objects under one id (E1305 on the GPU). On 15 October two more branches added ids to the same tables: a present group for the two-step pass and a decal frame group.
+So 200 of the 305 hunks (66%) fell in places that this plan removes or makes regenerate-only. The id tables alone conflicted in 27 merges. The review also names eight merges that chained `SAMPLERS`, `FOG_GROUPS`, `EXPOSURE_*` or `SKY_*` again by hand. And `9130ce783` fixed two objects under one id (E1305 on the GPU). Two more branches open at `dcd0b8e2b` added ids to the same tables: a present group for the two-step pass and a decal frame group.
 
 ### Repeated setup
 
@@ -163,6 +163,8 @@ The post chain gets one place too. One ordered list names the steps that read an
 
 Some passes need the builder: the fog's light step binds the camera's frame group, and the weighted pass draws sorted rows. The builder's record callback then gets a hook named by its kind, such as `Hook::FrameGroup(ViewId)` or `Hook::SortedDraws(Rows)`. A builder gains an arm only for a new kind of hook.
 
+The trait takes the shape of the public feature description that M3-R1 defines for add-on hooks ([D-202](D-202-one-feature-description.md)). That shape holds a frame point, declared reads and writes, the ready, quality, resize, reset and destroy callbacks, published outputs and lighting slots. Built-in steps and add-on features are then the same kind of node in the graph, while the trait stays crate-private. A built-in moves onto it only when it needs major work. M3-R1's test writes one built-in against the description first, which checks the shape before any migration.
+
 ### 2. One module per feature
 
 A step's module holds its trait impl, its ids, its settings, its frame from the scene's settings, its pass and texture names, and its tests. `SceneSettings` keeps one field per feature, of the module's settings type. Both builders call one shared function, `FrameGraph::set_frames(&settings, &view)`, in place of their own setter calls in two orders.
@@ -198,7 +200,7 @@ The ids stay numbers that the compiler works out. Nothing allocates at run time,
 
 ### 4. One template descriptor for both GPU paths
 
-The Rust template numbers move into one macro in `drawlist.rs`, one template per line. The macro writes the constants and the TypeScript constant list together, so `typescript_constants()` no longer repeats every name.
+The Rust template numbers move into one macro in `drawlist.rs`, one template per line. The macro writes the constants and the TypeScript constant list together, so `typescript_constants()` does not repeat every name.
 
 A new file, `packages/engine/src/gpu/templates.ts`, holds one row per engine template:
 
@@ -232,7 +234,7 @@ A unit test compares the two paths. Every `TEMPLATE_` constant, apart from the c
 
 ### 6. A safety net first
 
-The migration moves code without changing behaviour, so it needs a check that sees any change. A new integration test in `null3d-render` records frames through the mock GPU for both builders. It runs a set of scenes with each step on and off, on the HDR and 8-bit paths, at the whole scale and below it. It renames GPU ids in order of first use and keeps a hash of each draw list in a small fixture file. Each later step must keep every hash. Pipeline ids come from the order of requests, so the renaming covers them too.
+The migration moves code without changing behavior, so it needs a check that sees any change. A new integration test in `null3d-render` records frames through the mock GPU for both builders. It runs a set of scenes with each step on and off, on the HDR and 8-bit paths, at the whole scale and below it. It renames GPU ids in order of first use and keeps a hash of each draw list in a small fixture file. Each later step must keep every hash. Pipeline ids come from the order of requests, so the renaming covers them too.
 
 ## Options rejected
 
@@ -279,43 +281,28 @@ Over the measured merges, that would remove 55% to 60% of the renderer's conflic
 ## Not covered
 
 - A quality feature also spreads over the engine's TypeScript: the presets, the governor's steps, the runner, `shared/core.ts` and the `Scene` fields. The same review lists this beside GPU-8. It needs its own record.
-- The WebGPU fragment stage now reads 16 of its 16 sampled textures. The descriptor could later carry each template's texture count for a budget test, as review findings R-07 and H-6 ask.
+- The WebGPU fragment stage reads 16 of its 16 sampled textures. The descriptor could later carry each template's texture count for a budget test, as review findings R-07 and H-6 ask.
 
 ## Rulings
 
-The owner approved items 1 and 2 on 15 October 2026, and step 1 started at once.
+The owner approved the design: the step trait and one module per feature. Ids come from one table with an overlap test, and both GPU paths read one template descriptor with a parity test. The owner also approved the plan of twelve landings in the order above, each with unchanged draw lists and image references.
 
-1. Approve the design: the step trait and one module per feature. Ids come from one table with an overlap test, and both GPU paths read one template descriptor with a parity test.
-2. Approve the plan: twelve landings in the order above, each with unchanged draw lists and image references, starting after the open feature branches land.
-3. Whether step 1, the fingerprint and overlap tests, may land at once. It adds only tests, and it catches id clashes from today.
+The owner deferred the plan until after 1.0 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). The renderer is in a good place, and the owner does not want a change that would drastically alter how the engine works. The twelve landings move every step behind one trait. They replace both builders' hand-chained id tables, give both backends one template descriptor, and move the frame graph's tests into the step modules. That is such a change, so none of it starts before 1.0. The plan stays here as the record of the debt and of the work it needs.
 
-## Addendum, 17 October 2026: the owner defers the plan
-
-The owner deferred this plan on 17 October 2026. The renderer is in a good place, and he does not
-want a change that would drastically alter how the engine works. This record's twelve landings move
-every step behind one trait. They replace both builders' hand-chained id tables, give both backends
-one template descriptor, and move the frame graph's tests into the step modules. That is such a
-change, so none of it starts now. The plan stays here as the record of the debt and of the work it
-needs.
-
-My reading of why it is deferred:
+## Why the plan can wait
 
 - The figures in this record measure merge cost, not correctness. 200 of 305 conflict hunks fell in
-  places that the plan removes, but the engine draws correctly today. A conflict is paid once by a
-  maintainer. A regression in the step trait or in the id layout would reach every step at once.
-  Both builders and the graph's tests would change with it, and only the image tests would see it.
-- The plan's own precondition has not changed: it starts after the open feature branches land. The
-  renderer's file is contested by several branches today. That is the state the plan is meant to
-  end, and it is also what makes a large landing risky now.
-- Each landing promised unchanged draw lists, and a fingerprint test would guard them. That test
-  does not exist yet, so a landing would be checked by the image tests alone.
-- Nothing in the plan is a promise to a page today. The renderer has no public shape that depends
-  on its internal step structure.
+  places that the plan removes, but the engine draws correctly. A maintainer pays for a conflict
+  once. A regression in the step trait or in the id layout would reach every step at once. Both
+  builders and the graph's tests would change with it, and only the image tests would see it.
+- The plan starts after the open feature branches land. Several branches contest the renderer's
+  file. That is the state the plan is meant to end, and it is also what makes a large landing
+  risky.
+- Each landing must keep the draw lists unchanged, which the fingerprint test of step 1 would guard.
+  That test is not built, so only the image tests would check a landing.
+- No page depends on the plan. The renderer has no public shape that depends on its internal step
+  structure.
 
 Two things would make it worth revisiting. Renderer conflicts could rise again across parallel
 work. Or a feature might again need 20 to 30 places in `frame_graph.rs` and both id tables. Until
-then the debt stays recorded here and in review findings M-9, R-16 and R-17, with no code changes.
-
-## Addendum, 21 October 2026: after 1.0, in the shape of the feature description
-
-The owner kept this plan deferred until after 1.0 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). When it restarts, the `FrameStep` trait takes the shape of the public feature description that M3-R1 defines for add-on hooks: frame point, declared reads and writes, the ready, quality, resize, reset and destroy callbacks, published outputs and lighting slots. Built-in steps and add-on features are then the same kind of node in the graph, while the trait stays crate-private. A built-in moves onto it only when it needs major work. M3-R1's test writes one built-in against the description first, which checks the shape before any migration.
+then the debt stays recorded here and in review findings M-9, R-16 and R-17.

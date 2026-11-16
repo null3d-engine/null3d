@@ -1,8 +1,8 @@
 # D-34: Meshopt decoding
 
-Status: decided. Date: 2026-10-04. Task: M2-A3.
+Status: decided and built. The decoder loads through the on-demand loader (M2-R18). Task: M2-A3.
 
-Summary: meshoptimizer's own decoder, from its npm package, whose module the on-demand loader compiles once and sends to the glTF worker with the first file that holds meshopt data: 3.1 KB of WebAssembly and 0.4 KB of script after Brotli, apart from a page's first download. It reads both extension names, decodes every mode and filter as the reference decoder does, and never downloads a fallback buffer. The test file for the vendor name comes from gltfpack.
+Summary: The engine decodes with meshoptimizer's own decoder: 3.1 KB of WebAssembly and 0.4 KB of script after Brotli, apart from a page's first download. The on-demand loader compiles it once and sends it to the glTF worker with the first file that holds meshopt data. It reads both extension names, decodes every mode and filter as the reference decoder does, and never downloads a fallback buffer.
 
 ## Question
 
@@ -59,7 +59,7 @@ The triangle mode keeps each triangle and its winding, but may start a triangle 
 
 The image test `gltf-meshopt-ext` draws the gltfpack file. It must match the references of `gltf-instancing`, the same model uncompressed. The tool stores positions in 14 bits and normals in 8, so 0.21% to 0.23% of the pixels differ at all. The test passes the default tolerance on every tier, on the Mac's GPU and on SwiftShader. The test `gltf-meshopt-khr` draws the Khronos file, with references of its own.
 
-Parity with three.js (`bun run parity`, 2026-10-04), pixels that differ by three.js's rule:
+Parity with three.js (`bun run parity`), pixels that differ by three.js's rule:
 
 | Scene | Mac GPU: WebGPU, compatibility, WebGL2 | SwiftShader: the same three |
 | --- | --- | --- |
@@ -70,15 +70,13 @@ Parity with three.js (`bun run parity`, 2026-10-04), pixels that differ by three
 
 ## Decision
 
-Option (a). `scene/gltf-meshopt.ts` imports the decoder from the `meshoptimizer` package, pinned to 1.3.0 in the engine's dependencies. That is the version whose encoder the asset tool uses (M2-B1). The decoder starts its SIMD build where the browser validates it, and its plain build elsewhere. Option (b) saves about 3 KB for a C++ toolchain in the build. Option (c) would grow every page's download, and port each change to the format. Option (d) decodes about 4 times slower.
+Option (a). `scene/gltf-meshopt.ts` calls the decoder of the `meshoptimizer` package, pinned to 1.3.0. That is the version whose encoder the asset tool uses (M2-B1). Option (b) saves about 3 KB for a C++ toolchain in the build. Option (c) would grow every page's download, and port each change to the format. Option (d) decodes about 4 times slower.
 
-The glTF worker imports the decoder module with the first file whose buffer views use either name, and keeps it for the worker's life. A failed download fails that load with E1406, and the next file tries again. The parser stays free of imports. It takes the decoder as an argument, and decodes a view the first time an accessor reads it, into an array of the view's length. It checks the extension's rules first. The data must lie in a buffer that holds data, and the mode and filter must allow the stride. A triangle list must hold whole triangles. The decoded bytes must fill the view and stay within an accessor's limit. A fallback buffer is never downloaded, because the engine always decodes.
+The decoder loads through the on-demand loader ([D-54](D-54-addon-modules.md#built)). The loader compiles its module once per page with `WebAssembly.compileStreaming`. It sends the module to the glTF worker, which only instantiates it. That needs the module as a file, and the package packs it into a string inside its script. So the engine keeps the package's SIMD module as `vendor/meshopt/meshopt_decoder.wasm`: 12.0 KB, 3.1 KB after Brotli. The tool `bun tools/vendor-meshopt.ts` writes it from the pinned package, and a unit test checks it. The engine needs SIMD, so it ships no plain build. The file `scene/gltf-meshopt.ts` calls the module as the package's script does, in 0.4 KB after Brotli. The package `meshoptimizer` is one of the engine's development dependencies, because the asset tool and the tests use it.
+
+The glTF worker asks for the decoder with the first file whose buffer views use either name. It asks in the answer that lists the file's buffers, so the file waits for no extra round trip. The worker keeps the decoder for its life. A failed download fails that load with E1406, and the next file tries again. The parser stays free of imports. It takes the decoder as an argument, and decodes a view the first time an accessor reads it, into an array of the view's length. It checks the extension's rules first. The data must lie in a buffer that holds data, and the mode and filter must allow the stride. A triangle list must hold whole triangles. The decoded bytes must fill the view and stay within an accessor's limit. A fallback buffer is never downloaded, because the engine always decodes.
 
 The engine reads `KHR_meshopt_compression`'s newer vertex codec and color filter under either name, as meshoptimizer's decoder and three.js do.
-
-### Changed by M2-R18 (5 October 2026)
-
-The decoder now loads through the on-demand loader ([D-54](D-54-addon-modules.md#built)). The loader compiles its module once per page with `WebAssembly.compileStreaming`. It sends the module to the glTF worker, which only instantiates it. That needs the module as a file, and the package packs it into a string inside its script. So the engine keeps the package's SIMD module as `vendor/meshopt/meshopt_decoder.wasm`: 12.0 KB, 3.1 KB after Brotli. The tool `bun tools/vendor-meshopt.ts` writes it from the pinned package, and a unit test checks it. The engine needs SIMD, so the plain build goes. The file `scene/gltf-meshopt.ts` calls the module as the package's script does, in 0.4 KB after Brotli, from 6.2 KB. The package `meshoptimizer` moves to the engine's development dependencies, because the asset tool and the tests still use it. The glTF worker asks for the decoder in the answer that lists a file's buffers, so a file waits for no extra round trip.
 
 ## How three.js handles it
 
@@ -86,10 +84,8 @@ The decoder now loads through the on-demand loader ([D-54](D-54-addon-modules.md
 
 ## Consequences
 
-- `packages/engine/package.json` depends on `meshoptimizer` 1.3.0, the engine's first runtime dependency. The Vite plugin keeps it out of Vite's prebundling. So a dev server does not reload the page when the worker first imports it.
 - `scene/gltf-parse.ts` reads both extension names and checks their rules; `workers/gltf-worker.ts` loads `scene/gltf-meshopt.ts` on first use. `tools/lib/size-report.ts` lists `js/gltf-meshopt.js`, loaded by `js/gltf-worker.js`.
-- E1406 names the meshopt decoder among the files that may fail to download. E1417 no longer covers either meshopt name.
+- E1406 names the meshopt decoder among the files that may fail to download. E1417 covers neither meshopt name.
 - The CI job of the unit tests fetches the sample content, for the Khronos test file and for gltfpack's source model.
 - The model scenes gain `meshopt-ext` and `meshopt-khr`, so the image tests, parity and the benchmark job's parity spec cover them. The function `featureImagePath` takes a test that compares with another test's references.
 - `concepts/assets` and `api/assets` describe the decoding; the mapping entry `MeshoptDecoder / setMeshoptDecoder` points to `concepts/assets`. `guides/assets-pipeline` waits for the asset tool (M2-B1), which makes these files.
-- The record is in the table in [README.md](README.md).

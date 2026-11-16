@@ -166,13 +166,63 @@ fn surrounding_light(env: EnvironmentLight, d: vec3f, roughness: f32) -> vec3f {
     return light.rgb * env.params.y;
 }
 
+/// The light that leaves the volume at `exit` along the ray that index of refraction `ior` bends
+/// to: the copy's light where that point projects to, or the environment's along the ray without a
+/// copy.
+fn refracted_light(
+    exit: vec3f,
+    surface_at: vec3f,
+    normal: vec3f,
+    to_view: vec3f,
+    roughness: f32,
+    ior: f32,
+) -> vec3f {
+    if has_copy() {
+        return copied_light(
+            frame.view_proj * vec4f(exit, 1.0),
+            surface_at,
+            roughness,
+            ior,
+        );
+    }
+    let d = normalize(refract(-to_view, normal, 1.0 / ior));
+    return surrounding_light(frame.environment, d, refraction_roughness(roughness, ior));
+}
+
+/// The light that one color channel of the volume lets through: the ray that its index of
+/// refraction `channel_ior` bends to, through the copy or the environment, times what the volume
+/// lets through over the ray's length.
+fn channel_light(
+    surface_at: vec3f,
+    relative: vec3f,
+    normal: vec3f,
+    to_view: vec3f,
+    roughness: f32,
+    thickness: f32,
+    channel_ior: f32,
+    attenuation: vec4f,
+    scale: vec3f,
+) -> vec3f {
+    let ray = volume_ray(normal, to_view, thickness, channel_ior, scale);
+    let light = refracted_light(
+        relative + ray,
+        surface_at,
+        normal,
+        to_view,
+        roughness,
+        channel_ior,
+    );
+    return light * volume_attenuation(length(ray), attenuation.rgb, attenuation.w);
+}
+
 /// The light that passes through a surface at `relative`, a position relative to the camera, of
 /// unit `normal`, toward the camera along `to_view`, before the surface's own Fresnel term and
 /// color take their share: the copy's light where the refracted ray leaves the volume, or the
 /// environment's along the ray without a copy, times what the volume lets through over the ray.
 /// `surface_at` is the fragment's position, `thickness` and `ior` the volume's thickness and index
 /// of refraction, `attenuation` its color and distance, and `scale` the object's scale along each
-/// axis.
+/// axis. `dispersion` spreads the index of refraction over three rays, one per color, as three.js
+/// does: red takes the lowest index, 20 divided by the Abbe number away from the volume's.
 fn transmitted_light(
     surface_at: vec3f,
     relative: vec3f,
@@ -183,15 +233,54 @@ fn transmitted_light(
     ior: f32,
     attenuation: vec4f,
     scale: vec3f,
+    dispersion: f32,
 ) -> vec3f {
-    let ray = volume_ray(normal, to_view, thickness, ior, scale);
-    var light: vec3f;
-    if has_copy() {
-        light = copied_light(frame.view_proj * vec4f(relative + ray, 1.0), surface_at, roughness, ior);
-    } else {
-        let d = normalize(refract(-to_view, normal, 1.0 / ior));
-        let blurred = refraction_roughness(roughness, ior);
-        light = surrounding_light(frame.environment, d, blurred);
+    if dispersion <= 0.0 {
+        return channel_light(
+            surface_at,
+            relative,
+            normal,
+            to_view,
+            roughness,
+            thickness,
+            ior,
+            attenuation,
+            scale,
+        );
     }
-    return light * volume_attenuation(length(ray), attenuation.rgb, attenuation.w);
+    let half_spread = (ior - 1.0) * 0.025 * dispersion;
+    let red = channel_light(
+        surface_at,
+        relative,
+        normal,
+        to_view,
+        roughness,
+        thickness,
+        ior - half_spread,
+        attenuation,
+        scale,
+    );
+    let green = channel_light(
+        surface_at,
+        relative,
+        normal,
+        to_view,
+        roughness,
+        thickness,
+        ior,
+        attenuation,
+        scale,
+    );
+    let blue = channel_light(
+        surface_at,
+        relative,
+        normal,
+        to_view,
+        roughness,
+        thickness,
+        ior + half_spread,
+        attenuation,
+        scale,
+    );
+    return vec3f(red.r, green.g, blue.b);
 }

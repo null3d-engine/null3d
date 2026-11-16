@@ -5585,6 +5585,751 @@
 					"sha256": "4eb309f320e2a8e6608e981fa98e90fc6c18bf5688870c7a58187fc753acb55e"
 				}
 			]
+		},
+		{
+			"id": "khronos/AnimationPointerUVs",
+			"title": "Animation Pointer UVs",
+			"purpose": "KHR_animation_pointer on texture transforms: the offset, scale and rotation of each texture slot",
+			"authors": [
+				{
+					"name": "Eric Chadwick",
+					"role": "3D asset and textures",
+					"license": "CC-BY-4.0"
+				},
+				{
+					"name": "Darmstadt Graphics Group GmbH",
+					"role": "owner",
+					"license": "CC-BY-4.0"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/AnimationPointerUVs",
+			"fetched": "2026-10-24",
+			"changes": "None. Kept the glTF variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/AnimationPointerUVs",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "AnimationPointerUVs",
+				"variants": [
+					"glTF"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/AnimationPointerUVs/LICENSE.md",
+					"bytes": 787,
+					"sha256": "318d02ad3708285bff8595899b4b63162d7d80c519d1f1d0815777fe4771db58"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs.bin",
+					"bytes": 5329724,
+					"sha256": "778d37467d4f0db480bead3b8e449e083999ce8344acc609910e4ba506cf751b"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs.gltf",
+					"bytes": 385565,
+					"sha256": "3fe92b05f5d9456c645692773df1bd9991fd95c90a97d1de9d0191c68aa61805"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Anisotropy.png",
+					"bytes": 40406,
+					"sha256": "5a608e67a8d1533c1f04f62836021e07a66316817b025998957eaf54958a0d51"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_BaseColor.png",
+					"bytes": 59655,
+					"sha256": "ef4fabe76569d7c398e89ac2b1d1390e4c327f29bcb092285382fe85193352f1"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Clearcoat.png",
+					"bytes": 253446,
+					"sha256": "a247f4be0c363f49e66eda92def7ed2846d447e084e739c954b4c938651edeca"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_ClearcoatNormal.png",
+					"bytes": 207194,
+					"sha256": "7ab95d9ebb6e3d2ff674a3d207f9ecc2b50ec626a45d58d86d3e829d07f5d8f9"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_DiffuseTransmission.png",
+					"bytes": 344954,
+					"sha256": "e265142efb5f1eb8013036ed149121b1f3334033034a8695e1bdfa1240b5614c"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Emissive.png",
+					"bytes": 252458,
+					"sha256": "f595c38b0805562ee401c6ca4752234091e3fd604684f6e1050e5802c15a39bb"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Iridescence.png",
+					"bytes": 217901,
+					"sha256": "2bda03709d1eb682637cecabe8078411deb274e84ffbeaf8e8bc6b05a655c4d3"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Normal.png",
+					"bytes": 16531,
+					"sha256": "2bd6f7cfe118577b8dae7b6cf03fe799d2cf1f72c48561ecc603fff6b8d8236b"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_NormalFlat.png",
+					"bytes": 72,
+					"sha256": "962ef816bd2e27a85bf59470da4bb44b89747ab093ad91395837587faa2a7b6d"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Orm.png",
+					"bytes": 142256,
+					"sha256": "ea1d39549516d4a690c94a63f8f8fc6047b263c51935a2231f40dad80f0e3601"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Sheen.png",
+					"bytes": 503577,
+					"sha256": "3cb4848520e1067ab25df9eeab7b34de42235d17183986d6c35bbf0289a42354"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_Specular.png",
+					"bytes": 314624,
+					"sha256": "570fa1a08bbdfbb5dce448c6c37f6a3bb178c5b54b40f68d20bd0541a73d6f93"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/glTF/AnimationPointerUVs_TransmissionVolume.png",
+					"bytes": 96997,
+					"sha256": "c3912b80e28ce7eaa7e96b02207f3cb741306117ae3bc5193af2866b38154b5e"
+				},
+				{
+					"path": "sources/khronos/AnimationPointerUVs/metadata.json",
+					"bytes": 727,
+					"sha256": "c6f7d6389c46d70f4001447daf3a97143e760c59b8e392f7f291dcf7bd765808"
+				}
+			]
+		},
+		{
+			"id": "khronos/IridescenceDielectricSpheres",
+			"title": "Iridescence Dielectric Spheres",
+			"purpose": "KHR_materials_iridescence over a dielectric base: the base index of refraction, the film's thickness and the film's index",
+			"authors": [
+				{
+					"name": "Khronos"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/IridescenceDielectricSpheres",
+			"fetched": "2026-10-25",
+			"changes": "None. Kept the glTF variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/IridescenceDielectricSpheres",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "IridescenceDielectricSpheres",
+				"variants": [
+					"glTF"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/IridescenceDielectricSpheres/LICENSE.md",
+					"bytes": 792,
+					"sha256": "e494d2a8847df3a8831f5ff4309c880c65d72a4edd468c674399d5a76ac9e4de"
+				},
+				{
+					"path": "sources/khronos/IridescenceDielectricSpheres/glTF/IridescenceDielectricSpheres.bin",
+					"bytes": 34068,
+					"sha256": "eeacab254dfd44b8e026a8ad9e865aa1b63711eb86fa7c36180a437845e97253"
+				},
+				{
+					"path": "sources/khronos/IridescenceDielectricSpheres/glTF/IridescenceDielectricSpheres.gltf",
+					"bytes": 295192,
+					"sha256": "fe156ca114515aa2606d35e3eea4940fcf9895559d474e14ec48dedf4e5a8575"
+				},
+				{
+					"path": "sources/khronos/IridescenceDielectricSpheres/glTF/textures/guides.png",
+					"bytes": 42439,
+					"sha256": "01cef8cce29485f2e12c422aca6330b2ec869068f8035c3f006210678afc3573"
+				},
+				{
+					"path": "sources/khronos/IridescenceDielectricSpheres/metadata.json",
+					"bytes": 692,
+					"sha256": "626cd43494f61ad40d905a64d9be985f7be15ffc1570d066f122445c188eda15"
+				}
+			]
+		},
+		{
+			"id": "khronos/IridescenceMetallicSpheres",
+			"title": "Iridescence Metallic Spheres",
+			"purpose": "KHR_materials_iridescence over a metal base: the base color, the film's thickness and the film's index",
+			"authors": [
+				{
+					"name": "UX3D"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/IridescenceMetallicSpheres",
+			"fetched": "2026-10-25",
+			"changes": "None. Kept the glTF variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/IridescenceMetallicSpheres",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "IridescenceMetallicSpheres",
+				"variants": [
+					"glTF"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/IridescenceMetallicSpheres/LICENSE.md",
+					"bytes": 790,
+					"sha256": "4f0246487b90bf517becb25eb938c3893b36eb12b8ead3b96ba91f769ef42145"
+				},
+				{
+					"path": "sources/khronos/IridescenceMetallicSpheres/glTF/IridescenceMetallicSpheres.bin",
+					"bytes": 34068,
+					"sha256": "eeacab254dfd44b8e026a8ad9e865aa1b63711eb86fa7c36180a437845e97253"
+				},
+				{
+					"path": "sources/khronos/IridescenceMetallicSpheres/glTF/IridescenceMetallicSpheres.gltf",
+					"bytes": 267539,
+					"sha256": "8b43928584db4a27806fb9b806ebd22d5cb106b2262fc4ce3f4421419c0e60fe"
+				},
+				{
+					"path": "sources/khronos/IridescenceMetallicSpheres/glTF/textures/guides.png",
+					"bytes": 43791,
+					"sha256": "04be7e96eacef9981b3cdf67eeef390d080f601af86d86bef51993ee1bf738cc"
+				},
+				{
+					"path": "sources/khronos/IridescenceMetallicSpheres/metadata.json",
+					"bytes": 679,
+					"sha256": "d87fd62f51abdb797284f1d731141f41137f20ec03a26077cf8b3a0ff0d3f674"
+				}
+			]
+		},
+		{
+			"id": "khronos/IridescenceSuzanne",
+			"title": "Iridescence Suzanne",
+			"purpose": "KHR_materials_iridescence with a thickness texture, transmission and volume: three heads, one for each material",
+			"authors": [
+				{
+					"name": "Mathias Kanzler"
+				},
+				{
+					"name": "Pascal Schoen"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/IridescenceSuzanne",
+			"fetched": "2026-10-25",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/IridescenceSuzanne",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "IridescenceSuzanne",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/IridescenceSuzanne/LICENSE.md",
+					"bytes": 923,
+					"sha256": "204da4d7d1b7b88273f03dfdfbc39fef1200d2e7f3833afeca440a3e5b47aaa7"
+				},
+				{
+					"path": "sources/khronos/IridescenceSuzanne/glTF-Binary/IridescenceSuzanne.glb",
+					"bytes": 507608,
+					"sha256": "866762602d60a0942b7608bfabf4e8686a29033636224f4b55c5e56abe8abf8f"
+				},
+				{
+					"path": "sources/khronos/IridescenceSuzanne/metadata.json",
+					"bytes": 1052,
+					"sha256": "72228ea5a9e2f3d148ac2a185f5dfb49ed8d94741f5b5c8c983a05d2eb043ee2"
+				}
+			]
+		},
+		{
+			"id": "splats/bolton-priory",
+			"title": "Bolton Priory",
+			"purpose": "A drone scan of a whole site as Gaussian splats, 1.71 million of them in a SOG file, for the splats add-on's reader, its detail levels and its budget",
+			"authors": [
+				{
+					"name": "Dok11"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://superspl.at/scene/56496eab",
+			"fetched": "2026-11-02",
+			"changes": "None. Renamed Bolton Priory.sog to bolton-priory.sog.",
+			"dir": "sources/splats/bolton-priory",
+			"origin": {
+				"kind": "manual",
+				"url": "https://superspl.at/scene/56496eab"
+			},
+			"files": [
+				{
+					"path": "sources/splats/bolton-priory/bolton-priory.sog",
+					"bytes": 24426323,
+					"sha256": "19a160074b1f08c05407cefdfa8dc9760fab8209449320c64e6c2af986151fc8"
+				}
+			]
+		},
+		{
+			"id": "splats/bolton-priory-stream",
+			"title": "Bolton Priory (splat stream)",
+			"purpose": "The Bolton Priory scan as a splat stream that the splats add-on reads: an index and 84 chunk files of SPZ, so a page downloads the parts of the scan that its view needs",
+			"authors": [
+				{
+					"name": "Dok11"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://superspl.at/scene/56496eab",
+			"fetched": "2026-11-02",
+			"changes": "Converted from splats/bolton-priory by tools/samples/splats/bolton-priory.ts in the engine repository: turned upright, with the ground at height 0 and the site centered over the origin, keeping each splat's first spherical-harmonic band, cut into chunks and written as SPZ files with a stream index.",
+			"dir": "sources/splats/bolton-priory-stream",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/splats/bolton-priory.ts",
+				"from": "splats/bolton-priory"
+			},
+			"files": [
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-0.spz",
+					"bytes": 159,
+					"sha256": "a116d201bbea7cbb8f46c6257a5b3596852309a4ddc9290e3057e29ff5f8c577"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-1.spz",
+					"bytes": 79,
+					"sha256": "9bda2e8ebc4bc2de1b96784abcb225b2e3157b015abc2246e3e7aa12ddabb0f2"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-10.spz",
+					"bytes": 295202,
+					"sha256": "f2c4a0e2f68c4666ee8afe386116b3744b7b47cc1168b9a6dac47b38012417ae"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-11.spz",
+					"bytes": 35802,
+					"sha256": "376635363800d05418360a2648af16f5b6e7cca7f5242d13740ae0dc5d1bc5bd"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-12.spz",
+					"bytes": 119,
+					"sha256": "a375d344a422e388175e922518c400e3373c7dc783c6fb905525c388b31f86d7"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-13.spz",
+					"bytes": 460149,
+					"sha256": "6800a52155d0547491edd5e569e81c49e05842ba87d617974a293b5c54e708b8"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-14.spz",
+					"bytes": 252230,
+					"sha256": "d54c5e1ac548e5b547d9292da32e7761d8b56096e694369af16e45eaf2a33b0b"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-15.spz",
+					"bytes": 56,
+					"sha256": "5314ff21a0ad614d1c98b2fc6e77e5057c253309399b255e216397e1722ea14f"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-16.spz",
+					"bytes": 57,
+					"sha256": "11a29aa01a0a692ba9f1b07129b52ee1135a8c2087f6cbcb101697d05723b0b6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-17.spz",
+					"bytes": 57,
+					"sha256": "3a141d205658adc79d625ddfd9784879666c243a59fb8e2b7d4d67ab7d96eea2"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-18.spz",
+					"bytes": 219,
+					"sha256": "2470364e2beaa752fde36a62daace4e06ef9d251925c88f3dcc5c14673315ea4"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-19.spz",
+					"bytes": 319,
+					"sha256": "bbb554babab0939e4748cafe55cb2bdab6eb904aa9028b44518fe697e450bac6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-2.spz",
+					"bytes": 26484,
+					"sha256": "d05bbe79050b18cc95f1c96b8ea63667a3648075d1ce19eebb8e101e77c8bfb6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-20.spz",
+					"bytes": 634,
+					"sha256": "abfb3e6ed45a95ca50b1ef828715d039d5afe8d85d47ee856456b65f6ae12a9d"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-21.spz",
+					"bytes": 97,
+					"sha256": "5f27fb5d0bc7f5dbd87c1539d5a9837daf4db4158e69b63f01b0af3b29d5b6de"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-22.spz",
+					"bytes": 500796,
+					"sha256": "ae49c3115954157a0f9a16478a0a317627f9c5697ad142b82909cb7cfe0c9b9e"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-23.spz",
+					"bytes": 930281,
+					"sha256": "16a3bf2b39657b2570064e4ca16dd8b5c354d56e66a658c11f88d01ae271e5b1"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-24.spz",
+					"bytes": 558031,
+					"sha256": "e84abe7a1b952034d4c082bb57ce7a2122da60c65fe9da615ac5878474c03b7c"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-25.spz",
+					"bytes": 837810,
+					"sha256": "7ae2895769a831399ff4ada9c5e9399c512e9a8fe93165df3df3c6e69fd9b8b5"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-26.spz",
+					"bytes": 525755,
+					"sha256": "bd544975400521abff52d71ea40183d74f38930a92708590e24aa9a531ea299e"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-27.spz",
+					"bytes": 418440,
+					"sha256": "1d56eca66704bb0e3e2338d500eb53fc79119adebd5c7742b017bdb4388d44b7"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-28.spz",
+					"bytes": 463444,
+					"sha256": "f76917363447762c295e9585c328e537b13ae148e1658fdc7207298ad7f61163"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-29.spz",
+					"bytes": 735541,
+					"sha256": "b0882dbcd2d391ad052a2ac7262205c0c3ff31a0ca41e11158aaeb0b97cad3d0"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-3.spz",
+					"bytes": 530094,
+					"sha256": "97e33c35f3dd95b962feacc8f0c96119f01ffb7f902f5b51ae4fd6347550e410"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-30.spz",
+					"bytes": 495434,
+					"sha256": "59513fdbdc36d57f9da9ad04056ed6eb60c0d056d8eb9a19990fb38f9986cc49"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-31.spz",
+					"bytes": 400484,
+					"sha256": "e9c5aa175742232ac7cfac8e901d9a3511e9d8ffc9ab24fa33f13be4deea6a66"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-32.spz",
+					"bytes": 1284,
+					"sha256": "3d304a6f13d6b29c374dbc7b235b8c7c4ec123b011176ef06920b1f4df5d7056"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-33.spz",
+					"bytes": 332868,
+					"sha256": "d6e1f4f11946094b9691bf1902e4d1d86db27061364f953420a99f050b469ef6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-34.spz",
+					"bytes": 710541,
+					"sha256": "d4ce724542294a777b29ee4c13d51ce094e50fc82289f8cead85b1d61cea4f7c"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-35.spz",
+					"bytes": 253370,
+					"sha256": "e0a6e7707eb1c1bfc0902badf6e080969a278c886782bdf96d0eb4b9ab629cd6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-36.spz",
+					"bytes": 60292,
+					"sha256": "85b2d28588484c4208a0f2f3065f61f2bf679f839ca0ad230a1d8b3c1be3c30b"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-37.spz",
+					"bytes": 77,
+					"sha256": "f9d00f6919ec2a579a7d328df7527eadaf1ce2386bbb431ebef7d2f3da712a39"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-38.spz",
+					"bytes": 219,
+					"sha256": "5b3aa16af42ebaf21a7b7833fcad44a89a0b1efd3708e0b9076691396d02e8fb"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-39.spz",
+					"bytes": 7674,
+					"sha256": "b4066ed061eb90e517c196ebe77ec130db8c8384991045b400e1ad0ff28535c0"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-4.spz",
+					"bytes": 635668,
+					"sha256": "4b20a0cc3210cb7140b601cef0f76aca9f3030d89fa1f42c252657c4c80f90cc"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-40.spz",
+					"bytes": 1300,
+					"sha256": "c52957177c358aee11d09fa61e9fb2daffb06a28d6f6c9a12a52742abe3c87f0"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-41.spz",
+					"bytes": 77,
+					"sha256": "0c86fbd5f834b98f3beb579cfbd9c2f59172e2b455ea1bed56485af019e67d68"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-42.spz",
+					"bytes": 179,
+					"sha256": "864cd8085dc651054245455a5a3f0691d25271892c201a16883a89351ed223e6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-43.spz",
+					"bytes": 852879,
+					"sha256": "f58d8c8d248d6095c3d6df3127a0426ad2e46716e7fe6c215a7ea8652c53e504"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-44.spz",
+					"bytes": 829369,
+					"sha256": "92bdd9500b6ce30d26cf35c4eddeee10d317b5dfc2db64034b2ab0d175eabfc5"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-45.spz",
+					"bytes": 358862,
+					"sha256": "10c6451a98f2f9ee298b661d5f9795207ffaeb1528c2b68d1173904cb4a6affc"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-46.spz",
+					"bytes": 685315,
+					"sha256": "8680653b66f19cd413a9a90a3a2b1d8807daa5c8c7da6011dda9fb6a2e3467ef"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-47.spz",
+					"bytes": 1020077,
+					"sha256": "db58f11aadc770d3030fca1197dd5b8493913fa8b8b02b531e6f1990d4f21bf5"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-48.spz",
+					"bytes": 751121,
+					"sha256": "d51d8063783e8634eabdd60d10ef36507641b69a976984d52bef0f2c977ff3d6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-49.spz",
+					"bytes": 267370,
+					"sha256": "f20000046f3551f051ac44807ddc7e6c6a556a6cf17e493523e6573ca286e23f"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-5.spz",
+					"bytes": 420853,
+					"sha256": "dc709e9147502cace87f745a9bacacddfe5950f7b5ed04d4acc8fd31d7bb47cc"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-50.spz",
+					"bytes": 1153173,
+					"sha256": "435a162c096064dda21e2a98aa0f132104c09b5ece3dcdb89db01d74264109c2"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-51.spz",
+					"bytes": 720639,
+					"sha256": "a52b798288f4feb945663bfc6c380efc24febbe3f30e22ce93358bc0c354e466"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-52.spz",
+					"bytes": 390496,
+					"sha256": "c7b72ab7b1a4567b097ca2b9672c0fa4e3e5c42a9e33fe3c04fc7d9d260dfd40"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-53.spz",
+					"bytes": 48361,
+					"sha256": "abb6739e6670e7b71d4008cd105c345867a81620d433932dc3ea8d39d5a1a364"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-54.spz",
+					"bytes": 818760,
+					"sha256": "5baf6a56a10860e1ab28b762bf565546fe15a4d109625842032f8770403166a7"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-55.spz",
+					"bytes": 123364,
+					"sha256": "704ff1d76d37fca136278eae7bed9f1bcc8730edb8caf04cbed798f503dc00f3"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-56.spz",
+					"bytes": 33439,
+					"sha256": "896d2e341081a268c942076627f7030f7bff45513d63719791046757bd54551b"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-57.spz",
+					"bytes": 119,
+					"sha256": "42bbfb32ebcbacda8d7b4f569a21cd312ce60e7eacae1bf6c5e2d2b39485221f"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-58.spz",
+					"bytes": 2300,
+					"sha256": "8a4347d68c0373a9baa6b16cb12763c3b855ea14b1ec3d0e16813f125e18948e"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-59.spz",
+					"bytes": 259,
+					"sha256": "0f502bf55838bb7675e47b4b645f44fb6287e2fbec6ea8f2c039a513e3e492dd"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-6.spz",
+					"bytes": 40481,
+					"sha256": "67a24add5449efdb9441809390dd638e58d4b9e573af3ff9835e6bae1b3e6da6"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-60.spz",
+					"bytes": 57,
+					"sha256": "58419c4db20e8e33d0ab8a3e6ab9b2b9ba56068472e563feba8e63348671052d"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-61.spz",
+					"bytes": 95,
+					"sha256": "737f1703ac8d296f4e8e7a0a6752868bd69ab44fa13d5ef1040110a084f4802c"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-62.spz",
+					"bytes": 506522,
+					"sha256": "71086355074eba16d3bc9ee97e84e915ddcfea0e716a2c7aa7d35f04fac5ea10"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-63.spz",
+					"bytes": 1051005,
+					"sha256": "c4feb0cd303706a4855e9d7fe170a8b330e925ab4ce3f496013d344e16a2ee26"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-64.spz",
+					"bytes": 713595,
+					"sha256": "b7bea92f7f7fb129236c5be7eca0d2768db7c8015f9ac1ebe6b047f79226b240"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-65.spz",
+					"bytes": 862481,
+					"sha256": "da3630e249462831dd7285ae9ca3bcc4b99809d33ea849f91d996ea6205d660f"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-66.spz",
+					"bytes": 765777,
+					"sha256": "b3cc9c7a783561dad8d8c3a3354d78c786362803976dac4d4abbe51931e0a29c"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-67.spz",
+					"bytes": 696437,
+					"sha256": "fab156288060cd7ec29aaad56a99f2bb9aa331b37e69763673b3eb1e394c1fb1"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-68.spz",
+					"bytes": 598,
+					"sha256": "e91f496eda64d6f958b885ca5efd6eca79fe81d597cafa014e36a60fa493ea4b"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-69.spz",
+					"bytes": 1125856,
+					"sha256": "945a4c9f92d3b370efaf0a20f616ae91d6ecba30e75455ffd75d3b1136938322"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-7.spz",
+					"bytes": 1776,
+					"sha256": "366d16e259d3b05b94d8627f9acccd5123befdcb16559c1c47099bde9b7a50ae"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-70.spz",
+					"bytes": 303925,
+					"sha256": "e98a6e74d469c5663e33112cff9bb9f6f09ec76ac1f444f6c3846cbbc390c6f1"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-71.spz",
+					"bytes": 1519,
+					"sha256": "dc833bba3a575e7a84c3776921e0bbd23f6f1cfd6f30d55b828d3e2c4129ee46"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-72.spz",
+					"bytes": 330659,
+					"sha256": "6dc7d1d396b5e3babc6070b526bd573bcba145569a5678b7674258d08364fd89"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-73.spz",
+					"bytes": 82776,
+					"sha256": "62ccf2328ce93335324c61639ac6450e61a961aedf65f35e1ad53c04a472a4cc"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-74.spz",
+					"bytes": 57,
+					"sha256": "cda3bfd37814a752ce8759063af23352dc24ba2ea7722f1f569cbb91689029dd"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-75.spz",
+					"bytes": 1312,
+					"sha256": "37c154f1108cf3f0181311ddc93e2b8b9dcaadf35f275861d6ee2300927a46db"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-76.spz",
+					"bytes": 159,
+					"sha256": "aa37041ed26bc960aa3d309de6ce726b84546817d9b200be841f2e64b6fc3ddf"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-77.spz",
+					"bytes": 56,
+					"sha256": "be3ba5d0c7293a8bdfc6e2bc7a8244436c8d798651be2aaf634efbef6ffd1ad2"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-78.spz",
+					"bytes": 68823,
+					"sha256": "255cf4cefdaccd832de186a1c79869cbaa79e8b8ed2fd9a8456d3a3b55e4c1f9"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-79.spz",
+					"bytes": 605555,
+					"sha256": "a92343319a371e22730d3cc89386ea6d48c2039e23ec5723045004a153c35296"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-8.spz",
+					"bytes": 1280,
+					"sha256": "802bcf8f31bfbf887ae73fdc831f17a81ec9bbb0488aaae44e2acf75af549a29"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-80.spz",
+					"bytes": 1031926,
+					"sha256": "5f5871f1bb9ae445adb6d4a244b97f73f0ad065df03bc27ea872b5f0bd56e545"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-81.spz",
+					"bytes": 869796,
+					"sha256": "dbc66c9b901ea0153a03ae9b2e2cb503f0c053eb1001d31315cfeb40ce6739f8"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-82.spz",
+					"bytes": 110650,
+					"sha256": "2103ea3b3864cdceb73a171e9d11fd5386cb097f4a462b96cfeb42dbdc597ce8"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-83.spz",
+					"bytes": 279,
+					"sha256": "25093e40a55e44a8ad274a3ddce32e81dcf532e30663ed92c062c8a3ec181d5f"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/chunk-9.spz",
+					"bytes": 435153,
+					"sha256": "a66fc350ed138a1cba4b32d2d18bb305766655a2d0266d00eb97f9fa45646994"
+				},
+				{
+					"path": "sources/splats/bolton-priory-stream/index.json",
+					"bytes": 16358,
+					"sha256": "8b3c6efa646174755186b2f1d1949d059676c4854873752356bde8660947880f"
+				}
+			]
 		}
 	]
 }

@@ -434,6 +434,11 @@ class ThreeRuntime {
 			canvas: canvas as unknown as HTMLCanvasElement,
 			antialias: true,
 			powerPreference: 'high-performance',
+			// A held frame is read back from the drawing buffer after the draw. A browser may present
+			// that buffer, and clear it for reuse, before the read: the read then returns an empty
+			// frame. Keeping the buffer keeps the drawn frame for the read. Only a held frame reads
+			// the buffer, so a live comparison keeps the browser's faster path.
+			preserveDrawingBuffer: options.hold !== null,
 		}) as AnyRenderer;
 		// A program that fails to link draws nothing. The page hears why, and the console still does.
 		renderer.debug.onShaderError = (gl, program) => {

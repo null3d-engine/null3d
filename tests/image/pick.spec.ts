@@ -16,12 +16,14 @@ interface PickPage {
 		rays: { name: string; got: string | null }[];
 		raysCard: string | null;
 	};
+	/** What a pick did after the GPU was taken away while its read was in flight. */
+	loss?: { settled: boolean; outcome?: string; elapsedMs?: number };
 	failures: string[];
 }
 
 /** Opens the pick page for a GPU path, and returns what it published. */
-async function open(page: Page, tier: 'webgpu' | 'webgl2'): Promise<PickPage> {
-	await page.goto(`pick.html?gpu=${tier}`);
+async function open(page: Page, tier: 'webgpu' | 'webgl2', extra = ''): Promise<PickPage> {
+	await page.goto(`pick.html?gpu=${tier}${extra}`);
 	const result = await pageResult<PickPage>(page, 90_000);
 	expect(result.error).toBeUndefined();
 	expect(result.ok).toBe(true);
@@ -46,4 +48,18 @@ for (const tier of ['webgpu', 'webgl2'] as const)
 		// The ray tests the card's triangles, so it finds the card through the hole that the mask
 		// cuts: the ray and the pick answer differently, as they should.
 		expect(result.picks.raysCard).toBe('card');
+	});
+
+for (const tier of ['webgpu', 'webgl2'] as const)
+	test(`a pick is rejected when the GPU is lost with it in flight, on ${tier}`, async ({
+		page,
+	}) => {
+		test.setTimeout(120_000);
+		const result = await open(page, tier, '&lose-gpu');
+		// The engine starts a new device, but it cannot finish the read that the lost one recorded.
+		// The pick must settle, and the rule is that it rejects rather than waits or asks again.
+		expect(result.failures).toEqual([]);
+		expect(result.loss?.settled, JSON.stringify(result.loss)).toBe(true);
+		expect(result.loss?.outcome).toMatch(/^error: E1436:/);
+		expect(result.loss?.elapsedMs).toBeLessThan(20_000);
 	});

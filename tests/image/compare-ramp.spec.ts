@@ -1,8 +1,8 @@
 // The comparison ramps on null3D judge the rate at which the scene updates, not the rate at which
-// frames present: a frame whose sketch update threw still presents, so a frozen scene once reported
-// a false "held" figure. Battle froze past 1,024 units when its animation table filled. These tests
-// run the ramp and check that the scene keeps moving at every step, through the camera signature
-// that each sketch answers, and that no step reports a failed update.
+// frames present: a frame whose sketch update throws still presents, so a frozen scene can report a
+// false "held" figure, as Battle's would past 1,024 units if its animation table could not grow.
+// These tests run the ramp and check that the scene keeps moving at every step, through the camera
+// signature that each sketch answers, and that no step reports a failed update.
 import { expect, test } from '@playwright/test';
 import type { SceneSignature } from '../../examples/compare/scene-signature.ts';
 import { FLOOR_FPS, type RampResult } from '../../examples/lib/ramp.ts';
@@ -61,9 +61,9 @@ for (const compare of ['battle', 'factory', 'night-town'] as const)
 			expect(errors).toEqual([]);
 		});
 
-// The regression: Battle's animation table once held at most 1,024 objects, so a step past 1,024
-// failed in every frame and the scene froze while the ramp kept reporting frames. The table grows
-// now, so the ramp passes 1,024 with every update complete and the camera still moving.
+// An animation table that holds at most 1,024 objects fails every frame of a step past 1,024, and
+// the scene freezes while the ramp keeps reporting frames. Battle's table grows, so the ramp passes
+// 1,024 with every update complete and the camera still moving.
 test("Battle's ramp on null3D passes 1,024 units with the scene still moving", async ({ page }) => {
 	test.skip(softwareGpu(), 'posing over 1,000 soldiers takes too long on the software GPU');
 	const errors: string[] = [];

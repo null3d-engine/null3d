@@ -8,8 +8,10 @@ import { join } from 'node:path';
 import { readLibrary } from '../../tools/lib/shader-library.ts';
 import {
 	allCases,
+	drawnRows,
 	FUNCTIONS,
 	probeFault,
+	recordFailure,
 	TARGET_PROBE,
 } from '../pages/lib/shader-library-cases.ts';
 import { judge, NONE_MISSING } from './plans.ts';
@@ -60,10 +62,32 @@ describe('the shader library test', () => {
 		const variants = [
 			...section
 				.slice(0, section.indexOf('\n[', 1))
-				.matchAll(/^variants\.(\w+) = \{ defs = \["(\w+)"\]/gm),
-		].map(([, name, variantDef]) => [name, variantDef]);
-		const expected = [...new Set(modules)].sort().map((module) => [module, module.toUpperCase()]);
+				.matchAll(/^variants\.(\w+) = \{ defs = \[([^\]]*)\]/gm),
+		].map(([, name, defs]) => [
+			name,
+			...(defs ?? '').split(',').map((def) => def.trim().replaceAll('"', '')),
+		]);
+		// The reflection's GLSL build carries the def that says its rows start at the bottom, so it
+		// is a variant of its own beside the module's WebGPU build.
+		const expected = [...new Set([...modules, 'reflection_glsl'])].sort().map((module) => {
+			const base = module.replace(/_glsl$/, '').toUpperCase();
+			return module === 'reflection_glsl' ? [module, base, 'WEBGL2'] : [module, base];
+		});
 		expect(variants).toEqual(expected);
+	});
+
+	it("keys a split variant's failure by the module whose rows it draws", () => {
+		const failures = new Map<string, string>();
+		recordFailure(failures, 'reflection_glsl', 'the GLSL did not compile');
+		expect([...failures]).toEqual([['reflection', 'the GLSL did not compile']]);
+
+		const cases = allCases();
+		const reflectionRow = cases.findIndex((c) =>
+			FUNCTIONS[c.function]?.name.startsWith('reflection::'),
+		);
+		expect(reflectionRow).toBeGreaterThanOrEqual(0);
+		expect(drawnRows(cases, failures)).not.toContain(reflectionRow);
+		expect(drawnRows(cases, new Map())).toContain(reflectionRow);
 	});
 
 	it('tests every function of every public library module on the GPU', () => {
@@ -83,7 +107,7 @@ describe('the shader library test', () => {
 		for (let number = 0; number < FUNCTIONS.length; number++)
 			expect(cases.some((c) => c.function === number)).toBe(true);
 		for (const c of cases)
-			expect(FUNCTIONS[c.function]?.expected(c.inputs).values).toHaveLength(16);
+			expect(FUNCTIONS[c.function]?.expected(c.inputs, { fromTop: false }).values).toHaveLength(16);
 	});
 
 	it('draws the same cases on every run', () => {

@@ -1,8 +1,8 @@
 # D-50: Blocker meshes and stored trees from the asset tool
 
-Status: decided by the owner, 2026-10-04: the blockers, the file format, the tool's default, and S6's buildings without stored trees. Task: M2-B4.
+Status: decided by the owner and built: the blockers, the file format, the tool's default, and S6's buildings without stored trees. Task: M2-B4.
 
-Summary: The tool gives each mesh that encloses space a blocker of one or two boxes, checked from 48 rays per point to lie inside the mesh: all 76 city buildings get one, about 45 triangles each, for 2.9% more bytes after Brotli. `NULL3D_occluder` and `NULL3D_mesh_bvh` hold blockers and trees. Trees are stored from 20,000 triangles: they take 9.5 bytes per triangle after Brotli, and a build costs 0.2 to 0.3 µs per triangle on the job workers.
+Summary: The tool gives each mesh that encloses space a blocker of one or two boxes, and rays prove that it lies inside the mesh. All 76 city buildings get one, of about 45 triangles, for 2.9% more bytes after Brotli, in the extension `NULL3D_occluder`. The extension `NULL3D_mesh_bvh` stores trees for parts from 20,000 triangles: a tree takes 9.5 bytes per triangle after Brotli, and a build 0.2 to 0.3 µs.
 
 ## Question
 
@@ -86,7 +86,7 @@ The loader marks each primitive with `NULL3D_occluder` with the occluder flag (D
 
 ## Data
 
-All on the MacBook Pro (Apple M5 Max, 18 cores), 4 October 2026, at load averages of 10 to 70 while other helpers built.
+All on the MacBook Pro (Apple M5 Max, 18 cores), at load averages of 10 to 70 while other helpers built.
 
 ### Blockers never hide what shows
 
@@ -132,7 +132,7 @@ The city's model files, from the tool with its defaults and with `--bvh 1`, whic
 | 76 buildings, raw | 1,844,424 bytes | 3,133,464 bytes | +70% |
 | 76 buildings, Brotli 11 | 845,839 bytes | 1,786,815 bytes | +111% |
 
-The trees take 2,666,484 bytes before compression, 21.0 bytes per triangle. meshopt compresses a tree to about 60% of its bytes. One building's tree of 26,112 bytes became 15,761.
+The trees take 2,666,484 bytes before compression, 21.0 bytes per triangle. meshopt compresses a tree to about 60% of its bytes. One building's tree of 26,112 bytes compresses to 15,761.
 
 So a stored tree adds about 9.5 bytes per triangle after meshopt and Brotli. At 10 Mbit/s that downloads in about 7.6 µs, where a build takes 0.2 to 0.3 µs on the Mac. The build runs on the job workers at the first query, so a tree pays only where that build would hold up a frame. A mesh of 20,000 triangles builds in 4 to 6 ms on the Mac in WebAssembly, and a phone's core is slower.
 
@@ -153,13 +153,13 @@ How the data was produced: `cargo test -p null3d-assets-wasm --test blocker`, `c
 
 The task asks that S6's buildings ship with blockers and trees. The buildings have 1,316 triangles each on average, so the default stores no tree for them. With `--bvh 1`, their files double after Brotli, from 846 KB to 1,787 KB. That saves a build of about 100,000 triangles on the job workers, about 25 ms on one thread of the Mac.
 
-The owner's decision of 4 October 2026: S6's buildings ship without stored trees. The engine builds each building's tree at its first raycast, on the job workers. The tool keeps its default of 20,000 triangles (`--bvh 20000`), which stores no tree for meshes as small as S6's buildings. S6 builds with that default, not with `--bvh 1`.
+The owner decided that S6's buildings ship without stored trees. The engine builds each building's tree at its first raycast, on the job workers. The tool keeps its default of 20,000 triangles (`--bvh 20000`), which stores no tree for meshes as small as S6's buildings. S6 builds with that default, not with `--bvh 1`.
 
 three.js stores no trees: the `three-mesh-bvh` add-on builds one in JavaScript at load, and can serialize it for the page to save. three.js has no occlusion culling.
 
 ## Consequences
 
 - The tool: `packages/cli/src/assets/spatial.js` (the step), `spatial-extensions.js` (both extensions for glTF-Transform), the formats module's `blockerMesh` and `meshBvh`, the options `--no-blockers` and `--bvh`, and report lines for blockers and trees.
-- The engine: the loader reads both extensions, `setMeshBlocker` and `setMeshBvh` in the core's glue, `SceneQueries::store_mesh_bvh`, and `instantiate`'s `occluder: false`, which now clears the flag that the file set.
+- The engine: the loader reads both extensions, `setMeshBlocker` and `setMeshBvh` in the core's glue, `SceneQueries::store_mesh_bvh`, and `instantiate`'s `occluder: false`, which clears the flag that the file sets.
 - The docs: `guides/assets-pipeline` (blockers and stored trees), `concepts/culling` (blockers from the asset tool), `cli/null3d`, `api/objects` and `guides/performance`. The develop skill names both in its asset step, its performance notes and its raycast section.
 - S6 (M2-L3) builds its city with the tool's defaults: blockers, and no stored trees for its buildings.

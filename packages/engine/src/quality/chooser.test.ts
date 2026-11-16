@@ -6,6 +6,7 @@ import {
 	crashTier,
 	type DeviceHints,
 	deviceKind,
+	gpuOcclusionChoice,
 	hintedPreset,
 	MOBILE_TEXTURE_MEMORY_MIB,
 	memoryPreset,
@@ -96,6 +97,16 @@ describe('deviceKind and hintedPreset', () => {
 			hintedPreset(hints({ coarsePointer: true, screenMinEdge: 380, deviceMemoryGB: 8 })),
 		).toBe('low');
 		expect(hintedPreset(hints({ deviceMemoryGB: null }))).toBe('high');
+	});
+});
+
+describe('gpuOcclusionChoice', () => {
+	it('keeps GPU occlusion culling off on phones and tablets unless the page asks, and leaves desktops to the preset', () => {
+		expect(gpuOcclusionChoice('desktop', undefined)).toBeUndefined();
+		expect(gpuOcclusionChoice('phone', undefined)).toBe(false);
+		expect(gpuOcclusionChoice('tablet', undefined)).toBe(false);
+		expect(gpuOcclusionChoice('phone', true)).toBe(true);
+		expect(gpuOcclusionChoice('desktop', false)).toBe(false);
 	});
 });
 

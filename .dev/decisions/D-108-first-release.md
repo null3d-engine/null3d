@@ -1,20 +1,18 @@
-# D-108: The first release is 0.1.0, at M3's gate
+# D-108: The first release is 0.1.0, as part of M4
 
-Status: decided by the owner on 2026-10-08 at about 11:10 (UTC+8), with the particles add-on added at about 11:15. It replaces the owner's ruling of 3 October 2026 that the first release would be 1.0, with no 0.x release. Date: 2026-10-08.
+Status: decided by the owner, with the particles add-on in M3 and every change in the release notes. Not released yet. Before 0.1.0, the roadmap labels and the docs' `since` values must be settled.
 
-Summary: null3D's first release, 0.1.0, goes to npm when M3's exit gate passes, and 1.0 stays at M4's gate with the API freeze. Before 0.1.0, M3 adds hosting with isolation headers, basic fuzzing of the file loaders, the first npm publishes and a rule for the docs' `since` values. 0.1.0 ships the splats, MSDF text, physics and particles add-ons.
+Summary: null3D's first release, 0.1.0, goes to npm as part of M4, and a final 0.2.0 release follows it. 1.0.0 waits until the API is known to be stable. The release notes list every commit that is not a merge, whichever branch brought it to main.
 
 ## Question
 
-When does null3D first go to npm, and with which version number?
+When does null3D first go to npm, with which version number, and what goes into its release notes?
 
 ## Rule
 
-The first release comes when a developer outside the project can start on their own. They need docs to read, a template to start from, a guide to move from three.js, and a way to look inside a scene. Its version must tell users whether the API can still change.
+The owner sets when each release comes. A version must tell users whether the API can still change.
 
 ## Data
-
-On 3 October 2026 the owner ruled that the first release would be 1.0, with no 0.1, 0.2 or 0.3 release. The reason was cost: each release before 1.0 adds steps by hand, such as the first npm publishes, the trusted publishers and the release secrets. None of them helps finish the engine.
 
 The roadmap puts the work in milestones:
 
@@ -25,43 +23,40 @@ The roadmap puts the work in milestones:
 | M3 | The docs site, starter templates, the migration guide, the inspector, the rest of the `null3d` command, agent tooling and the porting tools | 0.3 |
 | M4 | The API freeze, the device lab pass, the size budgets, fuzzing of all loaders, public benchmarks | 1.0 |
 
-What a first user needs arrives in M3. Before it, there is no docs site, no template and no migration guide.
+Each release before 1.0 adds steps by hand, such as the first npm publishes, the trusted publishers and the release secrets. None of them helps finish the engine.
 
 ## Options
 
 | Option | For | Against |
 | --- | --- | --- |
-| (a) The first release is 1.0, at M4's gate (the ruling of 3 October) | The release steps by hand happen once, and the first version has the frozen API | No developer outside the project can use the engine until M4 |
-| (b) The first release is 0.1.0, at M3's gate, and 1.0 stays at M4 (chosen) | Developers can start once M3 has given them what they need. A 0.x version says the API can still change | The steps by hand move forward to M3. The docs' `since` labels need a new rule. Users' files reach the loaders before M4's full fuzzing |
+| (a) The first release is 1.0, at M4's gate | The release steps by hand happen once, and the first version has the frozen API | No developer outside the project can use the engine until M4 |
+| (b) The first release is 0.1.0, at M3's gate, and 1.0 stays at M4 | Developers can start once M3 gives them docs, a template and a migration guide. A 0.x version says the API can still change | The owner's ruling, option (d), replaces it |
+| (c) 0.1.0 once M2 is complete, a minor release for each later milestone, and 1.0.0 once the API is stable | A 0.x version says the API can still change, and each milestone ships | The owner's ruling, option (d), replaces it |
+| (d) 0.1.0 as part of M4, a final 0.2.0 after it, and 1.0.0 once the API is stable (chosen) | A 0.x version says the API can still change. The first release holds the docs, templates and migration guide of M3 | The steps by hand come in M4. The docs' `since` labels need a new rule. Users' files can reach the loaders before every loader is fuzzed in full |
 
 ## Decision
 
-The owner chose (b) on 8 October 2026.
+The owner chose (d):
 
-- 0.1.0 is released when M3's exit gate passes. The Release workflow takes the packages from 0.0.0 to 0.1.0 with the `minor` release type.
-- 1.0 stays at M4's gate, with the API freeze. Until then, a 0.x release may change the API, as semantic versioning allows.
-- 0.1.0 holds the work of M1, M2 and M3. Its add-ons are Gaussian splats, MSDF text, physics (`@null3d/rapier`) and particles (`@null3d/particles`).
-- The owner added the particles add-on to M3 on 8 October 2026, at about 11:15. It follows the add-on rule of [D-54](D-54-addon-modules.md): its own package, and shaders that load on first use. It registers through the engine's one on-demand loader.
+- **0.1.0** goes out as part of **M4**. It holds the roadmap steps 0.1 to 0.3: the work of M1, M2 and M3. The Release workflow takes the packages from 0.0.0 to 0.1.0 with the `minor` release type.
+- **0.2.0**, a final release, follows 0.1.0.
+- **1.0.0** is published only once the API is known to be stable. M4's API freeze does not by itself produce a 1.0 release. Until then, a 0.x release may change the API, as semantic versioning allows.
+- Once M4 is complete, the engine is publicized and the website launches.
+- M3's add-ons are Gaussian splats, MSDF text, physics (`@null3d/rapier`) and particles (`@null3d/particles`). The particles add-on is part of M3 by the owner's ruling. It follows the add-on rule of [D-54](D-54-addon-modules.md): its own package, and shaders that load on first use. It registers through the engine's one on-demand loader.
 
-### What M3 adds before 0.1.0
+### What the first release needs
 
-1. Hosting for the docs site and the demos, with the cross-origin isolation headers. Threaded modes need those headers, so the hosts must send them. The owner chooses the hosting, which is due before M3 starts.
-2. Basic fuzzing of the file loaders, such as glTF and KTX2, brought forward from M4. From 0.1.0, users load their own files, so the loaders must not crash or hang on broken input. M4 still fuzzes every loader in full.
+These come before 0.1.0, within M4:
+
+1. Hosting for the docs site and the demos, with the cross-origin isolation headers. Threaded modes need those headers, so the hosts must send them. The owner chooses the hosting.
+2. Basic fuzzing of the file loaders, such as glTF and KTX2. From 0.1.0, users load their own files, so the loaders must not crash or hang on broken input. M4 fuzzes every loader in full.
 3. The first npm publish of each package by hand, then trusted publishing from CI. npm cannot publish a package's first version through trusted publishing. So the owner publishes `@null3d/engine`, `@null3d/vite-plugin` and `@null3d/controls` by hand. Each new add-on package needs this too, such as `@null3d/rapier` and `@null3d/particles`. `@null3d/cli` is on npm at 0.0.0 already. [Releases](../releases.md#the-first-version-of-a-new-package) gives the steps.
-4. A rule for the docs' `since` values. Pages now carry `since: "0.1"`, `"0.2"` or `"0.3"`, which name the roadmap labels above. With 0.1.0 as the first release, a page with `since: "0.2"` ships in 0.1.0. The release script refuses an x.y.0 version while a page with that `since` or an earlier one is `planned`. For 0.1.0 it checks only the `"0.1"` pages. M3 sets the rule. Then it changes the release script's check, the README's labels and the skills' version labels to match.
+4. A rule for the docs' `since` values. Pages carry `since: "0.1"`, `"0.2"` or `"0.3"`, which name the roadmap labels above. Release 0.1.0 holds all three steps, so the labels do not name the release that ships them. Either the labels and the `since` values are remapped, or the roadmap says that they are roadmap numbers and not release numbers. The release script refuses an x.y.0 version while a page with that `since` or an earlier one is `planned`. For 0.1.0 it checks only the `"0.1"` pages. Once the rule is set, the release script's check, the README's labels and the skills' version labels change to match.
+5. A watch by hand of the built shader set as a release asset, which 0.1.0 carries first. The archive builds and uploads to the same Release, and a project fetches it and verifies its hash.
 
-## Consequences
+## Every change goes into the release notes
 
-- [Releases](../releases.md): making a release, the versions, the open point on version labels and the first version of a new package now point at 0.1.0.
-- 0.1.0 is the first public release. So the README's roadmap leaves before 0.1.0, and the agent skills are announced at 0.1.0. Today the release script refuses a README with the roadmap only from 1.0.0 (`tools/lib/release.ts`). M3 changes it to refuse from 0.1.0.
-- The README's quickstart and roadmap say that 0.1.0 is the first release, after the 0.3 step. The roadmap's 0.3 row names the four add-ons.
-- [D-54](D-54-addon-modules.md) names `@null3d/particles` among the add-ons.
-
-## Addendum: every change goes into the release notes, 15 October 2026
-
-Status: decided by the owner. Date: 2026-10-15.
-
-Main lands by direct push since [D-157](D-157-direct-pushes-to-main.md). Branches merge into main without a squash, so main's history holds each branch's commits and the merge commits. The release notes were written for the squash, where each line was one pull request. The owner ruled, in writing: "any and all changes should go into release notes and be able to do a new release."
+Main lands by direct push ([D-157](D-157-direct-pushes-to-main.md)). Branches merge into main without a squash, so main's history holds each branch's commits and the merge commits. The owner ruled, in writing: "any and all changes should go into release notes and be able to do a new release."
 
 So the release notes list every commit that is not a merge, whichever branch brought it to main. A release lists each commit that the released commit reaches and the last release tag does not. The release command (`tools/release.ts`) reads git's log as it streams, so the notes have no size limit.
 
@@ -72,19 +67,9 @@ So the release notes list every commit that is not a merge, whichever branch bro
 - The GitHub Release text stops at GitHub's limit of 125,000 characters, with a link to the release's full list in `CHANGELOG.md`. The first release lists about 850 lines, and its notes are about 176,000 characters.
 - A test builds the notes of a small repository with branch merges (`tools/lib/release.test.ts`). One branch starts before a release and lands after it, and two branches land the same subject.
 
-## Addendum, 17 October 2026: 0.1.0 goes out when M2 is complete
+## Consequences
 
-Status: decided by the owner on 2026-10-17.
-
-The owner ruled the release schedule in three parts:
-
-- **0.1.0** is published once **M2 is fully complete**, not at the later gate this record names.
-- **0.2.0** is published once **M3 is complete**.
-- **0.3.0** is published once **M4 is complete**, with the API freeze.
-- **1.0.0** waits for the future: it is published only once the API is known to be stable. M4's API freeze does not by itself produce a 1.0 release.
-- **After 0.3.0**, with M4 complete, the engine is publicised and the website launches.
-
-Two consequences need settling before the release:
-
-- The roadmap gives M2's and M3's features the versions 0.2 and 0.3. Each feature's `since` value in the docs follows that label. Under this schedule M2's features ship in 0.1.0 and M3's in 0.2.0, so the labels no longer name the release that ships them. Either the labels and the `since` values are remapped, or the roadmap says that they are roadmap numbers and not release numbers.
-- This is also the first release that carries the built shader set as a release asset, so it must be watched by hand: the archive builds, uploads to the same Release, and a project fetches it and verifies its hash.
+- [Releases](../releases.md): making a release, the versions, the open point on version labels and the first version of a new package point at 0.1.0.
+- 0.1.0 is the first public release. So the README's roadmap leaves before 0.1.0, and the agent skills are announced at 0.1.0. The release script refuses a README with the roadmap only from 1.0.0 (`tools/lib/release.ts`), and must refuse it from 0.1.0 before that release.
+- The README's quickstart and roadmap name 0.1.0 as the first release, once the steps 0.1 to 0.3 are done. The roadmap's 0.3 row names the four add-ons.
+- [D-54](D-54-addon-modules.md) names `@null3d/particles` among the add-ons.

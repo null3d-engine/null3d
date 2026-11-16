@@ -1,8 +1,10 @@
 import { describe, expect, it, spyOn } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
+import type { HoldScript } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import { presetSettings } from '../quality/presets';
 import { callValueArguments } from '../scene/fake-call-values';
@@ -10,10 +12,13 @@ import type { Material, MeshGeometry } from '../scene/resources';
 import {
 	controlViews,
 	createControlBuffer,
+	EVENT_KEY_DOWN,
+	EVENT_KEY_UP,
 	frameAfter,
 	frameReached,
 	nextFrame,
 	Slot,
+	writeInputEvent,
 } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { onEngineStop } from '../shared/helper-workers';
@@ -25,6 +30,7 @@ import {
 	Role,
 	sampleFrames,
 } from '../shared/metrics';
+import { decodeRecording, type ReplayProgram } from '../shared/recording';
 import { jobAsker } from '../shared/task-host';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
@@ -51,6 +57,7 @@ const CAPABILITIES: EngineCapabilities = {
 	maxCanvasSize: 4096,
 	depth: 'reversed',
 	directDraws: false,
+	drawPath: 'webgl2',
 };
 
 /** Scene slots of the fake core, and records of its command ring. */
@@ -58,6 +65,9 @@ const CAPACITY = 15;
 const RING = 64;
 /** The fake core's first ring block, past room for every scene field. */
 const RING_BLOCK = 16;
+
+/** Where the fake core keeps the debug line arrays, past every scene and ring block. */
+const LINES_AT = 4096 * 32;
 
 /** The GPU bytes of every mesh, as the fake core reports them. */
 const MESH_BYTES = 4096;
@@ -69,6 +79,7 @@ const KEPT_ARGUMENTS = new Set([
 	'setShadowQuality',
 	'setLightDefault',
 	'setCanvasOutput',
+	'drawDebugLines',
 ]);
 
 /** How the log shows a change of one of the core's texture settings. */
@@ -80,7 +91,7 @@ const textureOption = (option: number, value: number) => `setTextureOption ${opt
  * keeps the arguments of some calls in `calls`. Its transform updates clear the dirty bits, as the
  * core's do. With `grows`, each frame step grows the memory, which detaches the views of a memory
  * that is not shared, as the single-threaded build's is. `cellsRefused` gives the core's count of
- * refused grid cells. Its other calls do nothing.
+ * refused grid cells. `answers` replaces the answers of some calls. Its other calls do nothing.
  */
 function fakeGlue(
 	log: string[],
@@ -89,22 +100,36 @@ function fakeGlue(
 	grows = false,
 	cellsRefused = () => 0,
 	handed: { handedMs: number; timing?: boolean[] } = { handedMs: 0 },
+	readsLastFrame = () => 0,
+	answers: GlueAnswers = {},
 ): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
 	let slots = 0;
+	let linePoints = 0;
 	const kept: Partial<Record<keyof CoreGlue, (field: number) => number>> = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: block,
 		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
+		// The debug line arrays: each point's three positions, then each point's color.
+		reserveDebugLines: (points) => {
+			linePoints = points;
+			const short = LINES_AT + points * 28 - memory.buffer.byteLength;
+			if (short > 0) memory.grow(Math.ceil(short / 65536));
+			return 0;
+		},
+		debugLineArrays: (field) =>
+			field === C.DEBUG_LINE_FIELD_POSITIONS ? LINES_AT : LINES_AT + linePoints * 24,
 		// The first block holds no field, so the call values take its start.
 		callValues: () => 0,
 		cellsRefused,
+		readsLastFrame,
 		meshMemoryBytes: () => MESH_BYTES,
 		takeHandedUs: () => (handed.timing?.at(-1) === false ? 0 : Math.round(handed.handedMs * 1000)),
 		// The fake takes numbers, so the flag arrives as one.
 		timeHandedLoops: (on) => handed.timing?.push(Boolean(on)) ?? 0,
+		...answers,
 	};
 	const clearDirty = () =>
 		new Uint32Array(
@@ -126,6 +151,9 @@ function fakeGlue(
 			}),
 	});
 }
+
+/** Calls of the test glue whose answers a test gives. */
+type GlueAnswers = Partial<Record<keyof CoreGlue, (field: number) => number>>;
 
 /**
  * How the thread that draws behaves in a test: the intervals it records, in ms. With `replayMs`,
@@ -198,8 +226,9 @@ const MEDIUM: QualityStart = {
  * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in. With
  * `grows`, each frame step grows the memory. `cellsRefused` gives the core's count of refused grid
  * cells. `control` gives the page's control block, which the test can write. `maxTargetFps` is the
- * highest target that the page allows. `device` replaces fields of the stand-in device. The log
- * also shows the settings that the page got.
+ * highest target that the page allows. `device` replaces fields of the stand-in device. `answers`
+ * replaces the answers of some of the core's calls. The log also shows the settings that the page
+ * got.
  */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
@@ -209,19 +238,31 @@ async function start(
 		drawing,
 		grows = false,
 		holdSeconds,
+		holdScript,
+		replay,
+		record = false,
+		keyCodes = [],
 		shared = false,
 		cellsRefused,
+		readsLastFrame,
 		control = controlViews(createControlBuffer(shared)),
 		maxTargetFps = 60,
 		jobs = { most: 0, handedMs: 0, asked: [] },
 		device,
+		answers,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
 		grows?: boolean;
 		holdSeconds?: number;
+		holdScript?: HoldScript;
+		replay?: ReplayProgram;
+		record?: boolean;
+		keyCodes?: readonly string[];
 		shared?: boolean;
 		cellsRefused?: () => number;
+		/** What the core answers to `readsLastFrame`: nonzero when a pass reads the frame before. */
+		readsLastFrame?: () => number;
 		control?: ReturnType<typeof controlViews>;
 		maxTargetFps?: number;
 		/**
@@ -230,6 +271,7 @@ async function start(
 		 */
 		jobs?: { most: number; handedMs: number; asked: number[]; timing?: boolean[] };
 		device?: Partial<CoreDevice>;
+		answers?: GlueAnswers;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -246,17 +288,19 @@ async function start(
 		() => {},
 		metrics,
 		{
-			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs),
+			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs, readsLastFrame, answers),
 			memory,
 			control,
-			keyCodes: [],
+			keyCodes,
 			jobWorkers: jobs.most,
 			device: {
 				webgl2: true,
+				softwareRenderer: false,
 				storageBindingBytes: 0,
 				capabilities: 0,
 				maxTextureSize: 4096,
 				sharedUploads: false,
+				multiDraw: false,
 				depth: 'reversed',
 				parallelCompile: true,
 				freshShaders: false,
@@ -271,6 +315,7 @@ async function start(
 				cellCulling: true,
 				joinEffects: true,
 				depthPrepass: false,
+				prepassColor: C.PREPASS_COLOR_LOAD,
 				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
 				shadowDepthBits: 16,
@@ -278,8 +323,9 @@ async function start(
 				expectedObjects: 0,
 				gpuOcclusion: false,
 				directDraws: false,
-				textureCache: true,
+				derivedCache: true,
 				occlusionBuffer: 0,
+				occlusionCheck: true,
 				...device,
 			},
 			capabilities: CAPABILITIES,
@@ -294,13 +340,18 @@ async function start(
 			sendPreload: () => {},
 			onAskBuilds: () => {},
 			pageUrl: 'http://localhost/',
+			sketchUrl: 'http://localhost/sketch.ts',
 			maxTargetFps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
+			twoStepProbe: false,
 			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
 			sendLabelSlot: () => {},
 		},
 		holdSeconds,
+		holdScript,
+		replay,
+		record,
 	);
 	let context: SketchContext | undefined;
 	try {
@@ -444,9 +495,13 @@ describe('SketchRunner', () => {
 
 	it("shows the canvas's size at the start of each frame, and the page's capabilities", async () => {
 		const { runner, control, context } = await start(() => ({}));
-		const { viewport, capabilities } = context.engine;
+		const { viewport, capabilities, held } = context.engine;
 		expect([viewport.width, viewport.height, viewport.pixelRatio]).toEqual([320, 180, 2]);
 		expect(capabilities).toEqual(CAPABILITIES);
+		// A live page runs the sketch itself; a held page steps it.
+		expect(held).toBe(false);
+		const holding = await start(() => ({}), undefined, { holdSeconds: 0 });
+		expect(holding.context.engine.held).toBe(true);
 		control.slotFloats[Slot.CanvasCssWidth] = 640.5;
 		control.slotFloats[Slot.PixelRatio] = 1.5;
 		runner.step(0);
@@ -505,7 +560,13 @@ describe('SketchRunner', () => {
 			let skip = false;
 			const { runner } = await start(({ scene, time }) => {
 				const { core } = scene;
-				const mesh = { id: 1, radius: 1, core } as unknown as MeshGeometry;
+				const mesh = {
+					id: 1,
+					radius: 1,
+					center: [0, 0, 0],
+					core,
+					drawnWith() {},
+				} as unknown as MeshGeometry;
 				const material = { id: 1, core } as unknown as Material;
 				const crate = scene.createMesh({ name: 'Crate', mesh, material });
 				const sign = scene.createMesh({ name: 'Sign', mesh, material });
@@ -558,6 +619,17 @@ describe('SketchRunner', () => {
 		expect(shadowCalls().at(-1)).toEqual(['setShadowQuality', 3, 1, false, 0.2]);
 	});
 
+	it("moves the canvas to the lower preset's anti-aliasing mode when the check lowers the preset", async () => {
+		const { runner, context, calls } = await start(() => ({}));
+		const moves = () => calls.filter((call) => call[0] === 'setCanvasOutput');
+		expect(moves()).toEqual([]);
+		// The check's step is the runner's own, not part of a sketch's quality API.
+		const quality = context.quality as unknown as { lower(): Promise<void> };
+		await quality.lower();
+		runner.step(1000 / 60);
+		expect(moves()).toEqual([['setCanvasOutput', FORMAT_RGBA16_FLOAT, C.ANTIALIAS_FXAA]]);
+	});
+
 	it('moves an 8-bit device to HDR color for the subsurface blur only once the page or the sketch gives it taps', async () => {
 		const eightBit = { sceneColor: FORMAT_CANVAS, antialias: C.ANTIALIAS_MSAA };
 		const high: QualityStart = { ...MEDIUM, preset: 'high', settings: presetSettings('high') };
@@ -589,12 +661,13 @@ describe('SketchRunner', () => {
 		expect(moves(page.calls)).toHaveLength(1);
 	});
 
-	it("gives new directional lights the preset's shadow cascades and map size before the setup", async () => {
+	it("gives new directional lights the preset's shadow cascades, map size and hero tile size", async () => {
 		const { calls } = await start(() => ({}));
 		const medium = presetSettings('medium');
 		expect(calls.filter((call) => call[0] === 'setLightDefault')).toEqual([
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_CASCADES, medium.shadowCascades],
 			['setLightDefault', C.LIGHT_VALUE_SHADOW_MAP_SIZE, medium.shadowMapSize],
+			['setLightDefault', C.LIGHT_VALUE_HERO_SIZE, medium.heroTileSize],
 		]);
 	});
 
@@ -1042,46 +1115,54 @@ describe('SketchRunner and quality presets', () => {
 		expect(check?.rounds).toEqual([{ preset: 'medium', presentedFps: 62.5, completedFps: 60.6 }]);
 	});
 
-	it('lowers the preset when the GPU finishes too few frames, down to Low', async () => {
-		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
-			quality: { ...MEDIUM, check: true },
-			drawing: { presentedMs: 16, completedMs: 40 },
-		});
-		stopDrawing();
-		expect(context.quality.preset).toBe('low');
-		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
-		const last = updates.at(-1);
-		expect(last?.preset).toBe('low');
-		expect(last?.check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
-			['medium', 25],
-			['low', 25],
-		]);
-	}, 10_000);
+	it(
+		'lowers the preset when the GPU finishes too few frames, down to Low',
+		async () => {
+			const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+				quality: { ...MEDIUM, check: true },
+				drawing: { presentedMs: 16, completedMs: 40 },
+			});
+			stopDrawing();
+			expect(context.quality.preset).toBe('low');
+			expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+			const last = updates.at(-1);
+			expect(last?.preset).toBe('low');
+			expect(last?.check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
+				['medium', 25],
+				['low', 25],
+			]);
+		},
+		scaledBudget(10_000),
+	);
 
-	it("keeps the settings that the sketch's setup chose when the check lowers the preset", async () => {
-		const { context, log, stopDrawing } = await start(
-			(ctx, log) => {
-				ctx.textures.setUploadBudget(2048);
-				ctx.quality.set({ maxAnisotropy: 16 });
-				log.length = 0;
-				return {};
-			},
-			undefined,
-			{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
-		);
-		stopDrawing();
-		expect(context.quality.preset).toBe('low');
-		// Low's pixel ratio cap and texture memory budget apply, and the sketch's own anisotropy cap
-		// and upload budget stay.
-		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
-		expect(context.quality.settings.maxAnisotropy).toBe(16);
-		expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([
-			textureOption(
-				C.TEXTURE_OPTION_MEMORY_BUDGET_KIB,
-				presetSettings('low').textureMemoryMiB * 1024,
-			),
-		]);
-	}, 10_000);
+	it(
+		"keeps the settings that the sketch's setup chose when the check lowers the preset",
+		async () => {
+			const { context, log, stopDrawing } = await start(
+				(ctx, log) => {
+					ctx.textures.setUploadBudget(2048);
+					ctx.quality.set({ maxAnisotropy: 16 });
+					log.length = 0;
+					return {};
+				},
+				undefined,
+				{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
+			);
+			stopDrawing();
+			expect(context.quality.preset).toBe('low');
+			// Low's pixel ratio cap and texture memory budget apply, and the sketch's own anisotropy cap
+			// and upload budget stay.
+			expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+			expect(context.quality.settings.maxAnisotropy).toBe(16);
+			expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([
+				textureOption(
+					C.TEXTURE_OPTION_MEMORY_BUDGET_KIB,
+					presetSettings('low').textureMemoryMiB * 1024,
+				),
+			]);
+		},
+		scaledBudget(10_000),
+	);
 
 	it('asks for no more than the highest target that the page and ?fps= allow', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
@@ -1092,5 +1173,303 @@ describe('SketchRunner and quality presets', () => {
 		stopDrawing();
 		expect(context.quality.preset).toBe('medium');
 		expect(updates.at(-1)?.check?.targetFps).toBe(30);
+	});
+});
+
+describe('the held frames that draw', () => {
+	/** Each update's time and whether its frame draws, then the flag after the hold. */
+	const drawnFrames = async (answers?: GlueAnswers) => {
+		const lines: string[] = [];
+		let time: SketchContext['time'] | undefined;
+		await start(
+			(context) => {
+				time = context.time;
+				return {
+					onUpdate: () => lines.push(`${context.time.now.toFixed(3)} ${context.time.drawn}`),
+				};
+			},
+			undefined,
+			{ holdSeconds: 0.05, answers },
+		);
+		return { lines, after: time?.drawn };
+	};
+
+	it('marks only the frame at the held time as drawn', async () => {
+		const { lines, after } = await drawnFrames();
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 false', '0.050 true']);
+		expect(after).toBe(true);
+	});
+
+	it('marks the frame before it drawn when the held frame reads the motion since it', async () => {
+		const { lines } = await drawnFrames({ holdsFrameBefore: () => 1 });
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 true', '0.050 true']);
+	});
+
+	it('runs no update in the settle frame after the held one, so the held update is the one drawn', async () => {
+		// The thread that draws draws a settle frame when a pass reads the frame before, but the
+		// sketch's code stays out of it, so the air and every other drawn-frame cost run once.
+		const { lines, after } = await drawnFrames({ readsLastFrame: () => 1 });
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 false', '0.050 true']);
+		expect(after).toBe(true);
+	});
+});
+
+describe('hold mode with a timed script', () => {
+	/** A hold of `seconds` that performs `steps`, with a group named Car in the scene. */
+	const holdOf = (
+		steps: HoldScript['steps'],
+		seconds = 0.5,
+		keyCodes: readonly string[] = [],
+		log: (context: SketchContext, seconds: number) => object = () => ({}),
+	) =>
+		start(
+			(context) => {
+				context.scene.createGroup({ name: 'Car' });
+				return log(context, seconds);
+			},
+			undefined,
+			{ holdSeconds: seconds, holdScript: { steps }, keyCodes },
+		);
+
+	it('reports the held frame when a pass makes it draw one more', async () => {
+		// A pass that reads the frame before makes the hold record a settle frame after the held
+		// one. The page reports the frame that the session's steps reached, not that settle frame,
+		// and the settle frame runs none of the sketch's code.
+		let updates = 0;
+		const { control } = await start(() => ({ onUpdate: () => updates++ }), undefined, {
+			holdSeconds: 0.5,
+			readsLastFrame: () => 1,
+		});
+		expect(updates).toBe(31);
+		expect(Atomics.load(control.slots, Slot.HeldFrame)).toBe(31);
+		expect(Atomics.load(control.slots, Slot.FramesPublished)).toBe(32);
+	});
+
+	it('draws the held frame debug lines in the settle frame too', async () => {
+		// The update draws its debug lines again in each frame, and the settle frame runs no update,
+		// so it draws the held frame's lines: the settle frame is the one that the page captures.
+		const { calls } = await start(
+			(context) => ({
+				onUpdate: () => {
+					context.debug.line([0, 0, 0], [1, 0, 0]);
+					context.debug.box([0, 0, 0], [1, 1, 1]);
+				},
+			}),
+			undefined,
+			{ holdSeconds: 0.5, readsLastFrame: () => 1 },
+		);
+		const handed = calls.filter(([name]) => name === 'drawDebugLines').map(([, points]) => points);
+		expect(handed.length).toBe(32);
+		expect(handed.slice(-2)).toEqual([26, 26]);
+	});
+
+	it('writes a property before the frame at its time, and dumps it after', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'set', target: 'Car', path: 'position', value: [1, 2, 3] },
+			{ at: 0.25, verb: 'set', target: 'Car', path: 'visible', value: [0] },
+			{ at: 0.25, verb: 'dump', target: 'Car', path: 'position' },
+			{ at: 0.5, verb: 'dump', target: 'Car' },
+		]);
+		const result = runner.holdScriptResult;
+		expect(result?.problems).toEqual([]);
+		expect(result?.dumps[0]).toEqual({
+			at: 0.25,
+			target: 'Car',
+			path: 'position',
+			value: [1, 2, 3],
+		});
+		expect(result?.dumps[1]).toMatchObject({
+			at: 0.5,
+			target: 'Car',
+			value: { name: 'Car', kind: 'object', position: [1, 2, 3], visible: false },
+		});
+	});
+
+	it('gives a key pressed at its time to the frames that follow, and releases it', async () => {
+		/** The key's state at each frame from a third of a second to a half. */
+		const states: boolean[] = [];
+		const { runner } = await holdOf(
+			[
+				{ at: 0, verb: 'key', code: 'KeyW', down: true },
+				{ at: 0.4, verb: 'key', code: 'KeyW', down: false },
+			],
+			0.5,
+			['KeyW'],
+			({ input, time }) => ({
+				onUpdate: () => {
+					if (time.now > 0.3 && time.now < 0.5) states.push(input.isDown('KeyW'));
+				},
+			}),
+		);
+		expect(runner.holdScriptResult?.problems).toEqual([]);
+		expect(states.length).toBeGreaterThan(3);
+		expect(states.slice(0, -2)).toContain(true);
+		expect(states.slice(-1)).toEqual([false]);
+	});
+
+	it('moves and presses the pointer, which the frames read as the mouse', async () => {
+		/** The pointer's position and main button in the frame at a half second. */
+		let seen: [number, number, number] = [0, 0, 0];
+		const { runner } = await holdOf(
+			[
+				{ at: 0, verb: 'pointer', action: 'move', x: 100, y: 50 },
+				// A press without a place keeps the pointer where it is.
+				{ at: 0.2, verb: 'pointer', action: 'down' },
+			],
+			0.5,
+			[],
+			({ input, time }) => ({
+				onUpdate: () => {
+					if (time.now === 0.5) seen = [input.pointer.x, input.pointer.y, input.pointer.buttons];
+				},
+			}),
+		);
+		expect(runner.holdScriptResult?.problems).toEqual([]);
+		expect(seen).toEqual([100, 50, 1]);
+	});
+
+	it('says why a target is not in the scene, and names those that are close', async () => {
+		const { runner } = await holdOf([
+			{ at: 0.1, verb: 'set', target: 'Cr', path: 'position', value: [0, 0, 0] },
+		]);
+		expect(runner.holdScriptResult?.problems).toEqual([
+			{
+				at: 0.1,
+				step: 'set "Cr".position',
+				error: 'the scene has no object named "Cr". Names that are close: "Car".',
+			},
+		]);
+	});
+
+	it('says why a property is not one that the object takes', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'set', target: 'Car', path: 'speed', value: [1] },
+		]);
+		const problem = runner.holdScriptResult?.problems[0];
+		expect(problem?.step).toBe('set "Car".speed');
+		expect(problem?.error).toContain('set() got "speed" on "Car"');
+		expect(problem?.error).toContain('position');
+	});
+
+	it('says why a key is not one that the engine reads, and goes on', async () => {
+		const { runner } = await holdOf([
+			{ at: 0, verb: 'key', code: 'KeyZ', down: true },
+			{ at: 0.5, verb: 'dump', target: 'Car', path: 'position' },
+		]);
+		expect(runner.holdScriptResult?.problems).toEqual([
+			{
+				at: 0,
+				step: 'key KeyZ down',
+				error:
+					'the engine reads no key named "KeyZ". Name a key by its code on a standard keyboard, such as KeyA, Space or ArrowLeft.',
+			},
+		]);
+		expect(runner.holdScriptResult?.dumps).toHaveLength(1);
+	});
+});
+
+describe('recording a session and replaying it', () => {
+	/** The key that the session presses, as the harness numbers it. */
+	const KEYS = ['KeyW'];
+
+	/** What a frame showed the sketch: its time, its step and whether the key was down. */
+	const seenLine = (now: number, dt: number, down: boolean) =>
+		`${now.toFixed(6)} ${dt.toFixed(6)} ${down ? 1 : 0}`;
+
+	/** A sketch that logs what each frame gave it: its time, its step and the key that drove it. */
+	const logging = (lines: string[]) => (context: SketchContext) => {
+		const { input, time } = context;
+		return {
+			onUpdate(dt: number) {
+				lines.push(seenLine(time.now, dt, input.isDown('KeyW')));
+			},
+		};
+	};
+
+	it('records each frame’s step and the input it read, and replays them to the same states', async () => {
+		/** What the live session's frames gave the sketch. */
+		const live: string[] = [];
+		const session = await start(logging(live), undefined, { keyCodes: KEYS, record: true });
+		session.runner.step(0);
+		// A key press lands before the second frame, then a long frame, then a release.
+		writeInputEvent(session.control, EVENT_KEY_DOWN, 0, 0, 0, 0, 0, 0, 0);
+		session.runner.step(1000 / 60);
+		session.runner.step(1000 / 60 + 200);
+		writeInputEvent(session.control, EVENT_KEY_UP, 0, 0, 0, 0, 0, 0, 0);
+		session.runner.step(1000 / 60 + 216);
+		session.runner.step(1000 / 60 + 232);
+
+		const bytes = await session.runner.saveRecording();
+		expect(bytes).toBeDefined();
+		const program = decodeRecording(bytes as Uint8Array);
+		expect(program.fixedRate).toBe(60);
+		expect(program.steps.length).toBe(5);
+
+		/** What the replay's frames gave the sketch. */
+		const replayed: string[] = [];
+		const replay = await start(logging(replayed), undefined, { keyCodes: KEYS, replay: program });
+		expect(replayed).toEqual(live);
+		expect(replay.runner.replayOutcome).toEqual({
+			frames: 5,
+			seconds: program.steps.reduce((sum, step) => sum + step, 0),
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+		});
+		// A pass that reads the frame before makes the replay record a settle frame after its last
+		// one. The session's frames stay five, and the settle frame runs none of the sketch's code.
+		const settling: string[] = [];
+		const settled = await start(logging(settling), undefined, {
+			keyCodes: KEYS,
+			replay: program,
+			readsLastFrame: () => 1,
+		});
+		expect(settling).toEqual(live);
+		expect(settled.runner.replayOutcome?.frames).toBe(5);
+		expect(Atomics.load(settled.control.slots, Slot.HeldFrame)).toBe(5);
+		expect(Atomics.load(settled.control.slots, Slot.FramesPublished)).toBe(6);
+	});
+
+	it('runs no recording when the page does not record, and no replay when it gives none', async () => {
+		const lines: string[] = [];
+		const session = await start(logging(lines), undefined, { keyCodes: KEYS });
+		session.runner.step(0);
+		expect(await session.runner.saveRecording()).toBeUndefined();
+		expect(session.runner.replayOutcome).toBeUndefined();
+	});
+
+	it('refuses a recording of a sketch with another fixed rate, naming both rates', async () => {
+		const program = {
+			seed: 1,
+			fixedRate: 30,
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+			steps: new Float64Array([0]),
+			starts: new Uint32Array([0]),
+			counts: new Uint32Array([0]),
+			events: new Float64Array(0),
+			keyNames: [],
+			stride: 7,
+		} satisfies ReplayProgram;
+		await expect(
+			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
+		).rejects.toThrow('the recording runs 30 fixed steps a second, and this sketch runs 60');
+	});
+
+	it('refuses a recording that names a key that this engine does not have', async () => {
+		const program = {
+			seed: 1,
+			fixedRate: 60,
+			sketch: 'http://localhost/sketch.ts',
+			stopped: false,
+			steps: new Float64Array([0]),
+			starts: new Uint32Array([0]),
+			counts: new Uint32Array([1]),
+			events: new Float64Array([EVENT_KEY_DOWN, 0, 0, 0, 0, 0, 0]),
+			keyNames: ['KeyZ'],
+			stride: 7,
+		} satisfies ReplayProgram;
+		await expect(
+			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
+		).rejects.toThrow('the recording used the key "KeyZ"');
 	});
 });

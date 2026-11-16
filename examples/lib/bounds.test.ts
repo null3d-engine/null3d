@@ -1,10 +1,10 @@
 // The Manual camera's bounds keep it inside a showcase scene: never past the mountains, never under
-// the ground ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner, 20 October 2026). The
-// ground stops the camera along its orbit, so pushing against it never draws the camera in, and a
-// pan stops at the edge of the area the camera turns around.
+// the ground ([D-170](../../.dev/decisions/D-170-showcase-camera.md), owner's ruling). The ground
+// stops the camera along its orbit, so pushing against it never draws the camera in, and a pan
+// stops at the edge of the area the camera turns around.
 import { describe, expect, it } from 'bun:test';
 import { StandInCamera } from '../../tests/pages/lib/stand-in-cameras';
-import { BOUNDS, SHOTS } from '../showcase/night-town/sketch';
+import { BOUNDS, SHOTS } from '../showcase/island/sketch';
 import {
 	type CameraBounds,
 	type Cinematic,
@@ -13,7 +13,7 @@ import {
 	keepInside,
 } from './cinematic';
 
-/** Flat ground at y = 0, inside the night town's bounds. */
+/** Flat ground at y = 0, inside the island's bounds. */
 const FLAT: CameraBounds = { ...BOUNDS, ground: () => 0 };
 
 /** A context whose pointer a test drives, with a still scene and a clock the test moves. */
@@ -42,7 +42,7 @@ function stub() {
 	return { time, pointer, context: context as never };
 }
 
-/** A bounded camera, handed to the user at the night town's opening pose. */
+/** A bounded camera, handed to the user at the island's opening pose. */
 function manual() {
 	const { time, pointer, context } = stub();
 	const camera = new StandInCamera();
@@ -75,8 +75,9 @@ describe('keepInside', () => {
 
 	it('brings the point the camera turns around back to its disc, and the camera with it', () => {
 		const [cx, cz] = FLAT.center;
-		const target = [cx + 40, 2, cz];
-		const position = [cx + 40, 10, cz + 30];
+		const past = FLAT.focus + 15;
+		const target = [cx + past, 2, cz];
+		const position = [cx + past, 10, cz + 30];
 		expect(keepInside(FLAT, target, position)).toBe(true);
 		expect(Math.hypot((target[0] as number) - cx, (target[2] as number) - cz)).toBeCloseTo(
 			FLAT.focus,

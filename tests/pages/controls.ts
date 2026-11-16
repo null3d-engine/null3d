@@ -32,7 +32,15 @@ run('controls', async () => {
 	// Vite rewrites an address it can read whole, so the query goes on afterwards.
 	const sketch = new URL('./sketches/controls-sketch.ts', import.meta.url);
 	if (map) sketch.searchParams.set('map', '');
-	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
+	// The reference is drawn at the preset that the engine starts with, whose edges are
+	// multisampled, so a slow device's preset check must not draw the cheaper edges of a lower
+	// preset: this picture then differs from the reference only by the pose that the drags reach.
+	const engine = await createEngine({
+		canvas,
+		sketch,
+		maxPixelRatio: 1,
+		antialias: 'msaa',
+	});
 	await engine.firstFrame;
 
 	const { width, height } = CONTROLS_CANVAS;

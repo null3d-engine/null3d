@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>null3d probe: the cost of restoring a shadow layer</title>
+	</head>
+	<body>
+		<pre id="out">running</pre>
+		<script type="module">
+			// What restoring a cached shadow layer costs on this device: a copy of a 2,048-texel depth
+			// layer, whole and in rectangles, and the two passes that a whole-layer rewrite also takes.
+			// It shows each median in ms and publishes them on window.__null3dResult. It needs no engine.
+			const SIDE = 2048;
+			const SAMPLES = 32;
+			const RECTS = [
+				{ name: 'whole layer', side: SIDE },
+				{ name: 'half across', side: SIDE / 2 },
+				{ name: 'quarter across', side: SIDE / 4 },
+				{ name: 'eighth across', side: SIDE / 8 },
+			];
+			const out = document.querySelector('#out');
+			const say = (text) => {
+				out.textContent = text;
+			};
+
+			function median(values) {
+				const sorted = [...values].sort((a, b) => a - b);
+				const middle = sorted.length >> 1;
+				return sorted.length % 2 === 0
+					? (sorted[middle - 1] + sorted[middle]) / 2
+					: sorted[middle];
+			}
+			function percentile(values, share) {
+				const sorted = [...values].sort((a, b) => a - b);
+				return sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))];
+			}
+
+			async function main() {
+				const adapter = await navigator.gpu?.requestAdapter();
+				if (!adapter) throw new Error('the page has no WebGPU adapter');
+				if (!adapter.features.has('timestamp-query'))
+					throw new Error('the adapter has no timestamp-query');
+				const device = await adapter.requestDevice({ requiredFeatures: ['timestamp-query'] });
+				// A timestamp belongs to a pass's beginning or end. A mark pass of one invocation
+				// that does nothing writes it, and Metal does not skip a pass that holds a dispatch.
+				const markPipeline = device.createComputePipeline({
+					layout: 'auto',
+					compute: {
+						module: device.createShaderModule({
+							code: '@compute @workgroup_size(1) fn main() {}',
+						}),
+						entryPoint: 'main',
+					},
+				});
+				// The engine's cascade layer is 2 bytes a texel; depth32float is the fallback when the
+				// device cannot copy depth16unorm.
+				let format = 'depth16unorm';
+				let source;
+				let destination;
+				const make = (textureFormat) => [
+					device.createTexture({
+						size: [SIDE, SIDE],
+						format: textureFormat,
+						usage:
+							GPUTextureUsage.COPY_SRC |
+							GPUTextureUsage.COPY_DST |
+							GPUTextureUsage.RENDER_ATTACHMENT |
+							GPUTextureUsage.TEXTURE_BINDING,
+					}),
+					device.createTexture({
+						size: [SIDE, SIDE],
+						format: textureFormat,
+						usage:
+							GPUTextureUsage.COPY_SRC |
+							GPUTextureUsage.COPY_DST |
+							GPUTextureUsage.RENDER_ATTACHMENT |
+							GPUTextureUsage.TEXTURE_BINDING,
+					}),
+				];
+				try {
+					[source, destination] = make(format);
+					await new Promise((resolve) => setTimeout(resolve, 50));
+					device.pushErrorScope('validation');
+					const probe = device.createCommandEncoder();
+					probe.copyTextureToTexture(
+						{ texture: source },
+						{ texture: destination },
+						[SIDE, SIDE, 1],
+					);
+					device.queue.submit([probe.finish()]);
+					const error = await device.popErrorScope();
+					if (error) throw error;
+				} catch {
+					format = 'depth32float';
+					[source, destination] = make(format);
+				}
+
+				/** Times `draw` `SAMPLES` times in one command buffer, and gives each run's ms. */
+				async function time(name, run) {
+					const queries = device.createQuerySet({ type: 'timestamp', count: SAMPLES * 2 });
+					const resolved = device.createBuffer({
+						size: SAMPLES * 16,
+						usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+					});
+					const readback = device.createBuffer({
+						size: SAMPLES * 16,
+						usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+					});
+					const encoder = device.createCommandEncoder();
+					// Each run sits between two mark passes, whose timestamps bracket it. The run
+					// and the end mark's dispatch are both inside the interval.
+					const mark = (index) => {
+						const pass = encoder.beginComputePass({
+							timestampWrites: { querySet: queries, beginningOfPassWriteIndex: index },
+						});
+						pass.setPipeline(markPipeline);
+						pass.dispatchWorkgroups(1);
+						pass.end();
+					};
+					for (let index = 0; index < SAMPLES; index++) {
+						mark(index * 2);
+						run(encoder);
+						mark(index * 2 + 1);
+					}
+					encoder.resolveQuerySet(queries, 0, SAMPLES * 2, resolved, 0);
+					encoder.copyBufferToBuffer(resolved, 0, readback, 0, SAMPLES * 16);
+					device.queue.submit([encoder.finish()]);
+					await readback.mapAsync(GPUMapMode.READ);
+					const stamps = new BigUint64Array(readback.getMappedRange());
+					const times = [];
+					for (let index = 0; index < SAMPLES; index++) {
+						times.push(Number(stamps[index * 2 + 1] - stamps[index * 2]) / 1e6);
+					}
+					readback.unmap();
+					queries.destroy();
+					resolved.destroy();
+					readback.destroy();
+					say(`${name}: ${median(times).toFixed(4)} ms`);
+					return times;
+				}
+
+				const figures = { copies: {}, passes: {} };
+				for (const rect of RECTS) {
+					const times = await time(`copy, ${rect.name}`, (encoder) =>
+						encoder.copyTextureToTexture({ texture: source }, { texture: destination }, {
+							width: rect.side,
+							height: rect.side,
+							depthOrArrayLayers: 1,
+						}),
+					);
+					figures.copies[rect.name] = {
+						median: median(times),
+						p5: percentile(times, 0.05),
+						p95: percentile(times, 0.95),
+					};
+				}
+				for (const [name, loadOp] of [
+					['clear and store', 'clear'],
+					['load and store', 'load'],
+				]) {
+					const times = await time(`pass, ${name}`, (encoder) => {
+						const pass = encoder.beginRenderPass({
+							colorAttachments: [],
+							depthStencilAttachment: {
+								view: destination.createView({ aspect: 'depth-only' }),
+								depthClearValue: 1,
+								depthLoadOp: loadOp,
+								depthStoreOp: 'store',
+							},
+						});
+						pass.end();
+					});
+					figures.passes[name] = {
+						median: median(times),
+						p5: percentile(times, 0.05),
+						p95: percentile(times, 0.95),
+					};
+				}
+				figures.adapter = adapter.info?.description ?? null;
+				figures.format = format;
+				figures.bytes = SIDE * SIDE * (format === 'depth16unorm' ? 2 : 4);
+				window.__null3dResult = { ok: true, ...figures };
+				const row = (label, figure) =>
+					`${label}: ${figure.median.toFixed(4)} ms (${figure.p5.toFixed(4)} to ${figure.p95.toFixed(4)})`;
+				const rows = [
+					...Object.entries(figures.copies).map(([name, figure]) => row(`copy, ${name}`, figure)),
+					...Object.entries(figures.passes).map(([name, figure]) => row(`pass, ${name}`, figure)),
+				];
+				say(`${figures.adapter ?? 'the device'} reports ${format}, ${figures.bytes} bytes a layer\n${rows.join('\n')}`);
+			}
+
+			main().catch((error) => {
+				window.__null3dResult = { ok: false, error: String(error?.message ?? error) };
+				say(`failed: ${error?.message ?? error}`);
+			});
+		</script>
+	</body>
+</html>

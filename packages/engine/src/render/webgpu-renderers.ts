@@ -2,14 +2,16 @@
 // a page that draws with WebGL2 never downloads the WebGPU backend.
 
 import { SKINNING_FULL, SKINNING_SKIP_ONLY, SKINNING_VERTEX } from '../generated/core';
+import { PASS_ROLE_BACKGROUND } from '../generated/gpu';
 import { clearWebGPUCanvas } from '../gpu/canvas-release';
 import { QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
 import { captureWebGPU } from '../gpu/readback';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { FirstPass } from '../gpu/webgpu/first-pass';
-import { GpuTimer } from '../gpu/webgpu/gpu-timer';
+import { GpuTimer, setSampleEvery } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
+import { DEV } from '../shared/dev';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
@@ -34,6 +36,7 @@ export function webgpuRenderer(
 	shaders: DeviceShaderSet | undefined,
 ): Renderer {
 	const { scene, metrics } = options;
+	if (options.gpuSamples === 'every') setSampleEvery(1);
 	if (!scene || !shaders)
 		return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
 	return new WebGPUSceneRenderer(
@@ -96,7 +99,7 @@ class WebGPURenderer implements Renderer {
 		color[1] = linearToSrgb(background[1]);
 		color[2] = linearToSrgb(background[2]);
 		pass.setColor(view, undefined, true, true, color, 0);
-		pass.setTimestampWrites(this.timer?.passWrites(true));
+		pass.setTimestampWrites(this.timer?.passWrites(true, PASS_ROLE_BACKGROUND));
 		encoder.beginRenderPass(pass.descriptor).end();
 		this.timer?.endFrame();
 		submitOne(this.device.queue, encoder.finish());
@@ -235,8 +238,11 @@ class WebGPUSceneRenderer implements Renderer {
 		const { backend } = this;
 		backend.timer?.beginFrame(input.frame);
 		const figures = record.figures;
-		if (figures && !this.culledLoading) this.loadCulledCounts();
-		backend.culled?.beginFrame(figures);
+		// A development build reads the culling shader's dropped copies on a page that draws a draw
+		// the GPU culls, so a copy it drops warns with no stats card. A page that draws none has no
+		// count to read, and fetches no part for one.
+		if ((figures || DEV) && backend.culledDrawn && !this.culledLoading) this.loadCulledCounts();
+		backend.culled?.beginFrame(figures || DEV);
 		this.firstPass.draw();
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);

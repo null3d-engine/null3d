@@ -1,0 +1,3 @@
+Plans: the effects picture tests, 2026-10-25 on branch fix/effects-firefox-join, in the Mac's installed Chrome on its GPU, which the `chrome-real-gpu` references name. Every test whose name holds `effects` ran on each GPU tier: WebGPU, compatibility mode and WebGL2, in the pipelined mode and the page's own modes.
+
+Result: 41 passed, 0 failed, 0 skipped. Before the fix, `effects on webgl2` failed with E1408: "an effect has no piece for the host's build webgl2", while `demo-post-effects on webgl2` passed because it joins no host. After the fix, every joined group and fold builds and draws. Every picture matches its reference, so the joined image equals the separate passes' image on all three tiers.

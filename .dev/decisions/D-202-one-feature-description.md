@@ -1,0 +1,463 @@
+# D-202: One feature description for add-on hooks
+
+Status: decided. The owner put the add-on hooks into M3 and asked for one public feature description before H3 ([D-199](D-199-m4-features-and-study-tasks-in-m3.md)). Built: the shape, `defineFeature`, `FeatureRegistry` and the checks, the draw adapter (M3-E1), the full-screen adapter (M3-R1) and the preset and stats link (M3-E6), whose GPU time per add-on row is still pending. The scene inputs (M3-E4) are built too, with their first user, water's soft shores. The helper of M3-E4 decided that first user's design, for the owner's review. Task: M3-R1.
+
+Summary: Every add-on render hook declares one `FeatureDescription`, which `defineFeature` checks and a `FeatureRegistry` holds, and E1223 reports each mistake. A description gives a frame point, kind, order band, view mask, reads and writes, outputs with neutral defaults, lighting slots and lifecycle callbacks. H3, H7 and the preset and stats link build on it, and H4, H5, H6 and H9 need payloads of their own.
+
+## Question
+
+The D-173 hooks H1 to H9 were designed one at a time, each with its first user. Before H3 builds a new kind of draw, the engine needs one public shape for all of them. What does a feature declare, how does the engine check it, and which hooks does one shape fail to hold?
+
+## Rule
+
+- The shape is public, experimental and loads on first use. The engine's built-in renderer features stay internal and do not use it (AGENTS.md, parity rule 14; [D-199](D-199-m4-features-and-study-tasks-in-m3.md)).
+- A feature declares enough for the render graph to place it. It gives the point where it records, its reads and writes, its order inside the point, and its view mask.
+- One provider per lighting slot. Two answers for one kind of light would be a silent bug.
+- A missing, switched-off or not-ready feature breaks nothing downstream. Each output carries a neutral default.
+- Only the public entry point `@null3d/engine` exposes the shape. The check `tools/check-addon-imports.ts` holds that rule ([D-173](D-173-addon-hooks.md), ruling 2).
+- The shape must express the engine's own features, even though they do not move onto it. If a real built-in does not fit, the shape is incomplete.
+
+## Data
+
+### The study's descriptor
+
+The engine study read the competitor's `RendererFeatureDesc` in its chapter 04. Its fields are a name, a user pointer, and one record function for each of 12 phases. It holds a `has_draws` predicate per phase, and read and write bits of scene resources. It also holds prepare, resize, reset, destroy, quality and ready functions, and a static-shadow flag. It declares 16 published outputs, a lighting-slot mask, an order and a view mask. The study found 35 registrations, and the engine's own lights, shadows, sky, TAA, bloom and DOF use the same descriptor as game code.
+
+Two parts of that design do not carry over:
+
+- The 12 phases have fixed values and a fixed pass order. null3D's render graph orders passes from their declared reads and writes, which the study called better.
+- Its record functions run on the recording thread with the pass open. null3D's render worker never runs sketch code, so a feature must be data at that point.
+
+### null3D's other extension points
+
+- `render.addPass` declares scene, reflection and full-screen passes, with `writes`, `reads`, `size` or `scale`, `layers`, `every`, `clearColor` and the pass's own WGSL ([D-104](D-104-scene-passes.md)).
+- `post.addEffect` declares full-screen effect WGSL with textures, uniforms and an `order`.
+- Custom materials declare surface functions, full shaders, textures, uniforms and per-row values.
+- `quality` gives the preset and the settings, and a budget that the governor scales.
+- The render graph compiles reads and writes, culls passes that nothing shows, and reports E1502 to E1505.
+
+These are declarations for passes and effects. Only the feature description ties a feature's frame point, resources, outputs, slots, order, views and lifecycle together.
+
+### The real built-in that the test writes
+
+The test `packages/engine/src/scene/features.test.ts` writes depth of field against the shape. The description matches the built-in's real behavior:
+
+- It records at `'resolve'`, as a `'fullscreen'` feature, on the HDR color before the tone curve.
+- It reads `'sceneColor'` and `'sceneDepth'`, and writes `'sceneColor'`.
+- Its `quality` callback takes `settings.dofSamples`, which the preset table gives as 0, 22, 43 and 71.
+- Its `ready` callback is false on Low, where the real setting is 0, and true on the other presets.
+- Its `resize`, `reset` and `destroy` callbacks run, and the registry refuses a second owner of its name.
+
+The test file's 12 tests pass. It changes no built-in and does not ship.
+
+## Decision
+
+### The public type
+
+`FeatureDescription` holds one add-on feature:
+
+| Field | Meaning | Default |
+| --- | --- | --- |
+| `name` | From 1 to 64 characters, without a line break. It names the feature in errors, the graph dump and the stats GPU scope. | Required |
+| `frame` | The point in the frame where the feature records. Without it, the feature publishes data and records no frame work. | None |
+| `kind` | `'draw'`, `'compute'` or `'fullscreen'`. It is required with a frame, and the frame point decides which kinds it takes. | Required with a frame |
+| `band` | `'before'`, `'normal'` or `'after'`, against the engine's own work at the point. | `'normal'` |
+| `order` | A whole number inside the band's range. A lower number runs first. | The band's first place |
+| `reads` | Scene resources: `'sceneColor'`, `'sceneDepth'`, `'normals'`, `'motionVectors'`, `'history'` or `'shadowAtlas'`. | None |
+| `writes` | The scene resources that the feature writes. A compute feature writes none. | None |
+| `outputs` | Textures published by name, each with a neutral default: `'black'`, `'white'` or `'transparent'`. | None |
+| `provides` | Lighting slots: `'shadow'`, `'ambient'`, `'sky'`, `'ao'`, `'reflection'` or `'fog'`. | None |
+| `debugViews` | The debug views that the feature adds, each a name of its own and a `set(active)` callback that hears when `debug.view` or `?view=` starts and stops it. The name must not be one of the engine's own views or another feature's. | None |
+| `views` | The view mask: `'main'`, `'scenePass'` or `'reflection'`. | `['main']` |
+| `ready` | Returns whether the feature draws. False means no cost at all. | Ready |
+| `quality` | Gets the preset and the settings, and maps them onto the feature's own settings. | None |
+| `resize` | Gets the render size in device pixels. | None |
+| `reset` | Gets `'resize'`, `'camera'` or `'exposure'`, and drops the history that the reason makes stale. | None |
+| `destroy` | Frees the feature's own objects. | None |
+
+### The frame points and kinds
+
+| Frame point | What runs there | Kinds |
+| --- | --- | --- |
+| `'shadow'` | The shadow passes, from a light's view. | `'draw'` |
+| `'background'` | The background, before the opaque objects. | `'draw'`, `'compute'`, `'fullscreen'` |
+| `'opaque'` | The pass that shades the opaque objects. | `'draw'`, `'compute'`, `'fullscreen'` |
+| `'transparent'` | The pass that draws the blended objects. | `'draw'`, `'compute'`, `'fullscreen'` |
+| `'resolve'` | The scene color as the camera's passes leave it, before the tone curve. | `'compute'`, `'fullscreen'` |
+| `'post'` | The display image, after the tone curve. | `'compute'`, `'fullscreen'` |
+
+The frame point is a position in null3D's frame, not a copy of the study's 12 phases. The kinds follow the pass state at each point. A shadow map holds no full-screen result, and a post point has no camera to draw the scene from.
+
+### The view mask
+
+The study's view mask chooses between the main view, a thumbnail view and a stage view. null3D has the camera's view, scene pass views, reflection pass views and reflection probe captures. The shape names the first three. A feature that must also record in a probe capture needs a fourth view name when its first hook asks for one. No planned hook does.
+
+### The order bands
+
+| Band | Range | Meaning |
+| --- | --- | --- |
+| `'before'` | -1,048,576 to -1 | Before the engine's own work at the point. |
+| `'normal'` | 0 to 1,048,575 | With the engine's own work. |
+| `'after'` | 1,048,576 to 2,097,151 | After the engine's own work at the point. |
+
+A million numbers separate the bands, as the study's `BUILTIN` and `BUILTIN_POST` constants did. A band is easier to reason about than a bare number, and validation refuses an order outside its band.
+
+### The lifecycle
+
+- `ready` is checked before the frame records the feature. A false answer removes its pass, its targets and its download, so a feature that a sketch does not use costs nothing.
+- `quality` runs when the preset or its settings change. It is the engine's existing quality event, narrowed to one feature.
+- `resize` runs after the engine takes a new render size.
+- `reset` runs when the render size changes, when the camera cuts to another place, or when the exposure moves enough to make stored values stale.
+- `destroy` runs once. The registry does not call it, because the owner stops the feature before it removes it, as `render.removePass` does with its textures.
+
+### The checks
+
+`defineFeature` validates one description and returns it frozen, with every default filled. `FeatureRegistry.add` validates the rules across features. E1223 reports each mistake:
+
+- an unknown option, so a typo is not ignored;
+- a frame point, kind, resource, slot or view that does not exist;
+- a kind that the frame point does not take;
+- a resource or a view without a frame point;
+- a compute feature that writes a scene resource;
+- an order outside its band;
+- a name that is empty, longer than 64 characters or has a line break;
+- an output with no neutral default, or with an option other than `default`;
+- a feature name or output name that another feature has;
+- a lighting slot that another feature provides.
+
+### Options rejected
+
+- **One interface per hook.** Eight shapes would need eight version promises, eight docs pages and eight chances to disagree. One shape, built before H3, costs less (study chapter 15, A1).
+- **A copy of the study's 12 fixed phases.** null3D's graph orders by reads and writes. A fixed order would hide the graph's advantage and would force a slot for every pass that the engine might add.
+- **A record callback per phase.** The render worker never runs sketch code. The declarations cross to it as data, and the callbacks run on the sketch's thread.
+- **A numeric order alone.** A number does not say whether a feature runs with the engine's work or after it. The band says that, and the order breaks ties inside it.
+- **A lighting slot without one owner.** A second provider would light the scene twice, or give two answers for one term, with no error. The registry refuses it.
+- **A description that names an output with no default.** A material that reads a missing texture would show white or black by accident. The default is part of the declaration.
+- **A public API for the engine's own renderer features before 1.0.** The built-ins work and stay internal. Moving them onto the shape is D-180's question after 1.0, and a built-in moves only when it needs major work.
+
+## How each hook fits
+
+| Hook | Fits as | What the shape does not give it |
+| --- | --- | --- |
+| H1, a compute pass whose storage output materials and effects read in the same frame | `kind: 'compute'`, a frame point such as `'background'`, and an output with a neutral default | The same-frame storage read is a binding and ordering job for M3-E8's adapter. A feature has one `kind`, so the WebGL2 fragment-pass fallback is not expressible. That hook needs a fallback kind or a second description. |
+| H2, draws whose count and instances the GPU writes | `kind: 'draw'`, with its frame point and order band | The GPU-written count, the indirect buffer and the CPU-filled fallback are the hook's own payload. The shape says where the draw sorts, not how its count is made. |
+| H3, a new kind of draw | `kind: 'draw'`, with its frame point, order band, reads and writes | The shader template, the vertex format and the draw payload are H3's registration. The shape carries the sorting and the resources, not the draw's own declaration. |
+| H4, material lobes | Not a frame feature | A lobe extends the material shader. The shape has no shader-piece field. H4 needs its own material hook. |
+| H5, add-on tasks | Partly: a feature with no frame, an output and the ready and destroy callbacks | The task registration, the WebAssembly module and the job-worker queue are the hook's payload. The shape has no field for them. |
+| H6, a baked-data format | Partly: a data feature that publishes an output with a neutral default | The file format and the core's reader are not a frame feature. H6 needs its own format hook. |
+| H7, scene inputs | `reads` covers depth, normals, motion and history | The depth behind a custom material is a material input, not a frame read. The custom-material field `sceneInputs` gives it ([below](#scene-inputs-h7)). |
+| H8, sky layers | `frame: 'background'`, `provides: ['sky', 'ambient']`, and outputs with neutral defaults | The CPU sky light is not a declared resource, so the adapter at the background point must include it. The shape does not name it. |
+| H9, glTF extension handlers | Not a frame feature | A loader handler registers an extension name and a parse function. The shape has no field for it. |
+| Preset and stats links | The `quality` callback and the feature `name`, which names its GPU scope | The passes that carry a feature's work are the add-on's to declare, in `gpu.passes` ([D-267](D-267-gpu-timing-scopes.md)). |
+| Texture units, namespaces, interface version | Not frame features | The registry's unique names help, but unit allocation, name ranges and the version range are separate platform work (M3-D6 to M3-D8). |
+
+The shape therefore holds the render hooks H1, H2, H3, H7 and H8, and the preset and stats link. It holds the data parts of H5 and H6. H4, H9 and the platform items need their own hooks, and the record says so rather than bending the shape around them.
+
+## Consequences
+
+- **Code:** `packages/engine/src/scene/features.ts` holds the types, `defineFeature`, `FeatureRegistry` and the checks. `packages/engine/src/index.ts` exports them. E1223 is in `codes.ts`, `fixes.ts` and the code list.
+- **Test:** `packages/engine/src/scene/features.test.ts`. It writes depth of field against the shape, checks the defaults and each refusal, and proves the registry's one-owner rules. It does not ship and moves no built-in.
+- **Docs:** `docs/api/features.md` and its generated reference. The page says which hooks are not built.
+- **Skills:** the develop skill's quick reference shows the API.
+- **Size:** no start path calls the registry. A page that does not use a feature description downloads none of its code. The draw adapter loads on first use, as the plan asks.
+- **Other hooks:** the hooks that the table marks as needing their own payload keep their own tasks.
+
+## The draw adapter (H3)
+
+Task M3-E1 builds H3's adapter, `scene.addFeatureDraw(description, options)`. It takes a checked description with `kind: 'draw'` and the draw's own declaration: its compiled WGSL, the vertex arrays of one shape, and its uniforms. Choices that were not obvious:
+
+- **A draw is a scene object, not a new draw-list command.** The adapter makes a mesh from the add-on's arrays, a custom material from its WGSL, and an ordinary scene object that draws them. The engine already culls objects, uploads changed vertices, sorts blended ones and records them for both GPU paths and every thread mode. A new draw-list command would repeat the pass recording of both frame builders and the pipeline setup of both backends for the same picture, and would break the 1 to 2 KB start-code budget that D-173 gives H3. Rejected for the same reason: a new `Shading` kind.
+- **The shader compiles through the custom-material path.** A surface function or a full shader is what the plugin already compiles to WGSL and to GLSL ES 3.00, and what the custom-material template sends to the thread that draws. H3 adds no second shader route.
+- **The vertex format is the arrays that the add-on gives.** `geometry.fromArrays` fixes the attributes and their types, as it does for any mesh. The adapter turns vertex colors on when the arrays have colors, so a surface function reads the per-vertex color as `input.vertexColor`.
+- **The payload is the material's uniforms.** They fit the same 32-number row that `materials.shader` already writes, and `draw.setUniform` changes them with no allocation. A compact per-copy payload that a shader reads from its own buffer is not this declaration: it belongs to the draws whose count the GPU writes (H2, M3-E9).
+- **The frame point and the alpha mode must agree.** `'opaque'` takes an opaque or masked material, and `'transparent'` a blended one. A mismatch throws E1223 instead of drawing in a pass that the description never named, because the pass follows the blending, not the frame field.
+- **The band and order become the object's render order.** Blended objects sort lower first, so a band shifts the order by two million places. Opaque draws keep the engine's own order, and the docs say so, because the depth test decides what shows.
+- **The adapter places the main view alone.** A scene or reflection pass would need per-view object lists that the adapter does not have. A description with another view throws E1223 rather than drawing in the main view alone with no warning. The shape allows the mask to grow when an adapter can honor it.
+- **Splats' core draw needs more than the adapter.** The first test user is a point cloud, which the adapter draws from its vertices. A splat scene's compact buffer, its per-frame order and its dynamic count need M3-E2's sort and M3-E9's GPU-written count. The H3 hook is the shape those tasks extend, not a replacement for them.
+
+## The preset and stats link (M3-E6)
+
+Task M3-E6. [D-173](D-173-addon-hooks.md#4-shared-budgets-and-names-for-add-ons) asks for two links that the shape alone does not carry. An add-on declares its settings per preset, and the governor's steps reach them. The stats overlay shows each add-on's GPU time and memory. Its first users are the Gaussian splats' budget and the water add-on's reflection cadence.
+
+### The problem
+
+The `quality` callback alone gives a feature the preset and the engine's settings, so an add-on would hard-code its own table inside the callback. That has three faults:
+
+- The values are unchecked. A preset's value outside its range reaches the feature and breaks its shader or its sort.
+- The WebGL2 column, which the engine's table gives every row that needs one, would be copied by hand.
+- The governor cannot reach the values. A feature that costs too much has no step that lowers it, and the renderer measures one frame cost for the whole page.
+
+The stats have the same gap without the link. `FrameStats` reports the engine's threads, passes and memory, but an add-on's cost is invisible. Its code runs inside the sketch's `update` phase, and its GPU objects count with the engine's buffers.
+
+### The rule
+
+- A feature declares `settings`, each a row with `presets`, an optional `webgl2`, `values` and a `governor` word. The checks are the engine's own: every preset value must be one that `values` takes, and the range shape is checked.
+- A feature declares `budget`, its time per frame at full quality on each preset and a `min` share.
+- `FeatureHost` takes the sketch's `quality` and GPU path. It resolves the rows for the preset and the tier in use, and it registers the budget with the sketch's `GameBudgets`. The budgets' shared scale is the governor's link: a budget's step comes before a render scale step, as it does for the sketch's own systems.
+- A setting with `governor: 'scale'` takes the budget's share of its value and rounds where its values are whole. A setting with `governor: 'double'` doubles its value for each budget step, up to its range's highest value. A setting with `governor` needs a budget, which `defineFeature` checks.
+- The `quality` callback gets a third argument: the feature's resolved settings and its budget's share and time. The callback runs when the feature is added and again when a change moves one of those values.
+- `FeatureStats` holds the feature's name, settings, GPU time, memory, budget at full quality and budget now. The host sends them to the page as a `null3d:feature-stats` sketch message whenever a figure changes, and the page's overlay shows one row per feature.
+- A feature's `memory` callback returns the GPU bytes that its own objects hold. The engine calls it when a figure changes, never in a frame.
+- A feature has one GPU timing scope, named by the feature's `name`. Its `gpu.passes` names the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own gives no scope, and its row reads `gpu not measured` ([D-267](D-267-gpu-timing-scopes.md)).
+
+### Options rejected
+
+- **A second quality table for add-ons in `QualitySettings`.** The type is the sketch's own settings, and the engine's own table gives every row a value for every preset. An add-on's row would need a matching member, and a preset change would have to walk two tables.
+- **New steps in the governor's `LEVELS` and step order.** The budgets' scale already has the order that D-173's ruling asks for: a feature scales down before the render scale reaches its floor. A per-feature step would add a trial, a wait and a level to the governor for each add-on.
+- **A feature's figures in the metrics buffer's header.** It has fixed slots, one per named figure, which the overlay names. Feature names are dynamic, up to 64 characters, and the buffer is shared with the job workers. The sketch message carries the names as they are and costs nothing while no figure changes.
+- **The add-on reporting its own GPU time.** A page could then print a figure that no engine thread measured. The scope belongs to the engine's timer or it does not exist.
+- **Memory attributed by the engine.** The GPU layer counts buffers and textures as one pool. Splitting that by feature needs ownership on every GPU object, which is M3-D6's namespace work, not this hook.
+
+### Tests
+
+- `packages/engine/src/scene/feature-host.test.ts` writes one feature with a `'scale'` setting, a `'double'` setting, a budget and a memory figure. It checks the value on each preset and the WebGL2 column. It checks the quality callback's arguments and a budget step's effect on both words. It also checks the budget's time on a new preset, the range's cap, the figures, and the removal of a feature and its budget.
+- `tests/image/stats.spec.ts` opens the stats page with `feature`: the sketch adds the feature, and the overlay shows its row with the preset's value, its budget and its memory. A switch to Low moves both, and the row follows.
+
+## Scene inputs (H7)
+
+Task M3-E4. The custom-material field `sceneInputs` gives H7's depth behind a material. This section
+holds the field, the bindings and the absent cases.
+
+`SceneInput` is one public vocabulary (`'sceneColor'`, `'sceneDepth'`, `'normals'`,
+`'motionVectors'`) that `FeatureResource` extends with `'history'` and `'shadowAtlas'`. A custom
+material declares `sceneInputs: ['sceneDepth']` and reads it through `sceneDepth(uv)` or
+`sceneDistance(uv)`. The compiler turns the call into a `SCENE_DEPTH` build, and the material takes
+a `SCENE_DEPTH` feature bit. The frame then binds the copy of the camera's opaque depth (D-131),
+in the group after the frame's. A material that draws before the copy exists, and every view other
+than the camera's, binds one texel at the far plane, which reads 0. The copy is made while a reader
+draws, whatever the preset says.
+
+### The problem
+
+Without scene inputs, a custom material's surface function reads only the standard maps and its own textures. Water's
+soft shores and the splats add-on's depth mixing need the depth of the opaque scene behind a
+transparent surface. H7 must bind it on WebGPU and WebGL2, in every thread mode, and say what a
+reader sees where the resource is absent.
+
+### The binding
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| Which depth? | The copy of the camera's opaque depth, after the opaque pass and before the transparent pass | The transparent pass writes depth, so a shader cannot bind the depth target that its own pass holds on WebGPU. D-131 rejected that same option for particles |
+| Which group? | After the frame's group on WebGPU, and after the maps' group where a material has textures: group 2 with textures and group 1 without on WebGPU, group 4 on WebGL2 | It matches the decal group's place, so the shader's group numbers follow one rule and the pipeline builder appends joints and the index group after it |
+| How many textures beside the depth? | Up to seven: a depth-reading material takes a maps' group of seven slots, under a layout of its own ([D-256](D-256-depth-reading-materials-and-textures.md)) | The frame group holds 8 sampled textures and the maps' group holds 8, which leaves the fragment stage no room for the copy under WebGPU's default limit of 16 (hard rule 6) |
+| How does the engine know? | The compiler detects `sceneDepth` or `sceneDistance` in the WGSL and adds the `SCENE_DEPTH` def; `materials.shader` records the `SCENE_DEPTH` feature bit | The material's shading word has no free bit. The feature word does, and the bit is fixed at creation like every feature |
+| Why not a custom texture? | It would sample through the maps' layout with a filtering sampler | The copy is 32-bit float, which WebGPU cannot filter, and the maps' layout also costs a sampled texture in every material's fragment stage (hard rule 6) |
+| What when a reader draws first? | One texel at the far plane | The same pattern as a particle system's blank depth. It is one texture for the frame and one bind group |
+| What if the preset is Low? | The copy still draws | The material's read is a dependency, not a quality choice. D-131's preset controls soft particles alone |
+| What about normals and motion? | The vocabulary declares them; no frame makes a normals target, and the motion target exists only while a reader wants it | H7 binds what the frame makes. A material that declares them gets E1217 rather than a silent zero |
+| What about the 8-bit path? | The copy reads the scene depth's format and samples | The copy's `MULTISAMPLED` build copies sample 0, as particles do on both paths. The copy is one sample on both paths, so a material's binding needs no multisampled layout |
+| What about `reversed-gl`? | `sceneDepth` gives the stored value; `sceneDistance` is then less precise | The engine draws `reversed` where the browser has `EXT_clip_control`; all team devices do. A value written by the device's own depth mode has no single linearization (D-08) |
+
+### The group indices
+
+The custom material template's layouts are `[frame, maps?, scene]`, then the joint and index groups
+that the pipeline builder appends. The draw's groups follow the same order: maps, scene, joints,
+index. A caster, motion or pick build shades no surface, so its layout leaves the scene group out.
+
+### The absent cases
+
+- **The opaque pass.** The copy is written after it, so its materials bind the blank texel and read
+  0, the far plane. A material that needs the depth of the surfaces behind it blends, which draws
+  after the copy.
+- **A scene pass or a reflection pass.** Their views have no copy, and the camera's copy would be
+  wrong under their camera, so they bind the blank texel too.
+- **A preset without the copy.** The preset changes nothing: the copy is made while a reader exists.
+- **The copy's pipeline not yet built.** The blank groups exist from the first frame that wants the
+  copy, and the camera's group binds the blank until the target exists. A draw therefore never
+  reaches GPU validation with a missing group.
+- **The 8-bit path.** The same copy and the same values, with sample 0 of the scene depth.
+- **A destroyed material.** The feature bit is checked on live materials only, so the copy stops
+  with the last reader.
+
+### Rejected options
+
+- **A public `textures.sceneDepth()`.** It promises a texture object that the render graph plans,
+  and the custom texture path cannot bind a float depth without a sampler. A declaration is a
+  smaller promise.
+- **Reading the scene depth target directly.** It works for decals, which draw into the color alone,
+  and fails for a blended material, whose pass writes depth.
+- **A second copy per material.** One copy serves every reader in the frame.
+- **Binding the depth for opaque materials too.** The copy does not exist when they draw. Returning
+  the far plane is honest, and the first users blend.
+
+### Consequences
+
+- **Code:** `SceneInput` and `FeatureResource` in `packages/engine/src/scene/features.ts`; the
+  `sceneInputs` option and its checks in `packages/engine/src/scene/resources.ts`; the
+  `SCENE_DEPTH` shader def and helpers in `crates/null3d-shaders`; the `SCENE_DEPTH` feature bit in
+  `crates/null3d-render/src/materials.rs`; the copy's groups and the blank texel in
+  `crates/null3d-render/src/frame_graph.rs`; the draw bindings in both frame builders.
+- **Tests:** a Rust shader compiler test checks the depth binding in the shading builds alone. The
+  declaration has unit tests. The page test `scene-depth` draws the same water sheet on both GPU
+  paths and in every thread mode. The `water-shores` picture fails on every tier and thread mode
+  when the blank texel stands in for the copy. That failure is what proves the picture binds the
+  input.
+- **Docs:** `docs/api/materials.md`, `docs/shaders/surface-functions.md`,
+  `docs/concepts/render-graph.md`, `docs/api/features.md`, `docs/guides/custom-passes.md`,
+  `docs/guides/custom-shaders.md` and the mapping's entry for scene depth.
+- **Shaders:** the copy's shaders load with the material, through the `particles` first-use file,
+  which holds them.
+
+
+## The first user: water's soft shores
+
+A water sheet reads the copy of the opaque depth and fades its shore against the geometry it meets.
+It does so on WebGPU, compatibility mode and WebGL2. The water's depth along the view ray is the gap
+between the sheet and the opaque surface behind the pixel. The sheet tints, foams and loses its
+alpha over a band at the end of that gap. Its shoreline is then soft, rather than a polygon edge. A
+picture test holds the frame on every GPU tier and in every thread mode.
+
+### The shore
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| What sets the water's depth? | The gap between the sheet and the surface behind it along the view ray | The distance from the camera to the surface behind a pixel also grows with the camera's own distance. A shore that fades over that distance would fade with the viewpoint, not with the water |
+| How is the gap found? | Convert the pixel's own depth, `input.fragCoord.z`, to a distance with `engine_frame.camera_range`, and subtract it from `sceneDistance(uv)` | `sceneDistance` already converts the copy's stored depth the same way, on a perspective and on an orthographic camera |
+| How does the shore fade? | The alpha falls to zero over a band at the end of the gap, and foam fills half of that band | A fade in alpha ends the surface before its polygon's edge, so the bed shows through it. Foam marks the water that is too thin to show |
+| What when the copy is absent? | The gap reads as the far plane, so the whole sheet draws its deep color, opaque, with no foam | The same absent case as in the scene inputs above. The picture test catches a copy that is not bound: with the blank texel bound in its place in both frame builders, every thread mode differs from its reference at 5.163% of the pixels on compatibility mode, 5.286% on WebGPU and 5.552% on WebGL2, against the 0.100% limit |
+
+### The test
+
+`tests/image/manifest.ts` holds `water-shores`. Its sketch, `tests/pages/sketches/water-shores-sketch.ts`,
+draws a beach, a rounded island and two stones in the shallows. The soft shore follows all four
+waterlines. The test draws every GPU tier and every thread mode, and keeps a reference in both sets.
+
+### The texture limit beside the depth
+
+The Creek's water material wants the scene depth beside the reflection pass's texture and its foam
+map. So does the add-on that M3-F5 builds. `checkSceneInputs` in
+`packages/engine/src/scene/resources.ts` throws E1217 for a depth-reading material with more
+textures than fit beside the copy. The count behind the limit:
+
+- The frame group has 8 sampled textures in the fragment stage: bindings 2, 3, 4, 9, 10, 11, 12
+  and 15 of `LAYOUT_FRAME` in `packages/engine/src/gpu/webgpu/pipelines.ts`. Binding 10 holds the
+  light probe grid and binding 15 the copy of the opaque color.
+- The maps' group has 8 sampled textures in the fragment stage: the map slots, `MAP_SLOTS = 8` in
+  `crates/null3d-gpu/src/drawlist.rs`. The displacement map is the vertex stage's alone, so it
+  does not count here. The parallax layout makes it the fragment stage's too, and would count 9.
+- WebGPU's default `maxSampledTexturesPerShaderStage` is 16. The copy of the scene's depth is the
+  17th sampled texture of a material that has both the depth and the eight maps. A parallax
+  material with the depth would be the 18th.
+
+The owner ruled that this limit does not change under M3-E4. A binding-layout change reaches every
+material, and anything that would drastically alter a working engine waits. Task M3-E4a owns the
+limit: [D-256](D-256-depth-reading-materials-and-textures.md) gives a depth-reading material a maps'
+group of seven slots. That record also weighs a frame group without the light probe grid. A
+shore that keeps its analytic bed depth, as the Creek does, was rejected because it gives no soft
+shore from the copy. M3-E4's first user declares no textures.
+
+## The full-screen adapter and the built-in test (M3-R1)
+
+Task M3-R1. `post.addFeatureEffect(description, options)` places a `'fullscreen'` description at the
+`'resolve'` point in the chain of custom effects. The pass reads the scene's color, and its depth
+when the description declares it, and writes the color. The adapter makes the effect while the
+feature is ready, and removes it while it is not. It asks `ready` again on each quality change. The
+adapter loads on first use. A test sketch declares depth of field with the real preset's
+`dofSamples` and draws it through the adapter. A browser spec then compares the frames of the two
+GPU paths.
+
+### The call
+
+`post.addFeatureEffect(description, options)` takes a checked description and the pass's own
+declaration: its compiled WGSL, its first uniform values and its textures, as `post.addEffect`
+takes them. It returns a `FeatureEffect` with the live `effect`, `draws`, `setUniform`, `refresh`
+and `destroy`. The call is async, because the adapter is a first-use chunk.
+
+| Description field | What the adapter reads |
+| --- | --- |
+| `kind` | `'fullscreen'` alone. Another kind throws E1223. |
+| `frame` | `'resolve'` alone. No public pass draws an add-on's effect after the tone curve, so `'post'` throws E1223. |
+| `views` | `['main']` alone. |
+| `reads` | `'sceneColor'`, which every effect reads, and `'sceneDepth'` when the WGSL calls `effectDepth`, `effectViewPosition` or `effectDistance`. The two must agree, in both directions. |
+| `writes` | `['sceneColor']` alone. |
+| `band`, `order` | The chain's order. The band ranges do not overlap and stay in their order, so the description's order reaches the chain as it is. |
+| `ready` | Whether the effect is in the chain. False costs no pass, no target and no shader download. |
+| `destroy` | Called once by the handle's `destroy`. |
+| `outputs`, `provides` | Refused: the effect chain publishes no texture and provides no lighting slot. |
+
+The band places a full-screen feature among the sketch's other effects. The chain has one seat in
+the frame: after the exposure, and before bloom and the tone curve. A band therefore cannot move a
+pass against the engine's own bloom or depth of field. The docs state that limit.
+
+### The built-in test
+
+`tests/pages/sketches/feature-effect-sketch.ts` declares depth of field against the description. Its
+reads are `'sceneColor'` and `'sceneDepth'`, its write is `'sceneColor'`, and its frame point is
+`'resolve'`. A `FeatureHost` runs its `quality` callback with the engine's preset. The pass's tap
+count is the preset's `dofSamples`: 0 on Low, 22 on Medium, 43 on High and 71 on Ultra. Its `ready`
+callback returns `samples > 0`, so Low keeps the effect out of the chain. The sketch draws a row of
+posts at different distances through a golden-angle gather, so the blur follows the distance from
+the focus. The test ships nothing and moves no built-in.
+
+`tests/image/feature-effect.spec.ts` holds the frame at 0 seconds in one browser and compares runs
+of it. It needs no reference picture, as `direct-draws.spec.ts` does not. Each path is checked on
+its own, because each GPU path draws its own edges and each tier keeps its own references. The
+spec proves two separate things, and no single number carries both:
+
+- **Placement.** On WebGPU and on WebGL2, the frame with the pass must differ from the frame with
+  `?dof=off` in at least 2% of its pixels. At Medium on this Mac it changed 45.5868% of the pixels on
+  WebGPU and 37.9149% on WebGL2. The pass therefore reached the picture on both paths.
+- **The ready gate.** The sketch publishes the adapter's own `draws` answer, and the spec requires
+  false at Low, where `dofSamples` is 0, and true at Medium, where it is 22. The picture cannot carry
+  this check. A pass whose tap count is 0 returns its input unchanged, so a frame that ran the pass
+  anyway would match one that did not. The check runs on WebGPU alone, and that is enough. The gate is
+  TypeScript in the adapter, and the same code runs for every rendering path. The test also requires
+  the run's held frame, so a page that failed to draw cannot pass it silently. A unit test holds the
+  same rule without a GPU: `keeps the effect of a feature that is not ready out of the chain` asserts
+  that the effect chain received no effect.
+
+The runs are at Medium, a preset that both paths run. WebGL2 caps its preset at Medium, so a run
+at High would compare WebGPU's High against WebGL2's Medium.
+
+Add the feature to its `FeatureHost` before placing it. The host's quality callback and the
+adapter's `ready` check both run on the same quality change, in the order that they were
+registered. The feature's own values are therefore current only if the host came first.
+
+### Size
+
+The description's own code did not change. The method and its first-use loader sit in the start's
+runner chunk. The size report gives `js/page-sketch-runner.js` at 215,009 bytes and 61,356 after
+Brotli. An earlier landing checkout's build holds 214,410 and 61,276 for the same chunk. The
+adapter therefore adds 599 bytes before compression and 80 after Brotli against that build. The two
+tips differ by other commits, so that figure shows the order of the cost rather than an exact one.
+The adapter is a chunk of its own: `js/page-feature-effects.js` at 3,526 bytes, 1,136 after Brotli,
+and `js/sketch-worker-feature-effects.js` at 3,535 bytes, 1,149 after Brotli. Both stay under the
+first-use budget of 16 KB after Brotli, and a page that places no feature effect downloads neither.
+
+### What stays open
+
+- The draw, instance, compute and sky-layer adapters do not call `ready` yet; only this adapter
+  does. A hook that needs a draw to stop costs nothing until then.
+- `resize` and `reset` are declared and checked, and no adapter calls them; an add-on that keeps
+  targets or history keeps its own size and reset state.
+- The effect reads the color and depth alone. Normals, motion vectors, history and the shadow atlas
+  need a binding that the effect chain does not add yet.
+- The registry's outputs and lighting slots are declared and given one owner each. Nothing binds a
+  registered output as a texture yet, and nothing reads a slot's provider. A reader of an output
+  names the texture that a compute pass writes, through `textures.fromPass`. The registry's neutral
+  default is therefore a checked declaration, not yet a bound texture.
+
+### Each hook's adapter
+
+The description expresses what the hooks already do. The gaps that remain are in the adapters'
+delivery, and the list above names them. The table gives each hook's adapter and the description
+fields that the adapter reads:
+
+| Hook | Its adapter | Description fields it reads |
+| --- | --- | --- |
+| H1, a compute pass whose output reads in the same frame | `render.addPass({ kind: 'compute', description })` | `frame`, `kind`, `order`, one `outputs` name |
+| H2, draws whose count the GPU writes | `render.addPass({ kind: 'compute', buffers })` and `scene.addComputeInstances` | `frame`, `kind`, `order` |
+| H3, a new kind of draw | `scene.addFeatureDraw` and `scene.addFeatureInstances` | `frame`, `kind`, `band`, `order`, `views` |
+| H4, material lobes | Its own material hook, not a frame feature | none |
+| H5, add-on tasks | `runTask` and a task descriptor, not a frame feature | the data part: `outputs`, `ready` and `destroy` |
+| H6, a baked-data format | Its own file format, not a frame feature | the data part: `outputs` with a neutral default |
+| H7, scene inputs | `sceneInputs` on a material, and the effect depth helpers | `reads` and the shared resource names |
+| H8, sky layers | `scene.setSkyLayer` | `frame`, `kind`, `provides`, `views` |
+| H9, glTF extension handlers | `registerGltfExtension`, not a frame feature | none |
+| Presets, budgets and stats | `FeatureHost` and the stats message | `settings`, `budget`, `memory`, `quality` |
+| A full-screen pass | `post.addFeatureEffect` | `frame`, `kind`, `band`, `order`, `reads`, `writes`, `views`, `ready`, `destroy` |
+
+The texture-unit allocator, the namespaces and the plugin interface version are platform work, not
+frame features. The description carries them through the add-on's namespace and the interface
+range, not through a field.

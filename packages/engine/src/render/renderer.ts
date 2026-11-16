@@ -101,6 +101,11 @@ export interface RendererOptions {
 	/** How to time each WebGL call of the scene's renderer, for a benchmark page (?gl-timing). */
 	glTiming?: GlTimingMode;
 	/**
+	 * `every` for `?gpu-samples=every`, which times every drawn frame rather than one in eleven, so
+	 * a page can read the parts of a single long frame. It costs the draw's own time.
+	 */
+	gpuSamples?: 'every';
+	/**
 	 * Hears a WebGPU error that no error scope caught: with `outOfMemory`, the GPU had no room for
 	 * an object, else it rejected a command. `message` is the GPU path's own text. The thread that
 	 * draws reports each kind once per device, as E1304 or E1305.

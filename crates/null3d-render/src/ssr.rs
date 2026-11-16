@@ -175,8 +175,6 @@ pub(crate) struct TraceFrame {
     pub(crate) ssr: Ssr,
     /// The camera's projection and its inverse.
     pub(crate) projection: (Mat4, Mat4),
-    /// True for an orthographic camera.
-    pub(crate) orthographic: bool,
     /// The most steps of the march.
     pub(crate) steps: u32,
 }
@@ -373,7 +371,7 @@ fn blocks(frame: &TraceFrame, canvas: (u32, u32), scale: RenderScale, grid: (u32
                 ssr.max_distance.max(0.0),
                 ssr.thickness.max(0.0),
                 frame.steps.clamp(1, MAX_STEPS) as f32,
-                f32::from(u8::from(frame.orthographic)),
+                0.0,
             ],
         },
     }
@@ -441,7 +439,6 @@ mod tests {
         TraceFrame {
             ssr: Ssr::default(),
             projection: (projection, crate::camera::invert(&projection).unwrap()),
-            orthographic: false,
             steps: 32,
         }
     }
@@ -482,7 +479,7 @@ mod tests {
         let frame = trace_frame();
         let mut prepare = |pass: &mut SsrPass, list: &mut DrawList, grid| {
             list.clear();
-            arena.reset(SsrPass::UPLOAD_BYTES);
+            arena.begin_frame().unwrap();
             pass.prepare(
                 list,
                 &mut arena,

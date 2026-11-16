@@ -1257,8 +1257,12 @@ const fn align_up(value: u32, alignment: u32) -> u32 {
 /// multisampled color target through its resolved texture, so it needs no sampling usage itself.
 fn usage_of(target: Target, drawn: bool, sampled: bool, storage: bool) -> u32 {
     let mut usage = 0;
-    if drawn {
+    if drawn || (target.clearable && storage) {
         usage |= texture_usage::RENDER_ATTACHMENT;
+        // A pass that keeps state has its other state copied into the target, or copies it out.
+        if target.clearable && storage {
+            usage |= texture_usage::COPY_DST;
+        }
     }
     if sampled && !target.resolves() {
         usage |= texture_usage::TEXTURE_BINDING;
@@ -1266,7 +1270,7 @@ fn usage_of(target: Target, drawn: bool, sampled: bool, storage: bool) -> u32 {
     if storage {
         usage |= texture_usage::STORAGE_BINDING;
     }
-    if target.copy_source && drawn {
+    if target.copy_source && (drawn || storage) {
         usage |= texture_usage::COPY_SRC;
     }
     usage

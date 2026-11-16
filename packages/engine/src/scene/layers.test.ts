@@ -23,6 +23,7 @@ function fakeCore() {
 	const cameras: number[][] = [];
 	const batchLayers: [number, number][] = [];
 	const glue = {
+		meshCenter: () => 0,
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => AT.fields + field * 256,
 		commandRing: (field: number) => [AT.records, RING, AT.write, AT.read][field] as number,

@@ -30,6 +30,7 @@
 use std::simd::StdFloat;
 use std::simd::prelude::*;
 
+use crate::memory::{MemoryUse, vec_bytes};
 use crate::world::WorldArrays;
 
 /// The width of a cell along each axis, in meters.
@@ -186,6 +187,20 @@ impl Default for CellTable {
 }
 
 impl CellTable {
+    /// The bytes that the table's arrays hold.
+    pub(crate) fn memory_use(&self) -> MemoryUse {
+        let mut use_ = MemoryUse::default();
+        for array in [
+            vec_bytes(&self.coords),
+            vec_bytes(&self.counts),
+            vec_bytes(&self.free),
+            vec_bytes(&self.slots),
+        ] {
+            use_.add(array);
+        }
+        use_
+    }
+
     /// A table that holds the origin cell alone, with room for [`MAX_CELLS`] cells.
     pub fn new() -> Self {
         Self {

@@ -21,6 +21,7 @@ const KIND_TYPES: Readonly<Record<CompiledWgsl['kind'], string>> = {
 	material: 'CompiledMaterial',
 	effect: 'CompiledEffect',
 	toneCurve: 'CompiledToneCurve',
+	skyLayer: 'CompiledSkyLayer',
 };
 
 /** The path of the declaration of a `.wgsl` file. */
@@ -35,6 +36,7 @@ export function declarationPath(file: string): string {
 function shaderType(shader: CompiledWgsl): string {
 	if (shader.kind === 'shader') return 'CompiledShader';
 	if (shader.kind === 'toneCurve') return 'CompiledToneCurve';
+	if (shader.kind === 'skyLayer') return 'CompiledSkyLayer';
 	const fields = shader.uniforms.map(({ name, type }) => {
 		const key = PLAIN_NAME.test(name) ? name : JSON.stringify(name);
 		return `\t\treadonly ${key}: '${type}';\n`;

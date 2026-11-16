@@ -12,6 +12,7 @@
 // surface. A separate depth-only program gave other depths in Chrome on a Mac, although both
 // programs mark the position invariant.
 
+import { EngineError } from '../../errors/engine-error';
 import {
 	PERMUTATION_PREPASS,
 	TEMPLATE_ACCUMULATE,
@@ -20,9 +21,13 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BACKGROUND_ATMOSPHERE,
+	TEMPLATE_BACKGROUND_CLOUDS,
+	TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
+	TEMPLATE_BOUNCE_DENOISE,
+	TEMPLATE_BOUNCE_TRACE,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_DECAL,
@@ -46,6 +51,17 @@ import {
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOMENT_COMPOSITE,
+	TEMPLATE_MOMENT_DEPTH,
+	TEMPLATE_MOMENT_LIT,
+	TEMPLATE_MOMENT_SMAA_BLEND,
+	TEMPLATE_MOMENT_SMAA_EDGES,
+	TEMPLATE_MOMENT_SMAA_RESOLVE,
+	TEMPLATE_MOMENT_SPRITE,
+	TEMPLATE_MOMENT_SPRITE_MAP,
+	TEMPLATE_MOMENT_STANDARD_MAPS,
+	TEMPLATE_MOMENT_UNLIT,
+	TEMPLATE_MOMENT_UNLIT_MAP,
 	TEMPLATE_MOTION,
 	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OUTLINE_MASK,
@@ -61,6 +77,8 @@ import {
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
+	TEMPLATE_SINGLE_COMPOSITE,
+	TEMPLATE_SINGLE_DEPTH,
 	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
@@ -70,6 +88,9 @@ import {
 	TEMPLATE_SUBSURFACE_BLUR,
 	TEMPLATE_SUBSURFACE_COMPOSITE,
 	TEMPLATE_SUBSURFACE_MAPS,
+	TEMPLATE_TAA_COPY,
+	TEMPLATE_TAA_RESOLVE,
+	TEMPLATE_TONE_MASK,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_WEIGHTED_COMPOSITE,
 	TEMPLATE_WEIGHTED_DEPTH,
@@ -87,7 +108,7 @@ import {
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
-import { variantFor } from '../variants';
+import { missingVariant, variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 declare const __NULL3D_DEV__: boolean | undefined;
@@ -104,17 +125,17 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * The first slot of each bind group. A slot is a uniform block binding point, a sampler's place and
  * the place where a bind group leaves a texture, and each binding of a group takes its group's
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
- * first, with sixteen. Group 1 has six slots (the backgrounds' groups, of which the physical sky's
- * holds the most: its values, three tables and two samplers), group 2 ten (the instance textures,
- * then the two textures that skinned meshes read, the two that morphed meshes read, and the two
- * textures of the row values of instance batches) and group 3 the last eighteen: the eight map
- * textures, then their samplers, of which the standard material's shared map units take the first
- * six of each, then the displacement map's texture and sampler. Group 4 holds the scene depth that
- * decals read. Slots are no texture units: each program numbers the textures it reads from unit 0,
- * so the groups' bindings never run out of units. The groups' uniform blocks stay below the fewest
- * binding points that WebGL2 allows.
+ * first, with sixteen. Group 1 has eight slots (the backgrounds' groups, of which the physical sky's
+ * holds the most: its values, three tables and two samplers, and the volumetric cloud tier's noise
+ * field and its sampler), group 2 ten (the instance textures, then the two textures that skinned
+ * meshes read, the two that morphed meshes read, and the two textures of the row values of instance
+ * batches) and group 3 the last eighteen: the eight map textures, then their samplers, of which the
+ * standard material's shared map units take the first six of each, then the displacement map's
+ * texture and sampler. Group 4 holds the scene depth that decals read. Slots are no texture units:
+ * each program numbers the textures it reads from unit 0, so the groups' bindings never run out of
+ * units. The groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
-const GROUP_BASES = Uint8Array.of(0, 16, 22, 32, 50);
+const GROUP_BASES = Uint8Array.of(0, 16, 24, 34, 52);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -134,9 +155,52 @@ export const MIN_STAGE_TEXTURE_UNITS = 16;
 /** The slot of a binding of a bind group: its texture unit, uniform block binding point or sampler's place. */
 export function slotOf(group: number, binding: number): number {
 	return (GROUP_BASES[group] as number) + binding;
-}
-/** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
+} /** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
 export const NO_SAMPLER = -1;
+
+/**
+ * The texture units that one stage of a program reads: its distinct texture slots, since two
+ * entries of one slot read one texture. A stage that reads more than
+ * [`MIN_STAGE_TEXTURE_UNITS`] fails to link on the devices that give their stages the fewest
+ * units, so the engine refuses the program before the driver does.
+ */
+export function stageUnitCount(stage: GlslStage): number {
+	const slots = new Set<number>();
+	for (const texture of stage.textures) slots.add(slotOf(texture.group, texture.binding));
+	return slots.size;
+}
+
+/**
+ * The texture units that each stage of a context reads: the vertex stage's, then the fragment
+ * stage's. A WebGL2 device gives its stages at least [`MIN_STAGE_TEXTURE_UNITS`] each. The last of
+ * a context's units carries uploads and copies, so a program reads at most one fewer.
+ */
+export function stageTextureUnits(gl: WebGL2RenderingContext): readonly [number, number] {
+	const used = (units: number) => Math.min(units, UPLOAD_UNIT);
+	return [
+		used(gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) as number),
+		used(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number),
+	];
+}
+
+/**
+ * Throws E1209 when one stage of a program reads more textures than the device's stage has units.
+ * The engine hands out the stage's units, so a material that asks for too many hears about it,
+ * rather than the device failing to link a shader that then draws nothing. `limit` is the units
+ * that the device reports for the stage.
+ */
+export function checkStageUnits(
+	stage: GlslStage,
+	stageName: 'vertex' | 'fragment',
+	limit: number,
+): void {
+	const units = stageUnitCount(stage);
+	if (units <= limit) return;
+	throw new EngineError(
+		'E1209',
+		`a WebGL2 program reads ${units} textures in its ${stageName} stage, and a stage has ${limit} units: give the material fewer textures.`,
+	);
+}
 
 /**
  * How the backend builds the programs of one render pipeline template: the shader's variants, of
@@ -268,6 +332,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_SHADOW_CUTOUT] = { shader: shaders.shadow_cutout, pipeline: 'main' };
 	templates[TEMPLATE_SHADOW_CUTOUT_MAP] = { shader: shaders.shadow_cutout_map, pipeline: 'main' };
 	templates[TEMPLATE_OUTLINE_MASK] = { shader: shaders.outline_mask, pipeline: 'main' };
+	templates[TEMPLATE_TONE_MASK] = { shader: shaders.tone_mask, pipeline: 'main' };
 	templates[TEMPLATE_MOTION] = { shader: shaders.motion, pipeline: 'main' };
 	templates[TEMPLATE_PICK] = { shader: shaders.pick, pipeline: 'main' };
 	templates[TEMPLATE_PICK_MAPS] = { shader: shaders.pick_maps, pipeline: 'main' };
@@ -296,6 +361,11 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.background_cube, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.sky, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_ATMOSPHERE] = { shader: shaders.sky_physical, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_CLOUDS] = { shader: shaders.sky_volume, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_CLOUDS_ATMOSPHERE] = {
+		shader: shaders.sky_volume_physical,
+		pipeline: 'main',
+	};
 	templates[TEMPLATE_SKY_TABLE] = { shader: shaders.sky_tables, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.
@@ -314,15 +384,42 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FOG_SUM] = { shader: shaders.fog_volume, pipeline: 'sum' };
 	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	// Temporal anti-aliasing's resolve reads the same one-sample copy of the depth.
+	templates[TEMPLATE_TAA_RESOLVE] = { shader: shaders.taa, pipeline: 'resolve' };
+	templates[TEMPLATE_TAA_COPY] = { shader: shaders.taa_copy, pipeline: 'main' };
 	templates[TEMPLATE_ACCUMULATE] = { shader: shaders.accumulate, pipeline: 'main' };
 	// The subsurface blur's down step reads the same one-sample copy of the depth.
 	templates[TEMPLATE_SUBSURFACE_BLUR] = { shader: shaders.subsurface_blur, pipeline: 'across' };
 	templates[TEMPLATE_SUBSURFACE_COMPOSITE] = { shader: shaders.subsurface_blur, pipeline: 'down' };
 	templates[TEMPLATE_SSR_REDUCE] = { shader: shaders.ssr_reduce, pipeline: 'reduce' };
 	templates[TEMPLATE_SSR_TRACE] = { shader: shaders.ssr, pipeline: 'trace' };
+	templates[TEMPLATE_BOUNCE_TRACE] = { shader: shaders.bounce, pipeline: 'trace' };
+	templates[TEMPLATE_BOUNCE_DENOISE] = { shader: shaders.bounce, pipeline: 'denoise' };
 	// The weighted layer's depth copy reads the same one-sample copy of the depth.
 	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
 	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };
+	// So does the one-sample layer's depth copy.
+	templates[TEMPLATE_SINGLE_COMPOSITE] = { shader: shaders.single_composite, pipeline: 'main' };
+	templates[TEMPLATE_SINGLE_DEPTH] = { shader: shaders.single_depth, pipeline: 'main' };
+	// The moment layer's steps and its colour builds, which draw meshes with their own shader
+	// entries so that their builds load with the layer alone.
+	templates[TEMPLATE_MOMENT_COMPOSITE] = { shader: shaders.moment_composite, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_DEPTH] = { shader: shaders.moment_depth, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_EDGES] = { shader: shaders.moment_smaa_edges, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_BLEND] = { shader: shaders.moment_smaa_blend, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SMAA_RESOLVE] = {
+		shader: shaders.moment_smaa_resolve,
+		pipeline: 'main',
+	};
+	templates[TEMPLATE_MOMENT_LIT] = { shader: shaders.moment_lit, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_STANDARD_MAPS] = {
+		shader: shaders.moment_standard_maps,
+		pipeline: 'main',
+	};
+	templates[TEMPLATE_MOMENT_UNLIT] = { shader: shaders.moment_unlit, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_UNLIT_MAP] = { shader: shaders.moment_unlit_map, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SPRITE] = { shader: shaders.moment_sprite, pipeline: 'main' };
+	templates[TEMPLATE_MOMENT_SPRITE_MAP] = { shader: shaders.moment_sprite_map, pipeline: 'main' };
 	// Decals draw in a pass of their own, never in the depth prepass.
 	templates[TEMPLATE_DECAL] = { shader: shaders.decal, pipeline: 'main' };
 	templates[TEMPLATE_DECAL_MAPS] = { shader: shaders.decal_maps, pipeline: 'main' };
@@ -344,9 +441,13 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 
 /**
  * A program of the mip shader, from the shaders the device loaded: `main` draws a mip level of a
- * texture array's layer from the level before it, and `copy` copies a level of a layer.
+ * texture array's layer from the level before it, `copy` copies a level of a layer, and `scale`
+ * draws a texture into a corner of another at a size of its own.
  */
-export function mipmapTemplate(shaders: DeviceShaders, pipeline: 'main' | 'copy'): GlslTemplate {
+export function mipmapTemplate(
+	shaders: DeviceShaders,
+	pipeline: 'main' | 'copy' | 'scale',
+): GlslTemplate {
 	return { shader: shaders.mipmap, pipeline };
 }
 
@@ -392,8 +493,7 @@ export function createProgram(
 	const shading = variantFor(template.shader, build, 'glsl')?.glsl?.[template.pipeline];
 	const source =
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
-	if (!source)
-		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
+	if (!source) throw new Error(`a render pipeline template: ${missingVariant(permutation)}`);
 	const { program, shaders } = link(gl, source, '');
 	return {
 		program,
@@ -407,15 +507,32 @@ export function createProgram(
 	};
 }
 
+/** The head of a uniform declaration, with the text between it and the declaration's end. */
+const DECLARATION = /^\s*(?:layout\([^)]*\)\s*)?uniform\b([^;{]*)/gm;
+
+/** A word of a declaration, which is a name that the source declares. */
+const WORD = /[A-Za-z_][A-Za-z0-9_]*/g;
+
+/**
+ * The names that a GLSL source declares as uniforms or uniform blocks. One walk of the source
+ * answers every name, so a check over a program's whole reflection costs a scan beside a scan
+ * rather than a scan for each name it asks about.
+ */
+export function declaredUniforms(source: string): Set<string> {
+	const names = new Set<string>();
+	DECLARATION.lastIndex = 0;
+	for (let match = DECLARATION.exec(source); match !== null; match = DECLARATION.exec(source))
+		for (const word of (match[1] ?? '').match(WORD) ?? []) names.add(word);
+	return names;
+}
+
 /**
  * Whether a GLSL stage declares a uniform or a uniform block of this name. A driver may remove a
  * declared uniform that the program never reads, as GLSL allows, so a linked program can lack a
- * name that its source declares.
+ * name that its source declares. A check over many names reads [`declaredUniforms`] once instead.
  */
 export function declaresUniform(source: string, name: string): boolean {
-	return new RegExp(`^\\s*(?:layout\\([^)]*\\)\\s*)?uniform\\b[^;{]*\\b${name}\\b`, 'm').test(
-		source,
-	);
+	return declaredUniforms(source).has(name);
 }
 
 /**
@@ -465,34 +582,21 @@ function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Err
 }
 
 /**
- * Checks the program's link result, binds its uniform blocks to the slots of their WGSL groups and
- * bindings, gives each texture it reads a unit, counting from 0, and sets its vertex shader's
- * depth mapping for the backend's depth mode, once, at its first use. A texture that both stages
- * read takes one unit. A block or texture that the driver removed, because the program never reads
- * it, needs no binding and is skipped. The program is in use afterwards. A link that failed with
- * Safari's random Metal fault is done once more, into a new program, and waited for.
+ * The texture units that the stages of a program read, as triples of the unit, the slot where bind
+ * groups leave the unit's texture and the slot of the sampler it reads with, or `NO_SAMPLER`. Units
+ * count from 0, in the order the stages visit their textures, and a texture that both stages read
+ * takes one unit. A texture that `locationOf` gives no uniform, as the driver drops for one that a
+ * program never reads, needs no unit. `setUnit` gives each texture the unit that it reads.
  */
-export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
-	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
-		if (!metalFault(gl, p)) throw linkError(gl, p, '');
-		relink(gl, p);
-		if (!gl.getProgramParameter(p.program, gl.LINK_STATUS))
-			throw linkError(gl, p, ' twice, the second time after a fault in its Metal');
-	}
-	for (const shader of p.shaders) {
-		gl.detachShader(p.program, shader);
-		gl.deleteShader(shader);
-	}
-	gl.useProgram(p.program);
+export function textureUnitsOf(
+	source: GlslProgram,
+	locationOf: (name: string) => WebGLUniformLocation | null,
+	setUnit?: (location: WebGLUniformLocation, unit: number) => void,
+): number[] {
 	const textureUnits: number[] = [];
-	for (const stage of [p.source.vertex, p.source.fragment]) {
-		for (const block of stage.uniformBlocks) {
-			const index = gl.getUniformBlockIndex(p.program, block.name);
-			if (index !== gl.INVALID_INDEX)
-				gl.uniformBlockBinding(p.program, index, slotOf(block.group, block.binding));
-		}
+	for (const stage of [source.vertex, source.fragment]) {
 		for (const texture of stage.textures) {
-			const location = gl.getUniformLocation(p.program, texture.name);
+			const location = locationOf(texture.name);
 			if (!location) continue;
 			const slot = slotOf(texture.group, texture.binding);
 			const sampler = texture.sampler;
@@ -505,12 +609,57 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 			} else if (textureUnits[known + 2] !== samplerSlot) {
 				throw new Error('a WebGL2 program samples one texture with two samplers');
 			}
-			gl.uniform1i(location, textureUnits[known] as number);
+			setUnit?.(location, textureUnits[known] as number);
 		}
 	}
 	if (textureUnits.length / 3 > UPLOAD_UNIT)
 		throw new Error(`a WebGL2 program reads ${textureUnits.length / 3} textures, past its units`);
-	p.textureUnits = textureUnits;
+	return textureUnits;
+}
+
+/** The unit that the triples from `textureUnitsOf` give a binding, or a refusal when they lack it. */
+export function textureUnitOf(units: readonly number[], group: number, binding: number): number {
+	const slot = slotOf(group, binding);
+	for (let k = 0; k < units.length; k += 3) if (units[k + 1] === slot) return units[k] as number;
+	throw new Error(`a WebGL2 program reads no texture at group ${group}, binding ${binding}`);
+}
+
+/**
+ * Checks the program's link result, binds its uniform blocks to the slots of their WGSL groups and
+ * bindings, gives each texture it reads a unit, counting from 0, and sets its vertex shader's
+ * depth mapping for the backend's depth mode, once, at its first use. A texture that both stages
+ * read takes one unit. A block or texture that the driver removed, because the program never reads
+ * it, needs no binding and is skipped. The program is in use afterwards. A link that failed with
+ * Safari's random Metal fault is done once more, into a new program, and waited for.
+ */
+export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
+	// The units are counted from the sources, before the device reads them, so a material that
+	// asks for too many hears E1209 rather than a link failure that reads as a broken shader.
+	const [vertexUnits, fragmentUnits] = stageTextureUnits(gl);
+	checkStageUnits(p.source.vertex, 'vertex', vertexUnits);
+	checkStageUnits(p.source.fragment, 'fragment', fragmentUnits);
+	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
+		if (!metalFault(gl, p)) throw linkError(gl, p, '');
+		relink(gl, p);
+		if (!gl.getProgramParameter(p.program, gl.LINK_STATUS))
+			throw linkError(gl, p, ' twice, the second time after a fault in its Metal');
+	}
+	for (const shader of p.shaders) {
+		gl.detachShader(p.program, shader);
+		gl.deleteShader(shader);
+	}
+	gl.useProgram(p.program);
+	for (const stage of [p.source.vertex, p.source.fragment])
+		for (const block of stage.uniformBlocks) {
+			const index = gl.getUniformBlockIndex(p.program, block.name);
+			if (index !== gl.INVALID_INDEX)
+				gl.uniformBlockBinding(p.program, index, slotOf(block.group, block.binding));
+		}
+	p.textureUnits = textureUnitsOf(
+		p.source,
+		(name) => gl.getUniformLocation(p.program, name),
+		(location, unit) => gl.uniform1i(location, unit),
+	);
 	p.firstInstance = gl.getUniformLocation(p.program, 'naga_vs_first_instance');
 	const mapping = gl.getUniformLocation(p.program, DEPTH_MAPPING_UNIFORM);
 	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);
@@ -567,11 +716,7 @@ export function programHost(
 		},
 		slot: slotOf,
 		unit(program, group, binding) {
-			const units = linked.get(program)?.textureUnits ?? [];
-			const slot = slotOf(group, binding);
-			for (let k = 0; k < units.length; k += 3)
-				if (units[k + 1] === slot) return units[k] as number;
-			throw new Error(`a WebGL2 program reads no texture at group ${group}, binding ${binding}`);
+			return textureUnitOf(linked.get(program)?.textureUnits ?? [], group, binding);
 		},
 	};
 }

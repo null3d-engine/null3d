@@ -3,7 +3,7 @@ id: getting-started/hosting
 title: Hosting and cross-origin isolation
 status: experimental
 since: "0.1"
-summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the single-threaded fallback."
+summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the caches between visits; the single-threaded fallback."
 ---
 
 # Hosting and cross-origin isolation
@@ -58,6 +58,8 @@ The engine needs no inline script and no inline style. It sets styles from code,
 A worker follows the policy of its own script's response, not the page's. A host that sends the header on every file, as the examples below do for the isolation headers, applies the same policy to the workers.
 
 ## The engine's files on a CDN
+
+A page can also load the engine from a CDN with no build step of its own. [Try null3D from a CDN](cdn.md) gives that page, and the build folder it imports.
 
 The production build's files, `dist/assets/`, may come from another origin than the HTML page, such as a CDN. Point Vite's `base` option at the CDN, and serve the HTML page from your own origin:
 
@@ -158,15 +160,23 @@ Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. Git
 
 ## Publish the third-party notices
 
-The engine ships code from other projects:
+The engine and some add-ons ship code from other projects, under their licenses. A production build with the null3D Vite plugin collects every package's notices into `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits.
 
-- the Basis Universal transcoder for KTX2 files, with the Zstandard code inside it
-- the meshoptimizer decoder for meshopt-compressed glTF files
-- Draco's decoder for Draco-compressed glTF files
-- a table of values from three.js, in the engine core
-- the Rust crates in the engine core
+[Third-party notices](third-party-notices.md) lists every part and its license. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
 
-Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
+## Caches between visits
+
+A repeat visit starts sooner when the browser keeps what the first visit downloaded and made. Five caches do that, and each keeps something else:
+
+| Cache | What it keeps | Who sets it up |
+| --- | --- | --- |
+| The HTTP cache | The build's files: the engine, its workers, the shaders and your own files | The host, with the headers below |
+| A service worker's cache | Every file the game needs, so it plays with no network | Your game, as [Offline play](#offline-play) shows |
+| The cache of derived data | Data that the engine and add-ons make from files, such as transcoded KTX2 textures, and data that your sketch makes itself | The engine, with no setup. `assets.cache` gives your sketch its own namespace ([Caching](../api/assets.md#caching)) |
+| The stored preset check | The quality preset that the device held | The engine, in `localStorage` ([Quality presets](../concepts/quality-presets.md#repeat-visits)) |
+| The back/forward cache | The whole running page, for the browser's back and forward buttons | The browser ([Content pages](../guides/content-pages.md#second-visits-and-navigation)) |
+
+The first two keep files, so a repeat visit downloads less. The cache of derived data keeps the work done on those files, so a repeat visit skips it. A page whose KTX2 files are all in it never downloads the transcoder. The browser can delete any of them to free space, and the engine then downloads or makes the data again.
 
 ## Let browsers keep the build files
 
@@ -238,7 +248,9 @@ async function update() {
   const cache = await caches.open(name);
   if (await cache.match('./')) return;
   const features = FEATURES.flatMap((feature) => list.features[feature]);
-  await cache.addAll(['./', ...list.start, ...features]);
+  // Two features can name one file, such as a shared table of shader paragraphs, and a cache
+  // refuses a list that names a file twice.
+  await cache.addAll([...new Set(['./', ...list.start, ...features])]);
   for (const old of await caches.keys())
     if (old.startsWith(PREFIX) && old !== name) await caches.delete(old);
 }
@@ -260,15 +272,17 @@ The cache keeps each response with its headers, so the cached page keeps the two
 
 The cache decides where the files come from, and `preload` decides when they load. Cache each feature that the game lists in `preload`, or an offline start fails while it waits for that feature's shaders. A feature that the game caches but does not preload loads from the cache on its first use, with no network. A feature that the game neither caches nor preloads needs the network on its first use.
 
-### Keep the engine's caches
+The preset can also draw a feature that the sketch never asks for. High and Ultra, and WebGL2's Medium, draw [screen-space bounce light](../concepts/post-processing.md#screen-space-bounce-light), whose steps read `'ao'`'s depth and normals and the `'color_copy'` of the scene color from the first frame. WebGPU's High and Ultra also cull hidden objects on the GPU, which reads the `'occlusion'` shaders from the first frame. A game that plays offline on those presets caches these features as well as the ones that it preloads.
 
-The engine keeps the textures that it transcodes from KTX2 files in Cache Storage, in caches whose names start with `null3d-`. The worker above deletes only its own caches, which start with `game-`. A service worker that deletes every other cache makes the engine transcode those textures again.
+### Keep the engine's cache
+
+The engine keeps its [cache of derived data](../api/assets.md#the-cache-of-derived-data) in the origin private file system, in a folder whose name starts with `null3d-derived-`. A service worker's cache never holds it, so the worker above can delete its old caches freely. A page that clears the origin's storage, for example with the `Clear-Site-Data` header, makes the engine transcode its textures again.
 
 ## During development
 
 The null3D Vite plugin sends both isolation headers on every response from `vite` and `vite preview`. That includes the `.wasm` files and the worker scripts. `vite preview` also lets the browser keep the hashed files in `assets/`, as a well-set host does.
 
-Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
+Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. WebGPU, and so the High and Ultra presets, only exist there. A page served over plain HTTP on a network address silently falls back to WebGL2 at Medium. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
 
 To test on a phone or tablet over your local network, serve HTTPS with a local certificate. Make one with [mkcert](https://github.com/FiloSottile/mkcert), for `localhost` and your computer's network name:
 
@@ -286,7 +300,7 @@ export default defineConfig({ plugins: [null3d({ https: true, certDir: 'certs' }
 
 The plugin serves this HTTPS over HTTP/1.1. Over HTTP/2, Safari on an iPad sometimes stops while a worker loads its modules. The dev server sends each module as its own file, and every engine thread loads its own copy of each.
 
-The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings.
+The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings. A browser that has not been given the root certificate shows a warning: open the address over HTTPS and accept the certificate warning to continue.
 
 ## What isolation changes
 

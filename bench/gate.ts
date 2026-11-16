@@ -1,11 +1,11 @@
 // Runs the Mac part of M1's exit gate and writes its record: the image test manifest on the Mac's
-// GPU and on SwiftShader, the parity check, the budgets, the docs checks, the release version, the
-// gate commit's workflows, M0's desktop speed target, S3, S1-cells and S4 against three.js, the
-// allocation check and the soak on S4, and the time to first frame. Each step runs one of the
-// repository's own commands, one after another, so the timing steps never overlap. The record goes
-// to target/gate/<run>/: `gate.md` and `gate.json`, with each step's full output in `<step>.log`.
-// The phone, the tablet, and Safari and Firefox on the Mac run through the device runner, apart
-// from this command. From the repository root:
+// GPU and in the commit's CI browser jobs, which draw it on Linux SwiftShader, the parity check, the
+// budgets, the docs checks, the release version, the gate commit's workflows, M0's desktop speed
+// target, S3, S1-cells and S4 against three.js, the allocation check and the soak on S4, and the
+// time to first frame. Each step runs one of the repository's own commands, one after another, so
+// the timing steps never overlap. The record goes to target/gate/<run>/: `gate.md` and `gate.json`,
+// with each step's full output in `<step>.log`. The phone, the tablet, and Safari and Firefox on the
+// Mac run through the device runner, apart from this command. From the repository root:
 //   bun run gate
 //   bun run gate --quick                  fewer and shorter benchmark runs, for a rehearsal
 //   bun run gate --only parity,budgets    the named steps only
@@ -38,7 +38,6 @@ function runStep(step: GateStep, logFile: string): Promise<{ output: string; exi
 		let output = '';
 		const child = spawn(program as string, args, {
 			cwd: REPO_ROOT,
-			env: { ...process.env, ...step.env },
 			stdio: ['ignore', 'pipe', 'pipe'],
 		});
 		const take = (chunk: Buffer) => {

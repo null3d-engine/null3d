@@ -1,0 +1,17 @@
+# The splats' pack growth, held to one set of numbers by both packs: the TypeScript reference in
+# packages/splats/src/pack.ts and the core's port in crates/null3d-core/src/chunk_rows.rs. Each
+# reads this file and fails when its own growth leaves these figures.
+#
+# A chunk of 16 rows, and the share of its surface that each prefix covers, from the whole chunk
+# down to one row. Index i stands for the prefix that is count / 2^(i/2) rows long.
+count 16
+coverage 1 0.9 0.8 0.7 0.6 0.5 0.4 0.2 0.05
+
+# prefix growth: the whole chunk draws at its own scales; a half covers 0.8 of the surface and
+# grows by its square root's inverse; one row covers a twentieth and would grow past four, so the
+# cap holds it at three.
+expect 16 1
+expect 11 1.0588763607770533
+expect 8 1.118033988749895
+expect 2 1.5811388300841898
+expect 1 3

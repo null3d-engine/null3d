@@ -1,8 +1,8 @@
 # D-35: Skins, clips and morph targets from glTF files
 
-Status: decided, 2026-10-04. Date: 2026-10-04. Task: M2-C7.
+Status: decided and built. Task: M2-C7.
 
-Summary: One skeleton per model: skin joints, moved nodes and the nodes above and below them are joints, not objects. Meshes on bones move as one-joint skins. The job workers resample clips as background tasks. Seven sample models match three.js within 3e-4, Fox within 5e-3.
+Summary: One skeleton per model: skin joints, moved nodes and the nodes above and below them are joints, not objects. Meshes on bones move as one-joint skins, and the job workers resample clips as background tasks. Seven sample models match three.js within 3e-4, Fox within 5e-3.
 
 ## Question
 
@@ -20,7 +20,7 @@ How does a glTF file's animation reach the engine core? A file has skins, which 
 
 ### Poses against three.js
 
-`tests/pages/gltf-poses.ts` loads seven sample models with the engine's parser. It hands their clips to the core, which the job workers resample, and plays each clip of `tests/pages/lib/gltf-poses.ts` at chosen times. Then it compares each skin joint's skinning matrix with what three.js r186 gives for the same file and time. `bun bench/three-fixtures.ts` records three.js's values in `tests/pages/lib/gltf-poses.json`. For meshes that clips move without a skin, it compares their world matrices. Chrome on the Mac (MacBook Pro M5 Max, 4 October 2026), 2 job workers:
+`tests/pages/gltf-poses.ts` loads seven sample models with the engine's parser. It hands their clips to the core, which the job workers resample, and plays each clip of `tests/pages/lib/gltf-poses.ts` at chosen times. Then it compares each skin joint's skinning matrix with what three.js r186 gives for the same file and time. `bun bench/three-fixtures.ts` records three.js's values in `tests/pages/lib/gltf-poses.json`. For meshes that clips move without a skin, it compares their world matrices. Chrome on the Mac (MacBook Pro M5 Max), 2 job workers:
 
 | Model | Joints | Clips | Clips resampled | Largest difference: rotation and scale | Translation, as a share of the largest |
 | --- | --- | --- | --- | --- | --- |
@@ -34,30 +34,30 @@ How does a glTF file's animation reach the engine core? A file has skins, which 
 
 A script evaluated the parsed keys of Fox and the Knight directly, with `slerp`, and composed the skeleton in three.js. It matched three.js within 2.8e-7. So the parser and the skeleton match three.js, and any larger difference comes from how the core stores and samples clips.
 
-### Faults the comparison found
+### Two rules of the resampler
 
-| Fault | Before | After |
+| Rule | Without it | With it |
 | --- | --- | --- |
-| A clip's end is a 32-bit float. 32 thirtieths of a second lie 1.7 millionths of a frame past frame 32, and D-26's resampler allowed a millionth. So the Knight's clips got 33 frames at 30.9 keys per second, and no frame fell on the file's keys. The resampler now allows a thousandth of a frame, as its grid check does | Knight 1.1e-2 | Knight 7.2e-5 |
-| D-26 sampled rotations between keys with plain normalized linear interpolation, and judged it good up to 6 rad/s at 30 keys per second. Files turn joints faster: Fox's run turns a joint 1.5 radians in one key of 1/24 s, and SimpleSkin 0.8 radians in half a second. Sampling now applies the correction that D-26's blends use, one dot product and a short polynomial for four joints | RiggedFigure 1.4e-3, SimpleSkin 1.3e-3 | RiggedFigure 4.0e-5, SimpleSkin 3.0e-4 |
+| A clip's end is a 32-bit float. 32 thirtieths of a second lie 1.7 millionths of a frame past frame 32. A resampler that allows a millionth gives the Knight's clips 33 frames at 30.9 keys per second, and no frame falls on the file's keys. So the resampler allows a thousandth of a frame at a clip's end, as its grid check does | Knight 1.1e-2 | Knight 7.2e-5 |
+| D-26 judged plain normalized linear interpolation between rotation keys good up to 6 rad/s at 30 keys per second. Files turn joints faster: Fox's run turns a joint 1.5 radians in one key of 1/24 s, and SimpleSkin 0.8 radians in half a second. So sampling applies the correction that D-26's blends use, one dot product and a short polynomial for four joints | RiggedFigure 1.4e-3, SimpleSkin 1.3e-3 | RiggedFigure 4.0e-5, SimpleSkin 3.0e-4 |
 
-The correction also brought D-26's own fixtures closer to three.js. Poses went from 1.0e-4 to 2.1e-5, and skinning matrices from 3.6e-4 to 1.7e-4.
+With the correction, D-26's own fixtures match three.js within 2.1e-5 for poses and 1.7e-4 for skinning matrices. Without it, they match within 1.0e-4 and 3.6e-4.
 
-Below 0.2 radians between keys, plain interpolation stays within 3.2e-5 radians of `slerp`, about one step of a 16-bit key. So the resampler marks each rotation track that turns further between two frames, and puts the marked tracks first among the groups of four. Sampling tests only those groups, and corrects a group only at the frames where one of its joints turns further. Groups of unmarked tracks take the same steps as before the correction. Most clips at 30 keys per second have no marked track.
+Below 0.2 radians between keys, plain interpolation stays within 3.2e-5 radians of `slerp`, about one step of a 16-bit key. So the resampler marks each rotation track that turns further between two frames, and puts the marked tracks first among the groups of four. Sampling tests only those groups, and corrects a group only at the frames where one of its joints turns further. Groups of unmarked tracks take the plain interpolation steps alone. Most clips at 30 keys per second have no marked track.
 
-The benchmark `bench_animation_crowd` timed the native frame step of main and of this branch on 4 October 2026, in turns, 20 rounds each. Other work kept the Mac busy throughout, with load averages from 60 to 180 on 18 cores. So each figure is the fastest of a round's 500 frames, which filters out most of that work. The table gives the median of the 20 rounds with their range, and the median of the changes from round to round. The benchmark's first clip turns joints at most 0.16 radians between keys. Its second turns them up to 0.32 radians, so all of its tracks are marked.
+The benchmark `bench_animation_crowd` timed the native frame step without the correction and with it, in turns, 20 rounds each. Other work kept the Mac busy throughout, with load averages from 60 to 180 on 18 cores. So each figure is the fastest of a round's 500 frames, which filters out most of that work. The table gives the median of the 20 rounds with their range, and the median of the changes from round to round. The benchmark's first clip turns joints at most 0.16 radians between keys. Its second turns them up to 0.32 radians, so all of its tracks are marked.
 
-| Characters of 48 joints | main | This branch | Change | Rounds the branch was faster |
+| Characters of 48 joints | Without the correction | With it | Change | Rounds faster with it |
 | --- | --- | --- | --- | --- |
 | 100, 1 thread | 120.5 µs (108 to 124) | 129.9 µs (126 to 131) | +5.9% | 0 of 20 |
 | 500, 1 thread | 621.7 µs (599 to 631) | 654.1 µs (568 to 790) | +5.5% | 1 of 20 |
 | 500, 8 threads | 97.9 µs (93 to 106) | 102.8 µs (99 to 110) | +4.7% | 2 of 20 |
 
-The same build with the correction turned off ran at main's speed, within 1% on one thread. So the 5% is the correction itself, on the second clip's joints. At 0.32 radians apart, plain interpolation strays up to about 1.3e-4 radians from `slerp`, between D-26's figures for 0.2 and 0.5 radians. The correction keeps it under 3.3e-5.
+The same build with the correction switched off ran within 1% of the build without it, on one thread. So the 5% is the correction itself, on the second clip's joints. At 0.32 radians apart, plain interpolation strays up to about 1.3e-4 radians from `slerp`, between D-26's figures for 0.2 and 0.5 radians. The correction keeps it under 3.3e-5.
 
-The first version of this branch tested every group at every frame. A second run slowed the benchmark's second clip to turn at most 0.15 radians between keys, so that no track was marked. There that version took 1% to 2% more than main in 7 of the 8 cases. The marked tracks bring it to main's speed, within 0.5% on one thread.
+Marking tracks keeps the correction free where no joint turns fast. A run slowed the benchmark's second clip to turn at most 0.15 radians between keys, so that no track was marked. There, a correction that tests every group at every frame took 1% to 2% more than no correction, in 7 of the 8 cases. With marked tracks, that clip runs within 0.5% of no correction on one thread.
 
-Fox stays at 5.0e-3. Its run clip changes its key spacing at 0.87 s, so its keys lie on no single grid. The core therefore stores it at 30 keys per second, as D-26 decided. Its fastest joints turn 1.5 radians between keys, and the resampled curve cuts their corners. That is 0.3 degrees. A finer rate for such clips would double their memory; no measured clip needs it yet.
+Fox stays at 5.0e-3. Its run clip changes its key spacing at 0.87 s, so its keys lie on no single grid. The core therefore stores it at 30 keys per second, as D-26 decided. Its fastest joints turn 1.5 radians between keys, and the resampled curve cuts their corners. That is 0.3 degrees. A finer rate for such clips would double their memory, and no measured clip needs it.
 
 ### The Knight as joints and objects
 
@@ -74,14 +74,15 @@ With every node an object, as three.js makes it, a copy would hold 58 objects.
 
 ### Sizes
 
-| File | Before | After Brotli |
-| --- | --- | --- |
-| `js/sketch-worker-gltf.js` and `js/page-gltf.js`, the loader with the animator and `debug.skeleton`'s data | 3.1 KB | 6.1 KB |
-| `js/gltf-worker.js`, the parser with skins, clips and morph targets | 6.0 KB | 8.9 KB |
-| `threaded/null3d.js` and `single/null3d.js`, the core's JavaScript glue, with three more calls | 8.3 KB | 8.4 KB |
-| The engine's first download, `js/page.js` and `js/sketch-worker.js` | unchanged | unchanged |
+| File | After Brotli |
+| --- | --- |
+| `js/sketch-worker-gltf.js` and `js/page-gltf.js`, the loader with the animator and `debug.skeleton`'s data | 6.1 KB |
+| `js/gltf-worker.js`, the parser with skins, clips and morph targets | 8.9 KB |
+| `threaded/null3d.js` and `single/null3d.js`, the core's JavaScript glue, with the three calls for clips | 8.4 KB |
 
-How the data was produced: `bun bench/three-fixtures.ts`, then `NULL3D_PORT=9373 bunx playwright test gltf-poses.spec.ts` in `tests`, on 4 October 2026. The direct evaluation and the counts came from scripts over `parseGltf`, and the sizes from `bun run build`.
+The engine's first download, `js/page.js` and `js/sketch-worker.js`, holds none of the animation code.
+
+How the data was produced: `bun bench/three-fixtures.ts`, then `NULL3D_PORT=9373 bunx playwright test gltf-poses.spec.ts` in `tests`. The direct evaluation and the counts came from scripts over `parseGltf`, and the sizes from `bun run build`.
 
 ## Decision
 
@@ -93,7 +94,7 @@ The loader builds one skeleton for the whole model. Its joints are every node th
 - A node below a joint that the skins and clips leave still becomes an object in the copy's group. It takes the place its joints give it at rest.
 - A light on a moving node is left out, with a warning in development builds.
 
-The rejected option made one skeleton per skin, as three.js makes one `Skeleton` per `SkinnedMesh`. Clips that move nodes outside any skin, and meshes on bones, would then need a second mechanism. A model whose skins share joints would sample them once per skin.
+The rejected option makes one skeleton per skin, as three.js makes one `Skeleton` per `SkinnedMesh`. Clips that move nodes outside any skin, and meshes on bones, would then need a second mechanism. A model whose skins share joints would sample them once per skin.
 
 ### Meshes that joints move
 
@@ -115,11 +116,11 @@ The core resamples each clip as a background task on the job workers. The job sy
 | Resample in the glTF worker | No | The worker would need a second copy of the core's WebAssembly, 550 KB, or a resampler in TypeScript beside the core's |
 | Background tasks on the job workers (chosen) | No | The resampler that D-26 tested runs as it is |
 
-The resampler copies a track that holds one key, or one linear or step key at each frame's time, and evaluates only the others. The asset tool writes every track so, and its files load with copies alone ([D-18](D-18-asset-tool.md#clips)). The Knight's 76 clips then took 7.9 ms on two job workers, against 16.5 ms from its source file.
+The resampler copies a track that holds one key, or one linear or step key at each frame's time, and evaluates only the others. The asset tool writes every track so, and its files load with copies alone ([D-18](D-18-asset-tool.md#clips)). The Knight's 76 clips from the tool's file take 7.9 ms on two job workers, against 16.5 ms from its source file.
 
 ### The correction between rotation keys
 
-Sampling corrects rotations between keys for tracks that turn more than 0.2 radians between frames, and only there. Accuracy against three.js is the point of loading a file's clips, so the correction stays on. It costs about 5% of the frame step in `bench_animation_crowd`, whose second clip turns joints up to 0.32 radians between keys ("Faults the comparison found").
+Sampling corrects rotations between keys for tracks that turn more than 0.2 radians between frames, and only there. Accuracy against three.js is the point of loading a file's clips, so the correction stays on. It costs about 5% of the frame step in `bench_animation_crowd`, whose second clip turns joints up to 0.32 radians between keys ("Two rules of the resampler").
 
 The rejected option computes part of the correction at load time. The polynomial terms that depend only on the two keys' dot product would be stored for each group and frame, beside the keys. That doubles the rotation memory of the marked tracks, which D-26 kept small for crowds, and saves perhaps half of the 5%. It was not measured. A crowd scene whose clips turn fast could justify it later.
 
@@ -154,8 +155,7 @@ Its `GLTFLoader` makes an `Object3D` for every node and a `Bone` for every skin 
 ## Consequences
 
 - `packages/engine/src/scene/gltf-animation.ts` reads skins, clips and morph targets in the glTF worker; `gltf-json.ts` and `gltf-math.ts` hold the checks and matrix arithmetic that the parser and the loader share.
-- `animation.ts` has `loadAnimationRig`, `skinObject` and `debug.skeleton`'s data. `skinObject` records the link until the skinning passes (M2-C3, M2-C4) merge, which make it a scene command.
+- `animation.ts` has `loadAnimationRig`, `skinObject` and `debug.skeleton`'s data. `skinObject` sends the link as a scene command.
 - The core's resampler takes cubic spline keys and a thousandth of a frame at a clip's end. It marks rotation tracks that turn more than 0.2 radians between frames and groups them first. Sampling corrects those groups' rotations between keys, which D-26 records.
 - The WebAssembly entry point has `createClipLater`, `clipReady` and `animatedInstanceJoints`.
 - `tests/pages/gltf-poses.ts` and `tests/image/gltf-poses.spec.ts` compare the sample models with three.js, and the `gltf-skeleton` image test draws `debug.skeleton`.
-- The record is in the table in [README.md](README.md).

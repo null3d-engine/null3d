@@ -1,0 +1,40 @@
+{
+	"caps": "tree",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"frame": {
+			"petiole": [545, 1013],
+			"tip": [549, 8]
+		},
+		"lowerFrame": {
+			"petiole": [486, 1012],
+			"tip": [533, 10]
+		}
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "base",
+				"slot": 27,
+				"tile": [0.32, 0.32],
+				"depth": 0.05,
+				"smooth": 10
+			},
+			{
+				"name": "trunk",
+				"slot": 26,
+				"tile": [0.55, 0.55],
+				"depth": 0.012,
+				"smooth": 4
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 28,
+			"tile": [0.22, 0.22],
+			"depth": 0.0008,
+			"delight": { "radius": 0.1 }
+		}
+	}
+}

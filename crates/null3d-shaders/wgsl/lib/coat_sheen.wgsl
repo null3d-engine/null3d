@@ -2,7 +2,7 @@
 #import null3d::globals::{EnvironmentLight}
 #import null3d::ibl::{environment_radiance}
 #import null3d::lighting::{brdf_ggx, dfg_lut, environment_brdf, f_schlick}
-#import null3d::math::{INV_PI, PI, max_component}
+#import null3d::math::{INV_PI, PI, half_vector, max_component}
 
 // The layers above a surface's base, as three.js's MeshPhysicalMaterial lights them: a clear coat
 // and a sheen. The coat is a second GGX lobe, with a reflectance of 0.04 head on and 1 at grazing
@@ -92,7 +92,7 @@ fn layered_light(normal: vec3f, to_view: vec3f, to_light: vec3f, light: vec3f) -
     let roughness = current.sheen_roughness;
     let n_dot_l = saturate(dot(normal, to_light));
     let n_dot_v = saturate(dot(normal, to_view));
-    let half_dir = normalize(to_light + to_view);
+    let half_dir = half_vector(to_light, to_view);
     let n_dot_h = saturate(dot(normal, half_dir));
     let brdf = current.sheen_color * (d_charlie(roughness, n_dot_h) * v_neubelt(n_dot_v, n_dot_l));
     sheen_light += n_dot_l * light * brdf;

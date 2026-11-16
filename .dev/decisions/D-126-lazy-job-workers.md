@@ -1,29 +1,29 @@
 # D-126: Start the job workers as the work grows
 
-Status: decided, owner task, 10 October 2026. Task: memory parity study.
+Status: decided and built. Task: memory parity study, set by the owner.
 
-Summary: The engine starts no job workers at first. The sketch thread times the parallel loops that it hands out, and asks for 2 job workers once those loops take 0.2 ms or more per frame over 30 frames, then for twice as many after each such window, up to the most that [D-07](D-07-job-workers.md) sets. Started job workers stay. The sketch thread stops timing its loops for a while after a window with too little work, and for good once it has asked for the most, because each reading of the clock allocates. The render worker no longer runs a copy of the core. On an 18-core Mac, S1 with 1,000 boxes fell from 128 MiB to 77 MiB of real memory, against 40 to 48 MiB for its three.js twin. A scene that needs job workers runs its first quarter second about 0.3 ms per frame slower, and then as fast as before.
+Summary: The engine starts no job workers at first. The sketch thread times the parallel loops that it hands out, and asks for 2 job workers once those loops take 0.2 ms or more per frame over 30 frames, then for twice as many after each such window, up to the most that [D-07](D-07-job-workers.md) sets. Started job workers stay. The sketch thread stops timing its loops for 4.5 seconds of sketch time after a window with too little work, and for good once it has asked for the most, because each reading of the clock allocates. The render worker runs no copy of the core. On an 18-core Mac, S1 with 1,000 boxes takes 77 MiB of real memory, against 128 MiB with every job worker started at once and 40 to 48 MiB for its three.js twin. A scene that needs job workers runs its first quarter second about 0.3 ms per frame slower, and then as fast as with every job worker started at once.
 
 ## Question
 
-The owner asked whether null3D can use only as much memory as three.js. A page with a small null3D scene took about 80 MiB more memory than its three.js twin. Where does that memory go, and how much of it can go?
+Can null3D use only as much memory as three.js? A page with a small null3D scene, with every job worker started at once, takes about 80 MiB more memory than its three.js twin. Where does that memory go, and how much of it can go?
 
 ## Where the memory went
 
-Measured on 9 and 10 October 2026, MacBook Pro (18 logical cores), Chrome, production builds of the benchmark pages, 1280 x 720, pixel ratio 1. "Real memory" is the page's renderer process footprint from macOS `footprint`: the RAM the tab takes, without the GPU process. A memory figure varies by about 10 MiB from run to run, so each table compares rows of one run.
+Measured on a MacBook Pro (18 logical cores), Chrome, production builds of the benchmark pages, 1280 x 720, pixel ratio 1. "Real memory" is the page's renderer process footprint from macOS `footprint`: the RAM the tab takes, without the GPU process. A memory figure varies by about 10 MiB from run to run, so each table compares rows of one run.
 
 | Page | Real memory | Engine's WebAssembly memory | JS isolates |
 | --- | --- | --- | --- |
-| null3D S1, 1,000 boxes, WebGPU, 16 job workers (before) | 128 MiB | 22.1 MiB | 19 |
-| null3D S1, 1,000 boxes, WebGPU, `?jobs=1` (before) | 76 MiB | 7.0 MiB | 4 |
+| null3D S1, 1,000 boxes, WebGPU, 16 job workers started at once | 128 MiB | 22.1 MiB | 19 |
+| null3D S1, 1,000 boxes, WebGPU, `?jobs=1`, started at once | 76 MiB | 7.0 MiB | 4 |
 | null3D S1, 1,000 boxes, WebGPU, job workers as the work grows | 77 MiB | 5.0 MiB | 3 |
 | null3D S1, 1 box, WebGPU, job workers as the work grows | 73 MiB | 4.8 MiB | 3 |
 | three.js S1, 1,000 boxes, WebGPURenderer | 48 MiB | | 1 |
 | three.js S1, 1,000 boxes, WebGLRenderer | 40 MiB | | 1 |
 
-- Each job worker cost about 3.5 MiB of real memory while it waited: a whole browser thread with its own JS isolate (0.6 MiB of heap), its copy of the core's glue code and instance, and a 1 MiB stack in the shared memory. The 16 job workers of the Mac were 52 MiB of the 80 MiB gap.
+- Each job worker costs about 3.5 MiB of real memory while it waits: a whole browser thread with its own JS isolate (0.6 MiB of heap), its copy of the core's glue code and instance, and a 1 MiB stack in the shared memory. The 16 job workers of the Mac are 52 MiB of the 80 MiB gap.
 - Per object, null3D and three.js are close. From 1,000 to 100,000 boxes, null3D's WebAssembly memory grew by about 230 bytes per box, and three.js's renderer process by about 140 to 200 bytes. The gap is the fixed cost.
-- The S1 scene with 1,000 boxes never asked for a job worker. In the prototype's run, S1 with 100,000 boxes and S6 started all 16, and the real memory was the same as before (166 MiB and 171 MiB). In the timing runs below, S1 with 100,000 boxes started 4 to 16 on WebGPU, more when the Mac was busy, and all 16 on WebGL2.
+- The S1 scene with 1,000 boxes never asked for a job worker. In the prototype's run, S1 with 100,000 boxes and S6 started all 16, and the real memory was the same as with every job worker started at once (166 MiB and 171 MiB). In the timing runs below, S1 with 100,000 boxes started 4 to 16 on WebGPU, more when the Mac was busy, and all 16 on WebGL2.
 
 ## Options
 
@@ -38,17 +38,17 @@ Measured on 9 and 10 October 2026, MacBook Pro (18 logical cores), Chrome, produ
 
 - The page starts the sketch worker and the render worker at once, and no job worker. Each job worker gets its port for the loader's tasks when it starts.
 - The core adds up the time that the sketch thread spends in each parallel loop that it hands out, from the hand-out to the last chunk's end. A loop that runs inline, because it has one chunk, does not count. Until a job worker joins, the sketch thread runs every chunk, so the time measures the parallel work there is, whoever runs it.
-- After every 30 frames, the sketch thread reads the mean of that time per frame. At 0.2 ms or more, it asks the page for twice the job workers that it asked for before, and at least 2, up to the most: logical cores minus 2, or `?jobs=`.
+- After every 30 frames, the sketch thread reads the mean of that time per frame. At 0.2 ms or more, it asks the page for twice the job workers that it asked for last, and at least 2, up to the most: logical cores minus 2, or `?jobs=`. Below that, it leaves its loops untimed for 4.5 seconds of sketch time ([The pause after a light window is a time](#the-pause-after-a-light-window-is-a-time)).
 - The on-demand loader's first task asks for 2 job workers, and runs on the second, so the first stays free for the frames. While every job worker that takes tasks has one, the next task asks for twice as many.
-- Work that the core queues between frames runs only on job workers, such as the resampling of a model's animation clips. When the core queues such a task before any job worker has joined, it asks for 2 job workers at once, as the loader's first task does. The job system calls a hook of its host for this, so every future task of this kind asks too. The first version of this change had no such rule, and a model with clips never finished loading in a scene that had started no job worker.
+- Work that the core queues between frames runs only on job workers, such as the resampling of a model's animation clips. When the core queues such a task before any job worker has joined, it asks for 2 job workers at once, as the loader's first task does. The job system calls a hook of its host for this, so every future task of this kind asks too. Without this rule, a model with clips never finishes loading in a scene that has started no job worker.
 - Job workers never stop before the engine stops. A scene whose work falls keeps the ones it started.
 - `engine.mode.jobWorkers` gives the most job workers. The frame figures and the stats overlay count only the job workers that the engine has started.
 
 ## Cost
 
-Measured on 10 October 2026 on the same Mac, Chrome 155, production builds of main (2f54175) and of this change.
+Measured on the same Mac, Chrome 155, production builds of main (2f54175) and of this change.
 
-**Start-up.** A test page ran a busy scene: 64,000 boxes in 16 turning groups, made over the first four frames. The engine test's busy sketch now moves the rows of an instance batch instead, which hands out parallel work in every frame on both GPU paths. It measured the frames in windows of 0.25 s for 6 s from the engine's start. Three runs of each build on WebGPU and one on WebGL2, at a load of 2.7 to 6.1:
+**Start-up.** A test page ran a busy scene: 64,000 boxes in 16 turning groups, made over the first four frames. The engine test's busy sketch moves the rows of an instance batch instead, which hands out parallel work in every frame on both GPU paths. It measured the frames in windows of 0.25 s for 6 s from the engine's start. Three runs of each build on WebGPU and one on WebGL2, at a load of 2.7 to 6.1:
 
 | Window from the start | Main, mean CPU ms per frame | This change | Job workers running, this change |
 | --- | --- | --- | --- |
@@ -81,13 +81,11 @@ Measured on 10 October 2026 on the same Mac, Chrome 155, production builds of ma
 
 ## Open
 
-- After this change, a small scene still takes 15 to 30 MiB more than three.js. Most of it is the two other threads: each has its own isolate, its own copy of the engine's script source, and the render worker its own GPU client. The engine's WebAssembly memory adds about 5 MiB, and the frame figures' shared buffer 1.9 MiB, with room for every job worker that may start. The study's notes list the next steps.
-- `?jobs=` now sets the most job workers, so a sweep of counts measures a count only in a scene whose parallel work starts that many. S1 with 100,000 boxes on WebGPU may start fewer than 16. A sweep switch that starts its count at once would make the sweep exact again.
+- A small scene still takes 15 to 30 MiB more than three.js. Most of it is the two other threads: each has its own isolate, its own copy of the engine's script source, and the render worker its own GPU client. The engine's WebAssembly memory adds about 5 MiB, and the frame figures' shared buffer 1.9 MiB, with room for every job worker that may start. The study's notes list the next steps.
+- `?jobs=` sets the most job workers, so a sweep of counts measures a count only in a scene whose parallel work starts that many. S1 with 100,000 boxes on WebGPU may start fewer than 16. A sweep switch that starts its count at once would make the sweep exact.
 
-## Addendum, 2026-10-13: the pause after a light window is a time
+## The pause after a light window is a time
 
-The sketch thread left its loops untimed for 270 frames after a window with too little work. That is 4.5 seconds at 60 frames per second, but 30 seconds at 9. A page whose first frames hand out little work, and whose heavy work starts after them, then ran with no job worker for up to 300 frames.
+After a window with too little work, the sketch thread leaves its loops untimed for 4.5 seconds of sketch time (`JOB_PAUSE_SECONDS` in `packages/engine/src/sketch/runner.ts`). That is 270 frames at 60 frames per second. The sketch time comes from the frames' timestamps, so the pause reads no clock and allocates nothing. It does not run while the sketch is paused or the page is hidden. The window stays 30 frames. A unit test checks that at 9 frames per second the timing starts again after about 40 frames.
 
-On 12 October 2026, CI's raycast test on WebGPU failed this way in run 38266209211. The page's first frames cast no batch of rays, so the first window fell short. SwiftShader then drew 276 frames in the test's 31 seconds of measurement, so the next window never began, and neither job worker started. In 28 passing CI runs of the same test, 3 took 35.2 to 35.4 seconds, so they caught the workers only at the very end. The others took about 8.5 seconds.
-
-The pause now lasts 4.5 seconds of sketch time (`JOB_PAUSE_SECONDS` in `packages/engine/src/sketch/runner.ts`), the same as before at 60 frames per second. The sketch time comes from the frames' timestamps, so the pause reads no clock and allocates nothing. It does not run while the sketch is paused or the page is hidden. The window stays 30 frames. A unit test checks that at 9 frames per second the timing starts again after about 40 frames.
+A pause counted in frames fails on a slow device: 270 frames are 4.5 seconds at 60 frames per second, but 30 seconds at 9. A page whose first frames hand out little work, and whose heavy work starts after them, then runs with no job worker for up to 300 frames. CI's raycast test on WebGPU fails this way with such a pause (run 38266209211). The page's first frames cast no batch of rays, so the first window falls short. SwiftShader then draws 276 frames in the test's 31 seconds of measurement, so the next window never begins, and neither job worker starts. In 28 passing CI runs of the same test, 3 took 35.2 to 35.4 seconds, so they caught the workers only at the very end. The others took about 8.5 seconds.

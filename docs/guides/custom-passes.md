@@ -61,6 +61,7 @@ The function takes an `EffectInput`:
 | `pixel` | `vec2f` | The pixel's center in pixels, from the top left. |
 | `size` | `vec2f` | The image's size in pixels, at the render scale. |
 | `time` | `f32` | The sketch time in seconds. |
+| `layer` | `u32` | The array layer the draw writes, from 0. An effect writes 0. |
 
 It returns the new color in the same form: linear, and multiplied by coverage. Keep alpha as `input.color.a` unless the effect changes what covers the pixel.
 
@@ -92,7 +93,7 @@ Declare uniforms as `struct Uniforms`, and read them as `uniforms.name`. The rul
 
 ### Textures
 
-An effect can read textures, as a custom material does. Declare each as `var name: texture_2d<f32>;`, and give it with the `textures` option: a texture from a file or from data, or a pass's texture from `textures.fromPass`. The engine declares its sampler as `nameSampler`.
+An effect can read textures, as a custom material does. Declare each as `var name: texture_2d<f32>;`, or as `var name: texture_2d_array<f32>;` for a texture array whose layers the WGSL picks, and give it with the `textures` option: a texture from a file or from data, or a pass's texture from `textures.fromPass`. The engine declares its sampler as `nameSampler`.
 
 ```ts
 const vignetteFromImage = /* wgsl */ `
@@ -108,7 +109,7 @@ post.addEffect({ wgsl: vignetteFromImage, textures: { mask: await assets.loadTex
 ```
 
 - A texture samples as white until its image is on the GPU. A declared texture that the option leaves out stays white.
-- An image texture's first row is at v = 0, so `input.uv` reads it upside down unless the image was decoded with `imageOrientation: 'flipY'`, as `assets.loadTexture` does. A pass's texture holds its bottom row first too: read it at `effectPassUv(input.uv)`.
+- An image texture's first row is at v = 0, so `input.uv` reads it upside down unless the image was decoded with `imageOrientation: 'flipY'`, as `assets.loadTexture` does. A pass's texture holds its bottom row first too: read it at `effectPassUv(input.uv)`. A reflection pass's texture on the HDR WebGPU path starts at the top row instead: read it at `input.uv`.
 - Each texture takes one of the 32 uniform numbers for its layer, so with textures the uniforms have that much less room. At most 6 textures.
 - An effect with textures draws in a pass of its own: it joins no other effect, and nothing folds it into the final pass.
 
@@ -295,17 +296,15 @@ A pass reads only the textures of passes added before it, so passes cannot read 
 
 ### Drawing less often
 
-A pass that need not change every frame can draw every few frames. Its texture keeps the last image while the pass is off:
+A pass that need not change every frame draws every few frames. `setPassEvery` gives it a cadence, and its texture keeps the last image while the pass waits:
 
 ```ts
-let frame = 0;
-return {
-  onUpdate() {
-    frame++;
-    render.setPassEnabled(map, frame % 4 === 0);
-  },
-};
+render.setPassEvery(map, 4);
 ```
+
+The call compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. A material that samples the pass's texture in a frame that the pass skips shows the last image that it drew: the target is neither culled nor cleared. Pace a pass with the cadence, not with the switch. A pass that has never drawn is out of the plan while it is off, so switching it on compiles the render graph. Once a pass has drawn, its passes stay in the plan while it is off: the switch only skips its recording, and compiles nothing.
+
+In [hold mode](testing.md#hold-mode) every pass draws in every frame, whatever its cadence. The engine draws only the hold's last frames, so a pass that skipped one of them would show an image that no drawn frame made: an empty mirror, for one.
 
 ### What a scene pass draws
 
@@ -330,6 +329,8 @@ const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.f
 - A reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. It draws no ambient occlusion, as three.js's render targets draw none.
 
 ### A water recipe
+
+For water in a scene, use [`@null3d/water`](../api/water.md): it draws a river and a lake from one shape, with the waves, the foam, the soft shore and the reflection that this recipe builds by hand. This recipe shows the pieces that the add-on builds on, for a water surface of your own.
 
 This surface function makes a stream. It has ripples that move, a tint that deepens with the depth, foam at the banks, and the reflection of the banks and the sky. It needs the height of the bed under each point of the water. A terrain made in code gives it with the same function that shapes the terrain. A loaded terrain gives it with a height map texture, which the function samples instead.
 
@@ -416,6 +417,8 @@ surface.setRotationEuler(-Math.PI / 2, 0, 0);
 - `ripple` sets how far the waves tilt the normal. The tilt bends the reflection and the sun's highlights.
 - The foam hides the reflection where it lies, through the reflection's share in `a`.
 - The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
+- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']`. The water's depth along the view ray is the gap between the sheet and the geometry behind the pixel. Convert the pixel's own depth to a distance with the camera's range in `engine_frame.camera_range`, then subtract it from `sceneDistance(uv)`. Fade the water's alpha to zero over the last centimeters of the gap. The water then thins and foams against the bank, so its shore ends softly. Such a sheet takes up to seven textures of its own, so this recipe's mirror and a foam map join it. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the options.
+
 - Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
 
 ## Full-screen passes
@@ -453,15 +456,17 @@ The engine runs the scene pass, then the full-screen pass, then the camera's pas
 - `input.uv`, `input.pixel` and `input.size` belong to the pass's own texture: `input.uv` is (0, 0) at the top left of its image, as in an effect.
 - With `input: 'sceneColor'` or `input: 'outlineMask'`, `input.color`, `effectColor` and `effectPixel` read that image, and `effectInputSize()` gives its size. A pass at half size steps one pixel of its input with `1.0 / effectInputSize()`. Without an input, they read transparent black.
 - The depth functions read the scene's depth, as in an effect.
-- Its textures, by the `textures` option. A pass's texture holds its bottom row first, as materials sample it, so read another pass's texture at `effectPassUv(input.uv)`.
+- Its textures, by the `textures` option. A pass's texture holds its bottom row first, as materials sample it, so read another pass's texture at `effectPassUv(input.uv)`. A reflection pass's texture on the HDR WebGPU path starts at the top row instead: read it at `input.uv`.
 
 ### When a full-screen pass runs
 
 A pass that reads only textures runs before the passes that read its texture, within the frame. A pass that reads the scene color, the outline mask or the depth runs after the camera's passes: the scene must be drawn first. An effect that reads its texture still sees the image of the same frame. A material that shows its texture shows the image of the frame before, as a security monitor that shows the screen would.
 
+A pass that names no input image is placed before the camera's passes. A chain of passes that starts from the scene color or the outline mask names that image as the input of each pass in the chain, or the graph reports a cycle (E1504). The pass that names the image reads its own texture through the `textures` option as usual. A pass may name the scene color without reading it.
+
 ### A soft outline glow
 
-three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow:
+three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow. `@null3d/three-compat`'s `createOutlinePass` builds this shape, with three.js's glow, pulse and blur settings ([three.js compatibility](../api/three-compat.md)); the recipe below shows what it does.
 
 ```ts
 const glowFromMask = /* wgsl */ `
@@ -492,9 +497,69 @@ const glow = render.addPass({ kind: 'fullscreen', wgsl: glowFromMask, writes: 'g
 post.addEffect({ wgsl: addGlow, textures: { glow: textures.fromPass(glow) } });
 ```
 
-- `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls.
+- `width: 0` draws the outline mask without the crisp line. The mask's red channel holds each outlined object's coverage, and its green channel the parts that nothing hides, for a glow that differs behind walls. Read those two channels alone: the engine writes the blue channel for surfaces that keep their display color.
 - The pass blurs at half size, which shades a quarter of the pixels and blurs further for the same reads.
 - The effect adds the glow before the tone curve and bloom, on HDR color, so a bright glow also blooms.
+
+## Compute passes
+
+A compute pass runs a compute shader over a texture of its own, on WebGPU. Use one when the work suits a GPU's parallel threads better than a pixel: a wave simulation that combines each pixel with its neighbors, a table that the shader fills in a loop, or a field that several materials read. [Render graph API](../api/render.md#compute-passes) lists its options and the bindings that its shader declares.
+
+```ts
+const ripples = /* wgsl */ `
+struct ComputeBlock {
+    size: vec4f,
+    clock: vec4f,
+    inverseProjection: mat4x4f,
+    u0: vec4f,
+    u1: vec4f,
+    u2: vec4f,
+    u3: vec4f,
+    u4: vec4f,
+    u5: vec4f,
+    u6: vec4f,
+    u7: vec4f,
+    drawn: vec4f,
+    bloom: vec4f,
+}
+
+@group(0) @binding(0) var<uniform> block: ComputeBlock;
+@group(0) @binding(1) var field: texture_storage_2d_array<rgba16float, write>;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+    let size = vec2u(block.drawn.xy);
+    if (id.x >= size.x || id.y >= size.y) { return; }
+    let p = vec2f(id.xy) / vec2f(size) - 0.5;
+    let ring = smoothstep(0.02, 0.0, abs(length(p) - 0.3));
+    textureStore(field, vec2i(id.xy), 0, vec4f(ring, ring * 0.6, 0.0, 1.0));
+}
+`;
+
+const ripplesEverywhere = /* wgsl */ `
+fn effect(input: EffectInput) -> vec4f {
+    // The pass texture holds its first row at the bottom, and input.uv counts from the top left.
+    let p = vec2f(input.uv.x, 1.0 - input.uv.y) - 0.5;
+    let ring = smoothstep(0.02, 0.0, abs(length(p) - 0.3));
+    return vec4f(ring, ring * 0.6, 0.0, 1.0);
+}
+`;
+
+const field = render.addPass({
+  kind: 'compute',
+  description: defineFeature({ name: 'ripples', frame: 'background', kind: 'compute', outputs: { ripples: { default: 'black' } } }),
+  wgsl: ripples,
+  fallback: { wgsl: ripplesEverywhere },
+});
+const water = materials.unlit({ map: textures.fromPass(field) });
+```
+
+- Materials, effects and passes sample the pass's texture in the same frame. The graph orders the pass before them.
+- A compute shader declares the bindings itself. Group 0 holds the pass's block at binding 0 and its storage texture at binding 1. Group 1 holds the textures of the `textures` option, in that order.
+- The storage texture is read as an array of one layer, so the shader writes layer 0.
+- WebGL2 has no compute shaders. Give the pass a `fallback` that does the same work for each pixel, or leave it out and let the call throw on WebGL2.
+- Change the values with `render.setPassUniforms(pass, values)`.
+- The texture holds zeros until the pass runs. A reader shows nothing before that.
 
 ## Errors
 
@@ -502,7 +567,7 @@ post.addEffect({ wgsl: addGlow, textures: { glow: textures.fromPass(glow) } });
 | --- | --- |
 | E1215 | WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind, such as a material's. |
 | E1216 | A uniform or a texture that the WGSL does not declare, or a value of the wrong kind. |
-| E1213 | A ninth effect. |
+| E1213 | A ninth effect, or a `bloomLevel` missing from an effect whose WGSL calls `effectBloom`. |
 | E1203 | An `order` that is not a number. |
 | E1101 | `setEffectUniform` on an effect that `removeEffect` removed, or a call on a render pass that `render.removePass` removed. |
 | E1220 | Options that `render.addPass` does not take, such as a reflection's plane without a point, a full-screen pass with both a `size` and a `scale`, or a texture name that another pass writes. |

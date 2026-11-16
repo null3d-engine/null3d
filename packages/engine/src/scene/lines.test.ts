@@ -57,6 +57,7 @@ function fakeCore() {
 			return meshes.length;
 		},
 		meshRadius: () => 1,
+		meshCenter: () => 0,
 		batchArrays: (_batch: number, field: number) => fieldAddress(field),
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,

@@ -1,0 +1,145 @@
+{
+	"01-whole-shrub-distant.png": {
+		"sunAzimuth": 55,
+		"sunRise": 45,
+		"skyShare": 0.19,
+		"fov": 30,
+		"daylight": 2.4,
+		"fill": 0.8,
+		"targetY": 0.5,
+		"turn": 90
+	},
+	"02-whole-shrub-profile.png": {
+		"sunAzimuth": 25,
+		"sunRise": 50,
+		"skyShare": 0.6,
+		"fov": 30,
+		"daylight": 1.7,
+		"fill": 0.8,
+		"targetY": 0.5,
+		"turn": 0
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 40,
+		"sunRise": 70,
+		"skyShare": 0.4,
+		"daylight": 1.8
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.3,
+		"daylight": 2.6,
+		"surface": true
+	},
+	"05-crown-underside.png": {
+		"skyShare": 0.45,
+		"daylight": 2
+	},
+	"06-inside-bush.png": {
+		"skyShare": 0.35,
+		"daylight": 1.4
+	},
+	"07-stems-leaving-base.png": {
+		"skyShare": 0.5,
+		"daylight": 2
+	},
+	"17-stem-taper.png": {
+		"skyShare": 0.5,
+		"daylight": 2.3
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.1,
+		"eye": 0.3,
+		"turn": 90
+	},
+	"08-branch-fork.png": {
+		"background": "studio-grey"
+	},
+	"09-secondary-branching.png": {
+		"background": "studio-grey"
+	},
+	"10-fine-twigs-and-thorns.png": {
+		"background": "studio-grey",
+		"leaves": 4.5
+	},
+	"11-leaf-cluster.png": {
+		"background": "studio-grey"
+	},
+	"15-bark-mid-stem.png": {
+		"span": 0.4,
+		"barkMask": true,
+		"daylight": 0.94
+	},
+	"16-bark-on-branch.png": {
+		"view": "bark-limb",
+		"thin": 0.018,
+		"span": 0.08,
+		"leafyBark": true
+	},
+	"26-bark-texture.png": {
+		"span": 0.3
+	},
+	"28-young-bark.png": {
+		"view": "bark-limb",
+		"thin": 0.015,
+		"span": 0.1,
+		"barkMask": true
+	},
+	"19-thorns.png": {
+		"background": "studio-grey",
+		"leaves": 2.5,
+		"fruit": false,
+		"season": "winter"
+	},
+	"20-flowers-spring.png": {
+		"view": "twigs",
+		"background": "studio-grey",
+		"season": "blossom",
+		"leaves": 2.5
+	},
+	"21-branch-studio.png": {
+		"background": "studio-grey",
+		"leaves": 5.6,
+		"pick": 1
+	},
+	"22-subbranch-studio.png": {
+		"background": "studio-grey",
+		"leaves": 7.4,
+		"pick": 2
+	},
+	"23-leaf-cluster-studio.png": {
+		"background": "studio-grey",
+		"pick": 1
+	},
+	"hawthorn-turntable-halfturn.mp4": {
+		"skyShare": 0.19,
+		"daylight": 2.4
+	},
+	"hawthorn-wind-motion.mp4": {
+		"skyShare": 0.19,
+		"daylight": 2.4
+	},
+	"14-base-and-roots.png": {
+		"barkMask": true,
+		"daylight": 1.08
+	},
+	"_pictures": {
+		"05-crown-underside.png": {
+			"standing": "reference-limit",
+			"reason": "the view asks for a crown clear of the ground with a great limb to look up at; this form's foliage reaches the soil, so it has no crown underside for the camera to stand under",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"07-stems-leaving-base.png": {
+			"standing": "reference-limit",
+			"reason": "the limb where it leaves the trunk covers 0.00 of its box against the least 0.60, and the wood between trunk and limb 0.00 against 0.90; this form's stems leave the soil together, so it has no single bole for a junction",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		},
+		"26-bark-texture.png": {
+			"standing": "reference-limit",
+			"reason": "the bark covers 0.30 of its box against the least 0.90; the view asks for the bark of a single trunk at mid-height, and this form's wood stands as a stool of stems with no bole to hold edge to edge",
+			"ruling": "lead, 15 Nov 11:35: a view whose part the form lacks is a reference limit"
+		}
+	}
+}

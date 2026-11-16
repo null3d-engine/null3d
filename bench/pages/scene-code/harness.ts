@@ -3,7 +3,6 @@
 // up and measures like the engines' pages and publishes the time per frame, which the benchmark
 // report takes away from each engine's busiest thread to show the engine's own work.
 import { run } from '../../../tests/pages/lib/result';
-import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../scenes/spec';
 import { showPageName } from '../lib/fit';
 import { measureFrames } from '../lib/measure';
 import { pageReport, type RunOptions, readRunOptions } from '../lib/options';
@@ -36,8 +35,8 @@ export function runSceneCodePage(
 				code.frame(t);
 				return undefined;
 			},
-			options.seconds ?? WARMUP_SECONDS,
-			options.seconds ?? MEASURE_SECONDS,
+			options.warmupSeconds,
+			options.measureSeconds,
 		);
 		return { scene: sceneName, renderer: 'scene-code', n: code.n, ...timings };
 	});

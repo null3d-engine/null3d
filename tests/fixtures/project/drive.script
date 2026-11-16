@@ -1,0 +1,14 @@
+# Drive the project through three states, and draw each one.
+# The first is the scene as it starts.
+0 shot start
+# The forward key slides the box to the right, and the second state shows it there.
+0.2 key KeyW down
+2 key KeyW up
+2 shot forward
+# A press puts the marker where the pointer is, and the ball hides, for the third state.
+2.2 pointer move 200 90
+2.3 pointer down 200 90
+2.4 pointer up
+2.5 dump ball.position
+2.6 set ball.visible=false
+3 shot parked

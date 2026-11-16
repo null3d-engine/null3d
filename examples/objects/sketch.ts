@@ -4,7 +4,8 @@
 // crate on the stage stays where it stepped off. The table's turn and each crate's spin come from
 // the sketch time. The crates share one panel texture made in code, in six materials: wood, brushed
 // steel, copper, gold, red paint and blue lacquer. A spot light casts their shadows, and the built-in
-// room environment gives the metals something to reflect.
+// room environment gives the metals something to reflect. The Look button draws the whole stage
+// with one material instead, which keeps every shape and every crate's place.
 import { defineSketch, math } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
@@ -19,9 +20,11 @@ const SPIN = 1.5;
 const SIZE = 64;
 /** The studio's dark gray, for the background and the fog that hides the stage's edge. */
 const STUDIO = '#15171c';
+/** The image tests' address, `?look=one`, starts on the one material that sets the stage. */
+const ONE_MATERIAL = new URL(import.meta.url).searchParams.get('look') === 'one';
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, time } = ctx;
+	const { scene, assets, geometry, materials, textures, post, time, page } = ctx;
 	scene.setBackground(STUDIO);
 	scene.setFog({ color: STUDIO, curve: 'exp2', density: 0.035 });
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.7 });
@@ -92,6 +95,13 @@ export default defineSketch(async (ctx) => {
 		{ color: '#1f5fa8', roughness: 0.1 },
 	];
 	const crate = geometry.box({ width: 0.7, height: 0.7, depth: 0.7 });
+	// One plaster for the Look button: every mesh of the main pass draws with it, so the light and
+	// the shapes carry the picture in place of the six finishes.
+	const oneMaterial = materials.standard({ color: '#e8e2d8', roughness: 0.6, metalness: 0 });
+	if (ONE_MATERIAL) scene.overrideMaterial = oneMaterial;
+	page.onMessage((name, value) => {
+		if (name === 'look') scene.overrideMaterial = value === 'One material' ? oneMaterial : null;
+	});
 	const crates = finishes.map((finish, k) => {
 		const angle = (k / CRATES) * Math.PI * 2;
 		return scene.createMesh({

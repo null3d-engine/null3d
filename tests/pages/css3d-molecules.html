@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="data:," />
+		<title>null3D and three.js: CSS3D molecules</title>
+		<style>
+			body { margin: 0; background: #111; color: #ddd; font-family: Monospace; }
+			.stage {
+				position: relative;
+				width: 960px;
+				height: 540px;
+				overflow: hidden;
+				background: radial-gradient(ellipse at center, rgba(43, 45, 48, 1) 0%, rgba(0, 0, 0, 1) 100%);
+			}
+			.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+			.labels { position: absolute; inset: 0; pointer-events: none; }
+			.bond { width: 5px; height: 10px; background: #eee; display: block; }
+		</style>
+	</head>
+	<body>
+		<div class="stage" id="mine"><canvas></canvas><div class="labels" id="mine-labels"></div></div>
+		<div class="stage" id="theirs"><div class="labels" id="theirs-labels"></div></div>
+		<script type="module" src="./css3d-molecules.ts"></script>
+	</body>
+</html>

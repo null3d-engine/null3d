@@ -1,8 +1,8 @@
 # D-42: Large-world mode and batch origins
 
-Status: decided. Date: 2026-10-04. Task: M2-H1.
+Status: decided and built. Task: M2-H1.
 
-Summary: `largeWorld: true` stores whole cells beside each 32-bit position, so setters keep 64-bit precision: the cells scene at the Earth's radius draws the origin's image within 5 of 57,600 pixels, and raycasts there match three.js. Batches take an origin in both modes. 512 cells stay: a scene as dense as S6 fills its object budget first.
+Summary: `largeWorld: true` stores whole cells beside each 32-bit position, so setters keep 64-bit precision, and batches take an origin in both modes. At the Earth's radius, the cells scene draws the origin's image within 5 of 57,600 pixels, and raycasts match three.js. 512 cells stay, because a scene as dense as S6 fills its object budget first.
 
 ## Question
 
@@ -28,11 +28,11 @@ Grid cells keep world matrices precise far from the origin ([Large worlds and pr
 | A root moved in 600 steps of 1 mm across a cell boundary, with a child 600.25 m away | Every step moves both by 1 mm, within 1e-4 m | `scene.rs` tests |
 | `setParent(..., { keepWorld: true })` at 2,000 km and back to a root | Place kept within 1e-4 m; the root takes its whole cells back | `scene.rs` tests |
 | Nine batch rows 1 mm apart around an origin at the Earth's radius | Each row within 1e-4 m of its place; the four-lane and one-row paths agree bit for bit | `instances.rs` tests |
-| The cells scene at 6,378,137.3 m with large-world mode and batch origins, against the scene at the origin, Mac GPU | 0.009% of pixels differ on WebGPU, 0.002% in compatibility mode, 0.005% on WebGL2: at most 5 of 57,600 pixels, with any change of color counted | `cells-6378km` image test, 2026-10-04 |
-| The same scene without large-world mode | 3.5% of pixels differ on WebGPU, 2.5% in compatibility mode, 3.5% on WebGL2 | A temporary manifest entry, 2026-10-04 |
-| The raycast scene at the Earth's radius, 600 rays and a batch of 10,000, large-world mode | 271 closest hits and 442 hits in all, every one as three.js's `Raycaster` finds it, on WebGPU and WebGL2. Hit points taken to the screen and back as rays pass within 2.3e-14 m | `raycast.spec.ts`, Chrome on the Mac, 2026-10-04 |
+| The cells scene at 6,378,137.3 m with large-world mode and batch origins, against the scene at the origin, Mac GPU | 0.009% of pixels differ on WebGPU, 0.002% in compatibility mode, 0.005% on WebGL2: at most 5 of 57,600 pixels, with any change of color counted | `cells-6378km` image test |
+| The same scene without large-world mode | 3.5% of pixels differ on WebGPU, 2.5% in compatibility mode, 3.5% on WebGL2 | A temporary manifest entry |
+| The raycast scene at the Earth's radius, 600 rays and a batch of 10,000, large-world mode | 271 closest hits and 442 hits in all, every one as three.js's `Raycaster` finds it, on WebGPU and WebGL2. Hit points taken to the screen and back as rays pass within 2.3e-14 m | `raycast.spec.ts`, Chrome on the Mac |
 | The same rays without large-world mode | 710 mismatches with three.js | Same test |
-| `bun run bench:allocation`, S1, both GPU paths | Passes: no new allocation in the sketch worker or the render worker | 2026-10-04 |
+| `bun run bench:allocation`, S1, both GPU paths | Passes: no new allocation in the sketch worker or the render worker | The allocation check |
 
 ## Decision
 
@@ -40,7 +40,7 @@ Grid cells keep world matrices precise far from the origin ([Large worlds and pr
 
 `createEngine({ largeWorld: true })` gives the scene a second array with three 32-bit integers per slot. They hold the whole cells of each position. Each setter splits each number in JavaScript's 64-bit numbers. The nearest whole number of cells goes into the new array, and the rest of at most half a cell into the existing 32-bit positions. The rest keeps 0.03 mm or better. In the transform update, a root's cell is its whole cells plus the cell of its rest. Its translation is the rest relative to that cell. A child adds its whole cells back to its position in 64 bits. They are zero unless a child sits 512 m or more from its parent. Every other reader and writer of positions goes through the same split: `getPosition`, `translate`, `lookAt`, `clone`, `instantiate` and `setParent` with `keepWorld`.
 
-Options that were rejected:
+Rejected options:
 
 - 64-bit positions in the core, a `Float64Array` view in TypeScript. Every reader of positions would take two view types. And in every scene, the transform update would read 24 bytes per object in place of 12.
 - The split in every engine, with no option. Every setter of every small scene would pay a division and a rounding per axis, and every engine 12 bytes per slot. Most scenes fit in one cell and gain nothing.
@@ -58,7 +58,7 @@ Instance rows stay 32-bit floats that sketch code writes directly, in both modes
 
 S6 is a city block of about 20,000 objects. Take that many objects per square kilometer. A scene's budget of objects and rows is 1,048,576 to 8,388,480, by device. At that density it covers 52 km² to about 420 km² of ground. Flat ground takes one layer of cells, so that is 52 to about 420 cells. So a dense scene fills its object budget before it fills 512 cells, at any distance from the origin. Only the largest budget, on ground that straddles a vertical cell boundary over most of its area, could need more.
 
-Content spread thin can reach the limit: one marker in each of 1,000 towns takes 1,000 cells. The table then puts each source that enters a new cell into the origin's cell, at 32-bit precision, as it always has. The docs give the remedy: parents that hold far objects, as children share their root's cell, or content that streams with the camera.
+Content spread thin can reach the limit: one marker in each of 1,000 towns takes 1,000 cells. The table then puts each source that enters a new cell into the origin's cell, at 32-bit precision. The docs give the remedy: parents that hold far objects, as children share their root's cell, or content that streams with the camera.
 
 ### How three.js handles it
 
@@ -68,6 +68,6 @@ three.js keeps `Object3D` positions in JavaScript's 64-bit numbers, and multipli
 
 - Code: `split64` and `offset_cell` in `crates/null3d-core/src/cells.rs`; `SceneStorage::with_large_world`, `position_cells` and `set_position64` in `scene.rs`; `InstanceBatch::set_origin` in `instances.rs`; `initEngine`'s `large_world` argument, the `POSITION_CELLS` scene field and `setBatchOrigin` in the WebAssembly entry point; `writePosition` and `readPosition` in `packages/engine/src/scene/scene.ts`.
 - Tests: the `cells-6378km` image test borrows the `cells` references; the raycast page takes `?far` and `?largeWorld`.
-- Docs: `concepts/large-worlds` is written; `api/engine`, `api/objects`, `api/scene` and `concepts/instances` name the option and the origin; the mapping entry for `logarithmicDepthBuffer / reverseDepthBuffer` points to the large worlds page.
+- Docs: `concepts/large-worlds` describes the mode; `api/engine`, `api/objects`, `api/scene` and `concepts/instances` name the option and the origin; the mapping entry for `logarithmicDepthBuffer / reverseDepthBuffer` points to the large worlds page.
 - Skills: the large worlds recipe and the API reference of `null3d-develop`.
 - M2-H2 measures stability during a flight with this mode: the large-world jitter test, T-35.

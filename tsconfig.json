@@ -18,6 +18,8 @@
 	},
 	"include": [
 		"tools/**/*.ts",
+		// A tool that writes a GIF reads the same package, so its types join this project.
+		"bench/gifenc.d.ts",
 		"packages/*/src/**/*.test.ts",
 		"packages/vite-plugin/src/**/*.ts",
 		"tests/*.ts",
@@ -33,6 +35,11 @@
 		"packages/geometry/**",
 		"packages/particles/**",
 		"packages/impostors/**",
-		"packages/terrain/**"
+		"packages/terrain/**",
+		"packages/vegetation/**",
+		"packages/three-compat/**",
+		"packages/splats/**",
+		"packages/water/**",
+		"packages/wind/**"
 	]
 }

@@ -1,8 +1,9 @@
-// The point, spot and hemisphere light scenes, defined once for null3D's image tests and for their
-// three.js twin, which the parity test compares them with. It is plain data with no engine imports:
-// a floor with rows of spheres and boxes, lit by point lights in a square grid above it, by spot
-// lights of different cones, or by a hemisphere light, and a dim ambient light. No directional
-// light shines, so in the point and spot scenes every lit pixel comes from the clusters.
+// The point, spot, directional and hemisphere light scenes, defined once for null3D's image tests
+// and for their three.js twin, which the parity test compares them with. It is plain data with no
+// engine imports: a floor with rows of spheres and boxes, lit by point lights in a square grid
+// above it, by spot lights of different cones, by three directional lights, or by a hemisphere
+// light, and a dim ambient light. No directional light shines in the point and spot scenes, so
+// every lit pixel there comes from the clusters.
 
 type Vec3 = readonly [number, number, number];
 
@@ -113,6 +114,23 @@ export function pointLightGrid(count: number): ScenePointLight[] {
 		};
 	});
 }
+
+/** A directional light: the direction its light travels, its sRGB color and its intensity. */
+export interface SceneDirectionalLight {
+	direction: Vec3;
+	color: string;
+	intensity: number;
+}
+
+/**
+ * Three directional lights over the floor: a warm key from the front right, a cool fill from the
+ * left and a magenta rim from behind. The first keeps the shadows; the scene draws none.
+ */
+export const FILL_LIGHTS: readonly SceneDirectionalLight[] = [
+	{ direction: [-0.9, -1.2, -0.7], color: '#ffdcb4', intensity: 2.2 },
+	{ direction: [1, -0.6, -0.3], color: '#86b8ff', intensity: 1.2 },
+	{ direction: [0.2, -0.35, 1], color: '#ff5fa8', intensity: 1.8 },
+];
 
 /** A spot light: a point light with a target, a cone and a penumbra. */
 export interface SceneSpotLight extends ScenePointLight {

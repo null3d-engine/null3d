@@ -9,12 +9,12 @@ mod common;
 use std::collections::HashMap;
 
 use common::{World, grid};
-use null3d_gpu::drawlist::{Op, permutation, state_flags, template};
+use null3d_gpu::drawlist::{Op, permutation, state_flags, template, vertex};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
-use null3d_render::materials::{Shading, feature};
+use null3d_render::materials::{CustomShading, Shading, feature};
 
 /// A frame's operations with their operands.
 type Commands = Vec<(Op, Vec<u32>)>;
@@ -29,6 +29,10 @@ enum Kind {
     OwnVertexShader,
     /// A shading pipeline that draws only where the prepass found its depth.
     AfterPrepass,
+    /// A shading pipeline that draws at the prepass's depth or nearer, and writes depth as it would
+    /// without a prepass: a masked pair whose prepass keeps a fragment only where the mask keeps
+    /// every sample of it.
+    NearOrEqual,
     /// A shading pipeline that tests and writes depth as it would without the prepass.
     Shading,
 }
@@ -56,6 +60,9 @@ fn pipelines(commands: &[(Op, Vec<u32>)]) -> HashMap<u32, Kind> {
                     state_flags::NO_DEPTH_WRITE
                 );
                 Kind::AfterPrepass
+            } else if state & state_flags::DEPTH_OR_EQUAL != 0 {
+                assert_eq!(state & state_flags::NO_DEPTH_WRITE, 0);
+                Kind::NearOrEqual
             } else {
                 Kind::Shading
             };
@@ -75,11 +82,31 @@ struct Frames {
     steady: Commands,
 }
 
-/// The test world, with a masked object and a blended object besides its own, drawn by
-/// `renderer`.
+/// A custom material whose WGSL names the coverage that its mask tests, so its shadow caster and
+/// its depth prepass have builds that test that alpha.
+fn masked_custom() -> Shading {
+    Shading::Custom(CustomShading {
+        template: template::CUSTOM_FIRST,
+        attributes: vertex::UV0,
+        base_color: true,
+        textures: 0,
+        transmission: false,
+        row_values: false,
+        caster: true,
+        object_ids: false,
+    })
+}
+
+/// The test world, with a masked object, a masked custom material's object and a blended object
+/// besides its own, drawn by `renderer`.
 fn world_with<B: FrameBuilder>(renderer: B) -> World<B> {
     let mut world = World::build(renderer);
     world.add_object_with(&grid(1, 1), Shading::Lit, feature::ALPHA_MASK);
+    world.add_object_with(
+        &grid(1, 1),
+        masked_custom(),
+        feature::ALPHA_MASK | feature::CASTER_COVERAGE,
+    );
     world.add_object_with(&grid(1, 1), Shading::Unlit, feature::BLEND);
     world
 }
@@ -146,12 +173,21 @@ fn the_camera_replays_its_depth_bundle_before_its_opaque_bundle_in_one_render_pa
         2,
         "the depth bundle, then the opaque bundle"
     );
-    // The depth bundle draws with depth pipelines alone. The opaque bundle shades the lit and
-    // unlit buckets after the prepass, and the masked one as without it.
+    // The depth bundle draws the solid objects with the depth template and the masked custom
+    // material with its own build, which tests its mask. The opaque bundle shades the lit and
+    // unlit buckets after the prepass, and a masked pair that the prepass cannot follow as without
+    // it.
     let depth = &bundles[&executed[0]];
-    assert!(!depth.is_empty() && depth.iter().all(|&kind| kind == Kind::Depth));
+    assert!(!depth.is_empty());
+    assert!(depth.contains(&Kind::Depth));
+    assert!(
+        depth
+            .iter()
+            .all(|&kind| kind == Kind::Depth || kind == Kind::OwnVertexShader)
+    );
     let opaque = &bundles[&executed[1]];
     assert!(opaque.contains(&Kind::AfterPrepass));
+    assert!(opaque.contains(&Kind::NearOrEqual));
     assert!(opaque.contains(&Kind::Shading));
     assert!(!opaque.contains(&Kind::Depth));
     // The blended object draws after both bundles, with a shading pipeline that tests depth as
@@ -166,6 +202,104 @@ fn the_camera_replays_its_depth_bundle_before_its_opaque_bundle_in_one_render_pa
         .map(|(_, o)| kinds[&o[0]])
         .collect();
     assert_eq!(blended, [Kind::Shading]);
+}
+
+#[test]
+fn a_masked_custom_material_draws_its_own_depth_build_in_the_prepass_bundle() {
+    let mut world = world_with(GpuDrivenRenderer::new(RendererConfig {
+        depth_prepass: true,
+        ..RendererConfig::default()
+    }));
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    let steady = world.step(&mut mock, false);
+    // The custom material's pipelines: the one that shades, and the one that draws its depth.
+    let custom: Vec<(u32, Vec<u32>)> = first
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::CUSTOM_FIRST)
+        .map(|(_, o)| (o[0], o.clone()))
+        .collect();
+    let depth = custom
+        .iter()
+        .find(|(_, o)| o[2] & permutation::PREPASS != 0)
+        .expect("the masked custom material has a depth prepass build");
+    let shading = custom
+        .iter()
+        .find(|(_, o)| o[2] & permutation::PREPASS == 0)
+        .expect("the masked custom material has a shading build");
+    // The prepass build keeps the pair's mask, writes no color and draws the pair's own vertex
+    // shader, and it writes depth for a fragment that the mask keeps whole. The shading then
+    // draws at that depth or nearer, and writes depth as it would without a prepass.
+    assert_eq!(depth.1[2], shading.1[2] | permutation::PREPASS);
+    assert_eq!(
+        depth.1[6] & (state_flags::NO_COLOR_WRITE | state_flags::ALPHA_TO_COVERAGE),
+        state_flags::NO_COLOR_WRITE
+    );
+    assert_eq!(
+        shading.1[6] & state_flags::DEPTH_OR_EQUAL,
+        state_flags::DEPTH_OR_EQUAL
+    );
+    assert_eq!(shading.1[6] & state_flags::NO_DEPTH_WRITE, 0);
+    let depth_id = depth.0;
+    let kinds = pipelines(&first);
+    let mut bundles: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut recording = None;
+    for (op, o) in &first {
+        match op {
+            Op::BeginBundle => recording = Some(o[0]),
+            Op::EndBundle => recording = None,
+            Op::SetPipeline if recording.is_some() => {
+                bundles.entry(recording.unwrap()).or_default().push(o[0])
+            }
+            _ => {}
+        }
+    }
+    // It draws in the depth bundle, before the pass that shades it.
+    let depth_bundle = bundles
+        .iter()
+        .find(|(_, ids)| ids.contains(&depth_id))
+        .map(|(&bundle, _)| bundle)
+        .expect("the depth build draws in a bundle");
+    assert!(
+        bundles[&depth_bundle]
+            .iter()
+            .all(|id| matches!(kinds[id], Kind::Depth | Kind::OwnVertexShader)),
+        "the depth bundle holds no shading pipeline"
+    );
+    let pass = first_render_pass(&steady);
+    let executed: Vec<u32> = pass
+        .iter()
+        .filter(|(op, _)| *op == Op::ExecuteBundles)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert_eq!(
+        executed.first(),
+        Some(&depth_bundle),
+        "the depth bundle draws first"
+    );
+}
+
+#[test]
+fn a_masked_custom_material_stays_out_of_the_prepass_without_a_build_for_its_mask() {
+    let mut world = World::build(GpuDrivenRenderer::new(RendererConfig {
+        depth_prepass: true,
+        ..RendererConfig::default()
+    }));
+    // The material has no coverage function and sets no alpha, so its shader has no build that
+    // tests the mask, and the pair stays out.
+    world.add_object_with(&grid(1, 1), masked_custom(), feature::ALPHA_MASK);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    let custom: Vec<&Vec<u32>> = first
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] == template::CUSTOM_FIRST)
+        .map(|(_, o)| o)
+        .collect();
+    assert!(!custom.is_empty(), "the material draws");
+    assert!(
+        custom.iter().all(|o| o[2] & permutation::PREPASS == 0),
+        "no depth prepass build"
+    );
 }
 
 #[test]

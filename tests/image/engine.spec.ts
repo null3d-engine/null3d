@@ -14,8 +14,12 @@ import {
 	engineProblems,
 	THREADED_MODES,
 } from '../lib/engine-checks.ts';
+import { gltfDownloads, recordRequests } from '../lib/gltf-loader-files.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { failureText, type ItemResult } from '../lib/runs.ts';
 import { restoreWaitAsync, withoutWaitAsync } from '../lib/without-wait-async.ts';
+
+test.describe.configure({ mode: 'parallel' });
 
 /**
  * Serves every response to the page without the headers that make it cross-origin isolated, as a
@@ -266,11 +270,17 @@ for (const mode of ENGINE_MODES)
 /** The text as a regular expression that matches it alone. */
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** The address of a part's module on the dev server, and of its file with a hash in a build. */
-function partPatterns(modules: readonly string[]): RegExp[] {
+/**
+ * The address of a part's module on the dev server, and of its file with a hash in a build. A part
+ * whose module the start also holds has no file of its own on the dev server, since the page
+ * downloads the start's copy, so `builtOnly` asks for its built file alone: that file belongs to
+ * the thread that loads it on demand, and a page that fetches it at its start has loaded code early.
+ */
+function partPatterns(modules: readonly string[], { builtOnly = false } = {}): RegExp[] {
 	return [...new Set(modules)].map((module) => {
 		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
-		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
+		const built = `/${escaped(stem)}-[\\w-]{8}\\.js$`;
+		return builtOnly ? new RegExp(built) : new RegExp(`/${escaped(module)}$|${built}`);
 	});
 }
 
@@ -280,11 +290,16 @@ function partPatterns(modules: readonly string[]): RegExp[] {
  * lists these files apart from the start, and the WebAssembly modules that load on first use with
  * them.
  */
+const FIRST_USE_PARTS = LATER_PARTS.filter(
+	({ afterFirstFrame, onFirstCall }) => !afterFirstFrame && !onFirstCall,
+);
 const FIRST_USE_PATTERNS: readonly RegExp[] = [
 	...partPatterns(
-		LATER_PARTS.filter(({ afterFirstFrame, onFirstCall }) => !afterFirstFrame && !onFirstCall).map(
-			({ module }) => module,
-		),
+		FIRST_USE_PARTS.filter(({ alsoInStart }) => !alsoInStart).map(({ module }) => module),
+	),
+	...partPatterns(
+		FIRST_USE_PARTS.filter(({ alsoInStart }) => alsoInStart).map(({ module }) => module),
+		{ builtOnly: true },
 	),
 	...FIRST_USE_FILES.map((file) => {
 		const dot = file.lastIndexOf('.');
@@ -359,6 +374,24 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			).toEqual([]);
 		});
 
+// The engine test page, whose start the startup benchmark times, loads no glTF file.
+for (const mode of ENGINE_MODES)
+	test(`a page without glTF files downloads no part of the glTF loader, ${mode.name}`, async ({
+		page,
+	}) => {
+		const requests = recordRequests(page);
+		await page.goto(`engine.html?gpu=webgl2&seconds=1&${mode.query}`);
+		const result = await pageResult<{ error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(gltfDownloads(requests)).toEqual({
+			loader: 0,
+			worker: 0,
+			meshopt: 0,
+			draco: 0,
+			dracoWasm: 0,
+		});
+	});
+
 /**
  * Sketches of the image tests that use one feature whose shader builds load on first use. Every
  * other feature draws in the first-use sketch, whose `?feature=` names it.
@@ -369,6 +402,9 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	particles: 'tests/pages/sketches/particles-sketch.ts',
 	background: 'tests/pages/sketches/texture-background-sketch.ts',
 	transmission: 'tests/pages/sketches/transmission-sketch.ts',
+	// A surface that lets light through makes the frame copy the opaque color to sample it, so the
+	// same sketch draws the copy's builds as its own.
+	color_copy: 'tests/pages/sketches/transmission-sketch.ts',
 	// Both suns cast shadows for their feature's picture, and their scenes let the sun draw contact
 	// shadows, which load ambient occlusion's shader file on first use. The switch turns those off,
 	// so the page downloads its own feature's file alone.
@@ -381,12 +417,23 @@ const FIRST_USE_SKETCHES: Partial<Record<ShaderFeature, string>> = {
 	// the motion vectors sketch asks for that view.
 	motion: 'tests/pages/sketches/motion-vectors-sketch.ts?case=slide',
 	probe_grid: 'tests/pages/sketches/probe-grid-sketch.ts',
+	// The moment layer draws the sketch's blended panes once the page's switch turns it on, and its
+	// steps and the panes' moment builds load with them.
+	moment: 'tests/pages/sketches/moment-sketch.ts?mode=moment',
 };
 
 /** Page switches that a feature needs besides its sketch: the test switches that turn it on. */
 const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 	instance_index: '&instances=index',
 	occlusion: '&occlusion=on',
+	// The tier starts above Medium, which WebGL2 and compatibility mode stop at.
+	clouds: '&cloudSteps=32',
+	// A sky at High draws the tier over it, which would download the clouds' file as well. These
+	// pages draw the flat layer alone, so each keeps the one file that its own feature loads.
+	sky: '&cloudSteps=0',
+	physical_sky: '&cloudSteps=0',
+	// The moment layer draws only while the page turns it on.
+	moment: '&moments=on',
 };
 
 /**
@@ -397,10 +444,19 @@ const FIRST_USE_SWITCHES: Partial<Record<ShaderFeature, string>> = {
 const FIRST_USE_LIVE: ReadonlySet<ShaderFeature> = new Set(['picking']);
 
 /**
+ * The other features' files that a feature's first use also downloads: the cloud tier draws over
+ * the sky, so its page loads the sky's file too.
+ */
+const FEATURE_EXTRAS: Partial<Record<ShaderFeature, readonly ShaderFeature[]>> = {
+	clouds: ['sky'],
+};
+
+/**
  * The feature whose shader file a feature downloads on each GPU path, where it is another's, and
  * null where the path has no file for it: WebGPU morphs in the skinning pass, only WebGPU reads
- * index-only instance data and culls by occlusion on the GPU, and only WebGPU copies a view's
- * image, where WebGL2 draws the view into its target directly.
+ * index-only instance data and culls by occlusion on the GPU, only WebGPU copies a view's
+ * image, where WebGL2 draws the view into its target directly, and only WebGPU builds the pass
+ * that picks a mesh's cluster patches, where WebGL2 picks them on the job workers instead.
  */
 const FEATURE_FILE_OWNERS: Partial<
 	Record<ShaderFeature, Partial<Record<'webgpu' | 'webgl2', ShaderFeature | null>>>
@@ -409,17 +465,27 @@ const FEATURE_FILE_OWNERS: Partial<
 	instance_index: { webgl2: null },
 	occlusion: { webgl2: null },
 	views: { webgl2: null },
+	cluster_levels: { webgl2: null },
+};
+
+/**
+ * The feature whose file a feature's first use downloads as well as its own: a surface that lets
+ * light through makes the frame copy the opaque color, so the two files load together.
+ */
+const FIRST_USE_ALSO: Partial<Record<ShaderFeature, ShaderFeature>> = {
+	transmission: 'color_copy',
+	color_copy: 'transmission',
 };
 
 /**
  * How long a first-use page may take to answer. The page itself waits for the frame's pipelines to
- * build for up to 30 s (`BUILD_WAIT_LIMIT_MS`), and answers with its error when that runs out. So
+ * build for up to `BUILD_WAIT_LIMIT_MS`, and answers with its error when that runs out. So
  * the test must wait longer than the page's own limit, or it races the page and reports a bare
  * timeout in place of the page's answer. The clear coat and sheen page builds 24 pipelines, more
  * than any other feature's page, and needs about 30 s for them on CI's software GPU: it passed at
  * 30.2 s and failed at 30.5 s and 30.6 s while this wait was 30 s.
  */
-const FIRST_USE_WAIT_MS = 60_000;
+const FIRST_USE_WAIT_MS = 180_000;
 
 // A page that uses one such feature downloads that feature's shader file once, for its device's
 // fixed bits, and no other feature's shader file. The features come from the shader manifest's
@@ -431,6 +497,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			page,
 		}, testInfo) => {
 			test.skip(testInfo.project.name === 'production build', 'no image test page');
+			// The project's own timeout is shorter than this test's patience, so a page that answers
+			// between the two would be killed with a bare timeout instead of its own error.
+			test.setTimeout(FIRST_USE_WAIT_MS + 60_000);
 			// A decal material with any map cannot build its pipeline on a WebGPU device: the
 			// pipeline layout asks for 17 sampled textures in the fragment stage, one over the device's
 			// default limit of 16 (E1305), so no decal draws there. The decals image tests fail with it
@@ -441,40 +510,64 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			);
 			const requests: string[] = [];
 			page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-			const sketch =
+			// The preset draws screen-space bounce light, whose steps read ambient occlusion's grid
+			// and the frame's color copy, so a page that draws it downloads those two features' files
+			// as well. The switch leaves the light out, so the page downloads its own feature's file
+			// alone. Every sketch the table names reads it. High also culls hidden objects on the GPU,
+			// which loads GPU occlusion culling's file, so the page turns that off too, unless that
+			// culling is the feature.
+			const sketchModule =
 				FIRST_USE_SKETCHES[feature] ??
 				`tests/pages/sketches/first-use-sketch.ts?feature=${feature}`;
+			const sketch = `${sketchModule}${sketchModule.includes('?') ? '&' : '?'}bounce=off`;
+			const cull = feature === 'occlusion' ? '' : '&occlusion=off';
 			const address = FIRST_USE_LIVE.has(feature)
-				? `first-use-live.html?gpu=${gpu}&sketch=${encodeURIComponent(`/${sketch}`)}`
-				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
+				? `first-use-live.html?gpu=${gpu}${cull}&sketch=${encodeURIComponent(`/${sketch}`)}`
+				: `image.html?gpu=${gpu}&hold=0&preset=high&size=320x180${cull}${FIRST_USE_SWITCHES[feature] ?? ''}&sketch=${encodeURIComponent(`/${sketch}`)}`;
 			await page.goto(address);
-			const result = await pageResult<{ error?: string }>(page, FIRST_USE_WAIT_MS);
-			expect(result.error).toBeUndefined();
+			// A page that failed gives the steps it got through, which say where it spent the time.
+			const result = await pageResult<ItemResult>(page, FIRST_USE_WAIT_MS);
+			expect(result.error, failureText(result)).toBeUndefined();
 			const shaderFiles = requests.filter(isFirstUseShaderFile);
 			const owner = FEATURE_FILE_OWNERS[feature]?.[gpu];
 			if (owner === null) {
 				expect(shaderFiles).toEqual([]);
 				return;
 			}
-			expect(shaderFiles).toHaveLength(1);
-			// The shader files spell a feature's name with hyphens.
-			const file = (owner ?? feature).replaceAll('_', '-');
-			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`));
+			// The shader files spell a feature's name with hyphens. A feature that draws another's
+			// file as well, such as the cloud tier over the sky, downloads both, and so does one
+			// whose page makes the frame copy the opaque color.
+			const also = FIRST_USE_ALSO[feature];
+			const files = [
+				owner ?? feature,
+				...(also ? [also] : []),
+				...(FEATURE_EXTRAS[feature] ?? []),
+			].map((name) => name.replaceAll('_', '-'));
+			expect(shaderFiles).toHaveLength(files.length);
+			for (const file of files)
+				expect(
+					shaderFiles.filter((path) => new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`).test(path)),
+				).toHaveLength(1);
 		});
 
-// GPU occlusion culling runs only on WebGPU, where the first-use test turns it on. A scene whose
-// walls are marked occluders downloads no shader file with the culling off.
-test('marked occluders download no occlusion shader file with ?occlusion=off on webgpu', async ({
+// GPU occlusion culling runs only on WebGPU. A scene whose walls may hide others downloads none of
+// the culling's shader files with the culling off. The preset's other effects, such as ambient
+// occlusion, still load their own.
+test('occluders download no occlusion shader file with ?occlusion=off on webgpu', async ({
 	page,
 }, testInfo) => {
 	test.skip(testInfo.project.name === 'production build', 'no image test page');
 	const requests: string[] = [];
 	page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-	const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts');
+	// The preset draws screen-space bounce light, which loads ambient occlusion's file and the
+	// frame's color copy; ?bounce=off leaves it out, so the page loads no shader file at all.
+	const sketch = encodeURIComponent('/tests/pages/sketches/room-sketch.ts?bounce=off');
 	await page.goto(`image.html?gpu=webgpu&hold=0&size=320x180&occlusion=off&sketch=${sketch}`);
 	const result = await pageResult<{ error?: string }>(page, 30_000);
 	expect(result.error).toBeUndefined();
-	expect(requests.filter(isFirstUseShaderFile)).toEqual([]);
+	expect(
+		requests.filter((path) => isFirstUseShaderFile(path) && /\/shaders-occlusion-/.test(path)),
+	).toEqual([]);
 });
 
 /**
@@ -491,11 +584,11 @@ async function jobWorkerFails(page: Page, worker: string): Promise<void> {
 
 // A job worker that does not start is survivable, as the engine's own notes say: the engine runs on
 // with the workers it has, and the on-demand loader sends its tasks only to those. The KTX2 sketch
-// loads a file during its setup, so the page needs one task to finish. The loader used to send that
-// task to a job worker by index, started or not, and a worker that did not start never answers: the
-// page then drew nothing at all. Firefox lost the download of that worker's core on 16 October 2026,
-// in real-browsers, with one of two job workers gone. Each case here loads a page that must finish a
-// task of the loader, and every case keeps the engine to two job workers.
+// loads a file during its setup, so the page needs one task to finish. A loader that sends that
+// task to a job worker by index, started or not, gets no answer from a worker that did not start:
+// the page then draws nothing at all. In the real-browsers run, Firefox can lose the download of a
+// worker's core, which leaves one of two job workers gone. Each case here loads a page that must
+// finish a task of the loader, and every case keeps the engine to two job workers.
 for (const [what, stop] of [
 	[
 		'no job worker starts',
@@ -582,7 +675,13 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			Boolean(process.env.CI) || test.info().project.name.startsWith('chromium-swiftshader');
 		const seconds = soft ? 30 : 4;
 		await page.goto(`engine.html?gpu=${gpu}&seconds=${seconds}&${mode.query}&sketch=busy`);
-		const result = await pageResult<EngineResult & { error?: string }>(page, 60_000);
+		// The wait covers the page's own window plus the start of a slow software GPU, which alone
+		// measured about a third of a minute: a wait of the window plus a small multiple of the
+		// start leaves room for both on a loaded runner. The project's own minute would kill the
+		// test before that wait ran out, as it did in the production build, so the test sets a
+		// limit that contains it.
+		test.setTimeout(180_000);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 90_000);
 		expect(result.error).toBeUndefined();
 		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));

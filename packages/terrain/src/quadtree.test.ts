@@ -1,18 +1,44 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_LEVELS, MAX_SPLIT, Quadtree } from './quadtree';
+import { createHeightfield } from './heightfield';
+import { MAX_LEVELS, Quadtree } from './quadtree';
 
-/** The leaves of a selection, as `[level, column, row]` triples. */
-function leaves(tree: Quadtree, x: number, z: number): [number, number, number][] {
-	const count = tree.select(x, z);
+/** The screen error, in pixels, that most tests allow a block's cell. */
+const ERROR = 32;
+/** A vertical field of view, in degrees, and a buffer height, in device pixels. */
+const FOV = 52;
+const SCREEN = 1080;
+
+/** The leaves of a selection at the camera's x and z and a height, as `[level, column, row]`. */
+function leaves(
+	tree: Quadtree,
+	x: number,
+	z: number,
+	y = 0,
+	fov = FOV,
+	screen = SCREEN,
+	error = ERROR,
+): [number, number, number][] {
+	const count = tree.select([x, y, z], fov, screen, error);
 	const out: [number, number, number][] = [];
 	for (let i = 0; i < count; i++)
 		out.push([tree.levels[i] as number, tree.columns[i] as number, tree.rows[i] as number]);
 	return out;
 }
 
+/** The level of the leaf that covers the world point (`x`, `z`), or -1 when no leaf covers it. */
+function levelAt(tree: Quadtree, picked: [number, number, number][], x: number, z: number): number {
+	for (const [level, column, row] of picked) {
+		const size = tree.blockSize(level);
+		const lowX = tree.blockX(level, column);
+		const lowZ = tree.blockZ(level, row);
+		if (x >= lowX && x < lowX + size && z >= lowZ && z < lowZ + size) return level;
+	}
+	return -1;
+}
+
 describe('quadtree', () => {
 	test('the leaves tile the whole ground', () => {
-		const tree = new Quadtree({ size: 512, maxLevel: 5, split: 2 });
+		const tree = new Quadtree({ size: 512, maxLevel: 5 });
 		const picked = leaves(tree, 37, -91);
 		expect(picked.length).toBeGreaterThan(1);
 		let area = 0;
@@ -21,7 +47,7 @@ describe('quadtree', () => {
 	});
 
 	test('the ground near the camera is finer than the far ground', () => {
-		const tree = new Quadtree({ size: 512, maxLevel: 5, split: 2 });
+		const tree = new Quadtree({ size: 512, maxLevel: 5 });
 		const picked = leaves(tree, 0, 0);
 		let near = 0;
 		let far = 0;
@@ -34,6 +60,46 @@ describe('quadtree', () => {
 		}
 		expect(near).toBe(5);
 		expect(far).toBeLessThan(near);
+	});
+
+	test('a high camera draws the ground under it coarser', () => {
+		const tree = new Quadtree({ size: 512, maxLevel: 5 });
+		const low = leaves(tree, 0, 0, 0);
+		const high = leaves(tree, 0, 0, 500);
+		expect(levelAt(tree, low, 8, 8)).toBe(5);
+		expect(levelAt(tree, high, 8, 8)).toBeLessThan(5);
+		expect(high.length).toBeLessThan(low.length);
+	});
+
+	test('a narrow field of view keeps detail farther out', () => {
+		const tree = new Quadtree({ size: 512, maxLevel: 5 });
+		const wide = leaves(tree, 0, 0, 0, 90);
+		const narrow = leaves(tree, 0, 0, 0, 20);
+		// A point well away from the camera, so the field of view decides its block.
+		expect(levelAt(tree, narrow, 150, 150)).toBeGreaterThan(levelAt(tree, wide, 150, 150));
+		expect(narrow.length).toBeGreaterThan(wide.length);
+	});
+
+	test("a block's height box counts in the distance", () => {
+		// A hill at the middle reaches high enough that a camera above it stands inside the block's
+		// own height box, where the flat ground beside it is far below the camera.
+		const hill = createHeightfield({
+			size: 512,
+			resolution: 65,
+			height: (x, z) => 200 * Math.exp(-(x * x + z * z) / (2 * 200 * 200)),
+		});
+		const hillTree = new Quadtree({ size: 512, maxLevel: 5, field: hill });
+		const flatTree = new Quadtree({
+			size: 512,
+			maxLevel: 5,
+			field: createHeightfield({ size: 512, resolution: 65, height: () => 0 }),
+		});
+		const eye = 150;
+		const aboveHill = leaves(hillTree, 0, 0, eye);
+		const aboveFlat = leaves(flatTree, 0, 0, eye);
+		expect(levelAt(hillTree, aboveHill, 4, 4)).toBeGreaterThan(levelAt(flatTree, aboveFlat, 4, 4));
+		expect(hillTree.lowAt(0, 0, 0)).toBeCloseTo(hill.min, 5);
+		expect(hillTree.highAt(0, 0, 0)).toBeGreaterThan(150);
 	});
 
 	test('a leaf key stays a small integer, and names one leaf', () => {
@@ -70,8 +136,8 @@ describe('quadtree', () => {
 	});
 
 	test('every leaf key is unique, and names its leaf', () => {
-		const tree = new Quadtree({ size: 256, maxLevel: 4, split: 1.5 });
-		const picked = leaves(tree, -100, 60);
+		const tree = new Quadtree({ size: 256, maxLevel: 4 });
+		const picked = leaves(tree, -100, 60, 20, FOV, SCREEN, 16);
 		const keys = new Set<number>();
 		for (const [level, column, row] of picked) {
 			const key = tree.key(level, column, row);
@@ -84,24 +150,29 @@ describe('quadtree', () => {
 	test('a maximum level of 0 keeps only the root, and a deep maximum follows the camera', () => {
 		const root = new Quadtree({ size: 64, maxLevel: 0 });
 		expect(leaves(root, 0, 0)).toEqual([[0, 0, 0]]);
-		const deep = new Quadtree({ size: 64, maxLevel: 6, split: 2 });
+		const deep = new Quadtree({ size: 64, maxLevel: 6 });
 		const picked = leaves(deep, 0, 0);
 		expect(picked.some(([level]) => level === 6)).toBe(true);
 	});
 
-	test('refuses a size, a level or a split that does not fit', () => {
+	test('a screen error of 0 keeps the finest level everywhere', () => {
+		const tree = new Quadtree({ size: 64, maxLevel: 4 });
+		const picked = leaves(tree, 500, 500, 500, FOV, SCREEN, 0);
+		expect(picked.every(([level]) => level === 4)).toBe(true);
+		expect(picked.length).toBe(4 ** 4);
+	});
+
+	test('refuses a size, a level, a grid or a block of a block', () => {
 		expect(() => new Quadtree({ size: -1, maxLevel: 3 })).toThrow(/positive/);
 		expect(() => new Quadtree({ size: 1, maxLevel: MAX_LEVELS + 1 })).toThrow(/whole number/);
-		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: -1 })).toThrow(/above 0/);
-		expect(() => new Quadtree({ size: 1, maxLevel: 1, split: MAX_SPLIT + 0.5 })).toThrow(
-			`up to ${MAX_SPLIT}`,
-		);
+		expect(() => new Quadtree({ size: 1, maxLevel: 1, quads: 0 })).toThrow(/whole number/);
+		expect(() => new Quadtree({ size: 1, maxLevel: 1, quads: 2.5 })).toThrow(/whole number/);
 	});
 
 	test('a selection larger than the arrays grows them and keeps every leaf', () => {
-		// A wide split at many levels picks thousands of leaves.
-		const tree = new Quadtree({ size: 10_000, maxLevel: MAX_LEVELS, split: 6 });
-		const picked = leaves(tree, 1, 1);
+		// A fine error at many levels picks thousands of leaves.
+		const tree = new Quadtree({ size: 10_000, maxLevel: MAX_LEVELS });
+		const picked = leaves(tree, 1, 1, 0, FOV, SCREEN, 11.5);
 		expect(picked.length).toBeGreaterThan(4096);
 		let area = 0;
 		for (const [level, column, row] of picked) {

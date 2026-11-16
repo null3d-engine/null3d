@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import { LEVELS_MAX } from '../generated/core';
 import { failureError, startError } from '../page/engine';
 import { checkNumber, checkVector, DEV } from './checks';
 import { ERRORS } from './codes';
@@ -27,6 +28,14 @@ function failedCore(code: number, a = 0, b = 0): CoreErrors {
 
 // Each thread sets the table before it raises an error: the page its own, a worker the page's copy.
 beforeEach(() => setErrorFixes(ERROR_FIXES));
+
+describe('the file of fixes', () => {
+	it("states the level limit from the same constant as the engine's levels", () => {
+		// The fix text is the part of the error table that the page downloads, so it cannot import
+		// the core's constants without pulling their chunk into the page. This keeps the two equal.
+		expect(ERROR_FIXES.E1221).toContain(`at most ${LEVELS_MAX - 1} of them`);
+	});
+});
 
 describe('EngineError', () => {
 	it('carries its code, the fix and a link to the code page', () => {
@@ -205,7 +214,7 @@ describe('errors of an engine thread after the start', () => {
 	it('keep an engine error whole, and give a bare coded message its fix and link', () => {
 		const inWorker = new EngineError('E1406', 'the KTX2 transcoder did not download.');
 		expect(failureError('the render worker', inWorker.message).message).toBe(inWorker.message);
-		const bare = 'E1424: the builds of a custom material did not load: 404.';
+		const bare = 'E1424: the builds of a custom shader did not load: 404.';
 		const error = failureError('the render worker', bare);
 		expect(error.code).toBe('E1424');
 		expect(error.message).toBe(`${bare} ${ERROR_FIXES.E1424} See ${DOCS}E1424.md`);

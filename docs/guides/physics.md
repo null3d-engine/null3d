@@ -32,7 +32,7 @@ Two libraries work well in a sketch:
 Install one with Bun, as any other package:
 
 ```sh
-bun add @dimforge/rapier3d-compat
+bun add @dimforge/rapier3d-compat@^0.20.0
 ```
 
 ## Example: crates that fall on a floor
@@ -77,6 +77,10 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
     bodies.push(body);
   }
 
+  // Two objects made once, so the read allocates nothing in a frame.
+  const readTranslation = { x: 0, y: 0, z: 0 };
+  const readRotation = { x: 0, y: 0, z: 0, w: 1 };
+
   return {
     onFixedUpdate(step) {
       world.timestep = step; // 1/60 second at the default rate
@@ -86,15 +90,15 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
       const positions = crates.positions; // read the views in each frame
       const rotations = crates.rotations;
       for (let i = 0; i < COUNT; i++) {
-        const p = bodies[i].translation();
-        const q = bodies[i].rotation();
-        positions[i * 3] = p.x;
-        positions[i * 3 + 1] = p.y;
-        positions[i * 3 + 2] = p.z;
-        rotations[i * 4] = q.x;
-        rotations[i * 4 + 1] = q.y;
-        rotations[i * 4 + 2] = q.z;
-        rotations[i * 4 + 3] = q.w;
+        bodies[i].translation(readTranslation);
+        bodies[i].rotation(readRotation);
+        positions[i * 3] = readTranslation.x;
+        positions[i * 3 + 1] = readTranslation.y;
+        positions[i * 3 + 2] = readTranslation.z;
+        rotations[i * 4] = readRotation.x;
+        rotations[i * 4 + 1] = readRotation.y;
+        rotations[i * 4 + 2] = readRotation.z;
+        rotations[i * 4 + 3] = readRotation.w;
       }
     },
   };

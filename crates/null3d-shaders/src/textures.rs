@@ -1,9 +1,14 @@
 //! The textures of a custom material or a custom effect: the module-scope
-//! `var name: texture_2d<f32>;` declarations in its WGSL. The engine keeps every texture as a layer
-//! of a texture array, so the build turns each declaration into a texture array in a map slot of
-//! a bind group of the maps' layout, declares the texture's sampler as `<name>Sampler`, and gives
-//! each texture function that reads the texture the layer that the engine wrote. The WGSL then
-//! samples a texture as it would sample any 2D texture.
+//! `var name: texture_2d<f32>;` and `var name: texture_2d_array<f32>;` declarations in its WGSL.
+//! The engine keeps every texture as a layer of a texture array, so the build turns each
+//! declaration into a texture array in a map slot of a bind group of the maps' layout, declares
+//! the texture's sampler as `<name>Sampler`, and gives each texture function that reads a 2D
+//! texture the layer that the engine wrote. The WGSL then samples a texture as it would sample
+//! any 2D texture.
+//!
+//! A declaration of a texture array is the array itself: the shader picks the layer, and a texture
+//! function keeps it. Such a texture is a texture of several layers, which the engine gives an
+//! array of its own, so the layer the shader names is the layer the texture holds.
 //!
 //! Each texture's layer sits in the last floats of the values the engine writes for the WGSL,
 //! from the last float down: a material's row of custom values, which both stages read, or an
@@ -27,6 +32,9 @@ pub(crate) const MAX_TEXTURES: usize = 6;
 
 /// The type a texture of a custom material has, as the WGSL declares it.
 const TEXTURE_TYPE: &str = "texture_2d<f32>";
+
+/// The type of a texture array of a custom material, whose shader picks the layer.
+const ARRAY_TYPE: &str = "texture_2d_array<f32>";
 
 /// The name of the private array that holds each texture's layer for the stage that runs.
 const LAYERS: &str = "custom_texture_layers";
@@ -74,7 +82,7 @@ const READS: [TextureFunction; 6] = [
 ];
 
 /// Texture functions that read no texel, which take an array texture as they take a 2D one.
-const QUERIES: [&str; 2] = ["textureDimensions", "textureNumLevels"];
+const QUERIES: [&str; 3] = ["textureDimensions", "textureNumLevels", "textureNumLayers"];
 
 /// What declares the textures, which decides where they bind and where their layers come from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,6 +104,9 @@ pub struct Texture {
     pub name: String,
     /// The float of the row of custom values that holds the texture's layer.
     pub offset: u32,
+    /// True for a declaration of a texture array, which the shader picks a layer of. Its texture
+    /// is then a texture of several layers, and each layer the shader names is one of its own.
+    pub array: bool,
 }
 
 /// The textures of a custom material or effect, its WGSL with the declarations and calls
@@ -199,8 +210,9 @@ fn arguments(tokens: &[Token], open: usize) -> Option<(Vec<std::ops::Range<usize
     Some((list, close))
 }
 
-/// Reads the textures that the WGSL of `owner` declares, and rewrites the WGSL so that each reads
-/// its layer of a texture array. Problems name places in `source`.
+/// Reads the textures that the WGSL of `owner` declares, and rewrites the WGSL so that each 2D
+/// texture reads its layer of a texture array, and each texture array keeps the layer that the
+/// shader picks. Problems name places in `source`.
 pub(crate) fn read(
     tokens: &[Token],
     source: &str,
@@ -210,6 +222,7 @@ pub(crate) fn read(
     let place = |token: &Token| Some(locate(source, source, token.start));
     let mut problems = Vec::new();
     let mut names: Vec<&str> = Vec::new();
+    let mut arrays: Vec<bool> = Vec::new();
     let mut edits = Vec::new();
     for declaration in resource_declarations(tokens) {
         let name = &tokens[declaration.name];
@@ -226,8 +239,8 @@ pub(crate) fn read(
                 path,
                 place(&tokens[declaration.first]),
                 format!(
-                    "the texture `{}` has attributes. Declare it as `var {}: {TEXTURE_TYPE};`, without `@group` or `@binding`: the engine binds the textures that it declares.",
-                    name.text, name.text
+                    "the texture `{}` has attributes. Declare it as `var {}: {TEXTURE_TYPE};` or `var {}: {ARRAY_TYPE};`, without `@group` or `@binding`: the engine binds the textures that it declares.",
+                    name.text, name.text, name.text
                 ),
             ));
             continue;
@@ -247,12 +260,13 @@ pub(crate) fn read(
             ));
             continue;
         }
-        if spelled != TEXTURE_TYPE {
+        let array = spelled == ARRAY_TYPE;
+        if !array && spelled != TEXTURE_TYPE {
             problems.push(Problem::at(
                 path,
                 place(name),
                 format!(
-                    "the texture `{}` has the type `{spelled}`. The textures of custom WGSL are `{TEXTURE_TYPE}`.",
+                    "the texture `{}` has the type `{spelled}`. The textures of custom WGSL are `{TEXTURE_TYPE}`, or `{ARRAY_TYPE}` for a texture array whose layers the shader picks.",
                     name.text
                 ),
             ));
@@ -270,6 +284,7 @@ pub(crate) fn read(
             continue;
         }
         names.push(name.text);
+        arrays.push(array);
         let (start, end) = (
             tokens[declaration.first].start,
             tokens[declaration.end].start + 1,
@@ -337,6 +352,17 @@ pub(crate) fn read(
             continue;
         };
         allowed[texture] = true;
+        if function == "textureNumLayers" && !arrays[slot] {
+            problems.push(Problem::at(
+                path,
+                place(&tokens[index]),
+                format!(
+                    "`textureNumLayers` reads the layer count of a texture array. Declare `var {name}: {ARRAY_TYPE};`, and give the material a texture of several layers.",
+                    name = tokens[texture].text
+                ),
+            ));
+            continue;
+        }
         let Some(read) = read else {
             continue;
         };
@@ -344,17 +370,20 @@ pub(crate) fn read(
         let Some(after) = args.get(coordinates) else {
             continue;
         };
-        let last = &tokens[after.end - 1];
         edits.push(Edit {
             start: tokens[index].start,
             end: tokens[index].start,
             text: "select(vec4f(1.0), ".to_owned(),
         });
-        edits.push(Edit {
-            start: last.start + last.text.len(),
-            end: last.start + last.text.len(),
-            text: format!(", {LAYERS}[{slot}]"),
-        });
+        // A texture array's function already takes the layer that the shader picks.
+        if !arrays[slot] {
+            let last = &tokens[after.end - 1];
+            edits.push(Edit {
+                start: last.start + last.text.len(),
+                end: last.start + last.text.len(),
+                text: format!(", {LAYERS}[{slot}]"),
+            });
+        }
         edits.push(Edit {
             start: tokens[close].start + 1,
             end: tokens[close].start + 1,
@@ -395,6 +424,7 @@ pub(crate) fn read(
             .map(|(k, name)| Texture {
                 name: (*name).to_owned(),
                 offset: layer_offset(k),
+                array: arrays[k],
             })
             .collect(),
         declarations: declarations(&names, owner),
@@ -476,11 +506,13 @@ mod tests {
             [
                 Texture {
                     name: "base".into(),
-                    offset: 31
+                    offset: 31,
+                    array: false
                 },
                 Texture {
                     name: "noise".into(),
-                    offset: 30
+                    offset: 30,
+                    array: false
                 },
             ]
         );
@@ -514,6 +546,71 @@ mod tests {
         assert!(tail.contains("let t7 = custom_value(id, 7u);"));
         assert!(tail.contains("custom_texture_layers[0] = i32(t7.w);"));
         assert!(tail.contains("custom_texture_layers[1] = i32(t7.z);"));
+    }
+
+    #[test]
+    fn an_array_texture_keeps_the_layer_the_shader_picks() {
+        let source = "var facades: texture_2d_array<f32>;\nvar detail: texture_2d<f32>;\nfn surface(input: SurfaceInput) -> Surface {\n    let a = textureSampleLevel(facades, facadesSampler, input.uv, 3, 0.0);\n    let b = textureLoad(facades, vec2i(0), input.layer, 0);\n    let n = textureNumLayers(facades);\n    let c = textureSample(detail, detailSampler, input.uv);\n    let g = textureGather(0, facades, facadesSampler, input.uv, input.layer);\n}\n";
+        let found = rewrite(source).unwrap();
+        assert_eq!(
+            found.fields,
+            [
+                Texture {
+                    name: "facades".into(),
+                    offset: 31,
+                    array: true
+                },
+                Texture {
+                    name: "detail".into(),
+                    offset: 30,
+                    array: false
+                },
+            ]
+        );
+        let lines: Vec<&str> = found.source.lines().collect();
+        assert_eq!(
+            lines.len(),
+            source.lines().count(),
+            "lines stay where they were"
+        );
+        // The shader's own layer stays, and the call waits for the texture's image.
+        assert_eq!(
+            lines[3].trim(),
+            "let a = select(vec4f(1.0), textureSampleLevel(facades, facadesSampler, input.uv, 3, 0.0), custom_texture_layers[0] >= 0);"
+        );
+        assert_eq!(
+            lines[4].trim(),
+            "let b = select(vec4f(1.0), textureLoad(facades, vec2i(0), input.layer, 0), custom_texture_layers[0] >= 0);"
+        );
+        assert_eq!(lines[5].trim(), "let n = textureNumLayers(facades);");
+        assert_eq!(
+            lines[6].trim(),
+            "let c = select(vec4f(1.0), textureSample(detail, detailSampler, input.uv, custom_texture_layers[1]), custom_texture_layers[1] >= 0);"
+        );
+        assert_eq!(
+            lines[7].trim(),
+            "let g = select(vec4f(1.0), textureGather(0, facades, facadesSampler, input.uv, input.layer), custom_texture_layers[0] >= 0);"
+        );
+        assert!(
+            found
+                .declarations
+                .contains("@group(3) @binding(0) var facades: texture_2d_array<f32>;")
+        );
+        assert!(
+            found
+                .declarations
+                .contains("@group(3) @binding(8) var facadesSampler: sampler;")
+        );
+    }
+
+    #[test]
+    fn a_plain_texture_has_no_layer_count() {
+        let source = "var detail: texture_2d<f32>;\nfn f() { let n = textureNumLayers(detail); }";
+        let problems = rewrite(source).unwrap_err();
+        assert!(
+            problems[0].contains("`textureNumLayers` reads the layer count of a texture array")
+        );
+        assert!(problems[0].contains("var detail: texture_2d_array<f32>;"));
     }
 
     #[test]

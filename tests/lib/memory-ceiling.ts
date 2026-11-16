@@ -2,8 +2,8 @@
 // ceiling rather than taking the machine's memory. The unit script loads this as a preload and sets
 // `NULL3D_TEST_MEMORY_MIB`; a run that does not set it is not capped. Bun's own memory knobs do not
 // stop a run: `BUN_JSC_forceRAMSize` sets the size that the JavaScript heap grows towards, which a
-// fast allocation passes without failing (measured on 16 October 2026, .dev/tests.md), so the run is
-// watched instead.
+// fast allocation passes without failing (.dev/tests.md has the measurement), so the run is watched
+// instead.
 const ceilingMiB = Number(process.env.NULL3D_TEST_MEMORY_MIB ?? 0);
 
 /** How often the run's memory is read: often enough to catch a runaway while it is still small. */

@@ -1,0 +1,280 @@
+// The checks every species takes, walked from the registry, so a new species adds a folder and no
+// line here. The stand-in species joins them, so the walk proves itself before the first species
+// lands. Each species' record must pass the record check and the owner's caps, name its own texture
+// folder, grow the same bytes twice, and stay within its own budget.
+//
+// The walk is this module, and the slices beside it call it: the run starts a group only after the
+// group before it has ended, so the walk's length is the run's floor unless it divides. A slice takes
+// every nth species rather than a run of them, so the species that take longest land in different
+// slices rather than in one.
+import { describe, expect, it } from 'bun:test';
+import type { PlantAsset, SpeciesKitData } from '../../packages/vegetation/src/asset';
+import { plantAssetDigest } from '../../packages/vegetation/src/asset';
+import {
+	capsFor,
+	kitBytesOf,
+	NEAR_CAPS,
+	variantBytesOf,
+} from '../../packages/vegetation/src/core/caps';
+import { speciesProblems } from '../../packages/vegetation/src/core/check';
+import type { SpeciesModule } from '../../packages/vegetation/src/core/record';
+import { isSpeciesId, loadSpecies, speciesIds } from '../../packages/vegetation/src/core/registry';
+import { standInSpecies } from '../../packages/vegetation/src/core/stand-in';
+import { DETAILS } from '../../packages/vegetation/src/core/types';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../../packages/vegetation/src/generate';
+import { kitBuffers } from '../../packages/vegetation/src/generate-task';
+import { targetHeight } from '../../packages/vegetation/src/grow/height';
+import { SURFACE_SHEATH } from '../../packages/vegetation/src/leaf/writer';
+import { foliageBox } from '../../packages/vegetation/src/lod/card-size.test-support';
+import { drawnAtTallest } from '../../packages/vegetation/src/lod/drawn';
+import { scaledBudget } from './run-budget.ts';
+
+/**
+ * One species to walk: its folder's name, its module, and which of its stages grow as stand-ins:
+ * every stage, or only those not built yet.
+ */
+export interface Walked {
+	readonly folder: string;
+	readonly load: () => Promise<SpeciesModule>;
+	readonly placeholders: true | 'missing';
+}
+
+/** Every species the registry holds, then the stand-in that proves the walk. */
+export function walkedSpecies(): readonly Walked[] {
+	return [
+		...speciesIds().map((id) => ({
+			folder: id,
+			load: () => loadSpecies(id),
+			placeholders: 'missing' as const,
+		})),
+		{ folder: 'stub', load: async () => standInSpecies('stub'), placeholders: true as const },
+	];
+}
+
+/**
+ * The walk's `index`th slice, of `count` slices: every `count`th species, starting at `index`.
+ *
+ * @param all Every species the walk takes.
+ * @param index Which slice this is, from zero.
+ * @param count How many slices the walk divides into.
+ * @returns This slice's species.
+ */
+export function sliceOf(all: readonly Walked[], index: number, count: number): readonly Walked[] {
+	return all.filter((_, i) => i % count === index);
+}
+
+/**
+ * The species known to draw more at once than their near budget allows at the tallest views, with
+ * the count each draws there from its worst stated eye, at seed 11 and variant 0. A known species'
+ * test expects the failure and fails once the species holds its budget, so its line must go as it
+ * is mended.
+ */
+const NEAR_OVER: Readonly<Record<string, number>> = {
+	'giant-sequoia': 53_398_951,
+	olive: 30_065_894,
+	'pedunculate-oak': 43_550_406,
+	'silver-birch': 81_019_038,
+};
+
+/** The vertices of a variant's nearest merged foliage that carry the sheath column's mark. */
+function sheathMarked(asset: PlantAsset): number {
+	let marked = 0;
+	for (const part of asset.levels[0].parts) {
+		if (part.name !== 'foliage') continue;
+		const colours = part.arrays.colors as ArrayLike<number> | undefined;
+		if (!colours) continue;
+		for (let i = 2; i < colours.length; i += 4) if (colours[i] === SURFACE_SHEATH) marked++;
+	}
+	return marked;
+}
+
+/**
+ * Grows a kit's first variant twice and checks that both give the same bytes, and that the kit, the
+ * variant, its near band and its card levels in every season stay within the record's own budget.
+ */
+function growsWithinBudget(kit: SpeciesKitData): void {
+	const options = { seed: 11, variant: 0, near: true };
+	const asset = growPlantNow(kit, options);
+	expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(asset));
+	const record = kit.record;
+	// Merged foliage keeps each run's flutter phase in the byte that marks a sheath column, so a
+	// species without sheath columns draws no vertex with that mark: a leaf so marked draws in the
+	// record's sheath colour, black where the record names none.
+	const growth = record.growth;
+	if (!(growth.model === 'tuft' && growth.sheathColour !== undefined))
+		expect(sheathMarked(asset)).toBe(0);
+	const budget = record.lod.budget;
+	// The plant's own figure counts its meshes and every piece placed at a socket at the kit's tier:
+	// each shoot row draws its prototype at the nearest level, and a card level draws its meshes.
+	const tier = DETAILS.indexOf(kit.detail);
+	let pieces = 0;
+	if (record.lod.nearFoliage === 'instanced')
+		for (let r = 0; r < asset.shoots.count; r++)
+			pieces +=
+				(kit.prototypes[asset.shoots.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
+	expect(asset.stats.triangles).toEqual([
+		asset.levels[0].triangles + pieces,
+		asset.levels[1].triangles,
+		asset.levels[2].triangles,
+	]);
+	expect(kitBytesOf(kit)).toBeLessThanOrEqual(budget.kitBytes[kit.detail]);
+	expect(variantBytesOf(asset)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
+	expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
+	expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
+	// Every season's extras, such as autumn's fruit, stay within the variant's byte cap and the card
+	// levels' caps too: a season can carry far more than the default one, and the bytes are what a
+	// player downloads.
+	for (const season of record.seasons.deciduous ? (['autumn', 'blossom'] as const) : []) {
+		const seasonal = growPlantNow(kit, { ...options, season });
+		expect(variantBytesOf(seasonal)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
+		expect(seasonal.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
+		expect(seasonal.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
+	}
+}
+
+/** How far a leaf form's top may stand from its record's sampled height, as a share of it. */
+const HEIGHT_SLACK = 0.03;
+
+/**
+ * Registers the checks one species must pass.
+ *
+ * @param walked The species to walk.
+ */
+export function walkSpecies(walked: Walked): void {
+	describe(`the species ${walked.folder}`, async () => {
+		const module = await walked.load();
+		const { record } = module;
+		await loadPlantCode(record);
+
+		it('passes the record check and the owner caps', () => {
+			expect(speciesProblems(record)).toEqual([]);
+		});
+
+		it('is named by its folder and names its own texture folder', () => {
+			expect(record.id).toBe(walked.folder);
+			if (record.textures === 'own') expect(module.textures.manifest.species).toBe(record.id);
+			else expect(isSpeciesId(record.textures.from)).toBe(true);
+		});
+
+		for (const detail of DETAILS)
+			it(
+				`keeps its cutting kit within its cap at the ${detail} tier`,
+				() => {
+					const cutOnly = (record.shoots?.cuttingClasses ?? []).some(
+						(shoot) => shoot.cutOnly === true,
+					);
+					const hinted = ['branch', 'subbranch', 'cluster'].some(
+						(part) =>
+							(
+								record.cuttings?.[part as 'branch' | 'subbranch' | 'cluster'] as
+									| { readonly density?: number }
+									| undefined
+							)?.density !== undefined,
+					);
+					if (!cutOnly && record.cuttings?.density === undefined && !hinted) return;
+					const kit = buildKitNow(module, {
+						placeholders: walked.placeholders,
+						detail,
+						cutting: true,
+					});
+					expect(kit.prototypes.length).toBeGreaterThan(0);
+					expect(kit.cards.size).toBe(0);
+					expect(kitBytesOf(kit)).toBeLessThanOrEqual(record.lod.budget.kitBytes[detail]);
+				},
+				scaledBudget(120_000),
+			);
+
+		for (const detail of DETAILS)
+			it(
+				`keeps its kit and its nearest wood within their caps at the ${detail} tier`,
+				() => {
+					const kit = buildKitNow(module, { placeholders: walked.placeholders, detail });
+					expect(kitBytesOf(kit)).toBeLessThanOrEqual(record.lod.budget.kitBytes[detail]);
+					// A kit goes to the job worker by transfer, so two kits share no buffer: a shared one
+					// is detached at its second transfer.
+					const own = new Set(kitBuffers(kit));
+					const again = buildKitNow(module, { placeholders: walked.placeholders, detail });
+					expect(kitBuffers(again).filter((buffer) => own.has(buffer))).toEqual([]);
+					// The nearest wood of the first variants stays under the owner's cap at this tier.
+					const cap = capsFor(record).lod0WoodBytes[detail];
+					for (let variant = 0; variant < Math.min(3, record.variants); variant++) {
+						const asset = growPlantNow(kit, { seed: 11, variant, near: true });
+						let wood = 0;
+						for (const part of asset.levels[0].parts)
+							if (part.name === 'wood')
+								wood += Object.values(part.arrays).reduce(
+									(sum, array) => sum + array.byteLength,
+									0,
+								);
+						expect(wood).toBeLessThanOrEqual(cap);
+					}
+				},
+				scaledBudget(120_000),
+			);
+
+		// The triangles one copy draws at once, as the engine draws them, from its worst stated eye at
+		// the tallest views the presets give, against its near budget and the High preset's cap.
+		const over = NEAR_OVER[walked.folder];
+		(over === undefined ? it : it.failing)(
+			`draws at once within its near budget at the tallest view${over === undefined ? '' : `, known to draw ${over}`}`,
+			() => {
+				const kit = buildKitNow(module, { placeholders: walked.placeholders });
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+				const drawn = drawnAtTallest(kit, asset).triangles;
+				expect(drawn).toBeLessThanOrEqual(record.lod.budget.lod0Triangles);
+				expect(drawn).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
+			},
+			scaledBudget(120_000),
+		);
+
+		// A record that scales to its leaf form stands within 3 per cent of its record's height:
+		// its wood's top or its nearest foliage's, whichever is higher. Every other record keeps the
+		// drawn card level's measure it was judged with, which its cards may stand above.
+		it(
+			"stands its leaf form within 3 per cent of its record's height where it asks to",
+			() => {
+				if (record.lod.heightAtLeafTop !== true) return;
+				const kit = buildKitNow(module, { placeholders: walked.placeholders });
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+				const target = targetHeight(record, 11, 0);
+				const top = Math.max(asset.skeleton.height, foliageBox(kit, asset, 0).max[1]);
+				const off = Math.abs(top - target) / target;
+				expect([walked.folder, top.toFixed(3), off <= HEIGHT_SLACK]).toEqual([
+					walked.folder,
+					top.toFixed(3),
+					true,
+				]);
+			},
+			scaledBudget(60_000),
+		);
+
+		it(
+			'grows the same bytes twice, stays within its own budget and marks no leaf a sheath',
+			() => {
+				const kit = buildKitNow(module, { placeholders: walked.placeholders });
+				growsWithinBudget(kit);
+				const budget = record.lod.budget;
+				const outputs = module.textures.manifest.outputs;
+				const half = outputs
+					.filter((o) => o.file.includes('-half'))
+					.reduce((s, o) => s + o.bytes, 0);
+				const full = outputs
+					.filter((o) => !o.file.includes('-half'))
+					.reduce((s, o) => s + o.bytes, 0);
+				expect(full).toBeLessThanOrEqual(budget.downloadBytes);
+				expect(half).toBeLessThanOrEqual(budget.downloadHalfBytes);
+			},
+			scaledBudget(60_000),
+		);
+
+		// Each of the species' other forms grows from its own kit within the species' own budget.
+		for (const form of Object.keys(record.forms ?? {}))
+			it(
+				`grows its ${form} form the same twice, within the species' own budget`,
+				() => {
+					growsWithinBudget(buildKitNow(module, { placeholders: walked.placeholders, form }));
+				},
+				scaledBudget(60_000),
+			);
+	});
+}

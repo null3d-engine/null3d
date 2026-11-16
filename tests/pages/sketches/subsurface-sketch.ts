@@ -17,6 +17,7 @@
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
 import { defineSketch } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 import {
 	BAR,
 	BLOCKER,
@@ -35,6 +36,7 @@ const SCALE = params.get('scale');
 const TAPS = ([11, 17, 25] as const).find((taps) => taps === Number(params.get('taps'))) ?? 17;
 
 export default defineSketch(({ scene, materials, geometry, textures, quality, time, page }) => {
+	applySketchSwitches(import.meta.url, quality);
 	quality.set({ subsurfaceSamples: params.has('off') ? 0 : TAPS, governor: false });
 	if (SCALE !== null) {
 		const scale = Number(SCALE);

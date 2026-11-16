@@ -67,7 +67,12 @@ impl ProbeGrid {
                 self.counts[2] as f32,
                 (self.counts[2] + 2) as f32,
             ],
-            params: [self.intensity * exposure, self.environment_weight, 0.0, 0.0],
+            params: [
+                self.intensity * exposure,
+                self.environment_weight,
+                self.intensity,
+                0.0,
+            ],
         }
     }
 }

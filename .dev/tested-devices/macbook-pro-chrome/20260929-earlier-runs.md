@@ -11,7 +11,7 @@ The image tests' `chrome-real-gpu` references and the benchmarks run here throug
 
 Result: All passed.
 governor 2026-10-05: 4 of 4.
-bench 2026-10-06: every run finished but one, which the browser closed; S4 at Medium with one setting changed per run, 26 of 26 runs ([D-16](../../decisions/D-16-moving-casters-and-bias.md#addendum-2026-10-06-the-shadow-reads-on-webgl2-on-apple-gpus)).
+bench 2026-10-06: every run finished but one, which the browser closed; S4 at Medium with one setting changed per run, 26 of 26 runs ([D-16](../../decisions/D-16-moving-casters-and-bias.md#the-shadow-reads-on-webgl2-on-apple-gpus)).
 Bench, S4 at Low with the window in view and parked, 2026-10-06: every run finished.
 On the Mac's own screen, 120 frames per second each way, and the same GPU and CPU times within the runs' spread (runs 20261006-092815-bench to 20261006-094946-bench).
 On the external 60 Hz screen alone, 60 frames per second and the same times each way (runs 20261006-100742-bench in view, 20261006-101325-bench parked).

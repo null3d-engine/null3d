@@ -208,6 +208,69 @@ fn a_lower_render_scale_draws_into_a_corner_of_the_same_targets() {
     }
 }
 
+/// The worlds of `worlds`, with `antialias` in place of MSAA, and the state of the frame that hold
+/// mode records: the thread that draws has built none of its pipelines yet.
+fn held_worlds(antialias: Antialias) -> (World<GpuDrivenRenderer>, World<CpuCulledRenderer>) {
+    let canvas = CanvasOutput {
+        scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+        antialias,
+        transparent: false,
+    };
+    let mut webgpu = World::build(GpuDrivenRenderer::new(RendererConfig {
+        canvas,
+        ..RendererConfig::default()
+    }));
+    let mut webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        canvas,
+        multi_draw: true,
+        ..CpuCulledConfig::default()
+    }));
+    webgpu.renderer.settings_mut().set_render_scaling(true);
+    webgl2.renderer.settings_mut().set_render_scaling(true);
+    // Hold mode draws one frame, and the thread that draws has built none of its pipelines.
+    webgpu.pipelines_built = 0;
+    webgl2.pipelines_built = 0;
+    (webgpu, webgl2)
+}
+
+#[test]
+fn fxaa_draws_the_two_step_pass_on_the_first_frame_below_the_whole_canvas() {
+    // A held picture draws one frame. That frame must run the two steps, since the first step
+    // runs FXAA below the whole canvas's scale: the one pass leaves the image unsmoothed.
+    let (mut webgpu, mut webgl2) = held_worlds(Antialias::Fxaa);
+    let corner = Some([0, 0, 480, 270]);
+    let expected = [corner, corner, None];
+    check_first_frame(&mut webgpu, 750, None, expected);
+    check_first_frame(&mut webgl2, 750, None, expected);
+}
+
+#[test]
+fn the_sharpening_draws_the_two_step_pass_on_the_first_frame() {
+    // The sharpening draws in the second step, so a held picture at the whole canvas's scale also
+    // needs both steps in its one frame. Neither step draws a corner there.
+    let (mut webgpu, mut webgl2) = held_worlds(Antialias::Msaa);
+    let expected = [None, None, None];
+    check_first_frame(&mut webgpu, 1000, Some(1.0), expected);
+    check_first_frame(&mut webgl2, 1000, Some(1.0), expected);
+}
+
+/// Checks that `world`'s first frame at `scale` draws the passes of `expected` areas: the scene,
+/// the first step of the two-step pass and the second step, which takes the color to the canvas.
+fn check_first_frame<B: FrameBuilder>(
+    world: &mut World<B>,
+    scale: u32,
+    sharpen: Option<f32>,
+    expected: [Option<[u32; 4]>; 3],
+) {
+    if let Some(strength) = sharpen {
+        world.renderer.settings_mut().set_sharpen(Some(strength));
+    }
+    world.frame = 1;
+    world.render_scale = RenderScale::from_thousandths(scale);
+    world.record(true);
+    assert_eq!(render_areas(&world.commands()), expected, "scale {scale}");
+}
+
 /// The layout that a frame's `CreateBindGroup` gave each group, by the group's id.
 fn group_layouts(commands: &[(Op, Vec<u32>)]) -> std::collections::HashMap<u32, u32> {
     operands(commands, Op::CreateBindGroup)
@@ -356,11 +419,14 @@ fn check_scaling_switch<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(render_areas(&commands), [None]);
 
     world.renderer.settings_mut().set_render_scaling(true);
+    // The frame that lets the scale drop makes the second step's pipeline, the final pass's only
+    // build with the upscale, and draws the whole canvas until it is built.
+    let commands = frame_at(&mut world, &mut device, 500);
+    assert_eq!(render_areas(&commands), [None, None]);
+    assert_eq!(common::count(&commands, Op::CreateRenderPipeline), 1);
     let commands = frame_at(&mut world, &mut device, 500);
     let corner = Some([0, 0, 320, 180]);
     assert_eq!(render_areas(&commands), [corner, corner, None]);
-    // The final pass's pipeline was made with the first frame, and both steps draw with its
-    // build, so they draw at once.
     assert_eq!(common::count(&commands, Op::CreateRenderPipeline), 0);
 
     world.renderer.settings_mut().set_render_scaling(false);

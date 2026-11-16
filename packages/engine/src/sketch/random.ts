@@ -8,6 +8,12 @@ import { random, seed } from '../math/math';
 export const HOLD_SEED = 1;
 
 /**
+ * The seed of the random numbers that a recording gives the sketch's thread, so a session that a
+ * page records draws the same frames when it replays elsewhere. The recording keeps the seed.
+ */
+export const RECORDING_SEED = 1;
+
+/**
  * Seeds this thread's `math.random` with `value`, and makes `Math.random` draw from it too. Returns
  * a function that gives the thread its own `Math.random` back, unless something else replaced it
  * meanwhile.

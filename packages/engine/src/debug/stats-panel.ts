@@ -1,5 +1,5 @@
-// The stats overlay's panel: the header button with the frame rate and the card of figures under
-// it, over the top-right corner of a canvas. The engine's overlay (overlay.ts) fills it from the
+// The stats overlay's panel: the header button with the frame rate and the tabbed card of figures
+// under it, over the top-right corner of a canvas. The engine's overlay (overlay.ts) fills it from the
 // engine's metrics, and a page that draws with another engine, such as three.js, fills it with
 // figures of its own. So both pages show the same figures in the same look. overlay-look.ts holds
 // the look; this file holds the place on the page, the shadow root and the button's toggle.

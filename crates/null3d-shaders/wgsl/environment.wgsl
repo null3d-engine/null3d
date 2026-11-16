@@ -26,7 +26,9 @@
 
 #import null3d::fullscreen::{triangle}
 #import null3d::atmosphere::{SkySettings, second_sun, sky_light, sky_whole}
-#import null3d::cubemap::{face_direction, frame_bitangent, frame_tangent, radical_inverse}
+#import null3d::cubemap::{face_direction, frame_bitangent, frame_tangent, pack, radical_inverse}
+#import null3d::math::{half_vector}
+#import null3d::sky_layer::{SkyLayer, SkyLayerInput, SkyLayerValues}
 
 struct Step {
     /// The texels across a side of each face at the level that the draw fills.
@@ -44,7 +46,8 @@ struct Step {
     /// divided by a power of two, so that a sun past the largest shared-exponent value keeps its
     /// light, and the draws that fill the map multiply it back in.
     gain: f32,
-    spare_b: f32,
+    /// The cloud march's step count, 0 while the draw takes no part in the tier, then a spare.
+    cloud_steps: f32,
     spare_c: f32,
 }
 
@@ -56,6 +59,13 @@ struct Step {
 @group(0) @binding(4) var panorama_sampler: sampler;
 /// The sky's settings, which the `sky` step reads.
 @group(0) @binding(5) var<uniform> sky_settings: SkySettings;
+
+/// The layer that an add-on draws over the sky, which the builds with SKY_LAYER hold: the core
+/// sky's cloud settings, the share of the sun that the layer hides, the layer's opacity and the
+/// clock that it moves with. A map without a layer draws no layer, and binds no buffer here.
+#ifdef SKY_LAYER
+@group(0) @binding(6) var<uniform> layer: SkyLayerValues;
+#endif
 
 const PI: f32 = 3.14159265358979;
 
@@ -83,31 +93,6 @@ fn texel_direction(position: vec2f) -> vec3f {
     let at = face_texel(position);
     let center = (2.0 * at.texel + 1.0) / f32(params.size) - 1.0;
     return normalize(face_direction(at.face, center.x, center.y));
-}
-
-/// 2 to the power `e`, exact for the exponents of normal floats.
-fn power_of_two(e: i32) -> f32 {
-    return bitcast<f32>(u32(e + 127) << 23u);
-}
-
-/// The texel's light as `rgb9e5ufloat`, rounded to nearest as `EXT_texture_shared_exponent`
-/// packs it, in the four bytes of an `rgba8unorm` texel, lowest byte first. A quarter step above
-/// each byte keeps the byte whether the GPU rounds or truncates its conversion to 8 bits.
-fn pack(light: vec3f) -> vec4f {
-    let c = select(vec3f(0.0), min(light, vec3f(65408.0)), light > vec3f(0.0));
-    let largest = max(c.r, max(c.g, c.b));
-    if largest < power_of_two(-24) {
-        return vec4f(0.25 / 255.0);
-    }
-    let floor_log = i32((bitcast<u32>(largest) >> 23u) & 255u) - 127;
-    var exponent = max(floor_log, -16) + 16;
-    if floor(largest * power_of_two(24 - exponent) + 0.5) >= 512.0 {
-        exponent += 1;
-    }
-    let m = min(vec3u(floor(c * power_of_two(24 - exponent) + 0.5)), vec3u(511u));
-    let word = m.r | (m.g << 9u) | (m.b << 18u) | (u32(exponent) << 27u);
-    let bytes = vec4u(word & 255u, (word >> 8u) & 255u, (word >> 16u) & 255u, word >> 24u);
-    return (vec4f(bytes) + 0.25) / 255.0;
 }
 
 // The room of three.js's RoomEnvironment: a large white room with six white boxes and six glowing
@@ -317,7 +302,7 @@ fn shade(p: vec3f, n: vec3f) -> f32 {
     // The view points from the surface back to the center.
     let v = normalize(-p);
     let n_dot_v = max(dot(n, v), 1.0e-4);
-    let h = normalize(l + v);
+    let h = half_vector(l, v);
     let v_dot_h = clamp(dot(v, h), 0.0, 1.0);
     // three.js's `F_Schlick`, with its exponential fit of the fifth power.
     let weight = exp2((-5.55473 * v_dot_h - 6.98316) * v_dot_h);
@@ -429,15 +414,31 @@ fn fs_panorama(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let tc = (texel.y * f32(count) + f32(j) + 0.5) * spacing - 1.0;
         for (var i = 0u; i < count; i++) {
             let sc = (texel.x * f32(count) + f32(i) + 0.5) * spacing - 1.0;
-            sum += panorama_light(normalize(face_direction(at.face, sc, tc)));
+            let d = normalize(face_direction(at.face, sc, tc));
+            var light = panorama_light(d);
+#ifdef SKY_LAYER
+            light = sky_layer_over(light, d);
+#endif
+            sum += light;
         }
     }
     return pack(sum * (params.gain / f32(count * count)));
 }
 
+#ifdef SKY_LAYER
+/// The layer drawn over the sky's light in a direction, blended as the background's own pass blends
+/// it: the layer's color premultiplied by its coverage, over the light that it covers.
+fn sky_layer_over(sky: vec3f, direction: vec3f) -> vec3f {
+    let drawn = skyLayer(SkyLayerInput(direction, layer.clouds, layer.view.z, layer.view.x));
+    let coverage = clamp(drawn.coverage * layer.view.y, 0.0, 1.0);
+    return drawn.color * coverage + sky * (1.0 - coverage);
+}
+#endif
+
 /// The sky's light without the sun's disc, averaged over `samples` x `samples` directions spread
 /// evenly over the texel. The sun's direct light comes from the scene's directional light, and its
-/// disc is far smaller than a texel.
+/// disc is far smaller than a texel. A map of a scene with a sky layer draws the layer over the sky
+/// in each direction, so its texels hold what the background shows.
 @fragment
 fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let at = face_texel(position.xy);
@@ -457,13 +458,91 @@ fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
         for (var i = 0u; i < count; i++) {
             let sc = (texel.x * f32(count) + f32(i) + 0.5) * spacing - 1.0;
             let d = normalize(face_direction(at.face, sc, tc));
-            sum += sky_light(d, whole, sky_settings, 0.0);
+            var light = sky_light(d, whole, sky_settings, 0.0);
             if second_sky_weight > 0.0 {
-                sum += second_sky_weight * sky_light(d, second, sky_settings, 0.0);
+                light += second_sky_weight * sky_light(d, second, sky_settings, 0.0);
             }
+#ifdef SKY_LAYER
+            light = sky_layer_over(light, d);
+#endif
+            sum += light;
         }
     }
     return pack(sum * (params.gain / f32(count * count)));
+}
+
+/// The squares across each face of the grid that `fs_feedback` sums the light over.
+const FEEDBACK_GRID: u32 = 8u;
+
+/// The solid angle that the part of a cube face from its center to (x, y) covers, in face
+/// coordinates from -1 to 1.
+fn sh_area(x: f32, y: f32) -> f32 {
+    return atan2(x * y, sqrt(x * x + y * y + 1.0));
+}
+
+/// The nine basis functions of the diffuse light at a unit direction, in three.js's order and
+/// scale, as the CPU's own projection of the core sky sums them (`crates/null3d-render/src/
+/// sky_light.rs`). `k` numbers them from 0.
+fn sh_basis(k: u32, d: vec3f) -> f32 {
+    switch k {
+        case 0u: {
+            return 0.282095;
+        }
+        case 1u: {
+            return 0.488603 * d.y;
+        }
+        case 2u: {
+            return 0.488603 * d.z;
+        }
+        case 3u: {
+            return 0.488603 * d.x;
+        }
+        case 4u: {
+            return 1.092548 * d.x * d.y;
+        }
+        case 5u: {
+            return 1.092548 * d.y * d.z;
+        }
+        case 6u: {
+            return 0.315392 * (3.0 * d.z * d.z - 1.0);
+        }
+        case 7u: {
+            return 1.092548 * d.x * d.z;
+        }
+        default: {
+            return 0.546274 * (d.x * d.x - d.y * d.y);
+        }
+    }
+}
+
+/// The map's light summed onto the nine spherical harmonics coefficients of its diffuse light,
+/// which the engine reads back as the light the sky gives a surface: texel `k` holds coefficient
+/// `k` in red, green and blue, as the bits of 32-bit floats. A map with a sky layer captures them,
+/// so the light a layer gives comes from the texels that its reflections show.
+@fragment
+fn fs_feedback(@builtin(position) position: vec4f) -> @location(0) vec4u {
+    let k = u32(position.x);
+    if k >= 9u {
+        return vec4u(0u);
+    }
+    let n = f32(FEEDBACK_GRID);
+    let step = 2.0 / n;
+    var sum = vec3f(0.0);
+    for (var face = 0u; face < 6u; face++) {
+        for (var row = 0u; row < FEEDBACK_GRID; row++) {
+            let t0 = f32(row) * step - 1.0;
+            let t1 = t0 + step;
+            for (var column = 0u; column < FEEDBACK_GRID; column++) {
+                let s0 = f32(column) * step - 1.0;
+                let s1 = s0 + step;
+                let solid = sh_area(s0, t0) - sh_area(s0, t1) - sh_area(s1, t0) + sh_area(s1, t1);
+                let d = normalize(face_direction(face, 0.5 * (s0 + s1), 0.5 * (t0 + t1)));
+                let light = textureSampleLevel(source, source_sampler, d, params.value).rgb;
+                sum += light * (sh_basis(k, d) * solid);
+            }
+        }
+    }
+    return vec4u(bitcast<u32>(sum.r), bitcast<u32>(sum.g), bitcast<u32>(sum.b), 0u);
 }
 
 /// The average of the four texels of the level before that this texel covers: a linear filter

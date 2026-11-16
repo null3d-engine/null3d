@@ -1,0 +1,98 @@
+diff --git a/crates/null3d-core/src/levels.rs b/crates/null3d-core/src/levels.rs
+index e7838c715..0be441268 100644
+--- a/crates/null3d-core/src/levels.rs
++++ b/crates/null3d-core/src/levels.rs
+@@ -83,6 +83,8 @@ const LEAST_FADE: f32 = 1.0e-6;
+ /// The smallest distance that the rule compares, in meters. A camera inside a source's bounds
+ /// measures this distance, so the source keeps its base level.
+ pub const LEAST_DISTANCE: f32 = 1.0e-3;
++/// STUDY: the share of the radius that the camera's level pick takes off the center distance.
++pub const STUDY_NEAR_SHARE: f32 = 0.5;
+ 
+ /// What a level's switch distance is measured by.
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+@@ -409,7 +411,9 @@ impl LevelRule {
+     #[inline(always)]
+     pub fn error_distance(&self, center: [f32; 3], radius: f32) -> f32 {
+         match self.measure {
+-            Measure::Camera => self.distance(center, radius),
++            // STUDY: the camera's level pick measures to the sphere's center minus a share of its radius.
++            Measure::Camera if self.orthographic => 1.0,
++            Measure::Camera => toward(center, radius * STUDY_NEAR_SHARE),
+             Measure::Parallel => 1.0,
+             Measure::From(eye) => nearest(
+                 [center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]],
+@@ -418,15 +422,22 @@ impl LevelRule {
+         }
+     }
+ 
++    /// STUDY: the error distance that cluster patches keep: the nearest point, as the patch pass
++    /// on the GPU measures it.
++    #[inline(always)]
++    pub fn patch_distance(&self, center: [f32; 3], radius: f32) -> f32 {
++        match self.measure {
++            Measure::Camera => self.distance(center, radius),
++            _ => self.error_distance(center, radius),
++        }
++    }
++
+     /// Both distances that the rule compares for a bounding sphere at `center` relative to the
+     /// camera, of radius `radius`.
+     #[inline(always)]
+     pub fn distances(&self, center: [f32; 3], radius: f32) -> Distances {
+         let camera = self.distance(center, radius);
+-        let error = match self.measure {
+-            Measure::Camera => camera,
+-            _ => self.error_distance(center, radius),
+-        };
++        let error = self.error_distance(center, radius);
+         Distances { camera, error }
+     }
+ 
+@@ -632,6 +643,10 @@ impl LevelRule {
+ /// The distance to the nearest point of a sphere at `center` of radius `radius`, at least
+ /// [`LEAST_DISTANCE`].
+ #[inline(always)]
++fn toward(center: [f32; 3], less: f32) -> f32 {
++    nearest(center, less)
++}
++
+ fn nearest(center: [f32; 3], radius: f32) -> f32 {
+     let length = (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt();
+     (length - radius).max(LEAST_DISTANCE)
+diff --git a/crates/null3d-render/src/patches.rs b/crates/null3d-render/src/patches.rs
+index 6b5dfaaf3..007fe26a4 100644
+--- a/crates/null3d-render/src/patches.rs
++++ b/crates/null3d-render/src/patches.rs
+@@ -484,7 +484,7 @@ impl Walk<'_> {
+         }) {
+             return;
+         }
+-        let distance = self.rule.error_distance(centre, radius);
++        let distance = self.rule.patch_distance(centre, radius);
+         if self.tree.fits(patch, self.reach, distance) {
+             pick(patch);
+             return;
+diff --git a/crates/null3d-shaders/wgsl/cull.wgsl b/crates/null3d-shaders/wgsl/cull.wgsl
+index 8d56b5b82..fa918ac08 100644
+--- a/crates/null3d-shaders/wgsl/cull.wgsl
++++ b/crates/null3d-shaders/wgsl/cull.wgsl
+@@ -142,6 +142,7 @@ const HIDDEN_WORD: u32 = 1u;
+ /// The smallest distance that the level rule compares, in meters. A camera inside an instance's
+ /// bounds measures this distance, so the instance keeps its base level.
+ const LEAST_DISTANCE: f32 = 1.0e-3;
++const STUDY_NEAR_SHARE: f32 = 0.5;
+ /// The bit of a bucket's `indices` word that marks a bucket that draws pieces in its place.
+ const PIECED: u32 = 1u << 31u;
+ /// Where the count of a bucket's pieces sits in its `indices` word, above its first piece's bucket.
+@@ -474,7 +475,9 @@ fn level_of(s: Survivor) -> Level {
+     let factor = whole / bias;
+     let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
+     let distance = select(nearest, 1.0, params.levels.y > 0.5);
+-    let error = error_distance(s.center, s.radius, distance);
++    // STUDY: the camera's level pick measures to the sphere's center minus a share of its radius.
++    let toward = max(length(s.center) - STUDY_NEAR_SHARE * s.radius, LEAST_DISTANCE);
++    let error = select(error_distance(s.center, s.radius, distance), toward, params.measure.w < 0.5 && params.levels.y < 0.5);
+     out.distance = distance;
+     var next = buckets[s.bucket].next;
+     if next != 0u && whole > 0.0 {

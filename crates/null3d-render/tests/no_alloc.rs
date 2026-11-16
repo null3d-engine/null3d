@@ -23,7 +23,7 @@ use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
 use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op, format, template};
-use null3d_render::background::{Background, BackgroundSource};
+use null3d_render::background::{Background, BackgroundSource, Sky, SkyLayer};
 use null3d_render::bloom::Bloom;
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -93,10 +93,13 @@ fn shadow_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         map_size: 1024,
         bias: 0.5,
         normal_bias: 1.0,
+        intensity: 1.0,
         distance: 60.0,
         auto: false,
         contact: 0.0,
         layers: 1,
+        hero: None,
+        hero_size: 0,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
     world.record(true);
@@ -206,10 +209,13 @@ fn skinning_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         map_size: 1024,
         bias: 0.5,
         normal_bias: 1.0,
+        intensity: 1.0,
         distance: 40.0,
         auto: false,
         contact: 0.0,
         layers: 1,
+        hero: None,
+        hero_size: 0,
     };
     world.renderer.settings_mut().set_sun_shadow(Some(shadow));
     world.record(true);
@@ -796,6 +802,7 @@ fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             intensity: 1.0,
             blur: 0.0,
             rotation: [0.0; 3],
+            sun_visibility: 1.0,
         }));
     world.record(true);
     let textures = world.renderer.settings_mut().textures_mut();
@@ -1312,6 +1319,45 @@ fn frames_with_a_weighted_layer_allocate_nothing() {
     }
 }
 
+/// An object with a blended material that draws in the camera's one-sample layer, rising every
+/// frame.
+fn single_layer_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.add_object_with(&base_sphere(0.5, [8, 8]), Shading::Unlit, feature::BLEND);
+    let materials = world.renderer.settings_mut().materials_mut();
+    let material = materials.len() - 1;
+    materials.set_single_layer(material, true).unwrap();
+    let cloud = *world.objects.last().unwrap();
+    feature_allocations(
+        &mut world,
+        "the one-sample layer",
+        &[template::SINGLE_COMPOSITE],
+        move |world, frame| {
+            let y = (frame % 24) as f32 * 0.05;
+            world.scene.set_position(cloud, [0.0, y, 0.0]).unwrap();
+        },
+    )
+}
+
+#[test]
+fn frames_with_a_one_sample_layer_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(single_layer_allocations(World::new()), 0, "WebGPU");
+    assert_eq!(single_layer_allocations(hdr_world()), 0, "WebGPU, HDR");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            single_layer_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            single_layer_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "WebGL2, HDR, multi-draw {multi_draw}"
+        );
+    }
+}
+
 /// A particle system whose emitter writes new births every frame.
 fn particle_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     let settings = world.renderer.settings_mut();
@@ -1413,6 +1459,7 @@ fn physical_sky_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             intensity: 1.0,
             blur: 0.0,
             rotation: [0.0; 3],
+            sun_visibility: 1.0,
         }));
     feature_allocations(
         &mut world,
@@ -1424,6 +1471,45 @@ fn physical_sky_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
                 .renderer
                 .settings_mut()
                 .set_sun([angle.sin(), 0.5, angle.cos()], [1.0, 1.0, 1.0]);
+        },
+    )
+}
+
+/// The sky behind the scene with a layer over it, whose share of the sun moves every frame.
+fn sky_layer_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let settings = world.renderer.settings_mut();
+    settings.set_background_source(Some(Background {
+        source: BackgroundSource::Sky(Sky::default()),
+        intensity: 1.0,
+        blur: 0.0,
+        rotation: [0.0; 3],
+        sun_visibility: 1.0,
+    }));
+    settings.set_sky_layer(
+        Some(SkyLayer {
+            template: template::CUSTOM_FIRST,
+            map: 0,
+            opacity: 1.0,
+            sun: 0.0,
+            refresh: 0.0,
+        }),
+        0,
+    );
+    feature_allocations(
+        &mut world,
+        "the sky layer",
+        &[template::BACKGROUND_SKY, template::CUSTOM_FIRST],
+        |world, frame| {
+            world.renderer.settings_mut().set_sky_layer(
+                Some(SkyLayer {
+                    template: template::CUSTOM_FIRST,
+                    map: 0,
+                    opacity: 1.0,
+                    sun: (frame as f32 * 0.01) % 1.0,
+                    refresh: 0.0,
+                }),
+                0,
+            );
         },
     )
 }
@@ -1501,6 +1587,11 @@ fn frames_with_bloom_depth_of_field_the_sky_and_the_volumetric_fog_allocate_noth
         "the physical sky on WebGPU"
     );
     assert_eq!(
+        sky_layer_allocations(hdr_world()),
+        0,
+        "the sky layer on WebGPU"
+    );
+    assert_eq!(
         volumetric_fog_allocations(hdr_world()),
         0,
         "the volumetric fog on WebGPU"
@@ -1520,6 +1611,11 @@ fn frames_with_bloom_depth_of_field_the_sky_and_the_volumetric_fog_allocate_noth
             physical_sky_allocations(hdr_webgl2_world(multi_draw)),
             0,
             "the physical sky on WebGL2, multi-draw {multi_draw}"
+        );
+        assert_eq!(
+            sky_layer_allocations(hdr_webgl2_world(multi_draw)),
+            0,
+            "the sky layer on WebGL2, multi-draw {multi_draw}"
         );
         assert_eq!(
             volumetric_fog_allocations(hdr_webgl2_world(multi_draw)),
@@ -1574,4 +1670,63 @@ fn frames_with_the_probe_grid_allocate_nothing() {
             "WebGL2, multi-draw {multi_draw}"
         );
     }
+}
+
+#[test]
+fn frames_with_levels_a_draw_range_and_a_tree_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let mut world = World::new();
+    // The first object's mesh takes two levels, a distance range and a tree of one patch, so the
+    // frames walk the levels, the range and the patches.
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let mesh = world.scene.meshes()[slot];
+    {
+        let settings = world.renderer.settings_mut();
+        let lower = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+            .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+        settings
+            .set_mesh_levels(
+                mesh,
+                &lower,
+                &[0.01, 0.05],
+                &[null3d_core::levels::Switch::Error; 2],
+                &[0, 0],
+                0,
+            )
+            .unwrap();
+    }
+    world
+        .renderer
+        .set_mesh_patches(
+            mesh,
+            Some(
+                null3d_render::patches::PatchTree::new(
+                    vec![0, 1, 2],
+                    vec![[0.0, 0.0, 0.0, 1.0]],
+                    vec![[0, 3, 0, 0]],
+                    0,
+                    4,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_draw_range(world.objects[0], 1.0, 400.0)],
+            world.frame,
+        )
+        .unwrap();
+    for frame in 1..=4 {
+        world.frame = frame;
+        world.record(frame == 1);
+    }
+    CountingAllocator::arm();
+    for frame in 5..=60 {
+        world.frame = frame;
+        world.record(false);
+    }
+    assert_eq!(CountingAllocator::disarm(), 0);
 }

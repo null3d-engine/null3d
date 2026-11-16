@@ -17,7 +17,13 @@ export interface CliRun {
 /** Runs the tool with `args` in the folder `cwd`, and waits until it exits. */
 export function runCli(cwd: string, args: readonly string[]): Promise<CliRun> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(process.execPath, [COMMAND, ...args], { cwd });
+		// The tool starts the project's own Vite server, which serves HTTPS by default. A test that
+		// runs it has no certificate on CI, and the loopback is a secure origin over plain HTTP, so
+		// the tool is told to serve HTTP here, as the browser test servers are.
+		const child = spawn(process.execPath, [COMMAND, ...args], {
+			cwd,
+			env: { ...process.env, NULL3D_HTTPS: '0' },
+		});
 		let output = '';
 		let stdout = '';
 		child.stdout.on('data', (chunk: Buffer) => {

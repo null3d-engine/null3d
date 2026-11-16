@@ -32,6 +32,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { REPO_ROOT } from '../tests/lib/server.ts';
+import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { cachedBaseline, prepareBaseline, readPreparedBaseline, run } from './lib/baseline-cache';
 import type { Comparison } from './lib/compare';
 import {
@@ -47,10 +48,16 @@ import { benchPagesFresh, comparePagesDir, ensureBenchPages } from './lib/serve'
 /** The steps of the check that a run takes: both by default. */
 export type GpuCheckSteps = 'both' | 'prepare' | 'measure';
 
-interface GpuCheckOptions {
-	steps: GpuCheckSteps;
+/** The two builds that a GPU measurement compares: this checkout, and a baseline that is prepared. */
+export interface BuildsOptions {
+	/** A built checkout or a prepared baseline to compare with, or null for the merge base's cache. */
 	base: string | null;
+	/** Build this checkout and its pages before measuring. */
 	build: boolean;
+}
+
+interface GpuCheckOptions extends BuildsOptions {
+	steps: GpuCheckSteps;
 	runs: number;
 	seconds: number;
 }
@@ -104,7 +111,7 @@ function removeOldBaseCheckout(): void {
 }
 
 /** Builds this checkout and its pages, and the baseline's pages or the cache's prepared baseline. */
-async function prepare(options: GpuCheckOptions): Promise<void> {
+export async function prepareBuilds(options: BuildsOptions): Promise<void> {
 	if (options.build) run(REPO_ROOT, 'bun', 'run', 'build');
 	const base = options.base && resolve(options.base);
 	if (!base) await prepareBaseline(REPO_ROOT, mergeBase());
@@ -114,51 +121,68 @@ async function prepare(options: GpuCheckOptions): Promise<void> {
 }
 
 /** The baseline that the measurement compares with, which must be prepared already. */
-function preparedBase(options: GpuCheckOptions): string {
+export function preparedBaseDir(
+	options: Pick<BuildsOptions, 'base'>,
+	prepareCommand = PREPARE,
+): string {
 	if (options.base) {
 		const base = resolve(options.base);
+		if (!existsSync(base))
+			throw new Error(
+				`the base ${base} does not exist: give a built checkout or run ${prepareCommand}`,
+			);
 		if (!(readPreparedBaseline(base) || benchPagesFresh(base, comparePagesDir('baseline'))))
-			throw new Error(`the pages of ${base} are not built from its sources: run ${PREPARE}`);
+			throw new Error(`the pages of ${base} are not built from its sources: run ${prepareCommand}`);
 		return base;
 	}
 	const sha = mergeBase();
 	const base = cachedBaseline(sha);
 	if (!base)
 		throw new Error(
-			`the cache holds no prepared baseline of the merge base ${sha.slice(0, 9)}: run ${PREPARE}`,
+			`the cache holds no prepared baseline of the merge base ${sha.slice(0, 9)}: run ${prepareCommand}`,
 		);
 	return base;
 }
 
-const compareFolders = (folder: string) =>
+/** The run folders of the benchmark command's comparisons under a folder. */
+export const compareFolders = (folder: string) =>
 	existsSync(folder) ? readdirSync(folder).filter((name) => name.endsWith('-compare')) : [];
+
+/**
+ * Runs the benchmark command's comparison of `base` with this checkout, with the command's other
+ * options in `args`, and returns the folder of the run that it wrote. The command fails when a CPU
+ * measure is slower, which a GPU measurement leaves to CI's job.
+ */
+export function runComparison(base: string, args: readonly string[]): string {
+	const folder = join(REPO_ROOT, 'target/bench');
+	const before = new Set(compareFolders(folder));
+	spawnSync('bun', ['bench/run.ts', '--compare', `${base},.`, ...args], {
+		cwd: REPO_ROOT,
+		stdio: 'inherit',
+	});
+	const made = compareFolders(folder).filter((name) => !before.has(name));
+	if (made.length !== 1)
+		throw new Error(
+			`the comparison wrote ${made.length === 0 ? 'no run folder' : `${made.length} run folders`}`,
+		);
+	return join(folder, made[0] as string);
+}
 
 /** Compares the two builds at one preset with the benchmark command, and reads its summary. */
 function comparePreset(base: string, preset: string, options: GpuCheckOptions): PresetComparison {
-	const folder = join(REPO_ROOT, 'target/bench');
-	const before = new Set(compareFolders(folder));
-	// The command fails when a CPU measure is slower, which the GPU check leaves to CI's job.
-	spawnSync(
-		'bun',
-		[
-			'bench/run.ts',
-			'--compare',
-			`${base},.`,
-			'--scenes',
-			GPU_CHECK_SCENES.join(','),
-			'--pages',
-			GPU_CHECK_PAGE,
-			'--runs',
-			String(options.runs),
-			'--seconds',
-			String(options.seconds),
-			'--switches',
-			`preset=${preset}`,
-		],
-		{ cwd: REPO_ROOT, stdio: 'inherit' },
-	);
-	const made = compareFolders(folder).filter((name) => !before.has(name));
-	const summaryFile = made.length === 1 ? join(folder, made[0] as string, 'summary.json') : '';
+	const folder = runComparison(base, [
+		'--scenes',
+		GPU_CHECK_SCENES.join(','),
+		'--pages',
+		GPU_CHECK_PAGE,
+		'--runs',
+		String(options.runs),
+		'--seconds',
+		String(options.seconds),
+		'--switches',
+		`preset=${preset}`,
+	]);
+	const summaryFile = join(folder, 'summary.json');
 	if (!existsSync(summaryFile)) throw new Error(`the comparison at ${preset} wrote no summary`);
 	const summary = JSON.parse(readFileSync(summaryFile, 'utf8')) as {
 		comparisons: Comparison[];
@@ -181,7 +205,7 @@ function commitsText(base: string): string {
 
 /** Times both builds at each preset, and writes and prints the trailer line. */
 function measure(options: GpuCheckOptions): void {
-	const base = preparedBase(options);
+	const base = preparedBaseDir(options);
 	if (!benchPagesFresh(REPO_ROOT, comparePagesDir('new')))
 		throw new Error(
 			`this checkout's pages are not built from its sources as they are: run ${PREPARE}`,
@@ -195,8 +219,9 @@ function measure(options: GpuCheckOptions): void {
 }
 
 async function main(): Promise<void> {
+	refuseInQuietWindow('The GPU check');
 	const options = parseGpuCheckArgs(process.argv.slice(2));
-	if (options.steps !== 'measure') await prepare(options);
+	if (options.steps !== 'measure') await prepareBuilds(options);
 	if (options.steps !== 'prepare') measure(options);
 }
 

@@ -13,29 +13,20 @@ priority = 100
 
 # The one test in this part that builds every shader takes the longest, so it starts next, while
 # the many short tests fill the other threads. It builds the whole manifest beside a second build of
-# a few entries, one on each of two threads. The test that prepares every shader module also builds
-# the whole set, and it has a part of its own.
+# a few entries, one on each of two threads.
 [[profile.default.overrides]]
 filter = 'binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule)'
 threads-required = 2
 priority = 50
-
-# The one test that prepares every shader module and renders one of each kind through the
-# WebAssembly compiler builds the whole shader set, so it takes as long as the whole shader build.
-# It runs in a job of its own, and this timeout keeps a slow machine from stopping it as if it had
-# hung.
-[[profile.default.overrides]]
-filter = 'binary_id(null3d-shaders-wasm) & test(=tests::prepare_modules_lists_every_module_and_module_renders_one)'
-slow-timeout = { period = "120s", terminate-after = 30 }
 
 # The custom material and effect tests build their templates' variants, which take seconds each.
 [[profile.default.overrides]]
 filter = 'binary_id(null3d-shaders::material) | binary_id(null3d-shaders::effect) | binary_id(null3d-shaders::pieces)'
 priority = 40
 
-# CI runs the tests in three jobs at once, so that the two tests that build every shader do not set
-# the length of the job that runs all the others. Each profile keeps the overrides above.
-# `cargo nextest run --workspace --profile ci` runs every test except those two.
+# CI runs the test that builds every shader in the shader-compiler job, through the compiler, so
+# that it does not set the length of the parts that run all the others. Each profile keeps the
+# overrides above. `cargo nextest run --workspace --profile ci` runs every test except that one.
 # A test that runs past its time limit is stopped and reported as failed, so a hung test cannot use
 # the job's whole time and leave every other result unreported.
 [profile.ci]
@@ -44,23 +35,14 @@ priority = 40
 inherits = "default"
 fail-fast = false
 slow-timeout = { period = "60s", terminate-after = 15 }
-default-filter = 'not ((binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule)) | (binary_id(null3d-shaders-wasm) & test(=tests::prepare_modules_lists_every_module_and_module_renders_one)))'
+default-filter = 'not (binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule))'
 
-# `cargo nextest run -p null3d-shaders --test build --profile whole-shader-build` runs only that one.
-# The whole shader build gets most of its job's limit, until the shader build runs on every core.
-# A passing run still prints the test's output: a shard prints the split of the shader entries,
-# with each shard's estimated share, so a job's log shows the balance.
+# `cargo nextest run -p null3d-shaders --test build --profile whole-shader-build` runs only that one:
+# CI's determinism part and the nightly toolchain's run use it. The whole shader build gets most of
+# its job's limit. A passing run still prints the test's output: a shard prints the split of the
+# shader entries, with each shard's estimated share, so a job's log shows the balance.
 [profile.whole-shader-build]
 fail-fast = false
 success-output = "immediate"
 slow-timeout = { period = "300s", terminate-after = 24 }
 default-filter = 'binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule)'
-
-# `cargo nextest run -p null3d-shaders-wasm --profile shader-module-exports` runs only that one.
-# The test builds the whole shader set, so it gets most of its job's limit, as the whole shader
-# build does. A passing run prints the split of the shader entries, as the whole shader build does.
-[profile.shader-module-exports]
-fail-fast = false
-success-output = "immediate"
-slow-timeout = { period = "120s", terminate-after = 30 }
-default-filter = 'binary_id(null3d-shaders-wasm) & test(=tests::prepare_modules_lists_every_module_and_module_renders_one)'

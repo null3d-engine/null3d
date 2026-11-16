@@ -15,7 +15,8 @@
 // Content-Security-Policy lets it run.
 
 import BASIS, { type BasisModule } from '../../vendor/basis/basis_transcoder.mjs';
-import { TaskLoadError, type TaskResult } from '../workers/tasks';
+import { TaskLoadError } from '../shared/task-load-error';
+import type { TaskResult } from '../workers/tasks';
 import { ktx2TooLarge, readKtx2Header, targetOfTranscoder, transcodedBytes } from './ktx2-file';
 
 /** The name of the transcoder's WebAssembly module, as the loader sends it. */

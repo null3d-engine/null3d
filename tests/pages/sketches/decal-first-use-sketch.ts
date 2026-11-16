@@ -3,11 +3,13 @@
 // feature that loads on first use: no instance row values, so no combined build, and no
 // shadow-casting sun, whose contact shadows would load the ambient occlusion shader on a desktop.
 import { defineSketch, type Quat } from '@null3d/engine';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 /** A rotation that turns a box's +z axis to point up, so it projects down onto the ground. */
 const DOWN: Quat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
 
-export default defineSketch(({ scene, geometry, materials, textures }) => {
+export default defineSketch(({ scene, geometry, materials, textures, quality }) => {
+	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#8fa3b8');
 	scene.createHemisphereLight({ skyColor: '#a8c4ff', groundColor: '#5a4a3a', intensity: 1 });
 	scene.setActiveCamera(

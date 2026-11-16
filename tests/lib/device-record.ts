@@ -2,7 +2,13 @@
 // the runner page found itself in, and the run's entry in that record. The runner page and the
 // runner tool both use this file, so it imports nothing from Node or the DOM.
 
-import { GPU_PATH_NAMES, type GpuPath, SOFTWARE_RENDERER, skippedPathsText } from './gpu-paths.ts';
+import {
+	GPU_PATH_NAMES,
+	type GpuPath,
+	SOFTWARE_RENDERER,
+	skippedForImagesText,
+	skippedPathsText,
+} from './gpu-paths.ts';
 
 /** The browsers that the runner page tells apart. */
 export type BrowserName =
@@ -211,6 +217,8 @@ export interface RowInput {
 	fail: number;
 	/** The GPU paths that the device lacks, whose pages its runner page skipped. */
 	skippedPaths?: readonly GpuPath[];
+	/** The faults of the browser's image buffers, for which its runner page skipped the pages that draw. */
+	imageFault?: string;
 }
 
 /** The device's kind and model, with its screen and cores, which help to tell models apart. */
@@ -344,6 +352,7 @@ export function testedDeviceEntry({
 	skip,
 	fail,
 	skippedPaths = [],
+	imageFault,
 }: RowInput): TestedDeviceEntry {
 	return {
 		facts: [
@@ -358,6 +367,7 @@ export function testedDeviceEntry({
 		result: [
 			`${pass} passed, ${skip} skipped, ${fail} failed`,
 			...(skippedPaths.length > 0 ? [skippedPathsText(skippedPaths)] : []),
+			...(imageFault ? [skippedForImagesText(imageFault)] : []),
 		].join('; '),
 	};
 }

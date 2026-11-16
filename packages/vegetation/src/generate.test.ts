@@ -1,0 +1,232 @@
+// The plant core's pipeline, grown through every stage with stand-ins for the stages that are not
+// built yet: the kit, the skeleton, the shoot rows, the crown light, the wind records, the three
+// levels, the nearest wood, the far bake and a cutting. Two growths of one seed and variant give the
+// same bytes on this thread and in a worker that runs the job-worker task.
+import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { type PlantAsset, plantAssetDigest } from './asset';
+import { hashBytes } from './core/hash';
+import { NotBuiltError } from './core/not-built';
+import { standInSpecies } from './core/stand-in';
+import {
+	bakeFarNow,
+	buildKitNow,
+	growNearWoodNow,
+	growPlantNow,
+	kitKey,
+	loadPlantCode,
+	variantKey,
+} from './generate';
+import type { PlantTaskInput } from './generate-task';
+import { loadFarBaker } from './lod/impostor';
+
+const stub = standInSpecies('stub');
+
+await loadPlantCode(stub.record);
+const kit = buildKitNow(stub, { placeholders: true });
+
+describe('the plant core with stand-ins', () => {
+	it('builds a kit of prototypes, a leaf, a card atlas and a header', () => {
+		expect(kit.prototypes.length).toBe(stub.record.shoots?.prototypes ?? -1);
+		for (const prototype of kit.prototypes) {
+			expect(prototype.tiers).toHaveLength(4);
+			expect(prototype.card.planes).toHaveLength(3);
+			expect(prototype.length).toBeGreaterThan(0);
+		}
+		expect(kit.leaves).toHaveLength(1);
+		expect(kit.cards.color.length).toBe(kit.cards.size * kit.cards.size * 4 * 2);
+		expect(kit.header.length).toBeGreaterThan(0);
+		expect(kit.key).toBe(kitKey(stub.record, stub.textures.manifest, 'high'));
+	});
+
+	it('keys a kit by its season, and keeps the key it always had for the record’s own', () => {
+		const own = stub.record.seasons.default;
+		const other = own === 'winter' ? 'summer' : 'winter';
+		const plain = kitKey(stub.record, stub.textures.manifest, 'high');
+		expect(kitKey(stub.record, stub.textures.manifest, 'high', false, own)).toBe(plain);
+		expect(kitKey(stub.record, stub.textures.manifest, 'high', false, other)).not.toBe(plain);
+		// A kit built for another season carries its own key, so a page cannot take a summer kit back
+		// for a winter picture.
+		expect(buildKitNow(stub, { placeholders: true, season: other }).key).not.toBe(kit.key);
+	});
+
+	it('builds the kit of a form under a key of its own, and the record as it stands without one', () => {
+		const formed = {
+			...stub,
+			record: {
+				...stub.record,
+				forms: { young: { form: 'a young stand-in', size: { height: { mean: 2, spread: 0.2 } } } },
+			},
+		};
+		// The forms leave the record as it stands, and its kit, unchanged.
+		const own = buildKitNow(formed, { placeholders: true });
+		expect(own.key).toBe(kit.key);
+		expect('forms' in own.record).toBe(false);
+		const youngKit = buildKitNow(formed, { placeholders: true, form: 'young' });
+		expect(youngKit.record.size.height).toEqual({ mean: 2, spread: 0.2 });
+		expect(youngKit.key).not.toBe(kit.key);
+		const asset = growPlantNow(youngKit, { seed: 11, variant: 0 });
+		expect(asset.skeleton.height).toBeLessThan(2.5);
+		expect(variantKey(youngKit, { seed: 11, variant: 0 })).not.toBe(
+			variantKey(kit, { seed: 11, variant: 0 }),
+		);
+		expect(() => buildKitNow(formed, { placeholders: true, form: 'old' })).toThrow(/no form 'old'/);
+	});
+
+	it('grows a variant through every stage', () => {
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		expect(asset.skeleton.axes.count).toBeGreaterThan(1);
+		expect(asset.skeleton.buds.count).toBeGreaterThan(0);
+		expect(asset.shoots.count).toBe(asset.skeleton.buds.count);
+		expect(asset.wind.count).toBe(asset.skeleton.axes.count);
+		expect(asset.levels[0].parts.map((part) => part.name)).toEqual(['wood']);
+		expect(asset.levels[1].parts.map((part) => part.name)).toEqual(['wood', 'cards']);
+		expect(asset.levels[2].triangles).toBeLessThan(asset.levels[1].triangles);
+		expect(asset.levels[1].from).toBeGreaterThan(0);
+		expect(asset.levels[2].from).toBeGreaterThan(asset.levels[1].from);
+		const box = kit.box;
+		expect(asset.skeleton.bounds.max[1]).toBeLessThan(box.max[1]);
+		expect(asset.skeleton.bounds.min[0]).toBeGreaterThan(box.min[0]);
+		// The nearest level's figure counts its meshes and every shoot row at the kit's tier.
+		expect(asset.stats.shoots).toBeGreaterThan(0);
+		expect(asset.stats.triangles[0]).toBe(asset.levels[0].triangles + asset.stats.shoots);
+		expect(asset.stats.triangles[1]).toBe(asset.levels[1].triangles);
+	});
+
+	it('grows the same bytes from the same seed and variant, and other bytes from another', () => {
+		const options = { seed: 11, variant: 1, near: true };
+		const first = plantAssetDigest(growPlantNow(kit, options));
+		expect(plantAssetDigest(growPlantNow(kit, options))).toBe(first);
+		expect(plantAssetDigest(growPlantNow(kit, { ...options, variant: 2 }))).not.toBe(first);
+		expect(plantAssetDigest(growPlantNow(kit, { ...options, seed: 12 }))).not.toBe(first);
+		expect(variantKey(kit, options)).not.toBe(variantKey(kit, { ...options, variant: 2 }));
+	});
+
+	it('names merged foliage that its model does not build, and stands in where a kit asks', () => {
+		// A species whose nearest foliage is merged asks its growth model for that mesh, and the
+		// self-organizing model builds none. The kit with stand-ins turns that into the placeholder,
+		// and a kit without them reports the stage that is not built.
+		const merged = {
+			...stub,
+			record: { ...stub.record, lod: { ...stub.record.lod, nearFoliage: 'merged' as const } },
+		};
+		expect(() =>
+			growPlantNow(buildKitNow(merged, { placeholders: false }), { seed: 11, variant: 0 }),
+		).toThrow(NotBuiltError);
+		const stood = growPlantNow(buildKitNow(merged, { placeholders: 'missing' }), {
+			seed: 11,
+			variant: 0,
+		});
+		expect(stood.levels.some((level) => level.parts.some((part) => part.name === 'foliage'))).toBe(
+			true,
+		);
+	});
+
+	it('meshes the nearest wood later as it would have at once', () => {
+		const later = growPlantNow(kit, { seed: 11, variant: 0 });
+		expect(later.levels[0].parts).toHaveLength(0);
+		const wood = growNearWoodNow(kit, { seed: 11, variant: 0 });
+		const atOnce = growPlantNow(kit, { seed: 11, variant: 0, near: true }).levels[0].parts[0];
+		expect(wood).toHaveLength(1);
+		expect(wood[0]?.arrays.positions).toEqual(atOnce?.arrays.positions as Uint16Array);
+	});
+
+	it('bakes the far cards and cuts the review pieces', async () => {
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		await loadFarBaker();
+		const far = bakeFarNow(kit, asset);
+		expect(far.views).toBe(stub.record.lod.impostor.views);
+		expect(far.color.length).toBe((far.views * far.texels) ** 2 * 4);
+		for (const part of ['leaf', 'cluster', 'subbranch', 'branch'] as const) {
+			const piece = growPlantNow(kit, { seed: 11, variant: 0, near: true, cutting: { part } });
+			expect(piece.cutting?.part).toBe(part);
+			expect(piece.levels[0].triangles).toBeGreaterThan(0);
+			expect(piece.levels[1].parts).toHaveLength(0);
+		}
+	});
+
+	it('grows the same stand-ins as real stages land, so scenes that place them draw the same', () => {
+		const frozen = [
+			['stub', {}, 3667806437, '9b5641d2decd8f61'],
+			[
+				'pedunculate-oak',
+				{ height: { mean: 20, spread: 3 }, aspect: 1.2 },
+				843710834,
+				'62bb081c6c160bb7',
+			],
+		] as const;
+		for (const [id, options, kitHash, assetDigest] of frozen) {
+			const standIn = buildKitNow(standInSpecies(id, options), { placeholders: true });
+			let hash = 0;
+			for (const prototype of standIn.prototypes)
+				for (const tier of prototype.tiers)
+					hash =
+						hashBytes(new Uint8Array(tier.positions.buffer), hash) ^
+						hashBytes(tier.colors, hash + 1);
+			hash = hashBytes(standIn.cards.color, hash);
+			hash = hashBytes(
+				new Uint8Array(standIn.leaves[0]?.positions.buffer ?? new ArrayBuffer(0)),
+				hash,
+			);
+			expect(hash >>> 0).toBe(kitHash);
+			const grown = growPlantNow(standIn, { seed: 11, variant: 0, near: true });
+			expect(plantAssetDigest(grown)).toBe(assetDigest);
+		}
+	});
+
+	it('grows the built stages and stand-ins for the rest when the kit asks for the missing ones', () => {
+		const mixed = buildKitNow(stub, { placeholders: 'missing' });
+		expect(mixed.placeholders).toBe('missing');
+		const options = { seed: 11, variant: 0, near: true };
+		const asset = growPlantNow(mixed, options);
+		expect(plantAssetDigest(growPlantNow(mixed, options))).toBe(plantAssetDigest(asset));
+		expect(plantAssetDigest(asset)).not.toBe(plantAssetDigest(growPlantNow(kit, options)));
+		expect(asset.wind.count).toBe(asset.skeleton.axes.count);
+		expect(asset.levels[1].from).toBeGreaterThan(0);
+	});
+
+	it('grows every stage without stand-ins for a model that is built', () => {
+		const kit = buildKitNow(stub);
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		expect(asset.wind.count).toBe(asset.skeleton.axes.count);
+		expect(asset.levels[1].from).toBeGreaterThan(0);
+		expect(asset.impostor.from).toBeGreaterThan(asset.levels[2].from);
+	});
+
+	it('grows the same bytes in a worker that runs the job-worker task', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'plant-task-'));
+		try {
+			const script = join(dir, 'worker.ts');
+			writeFileSync(
+				script,
+				`import { run } from ${JSON.stringify(join(import.meta.dirname, 'generate-task.ts'))};
+self.onmessage = async (event) => {
+	const answer = await run(event.data);
+	postMessage(answer.output, answer.transfer);
+};
+`,
+			);
+			const worker = new Worker(script);
+			const ask = <T>(input: PlantTaskInput) =>
+				new Promise<T>((resolve, reject) => {
+					worker.onmessage = (event) => resolve(event.data as T);
+					worker.onerror = (event) => reject(new Error(String(event.message)));
+					worker.postMessage(input);
+				});
+			const options = { seed: 11, variant: 0, near: true };
+			const kitInWorker = await ask<typeof kit>({
+				stage: 'kit',
+				source: { record: stub.record, textures: { manifest: stub.textures.manifest } },
+				options: { placeholders: true },
+			});
+			expect(kitInWorker.key).toBe(kit.key);
+			const grown = await ask<PlantAsset>({ stage: 'grow', kit: kitInWorker, options });
+			worker.terminate();
+			expect(plantAssetDigest(grown)).toBe(plantAssetDigest(growPlantNow(kit, options)));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});

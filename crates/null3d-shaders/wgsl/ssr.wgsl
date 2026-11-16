@@ -16,7 +16,7 @@
 // Positions on the grid count texels of the first level from the corner's top left. WebGPU draws a
 // corner into a target's first rows and WebGL2, which counts rows from the bottom, into its last,
 // so the steps turn rows around there, by each texture's own height.
-#import null3d::depth::{view_position}
+#import null3d::depth::{is_orthographic, toward_camera, view_position}
 
 /// One pyramid step's values.
 struct Level {
@@ -33,8 +33,8 @@ struct Trace {
     /// xy: the render size in pixels. zw: the grid's drawn corner, in texels of the first level.
     corners: vec4f,
     /// The most distance that a ray travels in world units, how far behind a surface the ray may
-    /// pass and still hit it, in world units, the most steps of the march, and 1 for an
-    /// orthographic camera.
+    /// pass and still hit it, in world units, the most steps of the march, and a spare. The
+    /// projection says whether the camera is orthographic.
     ray: vec4f,
 }
 
@@ -198,8 +198,8 @@ fn trace_rays(@builtin(position) position: vec4f) -> @location(0) vec4f {
     }
     let center = position_at(texel);
     let normal = rebuilt_normal(texel, center);
-    let orthographic = trace.ray.w > 0.5;
-    let to_view = select(normalize(-center), vec3f(0.0, 0.0, 1.0), orthographic);
+    let orthographic = is_orthographic(trace.projection);
+    let to_view = toward_camera(center, trace.projection);
     let reflected = reflect(-to_view, normal);
     // The ray's far end: the most distance, or less, so a ray toward the camera stops in front of
     // its plane, where the projection still maps it onto the grid.

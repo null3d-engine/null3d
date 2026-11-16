@@ -1,8 +1,8 @@
 # D-71: Custom effects and the tone-curve hook
 
-Status: decided. Date: 2026-10-05; the Mac's timings 2026-10-06, the iPad's 2026-10-07. Task: M2-F5.
+Status: decided. Built: effects, their joins and folds on both GPU paths, and the tone-curve hook. Task: M2-F5.
 
-Summary: `post.addEffect` runs a sketch's WGSL as a full-screen pass on HDR color, after the scene and before bloom and the tone curve. Effects run in `order`, at most 8, through two shared targets. An effect that reads only its own pixel joins the pass before it, and the last pass folds into the final pass. Effects read any pixel and the scene's depth on all three tiers, with up to 32 floats of typed uniforms. `post.set({ toneMapping })` takes WGSL with `fn toneCurve`, built into the final pass. Both need HDR color, as bloom does: compatibility mode with MSAA moves to HDR with FXAA.
+Summary: `post.addEffect` runs up to 8 WGSL effects in `order`, on HDR color after the scene and before bloom and the tone curve. Effects that read only their own pixel join the pass before them, and the last group folds into the final pass. Effects and a WGSL tone curve in `post.set({ toneMapping })` need HDR color, so compatibility mode with MSAA moves to HDR with FXAA.
 
 ## Question
 
@@ -29,31 +29,30 @@ How do a sketch's own full-screen effects and its own tone curve join the post-p
 - `crates/null3d-shaders/tests/effect.rs` builds effects and curves into the repository's templates. An effect builds for WebGPU and WebGL2. One that reads depth adds a WebGPU build that reads a multisampled depth. A curve builds into the 8 variants of the final pass that are not `HALF` builds. Its problems name the sketch's own line. A wrong signature says which one the engine calls. Effects and curves import from the shader library.
 - `packages/vite-plugin/src/wgsl.test.ts` checks a bad effect in a tagged template literal. The error names line 5, column 26 of the script, where the unknown name stands.
 - `crates/null3d-render/src/frame_graph.rs` checks that effects run in order between the scene passes and bloom. Their targets share two textures, whatever the chain's length. The 8-bit path runs no effects.
-- The image tests `effects`, `effects-reversed`, `effects-later`, `effects-curve`, `effects-bloom-curve`, `effects-scale-50` and `effects-8-bit` draw on all three tiers. They use two effects: a color split that reads the pixels beside each pixel, and a fog by distance that reads the depth. They also draw Reinhard's curve as a custom tone curve. All 23 pass on the Mac's GPU and on SwiftShader (5 October 2026). Effects added in another order, with orders that restore the first, draw the same image. So do effects added during play. In compatibility mode with MSAA the first effect moves the engine to HDR color with FXAA, as bloom does. With HDR turned off, the page draws the scene without effects or the curve, within the 8-bit path's usual edge differences.
+- The image tests `effects`, `effects-reversed`, `effects-later`, `effects-curve`, `effects-bloom-curve`, `effects-scale-50` and `effects-8-bit` draw on all three tiers. They use two effects: a color split that reads the pixels beside each pixel, and a fog by distance that reads the depth. They also draw Reinhard's curve as a custom tone curve. All 23 pass on the Mac's GPU and on SwiftShader. Effects added in another order, with orders that restore the first, draw the same image. So do effects added during play. In compatibility mode with MSAA the first effect moves the engine to HDR color with FXAA, as bloom does. With HDR turned off, the page draws the scene without effects or the curve, within the 8-bit path's usual edge differences.
 
 ### Allocation
 
-`bun run bench:allocation --effects` adds two effects to S1, one of which reads depth, and changes a color uniform of each every frame. On 5 October 2026 both GPU paths passed, with no place of the effects' code in the sample. The first runs found 126 to 141 bytes per frame in the uniform writer, which the writer's change fixed ([benchmarks](../benchmarks.md)). Each effect pass adds about 64 bytes per frame to the WebGPU replay: the browser's render pass encoder.
+`bun run bench:allocation --effects` adds two effects to S1, one of which reads depth, and changes a color uniform of each every frame. Both GPU paths pass, with no place of the effects' code in the sample, and the uniform writer allocates nothing per frame ([benchmarks](../benchmarks.md)). Each effect pass adds about 64 bytes per frame to the WebGPU replay: the browser's render pass encoder.
 
 ### CPU time on WebGL2
 
-- The cloud Pixel 10 (PowerVR, Chrome 149) ran the `effects` plan on 5 October 2026. On WebGL2, 4 effects raised CPU time per frame from 0.52 to 3.33 ms at a render scale of 1. At 0.5 they raised it from 0.53 to 3.68 ms. WebGPU moved from 0.60 to 0.64 ms. On the Pixel 9 and the Pixel 11, bloom's 15 passes add 0.05 to 0.15 ms on WebGL2. So a pass alone does not cost this.
-- The Mac does not show it. Chrome kept CPU time at 0.03 to 0.09 ms per frame with 4 effects, on ANGLE's Metal, OpenGL and SwiftShader back ends.
-- The effect cost page now reports each thread's CPU time. With `?gltiming` it also reports each WebGL call's time per frame. On the Pixel 10, the thread that draws took all of the added time. It made 2 framebuffers in every frame. Their completeness checks took 3.0 to 3.3 ms per frame, about 1.5 ms each. That check waits for the browser's GPU process.
-- The render graph shares a target between a pass that draws with depth and one that draws without it, as the scene color and an effect's target. The backend kept one framebuffer per color target. It made that framebuffer again whenever the depth target changed, so such a target made 2 framebuffers a frame.
-- A color target now keeps its framebuffer without depth apart, beside the one with depth. Resolves already used that framebuffer. A unit test replays 3 frames of that pattern: it now makes 2 framebuffers in all, and made 6 before.
-- A first guess was that each frame's write of the effects' blocks waited for the GPU, since each block holds the clock. The same run measured those writes at 0.04 ms per frame, so the blocks stay as they were.
+- The render graph shares a target between a pass that draws with depth and one that draws without it, as the scene color and an effect's target. So on WebGL2 a color target keeps its framebuffer without depth apart, beside the one with depth. Resolves use that framebuffer too. With one framebuffer per color target, the backend would make it again whenever the depth target changed. Such a target would then make 2 framebuffers a frame. A unit test replays 3 frames of that pattern: it makes 2 framebuffers in all, against 6 with one framebuffer per target.
+- On the cloud Pixel 10 (PowerVR, Chrome 149), each new framebuffer's completeness check takes about 1.5 ms, because it waits for the browser's GPU process. With one framebuffer per target, 4 effects raised CPU time per frame on WebGL2 from 0.52 to 3.33 ms at a render scale of 1. At 0.5 they raised it from 0.53 to 3.68 ms. WebGPU moved from 0.60 to 0.64 ms.
+- The effect cost page reports each thread's CPU time. With `?gltiming` it also reports each WebGL call's time per frame. On the Pixel 10, the thread that draws took all of the added time, in the checks of 2 framebuffers made in every frame.
+- A pass alone does not cost this: on the Pixel 9 and the Pixel 11, bloom's 15 passes add 0.05 to 0.15 ms on WebGL2. The Mac does not show it either. Even with one framebuffer per target, its Chrome kept CPU time at 0.03 to 0.09 ms per frame with 4 effects. That holds on ANGLE's Metal, OpenGL and SwiftShader back ends.
+- Each frame writes the effects' blocks, since each block holds the clock. On the Pixel 10 those writes take 0.04 ms per frame, so they do not wait for the GPU.
 
 | Pixel 10, WebGL2, CPU time per frame with `?gltiming` | Scale 1 | Scale 0.5 |
 | --- | --- | --- |
-| Before the fix (run `20261005-151823-effects`): no effects, 4 effects | 0.80, 3.90 ms | 0.69, 3.84 ms |
-| After the fix (run `20261005-153215-effects`): no effects, 4 effects | 0.81, 0.83 ms | 0.82, 0.97 ms |
+| One framebuffer per color target (run `20261005-151823-effects`): no effects, 4 effects | 0.80, 3.90 ms | 0.69, 3.84 ms |
+| A framebuffer with depth and one without (run `20261005-153215-effects`): no effects, 4 effects | 0.81, 0.83 ms | 0.82, 0.97 ms |
 
-- `?gltiming` wraps every WebGL call, which adds about 0.15 to 0.3 ms per frame, so the table compares runs that both had it. After the fix, 4 effects add 0.02 and 0.15 ms of CPU time per frame. WebGPU's 4 effects add 0.04 ms. The framebuffer checks fell from 2 per frame to 0.01, which is the frames that add the effects.
+- `?gltiming` wraps every WebGL call, which adds about 0.15 to 0.3 ms per frame, so the table compares runs that both had it. With two framebuffers per target, 4 effects add 0.02 and 0.15 ms of CPU time per frame. WebGPU's 4 effects add 0.04 ms. The framebuffer checks fall from 2 per frame to 0.01, which is the frames that add the effects.
 
 ### Timings on the Mac
 
-The Mac ran both figures on 6 October 2026, in headless Chrome 154 on its GPU, at 1920 x 1080 and a render scale of 1. The load was 7.64 at the start and 3.69 at the end. Each page ran 3 rounds from the branch, and every page held 16.665 ms frames (60 Hz). WebGL2 has no GPU timer, so these are WebGPU figures.
+The Mac ran both figures in headless Chrome 154 on its GPU, at 1920 x 1080 and a render scale of 1. The load was 7.64 at the start and 3.69 at the end. Each page ran 3 rounds, and every page held 16.665 ms frames (60 Hz). WebGL2 has no GPU timer, so these are WebGPU figures.
 
 1. One more full-screen pass costs about 0.05 ms of GPU time. The `effects` plan's page adds 4 effects that each read their own pixel, so a quarter of the difference is one pass.
 
@@ -73,7 +72,7 @@ Round 1's HDR pages were noisy, up to 1.55 ms. Rounds 2 and 3 agree within 0.03 
 
 ### Timings on the cloud Pixel 10
 
-The cloud Pixel 10 (PowerVR, Chrome 149) ran the `effects` plan on the branch's final build on 6 October 2026 (run `20261006-002702-effects`, 4 of 4 pages passed). WebGL2 has no GPU timer there.
+The cloud Pixel 10 (PowerVR, Chrome 149) ran the `effects` plan (run `20261006-002702-effects`, 4 of 4 pages passed). WebGL2 has no GPU timer there.
 
 | Page | GPU time, no effects | 4 effects | One pass | CPU time, no effects | 4 effects |
 | --- | --- | --- | --- | --- | --- |
@@ -82,11 +81,11 @@ The cloud Pixel 10 (PowerVR, Chrome 149) ran the `effects` plan on the branch's 
 | WebGL2, scale 1 | | | | 0.49 ms | 0.48 ms |
 | WebGL2, scale 0.5 | | | | 0.51 ms | 0.49 ms |
 
-With the framebuffer fix (CPU time on WebGL2, above), 4 effects add no CPU time on WebGL2. The run of 5 October 2026 had found 0.33 ms a pass on WebGPU.
+With two framebuffers per color target (CPU time on WebGL2, above), 4 effects add no CPU time on WebGL2. A run of the plan with one framebuffer per target found 0.33 ms a pass on WebGPU.
 
 ### Timings on the owner's iPad
 
-The owner's iPad Pro 11-inch (A12X) ran the `effects` plan in Safari 26.6.2 on 7 October 2026, on main at eff499ea4, which holds this work. The command was `bun tests/real-browsers.ts --plan effects --lan ipad-safari` (run `20261007-054211-effects`). All 4 pages passed, with no memory refusal. The page was 1194 x 722 at a pixel ratio of 2, and every page held 15.4 to 15.6 ms frames (59 Hz).
+The owner's iPad Pro 11-inch (A12X) ran the `effects` plan in Safari 26.6.2, at commit eff499ea4. The command was `bun tests/real-browsers.ts --plan effects --lan ipad-safari` (run `20261007-054211-effects`). All 4 pages passed, with no memory refusal. The page was 1194 x 722 at a pixel ratio of 2, and every page held 15.4 to 15.6 ms frames (59 Hz).
 
 | Page | GPU time, no effects | 4 effects | One pass | CPU time, no effects | 4 effects |
 | --- | --- | --- | --- | --- | --- |
@@ -96,14 +95,14 @@ The owner's iPad Pro 11-inch (A12X) ran the `effects` plan in Safari 26.6.2 on 7
 | WebGL2, scale 0.5 | | | | 0.62 ms | 0.80 ms |
 
 - A pass costs about 0.1 ms of GPU time on the A12X at full size. That lies between the Mac's 0.05 ms and the Pixel 10's 0.25 to 0.31 ms.
-- WebGL2 has no GPU timer in Safari. The render worker's CPU time grows by 0.14 to 0.18 ms with 4 effects, about 0.04 ms a pass. That is the range of the Pixel 10 after the framebuffer fix, 0.02 to 0.15 ms.
+- WebGL2 has no GPU timer in Safari. The render worker's CPU time grows by 0.14 to 0.18 ms with 4 effects, about 0.04 ms a pass. That is the range of the Pixel 10 with two framebuffers per target, 0.02 to 0.15 ms.
 - These figures do not change the decision.
 
 ### Timings of joined effects
 
 The `effects-joined` plan compares 4 per-pixel effects joined with the same effects in a pass each (`?join=off`), on the same page. The cost of the effects is the time with them minus the time without them.
 
-On the Mac, Chrome 155 ran the plan on 7 October 2026, on its built-in screen at 120 Hz (run `20261006-232700-effects-joined`, 10 of 10 pages passed). The load was 4.94 at the start and 3.47 at the end. Chrome on the Mac offers WebGL2's timer queries, so both GPU paths have GPU time. At a render scale of 1 the effects fold into the final pass; at 0.5 they draw as one group.
+On the Mac, Chrome 155 ran the plan on its built-in screen at 120 Hz (run `20261006-232700-effects-joined`, 10 of 10 pages passed). The load was 4.94 at the start and 3.47 at the end. Chrome on the Mac offers WebGL2's timer queries, so both GPU paths have GPU time. At a render scale of 1 the effects fold into the final pass; at 0.5 they draw as one group.
 
 | Page | Joined | Separate | Saved |
 | --- | --- | --- | --- |
@@ -117,7 +116,7 @@ On the Mac, Chrome 155 ran the plan on 7 October 2026, on its built-in screen at
 - Both scale 0.5 pages read more GPU time without effects than the scale 1 pages. The upscale in the final pass may explain it; the difference between joined and separate does not depend on it.
 - A joined shader's first build took 99.9 ms for the group and 205.7 ms for the fold on WebGPU. On WebGL2 it took 66.3 ms and 124.6 ms, and 75.2 ms for the heavy page's group. Later pages that reuse the browser's shader cache built in 3.6 to 7.4 ms. No build failed. The first frame waits for these builds anyway. During play the effects draw alone until the joined shader is built.
 
-A second Mac run used the branch merged with main, in a quiet window on 7 October 2026. It passed 10 of 10 pages (run `20261007-083401-effects-joined`), with a load of 4.4 at the end. The pages came from the dev server, and no source file changed during the run.
+A second Mac run used the branch merged with main, in a quiet window. It passed 10 of 10 pages (run `20261007-083401-effects-joined`), with a load of 4.4 at the end. The pages came from the dev server, and no source file changed during the run.
 
 | Page | Joined | Separate | Saved |
 | --- | --- | --- | --- |
@@ -130,7 +129,7 @@ A second Mac run used the branch merged with main, in a quiet window on 7 Octobe
 - WebGL2 repeats the first run within 0.03 ms. WebGPU's figures moved by up to 0.17 ms between the runs, more than one pass costs on this GPU. So on the Mac's WebGPU, joining saves 0.03 to 0.20 ms, within the noise between runs. Chrome rounds WebGPU timestamps unless its developer features are on.
 - The joined shaders built in 2.3 to 8.5 ms, from the browser's shader cache of the first run. No build failed, and none was kept apart.
 
-On the owner's iPad (Safari, Limit Frame Rate on), the plan passed 10 of 10 pages on 7 October 2026 (run `20261007-071516-effects-joined`). Every page held 15.4 to 15.7 ms frames (59 Hz).
+On the owner's iPad (Safari, Limit Frame Rate on), the plan passed 10 of 10 pages (run `20261007-071516-effects-joined`). Every page held 15.4 to 15.7 ms frames (59 Hz).
 
 | iPad page | Joined: no effects, 4 effects | Separate: no effects, 4 effects |
 | --- | --- | --- |
@@ -139,19 +138,19 @@ On the owner's iPad (Safari, Limit Frame Rate on), the plan passed 10 of 10 page
 
 - The iPad's GPU time varies by 0.3 to 0.5 ms from page to page, more than one pass costs. So these figures show no saving on WebGPU, and no loss.
 - The joined shaders built on both GPU paths. On WebGL2 the group took 216 ms and the fold 415 ms at scale 1. On WebGPU each took about 820 ms, both asked in the same frame. Later pages built in 14 to 17 ms.
-- The 38 effect image pages also passed on the iPad, 38 of 38 (run `20261007-152006-checks`, 7 October 2026). Each joined image matched its separate-pass twin's reference on all three GPU paths, so Safari draws joined shaders right.
+- The 38 effect image pages also passed on the iPad, 38 of 38 (run `20261007-152006-checks`). Each joined image matched its separate-pass twin's reference on all three GPU paths, so Safari draws joined shaders right.
 - WebGL2 on the iPad has no GPU timer. Joining cut the render worker's CPU time instead. At a render scale of 1 the effects added 0.00 ms joined and 0.14 ms separate. At 0.5 they added 0.08 and 0.18 ms. On the heavy page they added 0.02 and 0.50 ms, from 0.58 to 1.08 ms separate. Each joined pass saves a pass's draw calls and state changes.
 
-On the cloud Pixel 10 (PowerVR D-Series, Chrome 149), the plan passed 10 of 10 pages on 7 October 2026 (run `20261007-081526-effects-joined`). Every page held 60 Hz.
+On the cloud Pixel 10 (PowerVR D-Series, Chrome 149), the plan passed 10 of 10 pages (run `20261007-081526-effects-joined`). Every page held 60 Hz.
 
 | Pixel 10 page | Joined: no effects, 4 effects | Separate: no effects, 4 effects | Saved |
 | --- | --- | --- | --- |
 | WebGPU GPU time, scale 1 | 2.10, 2.62 ms | 2.29, 3.21 ms | 0.40 ms |
 | WebGPU GPU time, scale 0.5 | 2.75, 3.21 ms | 2.75, 4.00 ms | 0.79 ms |
 
-- On WebGPU, joining saves 0.40 ms at a render scale of 1, where the effects fold into the final pass. At 0.5, where they draw as one group, it saves 0.79 ms. A separate pass there costs about 0.23 to 0.31 ms, close to the 0.31 ms per pass of the run on 6 October.
+- On WebGPU, joining saves 0.40 ms at a render scale of 1, where the effects fold into the final pass. At 0.5, where they draw as one group, it saves 0.79 ms. A separate pass there costs about 0.23 to 0.31 ms, close to the 0.31 ms per pass of run `20261006-002702-effects`.
 - The joined shaders built in 20 ms for the group and 100 ms for the fold at scale 1. At 0.5 they built in 11 and 12 ms.
-- On WebGL2 the phone's Chrome compiles no shaders in the background, and the page adds its effects during play. So the joined pages kept their effects in separate passes, as designed (When a join draws, below). The report first listed those templates as failed. The thread that draws took 0.49 to 0.58 ms of CPU time per frame on every WebGL2 page. WebGL2 has no GPU timer there.
+- On WebGL2 the phone's Chrome compiles no shaders in the background, and the page adds its effects during play. So the joined pages kept their effects in separate passes, as designed (When a join draws, below). The thread that draws took 0.49 to 0.58 ms of CPU time per frame on every WebGL2 page. WebGL2 has no GPU timer there.
 
 ## Decision
 
@@ -161,7 +160,7 @@ On the cloud Pixel 10 (PowerVR D-Series, Chrome 149), the plan passed 10 of 10 p
    - Core WebGPU with MSAA reads sample 0 of the multisampled depth, through a build with the `DEPTH_MULTISAMPLED` permutation bit (262144) and the layout `EFFECT_DEPTH_MS` (22).
    - Compatibility mode reads depth as unfilterable floats with `textureLoad`, through the layout `EFFECT` (21).
    - WebGL2 reads a copy of one sample of a multisampled depth, which the backend keeps as it does for ambient occlusion.
-4. Uniforms: a `struct Uniforms` of up to 32 floats, packed as custom materials pack theirs ([D-32](D-32-typed-uniforms.md)), read as `uniforms.name`. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects took no textures at first: a texture input needed the `textures.fromPass` work of custom passes, and the same bind group for both GPU paths. Since part 2 of [D-104](D-104-scene-passes.md) (12 October 2026), an effect takes up to six textures, as a custom material does.
+4. Uniforms: a `struct Uniforms` of up to 32 floats, packed as custom materials pack theirs ([D-32](D-32-typed-uniforms.md)), read as `uniforms.name`. TypeScript types `uniforms` and `setEffectUniform` from the struct. An effect takes up to six textures, as a custom material does ([D-104](D-104-scene-passes.md), part 2).
 5. The tone-curve hook: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, passed as `post.set({ toneMapping })`. The plugin builds it into every non-`HALF` variant of the final pass. The final pass calls it in place of the built-in curves and clamps its result to 0 to 1. A curve takes no uniforms.
 6. A custom curve and effects need HDR color, as bloom does ([D-21](D-21-effect-chain.md), decision 2). On the 8-bit path that serves only MSAA, the first effect or custom curve moves the engine to HDR color with FXAA, for its life. Where the device has no HDR target in any mode, effects and the custom curve stay off. The built-in curve stays, and development builds warn once.
 7. Errors reuse the custom material codes. E1215 is for WGSL that the plugin did not compile as an effect or a curve, and E1216 for a wrong uniform. A ninth effect throws E1213. An order that is not a number throws E1203, and a uniform set on a removed effect E1101.
@@ -169,7 +168,7 @@ On the cloud Pixel 10 (PowerVR D-Series, Chrome 149), the plan passed 10 of 10 p
 
 ### Joining effects into fewer passes
 
-The owner asked for this after the Pixel 10 figures (5 October 2026): on its WebGPU path, each extra effect pass cost about 0.33 ms of GPU time. Each pass reads and writes the whole image at 8 bytes per pixel each way. Joining effects removes that traffic. It does not change the work that the effects' own code does.
+The owner decided to join effects. On the cloud Pixel 10's WebGPU path, each extra effect pass costs 0.25 to 0.33 ms of GPU time. Each pass reads and writes the whole image at 8 bytes per pixel each way. Joining effects removes that traffic. It does not change the work that the effects' own code does.
 
 What joins:
 
@@ -187,20 +186,22 @@ How the shaders are made:
 - The hosts are engine shaders that load on first use, in the feature `effect_groups`: `effect_group.wgsl`, the group's template, and `final.wgsl`'s EFFECT_CHAIN build, the fold's. Each has a chain function, and the final pass a tone curve hook. A tone curve gets a fold piece too, so a fold holds the custom curve.
 - A host binds every effect's block, an array of 8 blocks padded to 256 bytes each, the distance between blocks in the buffer. Each piece's run function takes its block's slot, the effect's place.
 - At run time the thread that draws joins a host, the pieces in order with each shared item once, and a chain that calls each piece's run function (`effect-joiner.ts`). Only text moves. The joiner loads on first use, like the hosts, so pages without joined effects download neither. The sketch thread gives each group and fold a template, keyed by its effects' templates and places.
+- The chain passes each piece the members of its input one by one, as the WebGL2 build declares them. That build turns every structure parameter into one parameter for each member, which the Adreno 619's driver needs ([driver bugs](../driver-bugs.md)). A chain call that named the structure would fit no function, so no group would build on WebGL2. [D-167](D-167-two-step-output.md) gives the check that refuses such a call.
+- Every effect keeps the pieces that the shader build gives it (`packages/vite-plugin/src/material-builds.ts`). That includes an effect that reads its neighbors. Its `joins` flag says only that it cannot follow another effect in one pass. It still starts a group or a fold. Without its pieces, every group and fold that held it would stop in hold mode with E1408. An effect that draws a pass of its own, such as one that declares textures or reads bloom's chain, gets no pieces from the shader build. The test `material-builds.test.ts` checks that an effect that does not join the effect before it keeps its pieces.
 - naga makes names unique across a whole module, in order, so a function's argument names would depend on the functions before it. The text of a helper that two pieces share would then differ, and the joined shader would define it twice. The hosts' builds, and so the pieces', name each argument and local after its function (EFFECT_HOST). The GLSL uniform block of the blocks takes its name from a named struct, as a block named after a type's number would change with the types before it.
-- Some names stay out of the hosts' reach: naga's GLSL gives each loop a flag, `loop_init`, made unique across the module. An effect with a loop takes the first name. The final pass's `main`, whose loop blends the texels, then takes `loop_init_1` in the piece's build. The piece then held the host's `main` as an item of its own. The joined shader defined `main` twice, the first before the functions it calls. Every WebGL2 fold of such an effect failed, so the effect drew a pass of its own. The Creek demo's light shafts showed it on 11 October 2026. So a piece leaves out every function that the host's build defines, by name, whatever its text. The shader crate's tests join GLSL as the joiner does. They check that no function is defined twice or called before its definition. The check stands in for a driver, since naga cannot read GLSL ES. The image test `effect-fold.spec.ts` builds the fold of a looping effect beside the vignette on every tier, once bloom turns off. It fails on a failed join.
+- Some names stay out of the hosts' reach: naga's GLSL gives each loop a flag, `loop_init`, made unique across the module. An effect with a loop takes the first name. The final pass's `main`, whose loop blends the texels, then takes `loop_init_1` in the piece's build. That piece would hold the host's `main` as an item of its own. The joined shader would then define `main` twice, the first before the functions it calls. Every WebGL2 fold of such an effect would fail and draw a pass of its own. So a piece leaves out every function that the host's build defines, by name, whatever its text. The shader crate's tests join GLSL as the joiner does. They check that no function is defined twice or called before its definition. The check stands in for a driver, since naga cannot read GLSL ES. The image test `effect-fold.spec.ts` builds the fold of a looping effect beside the vignette on every tier, once bloom turns off. It fails on a failed join.
 
 When a join draws:
 
-- A fold's pipeline is asked for only while the fold may draw: bloom, depth of field and FXAA off, at a render scale of 1. Before 11 October 2026 the engine built the fold beside bloom too, a build that never drew. On WebGL2 one failed build then kept the effects apart for good, even once bloom turned off.
+- A fold's pipeline is asked for only while the fold may draw: bloom, depth of field and FXAA off, at a render scale of 1. A fold built beside bloom would never draw. On WebGL2 one failed build would also keep the effects apart for good, even once bloom turned off.
 - A group's or a fold's pipeline is asked for only once every effect in it draws alone. A frame that adds an effect during play waits for every pipeline that builds; a group that asked in that frame would hold it for the group's build too. Asked later, it builds in the background while its effects draw alone, and the core swaps it in once it is built (`PipelineCache::built`). No frame waits for it.
 - Before the first frame, which waits for every pipeline, a group asks at once, so the first frame draws it. Hold mode and the image tests draw that frame.
-- WebGL2 without `KHR_parallel_shader_compile` would wait for a joined program's compile at its first draw. So after the first frame such a device keeps the effects in separate passes. Chrome on the Android phones measured lacks the extension ([D-13](D-13-shader-variants.md)). So on those phones only the effects there before the first frame join. The joined builds' report lists the other templates as kept apart, not failed. A silent fallback would leave a developer wondering why the effects cost a pass each. So development builds say once that effects added after the first frame draw a pass each in this browser, and that adding them before the first frame joins them. The message does not call it a failure, since this is the design there. The cloud Pixel 10 run of 7 October 2026 first reported them as failed. `?compile=wait` on the Mac gave the same two templates, and both built without it. On the Mac and the owner's iPad, which compile in the background, every joined shader built on both GPU paths.
+- WebGL2 without `KHR_parallel_shader_compile` would wait for a joined program's compile at its first draw. So after the first frame such a device keeps the effects in separate passes. Chrome on the Android phones measured lacks the extension ([D-13](D-13-shader-variants.md)). So on those phones only the effects there before the first frame join. The joined builds' report lists the other templates as kept apart, not failed. A silent fallback would leave a developer wondering why the effects cost a pass each. So development builds say once that effects added after the first frame draw a pass each in this browser, and that adding them before the first frame joins them. The message does not call it a failure, since this is the design there. On the Mac, `?compile=wait` keeps the same two templates of the Pixel 10 run apart, and both build without it. On the Mac and the owner's iPad, which compile in the background, every joined shader built on both GPU paths.
 - Uniform changes need no new shader. Adding, removing or reordering effects makes a new one.
 
 Limits:
 
-- A group's size has a cap, so no joined shader grows past what drivers are known to build: the WGSL that its pieces add, 22 KB for a group and 8 KB for a fold. The group's host is about 1.7 KB and the final pass about 16.8 KB, so a joined shader stays within about 25 KB. The final pass's host grew from 14.9 to 16.8 KB when the vignette moved before the tone curve and the dither moved last (M2-F9). The cap stays at 8 KB. Each effect's size counts the helpers that it shares with the others, but a joined shader holds them once. So real folds are much smaller. With the final pass of M2-F9, a fold of 4 effects that scale the color is 18.7 KB of WGSL and 18.9 KB of GLSL, and one of 8 such effects 19.0 and 19.1 KB. The image tests' two effects with a custom curve make 22.2 and 22.7 KB. Those 4 small effects count 7.5 KB, so a 7 KB cap would stop them folding, the case that saves the most. A Pixel 11's PowerVR driver failed a 50 KB shader and built its 17 KB parts, and the final pass draws on every device the engine was tested on ([implementation notes](../implementation-notes.md#browser-faults)). The limit of about 25 KB is half the shader that failed, the margin the caps keep. A driver's failure can show as a lost context rather than an error, so the cap holds before any build. A larger group splits.
+- A group's size has a cap, so no joined shader grows past what drivers are known to build: the WGSL that its pieces add, 22 KB for a group and 8 KB for a fold. The group's host is about 1.7 KB. The final pass, with the vignette before the tone curve and the dither last (M2-F9), is about 16.8 KB. So a joined shader stays within about 25 KB. Each effect's size counts the helpers that it shares with the others, but a joined shader holds them once. So real folds are much smaller. With that final pass, a fold of 4 effects that scale the color is 18.7 KB of WGSL and 18.9 KB of GLSL, and one of 8 such effects 19.0 and 19.1 KB. The image tests' two effects with a custom curve make 22.2 and 22.7 KB. Those 4 small effects count 7.5 KB, so a 7 KB cap would stop them folding, the case that saves the most. A Pixel 11's PowerVR driver failed a 50 KB shader and built its 17 KB parts, and the final pass draws on every device the engine was tested on ([implementation notes](../implementation-notes.md#browser-faults)). The limit of about 25 KB is half the shader that failed, the margin the caps keep. A driver's failure can show as a lost context rather than an error, so the cap holds before any build. A larger group splits.
 - If a joined shader still fails to build, the engine does not stop. The thread that draws writes its template to the control slot `JoinFailed`, and the sketch thread draws those effects one pass each from then on. Development builds warn.
 - Between joined effects, color stays at 32-bit float precision instead of a 16-bit target's. The images can differ very slightly from separate passes. The effect image tests pass within the usual tolerance on all three tiers and both reference sets, with joining on and with `?join=off`.
 
@@ -208,9 +209,13 @@ Measurement:
 
 - The `?join=off` switch keeps every effect in a pass of its own. The `effects` plan uses it, so its quarter of the difference stays one pass's cost.
 - The `effects-joined` plan runs the effect cost page with 4 effects joined and with `join=off`, at render scales of 1 and 0.5 on each GPU path. At 1 they fold into the final pass; at 0.5 they draw as one group.
-- GPU time comes from WebGPU's timestamps and, new here, from `EXT_disjoint_timer_query_webgl2` on WebGL2, which most desktop browsers offer and phones mostly do not. Without a timer, the plan's heavy pair on WebGL2 draws 8 effects at the display's whole pixel ratio, so the GPU limits the frame rate, and compares frame intervals.
-- WebGL2's timer covers the frame as a whole, so `gpuPassMs` there is an empty list where `gpuMs` has a time, and null where it has none. SwiftShader offers the timer too. The scene test expected null on WebGL2 from before the timer, and CI's first full run on 8 October 2026 failed it in all 5 thread modes. The code was right and the test was out of date, so the test now expects the empty list wherever WebGL2 reports a GPU time.
+- GPU time comes from WebGPU's timestamps and from `EXT_disjoint_timer_query_webgl2` on WebGL2, which most desktop browsers offer and phones mostly do not. Without a timer, the plan's heavy pair on WebGL2 draws 8 effects at the display's whole pixel ratio, so the GPU limits the frame rate, and compares frame intervals.
+- WebGL2's timer covers the frame as a whole, so `gpuPassMs` there is an empty list where `gpuMs` has a time, and null where it has none. SwiftShader offers the timer too, so the scene test expects the empty list wherever WebGL2 reports a GPU time.
 - Each joined page reports how long each joined shader took to build (`joinBuilds`), which development builds keep, with the templates whose builds failed and those that a device without background compiles kept apart. On WebGL2 the time ends at the frame that finds the compile done, so it counts up to a frame more.
+
+### Effects that read bloom's chain
+
+An effect that calls `effectBloom` moves bloom's chain before the effects. The chain then reads the scene's color rather than the effects' output, as [Post-processing](../../docs/concepts/post-processing.md) states. One function, `FrameGraph::bloom_source`, chooses that source, and both the passes' declaration and the first step's binding call it. If the binding took the last effect's target instead, the chain would sample a target that the effect pass writes later in the same frame. A held frame draws once, so it would find the target's clear color: bloom would threshold black and draw no glow. A live frame would read the frame before, so the glow would lag the picture, and the streak's own glow would feed back into the chain that made it. The test `a_lone_effect_that_reads_bloom_keeps_the_whole_chain_and_the_glow` checks that the first step binds the scene's color and not the effect's target.
 
 ### Why the curve does not reach the 8-bit scene shaders
 
@@ -225,7 +230,7 @@ The move to HDR costs less. Compatibility mode with MSAA is the only 8-bit path 
 - One shader for all of a sketch's effects, with a loop over the effects that a uniform lists and a switch on each. It needs no build per order, but every pixel pays the loop and the switch, and the plugin builds each WGSL alone, so it cannot know a sketch's effects.
 - Joining a per-pixel effect into the pass of a neighbor reader after it. The per-pixel effect would run once for every pixel that the reader samples.
 - Only a fallback after a failed build, without a cap. Some drivers report a shader that is too large as a lost context, not as an error.
-- An effect `stage` option (`'hdr'` or `'final'`), as the early docs drew it. One stage keeps one model: every effect sees HDR color, and the tone curve hook covers what a `'final'` effect would map.
+- An effect `stage` option (`'hdr'` or `'final'`). One stage keeps one model: every effect sees HDR color, and the tone curve hook covers what a `'final'` effect would map.
 - A `name` option. The returned `Effect` is the handle, so a name added nothing.
 - A curve with uniforms. Its build joins the final pass, whose uniform block is fixed. Curves that three.js offers need no uniforms beyond the exposure, which the engine applies earlier.
 - A ping-pong pair of targets owned by the effects module. The render graph's memory sharing gives the same two textures and keeps the declaration in one place.
@@ -237,14 +242,3 @@ The move to HDR costs less. Compatibility mode with MSAA is the only 8-bit path 
 - New claims: this record, the layouts `EFFECT` (21) and `EFFECT_DEPTH_MS` (22), and the permutation bit `DEPTH_MULTISAMPLED` (262144).
 - The effect cost page gains `effect=effects`, and the device runner gains the `effects` plan.
 - Docs: `api/post`, `concepts/post-processing`, `guides/custom-passes`, `porting/threejs-postprocessing` and the mapping entries `ShaderPass` and `FilmPass / GlitchPass / ...`. Skills: both skills' `shaders.md`, the port skill's `post-processing.md`, and the develop skill's recipes and quick reference.
-
-## Addendum, 15 October 2026: the joins never built on WebGL2
-
-The joins above did not run on WebGL2, on any device, from the day they shipped. The engine writes a
-joined chain into the group host's built shader at run time, and it wrote that text in the structure
-form, naming `EffectInput`. The WebGL2 build removes every structure parameter, one parameter for
-each member, which the Adreno 619's driver needs ([driver bugs](../driver-bugs.md)). So the chain's
-calls fitted no function, and the driver refused the whole shader with "'fx74470501_effect_piece_main'
-: no matching overloaded function found". The engine then drew each effect in a pass of its own, so
-the images still matched and the fault stayed hidden. D-167's addendum records the fix, the check
-that refuses such a call, and its evidence. The joins now run at every render scale.

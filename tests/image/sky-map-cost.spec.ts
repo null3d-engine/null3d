@@ -8,6 +8,9 @@
 import { expect, test } from '@playwright/test';
 import { fromRgb9e5, words } from '../lib/environment-maps.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { TIMING_BROWSER_IN_RUN } from '../lib/timing-browser.ts';
+
+test.use(TIMING_BROWSER_IN_RUN);
 
 interface CostResult {
 	error?: string;

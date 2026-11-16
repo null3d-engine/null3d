@@ -1,12 +1,12 @@
 # D-74: Native fog
 
-Status: decided, 2026-10-05. Date: 2026-10-05. Task: M2-E8.
+Status: decided. Built: fog by straight-line distance with three curves, height fog and the sun glow. Task: M2-E8.
 
-Summary: Fog by each point's straight-line distance from the camera, so it stays still as the camera turns, with three curves: exponential by default, and three.js's exponential squared and linear, which the port maps `FogExp2` and `Fog` onto. Height fog integrates an exponential density exactly along each ray, and a sun glow scatters the main directional light. A branch on the frame's values, with no new shader build, in the same 48 bytes.
+Summary: Fog by each point's straight-line distance from the camera, so it stays still as the camera turns, with three curves: exponential by default, and three.js's exponential squared and linear, which the port maps `FogExp2` and `Fog` onto. Height fog integrates an exponential density exactly along each ray, and a sun glow scatters the main directional light. It is a branch on the frame's values, with no new shader build, in the fog's 48 bytes.
 
 ## Question
 
-null3D's fog copied three.js's: linear fog or exponential squared fog, by depth along the camera's view. [D-52](D-52-intent-parity.md) asks for the best technique by default, with three.js's look reached through the port. Decision 13 of [D-53](D-53-technique-defaults.md) names the target: one fog with radial distance, height and sun light, and a curve setting. How is it measured, how does height enter, where does the sun's light come from, and what does it cost?
+three.js's fog is linear or exponential squared, by depth along the camera's view. [D-52](D-52-intent-parity.md) asks for the best technique by default, with three.js's look reached through the port. Decision 13 of [D-53](D-53-technique-defaults.md) names the target: one fog with radial distance, height and sun light, and a curve setting. How is it measured, how does height enter, where does the sun's light come from, and what does it cost?
 
 ## Rule
 
@@ -33,7 +33,7 @@ Depth along the view gives the same fog to every point on a plane that faces the
 
 ### Distance
 
-Fog measures each point's straight-line distance from the camera. The shaders already work in positions relative to the camera, so the distance is the length of that position: one square root per pixel. The fog no longer needs the camera's view direction, which left the frame's values.
+Fog measures each point's straight-line distance from the camera. The shaders already work in positions relative to the camera, so the distance is the length of that position: one square root per pixel. The fog needs no view direction, so the frame's values hold none.
 
 ### Curves
 
@@ -67,7 +67,7 @@ The frame's values already hold the main directional light's direction and expos
 
 ### Where the fog mixes
 
-The fog mixes into each fragment's exposed linear color, before the tone curve. three.js's `WebGPURenderer` does the same, and so does its `WebGLRenderer` when it draws into a half-float target. Only `WebGLRenderer`'s default 8-bit canvas mixes after the sRGB encoding. The mapping note said that three.js mixes after encoding everywhere, and now says where it does.
+The fog mixes into each fragment's exposed linear color, before the tone curve. three.js's `WebGPURenderer` does the same, and so does its `WebGLRenderer` when it draws into a half-float target. Only `WebGLRenderer`'s default 8-bit canvas mixes after the sRGB encoding. The mapping note says where three.js mixes after encoding.
 
 ### The frame's values
 
@@ -79,7 +79,7 @@ The fog is a branch on the frame's values in the mesh templates, as ambient occl
 
 `bun run build:check-size` measured the growth against main at 32f387b8, after Brotli:
 
-| Files | Before | After | Growth |
+| Files | Without the fog | With the fog | Growth |
 | --- | --- | --- | --- |
 | The 4 WGSL start files | 22,778 to 24,182 bytes | 22,970 to 24,348 bytes | +0.7% to +0.8%, +157 to +195 bytes |
 | The 8 GLSL start files | 21,181 to 22,181 bytes | 21,330 to 22,326 bytes | +0.6% to +0.9%, +128 to +195 bytes |
@@ -92,7 +92,7 @@ The fog is a branch on the frame's values in the mesh templates, as ambient occl
 
 The fog's code is in every fragment shader of the mesh, line and sprite templates, so each build carries it. The small line and sprite files grow the most in percent. The fog adds no build, so the count of pipelines stays the same.
 
-Uncompressed, the largest file is the GLSL skin file with tone mapping, half floats and draw indices. It is 548.5 KB, 35.7% of its 1536 KB limit. Shader files store each repeated paragraph once and join them at load, since M2-J5. Before that, main had this file at 98.9% of the limit, and the fog took it over by up to 8.1 KB. A version of the fog that always computed the height terms fit under the limit then. The faster fog came back once the shared paragraphs merged.
+Uncompressed, the largest file is the GLSL skin file with tone mapping, half floats and draw indices. It is 548.5 KB, 35.7% of its 1536 KB limit. Shader files store each repeated paragraph once and join them at load (M2-J5). Without that sharing, the fog would take this file over its limit by up to 8.1 KB.
 
 naga writes each name once per program, and it lengthens names that clash between modules. So the fog keeps its text short with no cost per pixel:
 
@@ -101,30 +101,30 @@ naga writes each name once per program, and it lengthens names that clash betwee
 - The mesh template mixes with `mix`, without a call to `apply_fog`.
 - The fog's off curve is `OFF`, and `fog_color` takes `light_direction` and `light_color`, so no name clashes with another module's.
 
-naga's renames also reach custom materials. A library function's argument named `x` made naga rename a custom surface function's own `x`, and the shader crate's material test caught it. So `fog_height_ratio` calls its input `climb`.
+naga's renames also reach custom materials. A library function's argument named `x` would make naga rename a custom surface function's own `x`, which the shader crate's material test catches. So `fog_height_ratio` calls its input `climb`.
 
 Per pixel, the fog costs one square root and one `exp` for the curve, and a normalize and a `pow` for the glow. Height adds one more `exp` and a division, and fog that is the same at every height skips them with a branch on the frame's values. Exponential and exponential squared fog share one `exp`, and the curve picks its result with `select`. A scene without fog, or a material with `fog: false`, returns before any of it. That matches the estimate of about 15 operations and one `exp`.
 
 ## Data
 
-Results on 5 October 2026, in Chrome on the Mac's GPU and on SwiftShader, as CI draws. These runs came before the last change to the shader, which joined the exponential curves into one `exp` and folded the path into `fog_factor`. The change gives the same values within 32-bit rounding, and CI runs every one of these checks again on the pull request.
+Results in Chrome on the Mac's GPU and on SwiftShader, as CI draws. The runs measured a shader that gave each exponential curve its own `exp` and kept the path outside `fog_factor`. The current shader gives the same values within 32-bit rounding, and CI runs every one of these checks.
 
 | Check | Result |
 | --- | --- |
 | `fog-turn.spec.ts`: a white box 29.75 units away in black exponential fog of density 0.03, with the camera turned by 0, 20 and 40 degrees | The box's brightest channel is 171 on WebGPU and 172 in compatibility mode and on WebGL2, at every turn. Fog by depth along the view would give about 189 at 40 degrees, where the depth is 22.8 |
 | The shader library test, which checks the fog's functions against references in 64-bit floats | Passes on all three tiers |
-| Image tests `fog-linear`, `fog-exp2`, `fog-exponential`, `fog-height`, `fog-sun` and `lines-lit`, all three tiers | 18 of 18 pass on each reference set, with new references |
+| Image tests `fog-linear`, `fog-exp2`, `fog-exponential`, `fog-height`, `fog-sun` and `lines-lit`, all three tiers | 18 of 18 pass on each reference set |
 | `fog-linear` and `fog-exp2` against three.js's `Fog` and `FogExp2`, by three.js's own rule | 6 of 6 pass on the Mac's GPU, with at most 0.003% of the pixels different, and 6 of 6 on SwiftShader, with at most 0.016% |
-| S4 against three.js, whose town fades into linear fog at a wide angle | 2.9% to 3.3% of the pixels differ, at the far corners. S4 was already left out of the parity checks for WebGL2, and now lists the fog as a reason on every tier |
-| S4's image test | 2.2% of the pixels changed, at the corners, on every tier: new references |
+| S4 against three.js, whose town fades into linear fog at a wide angle | 2.9% to 3.3% of the pixels differ, at the far corners. The parity checks leave S4 out on every tier, with the fog as one reason |
+| S4's image test | Fog by straight-line distance changes 2.2% of the pixels against fog by depth, at the corners, on every tier |
 
-The fog scenes' narrow view keeps the straight-line distance within a few percent of the depth. So the two engines' fog differs by less than three.js's threshold at each pixel. A wide view, such as S4's, shows the difference at its corners. That difference is the reason for the change: three.js's fog there moves as the camera turns.
+The fog scenes' narrow view keeps the straight-line distance within a few percent of the depth. So the two engines' fog differs by less than three.js's threshold at each pixel. A wide view, such as S4's, shows the difference at its corners. That difference is the reason for fog by straight-line distance: three.js's fog there moves as the camera turns.
 
 ## Options
 
 | Option | Turns with the camera | Height | Cost |
 | --- | --- | --- | --- |
-| A: three.js's fog by depth along the view (before) | Shifts at the edges | None | One dot product |
+| A: three.js's fog by depth along the view | Shifts at the edges | None | One dot product |
 | B: straight-line distance, height from the density at the point (Godot) | Still | Wrong across valleys | As C, without the ray term |
 | C: straight-line distance, exact height integral, sun glow (Filament) | Still | Exact | One more `exp` with height |
 | D: a full-screen fog pass after the opaque pass (Filament's option) | Still | Exact | A pass over every pixel, and transparent objects need their own fog anyway |
@@ -133,8 +133,8 @@ Option C.
 
 ## Consequences
 
-- `scene.setFog` takes `{ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent }`. The `type` option is gone, and a call that passes it throws E1108 with the new name.
-- `null3d::fog` in the shader library loses `fog_depth`, and adds `EXPONENTIAL`, `fog_exponential`, `fog_height_ratio` and `fog_color`. The `Fog` struct's fields changed.
-- The image tests `fog-linear` and `fog-exp2` take new references, and so do `lines-lit` and S4, which have linear fog. Their parity with three.js becomes a sanity comparison.
-- New image tests: `fog-exponential`, `fog-height` and `fog-sun`. The browser test `fog-turn.spec.ts` checks that a box keeps its fogged color as the camera turns.
+- `scene.setFog` takes `{ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent }`. A call that passes a `type` option throws E1108, which names `curve`.
+- `null3d::fog` in the shader library has `EXPONENTIAL`, `fog_exponential`, `fog_height_ratio` and `fog_color`, and no `fog_depth`. The `Fog` struct holds the fields of the frame's values above.
+- The image tests `fog-linear`, `fog-exp2`, `lines-lit` and S4 draw linear fog by straight-line distance. Their parity with three.js is a sanity comparison.
+- The image tests `fog-exponential`, `fog-height` and `fog-sun` draw the other curve, the height and the glow. The browser test `fog-turn.spec.ts` checks that a box keeps its fogged color as the camera turns.
 - Docs: `api/scene` (fog), `concepts/lighting` (fog), the shader library. Mapping entries `Fog` and `FogExp2`.

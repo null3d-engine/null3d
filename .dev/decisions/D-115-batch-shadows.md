@@ -1,12 +1,12 @@
 # D-115: Instance batches cast and receive shadows
 
-Status: decided. Date: 2026-10-08. Task: M2-R6.
+Status: decided and built. Task: M2-R6.
 
 Summary: An instance batch takes `castShadows` and `receiveShadows` for all its rows, as an object does, on both GPU paths. Each cascade and each light's tile culls the rows one by one, with no new GPU binding. Sprite, point and line batches take neither. A dynamic batch that casts counts as a moving caster, row by row.
 
 ## Question
 
-Until M2-R6, batch rows neither cast nor received shadows (M1-D6's follow-up). glTF instancing (`EXT_mesh_gpu_instancing`), S6's city and three.js's `InstancedMesh` all need them. How do batches take part in the shadow passes, and what does it cost?
+glTF instancing (`EXT_mesh_gpu_instancing`), S6's city and three.js's `InstancedMesh` all need batch rows that cast and receive shadows (M1-D6's follow-up). How do batches take part in the shadow passes, and what does it cost?
 
 ## Rule
 
@@ -17,23 +17,23 @@ Until M2-R6, batch rows neither cast nor received shadows (M1-D6's follow-up). g
 
 ## Data
 
-The two paths already had most of what the shadow passes need:
+The two paths have most of what the shadow passes need:
 
-- On WebGPU, the casters' layout kept a place for every batch row, and each cascade's and tile's culling read the shared matrices, layers and cell order. A batch needed only a bucket in that layout. The cast option chooses the bucket, so the GPU needs no cast bit and no new binding.
-- On WebGL2, the casters' layout culled scene rows only. Its index lists now also hold the rows of the batches that cast.
+- On WebGPU, the casters' layout keeps a place for every batch row, and each cascade's and tile's culling reads the shared matrices, layers and cell order. A batch needs only a bucket in that layout. The cast option chooses the bucket, so the GPU needs no cast bit and no new binding.
+- On WebGL2, the casters' index lists hold the scene rows and the rows of the batches that cast.
 - The receive option picks the pipeline build that reads the shadow maps, as an object's does, in the opaque layouts and in the transparent pass.
 
-Gaps found and closed:
+Three cases need more:
 
-- A blended batch draws in the transparent pass, so it has no bucket in the scene's layout. On WebGL2 its clusters then never reached the cluster texture, and on WebGPU its rows were missing from the cell order that the cascades cull with. Both now count the casters' layout too.
-- The far cascades keep their depth between turns unless a moving caster touches them. That list held dynamic scene objects only. A dynamic batch that casts now joins it, and its active rows are tested one by one against each cascade's box, stopping at the first that touches.
+- A blended batch draws in the transparent pass, so it has no bucket in the scene's layout. The cluster texture on WebGL2 and the cell order that the cascades cull with on WebGPU therefore count the casters' layout too.
+- The far cascades keep their depth between turns unless a moving caster touches them. The list of moving casters holds dynamic scene objects and the dynamic batches that cast. A batch's active rows are tested one by one against each cascade's box, stopping at the first that touches.
 - A spot or point light's tile keeps its depth until a caster in its view changes. For a batch that casts, each row that its update changed in the frame marks the tiles that its sphere touched before or after the change. A new active count or new layers marks every tile. A row's reach from each light is found once, not once per tile. The scan of a batch's rows stops once every tile of the frame's lights must draw, so a large batch that moves costs little more in the frame builder than one at rest.
 
 Image tests: `shadows-batches` and `shadows-batches-dynamic` draw the shadows test's objects as batch rows, grouped by mesh, material and options, and compare with the shadows test's references. `spot-shadows-batches` does the same for the spot light's tile with the spot shadows test's references. Rust tests check, on both paths, that a moved row of a casting batch draws its light's tile once within the light's reach and none beyond it.
 
-Allocation: `bench:allocation --batch-shadows` passes on both GPU paths, alone and with `--tile-shadows`. The sun's 3 cascades then draw in every frame, so the WebGPU replay's budget grows by their pass encoders, 102 bytes per frame. These runs also found that the job workers' busy time made a number object per busy worker in each frame, now fixed ([benchmarks guide](../benchmarks.md)).
+Allocation: `bench:allocation --batch-shadows` passes on both GPU paths, alone and with `--tile-shadows`. The sun's 3 cascades then draw in every frame, so the WebGPU replay's budget allows their pass encoders, 102 bytes per frame. The same check covers the job workers' busy time, which makes no number object per busy worker in a frame ([benchmarks guide](../benchmarks.md)).
 
-How the data was produced: on 10 October 2026, on the Mac at a load below 3, `bench:run --scenes s1,s1-static --pages null3d-webgpu,null3d-webgl2 --runs 3 --seconds 10`. The first run used `--switches shadows=3`, and the second `shadows=3&batchShadows`. Each scene has 100,000 rows, which then cast and receive the sun's shadows in 3 cascades. Each figure is the median of 3 runs, without and then with the rows in the shadows.
+How the data was produced: on the Mac at a load below 3, `bench:run --scenes s1,s1-static --pages null3d-webgpu,null3d-webgl2 --runs 3 --seconds 10`. The first run used `--switches shadows=3`, and the second `shadows=3&batchShadows`. Each scene has 100,000 rows, which in the second run cast and receive the sun's shadows in 3 cascades. Each figure is the median of 3 runs, without and then with the rows in the shadows.
 
 | Scene | Page | CPU ms per frame | All threads, ms | GPU ms | Draw calls |
 | --- | --- | --- | --- | --- | --- |
@@ -58,5 +58,5 @@ Options not taken:
 ## Consequences
 
 - Docs: `concepts/shadows`, `concepts/instances`, `api/scene`, the three.js mapping entries of `castShadow` and `InstancedMesh`, and the develop skill's quick reference.
-- [D-37](D-37-sprites.md), [D-23](D-23-index-instances.md) and [D-106](D-106-s6-city.md) note the change.
+- [D-37](D-37-sprites.md), [D-23](D-23-index-instances.md) and [D-106](D-106-s6-city.md) point here.
 - A scene whose batches cast draws more in each cascade and tile. Benchmarks that use batches (S1, S1-static) set no shadow options by default, so their figures do not change. Their `batchShadows` switch, with `shadows=<n>`, makes the rows cast and receive the sun's shadows, and `bench:allocation --batch-shadows` samples S1 that way.

@@ -1,8 +1,8 @@
 # D-140: Per-object motion vectors
 
-Status: decided. The owner moved per-object motion vectors before 1.0 on 11 October 2026, and the feature landed on main on 14 October 2026. Date: 2026-10-11. Task: M2-EX25.
+Status: decided. The owner put per-object motion vectors before 1.0 ([D-129](D-129-temporal-anti-aliasing.md)). Built: the motion pass and its debug view are on main. Task: M2-EX25, and M3-V3 for the last frame's flag.
 
-Summary: The engine records how far each pixel's surface moved on the screen since the last frame, for the passes that need it: temporal anti-aliasing after the fixes that [D-129](D-129-temporal-anti-aliasing.md) lists, motion blur, and screen-space reflections that reuse the last frame. A separate motion pass draws only the objects that moved, into a target of two 16-bit floats per pixel, tested against the scene's depth. It stores each surface's own motion beyond what the camera's move explains, so still pixels need no draw: a reader adds the camera's part from the depth. Batches, skins, morph targets and vertex offsets keep the last frame's data on the GPU while a reader asks for motion. Nothing runs, downloads or takes memory while no pass reads the motion.
+Summary: The engine records how far each pixel's surface moved on the screen since the last frame, for passes such as motion blur and screen-space reflections that reuse the last frame. A motion pass draws only the objects that moved, into a two-channel half-float target that holds each surface's motion beyond the camera's. Nothing runs, downloads or takes memory while no pass reads it.
 
 ## Question
 
@@ -32,6 +32,8 @@ Option A changes every pipeline that draws in the camera's render pass: lit and 
 Option C needs the depth prepass, which most presets leave off ([quality presets](../../docs/concepts/quality-presets.md#the-depth-prepass)).
 
 Option B leaves the main pass alone. Its pipelines bind only what motion needs, so the texture limit holds. A still scene draws nothing in it but a clear. It costs a second vertex pass over the moving objects. That is the trade that Unity and Unreal make by default. The outline mask is the same kind of pass already: its own view, its own culling and layout, and the scene's depth as its depth target, read but never written.
+
+A custom material whose fragment stage tests its own coverage reads its row of custom values there, so its motion build declares that texture in the fragment stage. The motion pass's frame group gives that texture to both stages, as the depth group does. A vertex-only entry there stops every such material's motion pipeline from building on WebGPU, with E1408, and the motion view of a custom material shows it.
 
 ### What the target holds
 
@@ -86,7 +88,7 @@ A custom material with a vertex offset gets builds of its template that draw mot
 
 ### The camera
 
-The motion uniform holds the last frame's view-projection matrix, moved from the last camera's place to this one, as the TAA prototype's reprojection does. It lives in the motion pass's own group, not in the frame uniform that every pipeline reads. Projections carry no jitter yet. When temporal anti-aliasing adds one, the motion stays between the projections without it.
+The motion uniform holds the last frame's view-projection matrix, moved from the last camera's place to this one, as the TAA prototype's reprojection does. It lives in the motion pass's own group, not in the frame uniform that every pipeline reads. Projections carry no jitter, and the motion lies between projections without one.
 
 ### The pass
 
@@ -94,9 +96,9 @@ The render graph declares two optional passes after the camera's transparent pas
 
 - `MotionCulling` (WebGPU): the motion view's culling.
 - `Motion`: draws the moving objects into `motionVectors`, at the scene's samples, with the scene's depth as its depth target. It tests the depth as near or equal, with the outline mask's small bias toward the camera, and writes none. The motion pipelines compute the clip position with the same math as the main pass, marked invariant, so the bias covers only the differences between programs that WebGL2 allows. With MSAA the target resolves into one sample for its readers.
-- A reader: today only the motion debug view.
+- A reader, such as the motion debug view.
 
-An optional pass runs only while a running pass reads what it writes, so neither costs anything while nothing reads the motion. The debug view and, later, temporal anti-aliasing and motion blur turn it on by reading `motionVectors`.
+An optional pass runs only while a running pass reads what it writes, so neither costs anything while nothing reads the motion. The debug view, or a feature that declares `motionVectors` among its reads, turns it on.
 
 ### Texture slots
 
@@ -116,12 +118,12 @@ A held frame is the first frame that the thread that draws draws, so it has no l
 
 ## Cost
 
-Download size, after Brotli, measured with `bun run build:check-size` against main on 14 October:
+Download size, after Brotli, measured with `bun run build:check-size` against main:
 
-- The largest start, pipelined WebGPU, is 0.8 KB above main's, at 144,177 bytes after Brotli. Main sits at the 140 KB budget, so the motion's words put the start 817 bytes over it, and the raise of that budget covers this feature with the others that wait on it ([D-14](D-14-js-budget.md)). The page's WebGL2 shader combos file holds most of the 0.8 KB, and it grew 10.8%.
+- The largest start, pipelined WebGPU, grows by 0.8 KB, to 144,177 bytes after Brotli, within the start budget ([D-14](D-14-js-budget.md)). The page's WebGL2 shader combos file holds most of the 0.8 KB, and grows 10.8%.
 - The core's WebAssembly files grow by about 2% each. They hold the motion pass in both frame builders, with its layouts, its culling, the copies of the last frame's data and the debug view.
 - The motion shaders load on first use. Each file holds the motion builds beside the features that a page loads with. A page that never reads the motion never downloads them.
-- Loading the WebGPU motion pipelines on first use as well made the start bigger, not smaller, so they stay in the start code.
+- Loading the WebGPU motion pipelines on first use as well makes the start bigger, not smaller, so they stay in the start code.
 
 GPU time, measured in Chrome 155 on the Mac's M5 Max at 120 Hz, in a parked window:
 
@@ -136,12 +138,34 @@ Option B: a motion pass of the moving objects, into a two-channel half float tar
 
 - Code: `crates/null3d-render/src/motion.rs` (the uniform, the reprojection and the debug view's step), the motion layout and view in both frame builders, the culling shader's motion build, `motion.wgsl` and the motion builds of `lit.wgsl`, the new format, and both backends' templates.
 - Docs: the debug view in `api/debug`, the motion pass in `concepts/render-graph` and `concepts/post-processing`.
-- Later: temporal anti-aliasing (D-129's retry), motion blur, and a function that lets custom effects read the motion.
+- Later: motion blur, and a function that lets custom effects read the motion. Temporal anti-aliasing will not read it: [D-206](D-206-temporal-resolve.md) drops TAA.
 
 ## Tables while the motion pipelines load
 
-On 13 October 2026, the cost page stopped when it enabled motion on WebGPU and compatibility mode. The drawing worker named buffer 402, which did not exist. This was the motion layout's bucket table.
+The builder uploads the motion layout's tables when it rebuilds the requested motion layout. It still waits for the pipelines before drawing motion.
 
-The layout rebuilt while the motion pipelines loaded, but its tables uploaded only while the motion view could draw. Once the pipelines finished, no scene change asked for another upload. The first motion frame therefore read a table that had never been made.
+Tables that uploaded only while the motion view could draw would stay unmade when the layout rebuilds while the motion pipelines load. Once the pipelines finish, no scene change asks for another upload. The first motion frame would then read a table that was never made, and the drawing worker would stop on a buffer that does not exist. A mock-backend test covers motion requested at the start and enabled after ordinary frames.
 
-The builder now uploads those tables when it rebuilds the requested motion layout. It still waits for the pipelines before drawing motion. A mock-backend test covers motion requested at the start and enabled after ordinary frames. The WebGPU and compatibility mode pages of the cost check measure again after the fix.
+## The last frame's call says which it is
+
+`FrameValues` holds `lastFrame`, a boolean that is false everywhere and true only for the motion
+build's second call, which runs with the frame before's time, step and index (M3-V3). Without it, a
+vertex offset that reads data a compute pass wrote for this frame and the frame before cannot tell
+the two calls apart. Both calls see the same uniform value and row value, and the texture holds
+whichever image the pass last wrote. A vertex offset that
+reads a texture holding both frames' data then takes the row for the call it makes:
+
+```wgsl
+var poses: texture_2d<f32>;
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let row = select(0, 1, frame.lastFrame);
+    return vec3f(textureLoad(poses, vec2i(0, row), 0).r, 0.0, 0.0);
+}
+```
+
+The main, shadow caster and pick builds set nothing, so they read the frame's own row. The motion
+build draws the difference of the two calls.
+
+The `compute-vertex-offset` motion test proves it. Without the value both calls read the same row,
+the plane shows no motion, and the test fails on every tier.

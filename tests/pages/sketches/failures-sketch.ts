@@ -14,6 +14,8 @@ const FAULT = params.get('fault');
 const FAULT_FRAME = 10;
 const MESHES = Number(params.get('meshes') ?? 200);
 const ROWS = Number(params.get('rows') ?? 0);
+/** True when the page must hear that the frame-step fault is armed. */
+const REPORT_ARMED = params.has('report-armed');
 const COLUMNS = 60;
 
 /** A custom material's WGSL, which keeps the standard look. */
@@ -69,6 +71,9 @@ export default defineSketch((context) => {
 					performance.now = now;
 					throw new Error('the frame step failed on purpose');
 				};
+				// The page hears this after the engine's clock read threw, so a page that waits for
+				// it attaches its failure handler only once the engine has failed.
+				if (REPORT_ARMED) context.page.post('fault-armed');
 			}
 		},
 		onDestroy() {

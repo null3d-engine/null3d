@@ -30,9 +30,9 @@ import {
 	s4VehiclesAt,
 } from '../../scenes/spec';
 import {
+	applyQualitySwitches,
 	followPath,
 	readFarInterval,
-	readGovernor,
 	setUpView,
 	watchQuality,
 } from './sketch-common';
@@ -54,7 +54,7 @@ export default defineSketch((context) => {
 		}),
 		s4Camera,
 	);
-	context.quality.set({ governor: readGovernor(import.meta.url) });
+	applyQualitySwitches(context.quality, import.meta.url);
 	// ?far= fixes how often the far shadow cascades draw, to measure what drawing them less often
 	// saves.
 	const far = readFarInterval(import.meta.url);

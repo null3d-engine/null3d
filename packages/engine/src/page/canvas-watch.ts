@@ -23,6 +23,42 @@ export interface CanvasWatch {
 type DevicePixels = { width: number; height: number };
 
 /**
+ * The drawing buffer's size and pixel ratio for a canvas of `cssWidth` by `cssHeight` CSS pixels, at
+ * the page's `pageRatio` capped at `cap`, within `maxSize` on each side. The browser's device-pixel
+ * box gives the exact size where the ratio is the page's own, which avoids a rounding step. It must
+ * agree with the CSS size times the ratio, within that rounding: Chrome under a test runner's ratio
+ * emulation reports the screen's own device pixels, twice the size on a high-density screen, while
+ * the page's ratio says 1. Such a box would draw four times the pixels and pass the cap.
+ */
+export function canvasPixels(
+	cssWidth: number,
+	cssHeight: number,
+	pageRatio: number,
+	cap: number,
+	devicePixels: DevicePixels | undefined,
+	maxSize: number,
+): { width: number; height: number; ratio: number } {
+	const ratio = Math.min(pageRatio, cap);
+	let width = Math.round(cssWidth * ratio);
+	let height = Math.round(cssHeight * ratio);
+	if (
+		devicePixels &&
+		ratio === pageRatio &&
+		Math.abs(devicePixels.width - cssWidth * ratio) <= 1 &&
+		Math.abs(devicePixels.height - cssHeight * ratio) <= 1
+	) {
+		width = devicePixels.width;
+		height = devicePixels.height;
+	}
+	const fit = Math.min(1, maxSize / Math.max(width, height));
+	return {
+		width: Math.max(1, Math.round(width * fit)),
+		height: Math.max(1, Math.round(height * fit)),
+		ratio: ratio * fit,
+	};
+}
+
+/**
  * Fixes the CSS width or height of a canvas where it follows the size of the drawing buffer, as it
  * does on a canvas that no CSS sizes. The engine sizes the buffer to the CSS size times the pixel
  * ratio, so such a canvas would grow by that ratio at each resize, until the GPU could not draw
@@ -65,16 +101,19 @@ export function watchCanvas(
 
 	const writeSize = (cssWidth: number, cssHeight: number, devicePixels?: DevicePixels) => {
 		last = { cssWidth, cssHeight, devicePixels };
-		const ratio = Math.min(globalThis.devicePixelRatio ?? 1, cap);
-		const exact = devicePixels && ratio === globalThis.devicePixelRatio;
-		const width = exact ? devicePixels.width : Math.round(cssWidth * ratio);
-		const height = exact ? devicePixels.height : Math.round(cssHeight * ratio);
-		const fit = Math.min(1, maxSize / Math.max(width, height));
+		const pixels = canvasPixels(
+			cssWidth,
+			cssHeight,
+			globalThis.devicePixelRatio ?? 1,
+			cap,
+			devicePixels,
+			maxSize,
+		);
 		slotFloats[Slot.CanvasCssWidth] = cssWidth;
 		slotFloats[Slot.CanvasCssHeight] = cssHeight;
-		slotFloats[Slot.PixelRatio] = ratio * fit;
-		Atomics.store(slots, Slot.CanvasWidth, Math.max(1, Math.round(width * fit)));
-		Atomics.store(slots, Slot.CanvasHeight, Math.max(1, Math.round(height * fit)));
+		slotFloats[Slot.PixelRatio] = pixels.ratio;
+		Atomics.store(slots, Slot.CanvasWidth, pixels.width);
+		Atomics.store(slots, Slot.CanvasHeight, pixels.height);
 		Atomics.add(slots, Slot.ResizeSerial, 1);
 	};
 	const observer = new ResizeObserver((entries) => {
