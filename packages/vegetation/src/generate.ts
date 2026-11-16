@@ -731,6 +731,8 @@ interface GrownPlant {
 	readonly detail: Detail;
 	/** The order its foliage goes in as it thins, found when a sparseness first asks for it. */
 	order?: SparseOrder;
+	/** The shoot rows the dressing dropped, being over the record's rows for each axis. */
+	readonly dropped: number;
 }
 
 /** The plants as grown that this thread keeps, by key, the one read last at the end. */
@@ -794,8 +796,9 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		sparse: sparseLevel(kit, options),
 		...(most === undefined ? {} : { maxTriangles: most }),
 	};
-	// A model that plans its grown state states the plan's numbers before any geometry is built.
-	const plan = placeholders ? undefined : grower(model).plan?.(record, request);
+	// A model that plans its grown state states the plan's numbers before any geometry is built. A kit
+	// that asks for the missing stages' stand-ins is still a real plant, so it plans.
+	const plan = placeholders === true ? undefined : grower(model).plan?.(record, request);
 	const growInput: GrowInput = {
 		record,
 		seed: options.seed >>> 0,
@@ -884,10 +887,10 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 					() =>
 						record.shoots || carriesPieces(record)
 							? dressShoots(dressInput)
-							: { rows: emptyRows(), skeleton: dressInput.skeleton },
-					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
+							: { rows: emptyRows(), skeleton: dressInput.skeleton, dropped: 0 },
+					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton, dropped: 0 }),
 				)
-			: { rows: emptyRows(), skeleton: dressInput.skeleton };
+			: { rows: emptyRows(), skeleton: dressInput.skeleton, dropped: 0 };
 	let rows = dressed.rows;
 	let skeleton = dressed.skeleton;
 	// The reach is an estimate from the kit, so the drawn top is measured once the shoots stand. A
@@ -914,7 +917,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 			rows = scaledRows(rows, corrective);
 		}
 	}
-	return { input: { ...dressInput, skeleton }, rows, detail };
+	return { input: { ...dressInput, skeleton }, rows, detail, dropped: dressed.dropped };
 }
 
 /** A copy of shoot rows, which a growth may light and renumber without touching the rows it read. */
@@ -942,6 +945,8 @@ interface Dressed {
 	readonly mesh: MeshInput;
 	/** What a level is built from: the variant, its wood's parts and the walk of its shoot rows. */
 	readonly budget: (wood: boolean) => BudgetInput;
+	/** The shoot rows the dressing dropped, which a growth's balance counts. */
+	readonly dropped: number;
 }
 
 /** The order a grown plant's foliage goes in, found once and kept beside the plant. */
@@ -1035,7 +1040,7 @@ function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 				: {}),
 		};
 	};
-	return { mesh, budget: (wood) => budgetOf(mesh, wood) };
+	return { mesh, budget: (wood) => budgetOf(mesh, wood), dropped: grown.dropped };
 }
 
 /** The dressed variant alone, for the stages that read no more. */
@@ -1422,6 +1427,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		season: mesh.season,
 		coarseness: mesh.coarseness ?? 0,
 		...(mesh.plan === undefined ? {} : { plan: mesh.plan }),
+		...(plant.dropped === 0 ? {} : { dropped: plant.dropped }),
 		skeleton,
 		shoots: mesh.rows,
 		levels,
