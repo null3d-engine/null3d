@@ -436,9 +436,15 @@ const sparseSpy = spyOn(sparseModule, 'sparsePlant');
 const ladderSpy = spyOn(budgetModule, 'levelWithin');
 
 describe('the planned oak contract', () => {
-	it('loads the planned record', async () => {
+	it('loads the planned record, with an address on every element', async () => {
 		const kit = await kitOf('planned');
 		expect(kit.record.growth.model).toBe('planned');
+		// The cases that compare one plant with another match elements by this address, so a model
+		// that leaves it out fails here rather than passing on an accidental index.
+		const asset = await plant(HOME, {});
+		expect(asset.skeleton.axes.origin !== undefined).toBe(true);
+		expect(asset.skeleton.buds.origin !== undefined).toBe(true);
+		expect(asset.shoots.id !== undefined).toBe(true);
 	});
 
 	it('M0: m 0 is empty and returns in under a millisecond', async () => {
