@@ -364,7 +364,7 @@ export const record: Species = {
 		moss: { amount: 0.35, up: 1.2, north: 0.3, colour: [0.18, 0.22, 0.06] },
 		// Still 16's limb carries pale sage rosettes on its crests, so the lichen reaches the great
 		// limbs as well as the bole, in the fine flecks the bark shows through.
-		lichen: { amount: 0.4, from: 0.6, colour: [0.4, 0.42, 0.3] },
+		lichen: { amount: 2.5, from: 0.6, colour: [0.26, 0.29, 0.2] },
 	},
 	base: {
 		// Stills 01, 02, 17 and 18 flare the foot to about 1.8 times the bole a quarter metre up, 1.5
