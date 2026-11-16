@@ -15,8 +15,8 @@ import type { MacroSkeleton, SocketSites } from '../core/graph';
  * leaves stand over its underside, so its foot reads dark and its top reads open to the sky. The two
  * average about one, so the card keeps the clump's own mean tone while it gains its depth.
  */
-export const CLUMP_UNDER_SHADE = 0.7;
-export const CLUMP_OVER_SHADE = 1.3;
+export const CLUMP_UNDER_SHADE = 0.8;
+export const CLUMP_OVER_SHADE = 1.2;
 
 /** One foliage mass of a plant, and the rows that stand in it. */
 export interface Clump {
