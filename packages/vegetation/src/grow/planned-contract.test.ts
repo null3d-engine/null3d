@@ -894,7 +894,9 @@ describe('the planned oak contract', () => {
 					expect(typeof made).toBe('number');
 					expect(typeof shed).toBe('number');
 					const delivered = asset.skeleton.axes.count + asset.skeleton.buds.count;
-					expect([seed, request, made]).toEqual([seed, request, delivered + (shed as number)]);
+					// Every element made is one delivered, one the growth shed, or one the dressing dropped.
+					const dropped = asset.dropped ?? 0;
+					expect([seed, request, made]).toEqual([seed, request, delivered + (shed as number) + dropped]);
 					const { grower } = await import('../grow/models');
 					const planned = grower('planned');
 					const plan = planned.plan?.(kit.record, {
