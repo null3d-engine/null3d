@@ -38,8 +38,8 @@ import {
 	cardMesh,
 	clusterCardMesh,
 	clusterTriangles,
-	plannedClumpCards,
 	type DrawnWood,
+	plannedClumpCards,
 	woodSurface,
 } from './cards';
 
@@ -786,13 +786,20 @@ function rowLevel(
 		if (clumps > 0) {
 			const planes = budget >= 6 * clumps ? 3 : 2;
 			const each = 2 * planes;
-			const share = Math.min(1, Math.max(0, (budget - each) / (each * clumps)));
-			if (share > 0) {
-				const made = plannedClumpCards(input.mesh, planes, share, 1);
-				if (made) {
+			// The count comes from what the budget pays, and the mesh itself is the check: a clump that
+			// stands clear of the wood takes a stalk, which costs more than a bare card, so the count
+			// drops by the overrun's price until the level's own triangles fit.
+			let count = Math.min(clumps, Math.max(0, Math.floor(budget / each)));
+			for (let pass = 0; pass < 8 && count > 0; pass++) {
+				const made = plannedClumpCards(input.mesh, planes, count / clumps, 1);
+				if (!made) break;
+				const cost = trianglesOf(made);
+				if (cost <= budget) {
 					cards = made;
-					leaves = trianglesOf(made);
+					leaves = cost;
+					break;
 				}
+				count = Math.max(0, count - Math.max(1, Math.ceil((cost - budget) / each)));
 			}
 		} else {
 			const planes = planesFor(budget);

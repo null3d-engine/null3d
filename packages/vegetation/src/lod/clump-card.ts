@@ -84,13 +84,15 @@ export function clumpsOf(plant: ClumpPlant): Clump[] | undefined {
 			sky += (rows.sky[r] as number) / (255 * list.length);
 		}
 		let squared = 0;
-		for (const r of list) squared += ((rows.position[r * 3 + 1] as number) - middle) ** 2 / list.length;
+		for (const r of list)
+			squared += ((rows.position[r * 3 + 1] as number) - middle) ** 2 / list.length;
 		clumps.push({ lobe, rows: list, middle, spread: Math.sqrt(squared), sky });
 	}
 	// The walk meets the clumps in the order of their lowest-ordered row, so a cut between two runs
 	// of `cardClusters` falls between two clumps.
 	clumps.sort(
-		(a, b) => (rows.order[a.rows[0] as number] as number) - (rows.order[b.rows[0] as number] as number),
+		(a, b) =>
+			(rows.order[a.rows[0] as number] as number) - (rows.order[b.rows[0] as number] as number),
 	);
 	return clumps;
 }
@@ -102,7 +104,10 @@ export const CLUMP_ROWS_LEAST = 8;
  * The foliage mass that each row's socket names, where the plant's sockets share them; undefined
  * where every socket names a mass of its own.
  */
-function socketLobes(rows: ShootRows, sockets: SocketSites | undefined): ((row: number) => number) | undefined {
+function socketLobes(
+	rows: ShootRows,
+	sockets: SocketSites | undefined,
+): ((row: number) => number) | undefined {
 	const at = rows.socket;
 	if (!sockets || !at) return undefined;
 	const used = new Set<number>();
@@ -122,10 +127,7 @@ function socketLobes(rows: ShootRows, sockets: SocketSites | undefined): ((row: 
  * row's own axis, climbed until it stands for a clump's worth of shoots. This is a stand-in for the
  * clump a plant without clumps does not state, so a picture drawn with it says so.
  */
-function branchGroups(
-	rows: ShootRows,
-	skeleton: MacroSkeleton,
-): Map<number, number[]> | undefined {
+function branchGroups(rows: ShootRows, skeleton: MacroSkeleton): Map<number, number[]> | undefined {
 	const { axisOf } = skeleton;
 	const at = rows.node;
 	if (!at) return undefined;
