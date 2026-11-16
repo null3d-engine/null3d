@@ -41,7 +41,6 @@ const SPREAD_TILT = 0.5698402909980532;
 /** The purpose of the draws that turn a socket's piece, which the frame model shares. */
 const TURN = 15;
 
-
 /** What the fill grows: the elements it made and the sockets it hung. */
 export interface FillCount {
 	/** The twig axes and their nodes, and the sockets: the elements the fill made. */
@@ -184,8 +183,15 @@ export function fillClumps(input: FillInput): FillCount {
 		goal.rank = ranks[k] as number;
 	});
 	// Under a maximum a clump's own socket goes before any second socket anywhere, so the plant draws
-	// one card a kept clump over the whole crown rather than a few clumps and bare wood. Without a
-	// maximum the crown thins by its own spread alone, which keeps every side of it at one share.
+	// one card a kept clump over the whole crown rather than a few clumps and bare wood. The anchors
+	// carry the crown's own spatial rank among themselves, never their order in the clump list, so a
+	// capped crown keeps the plant's share in every octant of it. Without a maximum the crown thins
+	// by its own spread alone.
+	const anchors = goals.filter((goal) => goal.anchor === true);
+	const anchorRanks = thinningRanks(anchors.map((goal) => goal.point));
+	anchors.forEach((goal, k) => {
+		goal.anchorRank = anchorRanks[k] as number;
+	});
 	const most = Math.max(0, Math.round(goals.length * Math.min(1, Math.max(0, leaves))));
 	const kept = goals
 		.map((goal, k) => ({ goal, k }))
@@ -193,6 +199,8 @@ export function fillClumps(input: FillInput): FillCount {
 			const aAnchor = input.anchored === true && a.goal.anchor === true;
 			const bAnchor = input.anchored === true && b.goal.anchor === true;
 			if (aAnchor !== bAnchor) return aAnchor ? -1 : 1;
+			if (aAnchor)
+				return (a.goal.anchorRank as number) - (b.goal.anchorRank as number) || a.k - b.k;
 			return a.goal.rank - b.goal.rank || a.k - b.k;
 		})
 		.slice(0, most)
@@ -240,16 +248,20 @@ function dippedY(
 ): number {
 	if (clump.at !== 'limb-end' || crown === undefined || crown.height <= 0) return point[1];
 	// One at the crown's base, falling to none halfway up it: only the lowest limbs' ends droop.
-	const lowness = 1 - Math.min(1, Math.max(0, (clump.centre[1] - crown.base) / (crown.height * 0.5)));
+	const lowness =
+		1 - Math.min(1, Math.max(0, (clump.centre[1] - crown.base) / (crown.height * 0.5)));
 	if (lowness <= 0) return point[1];
 	const out =
-		Math.hypot(point[0] - clump.root[0], point[2] - clump.root[2]) /
-		Math.max(1e-6, clump.radius);
+		Math.hypot(point[0] - clump.root[0], point[2] - clump.root[2]) / Math.max(1e-6, clump.radius);
 	const dip = DIP_SHARE * clump.radius * Math.min(1, out) * lowness;
 	return Math.max(crown.base, point[1] - dip);
 }
 
-/** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */function flowerAt(seed: number, place: number, flowers: number | undefined): boolean {
+/** Whether a socket also carries a flower site at this ramp: the same sockets at every larger ramp. */ function flowerAt(
+	seed: number,
+	place: number,
+	flowers: number | undefined,
+): boolean {
 	return flowers !== undefined && flowers > 0 && unitAt(seed, place, 2) < flowers;
 }
 
