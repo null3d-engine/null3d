@@ -142,6 +142,8 @@ const HEADER_SCAR_COLOUR: i32 = 70;
 const HEADER_CARD_LEVEL_MOST: i32 = 71;
 const HEADER_CROWN_DIM: i32 = 72;
 const HEADER_CARD_MIP_LIFT: i32 = 73;
+// How much of the crown's baked sky visibility darkens bark, 0 leaving the wood unshaded.
+const HEADER_WOOD_SHADE: i32 = 74;
 // A card's stalk line: its least width in pixels, and 1 where the line draws at its twig's width.
 const HEADER_CARD_STALK: i32 = 55;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
@@ -213,10 +215,6 @@ const LEAF_F90: f32 = 0.875;
 // How much a furrow's cavity darkens the bark's colour and raises its roughness.
 const CAVITY_DARK: f32 = 0.45;
 const CAVITY_ROUGH: f32 = 0.2;
-// How much of the crown's baked sky visibility darkens bark. A tree's own leaves shade its limbs,
-// but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
-// alone would give it.
-const WOOD_SHADE: f32 = 0.35;
 // The open-sky shares between which a clump's shade grades, from its dark core to its sunlit rim:
 // a row deep in the crown sees a small share of the sky and a rim row most of it, so the shade
 // runs across each clump rather than stepping at one figure.
@@ -1302,7 +1300,10 @@ fn surface(input: SurfaceInput) -> Surface {
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
-        occlusion = mix(1.0, input.vertexColor.a, WOOD_SHADE);
+        // The crown's baked sky visibility darkens the wood: a tree's own leaves shade its limbs,
+        // but light scatters through the crown, so the wood keeps more of the sky than a leaf's
+        // density alone would give it. The record sets how much.
+        occlusion = mix(1.0, input.vertexColor.a, header(HEADER_WOOD_SHADE).x);
         // The vertex stage widened a tube thinner than the least drawn width, so the colour picture
         // draws it over the share of its width that the tube truly covers.
         if (material.matte < 0.5) {
