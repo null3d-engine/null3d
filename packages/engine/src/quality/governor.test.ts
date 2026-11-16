@@ -491,73 +491,74 @@ describe('the bloom steps', () => {
 		expect(controller.stepChanges).toBe(before + 1);
 	});
 
-	it("halve ambient occlusion's scale after bloom's base, while it draws at half the render size", () => {
+	it("halve ambient occlusion's scale after bloom's base, then draw none", () => {
 		const { controller, untilStep } = controlled(950);
 		controller.setBloom(true, 128);
 		controller.setAo(true, 500);
 		expect(controller.aoScale).toBe(500);
 		const seen: string[] = [];
-		for (let k = 0; k < 3; k++) {
+		for (let k = 0; k < 4; k++) {
 			untilStep(SLOW);
 			seen.push(`${controller.scale} ${controller.bloomHalvings} ${controller.aoScale}`);
 		}
 		// The scale drops to its lowest, then bloom's base halves, then ambient occlusion draws at
-		// a quarter.
-		expect(seen).toEqual(['950 0 500', '950 1 500', '950 1 250']);
-		expect(controller.maxSteps).toBe(2);
-		// Turned off, it takes its step back at once.
+		// a quarter, then draws none.
+		expect(seen).toEqual(['950 0 500', '950 1 500', '950 1 250', '950 1 0']);
+		expect(controller.maxSteps).toBe(3);
+		// Turned off, its steps go at once.
 		controller.setAo(false, 500);
 		expect([controller.steps, controller.aoScale]).toEqual([1, 500]);
-		// A quarter has no step, and a scale of 0 draws nothing to step.
+		// The lowest drawing scale leaves the step to none, and a scale of 0 draws nothing to step.
 		controller.setAo(true, 250);
+		expect(controller.maxSteps).toBe(2);
 		controller.setAo(true, 0);
 		expect(controller.maxSteps).toBe(1);
 		expect(LOWEST_AO_SCALE).toBe(250);
 	});
 
-	it("halve screen-space reflections' scale after ambient occlusion's", () => {
+	it("halve screen-space reflections' scale after ambient occlusion's removal", () => {
 		const { controller, untilStep } = controlled(950);
 		controller.setAo(true, 500);
 		controller.setSsr(true, 500);
 		const seen: string[] = [];
-		for (let k = 0; k < 3; k++) {
+		for (let k = 0; k < 4; k++) {
 			untilStep(SLOW);
 			seen.push(`${controller.scale} ${controller.aoScale} ${controller.ssrScale}`);
 		}
-		// The scale drops to its lowest, then ambient occlusion draws at a quarter, then the
-		// reflections trace at a quarter.
-		expect(seen).toEqual(['950 500 500', '950 250 500', '950 250 250']);
-		expect(controller.maxSteps).toBe(2);
+		// The scale drops to its lowest, then ambient occlusion draws at a quarter and then draws
+		// none, then the reflections trace at a quarter.
+		expect(seen).toEqual(['950 500 500', '950 250 500', '950 0 500', '950 0 250']);
+		expect(controller.maxSteps).toBe(3);
 		// Turned off, they take their step back at once.
 		controller.setSsr(false, 500);
-		expect([controller.steps, controller.ssrScale]).toEqual([1, 500]);
+		expect([controller.steps, controller.ssrScale]).toEqual([2, 500]);
 		controller.setSsr(true, 250);
-		expect(controller.maxSteps).toBe(1);
+		expect(controller.maxSteps).toBe(2);
 		expect(LOWEST_SSR_SCALE).toBe(250);
 	});
 
-	it("halve the volumetric fog's slices after ambient occlusion's step, while it draws", () => {
+	it("halve the volumetric fog's slices after ambient occlusion's steps, while it draws", () => {
 		const { controller, untilStep } = controlled(950);
 		controller.setAo(true, 500);
 		controller.setFog(true, 64);
 		expect(controller.fogHalvings).toBe(0);
 		const seen: string[] = [];
-		for (let k = 0; k < 3; k++) {
+		for (let k = 0; k < 4; k++) {
 			untilStep(SLOW);
 			seen.push(`${controller.scale} ${controller.aoScale} ${controller.fogHalvings}`);
 		}
-		// The scale drops to its lowest, then ambient occlusion draws at a quarter, then the fog
-		// draws half its slices.
-		expect(seen).toEqual(['950 500 0', '950 250 0', '950 250 1']);
-		expect(controller.maxSteps).toBe(2);
+		// The scale drops to its lowest, then ambient occlusion draws at a quarter and then draws
+		// none, then the fog draws half its slices.
+		expect(seen).toEqual(['950 500 0', '950 250 0', '950 0 0', '950 0 1']);
+		expect(controller.maxSteps).toBe(3);
 		// Turned off, it takes its step back at once, and changes what draws.
 		const before = controller.stepChanges;
 		controller.setFog(false, 64);
-		expect([controller.steps, controller.fogHalvings]).toEqual([1, 0]);
+		expect([controller.steps, controller.fogHalvings]).toEqual([2, 0]);
 		expect(controller.stepChanges).toBe(before + 1);
 		// With no slices it draws nothing to step.
 		controller.setFog(true, 0);
-		expect(controller.maxSteps).toBe(1);
+		expect(controller.maxSteps).toBe(2);
 	});
 
 	it('give contact shadows their fewest steps last, while the sun casts shadows', () => {
@@ -565,18 +566,18 @@ describe('the bloom steps', () => {
 		controller.setAo(true, 500);
 		controller.setContact(16);
 		// Without a light that casts shadows, contact shadows have no step.
-		expect(controller.maxSteps).toBe(1);
+		expect(controller.maxSteps).toBe(2);
 		controller.setCasters(1, false);
 		expect(controller.contactSteps).toBe(16);
 		const seen: string[] = [];
-		for (let k = 0; k < 3; k++) {
+		for (let k = 0; k < 4; k++) {
 			untilStep(SLOW);
 			seen.push(`${controller.scale} ${controller.aoScale} ${controller.contactSteps}`);
 		}
-		// The scale drops to its lowest, then ambient occlusion draws at a quarter, then contact
-		// shadows take their fewest steps.
-		expect(seen).toEqual(['950 500 16', '950 250 16', '950 250 4']);
-		expect(controller.maxSteps).toBe(2);
+		// The scale drops to its lowest, then ambient occlusion draws at a quarter and then draws
+		// none, then contact shadows take their fewest steps.
+		expect(seen).toEqual(['950 500 16', '950 250 16', '950 0 16', '950 0 4']);
+		expect(controller.maxSteps).toBe(3);
 		// Ambient occlusion turned off takes its place, and contact shadows keep their step.
 		controller.setAo(false, 500);
 		expect([controller.steps, controller.aoScale, controller.contactSteps]).toEqual([1, 500, 4]);
@@ -622,6 +623,77 @@ describe('the bloom steps', () => {
 		expect(ladder(SLOW)).toEqual(['950 1 3']);
 		expect(controller.maxSteps).toBe(0);
 		expect(SMALLEST_BLOOM_SIZE).toBe(64);
+	});
+});
+
+describe("ambient occlusion's removal", () => {
+	it('draws none only after the render scale and bloom, and returns in the reverse order', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setBloom(true, 512);
+		controller.setAo(true, 500);
+		const down: string[] = [];
+		for (let k = 0; k < 4; k++) {
+			untilStep(SLOW);
+			down.push(`${controller.scale} ${controller.bloomHalvings} ${controller.aoScale}`);
+		}
+		// The render scale reaches its floor, bloom's base halves, the effect's target takes the
+		// lowest scale above none, and only then the effect draws none.
+		expect(down).toEqual(['950 0 500', '950 1 500', '950 1 250', '950 1 0']);
+		const up: string[] = [];
+		for (let k = 0; k < 4; k++) {
+			untilStep(EASY);
+			up.push(`${controller.scale} ${controller.bloomHalvings} ${controller.aoScale}`);
+		}
+		// The effect returns before bloom's base and the render scale, and its removal comes back
+		// last of its own steps.
+		expect(up).toEqual(['950 1 250', '950 1 500', '950 0 500', '1000 0 500']);
+	});
+
+	it('draws none from the lowest drawing scale too', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setAo(true, LOWEST_AO_SCALE);
+		expect(controller.maxSteps).toBe(1);
+		// The render scale reaches its floor first.
+		untilStep(SLOW);
+		expect(controller.aoScale).toBe(LOWEST_AO_SCALE);
+		untilStep(SLOW);
+		expect(controller.aoScale).toBe(0);
+	});
+
+	it('reaches the step by measurement on a device nobody has named', () => {
+		// The governor reads no device model, add-on or scene name: the frame budget alone decides.
+		// The same settings lose the effect on an unnamed device whose frames run long, and keep it
+		// on one that holds the budget.
+		const over = controlled(950);
+		over.controller.setBloom(true, 512);
+		over.controller.setAo(true, 500);
+		expect(over.controller.maxSteps).toBe(3);
+		for (let k = 0; k < 4; k++) over.untilStep(SLOW);
+		expect([over.controller.scale, over.controller.aoScale]).toEqual([950, 0]);
+
+		const holding = controlled(950);
+		holding.controller.setBloom(true, 512);
+		holding.controller.setAo(true, 500);
+		holding.run(EASY, 60_000);
+		expect([
+			holding.controller.scale,
+			holding.controller.steps,
+			holding.controller.aoScale,
+		]).toEqual([FULL_SCALE, 0, 500]);
+	});
+
+	it('waits twice as long before its return when that took the frames over the budget', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setAo(true, 500);
+		// The render scale reaches its floor, then the effect's target shrinks, then it draws none.
+		for (let k = 0; k < 3; k++) untilStep(SLOW);
+		expect(controller.aoScale).toBe(0);
+		const raised = untilStep(EASY);
+		expect(controller.aoScale).toBe(LOWEST_AO_SCALE);
+		const dropped = untilStep(SLOW);
+		expect(dropped - raised).toBeLessThanOrEqual(FAILED_RAISE_MS);
+		expect(controller.aoScale).toBe(0);
+		expect(untilStep(EASY) - dropped).toBe(raiseGap(2 * RAISE_AFTER_MS));
 	});
 });
 

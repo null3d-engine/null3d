@@ -1,11 +1,12 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: a step of a sketch's budgets and a step of the render scale in turn, a
 // budget's step first, then the threshold of the levels of detail, then how often far shadow
-// cascades draw, then the shadow filter, then bloom's base, then ambient occlusion's scale, then the
-// steps of the sun's contact shadows, then the update interval of far characters' poses, then the
-// volumetric fog's slices. Once the render scale is at its floor, the budgets' remaining steps come
-// before the threshold's. When the frames have time to spare again, it raises them in the reverse
-// order. It never changes a setting that is fixed while a preset runs.
+// cascades draw, then the shadow filter, then bloom's base, then ambient occlusion's scale and then
+// its removal, then the steps of the sun's contact shadows, then the update interval of far
+// characters' poses, then the volumetric fog's slices. Once the render scale is at its floor, the
+// budgets' remaining steps come before the threshold's. When the frames have time to spare again,
+// it raises them in the reverse order. It never changes a setting that is fixed while a preset
+// runs.
 //
 // A detail step happens only while the scene draws a mesh with levels of detail: each doubles the
 // threshold in pixels under which a coarser level draws, up to four times the setting's. A level's
@@ -22,7 +23,8 @@
 // canvas, and the final pass scales it up to the canvas, so a new scale makes no GPU object. The
 // shadow steps are numbers in a uniform and a schedule, bloom's base and ambient occlusion's
 // scale corners of the same targets, and the contact shadows' steps a number in a uniform, so they
-// make none either.
+// make none either. Ambient occlusion's removal adds or removes its passes, as a scale of 0 does
+// through `quality.set`, so the frame waits for their pipelines.
 //
 // The governor judges the frames in windows of a quarter second. It takes a step down when the
 // frames of the last second, on average, missed the line at which the benchmark reports count a
@@ -47,10 +49,13 @@
 // touch them: where they keep their turns instead, a longer interval would leave moving shadows
 // further behind their casters. A bloom step happens only while the sketch has bloom on, above the
 // smallest base: it halves the base, and the chain drops its narrowest level, so the glow keeps its
-// size. The ambient occlusion step happens only while it draws at half the render size: it draws at
-// a quarter. The contact shadows' step happens only while the main directional light casts shadows
-// and their march takes more than the fewest steps: it takes the fewest. The volumetric fog's step
-// happens only while it draws: each frame draws half its grid's slices, into the same textures.
+// size. Ambient occlusion's steps happen only while it draws, and only after the render scale, the
+// budgets, the detail and shadow steps and bloom's base: its target's scale falls to the lowest
+// above none, then it draws none, so a device that still misses its budget gives up the effect's
+// whole share last. The contact shadows' step happens only while the main directional light casts
+// shadows and their march takes more than the fewest steps: it takes the fewest. The volumetric
+// fog's step happens only while it draws: each frame draws half its grid's slices, into the same
+// textures.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it. Unoptimized code makes a number object for
@@ -119,14 +124,14 @@ export function animationSteps(interval: number): number {
 }
 
 /**
- * The kinds of step that take one step each, which `maxSteps` counts with them: the shadow filter
- * takes the lightest filter, bloom's base halves, ambient occlusion takes its lowest scale, the
- * contact shadows' march takes the fewest steps, and the volumetric fog draws half its slices. Each
- * kind has a name of its own, so a merge cannot fold two counts into one.
+ * The kinds of step, which `maxSteps` counts: the shadow filter takes the lightest filter, bloom's
+ * base halves, ambient occlusion takes its lowest scale and then draws none, the contact shadows'
+ * march takes the fewest steps, and the volumetric fog draws half its slices. Each kind has a name
+ * of its own, so a merge cannot fold two counts into one.
  */
 const FILTER_STEPS = 1;
 const BLOOM_STEPS = 1;
-const OCCLUSION_STEPS = 1;
+const OCCLUSION_STEPS = 2;
 const CONTACT_STEPS = 1;
 const FOG_STEPS = 1;
 
@@ -282,8 +287,8 @@ export class Governor {
 	/** The halvings of bloom's base during play: 0 with the setting as set, or 1 after its step. */
 	bloomHalvings = 0;
 	/**
-	 * The scale of ambient occlusion's targets in thousandths of the render size: the setting's, or
-	 * the lowest above none after a step.
+	 * The scale of ambient occlusion's targets in thousandths of the render size: the setting's, the
+	 * lowest above none after the first step, or none after the last.
 	 */
 	aoScale = 0;
 	/** The steps of each march of contact shadows: the setting's, or the fewest after a step. */
@@ -414,8 +419,9 @@ export class Governor {
 	}
 
 	/**
-	 * Sets the scale of ambient occlusion's targets that its step starts from, in thousandths, and
-	 * whether the sketch has it on, which the step needs.
+	 * Sets the scale of ambient occlusion's targets that its steps start from, in thousandths, and
+	 * whether the sketch has it on, which the steps need. A setting above the lowest scale above
+	 * none gives both steps: to that scale, then to none. The lowest gives the step to none alone.
 	 */
 	setAo(on: boolean, scale: number): void {
 		if (on === this.ao && scale === this.aoSetting) return;
@@ -510,8 +516,8 @@ export class Governor {
 
 	/**
 	 * The steps past the render scale that the scene's levels of detail, shadows, bloom, ambient
-	 * occlusion, screen-space reflections, contact shadows, the far characters' update interval,
-	 * the volumetric fog's slices and the settings allow.
+	 * occlusion's scale and removal, screen-space reflections, contact shadows, the far characters'
+	 * update interval, the volumetric fog's slices and the settings allow.
 	 */
 	get maxSteps(): number {
 		return (
@@ -691,8 +697,8 @@ export class Governor {
 	/**
 	 * One step down: the budgets and the render scale in turn, a budget's step first, while the
 	 * scale is above the lowest; then the budgets' remaining steps, then the detail, shadow, bloom,
-	 * ambient occlusion, contact shadow and far-character interval steps. When it
-	 * leaves a level whose step up is still on trial, the next step up into that level waits twice
+	 * ambient occlusion's scale and removal, contact shadow and far-character interval steps. When
+	 * it leaves a level whose step up is still on trial, the next step up into that level waits twice
 	 * as long as that one did. Otherwise the level held, and the frames got heavier, so its wait
 	 * starts again from its shortest. A level that a failed step down closed takes no step until its
 	 * wait has passed. The step goes on trial (`lowerFailed`).
@@ -766,9 +772,10 @@ export class Governor {
 	}
 
 	/**
-	 * One step up, in the reverse order of the steps down: the ambient occlusion, bloom, shadow and
-	 * detail steps back first, then the budgets' steps past the scale's, then the render scale and
-	 * the budgets in turn, so the budgets' last step comes back last.
+	 * One step up, in the reverse order of the steps down: the ambient occlusion's removal and then
+	 * its scale, bloom, shadow and detail steps back first, then the budgets' steps past the
+	 * scale's, then the render scale and the budgets in turn, so the budgets' last step comes back
+	 * last.
 	 */
 	private raise(now: number): void {
 		const moved = this.stepUp();
@@ -843,9 +850,13 @@ export class Governor {
 		return this.bloom && this.bloomSetting > SMALLEST_BLOOM_SIZE ? 1 : 0;
 	}
 
-	/** Ambient occlusion's step while it draws above the lowest scale: to the lowest. */
+	/**
+	 * Ambient occlusion's steps while it draws: to the lowest scale above none, then to none. It
+	 * draws at the lowest already, so only the step to none remains.
+	 */
 	private aoSteps(): number {
-		return this.ao && this.aoSetting > LOWEST_AO_SCALE ? 1 : 0;
+		if (!this.ao || this.aoSetting <= 0) return 0;
+		return this.aoSetting > LOWEST_AO_SCALE ? OCCLUSION_STEPS : 1;
 	}
 
 	/** Screen-space reflections' step while they draw above the lowest scale: to the lowest. */
@@ -879,10 +890,10 @@ export class Governor {
 	 * Brings the steps within what the settings and the scene allow, and works out the settings
 	 * that frames draw with: the threshold of the levels of detail doubles with each of its steps,
 	 * then the far cascades' interval doubles with each of its steps, the filter takes the lightest
-	 * after them, then bloom's base halves, then ambient occlusion takes its lowest scale, then
-	 * screen-space reflections take theirs, then contact shadows take their fewest steps, then the
-	 * far characters' update interval doubles with each of its steps, and last the volumetric fog
-	 * draws half its slices.
+	 * after them, then bloom's base halves, then ambient occlusion takes its lowest scale and then
+	 * draws none, then screen-space reflections take theirs, then contact shadows take their fewest
+	 * steps, then the far characters' update interval doubles with each of its steps, and last the
+	 * volumetric fog draws half its slices.
 	 */
 	private applySteps(): void {
 		const detailSteps = this.detailSteps();
@@ -904,8 +915,14 @@ export class Governor {
 		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting << doublings);
 		const filter = shadowStepsTaken > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
-		const aoScale =
-			aoSteps > 0 && this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
+		// Ambient occlusion's steps run in order: the first takes its target to the lowest scale
+		// above none, and the last draws none.
+		const aoTaken = Math.min(aoSteps, Math.max(0, this.steps - shadowSteps - bloomSteps));
+		let aoScale = this.aoSetting;
+		if (aoSteps > 0) {
+			if (aoTaken >= aoSteps) aoScale = 0;
+			else if (aoTaken > 0) aoScale = LOWEST_AO_SCALE;
+		}
 		const ssrScale =
 			ssrSteps > 0 && this.steps > shadowSteps + bloomSteps + aoSteps
 				? LOWEST_SSR_SCALE

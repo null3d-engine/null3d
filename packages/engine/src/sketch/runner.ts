@@ -1281,8 +1281,9 @@ export class SketchRunner {
 	}
 
 	/**
-	 * Follows the sketch's ambient occlusion: the governor's step needs it on. Returns true when it
-	 * starts or stops drawing: the frame adds or removes the depth prepass and the steps.
+	 * Follows the sketch's ambient occlusion: the governor's steps need it on. Returns true when it
+	 * starts or stops drawing, either from the setting or from the governor's removal step: the
+	 * frame adds or removes the depth prepass and the steps.
 	 */
 	private followAo(): boolean {
 		const on = this.post.aoOn;
@@ -1290,7 +1291,7 @@ export class SketchRunner {
 			this.aoOn = on;
 			this.governor.setAo(on, this.aoSetting);
 		}
-		const drawn = on && this.aoSetting > 0;
+		const drawn = on && this.governor.aoScale > 0;
 		if (drawn === this.aoDrawn) return false;
 		this.aoDrawn = drawn;
 		return true;
