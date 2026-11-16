@@ -191,7 +191,11 @@ function barkTone(kit: SpeciesKitData): (height: number) => Rgb {
 			sum[2] = (sum[2] as number) + (tone[2] as number) * weight;
 		});
 		if (total <= 1e-6) return height < first.from ? firstTone : lastTone;
-		return [(sum[0] as number) / total, (sum[1] as number) / total, (sum[2] as number) / total] as Rgb;
+		return [
+			(sum[0] as number) / total,
+			(sum[1] as number) / total,
+			(sum[2] as number) / total,
+		] as Rgb;
 	};
 }
 
@@ -239,7 +243,10 @@ function farGrid(
 	if (!(budget > 0) || !(own > 0)) return { texels, supersample: SUPERSAMPLE };
 	const detail = Math.sqrt(Math.min(1, own / budget));
 	// A cell stays a power of two, as the atlas's mip levels expect.
-	const cells = Math.max(FAR_TEXELS_LEAST, 2 ** Math.floor(Math.log2(Math.max(1, texels * detail))));
+	const cells = Math.max(
+		FAR_TEXELS_LEAST,
+		2 ** Math.floor(Math.log2(Math.max(1, texels * detail))),
+	);
 	return {
 		texels: Math.min(texels, cells),
 		supersample: Math.max(FAR_SUPERSAMPLE_LEAST, Math.round(SUPERSAMPLE * detail)),
@@ -392,7 +399,11 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 		min: [min[0] as number, min[1] as number, min[2] as number],
 		max: [max[0] as number, max[1] as number, max[2] as number],
 	});
-	const far = filtered({ color: bake.color.data, surface: bake.surface.data }, views * texels, supersample);
+	const far = filtered(
+		{ color: bake.color.data, surface: bake.surface.data },
+		views * texels,
+		supersample,
+	);
 	return {
 		views,
 		texels,

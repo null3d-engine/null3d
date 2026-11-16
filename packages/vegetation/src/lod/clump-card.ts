@@ -11,10 +11,12 @@ import type { ShootRows } from '../asset';
 import type { MacroSkeleton, SocketSites } from '../core/graph';
 
 /**
- * The share of its sky-lit tone that a clump's lowest leaves keep: the clump's own leaves stand
- * over its underside, so its foot reads dark and its top reads open to the sky.
+ * The shares of its own open sky that a clump card wears at its foot and at its top: the clump's own
+ * leaves stand over its underside, so its foot reads dark and its top reads open to the sky. The two
+ * average about one, so the card keeps the clump's own mean tone while it gains its depth.
  */
-export const CLUMP_UNDER_SHADE = 0.5;
+export const CLUMP_UNDER_SHADE = 0.8;
+export const CLUMP_OVER_SHADE = 1.2;
 
 /** One foliage mass of a plant, and the rows that stand in it. */
 export interface Clump {
@@ -82,13 +84,15 @@ export function clumpsOf(plant: ClumpPlant): Clump[] | undefined {
 			sky += (rows.sky[r] as number) / (255 * list.length);
 		}
 		let squared = 0;
-		for (const r of list) squared += ((rows.position[r * 3 + 1] as number) - middle) ** 2 / list.length;
+		for (const r of list)
+			squared += ((rows.position[r * 3 + 1] as number) - middle) ** 2 / list.length;
 		clumps.push({ lobe, rows: list, middle, spread: Math.sqrt(squared), sky });
 	}
 	// The walk meets the clumps in the order of their lowest-ordered row, so a cut between two runs
 	// of `cardClusters` falls between two clumps.
 	clumps.sort(
-		(a, b) => (rows.order[a.rows[0] as number] as number) - (rows.order[b.rows[0] as number] as number),
+		(a, b) =>
+			(rows.order[a.rows[0] as number] as number) - (rows.order[b.rows[0] as number] as number),
 	);
 	return clumps;
 }
@@ -100,7 +104,10 @@ export const CLUMP_ROWS_LEAST = 8;
  * The foliage mass that each row's socket names, where the plant's sockets share them; undefined
  * where every socket names a mass of its own.
  */
-function socketLobes(rows: ShootRows, sockets: SocketSites | undefined): ((row: number) => number) | undefined {
+function socketLobes(
+	rows: ShootRows,
+	sockets: SocketSites | undefined,
+): ((row: number) => number) | undefined {
 	const at = rows.socket;
 	if (!sockets || !at) return undefined;
 	const used = new Set<number>();
@@ -120,10 +127,7 @@ function socketLobes(rows: ShootRows, sockets: SocketSites | undefined): ((row: 
  * row's own axis, climbed until it stands for a clump's worth of shoots. This is a stand-in for the
  * clump a plant without clumps does not state, so a picture drawn with it says so.
  */
-function branchGroups(
-	rows: ShootRows,
-	skeleton: MacroSkeleton,
-): Map<number, number[]> | undefined {
+function branchGroups(rows: ShootRows, skeleton: MacroSkeleton): Map<number, number[]> | undefined {
 	const { axisOf } = skeleton;
 	const at = rows.node;
 	if (!at) return undefined;
@@ -195,6 +199,7 @@ function rise(t: number): number {
  */
 export function clumpSky(clump: Clump, height: number): number {
 	const t = clump.spread > 1e-6 ? (height - clump.middle) / clump.spread : 1;
-	const keep = CLUMP_UNDER_SHADE + (1 - CLUMP_UNDER_SHADE) * rise(t);
+	const up = rise(t);
+	const keep = CLUMP_UNDER_SHADE + (CLUMP_OVER_SHADE - CLUMP_UNDER_SHADE) * up;
 	return Math.max(0, Math.min(1, clump.sky * keep));
 }
