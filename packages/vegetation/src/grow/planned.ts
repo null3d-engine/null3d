@@ -26,8 +26,15 @@ import { planFrame } from './frame';
 import type { Grower } from './models';
 import { type FillClump, type FillInput, fillClumps } from './planned-fill';
 
-/** The least share of a triangle maximum the wood keeps, so the bones are always paid for. */
-const CROWN_LEAST = 0.1;
+/**
+ * The share of a triangle maximum that the crown is paid before the wood takes its share: a clump
+ * card is six triangles, so a crown costs six for each clump it shows. Below about a quarter the
+ * crown reads as tufts rather than a crown.
+ */
+const CROWN_SHARE = 0.6;
+
+/** The least share of a maximum the crown may be left, under which its crown reads as tufts. */
+const CROWN_LEAST = 0.25;
 
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
@@ -242,7 +249,7 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const clumps = Math.max(1, Math.round(bounds.clumps));
 	const cardCost = max === undefined ? 0 : growth.prices.clumpCard;
 	const crownNeed = cardCost > 0 ? clumps * cardCost : 0;
-	const crownTake = max === undefined ? 0 : Math.min(crownNeed, max * (1 - CROWN_LEAST));
+	const crownTake = max === undefined ? 0 : Math.max(max * CROWN_LEAST, Math.min(crownNeed, max * CROWN_SHARE));
 	const cards = cardCost > 0 ? Math.min(clumps, Math.floor(crownTake / cardCost)) : 0;
 	const socketsBound = Math.max(1, expected[4] as number);
 	const woodRoom = max === undefined ? 0 : Math.max(0, max - cards * cardCost);
@@ -250,7 +257,8 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const woodKept =
 		max === undefined ? 1 : woodTotal > 0 ? Math.max(0, Math.min(1, woodRoom / woodTotal)) : 1;
 	// The fill keeps the plan's share of the crown: one anchor socket a carded clump, its lowest
-	// ranks first, so a card a clump is what stands when the crown is paid for.
+	// ranks first, so a card a clump is what stands when the crown is paid for. Below the least
+	// share the crown is never left, since under it the clumps read as tufts.
 	const crownKept = max === undefined ? 1 : Math.min(1, cards / socketsBound);
 	const cut = (order: number): number => {
 		if (max === undefined) return 1;
