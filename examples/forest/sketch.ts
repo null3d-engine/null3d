@@ -68,11 +68,23 @@ export default defineSketch(async (ctx) => {
 
 	const rows = plantRows(TREES, RADIUS);
 	const forest = plantForest(ctx, { bark, card, rows });
-	quality.onChange(forest.fit);
-	const addon = await plantAddon(ctx, {
-		rows,
-		wind: wind.field,
-		maxTriangles: TREE_TRIANGLES[quality.preset],
+	// The near trees are grown to the preset's ceiling, so a preset change grows them again: the old
+	// placement comes down before the new one stands, and a frame between the two draws none.
+	let addon: Awaited<ReturnType<typeof plantAddon>> | undefined;
+	const regrow = async (): Promise<void> => {
+		const previous = addon;
+		addon = undefined;
+		previous?.destroy();
+		addon = await plantAddon(ctx, {
+			rows,
+			wind: wind.field,
+			maxTriangles: TREE_TRIANGLES[quality.preset],
+		});
+	};
+	await regrow();
+	quality.onChange(() => {
+		forest.fit();
+		void regrow().catch((error: unknown) => console.error(error));
 	});
 	// L draws every plant's nearest level, and the preset's threshold again on the next press.
 	let threshold = quality.settings.lodThreshold;
@@ -81,7 +93,7 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			// The field's box follows the camera, so it steps before the trees read it.
 			wind.update();
-			addon.setWindLayer(wind.field);
+			addon?.setWindLayer(wind.field);
 			sway.update();
 
 			if (input.wasPressed('KeyL')) {
