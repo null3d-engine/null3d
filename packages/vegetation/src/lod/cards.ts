@@ -1846,6 +1846,9 @@ export function plannedClumpCards(
 		}
 		return best;
 	};
+	// A kept clump's card grows over the clumps it stands for, so a small share still covers the
+	// crown: the root of the count it replaces, as a card level grows a kept card.
+	const cover = Math.sqrt(clumps.length / Math.max(1, kept.length));
 	const clusters: CardCluster[] = kept.map((clump) => {
 		const row = nearest(clump.centre);
 		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
@@ -1861,7 +1864,7 @@ export function plannedClumpCards(
 			row,
 			rows: 0,
 			centre: [clump.centre[0], clump.centre[1], clump.centre[2]] as Vector3,
-			grow: half > 1e-9 ? Math.max(1, clump.radius / half) : 1,
+			grow: half > 1e-9 ? Math.max(1, (clump.radius / half) * cover) : cover,
 			reach: clump.radius,
 			stalk: false,
 		};
