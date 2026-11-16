@@ -1,14 +1,14 @@
 // The planned grower: a plant that builds only the state its request asks for, from the numbers the
 // plan worked out first.
 //
-// The adult is today's oak: the frame's stated trunk, nine great limbs, their boughs and branches
-// and the clumps they end in, planned with the frame's fine fill switched off. It never changes with
-// age, sparseness or the maximum, so it is planned once for a seed and kept. Growth reveals it:
-// a trunk node appears at the age its height is reached, a limb at its fork age showing the first
-// part of its adult path, and a bough or clump when its parent reaches it. Sparseness thins the
-// orders under the great limbs by a keyed rank, so a sparser plant is a subset of a denser one. The
-// fill clothes each clump with keyed sockets through its depth (planned-fill.ts). Nothing is grown
-// and then cut.
+// The adult is today's oak: the frame's trunk, nine great limbs, their boughs and branches and the
+// clumps they end in. It is planned once for a seed and kept, in two passes: the frame's own plan,
+// whose stated axes and the order-two twigs of its limb clumps are the bones, and the same plan with
+// the fine fill switched off, whose patches are the clumps. Growth reveals the adult at an age: a
+// limb shows the first part of its fixed path, and a clump appears as its carrying axis reaches it.
+// Sparseness keeps a spread rank of each thinned order, so a sparser plant is a subset of a denser
+// one. The fill clothes each clump through its depth (planned-fill.ts), and its sockets and twigs
+// stand at fixed places, so an element is the same in every request. Nothing is grown and then cut.
 import {
 	AXIS_LIMB,
 	AXIS_STEM,
@@ -16,20 +16,21 @@ import {
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../core/graph';
-import { hashAt, unitAt } from '../core/hash';
+import { hashAt } from '../core/hash';
 import type { FrameAxis, FrameNode, FramePlan } from './frame';
 import { planFrame } from './frame';
+import { thinningRanks } from '../core/rank';
 import type { Grower } from './models';
 import { type FillClump, fillClumps } from './planned-fill';
 import type { Planned, Species } from '../core/record';
 import type { DetailPlan, GrowInput, GrowRequest } from '../stages';
 import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
 
-/** The purpose of the draw that decides whether sparseness keeps an element. */
-const SPARSE = 21;
-
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
+
+/** The share of its growth a clump has reached before any of its pieces show. */
+const CLUMP_FROM = 0.85;
 
 /** Adult plans kept a thread, by species, seed and variant. */
 const ADULTS = new Map<string, Adult>();
@@ -37,11 +38,13 @@ const ADULTS = new Map<string, Adult>();
 /** The most adult plans a thread keeps: a page shows a few seeds and variants at once. */
 const ADULT_KEPT = 6;
 
-/** An adult plan: the frame's stated axes and clumps, with the height they reach. */
+/** An adult plan: the frame's axes, the clumps, and the height they reach. */
 interface Adult {
-	/** The frame without its fine fill: every stated axis and each axis's clump. */
-	readonly plan: FramePlan;
-	/** The height of the adult's stated wood, in metres. */
+	/** The frame's own plan: its stated axes, the order-two twigs of its limb clumps and its patches. */
+	readonly bones: FramePlan;
+	/** The frame without its fine fill, whose patches are the clumps the crown is made of. */
+	readonly clumps: FramePlan;
+	/** The height of the adult's bones, in metres. */
 	readonly height: number;
 }
 
@@ -52,14 +55,21 @@ interface FrameBounds {
 }
 
 /** The most elements one stated rule makes on each parent. */
-function countMost(count: number | { readonly every: number; readonly least: number; readonly most: number } | { readonly total: number }): number {
+function countMost(
+	count:
+		| number
+		| { readonly every: number; readonly least: number; readonly most: number }
+		| { readonly total: number },
+): number {
 	if (typeof count === 'number') return Math.max(0, Math.round(count));
 	if ('total' in count) return Math.max(0, Math.round(count.total));
 	return Math.max(0, Math.round(count.most));
 }
 
 /** The most elements that leave one axis of a rule, all its child rules together. */
-function childrenMost(rule: { readonly children?: readonly { readonly count: Parameters<typeof countMost>[0] }[] }): number {
+function childrenMost(rule: {
+	readonly children?: readonly { readonly count: Parameters<typeof countMost>[0] }[];
+}): number {
 	let sum = 0;
 	for (const child of rule.children ?? []) sum += countMost(child.count);
 	return sum;
@@ -69,8 +79,8 @@ function childrenMost(rule: { readonly children?: readonly { readonly count: Par
 function boundsOf(record: Species, growth: Planned): FrameBounds {
 	const height = curveAt(growth.height, 1);
 	const spec = growth.frame;
-	if (growth.adult !== 'frame' || spec === undefined)
-		return { expected: [0, 0, 0, 0, 0] };
+	void record;
+	if (growth.adult !== 'frame' || spec === undefined) return { expected: [0, 0, 0, 0, 0] };
 	// The stated levels: the stems, then the axes that leave them.
 	const stems = spec.stems;
 	const first = Math.max(1, Math.round(stems.count));
@@ -103,11 +113,6 @@ function boundsOf(record: Species, growth: Planned): FrameBounds {
 	};
 }
 
-/** A share of an age, kept inside 0 and 1. */
-function share(age: number, birth: number, fullAge: number): number {
-	return Math.max(0, Math.min(1, (age - birth) / Math.max(1e-9, fullAge - birth)));
-}
-
 /** The adult plan of a seed and variant, planned once and kept. */
 function adultFor(record: Species, growth: Planned, seed: number, variant: number): Adult | undefined {
 	if (growth.adult !== 'frame' || growth.frame === undefined) return undefined;
@@ -118,14 +123,13 @@ function adultFor(record: Species, growth: Planned, seed: number, variant: numbe
 		ADULTS.set(key, kept);
 		return kept;
 	}
-	const plan = planFrame(
-		growth.frame,
-		{ record, seed: seed >>> 0, variant, season: record.seasons.default },
-		false,
-	);
+	const input = { record, seed: seed >>> 0, variant, season: record.seasons.default };
+	const bones = planFrame(growth.frame, input);
+	const clumps = planFrame(growth.frame, input, false);
 	let height = 0;
-	for (const axis of plan.axes) for (const node of axis.nodes) height = Math.max(height, node.y);
-	const adult: Adult = { plan, height: Math.max(1e-6, height) };
+	for (const axis of bones.axes)
+		if (!axis.fine || axis.order <= 2) for (const node of axis.nodes) height = Math.max(height, node.y);
+	const adult: Adult = { bones, clumps, height: Math.max(1e-6, height) };
 	ADULTS.set(key, adult);
 	if (ADULTS.size > ADULT_KEPT) ADULTS.delete(ADULTS.keys().next().value as string);
 	return adult;
@@ -150,20 +154,16 @@ function ageAtHeight(height: Curve, fullAge: number, reach: number, y: number): 
 	return high * fullAge;
 }
 
-/** One revealed axis, as it stands at the asked age. */
-interface Placed {
-	/** The age it appeared at. */
+/** Where one axis of the adult stands at the asked age, before sparseness or a maximum is read. */
+interface Reveal {
+	/** The age it appears at. */
 	readonly birth: number;
-	/** The share of its adult length it has grown, 0 to 1. */
-	readonly growth: number;
 	/** The age at which it reaches its adult length. */
 	readonly span: number;
-	/** Its SkeletonBuilder axis, or -1 where the plan left it out. */
-	readonly axis: number;
-	/** The SkeletonBuilder node of each of its adult nodes that stands in the skeleton. */
-	readonly nodes: number[];
-	/** The nodes' places in plant space. */
-	readonly places: readonly Vec3[];
+	/** The share of its adult length it has grown, 0 to 1. */
+	readonly growth: number;
+	/** Whether the plant has reached it at all. */
+	readonly present: boolean;
 }
 
 /**
@@ -179,8 +179,8 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const bounds = boundsOf(record, growth);
 	const expected = bounds.expected;
 	const thin = growth.thin;
-	// The elements kept at this sparseness: the stated and fill orders thin by their keyed rank, and
-	// the trunk and the great limbs never thin.
+	// The elements kept at this sparseness: the stated and fill orders thin by their rank, and the
+	// trunk and the great limbs never thin.
 	const kept = expected.map((count, order) => count * (1 - sparse * (thin[order] ?? 0)));
 	// A maximum shares the count: the bones keep their own share, and the finer orders are cut.
 	const sides = max === undefined ? 10 : max >= 20_000 ? 8 : max >= 5_000 ? 6 : 3;
@@ -246,146 +246,161 @@ function ramp(maturity: number, from: number, band: number): number {
 
 /**
  * Grows the plant at the asked state: the adult plan revealed to the age, thinned by sparseness,
- * and clothed by the keyed fill.
+ * and clothed by the fill.
  */
 export function growPlanned(input: GrowInput): MacroSkeleton {
 	const growth = input.record.growth as Planned;
 	const request = input.request ?? { maturity: 1, sparse: 0 };
 	// The generator hands the plan as a stage input; a probe that grows without it plans here.
-	const planDetail = input.plan ?? planTree(input.record, request);
-	const age = planDetail.age;
+	const detail = input.plan ?? planTree(input.record, request);
+	const age = detail.age;
 	if (!(age > 0)) return emptyPlant();
 	const adult = adultFor(input.record, growth, input.seed, input.variant);
 	if (!adult) return emptyPlant();
-	const { plan, height: adultHeight } = adult;
+	const { bones, clumps: patches, height: adultHeight } = adult;
 	const fullAge = growth.fullAge;
+	const seed = input.seed >>> 0;
 	const sparse = request.sparse;
 	const thin = growth.thin;
-	const seed = input.seed >>> 0;
 	// The height at this age as a share of the adult's, and the wood's slimming with it.
 	const reachShare =
 		curveAt(growth.height, age / fullAge) / Math.max(1e-9, curveAt(growth.height, 1));
 	const height = adultHeight * Math.min(1, reachShare);
 	const slim = Math.pow(Math.min(1, height / adultHeight), SLIM);
-	// The age the plant reaches its adult height: the end of every axis's growth in length.
-	const maturityAge = ageAtHeight(growth.height, fullAge, adultHeight, adultHeight);
+	const matureAge = ageAtHeight(growth.height, fullAge, adultHeight, adultHeight);
 	// A maximum coarsens each axis's own nodes: every second or fourth node stands.
 	const most = request.maxTriangles;
 	const woodStep = most === undefined ? 1 : most >= 20_000 ? 1 : most >= 5_000 ? 2 : 4;
 
-	const builder = new SkeletonBuilder();
-	const placed: Placed[] = [];
-	const addresses: number[] = [];
-	/** Each stated axis's place in the plant as grown, in the order the axes were made. */
-	const axisOrigins: number[] = [];
-	let axesMade = 0;
-
-	// Each stated axis in plan order, parents before children: the trunk first, then the limbs it
-	// carries, then their boughs and branches.
-	for (let index = 0; index < plan.axes.length; index++) {
-		const axis = plan.axes[index] as FrameAxis;
-		const parentPlaced = axis.parent < 0 ? undefined : (placed[axis.parent] as Placed);
-		if (axis.parent >= 0 && (parentPlaced === undefined || parentPlaced.axis < 0)) {
-			placed.push(absent());
-			continue;
-		}
-		// The element's address, a hash of the seed, its parent's address, its slot and its kind.
-		const parentAddress = axis.parent < 0 ? 0 : (addresses[axis.parent] as number);
-		const address = hashAt(seed, parentAddress, axis.index, axis.order);
-		addresses.push(address);
-		// Sparseness keeps a keyed share of each thinned order, and never touches the trunk or the
-		// nine great limbs.
-		const thinning = axis.order >= 2 ? (thin[axis.order] ?? 0) : 0;
-		if (thinning > 0 && unitAt(seed, address, SPARSE) < sparse * thinning) {
-			placed.push(absent());
-			continue;
-		}
-		// The age it appears at and the age it reaches its adult length. A trunk node stands when the
-		// height curve reaches it, so the trunk is grown to its top early in life; a limb is born at
-		// its fork age, and a bough or a branch when its parent reaches the seat it leaves from. Every
-		// axis under the trunk reaches its adult length as the plant reaches its adult height.
+	// Where every adult axis stands at this age, before sparseness or a maximum is read.
+	const reveal: Reveal[] = bones.axes.map((axis) => {
 		const top = (axis.nodes[axis.nodes.length - 1] as FrameNode).y;
-		let birth: number;
-		let span: number;
-		let growthShare: number;
-		if (axis.parent < 0) {
-			birth = 0;
-			span = ageAtHeight(growth.height, fullAge, adultHeight, top);
-			growthShare = 1;
-		} else {
-			// A limb is born at its fork age and a bough or branch when its parent's tip reaches the
-			// seat it leaves from: the age the height curve reaches that seat's height.
-			const seatNode = (plan.axes[axis.parent] as FrameAxis).nodes[axis.parentNode] as FrameNode;
-			birth = ageAtHeight(growth.height, fullAge, adultHeight, seatNode.y);
-			span = Math.max(birth + 1e-9, maturityAge);
-			// The part of its adult path it shows: the share of the height it has still to gain from
-			// its seat to the adult's top.
-			const from = Math.max(0, Math.min(adultHeight, seatNode.y));
-			growthShare =
-				adultHeight - from > 1e-9 ? Math.max(0, Math.min(1, (height - from) / (adultHeight - from))) : 1;
-		}
-		if (growthShare <= 0) {
-			placed.push(absent());
-			continue;
-		}
-		// The nodes that stand: the trunk is cut where the plant's height reaches, and every other
-		// axis shows the first part of its fixed adult path. A triangle maximum takes every second or
-		// fourth node of an axis, so the wood it draws costs a share of the whole.
-		const kept: FrameNode[] = [];
-		const places: Vec3[] = [];
+		if (axis.parent < 0)
+			return { birth: 0, span: ageAtHeight(growth.height, fullAge, adultHeight, top), growth: 1, present: true };
+		const seat = (bones.axes[axis.parent] as FrameAxis).nodes[axis.parentNode] as FrameNode;
+		const birth = ageAtHeight(growth.height, fullAge, adultHeight, seat.y);
+		const from = Math.max(0, Math.min(adultHeight, seat.y));
+		const grown =
+			adultHeight - from > 1e-9 ? Math.max(0, Math.min(1, (height - from) / (adultHeight - from))) : 1;
+		return {
+			birth,
+			span: Math.max(birth + 1e-9, matureAge),
+			growth: grown,
+			present: grown > 0,
+		};
+	});
+
+	// Sparseness keeps a spread rank of each thinned order, so the counts fall at every step and the
+	// kept elements are a subset of a denser plant's.
+	const keptAxis = new Set<number>();
+	bones.axes.forEach((axis, index) => {
+		if (axis.fine && axis.order > 2) return;
+		keptAxis.add(index);
+	});
+	for (let order = 2; order < 8; order++) {
+		const candidates = [...keptAxis].filter((index) => (bones.axes[index] as FrameAxis).order === order);
+		const ranks = thinningRanks(
+			candidates.map((index) => {
+				const node = (bones.axes[index] as FrameAxis).nodes[0] as FrameNode;
+				return [node.x, node.y, node.z];
+			}),
+		);
+		const keepShare = Math.max(0, 1 - sparse * (thin[order] ?? 0));
+		const count = Math.max(0, Math.round(candidates.length * keepShare));
+		candidates.forEach((index, at) => {
+			if ((ranks[at] as number) >= count) keptAxis.delete(index);
+		});
+	}
+
+	// The scale of a socket's piece against the species' own, from the frame's own scale.
+	const pieceScale = bones.scale / Math.max(1e-9, spreadMean(input.record.size.height));
+	/** The clump each stated axis carries, by the axis's index. */
+	const patchOf = new Map<number, number>();
+	patches.patches.forEach((patch, id) => patchOf.set(patch.axis, id));
+	const builder = new SkeletonBuilder();
+	const built: number[] = new Array(bones.axes.length).fill(-1);
+	const builtNodes: number[][] = new Array(bones.axes.length).fill(undefined);
+	const origins: number[] = [];
+	const addresses: number[] = [];
+	/** Sockets that hang on the frame's own fine twigs, which keep those twigs from standing bare. */
+	const extraSockets: Array<{
+		id: number;
+		axis: number;
+		node: number;
+		order: number;
+		point: Vec3;
+		place: number;
+		scale: number;
+		birth: number;
+	}> = [];
+	// Every adult axis in plan order, parents before children.
+	for (let index = 0; index < bones.axes.length; index++) {
+		const axis = bones.axes[index] as FrameAxis;
+		// Only the stated axes and the order-two twigs of the limb clumps are the bones; the deeper
+		// fine twigs of the frame's own fill are replaced by this grower's fill.
+		if (axis.fine && axis.order > 2) continue;
+		if (axis.parent >= 0 && (built[axis.parent] as number) < 0) continue;
+		const where = reveal[index] as Reveal;
+		if (!where.present) continue;
+		if (!keptAxis.has(index)) continue;
+		const parentAddress = axis.parent < 0 ? 0 : (addresses[axis.parent] as number);
+		addresses.push(hashAt(seed, parentAddress, axis.index, axis.order));
+		// The nodes that stand, cut where its grown length reaches.
+		const keptNodes: FrameNode[] = [];
 		let travelled = 0;
 		for (let k = 0; k < axis.nodes.length; k++) {
 			const node = axis.nodes[k] as FrameNode;
 			const along = (axis.along[k] as number) * axis.length;
-			const inside = axis.parent < 0 ? node.y <= height + 1e-9 : along <= axis.length * growthShare + 1e-9;
+			const inside =
+				axis.parent < 0 ? node.y <= height + 1e-9 : along <= axis.length * where.growth + 1e-9;
 			if (k > 0 && !inside) break;
 			if (k > 0 && k % woodStep !== 0) continue;
-			kept.push(node);
-			places.push([node.x, node.y, node.z]);
+			keptNodes.push(node);
 			travelled = along;
 		}
-		// A revealed axis ends at the point its grown length reaches, between two adult nodes.
-		if (axis.parent >= 0 && growthShare < 1 && kept.length < axis.nodes.length) {
-			const target = axis.length * growthShare;
-			const next = axis.nodes[kept.length] as FrameNode;
-			const span = (axis.along[kept.length] as number) * axis.length - travelled;
+		// A revealed axis ends where its grown length reaches, between two adult nodes.
+		if (axis.parent >= 0 && where.growth < 1 && keptNodes.length < axis.nodes.length) {
+			const target = axis.length * where.growth;
+			const next = axis.nodes[keptNodes.length] as FrameNode;
+			const span = (axis.along[keptNodes.length] as number) * axis.length - travelled;
 			const t = span > 1e-9 ? Math.max(0, Math.min(1, (target - travelled) / span)) : 0;
-			const prior = kept[kept.length - 1] as FrameNode;
-			kept.push({
+			const prior = keptNodes[keptNodes.length - 1] as FrameNode;
+			keptNodes.push({
 				x: prior.x + (next.x - prior.x) * t,
 				y: prior.y + (next.y - prior.y) * t,
 				z: prior.z + (next.z - prior.z) * t,
 				radius: prior.radius + (next.radius - prior.radius) * t,
 			});
-			places.push([kept[kept.length - 1]?.x ?? 0, kept[kept.length - 1]?.y ?? 0, kept[kept.length - 1]?.z ?? 0]);
 		}
-		// Write the axis and its nodes into the skeleton.
 		const parentNode =
 			axis.parent < 0
 				? -1
-				: ((parentPlaced as Placed).nodes[Math.min(axis.parentNode, (parentPlaced as Placed).nodes.length - 1)] ?? -1);
-		const kind = axis.role === 'stem' ? AXIS_STEM : AXIS_LIMB;
+				: ((builtNodes[axis.parent] as number[])[
+						Math.min(axis.parentNode, (builtNodes[axis.parent] as number[]).length - 1)
+					] ?? -1);
 		const builderAxis = builder.addAxis({
-			parent: axis.parent < 0 ? -1 : ((parentPlaced as Placed).axis as number),
+			parent: axis.parent < 0 ? -1 : (built[axis.parent] as number),
 			parentNode,
 			order: axis.order,
-			kind,
+			kind: axis.role === 'stem' ? AXIS_STEM : AXIS_LIMB,
 			barkV: 0,
 			barkU: (axis.azimuth * Math.PI) / 180,
 		});
-		axesMade++;
-		axisOrigins.push(index);
+		built[index] = builderAxis;
+		origins.push(index);
 		const nodes: number[] = [];
 		let last = parentNode;
-		kept.forEach((node, k) => {
+		keptNodes.forEach((node, k) => {
 			const at = axis.parent < 0 ? node.y : (axis.along[k] as number);
 			const ageOfNode =
-				axis.parent < 0 ? ageAtHeight(growth.height, fullAge, adultHeight, node.y) : birth + (fullAge - birth) * at;
+				axis.parent < 0
+					? ageAtHeight(growth.height, fullAge, adultHeight, node.y)
+					: where.birth + (where.span - where.birth) * at;
 			last = builder.addNode({
 				x: node.x,
 				y: node.y,
 				z: node.z,
-				radius: node.radius * (axis.parent < 0 ? slim : slim),
+				radius: node.radius * slim,
 				parent: last,
 				axis: builderAxis,
 				light: 1,
@@ -393,99 +408,131 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			});
 			nodes.push(last);
 		});
-		placed.push({ birth, growth: growthShare, span, axis: builderAxis, nodes, places });
+		builtNodes[index] = nodes;
+		// A fine twig of the frame's own fill carries a socket as today's does; hung without its
+		// deeper twigs it would stand bare, and the dressing would trim it away.
+		const clumpId = axis.parent < 0 ? undefined : patchOf.get(axis.parent);
+		if (axis.fine && axis.order <= 2 && nodes.length > 0 && clumpId !== undefined) {
+			const last = keptNodes[keptNodes.length - 1] as FrameNode;
+			const parentGrowth = (reveal[axis.parent] as Reveal).growth;
+			const clumpGrowth = Math.max(0, Math.min(1, (parentGrowth - CLUMP_FROM) / (1 - CLUMP_FROM)));
+			extraSockets.push({
+				id: clumpId,
+				axis: builderAxis,
+				node: nodes[nodes.length - 1] as number,
+				order: axis.order,
+				point: [last.x, last.y, last.z],
+				place: 1_000_000 + index,
+				scale: pieceScale * clumpGrowth,
+				birth: where.birth,
+			});
+		}
 	}
 
-	// The clumps the stated axes end in, grown with their axes.
+	// The clumps the adult ends in, at their adult places. They stand in the skeleton as soon as
+	// their carrying axis is reached, whatever sparseness thins, so the crown's box and base never
+	// move with sparseness.
 	const clumps: ClumpData[] = [];
 	const fill: FillClump[] = [];
-	let crownBase = height;
-	plan.patches.forEach((patch, id) => {
-		const placedAxis = placed[patch.axis];
-		if (placedAxis === undefined || placedAxis.axis < 0) return;
-		const axis = plan.axes[patch.axis] as FrameAxis;
-		const growthShare = placedAxis.growth;
-		const radius = (patch.width / 2) * growthShare;
+	let crownBase = Number.POSITIVE_INFINITY;
+	let top = height;
+	patches.patches.forEach((patch, id) => {
+		const axis = bones.axes[patch.axis] as FrameAxis;
+		const where = reveal[patch.axis] as Reveal;
+		if (where === undefined || !where.present) return;
+		const radius = patch.width / 2;
 		if (!(radius > 1e-6)) return;
-		const adultTip = axis.nodes[axis.nodes.length - 1] as FrameNode;
-		const tip = placedAxis.places[placedAxis.places.length - 1] as Vec3;
-		const centre: Vec3 = [
-			tip[0] + (patch.centre[0] - adultTip.x) * growthShare,
-			tip[1] + (patch.centre[1] - adultTip.y) * growthShare,
-			tip[2] + (patch.centre[2] - adultTip.z) * growthShare,
-		];
-		clumps.push({
-			id,
-			centre,
-			radius,
-			depth: 3,
-			birth: placedAxis.birth,
-		});
+		const centre = patch.centre;
+		clumps.push({ id, centre, radius, depth: 3, birth: where.birth });
+		crownBase = Math.min(crownBase, centre[1] - radius);
+		top = Math.max(top, centre[1] + radius);
+		const builtAxis = built[patch.axis] as number;
+		if (builtAxis < 0) return;
+		const grown = Math.max(0, Math.min(1, (where.growth - CLUMP_FROM) / (1 - CLUMP_FROM)));
+		if (grown <= 0) return;
+		const tip = axis.nodes[axis.nodes.length - 1] as FrameNode;
 		fill.push({
 			id,
 			centre,
 			radius,
-			birth: placedAxis.birth,
-			axis: placedAxis.axis,
-			node: placedAxis.nodes[placedAxis.nodes.length - 1] as number,
+			birth: where.birth,
+			growth: grown,
+			axis: builtAxis,
+			node: (builtNodes[patch.axis] as number[])[
+				(builtNodes[patch.axis] as number[]).length - 1
+			] as number,
 			order: axis.order,
-			root: tip,
+			root: [tip.x, tip.y, tip.z],
 		});
-		crownBase = Math.min(crownBase, centre[1] - radius);
 	});
 
 	// The sockets that clothe the clumps, at the share the sparseness and the plan leave.
-	// Sparseness keeps its share of the leaf area, never under the contract's floor; a maximum can
-	// take the share below it, since a maximum may legitimately leave a crown of a few clump cards.
 	const keepsItsShare = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
-	const cutByMaximum = Math.max(0, Math.min(1, planDetail.rankCut[planDetail.rankCut.length - 1] ?? 1));
+	const cutByMaximum = Math.max(0, Math.min(1, detail.rankCut[detail.rankCut.length - 1] ?? 1));
 	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
-	const planScale = plan.scale / Math.max(1e-9, spreadMean(input.record.size.height));
 	const grown = fillClumps({
 		builder,
 		seed,
 		salt: input.record.seedSalt >>> 0,
 		variant: input.variant,
 		clumps: fill,
+		extra: extraSockets,
 		leaves,
-		pieceScale: planScale,
+		pieceScale: pieceScale,
 		turn: growth.turn,
 	});
-	const made = axesMade + grown.made;
+
 	// Each element keeps its place in the plant as grown, so a younger or a sparser plant's element
 	// names the same place as the full one and the contract can pair them.
-	const finished = builder.finish(Math.max(0, Math.min(crownBase, height)));
+	const finished = builder.finish(Number.isFinite(crownBase) ? Math.max(0, crownBase) : height);
 	const axesOrigin = new Uint32Array(finished.axes.count);
-	axisOrigins.forEach((origin, at) => {
+	origins.forEach((origin, at) => {
 		if (at < axesOrigin.length) axesOrigin[at] = origin;
 	});
-	const fillOrigins = grown.axisOrigins;
-	fillOrigins.forEach((origin, at) => {
-		const held = axesMade + at;
+	grown.axisOrigins.forEach((origin, at) => {
+		const held = origins.length + at;
 		if (held < axesOrigin.length) axesOrigin[held] = origin;
 	});
 	const budsOrigin = new Uint32Array(finished.buds.count);
 	grown.socketOrigins.forEach((origin, at) => {
 		if (at < budsOrigin.length) budsOrigin[at] = origin;
 	});
+	// The crown's own box: the bones and every clump that stands at this age, so sparseness never
+	// changes a bound.
+	const min: [number, number, number] = [
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+	];
+	const max: [number, number, number] = [
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+	];
+	for (let n = 0; n < finished.nodeCount; n++)
+		for (let c = 0; c < 3; c++) {
+			const value = finished.position[n * 3 + c] as number;
+			min[c] = Math.min(min[c] as number, value);
+			max[c] = Math.max(max[c] as number, value);
+		}
+	for (const clump of clumps)
+		for (let c = 0; c < 3; c++) {
+			const reach = c === 1 ? clump.radius * 0.7 : clump.radius;
+			min[c] = Math.min(min[c] as number, (clump.centre[c] as number) - reach);
+			max[c] = Math.max(max[c] as number, (clump.centre[c] as number) + reach);
+		}
 	return {
 		...finished,
 		axes: { ...finished.axes, origin: axesOrigin },
 		buds: { ...finished.buds, origin: budsOrigin },
+		bounds: { min, max },
+		height: max[1],
+		crownBase: Number.isFinite(crownBase) ? Math.max(0, crownBase) : 0,
 		clumps,
-		made,
+		// Every element the grower made is delivered: the axes and the bud sites it built.
+		made: finished.axes.count + finished.buds.count,
 		shed: 0,
 	};
-}
-
-/** An axis the plan left out. */
-function absent(): Placed {
-	return { birth: 0, growth: 0, span: 0, axis: -1, nodes: [], places: [] };
-}
-
-/** The years an age waits to cross a share of its life. */
-function set(shareAt: number, fullAge: number, birth: number): number {
-	return (fullAge - birth) * Math.max(0, Math.min(1, shareAt));
 }
 
 /** The planned grower. */
@@ -493,3 +540,4 @@ export const grower: Grower = {
 	grow: growPlanned,
 	plan: planTree,
 };
+
