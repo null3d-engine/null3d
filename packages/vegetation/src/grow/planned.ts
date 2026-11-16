@@ -470,7 +470,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	// Which limb each axis belongs to, and how far each limb reaches from the centre line: the
 	// fill's sight of the crown, read from the adult plan alone.
 	const limbOf: number[] = [];
-	bones.axes.forEach((axis, index) => {
+	bones.axes.forEach((axis) => {
 		if (axis.parent < 0) {
 			limbOf.push(-1);
 			return;
