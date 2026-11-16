@@ -484,6 +484,9 @@ export const record: Species = {
 		// Still 16, full size: the photographs show deep furrows with lit walls, so the bark's own
 		// relief is tilted and deepened beyond what its map alone gives.
 		barkRelief: 0.8,
+		// Still 01: the limbs keep the lichen's pale grey-green as an even tint where its rosettes
+		// fall under a pixel, so the whole view shows the lichen its close view does.
+		lichenFarTint: 1,
 		// Still 18 at full size: the crown's rim is rounded lobes with clean notches of sky, so a far
 		// card's thinnest leaves keep their cover as its mip levels average them with their gaps.
 		cardMipLift: 0.12,

@@ -220,6 +220,8 @@ const CAVITY_ROUGH: f32 = 0.2;
 // The share of the bark that a lichen's rosettes cover, which its pattern gives way to where a
 // patch falls under a pixel and the pattern would shimmer.
 const LICHEN_COVER: f32 = 0.12;
+// The share of its rosettes' even tint that a far lichen keeps, 0 fading it out at a distance.
+const HEADER_LICHEN_FAR_TINT: i32 = 76;
 // The open-sky shares between which a clump's shade grades, from its dark core to its sunlit rim:
 // a row deep in the crown sees a small share of the sky and a rim row most of it, so the shade
 // runs across each clump rather than stepping at one figure.
@@ -1285,7 +1287,7 @@ fn surface(input: SurfaceInput) -> Surface {
         let footprint = max(length(dpx), length(dpy));
         let resolved = 1.0 - smoothstep(0.004, 0.012, footprint);
         let rosette = min(1.0, smoothstep(0.7, 0.73, grain) * 4.0);
-        let pattern = mix(LICHEN_COVER, rosette, resolved);
+        let pattern = mix(header(HEADER_LICHEN_FAR_TINT).x * LICHEN_COVER, rosette, resolved);
         let lichen_mask =
             pattern * crest * upward * in_zone * lichen.w * (1.0 - youth);
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);

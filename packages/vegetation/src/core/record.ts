@@ -3000,6 +3000,12 @@ export interface LodSpec {
 	 */
 	readonly barkRelief?: number;
 	/**
+	 * The share of its rosettes' even tint that a far lichen keeps, where a patch falls under a
+	 * pixel and its pattern would shimmer, from 0 to 1. 0 by default, which fades the lichen out at
+	 * a distance; 1 reads the far limb as the tint its rosettes make together.
+	 */
+	readonly lichenFarTint?: number;
+	/**
 	 * The share of each card level's clumps drawn as one card each, for the first and the second
 	 * level, each from 0 to 1: a clump card stands for the foliage mass its clump holds, so a far
 	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.
