@@ -386,7 +386,7 @@ export function dressShoots(input: DressInput): DressedShoots {
 			pruned && lowest !== input.skeleton.crownBase
 				? { ...input.skeleton, crownBase: lowest }
 				: input.skeleton;
-		return { rows: finishedRows(rows, skeleton), skeleton, dropped };
+		return { rows: finishedRows(rows, skeleton, planned), skeleton, dropped };
 	}
 	const { skeleton, axisOut, nodeOut, budOut } = trimmed;
 	for (const row of rows) {
@@ -397,15 +397,22 @@ export function dressShoots(input: DressInput): DressedShoots {
 		if (row.socket !== undefined) row.socket = budOut[row.socket] as number;
 		if (row.site !== undefined) row.site = budOut[row.site] as number;
 	}
-	return { rows: finishedRows(rows, skeleton), skeleton, dropped };
+	return { rows: finishedRows(rows, skeleton, planned), skeleton, dropped };
 }
 
-/** The rows as the table, in the space-filling order of a skeleton's bounds. */
-function finishedRows(rows: Row[], skeleton: MacroSkeleton): ShootRows {
+/**
+ * The rows as the table, in the space-filling order of a skeleton's bounds. A planned plant grew
+ * exactly the rows it delivers, so each row carries its own index as its place in the plant: the
+ * grown plant and the delivered plant are the same one.
+ */
+function finishedRows(rows: Row[], skeleton: MacroSkeleton, planned = false): ShootRows {
 	// The coarseness dial keeps every shoot row: it changes how smoothly the plant is drawn, not how
 	// many leaves the plant grows.
 	const kept = rows;
-	return packRows(kept, skeleton.bounds);
+	const packed = packRows(kept, skeleton.bounds);
+	return planned
+		? { ...packed, id: Uint32Array.from({ length: packed.count }, (_, i) => i) }
+		: packed;
 }
 
 /**
