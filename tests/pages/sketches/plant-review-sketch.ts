@@ -727,6 +727,8 @@ export default defineSketch(async (ctx) => {
 		near: true,
 		...(QUERY.season && { season: QUERY.season }),
 		...(QUERY.sparse !== undefined && { sparse: QUERY.sparse }),
+		...(QUERY.maturity !== undefined && { maturity: QUERY.maturity }),
+		...(QUERY.maxTriangles !== undefined && { maxTriangles: QUERY.maxTriangles }),
 		...(QUERY.sections !== undefined && { sections: QUERY.sections }),
 		...(QUERY.cards !== undefined && { cards: QUERY.cards }),
 		...(QUERY.cardJoin !== undefined && { cardJoin: QUERY.cardJoin }),
