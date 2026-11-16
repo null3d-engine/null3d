@@ -26,6 +26,9 @@ import { planFrame } from './frame';
 import type { Grower } from './models';
 import { type FillClump, type FillInput, fillClumps } from './planned-fill';
 
+/** The least share of a triangle maximum the wood keeps, so the bones are always paid for. */
+const CROWN_LEAST = 0.1;
+
 /** The exponent that slims a young plant's wood against its height: a whip is slender. */
 const SLIM = 2.5;
 
@@ -77,6 +80,8 @@ export interface ClumpSight {
 interface FrameBounds {
 	/** The expected count of each order, generous enough that a plant never exceeds it. */
 	readonly expected: number[];
+	/** The most clumps the adult can carry: one for each limb, bough and branch. */
+	readonly clumps: number;
 }
 
 /** The most elements one stated rule makes on each parent. */
@@ -105,7 +110,8 @@ function boundsOf(record: Species, growth: Planned): FrameBounds {
 	const height = curveAt(growth.height, 1);
 	const spec = growth.frame;
 	void record;
-	if (growth.adult !== 'frame' || spec === undefined) return { expected: [0, 0, 0, 0, 0] };
+	if (growth.adult !== 'frame' || spec === undefined)
+		return { expected: [0, 0, 0, 0, 0], clumps: 0 };
 	// The stated levels: the stems, then the axes that leave them.
 	const stems = spec.stems;
 	const first = Math.max(1, Math.round(stems.count));
@@ -135,6 +141,7 @@ function boundsOf(record: Species, growth: Planned): FrameBounds {
 			(fourth + sockets(third, boughWidth)) * margin,
 			sockets(fourth, twigWidth) * margin,
 		],
+		clumps: (second + third + fourth) * margin,
 	};
 }
 
@@ -229,15 +236,26 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 		foliage: foliage + fruit,
 		fruit,
 	};
-	const whole = priced.trunk + priced.limbs + priced.branches + priced.foliage;
-	// Under a maximum, each order keeps a share of its elements: the bones first, the fill last.
+	// Under a maximum the crown is served before the wood takes its share: each clump draws one
+	// card below about 2,000 triangles, and the crown keeps a card a clump while the cap allows,
+	// leaving the wood at least a tenth of it. Above that share the wood keeps the rest.
+	const clumps = Math.max(1, Math.round(bounds.clumps));
+	const cardCost = max === undefined ? 0 : growth.prices.clumpCard;
+	const crownNeed = cardCost > 0 ? clumps * cardCost : 0;
+	const crownTake = max === undefined ? 0 : Math.min(crownNeed, max * (1 - CROWN_LEAST));
+	const cards = cardCost > 0 ? Math.min(clumps, Math.floor(crownTake / cardCost)) : 0;
+	const socketsBound = Math.max(1, expected[4] as number);
+	const woodRoom = max === undefined ? 0 : Math.max(0, max - cards * cardCost);
+	const woodTotal = priced.trunk + priced.limbs + priced.branches;
+	const woodKept =
+		max === undefined ? 1 : woodTotal > 0 ? Math.max(0, Math.min(1, woodRoom / woodTotal)) : 1;
+	// The fill keeps the plan's share of the crown: one anchor socket a carded clump, its lowest
+	// ranks first, so a card a clump is what stands when the crown is paid for.
+	const crownKept = max === undefined ? 1 : Math.min(1, cards / socketsBound);
 	const cut = (order: number): number => {
-		if (max === undefined || whole <= max) return 1;
+		if (max === undefined) return 1;
 		if (order < 2) return 1;
-		const bones = priced.trunk + priced.limbs;
-		const room = Math.max(0, max - bones);
-		const finer = whole - bones;
-		return Math.max(0, Math.min(1, finer > 0 ? room / finer : 0));
+		return order >= 4 ? crownKept : woodKept;
 	};
 	return {
 		age,
@@ -544,7 +562,18 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 
 	// The sockets that clothe the clumps, at the share the sparseness and the plan leave.
 	const keepsItsShare = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
-	const cutByMaximum = Math.max(0, Math.min(1, detail.rankCut[detail.rankCut.length - 1] ?? 1));
+	// Under a maximum the plan pays for a count of sockets, one for each carded clump; the fill's
+	// own sockets are about six and a half a square metre of clump width, so the share that keeps
+	// that many is the plan's count over the crown's own count.
+	const carded = Math.round(
+		Math.max(0, Math.min(1, detail.rankCut[detail.rankCut.length - 1] ?? 1)) *
+			(detail.expected[4] ?? 0),
+	);
+	const socketsAbout = fill.reduce(
+		(sum, clump) => sum + 1 + Math.round(6.5 * (2 * clump.radius) ** 2),
+		0,
+	);
+	const cutByMaximum = socketsAbout > 0 ? Math.min(1, carded / socketsAbout) : 1;
 	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
 	const crownBaseValue = Number.isFinite(crownBase) ? Math.max(0, crownBase) : height;
 	const sighted: FillInput & PlannedFillSight = {
