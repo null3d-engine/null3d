@@ -47,7 +47,7 @@ import {
 	placeholderWind,
 	placeholderWood,
 } from './core/placeholder';
-import type { Growth, Species, SpeciesModule } from './core/record';
+import type { Growth, GrowthModel, Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
 import {
@@ -378,8 +378,12 @@ function cuttingRecord(record: Species, part?: CuttingPart): Species {
  * @category api/vegetation
  */
 export async function loadPlantCode(record: Species): Promise<void> {
+	// A form may hand its plant to another growth model, which its own code walks, so every model a
+	// record or one of its forms names is loaded here.
+	const models = new Set<GrowthModel>([record.growth.model]);
+	for (const name of Object.keys(record.forms ?? {})) models.add(formRecord(record, name).growth.model);
 	await Promise.all([
-		loadGrower(record.growth.model),
+		...[...models].map((model) => loadGrower(model)),
 		loadFoliage(record.foliage.kind),
 		loadSpeciesHooks(record.id),
 	]);
