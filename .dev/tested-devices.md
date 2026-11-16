@@ -102,11 +102,11 @@ Ten pages passed, and none was skipped.
 | Forest Low | WebGPU | 60.0 | 15.6 | 1.9 | 6.9 | 7,160,900 | 88 | 57.4 | 34.4 | 328.8 |
 | Forest Low | Compatibility | 59.6 | 15.6 | 1.9 | 6.9 | 6,962,000 | 88 | 57.4 | 34.4 | 328.8 |
 | Forest Low | WebGL2 | 60.1 | 15.5 | 1.5 | n/a | 4,839,200 | 35 | 95.8 | 11.0 | 69.5 |
-| Forest Medium | WebGPU | 17.8 | 54.8 | 3.4 | 45.4 | 51,510,000 | 118 | 246.8 | 56.7 | 462.1 |
+| Forest Medium | WebGPU | 16.2 | 67.40 | 2.38 | 57.79 | n/a | 48 | n/a | n/a | 98.3 |
 | Forest Medium | Compatibility | 28.5 | 33.8 | 3.5 | 23.9 | 101,890,000 | 118 | 107.4 | 56.7 | 462.3 |
 | Forest Medium | WebGL2 | 19.6 | 46.6 | 1.1 | n/a | 34,880,000 | 43 | 424.3 | 12.0 | 75.1 |
-| Forest High | WebGPU | 14.8 | 67.1 | 3.5 | 58.3 | 297,100,000 | 146 | 271.7 | 56.7 | 667.7 |
-| Forest Ultra | WebGPU | 13.9 | 71.1 | 3.6 | 63.2 | 107,530,000 | 158 | 355.8 | 63.6 | 864.0 |
+| Forest High | WebGPU | 11.6 | 85.12 | 2.51 | 75.44 | n/a | 67 | n/a | n/a | 94.1 |
+| Forest Ultra | WebGPU | 10.2 | 97.74 | 2.86 | 87.79 | n/a | 71 | n/a | n/a | 101.3 |
 
 The run: [20261024-105210-vegetation](tested-devices/ipad-pro-13-safari/20261024-105210-vegetation.md).
 Ten pages passed, and none was skipped.
@@ -121,6 +121,14 @@ pass and what follows. The pages run no wind reader, so the misses are the Creek
 this device. Its pixels rather than its triangles carry that cost. The earlier run's rows are in
 [20261115-112412-vegetation](tested-devices/ipad-pro-13-safari/20261115-112412-vegetation.md), at
 `1c6785724`.
+
+The forest's WebGPU rows come from the head that restored the demo's own near trees:
+[20261116-015954-vegetation](tested-devices/ipad-pro-13-safari/20261116-015954-vegetation.md), at
+`157574d6c` in Safari 26.6.1. Medium reads 67.40 against 54.8, High 85.12 against 67.1, and Ultra
+97.74 against 71.1, so every row still misses. The near-trees swap was measured before the restore
+and reverted: at `d57918816` the same pages read 670.08, 911.80 and 1052.30 ms, with 26 to 71
+seconds to the first frame
+([20261116-011152-vegetation](tested-devices/ipad-pro-13-safari/20261116-011152-vegetation.md)).
 
 The forest's GPU time at High and Ultra goes into the last render pass, which draws the far cards.
 Its triangle count is higher at High than at Ultra, because each preset picks its own levels.
