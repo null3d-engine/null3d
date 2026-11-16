@@ -67,8 +67,8 @@ export const plannedGrowth: Planned = {
 	// land there, and never under the contract's 0.08 floor.
 	leavesAt: [
 		[0, 1],
-		[0.5, 0.42],
-		[1, 0.18],
+		[0.5, 0.44],
+		[1, 0.2],
 	],
 	// The oak first bears acorns at about 40 years in the open (FACTS gives the fruit but no age;
 	// 40 of 150 model years is the usual open-grown figure), and the crop fills over 15 years.
@@ -77,6 +77,7 @@ export const plannedGrowth: Planned = {
 	// Catkins hang in the blossom season, from the same age as the acorns and over the same band.
 	flowers: { season: 'blossom', from: 0.27, band: 0.1 },
 	// Priced at the nearest level's own draw: a branch end's leaves, a leaf card's triangles, one
-	// clump card and one wood tube segment. The plan shares a maximum out from these.
-	prices: { piece: 24, card: 6, clumpCard: 4, tubeSegment: 14 },
+	// clump card and one wood tube segment. The plan shares a maximum out from these. A clump card is
+	// six triangles, two a plane of the three pictures the clump card draws (`lod/budget.ts`).
+	prices: { piece: 24, card: 6, clumpCard: 6, tubeSegment: 14 },
 };

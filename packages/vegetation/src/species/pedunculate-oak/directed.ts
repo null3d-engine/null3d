@@ -453,7 +453,7 @@ const base = {
 		lobes: { mean: 9, spread: 1.5 },
 		amount: 0.35,
 		sharpness: 3,
-		height: 1,
+		height: 1.6,
 		round: 0.4,
 	},
 	roots: {
@@ -461,7 +461,7 @@ const base = {
 		length: { mean: 1.3, spread: 0.3 },
 		radius: 0.2,
 		dive: 0.3,
-		ridge: 0.3,
+		ridge: 1,
 	},
 	flutes: { count: { mean: 7, spread: 1 }, depth: 0.16, height: 1.5, hold: 0.35 },
 } as const;
