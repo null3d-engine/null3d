@@ -55,6 +55,24 @@ const FLOORS: Readonly<Record<number, number>> = {
 	100_000: 0.685,
 };
 
+/** The caps of the owner's maximum sweep, falling. */
+const SWEEP: readonly number[] = [50_000, 20_000, 10_000, 5_000, 2_000, 1_000, 500];
+
+/**
+ * The least outline overlap each sweep cap takes, from the next smaller maximum listed in
+ * `lod/budget.test.ts`: 50,000 and 20,000 from 10,000; 10,000 and 5,000 from 2,000; 2,000 and 1,000
+ * from 500; 500 from 100.
+ */
+const SWEEP_FLOORS: Readonly<Record<number, number>> = {
+	50_000: 0.5,
+	20_000: 0.5,
+	10_000: 0.3,
+	5_000: 0.3,
+	2_000: 0.26,
+	1_000: 0.26,
+	500: 0.17,
+};
+
 /** The fill target's tolerances, frozen at C1: the median rows a clump holds, and its spread. */
 const FILL = { median: 0.15, spread: 0.25, inner: 0.05, sky: 0.05, cover: 0.02 } as const;
 
@@ -764,7 +782,7 @@ describe('the planned oak contract', () => {
 		'S4: every sparseness is one body, as tall, with an even share round the crown',
 		async () => {
 			for (const seed of SEEDS)
-				for (const maturity of [1, 0.5]) {
+				for (const maturity of [1, 0.5, 0.25, 0.1]) {
 					const plants = [] as PlantAsset[];
 					for (const sparse of [0, 0.5, 1]) plants.push(await plant(seed, { maturity, sparse }));
 					const full = plants[0] as PlantAsset;
@@ -1038,6 +1056,37 @@ describe('the planned oak contract', () => {
 						]);
 					}
 				}
+		},
+		LONG,
+	);
+
+	it(
+		'X3: the maximum sweep keeps every level under its cap and the outline above its floor',
+		async () => {
+			for (const seed of SEEDS) {
+				const plain = await plant(seed, { maturity: 1, sparse: 0 });
+				const plainOutline = outlineOf(plain);
+				const drawing: number[] = [];
+				for (const max of SWEEP) {
+					const capped = await plant(seed, { maturity: 1, sparse: 0, maxTriangles: max });
+					let leaves = 0;
+					for (const part of capped.levels[0].parts)
+						if (part.name === 'foliage' || part.name === 'cards') leaves += part.arrays.indices.length / 3;
+					if (leaves > 0) drawing.push(max);
+					// A cap that draws no crown is a known fault, reported here rather than failed.
+					console.log(`X3 seed ${seed} cap ${max}: leaf triangles ${leaves}, rows ${capped.shoots.count}`);
+					for (let level = 0; level < 3; level++)
+						expect([seed, max, level, (capped.stats.triangles[level] as number) <= max]).toEqual([seed, max, level, true]);
+					const share = overlap(plainOutline, outlineOf(capped));
+					expect([seed, max, Number(share.toFixed(3)), share >= (SWEEP_FLOORS[max] as number) - 1e-9]).toEqual([
+						seed,
+						max,
+						Number(share.toFixed(3)),
+						true,
+					]);
+				}
+				console.log(`X3 seed ${seed}: caps drawing leaf triangles ${drawing.join(', ') || 'none'}`);
+			}
 		},
 		LONG,
 	);
