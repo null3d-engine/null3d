@@ -342,17 +342,17 @@ export const record: Species = {
 			// daylight, so this tint scales the sampled colour to match it. The flat-lit texture source
 			// drawing the same wood sits a little dark beside its photograph, but a texture source
 			// sets no row.
-			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.69, 0.67, 0.62] },
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.58, 0.55, 0.42] },
 			// The great limbs stand in brighter light than the bole and read a little lighter and
 			// warmer than still 16. Their tint stays close to the bole's and changes over a long blend,
 			// so a limb that crosses the zone's height keeps one colour along its length.
-			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2, tint: [0.52, 0.56, 0.18] },
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2.5, tint: [0.28, 0.28, 0.1] },
 		],
 		young: 0,
 		// The young bark is the smooth grey-green of a young shoot, and the photographs of it are
 		// pale. Only truly thin wood keeps it, so a sub-branch the size of a sapling's stem reads as
 		// the same wood as the limb it leaves, a shade lighter, rather than turning pale grey.
-		youngRadius: 0.05,
+		youngRadius: 0.02,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
@@ -364,7 +364,7 @@ export const record: Species = {
 		moss: { amount: 0.35, up: 1.2, north: 0.3, colour: [0.18, 0.22, 0.06] },
 		// Still 16's limb carries pale sage rosettes on its crests, so the lichen reaches the great
 		// limbs as well as the bole, in the fine flecks the bark shows through.
-		lichen: { amount: 0.3, from: 0.6, colour: [0.36, 0.38, 0.26] },
+		lichen: { amount: 0.15, from: 0.6, colour: [0.36, 0.38, 0.26] },
 	},
 	base: {
 		// Stills 01, 02, 17 and 18 flare the foot to about 1.8 times the bole a quarter metre up, 1.5
