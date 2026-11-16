@@ -49,6 +49,28 @@ export async function loadFarBaker(): Promise<void> {
 /** The share of its colour that a vertex keeps where the crown hides all of its sky. */
 const SHADED = 0.4;
 
+/**
+ * The open-sky shares between which a clump's dim runs, from its dark core to its sunlit rim, as the
+ * plant shader's own bounds: the far card reads the same record value that draws the card levels.
+ */
+const CROWN_SHADE_LOW = 0.15;
+const CROWN_SHADE_HIGH = 0.75;
+
+/**
+ * How much of its colour a vertex keeps under the record's crown dim: a leaf or a card deep in a
+ * clump takes less of the sun and of the light through it than the clump's rim does, as the plant
+ * shader darkens the card and shoot roles by the row's open-sky share. At 0 the record dims nothing.
+ *
+ * @param kit The species' kit.
+ * @param sky The vertex's open-sky share, 0 to 1.
+ * @returns The share of its colour the vertex keeps.
+ */
+function crownShade(kit: SpeciesKitData, sky: number): number {
+	const dim = kit.record.lod.crownDim ?? 0;
+	if (!(dim > 0)) return 1;
+	return 1 - dim * (1 - smoothstep(CROWN_SHADE_LOW, CROWN_SHADE_HIGH, sky));
+}
+
 /** The bark colour where neither the manifest nor the record names one. */
 const BARK: Rgb = [0.2, 0.16, 0.12];
 
@@ -94,12 +116,16 @@ function widen(positions: Float32Array, min: number[], max: number[]): void {
 }
 
 /** Linear colours per vertex: a part's colour, darkened by the vertex's sky visibility byte. */
-function shadedColours(bytes: Uint8Array, colour: (vertex: number) => Rgb): Float32Array {
+function shadedColours(
+	kit: SpeciesKitData,
+	bytes: Uint8Array,
+	colour: (vertex: number) => Rgb,
+): Float32Array {
 	const count = bytes.length / 4;
 	const out = new Float32Array(count * 3);
 	for (let v = 0; v < count; v++) {
 		const sky = (bytes[v * 4 + 3] as number) / 255;
-		const keep = SHADED + (1 - SHADED) * sky;
+		const keep = (SHADED + (1 - SHADED) * sky) * crownShade(kit, sky);
 		const c = colour(v);
 		out[v * 3] = (c[0] as number) * keep;
 		out[v * 3 + 1] = (c[1] as number) * keep;
@@ -305,7 +331,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			parts.push({
 				positions,
 				normals,
-				colors: shadedColours(part.colors, (v) => bark(positions[v * 3 + 1] as number)),
+				colors: shadedColours(kit, part.colors, (v) => bark(positions[v * 3 + 1] as number)),
 				indices: part.indices,
 			});
 		} else if (part.name === 'cards' && size > 0) {
@@ -314,7 +340,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 				positions,
 				normals,
 				uvs,
-				colors: shadedColours(part.colors, () => [1, 1, 1]),
+				colors: shadedColours(kit, part.colors, () => [1, 1, 1]),
 				indices: part.indices,
 				doubleSided: true,
 			});
@@ -326,7 +352,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			parts.push({
 				positions,
 				normals,
-				colors: shadedColours(bytes, (v) =>
+				colors: shadedColours(kit, bytes, (v) =>
 					part.name === 'extras'
 						? (extras[bytes[v * 4 + 2] as number]?.colour ?? leaf)
 						: (leaf as Rgb),
