@@ -271,6 +271,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const builder = new SkeletonBuilder();
 	const placed: Placed[] = [];
 	const addresses: number[] = [];
+	/** Each stated axis's place in the plant as grown, in the order the axes were made. */
+	const axisOrigins: number[] = [];
 	let axesMade = 0;
 
 	// Each stated axis in plan order, parents before children: the trunk first, then the limbs it
@@ -300,17 +302,23 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		const top = (axis.nodes[axis.nodes.length - 1] as FrameNode).y;
 		let birth: number;
 		let span: number;
+		let growthShare: number;
 		if (axis.parent < 0) {
 			birth = 0;
 			span = ageAtHeight(growth.height, fullAge, adultHeight, top);
+			growthShare = 1;
 		} else {
-			const parent = parentPlaced as Placed;
-			const seat = Math.max(0, Math.min(1, (plan.axes[axis.parent] as FrameAxis).along[axis.parentNode] as number));
-			birth = parent.birth + (parent.span - parent.birth) * seat;
-			// Every axis under the trunk reaches its adult length as the plant reaches its adult height.
+			// A limb is born at its fork age and a bough or branch when its parent's tip reaches the
+			// seat it leaves from: the age the height curve reaches that seat's height.
+			const seatNode = (plan.axes[axis.parent] as FrameAxis).nodes[axis.parentNode] as FrameNode;
+			birth = ageAtHeight(growth.height, fullAge, adultHeight, seatNode.y);
 			span = Math.max(birth + 1e-9, maturityAge);
+			// The part of its adult path it shows: the share of the height it has still to gain from
+			// its seat to the adult's top.
+			const from = Math.max(0, Math.min(adultHeight, seatNode.y));
+			growthShare =
+				adultHeight - from > 1e-9 ? Math.max(0, Math.min(1, (height - from) / (adultHeight - from))) : 1;
 		}
-		const growthShare = axis.parent < 0 ? 1 : share(age, birth, span);
 		if (growthShare <= 0) {
 			placed.push(absent());
 			continue;
@@ -359,6 +367,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			barkU: (axis.azimuth * Math.PI) / 180,
 		});
 		axesMade++;
+		axisOrigins.push(index);
 		const nodes: number[] = [];
 		let last = parentNode;
 		kept.forEach((node, k) => {
@@ -435,8 +444,26 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		turn: growth.turn,
 	});
 	const made = axesMade + grown.made;
+	// Each element keeps its place in the plant as grown, so a younger or a sparser plant's element
+	// names the same place as the full one and the contract can pair them.
+	const finished = builder.finish(Math.max(0, Math.min(crownBase, height)));
+	const axesOrigin = new Uint32Array(finished.axes.count);
+	axisOrigins.forEach((origin, at) => {
+		if (at < axesOrigin.length) axesOrigin[at] = origin;
+	});
+	const fillOrigins = grown.axisOrigins;
+	fillOrigins.forEach((origin, at) => {
+		const held = axesMade + at;
+		if (held < axesOrigin.length) axesOrigin[held] = origin;
+	});
+	const budsOrigin = new Uint32Array(finished.buds.count);
+	grown.socketOrigins.forEach((origin, at) => {
+		if (at < budsOrigin.length) budsOrigin[at] = origin;
+	});
 	return {
-		...builder.finish(Math.max(0, Math.min(crownBase, height))),
+		...finished,
+		axes: { ...finished.axes, origin: axesOrigin },
+		buds: { ...finished.buds, origin: budsOrigin },
 		clumps,
 		made,
 		shed: 0,

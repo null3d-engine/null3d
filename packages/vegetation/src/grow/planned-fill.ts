@@ -54,7 +54,14 @@ export interface FillCount {
 	readonly made: number;
 	/** The sockets that carry a piece. */
 	readonly sockets: number;
+	/** Each twig axis's place in the plant as grown, in the order the axes were made. */
+	readonly axisOrigins: number[];
+	/** Each socket's place in the plant as grown, in the order the sockets were hung. */
+	readonly socketOrigins: number[];
 }
+
+/** The sockets one clump may carry, which bounds its sockets' places in the plant. */
+const SOCKETS_MOST = 256;
 
 /** One clump of the adult plan, grown to its asked state. */
 export interface FillClump {
@@ -106,6 +113,8 @@ export function fillClumps(input: FillInput): FillCount {
 		readonly clump: FillClump;
 		readonly point: Vector3;
 		readonly rank: number;
+		/** Its place in the plant as grown, which the clump's own order fixes. */
+		readonly place: number;
 	}
 	const goals: Goal[] = [];
 	clumps.forEach((clump) => {
@@ -119,7 +128,13 @@ export function fillClumps(input: FillInput): FillCount {
 			Math.round((SOCKETS_PER_AREA * (2 * radius) ** 2) / SHELL_TOTAL),
 		);
 		// The clump's own axis ends in a socket, as every twig does.
-		goals.push({ clump, point: [clump.root[0], clump.root[1], clump.root[2]], rank: 0 });
+		let local = 0;
+		goals.push({
+			clump,
+			point: [clump.root[0], clump.root[1], clump.root[2]],
+			rank: 0,
+			place: clump.id * SOCKETS_MOST + local++,
+		});
 		SHELLS.forEach(([size, keep], shell) => {
 			const many = Math.max(0, Math.round(count * size * size * keep));
 			for (let k = 0; k < many; k++) {
@@ -136,6 +151,7 @@ export function fillClumps(input: FillInput): FillCount {
 						clump.centre[2] + inner * size * ring * Math.sin(angle),
 					],
 					rank: 0,
+					place: clump.id * SOCKETS_MOST + Math.min(SOCKETS_MOST - 1, local++),
 				});
 			}
 		});
@@ -151,9 +167,13 @@ export function fillClumps(input: FillInput): FillCount {
 		.sort((a, b) => (a.goal.rank as number) - (b.goal.rank as number) || a.k - b.k)
 		.slice(0, most);
 	let made = 0;
+	const axisOrigins: number[] = [];
+	const socketOrigins: number[] = [];
 	const rollFrom = unitAt(seed, salt, variant, TURN, 0);
 	const tiltFrom = unitAt(seed, salt, variant, TURN, 1);
 	kept.forEach(({ goal }, socket) => {
+		axisOrigins.push(goal.place);
+		socketOrigins.push(goal.place);
 		made += hangTwig(
 			builder,
 			goal.clump,
@@ -163,7 +183,7 @@ export function fillClumps(input: FillInput): FillCount {
 			turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom },
 		);
 	});
-	return { made, sockets: kept.length };
+	return { made, sockets: kept.length, axisOrigins, socketOrigins };
 }
 
 /**
