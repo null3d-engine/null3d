@@ -997,6 +997,15 @@ function clumpShare(record: SpeciesKitData['record'], level: 1 | 2): number {
 	return Math.max(0, Math.min(1, share));
 }
 
+/** Every so many of a list, an even share of it through the list's own order. */
+function evenShare<T>(list: readonly T[], share: number): T[] {
+	const wanted = Math.max(1, Math.min(list.length, Math.round(list.length * share)));
+	return list.filter(
+		(_, at) =>
+			Math.floor(((at + 1) * wanted) / list.length) > Math.floor((at * wanted) / list.length),
+	);
+}
+
 /** The pictures a side that one clump card shows of its own rows. */
 const CLUMP_TILES = 3;
 
@@ -1008,11 +1017,9 @@ const CLUMP_TILES = 3;
  */
 function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2): MeshArrays {
 	const share = clumpShare(input.record, level);
-	// A share below every clump keeps every so many of them in the walk's order, which is spread
-	// through the crown, so a thinned level holds the plant's outline rather than one side of it.
-	const wanted = Math.max(1, Math.round(clumps.length * share));
-	const stride = Math.max(1, Math.round(clumps.length / wanted));
-	const kept = clumps.filter((_, at) => at % stride === 0);
+	// A share below every clump keeps a spread share of them in the walk's order, so a thinned level
+	// holds the plant's outline rather than one side of it.
+	const kept = evenShare(clumps, share);
 	const walk = clumpWalk(kept);
 	// The level draws the wood that its own wood orders keep, so a clump joins the plant where that
 	// wood reaches it.
@@ -1800,6 +1807,7 @@ export function plannedClumpCards(
 	input: MeshInput,
 	planes = 3,
 	share = 1,
+	tiles = CLUMP_TILES,
 ): MeshArrays | undefined {
 	const clumps = input.skeleton.clumps;
 	if (!clumps || clumps.length === 0) return undefined;
@@ -1821,9 +1829,7 @@ export function plannedClumpCards(
 					bent: Uint8Array.of(0),
 					order: Uint32Array.of(0),
 				};
-	const wanted = Math.max(1, Math.round(clumps.length * Math.max(0, Math.min(1, share))));
-	const stride = Math.max(1, Math.round(clumps.length / wanted));
-	const kept = clumps.filter((_, at) => at % stride === 0);
+	const kept = evenShare(clumps, Math.max(0, Math.min(1, share)));
 	/** The row whose picture and bytes a clump takes: the nearest one it has. */
 	const nearest = (centre: readonly number[]): number => {
 		let best = 0;
@@ -1861,7 +1867,7 @@ export function plannedClumpCards(
 		};
 	});
 	const tiled = {
-		tiles: CLUMP_TILES,
+		tiles,
 		row: (index: number, tile: number): number => {
 			const clump = kept[index];
 			if (!clump) return 0;
@@ -1874,7 +1880,7 @@ export function plannedClumpCards(
 				if (dx * dx + dy * dy + dz * dz <= clump.radius * clump.radius) near.push(r);
 			}
 			const list = near.length > 0 ? near : [0];
-			return list[Math.floor((tile * list.length) / (CLUMP_TILES * CLUMP_TILES))] as number;
+			return list[Math.floor((tile * list.length) / (tiles * tiles))] as number;
 		},
 	};
 	return clusterCardMesh(
