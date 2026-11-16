@@ -122,7 +122,14 @@ import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
 import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import { speciesHeader } from './render/records';
-import type { DressInput, FarBake, GrowInput, MeshInput, MeshLevel } from './stages';
+import type {
+	DressInput,
+	FarBake,
+	GrowInput,
+	GrowRequest,
+	MeshInput,
+	MeshLevel,
+} from './stages';
 import { VARIANT_RECORDS, windRecords } from './wind/records';
 import { meshWood } from './wood/wood-mesh';
 
@@ -199,6 +206,13 @@ export interface GrowOptions extends CoarsenessOptions {
 	readonly near?: boolean;
 	/** Grow or cut one piece for close review instead of the whole plant. */
 	readonly cutting?: CuttingOptions;
+	/**
+	 * How far the plant has grown, from 0 to 1: 0 grows nothing, 0.5 a half-grown plant and 1, or
+	 * absent, the full-grown plant the record names. It is continuous, so no part appears in a step.
+	 * A model that plans its grown state builds only what this state holds; a stand-in species and a
+	 * cut piece grow as they are.
+	 */
+	readonly maturity?: number;
 	/**
 	 * How much of its foliage, and of the branches that carried it, the plant gives up, from 0 to 1:
 	 * 0 is the plant as grown, at its full density, and 1 is the sparsest, the trunk and the great
@@ -456,7 +470,9 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
 	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
 	const join = options.cardJoin === undefined ? '' : `:join=${options.cardJoin}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${max}${sections}${cards}${join}`;
+	const maturity =
+		options.maturity === undefined || options.maturity === 1 ? '' : `:maturity=${options.maturity}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${max}${maturity}${sections}${cards}${join}`;
 }
 
 /**
@@ -641,6 +657,9 @@ function checkGrowOptions(options: GrowOptions): void {
 		throw new Error(`cards is ${cards}; a share of the card rows lies from 0.05 to 1`);
 	if (sparse !== undefined && !(sparse >= 0 && sparse <= 1))
 		throw new Error(`sparse is ${sparse}; a sparseness lies from 0 to 1`);
+	const maturity = options.maturity;
+	if (maturity !== undefined && !(maturity >= 0 && maturity <= 1))
+		throw new Error(`maturity is ${maturity}; a maturity lies from 0 to 1`);
 	const max = options.maxTriangles;
 	if (max !== undefined && !(Number.isFinite(max) && max > 0))
 		throw new Error(`maxTriangles is ${max}; a maximum is a positive number of triangles`);
@@ -735,11 +754,15 @@ export function forgetGrownPlants(): void {
 /**
  * The plant as grown for a kit and a growth's options: kept from the growth before, or grown now.
  * Its key holds everything that moves the grown plant and leaves out the sparseness, which only
- * cuts it.
+ * cuts it, except on a model that grows straight to the asked state: its plant holds the sparseness
+ * and the maximum as grown.
  */
 function grownPlant(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	const stand = kit.placeholders === 'missing' ? ':missing' : kit.placeholders ? ':stand-ins' : '';
-	const key = `${variantKey(kit, { ...options, sparse: 0, maxTriangles: undefined })}${stand}`;
+	const planned = kit.record.growth.model === 'planned';
+	const key = `${
+		variantKey(kit, planned ? options : { ...options, sparse: 0, maxTriangles: undefined })
+	}${stand}`;
 	const kept = GROWN.get(key);
 	if (kept) {
 		GROWN.delete(key);
@@ -757,11 +780,22 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	grownFromSeed++;
 	const record = cuttingLeaves(kit.record, options.cutting);
 	const placeholders = kit.placeholders;
+	const model = record.growth.model;
+	const most = maxOf(kit, options);
+	const request: GrowRequest = {
+		maturity: options.maturity ?? 1,
+		sparse: sparseLevel(kit, options),
+		...(most === undefined ? {} : { maxTriangles: most }),
+	};
+	// A model that plans its grown state states the plan's numbers before any geometry is built.
+	const plan = placeholders ? undefined : grower(model).plan?.(record, request);
 	const growInput: GrowInput = {
 		record,
 		seed: options.seed >>> 0,
 		variant: options.variant,
 		season: options.season ?? record.seasons.default,
+		request,
+		...(plan === undefined ? {} : { plan }),
 	};
 	const detail = options.detail ?? kit.detail;
 	const grown = stage(
@@ -786,6 +820,8 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		!options.cutting &&
 		placeholders !== true &&
 		record.growth.model !== 'frond-crown' &&
+		// A planned plant grows its own height from its age, so no drawn height rescales it.
+		record.growth.model !== 'planned' &&
 		(merged
 			? grower(record.growth.model).foliage !== undefined
 			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
@@ -926,8 +962,11 @@ function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
 function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 	const grown = grownPlant(kit, options);
 	const sparse = sparseLevel(kit, options);
-	// Rows that name no node stand on no skeleton, so no wood can follow them out.
-	const thins = grown.rows.count === 0 || grown.rows.node !== undefined;
+	// Rows that name no node stand on no skeleton, so no wood can follow them out. A planned plant
+	// grew its own sparseness, so it is never cut after growing.
+	const thins =
+		kit.record.growth.model !== 'planned' &&
+		(grown.rows.count === 0 || grown.rows.node !== undefined);
 	const full = { skeleton: grown.input.skeleton, rows: grown.rows };
 	let thinned: ReturnType<typeof sparsePlant>;
 	if (thins && sparse > 0) {

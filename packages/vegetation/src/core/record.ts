@@ -216,7 +216,8 @@ export type Growth =
 	| Rosette
 	| FrondColony
 	| Tuft
-	| Column;
+	| Column
+	| Planned;
 
 /**
  * The name of a growth model.
@@ -1617,6 +1618,77 @@ export interface Column {
 	};
 	/** Metres between areoles on a rib crest; each carries a spine-cluster prototype. */
 	readonly areoles: number;
+}
+
+/**
+ * One order of a planned plant's wood, the orders below the boughs: what each parent carries, how
+ * far its children reach and where they leave it.
+ *
+ * @category api/vegetation
+ */
+export interface OrderSpec {
+	/** Children per metre of parent. */
+	readonly density: Curve;
+	/** Degrees a child leaves its parent at. */
+	readonly angle: Curve;
+	/** The child's length as a share of its parent's. */
+	readonly length: number;
+	/** Model years after its parent's birth that the child appears at. */
+	readonly birth: number;
+	/** Degrees the child turns where it takes over from its parent. */
+	readonly kink: number;
+}
+
+/**
+ * A plant that plans its grown state as numbers first and then builds only what that plan allows:
+ * its maturity, its sparseness and its triangle maximum are all met as it grows, never by cutting a
+ * full plant afterwards.
+ *
+ * @category api/vegetation
+ */
+export interface Planned {
+	/** The model's name. */
+	readonly model: 'planned';
+	/** The age in model years of the full-grown plant. */
+	readonly fullAge: number;
+	/** The plant's height in metres by age. */
+	readonly height: Curve;
+	/** The crown's spread as a share of the height, by age. */
+	readonly spread: Curve;
+	/**
+	 * Where the trunk, limbs, boughs and their clumps come from: the species' frame, planned to order
+	 * two, or stated directly in its record.
+	 */
+	readonly adult: 'frame' | 'stated';
+	/**
+	 * The frame the adult plan comes from, where the record says it comes from a frame. It never
+	 * grows as it stands: the plan reads only its stems, its limbs and its boughs.
+	 */
+	readonly frame?: FrameSpec;
+	/**
+	 * The branch piece each socket carries, by its name among the record's pieces. Absent, a socket
+	 * holds shoot rows.
+	 */
+	readonly piece?: string;
+	/**
+	 * How far each socket's piece turns from the sky, in degrees: its roll about its own line and its
+	 * tilt off the wood's, as the frame's sockets state them.
+	 */
+	readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
+	/** The orders below the boughs, from the shallowest. */
+	readonly orders: readonly OrderSpec[];
+	/** The share of each order kept at full sparseness; 0 for the trunk and the limbs. */
+	readonly thin: readonly number[];
+	/** The leaf area left, as a share of the full crown's, by sparseness. */
+	readonly leavesAt: Curve;
+	/** The maturity at which acorns start. */
+	readonly fruitFrom: number;
+	/** The band of maturity the acorns ramp over, from nothing to their full count. */
+	readonly fruitBand: number;
+	/** The flowering season and the ramp the catkins come in over, where the species carries them. */
+	readonly flowers?: { readonly season: Season; readonly from: number; readonly band: number };
+	/** The triangles one drawn piece of each kind costs, which the plan prices its shares from. */
+	readonly prices: Readonly<Record<'piece' | 'card' | 'clumpCard' | 'tubeSegment', number>>;
 }
 
 /**
