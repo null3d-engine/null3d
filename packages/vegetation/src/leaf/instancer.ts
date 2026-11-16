@@ -358,7 +358,13 @@ export function dressShoots(input: DressInput): DressedShoots {
 	const placed = placedRows(input);
 	const rows = cappedRows(placed, input.record.shoots?.placement.rowsPerAxis);
 	const dropped = placed.length - rows.length;
-	const limit = Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
+	// A planned plant grew its crown's box and its bare wood as the plan states them, so no row of it
+	// moves the box and no twig of it is trimmed here: a box read from its rows would move with the
+	// sparseness, and the plant must be as tall at every sparseness.
+	const planned = input.record.growth.model === 'planned';
+	const limit = planned
+		? 0
+		: Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
 	let lowest = Number.POSITIVE_INFINITY;
 	for (const row of rows) lowest = Math.min(lowest, row.position[1]);
 	const trimmed =
@@ -374,12 +380,13 @@ export function dressShoots(input: DressInput): DressedShoots {
 			: undefined;
 	if (!trimmed) {
 		// A pruned crown stands on what it kept.
-		const pruned = (input.record.shoots?.placement.skyPrune ?? 0) > 0 && rows.length > 0;
+		const pruned =
+			!planned && (input.record.shoots?.placement.skyPrune ?? 0) > 0 && rows.length > 0;
 		const skeleton =
 			pruned && lowest !== input.skeleton.crownBase
 				? { ...input.skeleton, crownBase: lowest }
 				: input.skeleton;
-		return { rows: finishedRows(rows, skeleton), skeleton, dropped };
+		return { rows: finishedRows(rows, skeleton, planned), skeleton, dropped };
 	}
 	const { skeleton, axisOut, nodeOut, budOut } = trimmed;
 	for (const row of rows) {
@@ -390,15 +397,22 @@ export function dressShoots(input: DressInput): DressedShoots {
 		if (row.socket !== undefined) row.socket = budOut[row.socket] as number;
 		if (row.site !== undefined) row.site = budOut[row.site] as number;
 	}
-	return { rows: finishedRows(rows, skeleton), skeleton, dropped };
+	return { rows: finishedRows(rows, skeleton, planned), skeleton, dropped };
 }
 
-/** The rows as the table, in the space-filling order of a skeleton's bounds. */
-function finishedRows(rows: Row[], skeleton: MacroSkeleton): ShootRows {
+/**
+ * The rows as the table, in the space-filling order of a skeleton's bounds. A planned plant grew
+ * exactly the rows it delivers, so each row carries its own index as its place in the plant: the
+ * grown plant and the delivered plant are the same one.
+ */
+function finishedRows(rows: Row[], skeleton: MacroSkeleton, planned = false): ShootRows {
 	// The coarseness dial keeps every shoot row: it changes how smoothly the plant is drawn, not how
 	// many leaves the plant grows.
 	const kept = rows;
-	return packRows(kept, skeleton.bounds);
+	const packed = packRows(kept, skeleton.bounds);
+	return planned
+		? { ...packed, id: Uint32Array.from({ length: packed.count }, (_, i) => i) }
+		: packed;
 }
 
 /**

@@ -160,6 +160,16 @@ export const HEADER = {
 	scarColour: 70,
 	/** The coarsest mip level a card's sample reads, or 0 where it reads any. */
 	cardLevelMost: 71,
+	/**
+	 * How much a row's own share of the open sky dims its foliage, 0 dimming none: a leaf deep in a
+	 * clump takes this much less of the sun and of the light through it, so the clump reads light on
+	 * top and dark beneath.
+	 */
+	crownDim: 72,
+	/** How much a card's alpha rises for each mip level its sample reads, from 0 to 1. */
+	cardMipLift: 73,
+	/** How much of the crown's baked sky visibility darkens bark, from 0 to 1. */
+	woodShade: 74,
 } as const;
 
 /**
@@ -169,10 +179,16 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.cardLevelMost + 1;
+export const HEADER_TEXELS = HEADER.woodShade + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
+
+/** How much a card's alpha rises for each mip level its sample reads where its record names none. */
+export const CARD_MIP_LIFT = 0.05;
+
+/** How much of the crown's baked sky visibility darkens bark where a record names none. */
+export const WOOD_SHADE = 0.35;
 
 /** Faces round an extra's lathe at the nearest level where its record names none. */
 const EXTRA_SIDES = 8;
@@ -438,6 +454,9 @@ export function speciesHeader(
 	);
 	texel(header, HEADER.scarColour, scar ? [...scar.colour, scar.shade ?? 0.9] : [0, 0, 0, 0]);
 	texel(header, HEADER.cardLevelMost, [cardLevelMost, 0, 0, 0]);
+	texel(header, HEADER.crownDim, [record.lod.crownDim ?? 0, 0, 0, 0]);
+	texel(header, HEADER.cardMipLift, [record.lod.cardMipLift ?? CARD_MIP_LIFT, 0, 0, 0]);
+	texel(header, HEADER.woodShade, [record.lod.woodShade ?? WOOD_SHADE, 0, 0, 0]);
 	return header;
 }
 

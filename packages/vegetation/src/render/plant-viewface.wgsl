@@ -134,6 +134,10 @@ const HEADER_EXTRA_SCALES: i32 = 47;
 const HEADER_EXTRA_STALKS: i32 = 51;
 // A card's stalk line: its least width in pixels, and 1 where the line draws at its twig's width.
 const HEADER_CARD_STALK: i32 = 55;
+// How much a row's own share of the open sky dims its foliage, 0 dimming none.
+const HEADER_CROWN_DIM: i32 = 72;
+// How much a card's alpha rises for each mip level its sample reads, 0 raising none.
+const HEADER_CARD_MIP_LIFT: i32 = 73;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
@@ -156,10 +160,9 @@ const WOOD_RADIUS_SPAN: f32 = 4.0;
 const WOOD_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
-// How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
-// the share of the texel that the leaves cover, so a small rise keeps a far card's thinnest leaves
-// from falling under the cutoff without inventing coverage that the mip does not hold.
-const CARD_MIP_LIFT: f32 = 0.05;
+// The open-sky shares between which a clump's shade grades, from its dark core to its sunlit rim.
+const CROWN_SHADE_LOW: f32 = 0.15;
+const CROWN_SHADE_HIGH: f32 = 0.75;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
 // The wind speed at which a species' sway is measured: its record gives the metres at the top for
@@ -647,6 +650,22 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The share of its drawn width that a stalk the vertex stage widened truly covers. The stalk is
+/// widened to the least drawn width, so the fragment takes the extra back: it keeps its twig's true
+/// width at a distance instead of drawing as a spoke.
+fn widened_cover(radius: f32, distance: f32) -> f32 {
+    let half =
+        radius * camera.projection[1][1] * frame.resolution.y * 0.5 / max(distance, 0.0001);
+    return clamp(half / (WOOD_LEAST_PIXELS * 0.5), 0.0, 1.0);
+}
+
+/// Whether a fragment of a widened stalk draws at its true width: a stable hash of its point in the
+/// plant's space drops it by the share the widening invented, so the stalk thins evenly and nothing
+/// crawls as the camera moves.
+fn widened_drawn(cover: f32, point: vec3f) -> bool {
+    return cover >= 0.999 || value3(point * 5.0) <= cover;
+}
+
 /// Metres a loose byte of the packed blade keel stands for: the attribute's fraction times the
 /// signed range the writer packed.
 const KEEL_SCALE: f32 = 127.0 / 8192.0;
@@ -893,6 +912,14 @@ fn uv_scale(mode: i32) -> f32 {
     return 1.0 / TEXTURE_UV_STEPS;
 }
 
+/// How much a clump's own shade dims a leaf or a card there: the row's open-sky share, from none at
+/// the clump's dark core to all at its sunlit rim, times the record's dim. At 0 the record dims
+/// nothing, so a species that names none draws its leaves as before.
+fn crown_shade(sky: f32) -> f32 {
+    let dim = header(HEADER_CROWN_DIM).x;
+    return mix(1.0, smoothstep(CROWN_SHADE_LOW, CROWN_SHADE_HIGH, sky), dim);
+}
+
 /// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
 /// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
 /// leaves would vanish; raising it by a quarter for each level keeps the share of the card that
@@ -901,7 +928,7 @@ fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
     let texels = vec2f(textureDimensions(colour).xy);
     let footprint = max(length(gx * texels), length(gy * texels));
     let level = max(log2(max(footprint, 1.0)), 0.0);
-    return saturate(alpha * (1.0 + level * CARD_MIP_LIFT));
+    return saturate(alpha * (1.0 + level * header(HEADER_CARD_MIP_LIFT).x));
 }
 
 /// The coverage a point casts: a leaf's or a card's texel, and wood and stems whole.
@@ -1136,6 +1163,19 @@ fn surface(input: SurfaceInput) -> Surface {
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
+            // A stalk widened to its twig's true width on the screen takes that width back in the
+            // colour picture, over the share of it the twig itself covers.
+            if (material.matte < 0.5 && stalk.x > 0.0 && stalk.y > 0.5) {
+                let linear = object.worldMatrix[0].xyz;
+                let scale = sqrt(max(dot(linear, linear), 0.000001));
+                let cover = widened_cover(
+                    input.uv.y * WOOD_RADIUS_SPAN * scale,
+                    length(input.relativePosition),
+                );
+                if (!widened_drawn(cover, input.relativePosition)) {
+                    alpha = 0.0;
+                }
+            }
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
@@ -1152,6 +1192,11 @@ fn surface(input: SurfaceInput) -> Surface {
             } else {
                 base = texel.rgb;
             }
+            // The leaves deep in a clump take less of the sun and of the light through them than its
+            // rim does, so the card draws the clump's own dark underside rather than an even face.
+            let crown = crown_shade(input.vertexColor.a);
+            base *= crown;
+            through *= crown;
             alpha = card_alpha(texel.a, gx, gy);
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
@@ -1289,6 +1334,11 @@ fn surface(input: SurfaceInput) -> Surface {
             let row = shoot_row(object.values);
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
+            // A leaf deep in a clump takes less of the sun and of the light through it, as the card
+            // levels draw it, so the nearest level carries the same shaded clumps.
+            let crown = crown_shade(saturate(row.sky / 250.0));
+            base *= crown;
+            through *= crown;
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;
