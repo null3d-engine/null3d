@@ -181,3 +181,67 @@ describe('the clumps of a plant that names none', () => {
 		expect(clumpsOf(plant)).toBeUndefined();
 	});
 });
+
+describe('the cards of a plant the plan cuts below its clumps', () => {
+	it('draws one card set for each planned clump, sized by its radius', async () => {
+		const { OAK_MANIFEST, oakRecord, testKit } = await import('../leaf/oak.test-support.ts');
+		const { bakeCards } = await import('./card-bake.ts');
+		const { plannedClumpCards } = await import('./cards.ts');
+		const { CLUMP_TILES: _tiles } = { CLUMP_TILES: 3 };
+		const record = oakRecord();
+		const kit = testKit(record);
+		const { cells, atlas } = bakeCards(record, OAK_MANIFEST, 'high', kit.prototypes);
+		const prototypes = kit.prototypes.map((prototype, at) => ({
+			...prototype,
+			card: cells[at] ?? prototype.card,
+		}));
+		const grown = { ...kit, manifest: OAK_MANIFEST, prototypes, cards: atlas };
+		const clumps = [0, 1, 2, 3, 4].map((id) => ({
+			id,
+			centre: [id * 2, 8 + id, 0] as [number, number, number],
+			radius: 1,
+			depth: 3,
+			birth: 0,
+		}));
+		const rows: ShootRows = {
+			count: 0,
+			prototype: new Uint8Array(0),
+			position: new Float32Array(0),
+			rotation: new Float32Array(0),
+			scale: new Float32Array(0),
+			record: new Uint16Array(0),
+			phase: new Uint8Array(0),
+			sky: new Uint8Array(0),
+			bent: new Uint8Array(0),
+			order: new Uint32Array(0),
+		};
+		const skeleton = {
+			clumps,
+			axes: { count: 0, order: new Uint32Array(0), parent: new Int32Array(0) },
+			buds: {},
+		} as unknown as MacroSkeleton;
+		const mesh = plannedClumpCards(
+			{
+				record,
+				seed: 11,
+				variant: 0,
+				season: 'summer',
+				kit: grown,
+				skeleton,
+				rows,
+				crown: { cells: [1, 1, 1], min: [0, 0, 0], cell: 1, sky: new Float32Array([1]) },
+				detail: 'high',
+			} as never,
+			3,
+			1,
+		);
+		expect(mesh).toBeDefined();
+		// Three planes of a 3 by 3 picture grid for each of the five clumps.
+		const perClump = 3 * 3 * 3 * 2;
+		expect((mesh?.indices.length ?? 0) / 3).toBe(5 * perClump);
+		// Every card stands around its own clump's centre.
+		const xs = mesh?.positions.filter((_, at) => at % 3 === 0) ?? new Float32Array(0);
+		expect(Math.min(...xs)).toBeGreaterThanOrEqual(-1.5);
+		expect(Math.max(...xs)).toBeLessThanOrEqual(9.5);
+	});
+});

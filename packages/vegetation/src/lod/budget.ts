@@ -38,6 +38,7 @@ import {
 	cardMesh,
 	clusterCardMesh,
 	clusterTriangles,
+	plannedClumpCards,
 	type DrawnWood,
 	woodSurface,
 } from './cards';
@@ -805,6 +806,20 @@ function rowLevel(
 		if (clusters.length > 0) {
 			cards = clusterCardMesh(mesh, clusters, planes);
 			leaves = trianglesOf(cards);
+		} else if (input.mesh.skeleton.clumps && input.mesh.skeleton.clumps.length > 0) {
+			// A plant cut too far to fill a card set from its rows draws the clumps its plan holds,
+			// one card each, as many as its leaves' share pays for. A clump's card is two triangles a
+			// plane, with one picture rather than a grid at this size.
+			const clumps = input.mesh.skeleton.clumps.length;
+			// One clump's card stands under the budget, so rounding never tips the level past it.
+			const share = Math.min(1, (budget - 6) / (6 * clumps));
+			if (share > 0) {
+				const made = plannedClumpCards(input.mesh, 3, share, 1);
+				if (made) {
+					cards = made;
+					leaves = trianglesOf(made);
+				}
+			}
 		}
 		joins = {
 			clusters: clusters.length,

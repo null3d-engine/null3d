@@ -14,7 +14,7 @@ import type { MacroSkeleton, SocketSites } from '../core/graph';
  * The share of its sky-lit tone that a clump's lowest leaves keep: the clump's own leaves stand
  * over its underside, so its foot reads dark and its top reads open to the sky.
  */
-export const CLUMP_UNDER_SHADE = 0.35;
+export const CLUMP_UNDER_SHADE = 0.5;
 
 /** One foliage mass of a plant, and the rows that stand in it. */
 export interface Clump {
