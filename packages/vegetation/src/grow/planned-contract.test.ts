@@ -15,6 +15,7 @@ import { standInSpecies } from '../core/stand-in';
 import { buildKitNow, forgetGrownPlants, growPlantNow, loadPlantCode, plantsGrown } from '../generate';
 import { rowSockets } from '../grow/sparse';
 import * as sparseModule from '../grow/sparse';
+import { planFrame } from '../grow/frame';
 import * as budgetModule from '../lod/budget';
 
 /** Whether the run states the full set of seeds. */
@@ -331,65 +332,116 @@ function overlap(a: Uint8Array, b: Uint8Array): number {
 	return either === 0 ? 1 : both / either;
 }
 
-/** The clump table of a plant: its sockets grouped by lobe, with each clump's centre and radius. */
-interface Clumps {
-	readonly count: number;
-	readonly centre: readonly (readonly [number, number, number])[];
-	readonly radius: readonly number[];
-	readonly rows: readonly number[];
-	readonly inner: number;
+/** One clump of the fill target: a place with a radius and the socket places that fill it. */
+interface Clump {
+	readonly id: number;
+	readonly centre: readonly [number, number, number];
+	readonly radius: number;
+	readonly sockets: number[];
 }
 
 /**
- * The clumps of a plant, from its sockets' lobe ids: a clump is the set of sockets sharing one lobe.
- * Its centre is the mean of its socket places and its radius the farthest socket from that centre.
+ * The adult plan's clumps: the frame's own bough-end patches, before the fine fill replaces them.
+ * The planned grower names its own clumps the same way, one `lobe` id to a clump.
  */
-function clumpsOf(asset: PlantAsset): Clumps {
-	const { skeleton, shoots } = asset;
-	const { buds } = skeleton;
-	const sockets = buds.sockets;
-	const byLobe = new Map<number, number[]>();
-	const count = sockets ? buds.count : 0;
-	for (let b = 0; b < count; b++) {
-		const lobe = sockets?.lobe[b] as number;
-		const list = byLobe.get(lobe) ?? [];
-		list.push(b);
-		byLobe.set(lobe, list);
+async function anchorClumps(seed: number): Promise<{ clumps: readonly Clump[]; ofBud: Map<number, number> }> {
+	const module = await moduleOf('anchor');
+	const record = module.record;
+	const input = { record, seed, variant: 0, season: record.seasons.default } as never;
+	// The third argument asks for the stated patches, before the fine fill replaces them. A head
+	// that does not take it yet reports every fine patch, which the fill target notes.
+	const planOf = planFrame as unknown as (spec: never, input: never, fill?: boolean) => ReturnType<typeof planFrame>;
+	const plan = planOf((record.growth as unknown as { frame: never }).frame, input, false);
+	const clumps: Clump[] = plan.patches.map((patch, id) => ({
+		id,
+		centre: patch.centre as [number, number, number],
+		radius: Math.max(patch.width, patch.depth) / 2,
+		sockets: [],
+	}));
+	const asset = await plant(seed, {}, 'anchor');
+	const { buds } = asset.skeleton;
+	const ofBud = new Map<number, number>();
+	for (let b = 0; b < buds.count; b++) {
+		const at: [number, number, number] = [buds.position[b * 3] as number, buds.position[b * 3 + 1] as number, buds.position[b * 3 + 2] as number];
+		let nearest = 0;
+		let distance = Number.POSITIVE_INFINITY;
+		for (let c = 0; c < clumps.length; c++) {
+			const d = away(at, (clumps[c] as Clump).centre);
+			if (d < distance) {
+				distance = d;
+				nearest = c;
+			}
+		}
+		ofBud.set(b, nearest);
+		clumps[nearest]?.sockets.push(b);
 	}
-	const socketsOf = rowSockets(skeleton, shoots);
+	return { clumps, ofBud };
+}
+
+/** The planned plant's clumps, from its own table, and the clump each socket fills. */
+function plannedClumps(asset: PlantAsset): { clumps: readonly Clump[]; ofBud: Map<number, number> } | undefined {
+	const table = asset.skeleton.clumps;
+	const sockets = asset.skeleton.buds.sockets;
+	if (!table || !sockets) return undefined;
+	const byId = new Map<number, Clump>();
+	const clumps = table.map((entry) => {
+		const clump: Clump = { id: entry.id, centre: entry.centre, radius: entry.radius, sockets: [] };
+		byId.set(entry.id, clump);
+		return clump;
+	});
+	const ofBud = new Map<number, number>();
+	for (let b = 0; b < asset.skeleton.buds.count; b++) {
+		const clump = byId.get(sockets.lobe[b] as number);
+		if (!clump) continue;
+		ofBud.set(b, clump.id);
+		clump.sockets.push(b);
+	}
+	return { clumps, ofBud };
+}
+
+/** The fill measures of a clump table: rows a clump holds, the inner-half share, and the sky bins. */
+interface FillFigures {
+	readonly clumps: number;
+	readonly medianRows: number;
+	readonly spreadRows: number;
+	readonly inner: number;
+	readonly sky: readonly number[];
+}
+
+function fillFigures(
+	asset: PlantAsset,
+	table: { readonly clumps: readonly Clump[]; readonly ofBud: Map<number, number> },
+): FillFigures {
+	const rows = asset.shoots;
+	const rowSocket = rowSockets(asset.skeleton, rows);
 	const rowsOf = new Map<number, number>();
-	if (socketsOf)
-		for (let r = 0; r < shoots.count; r++) {
-			const bud = socketsOf[r] as number;
-			const lobe = sockets?.lobe[bud] as number;
-			rowsOf.set(lobe, (rowsOf.get(lobe) ?? 0) + 1);
+	if (rowSocket)
+		for (let r = 0; r < rows.count; r++) {
+			const clump = table.ofBud.get(rowSocket[r] as number);
+			if (clump === undefined) continue;
+			rowsOf.set(clump, (rowsOf.get(clump) ?? 0) + 1);
 		}
-	const ids = [...byLobe.keys()].sort((a, b) => a - b);
-	const centre: [number, number, number][] = [];
-	const radius: number[] = [];
-	const rows: number[] = [];
 	const inner: number[] = [];
-	for (const lobe of ids) {
-		const list = byLobe.get(lobe) as number[];
-		const c: [number, number, number] = [0, 0, 0];
-		for (const b of list) {
-			c[0] += (buds.position[b * 3] as number) / list.length;
-			c[1] += (buds.position[b * 3 + 1] as number) / list.length;
-			c[2] += (buds.position[b * 3 + 2] as number) / list.length;
-		}
-		let reach = 0;
-		for (const b of list) reach = Math.max(reach, away(c, [buds.position[b * 3] as number, buds.position[b * 3 + 1] as number, buds.position[b * 3 + 2] as number]));
+	for (const clump of table.clumps) {
 		let within = 0;
-		for (const b of list) {
-			const d = away(c, [buds.position[b * 3] as number, buds.position[b * 3 + 1] as number, buds.position[b * 3 + 2] as number]);
-			if (d <= reach / 2) within++;
+		for (const b of clump.sockets) {
+			const at: [number, number, number] = [
+				asset.skeleton.buds.position[b * 3] as number,
+				asset.skeleton.buds.position[b * 3 + 1] as number,
+				asset.skeleton.buds.position[b * 3 + 2] as number,
+			];
+			if (away(at, clump.centre) <= clump.radius / 2) within++;
 		}
-		centre.push(c);
-		radius.push(reach);
-		rows.push(rowsOf.get(lobe) ?? 0);
-		inner.push(within / list.length);
+		if (clump.sockets.length > 0) inner.push(within / clump.sockets.length);
 	}
-	return { count: ids.length, centre, radius, rows, inner: inner.length === 0 ? 1 : inner.reduce((s, v) => s + v, 0) / inner.length };
+	const rowsPer = table.clumps.map((clump) => rowsOf.get(clump.id) ?? 0);
+	return {
+		clumps: table.clumps.length,
+		medianRows: median(rowsPer),
+		spreadRows: spreadOf(rowsPer),
+		inner: inner.length === 0 ? 0 : inner.reduce((s, v) => s + v, 0) / inner.length,
+		sky: skyBins(asset),
+	};
 }
 
 /** The rows' sky share in five equal bins. */
@@ -594,15 +646,16 @@ describe('the planned oak contract', () => {
 			const band = growth.fruitBand ?? 0.1;
 			const full = extrasOf(await plant(HOME, { maturity: 1 }));
 			expect(full).toBeGreaterThan(0);
-			let previous = 0;
-			for (let i = 0; i <= Math.round(1 / 0.01); i++) {
-				const maturity = i * 0.01;
+			// Below the fruiting maturity nothing draws; through the band every 0.01 step rises by at
+			// most a twentieth of the final count.
+			for (const maturity of [0, Math.max(0, from - 0.05), Math.max(0, from - 0.01)])
+				expect([maturity, extrasOf(await plant(HOME, { maturity, season: kit.record.seasons.default }))]).toEqual([maturity, 0]);
+			let previous = extrasOf(await plant(HOME, { maturity: from, season: kit.record.seasons.default }));
+			for (let i = 1; i <= Math.max(1, Math.ceil(band / 0.01)); i++) {
+				const maturity = Math.min(1, from + i * 0.01);
 				const extras = extrasOf(await plant(HOME, { maturity, season: kit.record.seasons.default }));
-				if (maturity < from) expect([maturity, extras]).toEqual([maturity, 0]);
-				if (maturity >= from && previous >= 0) {
-					expect([maturity, extras - previous <= 0.05 * full]).toEqual([maturity, true]);
-					previous = extras;
-				}
+				expect([maturity, extras - previous <= 0.05 * full]).toEqual([maturity, true]);
+				previous = extras;
 			}
 			expect(from + band <= 1 + 1e-9).toBe(true);
 			const flowers = growth.flowers;
@@ -791,15 +844,17 @@ describe('the planned oak contract', () => {
 				expect([a, away(nodeAt(anchor, last), nodeAt(planned, planned.skeleton.axes.last[nearest] as number)) <= 0.01]).toEqual([a, true]);
 				expect([a, off(planned.skeleton.radius[planned.skeleton.axes.last[nearest] as number] as number, anchor.skeleton.radius[last] as number) <= 0.01]).toEqual([a, true]);
 			}
-			// The clumps are the anchor's own lobe table, at the same centres and radii.
-			const anchorClumps = clumpsOf(anchor);
-			const plannedClumps = planned.skeleton.clumps;
-			expect(plannedClumps !== undefined).toBe(true);
-			expect(plannedClumps?.length).toBe(anchorClumps.count);
-			for (let i = 0; i < anchorClumps.count; i++) {
-				const clump = plannedClumps?.[i];
-				expect([i, clump?.id, clump !== undefined ? away(clump.centre, anchorClumps.centre[i] as readonly [number, number, number]) <= 0.01 : false]).toEqual([i, clump?.id, true]);
-				expect([i, clump !== undefined ? Math.abs(clump.radius - (anchorClumps.radius[i] as number)) <= 0.01 : false]).toEqual([i, true]);
+			// The clumps are the adult plan's own bough-end patches, at the same centres and radii,
+			// and the planned plant names each socket's clump by `lobe`.
+			const anchorTable = await anchorClumps(HOME);
+			const plannedTable = plannedClumps(planned);
+			expect(plannedTable !== undefined).toBe(true);
+			expect(plannedTable?.clumps.length).toBe(anchorTable.clumps.length);
+			for (let i = 0; i < anchorTable.clumps.length; i++) {
+				const anchorClump = anchorTable.clumps[i] as Clump;
+				const clump = plannedTable?.clumps[i];
+				expect([i, clump?.id, clump !== undefined ? away(clump.centre, anchorClump.centre) <= 0.01 : false]).toEqual([i, clump?.id, true]);
+				expect([i, clump !== undefined ? Math.abs(clump.radius - anchorClump.radius) <= 0.01 : false]).toEqual([i, true]);
 			}
 		},
 		LONG,
@@ -810,26 +865,19 @@ describe('the planned oak contract', () => {
 		async () => {
 			const anchor = await plant(HOME, {}, 'anchor');
 			const planned = await plant(HOME, {});
-			const target = clumpsOf(anchor);
-			const candidate = clumpsOf(planned);
-			const targetMedian = median(target.rows);
-			const candidateMedian = median(candidate.rows);
-			const targetSpread = spreadOf(target.rows);
-			const candidateSpread = spreadOf(candidate.rows);
-			const skyTarget = skyBins(anchor);
-			const skyCandidate = skyBins(planned);
-			console.log(
-				[
-					`F1 target (frame): clumps ${target.count}, median rows ${targetMedian}, spread ${targetSpread}, inner half ${target.inner.toFixed(3)}, sky ${skyTarget.map((v) => v.toFixed(3)).join('/')}`,
-					`F1 candidate (planned): clumps ${candidate.count}, median rows ${candidateMedian}, spread ${candidateSpread}, inner half ${candidate.inner.toFixed(3)}, sky ${skyCandidate.map((v) => v.toFixed(3)).join('/')}`,
-				].join('\n'),
-			);
-			// The target is for the grower, not a gate: print the distance and let the eye decide.
-			console.log(
-				`F1 distances: median ${(off(candidateMedian, targetMedian) * 100).toFixed(1)}%, spread ${(off(candidateSpread, targetSpread) * 100).toFixed(1)}%, inner ${Math.abs(candidate.inner - target.inner).toFixed(3)}, sky ${skyCandidate.map((v, i) => Math.abs(v - (skyTarget[i] as number)).toFixed(3)).join('/')}`,
-			);
+			const target = fillFigures(anchor, await anchorClumps(HOME));
+			const plannedTable = plannedClumps(planned);
+			const candidate = plannedTable ? fillFigures(planned, plannedTable) : undefined;
+			console.log(`F1 target (the frame's clumps): ${JSON.stringify(target)}`);
+			console.log(`F1 candidate (planned): ${candidate ? JSON.stringify(candidate) : 'no clumps on the skeleton'}`);
+			if (candidate) {
+				// The target is for the grower, not a gate: print the distance and let the eye decide.
+				console.log(
+					`F1 distances: median ${(off(candidate.medianRows, target.medianRows) * 100).toFixed(1)}%, spread ${(off(candidate.spreadRows, target.spreadRows) * 100).toFixed(1)}%, inner ${Math.abs(candidate.inner - target.inner).toFixed(3)}, sky ${candidate.sky.map((v, i) => Math.abs(v - (target.sky[i] as number)).toFixed(3)).join('/')}`,
+				);
+			}
 			console.log(`F1 crown cover tolerance ${FILL.cover}: read from the CPU preview over 01 in the verdict.`);
-			expect(target.count).toBeGreaterThan(0);
+			expect(target.clumps).toBeGreaterThan(0);
 		},
 		LONG,
 	);
@@ -877,13 +925,22 @@ describe('the planned oak contract', () => {
 				expect([request, ladderSpy.mock.calls.length]).toEqual([request, 0]);
 			}
 			forget();
-			const grownOnce = growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low', maturity: 0.5, sparse: 0.5 } as never);
-			const count = plantsGrown();
-			const again = growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low', maturity: 0.5, sparse: 0.5 } as never);
+			const once = { seed: HOME, variant: 0, near: false, detail: 'low', maturity: 0.5, sparse: 0.5 } as const;
+			const grownOnce = growPlantNow(kit, once as never);
+			let count = plantsGrown();
+			const again = growPlantNow(kit, once as never);
 			expect(plantsGrown()).toBe(count);
 			expect(plantAssetDigest(again)).toBe(plantAssetDigest(grownOnce));
-			growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low', maturity: 0.6, sparse: 0.5 } as never);
-			expect(plantsGrown()).toBe(count + 1);
+			// A change of maturity, of sparseness and of the maximum each grows a plant of its own.
+			for (const changed of [
+				{ ...once, maturity: 0.6 },
+				{ ...once, sparse: 0.75 },
+				{ ...once, maxTriangles: 1000 },
+			]) {
+				growPlantNow(kit, changed as never);
+				expect([changed, plantsGrown()]).toEqual([changed, count + 1]);
+				count = plantsGrown();
+			}
 		},
 		LONG,
 	);
