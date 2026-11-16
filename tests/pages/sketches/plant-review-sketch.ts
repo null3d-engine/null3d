@@ -1884,7 +1884,15 @@ export default defineSketch(async (ctx) => {
 	}
 	if (!PLAIN) {
 		const reach = Math.max(bounds.max[0] - bounds.min[0], bounds.max[2] - bounds.min[2]);
-		const shadow = { distance: Math.max(20, height * 2.5 + reach * 2), contactDistance: 0.4 };
+		// The sun's shadow range reaches the camera's own stand: a camera past the plant's own reach
+		// draws the plant with no shadow, and the crown loses the dark undersides its reference shows.
+		// The range follows the engine's own automatic default, the plant's extent or the camera's
+		// distance, whichever is further.
+		const cameraDistance = first ? Math.hypot(...sub(first.target, first.position)) : 0;
+		const shadow = {
+			distance: Math.max(20, height * 2.5 + reach * 2, cameraDistance * 1.2),
+			contactDistance: 0.4,
+		};
 		const sunFrom = (azimuth: number, rise: number): V3 => {
 			const e = rise * DEG;
 			return scale(add(scale(facing(azimuth), Math.cos(e)), [0, Math.sin(e), 0]), -1);
