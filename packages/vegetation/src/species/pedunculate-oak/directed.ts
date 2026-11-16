@@ -528,10 +528,10 @@ const foliage =
 					optics: {
 						...record.foliage.leaf.optics,
 						reflectance: [0.0331, 0.0823, 0.0086] as const,
-						// Still 01: the pale lower face reflects a share of the sky's blue light where it
-						// stands in the crown's shade, so the dark clumps read grey-blue. The face takes
-						// its share of that blue down, and the reference leaf's own pictures stay pale.
-						reflectanceBack: [0.1441, 0.1861, 0.0997] as const,
+						// Still 13 shows the leaf's lower face pale grey-green, while still 01 wants the
+						// crown's dark clumps deep green. The face keeps the photograph's colour: cutting
+						// its blue moved the leaf away from its picture and barely moved the crown.
+						reflectanceBack: [0.1441, 0.1861, 0.1329] as const,
 					},
 				},
 			}
