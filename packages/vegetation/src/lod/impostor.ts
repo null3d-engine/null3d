@@ -117,6 +117,58 @@ function barkMean(kit: SpeciesKitData): Rgb {
 	return [mean[0] * tint[0], mean[1] * tint[1], mean[2] * tint[2]];
 }
 
+/** A smooth step from 0 to 1 between two edges, flat outside them. */
+function smoothstep(edge0: number, edge1: number, at: number): number {
+	const t = Math.max(0, Math.min(1, (at - edge0) / (edge1 - edge0 || 1e-9)));
+	return t * t * (3 - 2 * t);
+}
+
+/**
+ * The bark tone that a vertex at a height wears: the record's zones judged at that height and
+ * blended over each band's ends as the plant shader blends them, and the nearest zone's tone where
+ * no band holds the height. A crown's wood stands well above the foot, so one zone's tone for the
+ * whole tree would paint the limbs in the foot's shade.
+ *
+ * @param kit The species' kit.
+ * @returns The linear tone at a height in metres.
+ */
+function barkTone(kit: SpeciesKitData): (height: number) => Rgb {
+	const zones = (kit.record.bark?.zones ?? []).filter((zone) => zone.by === 'height');
+	if (zones.length === 0) {
+		const mean = barkMean(kit);
+		return () => mean;
+	}
+	const tones = zones.map((zone): Rgb => {
+		const layer = kit.manifest.bark?.layers[zone.layer];
+		const mean = layer?.mean ?? kit.manifest.bark?.young.mean ?? BARK;
+		const tint = zone.tint ?? [1, 1, 1];
+		return [mean[0] * tint[0], mean[1] * tint[1], mean[2] * tint[2]];
+	});
+	const first = zones[0] as (typeof zones)[number];
+	const last = zones[zones.length - 1] as (typeof zones)[number];
+	const firstTone = tones[0] as Rgb;
+	const lastTone = tones[tones.length - 1] as Rgb;
+	return (height: number): Rgb => {
+		if (height < first.from) return firstTone;
+		if (height > last.to) return lastTone;
+		const sum = [0, 0, 0];
+		let total = 0;
+		zones.forEach((zone, at) => {
+			const half = Math.max((zone.blend ?? 0) * 0.5, 0.0001);
+			const weight =
+				smoothstep(zone.from - half, zone.from + half, height) *
+				(1 - smoothstep(zone.to - half, zone.to + half, height));
+			total += weight;
+			const tone = tones[at] as Rgb;
+			sum[0] = (sum[0] as number) + (tone[0] as number) * weight;
+			sum[1] = (sum[1] as number) + (tone[1] as number) * weight;
+			sum[2] = (sum[2] as number) + (tone[2] as number) * weight;
+		});
+		if (total <= 1e-6) return height < first.from ? firstTone : lastTone;
+		return [(sum[0] as number) / total, (sum[1] as number) / total, (sum[2] as number) / total] as Rgb;
+	};
+}
+
 /**
  * The share of a far texel's area that leaves must cover for it to draw. Cards seen from far draw
  * with alpha to coverage, so a crown's texel where a third of the area is leaf reads as crown.
@@ -240,7 +292,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];
 	const parts: ImpostorBakePart[] = [];
-	const bark = barkMean(kit);
+	const bark = barkTone(kit);
 	const size = kit.cards.size;
 	const cards: ImpostorBakePart[] = [];
 	// The plant that was asked for draws its own first card level into the atlas.
@@ -253,7 +305,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			parts.push({
 				positions,
 				normals,
-				colors: shadedColours(part.colors, () => bark),
+				colors: shadedColours(part.colors, (v) => bark(positions[v * 3 + 1] as number)),
 				indices: part.indices,
 			});
 		} else if (part.name === 'cards' && size > 0) {
