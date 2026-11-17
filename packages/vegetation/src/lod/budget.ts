@@ -797,7 +797,9 @@ export function rowLevel(
 		const tier = tiers.find((candidate) => candidate.tier === chosen.tier);
 		leaves = tier?.leaves ?? 0;
 		twigs = tier?.twigs ?? 0;
-	} else if (rows.count > 0) {
+	} else if (rows.count > 0 || (input.mesh.skeleton.clumps?.length ?? 0) > 0) {
+		// A plant a maximum cut to no rows still draws its clumps as cards, so a crown whose every
+		// twig is above the cap's cut is drawn rather than left bare.
 		const budget = max - woodTotal - extras.cost;
 		allowed.leaves = budget;
 		const clumps = input.mesh.skeleton.clumps?.length ?? 0;
