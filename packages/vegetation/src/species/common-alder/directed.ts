@@ -66,7 +66,7 @@ export const frame: FrameSpec = {
 		// Stills 01 and 17: no lean and no bend.
 		sway: 0.6,
 		elbows: 4,
-		patch: { kind: 'clump', width: 0.1, depth: 0.09, fill: ENDS },
+		patch: { kind: 'clump', width: 0.115, depth: 0.1035, fill: ENDS },
 		children: [
 			{
 				name: 'limb',
@@ -133,7 +133,7 @@ export const frame: FrameSpec = {
 				sway: 10,
 				elbows: 5,
 				// Still 30: a clump is 0.10 to 0.15 of the height across.
-				patch: { kind: 'clump', width: 0.18, depth: 0.135, fill: ENDS },
+				patch: { kind: 'clump', width: 0.207, depth: 0.155, fill: ENDS },
 				children: [
 					{
 						name: 'side',
@@ -168,7 +168,7 @@ export const frame: FrameSpec = {
 						sway: 10,
 						elbows: 3,
 						// Still 30: the smaller clumps on a branch's side twigs.
-						patch: { kind: 'clump', width: 0.14, depth: 0.105, fill: ENDS },
+						patch: { kind: 'clump', width: 0.161, depth: 0.121, fill: ENDS },
 					},
 				],
 			},
