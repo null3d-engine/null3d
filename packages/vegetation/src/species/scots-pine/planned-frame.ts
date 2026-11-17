@@ -37,15 +37,15 @@ const TRUNK = [
  * its bend states both in the record's own degrees, so the low pads' floors fall with their limbs.
  */
 const LEVELS = [
-	{ at: 0.46, count: 2, leave: 30, end: -28, pad: 0.23 },
-	{ at: 0.52, count: 2, leave: 30.7, end: -28, pad: 0.25 },
-	{ at: 0.61, count: 3, leave: 31.7, end: -55, pad: 0.28 },
-	{ at: 0.69, count: 3, leave: 32.9, end: -55, pad: 0.31 },
-	{ at: 0.755, count: 4, leave: 34, end: -28, pad: 0.35 },
+	{ at: 0.46, count: 2, leave: 30, end: -28, pad: 0.23, band: [0.25, 0.75] },
+	{ at: 0.52, count: 2, leave: 30.7, end: -28, pad: 0.25, band: [0.2, 0.65] },
+	{ at: 0.61, count: 3, leave: 31.7, end: -55, pad: 0.28, band: [0.15, 0.5] },
+	{ at: 0.69, count: 3, leave: 32.9, end: -55, pad: 0.31, band: [0.15, 0.5] },
+	{ at: 0.755, count: 4, leave: 34, end: -28, pad: 0.35, band: [0.2, 0.65] },
 ] as const;
 
 /** Still 01: four top limbs leave at 45 degrees and level out under the top plates. */
-const TOP = { at: 0.81, count: 4, leave: 45, end: 0, pad: 0.32 } as const;
+const TOP = { at: 0.81, count: 4, leave: 45, end: 0, pad: 0.32, band: [0.1, 0.6] } as const;
 
 /**
  * The pad's dome as a share of its width: still 02 reads a dome 0.29 of its width deep, so the
@@ -61,23 +61,34 @@ const PAD = {
 const SHELL = { pitch: 0.021, reach: 0.029 } as const;
 
 /**
- * Still 08: a limb forks in its outer half, two arms at 39 degrees, each about 0.7 of its parent's
- * width. The frame gives a bough one fork of two arms; the record's two or three forks repeat the
- * pair along the limb. Each arm carries a small pad, so a limb's foliage reads as layered plates
- * rather than one mass.
+ * The pads take the conifer family's clump class: a pine's bough carries side sprays along its
+ * outer half, and each spray ends in a needle tuft, so one pad is many small clumps and never one
+ * mass. Still 08's fork stands as two arms with no foliage of their own, as the record's arms
+ * spread under the pad.
  */
-const STUB = {
-	width: [
-		[0, 0.035],
-		[1, 0.05],
-	],
-	depth: [
-		[0, 0.01],
-		[1, 0.015],
-	],
-} as const;
+const CLUMP = 0.1;
+const TUFT = { width: CLUMP, depth: CLUMP * 0.29 } as const;
 
-const stub = () => ({
+const tuft = () => ({
+	name: 'tuft',
+	role: 'branch' as const,
+	count: 1,
+	along: [0.85, 1] as const,
+	stagger: 0,
+	around: 'ring' as const,
+	angle: 20,
+	from: 'parent' as const,
+	angleSpread: 8,
+	length: { share: 0.15 },
+	vary: 0.2,
+	radius: 0.7,
+	taper: 0.7,
+	sway: 4,
+	elbows: 1,
+	patch: { kind: 'clump', width: TUFT.width, depth: TUFT.depth, fill: SHELL },
+});
+
+const arm = () => ({
 	name: 'arm',
 	role: 'branch' as const,
 	count: 2,
@@ -93,7 +104,25 @@ const stub = () => ({
 	taper: 0.6,
 	sway: 8,
 	elbows: 1,
-	patch: { kind: 'clump', width: STUB.width, depth: STUB.depth, fill: SHELL },
+});
+
+const spray = (band: readonly [number, number]) => ({
+	name: 'spray',
+	role: 'branch' as const,
+	count: 5,
+	along: band,
+	stagger: 0.5,
+	around: 'spiral' as const,
+	angle: 20,
+	from: 'parent' as const,
+	angleSpread: 12,
+	length: { share: 0.12 },
+	vary: 0.25,
+	radius: 0.35,
+	taper: 0.6,
+	sway: 8,
+	elbows: 1,
+	children: [tuft()],
 });
 
 const rule = (
@@ -103,6 +132,7 @@ const rule = (
 		readonly leave: number;
 		readonly end: number;
 		readonly pad: number;
+		readonly band: readonly [number, number];
 	},
 	stubs = true,
 ) => ({
@@ -116,7 +146,7 @@ const rule = (
 	from: 'plumb' as const,
 	angleSpread: 4,
 	// The crown's own outline is the foliage's edge, so the wood stops a pad's radius inside it.
-	length: { outline: 0.85 },
+	length: { outline: 0.84 },
 	vary: 0.05,
 	// Still 01, at the measured place outside the collar: the limb is 0.20 of the trunk's radius
 	// and keeps 0.85 of it along the run. The collar's swell to 0.58 at the joint is the form's
@@ -127,8 +157,7 @@ const rule = (
 	sway: 6,
 	elbows: 3,
 	apart: 0.01,
-	...(stubs ? { children: [stub()] } : {}),
-	patch: { kind: 'clump', width: level.pad, depth: PAD.depth, fill: SHELL },
+	...(stubs ? { children: [arm(), spray(level.band)] } : {}),
 });
 
 /** The Scots pine's frame. */
@@ -138,7 +167,7 @@ export const frame: FrameSpec = {
 		name: 'trunk',
 		count: 1,
 		width: TRUNK as unknown as (readonly [number, number])[],
-		length: { share: 1 },
+		length: { share: 0.93 },
 		sway: 3,
 		elbows: 3,
 		crook: 0.2,
