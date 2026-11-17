@@ -1399,17 +1399,15 @@ fn surface(input: SurfaceInput) -> Surface {
             let crown = crown_shade(input.vertexColor.a);
             base *= crown;
             through *= crown;
-            alpha = card_alpha(texel.a, hx, hy);
-            cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(hx, hy));
-            // The first card level's own coverage: a factor on its cut alpha, which the lighting
-            // does not compress, so a crown can close or open at that level alone. A record naming
-            // no factor draws the card exactly as before, and the stalk strips, which carry their
-            // own uv1.y, stand outside the gate.
+            // The first card level's own coverage: a factor on the texel's alpha before the cut, so
+            // the threshold moves in the card's own alpha space. Scaling the already-cut value moves
+            // nothing, since a card's alpha at distance is nearly binary. A record naming no factor
+            // draws the card as before, and the stalk strips stand outside the gate.
             let card_gate = header(HEADER_CARD_SHADE);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
-            if (card_gate.y != 1.0) {
-                cut_alpha *= mix(1.0, card_gate.y, gated);
-            }
+            let card_fill = mix(1.0, card_gate.y, gated);
+            alpha = card_alpha(texel.a * card_fill, hx, hy);
+            cut_alpha = card_cut_alpha(texel.a * card_fill, surface_texel.z, card_level(hx, hy));
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
             // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
             // record names none, the card draws whole.
