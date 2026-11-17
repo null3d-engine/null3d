@@ -1466,6 +1466,9 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 			from: starts[2],
 		},
 		...(asked !== undefined ? { maxTriangles: asked } : {}),
+		// The far bake reads the biting maximum, since a maximum the plant's plan already fits
+		// changes no level and must change no far picture.
+		...(most === undefined ? {} : { capTriangles: most }),
 		...(shoots !== undefined && shoots !== mesh.detail ? { shootDetail: shoots } : {}),
 		stats: {
 			milliseconds: now() - started,

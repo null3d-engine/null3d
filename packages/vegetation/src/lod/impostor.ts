@@ -266,19 +266,19 @@ export const FAR_SUPERSAMPLE_LEAST = 1;
  * @returns The texels a far view, and how many times finer the bake draws.
  * @category api/vegetation
  */
-function farGrid(
+export function farGrid(
 	kit: SpeciesKitData,
 	asset: PlantAsset,
 ): { readonly texels: number; readonly supersample: number } {
 	const texels = asset.impostor.texels;
 	const sparse = Math.min(1, Math.max(0, asset.sparse ?? 0));
-	if (asset.maxTriangles === undefined && sparse === 0) return { texels, supersample: SUPERSAMPLE };
+	if (asset.capTriangles === undefined && sparse === 0) return { texels, supersample: SUPERSAMPLE };
 	const budget = kit.record.lod.budget.lod1Triangles;
 	const own = asset.stats.triangles[1];
 	// A capped level draws fewer triangles than the record's full level, so its cells shrink with
 	// the level's own count.
 	const capped =
-		asset.maxTriangles !== undefined && budget > 0 && own > 0
+		asset.capTriangles !== undefined && budget > 0 && own > 0
 			? Math.sqrt(Math.min(1, own / budget))
 			: 1;
 	// A crown grown sparse keeps its clumps but carries far fewer leaves, so its far cells resolve
@@ -387,7 +387,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			// A capped plant's level draws a bare frame under a few large clumps, so its own level
 			// bakes a wood-coloured far picture. The far picture shows the crown, so under a maximum
 			// its cards grow about their middles until the crown bakes as leaves.
-			if (asset.maxTriangles !== undefined) growPlanes(positions, CAPPED_CARD_LIFT);
+			if (asset.capTriangles !== undefined) growPlanes(positions, CAPPED_CARD_LIFT);
 			widen(positions, min, max);
 			cards.push({
 				positions,
