@@ -30,12 +30,12 @@ const HEIGHT: Planned['height'] = [
  * oak's and never widens into a dome.
  */
 const SPREAD: Planned['spread'] = [
-	[0, 0.04],
-	[0.05, 0.1],
-	[0.15, 0.16],
-	[0.35, 0.2],
-	[0.7, 0.22],
-	[1, 0.22],
+	[0, 0.05],
+	[0.05, 0.13],
+	[0.15, 0.2],
+	[0.35, 0.26],
+	[0.7, 0.3],
+	[1, 0.3],
 ];
 
 /** The silver birch's planned growth. */
@@ -53,9 +53,11 @@ export const plannedGrowth: Planned = {
 	turn: { roll: 90, tilt: 25, out: 30 },
 	// The orders under the branches: the branches themselves are stated by the frame; these describe
 	// the woody twigs the keyed fill grows inside each clump.
+	// The birch's pictures show an open flame of separate hanging leaves, so its fill carries fewer
+	// twigs through each clump than the oak's or the alder's.
 	orders: [
-		{ density: 8, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 12, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ density: 6, angle: 50, length: 0.35, birth: 0, kink: 20 },
+		{ density: 9, angle: 45, length: 0.3, birth: 0, kink: 18 },
 	],
 	// The share of each order kept at full sparseness. The bole and the great limbs never thin; at
 	// sparseness 1 about two thirds of the branches and a third of the twigs stay.
