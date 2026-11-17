@@ -526,6 +526,118 @@ describe('the plant shader', () => {
 			expect([name, constant(name)]).toEqual([name, value]);
 	});
 
+	test('reads only the channels the header writes', () => {
+		// A header field lives in one channel of its texel, and the shader must read the channel the
+		// writer filled: the card gate was written into the first channel and read from the second,
+		// and two identical pictures passed before anyone found it. Every named texel is compared
+		// here, so the next field to drift fails the same way. A writer's zero leaves its channel
+		// unused; a spread fills the channels from its place.
+		const source = readFileSync(new URL('./records.ts', import.meta.url), 'utf8').replace(
+			/\/\/[^\n]*/g,
+			'',
+		);
+		const viewFace = readFileSync(new URL('./plant-viewface.wgsl', import.meta.url), 'utf8');
+		const names = new Map<string, string>();
+		for (const file of [wgsl, viewFace])
+			for (const match of file.matchAll(/const (HEADER_[A-Z0-9_]+): i32 = \d+;/g))
+				names.set(match[1] as string, match[1] as string);
+		/** The writer's name for a shader constant: its snake case, with the fields that differ named. */
+		const writerOf = (constant: string): string => {
+			const snake = constant.slice('HEADER_'.length);
+			const renamed: Record<string, string> = { CARD_SHADE: 'cardCover' };
+			if (renamed[snake]) return renamed[snake] as string;
+			return snake
+				.toLowerCase()
+				.split('_')
+				.map((word, k) => (k === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1)))
+				.join('');
+		};
+		/** The channels a texel write fills: a bare zero leaves its channel to the next field. */
+		const written = (name: string): number[] | undefined => {
+			const at = source.indexOf(`HEADER.${name},`);
+			if (at < 0) return undefined;
+			const after = source.slice(at + `HEADER.${name},`.length);
+			const open = after.indexOf('[');
+			if (open < 0) return undefined;
+			let depth = 0;
+			let close = open;
+			for (let i = open; i < after.length; i++) {
+				if (after[i] === '[') depth++;
+				else if (after[i] === ']' && --depth === 0) {
+					close = i;
+					break;
+				}
+			}
+			const body = after.slice(open + 1, close);
+			const cells: string[] = [];
+			let level = 0;
+			let cell = '';
+			for (const ch of body) {
+				if (ch === '[' || ch === '(') level++;
+				else if (ch === ']' || ch === ')') level--;
+				if (ch === ',' && level === 0) {
+					cells.push(cell.trim());
+					cell = '';
+				} else cell += ch;
+			}
+			if (cell.trim()) cells.push(cell.trim());
+			const channels: number[] = [];
+			let at2 = 0;
+			for (const cell2 of cells) {
+				const spread = cell2.startsWith('...');
+				const width = spread ? 3 : 1;
+				if (spread || cell2 !== '0')
+					for (let k = 0; k < width; k++) if (at2 + k < 4) channels.push(at2 + k);
+				at2 += width;
+			}
+			return channels;
+		};
+		/** The channels a shader reads from a constant: a channel letter, or the colours' own sets. A
+		 * reader that first takes the texel into a local reads the channels the local's own reads name. */
+		const read = (file: string, constant: string): number[] => {
+			const out: number[] = [];
+			const targets = [constant];
+			const alias = new RegExp(`let (\\w+) = header\\(${constant}\\);`, 'g');
+			for (const match of file.matchAll(alias)) targets.push(match[1] as string);
+			const re = new RegExp(
+				`(?:header\\(${constant}\\)|(?:${targets.slice(1).join('|') || '\\\\b\\u0000'}))\\s*\\.\\s*(rgba|rgb|xyz|xy|zw|x|y|z|w)`,
+				'g',
+			);
+			for (const match of file.matchAll(re)) {
+				const which = match[1] as string;
+				for (const channel of which === 'rgba'
+					? [0, 1, 2, 3]
+					: which === 'rgb' || which === 'xyz'
+						? [0, 1, 2]
+						: which === 'xy' || which === 'zw'
+							? which === 'xy'
+								? [0, 1]
+								: [2, 3]
+							: [{ x: 0, y: 1, z: 2, w: 3 }[which] as number]) {
+					if (!out.includes(channel)) out.push(channel);
+				}
+			}
+			return out;
+		};
+		const faults: string[] = [];
+		for (const constant of names.keys()) {
+			const writer = writerOf(constant);
+			const channels = written(writer);
+			const reads = [...read(wgsl, constant), ...read(viewFace, constant)];
+			if (reads.length === 0) continue;
+			if (channels === undefined) {
+				faults.push(`${constant} reads a texel that records.ts never writes (${writer})`);
+				continue;
+			}
+			for (const channel of reads)
+				if (!channels.includes(channel))
+					faults.push(
+						`${constant} reads channel ${'xyzw'[channel]} but the writer fills ${channels.map((c) => 'xyzw'[c]).join('') || 'none'}`,
+					);
+		}
+		expect(faults).toEqual([]);
+	});
+
 	test('names the surface kinds that the mesh writers give a vertex', () => {
 		const kind = (name: string) => {
 			const match = new RegExp(`const ${name}: f32 = ([\\d.]+);`).exec(wgsl);
