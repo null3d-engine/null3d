@@ -109,16 +109,20 @@ const boughs: FrameBranchRule = {
 			// covers every rule that fails, each from its own elbow count: branch, four elbows, 148 to
 			// 170 of its 178 to 192 axes a seed over the 0.2 allowance with a worst of 0.347; limb,
 			// three elbows, none or one of its five or six at 0.208 to 0.230; crown, three elbows, none
-			// to two of its three at 0.217 to 0.250. At the branch rule's proportions (median 2.83 m
-			// long, longest 4.27 m; base radius median 0.052 m, largest 0.135 m, a 0.27 m diameter at
-			// the thickest), no elbow count satisfies both frame rules: four leaves the worst branch
-			// 0.347 straight with its bends at 3.21 diameters; five gives 0.270 straight and six 0.221
-			// with the bend still safe at 3.29; seven meets the straight at 0.190 but turns the most
-			// curled branch at 2.665 diameters, under the least of three, and eight reads 0.160
-			// straight and 2.511 of a bend. The straight share needs at least seven elbows, and that
-			// turns the wood under its three-diameter bend; the window between the two rules is empty.
-			// The seven-elbow candidate turns the most curled crown to 0.213 and 0.279 with that same
-			// bend fault.
+			// to two of its three at 0.217 to 0.250.
+			//
+			// The straight-run rule allows no run over a fifth of the branch, and the bend-radius rule
+			// no radius under three diameters of its wood. At the branch rule's proportions — median
+			// 2.65 m long over five seeds and 2.83 m over four, longest 4.27 m; base radius median
+			// 0.052 m, so a 0.10 m diameter and about 0.31 m for three diameters, and 0.135 m at the
+			// thickest — no elbow count satisfies both rules: four leaves the worst branch 0.347
+			// straight with its bends at 3.21 diameters; five gives 0.270 straight and six 0.221 with
+			// the bend still safe at 3.29; seven meets the straight at 0.190 but turns the most curled
+			// branch at 2.665 diameters, under the 3 the wood allows, and eight reads 0.160 straight
+			// and 2.511 of a bend. More elbows worsen the bend and fewer worsen the run, so no count
+			// satisfies both on a branch this short for its girth, and the window between the two rules
+			// is empty. The seven-elbow candidate turns the most curled crown to 0.213 and 0.279 with
+			// that same bend fault.
 			//
 			// The frame's known intersections on this record stand at one through pair, and at one
 			// crossing between axes on no line of descent plus twenty-three on a line of descent; every
