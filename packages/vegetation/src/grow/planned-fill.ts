@@ -25,6 +25,11 @@ const SOCKETS_PER_AREA = 8.5;
 /** The clump's vertical radius against its horizontal one: an oak clump is flatter than a ball. */
 const DEPTH_SHARE = 0.7;
 
+/** The leaf masses a clump's sockets gather into, and how far toward a lobe each socket is drawn. */
+const LOBES = 3;
+const LOBE_REACH = 0.55;
+const LOBE_GATHER = 0.55;
+
 /** The droop of a low limb's end clump, as a share of its radius at its outer face. */
 const DIP_SHARE = 0.6;
 
@@ -161,10 +166,21 @@ export function fillClumps(input: FillInput): FillCount {
 			const spin = unitAt(seed, clump.id, variant, 1) * 2 * Math.PI;
 			const angle = spin + k * radians(137.507);
 			const depth = DEPTH_FROM + (DEPTH_TO - DEPTH_FROM) * unitAt(seed, clump.id, k, 1);
+			// The even point is drawn toward one of the clump's keyed lobe centres, so its leaves
+			// gather into natural masses with sky between them rather than an even mesh.
+			const lobe = Math.min(LOBES - 1, Math.floor(unitAt(seed, clump.id, k, 3) * LOBES));
+			const lobeSpin = unitAt(seed, clump.id, variant, 40 + lobe) * 2 * Math.PI;
+			const lobeY = 1 - (2 * (lobe + 0.5)) / LOBES;
+			const lobeRing = Math.sqrt(Math.max(0, 1 - lobeY * lobeY));
+			const evenX = clump.centre[0] + radius * depth * ring * Math.cos(angle);
+			const evenY = clump.centre[1] + radius * DEPTH_SHARE * depth * y;
+			const evenZ = clump.centre[2] + radius * depth * ring * Math.sin(angle);
+			const lobeX = clump.centre[0] + radius * LOBE_REACH * lobeRing * Math.cos(lobeSpin);
+			const lobeZ = clump.centre[2] + radius * LOBE_REACH * lobeRing * Math.sin(lobeSpin);
 			const point: [number, number, number] = [
-				clump.centre[0] + radius * depth * ring * Math.cos(angle),
-				clump.centre[1] + radius * DEPTH_SHARE * depth * y,
-				clump.centre[2] + radius * depth * ring * Math.sin(angle),
+				lobeX + LOBE_GATHER * (evenX - lobeX),
+				evenY,
+				lobeZ + LOBE_GATHER * (evenZ - lobeZ),
 			];
 			point[1] = dippedY(clump, point, input.crown);
 			goals.push({
