@@ -14,7 +14,9 @@ as a dark twisted ribbon. What should a low cap spend its triangles on, and what
 
 ## Rule
 
-The picture a cap is judged by is the picture at the distance the cap is for. A tree at any cap keeps a trunk with enough
+The picture a cap is judged by is the picture at the distance the cap is *looked at*: for a cap that is spent on the
+near level, that is the close view, because at a distance where the card level draws, a near-level floor changes nothing —
+the willow at 1,000 draws byte-identical pictures at 150 metres with and without the floor. A tree at any cap keeps a trunk with enough
 sides to read as wood — five or six at the lowest cap — its fork, and its first two limb orders with enough sides to read
 as limbs; the leaf budget takes what remains. A cap also leaves no piece standing free: a strip that loses its carrier is
 joined or dropped, as the connectedness rule asks at every level. And a cap draws wood only down to the lowest order it
