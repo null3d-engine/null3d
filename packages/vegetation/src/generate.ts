@@ -1023,6 +1023,15 @@ function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 			const kept: number[] = [];
 			for (const row of order.list) if ((held[row] as number) >= 0) kept.push(held[row] as number);
 			walk = Uint32Array.from(kept);
+		} else if (
+			kit.placeholders !== true &&
+			kit.record.growth.model === 'planned' &&
+			of.rows.count > 0 &&
+			(of.skeleton.clumps?.length ?? 0) > 0
+		) {
+			// A planned plant grows its own rows and keeps no thinning walk, but its crown's cards
+			// stand at its row places: the plant's own rows are the order those places are read in.
+			walk = Uint32Array.from({ length: of.rows.count }, (_, row) => row);
 		}
 		let carriers = 0;
 		if (order && !order.byRows) {
