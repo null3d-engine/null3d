@@ -447,6 +447,7 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
+		crownPlace: 'covered',
 		switchPixels: [240, 12, 160],
 		// Stills 01 and 19: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air; each card draws its twig as a line and the join shows. The line takes
