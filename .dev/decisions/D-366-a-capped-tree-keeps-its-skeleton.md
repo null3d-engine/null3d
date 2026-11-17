@@ -17,7 +17,9 @@ as a dark twisted ribbon. What should a low cap spend its triangles on, and what
 The picture a cap is judged by is the picture at the distance the cap is for. A tree at any cap keeps a trunk with enough
 sides to read as wood — five or six at the lowest cap — its fork, and its first two limb orders with enough sides to read
 as limbs; the leaf budget takes what remains. A cap also leaves no piece standing free: a strip that loses its carrier is
-joined or dropped, as the connectedness rule asks at every level. A change of budget order must show a better read at
+joined or dropped, as the connectedness rule asks at every level. And a cap draws wood only down to the lowest order it
+can make look like wood: a subbranch of two triangles reads as a needle, which is worse than drawing no wood at all, so
+below that order the leaf approximation stands in and attaches to the last order drawn. A change of budget order must show a better read at
 that distance or it is not taken.
 
 ## Data
