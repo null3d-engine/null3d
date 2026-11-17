@@ -305,7 +305,10 @@ export const record: Species = {
 	bark: {
 		// Stills 15 and 26: the sampled plates read darker than the photographs, so the zone lifts the
 		// measured colour, a little more in green and blue, toward the grey-brown the photographs show.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [2.8, 3.2, 3.2] }],
+		// The lift was written for the sampled plates, but under the whole-plant light it draws the bole
+		// far lighter and bluer than the photographs — 86, 84, 62 against the picture's darker
+		// grey-brown — so the tint comes down and keeps almost no blue.
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1.7, 1.9, 1.1] }],
 		young: 0,
 		// Still 16: the young bark draws redder than its photograph, so thin wood lifts green and blue
 		// more than red. Still 28's young stem asks for a neutral cast instead, a recorded conflict.
