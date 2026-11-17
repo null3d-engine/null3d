@@ -694,6 +694,9 @@
 				animation: growth-spin 0.9s linear infinite;
 			}
 			.growth--done .growth-spin { display: none; }
+			/* The bar carries its own display style, which would outrank the browser's rule for a
+			   hidden element, so hiding it needs the stronger rule. */
+			#demo-growth[hidden] { display: none !important; }
 			@keyframes growth-spin {
 				to { transform: rotate(360deg); }
 			}
