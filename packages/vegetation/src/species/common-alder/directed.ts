@@ -140,7 +140,7 @@ export const frame: FrameSpec = {
 						role: 'branch',
 						// Stills 05 and 09: side branches leave alternately from the middle of a branch
 						// outward. A long low branch carries four or five and a top one a single one.
-						count: { every: 0.05, least: 1, most: 5 },
+						count: { every: 0.035, least: 1, most: 7 },
 						along: [0.3, 0.92],
 						stagger: 0.2,
 						around: 'sides',
@@ -168,7 +168,7 @@ export const frame: FrameSpec = {
 						sway: 10,
 						elbows: 3,
 						// Still 30: the smaller clumps on a branch's side twigs.
-						patch: { kind: 'clump', width: 0.2, depth: 0.15, fill: ENDS },
+						patch: { kind: 'clump', width: 0.161, depth: 0.121, fill: ENDS },
 					},
 				],
 			},
