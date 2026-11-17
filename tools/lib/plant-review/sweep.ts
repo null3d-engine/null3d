@@ -1122,6 +1122,151 @@ export function seriesCovered(
 	};
 }
 
+/** The most metres a fixed crown patch spans, and the step in pixels it is sampled at. */
+export const PATCH_METRES = 4;
+const PATCH_STEP = 2;
+
+/** The four corners of a fixed crown patch, projected to the frame's pixels. */
+export interface PatchedCorners {
+	readonly corners: readonly (readonly [number, number])[];
+	/** Whether every corner stands inside the frame. */
+	readonly inside: boolean;
+}
+
+/**
+ * Projects a fixed-size square patch at a camera's target to the frame. The patch's world size
+ * never changes, so its fill is a density rather than a share of whatever box the plant happens to
+ * make: the framing is the same at every distance, and a patch that leaves the frame is refused.
+ */
+export function patchCorners(
+	camera: {
+		readonly position: readonly number[];
+		readonly target: readonly number[];
+		readonly fov: number;
+	},
+	width: number,
+	height: number,
+	metres = PATCH_METRES,
+): PatchedCorners {
+	const sub = (a: readonly number[], b: readonly number[]) =>
+		[
+			(a[0] as number) - (b[0] as number),
+			(a[1] as number) - (b[1] as number),
+			(a[2] as number) - (b[2] as number),
+		] as const;
+	const cross = (a: readonly number[], b: readonly number[]) =>
+		[
+			(a[1] as number) * (b[2] as number) - (a[2] as number) * (b[1] as number),
+			(a[2] as number) * (b[0] as number) - (a[0] as number) * (b[2] as number),
+			(a[0] as number) * (b[1] as number) - (a[1] as number) * (b[0] as number),
+		] as const;
+	const unit = (a: readonly number[]) => {
+		const length = Math.hypot(a[0] as number, a[1] as number, a[2] as number) || 1;
+		return [
+			(a[0] as number) / length,
+			(a[1] as number) / length,
+			(a[2] as number) / length,
+		] as const;
+	};
+	const dot = (a: readonly number[], b: readonly number[]) =>
+		(a[0] as number) * (b[0] as number) +
+		(a[1] as number) * (b[1] as number) +
+		(a[2] as number) * (b[2] as number);
+	const forward = unit(sub(camera.target, camera.position));
+	// A camera looking straight up or down has no world-up right vector; the patch is refused then.
+	const rightward = cross(forward, [0, 1, 0]);
+	const right = unit(rightward);
+	const up = cross(right, forward);
+	const half = metres / 2;
+	const target = camera.target;
+	const tanV = Math.tan((camera.fov * Math.PI) / 180 / 2);
+	const tanH = tanV * (width / height);
+	const corners: [number, number][] = [];
+	let inside = true;
+	for (const [a, b] of [
+		[-1, -1],
+		[1, -1],
+		[1, 1],
+		[-1, 1],
+	] as const) {
+		const point = [
+			(target[0] as number) + right[0] * a * half + up[0] * b * half,
+			(target[1] as number) + right[1] * a * half + up[1] * b * half,
+			(target[2] as number) + right[2] * a * half + up[2] * b * half,
+		] as const;
+		const offset = sub(point, camera.position);
+		const depth = dot(offset, forward);
+		if (depth <= 0.01) {
+			inside = false;
+			corners.push([0, 0]);
+			continue;
+		}
+		const x = width / 2 + (dot(offset, right) / depth / tanH) * (width / 2);
+		const y = height / 2 - (dot(offset, up) / depth / tanV) * (height / 2);
+		if (x < 0 || x > width - 1 || y < 0 || y > height - 1) inside = false;
+		corners.push([x, y]);
+	}
+	return { corners, inside };
+}
+
+/**
+ * The share of a fixed crown patch that the plant fills, read from a series frame's matte. The
+ * patch's world size is fixed, so the figure is the crown's density and does not move with the
+ * plant's box as the camera pulls back.
+ */
+export function patchCover(
+	runDir: string,
+	frame: RunFrame,
+	metres = PATCH_METRES,
+): { readonly value: number | null; readonly note: string } {
+	if (frame.matte === undefined) return { value: null, note: 'no matte' };
+	const camera = (
+		frame.cell as { camera?: { position?: number[]; target?: number[]; fov?: number } }
+	)?.camera;
+	if (!camera?.position || !camera.target || typeof camera.fov !== 'number')
+		return { value: null, note: 'no camera posted' };
+	const image = readImage(join(runDir, frame.matte));
+	const own = matteOwnMask(image);
+	const patch = patchCorners(
+		{ position: camera.position, target: camera.target, fov: camera.fov },
+		own.width,
+		own.height,
+		metres,
+	);
+	if (!patch.inside) return { value: null, note: 'the fixed patch leaves the frame' };
+	const [a, b, c, d] = patch.corners as [
+		readonly [number, number],
+		readonly [number, number],
+		readonly [number, number],
+		readonly [number, number],
+	];
+	const edge = (from: readonly [number, number], to: readonly [number, number]) =>
+		[to[0] - from[0], to[1] - from[1]] as const;
+	const across = edge(a, b);
+	const down = edge(a, d);
+	const area = across[0] * down[1] - across[1] * down[0];
+	if (Math.abs(area) < 1e-6) return { value: null, note: 'the fixed patch is edge-on' };
+	let plant = 0;
+	let total = 0;
+	const leastX = Math.max(0, Math.floor(Math.min(a[0], b[0], c[0], d[0])));
+	const mostX = Math.min(own.width - 1, Math.ceil(Math.max(a[0], b[0], c[0], d[0])));
+	const leastY = Math.max(0, Math.floor(Math.min(a[1], b[1], c[1], d[1])));
+	const mostY = Math.min(own.height - 1, Math.ceil(Math.max(a[1], b[1], c[1], d[1])));
+	for (let y = leastY; y <= mostY; y += PATCH_STEP)
+		for (let x = leastX; x <= mostX; x += PATCH_STEP) {
+			const local = [x + 0.5 - a[0], y + 0.5 - a[1]] as const;
+			const u = (local[0] * down[1] - local[1] * down[0]) / area;
+			const v = (across[0] * local[1] - across[1] * local[0]) / area;
+			if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+			total++;
+			if (own.mask[y * own.width + x] === 1) plant++;
+		}
+	return {
+		value: total === 0 ? null : plant / total,
+		note: total === 0 ? 'the fixed patch holds no texel' : '',
+	};
+}
+
 /**
  * The share of the whole frame that the plant fills, read from its matte. A close view whose
  * silhouette the frame cuts has no box of its own, but its cover is still a figure the judge can
@@ -1229,14 +1374,17 @@ export function sweepRun(
 			continue;
 		}
 		const record = (frame.cell as { level?: { level?: unknown } } | undefined)?.level;
+		// The series reads one field at every distance: the fixed crown patch, whose world size
+		// never changes, so a fall is the crown's density and not the plant's box changing.
+		const read = patchCover(runDir, frame);
 		seriesRows.push({
 			file: step.file,
 			distance: step.distance,
 			level: typeof record?.level === 'number' ? record.level : null,
-			covered: seriesCovered(runDir, frame).value,
+			covered: read.value,
 			change: null,
 			verdict: 'pass',
-			reason: '',
+			reason: read.note,
 		});
 	}
 	const stepped = sweepSeriesRows(seriesRows);
