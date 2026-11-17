@@ -3,11 +3,16 @@
 // helper reads its inputs before it writes, so `out` may be one of them. Angles are in radians, and
 // the arithmetic follows three.js's, so the results match it.
 //
+// Each helper here uses exact arithmetic only, so a deterministic simulation can import this module
+// through the maths entry (`@null3d/engine/math/quat`). The helpers that turn by an angle need a
+// sine and a cosine, and live in create-math.ts; the main entry's `quat` namespace
+// (namespaces/quat.ts) adds them, built on the browser's `Math`.
+//
 // Each helper does its own arithmetic and passes only arrays to other helpers. A fraction passed to
 // or returned from a call that the browser does not inline becomes a new number object, and a large
 // sketch function can use up the browser's inlining budget.
 
-import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from './types';
+import type { Mat4Like, QuatLike, Vec3Like } from './types';
 
 /** The up direction that `lookAt` uses when a call gives none. */
 const UP: Vec3Like = [0, 1, 0];
@@ -16,20 +21,10 @@ const UP: Vec3Like = [0, 1, 0];
 const basis = new Float64Array(16);
 
 /**
- * A quaternion that a helper builds before it scales it to length 1. It keeps full precision,
+ * A quaternion that `rotationTo` builds before it scales it to length 1. It keeps full precision,
  * where `out` may be a Float32Array.
  */
 const unscaled = new Float64Array(4);
-
-/** The signs of the cross terms of each Euler order, the only part of the formula that differs between orders. */
-const EULER_SIGNS: Readonly<Record<EulerOrder, readonly number[]>> = {
-	XYZ: [1, -1, 1, -1],
-	YXZ: [1, -1, -1, 1],
-	ZXY: [-1, 1, 1, -1],
-	ZYX: [-1, 1, -1, 1],
-	YZX: [1, 1, -1, -1],
-	XZY: [-1, -1, 1, 1],
-};
 
 /**
  * A new quaternion (0, 0, 0, 1), which turns nothing. It allocates, so create quaternions once,
@@ -66,42 +61,6 @@ export function identity<T extends QuatLike>(out: T): T {
 	out[1] = 0;
 	out[2] = 0;
 	out[3] = 1;
-	return out;
-}
-
-/** The rotation of `rad` radians about `axis`, a vector of length 1. */
-export function setAxisAngle<T extends QuatLike>(out: T, axis: Vec3Like, rad: number): T {
-	const half = rad / 2;
-	const s = Math.sin(half);
-	out[0] = (axis[0] as number) * s;
-	out[1] = (axis[1] as number) * s;
-	out[2] = (axis[2] as number) * s;
-	out[3] = Math.cos(half);
-	return out;
-}
-
-/**
- * The rotation of Euler angles in radians, applied in `order`, as three.js's `setFromEuler`.
- * gl-matrix's `fromEuler` takes degrees, but this one takes radians.
- */
-export function fromEuler<T extends QuatLike>(
-	out: T,
-	x: number,
-	y: number,
-	z: number,
-	order: EulerOrder = 'XYZ',
-): T {
-	const c1 = Math.cos(x / 2);
-	const c2 = Math.cos(y / 2);
-	const c3 = Math.cos(z / 2);
-	const s1 = Math.sin(x / 2);
-	const s2 = Math.sin(y / 2);
-	const s3 = Math.sin(z / 2);
-	const signs = EULER_SIGNS[order];
-	out[0] = s1 * c2 * c3 + (signs[0] as number) * c1 * s2 * s3;
-	out[1] = c1 * s2 * c3 + (signs[1] as number) * s1 * c2 * s3;
-	out[2] = c1 * c2 * s3 + (signs[2] as number) * s1 * s2 * c3;
-	out[3] = c1 * c2 * c3 + (signs[3] as number) * s1 * s2 * s3;
 	return out;
 }
 
@@ -248,51 +207,6 @@ export function multiply<T extends QuatLike>(out: T, a: QuatLike, b: QuatLike): 
 	return out;
 }
 
-/** Turns the rotation `a` by `rad` radians about its own X axis. */
-export function rotateX<T extends QuatLike>(out: T, a: QuatLike, rad: number): T {
-	const ax = a[0] as number;
-	const ay = a[1] as number;
-	const az = a[2] as number;
-	const aw = a[3] as number;
-	const bx = Math.sin(rad / 2);
-	const bw = Math.cos(rad / 2);
-	out[0] = ax * bw + aw * bx;
-	out[1] = ay * bw + az * bx;
-	out[2] = az * bw - ay * bx;
-	out[3] = aw * bw - ax * bx;
-	return out;
-}
-
-/** Turns the rotation `a` by `rad` radians about its own Y axis. */
-export function rotateY<T extends QuatLike>(out: T, a: QuatLike, rad: number): T {
-	const ax = a[0] as number;
-	const ay = a[1] as number;
-	const az = a[2] as number;
-	const aw = a[3] as number;
-	const by = Math.sin(rad / 2);
-	const bw = Math.cos(rad / 2);
-	out[0] = ax * bw - az * by;
-	out[1] = ay * bw + aw * by;
-	out[2] = az * bw + ax * by;
-	out[3] = aw * bw - ay * by;
-	return out;
-}
-
-/** Turns the rotation `a` by `rad` radians about its own Z axis. */
-export function rotateZ<T extends QuatLike>(out: T, a: QuatLike, rad: number): T {
-	const ax = a[0] as number;
-	const ay = a[1] as number;
-	const az = a[2] as number;
-	const aw = a[3] as number;
-	const bz = Math.sin(rad / 2);
-	const bw = Math.cos(rad / 2);
-	out[0] = ax * bw + ay * bz;
-	out[1] = ay * bw - ax * bz;
-	out[2] = az * bw + aw * bz;
-	out[3] = aw * bw - az * bz;
-	return out;
-}
-
 /** The rotation that undoes `a`, a quaternion of length 1, as three.js's `invert`. */
 export function invert<T extends QuatLike>(out: T, a: QuatLike): T {
 	out[0] = -(a[0] as number);
@@ -326,46 +240,4 @@ export function dot(a: QuatLike, b: QuatLike): number {
 		(a[2] as number) * (b[2] as number) +
 		(a[3] as number) * (b[3] as number)
 	);
-}
-
-/**
- * The rotation a fraction `t` of the way from `a` to `b` along the shortest arc, turning at an even
- * speed, as three.js's `slerp`.
- */
-export function slerp<T extends QuatLike>(out: T, a: QuatLike, b: QuatLike, t: number): T {
-	const ax = a[0] as number;
-	const ay = a[1] as number;
-	const az = a[2] as number;
-	const aw = a[3] as number;
-	let bx = b[0] as number;
-	let by = b[1] as number;
-	let bz = b[2] as number;
-	let bw = b[3] as number;
-	let cos = ax * bx + ay * by + az * bz + aw * bw;
-	if (cos < 0) {
-		// q and -q are the same rotation: take the one on the shorter arc.
-		bx = -bx;
-		by = -by;
-		bz = -bz;
-		bw = -bw;
-		cos = -cos;
-	}
-	const s = 1 - t;
-	if (cos < 0.9995) {
-		const theta = Math.acos(cos);
-		const sin = Math.sin(theta);
-		const sa = Math.sin(s * theta) / sin;
-		const sb = Math.sin(t * theta) / sin;
-		out[0] = ax * sa + bx * sb;
-		out[1] = ay * sa + by * sb;
-		out[2] = az * sa + bz * sb;
-		out[3] = aw * sa + bw * sb;
-		return out;
-	}
-	// Close rotations blend in a straight line, which shortens the result, so scale it back.
-	unscaled[0] = ax * s + bx * t;
-	unscaled[1] = ay * s + by * t;
-	unscaled[2] = az * s + bz * t;
-	unscaled[3] = aw * s + bw * t;
-	return normalize(out, unscaled);
 }

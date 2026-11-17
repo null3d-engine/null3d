@@ -2,7 +2,7 @@
 // Math.random to the same generator, so a sketch that places or moves things at random draws the
 // same frame on every run.
 
-import { random, seed } from '../math/math';
+import { random, seed } from '../math/random';
 
 /** The seed of the random numbers that hold mode gives the sketch's thread. */
 export const HOLD_SEED = 1;

@@ -4,9 +4,9 @@
 import { expect, test } from '@playwright/test';
 import * as color from '../../packages/engine/src/math/color.ts';
 import * as mat4 from '../../packages/engine/src/math/mat4.ts';
-import * as math from '../../packages/engine/src/math/math.ts';
-import * as quat from '../../packages/engine/src/math/quat.ts';
-import * as vec3 from '../../packages/engine/src/math/vec3.ts';
+import * as math from '../../packages/engine/src/math/namespaces/math.ts';
+import * as quat from '../../packages/engine/src/math/namespaces/quat.ts';
+import * as vec3 from '../../packages/engine/src/math/namespaces/vec3.ts';
 import { allocatingPlaces } from '../lib/allocations.ts';
 import { ALONE } from '../lib/alone.ts';
 import { pageResult } from '../lib/page-result.ts';

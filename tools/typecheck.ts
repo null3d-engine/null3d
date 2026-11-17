@@ -49,6 +49,7 @@ export const PROJECTS = [
 	'packages/cli',
 	'tests/pages',
 	'tests/fixtures/project',
+	'tests/fixtures/rules-code',
 	'tests/fixtures/typed-uniforms',
 	'examples',
 	'examples/tsconfig.test.json',

@@ -57,6 +57,7 @@ const engine = await createEngine({
   onWorkerRetry: (worker, script) => {},   // (0.2) a worker's script did not load and the engine started a second copy; the console warns too
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
+  input: false,          // (0.3) another library records the input: no listeners, no pointer capture, ctx.input stays at rest
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
   hdr: true,             // false draws the 8-bit path; both paths honour toneMapped: false, apart from a blended surface on the HDR path
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
@@ -81,6 +82,7 @@ const metrics = await engine.measure(5);          // CPU time per thread and pha
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
+engine.onStop(() => { /* (0.3) once: destroy() began, or E1302, E1404 or E1424 ended the frames, after onFailure heard it; end the page's own loop */ });
 engine.onSketchError((error) => { /* (0.2) the sketch's update threw; the engine keeps drawing, and measure().updateErrors counts the frames */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
@@ -88,7 +90,7 @@ await engine.destroy({ release: true }); // (0.2) also frees the memory that the
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
-await engine.requestPointerLock();                // (0.2) in a click handler, for first-person controls; E1425 when refused
+await engine.requestPointerLock();                // (0.2) in a click handler, for first-person controls; E1425 when refused, E1426 with input: false
 // engine.registerVideo and textures.fromVideo come in 0.3; recipe 14 shows the workaround
 ```
 
@@ -626,6 +628,8 @@ dragger.dragging; dragger.hovered;      // the object each names, or null
 
 Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches. When the wheel or a pinch zooms the camera, stop the page from scrolling and zooming with `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })` on the page.
 
+The option `input: false` of `createEngine` (0.3) turns the engine's listening off, for a page whose input another library records. The engine then adds no pointer, key, wheel, focus or gamepad listener, and none for the pointer lock or for its input's page visibility. It captures no pointer and leaves the context menu alone. It keeps the listeners that take no input, such as the canvas watch's `visibilitychange` (`api/input#input-off`). The sketch's input stays at rest: every key, button and action is up, and `value` gives 0. There are no touches, the pointer rests at the canvas's top-left corner, and objects get no pointer events. The engine's `requestPointerLock()` fails with E1426, and the page's own input code locks the canvas. A development build warns once for each kind when the sketch reads `ctx.input`, gives an object a pointer event handler or imports `@null3d/controls`. A game whose simulation a server replays decides nothing from input, object events, raycasts or controls. None of them is in its input log (`guides/deterministic-simulation`).
+
 ## 15. Post-processing (`api/post`)
 
 `toneMapping`, `exposure`, `autoExposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut`, `grading`, `vignette` and `sharpen` are built. A view whose scene stops changing sharpens itself and rests the GPU; `createEngine({ still: false })` draws every frame instead (`concepts/post-processing`). Lit fog is built as a scene setting, `scene.setFog({ volumetric })`, not a post effect. Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Screen-space bounce light draws where `bounceRays` is above 0: on High and Ultra, and on WebGL2's Medium, or after `quality.set({ bounceRays: 8 })` on phones and tablets. It replaces the environment's diffuse light by its share, and a scene with a light probe grid draws none. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
@@ -826,6 +830,24 @@ time.now; time.dt; time.frame;            // seconds, the frame's step in second
 - `quat.lookAt` gives a mesh's rotation. For a camera or a light, which looks down -Z, swap `eye` and `target`.
 - `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
 - Color options take `'#rrggbb'` or `'#rgb'` strings and `0xrrggbb` numbers, which are sRGB, and `[r, g, b]` arrays from 0 to 1, which are linear, as three.js's `setRGB` reads them. The engine converts hex colors to linear, as three.js does. The `color` helpers give linear RGB, which color options and instance colors take.
+
+A simulation that a server replays (0.3) imports its math from the maths entry, never from `@null3d/engine`. That bundle brings engine code with a top-level `FinalizationRegistry`, which a replaying engine's scan refuses. A bundler that keeps namespaces whole, such as Bun 1.3.11, also brings `Math.sin`, `Math.random` and page code:
+
+```ts
+import { createMath } from '@null3d/engine/math';          // createMath and the array types
+import * as vec3 from '@null3d/engine/math/vec3';          // every vec3 helper but angle
+import * as quat from '@null3d/engine/math/quat';          // create, set, copy, identity, fromMat4, lookAt, rotationTo, multiply, invert, normalize, dot
+import * as mat4 from '@null3d/engine/math/mat4';          // every mat4 helper
+import * as math from '@null3d/engine/math/math';          // clamp, lerp, inverseLerp, mapLinear, smoothstep, degToRad, radToDeg, euclideanModulo
+import { acos, cos, exp, sin } from '@clockwork2/engine/dmath';  // an exact math library, imported by name
+const exact = createMath({ sin, cos, acos, exp });         // once, at load
+exact.quat.setAxisAngle(q, [0, 1, 0], a); exact.quat.fromEuler(q, x, y, z, 'YXZ'); exact.quat.slerp(q, a, b, t);
+// Also exact.quat.rotateX/Y/Z, exact.vec3.angle and exact.math.damp: the main entry's arithmetic on the functions given.
+```
+
+- The sub-paths hold only helpers of exact arithmetic, each the main entry's own function. The eight that need a sine, a cosine, an arc cosine or an exponential come from `createMath`. Given `Math`'s functions, it gives the main entry's results bit for bit. It throws E1213 without one of the four.
+- The random helpers and `color` are drawing only. A simulation draws random numbers from its own seeded generator.
+- The sketch keeps the main entry's helpers and draws the state that the simulation sends; it never computes that state again (`guides/deterministic-simulation`).
 
 ## 21. Tasks on the job workers (`api/tasks`, 0.3)
 

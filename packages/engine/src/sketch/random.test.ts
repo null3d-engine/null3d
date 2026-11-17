@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { random, seed } from '../math/math';
+import { random, seed } from '../math/random';
 import { HOLD_SEED, seedMathRandom } from './random';
 
 const draws = (generator: () => number, count: number) => Array.from({ length: count }, generator);

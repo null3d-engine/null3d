@@ -37,6 +37,31 @@
 			"types": "./lib/stats.d.ts",
 			"default": "./lib/stats.js"
 		},
+		"./math": {
+			"null3d-source": "./src/math/index.ts",
+			"types": "./lib/math/index.d.ts",
+			"default": "./lib/math/index.js"
+		},
+		"./math/vec3": {
+			"null3d-source": "./src/math/vec3.ts",
+			"types": "./lib/math/vec3.d.ts",
+			"default": "./lib/math/vec3.js"
+		},
+		"./math/quat": {
+			"null3d-source": "./src/math/quat.ts",
+			"types": "./lib/math/quat.d.ts",
+			"default": "./lib/math/quat.js"
+		},
+		"./math/mat4": {
+			"null3d-source": "./src/math/mat4.ts",
+			"types": "./lib/math/mat4.d.ts",
+			"default": "./lib/math/mat4.js"
+		},
+		"./math/math": {
+			"null3d-source": "./src/math/math.ts",
+			"types": "./lib/math/math.d.ts",
+			"default": "./lib/math/math.js"
+		},
 		"./early-core": {
 			"null3d-source": "./src/page/early-core.ts",
 			"default": "./lib/page/early-core.js"

@@ -8,8 +8,14 @@ import null3d from '@null3d/vite-plugin';
 import { build, type Rollup } from 'vite';
 
 const ENGINE = join(import.meta.dirname, '../../packages/engine/src/index.ts');
-/** The first line of the bundle's region for a public math module, which names its source file. */
-const MATH_REGION = /^\S*\/math\/(vec3|quat|mat4|math|color)\.ts\n/;
+/**
+ * The first line of the bundle's region for a module of the math helpers, which names its source
+ * file: a namespace of the main entry, the exact helpers it re-exports, the random generator, or the
+ * shared implementations of the helpers that need a sine, a cosine, an arc cosine or an exponential.
+ * A namespace's file and its exact helpers' file both count as the namespace.
+ */
+const MATH_REGION =
+	/^\S*\/math\/(?:namespaces\/)?(vec3|quat|mat4|math|color|random|create-math)\.ts\n/;
 /**
  * The engine's shader modules, which the engine loads on first use or links by address. The checks
  * read only the math helpers' code, and these modules are most of what a build of the engine holds:
@@ -46,7 +52,7 @@ export async function bundle(sketch: string): Promise<string> {
 }
 
 /**
- * The public math modules that a bundle holds code from, and their functions, as `module` and
+ * The math modules that a bundle holds code from, and their functions, as `module` and
  * `module.name`. The bundler marks the code of each source module with a region comment, so a
  * module whose values the bundle keeps without any of its functions still shows.
  */
@@ -56,7 +62,12 @@ export function helpersIn(code: string): string[] {
 		const module = MATH_REGION.exec(region)?.[1];
 		if (!module) continue;
 		found.push(module);
-		for (const [, name] of region.matchAll(/^function (\w+)\(/gm)) found.push(`${module}.${name}`);
+		// A helper is a function, or a constant that a maker of the shared implementations builds.
+		for (const [, name, built] of region.matchAll(
+			/^(?:function (\w+)\(|(?:const|let|var) (\w+) = (?:\/\* @__PURE__ \*\/ )?make\w+\()/gm,
+		))
+			found.push(`${module}.${name ?? built}`);
 	}
-	return found.sort();
+	// A namespace and its exact helpers are two regions of one module name.
+	return [...new Set(found)].sort();
 }

@@ -32,7 +32,9 @@ import {
 } from '../shared/metrics';
 import { decodeRecording, type ReplayProgram } from '../shared/recording';
 import { jobAsker } from '../shared/task-host';
+import { checkAddonVersion, onAddonChecked, VERSION } from '../shared/version';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
+import { INPUT_OFF_NOTES } from './input-off';
 import type { QualityStart, QualityUpdate } from './quality';
 import { runPipelined, SketchRunner } from './runner';
 
@@ -250,6 +252,7 @@ async function start(
 		jobs = { most: 0, handedMs: 0, asked: [] },
 		device,
 		answers,
+		hearAddons = onAddonChecked,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -272,6 +275,8 @@ async function start(
 		jobs?: { most: number; handedMs: number; asked: number[]; timing?: boolean[] };
 		device?: Partial<CoreDevice>;
 		answers?: GlueAnswers;
+		/** How the runner hears add-ons, which a worker gives as `onAddonChecked`. */
+		hearAddons?: (heard: (name: string) => void) => () => void;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -347,6 +352,7 @@ async function start(
 			twoStepProbe: false,
 			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
 			sendLabelSlot: () => {},
+			hearAddons,
 		},
 		holdSeconds,
 		holdScript,
@@ -1471,5 +1477,132 @@ describe('recording a session and replaying it', () => {
 		await expect(
 			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
 		).rejects.toThrow('the recording used the key "KeyZ"');
+	});
+});
+
+describe('a runner on a page that writes no input', () => {
+	/** A control block whose page started the engine with `input: false`, as a development build writes it. */
+	const inputOff = () => {
+		const control = controlViews(createControlBuffer(false));
+		control.slots[Slot.InputOff] = 1;
+		return control;
+	};
+	/** The controls' notes among the console's warnings. */
+	const controlsNotes = (warn: { mock: { calls: unknown[][] } }) =>
+		warn.mock.calls.filter(([note]) => note === INPUT_OFF_NOTES.controls).length;
+
+	it('names the controls that its own sketch loads, in its setup or later, and none from before', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			// A worker that ran an earlier sketch, or another engine on the thread, loaded the controls
+			// before this runner: that load is not this sketch's.
+			checkAddonVersion('@null3d/controls', VERSION);
+			const { runner } = await start(
+				() => {
+					checkAddonVersion('@null3d/controls', VERSION);
+					return {};
+				},
+				undefined,
+				{ control: inputOff() },
+			);
+			expect(controlsNotes(warn)).toBe(1);
+			runner.dispose();
+			const late = await start(() => ({}), undefined, { control: inputOff() });
+			expect(controlsNotes(warn)).toBe(1);
+			// A load from a callback after the setup.
+			checkAddonVersion('@null3d/controls', VERSION);
+			expect(controlsNotes(warn)).toBe(2);
+			late.runner.dispose();
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it('stops hearing add-ons when its setup fails at any step, and when it is disposed', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			let failed = '';
+			try {
+				await start(
+					() => {
+						throw new Error('the setup failed on purpose');
+					},
+					undefined,
+					{ control: inputOff() },
+				);
+			} catch (error) {
+				failed = messageOf(error);
+			}
+			expect(failed).toContain('the setup failed on purpose');
+			// A setup refused before the sketch's own setup runs, here for a rate of fixed steps that
+			// is no rate, stops the hearing too.
+			let refused = '';
+			try {
+				await start(() => ({}), { fixedRate: 0 }, { control: inputOff() });
+			} catch (error) {
+				refused = messageOf(error);
+			}
+			expect(refused).toContain('E1214');
+			checkAddonVersion('@null3d/controls', VERSION);
+			const { runner } = await start(() => ({}), undefined, { control: inputOff() });
+			runner.dispose();
+			checkAddonVersion('@null3d/controls', VERSION);
+			expect(controlsNotes(warn)).toBe(0);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it('hears no add-on on a page that writes input', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			const { runner } = await start(() => {
+				checkAddonVersion('@null3d/controls', VERSION);
+				return {};
+			});
+			expect(controlsNotes(warn)).toBe(0);
+			runner.dispose();
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it('hears add-ons through the hearing that its thread gives it, from before it existed', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			// The page's thread gives the controls that the sketch's module loaded before the runner
+			// existed, then each later load.
+			let stopped = 0;
+			const { runner } = await start(() => ({}), undefined, {
+				control: inputOff(),
+				hearAddons: (heard) => {
+					heard('@null3d/physics');
+					heard('@null3d/controls');
+					const stop = onAddonChecked(heard);
+					return () => {
+						stopped++;
+						stop();
+					};
+				},
+			});
+			expect(controlsNotes(warn)).toBe(1);
+			// Said once, when the sketch loads them again later.
+			checkAddonVersion('@null3d/controls', VERSION);
+			expect(controlsNotes(warn)).toBe(1);
+			runner.dispose();
+			expect(stopped).toBe(1);
+			// A runner on a page that writes input asks for no hearing.
+			let asked = 0;
+			const writing = await start(() => ({}), undefined, {
+				hearAddons: () => {
+					asked++;
+					return () => {};
+				},
+			});
+			writing.runner.dispose();
+			expect(asked).toBe(0);
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });

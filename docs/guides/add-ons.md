@@ -10,7 +10,7 @@ summary: "One package with one entry; claim a namespace and the plugin interface
 
 > Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
-An add-on is a package that adds a feature above the engine's public API. It has one install and one import, and it reaches the engine only through `@null3d/engine` and `@null3d/engine/stats`. The engine's own add-ons work the same way. `bunx @null3d/cli check-addon` runs these rules on a folder before a listing publishes it.
+An add-on is a package that adds a feature above the engine's public API. It has one install and one import, and it reaches the engine only through the engine's public entry points. The engine's own add-ons work the same way. `bunx @null3d/cli check-addon` runs these rules on a folder before a listing publishes it.
 
 ## Claim the add-on's names
 
@@ -38,7 +38,7 @@ The engine's own add-ons leave the range out and pin the engine version exactly 
 
 ## Import only the public entry points
 
-Every shipped file may import `@null3d/engine` and `@null3d/engine/stats`. The check refuses any other engine entry point, and the engine's source files. When the add-on needs something that the API lacks, that is a hook to build in the engine, so another developer can build the same add-on.
+Every shipped file may import `@null3d/engine`, `@null3d/engine/stats` and the maths entry: `@null3d/engine/math` and its sub-paths `/vec3`, `/quat`, `/mat4` and `/math`. The check refuses any other engine entry point, and the engine's source files. When the add-on needs something that the API lacks, that is a hook to build in the engine, so another developer can build the same add-on.
 
 ## Put the hot path in Rust
 

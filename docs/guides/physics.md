@@ -22,6 +22,8 @@ null3D has no physics engine of its own. You add a physics library to your sketc
 
 In the single-threaded build, the sketch runs on the page's thread, and so does the physics library. [Hosting and cross-origin isolation](../getting-started/hosting.md) says when a page gets that build.
 
+Physics in the sketch only moves what the player sees. A game whose server replays its simulation keeps the physics that decides a result in that simulation. It writes that physics with exact arithmetic, as [Using null3D with a deterministic simulation](deterministic-simulation.md#keep-decisions-out-of-the-sketch) shows.
+
 Two libraries work well in a sketch:
 
 | Library | Package | What it is |

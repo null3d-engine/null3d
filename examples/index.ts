@@ -260,8 +260,10 @@ async function runDemo(demo: Demo): Promise<void> {
 	const keys = keyHelp(demo);
 	if (keys) corner.append(keys);
 	stage.append(canvas, labels, corner);
-	// A showcase scene's choices, such as its time of day, sit in a bar at the bottom of the panel.
-	const choices = demo.choices && !params.has('hold') ? element('div') : undefined;
+	// A demo's choices, such as a showcase scene's time of day, and a page part's buttons sit in a bar
+	// at the bottom of the panel.
+	const choices =
+		(demo.choices || demo.pagePart) && !params.has('hold') ? element('div') : undefined;
 	if (choices) {
 		choices.className = 'choices';
 		stage.append(choices);

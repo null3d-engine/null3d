@@ -95,7 +95,8 @@ export interface StartOptions {
 	/**
 	 * Aborting it removes the listeners, the loading overlay and the controls HUD that this demo
 	 * added, so a page that starts a second demo in the same document leaves nothing of the first.
-	 * The page still owns the canvas, its own elements and the engine.
+	 * The page still owns the canvas, its own elements and the engine. A demo's page part also stops
+	 * when the engine stops drawing, as the page destroys it or at a failure that ends its frames.
 	 */
 	signal?: AbortSignal;
 }
@@ -105,7 +106,29 @@ const LOADER_QUIET_MS = 400;
 /** The most of the sketch's early messages that the page keeps, as the engine keeps its own. */
 const MAX_EARLY_MESSAGES = 256;
 
-/** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
+/**
+ * A demo's page part, `examples/<name>/page.ts`, which `startDemo` loads and starts for a demo with
+ * `pagePart`. The bundler ships every such module as a chunk of its own, which only that demo loads.
+ */
+export interface DemoPage {
+	/**
+	 * Starts the part on the demo's canvas. `controls` is the element that `startDemo` takes as
+	 * `choices`, where the part shows its buttons. `signal` ends the part with the demo: it aborts
+	 * when the page aborts the demo's own signal, and when the engine stops drawing, as the page
+	 * destroys it or at a failure that ends its frames.
+	 */
+	start(
+		engine: Engine,
+		canvas: HTMLCanvasElement,
+		controls: HTMLElement | undefined,
+		signal: AbortSignal,
+	): void;
+}
+
+/**
+ * Starts the demo's sketch on the canvas, and resolves to its engine once it runs. A demo with a
+ * page part resolves once the part runs too; a part that fails to load or start fails the start.
+ */
 export async function startDemo({
 	canvas,
 	demo,
@@ -254,6 +277,8 @@ export async function startDemo({
 			hdr: demo.hdr,
 			momentTransparency: demo.momentTransparency,
 			transparent: behind,
+			// A demo whose page takes the input itself keeps the engine from listening.
+			...(demo.pagePart ? { input: false } : {}),
 			preset,
 			antialias,
 			...settings,
@@ -291,7 +316,46 @@ export async function startDemo({
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}), { signal });
+	// A demo whose page takes the input starts its page part on a live page. A held frame draws the
+	// sketch alone, and the engine reads `?hold` from the page's address.
+	if (demo.pagePart && !new URLSearchParams(location.search).has('hold')) {
+		const stop = stopWithDemo(engine, signal);
+		try {
+			const part = (await import(`../${demo.name}/page.ts`)) as DemoPage;
+			// The demo may have ended while its part loaded: the page aborted it, or the engine failed.
+			if (!stop.signal.aborted) part.start(engine, canvas, choices, stop.signal);
+		} catch (error) {
+			// A demo whose page part fails cannot be played, so its start fails as a failed engine's
+			// does: the overlay comes back to say why, also after the first frame, the controls that
+			// would act on the demo leave, and so does the engine. A page that already aborted the
+			// demo may show another in those places, so the page is left as it is then.
+			const text = `The demo's page part did not start: ${error instanceof Error ? error.message : String(error)}`;
+			stop.abort();
+			if (!signal?.aborted) {
+				loader.fail(text);
+				if (hud) hud.hidden = true;
+				choices?.replaceChildren();
+			}
+			await engine.destroy();
+			throw new Error(text);
+		}
+	}
 	return engine;
+}
+
+/**
+ * The stop of a demo's page part, which aborts when the page aborts the demo's signal, and when
+ * the engine stops drawing: as the page destroys it, or at a failure that ends its frames. Either
+ * ends the demo, so the part's listeners and frame loop leave the page with it.
+ */
+function stopWithDemo(engine: Engine, signal: AbortSignal | undefined): AbortController {
+	const stop = new AbortController();
+	const end = () => stop.abort();
+	if (signal?.aborted) end();
+	signal?.addEventListener('abort', end, { once: true, signal: stop.signal });
+	const offStop = engine.onStop(end);
+	stop.signal.addEventListener('abort', offStop, { once: true });
+	return stop;
 }
 
 /** The text that a scene posts while it loads its files, for the loading overlay. */
@@ -400,6 +464,8 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 	let sceneStarted = false;
 	let painted = 0;
 	let hidden = false;
+	/** The timer that takes the overlay away after its fade, which a later failure cancels. */
+	let removal: ReturnType<typeof setTimeout> | undefined;
 	let said = '';
 
 	/** The row for a lane's phase, made on first use and kept in lane order. */
@@ -511,7 +577,7 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 		overlay.classList.add('loader--done');
 		const remove = () => overlay.remove();
 		if (matchMedia('(prefers-reduced-motion: reduce)').matches) remove();
-		else setTimeout(remove, 320);
+		else removal = setTimeout(remove, 320);
 	};
 
 	// The overlay shows before the engine reports anything: the main bar begins its first stretch.
@@ -605,6 +671,11 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 			hidden = true;
 			if (painted) cancelAnimationFrame(painted);
 			painted = 0;
+			// A failure after the first frame brings the overlay back, so the reason shows over the
+			// canvas wherever the start had got to.
+			clearTimeout(removal);
+			overlay.classList.remove('loader--done');
+			if (!overlay.isConnected) host.append(overlay);
 			overlay.classList.add('loader--error');
 			label.textContent = text;
 			label.classList.add('loader__label--error');

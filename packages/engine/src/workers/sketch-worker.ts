@@ -6,6 +6,7 @@
 // go back to the page: it frees its GPU device and lets go of the engine's core, and the next
 // engine on the same canvas starts it again.
 
+import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
 import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
@@ -15,6 +16,7 @@ import { controlViews } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
+import { onAddonChecked } from '../shared/version';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
@@ -107,6 +109,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					sendLabelSlot: (id, table, slot, generation) =>
 						replyToPage({ type: 'label', id, table, slot, generation }),
 					reportSketchError: (message) => replyToPage({ type: 'sketch-error', message }),
+					// The worker exists before its sketch's module loads, so this hears the module's imports.
+					...(DEV && { hearAddons: onAddonChecked }),
 				},
 				message.hold,
 				message.holdScript,

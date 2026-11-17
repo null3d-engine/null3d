@@ -35,22 +35,22 @@ export * as mat4 from './math/mat4';
  *
  * @category api/math
  */
-export * as math from './math/math';
+export * as math from './math/namespaces/math';
 /**
  * Rotations as quaternions (x, y, z, w) in plain arrays, with angles in radians:
  * `quat.setAxisAngle(out, [0, 1, 0], angle)` writes the rotation into `out` and returns `out`.
  *
  * @category api/math
  */
-export * as quat from './math/quat';
-export type { EulerOrder, Mat4Like, QuatLike, Vec2Like, Vec3Like } from './math/types';
+export * as quat from './math/namespaces/quat';
 /**
  * Vectors (x, y, z) in plain arrays, in the style of gl-matrix: `vec3.add(out, a, b)` writes the sum
  * into `out` and returns `out`, so per-frame code allocates nothing.
  *
  * @category api/math
  */
-export * as vec3 from './math/vec3';
+export * as vec3 from './math/namespaces/vec3';
+export type { EulerOrder, Mat4Like, QuatLike, Vec2Like, Vec3Like } from './math/types';
 export type {
 	CapabilityReport,
 	WebGL2Report,

@@ -50,6 +50,7 @@ import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metri
 import { addMeasurementRelease } from '../shared/page-measurement';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
+import { onAddonChecked } from '../shared/version';
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
@@ -408,6 +409,23 @@ export interface EngineOptions {
 	 */
 	hold?: number;
 	/**
+	 * False keeps the engine from listening for input, for a page whose input another library
+	 * records, such as a game whose simulation replays a log of it. The engine's input then adds no
+	 * listener: none for pointers, keys, the wheel, focus, page visibility, the pointer lock or
+	 * gamepads. It captures no pointer on the canvas, and leaves the canvas's context menu to the
+	 * browser. The engine keeps its listeners that take no input, such as the canvas watch's
+	 * `visibilitychange`, after which the sketch's next step counts no hidden time. The sketch's `ctx.input`
+	 * stays at rest: every key, button and action is up, `value` gives 0, `input.touches` is empty,
+	 * and the pointer stays at the canvas's top-left corner with no movement, wheel or buttons.
+	 * Objects get no pointer events, and `requestPointerLock` fails with E1426. A development build
+	 * warns in the console, once for each kind, when the sketch reads `ctx.input`, gives an object a
+	 * pointer event handler or imports `@null3d/controls`. The warning about the controls comes as
+	 * they load in the sketch's thread, so it misses controls that another sketch in that thread
+	 * loaded first. Two engines on the page's thread both hear a load by either one's sketch. The
+	 * default is true.
+	 */
+	input?: boolean;
+	/**
 	 * Features whose shaders load before the first frame, for a game that must fetch nothing while
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
@@ -680,9 +698,19 @@ export interface Engine {
 	 * draws on without the objects that failed. The engine reports each failure once. A failure that
 	 * no handler listened for when the engine reported it reaches the first handler that listens, so
 	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
-	 * console. Returns a function that removes the handler.
+	 * console. A failure that ends the frames reaches these handlers before `onStop`'s. Returns a
+	 * function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
+	/**
+	 * Calls `handler` once, when the engine stops drawing for good: as `destroy()` begins, or at a
+	 * failure after which it draws no new frames (E1302, E1404 or E1424). At such a failure, the
+	 * `onFailure` handlers hear it first. A handler added after that runs at once. A handler that
+	 * throws reaches the console, and the other handlers and the stop go on. Use it to end the page's
+	 * own work for the engine, such as a frame loop that sends the sketch messages. Returns a
+	 * function that removes the handler.
+	 */
+	onStop(handler: () => void): () => void;
 	/**
 	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
 	 * while the engine runs. The engine keeps drawing, so this error alone does not stop it: a frame
@@ -772,7 +800,9 @@ export interface Engine {
 	 * The browser hides the pointer, and the sketch's `input.pointer.dx` and `dy` give the mouse's
 	 * movement, with no edge to stop it. Call it in a click or key handler: browsers lock the pointer
 	 * only right after the user acts. Resolves once the lock begins. Fails with E1425 when the browser
-	 * refuses it. The user ends the lock with Esc, and the page with `document.exitPointerLock()`.
+	 * refuses it, and with E1426 on an engine started with `input: false`, which reads no movement.
+	 * The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Stopping the
+	 * engine ends a lock that it took or that its input read.
 	 */
 	requestPointerLock(options?: PointerLockOptions): Promise<void>;
 	/**
@@ -802,6 +832,12 @@ const BENCH_GLOBAL = '__null3dEngine';
 const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 /** How often the page reads the frame records while it measures. */
 const DRAIN_INTERVAL_MS = 250;
+/**
+ * The failures after which the engine draws no new frames, as `onFailure`'s docs say: a GPU that
+ * did not come back, a failed engine thread, and builds that a pipeline needed and did not get.
+ * `onStop`'s handlers hear each of them.
+ */
+const FAILURES_THAT_END_DRAWING: ReadonlySet<string> = new Set(['E1302', 'E1404', 'E1424']);
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
 /**
@@ -1709,6 +1745,10 @@ async function startEngine(
 ): Promise<Engine> {
 	const { hold, holdScript } = modes;
 	const startedAt = performance.now();
+	/** Ends a development build's hearing of add-ons for a runner that does not exist yet. */
+	let stopEarlyAddons: (() => void) | undefined;
+	/** Set once the start reaches the try whose failure stops the engine. */
+	let startTried = false;
 	const { signal } = options;
 	// A page's progress handler that throws is the page's error: the console shows it, and the
 	// start goes on.
@@ -1802,6 +1842,19 @@ async function startEngine(
 	// numbers, so that code draws the same numbers on every run.
 	if (sketchOnPage) void awaitLater(loadGlue(build));
 	const runnerModule = sketchOnPage ? loadRunnerModule() : undefined;
+	// A development build with input off hears each add-on that the sketch's module loads, such as
+	// @null3d/controls, from before the load begins, and hands them to the runner once it exists.
+	let earlyAddons: string[] | undefined;
+	if (DEV && sketchOnPage && hold === undefined && options.input === false) {
+		const heard: string[] = [];
+		earlyAddons = heard;
+		stopEarlyAddons = onAddonChecked((name) => heard.push(name));
+		// The start runs on with no wait to the try below, whose failure stops the engine and this
+		// hearing with it. A start that throws before that try ends the hearing here.
+		queueMicrotask(() => {
+			if (!startTried) stopEarlyAddons?.();
+		});
+	}
 	const sketchModule =
 		sketchOnPage && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
@@ -1832,6 +1885,25 @@ async function startEngine(
 		for (const handler of messageHandlers) handler(name, data);
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
+	const stopHandlers = new Set<() => void>();
+	/** True once the engine draws no new frames, which each stop handler hears once. */
+	let drawingEnded = false;
+	/** Runs a stop handler. One that throws is the page's error, which the console shows. */
+	const runStopHandler = (handler: () => void) => {
+		try {
+			handler();
+		} catch (error) {
+			console.error(error);
+		}
+	};
+	const endDrawing = () => {
+		if (drawingEnded) return;
+		drawingEnded = true;
+		const handlers = [...stopHandlers];
+		stopHandlers.clear();
+		// The other handlers and the stop go on past one that throws.
+		for (const handler of handlers) runStopHandler(handler);
+	};
 	const sketchErrorHandlers = new Set<(error: Error) => void>();
 	/**
 	 * The failures that the engine reported while no handler listened, for the first handler that
@@ -1861,12 +1933,16 @@ async function startEngine(
 			start.abort(error);
 			return;
 		}
-		if (failureHandlers.size === 0) {
-			earlyFailures.push(error);
-			console.error(error);
-			return;
+		// The failure reaches its handlers, or the console, before the stop handlers hear that the
+		// frames ended, so a page hears why before it hears that.
+		try {
+			if (failureHandlers.size === 0) {
+				earlyFailures.push(error);
+				console.error(error);
+			} else for (const handler of failureHandlers) handler(error);
+		} finally {
+			if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing();
 		}
-		for (const handler of failureHandlers) handler(error);
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
 	// handlers below read them only after that.
@@ -2031,7 +2107,10 @@ async function startEngine(
 	/** True while the page's own core starts in the shared memory. */
 	let pageCoreStarting = false;
 	let canvasWatch: CanvasWatch | undefined;
+	/** The page's input capture, which exists only while the engine takes input from the page. */
 	let input: ReturnType<typeof captureInput> | undefined;
+	/** True once `engine.requestPointerLock` took the lock, which the engine then gives back as it stops. */
+	let tookLock = false;
 	let stopPreferences: (() => void) | undefined;
 	let stopDisplay: (() => void) | undefined;
 	let rendererHost: EngineWorker | undefined;
@@ -2143,6 +2222,7 @@ async function startEngine(
 	 * the core and the GPU device, unless it failed. A second call returns the first call's promise.
 	 */
 	const stop = () => {
+		if (DEV) stopEarlyAddons?.();
 		stopping ??= (async () => {
 			holder.beginStop();
 			Atomics.store(slots, Slot.Running, 0);
@@ -2167,8 +2247,13 @@ async function startEngine(
 			localRunner?.dispose();
 			videos?.dispose();
 			input?.listen(false);
-			// A stopped engine reads no input, so it gives the pointer back.
-			if (globalThis.document?.pointerLockElement === options.canvas) document.exitPointerLock();
+			// A stopped engine reads no input, so it gives back a lock that its input read or that it
+			// took. With input off it took none, and a lock on the canvas is the page's own.
+			if (
+				(input !== undefined || tookLock) &&
+				globalThis.document?.pointerLockElement === options.canvas
+			)
+				document.exitPointerLock();
 			canvasWatch?.listen(false);
 			stopPreferences?.();
 			stopDisplay?.();
@@ -2200,6 +2285,8 @@ async function startEngine(
 			release();
 			keepCoreMemory();
 		})();
+		// The stop has begun, its slots written, before the stop handlers hear of it.
+		endDrawing();
 		return stopping;
 	};
 	/**
@@ -2233,6 +2320,7 @@ async function startEngine(
 		canvasWorker.detach();
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
+	startTried = true;
 	try {
 		const report = await abortable(
 			probeCapabilities(powerPreference, presetRequest.hints, switches.multiDraw),
@@ -2454,11 +2542,16 @@ async function startEngine(
 		canvasHold.sized = true;
 		canvasWatch = watch;
 		watch.listen(true);
-		// Hold mode keeps input out, so a held frame never depends on it.
-		const takesInput = hold === undefined && replay === undefined;
-		const pageInput = captureInput(options.canvas, control);
+		// Hold mode keeps input out, so a held frame never depends on it. A page whose input another
+		// library records turns it off, and then the engine adds no listener at all.
+		const pageInput =
+			hold === undefined && replay === undefined && options.input !== false
+				? captureInput(options.canvas, control)
+				: undefined;
 		input = pageInput;
-		pageInput.listen(takesInput);
+		pageInput?.listen(true);
+		// A development build's sketch thread then says when the sketch relies on input.
+		if (DEV && options.input === false) Atomics.store(slots, Slot.InputOff, 1);
 		stopPreferences = watchPreferences(slots);
 		// A worker that draws holds its frames to the display's rate, which only the page can measure.
 		stopDisplay = renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
@@ -2467,7 +2560,7 @@ async function startEngine(
 		let detached = false;
 		const applyPause = () => {
 			const paused = userPaused || detached;
-			pageInput.listen(takesInput && !paused);
+			pageInput?.listen(!paused);
 			// Counted before the flag clears, so the sketch's first step after the pause sees it.
 			if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
@@ -2647,6 +2740,14 @@ async function startEngine(
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
 					reportSketchError: (message) => events.sketchError(new Error(message)),
+					// What the sketch's module loaded before the runner existed, then each later load.
+					...(DEV && {
+						hearAddons: (heard: (name: string) => void) => {
+							stopEarlyAddons?.();
+							for (const name of earlyAddons ?? []) heard(name);
+							return onAddonChecked(heard);
+						},
+					}),
 				},
 				hold,
 				holdScript,
@@ -2809,6 +2910,14 @@ async function startEngine(
 				for (const error of earlyFailures.splice(0)) handler(error);
 				return () => failureHandlers.delete(handler);
 			},
+			onStop(handler) {
+				if (drawingEnded) {
+					runStopHandler(handler);
+					return () => {};
+				}
+				stopHandlers.add(handler);
+				return () => stopHandlers.delete(handler);
+			},
 			onSketchError(handler) {
 				sketchErrorHandlers.add(handler);
 				return () => sketchErrorHandlers.delete(handler);
@@ -2907,7 +3016,17 @@ async function startEngine(
 				else rendererHost?.send({ type: 'lose-gpu' });
 			},
 			requestPointerLock(lockOptions) {
-				return requestPointerLock(options.canvas, lockOptions);
+				// The lock is input: the sketch reads the mouse's movement through the engine's listeners.
+				if (options.input === false)
+					return Promise.reject(
+						new EngineError(
+							'E1426',
+							'engine.requestPointerLock() was called on an engine started with input: false, which reads no pointer movement.',
+						),
+					);
+				return requestPointerLock(options.canvas, lockOptions).then(() => {
+					tookLock = true;
+				});
 			},
 			async destroy(destroyOptions) {
 				await stop();

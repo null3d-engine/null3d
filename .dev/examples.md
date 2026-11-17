@@ -21,6 +21,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/forest/planting.ts` | The forest demo's build: one batch for each kind of tree and one for the understory, the far rows as cards, the hero fir and the counts that each preset draws. The sketch keeps the look and the frame, so it stays under the feature demos' 150-line rule |
 | `examples/forest/sway.ts` | The forest demo's trees' material, whose trunk and crown bend in the wind add-on's field, read at each tree's root and fading out by the sway distance |
 | `examples/impostors/forest.ts` | The impostors demo's scenery: the shared pines split into three bands by distance, the octahedral atlas drawn in code from the pine's own tiers, and the transform that places each copy in a merged far mesh. The two nearer bands overlap, and each fades through the other's edge, so the rings never meet on a line |
+| `examples/replay/` | The deterministic simulation demo ([below](#the-deterministic-simulation-demo)): `sim.ts`, the simulation; `session.ts`, the play without the page: the run, its log, the replay and the clock; `page.ts`, its page part, which takes the input and runs the session, and which `startDemo` loads by the demo's `pagePart`; `view.ts`, the numbers that the page sends the sketch; `court.ts`, the scenery; and `sketch.ts` |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
@@ -48,7 +49,7 @@ The examples page links only by relative addresses, and each demo's entry names 
 
 The website's repository holds this repository as a git submodule, pinned to the release tag that matches the `@null3d/engine` version it installs. Its build:
 
-1. Installs `@null3d/engine`, `@null3d/controls` and `@null3d/vite-plugin` from npm, and `three` at the version that `examples/package.json` pins, for the comparisons. It never lists the submodule as a workspace, whose `workspace:*` versions would break.
+1. Installs `@null3d/engine`, `@null3d/controls` and `@null3d/vite-plugin` from npm. It installs `three`, for the comparisons, and `@clockwork2/engine`, the deterministic simulation demo's exact math library, at the versions that `examples/package.json` pins. It never lists the submodule as a workspace, whose `workspace:*` versions would break.
 2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, scenes, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. A page shows each demo's `scene` after its title, as in "Instancing · 100,000 columns". It marks a demo with an `assets` field as one that loads files. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. It shows the comparisons from `examples/compare/comparisons.ts` with `startComparison` from `examples/lib/compare.ts`. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
 3. Builds its pages with `null3d()` from the plugin, `base: './'`, and `resolve.dedupe` for `@null3d/engine` and `@null3d/controls`. The dedupe matters when the submodule has its own `node_modules`: its workspace links point at packages whose built files are missing. Each entry of the list names its sketch with a literal address, so the build ships every sketch that the website imports.
 4. Sets the environment variable `VITE_NULL3D_SAMPLES_BASE` to the folder of the sample files, such as `./samples/`, and copies them there with `copyNamedSamples` from `tools/lib/samples.ts`, which copies every file that the demos name.
@@ -1153,7 +1154,7 @@ The demos' groups are the owner's ruling. In the sidebar's order, they are Showc
 | Showcase | creek, island, skyway |
 | Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, aurora, canvas-screen, coat-and-sheen, iridescence-and-anisotropy, property-animation, translucency, subsurface, reflection-probes, shader-inputs, water, weighted-transparency, relief, multiple-views, time-of-day, decals, atmosphere, contact-shadows, hero-shadow, camera-lens, wet-street, auto-exposure, tone-mapped, light-shafts, gltf-model, post-effects, sprites-lines, rain, particles, security-camera, area-lights |
-| Motion and interaction | character, look-at, input, walk-and-fly, morph-flowers, css3d-labels, picking, gizmos, math |
+| Motion and interaction | character, look-at, input, walk-and-fly, morph-flowers, css3d-labels, picking, gizmos, math, replay |
 | Scale | terrain, galaxy, instances, forest, impostors, far-from-origin, large-world |
 | Testing and tools | hold-mode |
 
@@ -1162,6 +1163,19 @@ The demos' groups are the owner's ruling. In the sidebar's order, they are Showc
 - Each title names the feature, such as "Instancing" or "Render to texture", and the `scene` field names the scene that shows it, such as "100,000 columns". A reader looks for a feature, and the scene tells the demos apart at a glance.
 - The folder names do not follow the titles, because the image tests, the code links and the device plans use them.
 - The demos that load files (creek, environment, gltf-model, character and look-at) carry a "loads files" tag, from their `assets` field. The gltf-model demo sits with light and materials, since its look is what it shows.
+
+## The deterministic simulation demo
+
+The demo shows how a game whose server replays its simulation uses null3D: the maths entry, `createMath` and `input: false` together. It sits in Motion and interaction, beside the input and the math demos that it builds on. Testing and tools holds the engine's own test tools, such as hold mode, and this replay is the game's, not the engine's.
+
+- The simulation in `sim.ts` steps an orb hunt by ticks from a seed and a log. It imports only the maths entry's sub-paths and clockwork2's `dmath`, which `examples/package.json` pins, and builds `createMath` on `dmath`'s `sin`, `cos`, `acos` and `exp`. An orb counts when the view points at it from close by, so the look decides the result, and the camera is the simulation's.
+- The page part in `page.ts` takes the keys, the mouse, the fingers and the pointer lock itself. It records each tick's input as whole numbers, and steps the simulation with the page's own clock. It sends the sketch two poses and how far the frame is between them. Replay steps a new run from the seed through the log at the same rate. It says whether the replay ended on the run's state, bit for bit.
+- The demo's entry sets `pagePart`. Then `startDemo` starts the engine with `input: false`, and on a live page it loads and starts `examples/<name>/page.ts`. It hands the part the element that it takes as `choices`, for the part's buttons. A page of the website's own layout passes that element for this demo too.
+- `startDemo` resolves once the part runs. A part that fails to load or start fails the start. The overlay comes back with the reason, also after the first frame, and the caller gets it too. The HUD hides, the choice buttons leave, and the engine is destroyed. The part stops when the page aborts the demo's signal, and when the engine stops drawing (`engine.onStop`). The engine stops drawing as the page destroys it, or at a failure that ends its frames. Its listeners and frame loop go with it.
+- A demo that the page aborted while its part loaded starts no part, and the part checks its signal too. If that part then fails, the start still fails, but the page stays as it is. By then the page may show another demo in the overlay's place, the HUD and the choices.
+- The held frame draws the sketch alone, with no page part. The sketch draws the run's start, which the simulation computes from the same seed, until a view arrives.
+- On a live page the room environment's soft fill arrives after the first frame, so the start waits for none of its work. A held frame waits for it, as the wind demo's held frame waits for its plants. A fill that the engine's stop cuts short fails with E1420, which the sketch drops. Any other failure of the fill reaches the console.
+- `tests/image/demo-interaction.spec.ts` walks and turns the camera through the page's own listeners, replays the run, and holds the replayed camera to where the run left it. It holds the fill's code back until the engine stops, and sees the fill end quietly. It also moves the probe page to another demo while the part loads. The next demo's choices, HUD and overlay must stay as they were, whether the part then loads or fails.
 
 ## The owner's decisions on the examples
 

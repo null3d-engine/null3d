@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { Euler, Matrix4, Object3D, PerspectiveCamera, Quaternion, Vector3 } from 'three';
-import * as quat from './quat';
+import * as quat from './namespaces/quat';
 import type { EulerOrder } from './types';
 
 const ORDERS: EulerOrder[] = ['XYZ', 'YXZ', 'ZXY', 'ZYX', 'YZX', 'XZY'];

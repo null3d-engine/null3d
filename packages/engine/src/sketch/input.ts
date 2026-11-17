@@ -44,6 +44,7 @@ import {
 	type InputEventType,
 	Slot,
 } from '../shared/control';
+import type { InputOffNotes } from './input-off';
 
 /**
  * The main pointer: the mouse, a pen, or the first finger that touches the canvas. A frame's drag
@@ -263,6 +264,8 @@ export class InputReader implements Input, PointerInput {
 	recorder: InputRecorder | undefined = undefined;
 	/** The log that copies each frame's pointer events, which pointer events on objects set. */
 	pointerLog: PointerLog | undefined = undefined;
+	/** A development build's notes, set when the page writes no input. A production build has none. */
+	declare inputOffNotes?: InputOffNotes;
 	readonly touches: TouchState[];
 	readonly actions: InputActions = { define: (actions) => this.define(actions) };
 	/** Control numbers by name, and each action's number plus the count of controls. */

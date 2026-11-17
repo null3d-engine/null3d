@@ -27,6 +27,7 @@ import {
 	FLAG_TOUCH,
 	INPUT_RING_EVENTS,
 } from '../shared/control';
+import type { InputOffNotes } from '../sketch/input-off';
 import type { Ray } from './frame-cameras';
 import type { LineBatch } from './lines';
 import type { InstanceBatch, Object3D } from './scene';
@@ -199,6 +200,11 @@ export interface PointerInput {
 	pointerLog: PointerLog | undefined;
 	/** The frame on screen now, in the engine's count, whose camera a resting pointer casts from. */
 	presentedFrame(): number;
+	/**
+	 * A development build's notes, set when the page writes no input: the first handler then says
+	 * that no object gets a pointer event.
+	 */
+	inputOffNotes?: InputOffNotes;
 }
 
 /** Each logged event's whole numbers. */
@@ -429,8 +435,10 @@ export class PointerEvents {
 		this.total += change;
 		const { input } = this;
 		if (input === undefined) return;
-		if (before === 0 && this.total > 0) input.pointerLog = this.log;
-		else if (before > 0 && this.total === 0) {
+		if (before === 0 && this.total > 0) {
+			input.pointerLog = this.log;
+			if (DEV) input.inputOffNotes?.note('events');
+		} else if (before > 0 && this.total === 0) {
 			input.pointerLog = undefined;
 			this.log.count = 0;
 			for (const pointer of this.pointers) pointer.free();

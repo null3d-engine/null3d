@@ -1648,7 +1648,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Plain arrays and the vec3, quat, mat4 and color helpers from @null3d/engine, such as vec3.add(out, a, b) and quat.slerp(out, a, b, t)",
-      "notes": "Create scratch arrays once with vec3.create(), quat.create() or mat4.create(), outside onUpdate. Most names match three.js. applyQuaternion is vec3.transformQuat, applyMatrix4 is vec3.transformMat4, multiplyScalar is vec3.scale and addScaledVector is vec3.scaleAndAdd. setFromUnitVectors is quat.rotationTo, and setFromEuler is quat.fromEuler, in radians. There are no helpers for Box3, Sphere, Ray or Plane. three.js math classes may stay in setup code during a port, but not in per-frame code.",
+      "notes": "Create scratch arrays once with vec3.create(), quat.create() or mat4.create(), outside onUpdate. Most names match three.js. applyQuaternion is vec3.transformQuat, applyMatrix4 is vec3.transformMat4, multiplyScalar is vec3.scale and addScaledVector is vec3.scaleAndAdd. setFromUnitVectors is quat.rotationTo, and setFromEuler is quat.fromEuler, in radians. There are no helpers for Box3, Sphere, Ray or Plane. three.js math classes may stay in setup code during a port, but not in per-frame code. Game rules that a server replays import the exact helpers from @null3d/engine/math/vec3, quat, mat4 and math, and build setAxisAngle, fromEuler, rotateX, rotateY, rotateZ, slerp, vec3.angle and math.damp with createMath on an exact math library (0.3).",
       "docs": "api/math",
       "detect": "new\\s+(THREE\\.)?(Vector[234]|Quaternion|Matrix[34]|Euler|Color|Box[23]|Sphere|Ray|Plane|Frustum|Spherical|Cylindrical)\\s*\\("
     },
@@ -1670,7 +1670,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "math.degToRad, radToDeg, clamp, lerp, inverseLerp, mapLinear, damp, smoothstep, euclideanModulo, randFloat, randInt and randFloatSpread; math.seed and math.random",
-      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random(). smootherstep, pingpong, generateUUID and the power of two helpers have no equivalent.",
+      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random(). smootherstep, pingpong, generateUUID and the power of two helpers have no equivalent. Game rules that a server replays import clamp, lerp and the other exact helpers from @null3d/engine/math/math, build damp with createMath on an exact math library, and draw random numbers from a generator of their own (0.3).",
       "docs": "api/math",
       "detect": "\\bMathUtils\\.\\w+"
     },
