@@ -25,9 +25,11 @@ const ENDS = { pitch: 1.25 / 8, reach: 1.05 / 8 } as const;
 
 /**
  * A rounded clump of foliage that fine wood clothes. Still 01: the dome's surface is rounded masses
- * a fifth to a quarter of the height across.
+ * about a fifth of the height across. The clump's plan radius, which places its cards, is half its
+ * width, so the width sets how broad the crown's highest caps stand; at a quarter of the height they
+ * meet as one plate, where the pictures' dome rounds over at its top.
  */
-const CLUMP = { kind: 'clump', width: 0.24, depth: 0.18, fill: ENDS } as const;
+const CLUMP = { kind: 'clump', width: 0.2, depth: 0.18, fill: ENDS } as const;
 
 /**
  * The branches that end a stem's stated wood: three from each second fork, each to the dome's

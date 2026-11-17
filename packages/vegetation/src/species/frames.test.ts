@@ -938,8 +938,6 @@ for (const held of HELD)
 const REGISTERED_FRAMES = [
 	'european-beech',
 	'olive',
-	'pedunculate-oak',
-	'silver-birch',
 	'weeping-willow',
 ] as const;
 
