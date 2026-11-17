@@ -151,6 +151,7 @@ interface PieceShape {
 	readonly points: readonly Vector3[];
 	readonly middle: Vector3;
 	readonly reach: number;
+	readonly leaves: number;
 }
 
 /** Each record's pieces, found once: planning a frond is the costly part. */
@@ -196,7 +197,7 @@ function pieceShape(record: Species, piece: number, rule: PieceRule): PieceShape
 		const dz = point[2] - middle[2];
 		reach = Math.max(reach, Math.sqrt(dx * dx + dy * dy + dz * dz));
 	}
-	const shape: PieceShape = { points, middle, reach };
+	const shape: PieceShape = { points, middle, reach, leaves: plan.leaves.length };
 	known.set(piece, shape);
 	return shape;
 }
@@ -548,21 +549,44 @@ function modelOf(
 				reach = Math.max(reach, Math.sqrt(dx * dx + dz * dz));
 			}
 		}
+		// The piece's own breadth and depth, not its rachis: the frond is its pinnae, and the
+		// shared price and bake read the piece's size and the leaf figures, never the stem alone.
+		let halfWidth = 0;
+		let halfDepth = 0;
+		for (const point of shape.points) {
+			halfWidth = Math.max(halfWidth, Math.abs(point[0]));
+			halfDepth = Math.max(halfDepth, Math.abs(point[2]));
+		}
+		const leaf =
+			record.foliage.kind === 'blade'
+				? record.foliage.leaf
+				: record.foliage.kind === 'needle' || record.foliage.kind === 'fascicle'
+					? record.foliage.needle
+					: undefined;
+		const leafLength = leaf ? spreadMean(leaf.length) : 0;
+		const leafBreadth = leaf !== undefined && 'breadth' in leaf ? (leaf.breadth ?? 0) : 0;
+		const rachis = rule.stem.radius[0] * 2;
 		return {
 			name: rule.name,
 			length: spreadMean(rule.stem.length),
-			width: rule.stem.radius[0] * 2,
-			depth: rule.stem.radius[0] * 2,
+			width: halfWidth * 2,
+			depth: halfDepth * 2,
 			top: top / own,
 			reach: reach / own,
 			bottom: bottom / own,
 			middle: shape.middle,
 			figures: {
-				length: spreadMean(rule.stem.length),
-				width: rule.stem.radius[0] * 2,
+				frondLength: spreadMean(rule.stem.length),
+				frondWidth: halfWidth * 2,
+				frondDepth: halfDepth * 2,
+				leafLength,
+				leafBreadth,
+				pinnae: shape.leaves,
+				rachis,
 				top: top / own,
 				reach: reach / own,
 				bottom: bottom / own,
+				...(rule.browning === undefined ? {} : { browning: rule.browning }),
 			},
 		};
 	});
@@ -593,7 +617,7 @@ function modelOf(
 		least,
 		scale,
 		keepShare: Math.max(0, Math.min(1, leaves)),
-		crown: { top: crown.top, reach: crown.reach },
+		crown: { top: crown.top, reach: crown.reach, base: crown.base },
 	};
 }
 

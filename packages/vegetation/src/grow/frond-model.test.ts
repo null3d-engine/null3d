@@ -26,11 +26,11 @@ describe('the frond crown adapter', () => {
 		const { buds } = asset.skeleton;
 		let grown = 0;
 		for (let b = 0; b < buds.count; b++) if ((buds.kind[b] as number) !== BUD_FLOWER) grown++;
-		// The adapter lays the record's own counts: 56 living and 20 dead, each within its spread.
-		expect(model.sockets.length).toBeGreaterThanOrEqual(56 - 4 + 20 - 4);
-		expect(model.sockets.length).toBeLessThanOrEqual(56 + 4 + 20 + 4);
-		expect(grown).toBeGreaterThanOrEqual(56 - 4 + 20 - 4);
-		expect(grown).toBeLessThanOrEqual(56 + 4 + 20 + 4);
+		// The adapter's own draw purposes lay 76 sockets where the directed grower lays 79 without
+		// the flower sites. That three-socket difference is the conversion's one mover, named to the
+		// lead; the shared grow will follow the model. Both figures are pinned, so a change fails.
+		expect(model.sockets.length).toBe(76);
+		expect(grown).toBe(79);
 		expect(model.pieces.map((piece) => piece.name)).toEqual(
 			(palm.record.pieces ?? []).map((piece) => piece.name),
 		);

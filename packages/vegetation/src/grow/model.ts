@@ -150,7 +150,7 @@ export interface PlantModel {
 	readonly species: string;
 	/** Its axes, parents before children. */
 	readonly axes: readonly ModelAxis[];
-	/** Its sockets, in the order the plant thins by. */
+	/** Its sockets, in the layout's order; each socket's keep names its place in the thinning order. */
 	readonly sockets: readonly ModelSocket[];
 	/** The pieces its sockets carry, in the kit's order. */
 	readonly pieces: readonly ModelPiece[];
@@ -160,8 +160,12 @@ export interface PlantModel {
 	readonly scale: number;
 	/** The share of the grown sockets the state keeps, from its sparseness. */
 	readonly keepShare: number;
-	/** The tall piece's height above the soil and the widest piece's reach from the middle. */
-	readonly crown: { readonly top: number; readonly reach: number };
+	/**
+	 * The box the pieces fill: the tall piece's height above the soil, the widest piece's reach
+	 * from the middle, and the lowest foliage's height, which a hanging piece's `bottom` gives. A
+	 * shared stage reads the box through `crownOf`, so the three figures are one reading.
+	 */
+	readonly crown: { readonly top: number; readonly reach: number; readonly base: number };
 }
 
 /**
