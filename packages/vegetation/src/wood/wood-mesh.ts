@@ -262,7 +262,7 @@ function woodAxes(
 	const meshed = (a: number) =>
 		((axes.order[a] as number) <= keep || support?.[a] === 1) &&
 		planned(a) !== null &&
-		(partOf(a) !== PART_BRANCH || !plan?.keep || plan.keep[a] === 1) &&
+		(partOf(a) === PART_TRUNK || !plan?.keep || plan.keep[a] === 1) &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
 		((axes.parent[a] as number) >= 0 || rooted(a) || piece(a));
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
