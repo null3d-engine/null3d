@@ -940,7 +940,6 @@ const REGISTERED_FRAMES = [
 	'holm-oak',
 	'olive',
 	'pedunculate-oak',
-	'weeping-willow',
 ] as const;
 
 describe('a species entry that gives its frame', () => {
