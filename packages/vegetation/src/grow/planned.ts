@@ -239,7 +239,7 @@ function boundsOf(record: Species, growth: Planned): FrameBounds {
 	};
 }
 
-/** A capped clump's kept culms and pairs, from the room the crown's cards leave. */
+/** A capped clump's kept culms and pairs, by the plan's low-cap bands; each pair's card is paid after. */
 interface ClumpKeep {
 	readonly culms: number;
 	readonly pairs: number;
@@ -363,8 +363,8 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const socketsBound = Math.max(1, expected[4] as number);
 	const woodRoom = max === undefined ? 0 : Math.max(0, max - cards * cardCost);
 	const woodTotal = priced.trunk + priced.limbs + priced.branches;
-	// A clump class pays its culms and pairs at the coarse step, and the fine orders take the room
-	// that is left; the crown's cards were paid first, above.
+	// A clump class pays its culms and pairs at the coarse step, then each kept pair's card, and the
+	// fine orders take the room that is left. The bands set the counts; the cards follow them.
 	const clump = max === undefined ? undefined : clumpKeep(growth, bounds, max);
 	const classWood =
 		clump === undefined
