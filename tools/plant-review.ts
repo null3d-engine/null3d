@@ -10,8 +10,10 @@
 //     [--no-matte] [--draw-only] [--compare <run folder>]
 //
 //   bun run plants:review <species> --sweep [--out <folder>] [--run <name>] [--draw-only]
+//     [--sweep-step <degrees>] [--rungs-only]
 //   bun run plants:review --sweep-compare <run folder>
 //   bun run plants:review --sweep-all [--species a,b] [--out <folder>] [--run <name>]
+//     [--sweep-step <degrees>] [--rungs-only] [--rungs-after HH:MM] [--until HH:MM]
 //
 // The sweep draws a species at six rungs — the far card, the first card level, the near form at its
 // switch, inside the crown, the trunk and a leaf's scale — at four turns and two heights each,
@@ -1569,8 +1571,9 @@ async function main(): Promise<void> {
 		const plan = planFromManifest(set, manifest.sweep);
 		printSweep(
 			sweepRun(dir, manifest.species, set, manifest.frames, plan, manifest.sweep.series, {
-				commit: manifest.commit,
-				dirty: manifest.dirty,
+				step: manifest.sweep.step ?? 30,
+				orbit: manifest.sweep.orbit ?? true,
+				head: { commit: manifest.commit, dirty: manifest.dirty },
 			}),
 			dir,
 		);
@@ -1586,9 +1589,12 @@ async function main(): Promise<void> {
 		mkdirSync(dir, { recursive: true });
 		const named = flag('species') ? option('species').split(',') : [...speciesIds()];
 		const until = flag('until') ? option('until') : undefined;
+		const rungsAfter = flag('rungs-after') ? option('rungs-after') : undefined;
 		for (const id of named) {
 			if (!referenceFolder(id)) continue;
 			if (until !== undefined && pastDeadline(until)) break;
+			const rungsOnly =
+				flag('rungs-only') || (rungsAfter !== undefined && pastDeadline(rungsAfter));
 			const args = [
 				join(REPO_ROOT, 'tools/plant-review.ts'),
 				id,
@@ -1605,6 +1611,8 @@ async function main(): Promise<void> {
 				option('preset', 'high'),
 				...(flag('sparse') ? ['--sparse', option('sparse')] : []),
 				...(flag('gpu') ? ['--gpu', option('gpu')] : []),
+				...(flag('sweep-step') ? ['--sweep-step', option('sweep-step')] : []),
+				...(rungsOnly ? ['--rungs-only'] : []),
 			];
 			// A child whose table names a failing row exits 1: that is a species fault the round's
 			// table carries, not a reason to leave the round short.
@@ -1721,8 +1729,10 @@ async function main(): Promise<void> {
 				throw new Error(`the sweep's probe drew no frame: ${probe?.error ?? 'no frame'}`);
 			const starts = sweepStarts(probe);
 			if (!starts) throw new Error("the sweep's probe posted no level distances");
-			const built = sweepShots(set, base, starts);
-			const pull = sweepSeriesShots(base, starts);
+			const step = Number(option('sweep-step', '30'));
+			const orbit = !flag('rungs-only');
+			const built = sweepShots(set, base, starts, step, orbit);
+			const pull = orbit ? sweepSeriesShots(base, starts) : { shots: [], steps: [] };
 			const allShots = [...built.shots, ...pull.shots];
 			let frames = await drawShots(dir, allShots, { ...(gpu !== undefined && { gpu }) });
 			// A page that navigated under a cell or lost its worker is drawn once more: a run fault
@@ -1749,7 +1759,7 @@ async function main(): Promise<void> {
 				windFps,
 				started: new Date(started).toISOString(),
 				seconds: Number(((Date.now() - started) / 1000).toFixed(1)),
-				sweep: sweepManifest(built.plan, starts, pull.steps),
+				sweep: sweepManifest(built.plan, starts, pull.steps, step, orbit),
 				frames: [probe, ...frames],
 			};
 			writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, '\t')}\n`);
@@ -1758,7 +1768,11 @@ async function main(): Promise<void> {
 				return;
 			}
 			printSweep(
-				sweepRun(dir, species, set, frames, built.plan, pull.steps, { commit, dirty }),
+				sweepRun(dir, species, set, frames, built.plan, pull.steps, {
+					step,
+					orbit,
+					head: { commit, dirty },
+				}),
 				dir,
 			);
 		} finally {

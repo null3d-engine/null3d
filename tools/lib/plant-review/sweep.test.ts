@@ -30,6 +30,7 @@ import {
 	sweepManifest,
 	sweepMarkdown,
 	sweepOrbitJumps,
+	sweepPictures,
 	sweepReference,
 	sweepRow,
 	sweepSeriesDistances,
@@ -190,6 +191,31 @@ describe('the sweep’s rungs and orbit', () => {
 		// The near form's switch lies near the foot, so the rung draws from the inside-crown camera.
 		const near = SWEEP_RUNGS.find((rung) => rung.id === 'switch');
 		expect(near?.referenceViews[0]).toBe('inside');
+	});
+
+	test('draws the pictures a step and an orbit ask, or one alone', () => {
+		expect(sweepPictures(30)).toBe(24);
+		expect(sweepPictures(60)).toBe(12);
+		expect(sweepPictures(45)).toBe(16);
+		expect(sweepPictures(60, false)).toBe(1);
+		const folder = set([
+			slot(1, 'whole'),
+			slot(6, 'inside'),
+			slot(17, 'trunk'),
+			slot(18, 'leaf-upper'),
+		]);
+		const whole = SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number];
+		const orbit = sweepShots(folder, { species: 'species' }, [3.7, 156.6, 900], 60, true);
+		expect(
+			orbit.shots.filter((shot) => shot.cells[0]?.file.includes('sweep-far-card/')),
+		).toHaveLength(12);
+		const rungs = sweepShots(folder, { species: 'species' }, [3.7, 156.6, 900], 60, false);
+		expect(rungs.shots).toHaveLength(SWEEP_RUNGS.length);
+		expect(
+			rungs.shots.every(
+				(shot) => shot.query.view === whole.referenceViews[0] || shot.reference !== undefined,
+			),
+		).toBe(true);
 	});
 
 	test('orbits each rung at an even step of a full turn and two heights', () => {
