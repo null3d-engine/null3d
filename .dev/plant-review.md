@@ -54,8 +54,10 @@ read; the picture fails, and the fault is a generator fault, not a row to judge.
 The reading takes two views of the render's matte. The coverage view joins two runs whose feathered
 edges meet, because a support thinner than a pixel at the work width falls to the outline's cutoff.
 The raw view counts only the texels the matte draws darker than half and bridges no gap: a component
-of the piece area that is separate there is a piece standing free whatever the coverage view joins.
-The summary prints the raw read beside the coverage read, and row 12 fails on either.
+of the piece area whose own centre lies outside the crown's envelope — the crown's filled region,
+dilated by two pixels — is a piece standing free whatever the coverage view joins, and a component
+inside the envelope is one of the crown's own leaf clusters standing among its neighbours. The
+summary prints the raw read beside the coverage read, and row 12 fails on it.
 
 ## Sparseness and polygon count are different dials
 

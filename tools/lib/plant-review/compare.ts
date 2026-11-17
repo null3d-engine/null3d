@@ -55,6 +55,7 @@ import {
 	pieceParts,
 	plantMask,
 	type ReferenceSet,
+	rawFloatingParts,
 	rawMatteOwnMask,
 	SOIL_MASK_GROUND_SHARE,
 	skyMaskable,
@@ -1506,14 +1507,19 @@ function bandFor(frame: RunFrame, height: number): { top: number; base: number }
 	return groundBandOf(frame, height) ?? undefined;
 }
 
+/** A part's area and box, as the gate reports it. */
+function partShape(part: PlantPart): { readonly area: number; readonly box: string } {
+	return {
+		area: part.area,
+		box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
+	};
+}
+
 export function floatingParts(
 	list: readonly PlantPart[],
 	band?: { readonly top: number; readonly base: number },
 ): readonly { readonly area: number; readonly box: string }[] {
-	return hangingParts(list, band).parts.map((part) => ({
-		area: part.area,
-		box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
-	}));
+	return hangingParts(list, band).parts.map(partShape);
 }
 
 /** The row where the plant stands: the lowest row a piece reaches. */
@@ -1595,12 +1601,8 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 				return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
 			})()
 		: null;
-	const raw = matte
-		? (() => {
-				const mask = rawMatteOwnMask(matte);
-				return rawPartsAtOwnWidth(mask.mask, mask.width, mask.height);
-			})()
-		: null;
+	const rawMask = matte ? rawMatteOwnMask(matte) : undefined;
+	const raw = rawMask ? rawPartsAtOwnWidth(rawMask.mask, rawMask.width, rawMask.height) : null;
 	const read = own ?? parts;
 	const band = bandFor(frame, render.plant.height);
 	return {
@@ -1609,7 +1611,15 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 		groundBand: band ?? null,
 		floating: floatingParts(read, band),
 		workWidth: own ? { components: parts.length, floating: floatingParts(parts, band) } : null,
-		rawMatte: raw ? { components: raw.length, floating: floatingParts(raw, band) } : null,
+		rawMatte:
+			raw && rawMask
+				? {
+						components: raw.length,
+						floating: rawFloatingParts(raw, rawMask.mask, rawMask.width, rawMask.height, band).map(
+							partShape,
+						),
+					}
+				: null,
 		crownBoxGap: render.measures.crownBoxGap ?? null,
 	};
 }
@@ -2904,9 +2914,19 @@ export function compareStills(
 					workWidth: parts
 						? { components: parts.length, floating: floatingParts(parts, band) }
 						: null,
-					rawMatte: rawParts
-						? { components: rawParts.length, floating: floatingParts(rawParts, band) }
-						: null,
+					rawMatte:
+						rawParts && rawOwn
+							? {
+									components: rawParts.length,
+									floating: rawFloatingParts(
+										rawParts,
+										rawOwn.mask,
+										rawOwn.width,
+										rawOwn.height,
+										band,
+									).map(partShape),
+								}
+							: null,
 				}
 			: null;
 		const shown: PairMetrics = {

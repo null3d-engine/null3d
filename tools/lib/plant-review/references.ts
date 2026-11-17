@@ -1145,6 +1145,76 @@ export function hangingParts(
 }
 
 /**
+ * The crown's envelope: the region the crown's foliage fills across its rows, dilated by `dilate`
+ * pixels. The largest component is the plant's body, and its own crown start row sets where the
+ * crown begins, so a card hanging below that row cannot drag the crown down. Above it each row fills
+ * from the matte's leftmost to its rightmost solid pixel, so the crown's own fringe cards set the
+ * crown's outline. The filled rows are then dilated by `dilate` pixels.
+ *
+ * @param mask The matte's solid coverage, one byte a pixel.
+ * @param width The mask's width in pixels.
+ * @param height The mask's height in pixels.
+ * @param dilate How far the filled crown reaches past its own outline, in pixels.
+ * @returns One byte a pixel, 1 inside the crown's envelope.
+ */
+export function crownEnvelopeMask(
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	dilate = 2,
+): Uint8Array {
+	const envelope = new Uint8Array(width * height);
+	const { labels, sizes } = components(mask, width, height);
+	let body = 0;
+	for (let label = 1; label < sizes.length; label++)
+		if ((sizes[label] as number) > (sizes[body] as number)) body = label;
+	if (body === 0) return envelope;
+	const only = new Uint8Array(width * height);
+	for (let at = 0; at < only.length; at++) only[at] = labels[at] === body ? 1 : 0;
+	const box = boxOf(only, width, height);
+	if (!box) return envelope;
+	const start = crownStartRow(rowSpans(only, width, height), box);
+	const spans = rowSpans(mask, width, height);
+	for (let y = Math.max(0, box.top); y <= Math.min(height - 1, start); y++) {
+		const left = spans[y * 2] as number;
+		const right = spans[y * 2 + 1] as number;
+		if (left < 0) continue;
+		const from = Math.max(0, left - dilate);
+		const to = Math.min(width - 1, right + dilate);
+		for (let row = Math.max(0, y - dilate); row <= Math.min(height - 1, y + dilate); row++)
+			for (let x = from; x <= to; x++) envelope[row * width + x] = 1;
+	}
+	return envelope;
+}
+
+/**
+ * The raw matte's floating pieces: the parts `hangingParts` names, less those whose own centre lies
+ * inside the crown's envelope. A crown card standing among its neighbours is inside the crown and
+ * passes; a piece in open sky below the fringe is outside and is floating.
+ *
+ * @param list The raw matte's parts, the largest run first.
+ * @param mask The matte's solid coverage, one byte a pixel.
+ * @param width The mask's width in pixels.
+ * @param height The mask's height in pixels.
+ * @param band The rows the plant's feet land on, where a piece stands rather than hangs.
+ * @returns The pieces that hang free in open sky.
+ */
+export function rawFloatingParts(
+	list: readonly PlantPart[],
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	band?: { readonly top: number; readonly base: number },
+): PlantPart[] {
+	const envelope = crownEnvelopeMask(mask, width, height);
+	return hangingParts(list, band).parts.filter((part) => {
+		const x = Math.floor((part.left + part.right) / 2);
+		const y = Math.floor((part.top + part.bottom) / 2);
+		return envelope[y * width + x] !== 1;
+	});
+}
+
+/**
  * The separate pieces a plant is drawn as: runs of at least `minArea` pixels, with two runs one
  * background pixel apart counted as one. A plant hangs together: every fruit meets its twig, every
  * twig meets its limb. A part that meets nothing is drawn as an island, and this returns it with its

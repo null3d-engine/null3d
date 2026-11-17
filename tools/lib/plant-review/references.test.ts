@@ -30,6 +30,7 @@ import {
 	pieceCount,
 	pieceParts,
 	plantMask,
+	rawFloatingParts,
 	rawMatteOwnMask,
 	readIndex,
 	rowSpans,
@@ -1207,6 +1208,34 @@ describe('the coverage matte', () => {
 		const parts = pieceParts(raw.mask, width, height, 24, 0);
 		expect(parts.length).toBe(1);
 		expect(hangingParts(parts).parts.length).toBe(0);
+	});
+
+	test('passes a crown cluster inside the envelope and fails a bar in open sky', () => {
+		// The birch's bar beside the trunk: a narrow card below the crown's fringe, with sky around
+		// it. The oak's cluster: a card at the crown's edge, among the crown's other cards. Both are
+		// separate in the raw matte; only the bar's centre lies outside the crown's envelope.
+		const width = 80;
+		const height = 80;
+		const mask = new Uint8Array(width * height);
+		const block = (left: number, top: number, right: number, bottom: number): void => {
+			for (let y = top; y <= bottom; y++)
+				for (let x = left; x <= right; x++) mask[y * width + x] = 1;
+		};
+		block(15, 10, 64, 35);
+		block(38, 30, 41, 78);
+		block(68, 16, 73, 24);
+		block(46, 40, 50, 60);
+		const parts = pieceParts(mask, width, height, 24, 0);
+		expect(parts.length).toBe(3);
+		// The cluster and the bar both meet nothing; the foot row is the trunk's.
+		expect(hangingParts(parts).parts.map((part) => [part.area, part.left, part.top])).toEqual([
+			[105, 46, 40],
+			[54, 68, 16],
+		]);
+		// The cluster stands inside the crown's envelope; the bar stands in the open sky below it.
+		expect(
+			rawFloatingParts(parts, mask, width, height).map((part) => [part.area, part.left, part.top]),
+		).toEqual([[105, 46, 40]]);
 	});
 
 	test('names a piece that meets nothing, and spares one the frame carries', () => {
