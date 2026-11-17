@@ -1506,6 +1506,15 @@ function writeSweepRound(dir: string, merged: ReturnType<typeof mergeSweepRound>
 	if (!sweepGreen(merged.rows, merged.coverage)) process.exitCode = 1;
 }
 
+/** Whether the clock has reached a round's stopping time, `HH:MM` in the machine's own zone. */
+function pastDeadline(until: string): boolean {
+	const match = /^(\d{1,2}):(\d{2})$/.exec(until);
+	if (!match) throw new Error(`--until takes a time as HH:MM, not ${until}`);
+	const now = new Date();
+	const minutes = now.getHours() * 60 + now.getMinutes();
+	return minutes >= Number(match[1]) * 60 + Number(match[2]);
+}
+
 /** Prints one species' sweep table and sets the exit code when a row or a view is not green. */
 function printSweep(
 	result: { readonly rows: readonly SweepRow[]; readonly coverage: SweepCoverage },
@@ -1559,7 +1568,10 @@ async function main(): Promise<void> {
 		if (!set) throw new Error(`${dir} names no reference folder, so its sweep cannot compare`);
 		const plan = planFromManifest(set, manifest.sweep);
 		printSweep(
-			sweepRun(dir, manifest.species, set, manifest.frames, plan, manifest.sweep.series),
+			sweepRun(dir, manifest.species, set, manifest.frames, plan, manifest.sweep.series, {
+				commit: manifest.commit,
+				dirty: manifest.dirty,
+			}),
 			dir,
 		);
 		return;
@@ -1573,8 +1585,10 @@ async function main(): Promise<void> {
 		const dir = resolve(option('out', RENDERS), option('run', `sweep-${stamp}`));
 		mkdirSync(dir, { recursive: true });
 		const named = flag('species') ? option('species').split(',') : [...speciesIds()];
+		const until = flag('until') ? option('until') : undefined;
 		for (const id of named) {
 			if (!referenceFolder(id)) continue;
+			if (until !== undefined && pastDeadline(until)) break;
 			const args = [
 				join(REPO_ROOT, 'tools/plant-review.ts'),
 				id,
@@ -1743,7 +1757,10 @@ async function main(): Promise<void> {
 				console.log(`compare with: bun run plants:review --sweep-compare ${dir}`);
 				return;
 			}
-			printSweep(sweepRun(dir, species, set, frames, built.plan, pull.steps), dir);
+			printSweep(
+				sweepRun(dir, species, set, frames, built.plan, pull.steps, { commit, dirty }),
+				dir,
+			);
 		} finally {
 			release();
 		}

@@ -237,6 +237,8 @@ export interface SweepSeriesStep {
 /** What a sweep run records of its plan, so a replay compares the same rungs. */
 export interface SweepManifest {
 	readonly starts: readonly [number, number, number];
+	/** Degrees between the orbit's frames, so a table names the step it drew at. */
+	readonly step: number;
 	readonly rungs: readonly {
 		readonly id: string;
 		readonly reference?: string;
@@ -381,6 +383,7 @@ export function sweepManifest(
 ): SweepManifest {
 	return {
 		starts,
+		step: SWEEP_STEP,
 		rungs: plan.map((entry) => ({
 			id: entry.rung.id,
 			...(entry.slot && { reference: entry.slot.file }),
@@ -1000,6 +1003,7 @@ export function sweepRun(
 	frames: readonly RunFrame[],
 	plan: readonly SweepRungPlan[],
 	series: readonly SweepSeriesStep[],
+	head?: { readonly commit: string; readonly dirty: boolean },
 ): {
 	readonly rows: readonly SweepRow[];
 	readonly coverage: SweepCoverage;
@@ -1103,8 +1107,20 @@ export function sweepRun(
 		join(runDir, 'sweep.json'),
 		`${JSON.stringify({ rows, coverage, series: withSpecies }, null, '\t')}\n`,
 	);
-	writeFileSync(join(runDir, 'sweep.md'), sweepMarkdown(rows, [coverage], withSpecies));
+	writeFileSync(
+		join(runDir, 'sweep.md'),
+		`${headLine(species, head)}${sweepMarkdown(rows, [coverage], withSpecies)}`,
+	);
 	return { rows, coverage, series: stepped };
+}
+
+/** The line above a species' table: the head it drew at and the orbit's step. */
+function headLine(
+	species: string,
+	head?: { readonly commit: string; readonly dirty: boolean },
+): string {
+	const where = head ? `Head: ${head.commit.slice(0, 12)}${head.dirty ? ' (dirty)' : ''}. ` : '';
+	return `${species}. ${where}Orbit step: ${SWEEP_STEP} degrees. Pictures a rung: ${SWEEP_PICTURES}.\n\n`;
 }
 
 /** Whether every row and every series step of a round is green. */

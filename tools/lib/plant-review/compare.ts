@@ -1559,10 +1559,35 @@ export interface SweepMeasures {
  * read at the picture's own width, and the crown box's gap. The picture has no reference, so its
  * figures stand alone and are read against the record's band and each other.
  */
+/**
+ * A mask grown by one pixel in the four axis directions. A join drawn thinner than a pixel, such as
+ * a twig that rasterises as dashed texels, then reads as joined: the sweep counts a piece that
+ * meets nothing, and a sub-pixel join must not manufacture one.
+ */
+function dilatedOne(mask: Uint8Array, width: number, height: number): Uint8Array {
+	const out = new Uint8Array(mask.length);
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const at = y * width + x;
+			if (mask[at] === 1) {
+				out[at] = 1;
+				continue;
+			}
+			if (
+				(x > 0 && mask[at - 1] === 1) ||
+				(x + 1 < width && mask[at + 1] === 1) ||
+				(y > 0 && mask[at - width] === 1) ||
+				(y + 1 < height && mask[at + width] === 1)
+			)
+				out[at] = 1;
+		}
+	return out;
+}
+
 export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 	const render = renderSideOf(runDir, frame, `SWEEP ${frame.file}`, false);
 	const parts = pieceParts(
-		anyPlantMask(render.plant),
+		dilatedOne(anyPlantMask(render.plant), render.plant.width, render.plant.height),
 		render.plant.width,
 		render.plant.height,
 		PIECE_AREA,
@@ -1572,7 +1597,11 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 			? null
 			: (() => {
 					const mask = matteOwnMask(readImage(join(runDir, frame.matte as string)));
-					return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
+					return piecePartsAtOwnWidth(
+						dilatedOne(mask.mask, mask.width, mask.height),
+						mask.width,
+						mask.height,
+					);
 				})();
 	const read = own ?? parts;
 	const band = bandFor(frame, render.plant.height);
