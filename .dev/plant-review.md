@@ -82,7 +82,10 @@ the deciding camera is the one the level is seen at.
 
 A low triangle maximum promises a tree that reads from a distance, and it keeps its skeleton before its
 leaves: a trunk, a fork and the first limb orders come first, and the leaves take what remains as a few
-large approximations rather than many small ones. Its evidence carries a picture at the distance the cap
+large approximations rather than many small ones. The crown's plates then set the outline: **no wood is
+drawn outside the crown's foliage at any cap**, and a clump's plate grows to its own extent so a few
+large plates surface whole sections of the crown. A capped tree whose limbs reach past its leaves reads
+as a starfish, and that picture fails however few triangles it draws. Its evidence carries a picture at the distance the cap
 is for, beside the close one, and the trade is stated: at a low cap the leaf is coarser than the
 uncapped tree's and the structure is not ([D-366](decisions/D-366-a-capped-tree-keeps-its-skeleton.md)).
 
