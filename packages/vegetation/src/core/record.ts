@@ -1648,6 +1648,18 @@ export interface Planned {
 	 * the plant. Absent, the wood.
 	 */
 	readonly capCards?: 'wood' | 'stated';
+	/**
+	 * The clump class's cap rule, where the plant is a clump of stems rather than one stem: a
+	 * triangle maximum lowers the culm count and the branch pairs before it touches the blades. The
+	 * culm cost is the coarsest step's two triangles a segment, never the fine tube's price. Absent
+	 * on a tree, whose caps are proved without it.
+	 */
+	readonly clump?: {
+		/** The fewest culms a capped clump keeps, below which it stops reading as a clump. */
+		readonly leastCulms: number;
+		/** The fewest pairs a capped clump keeps. */
+		readonly leastPairs: number;
+	};
 	/** The triangles one drawn piece of each kind costs, which the plan prices its shares from. */
 	readonly prices: Readonly<Record<'piece' | 'card' | 'clumpCard' | 'tubeSegment', number>>;
 }
