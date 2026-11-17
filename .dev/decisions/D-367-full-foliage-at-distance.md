@@ -74,16 +74,16 @@ their larger coverage, so the second cut can only add leaf and never remove any.
 triangle. Across the eight turn angles the crown's open sky closes 1.0 point in the mean and the spread across angles
 barely moves, so the cut lifts every quarter evenly.
 
-1. **Keeping the leaf form longer — measured and rejected.** The near level holds 623,220 triangles against the card
+1. **Keeping the leaf form longer: measured and rejected.** The near level holds 623,220 triangles against the card
    level's 62,023, and raising the switch moves the card level nearer, not the leaf form farther. Held at one distance and
    camera, the cards cover *more* than the leaf form: open sky 0.459 against 0.565 at fifty metres, 0.476 against 0.675 at
    seventy. So the switch is not the cause of a coverage loss, and a raise opens the crown.
 
-2. **A second cut over every plate — built and landed.** The cut rides the same texture sample's neighbour, so a species
+2. **A second cut over every plate: built and landed.** The cut rides the same texture sample's neighbour, so a species
    needs no new geometry and no new atlas. The offset ships as one texel; a species that needs another can name its own
    when the record gains the field.
 
-3. **Radial plate normals — withdrawn.** The card material uses the plain plant shader, whose cards role takes its shading
+3. **Radial plate normals: withdrawn.** The card material uses the plain plant shader, whose cards role takes its shading
    normal from the card's own surface map and never reads the vertex normal; the face-turning path runs only for merged
    foliage. Turning a plate's normal would therefore be inert, and the plane orientations themselves would have to change,
    which is a geometry change and not this route.
