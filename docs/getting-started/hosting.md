@@ -3,7 +3,7 @@ id: getting-started/hosting
 title: Hosting and cross-origin isolation
 status: experimental
 since: "0.1"
-summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the caches between visits; the single-threaded fallback."
+summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the caches between visits; the single-threaded fallback; Electron desktop apps served from a custom scheme."
 ---
 
 # Hosting and cross-origin isolation
@@ -144,6 +144,51 @@ add_header Cross-Origin-Embedder-Policy require-corp always;
 ```
 
 GitHub Pages cannot send custom headers, so a null3D page there runs single-threaded.
+
+## Desktop apps with Electron
+
+Electron ships Chromium, so a null3D game runs in it as it runs in Chrome. The threaded build needs the same cross-origin isolation as on a website. Two common setups do not give it:
+
+- `win.loadFile('index.html')` opens the page at a `file://` address. Such a page cannot be isolated, so the engine runs single-threaded. With Vite's default `base`, the window also stays blank: the page's script addresses start with `/`, which a `file://` page reads from the root of the disk.
+- A Chromium switch that turns on `SharedArrayBuffer` does not help. `crossOriginIsolated` stays `false`, and the engine reads that value to choose its build.
+
+Serve the production build from a custom scheme, and send the two headers on each response. This main process serves the `dist/` folder that `bunx vite build` writes at `app://game/`. It needs Electron 25 or later, which has `protocol.handle`:
+
+```js
+// main.js (Electron main process)
+const { app, protocol, net, BrowserWindow } = require('electron');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+// Call this before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
+app.whenReady().then(() => {
+  const root = path.join(__dirname, 'dist');
+  protocol.handle('app', async (request) => {
+    const file = path.join(root, decodeURIComponent(new URL(request.url).pathname));
+    if (!file.startsWith(root + path.sep)) return new Response('Not found', { status: 404 });
+    const response = await net.fetch(pathToFileURL(file).toString());
+    const headers = new Headers(response.headers);
+    headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+    headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+    return new Response(response.body, { status: response.status, headers });
+  });
+  new BrowserWindow({ width: 1280, height: 720 }).loadURL('app://game/index.html');
+});
+```
+
+Each of the three privileges is necessary:
+
+- `standard` makes the scheme's addresses work as `https:` addresses do, with an origin. Without it, the browser refuses to start the engine's workers, and `createEngine` rejects with [E1405](../errors/E1405.md).
+- `secure` makes the page a secure context, which isolation and WebGPU need. Without it, the page is not isolated, and the engine runs single-threaded.
+- `supportFetchAPI` lets the engine download its `.wasm` files with `fetch`. Without it, `createEngine` rejects with [E1406](../errors/E1406.md).
+
+The `startsWith` check refuses an address that points outside `dist/`. The game's own files come from the same scheme, so they need no other header. A file from a website, such as a model on a CDN, needs CORS or CORP headers, as [Files from other sites](#files-from-other-sites) says.
+
+To check the app, open its developer tools and read `crossOriginIsolated` in the console, or read `engine.capabilities.threaded` in the page's code. Both are `true` when the engine runs threaded.
 
 ## Send the files with Brotli
 
