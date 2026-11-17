@@ -112,6 +112,9 @@ const CLUMP_FROM = 0.25;
 /** The share of its growth at which a clump carries all the sockets it ever carries. */
 const CLUMP_OPEN = 0.55;
 
+/** The share of the plan's places a candidate draws them at: a smaller crown and a shorter tree. */
+const CROWN_SHRINK: number = 0.97;
+
 /** The share of the crown's outer reach from which a clump is shell, and its card's size. */
 const RIM_SHARE = 0.65;
 const RIM_CARD = 1.25;
@@ -386,6 +389,36 @@ function ramp(maturity: number, from: number, band: number): number {
  * Grows the plant at the asked state: the adult plan revealed to the age, thinned by sparseness,
  * and clothed by the fill.
  */
+/**
+ * The adult plan with every place drawn `k` of its size about the ground: the crown's radius and the
+ * plant's height shrink together, while each patch keeps its stated width in metres, so the leaves,
+ * their sockets and the clump table hold their own sizes.
+ *
+ * @param plan The adult plan.
+ * @param k The share of each place's size to keep.
+ * @returns The plan at that size.
+ */
+function shrunkPlan(plan: FramePlan, k: number): FramePlan {
+	return {
+		...plan,
+		height: plan.height * k,
+		crownBase: plan.crownBase * k,
+		axes: plan.axes.map((axis) => ({
+			...axis,
+			nodes: axis.nodes.map((node) => ({
+				...node,
+				x: node.x * k,
+				y: node.y * k,
+				z: node.z * k,
+			})),
+		})),
+		patches: plan.patches.map((patch) => ({
+			...patch,
+			centre: [patch.centre[0] * k, patch.centre[1] * k, patch.centre[2] * k] as [number, number, number],
+		})),
+	};
+}
+
 export function growPlanned(input: GrowInput): MacroSkeleton {
 	const growth = input.record.growth as Planned;
 	const request = input.request ?? { maturity: 1, sparse: 0 };
@@ -395,7 +428,10 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	if (!(age > 0)) return emptyPlant();
 	const adult = adultFor(input.record, growth, input.seed, input.variant);
 	if (!adult) return emptyPlant();
-	const { plan: bones, height: adultHeight } = adult;
+	const { plan: stated, height: statedHeight } = adult;
+	// The crown and the plant are drawn a little smaller, with every other number held.
+	const bones = CROWN_SHRINK === 1 ? stated : shrunkPlan(stated, CROWN_SHRINK);
+	const adultHeight = statedHeight * CROWN_SHRINK;
 	const fullAge = growth.fullAge;
 	const seed = input.seed >>> 0;
 	const sparse = request.sparse;
