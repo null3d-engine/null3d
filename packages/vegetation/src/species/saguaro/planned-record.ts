@@ -7,13 +7,15 @@
 // prices the leaves explicitly, an areole card's two triangles a place, because the tree's price
 // counts foliage at order-4 sockets and a column has none.
 //
-// The skin's density target is the record's own: its first card level's areole cards measure 109,223
-// triangles at the finest tier against that level's 112,000 budget, and the second level 46,892.
-// The crest fill predicts 5,571 areoles at full cover, 11,142 triangles at a two-triangle card each,
-// a tenth of the record's first card level; the first card level's own card price and tiling are the
-// open question the fill must settle. The nest holes are the old column grower's own number, 30 in
-// the 0.5 to 0.85 band, not the record's: the record's extra is the berry at old-wood, and a planned
-// extras site for them is still open.
+// The skin's density is measured with the crest fill: the plant carries 5,632 areoles at full cover,
+// 2,816 at half sparseness and 1,126 at full, and its first card level draws 35,863 triangles. The
+// record's budget for that level is 112,000 and its comment states 109,223 areole-card triangles;
+// the shipped tree's own first card level measures 49,081, so the planned skin reads 0.73 of the
+// tree it replaces. The gap is the price: one spine-cluster card, two triangles, at each areole,
+// where the record's 109,223 counts several planes or tiles an areole. 35,863 is the figure the eye
+// reads. The nest holes are the old column grower's own number, 30 in the 0.5 to 0.85 band, not the
+// record's: the record's extra is the berry at old-wood, and a planned extras site for them is still
+// open.
 import type { Planned } from '../../core/record';
 import { frame } from './directed';
 

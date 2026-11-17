@@ -142,11 +142,11 @@ export const record: Species = {
 		// Still 12: the areole's felt pad is the only bud the card carries, under the cluster.
 		bud: { length: 0.002, width: 0.002, tipCluster: 0, colour: [0.42, 0.36, 0.29] },
 		placement: {
-			// One card at every areole: the grower sets the areoles' spacing, so the curve gives the
-			// one shoot a metre of stretch that each bud's own stretch fills.
+			// One card at every areole: the grower sets the areoles' spacing, and 0 places a shoot at
+			// each bud site alone, which is one spine cluster an areole.
 			perMetre: [
-				[0, 40],
-				[1, 40],
+				[0, 0],
+				[1, 0],
 			],
 			density: 1,
 			shadePrune: 0,

@@ -12,20 +12,22 @@
 import {
 	AXIS_LIMB,
 	AXIS_STEM,
+	BUD_TERMINAL,
 	type ClumpData,
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../core/graph';
 import { hashAt } from '../core/hash';
-import { pow } from '../core/math';
+import { pow, quatFromFrame } from '../core/math';
 import { thinningRanks } from '../core/rank';
 import type { Planned, Species } from '../core/record';
 import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
 import type { DetailPlan, GrowInput, GrowRequest } from '../stages';
+import { crestAngle, ribPlan } from '../wood/ribs';
 import type { FrameAxis, FrameLength, FrameNode, FramePlan } from './frame';
 import { planFrame } from './frame';
 import type { Grower } from './models';
-import { type FillClump, type FillInput, fillClumps } from './planned-fill';
+import { type FillClump, type FillCount, type FillInput, fillClumps } from './planned-fill';
 
 /**
  * The share of a triangle maximum that the crown is paid before the wood takes its share: a clump
@@ -98,6 +100,124 @@ function cardedSet(
 		kept.add(bestAt);
 	}
 	return kept;
+}
+
+/** One built axis of a column, as the fill walks it: its builder axis and its node places. */
+interface CrestAxis {
+	/** The SkeletonBuilder axis, which keys the rib plan the mesher draws. */
+	readonly axis: number;
+	/** Whether it is an arm; the stem otherwise. */
+	readonly arm: boolean;
+	/** Its nodes from the foot or the joint, with the wood radius as it draws. */
+	readonly nodes: readonly {
+		readonly x: number;
+		readonly y: number;
+		readonly z: number;
+		readonly r: number;
+		readonly node: number;
+	}[];
+}
+
+/**
+ * The crest areoles a column draws: a bud at every pitch along every crest of its stem and arms, at
+ * the rib plan the mesher draws, so each card stands on the wood it is drawn with. The buds are the
+ * areole shoots, and the record's own class turns each card down the axis.
+ *
+ * @param input The builder, the plant's keys, the column block, the built axes and the kept share.
+ * @returns What the fill made, in the shape the plan reads.
+ */
+function fillCrests(input: {
+	readonly builder: SkeletonBuilder;
+	readonly seed: number;
+	readonly salt: number;
+	readonly variant: number;
+	readonly column: NonNullable<Planned['column']>;
+	readonly axes: readonly CrestAxis[];
+	readonly leaves: number;
+}): FillCount {
+	const { builder, seed, salt, variant, column, axes, leaves } = input;
+	const source = { ribs: column.ribs, armRibs: column.armRibs, ribDepth: column.ribDepth };
+	const share = Math.max(0, Math.min(1, leaves));
+	const frame = new Float32Array(4);
+	const budOrigins: number[] = [];
+	let made = 0;
+	let place = 0;
+	for (const axis of axes) {
+		const nodes = axis.nodes;
+		if (nodes.length < 2) continue;
+		const plan = ribPlan(source, seed, salt, variant, axis.axis, axis.arm);
+		// The arc position of each node, so the pitch runs along the drawn wood.
+		const arc: number[] = [0];
+		for (let k = 1; k < nodes.length; k++) {
+			const a = nodes[k - 1] as CrestAxis['nodes'][number];
+			const b = nodes[k] as CrestAxis['nodes'][number];
+			arc.push((arc[k - 1] as number) + Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z));
+		}
+		const length = arc[arc.length - 1] as number;
+		let at = 0;
+		for (let step = 0; step <= length; step += column.areoles) {
+			while (at + 1 < nodes.length && (arc[at + 1] as number) < step) at++;
+			const a = nodes[at] as CrestAxis['nodes'][number];
+			const b = nodes[Math.min(at + 1, nodes.length - 1)] as CrestAxis['nodes'][number];
+			const span = (arc[at + 1] ?? length) - (arc[at] as number);
+			const t = span > 1e-9 ? Math.max(0, Math.min(1, (step - (arc[at] as number)) / span)) : 0;
+			const x = a.x + (b.x - a.x) * t;
+			const y = a.y + (b.y - a.y) * t;
+			const z = a.z + (b.z - a.z) * t;
+			const radius = a.r + (b.r - a.r) * t;
+			// The tangent at the sample, and a perpendicular pair about it.
+			const dx = b.x - a.x;
+			const dy = b.y - a.y;
+			const dz = b.z - a.z;
+			const dl = Math.hypot(dx, dy, dz) || 1;
+			const tx = dx / dl;
+			const ty = dy / dl;
+			const tz = dz / dl;
+			let rx = -tz;
+			let ry = 0;
+			let rz = tx;
+			let rl = Math.hypot(rx, ry, rz);
+			if (rl < 1e-9) {
+				rx = 1;
+				rz = 0;
+				rl = 1;
+			}
+			rx /= rl;
+			ry /= rl;
+			rz /= rl;
+			const ux = ry * tz - rz * ty;
+			const uy = rz * tx - rx * tz;
+			const uz = rx * ty - ry * tx;
+			for (let crest = 0; crest < plan.count; crest++) {
+				// The share of the areoles this sparseness keeps, spread evenly along the crests.
+				const keep = Math.floor((place + 1) * share) > Math.floor(place * share);
+				place++;
+				if (!keep) continue;
+				const angle = crestAngle(plan, crest);
+				const cos = Math.cos(angle);
+				const sin = Math.sin(angle);
+				const ox = rx * cos + ux * sin;
+				const oy = ry * cos + uy * sin;
+				const oz = rz * cos + uz * sin;
+				quatFromFrame([ox, oy, oz], [tx, ty, tz], frame);
+				builder.addBud({
+					node: (t < 0.5 ? a.node : b.node) as number,
+					x: x + ox * radius,
+					y: y + oy * radius,
+					z: z + oz * radius,
+					frame,
+					kind: BUD_TERMINAL,
+					vigor: 1,
+					light: 1,
+					axis: axis.axis,
+					woodRadius: radius,
+				});
+				budOrigins.push(place);
+				made++;
+			}
+		}
+	}
+	return { made, sockets: 0, budOrigins };
 }
 
 /** The maturity from which a crown thins its branches with sparseness: younger crowns keep them. */
@@ -602,6 +722,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const builder = new SkeletonBuilder();
 	const built: number[] = new Array(bones.axes.length).fill(-1);
 	const builtNodes: number[][] = new Array(bones.axes.length).fill(undefined);
+	// The axes a column's crest fill walks, with the nodes as they draw.
+	const crestAxes: CrestAxis[] = [];
 	const origins: number[] = [];
 	const addresses: number[] = [];
 
@@ -681,6 +803,18 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			nodes.push(last);
 		});
 		builtNodes[index] = nodes;
+		if (nodes.length > 1)
+			crestAxes.push({
+				axis: builderAxis,
+				arm: axis.parent >= 0,
+				nodes: keptNodes.map((node, k) => ({
+					x: node.x,
+					y: node.y,
+					z: node.z,
+					r: node.radius * slim,
+					node: nodes[k] as number,
+				})),
+			});
 	}
 
 	// Which limb each axis belongs to, and how far each limb reaches from the centre line: the
@@ -844,7 +978,21 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		turn: growth.turn,
 		crown: { top, base: crownBaseValue, height: Math.max(0, top - crownBaseValue) },
 	};
-	const grown = fillClumps(sighted);
+	// A column's leaves are its areoles, at every crest of its stem and arms; a tree's are the
+	// sockets the fill clothes its clumps with.
+	const columnOf = growth.column;
+	const grown =
+		columnOf === undefined
+			? fillClumps(sighted)
+			: fillCrests({
+					builder,
+					seed,
+					salt: input.record.seedSalt >>> 0,
+					variant: input.variant,
+					column: columnOf,
+					axes: crestAxes,
+					leaves,
+				});
 
 	// Each element keeps its place in the plant as grown, so a younger or a sparser plant's element
 	// names the same place as the full one and the contract can pair them.
