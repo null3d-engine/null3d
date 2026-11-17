@@ -32,27 +32,26 @@ const TRUNK = [
 
 /**
  * Still 02: the limbs cross a line beside the trunk at five heights, in whorls. Each level is its
- * own ring rule, with the record's counts summing to its 14 limbs. The frame's angle is the
- * record's leave turned to plumb, 90 less its degrees above level; the bend's end is its end angle,
- * 90 less the degrees it droops below level, so the low pads' floors fall with their limbs.
+ * own ring rule, with the record's counts summing to its 14 limbs. The record states the leave and
+ * the end as degrees above level; the frame's leave is turned to plumb, 90 less the degrees, and
+ * its bend states both in the record's own degrees, so the low pads' floors fall with their limbs.
  */
 const LEVELS = [
-	{ at: 0.46, count: 2, angle: 80, end: 158 },
-	{ at: 0.52, count: 2, angle: 58, end: 142 },
-	{ at: 0.61, count: 3, angle: 58, end: 145 },
-	{ at: 0.69, count: 3, angle: 57, end: 145 },
-	{ at: 0.755, count: 4, angle: 56, end: 118 },
+	{ at: 0.46, count: 2, leave: 30, end: -28, pad: 0.23 },
+	{ at: 0.52, count: 2, leave: 30.7, end: -28, pad: 0.25 },
+	{ at: 0.61, count: 3, leave: 31.7, end: -55, pad: 0.28 },
+	{ at: 0.69, count: 3, leave: 32.9, end: -55, pad: 0.31 },
+	{ at: 0.755, count: 4, leave: 34, end: -28, pad: 0.35 },
 ] as const;
 
 /** Still 01: four top limbs leave at 45 degrees and level out under the top plates. */
-const TOP = { at: 0.81, count: 4, angle: 45, end: 90 } as const;
+const TOP = { at: 0.81, count: 4, leave: 45, end: 0, pad: 0.32 } as const;
 
-/** The pad's width as shares of the height: 0.23 to 0.35, and its dome 0.29 of its width deep. */
+/**
+ * The pad's dome as a share of its width: still 02 reads a dome 0.29 of its width deep, so the
+ * depth follows the level's own width. Each level states its pad's width, 0.23 to 0.35.
+ */
 const PAD = {
-	width: [
-		[0.46, 0.23],
-		[0.755, 0.35],
-	],
 	depth: [
 		[0.46, 0.067],
 		[0.755, 0.102],
@@ -62,9 +61,10 @@ const PAD = {
 const SHELL = { pitch: 0.021, reach: 0.029 } as const;
 
 /**
- * Still 02: the pads sit on the limbs' outer parts, and between them the limbs show their side
- * shoots. Each bough carries three of them along its outer half, each with a small pad of its own,
- * so a limb's foliage reads as layered plates rather than one mass.
+ * Still 08: a limb forks in its outer half, two arms at 39 degrees, each about 0.7 of its parent's
+ * width. The frame gives a bough one fork of two arms; the record's two or three forks repeat the
+ * pair along the limb. Each arm carries a small pad, so a limb's foliage reads as layered plates
+ * rather than one mass.
  */
 const STUB = {
 	width: [
@@ -78,19 +78,19 @@ const STUB = {
 } as const;
 
 const stub = () => ({
-	name: 'stub',
+	name: 'arm',
 	role: 'branch' as const,
-	count: 3,
-	along: [0.5, 0.9] as const,
+	count: 2,
+	along: [0.55, 0.8] as const,
 	stagger: 0.4,
-	around: 'spiral' as const,
-	angle: 35,
+	around: 'ring' as const,
+	angle: 39,
 	from: 'parent' as const,
 	angleSpread: 10,
-	length: { share: 0.15 },
+	length: { share: 0.2 },
 	vary: 0.2,
-	radius: 0.4,
-	taper: 0.5,
+	radius: 0.7,
+	taper: 0.6,
 	sway: 8,
 	elbows: 1,
 	patch: { kind: 'clump', width: STUB.width, depth: STUB.depth, fill: SHELL },
@@ -100,8 +100,9 @@ const rule = (
 	level: {
 		readonly at: number;
 		readonly count: number;
-		readonly angle: number;
+		readonly leave: number;
 		readonly end: number;
+		readonly pad: number;
 	},
 	stubs = true,
 ) => ({
@@ -111,20 +112,23 @@ const rule = (
 	along: [level.at - 0.004, level.at + 0.004] as const,
 	stagger: 0.2,
 	around: 'ring' as const,
-	angle: level.angle,
+	angle: 90 - level.leave,
 	from: 'plumb' as const,
 	angleSpread: 4,
-	length: { outline: 1 },
+	// The crown's own outline is the foliage's edge, so the wood stops a pad's radius inside it.
+	length: { outline: 0.85 },
 	vary: 0.05,
-	// Still 01: a long limb keeps its thickness to its outer half, then narrows a little.
-	radius: 0.2,
+	// Still 01: the limb leaves the trunk at 0.58 of its radius, the collar at the joint, and keeps
+	// 0.85 of its radius along the run. The frame reads one radius at the joint, so the collar's
+	// value stands and no swell fades behind it.
+	radius: 0.58,
 	taper: 0.85,
-	bends: [{ from: 0.3, to: 1, level: [[0, level.angle] as const, [1, level.end] as const] }],
+	bends: [{ from: 0.3, to: 1, level: [[0, level.leave] as const, [1, level.end] as const] }],
 	sway: 6,
 	elbows: 3,
 	apart: 0.01,
 	...(stubs ? { children: [stub()] } : {}),
-	patch: { kind: 'clump', width: PAD.width, depth: PAD.depth, fill: SHELL },
+	patch: { kind: 'clump', width: level.pad, depth: PAD.depth, fill: SHELL },
 });
 
 /** The Scots pine's frame. */
