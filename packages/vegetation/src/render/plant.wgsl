@@ -143,6 +143,9 @@ const HEADER_CARD_LEVEL_MOST: i32 = 71;
 const HEADER_CROWN_DIM: i32 = 72;
 const HEADER_CARD_MIP_LIFT: i32 = 73;
 const HEADER_CARD_SHADE: i32 = 77;
+// The darkest and lightest a card's shade takes a patch of its own colour, at full strength.
+const CARD_SHADE_DARK: f32 = 0.5;
+const CARD_SHADE_LIT: f32 = 1.4;
 // How much of the crown's baked sky visibility darkens bark, 0 leaving the wood unshaded.
 const HEADER_WOOD_SHADE: i32 = 74;
 // How much more the bark's relief tilts its normal and deepens its furrows than its map gives.
@@ -1410,7 +1413,9 @@ fn surface(input: SurfaceInput) -> Surface {
                 // local contrast that makes a leaf mass read as many leaves.
                 let cells = floor(uv * vec2f(textureDimensions(colour).xy) / 6.0);
                 let spot = fract(sin(dot(cells, vec2f(12.9898, 78.233))) * 43758.5453);
-                base *= mix(1.0, 1.0 + (spot - 0.5) * card_gate.x, gated);
+                // A wide, mostly-dark alternation, so a lit patch stands beside a shadowed one by
+                // the leaf form's own margin rather than by a gentle wiggle.
+                base *= mix(1.0, CARD_SHADE_DARK + (CARD_SHADE_LIT - CARD_SHADE_DARK) * spot, card_gate.x * gated);
             }
             if (card_gate.y != 1.0) {
                 cut_alpha *= mix(1.0, card_gate.y, gated);

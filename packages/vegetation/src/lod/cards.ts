@@ -1136,7 +1136,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
+					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), level === 1 ? 0.5 : 0],
 					colour,
 				);
 			}
