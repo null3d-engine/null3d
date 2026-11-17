@@ -24,6 +24,11 @@ const plannedRecord: Species = formRecord(
  * the planned form is the one a page can name.
  */
 export const species: SpeciesModule = {
-	record: { ...plannedRecord, forms: { ...(directed.forms ?? {}), planned } },
+	record: {
+		...plannedRecord,
+		// The class's rows a clump, not one card a clump: the box, the share and the cards agree.
+		lod: { ...plannedRecord.lod, clumpCard: [0, 0] },
+		forms: { ...(directed.forms ?? {}), planned },
+	},
 	textures: files,
 };
