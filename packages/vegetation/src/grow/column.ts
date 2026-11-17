@@ -22,7 +22,7 @@ import {
 import { unitAt } from '../core/hash';
 import { asin, cos, normalize3, PI, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
 import type { Column, ColumnArmTier, Species } from '../core/record';
-import { curveAt, spreadAt } from '../core/types';
+import { curveAt, spreadAt, spreadMean } from '../core/types';
 import type { GrowInput } from '../stages';
 import {
 	type AxisPath,
@@ -35,6 +35,13 @@ import {
 	roundKinks,
 } from '../wood/frames';
 import { crestAngle, type RibPlan, ribPlan, ribSection } from '../wood/ribs';
+import {
+	crownOf,
+	type ModelAxis,
+	type ModelPiece,
+	type ModelSocket,
+	type PlantModel,
+} from './model';
 import type { Grower } from './models';
 
 /** Purposes of the grower's hash keys, so no two draws share one. */
@@ -94,17 +101,29 @@ function columnOf(record: Species): Column {
 	return record.growth;
 }
 
-/** One point laid along an axis, with the node it stands at. */
-interface Laid {
+/** One point of an axis's course, with its girth: an axis as laid, before any skeleton. */
+interface LaidPoint {
 	readonly at: Vector3;
-	readonly node: number;
 	readonly radius: number;
 }
 
-/** An axis as laid: its points, and the mesher's path and ribs along it. */
-interface Run {
-	readonly axis: number;
-	readonly points: readonly Laid[];
+/**
+ * An axis as laid: its course, its girth, its rounded end and its ribs, with no skeleton node. The
+ * family's adapter emits these; the grower writes them into the skeleton in the same order.
+ */
+interface LaidAxis {
+	/** Its order: 0 for the stem, one more for each axis between it and the stem. */
+	readonly order: number;
+	/** Its parent's index in the laid axes, or -1 for the stem. */
+	readonly parent: number;
+	/** The parent's point its first node hangs from, or -1 for the stem. */
+	readonly joint: number;
+	/** Its share along the parent's course where it leaves. */
+	readonly parentShare: number;
+	/** Its points, the rounded end's last. */
+	readonly points: readonly LaidPoint[];
+	/** The points before the rounded end begins. */
+	readonly shaftCount: number;
 	readonly path: AxisPath;
 	/** The arc length of the path at the axis's first own point. */
 	readonly start: number;
@@ -114,6 +133,33 @@ interface Run {
 	/** The radius of the wood just below the rounded end. */
 	readonly domeRadius: number;
 	readonly ribs: RibPlan;
+}
+
+/** One bud site as laid, in the order the grower hangs them. */
+interface LaidSite {
+	/** Its carrying axis, an index into the laid axes. */
+	readonly axis: number;
+	/** The axis point its node hangs on. */
+	readonly point: number;
+	readonly at: Vector3;
+	/** Its frame, a unit quaternion as x, y, z, w. */
+	readonly frame: readonly [number, number, number, number];
+	readonly kind: number;
+	readonly vigor: number;
+	/** The wood's radius where it stands. */
+	readonly radius: number;
+	/** Its share along its axis's course, from 0 at the foot to 1 at the tip. */
+	readonly share: number;
+	/** The direction its piece faces, out of the skin. */
+	readonly direction: Vector3;
+}
+
+/** A column as laid: its axes, every bud site, and the course it was laid from. */
+interface ColumnLayout {
+	readonly height: number;
+	readonly trunkDir: Vector3;
+	readonly axes: readonly LaidAxis[];
+	readonly sites: readonly LaidSite[];
 }
 
 /** A smooth step from 0 to 1 over a share from 0 to 1. */
@@ -129,7 +175,7 @@ function eased(share: number): number {
  * mesher's own rules and functions, so the frames here are the frames it draws.
  */
 function pathOf(
-	points: readonly Laid[],
+	points: readonly LaidPoint[],
 	junction?: Readonly<Vector3>,
 	parentTangent?: Readonly<Vector3>,
 ): { readonly path: AxisPath; readonly start: number } {
@@ -137,7 +183,7 @@ function pathOf(
 	const count = points.length + lead;
 	const at = new Float64Array(count * 3);
 	const radii = new Float64Array(count);
-	const first = points[0] as Laid;
+	const first = points[0] as LaidPoint;
 	if (junction) {
 		at.set(junction, 0);
 		radii[0] = first.radius;
@@ -181,9 +227,9 @@ function radialOf(frame: PathFrame, angle: number, out: Vector3): Vector3 {
 }
 
 /** The point of a run nearest a place, searched on from the point a place before it was nearest. */
-function nearestPoint(points: readonly Laid[], place: Float64Array, from: number): number {
+function nearestPoint(points: readonly LaidPoint[], place: Float64Array, from: number): number {
 	const gap = (i: number): number => {
-		const at = (points[i] as Laid).at;
+		const at = (points[i] as LaidPoint).at;
 		return (
 			(at[0] - (place[0] as number)) ** 2 +
 			(at[1] - (place[1] as number)) ** 2 +
@@ -196,39 +242,31 @@ function nearestPoint(points: readonly Laid[], place: Float64Array, from: number
 }
 
 /**
- * Lays the nodes of a rounded end on an axis: a half ellipsoid `height` tall above `from`, along
- * `dir`, its radius falling from `radius` as a circle's does.
+ * The points of a rounded end: a half ellipsoid `height` tall above the last point of `points`,
+ * along `dir`, its radius falling from `radius` as a circle's does. The points are laid, not
+ * written into a skeleton: the grower writes them, the adapter states their course.
  */
-function layDome(
-	builder: SkeletonBuilder,
-	axis: number,
-	points: Laid[],
+function domePoints(
+	from: LaidPoint,
 	dir: Readonly<Vector3>,
 	radius: number,
 	height: number,
-): void {
-	const from = points[points.length - 1] as Laid;
-	let previous = from.node;
+): readonly LaidPoint[] {
+	const points: LaidPoint[] = [];
 	for (let k = 1; k <= DOME_NODES; k++) {
 		// Even steps of the end's own curve, so the rings crowd where it closes.
 		const share = Math.min(DOME_LAST, sin(((k / DOME_NODES) * PI) / 2));
 		const r = radius * Math.sqrt(1 - share * share);
-		const at: Vector3 = [
-			from.at[0] + dir[0] * height * share,
-			from.at[1] + dir[1] * height * share,
-			from.at[2] + dir[2] * height * share,
-		];
-		previous = builder.addNode({
-			x: at[0],
-			y: at[1],
-			z: at[2],
+		points.push({
+			at: [
+				from.at[0] + dir[0] * height * share,
+				from.at[1] + dir[1] * height * share,
+				from.at[2] + dir[2] * height * share,
+			],
 			radius: r,
-			parent: previous,
-			axis,
-			light: 1,
 		});
-		points.push({ at, node: previous, radius: r });
 	}
+	return points;
 }
 
 /** One arm's plan: its tier, where it leaves, which way it runs, how far out and how high. */
@@ -345,20 +383,16 @@ function armNodes(along: Float64Array, elevation: Float64Array): number[] {
 }
 
 /**
- * Places an areole at every rib crest along an axis, one bud site each, set in the crest's skin.
- * The sites stop where the rounded end has closed to a small share of the wood below it.
+ * Lays an areole at every rib crest along an axis, one bud site each, set in the crest's skin. The
+ * sites stop where the rounded end has closed to a small share of the wood below it.
  */
-function placeAreoles(
-	builder: SkeletonBuilder,
-	growth: Column,
-	run: Run,
-	skip: number,
-	frame: Float32Array,
-): void {
+function areoleSites(growth: Column, run: LaidAxis, skip: number): readonly LaidSite[] {
 	const step = Math.max(0.005, growth.areoles);
 	const place = emptyFrame();
+	const frame = new Float32Array(4);
 	const radial: Vector3 = [0, 0, 0];
 	const along: Vector3 = [0, 0, 0];
+	const sites: LaidSite[] = [];
 	let node = 0;
 	for (let s = run.start + skip + step; s < run.path.length; s += step) {
 		frameAt(run.path, s, place);
@@ -368,40 +402,48 @@ function placeAreoles(
 		along[1] = place.tangent[1] as number;
 		along[2] = place.tangent[2] as number;
 		const stand = Math.max(0, place.radius - SITE_INSET);
+		const share = Math.max(0, Math.min(1, s / Math.max(1e-9, run.path.length)));
 		for (let k = 0; k < run.ribs.count; k++) {
 			radialOf(place, crestAngle(run.ribs, k), radial);
 			// +Y leaves the skin, +Z runs on up the axis, so the leaf's azimuth of a quarter turn
 			// lays its midrib along the stem and its face outward.
 			quatFromFrame(radial, along, frame);
-			builder.addBud({
-				node: (run.points[node] as Laid).node,
-				x: (place.position[0] as number) + radial[0] * stand,
-				y: (place.position[1] as number) + radial[1] * stand,
-				z: (place.position[2] as number) + radial[2] * stand,
-				frame,
+			sites.push({
+				axis: 0,
+				point: node,
+				at: [
+					(place.position[0] as number) + radial[0] * stand,
+					(place.position[1] as number) + radial[1] * stand,
+					(place.position[2] as number) + radial[2] * stand,
+				],
+				frame: [frame[0] as number, frame[1] as number, frame[2] as number, frame[3] as number],
 				kind: BUD_AREOLE,
 				vigor: 0.5,
-				light: 1,
-				axis: run.axis,
-				woodRadius: place.radius,
+				radius: place.radius,
+				share,
+				direction: [radial[0], radial[1], radial[2]],
 			});
 		}
 	}
+	return sites;
 }
 
 /**
- * Places a ring of flower sites on an axis's rounded end, one on each rib crest, set in the skin at
+ * Lays a ring of flower sites on an axis's rounded end, one on each rib crest, set in the skin at
  * the ring's own height and facing square out of the end's curve.
  */
-function placeFlowerRing(builder: SkeletonBuilder, run: Run, frame: Float32Array): void {
-	if (run.domeHeight <= 0) return;
-	const place = frameAt(run.path, run.domeAt + run.domeHeight * FLOWER_RING, emptyFrame());
-	const tip = run.points[run.points.length - 1] as Laid;
+function flowerRingSites(run: LaidAxis): readonly LaidSite[] {
+	if (!(run.domeHeight > 0)) return [];
+	const ringAt = run.domeAt + run.domeHeight * FLOWER_RING;
+	const place = frameAt(run.path, ringAt, emptyFrame());
+	const frame = new Float32Array(4);
 	// The end's skin leans in toward its top by the slope of its own curve at the ring.
 	const lean =
 		(run.domeRadius * FLOWER_RING) / (run.domeHeight * Math.sqrt(1 - FLOWER_RING * FLOWER_RING));
 	const radial: Vector3 = [0, 0, 0];
 	const stand = Math.max(0, place.radius - SITE_INSET);
+	const share = Math.max(0, Math.min(1, ringAt / Math.max(1e-9, run.path.length)));
+	const sites: LaidSite[] = [];
 	for (let k = 0; k < run.ribs.count; k++) {
 		radialOf(place, crestAngle(run.ribs, k), radial);
 		const out = normalize3([
@@ -410,19 +452,23 @@ function placeFlowerRing(builder: SkeletonBuilder, run: Run, frame: Float32Array
 			radial[2] + lean * (place.tangent[2] as number),
 		]);
 		quatFromFrame(out, radial, frame);
-		builder.addBud({
-			node: tip.node,
-			x: (place.position[0] as number) + radial[0] * stand,
-			y: (place.position[1] as number) + radial[1] * stand,
-			z: (place.position[2] as number) + radial[2] * stand,
-			frame,
+		sites.push({
+			axis: 0,
+			point: run.points.length - 1,
+			at: [
+				(place.position[0] as number) + radial[0] * stand,
+				(place.position[1] as number) + radial[1] * stand,
+				(place.position[2] as number) + radial[2] * stand,
+			],
+			frame: [frame[0] as number, frame[1] as number, frame[2] as number, frame[3] as number],
 			kind: BUD_FLOWER,
 			vigor: 1,
-			light: 1,
-			axis: run.axis,
-			woodRadius: place.radius,
+			radius: place.radius,
+			share,
+			direction: [out[0], out[1], out[2]],
 		});
 	}
+	return sites;
 }
 
 /**
@@ -432,10 +478,16 @@ function placeFlowerRing(builder: SkeletonBuilder, run: Run, frame: Float32Array
  * @returns The skeleton.
  * @category api/vegetation
  */
-export function growColumn(input: GrowInput): MacroSkeleton {
+/**
+ * Lays a column at one state: its stem, its arms, and the areoles, flower rings and nest sites
+ * along every rib crest. The layout is plain data, so the grower writes it into a skeleton and the
+ * family's adapter states it as the shared model.
+ *
+ * @param input The record, the seed and the variant.
+ * @returns The laid axes and every bud site, in the order they are hung.
+ */
+function layoutColumn(input: GrowInput): ColumnLayout {
 	const growth = columnOf(input.record);
-	const builder = new SkeletonBuilder();
-	const frame = new Float32Array(4);
 	const salt = input.record.seedSalt >>> 0;
 	const height = Math.max(0.5, spreadAt(growth.height, draw(input, Purpose.Height)));
 	const lean = radians(LEAN[0] + draw(input, Purpose.Lean) * (LEAN[1] - LEAN[0]));
@@ -447,38 +499,39 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 	const topRadius = radiusAt(height);
 	const stemDome = Math.min(height * 0.5, growth.dome * topRadius);
 	const shaft = height - stemDome;
-	const stemAxis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-	const trunk: Laid[] = [];
-	let node = -1;
+	const trunk: LaidPoint[] = [];
 	const steps = Math.max(2, Math.ceil(shaft / STEM_NODE));
 	for (let n = 0; n <= steps; n++) {
 		const y = (n / steps) * shaft;
-		const at: Vector3 = [(trunkDir[0] * y) / trunkDir[1], y, (trunkDir[2] * y) / trunkDir[1]];
-		node = builder.addNode({
-			x: at[0],
-			y,
-			z: at[2],
+		trunk.push({
+			at: [(trunkDir[0] * y) / trunkDir[1], y, (trunkDir[2] * y) / trunkDir[1]],
 			radius: radiusAt(y),
-			parent: node,
-			axis: stemAxis,
-			light: 1,
 		});
-		trunk.push({ at, node, radius: radiusAt(y) });
 	}
 	const shaftNodes = trunk.length;
 	// The rounded top rises plumb, so the plant's height is the record's whatever the stem's lean.
-	layDome(builder, stemAxis, trunk, [0, 1, 0], topRadius, stemDome);
-	const stemPath = pathOf(trunk);
-	const stem: Run = {
-		axis: stemAxis,
-		points: trunk,
+	const stemPoints = [
+		...trunk,
+		...domePoints(trunk[trunk.length - 1] as LaidPoint, [0, 1, 0], topRadius, stemDome),
+	];
+	const stemPath = pathOf(stemPoints);
+	const stem: LaidAxis = {
+		order: 0,
+		parent: -1,
+		joint: -1,
+		parentShare: 0,
+		points: stemPoints,
+		shaftCount: shaftNodes,
 		...stemPath,
-		domeAt: arcAt(stemPath.path, (trunk[shaftNodes - 1] as Laid).at),
+		domeAt: arcAt(stemPath.path, (trunk[shaftNodes - 1] as LaidPoint).at),
 		domeHeight: stemDome,
 		domeRadius: topRadius,
-		ribs: ribPlan(growth, input.seed, salt, input.variant, stemAxis, false),
+		ribs: ribPlan(growth, input.seed, salt, input.variant, 0, false),
 	};
-	placeFlowerRing(builder, stem, frame);
+	const axes: LaidAxis[] = [stem];
+	const sites: LaidSite[] = [];
+	const stemFlowers = flowerRingSites(stem);
+	for (const site of stemFlowers) sites.push({ ...site, axis: 0 });
 	// Arms leave the stem, each on an axis of its own that hangs from the node nearest its height
 	// and starts at the height itself, on the stem's line.
 	const up: Vector3 = [0, 1, 0];
@@ -486,11 +539,11 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		let fromNode = 0;
 		for (let n = 1; n < shaftNodes; n++)
 			if (
-				Math.abs((trunk[n] as Laid).at[1] - plan.height) <
-				Math.abs((trunk[fromNode] as Laid).at[1] - plan.height)
+				Math.abs((trunk[n] as LaidPoint).at[1] - plan.height) <
+				Math.abs((trunk[fromNode] as LaidPoint).at[1] - plan.height)
 			)
 				fromNode = n;
-		const joint = trunk[fromNode] as Laid;
+		const joint = trunk[fromNode] as LaidPoint;
 		const base: Vector3 = [
 			(trunkDir[0] * plan.height) / trunkDir[1],
 			plan.height,
@@ -508,13 +561,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			plan.height,
 		);
 		const path = archPath(arch, 0);
-		const armAxis = builder.addAxis({
-			parent: stemAxis,
-			parentNode: joint.node,
-			parentT: 0,
-			order: 1,
-			kind: AXIS_ARM,
-		});
+		const armIndex = axes.length;
 		// The arm is pinched where it leaves the stem, stoutest part way through its bend, and
 		// thins from the bend's end to its tip.
 		const swellAt = bendEnd * SWELL_AT;
@@ -526,8 +573,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 				: s <= bendEnd
 					? swollen + (radius - swollen) * eased((s - swellAt) / (bendEnd - swellAt))
 					: radius + ((tipRadius - radius) * (s - bendEnd)) / (arch.length - bendEnd);
-		const arm: Laid[] = [];
-		let previous = joint.node;
+		const arm: LaidPoint[] = [];
 		let segment = 0;
 		for (const share of armNodes(path.along, path.elevation)) {
 			// The node's place on the path: on a cut, or along the straight segment it guards.
@@ -541,38 +587,41 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			const rise =
 				(path.up[segment] as number) +
 				t * ((path.up[segment + 1] as number) - (path.up[segment] as number));
-			const at: Vector3 = [
-				base[0] + heading[0] * (start + out),
-				base[1] + rise,
-				base[2] + heading[2] * (start + out),
-			];
-			const r = radiusOf(share * arch.length);
-			previous = builder.addNode({
-				x: at[0],
-				y: at[1],
-				z: at[2],
-				radius: r,
-				parent: previous,
-				axis: armAxis,
-				light: 1,
+			arm.push({
+				at: [
+					base[0] + heading[0] * (start + out),
+					base[1] + rise,
+					base[2] + heading[2] * (start + out),
+				],
+				radius: radiusOf(share * arch.length),
 			});
-			arm.push({ at, node: previous, radius: r });
 		}
 		const shaftCount = arm.length;
-		layDome(builder, armAxis, arm, up, tipRadius, domeHeight);
-		const armPath = pathOf(arm, base, trunkDir);
-		const run: Run = {
-			axis: armAxis,
-			points: arm,
+		const armPoints = [
+			...arm,
+			...domePoints(arm[arm.length - 1] as LaidPoint, up, tipRadius, domeHeight),
+		];
+		const armPath = pathOf(armPoints, base, trunkDir);
+		const laid: LaidAxis = {
+			order: 1,
+			parent: 0,
+			joint: fromNode,
+			parentShare: Math.max(
+				0,
+				Math.min(1, arcAt(stem.path, joint.at) / Math.max(1e-9, stem.path.length)),
+			),
+			points: armPoints,
+			shaftCount,
 			...armPath,
-			domeAt: arcAt(armPath.path, (arm[shaftCount - 1] as Laid).at),
+			domeAt: arcAt(armPath.path, (arm[shaftCount - 1] as LaidPoint).at),
 			domeHeight,
 			domeRadius: tipRadius,
-			ribs: ribPlan(growth, input.seed, salt, input.variant, armAxis, true),
+			ribs: ribPlan(growth, input.seed, salt, input.variant, armIndex, true),
 		};
-		placeFlowerRing(builder, run, frame);
+		axes.push(laid);
+		for (const site of flowerRingSites(laid)) sites.push({ ...site, axis: armIndex });
 		// The arm's first stretch stands inside the weld to the stem, so its areoles start past it.
-		placeAreoles(builder, growth, run, radius, frame);
+		for (const site of areoleSites(growth, laid, radius)) sites.push({ ...site, axis: armIndex });
 	}
 	// Woodpecker holes on the upper stem, as nearly every old saguaro carries. Each is a dormant
 	// site set a little inside the skin where it stands, crest or groove, so the extra's dark socket
@@ -580,6 +629,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 	const section = ribSection(stem.ribs);
 	const place = emptyFrame();
 	const radial: Vector3 = [0, 0, 0];
+	const frame = new Float32Array(4);
 	for (let h = 0; h < NEST_HOLES; h++) {
 		const y =
 			height * (NEST_BAND[0] + (NEST_BAND[1] - NEST_BAND[0]) * draw(input, Purpose.Nest, h));
@@ -590,21 +640,168 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		const stand = section.radius(0, theta, place.radius) - NEST_INSET;
 		const nestNode = nearestPoint(trunk, place.position, 0);
 		quatFromFrame(radial, [0, 1, 0], frame);
-		builder.addBud({
-			node: (trunk[nestNode] as Laid).node,
-			x: (place.position[0] as number) + radial[0] * stand,
-			y: (place.position[1] as number) + radial[1] * stand,
-			z: (place.position[2] as number) + radial[2] * stand,
-			frame,
+		sites.push({
+			axis: 0,
+			point: nestNode,
+			at: [
+				(place.position[0] as number) + radial[0] * stand,
+				(place.position[1] as number) + radial[1] * stand,
+				(place.position[2] as number) + radial[2] * stand,
+			],
+			frame: [frame[0] as number, frame[1] as number, frame[2] as number, frame[3] as number],
 			kind: BUD_DORMANT,
 			vigor: 0.5,
-			light: 1,
-			axis: stemAxis,
-			woodRadius: place.radius,
+			radius: place.radius,
+			share: Math.max(0, Math.min(1, s / Math.max(1e-9, stem.path.length))),
+			direction: [radial[0], radial[1], radial[2]],
 		});
 	}
-	placeAreoles(builder, growth, stem, 0, frame);
+	for (const site of areoleSites(growth, stem, 0)) sites.push({ ...site, axis: 0 });
+	return { height, trunkDir, axes, sites };
+}
+
+/**
+ * Grows a column: its stem, its arms, and the areoles and flower sites along every rib crest.
+ *
+ * @param input The record, the seed, the variant and the season.
+ * @returns The skeleton.
+ * @category api/vegetation
+ */
+export function growColumn(input: GrowInput): MacroSkeleton {
+	const layout = layoutColumn(input);
+	const builder = new SkeletonBuilder();
+	const bases: number[] = [];
+	layout.axes.forEach((laid, index) => {
+		const axis = builder.addAxis(
+			index === 0
+				? { parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM }
+				: {
+						parent: 0,
+						parentNode: (bases[0] as number) + laid.joint,
+						parentT: 0,
+						order: 1,
+						kind: AXIS_ARM,
+					},
+		);
+		bases[index] = builder.nodeCount;
+		let previous = index === 0 ? -1 : (bases[0] as number) + laid.joint;
+		for (const point of laid.points)
+			previous = builder.addNode({
+				x: point.at[0],
+				y: point.at[1],
+				z: point.at[2],
+				radius: point.radius,
+				parent: previous,
+				axis,
+				light: 1,
+			});
+	});
+	for (const site of layout.sites)
+		builder.addBud({
+			node: (bases[site.axis] as number) + site.point,
+			x: site.at[0],
+			y: site.at[1],
+			z: site.at[2],
+			frame: site.frame,
+			kind: site.kind,
+			vigor: site.vigor,
+			light: 1,
+			axis: site.axis,
+			woodRadius: site.radius,
+		});
 	return builder.finish(0);
+}
+
+/**
+ * The saguaro's single piece: the spine cluster at an areole, a flat card with the record's own
+ * leaf length. The card's midrib points down its axis, so it reaches a leaf length below its
+ * socket and none above it; its breadth is the cluster's span, which the record measures as the
+ * leaf's own length.
+ *
+ * @param record The species record.
+ * @param growth Its column growth, whose figures the piece states.
+ * @returns The piece, as the shared model states it.
+ */
+function columnPiece(record: Species, growth: Column): ModelPiece {
+	const leaf = record.foliage.kind === 'blade' ? record.foliage.leaf : undefined;
+	const length = leaf ? spreadMean(leaf.length) : 0;
+	const shoot = record.shoots?.classes[0];
+	return {
+		name: shoot?.name ?? 'areole',
+		length,
+		width: length,
+		depth: 0,
+		top: 0,
+		reach: 0,
+		bottom: length,
+		figures: {
+			leafLength: length,
+			shootStem: shoot ? spreadMean(shoot.length) : 0,
+			areoleSpacing: growth.areoles,
+			prototypes: record.shoots?.prototypes ?? 1,
+			cardWidth: length,
+			cardDepth: 0,
+		},
+	};
+}
+
+/**
+ * Writes the column family's intermediate model: its stem and arm axes with their girth and
+ * course, one socket at each areole with its carrier and its share along it, and the spine
+ * cluster's piece from the record's measured leaf length. The adapter writes no geometry, material
+ * or level; the shared stages price, grow, close, allocate and bake the model (D-377). Its crown
+ * box is read from the pieces, never stated beside them. The column model has no maturity or
+ * sparseness, so the model is the record's adult state.
+ *
+ * @param input The record, the seed and the variant.
+ * @returns The model.
+ * @category api/vegetation
+ */
+export function emitColumn(input: GrowInput): PlantModel {
+	const growth = columnOf(input.record);
+	const layout = layoutColumn(input);
+	const axes: ModelAxis[] = layout.axes.map((laid) => {
+		const first = laid.points[0] as LaidPoint;
+		const last = laid.points[laid.points.length - 1] as LaidPoint;
+		return {
+			order: laid.order,
+			parent: laid.parent,
+			parentShare: laid.parentShare,
+			from: first.at,
+			to: last.at,
+			nodes: laid.points.map((point) => ({ at: point.at, radius: point.radius })),
+			radius: [first.radius, last.radius],
+			body: true,
+		};
+	});
+	const sockets: ModelSocket[] = [];
+	for (const site of layout.sites) {
+		if (site.kind !== BUD_AREOLE) continue;
+		sockets.push({
+			axis: site.axis,
+			order: site.axis === 0 ? 1 : 2,
+			share: site.share,
+			at: site.at,
+			direction: site.direction,
+			piece: 0,
+			scale: 1,
+			// The column model thins no socket: the least plant keeps every areole.
+			keep: 0,
+			group: site.axis,
+		});
+	}
+	const pieces: ModelPiece[] = [columnPiece(input.record, growth)];
+	const crown = crownOf(sockets, pieces);
+	return {
+		species: input.record.id,
+		axes,
+		sockets,
+		pieces,
+		least: sockets.length,
+		scale: 1,
+		keepShare: 1,
+		crown: { top: crown.top, reach: crown.reach, base: crown.base },
+	};
 }
 
 /** The column grower: the stem, its arms and their areoles. */
