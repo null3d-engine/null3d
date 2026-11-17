@@ -156,9 +156,16 @@ async function formsOf(species: string): Promise<readonly string[]> {
 	return Object.keys((await loadSpecies(species)).record.forms ?? {});
 }
 
-/** The species' own name where the registry knows it, so a reference folder's title can be read. */
-async function speciesName(species: string): Promise<string | undefined> {
-	return isSpeciesId(species) ? (await loadSpecies(species)).record.name : undefined;
+/**
+ * The species' own name and Latin name where the registry knows them, so a reference folder's
+ * INDEX declaration can be read against them.
+ */
+async function speciesFacts(
+	species: string,
+): Promise<{ readonly name: string; readonly latin: string } | undefined> {
+	if (!isSpeciesId(species)) return undefined;
+	const record = (await loadSpecies(species)).record;
+	return { name: record.name, latin: record.latin };
 }
 
 /** The folder of the species' slot files, which hold each species' review data too. */
@@ -1417,10 +1424,12 @@ async function main(): Promise<void> {
 		if (set) {
 			// A replay measures against the same folder the run did, so it refuses a run whose folder
 			// names another species rather than passing the fault through a second time.
+			const replayFacts = await speciesFacts(manifest.species);
 			const wrongReplay = referenceSpeciesProblem(
 				set.folder,
 				manifest.species,
-				await speciesName(manifest.species),
+				replayFacts?.name,
+				replayFacts?.latin,
 			);
 			if (wrongReplay) throw new Error(wrongReplay);
 		}
@@ -1442,7 +1451,13 @@ async function main(): Promise<void> {
 		const where = referenceFolder(named);
 		if (!where) throw new Error(`--subjects found no reference folder for ${named}`);
 		const cutSet = readReferenceSet(where, await formsOf(named));
-		const wrongSubjects = referenceSpeciesProblem(cutSet.folder, named, await speciesName(named));
+		const namedFacts = await speciesFacts(named);
+		const wrongSubjects = referenceSpeciesProblem(
+			cutSet.folder,
+			named,
+			namedFacts?.name,
+			namedFacts?.latin,
+		);
 		if (wrongSubjects) throw new Error(wrongSubjects);
 		const subjects: Record<string, { readonly bottom: number }> = {};
 		for (const slot of cutSet.stills) {
@@ -1476,11 +1491,8 @@ async function main(): Promise<void> {
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
 	if (set) {
-		const wrongReferences = referenceSpeciesProblem(
-			set.folder,
-			species,
-			await speciesName(species),
-		);
+		const facts = await speciesFacts(species);
+		const wrongReferences = referenceSpeciesProblem(set.folder, species, facts?.name, facts?.latin);
 		if (wrongReferences) throw new Error(wrongReferences);
 	}
 	const sheath = sheathTargetOfSpecies(species);

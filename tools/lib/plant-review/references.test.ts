@@ -1503,44 +1503,114 @@ describe('a reference folder against the species it is drawn for', () => {
 	let root = '';
 	let oak = '';
 	let ash = '';
-	let own = '';
+	let slugged = '';
 	let bare = '';
+	let wrongInside = '';
+	let incidental = '';
+	let twoSpecies = '';
+	let bamboo = '';
+	let oakGenus = '';
+	let meadow = '';
+	let fern = '';
+	let generic = '';
 	const folder = (name: string, title?: string): string => {
 		const dir = join(root, name);
 		mkdirSync(dir, { recursive: true });
 		if (title !== undefined) writeFileSync(join(dir, 'INDEX.md'), `${title}\n`);
 		return dir;
 	};
+	const ashFacts = ['Common ash', 'Fraxinus excelsior'] as const;
 	beforeAll(() => {
 		root = mkdtempSync(join(tmpdir(), 'plant-review-refs-'));
 		oak = folder('pedunculate-oak', '# Pedunculate oak (*Quercus robur*) — reference set');
 		ash = folder('refs-for-the-ash', '# Common ash (*Fraxinus excelsior*) — reference set');
-		own = folder('common-ash', '# Common ash (*Fraxinus excelsior*) — reference set');
+		slugged = folder('silver-birch');
 		bare = folder('a-folder-with-no-index');
+		wrongInside = folder('common-ash', '# Pedunculate oak (*Quercus robur*) — reference set');
+		incidental = folder(
+			'refs-for-the-oak',
+			'# Pedunculate oak (*Quercus robur*), a sturdier tree than the common ash — reference set',
+		);
+		twoSpecies = folder('refs-for-two', '# Common ash and pedunculate oak — reference set');
+		bamboo = folder(
+			'bamboo',
+			'# Bamboo (*Phyllostachys* type, running timber bamboo) — reference set',
+		);
+		oakGenus = folder('refs-for-the-oak-genus', '# Oak (*Quercus*) — reference set');
+		meadow = folder(
+			'meadow-grass',
+			'# Meadow grass tuft (tussock-forming meadow grass) — reference set',
+		);
+		fern = folder('tree-fern', '# Tree fern — reference set, not yet growable');
+		generic = folder('common-alder', '# Reference set');
 	});
 	afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-	test('accepts the species own folder, named by its slug', () => {
-		expect(referenceSpeciesProblem(own, 'common-ash')).toBeNull();
-		expect(referenceSpeciesProblem(oak, 'pedunculate-oak', 'Pedunculate oak')).toBeNull();
+	test('accepts a folder named by its slug where no INDEX declares anything', () => {
+		expect(
+			referenceSpeciesProblem(slugged, 'silver-birch', 'Silver birch', 'Betula pendula'),
+		).toBeNull();
+		expect(
+			referenceSpeciesProblem(generic, 'common-alder', 'Common alder', 'Alnus glutinosa'),
+		).toBeNull();
+	});
+
+	test('accepts a heading that declares the species', () => {
+		expect(
+			referenceSpeciesProblem(oak, 'pedunculate-oak', 'Pedunculate oak', 'Quercus robur'),
+		).toBeNull();
+		expect(referenceSpeciesProblem(ash, 'common-ash', ...ashFacts)).toBeNull();
 	});
 
 	test('refuses another species folder, and names both species', () => {
-		const problem = referenceSpeciesProblem(oak, 'silver-birch', 'Silver birch');
+		const problem = referenceSpeciesProblem(oak, 'silver-birch', 'Silver birch', 'Betula pendula');
 		expect(problem).not.toBeNull();
 		expect(problem).toContain('pedunculate-oak');
 		expect(problem).toContain('Silver birch (silver-birch)');
 	});
 
-	test('accepts a renamed folder whose INDEX names the species', () => {
-		expect(referenceSpeciesProblem(ash, 'common-ash', 'Common ash')).toBeNull();
+	test('refuses a folder named for the species whose heading declares another', () => {
+		const problem = referenceSpeciesProblem(wrongInside, 'common-ash', ...ashFacts);
+		expect(problem).not.toBeNull();
+		expect(problem).toContain('Pedunculate oak (Quercus robur)');
+		expect(problem).toContain('Common ash (common-ash)');
 	});
 
-	test('refuses a renamed folder whose INDEX names another species', () => {
-		expect(referenceSpeciesProblem(ash, 'silver-birch', 'Silver birch')).not.toBeNull();
+	test('refuses a heading that mentions the species only incidentally', () => {
+		expect(referenceSpeciesProblem(incidental, 'common-ash', ...ashFacts)).not.toBeNull();
+	});
+
+	test('refuses a heading that names two species', () => {
+		expect(referenceSpeciesProblem(twoSpecies, 'common-ash', ...ashFacts)).not.toBeNull();
+	});
+
+	test('accepts a genus-only Latin name beside the same common name', () => {
+		expect(referenceSpeciesProblem(bamboo, 'bamboo', 'Bamboo', 'Phyllostachys edulis')).toBeNull();
+	});
+
+	test('refuses a genus that is not the species genus', () => {
+		expect(referenceSpeciesProblem(oakGenus, 'common-ash', ...ashFacts)).not.toBeNull();
+	});
+
+	test('accepts a heading whose name adds a growth form', () => {
+		expect(
+			referenceSpeciesProblem(meadow, 'meadow-grass', 'Meadow grass', 'Poa pratensis'),
+		).toBeNull();
+	});
+
+	test('accepts a heading whose name the registry qualifies', () => {
+		expect(
+			referenceSpeciesProblem(fern, 'tree-fern', 'Soft tree fern', 'Dicksonia antarctica'),
+		).toBeNull();
+	});
+
+	test('refuses a renamed folder whose heading names another species', () => {
+		expect(
+			referenceSpeciesProblem(ash, 'silver-birch', 'Silver birch', 'Betula pendula'),
+		).not.toBeNull();
 	});
 
 	test('refuses a folder with no INDEX and no matching slug', () => {
-		expect(referenceSpeciesProblem(bare, 'common-ash', 'Common ash')).not.toBeNull();
+		expect(referenceSpeciesProblem(bare, 'common-ash', ...ashFacts)).not.toBeNull();
 	});
 });

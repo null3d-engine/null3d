@@ -330,9 +330,11 @@ rules that set them.
   [`slots/pedunculate-oak.json`](../tools/lib/plant-review/slots/pedunculate-oak.json), so its
   review runs as
   `bun run plants:review pedunculate-oak --refs <the oak's reference folder> --slot-query tools/lib/plant-review/slots/pedunculate-oak.json`.
-- A run draws a species against its own photographs. The tool refuses a folder whose name, or whose
-  INDEX title, names another species, and it names both species in the refusal. A run or a replay
-  that points at another tree's set measures the wrong plant, so its figures mean nothing.
+- A run draws a species against its own photographs. The INDEX heading declares the set's species.
+  The tool compares that declaration with the species being drawn. A heading that names another
+  species refuses, even where the folder's own name matches. Only a heading that declares nothing
+  usable leaves the decision to the folder's name. A run or a replay that points at another tree's
+  set measures the wrong plant, so its figures mean nothing.
 
 The light moves the color figures, not the outlines, which come from a matte. Under the page's soft
 daylight the oak's distant leaves read 8.9 color steps from their photograph. Under the photograph's
