@@ -6,7 +6,7 @@
 // a bundler that keeps a whole module still reaches no page, worker, generated or WebAssembly code,
 // and the package's exports map to naming each module's built twin.
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
@@ -221,34 +221,62 @@ function forbiddenNames(code: string): string[] {
 }
 
 /**
- * The engine's source files that `entry` reaches through the imports that stay in JavaScript, as
- * paths from the engine. An import of types alone leaves nothing in a bundle, so the walk skips it.
+ * The specifiers of the modules that `file` loads in JavaScript: its import and export declarations
+ * other than those of types alone, `import x = require(...)`, and every `import(...)` and
+ * `require(...)` call anywhere in it. An import of types alone leaves nothing in a bundle, and a
+ * call that names its module with anything but a string cannot be followed, so it throws.
  */
-function reachedFiles(entry: string): string[] {
+function loadedModules(file: string, text: string): string[] {
+	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
+	const loaded: string[] = [];
+	const visit = (node: ts.Node): void => {
+		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+			const typesOnly = ts.isImportDeclaration(node)
+				? node.importClause?.isTypeOnly === true
+				: node.isTypeOnly;
+			if (!typesOnly && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier))
+				loaded.push(node.moduleSpecifier.text);
+		} else if (
+			ts.isImportEqualsDeclaration(node) &&
+			!node.isTypeOnly &&
+			ts.isExternalModuleReference(node.moduleReference) &&
+			ts.isStringLiteral(node.moduleReference.expression)
+		) {
+			loaded.push(node.moduleReference.expression.text);
+		} else if (
+			ts.isCallExpression(node) &&
+			(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+				(ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+		) {
+			const [specifier] = node.arguments;
+			if (!specifier || !ts.isStringLiteralLike(specifier))
+				throw new Error(`${file} loads a module that it names with no string`);
+			loaded.push(specifier.text);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	return loaded;
+}
+
+/**
+ * The source files under `root` that `entry` reaches through the modules that it loads in
+ * JavaScript, as paths from `root`: the engine's, unless a test names another folder.
+ */
+function reachedFiles(entry: string, root = ENGINE): string[] {
 	const reached = new Set<string>();
 	const walk = (file: string): void => {
-		const path = relative(ENGINE, file);
+		const path = relative(root, file);
 		if (reached.has(path)) return;
 		reached.add(path);
-		const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest);
-		for (const statement of source.statements) {
-			const typesOnly =
-				(ts.isImportDeclaration(statement) && statement.importClause?.isTypeOnly) ||
-				(ts.isExportDeclaration(statement) && statement.isTypeOnly);
-			const specifier =
-				(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) &&
-				statement.moduleSpecifier &&
-				ts.isStringLiteral(statement.moduleSpecifier)
-					? statement.moduleSpecifier.text
-					: undefined;
-			if (specifier === undefined || typesOnly) continue;
+		for (const specifier of loadedModules(file, readFileSync(file, 'utf8'))) {
 			if (!specifier.startsWith('.'))
 				throw new Error(`${path} imports ${specifier}, which is not one of the engine's own files`);
 			const target = resolve(dirname(file), specifier);
 			walk(target.endsWith('.ts') ? target : `${target}.ts`);
 		}
 	};
-	walk(join(ENGINE, entry));
+	walk(join(root, entry));
 	return [...reached].sort();
 }
 
@@ -347,6 +375,46 @@ describe('the maths entry', () => {
 		},
 		scaledBudget(60_000),
 	);
+});
+
+describe('the walk of the modules that a maths module reaches', () => {
+	it('follows import() and require() calls as well as declarations, and skips types alone', () => {
+		const root = mkdtempSync(join(tmpdir(), 'null3d-reach-'));
+		try {
+			const files: Record<string, string> = {
+				'math/entry.ts': [
+					"import type { Shape } from './shape';",
+					"export { add } from './add';",
+					"export const later = () => import('../page/later');",
+				].join('\n'),
+				'math/shape.ts': 'export interface Shape { size: number }',
+				'math/add.ts':
+					"export const add = (a: number, b: number) => a + b;\nrequire('../page/old');",
+				'page/later.ts': 'export const page = document.title;',
+				'page/old.ts': 'export const old = 1;',
+			};
+			for (const [path, text] of Object.entries(files)) {
+				mkdirSync(dirname(join(root, path)), { recursive: true });
+				writeFileSync(join(root, path), text);
+			}
+			// A maths module that loads page code when called brings that code into its bundle.
+			expect(reachedFiles('math/entry.ts', root)).toEqual([
+				'math/add.ts',
+				'math/entry.ts',
+				'page/later.ts',
+				'page/old.ts',
+			]);
+			writeFileSync(
+				join(root, 'math/entry.ts'),
+				"const name = './add';\nexport const load = () => import(name);",
+			);
+			expect(() => reachedFiles('math/entry.ts', root)).toThrow(
+				'loads a module that it names with no string',
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });
 
 describe('the scan of a simulation', () => {
