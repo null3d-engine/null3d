@@ -90,22 +90,29 @@ const branches: FrameBranchRule = {
 			angle: 48,
 			from: 'parent',
 			angleSpread: 6,
-			// A twig ends inside the crown's edge, and no twig is longer than a branch end's
-			// two metres across.
+			// Still 22 measures a twig at 35 cm; stills 09 and 22 show its leaves in opposite pairs
+			// at about three nodes. On this 23 m tree a twig runs 0.28 to 0.46 m, not the metres a
+			// branch of a limb spans.
 			length: { outline: 0.95 },
 			vary: 0.1,
-			least: 0.03,
+			least: 0.008,
 			most: [
-				[0, 0.12],
-				[1, 0.07],
+				[0, 0.02],
+				[1, 0.012],
 			],
-			radius: 0.5,
+			radius: 0.2,
 			taper: 0.35,
-			// Stills 04 and 09: every shoot tip turns up, and the leaves stand only there.
+			// Still 09: every shoot tip turns up above its last pair of leaves.
 			bends: [{ from: 0.5, to: 1, by: -30 }],
 			sway: 10,
 			elbows: 3,
-			patch: bunch(0.11),
+			// Stills 09, 22 and 23: the leaves stand in opposite pairs along the twig at about three
+			// nodes, each pair turned from the last, with the tip's own bunch above them.
+			patch: {
+				...bunch(0.11),
+				along: 0.2,
+				sockets: { every: 0.006, angle: 70 },
+			},
 		},
 	],
 };
