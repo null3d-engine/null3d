@@ -261,4 +261,31 @@ describe('the newly added oak cases', () => {
 		);
 		expect(sparse).toBeLessThanOrEqual(SPARSE_BAKE_BAR_MS);
 	});
+
+	it('A1: the alder honours the three options once it is on the planned model', async () => {
+		forgetGrownPlants();
+		const { loadSpecies } = await import('../core/registry');
+		const alder = (await loadSpecies('common-alder')) as Awaited<ReturnType<typeof loadSpecies>>;
+		await loadPlantCode(alder.record);
+		const kit = buildKitNow(alder, { placeholders: 'missing', detail: 'low' });
+		const base = { seed: SEED, variant: 0, near: false, detail: 'low' } as const;
+		const plain = growPlantNow(kit, base);
+		const repeat = growPlantNow(kit, base);
+		const aged = growPlantNow(kit, { ...base, maturity: 0.3 } as never);
+		const thinned = growPlantNow(kit, { ...base, sparse: 1 } as never);
+		const capped = growPlantNow(kit, { ...base, maxTriangles: 1000 } as never);
+		const plainRows = plain.shoots.count;
+		const thinRows = thinned.shoots.count;
+		const capTriangles = capped.stats.triangles as readonly number[];
+		const matureMoves = plantAssetDigest(aged) !== plantAssetDigest(plain);
+		console.log(
+			`A1: alder rows ${plainRows} plain, ${thinRows} at sparseness 1; capped levels ${capTriangles.join('/')}; maturity 0.3 ${matureMoves ? 'moves the plant' : 'leaves it unchanged'}`,
+		);
+		// Each assertion is the planned model acting; on a directed alder the first one fails.
+		expect(matureMoves).toBe(true);
+		expect(thinRows).toBeLessThan(plainRows);
+		for (let level = 0; level < 3; level++)
+			expect([level, (capTriangles[level] as number) <= 1000]).toEqual([level, true]);
+		expect(plantAssetDigest(repeat)).toBe(plantAssetDigest(plain));
+	});
 });

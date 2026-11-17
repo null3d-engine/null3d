@@ -1356,30 +1356,33 @@ describe('the planned oak contract', () => {
 			} as never);
 			expect(plantAssetDigest(repeatedStub)).toBe(plantAssetDigest(optionedStub));
 
+			// The alder is planned by design from the alder branch on, so the no-leak guard names a
+			// species still on the directed model: a planned species honours maturity, and this case
+			// holds the rule that a species without the planned model ignores it.
 			const { loadSpecies } = await import('../core/registry');
-			const alder = (await loadSpecies('common-alder')) as SpeciesModule;
-			await loadPlantCode(alder.record);
-			const alderKit = buildKitNow(alder, { placeholders: 'missing', detail: 'low' });
-			const plainAlder = growPlantNow(alderKit, options);
-			const repeatAlder = growPlantNow(alderKit, options);
-			expect(plantAssetDigest(repeatAlder)).toBe(plantAssetDigest(plainAlder));
-			const agedAlder = growPlantNow(alderKit, { ...options, maturity: 0.3 } as never);
-			expect(plantAssetDigest(agedAlder)).toBe(plantAssetDigest(plainAlder));
-			const optionedAlder = growPlantNow(alderKit, {
+			const birch = (await loadSpecies('silver-birch')) as SpeciesModule;
+			await loadPlantCode(birch.record);
+			const birchKit = buildKitNow(birch, { placeholders: 'missing', detail: 'low' });
+			const plainBirch = growPlantNow(birchKit, options);
+			const repeatBirch = growPlantNow(birchKit, options);
+			expect(plantAssetDigest(repeatBirch)).toBe(plantAssetDigest(plainBirch));
+			const agedBirch = growPlantNow(birchKit, { ...options, maturity: 0.3 } as never);
+			expect(plantAssetDigest(agedBirch)).toBe(plantAssetDigest(plainBirch));
+			const optionedBirch = growPlantNow(birchKit, {
 				...options,
 				maturity: 0.3,
 				sparse: 1,
 				maxTriangles: 1000,
 			} as never);
-			const repeatedAlder = growPlantNow(alderKit, {
+			const repeatedBirch = growPlantNow(birchKit, {
 				...options,
 				maturity: 0.3,
 				sparse: 1,
 				maxTriangles: 1000,
 			} as never);
-			expect(plantAssetDigest(repeatedAlder)).toBe(plantAssetDigest(optionedAlder));
+			expect(plantAssetDigest(repeatedBirch)).toBe(plantAssetDigest(optionedBirch));
 			console.log(
-				'P1: maturity leaves the stand-in and the alder unchanged; sparse 1 and max 1,000 are generic and their digests repeat',
+				'P1: maturity leaves the stand-in and the silver birch unchanged; sparse 1 and max 1,000 are generic and their digests repeat',
 			);
 		},
 		LONG,
