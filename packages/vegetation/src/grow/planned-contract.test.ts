@@ -173,7 +173,11 @@ function leafOf(kit: SpeciesKitData): number {
  * The leaf area a 0.01 step adds, grouped by the clump and by the axis its rows stand on, and the
  * whole gain: the evidence that no step adds a whole clump or a whole axis.
  */
-function stepGains(kit: SpeciesKitData, a: PlantAsset, b: PlantAsset): { clump: number[]; axis: number[]; total: number } {
+function stepGains(
+	kit: SpeciesKitData,
+	a: PlantAsset,
+	b: PlantAsset,
+): { clump: number[]; axis: number[]; total: number } {
 	const one = leafOf(kit);
 	const rows = (asset: PlantAsset): Map<number, { area: number; clump: number; axis: number }> => {
 		const shoots = asset.shoots as unknown as {
@@ -194,9 +198,10 @@ function stepGains(kit: SpeciesKitData, a: PlantAsset, b: PlantAsset): { clump: 
 			if (!prototype) continue;
 			const scale = shoots.scale[r] as number;
 			const socket = shoots.socket?.[r];
-			const address = socket !== undefined ? (buds.origin?.[socket] ?? socket) : (shoots.id?.[r] ?? r);
-			const clump = socket !== undefined ? ((buds.sockets?.lobe?.[socket] ?? -1) | 0) : -1;
-			const axis = socket !== undefined ? ((buds.axis?.[socket] ?? -1) | 0) : -1;
+			const address =
+				socket !== undefined ? (buds.origin?.[socket] ?? socket) : (shoots.id?.[r] ?? r);
+			const clump = socket !== undefined ? (buds.sockets?.lobe?.[socket] ?? -1) | 0 : -1;
+			const axis = socket !== undefined ? (buds.axis?.[socket] ?? -1) | 0 : -1;
 			out.set(address, { area: prototype.leaves * one * scale * scale, clump, axis });
 		}
 		return out;
@@ -746,13 +751,17 @@ describe('the planned oak contract', () => {
 				expect(budFull).toBeGreaterThan(0);
 				const budShare = (step / flowers.band) * budFull;
 				const budTolerance = 0.03 * budFull;
-				expect([
+				expect([flowers.from, await budsAt(Math.max(0, flowers.from - 0.05))]).toEqual([
 					flowers.from,
-					await budsAt(Math.max(0, flowers.from - 0.05)),
-				]).toEqual([flowers.from, 0]);
+					0,
+				]);
 				let last = await budsAt(flowers.from);
 				expect([flowers.from, last]).toEqual([flowers.from, 0]);
-				for (let i = 1; i * step <= flowers.band + 1e-9 && flowers.from + i * step <= 1 + 1e-9; i++) {
+				for (
+					let i = 1;
+					i * step <= flowers.band + 1e-9 && flowers.from + i * step <= 1 + 1e-9;
+					i++
+				) {
 					const maturity = flowers.from + i * step;
 					const buds = await budsAt(maturity);
 					expect([maturity, buds - last <= budShare + budTolerance]).toEqual([maturity, true]);

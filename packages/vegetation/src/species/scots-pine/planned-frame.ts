@@ -181,7 +181,9 @@ const rule = (
 	sway: 6,
 	elbows: 3,
 	apart: 0.01,
-	...(stubs ? { children: [arm(), spray(level.band, level.pad * 0.33), tip(level.pad * 0.3)] } : {}),
+	...(stubs
+		? { children: [arm(), spray(level.band, level.pad * 0.33), tip(level.pad * 0.3)] }
+		: {}),
 });
 
 /** The Scots pine's frame. */
