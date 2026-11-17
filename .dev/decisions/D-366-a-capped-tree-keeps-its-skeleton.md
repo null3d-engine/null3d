@@ -15,8 +15,10 @@ as a dark twisted ribbon. What should a low cap spend its triangles on, and what
 ## Rule
 
 The picture a cap is judged by is the picture at the distance the cap is for. A tree at any cap keeps a trunk with enough
-sides to read as wood, its fork, and its first limb orders; the leaf budget takes what remains. A change of budget order
-must show a better read at that distance or it is not taken.
+sides to read as wood — five or six at the lowest cap — its fork, and its first two limb orders with enough sides to read
+as limbs; the leaf budget takes what remains. A cap also leaves no piece standing free: a strip that loses its carrier is
+joined or dropped, as the connectedness rule asks at every level. A change of budget order must show a better read at
+that distance or it is not taken.
 
 ## Data
 
@@ -39,7 +41,10 @@ more than that floor at any cap, and the leaf side is many single-picture cards 
 How the data was produced: one probe script, seed 11, variant 0, detail high, the planned oak and the directed willow,
 caps as above, each part's triangles counted at the first level and given as a share of the cap.
 
-The owner's recording of the willow at 1,000 triangles is what the rules in this record answer.
+The owner's recording and a still of the willow at 1,000 triangles are what the rules in this record answer. The still
+shows three faults in one frame: a trunk of three sides that reads as a folded ribbon, limbs that are single straight
+sticks with no fork or taper, and leaf strips hanging as separate curtains with several standing free of the tree at the
+crown's edges.
 
 ## Look
 
