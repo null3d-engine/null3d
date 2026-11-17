@@ -13,7 +13,10 @@ import { plannedGrowth } from './planned-record';
 const planned: SpeciesForm = {
 	form: 'the olive grown straight to the asked state, at any maturity, sparseness or maximum',
 	growth: plannedGrowth,
-	lod: { clumpCard: [1, 1] },
+	// Each clump stands for a spray's whole mass, so the crown's few masses take the cover the
+	// near level's branch ends make: the cards grow about their middles as far as the leaf hull
+	// allows.
+	lod: { clumpCard: [1, 1], cardGrow: 1.4 },
 };
 
 /** The olive as its directed frame grows it, which carries its branch ends at sockets. */
