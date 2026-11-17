@@ -10,6 +10,7 @@ import type { SweepMeasures } from './compare.ts';
 import type { ReferenceSet, Slot } from './references.ts';
 import type { RunFrame } from './render.ts';
 import {
+	patchCorners,
 	planFromManifest,
 	SERIES_COLUMNS,
 	SERIES_OPEN,
@@ -312,6 +313,16 @@ describe('the sweep’s rungs and orbit', () => {
 });
 
 describe('the pull-back series', () => {
+	test('projects a fixed patch at the camera target, and refuses one that leaves the frame', () => {
+		const far = patchCorners({ position: [0, 0, 40], target: [0, 0, 0], fov: 38 }, 960, 720);
+		expect(far.inside).toBe(true);
+		const centre = far.corners[0] as readonly [number, number];
+		expect(centre[0]).toBeLessThan(960);
+		expect(centre[1]).toBeLessThan(720);
+		const close = patchCorners({ position: [0, 0, 2], target: [0, 0, 0], fov: 38 }, 960, 720);
+		expect(close.inside).toBe(false);
+	});
+
 	test('joins the rungs with intermediate distances, from inside the crown past the far start', () => {
 		const distances = sweepSeriesDistances([3.7, 156.6, 900]);
 		expect(distances.length).toBeGreaterThanOrEqual(SWEEP_SERIES_STEPS);
