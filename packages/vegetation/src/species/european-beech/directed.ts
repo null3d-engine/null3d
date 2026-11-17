@@ -192,7 +192,7 @@ export const frame: FrameSpec = {
 				role: 'limb',
 				// Still 18: ten to twelve great limbs leave the trunk's top.
 				count: 10,
-				along: [0.62, 1],
+				along: [0.82, 1],
 				stagger: 0.2,
 				around: 'spiral',
 				jitter: 15,
