@@ -16,6 +16,7 @@ import { MeshWriter } from '../leaf/writer';
 import type { MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
+import type { CardPlane } from './card-bake';
 import { type Clump, clumpSky, clumpsOf, clumpWalk } from './clump-card';
 
 /** A card's corners: signs of its right and up half-extents. */
@@ -2025,7 +2026,7 @@ function clumpGrowthInHull(
 	input: MeshInput,
 	centre: readonly number[],
 	row: number,
-	plane: CardPlane,
+	plane: Pick<CardPlane, 'centre' | 'right' | 'up'>,
 	scale: number,
 	first0: readonly number[],
 	wanted: number,
