@@ -482,6 +482,13 @@ describe('the sweep’s verdicts', () => {
 		expect(result.reason).toContain('6 px wide');
 	});
 
+	test('judges the cut crown only where the rung compares the crown', () => {
+		// The inside rung frames the plant by design, so its cut top is no crown fault.
+		const inside = SWEEP_RUNGS[3] as (typeof SWEEP_RUNGS)[number];
+		const drawn = orbit(0).map((entry) => ({ ...entry, cutTop: true }));
+		expect(row(inside, drawn).verdict).toBe('pass');
+	});
+
 	test('leaves a row whose crown is cut by the frame’s top unmeasured, and names the frame', () => {
 		const drawn = orbit(3);
 		drawn[5] = { ...drawn[5]!, cutTop: true };
