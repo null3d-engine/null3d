@@ -681,6 +681,8 @@ interface PairMetrics {
 		 */
 		readonly rule?: 'colour' | 'half-dark';
 	} | null;
+	/** Why the enclosed sky was not read, where the drawn outline collapsed to a speckle. */
+	readonly gapNote?: string;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	/**
 	 * The crown's foliage share on each side: of the crown's own covered pixels, the share that is
@@ -2122,6 +2124,25 @@ export function blankFrame(plant: {
 }
 
 /**
+ * Why an enclosed-sky figure is not read from a whole view: the drawn plant covers less of the
+ * frame than the subject floor, so its outline has collapsed around a speckle. The sky a speckle's
+ * outline encloses is nearly none, which reads as a solid crown where the picture is a sparse one —
+ * a far card at a fifth of its coverage reads 0.02 open this way.
+ */
+export function sparseOutline(plant: {
+	readonly mask: Uint8Array;
+	readonly width: number;
+	readonly height: number;
+}): string | undefined {
+	let covered = 0;
+	for (let at = 0; at < plant.mask.length; at++) covered += plant.mask[at] ? 1 : 0;
+	const share = covered / Math.max(1, plant.mask.length);
+	return share > 0 && share < MASK_SUBJECT_FLOOR
+		? `the drawn plant covers ${(share * 100).toFixed(1)} per cent of the frame, under the subject floor, so its outline is a speckle and no enclosed sky is read`
+		: undefined;
+}
+
+/**
  * The level of detail a page posted for a cell, in words; undefined where it posted none. A forced
  * level the cell's own distance would not draw is named as out of range, with the level the engine
  * draws there, so a picture of one-pixel leaves at a whole view is never read as that level's look.
@@ -2746,22 +2767,29 @@ export function compareStills(
 		// A whole view's photograph has no matte: its plant is cut by colour from its fitted sky, so the
 		// drawing's colour still is read by the same rule. A silhouette is read by the half-dark rule
 		// on both sides.
+		// An enclosed-sky figure read over an outline that has collapsed around a sparse speckle
+		// encloses nearly no sky, so a sparse far card reads as a solid one. The figure is left out,
+		// with its reason.
+		const sparse = sparseOutline(render.plant);
 		const colourGap =
-			paired.gap && frame.matte !== undefined && drawn === 'whole'
+			!sparse && paired.gap && frame.matte !== undefined && drawn === 'whole'
 				? colourRuleGap(render.image, habit)
 				: undefined;
 		const rule: 'colour' | 'half-dark' | undefined =
 			drawn === 'silhouette' ? 'half-dark' : colourGap !== undefined ? 'colour' : undefined;
-		const pair = paired.gap
-			? {
-					...paired,
-					gap: {
-						...paired.gap,
-						...(colourGap !== undefined && { renderByColour: colourGap }),
-						...(rule && { rule }),
-					},
-				}
-			: paired;
+		const pair =
+			paired.gap && sparse === undefined
+				? {
+						...paired,
+						gap: {
+							...paired.gap,
+							...(colourGap !== undefined && { renderByColour: colourGap }),
+							...(rule && { rule }),
+						},
+					}
+				: paired.gap
+					? { ...paired, gap: null, gapNote: sparse }
+					: paired;
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
 		// reaches; the reference rule's own query is a different thing and is often empty.

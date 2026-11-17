@@ -1245,7 +1245,8 @@ function gapClause(pair: StillResult): string {
 		gap?.renderByCoverage === undefined
 			? ''
 			: `, ${fixed(gap.renderByCoverage)} by its clear share`;
-	if (!gap) return "sky gap enclosed by the crown's outline (row 6's figure): not read";
+	if (!gap)
+		return `sky gap enclosed by the crown's outline (row 6's figure): not read${pair.gapNote ? `, ${pair.gapNote}` : ''}`;
 	if (read?.rule === 'colour')
 		return `sky gap enclosed by the crown's outline (row 6's figure), by the photograph's colour rule on both pictures: photograph ${fixed(gap.reference)}, drawing ${fixed(read.value)}; the drawing's matte ${fixed(gap.render)}${clear}, instrument only, not comparable at 01/02`;
 	if (read?.rule === 'half-dark')
