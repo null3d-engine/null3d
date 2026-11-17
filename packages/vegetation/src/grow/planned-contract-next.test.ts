@@ -288,4 +288,30 @@ describe('the newly added oak cases', () => {
 			expect([level, (capTriangles[level] as number) <= 1000]).toEqual([level, true]);
 		expect(plantAssetDigest(repeat)).toBe(plantAssetDigest(plain));
 	});
+
+	it('A2: a capped alder pays its crown before the wood', async () => {
+		forgetGrownPlants();
+		const { loadSpecies } = await import('../core/registry');
+		const alder = (await loadSpecies('common-alder')) as Awaited<ReturnType<typeof loadSpecies>>;
+		await loadPlantCode(alder.record);
+		const kit = buildKitNow(alder, { placeholders: 'missing', detail: 'low' });
+		const base = { seed: SEED, variant: 0, near: false, detail: 'low' } as const;
+		for (const maxTriangles of [20_000, 5_000, 2_000, 1_000, 500]) {
+			const asset = growPlantNow(kit, { ...base, maxTriangles } as never);
+			let cards = 0;
+			for (const part of asset.levels[0].parts)
+				if (part.name === 'cards' || part.name === 'foliage')
+					cards += part.arrays.indices.length / 3;
+			const rows = asset.shoots.count;
+			const rowLeaves =
+				rows > 0 ? (asset.stats.triangles[0] as number) - asset.levels[0].triangles : 0;
+			const clumps = (asset.skeleton.clumps ?? []).length;
+			// The crown's own rule: a card a clump, paid out of the crown's share of the cap.
+			const owed = Math.min(clumps * 6, maxTriangles * 0.6);
+			console.log(
+				`A2 cap ${maxTriangles}: rows ${rows}, leaf triangles ${cards + rowLeaves} (${cards / 6} cards over ${clumps} clumps), owed ${owed}`,
+			);
+			expect([maxTriangles, cards + rowLeaves >= owed - 1e-9]).toEqual([maxTriangles, true]);
+		}
+	});
 });
