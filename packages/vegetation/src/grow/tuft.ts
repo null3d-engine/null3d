@@ -393,7 +393,7 @@ interface TuftTune {
 	readonly fill: number;
 	/** The share of the adult's flowering stems the plant carries, 0 out of season. */
 	readonly flowers: number;
-	/** The share of the adult's height the plant stands at. */
+	/** The share of the adult's height the tallest piece aims at. */
 	readonly size: number;
 	/** The share of the grown sockets the plant keeps, from its sparseness. */
 	readonly keepShare: number;
@@ -650,16 +650,20 @@ function emptyTuft(): MacroSkeleton {
  */
 function plannedTune(input: GrowInput): TuftTune {
 	const growth = input.record.growth;
-	if (growth.model !== 'planned' || growth.adult !== 'tuft')
+	if (growth.model !== 'planned' || growth.adult !== 'tuft' || growth.tuft === undefined)
 		throw new Error(`@null3d/vegetation: '${input.record.id}' is not a planned tuft`);
 	const request = input.request ?? { maturity: 1, sparse: 0 };
 	const maturity = Math.max(0, Math.min(1, request.maturity));
 	const top = Math.max(1e-9, curveAt(growth.height, 1));
 	const size = Math.max(0, Math.min(1, curveAt(growth.height, maturity) / top));
 	const flowers = flowersAt(growth, maturity);
+	// A flowering plant aims its tallest stem at the plant's height; one in leaf alone aims its
+	// leaf mound at the share of that height the mound holds, so its blades keep their own lengths.
+	const stemsStand = growth.tuft.stalks?.seasons.includes(input.season) === true && flowers > 0;
+	const aim = stemsStand ? size : size * growth.tuft.mound;
 	const sparse = Math.max(0, Math.min(1, request.sparse));
 	const floor = input.record.sparse?.foliage ?? FOLIAGE_FLOOR;
-	return { fill: size, flowers, size, keepShare: 1 - sparse * (1 - floor) };
+	return { fill: size, flowers, size: aim, keepShare: 1 - sparse * (1 - floor) };
 }
 
 /**

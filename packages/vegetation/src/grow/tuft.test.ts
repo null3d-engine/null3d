@@ -8,7 +8,7 @@ import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset
 import { quatRotate } from '../core/math';
 import { type Species, type Tuft, tuftGrowth } from '../core/record';
 import { loadSpecies } from '../core/registry';
-import { DETAILS, spreadMean } from '../core/types';
+import { curveAt, DETAILS, spreadMean } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { SURFACE_PIECE, SURFACE_PIECE_SHEATH } from '../leaf/writer';
 import { drawnAtTallest } from '../lod/drawn';
@@ -686,5 +686,26 @@ describe('the meadow grass grown straight to its state', () => {
 		expect(capped.skeleton.height).toBeCloseTo(full.skeleton.height, 6);
 		for (let c = 0; c < 3; c++)
 			expect(capped.skeleton.bounds.max[c]).toBeCloseTo(full.skeleton.bounds.max[c] as number, 6);
+	});
+});
+
+describe('the meadow grass before its flowering', () => {
+	it("stands its leaf mound at the mound's share of a young plant's height", async () => {
+		const module = await loadSpecies('meadow-grass');
+		await loadPlantCode(module.record);
+		const growth = tuftGrowth(module.record);
+		const planned = module.record.growth;
+		if (!growth || planned.model !== 'planned' || planned.adult !== 'tuft')
+			throw new Error('the meadow grass has no planned tuft');
+		const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, maturity: 0.15 });
+		// No stem has opened, so the leaves are the whole plant and aim at the mound's share.
+		const classes = new Set<string>();
+		for (let r = 0; r < asset.shoots.count; r++)
+			classes.add(nameOf(kit.prototypes[asset.shoots.prototype[r] as number]));
+		expect([...classes].some((name) => name.startsWith('stalk-'))).toBe(false);
+		const share = curveAt(planned.height, 0.15) / curveAt(planned.height, 1);
+		const aim = targetHeight(module.record, 11, 0) * share * growth.mound;
+		expect(Math.abs(asset.skeleton.height - aim) / aim).toBeLessThan(0.02);
 	});
 });
