@@ -271,11 +271,19 @@ function farGrid(
 	asset: PlantAsset,
 ): { readonly texels: number; readonly supersample: number } {
 	const texels = asset.impostor.texels;
-	if (asset.maxTriangles === undefined) return { texels, supersample: SUPERSAMPLE };
+	const sparse = Math.min(1, Math.max(0, asset.sparse ?? 0));
+	if (asset.maxTriangles === undefined && sparse === 0) return { texels, supersample: SUPERSAMPLE };
 	const budget = kit.record.lod.budget.lod1Triangles;
 	const own = asset.stats.triangles[1];
-	if (!(budget > 0) || !(own > 0)) return { texels, supersample: SUPERSAMPLE };
-	const detail = Math.sqrt(Math.min(1, own / budget));
+	// A capped level draws fewer triangles than the record's full level, so its cells shrink with
+	// the level's own count.
+	const capped =
+		asset.maxTriangles !== undefined && budget > 0 && own > 0
+			? Math.sqrt(Math.min(1, own / budget))
+			: 1;
+	// A crown grown sparse keeps its clumps but carries far fewer leaves, so its far cells resolve
+	// fewer leaf clusters: half the side at full sparseness.
+	const detail = Math.min(capped, 1 - 0.5 * sparse);
 	// A cell stays a power of two, as the atlas's mip levels expect.
 	const cells = Math.max(
 		FAR_TEXELS_LEAST,

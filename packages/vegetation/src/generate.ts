@@ -1406,6 +1406,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	const record = kit.record;
 	const plant = dressed(kit, options);
 	const mesh = plant.mesh;
+	const sparse = sparseLevel(kit, options);
 	const placeholders = kit.placeholders;
 	const wind = stage(
 		placeholders,
@@ -1448,6 +1449,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		coarseness: mesh.coarseness ?? 0,
 		...(mesh.plan === undefined ? {} : { plan: mesh.plan }),
 		...(plant.dropped === 0 ? {} : { dropped: plant.dropped }),
+		...(sparse > 0 ? { sparse } : {}),
 		skeleton,
 		shoots: mesh.rows,
 		levels,

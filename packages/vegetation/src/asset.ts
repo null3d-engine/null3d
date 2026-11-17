@@ -341,6 +341,11 @@ export interface PlantAsset {
 	 * balance reads made = the rows delivered + the growth's shed + these. Absent when none dropped.
 	 */
 	readonly dropped?: number;
+	/**
+	 * The sparseness the growth took, from 0 to 1, so the far bake sizes its cells to the leaf
+	 * clusters the crown keeps. Absent when the growth took none.
+	 */
+	readonly sparse?: number;
 	/** Its grown structure. */
 	readonly skeleton: MacroSkeleton;
 	/** The nearest level's foliage of an 'instanced' species; empty for a 'merged' one. */
