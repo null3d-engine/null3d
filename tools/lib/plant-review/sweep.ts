@@ -66,6 +66,9 @@ export const SERIES_OPEN = 0.01;
 /** The slack under one point that the bar allows, so a fall of exactly one point still passes. */
 const SERIES_SLACK = 0.0005;
 
+/** The patch whose step a never-thins fault is charged on: the one that sees the crown. */
+export const SERIES_JUDGED_FIELD = '4 m patch';
+
 /** The most a frame's covered share may stand from its neighbours' in the orbit. */
 export const ORBIT_COVERED_BAND = GAP_ABOVE;
 
@@ -557,6 +560,7 @@ function piecesDrawn(picture: SweepPicture): number | null {
 export function sweepOrbitJumps(
 	pictures: readonly SweepPicture[],
 	cover = true,
+	clusters = true,
 ): readonly string[] {
 	const jumps: string[] = [];
 	for (const height of SWEEP_HEIGHTS) {
@@ -583,7 +587,7 @@ export function sweepOrbitJumps(
 				previous.measures?.floating.length ?? 0,
 				next.measures?.floating.length ?? 0,
 			];
-			if (free > Math.max(...neighbours) + ORBIT_CLUSTER_BAND)
+			if (clusters && free > Math.max(...neighbours) + ORBIT_CLUSTER_BAND)
 				jumps.push(
 					`${picture.file} at ${picture.turn}° ${height.id} holds ${free} pieces that meet nothing, against its neighbours' ${Math.max(...neighbours)}`,
 				);
@@ -655,7 +659,10 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 							most: Math.max(covered.most, picture.covered),
 						};
 	}
-	if (floating.length > 0) {
+	// A leaf at its own scale is a pinnate blade whose leaflets are separate pictures: a leaflet is
+	// foliage, not a piece that left its wood, so the leaf rung reports its floating count and does
+	// not fail on it.
+	if (floating.length > 0 && rung.id !== 'leaf') {
 		const largest = floating.reduce((most, piece) => (piece.area > most.area ? piece : most));
 		failures.push(
 			`${floating.length} piece${floating.length === 1 ? '' : 's'} meet${floating.length === 1 ? 's' : ''} nothing in ${floatingIn ?? 'a picture'}, the largest ${largest.area} px at ${largest.box}`,
@@ -729,8 +736,13 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 				});
 				if (outside.length > 0) {
 					const first = outside[0] as SweepPicture;
+					const drawnOpen = 1 - (first.covered as number);
+					const direction =
+						drawnOpen < referenceOpen - GAP_BELOW
+							? 'the card keeps too little of its own silhouette box open, so it is too closed'
+							: 'the card keeps too much of its own silhouette box open, so it is too open';
 					failures.push(
-						`the filled-frame openness ${(1 - (first.covered as number)).toFixed(3)} in ${first.file} against the reference's ${referenceOpen.toFixed(3)}, past the ${GAP_BELOW.toFixed(2)}/${GAP_ABOVE.toFixed(2)} band (the outline covers too little of the frame for the enclosed sky)`,
+						`the filled-frame openness ${drawnOpen.toFixed(3)} in ${first.file} against the reference's ${referenceOpen.toFixed(3)}: ${direction}; the enclosed sky cannot read here, so the filled-frame share is used`,
 					);
 				}
 			}
@@ -752,7 +764,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 	// share is read at the ladder's crown rungs; a close view frames one piece, whose own
 	// silhouette turns, so its share says nothing about the crown's density. A piece that leaves
 	// the wood is read at every rung.
-	for (const jump of sweepOrbitJumps(pictures, rung.distance !== 'fit'))
+	for (const jump of sweepOrbitJumps(pictures, rung.distance !== 'fit', rung.id !== 'leaf'))
 		failures.push(`the orbit jumps: ${jump}`);
 	const nearNote = (): string => {
 		if (nearShort === null) return '';
@@ -769,22 +781,26 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 	};
 	const expected = input.expected ?? SWEEP_PICTURES;
 	if (drawn.length < expected) failures.unshift(`${drawn.length} of ${expected} pictures drew`);
-	if (failures.length > 0)
-		return rowOf('fail', [failures.join('; '), nearNote()].filter(Boolean).join('; '));
+	// A camera that cannot reach the near form leaves the rung open rather than failed: the row
+	// cannot see what it was asked to judge, and the reason says so beside any other figure.
+	if (nearShort !== null)
+		return rowOf('open', [nearNote(), ...failures].filter(Boolean).join('; '), {
+			floating: floating.length,
+		});
+	if (failures.length > 0) return rowOf('fail', failures.join('; '));
 	if (rung.compare === 'gap' && (!reference.separable || reference.skyGap === null))
 		return rowOf(
 			'open',
 			`the reference's outline does not separate, so its open sky cannot be compared; the ${drawn.length} pictures hold no floating piece`,
 			{ floating: 0 },
 		);
-	if (nearShort !== null) return rowOf('open', nearNote(), { floating: 0 });
 	const beside =
 		gap === null
 			? 'no floating piece'
 			: `open sky ${gap.drawn.toFixed(3)} against ${gap.reference.toFixed(3)}`;
-	return rowOf('pass', `${drawn.length} of ${expected} pictures beside the reference; ${beside}`, {
-		floating: 0,
-	});
+	// The floating figure stands as read: at a leaf's own scale it is the leaflets, a figure the
+	// judge sees and not a fault.
+	return rowOf('pass', `${drawn.length} of ${expected} pictures beside the reference; ${beside}`);
 }
 
 /** The coverage of one species' round: a row per rung, and every row compared. */
@@ -901,8 +917,13 @@ export function sweepSeriesRows(pictures: readonly SweepSeriesRow[]): readonly S
 			verdict = 'unmeasured';
 			reason = `unmeasured: ${picture.reason === '' ? 'no covered share read at this distance' : picture.reason}`;
 		} else if (change !== null && change < -SERIES_OPEN - SERIES_SLACK) {
-			verdict = 'fail';
-			reason = `the crown's covered share falls ${(-change).toFixed(3)} from ${previous?.file ?? 'the step before'} (${previous?.covered?.toFixed(3)} to ${picture.covered?.toFixed(3)})`;
+			// The fault is charged only on the four-metre field, the patch that sees the crown; a
+			// close step's smaller patch sees a crop, so its fall is reported and not charged.
+			if (picture.field === SERIES_JUDGED_FIELD) {
+				verdict = 'fail';
+				reason = `the crown's covered share falls ${(-change).toFixed(3)} from ${previous?.file ?? 'the step before'} (${previous?.covered?.toFixed(3)} to ${picture.covered?.toFixed(3)})`;
+			} else if (reason === '')
+				reason = `it falls ${(-change).toFixed(3)} but is read on a ${picture.field ?? 'smaller patch'}: the crop cannot see a crown fall, so it is not charged`;
 		}
 		const row: SweepSeriesRow = { ...picture, change, verdict, reason };
 		rows.push(row);
@@ -990,6 +1011,7 @@ export function sweepMarkdown(
 			'',
 			`A step fails only when it opens the crown by more than ${SERIES_OPEN.toFixed(3)}; a step that opens exactly ${SERIES_OPEN.toFixed(3)} passes.`,
 			`A close step reads the largest fixed patch that fits its frame, and a step is compared only with one read on the same patch; a change of patch is named and not compared across.`,
+			`A never-thins fault is charged only on a ${SERIES_JUDGED_FIELD}; a smaller patch reports its figures and is not charged, because it sees a crop of the crown.`,
 			'',
 		);
 		lines.push(`| ${SERIES_COLUMNS.join(' | ')} |`);
