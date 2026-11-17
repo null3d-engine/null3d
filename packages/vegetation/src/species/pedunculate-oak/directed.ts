@@ -105,6 +105,17 @@ const boughs: FrameBranchRule = {
 			radius: 0.55,
 			taper: 0.35,
 			sway: 38,
+			// The elbows below are a mathematical limit, not an exemption. At this rule's proportions
+			// (median 2.83 m long, longest 4.27 m; base radius median 0.052 m, largest 0.135 m, so a
+			// 0.27 m diameter at the thickest), no elbow count satisfies both frame rules. Four elbows
+			// leave the worst branch 0.347 of its run straight against a 0.2 allowance, and the bends
+			// read 3.21 of the wood's diameters. Five gives 0.270 straight, six 0.221 with the bend
+			// still safe at 3.29, seven gives 0.190 inside the allowance but turns the most curled
+			// branch at 2.665 diameters, under the least of three, and eight reads 0.160 straight and
+			// 2.511 of a bend. The straight share needs at least seven elbows, and that turns the wood
+			// under its three-diameter bend; the window between the two rules is empty. The recorded
+			// straight-run deviation is this trade, and the limbs' and crowns' own straights, at 0.20
+			// to 0.28, belong to the same recorded deviation.
 			elbows: 4,
 			crook: 0.65,
 			// A branch's wood passes through no other wood.
