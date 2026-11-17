@@ -69,6 +69,9 @@ const SERIES_SLACK = 0.0005;
 /** The patch whose step a never-thins fault is charged on: the one that sees the crown. */
 export const SERIES_JUDGED_FIELD = '4 m patch';
 
+/** The least a plant may draw wide in a picture for its figures to mean anything, in pixels. */
+export const LEAST_PLANT_WIDTH = 24;
+
 /** The most a frame's covered share may stand from its neighbours' in the orbit. */
 export const ORBIT_COVERED_BAND = GAP_ABOVE;
 
@@ -475,6 +478,10 @@ export interface SweepPicture {
 	readonly skyGap: number | null;
 	/** The share of the crown's outline the foliage covers: one less the sky gap. */
 	readonly covered: number | null;
+	/** The plant's own box width in the picture, in pixels, where the matte reads it. */
+	readonly width: number | null;
+	/** Whether the plant's box is cut by the frame's top edge, so the crown stands above it. */
+	readonly cutTop: boolean;
 }
 
 /** The reference picture a rung is compared beside. */
@@ -781,6 +788,22 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 	};
 	const expected = input.expected ?? SWEEP_PICTURES;
 	if (drawn.length < expected) failures.unshift(`${drawn.length} of ${expected} pictures drew`);
+	// A plant drawn as a speck cannot be measured, and a crown cut by the frame's top cannot be
+	// judged: both leave the row unmeasured and name why.
+	const widths = drawn
+		.map((picture) => picture.width)
+		.filter((value): value is number => value !== null);
+	if (widths.length > 0 && Math.max(...widths) < LEAST_PLANT_WIDTH)
+		return rowOf(
+			'open',
+			`the plant draws ${Math.max(...widths)} px wide, under the ${LEAST_PLANT_WIDTH} px a figure needs`,
+			{ floating: floating.length },
+		);
+	const crownCut = drawn.find((picture) => picture.cutTop);
+	if (crownCut)
+		return rowOf('open', `the crown is cut by the frame's top edge in ${crownCut.file}`, {
+			floating: floating.length,
+		});
 	// A camera that cannot reach the near form leaves the rung open rather than failed: the row
 	// cannot see what it was asked to judge, and the reason says so beside any other figure.
 	if (nearShort !== null)
@@ -1103,6 +1126,8 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 		measures: null,
 		skyGap: null,
 		covered: null,
+		width: null,
+		cutTop: false,
 	};
 	if (frame.error !== undefined || frame.matteError !== undefined)
 		return {
@@ -1112,6 +1137,11 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 		};
 	try {
 		const measures = sweepMeasures(runDir, frame);
+		const ownMask =
+			frame.matte === undefined ? undefined : matteOwnMask(readImage(join(runDir, frame.matte)));
+		const ownBox = ownMask ? boxOf(ownMask.mask, ownMask.width, ownMask.height) : null;
+		const width = ownBox ? ownBox.right - ownBox.left + 1 : null;
+		const cutTop = ownBox !== null && ownBox.top === 0;
 		const image = readImage(join(runDir, frame.file));
 		const plant = plantMask(image);
 		const read = measurePlant(image, plant);
@@ -1127,6 +1157,8 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 			...picture,
 			measures,
 			skyGap,
+			width,
+			cutTop,
 			// The orbit's share reads the matte, which separates a filled frame that the photograph's
 			// colour rule cannot: the same figure on the crown and at a close piece. A close piece
 			// whose silhouette the frame cuts reports its fill of the whole frame instead.

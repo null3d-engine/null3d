@@ -112,6 +112,8 @@ function picture(
 		measures: measures(),
 		skyGap: covered === null ? null : 1 - covered,
 		covered,
+		width: 400,
+		cutTop: false,
 		...rest,
 	};
 }
@@ -454,6 +456,22 @@ describe('the sweep’s verdicts', () => {
 		expect(result.verdict).toBe('fail');
 		expect(result.reason).toContain('uncompared');
 		expect(result.reference).toBeNull();
+	});
+
+	test('leaves a plant drawn as a speck unmeasured, and names its pixel width', () => {
+		const drawn = orbit(3).map((entry) => ({ ...entry, width: 6 }));
+		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], drawn);
+		expect(result.verdict).toBe('open');
+		expect(result.reason).toContain('6 px wide');
+	});
+
+	test('leaves a row whose crown is cut by the frame’s top unmeasured, and names the frame', () => {
+		const drawn = orbit(3);
+		drawn[5] = { ...drawn[5]!, cutTop: true };
+		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], drawn);
+		expect(result.verdict).toBe('open');
+		expect(result.reason).toContain('cut by the frame');
+		expect(result.reason).toContain(drawn[5]!.file);
 	});
 
 	test('fails a rung with a missing picture, and names how many drew', () => {
