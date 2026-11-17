@@ -157,8 +157,10 @@ export const plannedGrowth: Planned = {
 	turn: { roll: 90, tilt: 25, out: 30 },
 	// The fill's woody twigs through a clump: the pair piece carries the fans, so the fill is thin.
 	orders: [{ density: 3, angle: 55, length: 0.12, birth: 0, kink: 12 }],
-	// The culms never thin; the pair spurs and the fill do.
-	thin: [0, 0.55, 0.45, 0.3],
+	// The culms and their branch pairs never thin: the pairs are the record's limbs, as a pine's
+	// whorl boughs are, and the grower's own thinning starts at order 2. The sub-branches and twigs
+	// carry the sparseness, at orders 2 and 3.
+	thin: [0, 0, 0.45, 0.3],
 	leavesAt: [
 		[0, 1],
 		[0.5, 0.6],
@@ -168,6 +170,9 @@ export const plannedGrowth: Planned = {
 	fruitFrom: 2,
 	fruitBand: 0.1,
 	capCards: 'stated',
+	// The clump class's cap rule: a maximum keeps at least six culms and one pair a culm, and the
+	// culm cost is the coarsest step's two triangles a segment.
+	clump: { leastCulms: 6, leastPairs: 1 },
 	prices: { piece: 24, card: 6, clumpCard: 6, tubeSegment: 14 },
 };
 
@@ -226,13 +231,9 @@ export const plannedFrameDeep: FrameSpec = {
 					[1, meanOf(growth.branches.leave) - 5],
 				],
 				from: 'parent',
-				// The pair's branches: 0.9 to 2.45 m on the record's 8 m plant.
-				length: {
-					share: [
-						[0, 0.11],
-						[1, 0.31],
-					],
-				},
+				// The pair runs to the crown's outline, so the crown's top stays at the culm's tip
+				// and the plant keeps the record's height.
+				length: { outline: 0.9 },
 				radius: 0.35,
 				taper: 0.2,
 				sway: 5,
