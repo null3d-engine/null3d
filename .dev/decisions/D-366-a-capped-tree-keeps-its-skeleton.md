@@ -39,7 +39,10 @@ that distance or it is not taken.
 | Willow, leaves (share of cap) | 972 (97.2%) | 458 (91.6%) | 372 (93%) |
 | Willow, leaf cards, 2.4 to 2.5 triangles each | 390 | 188 | 153 |
 
-The trunk's six triangles are the ladder's bottom: one straight run with three sides. The allocator buys the trunk no
+The trunk's six triangles are the ladder's bottom: one straight run with three sides. The sides value that followed
+raises the trunk and the great limbs to a rung of at least five sides before cost chooses among them: the willow's trunk
+now reads 67 triangles at 26 sides at all three caps, and the oak's 122 at 1,000 and 78 at 500, with its 400 cap closing
+the fallback path that still reached the three-sided rung. The allocator buys the trunk no
 more than that floor at any cap, and the leaf side is many single-picture cards rather than a few large ones.
 
 How the data was produced: one probe script, seed 11, variant 0, detail high, the planned oak and the directed willow,
