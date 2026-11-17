@@ -4,6 +4,9 @@
 // controls through their DOM listeners, and null3D's through the engine's input. The page offers
 // `lockPoses()`, both cameras' rotations and whether each side sees the lock, and
 // `lockRequests`, how each request ended, and `lockDetached()`, a request that the browser refuses.
+// With ?noInput, the engine starts with its `input` option off, and a click also locks the canvas
+// with the page's own call, as the code that records a game's input does. `lockedToCanvas()` says
+// whether the canvas holds the lock, and `destroyEngine()` stops the engine.
 import { createEngine } from '@null3d/engine';
 import { PerspectiveCamera } from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -24,6 +27,8 @@ declare global {
 		lockRequests?: string[];
 		/** Asks for the lock while the canvas is off the page, and returns how the request ended. */
 		lockDetached?: () => Promise<string>;
+		lockedToCanvas?: () => boolean;
+		destroyEngine?: () => Promise<void>;
 	}
 }
 
@@ -31,7 +36,13 @@ run('pointer-lock', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL('./sketches/pointer-lock-sketch.ts', import.meta.url);
-	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
+	const noInput = new URLSearchParams(location.search).has('noInput');
+	const engine = await createEngine({
+		canvas,
+		sketch,
+		maxPixelRatio: 1,
+		...(noInput ? { input: false } : {}),
+	});
 	await engine.firstFrame;
 
 	const { width, height } = CONTROLS_CANVAS;
@@ -47,7 +58,11 @@ run('pointer-lock', async () => {
 			() => requests.push('locked'),
 			(error: Error) => requests.push(error.message),
 		);
+		// The page's own lock, which the engine with input off leaves to it.
+		if (noInput) void canvas.requestPointerLock();
 	});
+	window.lockedToCanvas = () => document.pointerLockElement === canvas;
+	window.destroyEngine = () => engine.destroy();
 
 	const nullPose = () =>
 		new Promise<Pose>((resolve) => {

@@ -106,12 +106,14 @@ import {
 } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { plansPending, tasksPending } from '../shared/task-pending';
+import { addonChecked } from '../shared/version';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
+import { InputOffNotes, noteInputReads } from './input-off';
 import { type QualityStart, type QualityUpdate, RESTART_CHANGE, SketchQuality } from './quality';
 import { HOLD_SEED, RECORDING_SEED, seedMathRandom } from './random';
 import { type LabelSlotSender, Ui } from './ui';
@@ -431,6 +433,8 @@ export class SketchRunner {
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
+	/** A development build's notes of input that the sketch relies on and the page does not write. */
+	declare private inputOffNotes: InputOffNotes | undefined;
 	private readonly quality: SketchQuality;
 	/** The sketch's textures, whose memory budget each frame looks at. */
 	private readonly textures: Textures;
@@ -789,6 +793,14 @@ export class SketchRunner {
 			},
 			debug,
 		};
+		// A page that started the engine with `input: false` writes no input. A development build
+		// says so, once for each kind, when the sketch relies on it.
+		if (DEV && Atomics.load(slots, Slot.InputOff) !== 0) {
+			const notes = new InputOffNotes();
+			this.inputOffNotes = notes;
+			this.input.inputOffNotes = notes;
+			noteInputReads(this.context, notes);
+		}
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		const seed =
 			holdSeconds !== undefined
@@ -808,6 +820,9 @@ export class SketchRunner {
 		this.record.markSetupStart();
 		const growing = performance.now();
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		// The sketch's module has loaded, with the add-ons that it imports, and so has any add-on
+		// that its setup imported.
+		if (DEV && addonChecked('@null3d/controls')) this.inputOffNotes?.note('controls');
 		this.record.markSetupDone(performance.now() - growing);
 		const { check } = this.sketch.quality;
 		if (check && !this.holdsFrames) await this.checkPreset();

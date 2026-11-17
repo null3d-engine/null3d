@@ -84,7 +84,7 @@ Options rejected:
 
 - `export * as vec3 from ...` in one maths module: Bun 1.3.11 keeps every helper of a re-exported namespace. With them come `Math.sin`, `Math.acos`, `Math.exp` and `Math.random`.
 - Named exports from one module: the namespaces share names, such as `multiply`, `normalize` and `create`. One module would need new names for them, which no sketch uses.
-- The main entry with a bundler that tree-shakes: under Bun 1.4.3 it still brings a top-level `FinalizationRegistry`, and under Bun 1.3.11 about 88 KB of page code.
+- The main entry with a bundler that tree-shakes: under Bun 1.4.3 it brings a top-level `FinalizationRegistry`, and under Bun 1.3.11 88 KB of page code.
 - One object of every namespace from `createMath`: a bundler keeps an object whole, so a simulation would pay for every helper.
 - The arguments form: JavaScriptCore ran `slerp` 11% slower than main's.
 - The wrapper form: SpiderMonkey ran `setAxisAngle`, `slerp` and `angle` up to 4% slower than main's.

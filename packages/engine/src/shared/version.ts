@@ -5,6 +5,7 @@
 // so a page stops the same way when its interface lies outside that range. The module reads the
 // error class alone, so the start code pays a few hundred bytes and no other file.
 import { EngineError } from '../errors/engine-error';
+import { DEV } from './dev';
 
 /**
  * The engine version, which the WebAssembly core and this package always share.
@@ -36,6 +37,16 @@ export interface PluginInterfaceRange {
 }
 
 /**
+ * The add-ons that checked their version in this thread, by package name, in a development build:
+ * the sketch's thread names one whose use the page's options make useless, such as
+ * @null3d/controls on an engine that takes no input. A production build keeps no such list.
+ */
+const checked = /* @__PURE__ */ new Set<string>();
+
+/** Whether the add-on of this package name checked its version in this thread. Development builds only. */
+export const addonChecked = (name: string): boolean => checked.has(name);
+
+/**
  * Checks that an add-on, built for `version` of the engine, runs against this engine's version,
  * and throws E1432 when the two differ. An add-on calls it once, as its module loads, with its own
  * package name and version. An add-on from another developer calls `checkPluginInterface` instead,
@@ -47,6 +58,7 @@ export interface PluginInterfaceRange {
  * @category api/engine
  */
 export function checkAddonVersion(name: string, version: string): void {
+	if (DEV) checked.add(name);
 	if (version === VERSION) return;
 	throw new EngineError(
 		'E1432',

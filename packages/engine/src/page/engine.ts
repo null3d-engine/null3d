@@ -409,12 +409,16 @@ export interface EngineOptions {
 	hold?: number;
 	/**
 	 * False keeps the engine from listening for input, for a page whose input another library
-	 * records, such as a game whose simulation replays a log of it. The engine then adds no pointer,
-	 * key, wheel, blur, visibility, pointer lock or gamepad listener, captures no pointer on the
-	 * canvas, and leaves the canvas's context menu to the browser. The sketch's `ctx.input` stays at
-	 * rest: every key, button and action is up, `value` gives 0, `input.touches` is empty, and the
-	 * pointer stays at the canvas's top-left corner with no movement, wheel or buttons. Objects get
-	 * no pointer events. The default is true.
+	 * records, such as a game whose simulation replays a log of it. The engine's input then adds no
+	 * listener: none for pointers, keys, the wheel, focus, page visibility, the pointer lock or
+	 * gamepads. It captures no pointer on the canvas, and leaves the canvas's context menu to the
+	 * browser. The engine keeps its listeners that take no input, such as the canvas watch's
+	 * `visibilitychange`, after which the sketch's next step counts no hidden time. The sketch's `ctx.input`
+	 * stays at rest: every key, button and action is up, `value` gives 0, `input.touches` is empty,
+	 * and the pointer stays at the canvas's top-left corner with no movement, wheel or buttons.
+	 * Objects get no pointer events, and `requestPointerLock` fails with E1426. A development build
+	 * warns in the console, once for each kind, when the sketch reads `ctx.input`, gives an object a
+	 * pointer event handler or imports `@null3d/controls`. The default is true.
 	 */
 	input?: boolean;
 	/**
@@ -782,7 +786,9 @@ export interface Engine {
 	 * The browser hides the pointer, and the sketch's `input.pointer.dx` and `dy` give the mouse's
 	 * movement, with no edge to stop it. Call it in a click or key handler: browsers lock the pointer
 	 * only right after the user acts. Resolves once the lock begins. Fails with E1425 when the browser
-	 * refuses it. The user ends the lock with Esc, and the page with `document.exitPointerLock()`.
+	 * refuses it, and with E1426 on an engine started with `input: false`, which reads no movement.
+	 * The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Stopping the
+	 * engine ends a lock that it took or that its input read.
 	 */
 	requestPointerLock(options?: PointerLockOptions): Promise<void>;
 	/**
@@ -2041,7 +2047,10 @@ async function startEngine(
 	/** True while the page's own core starts in the shared memory. */
 	let pageCoreStarting = false;
 	let canvasWatch: CanvasWatch | undefined;
+	/** The page's input capture, which exists only while the engine takes input from the page. */
 	let input: ReturnType<typeof captureInput> | undefined;
+	/** True once `engine.requestPointerLock` took the lock, which the engine then gives back as it stops. */
+	let tookLock = false;
 	let stopPreferences: (() => void) | undefined;
 	let stopDisplay: (() => void) | undefined;
 	let rendererHost: EngineWorker | undefined;
@@ -2177,8 +2186,13 @@ async function startEngine(
 			localRunner?.dispose();
 			videos?.dispose();
 			input?.listen(false);
-			// A stopped engine reads no input, so it gives the pointer back.
-			if (globalThis.document?.pointerLockElement === options.canvas) document.exitPointerLock();
+			// A stopped engine reads no input, so it gives back a lock that its input read or that it
+			// took. With input off it took none, and a lock on the canvas is the page's own.
+			if (
+				(input !== undefined || tookLock) &&
+				globalThis.document?.pointerLockElement === options.canvas
+			)
+				document.exitPointerLock();
 			canvasWatch?.listen(false);
 			stopPreferences?.();
 			stopDisplay?.();
@@ -2466,10 +2480,14 @@ async function startEngine(
 		watch.listen(true);
 		// Hold mode keeps input out, so a held frame never depends on it. A page whose input another
 		// library records turns it off, and then the engine adds no listener at all.
-		const takesInput = hold === undefined && replay === undefined && options.input !== false;
-		const pageInput = captureInput(options.canvas, control);
+		const pageInput =
+			hold === undefined && replay === undefined && options.input !== false
+				? captureInput(options.canvas, control)
+				: undefined;
 		input = pageInput;
-		pageInput.listen(takesInput);
+		pageInput?.listen(true);
+		// A development build's sketch thread then says when the sketch relies on input.
+		if (DEV && options.input === false) Atomics.store(slots, Slot.InputOff, 1);
 		stopPreferences = watchPreferences(slots);
 		// A worker that draws holds its frames to the display's rate, which only the page can measure.
 		stopDisplay = renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
@@ -2478,7 +2496,7 @@ async function startEngine(
 		let detached = false;
 		const applyPause = () => {
 			const paused = userPaused || detached;
-			pageInput.listen(takesInput && !paused);
+			pageInput?.listen(!paused);
 			// Counted before the flag clears, so the sketch's first step after the pause sees it.
 			if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
@@ -2918,7 +2936,17 @@ async function startEngine(
 				else rendererHost?.send({ type: 'lose-gpu' });
 			},
 			requestPointerLock(lockOptions) {
-				return requestPointerLock(options.canvas, lockOptions);
+				// The lock is input: the sketch reads the mouse's movement through the engine's listeners.
+				if (options.input === false)
+					return Promise.reject(
+						new EngineError(
+							'E1426',
+							'engine.requestPointerLock() was called on an engine started with input: false, which reads no pointer movement.',
+						),
+					);
+				return requestPointerLock(options.canvas, lockOptions).then(() => {
+					tookLock = true;
+				});
 			},
 			async destroy(destroyOptions) {
 				await stop();

@@ -43,8 +43,8 @@ function apart({ null3d, three }: Poses): number {
 	return 1 - Math.abs(dot);
 }
 
-async function open(page: Page): Promise<void> {
-	await page.goto('pointer-lock.html');
+async function open(page: Page, query = ''): Promise<void> {
+	await page.goto(`pointer-lock.html${query}`);
 	const result = await pageResult<Record<string, unknown>>(page, 30_000);
 	expect(result.error).toBeUndefined();
 }
@@ -98,4 +98,50 @@ test('a request that the browser refuses fails with E1425', async ({ page }) => 
 		(globalThis as { lockDetached?: () => Promise<string> }).lockDetached?.(),
 	);
 	expect(message).toMatch(/^E1425: the browser refused the pointer lock: /);
+});
+
+/** Whether the canvas holds the pointer lock now. */
+const lockedToCanvas = (page: Page) =>
+	page.evaluate(() => (globalThis as { lockedToCanvas?: () => boolean }).lockedToCanvas?.());
+
+/** Stops the page's engine. */
+const destroyEngine = (page: Page) =>
+	page.evaluate(() => (globalThis as { destroyEngine?: () => Promise<void> }).destroyEngine?.());
+
+test('destroying the engine ends the lock that it took', async ({ page }) => {
+	await open(page);
+	await lock(page);
+	await destroyEngine(page);
+	await expect.poll(() => lockedToCanvas(page)).toBe(false);
+});
+
+test('with input off, the engine refuses the lock with E1426, and leaves the page its own', async ({
+	page,
+}) => {
+	const notes: string[] = [];
+	page.on('console', (message) => {
+		if (message.text().startsWith('null3D: ')) notes.push(message.text());
+	});
+	await open(page, '?noInput');
+	// The click asks the engine for the lock, which it refuses, and locks the canvas with the page's
+	// own call.
+	await page.mouse.click(160, 90);
+	await expect
+		.poll(() => page.evaluate(() => (globalThis as { lockRequests?: string[] }).lockRequests))
+		.toHaveLength(1);
+	const [refusal] = await page.evaluate(
+		() => (globalThis as { lockRequests?: string[] }).lockRequests ?? [],
+	);
+	expect(refusal).toMatch(
+		/^E1426: engine\.requestPointerLock\(\) was called on an engine started with input: false, /,
+	);
+	await expect.poll(() => lockedToCanvas(page)).toBe(true);
+	// The sketch hears nothing of the page's lock.
+	expect((await page.evaluate(readPoses)).null3d.locked).toBe(false);
+	// Its first-person controls read ctx.input, which a development build names once for each.
+	expect(notes.filter((note) => note.includes('@null3d/controls'))).toHaveLength(1);
+	expect(notes.filter((note) => note.includes('ctx.input was read'))).toHaveLength(1);
+	// Stopping the engine leaves the lock that the page took.
+	await destroyEngine(page);
+	expect(await lockedToCanvas(page)).toBe(true);
 });

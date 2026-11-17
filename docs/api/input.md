@@ -208,7 +208,36 @@ The page reads the gamepads once per display frame while at least one is connect
 - The engine leaves the browser's own actions for keys and the wheel alone. On a page that scrolls, stop Space and the arrow keys from scrolling it with a `keydown` listener on the page that calls `preventDefault()`. When the sketch zooms with the wheel or a pinch, stop the page from scrolling and zooming with a wheel listener on the canvas: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`.
 - On a Mac, the browser sends no release for a key pressed while Cmd is down. So when Cmd comes up, the sketch sees every key come up.
 - In hold mode, the sketch gets no input, so a held frame is the same on every run. See [Testing your sketch](../guides/testing.md).
-- `createEngine({ input: false })` turns the engine's listening off, for a page whose input another library records, such as a game whose simulation a server replays from a log. The engine then adds no pointer, key, wheel, focus, visibility, pointer lock or gamepad listener. It captures no pointer on the canvas, and leaves the canvas's context menu to the browser. The sketch's `ctx.input` stays at rest: every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons, and objects get no pointer events. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md#input-that-another-library-records) shows the page.
+- `createEngine({ input: false })` turns the engine's listening off, for a page whose input another library records, such as a game whose simulation a server replays from a log. [Input off](#input-off) says what changes.
+
+## Input off
+
+`createEngine({ input: false })` is for a page whose input another library records. The engine then adds no listener that takes input:
+
+- none of its pointer, key, wheel and context menu listeners on the canvas, and no pointer capture;
+- no `pointerup`, `pointercancel`, `keydown`, `keyup` or `blur` listener on the window;
+- no `visibilitychange` or `pointerlockchange` listener of its input on the document;
+- no gamepad listener, and no reading of the gamepads.
+
+The canvas's context menu stays the browser's. The engine keeps the listeners that take no input, and each reads only the page's state:
+
+| Listener | Why the engine keeps it |
+| --- | --- |
+| `visibilitychange` on the document | The canvas watch counts a page that shows again as a resume. So the sketch's next step counts no hidden time. |
+| `change` on media queries | The page passes the user's reduced motion choice to the sketch. Without the device-pixel box, a query also notices a new pixel ratio. |
+| `pagehide` on the window | It stops the job workers, ends the start's crash note and lets go of kept memory as the page leaves. |
+| `securitypolicyviolation` on the window | It names what a Content-Security-Policy blocked while the engine loads its files, as [E1418](../errors/E1418.md) and [E1422](../errors/E1422.md) say. |
+| `message`, `error` and `abort` on the engine's own objects | Its workers, ports and signals talk to the page. |
+
+A development build also listens for the dev server's shader updates. The input test records the engine's listeners in every thread mode.
+
+The sketch's `ctx.input` stays at rest. Every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons, and objects get no pointer events.
+
+- `engine.requestPointerLock()` fails with [E1426](../errors/E1426.md). The lock is part of the engine's input, since the sketch reads the mouse's movement through the engine's listeners. Lock the canvas with the code that records the input, which reads the movement.
+- Stopping the engine leaves a lock that the page took. It ends only a lock that the engine took or that its input read.
+- A development build warns in the console when the sketch relies on input. It warns once for each kind: a read of `ctx.input`, an object's pointer event handler, and `@null3d/controls`. Each warning names `input: false`. A production build carries none of them.
+
+[Using null3D with a deterministic simulation](../guides/deterministic-simulation.md#input-that-another-library-records) shows the page.
 
 ## API reference
 

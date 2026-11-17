@@ -107,7 +107,7 @@ The sketch still draws with the main entry's helpers, which use the browser's `M
 
 ## Input that another library records
 
-`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no pointer, key, wheel, focus, visibility, pointer lock or gamepad listener. It captures no pointer on the canvas, and leaves the canvas's context menu to the browser. The library that records the player's input listens alone.
+`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. It captures no pointer on the canvas, and leaves the canvas's context menu to the browser. It keeps its listeners that take no input, such as the `visibilitychange` that keeps a hidden page's time out of the sketch's steps. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone.
 
 ```ts
 // page.ts
@@ -121,7 +121,10 @@ await createEngine({
 });
 ```
 
-The sketch's `ctx.input` then stays at rest. Every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons. Objects get no pointer events. A game that locks the pointer locks it through the library that records the input, which reads the movement.
+The sketch's `ctx.input` then stays at rest. Every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons. Objects get no pointer events.
+
+- `engine.requestPointerLock()` fails with [E1426](../errors/E1426.md). A game that locks the pointer locks it through the library that records the input, which reads the movement. Stopping the engine leaves that lock.
+- A development build warns in the console when the sketch relies on input anyway. It warns once for each kind: a read of `ctx.input`, an object's pointer event handler, and `@null3d/controls`. A production build carries no trace of the warnings.
 
 ## Sending the state to the sketch
 

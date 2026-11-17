@@ -89,7 +89,7 @@ await engine.destroy({ release: true }); // (0.2) also frees the memory that the
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
-await engine.requestPointerLock();                // (0.2) in a click handler, for first-person controls; E1425 when refused
+await engine.requestPointerLock();                // (0.2) in a click handler, for first-person controls; E1425 when refused, E1426 with input: false
 // engine.registerVideo and textures.fromVideo come in 0.3; recipe 14 shows the workaround
 ```
 
@@ -627,7 +627,7 @@ dragger.dragging; dragger.hovered;      // the object each names, or null
 
 Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches. When the wheel or a pinch zooms the camera, stop the page from scrolling and zooming with `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })` on the page.
 
-The option `input: false` of `createEngine` (0.3) turns the engine's listening off, for a page whose input another library records. The engine then adds no pointer, key, wheel, focus, visibility, pointer lock or gamepad listener. It captures no pointer and leaves the context menu alone. The sketch's input stays at rest: every key, button and action is up, and `value` gives 0. There are no touches, the pointer rests at the canvas's top-left corner, and objects get no pointer events. A game whose simulation a server replays decides nothing from input, object events, raycasts or controls. None of them is in its input log (`guides/deterministic-simulation`).
+The option `input: false` of `createEngine` (0.3) turns the engine's listening off, for a page whose input another library records. The engine then adds no pointer, key, wheel, focus or gamepad listener, and none for the pointer lock or for its input's page visibility. It captures no pointer and leaves the context menu alone. It keeps the listeners that take no input, such as the canvas watch's `visibilitychange` (`api/input#input-off`). The sketch's input stays at rest: every key, button and action is up, and `value` gives 0. There are no touches, the pointer rests at the canvas's top-left corner, and objects get no pointer events. The engine's `requestPointerLock()` fails with E1426, and the page's own input code locks the canvas. A development build warns once for each kind when the sketch reads `ctx.input`, gives an object a pointer event handler or imports `@null3d/controls`. A game whose simulation a server replays decides nothing from input, object events, raycasts or controls. None of them is in its input log (`guides/deterministic-simulation`).
 
 ## 15. Post-processing (`api/post`)
 
