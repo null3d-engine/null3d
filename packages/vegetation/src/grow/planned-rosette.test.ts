@@ -5,10 +5,15 @@
 import { describe, expect, it } from 'bun:test';
 import { files } from '@null3d/vegetation-textures/tree-fern';
 import { speciesProblems } from '../core/check';
+import type { Planned } from '../core/record';
+import { curveAt } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { planned } from '../species/tree-fern/planned-record';
 import type { GrowRequest } from '../stages';
+import { planFrame } from './frame';
+import { crownOf } from './model';
 import { growPlanned, planTree } from './planned';
+import { emitRosette } from './planned-rosette';
 
 /** Grows the tree fern at a state, with the plan the generator would hand it. */
 function grow(request: GrowRequest, seed = 11, variant = 0) {
@@ -106,6 +111,49 @@ describe('the planned rosette', () => {
 		expect(card.levels[1].triangles).toBeLessThanOrEqual(15_000);
 		const near = growPlantNow(kit, { seed: 11, variant: 0, near: true, detail: 'high' });
 		expect(near.levels[0].triangles).toBeLessThanOrEqual(90_000);
+	});
+
+	it('emits the shared model, whose pieces give the grown plant’s crown', () => {
+		const request: GrowRequest = { maturity: 1, sparse: 0 };
+		const { plant } = grow(request);
+		const growth = planned.growth as Planned;
+		const first = plant.axes.first[0] as number;
+		const last = plant.axes.last[0] as number;
+		const trunkNodes = [];
+		for (let node = first; node <= last; node++)
+			trunkNodes.push({
+				y: plant.position[node * 3 + 1] as number,
+				radius: plant.radius[node] as number,
+			});
+		const top = trunkNodes[trunkNodes.length - 1] as { y: number; radius: number };
+		const adult = planFrame(
+			growth.frame as NonNullable<Planned['frame']>,
+			{ record: planned, seed: 11, variant: 0, season: 'summer' },
+			false,
+		).height;
+		const model = emitRosette({
+			record: planned,
+			growth,
+			seed: 11,
+			variant: 0,
+			at: [0, top.y, 0],
+			height: top.y,
+			adultHeight: adult,
+			topRadius: top.radius,
+			trunkNodes,
+			leaves: curveAt(growth.leavesAt, 0),
+			scale: top.y / adult,
+		});
+		// The model is the grown plant's sockets and pieces: 35 living and 15 dead at seed 11.
+		expect(model.sockets.length).toBe(plant.buds.count);
+		expect(model.pieces.length).toBe(3);
+		expect(model.sockets.filter((socket) => socket.piece === 2).length).toBe(15);
+		expect(model.least).toBe(Math.round(model.sockets.length * 0.4));
+		// The crown's top and base are the pieces' own: they match the grown plant's figures.
+		const crown = crownOf(model.sockets, model.pieces);
+		expect(crown.top).toBeCloseTo(plant.height, 1);
+		expect(crown.base).toBeCloseTo(plant.crownBase, 1);
+		expect(model.crown.top).toBeCloseTo(plant.height, 1);
 	});
 
 	it('grows a young plant as a rosette above the ground', () => {

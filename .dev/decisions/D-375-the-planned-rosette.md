@@ -67,3 +67,13 @@ rosette's stem whole at every maximum. The tree fern's record moves to the plann
 directed frond-crown record is removed. The frond-crown grower still serves the date palm. A rosette
 states its trunk's height in the plan's height curve. Its frame is the trunk, and the crown stands
 above it.
+
+The family now writes the shared generator's intermediate model (D-377). `layoutRosette` states the
+fronds' sockets from either growth block. `emitRosette` and `emitFrondCrown` write the same model.
+It holds one trunk axis, one socket a frond with its carrier, and the pieces from the record's
+measured figures. The model states a hanging piece's `bottom` and its `middle`, so the crown box is
+the pieces' own. The adapter writes no geometry, material or level. The family's growth digests at
+the low tier are unchanged. The tree fern reads `e31774badf205372` and the date palm
+`ba6e966865e3663b`, before and after. The shared price, grow, close, allocate and bake stages are
+not built yet. The family still grows through the planned rosette's own grower, and the switch to
+the shared stages is their owner's next step.
