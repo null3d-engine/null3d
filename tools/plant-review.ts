@@ -1059,7 +1059,7 @@ function compareRun(
 						: ''
 				}${
 					rawExtra.length > 0
-						? ` The raw matte at solid coverage reads ${read.rawMatte?.components ?? 0} components with ${rawExtra.length} separate from the body (${rawExtra.map((part) => `${part.area} px ${part.box}`).join(', ')}); the coverage bridge joins them, and each is a floating piece.`
+						? ` The raw matte at solid coverage reads ${read.rawMatte?.components ?? 0} components with ${rawExtra.length} separate from the body (${rawExtra.map((part) => `${part.area} px ${part.box}`).join(', ')}); the coverage bridge joins them, and each lies outside the crown's envelope, so it is a floating piece.`
 						: ''
 				}`,
 			);
@@ -1394,7 +1394,7 @@ function connectivityLines(pairs: readonly StillResult[]): string[] {
 			const extra = raw.floating.filter((part) => !shown.has(part.box));
 			if (extra.length > 0)
 				lines.push(
-					`- ${pair.file}${sparse}: the raw matte at solid coverage reads ${raw.components} components, ${extra.length} separate from the body — ${extra.map((part) => `${part.area} px ${part.box}`).join(', ')}. A component of this size that the raw matte keeps apart is a floating piece, whatever the coverage bridge joins.`,
+					`- ${pair.file}${sparse}: the raw matte at solid coverage reads ${raw.components} components, ${extra.length} separate from the body — ${extra.map((part) => `${part.area} px ${part.box}`).join(', ')}. A component of this size whose centre lies outside the crown's envelope is a floating piece, whatever the coverage bridge joins.`,
 				);
 		}
 	}
