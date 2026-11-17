@@ -974,6 +974,19 @@ hand-picked stills no longer counts as a species review. The sweep is the first 
 its bough, a plate where a needle belongs or a twig drawn at branch scale must appear, and its cost is what catches
 them before a person does.
 
+## The orbit is watched, not sampled
+
+A still shows what a camera was pointed at. A tree is judged by turning round it. Every species is therefore orbited at
+each rung of its distance ladder — a full turn at an even step — and it is orbited again at close range, because a fault
+that faces one way is invisible from the other. The reviewer records every fault with the frame number and the angle it
+stands at, and the orbit's frames are the evidence behind the verdict. A verdict signed from stills alone is not a
+verdict.
+
+The orbit also feeds a check that does not tire: per frame, the body rail's free-cluster count and the crown's covered
+share are read, and a frame whose figures jump beyond the round's band from its neighbours' fails, naming the frame and
+the step. A cluster that leaves its wood on one side, a card that faces away, or a crown that closes on one side and
+opens on the other then appears as a number before it appears to a person.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
