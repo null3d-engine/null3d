@@ -112,6 +112,9 @@ const CLUMP_FROM = 0.25;
 /** The share of its growth at which a clump carries all the sockets it ever carries. */
 const CLUMP_OPEN = 0.55;
 
+/** How far a bough's clump is drawn toward the crown's middle, as a share of its distance there. */
+const CLUMP_GATHER = 0.22;
+
 /** The size a clump's pieces start at, as a share of their full size, when they first show. */
 const PIECE_START = 0.35;
 
@@ -747,6 +750,39 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			at: limb >= 0 && (axis.order === 1 || seatShare >= 0.9) ? 'limb-end' : 'limb-side',
 		});
 	});
+
+	// The crown's leaves gather into natural masses: a bough's or branch's clump card is drawn a
+	// little toward the crown's middle, where it overlaps the bays of the cards outside it. The pull
+	// stops at half a clump's radius, so every card still covers the wood that carries it.
+	if (most === undefined) {
+		const middle: [number, number, number] = [0, 0, 0];
+		let weight = 0;
+		for (const clump of clumps) {
+			const many = Math.max(1, clump.radius * clump.radius);
+			for (let c = 0; c < 3; c++)
+				middle[c] = (middle[c] as number) + (clump.centre[c] as number) * many;
+			weight += many;
+		}
+		for (let c = 0; c < 3; c++) middle[c] = (middle[c] as number) / Math.max(1e-9, weight);
+		for (let k = 0; k < clumps.length; k++) {
+			if ((orders[k] as number) < 2) continue;
+			const clump = clumps[k] as ClumpData;
+			const dx = (middle[0] as number) - (clump.centre[0] as number);
+			const dy = (middle[1] as number) - (clump.centre[1] as number);
+			const dz = (middle[2] as number) - (clump.centre[2] as number);
+			const away = Math.hypot(dx, dy, dz);
+			if (!(away > 1e-9)) continue;
+			const pull = Math.min(CLUMP_GATHER * away, 0.6 * (sizes[k] as number));
+			clumps[k] = {
+				...clump,
+				centre: [
+					(clump.centre[0] as number) + (dx / away) * pull,
+					(clump.centre[1] as number) + (dy / away) * pull,
+					(clump.centre[2] as number) + (dz / away) * pull,
+				],
+			};
+		}
+	}
 
 	// Under a maximum the crown stands only the clumps its cards may draw: the low caps keep the
 	// clumps on the wood every cap draws, and above them the kept clumps grow from that wood by
