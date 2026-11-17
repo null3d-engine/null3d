@@ -605,6 +605,13 @@ describe('the sweep’s verdicts', () => {
 		expect(near.reason).toContain("near form's switch");
 	});
 
+	test('names a forced level in the near-switch reason', () => {
+		const drawn = orbit(1).map((entry) => ({ ...entry, forced: true }));
+		const result = row(SWEEP_RUNGS[2] as (typeof SWEEP_RUNGS)[number], drawn);
+		expect(result.verdict).toBe('open');
+		expect(result.reason).toContain('first card level (forced)');
+	});
+
 	test('leaves a near rung the camera cannot reach open even where another figure fails', () => {
 		const drawn = orbit(1);
 		drawn[0] = picture(drawn[0]!.file, 1, {
