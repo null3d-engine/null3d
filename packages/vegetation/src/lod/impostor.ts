@@ -62,6 +62,13 @@ const SHADED = 0.15;
 const FAR_LIT = 0.7;
 
 /**
+ * How far a capped plant's card planes grow in the far bake, about their middles. A maximum keeps
+ * only the clumps on the trunk and the great limbs, and a far picture built from those alone would
+ * read as wood; the far picture shows the crown, where the approximation is allowed.
+ */
+const CAPPED_CARD_LIFT = 2.2;
+
+/**
  * The open-sky shares between which a clump's dim runs, from its dark core to its sunlit rim, as the
  * plant shader's own bounds: the far card reads the same record value that draws the card levels.
  */
@@ -115,6 +122,21 @@ function unpack(part: PlantPart, kit: SpeciesKitData): LevelPart {
 	const uvs = new Float32Array(a.uvs.length);
 	for (let i = 0; i < uvs.length; i++) uvs[i] = (a.uvs[i] as number) / uvSteps;
 	return { name: part.name, positions, normals, uvs, colors: a.colors, indices: a.indices };
+}
+
+/** Grows each four-vertex card plane about its middle, which leaves its picture and turn alone. */
+function growPlanes(positions: Float32Array, scale: number): void {
+	for (let at = 0; at + 11 < positions.length; at += 12) {
+		const middle = [0, 0, 0];
+		for (let v = 0; v < 4; v++)
+			for (let k = 0; k < 3; k++)
+				middle[k] = (middle[k] as number) + (positions[at + v * 3 + k] as number) / 4;
+		for (let v = 0; v < 4; v++)
+			for (let k = 0; k < 3; k++)
+				positions[at + v * 3 + k] =
+					(middle[k] as number) +
+					((positions[at + v * 3 + k] as number) - (middle[k] as number)) * scale;
+	}
 }
 
 /** Widens a box to hold a part's positions. */
@@ -249,11 +271,19 @@ function farGrid(
 	asset: PlantAsset,
 ): { readonly texels: number; readonly supersample: number } {
 	const texels = asset.impostor.texels;
-	if (asset.maxTriangles === undefined) return { texels, supersample: SUPERSAMPLE };
+	const sparse = Math.min(1, Math.max(0, asset.sparse ?? 0));
+	if (asset.maxTriangles === undefined && sparse === 0) return { texels, supersample: SUPERSAMPLE };
 	const budget = kit.record.lod.budget.lod1Triangles;
 	const own = asset.stats.triangles[1];
-	if (!(budget > 0) || !(own > 0)) return { texels, supersample: SUPERSAMPLE };
-	const detail = Math.sqrt(Math.min(1, own / budget));
+	// A capped level draws fewer triangles than the record's full level, so its cells shrink with
+	// the level's own count.
+	const capped =
+		asset.maxTriangles !== undefined && budget > 0 && own > 0
+			? Math.sqrt(Math.min(1, own / budget))
+			: 1;
+	// A crown grown sparse keeps its clumps but carries far fewer leaves, so its far cells resolve
+	// fewer leaf clusters: half the side at full sparseness.
+	const detail = Math.min(capped, 1 - 0.5 * sparse);
 	// A cell stays a power of two, as the atlas's mip levels expect.
 	const cells = Math.max(
 		FAR_TEXELS_LEAST,
@@ -354,6 +384,10 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 				indices: part.indices,
 			});
 		} else if (part.name === 'cards' && size > 0) {
+			// A capped plant's level draws a bare frame under a few large clumps, so its own level
+			// bakes a wood-coloured far picture. The far picture shows the crown, so under a maximum
+			// its cards grow about their middles until the crown bakes as leaves.
+			if (asset.maxTriangles !== undefined) growPlanes(positions, CAPPED_CARD_LIFT);
 			widen(positions, min, max);
 			cards.push({
 				positions,

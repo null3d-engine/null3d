@@ -47,6 +47,59 @@ function crownCards(max: number | undefined, clumps: number, cardCost: number): 
 	return Math.min(clumps, Math.floor(take / cardCost));
 }
 
+/**
+ * The indices of the clumps a capped crown keeps. The clumps carried by the trunk and the great
+ * limbs stand first, because every cap draws that wood; then, while the cap pays, the clumps that
+ * meet a kept card, the most overlap first. A connected set draws one crown mass rather than tufts
+ * that hang in the air.
+ *
+ * @param clumps The crown's clumps.
+ * @param sizes Their fill sizes, in metres.
+ * @param orders The order of each clump's carrying axis.
+ * @param cards The most clumps the cap pays a card for.
+ * @param seedsOnly Whether only the clumps on the always-drawn wood stand.
+ * @returns The kept clumps' indices.
+ */
+function cardedSet(
+	clumps: readonly { readonly centre: Vec3 }[],
+	sizes: readonly number[],
+	orders: readonly number[],
+	cards: number,
+	seedsOnly: boolean,
+): Set<number> {
+	const kept = new Set<number>();
+	for (let i = 0; i < clumps.length; i++) if ((orders[i] as number) <= 1) kept.add(i);
+	if (kept.size === 0 && clumps.length > 0) kept.add(0);
+	if (seedsOnly) return kept;
+	const most = Math.max(kept.size, Math.min(clumps.length, cards));
+	while (kept.size < most) {
+		let bestAt = -1;
+		let best = 0;
+		for (let i = 0; i < clumps.length; i++) {
+			if (kept.has(i)) continue;
+			const centre = (clumps[i] as { centre: Vec3 }).centre;
+			let meeting = 0;
+			for (const k of kept) {
+				const other = clumps[k] as { centre: Vec3 };
+				const sum = ((sizes[i] as number) + (sizes[k] as number)) * CARD_MEET;
+				const d = Math.hypot(
+					(centre[0] as number) - (other.centre[0] as number),
+					(centre[1] as number) - (other.centre[1] as number),
+					(centre[2] as number) - (other.centre[2] as number),
+				);
+				if (d < sum) meeting += sum - d;
+			}
+			if (meeting > best) {
+				best = meeting;
+				bestAt = i;
+			}
+		}
+		if (bestAt < 0) break;
+		kept.add(bestAt);
+	}
+	return kept;
+}
+
 /** The maturity from which a crown thins its branches with sparseness: younger crowns keep them. */
 const ADULT_MATURITY = 0.5;
 
@@ -61,6 +114,16 @@ const CLUMP_OPEN = 0.55;
 
 /** The size a clump's pieces start at, as a share of their full size, when they first show. */
 const PIECE_START = 0.35;
+
+/**
+ * How much larger than its fill a clump's drawn card stands under a triangle maximum: neighbouring
+ * cards meet over the sky bays between them, so a cap that keeps few clumps draws one crown mass
+ * rather than separate tufts that hang in the air.
+ */
+const CARD_MEET = 1.8;
+
+/** Below this maximum the crown keeps only the clumps on the wood every cap draws. */
+const CARD_SEEDS_MAX = 800;
 
 /** Adult plans kept a thread, by species, seed and variant. */
 const ADULTS = new Map<string, Adult>();
@@ -239,7 +302,6 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	// trunk and the great limbs never thin.
 	const kept = expected.map((count, order) => count * (1 - sparse * (thin[order] ?? 0)));
 	// A maximum shares the count: the bones keep their own share, and the finer orders are cut.
-	const sides = max === undefined ? 10 : max >= 20_000 ? 8 : max >= 5_000 ? 6 : 3;
 	const clumpCard = max !== undefined && max < 2_000;
 	const piece = growth.prices.piece;
 	const tube = growth.prices.tubeSegment;
@@ -272,8 +334,14 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	// ranks first, so a card a clump is what stands when the crown is paid for. Below the least
 	// share the crown is never left, since under it the clumps read as tufts.
 	const crownKept = max === undefined ? 1 : Math.min(1, cards / socketsBound);
+	// A maximum above the plant's own cost never bites: it draws the plant the uncapped plan draws.
+	const bites =
+		max !== undefined &&
+		priced.trunk + priced.limbs + priced.branches + priced.twigs + priced.foliage + priced.fruit > max;
+	// The wood's own sides follow the maximum, and an unreached maximum keeps the plant's own.
+	const sides = !bites ? 10 : (max as number) >= 20_000 ? 8 : (max as number) >= 5_000 ? 6 : 3;
 	const cut = (order: number): number => {
-		if (max === undefined) return 1;
+		if (!bites) return 1;
 		if (order < 2) return 1;
 		return order >= 4 ? crownKept : woodKept;
 	};
@@ -336,6 +404,12 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const matureAge = ageAtHeight(growth.height, fullAge, adultHeight, adultHeight);
 	// A maximum coarsens each axis's own nodes: every second or fourth node stands.
 	const most = request.maxTriangles;
+	// A maximum bites only when the plant's best look costs more than it pays. A maximum above that
+	// cost must draw the plant the same as one with no maximum at all.
+	const price = detail.triangles;
+	const capped =
+		most !== undefined &&
+		price.trunk + price.limbs + price.branches + price.twigs + price.foliage + price.fruit > most;
 	const woodStep = most === undefined ? 1 : most >= 20_000 ? 1 : most >= 5_000 ? 2 : 8;
 
 	// Where every adult axis stands at this age, before sparseness or a maximum is read.
@@ -602,6 +676,11 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	// move with sparseness.
 	const clumps: ClumpData[] = [];
 	const fill: (FillClump & ClumpSight)[] = [];
+	// Each clump's own size, and the order of the axis that carries it: a cap draws the card larger
+	// than the clump and keeps the clumps that stand on the wood every cap draws.
+	const sizes: number[] = [];
+	const orders: number[] = [];
+	const sizeOf = new Map<number, number>();
 	let crownBase = Number.POSITIVE_INFINITY;
 	let top = height;
 	bones.patches.forEach((patch, id) => {
@@ -614,12 +693,28 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		if (!(radius > 1e-6)) return;
 		const tip = axis.nodes[axis.nodes.length - 1] as FrameNode;
 		const grownTip = planTips[patch.axis] as Vec3;
-		const centre: Vec3 = [
-			grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
-			grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
-			grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
-		];
-		clumps.push({ id, centre, radius, depth: 3, birth: where.birth });
+		const root = axis.nodes[0] as FrameNode;
+		// A capped crown's cards stand at the middle of the wood that carries them, because a low cap
+		// draws the skeleton shortened and a card past its drawn end hangs in the air. With no
+		// maximum the crown spreads as its patches state.
+		const centre: Vec3 =
+			!capped
+				? [
+						grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
+						grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
+						grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
+					]
+				: [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2];
+		clumps.push({
+			id,
+			centre,
+			radius: capped ? radius * CARD_MEET : radius,
+			depth: 3,
+			birth: where.birth,
+		});
+		sizes.push(radius);
+		orders.push(axis.order);
+		sizeOf.set(id, radius);
 		crownBase = Math.min(crownBase, centre[1] - radius);
 		top = Math.max(top, centre[1] + radius);
 		const builtAxis = built[patch.axis] as number;
@@ -653,26 +748,20 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		});
 	});
 
-	// Under a maximum the crown stands only the clumps its share pays for: a card a clump is what the
-	// crown draws, so an unpayable clump would spend the wood's room on a card of its own. The kept
-	// clumps are an even rank over the crown's own centres, so a smaller cap keeps a subset of a
-	// larger one's clumps.
+	// Under a maximum the crown stands only the clumps its cards may draw: the low caps keep the
+	// clumps on the wood every cap draws, and above them the kept clumps grow from that wood by
+	// meeting, so the crown stays one body at every cap.
 	const cards = crownCards(
 		most,
 		Math.max(1, Math.round(boundsOf(input.record, growth).clumps)),
 		growth.prices.clumpCard,
 	);
-	if (cards < clumps.length) {
-		const ranks = thinningRanks(clumps.map((clump) => clump.centre));
-		const kept = new Set(
-			clumps
-				.map((clump, k) => ({ id: clump.id, rank: ranks[k] as number, k }))
-				.sort((a, b) => a.rank - b.rank || a.k - b.k)
-				.slice(0, cards)
-				.map((one) => one.id),
-		);
-		clumps.splice(0, clumps.length, ...clumps.filter((clump) => kept.has(clump.id)));
-		fill.splice(0, fill.length, ...fill.filter((clump) => kept.has(clump.id)));
+	if (capped) {
+		const keep = cardedSet(clumps, sizes, orders, cards, most !== undefined && most <= CARD_SEEDS_MAX);
+		const kept = [...keep].sort((a, b) => a - b);
+		const keptIds = new Set(kept.map((index) => (clumps[index] as ClumpData).id));
+		clumps.splice(0, clumps.length, ...kept.map((index) => clumps[index] as ClumpData));
+		fill.splice(0, fill.length, ...fill.filter((clump) => keptIds.has(clump.id)));
 	}
 
 	// The sockets that clothe the clumps, at the share the sparseness and the plan leave.
@@ -688,7 +777,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		(sum, clump) => sum + 1 + Math.round(6.5 * (2 * clump.radius) ** 2),
 		0,
 	);
-	const cutByMaximum = socketsAbout > 0 ? Math.min(1, carded / socketsAbout) : 1;
+	const cutByMaximum = capped && socketsAbout > 0 ? Math.min(1, carded / socketsAbout) : 1;
 	const leaves = Math.min(1, keepsItsShare * cutByMaximum);
 	const crownBaseValue = Number.isFinite(crownBase) ? Math.max(0, crownBase) : height;
 	const sighted: FillInput & PlannedFillSight = {
@@ -698,7 +787,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		variant: input.variant,
 		clumps: fill,
 		leaves,
-		anchored: most !== undefined,
+		anchored: capped,
 		// Catkins hang on their own sites in the flowering season, ramped by the plan.
 		...(growth.flowers === undefined || input.season !== growth.flowers.season
 			? {}
@@ -740,7 +829,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		}
 	for (const clump of clumps)
 		for (let c = 0; c < 3; c++) {
-			const reach = c === 1 ? clump.radius * 0.7 : clump.radius;
+			const size = sizeOf.get(clump.id) ?? clump.radius;
+			const reach = c === 1 ? size * 0.7 : size;
 			min[c] = Math.min(min[c] as number, (clump.centre[c] as number) - reach);
 			max[c] = Math.max(max[c] as number, (clump.centre[c] as number) + reach);
 		}

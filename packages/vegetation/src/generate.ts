@@ -686,6 +686,20 @@ function maxOf(kit: SpeciesKitData, options: GrowOptions): number | undefined {
 }
 
 /**
+ * The maximum a plant's own levels take. A maximum above what the plan's parts cost never bites, so
+ * the levels take none and the plant draws exactly as it would with no maximum at all.
+ *
+ * @param plan The grown plan, where the model plans its state.
+ * @param max The maximum the growth was asked for.
+ * @returns The maximum the levels draw under, or undefined for none.
+ */
+function bitingMax(plan: DetailPlan | undefined, max: number | undefined): number | undefined {
+	if (max === undefined || plan === undefined) return max;
+	const t = plan.triangles;
+	return t.trunk + t.limbs + t.branches + t.twigs + t.foliage + t.fruit > max ? max : undefined;
+}
+
+/**
  * The sparseness a growth takes: the one its options give, or none for a stand-in species and for a
  * cut piece, which grow as they are.
  *
@@ -1324,7 +1338,7 @@ function builtLevels(
 	options: GrowOptions,
 ): readonly [BuiltLevel, BuiltLevel, BuiltLevel] {
 	const { mesh } = plant;
-	const most = maxOf(kit, options);
+	const most = bitingMax(mesh.plan, maxOf(kit, options));
 	const input = plant.budget(options.near === true);
 	const reference = most === undefined ? undefined : referenceOf(kit, input);
 	const level = (at: MeshLevel): BuiltLevel => {
@@ -1392,6 +1406,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	const record = kit.record;
 	const plant = dressed(kit, options);
 	const mesh = plant.mesh;
+	const sparse = sparseLevel(kit, options);
 	const placeholders = kit.placeholders;
 	const wind = stage(
 		placeholders,
@@ -1423,7 +1438,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	);
 	let bytes = wind.records.byteLength;
 	for (const level of levels) bytes += level.bytes;
-	const most = maxOf(kit, options);
+	const most = bitingMax(mesh.plan, maxOf(kit, options));
 	const shoots = built[0].shoots;
 	const asset: PlantAsset = {
 		species: record.id,
@@ -1434,6 +1449,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		coarseness: mesh.coarseness ?? 0,
 		...(mesh.plan === undefined ? {} : { plan: mesh.plan }),
 		...(plant.dropped === 0 ? {} : { dropped: plant.dropped }),
+		...(sparse > 0 ? { sparse } : {}),
 		skeleton,
 		shoots: mesh.rows,
 		levels,
