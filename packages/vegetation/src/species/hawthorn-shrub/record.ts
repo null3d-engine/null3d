@@ -295,9 +295,12 @@ export const record: Species = {
 			twist: 5,
 			wave: [0.002, 4],
 			optics: {
-				reflectance: [0.0404, 0.0849, 0.0116],
+				// The whole-plant light draws the leaf lighter and greener than the photographs'
+				// grey-olive (#64644d against #555133 at 01), so the front face darkens and warms a
+				// little and the transmitted light comes down with it.
+				reflectance: [0.0354, 0.0705, 0.0102],
 				reflectanceBack: [0.1935, 0.2701, 0.1787],
-				transmittance: [0.12, 0.084, 0.013],
+				transmittance: [0.105, 0.0735, 0.0114],
 				roughness: [0.45, 0.6],
 			},
 		},
