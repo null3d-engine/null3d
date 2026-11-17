@@ -11,7 +11,7 @@
 // skeleton. Rows then take a space-filling order, which the thinned card level keeps every second
 // of. The coarseness leaves every row in place: it changes how smoothly the plant is drawn, not how
 // many leaves the plant grows.
-import type { ShootPrototype, ShootRows } from '../asset';
+import type { MeshArrays, ShootPrototype, ShootRows, SpeciesKitData } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
 import { BUD_AREOLE, BUD_DORMANT, BUD_FLOWER, BUD_JOINT, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
@@ -29,13 +29,14 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { Scaffold, Species } from '../core/record';
-import { curveAt, spreadAt } from '../core/types';
+import { curveAt, DETAILS, type Detail, spreadAt } from '../core/types';
 import { rowCentre } from '../crown/density';
 import { crownSkyAt, lightCrown } from '../crown/visibility';
 import { bareTrimmed } from '../grow/coarsen';
 import type { CrownLight, DressInput } from '../stages';
 import { carriesPieces, pieceRows } from './piece-rows';
 import { inLeaf } from './season';
+import { MeshWriter } from './writer';
 
 /** Sky visibility and bent normal of a row before the crown's light gives it its own. */
 const OPEN_SKY = 250;
@@ -161,6 +162,11 @@ export interface Row {
 	 * than a part of a piece, so it takes a place of its own in the space-filling order.
 	 */
 	site?: number;
+}
+
+/** One prototype's rows joined at one tier: the prototype's index and its finished mesh. */
+export interface AssembledRows extends MeshArrays {
+	readonly prototype: number;
 }
 
 /** A variant's shoot rows and the skeleton they stand on, its bare wood trimmed where the record asks. */
@@ -953,4 +959,63 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 	});
 	out.order.set(rowOrder(rows, bounds));
 	return sockets ? { ...out, socket: sockets } : out;
+}
+
+/**
+ * The leaf form's rows joined into one mesh a prototype at one detail tier.
+ *
+ * Each row places a copy of its prototype's tier mesh by the row's own turn, scale and position,
+ * exactly as the near form's instances draw it, and the copies of one prototype join into a single
+ * mesh. The far bake and a coverage measure read this mesh, since the near form draws the rows on
+ * the GPU and nothing else expands them on the CPU.
+ *
+ * @param kit The species' kit, which holds the prototypes at every tier.
+ * @param rows The variant's placed rows.
+ * @param tier The kit's detail tier the copies draw at: the near form's own, or a coarser one.
+ * @param keep An optional row filter, for a caller that draws a share of the rows: every row by
+ * default.
+ * @returns One finished mesh a prototype that has rows, with its prototype's index.
+ * @category api/vegetation
+ */
+export function assembleRows(
+	kit: SpeciesKitData,
+	rows: ShootRows,
+	tier: Detail,
+	keep?: (row: number) => boolean,
+): AssembledRows[] {
+	const index = DETAILS.indexOf(tier);
+	const out: AssembledRows[] = [];
+	if (index < 0) return out;
+	const at: Vector3 = [0, 0, 0];
+	const normal: Vector3 = [0, 0, 0];
+	for (let prototype = 0; prototype < kit.prototypes.length; prototype++) {
+		const arrays = kit.prototypes[prototype]?.tiers[index];
+		if (!arrays || arrays.indices.length === 0) continue;
+		const writer = new MeshWriter();
+		for (let r = 0; r < rows.count; r++) {
+			if ((rows.prototype[r] as number) !== prototype) continue;
+			if (keep && !keep(r)) continue;
+			const scale = rows.scale[r] as number;
+			const x = rows.position[r * 3] as number;
+			const y = rows.position[r * 3 + 1] as number;
+			const z = rows.position[r * 3 + 2] as number;
+			writer.append(arrays, (position, direction) => {
+				at[0] = position[0] * scale;
+				at[1] = position[1] * scale;
+				at[2] = position[2] * scale;
+				quatRotate(rows.rotation, r * 4, at, at);
+				position[0] = at[0] + x;
+				position[1] = at[1] + y;
+				position[2] = at[2] + z;
+				// A turn keeps a unit normal unit, but a float quaternion drifts: restore its length.
+				quatRotate(rows.rotation, r * 4, direction, normal);
+				const length = Math.hypot(normal[0], normal[1], normal[2]) || 1;
+				direction[0] = normal[0] / length;
+				direction[1] = normal[1] / length;
+				direction[2] = normal[2] / length;
+			});
+		}
+		if (writer.vertices > 0) out.push({ prototype, ...writer.finishMesh() });
+	}
+	return out;
 }
