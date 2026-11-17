@@ -87,6 +87,16 @@ const LEAST_EXTRAS_SHARE = 0.25;
  */
 const CROWN_SHARE = 0.6;
 
+/**
+ * The least share of a maximum the trunk and the great limbs take before the leaves, and the part
+ * of it the trunk takes: a capped tree keeps a read of wood at any distance.
+ */
+const SKELETON_SHARE = 0.3;
+const SKELETON_TRUNK = 0.55;
+
+/** The least sides a capped trunk's or great limb's tube may draw: below it a tube reads as a pinch. */
+const SIDES_LEAST = 5;
+
 /** No triangles in any part. */
 export const NO_TRIANGLES: PartTriangles = {
 	trunk: 0,
@@ -570,15 +580,25 @@ export function rowLevel(
 	// cost more than the part's mean, so their price is measured apart.
 	const eachKept: (number | undefined)[] = [];
 	const fitWood = (part: number, budget: number): WoodChoice => {
-		for (let rung = 0; rung <= last; rung++) {
+		for (let rung = 0; rung < tubes.length; rung++) {
 			const cost = priced(part, rung);
 			if (cost <= budget) return { rung, cost };
 		}
-		// Not even one straight run for each axis fits: the thickest limbs or branches that do.
+		// Not even one straight run for each axis fits: the thickest limbs or branches that do, at
+		// the coarsest rung that still reads as wood — the fallback may not draw a pinch either.
+		let coarsest = -1;
+		for (let rung = last; rung >= 0; rung--)
+			if ((tubes[rung] as TubeDetail).maxSides >= SIDES_LEAST) {
+				coarsest = rung;
+				break;
+			}
+		if (coarsest < 0) return { rung: -1, cost: 0 };
 		if (part === 0) return { rung: -1, cost: 0 };
-		const each = eachKept[part] ?? priced(part, last) / Math.max(1, axesOf[part] as number);
+		const each = eachKept[part] ?? priced(part, coarsest) / Math.max(1, axesOf[part] as number);
 		const kept = each > 0 ? Math.floor(budget / each) : 0;
-		return kept > 0 ? { rung: last, kept, cost: Math.ceil(kept * each) } : { rung: -1, cost: 0 };
+		return kept > 0
+			? { rung: coarsest, kept, cost: Math.ceil(kept * each) }
+			: { rung: -1, cost: 0 };
 	};
 	// The shoots' ladder: the rows at each tier the kit holds, then cards.
 	const tiers: { tier: Detail; leaves: number; twigs: number }[] = [];
@@ -638,11 +658,15 @@ export function rowLevel(
 			? Number.POSITIVE_INFINITY
 			: Math.min(...tiers.map((tier) => tier.leaves + tier.twigs));
 	const crownedNoRows = clumpsOfPlant > 0 && cheapestRows > Math.floor(max * CROWN_SHARE);
+	// A low maximum buys the tree's shape first: the trunk and the great limbs take a share of the
+	// cap before the leaves, because a crown standing on one three-sided run is not a tree at any
+	// distance. The share is paid even where the crown would take the whole maximum.
+	const skeletonFloor = Math.floor(max * SKELETON_SHARE);
 	const floor = (part: Part): number =>
 		part === 'trunk'
-			? priced(0, last)
+			? Math.max(priced(0, last), Math.floor(skeletonFloor * SKELETON_TRUNK))
 			: part === 'limbs'
-				? priced(1, last)
+				? Math.max(priced(1, last), Math.floor(skeletonFloor * (1 - SKELETON_TRUNK)))
 				: part === 'leaves'
 					? rows.count > 0
 						? 4
