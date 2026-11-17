@@ -280,15 +280,14 @@ for (const id of SPECIES) {
 					for (let k = 1; k < plants.length; k++) {
 						const plant = plants[k] as PlantAsset;
 						const at = `${id} seed ${seed} sparse ${LEVELS[k]}`;
-						// A subset in place: each row the sparser plant keeps stands at the denser plant's
-						// place and scale, with the piece its socket carries, so nothing moved and no leaf
-						// was scaled. Its facing is the state's own: the planned fill grows each state's
-						// twigs itself, so a kept row may turn another way (D-369).
-						const denserRows = rowPlaces(before);
+						// A cut of the full tree: each row the state keeps is the full plant's, at its place,
+						// its scale and its piece (D-371). The states are not nested in each other, and a
+						// sparser state's facing is the state's own (D-369).
+						const denserRows = rowPlaces(full);
 						const rows = rowPlaces(plant);
 						for (const [row, key] of rows)
 							expect([at, row, denserRows.get(row)]).toEqual([at, row, key]);
-						const denserAxes = axisKeys(before);
+						const denserAxes = axisKeys(full);
 						const axes = axisKeys(plant);
 						for (const [axis, key] of axes)
 							expect([at, axis, sameAxis(key, denserAxes.get(axis))]).toEqual([at, axis, true]);
