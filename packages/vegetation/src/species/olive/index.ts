@@ -16,7 +16,14 @@ const planned: SpeciesForm = {
 	// Each clump stands for a spray's whole mass, so the crown's few masses take the cover the
 	// near level's branch ends make: the cards grow about their middles as far as the leaf hull
 	// allows.
-	lod: { clumpCard: [1, 1], cardGrow: 1.4 },
+	//
+	// The faces and the cover are read from the leaf form's own covered share, not chosen: the
+	// crown's plates leave the gaps their clumps leave, and more faces at each clump's middle close
+	// them. The measured series at the whole view puts the crossing's step at two points for the
+	// sixteen faces alone and one point with the cover of 1.1, where the leaf form reads 0.18 of
+	// open sky and the crossing 0.17; a cover of 1.15 over-closes it. The second level keeps twelve
+	// faces, the most its 12,293-triangle cap pays; sixteen would cost 15,309.
+	lod: { clumpCard: [1, 1], cardGrow: 1.4, clumpPlanes: [16, 12], cardCover: 1.1 },
 };
 
 /** The species' measured fields, without the growth the planned form states itself. */
