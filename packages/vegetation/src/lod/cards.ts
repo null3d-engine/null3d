@@ -1059,6 +1059,8 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 			return clump ? clumpSky(clump, height) : 1;
 		},
 		tiled,
+		undefined,
+		level === 1 ? 0.5 : 0,
 	);
 }
 
@@ -1817,6 +1819,7 @@ export function plannedClumpCards(
 	planes = 3,
 	share = 1,
 	tiles = CLUMP_TILES[1],
+	gate = 0,
 ): MeshArrays | undefined {
 	const clumps = input.skeleton.clumps;
 	if (!clumps || clumps.length === 0) return undefined;
@@ -1943,6 +1946,8 @@ export function plannedClumpCards(
 			);
 		},
 		tiled,
+		undefined,
+		gate,
 	);
 }
 
@@ -1970,6 +1975,7 @@ export function clusterCardMesh(
 		readonly row: (cluster: number, tile: number) => number;
 	},
 	into?: MeshWriter,
+	gate = 0,
 ): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = into ?? new MeshWriter();
@@ -2065,7 +2071,7 @@ export function clusterCardMesh(
 						at,
 						normal,
 						[(rx + ((us + 1) / 2) * rw) / size, (ry + ((vt + 1) / 2) * rh) / size],
-						[plane.along[0] + ((vt + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
+						[plane.along[0] + ((vt + 1) / 2) * (plane.along[1] - plane.along[0]), gate],
 						colourAt(at[1]),
 					);
 				}

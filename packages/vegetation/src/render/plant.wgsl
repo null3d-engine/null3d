@@ -142,6 +142,7 @@ const HEADER_SCAR_COLOUR: i32 = 70;
 const HEADER_CARD_LEVEL_MOST: i32 = 71;
 const HEADER_CROWN_DIM: i32 = 72;
 const HEADER_CARD_MIP_LIFT: i32 = 73;
+const HEADER_CARD_SHADE: i32 = 77;
 // How much of the crown's baked sky visibility darkens bark, 0 leaving the wood unshaded.
 const HEADER_WOOD_SHADE: i32 = 74;
 // How much more the bark's relief tilts its normal and deepens its furrows than its map gives.
@@ -1397,6 +1398,23 @@ fn surface(input: SurfaceInput) -> Surface {
             through *= crown;
             alpha = card_alpha(texel.a, hx, hy);
             cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(hx, hy));
+            // The first card level's own shade and cover: a hashed share of the card's colour at a
+            // leaf's scale, so a plate reads as many lit and shadowed leaves, and a factor on its
+            // coverage. A record naming neither draws the card exactly as before, and the stalk
+            // strips, which carry their own uv1.y, are outside the gate.
+            let card_gate = header(HEADER_CARD_SHADE);
+            let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
+            if (card_gate.x > 0.0) {
+                // Hashed at a blotch of a few texels, so neighbouring patches stand at different
+                // light and dark rather than on a smooth slope: a smooth slope cannot raise the
+                // local contrast that makes a leaf mass read as many leaves.
+                let cells = floor(uv * vec2f(textureDimensions(colour).xy) / 6.0);
+                let spot = fract(sin(dot(cells, vec2f(12.9898, 78.233))) * 43758.5453);
+                base *= mix(1.0, 1.0 + (spot - 0.5) * card_gate.x, gated);
+            }
+            if (card_gate.y != 1.0) {
+                cut_alpha *= mix(1.0, card_gate.y, gated);
+            }
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
             // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
             // record names none, the card draws whole.
