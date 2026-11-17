@@ -303,7 +303,10 @@ export const record: Species = {
 			twist: 4,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.065, 0.133, 0.0144],
+				// Stills 01, 02 and 18: the crown's foliage averages an olive green. The leaf form
+				// shows its average as the record's reflectance, so the reflectance carries that
+				// green rather than the brighter tone the card level would wash out.
+				reflectance: [0.042, 0.086, 0.013],
 				reflectanceBack: [0.171, 0.254, 0.065],
 				transmittance: [0.09, 0.19, 0.02],
 				roughness: [0.5, 0.65],
@@ -332,7 +335,9 @@ export const record: Species = {
 			// photographs part between a warm and a grey tone, so its tint lifts the red and the blue
 			// together and stands the drawn bark between them.
 			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [1.2, 1.15, 1] },
-			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.85, 0.79, 0.73] },
+			// Stills 01 and 02: the bole's own grey-brown is darker and greener than the drawn one,
+			// which stands too near white against it.
+			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.49, 0.48, 0.37] },
 			// Still 16: a great limb's bark reads darker than the limb in its photograph, so wood
 			// thinner than the bole takes a lighter tone of its own.
 			{ layer: 0, by: 'radius', from: 0, to: 0.3, blend: 0.05, tint: [1.38, 1.4, 1.22] },
@@ -441,6 +446,10 @@ export const record: Species = {
 		// its own cover rather than as sky.
 		cardGrow: 1.03,
 		woodOrders: [2, 1],
+		// Stills 01, 02 and 18: the crown runs from a lit yellow-green top to a dark under-face, so a
+		// leaf deep in the crown takes most of the sun's light away and a clump reads as a cushion
+		// rather than as an even, pale face.
+		crownDim: 0.6,
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {

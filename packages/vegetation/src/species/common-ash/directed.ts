@@ -137,34 +137,36 @@ const spurs: FrameBranchRule = {
 	patch: bunch(0.1),
 };
 
+/**
+ * The crown's outline half width in bands from the top down, each at its own height, as still 01
+ * measures it. The planned form takes it out to the turning video's widest reach; the directed
+ * frame keeps the still's own bands.
+ */
+export const crownOutline: readonly (readonly [number, number])[] = [
+	[0.265, 0.21],
+	[0.305, 0.4],
+	[0.345, 0.438],
+	[0.385, 0.457],
+	[0.464, 0.448],
+	[0.543, 0.395],
+	[0.583, 0.41],
+	[0.623, 0.457],
+	[0.662, 0.467],
+	[0.702, 0.429],
+	[0.742, 0.424],
+	[0.782, 0.4],
+	[0.821, 0.334],
+	[0.861, 0.319],
+	[0.901, 0.272],
+	[0.94, 0.148],
+	[0.98, 0.119],
+	[1, 0],
+];
+
 /** The common ash's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in bands from the top down, each at its own height.
-	outline: evenOutline(
-		[
-			[0.265, 0.21],
-			[0.305, 0.4],
-			[0.345, 0.438],
-			[0.385, 0.457],
-			[0.464, 0.448],
-			[0.543, 0.395],
-			[0.583, 0.41],
-			[0.623, 0.457],
-			[0.662, 0.467],
-			[0.702, 0.429],
-			[0.742, 0.424],
-			[0.782, 0.4],
-			[0.821, 0.334],
-			[0.861, 0.319],
-			[0.901, 0.272],
-			[0.94, 0.148],
-			[0.98, 0.119],
-			[1, 0],
-		],
-		// Still 01 looks across the wide side. The turning video: the crown is about 0.95 as wide
-		// as tall at still 01's turn and about 0.72 a quarter turn on.
-		0.78,
-	),
+	outline: evenOutline(crownOutline, 0.78),
 	stems: {
 		name: 'trunk',
 		count: 1,
