@@ -265,7 +265,14 @@ const SUPERSAMPLE = 4;
  * still meets the plant at the switch, where its height is the record's pixels, so the cell keeps
  * half the record's texels: the crown's clumps stay apart there and the bake stays cheap.
  */
-export const FAR_TEXELS_LEAST = 32;
+export /** The largest power of two not above a value, by doubling: no engine-rounded call. */
+function powerOfTwoAtMost(value: number): number {
+	let side = 1;
+	while (side * 2 <= value) side *= 2;
+	return side;
+}
+
+const FAR_TEXELS_LEAST = 32;
 export const FAR_SUPERSAMPLE_LEAST = 1;
 
 /**
@@ -299,10 +306,7 @@ export function farGrid(
 	// fewer leaf clusters: half the side at full sparseness.
 	const detail = Math.min(capped, 1 - 0.5 * sparse);
 	// A cell stays a power of two, as the atlas's mip levels expect.
-	const cells = Math.max(
-		FAR_TEXELS_LEAST,
-		2 ** Math.floor(Math.log2(Math.max(1, texels * detail))),
-	);
+	const cells = Math.max(FAR_TEXELS_LEAST, powerOfTwoAtMost(Math.max(1, texels * detail)));
 	return {
 		texels: Math.min(texels, cells),
 		supersample: Math.max(FAR_SUPERSAMPLE_LEAST, Math.round(SUPERSAMPLE * detail)),

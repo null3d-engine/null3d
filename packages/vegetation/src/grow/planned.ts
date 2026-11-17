@@ -17,6 +17,7 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { hashAt } from '../core/hash';
+import { pow } from '../core/math';
 import { thinningRanks } from '../core/rank';
 import type { Planned, Species } from '../core/record';
 import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
@@ -82,11 +83,10 @@ function cardedSet(
 			for (const k of kept) {
 				const other = clumps[k] as { centre: Vec3 };
 				const sum = ((sizes[i] as number) + (sizes[k] as number)) * CARD_MEET;
-				const d = Math.hypot(
-					(centre[0] as number) - (other.centre[0] as number),
-					(centre[1] as number) - (other.centre[1] as number),
-					(centre[2] as number) - (other.centre[2] as number),
-				);
+				const dx = (centre[0] as number) - (other.centre[0] as number);
+				const dy = (centre[1] as number) - (other.centre[1] as number);
+				const dz = (centre[2] as number) - (other.centre[2] as number);
+				const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
 				if (d < sum) meeting += sum - d;
 			}
 			if (meeting > best) {
@@ -401,7 +401,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const reachShare =
 		curveAt(growth.height, age / fullAge) / Math.max(1e-9, curveAt(growth.height, 1));
 	const height = adultHeight * Math.min(1, reachShare);
-	const slim = Math.min(1, height / adultHeight) ** SLIM;
+	const slim = pow(Math.min(1, height / adultHeight), SLIM);
 	const matureAge = ageAtHeight(growth.height, fullAge, adultHeight, adultHeight);
 	// A maximum coarsens each axis's own nodes: every second or fourth node stands.
 	const most = request.maxTriangles;
@@ -668,7 +668,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	bones.axes.forEach((axis, index) => {
 		if (axis.order !== 1) return;
 		let reach = 0;
-		for (const node of axis.nodes) reach = Math.max(reach, Math.hypot(node.x, node.z));
+		for (const node of axis.nodes)
+			reach = Math.max(reach, Math.sqrt(node.x * node.x + node.z * node.z));
 		limbReach.set(index, reach);
 	});
 
