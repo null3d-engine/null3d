@@ -728,6 +728,30 @@ export function readReferenceSet(folder: string, forms: readonly string[] = []):
 	return { folder, slug: basename(folder), files, stills, turns, winds, unknown };
 }
 
+/**
+ * Why a reference folder cannot stand for a species, or null when it can: the folder's own slug must
+ * be the species' id, or its INDEX's title must name the species, so a run never measures a species
+ * against another species' photographs. A renamed folder still passes when its title names the
+ * species; a folder whose title names another species never does.
+ */
+export function referenceSpeciesProblem(
+	folder: string,
+	species: string,
+	name?: string,
+): string | null {
+	const slug = basename(folder);
+	if (slug === species) return null;
+	const indexPath = join(folder, 'INDEX.md');
+	const title = existsSync(indexPath)
+		? (readFileSync(indexPath, 'utf8')
+				.split('\n')
+				.find((line) => line.startsWith('# ')) ?? '')
+		: '';
+	if (name !== undefined && title.toLowerCase().includes(name.toLowerCase())) return null;
+	const whose = name === undefined ? species : `${name} (${species})`;
+	return `the references at ${folder} are ${slug}'s, not ${whose}'s: a run must draw a species against its own reference folder`;
+}
+
 /** The widest picture the masks and the measures work on, in pixels. */
 export const WORK_WIDTH = 640;
 

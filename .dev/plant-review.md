@@ -66,7 +66,7 @@ stated limit and the stray is read at every sparseness setting, not only at the 
 ## A card level's cover closes a crown, never opens one
 
 A species may name a factor on its first card level's cut alpha. Above one it closes a crown, and that
-is kept where the eye accepts the coarser leaf — the beech's 1.35 closes its sky from 0.187 to 0.142
+is kept where the eye accepts the coarser leaf: the beech's 1.35 closes its sky from 0.187 to 0.142
 against its photograph's 0.073. Below one it opens a crown by coarsening the leaf, and the eye rejects
 it at the same sky gain, so no species names a value below one. A crown that needs more cover takes it
 from the fill, not from the cut ([D-365](decisions/D-365-card-level-cover-and-planes.md)).
@@ -330,6 +330,9 @@ rules that set them.
   [`slots/pedunculate-oak.json`](../tools/lib/plant-review/slots/pedunculate-oak.json), so its
   review runs as
   `bun run plants:review pedunculate-oak --refs <the oak's reference folder> --slot-query tools/lib/plant-review/slots/pedunculate-oak.json`.
+- A run draws a species against its own photographs. The tool refuses a folder whose name, or whose
+  INDEX title, names another species, and it names both species in the refusal. A run or a replay
+  that points at another tree's set measures the wrong plant, so its figures mean nothing.
 
 The light moves the color figures, not the outlines, which come from a matte. Under the page's soft
 daylight the oak's distant leaves read 8.9 color steps from their photograph. Under the photograph's

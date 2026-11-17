@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	plantReviewQuery,
@@ -31,6 +32,7 @@ import {
 	pieceParts,
 	plantMask,
 	readIndex,
+	referenceSpeciesProblem,
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
@@ -1494,5 +1496,51 @@ describe("the crown's balance in bands", () => {
 		const bands = crownBandsOf(mattePlant(width, height, mask), region);
 		expect(bands?.left[0]).toBeNull();
 		expect(bands?.left[1]).not.toBeNull();
+	});
+});
+
+describe('a reference folder against the species it is drawn for', () => {
+	let root = '';
+	let oak = '';
+	let ash = '';
+	let own = '';
+	let bare = '';
+	const folder = (name: string, title?: string): string => {
+		const dir = join(root, name);
+		mkdirSync(dir, { recursive: true });
+		if (title !== undefined) writeFileSync(join(dir, 'INDEX.md'), `${title}\n`);
+		return dir;
+	};
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), 'plant-review-refs-'));
+		oak = folder('pedunculate-oak', '# Pedunculate oak (*Quercus robur*) — reference set');
+		ash = folder('refs-for-the-ash', '# Common ash (*Fraxinus excelsior*) — reference set');
+		own = folder('common-ash', '# Common ash (*Fraxinus excelsior*) — reference set');
+		bare = folder('a-folder-with-no-index');
+	});
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	test('accepts the species own folder, named by its slug', () => {
+		expect(referenceSpeciesProblem(own, 'common-ash')).toBeNull();
+		expect(referenceSpeciesProblem(oak, 'pedunculate-oak', 'Pedunculate oak')).toBeNull();
+	});
+
+	test('refuses another species folder, and names both species', () => {
+		const problem = referenceSpeciesProblem(oak, 'silver-birch', 'Silver birch');
+		expect(problem).not.toBeNull();
+		expect(problem).toContain('pedunculate-oak');
+		expect(problem).toContain('Silver birch (silver-birch)');
+	});
+
+	test('accepts a renamed folder whose INDEX names the species', () => {
+		expect(referenceSpeciesProblem(ash, 'common-ash', 'Common ash')).toBeNull();
+	});
+
+	test('refuses a renamed folder whose INDEX names another species', () => {
+		expect(referenceSpeciesProblem(ash, 'silver-birch', 'Silver birch')).not.toBeNull();
+	});
+
+	test('refuses a folder with no INDEX and no matching slug', () => {
+		expect(referenceSpeciesProblem(bare, 'common-ash', 'Common ash')).not.toBeNull();
 	});
 });

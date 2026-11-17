@@ -69,6 +69,7 @@ import {
 	plantMask,
 	type ReferenceSet,
 	readReferenceSet,
+	referenceSpeciesProblem,
 	type Slot,
 	skyMaskable,
 	soilMaskable,
@@ -153,6 +154,11 @@ function sizeAt(aspect: number, width: number): [number, number] {
 async function formsOf(species: string): Promise<readonly string[]> {
 	if (!isSpeciesId(species)) return [];
 	return Object.keys((await loadSpecies(species)).record.forms ?? {});
+}
+
+/** The species' own name where the registry knows it, so a reference folder's title can be read. */
+async function speciesName(species: string): Promise<string | undefined> {
+	return isSpeciesId(species) ? (await loadSpecies(species)).record.name : undefined;
 }
 
 /** The folder of the species' slot files, which hold each species' review data too. */
@@ -1408,6 +1414,16 @@ async function main(): Promise<void> {
 		const set = manifest.references
 			? readReferenceSet(manifest.references, await formsOf(manifest.species))
 			: undefined;
+		if (set) {
+			// A replay measures against the same folder the run did, so it refuses a run whose folder
+			// names another species rather than passing the fault through a second time.
+			const wrongReplay = referenceSpeciesProblem(
+				set.folder,
+				manifest.species,
+				await speciesName(manifest.species),
+			);
+			if (wrongReplay) throw new Error(wrongReplay);
+		}
 		const complete = compareRun(
 			dir,
 			manifest,
@@ -1426,6 +1442,8 @@ async function main(): Promise<void> {
 		const where = referenceFolder(named);
 		if (!where) throw new Error(`--subjects found no reference folder for ${named}`);
 		const cutSet = readReferenceSet(where, await formsOf(named));
+		const wrongSubjects = referenceSpeciesProblem(cutSet.folder, named, await speciesName(named));
+		if (wrongSubjects) throw new Error(wrongSubjects);
 		const subjects: Record<string, { readonly bottom: number }> = {};
 		for (const slot of cutSet.stills) {
 			if (VIEW_SPECS[slot.view].cutting === undefined) continue;
@@ -1457,6 +1475,14 @@ async function main(): Promise<void> {
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
+	if (set) {
+		const wrongReferences = referenceSpeciesProblem(
+			set.folder,
+			species,
+			await speciesName(species),
+		);
+		if (wrongReferences) throw new Error(wrongReferences);
+	}
 	const sheath = sheathTargetOfSpecies(species);
 	const { commit, dirty } = commitOf();
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
