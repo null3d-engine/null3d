@@ -826,7 +826,9 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			`the plant draws ${Math.max(...widths)} px wide, under the ${LEAST_PLANT_WIDTH} px a figure needs`,
 			{ floating: floating.length },
 		);
-	const crownCut = drawn.find((picture) => picture.cutTop);
+	// The crown is judged only where the rung compares the crown's openness; a close rung's frame
+	// cuts the plant by design, and a cut there says nothing about a crown.
+	const crownCut = rung.compare === 'gap' ? drawn.find((picture) => picture.cutTop) : undefined;
 	if (crownCut)
 		return rowOf('open', `the crown is cut by the frame's top edge in ${crownCut.file}`, {
 			floating: floating.length,
