@@ -629,7 +629,12 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 	let pieces: SweepRow['pieces'] = null;
 	let covered: SweepRow['covered'] = null;
 	/** A near-form rung whose page drew a card level, with the foot distances it stood at. */
-	let nearShort: { readonly level: number; awayLeast: number; awayMost: number } | null = null;
+	let nearShort: {
+		readonly level: number;
+		readonly forced: boolean;
+		awayLeast: number;
+		awayMost: number;
+	} | null = null;
 	for (const picture of pictures) {
 		if (picture.error !== undefined) {
 			failures.push(`${picture.file} did not draw: ${picture.error}`);
@@ -649,6 +654,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			const away = picture.away;
 			nearShort ??= {
 				level,
+				forced: picture.forced,
 				awayLeast: away ?? Number.POSITIVE_INFINITY,
 				awayMost: away ?? 0,
 			};
@@ -811,7 +817,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 					? `${least.toFixed(1)} m`
 					: `${least.toFixed(1)} to ${nearShort.awayMost.toFixed(1)} m`;
 		const switchAt = input.distance === null ? 'unread' : `${input.distance.toFixed(1)} m`;
-		return `the near form's switch stands ${switchAt} from the foot, and this camera reached ${away}, so the page drew the ${names[nearShort.level] ?? 'far card'}`;
+		return `the near form's switch stands ${switchAt} from the foot, and this camera reached ${away}, so the page drew the ${names[nearShort.level] ?? 'far card'}${nearShort.forced ? ' (forced)' : ''}`;
 	};
 	const expected = input.expected ?? SWEEP_PICTURES;
 	if (drawn.length < expected) failures.unshift(`${drawn.length} of ${expected} pictures drew`);
