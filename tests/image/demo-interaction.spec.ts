@@ -8,10 +8,11 @@
 // the pointer leaves the blend alone. In the deterministic simulation demo, the page's own listeners
 // take a key and a drag, which walk and turn the camera that the simulation computes, and its replay
 // ends with the camera where the run left it. Its page part stops with the demo, by its signal, its
-// engine's destroy or its engine's failure, and a page part that does not load fails the demo's
-// start, also after the first frame. A demo that the page leaves while its part loads starts no
-// part and leaves the next demo's choices, HUD and overlay alone. A finger whose capture the
-// browser refuses is not counted among the fingers down.
+// engine's destroy or its engine's failure, and its room fill ends quietly when the stop cuts it
+// short. A page part that does not load fails the demo's start, also after the first frame. A demo
+// that the page leaves while its part loads starts no part and leaves the next demo's choices,
+// HUD and overlay alone. A finger whose capture the browser refuses is not counted among the
+// fingers down.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -346,6 +347,36 @@ test("the deterministic simulation demo's page part stops with the demo, by its 
 		await expect(run).toHaveCount(0);
 		expect(errors).toEqual([]);
 	}
+});
+
+test("the deterministic simulation demo's room fill ends quietly when the stop cuts it short", async ({
+	page,
+}) => {
+	// The fill's code answers only once the engine has stopped. The sketch runs on the page's
+	// thread, which outlives the engine, so the fill then reaches the stopped engine.
+	let stopped = () => {};
+	const stop = new Promise<void>((resolve) => {
+		stopped = resolve;
+	});
+	let answered = () => {};
+	const answer = new Promise<void>((resolve) => {
+		answered = resolve;
+	});
+	await page.route('**/scene/builtin-environments*', async (route) => {
+		await stop;
+		await route.continue();
+		answered();
+	});
+	const errors = await open(page, 'replay', 'sketch-thread=main');
+	await expect(page.getByRole('group', { name: 'Run' })).toHaveCount(1, { timeout: PATIENCE });
+	await page.evaluate(() =>
+		(globalThis as { stopDemo?: (how: string) => Promise<void> }).stopDemo?.('destroy'),
+	);
+	stopped();
+	await answer;
+	// A few turns of the page's own clock, for the fill to reach the engine and settle.
+	await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+	expect(errors).toEqual([]);
 });
 
 test("the deterministic simulation demo's page part stops when its engine fails", async ({

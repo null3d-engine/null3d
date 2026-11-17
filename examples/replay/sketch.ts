@@ -6,7 +6,7 @@
 // start, which the simulation computes from the same seed. The court in court.ts is the sketch's
 // own scenery, and the orbs' slow pulse is drawing only.
 import type { Vec3 } from '@null3d/engine';
-import { defineSketch, quat, vec3 } from '@null3d/engine';
+import { defineSketch, EngineError, quat, vec3 } from '@null3d/engine';
 import { buildCourt } from './court';
 import { ORBS, startRun } from './sim';
 import { BEFORE, BETWEEN, CAUGHT, NOW, VIEW_NUMBERS } from './view';
@@ -19,17 +19,15 @@ export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, page, time } = ctx;
 	scene.setBackground({ sky: { sunPosition: SUN, turbidity: 7, cloudCoverage: 0.5 } });
 	// The room's soft fill arrives after the first frame on a live page, so the start shows the court
-	// at once, and the fill lands when it is ready. A held picture waits for it. An engine that stops
-	// before the fill arrives ends it quietly: the page left the demo, and the fill has nowhere to go.
-	let stopped = false;
-	const fill = async () => {
-		const room = await assets.builtinEnvironment('room');
-		if (!stopped) scene.setEnvironment(room, { intensity: 0.12 });
-	};
+	// at once, and the fill lands when it is ready. A held picture waits for it. An engine that stopped
+	// before the fill landed refuses it with E1420, which ends the fill quietly: the page has left the
+	// demo. Any other failure is reported.
+	const fill = async () =>
+		scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.12 });
 	if (ctx.engine.held) await fill();
 	else
 		fill().catch((error: unknown) => {
-			if (!stopped) console.error(error);
+			if (!(error instanceof EngineError && error.code === 'E1420')) console.error(error);
 		});
 	scene.setFog({ color: '#3d3242', density: 0.018, heightFalloff: 0.35, sunGlow: 1 });
 	post.set({ bloom: { intensity: 0.35, threshold: 1 }, ao: { radius: 0.5 }, vignette: {} });
@@ -76,9 +74,6 @@ export default defineSketch(async (ctx) => {
 	const [before, now, turned] = [quat.create(), quat.create(), quat.create()];
 	let shown = 0;
 	return {
-		onDestroy() {
-			stopped = true;
-		},
 		onUpdate() {
 			// Drawing only: each orb that is still lit swells and shrinks a little.
 			for (let i = 0; i < ORBS; i++) {
