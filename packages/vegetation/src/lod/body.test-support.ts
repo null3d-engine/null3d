@@ -212,3 +212,150 @@ export function bodyFill(
 		freeRows,
 	};
 }
+
+/** The alpha at or above which one atlas texel is the pictured leaf, not the clear space round it. */
+export const PICTURED_ALPHA = 128;
+
+/** The metres within which a pictured texel covers a point: the body rail's own cell. */
+export const PICTURED_REACH = 0.4;
+
+/** The resolution, in texels a side of a cell, that the pictured field samples the atlas at. */
+const PICTURED_STEPS = 64;
+
+/** A field of the level's pictured leaf texels, for asking whether a point stands under foliage. */
+export interface PicturedField {
+	/**
+	 * Metres to the nearest pictured texel, or null when no pictured texel stands within one cell of
+	 * the point.
+	 */
+	nearest(point: readonly [number, number, number]): number | null;
+	/** The pictured texel points that stand within one cell of the point. */
+	near(point: readonly [number, number, number]): readonly (readonly [number, number, number])[];
+	/** The pictured texels the field holds. */
+	readonly texels: number;
+}
+
+/**
+ * Samples a level's card parts through the card atlas's alpha: every texel the atlas pictures
+ * becomes a point on the card quad it is drawn on. A row whose base stands within reach of one of
+ * these points is under drawn foliage, whatever the level's wood ends.
+ *
+ * @param kit The species' kit, which holds the card atlas.
+ * @param asset The grown variant.
+ * @param level The level whose cards are sampled.
+ * @param cell The cell's side in metres, which is also the reach the field answers within.
+ * @returns The field.
+ */
+export function picturedField(
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+	level: 0 | 1 | 2,
+	cell = PICTURED_REACH,
+): PicturedField {
+	const size = Math.max(1, kit.cards.size);
+	const atlas = kit.cards.color;
+	const pictured = (x: number, y: number) => (atlas[(y * size + x) * 4 + 3] ?? 0) >= PICTURED_ALPHA;
+	const step = Math.max(1, Math.ceil(size / PICTURED_STEPS));
+	const grid = new Map<number, number[]>();
+	const point: [number, number, number] = [0, 0, 0];
+	const atCell = (p: readonly [number, number, number]) =>
+		keyOf(Math.floor(p[0] / cell), Math.floor(p[1] / cell), Math.floor(p[2] / cell));
+	let texels = 0;
+	for (const part of asset.levels[level].parts) {
+		if (part.name !== 'cards') continue;
+		const arrays = part.arrays;
+		const count = arrays.positions.length / 3;
+		const positions = new Float32Array(count * 3);
+		const uvs = new Float32Array(count * 2);
+		for (let i = 0; i < count; i++) {
+			dequantisePosition(arrays.positions, i, kit.box, point);
+			positions.set(point, i * 3);
+			uvs[i * 2] = (arrays.uvs[i * 2] as number) / 65535;
+			uvs[i * 2 + 1] = (arrays.uvs[i * 2 + 1] as number) / 65535;
+		}
+		const indices = arrays.indices;
+		for (let t = 0; t < indices.length; t += 3) {
+			const a = indices[t] as number;
+			const b = indices[t + 1] as number;
+			const c = indices[t + 2] as number;
+			const ua = uvs[a * 2] as number;
+			const va = uvs[a * 2 + 1] as number;
+			const ub = uvs[b * 2] as number;
+			const vb = uvs[b * 2 + 1] as number;
+			const uc = uvs[c * 2] as number;
+			const vc = uvs[c * 2 + 1] as number;
+			const leastU = Math.max(0, Math.floor(Math.min(ua, ub, uc) * size));
+			const mostU = Math.min(size - 1, Math.ceil(Math.max(ua, ub, uc) * size));
+			const leastV = Math.max(0, Math.floor(Math.min(va, vb, vc) * size));
+			const mostV = Math.min(size - 1, Math.ceil(Math.max(va, vb, vc) * size));
+			const denominator = (vb - vc) * (ua - uc) + (uc - ub) * (va - vc);
+			if (Math.abs(denominator) < 1e-9) continue;
+			for (let y = leastV; y <= mostV; y += step) {
+				const v = (y + 0.5) / size;
+				for (let x = leastU; x <= mostU; x += step) {
+					if (!pictured(x, y)) continue;
+					const u = (x + 0.5) / size;
+					const wa = ((vb - vc) * (u - uc) + (uc - ub) * (v - vc)) / denominator;
+					const wb = ((vc - va) * (u - uc) + (ua - uc) * (v - vc)) / denominator;
+					const wc = 1 - wa - wb;
+					if (wa < -1e-6 || wb < -1e-6 || wc < -1e-6) continue;
+					const world: [number, number, number] = [
+						wa * (positions[a * 3] as number) +
+							wb * (positions[b * 3] as number) +
+							wc * (positions[c * 3] as number),
+						wa * (positions[a * 3 + 1] as number) +
+							wb * (positions[b * 3 + 1] as number) +
+							wc * (positions[c * 3 + 1] as number),
+						wa * (positions[a * 3 + 2] as number) +
+							wb * (positions[b * 3 + 2] as number) +
+							wc * (positions[c * 3 + 2] as number),
+					];
+					const key = atCell(world);
+					const held = grid.get(key);
+					if (held) held.push(world[0], world[1], world[2]);
+					else grid.set(key, [world[0], world[1], world[2]]);
+					texels++;
+				}
+			}
+		}
+	}
+	return {
+		texels,
+		nearest(point) {
+			const x = Math.floor(point[0] / cell);
+			const y = Math.floor(point[1] / cell);
+			const z = Math.floor(point[2] / cell);
+			let best: number | null = null;
+			for (let dx = -1; dx <= 1; dx++)
+				for (let dy = -1; dy <= 1; dy++)
+					for (let dz = -1; dz <= 1; dz++) {
+						const held = grid.get(keyOf(x + dx, y + dy, z + dz));
+						if (!held) continue;
+						for (let i = 0; i < held.length; i += 3) {
+							const distance = Math.hypot(
+								(held[i] as number) - point[0],
+								(held[i + 1] as number) - point[1],
+								(held[i + 2] as number) - point[2],
+							);
+							if (best === null || distance < best) best = distance;
+						}
+					}
+			return best;
+		},
+		near(point) {
+			const x = Math.floor(point[0] / cell);
+			const y = Math.floor(point[1] / cell);
+			const z = Math.floor(point[2] / cell);
+			const found: [number, number, number][] = [];
+			for (let dx = -1; dx <= 1; dx++)
+				for (let dy = -1; dy <= 1; dy++)
+					for (let dz = -1; dz <= 1; dz++) {
+						const held = grid.get(keyOf(x + dx, y + dy, z + dz));
+						if (!held) continue;
+						for (let i = 0; i < held.length; i += 3)
+							found.push([held[i] as number, held[i + 1] as number, held[i + 2] as number]);
+					}
+			return found;
+		},
+	};
+}
