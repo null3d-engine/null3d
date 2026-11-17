@@ -69,6 +69,20 @@ const FAR_LIT = 0.7;
 const CAPPED_CARD_LIFT = 2.2;
 
 /**
+ * How far a card grows about its middle in the far bake, from one for no growth. A plant whose
+ * maximum changed its levels draws a bare frame under a few large clumps, so its far picture needs
+ * the cards enlarged until the crown bakes as leaves; a maximum that changed nothing bakes as one
+ * with no maximum does.
+ *
+ * @param asset The grown variant.
+ * @returns The factor a card grows by about its middle.
+ * @category api/vegetation
+ */
+export function farCardLift(asset: PlantAsset): number {
+	return asset.capTriangles === undefined ? 1 : CAPPED_CARD_LIFT;
+}
+
+/**
  * The open-sky shares between which a clump's dim runs, from its dark core to its sunlit rim, as the
  * plant shader's own bounds: the far card reads the same record value that draws the card levels.
  */
@@ -384,10 +398,9 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 				indices: part.indices,
 			});
 		} else if (part.name === 'cards' && size > 0) {
-			// A capped plant's level draws a bare frame under a few large clumps, so its own level
-			// bakes a wood-coloured far picture. The far picture shows the crown, so under a maximum
-			// its cards grow about their middles until the crown bakes as leaves.
-			if (asset.capTriangles !== undefined) growPlanes(positions, CAPPED_CARD_LIFT);
+			// A plant whose maximum changed its levels draws a bare frame under a few large clumps,
+			// so its far picture needs the cards enlarged until the crown bakes as leaves.
+			growPlanes(positions, farCardLift(asset));
 			widen(positions, min, max);
 			cards.push({
 				positions,

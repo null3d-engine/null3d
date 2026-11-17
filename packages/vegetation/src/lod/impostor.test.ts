@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset } from '../asset.ts';
 import type { SpeciesKitData } from '../core/kit.ts';
-import { farGrid } from './impostor.ts';
+import { farCardLift, farGrid } from './impostor.ts';
 
 /** A kit whose record's second level is the full level a capped one is measured against. */
 const KIT = {
@@ -31,6 +31,14 @@ describe('the far bake', () => {
 		const uncapped = farGrid(KIT, assetOf({}));
 		const biting = farGrid(KIT, assetOf({ maxTriangles: 250_000, capTriangles: 250_000 }));
 		expect(biting.texels).toBeLessThan(uncapped.texels);
+	});
+
+	it('enlarges the far cards only where the maximum changed the levels', () => {
+		expect(farCardLift(assetOf({}))).toBe(1);
+		expect(farCardLift(assetOf({ maxTriangles: 250_000 }))).toBe(1);
+		expect(farCardLift(assetOf({ maxTriangles: 250_000, capTriangles: 250_000 }))).toBeGreaterThan(
+			1,
+		);
 	});
 });
 
