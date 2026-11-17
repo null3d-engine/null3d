@@ -2977,6 +2977,12 @@ export interface LodSpec {
 	 */
 	readonly cardMipLift?: number;
 	/**
+	 * Extra crossed planes a card draws at each card level, from 0 to 2: each is the card's first
+	 * plane turned a quarter about the vertical, closing the crown's gaps without enlarging a
+	 * picture. Absent draws the planes the prototype holds, as every species does today.
+	 */
+	readonly cardPlanes?: readonly [lod1: number, lod2: number];
+	/**
 	 * A multiplier on the first card level's coverage, 1 drawing it as the cards are: above 1 closes
 	 * the crown's gaps and below 1 opens them. Absent draws it as 1.
 	 */

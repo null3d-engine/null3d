@@ -1142,6 +1142,41 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			}
 			mesh.quad(first, first + 1, first + 2, first + 3);
 		});
+		// A record may ask for crossed planes at a card level: each extra plane is the card's first,
+		// turned a quarter about the vertical, so it closes the crown's gaps without enlarging a
+		// picture.
+		const extra = input.record.lod.cardPlanes?.[level - 1] ?? 0;
+		const lead = prototype.card.planes[0];
+		const quarter = (v: readonly number[], turns: number): Vector3 => {
+			let out: Vector3 = [v[0] as number, v[1] as number, v[2] as number];
+			for (let t = 0; t < turns % 4; t++) out = [-out[2] as number, out[1] as number, out[0] as number];
+			return out;
+		};
+		for (let e = 1; lead && e <= extra; e++) {
+			const right = quarter(lead.right, e);
+			const up = quarter(lead.up, e);
+			const n = normalize3([
+				right[1] * up[2] - right[2] * up[1],
+				right[2] * up[0] - right[0] * up[2],
+				right[0] * up[1] - right[1] * up[0],
+			]);
+			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
+			const first = mesh.vertices;
+			const [rx, ry, rw, rh] = lead.front;
+			for (const [sx, sy] of CARD_CORNERS) {
+				for (let c = 0; c < 3; c++)
+					local[c] = ((lead.centre[c] as number) + grow * (sx * (right[c] as number) + sy * (up[c] as number))) * scale;
+				quatRotate(rows.rotation, r * 4, local, world);
+				mesh.vertex(
+					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
+					normal,
+					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
+					[lead.along[0] + ((sy + 1) / 2) * (lead.along[1] - lead.along[0]), level === 1 ? 0.5 : 0],
+					colour,
+				);
+			}
+			mesh.quad(first, first + 1, first + 2, first + 3);
+		}
 		// A twig join's line runs from the card to the nearest branch the level draws, so the card
 		// stands on the plant even where its own twig is not drawn.
 		if (twigs?.has(r)) {
