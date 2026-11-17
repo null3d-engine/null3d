@@ -24,7 +24,7 @@ import {
 	type Palette,
 	paletteOf,
 } from './card-bake';
-import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull } from './cards';
+import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull, tilesAt } from './cards';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -757,6 +757,29 @@ describe('the card levels', () => {
 				count++;
 		return count;
 	};
+
+	it('marks each card quad with the level the cover gate reads, and leaves the stalks alone', () => {
+		// The first card level's cover factor finds its cards by this mark: a half at that level and
+		// nought at the second, while a stalk keeps the plane value the stalk tests use.
+		const marks = (arrays: { uvs1: ArrayLike<number> }): number[] => {
+			const seen = new Set<number>();
+			for (let v = 0; v < arrays.uvs1.length / 2; v++) seen.add(arrays.uvs1[v * 2 + 1] as number);
+			return [...seen].sort((a, b) => a - b);
+		};
+		const first = marks(cardMesh(mesh, 1));
+		const second = marks(cardMesh(mesh, 2));
+		expect(first).toContain(0.5);
+		expect(second).toContain(0);
+		expect(second).not.toContain(0.5);
+		for (const mark of [...first, ...second]) expect([0, 0.5, 0.75]).toContain(mark);
+	});
+
+	it('tiles a clump card three pictures a side at both card levels', () => {
+		// The judged pair at the deciding camera keeps three: larger plates gather into crown mass,
+		// where four's finer plates scatter into speckle at 11,214 more card triangles.
+		expect(tilesAt(1)).toBe(3);
+		expect(tilesAt(2)).toBe(3);
+	});
 
 	it("draws each row's three planes at the first level", () => {
 		const first = cardMesh(mesh, 1);

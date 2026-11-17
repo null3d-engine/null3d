@@ -51,6 +51,41 @@ reaches its root, whatever its density. The reading counts the pieces as the row
 picture shows a piece standing free, the shader and the generator are at fault whichever row is being
 read; the picture fails, and the fault is a generator fault, not a row to judge.
 
+## The piece a thinning isolates
+
+The commonest free piece on the card levels is not an unjoined card but an isolated island: a card
+whose supporting axis the level's wood orders do not draw, joined to the plant through other cards
+rather than to wood, and left standing when the thinning removes the card that carried the chain. It
+shows at default density on the olive, the birch and the alder, and on the hawthorn only from
+sparseness 0.5, where the connecting branch goes first. The join's reach is what hides it: a card up
+to 0.4 metres from the plant at the first card level and 2.5 at the second counts as joined, so a
+chain can hop across air the eye sees. Tightening the reach frees some strays and makes more new
+islands, so the fix has to draw the hop or move the link into the wood; until then the fault is a
+stated limit and the stray is read at every sparseness setting, not only at the default.
+
+## A card level's cover closes a crown, never opens one
+
+A species may name a factor on its first card level's cut alpha. Above one it closes a crown, and that
+is kept where the eye accepts the coarser leaf — the beech's 1.35 closes its sky from 0.187 to 0.142
+against its photograph's 0.073. Below one it opens a crown by coarsening the leaf, and the eye rejects
+it at the same sky gain, so no species names a value below one. A crown that needs more cover takes it
+from the fill, not from the cut ([D-365](decisions/D-365-card-level-cover-and-planes.md)).
+
+## Larger plates gather, finer plates speckle
+
+A clump card tiles its clump's pictures a side. Three a side gathers into crown mass; four, at a fifth
+more card triangles, scatters the same crown into speckle with the sky showing through as many small
+holes. A candidate that subdivides a plate is therefore judged for its grain as well as its sky, and
+the deciding camera is the one the level is seen at.
+
+## A capped tree is drawn for distance
+
+A low triangle maximum promises a tree that reads from a distance, and it keeps its skeleton before its
+leaves: a trunk, a fork and the first limb orders come first, and the leaves take what remains as a few
+large approximations rather than many small ones. Its evidence carries a picture at the distance the cap
+is for, beside the close one, and the trade is stated: at a low cap the leaf is coarser than the
+uncapped tree's and the structure is not ([D-366](decisions/D-366-a-capped-tree-keeps-its-skeleton.md)).
+
 ## Sparseness and polygon count are different dials
 
 Sparseness is about how much foliage and how many limbs the plant carries: a sparse plant has fewer
