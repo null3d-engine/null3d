@@ -264,3 +264,21 @@ None of the three has a real round of its new structure yet. Their floors:
 - **Olive:** a small flat-topped tree, right in its gray-green with pale flecks. Its variant caps rise to
   about 6,820,000 bytes.
 - **Giant sequoia:** a conifer on a red pole with its foliage wound round it. Its bark is right.
+
+The giant sequoia's directed record states the frame, the patch and the bark, but no foliage rule.
+The conifer plan lays no socket without a socket rule, so the model emits none. Two entries would
+fill it:
+
+- **A socket rule.** The patch is a dome at each limb's and arm's end, 0.04 to 0.06 of the height
+  across. Still 01 shows one rounded clump on each end. It states no `patch.sockets` entry, and a
+  patch
+  without one carries no socket. The entry names the piece, the meters between sockets over the
+  dome, and the most degrees a piece leaves at.
+- **A piece.** The record states no `pieces` entry, so no class exists for a socket to carry. Its
+  spray is described already. Still 21's branch is a spray of this year's and last year's rope
+  shoots in two or three orders. Its shoots are 0.32 m long on average, over three years, with 70
+  degree laterals. Still 22 shows the close piece. A piece built from that spray would give the
+  socket something to carry. Its breadth and depth come from Stills 21 and 22, and its name is the
+  one the socket rule states.
+
+Until both land the model holds 163 axes and no sockets at seed 11, which is the honest figure.
