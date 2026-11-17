@@ -70,6 +70,10 @@ refuses. The runs are `switch-l0-head`, `switch-l1-tiles`, `inside-l0-head` and 
 build's `lod` folder. The fixed count's pair is `switch-l1-head` and `inside-l1-head` beside them. The two fields
 differ: the parts picture's crown cover is not the frame's open sky.
 
+The rule's own field, the frame's open sky on the matte at the from-below camera, steps from 0.0268 on the leaf form to
+0.0168 on the first card level. That is one point, inside the two hundredths the rule sets. The runs are
+`switch-l0-matte` and `switch-l1-matte` beside the pair.
+
 ## Look
 
 The owner's own recordings decide this row: the leaves at close range are the reference, and the pulled-back crown must
@@ -115,7 +119,8 @@ barely moves, so the cut lifts every quarter evenly.
    level is measured again when that species' pictures are next drawn.
 
 More cards per clump stays in reserve for a band where neither applies. The done-when is met with the pictures fitted.
-The swap's crown cover steps 3.6 points at the from-below camera. It steps 6.6 at the inside-crown camera. Under the
-fixed count it steps 5.9 and 9.1. The grain matches the leaf form's separate shapes within a fifth. The cut across the
-eight angles closes 1.0 point in the mean. A further closing is the card level's own fuller cover. The cover factor
+The frame's open sky steps one point at the from-below camera, from 0.0268 to 0.0168, inside the two hundredths. The
+crown's own area cover steps 3.6 points at that camera and 6.6 at the inside-crown camera. Under the fixed count it
+steps 5.9 and 9.1. The grain matches the leaf form's separate shapes within a fifth. The cut across the eight angles
+closes 1.0 point in the mean. The area cover's further closing is the card level's own fuller cover. The cover factor
 below one opens it only by coarsening the leaf.
