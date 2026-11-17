@@ -3,12 +3,11 @@
 // same bytes. A hanging piece runs along its own line and its leaves hang with it. A studio layout
 // stands every piece on its cut wood.
 import { beforeAll, describe, expect, it } from 'bun:test';
-import { existsSync } from 'node:fs';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { Rgba } from '../../../../tools/lib/plant-review/image.ts';
 import { matteMask, measurePlant } from '../../../../tools/lib/plant-review/references.ts';
 import { quatRotate } from '../core/math';
-import type { Species, SpeciesModule } from '../core/record';
+import type { SpeciesModule } from '../core/record';
 import type { SpeciesId } from '../core/registry';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
@@ -1051,22 +1050,18 @@ const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 
 describe("a plant of pieces' kit", () => {
 	it(
-		"holds each piece it carries at a fifth of the crown cut at the high tier, the oak's and the beech's branch ends at 1,000, every directed record of the nine species that names pieces",
+		"holds each piece it carries at a fifth of the crown cut at the high tier, the oak's and the beech's branch ends at 1,000, every species' planned record of the nine that names pieces",
 		async () => {
 			const high = DETAILS.indexOf('high');
 			let read = 0;
 			for (const id of BROADLEAF) {
-				const file = new URL(`./${id}/directed.ts`, import.meta.url);
-				if (!existsSync(file)) continue;
-				const record = (await import(file.href)).directed as Species;
-				// A directed record carries pieces only where it names them.
-				if (!record.pieces?.length) continue;
+				// The pieces live in the planned record's kit, which is the species' own default.
 				const module = await loadSpecies(id);
+				const record = module.record;
+				// A species carries pieces only where its record names them.
+				if (!record.pieces?.length) continue;
 				await loadPlantCode(record);
-				const kit = buildKitNow(
-					{ record, textures: module.textures },
-					{ detail: 'high', placeholders: 'missing' },
-				);
+				const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
 				// Each piece's first variant, every part of it, as the kit holds it.
 				const drawn = new Map<string, number>();
 				for (const prototype of kit.prototypes) {
