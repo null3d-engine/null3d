@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PlantAsset, SpeciesKitData } from '../asset';
+import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
 import { leafArea } from '../crown/density';
 import { buildKitNow, forgetGrownPlants, growPlantNow, loadPlantCode } from '../generate';
 
