@@ -577,11 +577,13 @@ describe('the planned oak contract', () => {
 								step.total <= 1e-9 || most <= 0.25 * step.total,
 							]).toEqual([seed, maturity, max, true]);
 						}
-						const triA = a.stats.triangles[0] as number;
-						const triB = b.stats.triangles[0] as number;
-						// The triangles follow the leaf share's own limit: from 0.3 upward a step stays
-						// within six per cent; below it the few-triangle base reads large, as the leaves'
-						// ratio does, and the eye's test is the whole-arrival check below.
+						// The crown's own triangles, with the extras taken out: the acorns and catkins are
+						// the fruiting ramp's subject (M5 and M4), and their ramp can add a tenth of a
+						// full crop in one step, which is not the crown's step. From 0.3 upward the crown
+						// stays within six per cent; below it the few-triangle base reads large, as the
+						// leaves' ratio does, and the eye's whole-arrival check below is the young end's.
+						const triA = (a.stats.triangles[0] as number) - extrasOf(a);
+						const triB = (b.stats.triangles[0] as number) - extrasOf(b);
 						expect([
 							seed,
 							maturity,
@@ -693,50 +695,79 @@ describe('the planned oak contract', () => {
 			expect(typeof growth.fruitFrom).toBe('number');
 			const from = growth.fruitFrom as number;
 			const band = growth.fruitBand ?? 0.1;
-			const full = extrasOf(await plant(HOME, { maturity: 1 }));
+			const step = 0.01;
+			const season = kit.record.seasons.default;
+			// The ramp's own truth. A correct ramp rises across its band, so a 0.01 step adds about the
+			// step's share of the band — a tenth of the crop at a tenth-wide band — and no more than
+			// that share plus a tolerance for the crown's own growth between the two maturities.
+			// Below the band nothing draws; past the band the ramp adds nothing, so a step moves by
+			// no more than the tolerance; and at the band's end the ramp's share is full, the crop
+			// then following the crown's growth. The old five per cent a step could never pass a
+			// ramp that rises 10 per cent of the crop a step through a tenth-wide band.
+			const crop = async (maturity: number, s: string = season) =>
+				extrasOf(await plant(HOME, { maturity, season: s as never }));
+			const full = await crop(1);
 			expect(full).toBeGreaterThan(0);
-			// Below the fruiting maturity nothing draws; through the band every 0.01 step rises by at
-			// most a twentieth of the final count.
+			const share = (step / band) * full;
+			const tolerance = 0.03 * full;
 			for (const maturity of [0, Math.max(0, from - 0.05), Math.max(0, from - 0.01)])
-				expect([
-					maturity,
-					extrasOf(await plant(HOME, { maturity, season: kit.record.seasons.default })),
-				]).toEqual([maturity, 0]);
-			let previous = extrasOf(
-				await plant(HOME, { maturity: from, season: kit.record.seasons.default }),
-			);
-			for (let i = 1; i <= Math.max(1, Math.ceil(band / 0.01)); i++) {
-				const maturity = Math.min(1, from + i * 0.01);
-				const extras = extrasOf(
-					await plant(HOME, { maturity, season: kit.record.seasons.default }),
-				);
-				expect([maturity, extras - previous <= 0.05 * full]).toEqual([maturity, true]);
+				expect([maturity, await crop(maturity)]).toEqual([maturity, 0]);
+			let previous = await crop(from);
+			expect([from, previous]).toEqual([from, 0]);
+			for (let i = 1; i * step <= band + 1e-9 && from + i * step <= 1 + 1e-9; i++) {
+				const maturity = from + i * step;
+				const extras = await crop(maturity);
+				expect([maturity, extras - previous <= share + tolerance]).toEqual([maturity, true]);
 				previous = extras;
 			}
 			expect(from + band <= 1 + 1e-9).toBe(true);
+			const end = Math.min(1, from + band);
+			// At the band's end the ramp is full: the steps past it move by the tolerance at most.
+			for (const maturity of [Math.min(1, end + step), Math.min(1, end + 2 * step)]) {
+				const before = await crop(Math.max(0, maturity - step));
+				expect([maturity, (await crop(maturity)) - before <= tolerance]).toEqual([maturity, true]);
+			}
+			// The catkins draw as flower buds, which the growth marks; their ramp is the same rule
+			// in the blossom season, read from the drawn buds rather than the extras.
 			const flowers = growth.flowers;
 			if (flowers) {
-				let last = -1;
-				for (let i = 0; i <= 10; i++) {
-					const maturity = flowers.from + (i / 10) * flowers.band;
-					const extras = extrasOf(await plant(HOME, { maturity, season: flowers.season as never }));
-					if (last >= 0) expect([maturity, extras >= last - 1e-9]).toEqual([maturity, true]);
-					last = extras;
-				}
-				const before = extrasOf(
-					await plant(HOME, {
-						maturity: Math.max(0, flowers.from - 0.05),
+				expect(flowers.from + flowers.band <= 1 + 1e-9).toBe(true);
+				const budsAt = async (maturity: number) => {
+					const asset = await plant(HOME, {
+						maturity,
 						season: flowers.season as never,
-					}),
-				);
-				expect([flowers.from, before]).toEqual([flowers.from, 0]);
+					});
+					let buds = 0;
+					for (let b = 0; b < asset.skeleton.buds.count; b++)
+						if ((asset.skeleton.buds.kind[b] as number) === BUD_FLOWER) buds++;
+					return buds;
+				};
+				const budFull = await budsAt(1);
+				expect(budFull).toBeGreaterThan(0);
+				const budShare = (step / flowers.band) * budFull;
+				const budTolerance = 0.03 * budFull;
+				expect([
+					flowers.from,
+					await budsAt(Math.max(0, flowers.from - 0.05)),
+				]).toEqual([flowers.from, 0]);
+				let last = await budsAt(flowers.from);
+				expect([flowers.from, last]).toEqual([flowers.from, 0]);
+				for (let i = 1; i * step <= flowers.band + 1e-9 && flowers.from + i * step <= 1 + 1e-9; i++) {
+					const maturity = flowers.from + i * step;
+					const buds = await budsAt(maturity);
+					expect([maturity, buds - last <= budShare + budTolerance]).toEqual([maturity, true]);
+					last = buds;
+				}
+				const budEnd = Math.min(1, flowers.from + flowers.band);
+				for (const maturity of [Math.min(1, budEnd + step), Math.min(1, budEnd + 2 * step)]) {
+					const before = await budsAt(Math.max(0, maturity - step));
+					expect([maturity, (await budsAt(maturity)) - before <= budTolerance]).toEqual([
+						maturity,
+						true,
+					]);
+				}
+				console.log(`M4: ${full} acorn triangles at m 1, ${budFull} flower buds in blossom`);
 			}
-			// Catkins draw as flower buds, which the growth marks.
-			const spring = await plant(HOME, { maturity: 1, season: 'blossom' });
-			let flowerBuds = 0;
-			for (let b = 0; b < spring.skeleton.buds.count; b++)
-				if ((spring.skeleton.buds.kind[b] as number) === BUD_FLOWER) flowerBuds++;
-			console.log(`M4: ${full} acorn triangles at m 1, ${flowerBuds} flower buds in blossom`);
 		},
 		LONG,
 	);
