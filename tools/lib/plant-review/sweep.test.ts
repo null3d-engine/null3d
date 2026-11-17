@@ -341,10 +341,13 @@ describe('the pull-back series', () => {
 		expect(SERIES_OPEN).toBe(0.01);
 	});
 
-	test('leaves a step open where no share reads, since the rule reads every frame', () => {
+	test('marks a step unmeasured where no share reads, never as an opening', () => {
 		const rows = sweepSeriesRows([seriesStep('a.png', 10, null)]);
-		expect(rows[0]?.verdict).toBe('open');
-		expect(rows[0]?.reason).toContain('no covered share');
+		expect(rows[0]?.verdict).toBe('unmeasured');
+		expect(rows[0]?.reason).toContain('unmeasured: no covered share');
+		const coverage = sweepCoverage('species', [], rows, 24, 24);
+		expect(coverage.green).toBe(false);
+		expect(coverage.series.join('; ')).toContain('unmeasured');
 	});
 });
 

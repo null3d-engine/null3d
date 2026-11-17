@@ -21,6 +21,8 @@ import {
 import { onColour, readImage } from './image.ts';
 import {
 	anyPlantMask,
+	boxOf,
+	matteOwnMask,
 	measurePlant,
 	pieceCount,
 	plantMask,
@@ -390,7 +392,7 @@ export function sweepSeriesShots(
 				`${name}.png`,
 				{ ...base, view: 'whole', distance, measure: true },
 				VIEW_SPECS.whole.size,
-				false,
+				true,
 			),
 		);
 		steps.push({ file, distance });
@@ -787,8 +789,13 @@ export function sweepCoverage(
 		if (row.verdict === 'open') open.push(`${rung.label}: ${row.reason}`);
 	}
 	const seriesFaults = series
-		.filter((step) => step.verdict !== 'pass')
+		.filter((step) => step.verdict === 'fail')
 		.map((step) => `${step.file} at ${step.distance.toFixed(2)} m: ${step.reason}`);
+	const unmeasured = series.filter((step) => step.verdict === 'unmeasured');
+	if (unmeasured.length > 0)
+		seriesFaults.push(
+			`${unmeasured.length} of ${series.length} steps unmeasured, the first ${unmeasured[0]?.file ?? ''} at ${unmeasured[0]?.distance.toFixed(2) ?? ''} m`,
+		);
 	const short = series.length < seriesExpected;
 	return {
 		species,
@@ -820,7 +827,7 @@ export interface SweepSeriesRow {
 	readonly level: number | null;
 	readonly covered: number | null;
 	readonly change: number | null;
-	readonly verdict: 'pass' | 'fail' | 'open';
+	readonly verdict: 'pass' | 'fail' | 'unmeasured';
 	readonly reason: string;
 }
 
@@ -837,8 +844,8 @@ export function sweepSeriesRows(pictures: readonly SweepSeriesRow[]): readonly S
 		let verdict: SweepSeriesRow['verdict'] = picture.verdict;
 		let reason = picture.reason;
 		if (picture.covered === null && verdict === 'pass') {
-			verdict = 'open';
-			reason = 'no covered share read at this distance';
+			verdict = 'unmeasured';
+			reason = 'unmeasured: no covered share read at this distance';
 		} else if (change !== null && change < -SERIES_OPEN) {
 			verdict = 'fail';
 			reason = `the crown's covered share falls ${(-change).toFixed(3)} from ${previous?.file ?? 'the step before'} (${previous?.covered?.toFixed(3)} to ${picture.covered?.toFixed(3)})`;
@@ -1018,7 +1025,9 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 			...picture,
 			measures,
 			skyGap,
-			covered: skyGap === null ? null : 1 - skyGap,
+			// The orbit's share reads the matte, which separates a filled frame that the photograph's
+			// colour rule cannot: the same figure on the crown and at a close piece.
+			covered: seriesCovered(runDir, frame),
 		};
 	} catch (error) {
 		return {
@@ -1026,6 +1035,23 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 			matteError: error instanceof Error ? error.message : String(error),
 		};
 	}
+}
+
+/**
+ * The share of the plant's own silhouette box that the plant fills, read from a series frame's
+ * matte. The matte separates a filled frame that the colour rule cannot, so the never-thins rule
+ * reads at every distance rather than at the few the photograph's rule can find. A frame with no
+ * matte, or no plant in it, reads no share.
+ */
+export function seriesCovered(runDir: string, frame: RunFrame): number | null {
+	if (frame.matte === undefined) return null;
+	const image = readImage(join(runDir, frame.matte));
+	const own = matteOwnMask(image);
+	const box = boxOf(own.mask, own.width, own.height);
+	if (!box) return null;
+	let plant = 0;
+	for (const value of own.mask) if (value === 1) plant++;
+	return plant / ((box.right - box.left + 1) * (box.bottom - box.top + 1));
 }
 
 /** One species' round: its rows, its series, its coverage and its sheets, written into the run. */
@@ -1120,12 +1146,12 @@ export function sweepRun(
 			});
 			continue;
 		}
-		const picture = pictureOf(runDir, frame);
+		const record = (frame.cell as { level?: { level?: unknown } } | undefined)?.level;
 		seriesRows.push({
 			file: step.file,
 			distance: step.distance,
-			level: picture.level,
-			covered: picture.covered,
+			level: typeof record?.level === 'number' ? record.level : null,
+			covered: seriesCovered(runDir, frame),
 			change: null,
 			verdict: 'pass',
 			reason: '',
