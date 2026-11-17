@@ -47,25 +47,64 @@ const LEVELS = [
 /** Still 01: four top limbs leave at 45 degrees and level out under the top plates. */
 const TOP = { at: 0.81, count: 4, angle: 45, end: 90 } as const;
 
-/** The pad's width and depth as shares of the height: 0.23 to 0.35 wide, 0.29 deep. */
+/** The pad's width as shares of the height: 0.23 to 0.35, and its dome 0.29 of its width deep. */
 const PAD = {
 	width: [
 		[0.46, 0.23],
 		[0.755, 0.35],
 	],
 	depth: [
-		[0.46, 0.29],
-		[1, 0.29],
+		[0.46, 0.067],
+		[0.755, 0.102],
+		[1, 0.102],
 	],
 } as const;
 const SHELL = { pitch: 0.021, reach: 0.029 } as const;
 
-const rule = (level: {
-	readonly at: number;
-	readonly count: number;
-	readonly angle: number;
-	readonly end: number;
-}) => ({
+/**
+ * Still 02: the pads sit on the limbs' outer parts, and between them the limbs show their side
+ * shoots. Each bough carries three of them along its outer half, each with a small pad of its own,
+ * so a limb's foliage reads as layered plates rather than one mass.
+ */
+const STUB = {
+	width: [
+		[0, 0.035],
+		[1, 0.05],
+	],
+	depth: [
+		[0, 0.01],
+		[1, 0.015],
+	],
+} as const;
+
+const stub = () => ({
+	name: 'stub',
+	role: 'branch' as const,
+	count: 3,
+	along: [0.5, 0.9] as const,
+	stagger: 0.4,
+	around: 'spiral' as const,
+	angle: 35,
+	from: 'parent' as const,
+	angleSpread: 10,
+	length: { share: 0.15 },
+	vary: 0.2,
+	radius: 0.4,
+	taper: 0.5,
+	sway: 8,
+	elbows: 1,
+	patch: { kind: 'clump', width: STUB.width, depth: STUB.depth, fill: SHELL },
+});
+
+const rule = (
+	level: {
+		readonly at: number;
+		readonly count: number;
+		readonly angle: number;
+		readonly end: number;
+	},
+	stubs = true,
+) => ({
 	name: 'bough',
 	role: 'branch' as const,
 	count: level.count,
@@ -77,12 +116,14 @@ const rule = (level: {
 	angleSpread: 4,
 	length: { outline: 1 },
 	vary: 0.05,
-	radius: 0.12,
-	taper: 0.4,
+	// Still 01: a long limb keeps its thickness to its outer half, then narrows a little.
+	radius: 0.2,
+	taper: 0.85,
 	bends: [{ from: 0.3, to: 1, level: [[0, level.angle] as const, [1, level.end] as const] }],
 	sway: 6,
 	elbows: 3,
 	apart: 0.01,
+	...(stubs ? { children: [stub()] } : {}),
 	patch: { kind: 'clump', width: PAD.width, depth: PAD.depth, fill: SHELL },
 });
 
@@ -94,8 +135,9 @@ export const frame: FrameSpec = {
 		count: 1,
 		width: TRUNK as unknown as (readonly [number, number])[],
 		length: { share: 1 },
-		sway: 1,
-		elbows: 2,
-		children: [...LEVELS.map(rule), rule(TOP)],
+		sway: 3,
+		elbows: 3,
+		crook: 0.2,
+		children: [...LEVELS.map((level) => rule(level)), rule(TOP, false)],
 	},
 };

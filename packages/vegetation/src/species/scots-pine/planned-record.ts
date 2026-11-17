@@ -33,8 +33,11 @@ export const plannedGrowth: Planned = {
 	// The bough each socket carries: the record's own piece.
 	piece: 'bough',
 	turn: { roll: 90, tilt: 25, out: 30 },
+	// Still 20: on a pad's top the brushes stand shoulder to shoulder, one bough to each 0.42 m
+	// square. The first fill order asks for that density through each clump; the second packs the
+	// shoots below them.
 	orders: [
-		{ density: 12, angle: 50, length: 0.3, birth: 0, kink: 18 },
+		{ density: 18, angle: 50, length: 0.3, birth: 0, kink: 18 },
 		{ density: 16, angle: 45, length: 0.25, birth: 0, kink: 15 },
 	],
 	// The whorl boughs are the record's limbs, as the cypress and the sequoia keep them: the thinning
