@@ -3,15 +3,48 @@
 import {
 	growPlant,
 	loadSpecies,
+	type PlantMaterials,
 	placePlants,
 	plantMaterials,
 	prepareSpecies,
 	type SpeciesId,
+	type SpeciesKit,
 	speciesIds,
 } from '@null3d/vegetation';
 import { createFill } from './fill';
 import type { MeadowControls } from './hud';
 import { plantSign } from './signage';
+
+/**
+ * The page's plant materials, one set a species and season for the page's life. A regrow frees its
+ * pieces; a piece's destroy stops its batches and its meshes and leaves the materials it draws with
+ * alone, so a set outlives every build. Making a new six a species a build fills the renderer's
+ * material table and every grow fails once it is full.
+ */
+const PAGE_MATERIALS = new WeakMap<object, Map<string, PlantMaterials>>();
+
+/**
+ * The materials a species draws with this season, made once and kept for the page's life.
+ *
+ * @param ctx The sketch's context, whose page owns the sets.
+ * @param kit The species' kit.
+ * @param season The season the meadow stands in, which keys the set where it changes the materials.
+ * @returns The species' materials.
+ */
+function pageMaterials(ctx: object, kit: SpeciesKit, season: string): PlantMaterials {
+	let sets = PAGE_MATERIALS.get(ctx);
+	if (!sets) {
+		sets = new Map();
+		PAGE_MATERIALS.set(ctx, sets);
+	}
+	const key = `${kit.record.id}|${season}`;
+	let materials = sets.get(key);
+	if (!materials) {
+		materials = plantMaterials(ctx as Parameters<typeof plantMaterials>[0], kit, {});
+		sets.set(key, materials);
+	}
+	return materials;
+}
 
 /** One plant standing in the meadow: where its foot is and how tall it is. */
 export interface MeadowPlant {
@@ -148,9 +181,10 @@ export function createMeadow(
 							sparse,
 							maxTriangles,
 						});
-						// The plant stands at its own slot as soon as it is grown; its materials are made
-						// here, so the field shows every plant that has finished while the others grow.
-						const materials = plantMaterials(ctx, kit, {});
+						// The plant stands at its own slot as soon as it is grown, drawing with the page's
+						// own set for its species and season, so the field shows every finished plant and
+						// a regrow makes no new materials.
+						const materials = pageMaterials(ctx, kit, season);
 						const [x, z] = slotOf(index);
 						const piece = placePlants(
 							ctx,
