@@ -425,6 +425,7 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
+		crownPlace: 'covered',
 		switchPixels: [240, 12, 160],
 		// A card's twig is thinner than a pixel at a whole view, so each draws its supporting twig as
 		// a line wide enough to hold the leaf group in the picture, running on to the card's foliage.
