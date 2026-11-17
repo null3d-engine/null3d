@@ -25,6 +25,8 @@ const CLICK_PX = 4;
 
 /** Starts the page part: see `DemoPage` in `examples/lib/run.ts`. */
 export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
+	// A demo that ended before its part loaded gets no part.
+	if (signal.aborted) return;
 	const listen: AddEventListenerOptions = { signal };
 	const session = new Session();
 	// The keys held, and the input since the last tick, which the session takes tick by tick.

@@ -322,16 +322,20 @@ export async function startDemo({
 		const stop = stopWithDemo(engine, signal);
 		try {
 			const part = (await import(`../${demo.name}/page.ts`)) as DemoPage;
-			part.start(engine, canvas, choices, stop.signal);
+			// The demo may have ended while its part loaded: the page aborted it, or the engine failed.
+			if (!stop.signal.aborted) part.start(engine, canvas, choices, stop.signal);
 		} catch (error) {
 			// A demo whose page part fails cannot be played, so its start fails as a failed engine's
 			// does: the overlay comes back to say why, also after the first frame, the controls that
-			// would act on the demo leave, and so does the engine.
+			// would act on the demo leave, and so does the engine. A page that already aborted the
+			// demo may show another in those places, so the page is left as it is then.
 			const text = `The demo's page part did not start: ${error instanceof Error ? error.message : String(error)}`;
 			stop.abort();
-			loader.fail(text);
-			if (hud) hud.hidden = true;
-			choices?.replaceChildren();
+			if (!signal?.aborted) {
+				loader.fail(text);
+				if (hud) hud.hidden = true;
+				choices?.replaceChildren();
+			}
 			await engine.destroy();
 			throw new Error(text);
 		}

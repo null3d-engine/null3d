@@ -9,7 +9,8 @@
 // take a key and a drag, which walk and turn the camera that the simulation computes, and its replay
 // ends with the camera where the run left it. Its page part stops with the demo, by its signal, its
 // engine's destroy or its engine's failure, and a page part that does not load fails the demo's
-// start, also after the first frame.
+// start, also after the first frame. A demo that the page leaves while its part loads starts no
+// part and leaves the next demo's choices, HUD and overlay alone.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -419,4 +420,81 @@ test('a page part that fails after the first frame brings the overlay back with 
 	expect(result.error).toMatch(/^The demo's page part did not start: /);
 	await expect(page.locator('.loader')).toBeVisible();
 	await expect(page.locator('.loader')).toContainText("The demo's page part did not start");
+});
+
+/**
+ * Holds the replay demo's page part until the returned function answers it: with the module, or
+ * with a failure. `asked` resolves once the page has asked for it.
+ */
+async function holdPagePart(
+	page: Page,
+): Promise<{ asked: Promise<void>; answer: (ok: boolean) => void }> {
+	let asked = () => {};
+	const seen = new Promise<void>((resolve) => {
+		asked = resolve;
+	});
+	let answer: (ok: boolean) => void = () => {};
+	const answered = new Promise<boolean>((resolve) => {
+		answer = resolve;
+	});
+	await page.route('**/examples/replay/page.ts*', async (route) => {
+		asked();
+		if (await answered) await route.continue();
+		else await route.fulfill({ status: 500, body: 'the page part failed on purpose' });
+	});
+	return { asked: seen, answer };
+}
+
+/** What the page shows of the second demo: its choices, its HUD and any overlay that failed. */
+const secondDemo = (page: Page) =>
+	page.evaluate(() => {
+		const { document } = globalThis as unknown as {
+			document: {
+				querySelectorAll(selector: string): { length: number };
+				querySelector(selector: string): { hidden: boolean } | null;
+			};
+		};
+		return {
+			choiceButtons: document.querySelectorAll('.choice button').length,
+			runGroups: document.querySelectorAll('[aria-label="Run"]').length,
+			hudHidden: document.querySelector('.hud')?.hidden,
+			failedOverlays: document.querySelectorAll('.loader--error').length,
+		};
+	});
+
+for (const ok of [false, true]) {
+	test(`a demo the page left while its part loaded leaves the next demo's page alone, when the part ${ok ? 'loads' : 'fails'}`, async ({
+		page,
+	}) => {
+		const held = await holdPagePart(page);
+		await page.goto('demo-probe.html?demo=replay&preset=low&hud&switchTo=gizmos');
+		const result = await pageResult<{ error?: string }>(page, PATIENCE);
+		expect(result.error).toBeUndefined();
+		await held.asked;
+		// The page moves to the next demo while the first one's part is still loading.
+		await page.evaluate(() =>
+			(globalThis as unknown as { switchDemo: () => Promise<void> }).switchDemo(),
+		);
+		const before = await secondDemo(page);
+		expect(before.choiceButtons).toBeGreaterThan(0);
+		expect(before.hudHidden).toBe(false);
+		held.answer(ok);
+		const first = await page.evaluate(
+			() => (globalThis as unknown as { firstDemo: Promise<string> }).firstDemo,
+		);
+		// A failed part still fails the start of its demo, which says so to the page that started it.
+		if (ok) expect(first).toBe('started');
+		else expect(first).toMatch(/^failed: The demo's page part did not start: /);
+		// The first demo's part never started, and its failure changed nothing that the second shows.
+		expect(await secondDemo(page)).toEqual({ ...before, runGroups: 0, failedOverlays: 0 });
+		await expect(page.getByText("The demo's page part did not start")).toHaveCount(0);
+	});
+}
+
+test('a page part started on an aborted signal adds nothing to the page', async ({ page }) => {
+	await open(page, 'replay');
+	const left = await page.evaluate(() =>
+		(globalThis as unknown as { startAbortedPart: () => Promise<number> }).startAbortedPart(),
+	);
+	expect(left).toBe(0);
 });
