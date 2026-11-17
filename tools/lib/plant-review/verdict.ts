@@ -517,7 +517,13 @@ export function toolVerdict(input: VerdictInput): Verdict {
 				reason: 'every picture of this row shows no subject',
 			};
 		if (row === 12) {
-			const floating = sound.filter((pair) => (pair.connectivity?.floating.length ?? 0) > 0);
+			// A piece the raw matte keeps apart is floating whatever the coverage read joins: the
+			// feathered edges of two pieces can meet without either piece being drawn between them.
+			const floating = sound.filter(
+				(pair) =>
+					(pair.connectivity?.floating.length ?? 0) > 0 ||
+					(pair.connectivity?.rawMatte?.floating.length ?? 0) > 0,
+			);
 			if (floating.length > 0)
 				return {
 					...base,

@@ -1952,6 +1952,9 @@ export function keepPlantParts(
  */
 export type PlantHabit = 'mound' | 'clump';
 
+/** The luma below which a matte draws a texel: nearer black than the white it stands on. */
+export const HALF_DARK = 128;
+
 /**
  * A silhouette photograph's plant mask read as the drawn matte is read: a texel is plant only where
  * it is darker than half, so a texel the plant covers in part counts as the sky it mostly shows.
@@ -1972,7 +1975,7 @@ export function halfDarkMask(plant: PlantMask, image: Rgba): PlantMask {
 			0.2126 * (work.data[at * 4] as number) +
 			0.7152 * (work.data[at * 4 + 1] as number) +
 			0.0722 * (work.data[at * 4 + 2] as number);
-		if (luma >= 128) mask[at] = 0;
+		if (luma >= HALF_DARK) mask[at] = 0;
 	}
 	return { ...plant, mask };
 }
@@ -1988,7 +1991,7 @@ export function matteMask(image: Rgba): PlantMask {
 			0.2126 * (work.data[at * 4] as number) +
 			0.7152 * (work.data[at * 4 + 1] as number) +
 			0.0722 * (work.data[at * 4 + 2] as number);
-		mask[at] = luma < 128 ? 1 : 0;
+		mask[at] = luma < HALF_DARK ? 1 : 0;
 		// The clear sky reads white, and the matte's frame edge reads one step below it. A texel at
 		// that step or above is clear, so the frame's own edge is not taken for a faint leaf.
 		coverage[at] = luma >= 254 ? 0 : Math.round(255 - luma);
@@ -2039,6 +2042,31 @@ export function matteOwnMask(image: Rgba): {
 			0.7152 * (image.data[at * 4 + 1] as number) +
 			0.0722 * (image.data[at * 4 + 2] as number);
 		mask[at] = luma < 254 ? 1 : 0;
+	}
+	return { width, height, mask };
+}
+
+/**
+ * A matte's solid coverage at the picture's own width: a texel is plant where the matte draws it
+ * darker than half. A piece read here is separate from the body in the drawn matte itself, so a
+ * feathered edge that only meets a neighbour's feathering does not join it. No gap is bridged.
+ *
+ * @param image The matte picture, at the size the run drew it.
+ * @returns The picture's width and height with one byte per texel, 1 where the matte draws it solid.
+ */
+export function rawMatteOwnMask(image: Rgba): {
+	readonly width: number;
+	readonly height: number;
+	readonly mask: Uint8Array;
+} {
+	const { width, height } = image;
+	const mask = new Uint8Array(width * height);
+	for (let at = 0; at < mask.length; at++) {
+		const luma =
+			0.2126 * (image.data[at * 4] as number) +
+			0.7152 * (image.data[at * 4 + 1] as number) +
+			0.0722 * (image.data[at * 4 + 2] as number);
+		mask[at] = luma < HALF_DARK ? 1 : 0;
 	}
 	return { width, height, mask };
 }

@@ -1025,7 +1025,12 @@ function compareRun(
 			const read = sweepMeasures(dir, frame);
 			const parts = { length: read.components };
 			const floating = read.floating;
-			if (floating.length > 0) sweepFloating.push(frame.file);
+			// The raw matte's pieces that the coverage read joins: these are floating pieces too,
+			// whatever the bridge sees.
+			const rawExtra = (read.rawMatte?.floating ?? []).filter(
+				(part) => !floating.some((shown) => shown.box === part.box),
+			);
+			if (floating.length + rawExtra.length > 0) sweepFloating.push(frame.file);
 			const facts = frame.facts as { plant?: { height?: number } } | undefined;
 			const height = facts?.plant?.height;
 			const sparse = frame.query.sparse ?? 0;
@@ -1052,6 +1057,10 @@ function compareRun(
 					read.workWidth && read.workWidth.floating.length !== floating.length
 						? ` At the tool's work width it reads ${read.workWidth.components} components, ${read.workWidth.floating.length} floating.`
 						: ''
+				}${
+					rawExtra.length > 0
+						? ` The raw matte at solid coverage reads ${read.rawMatte?.components ?? 0} components with ${rawExtra.length} separate from the body (${rawExtra.map((part) => `${part.area} px ${part.box}`).join(', ')}); the coverage bridge joins them, and each is a floating piece.`
+						: ''
 				}`,
 			);
 		}
@@ -1061,7 +1070,9 @@ function compareRun(
 	metrics.coverage = coverage;
 	const maskFailures = [...turns.values()].filter((turn) => turn.maskCheckFailed);
 	const floating = [...stills.values()].filter(
-		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
+		(pair) =>
+			(pair.connectivity?.floating.length ?? 0) > 0 ||
+			(pair.connectivity?.rawMatte?.floating.length ?? 0) > 0,
 	);
 	const withheld = [...stills.values()].filter((pair) => pair.connectivityWithheld !== undefined);
 	const voids = [...stills.values()].filter((pair) => pair.void !== undefined);
@@ -1375,6 +1386,17 @@ function connectivityLines(pairs: readonly StillResult[]): string[] {
 			lines.push(
 				`- ${pair.file}${sparse}: at the tool's work width it reads ${check.workWidth.components} components with ${check.workWidth.floating.length} floating${check.workWidth.floating.length > 0 ? ` (${check.workWidth.floating.map((part) => `${part.area} px ${part.box}`).join(', ')})` : ''}, where the picture's own width reads ${check.components} and ${check.floating.length}. The picture's own width decides.`,
 			);
+		// The raw matte at solid coverage, with no gap bridged: a piece here is a floating piece,
+		// whatever the coverage read joins through the feathered edges.
+		const raw = check.rawMatte;
+		if (raw) {
+			const shown = new Set(check.floating.map((part) => part.box));
+			const extra = raw.floating.filter((part) => !shown.has(part.box));
+			if (extra.length > 0)
+				lines.push(
+					`- ${pair.file}${sparse}: the raw matte at solid coverage reads ${raw.components} components, ${extra.length} separate from the body — ${extra.map((part) => `${part.area} px ${part.box}`).join(', ')}. A component of this size that the raw matte keeps apart is a floating piece, whatever the coverage bridge joins.`,
+				);
+		}
 	}
 	return lines;
 }

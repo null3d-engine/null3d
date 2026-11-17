@@ -55,6 +55,7 @@ import {
 	pieceParts,
 	plantMask,
 	type ReferenceSet,
+	rawMatteOwnMask,
 	SOIL_MASK_GROUND_SHARE,
 	skyMaskable,
 	soilMaskable,
@@ -1535,6 +1536,16 @@ export function piecePartsAtOwnWidth(mask: Uint8Array, width: number, height: nu
 	);
 }
 
+/**
+ * The raw matte's parts at the picture's own width: the same area rule, with no gap bridged. A
+ * component separate here is a piece whatever the coverage read joins, because its feathered edge
+ * only meets a neighbour's feathering.
+ */
+export function rawPartsAtOwnWidth(mask: Uint8Array, width: number, height: number): PlantPart[] {
+	const scale = width / WORK_WIDTH;
+	return pieceParts(mask, width, height, Math.max(1, Math.round(PIECE_AREA * scale * scale)), 0);
+}
+
 /** A sweep picture's readings: its components and floating pieces, and the render's crown-box gap. */
 export interface SweepMeasures {
 	readonly components: number;
@@ -1548,6 +1559,15 @@ export interface SweepMeasures {
 	 * hairline join the picture keeps. Only the picture's own read decides whether a piece floats.
 	 */
 	readonly workWidth: {
+		readonly components: number;
+		readonly floating: readonly { readonly area: number; readonly box: string }[];
+	} | null;
+	/**
+	 * The matte read at solid coverage with no gap bridged: a component here is separate in the
+	 * drawn matte itself, so a feathered edge that only meets a neighbour's feathering does not join
+	 * it. A component of the stated area that is separate here is a floating piece.
+	 */
+	readonly rawMatte: {
 		readonly components: number;
 		readonly floating: readonly { readonly area: number; readonly box: string }[];
 	} | null;
@@ -1567,13 +1587,20 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 		render.plant.height,
 		PIECE_AREA,
 	);
-	const own =
-		frame.matte === undefined
-			? null
-			: (() => {
-					const mask = matteOwnMask(readImage(join(runDir, frame.matte as string)));
-					return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
-				})();
+	const matte =
+		frame.matte === undefined ? undefined : readImage(join(runDir, frame.matte as string));
+	const own = matte
+		? (() => {
+				const mask = matteOwnMask(matte);
+				return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
+			})()
+		: null;
+	const raw = matte
+		? (() => {
+				const mask = rawMatteOwnMask(matte);
+				return rawPartsAtOwnWidth(mask.mask, mask.width, mask.height);
+			})()
+		: null;
 	const read = own ?? parts;
 	const band = bandFor(frame, render.plant.height);
 	return {
@@ -1582,6 +1609,7 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 		groundBand: band ?? null,
 		floating: floatingParts(read, band),
 		workWidth: own ? { components: parts.length, floating: floatingParts(parts, band) } : null,
+		rawMatte: raw ? { components: raw.length, floating: floatingParts(raw, band) } : null,
 		crownBoxGap: render.measures.crownBoxGap ?? null,
 	};
 }
@@ -1980,6 +2008,16 @@ export interface StillResult extends PairMetrics {
 		 * not. Only the picture's own read decides whether a piece floats.
 		 */
 		readonly workWidth: {
+			readonly components: number;
+			readonly floating: readonly { readonly area: number; readonly box: string }[];
+		} | null;
+		/**
+		 * The matte read at solid coverage with no gap bridged: a component here is separate in the
+		 * drawn matte itself, so a feathered edge that only meets a neighbour's feathering does not
+		 * join it. A component of the stated area that is separate here is a floating piece,
+		 * whatever the coverage read joins.
+		 */
+		readonly rawMatte: {
 			readonly components: number;
 			readonly floating: readonly { readonly area: number; readonly box: string }[];
 		} | null;
@@ -2573,8 +2611,9 @@ export function compareStills(
 			continue;
 		}
 		// The matte at the picture's own width, which the subject check and the connectivity gate read.
-		const own =
-			frame.matte === undefined ? undefined : matteOwnMask(readImage(join(runDir, frame.matte)));
+		const matteImage = frame.matte === undefined ? undefined : readImage(join(runDir, frame.matte));
+		const own = matteImage === undefined ? undefined : matteOwnMask(matteImage);
+		const rawOwn = matteImage === undefined ? undefined : rawMatteOwnMask(matteImage);
 		// A picture that no figure is read from: it is laid on the sheet beside its reference with
 		// the words that say why.
 		const unread = (why: Partial<StillResult>, lines: readonly string[]) => {
@@ -2840,6 +2879,10 @@ export function compareStills(
 			own && drawn !== 'fork' && !closeInside && !forcedFiner
 				? piecePartsAtOwnWidth(own.mask, own.width, own.height)
 				: null;
+		const rawParts =
+			rawOwn && drawn !== 'fork' && !closeInside && !forcedFiner
+				? rawPartsAtOwnWidth(rawOwn.mask, rawOwn.width, rawOwn.height)
+				: null;
 		const pieces = parts
 			? {
 					reference:
@@ -2860,6 +2903,9 @@ export function compareStills(
 					floating: floatingParts(ownParts, band),
 					workWidth: parts
 						? { components: parts.length, floating: floatingParts(parts, band) }
+						: null,
+					rawMatte: rawParts
+						? { components: rawParts.length, floating: floatingParts(rawParts, band) }
 						: null,
 				}
 			: null;

@@ -30,6 +30,7 @@ import {
 	pieceCount,
 	pieceParts,
 	plantMask,
+	rawMatteOwnMask,
 	readIndex,
 	rowSpans,
 	seasonFromPicture,
@@ -1173,6 +1174,39 @@ describe('the coverage matte', () => {
 		const work = matteMask(image);
 		expect(work.width).toBe(640);
 		expect(pieceParts(anyPlantMask(work), work.width, work.height, 24).length).toBe(2);
+	});
+
+	test('reads a card that only meets its neighbour feathering as a piece of its own', () => {
+		// The drawn matte: a body, a card hanging above the body's foot, and a band of faint texels
+		// between them, the feathered edge of both pieces. Any coverage joins the two; the matte
+		// draws neither piece in the band, so the card is a piece whatever that join sees.
+		const width = 60;
+		const height = 40;
+		const image = blank(width, height, [254, 254, 254]);
+		for (let y = 5; y <= 34; y++) for (let x = 5; x <= 24; x++) put(image, x, y, [0, 0, 0]);
+		for (let y = 5; y <= 20; y++) for (let x = 39; x <= 44; x++) put(image, x, y, [0, 0, 0]);
+		for (let y = 5; y <= 34; y++) for (let x = 25; x <= 38; x++) put(image, x, y, [240, 240, 240]);
+		const covered = matteOwnMask(image);
+		expect(pieceParts(covered.mask, width, height, 24, 0).length).toBe(1);
+		const raw = rawMatteOwnMask(image);
+		const parts = pieceParts(raw.mask, width, height, 24, 0);
+		expect(parts.map((part) => part.area)).toEqual([600, 96]);
+		expect(hangingParts(parts).parts.map((part) => part.area)).toEqual([96]);
+	});
+
+	test('keeps one piece where the matte draws the support solid', () => {
+		// The same body and card, joined by one row the matte draws at full darkness: a support the
+		// eye can see, so the raw read keeps the plant as one piece.
+		const width = 60;
+		const height = 40;
+		const image = blank(width, height, [254, 254, 254]);
+		for (let y = 5; y <= 34; y++) for (let x = 5; x <= 24; x++) put(image, x, y, [0, 0, 0]);
+		for (let y = 5; y <= 20; y++) for (let x = 39; x <= 44; x++) put(image, x, y, [0, 0, 0]);
+		for (let x = 25; x <= 38; x++) put(image, x, 20, [0, 0, 0]);
+		const raw = rawMatteOwnMask(image);
+		const parts = pieceParts(raw.mask, width, height, 24, 0);
+		expect(parts.length).toBe(1);
+		expect(hangingParts(parts).parts.length).toBe(0);
 	});
 
 	test('names a piece that meets nothing, and spares one the frame carries', () => {

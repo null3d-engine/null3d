@@ -51,6 +51,12 @@ reaches its root, whatever its density. The reading counts the pieces as the row
 picture shows a piece standing free, the shader and the generator are at fault whichever row is being
 read; the picture fails, and the fault is a generator fault, not a row to judge.
 
+The reading takes two views of the render's matte. The coverage view joins two runs whose feathered
+edges meet, because a support thinner than a pixel at the work width falls to the outline's cutoff.
+The raw view counts only the texels the matte draws darker than half and bridges no gap: a component
+of the piece area that is separate there is a piece standing free whatever the coverage view joins.
+The summary prints the raw read beside the coverage read, and row 12 fails on either.
+
 ## Sparseness and polygon count are different dials
 
 Sparseness is about how much foliage and how many limbs the plant carries: a sparse plant has fewer

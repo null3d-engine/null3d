@@ -330,6 +330,30 @@ describe("the tool's verdict of a run", () => {
 						groundBand: null,
 						floating: [{ area: 40, box: '12x9@300,200' }],
 						workWidth: null,
+						rawMatte: null,
+					},
+				},
+			}),
+		);
+		expect(rowOf(loose, 12)).toMatchObject({
+			verdict: 'fail',
+			judge: 'tool',
+			reason: 'a piece hangs free in 18-silhouette.png',
+		});
+	});
+
+	test('fails row 12 where the raw matte keeps a piece apart, whatever the coverage read joins', () => {
+		const loose = toolVerdict(
+			input({
+				'18-silhouette.png': {
+					view: 'silhouette',
+					connectivity: {
+						components: 1,
+						footRow: 600,
+						groundBand: null,
+						floating: [],
+						workWidth: null,
+						rawMatte: { components: 2, floating: [{ area: 40, box: '12x9@300,200' }] },
 					},
 				},
 			}),
