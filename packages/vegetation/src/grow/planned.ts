@@ -698,12 +698,17 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		// draws the skeleton shortened and a card past its drawn end hangs in the air. A record may
 		// ask for its clumps' stated places instead, so a maximum never reshapes the plant.
 		const woodPlaced = capped && growth.capCards !== 'stated';
+		// A young crown is shrubbier than a mature one: while a clump is still opening, its leaves stand
+		// along the revealed stem rather than past its tip, so the young plant carries a compact crown
+		// instead of a tuft at the top and a skirt at the foot.
+		const young = Math.max(0, Math.min(1, 1 - where.growth / 0.9));
+		const along = 0.55 * young;
 		const centre: Vec3 = woodPlaced
 			? [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2]
 			: [
-					grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
-					grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
-					grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
+					grownTip[0] + (root.x - grownTip[0]) * along + (patch.centre[0] - tip.x) * where.growth,
+					grownTip[1] + (root.y - grownTip[1]) * along + (patch.centre[1] - tip.y) * where.growth,
+					grownTip[2] + (root.z - grownTip[2]) * along + (patch.centre[2] - tip.z) * where.growth,
 				];
 		clumps.push({
 			id,
