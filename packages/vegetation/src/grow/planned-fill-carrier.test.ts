@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { PlantAsset } from '../asset';
 import { BUD_TERMINAL } from '../core/graph';
-import { loadSpecies } from '../core/registry';
+import { loadSpecies, type SpeciesId } from '../core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 
 /** Every species whose registered form grows by the planned model. */
@@ -24,10 +24,10 @@ const SPECIES = [
 ] as const;
 
 /** One species' plant, grown once for every case in this file. */
-const grown = new Map<string, PlantAsset>();
+const grown = new Map<SpeciesId, PlantAsset>();
 
 /** Grows one planned species at a state where its clumps carry sockets. */
-async function plantOf(id: string): Promise<PlantAsset> {
+async function plantOf(id: SpeciesId): Promise<PlantAsset> {
 	const kept = grown.get(id);
 	if (kept) return kept;
 	const module = await loadSpecies(id);
