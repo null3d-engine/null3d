@@ -110,6 +110,8 @@ export interface FillInput {
 	 * a fuller-leaved species asks for more twigs through the same clump.
 	 */
 	readonly density?: number;
+	/** How far up its clump a socket's fill stands, as a share of the clump's radius. */
+	readonly lift?: number;
 }
 
 /** One socket the fill places, its place and the clump it belongs to. */
@@ -168,9 +170,12 @@ export function fillClumps(input: FillInput): FillCount {
 			const spin = unitAt(seed, clump.id, variant, 1) * 2 * Math.PI;
 			const angle = spin + k * radians(137.507);
 			const depth = DEPTH_FROM + (DEPTH_TO - DEPTH_FROM) * unitAt(seed, clump.id, k, 1);
+			// A species whose pictures carry their leaves above each clump's middle asks for the
+			// fill to stand higher in the clump; the others keep the depth through its middle.
+			const lift = (input.lift ?? 0) * radius;
 			const point: [number, number, number] = [
 				clump.centre[0] + radius * depth * ring * Math.cos(angle),
-				clump.centre[1] + radius * DEPTH_SHARE * depth * y,
+				clump.centre[1] + radius * DEPTH_SHARE * depth * y + lift,
 				clump.centre[2] + radius * depth * ring * Math.sin(angle),
 			];
 			point[1] = dippedY(clump, point, input.crown);

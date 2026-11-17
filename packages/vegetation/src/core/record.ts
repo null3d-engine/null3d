@@ -1687,6 +1687,11 @@ export interface Planned {
 	readonly fruitBand: number;
 	/** The flowering season and the ramp the catkins come in over, where the species carries them. */
 	readonly flowers?: { readonly season: Season; readonly from: number; readonly band: number };
+	/**
+	 * How far up its own clump a socket's fill stands, as a share of the clump's radius: a species
+	 * whose pictures carry their leaves above each clump's middle asks for a lifted fill. Absent, 0.
+	 */
+	readonly fillLift?: number;
 	/** The triangles one drawn piece of each kind costs, which the plan prices its shares from. */
 	readonly prices: Readonly<Record<'piece' | 'card' | 'clumpCard' | 'tubeSegment', number>>;
 }

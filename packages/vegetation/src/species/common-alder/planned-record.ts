@@ -75,5 +75,9 @@ export const plannedGrowth: Planned = {
 	fruitBand: 0.1,
 	// Priced at the nearest level's own draw: a branch end's leaves, a leaf card's triangles, one
 	// clump card and one wood tube segment.
+	// The alder's pictures carry their leaves above each clump's middle, where the oak's sit round it:
+	// the fill stands a fifth of a radius higher in every clump, so the crown's upper middle fills
+	// and its lower band lightens.
+	fillLift: 0.2,
 	prices: { piece: 24, card: 6, clumpCard: 6, tubeSegment: 14 },
 };
