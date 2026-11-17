@@ -15,6 +15,7 @@ import { drawnAtTallest } from '../lod/drawn';
 import { dequantisePosition } from '../lod/quantise';
 import { bodies, type TestMesh, toMesh } from './body.fixture';
 import { targetHeight } from './height';
+import { emitTuft } from './tuft';
 
 /** The most vertices one prototype may hold at a tier: its indices are 16 bits wide. */
 const VERTEX_CAP = 65_535;
@@ -729,5 +730,47 @@ describe("the planned tuft's thinning", () => {
 		);
 		// The thin array is the planned frame's own; the tuft adult never reads it.
 		expect(plantAssetDigest(thinned)).toBe(plantAssetDigest(plain));
+	});
+});
+
+describe("the tuft's shared model", () => {
+	it('writes the stool, a shoot axis each, and a socket for every piece', async () => {
+		const module = await loadSpecies('meadow-grass');
+		const growth = module.record.growth;
+		if (growth.model !== 'planned' || growth.adult !== 'tuft')
+			throw new Error('the meadow grass has no planned tuft');
+		const model = emitTuft({
+			record: module.record,
+			seed: 11,
+			variant: 0,
+			season: module.record.seasons.default,
+			request: { maturity: 1, sparse: 0 },
+		});
+		// The stool, then one axis a shoot, at seed 11's 44 draws.
+		expect(model.axes.length).toBe(45);
+		expect(model.axes[0]?.body).toBe(true);
+		// 44 sheaths, 159 blades and 21 flowering stems stand on those axes.
+		expect(model.sockets.length).toBe(224);
+		expect(model.pieces[0]?.name).toBe('sheath');
+		expect(model.pieces.filter((piece) => piece.name.startsWith('blade-')).length).toBeGreaterThan(
+			0,
+		);
+		// The least plant's 25 sockets carry keep 0.
+		expect(model.least).toBe(25);
+		expect(model.scale).toBe(1);
+		expect(model.crown.top).toBeGreaterThan(0.45);
+	});
+
+	it('serves the sedge by the same adapter', async () => {
+		const module = await loadSpecies('sedge');
+		const model = emitTuft({
+			record: module.record,
+			seed: 11,
+			variant: 0,
+			season: module.record.seasons.default,
+		});
+		expect(model.axes.length).toBeGreaterThan(1);
+		expect(model.sockets.length).toBeGreaterThan(0);
+		expect(model.pieces.some((piece) => piece.name.startsWith('stalk-'))).toBe(true);
 	});
 });
