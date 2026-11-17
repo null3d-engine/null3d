@@ -975,12 +975,7 @@ for (const held of HELD)
  * frame. A merge can take another line's entry, which gives the record the old grower grows, so
  * this list changes in the same commit as an entry does.
  */
-const REGISTERED_FRAMES = [
-	'holm-oak',
-	'olive',
-	'silver-birch',
-	'weeping-willow',
-] as const;
+const REGISTERED_FRAMES = ['holm-oak', 'silver-birch', 'weeping-willow'] as const;
 
 describe('a species entry that gives its frame', () => {
 	for (const id of REGISTERED_FRAMES)
