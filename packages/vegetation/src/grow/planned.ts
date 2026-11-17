@@ -694,21 +694,21 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		const tip = axis.nodes[axis.nodes.length - 1] as FrameNode;
 		const grownTip = planTips[patch.axis] as Vec3;
 		const root = axis.nodes[0] as FrameNode;
-		// A capped crown's cards stand at the middle of the wood that carries them, because a low cap
-		// draws the skeleton shortened and a card past its drawn end hangs in the air. With no
-		// maximum the crown spreads as its patches state.
-		const centre: Vec3 =
-			!capped
-				? [
-						grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
-						grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
-						grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
-					]
-				: [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2];
+		// A capped crown's cards stand at the middle of the wood that draws them, because a low cap
+		// draws the skeleton shortened and a card past its drawn end hangs in the air. A record may
+		// ask for its clumps' stated places instead, so a maximum never reshapes the plant.
+		const woodPlaced = capped && growth.capCards !== 'stated';
+		const centre: Vec3 = woodPlaced
+			? [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2]
+			: [
+					grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
+					grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
+					grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
+				];
 		clumps.push({
 			id,
 			centre,
-			radius: capped ? radius * CARD_MEET : radius,
+			radius: woodPlaced ? radius * CARD_MEET : radius,
 			depth: 3,
 			birth: where.birth,
 		});

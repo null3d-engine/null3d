@@ -75,5 +75,8 @@ export const plannedGrowth: Planned = {
 	fruitBand: 0.1,
 	// Priced at the nearest level's own draw: a branch end's leaves, a leaf card's triangles, one
 	// clump card and one wood tube segment.
+	// A maximum takes the finest rows away, never the alder's shape or its size: its capped crowns
+	// stand at their clumps' stated places, and the plant keeps the same height and width at every cap.
+	capCards: 'stated',
 	prices: { piece: 24, card: 6, clumpCard: 6, tubeSegment: 14 },
 };
