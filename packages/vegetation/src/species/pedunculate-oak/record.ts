@@ -490,7 +490,6 @@ export const record: Species = {
 		// Still 18 at full size: the crown's rim is rounded lobes with clean notches of sky, so a far
 		// card's thinnest leaves keep their cover as its mip levels average them with their gaps.
 		cardMipLift: 0.12,
-		cardShade: 0.8,
 		// Still 01, full size: inside a lit stretch of the crown, neighbouring pixels change gradually
 		// rather than each texel catching its own light, so a shoot's leaves shade as one rounded mass.
 		cardNormalRound: 0.6,

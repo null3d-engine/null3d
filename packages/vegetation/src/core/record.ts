@@ -2977,12 +2977,6 @@ export interface LodSpec {
 	 */
 	readonly cardMipLift?: number;
 	/**
-	 * The first card level's leaf-scale light and dark, from 0 to 1: a share of each card's colour
-	 * varying at a leaf's own scale, so a distant card reads as many lit and shadowed leaves rather
-	 * than one flat plate. Absent or 0 draws the card as it is.
-	 */
-	readonly cardShade?: number;
-	/**
 	 * A multiplier on the first card level's coverage, 1 drawing it as the cards are: above 1 closes
 	 * the crown's gaps and below 1 opens them. Absent draws it as 1.
 	 */

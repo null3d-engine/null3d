@@ -1401,22 +1401,12 @@ fn surface(input: SurfaceInput) -> Surface {
             through *= crown;
             alpha = card_alpha(texel.a, hx, hy);
             cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(hx, hy));
-            // The first card level's own shade and cover: a hashed share of the card's colour at a
-            // leaf's scale, so a plate reads as many lit and shadowed leaves, and a factor on its
-            // coverage. A record naming neither draws the card exactly as before, and the stalk
-            // strips, which carry their own uv1.y, are outside the gate.
+            // The first card level's own coverage: a factor on its cut alpha, which the lighting
+            // does not compress, so a crown can close or open at that level alone. A record naming
+            // no factor draws the card exactly as before, and the stalk strips, which carry their
+            // own uv1.y, stand outside the gate.
             let card_gate = header(HEADER_CARD_SHADE);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
-            if (card_gate.x > 0.0) {
-                // Hashed at a blotch of a few texels, so neighbouring patches stand at different
-                // light and dark rather than on a smooth slope: a smooth slope cannot raise the
-                // local contrast that makes a leaf mass read as many leaves.
-                let cells = floor(uv * vec2f(textureDimensions(colour).xy) / 6.0);
-                let spot = fract(sin(dot(cells, vec2f(12.9898, 78.233))) * 43758.5453);
-                // A wide, mostly-dark alternation, so a lit patch stands beside a shadowed one by
-                // the leaf form's own margin rather than by a gentle wiggle.
-                base *= mix(1.0, CARD_SHADE_DARK + (CARD_SHADE_LIT - CARD_SHADE_DARK) * spot, card_gate.x * gated);
-            }
             if (card_gate.y != 1.0) {
                 cut_alpha *= mix(1.0, card_gate.y, gated);
             }

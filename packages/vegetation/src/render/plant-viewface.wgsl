@@ -1215,16 +1215,11 @@ fn surface(input: SurfaceInput) -> Surface {
             let crown = crown_shade(input.vertexColor.a);
             base *= crown;
             through *= crown;
-            // The first card level's own shade: a hashed share of the card's colour at a leaf's
-            // scale, so a plate reads as many lit and shadowed leaves. The stalk strips carry their
-            // own uv1.y and stand outside the gate, and a record naming zero draws as before.
+            // The first card level's own coverage: a factor on its alpha, at that level alone. The
+            // stalk strips carry their own uv1.y and stand outside the gate.
             let card_gate = header(HEADER_CARD_SHADE);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
-            if (card_gate.x > 0.0) {
-                let cells = floor(uv * vec2f(textureDimensions(colour).xy) / 6.0);
-                let spot = fract(sin(dot(cells, vec2f(12.9898, 78.233))) * 43758.5453);
-                base *= mix(1.0, CARD_SHADE_DARK + (CARD_SHADE_LIT - CARD_SHADE_DARK) * spot, card_gate.x * gated);
-            }
+
             alpha = card_alpha(texel.a, gx, gy);
             if (card_gate.y != 1.0) {
                 alpha *= mix(1.0, card_gate.y, gated);

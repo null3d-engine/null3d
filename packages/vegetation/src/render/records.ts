@@ -168,12 +168,8 @@ export const HEADER = {
 	crownDim: 72,
 	/** How much a card's alpha rises for each mip level its sample reads, from 0 to 1. */
 	cardMipLift: 73,
-	/**
-	 * The first card level's leaf-scale light and dark, from 0 to 1, and its cover multiplier: a
-	 * share of the card's own colour varying at a leaf's own scale, and a factor on its coverage.
-	 * Zero and one leave every card as it draws today.
-	 */
-	cardShade: 77,
+	/** The first card level's cover multiplier, 1 drawing it as the cards are. */
+	cardCover: 77,
 	/** How much of the crown's baked sky visibility darkens bark, from 0 to 1. */
 	woodShade: 74,
 	/** How much more the bark's relief tilts its normal and deepens its furrows, from 0 up. */
@@ -192,7 +188,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.cardShade + 1;
+export const HEADER_TEXELS = HEADER.cardCover + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -469,7 +465,7 @@ export function speciesHeader(
 	texel(header, HEADER.cardLevelMost, [cardLevelMost, 0, 0, 0]);
 	texel(header, HEADER.crownDim, [record.lod.crownDim ?? 0, 0, 0, 0]);
 	texel(header, HEADER.cardMipLift, [record.lod.cardMipLift ?? CARD_MIP_LIFT, 0, 0, 0]);
-	texel(header, HEADER.cardShade, [record.lod.cardShade ?? 0, record.lod.cardCover ?? 1, 0, 0]);
+	texel(header, HEADER.cardCover, [record.lod.cardCover ?? 1, 0, 0, 0]);
 	texel(header, HEADER.woodShade, [record.lod.woodShade ?? WOOD_SHADE, 0, 0, 0]);
 	texel(header, HEADER.barkRelief, [record.lod.barkRelief ?? 0, 0, 0, 0]);
 	texel(header, HEADER.lichenFarTint, [record.lod.lichenFarTint ?? 0, 0, 0, 0]);
