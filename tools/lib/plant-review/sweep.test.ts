@@ -388,6 +388,13 @@ describe('the pull-back series', () => {
 		expect(solid[0]?.reason).toContain('fills its own span');
 	});
 
+	test('passes a step that opens exactly one point, and fails one that opens more', () => {
+		const edge = sweepSeriesRows([seriesStep('a.png', 10, 0.6), seriesStep('b.png', 20, 0.59)]);
+		expect(edge[1]?.verdict).toBe('pass');
+		const more = sweepSeriesRows([seriesStep('a.png', 10, 0.6), seriesStep('b.png', 20, 0.589)]);
+		expect(more[1]?.verdict).toBe('fail');
+	});
+
 	test('marks a step unmeasured where no share reads, never as an opening', () => {
 		const rows = sweepSeriesRows([seriesStep('a.png', 10, null)]);
 		expect(rows[0]?.verdict).toBe('unmeasured');

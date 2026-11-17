@@ -63,6 +63,9 @@ export const SWEEP_SERIES_STEPS = 24;
 /** The most a step of the pull-back may open the crown's covered share. */
 export const SERIES_OPEN = 0.01;
 
+/** The slack under one point that the bar allows, so a fall of exactly one point still passes. */
+const SERIES_SLACK = 0.0005;
+
 /** The most a frame's covered share may stand from its neighbours' in the orbit. */
 export const ORBIT_COVERED_BAND = GAP_ABOVE;
 
@@ -887,7 +890,7 @@ export function sweepSeriesRows(pictures: readonly SweepSeriesRow[]): readonly S
 		} else if (picture.covered === null && verdict === 'pass') {
 			verdict = 'unmeasured';
 			reason = `unmeasured: ${picture.reason === '' ? 'no covered share read at this distance' : picture.reason}`;
-		} else if (change !== null && change < -SERIES_OPEN) {
+		} else if (change !== null && change < -SERIES_OPEN - SERIES_SLACK) {
 			verdict = 'fail';
 			reason = `the crown's covered share falls ${(-change).toFixed(3)} from ${previous?.file ?? 'the step before'} (${previous?.covered?.toFixed(3)} to ${picture.covered?.toFixed(3)})`;
 		}
@@ -970,7 +973,13 @@ export function sweepMarkdown(
 			].join(' | ')} |`,
 		);
 	if (series.length > 0) {
-		lines.push('', '## The pull-back series', '');
+		lines.push(
+			'',
+			'## The pull-back series',
+			'',
+			`A step fails only when it opens the crown by more than ${SERIES_OPEN.toFixed(3)}; a step that opens exactly ${SERIES_OPEN.toFixed(3)} passes.`,
+			'',
+		);
 		lines.push(`| ${SERIES_COLUMNS.join(' | ')} |`);
 		lines.push(`| ${SERIES_COLUMNS.map(() => '---').join(' | ')} |`);
 		for (const step of series)
