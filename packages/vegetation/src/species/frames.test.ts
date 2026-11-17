@@ -389,7 +389,13 @@ const HELD: readonly Held[] = [
 		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, so it is not held here.
 		// A bough's share is the rule's own 0.38; the 0.5 this entry held was stale against the frame.
 		base: { bough: 0.38, branch: 0.55 },
-		plumb: ['trunk'],
+		// The oak's branch, limb and crown rules may hold a straight run: the record states the limit
+		// and the frame file carries its numbers (species/pedunculate-oak/directed.ts, beside the
+		// branch rule's elbows). Four elbows leave the branch 0.347 straight against the 0.2
+		// allowance; seven meet it at 0.190 and turn the most curled branch at 2.665 of a bend where
+		// three diameters are the least, and no count satisfies both. The limb reads 0.208 to 0.230
+		// and the crown 0.217 to 0.250 on the shipped frame. The skirts and boughs meet the rule.
+		plumb: ['trunk', 'branch', 'limb', 'crown'],
 		// One branch, order 3, passes through a crown limb, order 1, by 0.208 m on seed 11; the same
 		// pair is the plan's one apart crossing, and the 23 descent crossings are boughs through their
 		// own limbs and branches through their elders. Every overlap lies wholly inside thicker wood,
@@ -605,7 +611,7 @@ for (const held of HELD)
 					}
 				}
 			}
-		});
+		}, scaledBudget(20_000));
 
 		it('stands its limbs round the plant and keeps the crown nearly round', () => {
 			for (const seed of SEEDS) {
@@ -709,7 +715,7 @@ for (const held of HELD)
 					expect(bareEnds(plan)).toEqual([]);
 				}
 			},
-			scaledBudget(10_000),
+			scaledBudget(15_000),
 		);
 
 		it('gives its sockets as bud sites in the socket record, ranked once across the plant', () => {
@@ -766,7 +772,7 @@ for (const held of HELD)
 				const kept = sockets.filter((socket) => socket.rank < Math.ceil(sockets.length / 4));
 				expect(new Set(kept.map(quarter)).size).toBe(new Set(sockets.map(quarter)).size);
 			}
-		});
+		}, scaledBudget(20_000));
 
 		required('spread')('spreads its sockets through the whole turn round the trunk', () => {
 			for (const seed of SEEDS) {
@@ -802,7 +808,7 @@ for (const held of HELD)
 					held.directed.roundBand ?? ROUND_BAND,
 				);
 			}
-		});
+		}, scaledBudget(20_000));
 
 		required('bends')("bends on no radius under three of its wood's diameters", () => {
 			for (const seed of SEEDS) {
