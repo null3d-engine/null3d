@@ -171,13 +171,12 @@ const STILL_01_LEFT: Reading = {
 	],
 };
 /**
- * The quarter turn's reach as a share of still 01's. Pictures 01 and 02 are the same clump seen
- * across and a quarter turn on: the crown's box is 379 pixels wide at 01 and 604 at 02, against
- * the plant's height, so the quarter turn reaches past still 01's side by 604 over 379, less the
- * first side's own overhang. The clump is broad and low in both, and a wider quarter turn lets its
- * stems arc out to the picture's width instead of rising side by side.
+ * The quarter turn's reach as a share of still 01's. Picture 02, filed a quarter turn on, draws a
+ * crown box 604 pixels wide against still 01's 379; the quarter turn reaches 1.34 times still 01's
+ * side, so the clump's stems arc out to the picture's width and its edge stands as deep as the
+ * picture's rather than rising side by side.
  */
-const NARROW = 1.30;
+const NARROW = 1.34;
 
 /**
  * A quarter turn's side, from a still 01 side: the video gives the width there and no reading of
