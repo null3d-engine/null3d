@@ -414,13 +414,13 @@ export const record: Species = {
 			twist: 7,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.1, 0.22, 0.012],
+				reflectance: [0.144, 0.316, 0.017],
 				// The crown draws a mixture of the three faces. Its whole views stand too green and
 				// too yellow against their photographs, so the back face and the light through the
 				// leaf carry the photograph-to-render ratio per channel: a tenth more red, a little
 				// more green and a third more blue. The front face keeps its measured values.
-				reflectanceBack: [0.228, 0.298, 0.158],
-				transmittance: [0.091, 0.186, 0.026],
+				reflectanceBack: [0.275, 0.361, 0.191],
+				transmittance: [0.131, 0.267, 0.037],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -523,9 +523,6 @@ export const record: Species = {
 		// cover, 0.25 and 0.18 at this value. Larger values stand on the leaf form's outline: 1.4
 		// draws 0.0299 of it outside against the 0.03 the card test allows, and 1.3 reads 0.0256.
 		cardGrow: 1.3,
-		// The curtain's cards stand open at the whole view, so the first card level crosses one
-		// more plane at each card: the crown closes without a picture growing coarser.
-		cardPlanes: [1, 0],
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,
