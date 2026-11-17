@@ -25,7 +25,7 @@
 // it, so a far card keeps the cover the near one draws.
 import type { CardCell, MeshArrays } from '../asset';
 import { atan2, cos, length3, pow, sin } from '../core/math';
-import type { Species } from '../core/record';
+import { type Species, tuftGrowth } from '../core/record';
 import { barkColourOf, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { DETAILS, type Detail } from '../core/types';
@@ -615,7 +615,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		? [young[0] * tint[0], young[1] * tint[1], young[2] * tint[2]]
 		: barkColourOf(record, manifest);
 	const extras = (record.extras ?? []).map((extra) => extra.colour);
-	const sheathColour = record.growth.model === 'tuft' ? record.growth.sheathColour : undefined;
+	const sheathColour = tuftGrowth(record)?.sheathColour;
 	const sheath = sheathColour ? { sheath: sheathColour.foot } : {};
 	const leafOptics = foliageOptics(record);
 	const autumn = record.seasons.autumn?.reflectance;

@@ -1,12 +1,12 @@
-// The tuft grower's pieces and sockets, on the two species that grow by it. Each piece of the kit
-// is one body that begins at its socket and stays under the vertex cap at every tier. The sockets'
-// order thins the plant from its record's own form to its least without leaving a piece off a
-// shoot or a shoot off the stool, and spreads what it keeps round the stool. The plant stands as
-// tall as its record asks and grows the same each time.
+// The tuft grower's pieces and sockets, on the species that grow by it and by the planned model's
+// tuft adult. Each piece of the kit is one body that begins at its socket and stays under the
+// vertex cap at every tier. The sockets' order thins the plant from its record's own form to its
+// least without leaving a piece off a shoot or a shoot off the stool, and spreads what it keeps
+// round the stool. The plant stands as tall as its record asks and grows the same each time.
 import { describe, expect, it } from 'bun:test';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
 import { quatRotate } from '../core/math';
-import type { Species, Tuft } from '../core/record';
+import { type Species, type Tuft, tuftGrowth } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS, spreadMean } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
@@ -22,7 +22,7 @@ const OPTIONS = { seed: 11, variant: 0, near: true } as const;
 /** The sparseness settings a plant is read at: its own form, half way and its least. */
 const SPARSENESS = [0, 0.5, 1] as const;
 
-/** The species that grow by the tuft grower. */
+/** The species that grow by the tuft grower or the planned model's tuft adult. */
 const TUFTS = ['sedge', 'meadow-grass'] as const;
 type TuftSpecies = (typeof TUFTS)[number];
 
@@ -39,8 +39,8 @@ interface Grown {
 async function grow(id: TuftSpecies, options: { season?: Species['seasons']['default'] } = {}) {
 	const module = await loadSpecies(id);
 	await loadPlantCode(module.record);
-	const growth = module.record.growth;
-	if (growth.model !== 'tuft') throw new Error(`${id} is not a tuft`);
+	const growth = tuftGrowth(module.record);
+	if (!growth) throw new Error(`${id} is not a tuft`);
 	const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
 	const asset = growPlantNow(kit, { ...OPTIONS, ...options });
 	// The tallest piece is a flowering stem in season and a blade out of it; the stem's top is the
@@ -625,5 +625,66 @@ describe("the sedge's picked leaf", () => {
 		const across = widthAt(length - blade.width) / blade.width;
 		expect(across).toBeGreaterThan(0.3);
 		expect(across).toBeLessThan(0.55);
+	});
+});
+
+describe('the meadow grass grown straight to its state', () => {
+	const OPTIONS = { seed: 11, variant: 0, near: false, detail: 'high', maturity: 1 } as const;
+
+	it('grows by the planned model with a tuft adult', async () => {
+		const module = await loadSpecies('meadow-grass');
+		const growth = module.record.growth;
+		expect(growth.model).toBe('planned');
+		expect(growth.model === 'planned' ? growth.adult : undefined).toBe('tuft');
+	});
+
+	it('keeps a sparser plant a subset of a denser one, on the same frame', async () => {
+		const module = await loadSpecies('meadow-grass');
+		await loadPlantCode(module.record);
+		const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
+		const placesOf = (sparse: number) => {
+			const plant = growPlantNow(kit, { ...OPTIONS, sparse });
+			const sockets = plant.skeleton.buds.sockets;
+			if (!sockets) throw new Error('the tuft has no sockets');
+			const places = new Set<string>();
+			for (let b = 0; b < plant.skeleton.buds.count; b++) {
+				const at = [0, 1, 2].map((k) =>
+					(plant.skeleton.buds.position[b * 3 + k] as number).toFixed(5),
+				);
+				places.add(at.join(','));
+			}
+			return { places, plant };
+		};
+		const full = placesOf(0);
+		const half = placesOf(0.5);
+		const least = placesOf(1);
+		for (const place of half.places) expect(full.places.has(place)).toBe(true);
+		for (const place of least.places) expect(half.places.has(place)).toBe(true);
+		// The frame stays put: the height and the box stand as the full plant's, within a blade tip.
+		for (const state of [half.plant, least.plant]) {
+			expect(Math.abs(state.skeleton.height - full.plant.skeleton.height)).toBeLessThan(1e-6);
+			for (let c = 0; c < 3; c++) {
+				expect(
+					Math.abs(
+						(state.skeleton.bounds.max[c] as number) -
+							(full.plant.skeleton.bounds.max[c] as number),
+					),
+				).toBeLessThan(1e-6);
+			}
+		}
+	});
+
+	it('keeps its stool and its least plant under the 400-triangle maximum', async () => {
+		const module = await loadSpecies('meadow-grass');
+		await loadPlantCode(module.record);
+		const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
+		const full = growPlantNow(kit, OPTIONS);
+		const capped = growPlantNow(kit, { ...OPTIONS, maxTriangles: 400 });
+		for (const level of capped.levels) expect(level.triangles).toBeLessThanOrEqual(400);
+		// It does not vanish, and the state it draws is the same plant's frame.
+		expect(capped.levels[0]?.triangles).toBeGreaterThan(200);
+		expect(capped.skeleton.height).toBeCloseTo(full.skeleton.height, 6);
+		for (let c = 0; c < 3; c++)
+			expect(capped.skeleton.bounds.max[c]).toBeCloseTo(full.skeleton.bounds.max[c] as number, 6);
 	});
 });

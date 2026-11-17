@@ -50,7 +50,7 @@ function framePitch(record: Species): number {
 const grown = new Map<string, PlantAsset>();
 
 /** Grows one planned species at a state where the fill has run. */
-async function plantOf(id: string): Promise<PlantAsset> {
+async function plantOf(id: (typeof SPECIES)[number]): Promise<PlantAsset> {
 	const kept = grown.get(id);
 	if (kept) return kept;
 	const module = await loadSpecies(id);
@@ -108,24 +108,28 @@ describe('the planned fill reads its piece figures from the record', () => {
 			}
 		});
 
-		it(`${id}: the grown plant carries the record's figures, not a copy`, async () => {
-			const asset = await plantOf(id);
-			const record = (await loadSpecies(id)).record;
-			const growth = record.growth;
-			if (growth.model !== 'planned' || growth.frame === undefined) return;
-			const plan = planFrame(
-				growth.frame,
-				{
-					record,
-					seed: 11,
-					variant: 0,
-					season: record.seasons.default,
-				} as never,
-				false,
-			);
-			const figures = resolveFillFigures(record, plan.patches);
-			expect(asset.skeleton.fillFigures).toEqual(figures as FillFigures[]);
-		}, scaledBudget(120_000));
+		it(
+			`${id}: the grown plant carries the record's figures, not a copy`,
+			async () => {
+				const asset = await plantOf(id);
+				const record = (await loadSpecies(id)).record;
+				const growth = record.growth;
+				if (growth.model !== 'planned' || growth.frame === undefined) return;
+				const plan = planFrame(
+					growth.frame,
+					{
+						record,
+						seed: 11,
+						variant: 0,
+						season: record.seasons.default,
+					} as never,
+					false,
+				);
+				const figures = resolveFillFigures(record, plan.patches);
+				expect(asset.skeleton.fillFigures).toEqual(figures as FillFigures[]);
+			},
+			scaledBudget(120_000),
+		);
 	}
 
 	it('a changed piece moves the fill figures with it', async () => {
