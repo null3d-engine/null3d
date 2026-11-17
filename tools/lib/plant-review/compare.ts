@@ -2121,11 +2121,22 @@ export function blankFrame(plant: {
 		: undefined;
 }
 
-/** The level of detail a page posted for a cell, in words; undefined where it posted none. */
+/**
+ * The level of detail a page posted for a cell, in words; undefined where it posted none. A forced
+ * level the cell's own distance would not draw is named as out of range, with the level the engine
+ * draws there, so a picture of one-pixel leaves at a whole view is never read as that level's look.
+ */
 export function levelName(cell: unknown): string | undefined {
-	const level = (cell as { level?: { name?: unknown; forced?: unknown } } | undefined)?.level;
+	const level = (
+		cell as { level?: { name?: unknown; forced?: unknown; level?: unknown } } | undefined
+	)?.level;
 	if (!level || typeof level.name !== 'string') return undefined;
-	return level.forced === true ? `${level.name}, forced` : level.name;
+	if (level.forced !== true) return level.name;
+	const engine = engineLevelAt(cell);
+	const forced = typeof level.level === 'number' ? level.level : undefined;
+	return engine !== undefined && forced !== undefined && engine !== forced
+		? `${level.name}, forced, out of range: its distance draws the ${LEVEL_NAMES[engine]}`
+		: `${level.name}, forced`;
 }
 
 /** The levels of detail, in level order, for a record that names them. */
