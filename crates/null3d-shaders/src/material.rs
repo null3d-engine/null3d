@@ -314,13 +314,29 @@ fn pick_variant(shading: &Variant) -> Variant {
 /// the first texture coordinates.
 const CUSTOM_DEFS: [&str; 2] = ["CUSTOM", "UV0"];
 
+/// The value that holds a field which turns an input on.
+#[derive(Clone, Copy)]
+enum Holder {
+    /// A value that the WGSL declares with one of these engine types: a function's parameter, or a
+    /// variable or structure member written with its type. A field of the same name in a value of
+    /// the WGSL's own types turns nothing on, so a helper's frame may name its `tangent`.
+    Typed(&'static [&'static str]),
+    /// The engine's module-scope value of this name.
+    Named(&'static str),
+}
+
+/// The engine's inputs of both the surface and the vertex offset functions.
+const SURFACE_AND_VERTEX_INPUTS: &[&str] = &["SurfaceInput", "VertexInput"];
+
+/// The engine's input of the vertex offset function.
+const VERTEX_INPUT: &[&str] = &["VertexInput"];
+
 /// An input of custom materials that costs something, which only WGSL that reads it gets.
 struct Input {
     /// The shader def that makes the template fill it.
     def: &'static str,
-    /// The fields whose reading turns it on, each after the value that it belongs to, or after any
-    /// value with `None`.
-    fields: &'static [(Option<&'static str>, &'static str)],
+    /// The fields whose reading turns it on, each after the value that holds it.
+    fields: &'static [(Holder, &'static str)],
 }
 
 /// The shader def of the inputs that find an instance's index in its batch and its object's id.
@@ -335,30 +351,33 @@ const OBJECT_IDS_DEF: &str = "OBJECT_IDS";
 const INPUTS: [Input; 6] = [
     Input {
         def: "CUSTOM_UV1",
-        fields: &[(None, "uv1")],
+        fields: &[(Holder::Typed(SURFACE_AND_VERTEX_INPUTS), "uv1")],
     },
     Input {
         def: "CUSTOM_VERTEX_COLOR",
-        fields: &[(None, "colors")],
+        fields: &[(Holder::Typed(VERTEX_INPUT), "colors")],
     },
     Input {
         def: OBJECT_IDS_DEF,
-        fields: &[(None, "instance"), (Some("object"), "id")],
+        fields: &[
+            (Holder::Typed(SURFACE_AND_VERTEX_INPUTS), "instance"),
+            (Holder::Named("object"), "id"),
+        ],
     },
     Input {
         def: "OBJECT_MATRICES",
         fields: &[
-            (Some("object"), "worldMatrix"),
-            (Some("object"), "normalMatrix"),
+            (Holder::Named("object"), "worldMatrix"),
+            (Holder::Named("object"), "normalMatrix"),
         ],
     },
     Input {
         def: "CUSTOM_TARGET",
-        fields: &[(None, "vertexRecord")],
+        fields: &[(Holder::Typed(VERTEX_INPUT), "vertexRecord")],
     },
     Input {
         def: "CUSTOM_TANGENT",
-        fields: &[(None, "tangent")],
+        fields: &[(Holder::Typed(VERTEX_INPUT), "tangent")],
     },
 ];
 
@@ -379,14 +398,32 @@ fn calls_scene_depth(tokens: &[Token]) -> bool {
         .any(|name| calls_function(tokens, name))
 }
 
-/// True when the WGSL reads `field` of a value: a `.` and the field's name, after `owner` where it
-/// names one.
-fn reads_field(tokens: &[Token], owner: Option<&str>, field: &str) -> bool {
-    tokens.windows(3).any(|three| {
-        three[1].text == "."
-            && three[2].text == field
-            && owner.is_none_or(|owner| three[0].text == owner)
-    })
+/// True when the WGSL reads `field` of a value: a `.` and the field's name, after a name that
+/// `holds` accepts.
+fn reads_field(tokens: &[Token], field: &str, holds: impl Fn(&str) -> bool) -> bool {
+    tokens
+        .windows(3)
+        .any(|three| three[1].text == "." && three[2].text == field && holds(three[0].text))
+}
+
+/// The names that the WGSL declares with one of `types`: each name before a `:` and the type.
+fn names_of_types<'a>(tokens: &[Token<'a>], types: &[&str]) -> Vec<&'a str> {
+    tokens
+        .windows(3)
+        .filter(|three| three[1].text == ":" && types.contains(&three[2].text))
+        .map(|three| three[0].text)
+        .collect()
+}
+
+/// True when the WGSL reads `field` of a value that `holder` names.
+fn reads_held_field(tokens: &[Token], holder: Holder, field: &str) -> bool {
+    match holder {
+        Holder::Typed(types) => {
+            let names = names_of_types(tokens, types);
+            reads_field(tokens, field, |name| names.contains(&name))
+        }
+        Holder::Named(value) => reads_field(tokens, field, |name| name == value),
+    }
 }
 
 /// The defs of the inputs that cost something which the WGSL reads.
@@ -397,7 +434,7 @@ fn read_inputs(tokens: &[Token]) -> Vec<&'static str> {
             input
                 .fields
                 .iter()
-                .any(|&(owner, field)| reads_field(tokens, owner, field))
+                .any(|&(holder, field)| reads_held_field(tokens, holder, field))
         })
         .map(|input| input.def)
         .collect()
@@ -407,7 +444,7 @@ fn read_inputs(tokens: &[Token]) -> Vec<&'static str> {
 fn named_surface_fields(tokens: &[Token]) -> Vec<&'static str> {
     SURFACE_FIELDS
         .iter()
-        .filter(|found| reads_field(tokens, None, found.field))
+        .filter(|found| reads_field(tokens, found.field, |_| true))
         .map(|found| found.def)
         .collect()
 }
