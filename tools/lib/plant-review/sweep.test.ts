@@ -331,6 +331,22 @@ describe('the pull-back series', () => {
 		expect(close.inside).toBe(false);
 	});
 
+	test('refuses a patch whose projected span is under the least a figure needs', () => {
+		const spanOf = (corners: readonly (readonly [number, number])[]) => {
+			const [a, b, , d] = corners as readonly [
+				readonly [number, number],
+				readonly [number, number],
+				readonly [number, number],
+				readonly [number, number],
+			];
+			return Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(d[0] - a[0], d[1] - a[1]));
+		};
+		const near = patchCorners({ position: [0, 0, 40], target: [0, 0, 0], fov: 38 }, 960, 720);
+		const far = patchCorners({ position: [0, 0, 442], target: [0, 0, 0], fov: 38 }, 960, 720);
+		expect(spanOf(near.corners)).toBeGreaterThan(24);
+		expect(spanOf(far.corners)).toBeLessThan(24);
+	});
+
 	test('joins the rungs with intermediate distances, from inside the crown past the far start', () => {
 		const distances = sweepSeriesDistances([3.7, 156.6, 900]);
 		expect(distances.length).toBeGreaterThanOrEqual(SWEEP_SERIES_STEPS);

@@ -721,18 +721,26 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			// and five points more open than its photograph's outline.
 			const least = Math.min(...skyGaps);
 			const most = Math.max(...skyGaps);
-			gap = { drawn: most, reference: referenceGap };
-			gapField = 'enclosed sky';
-			const outside = drawn.filter(
-				(picture) =>
-					picture.skyGap !== null &&
-					(picture.skyGap < referenceGap - GAP_BELOW || picture.skyGap > referenceGap + GAP_ABOVE),
+			// The charged figure is the picture furthest outside the band, so the row's figure and
+			// its reason name one picture and one direction, while the range shows both sides.
+			const deviationOf = (value: number) =>
+				value < referenceGap - GAP_BELOW
+					? referenceGap - GAP_BELOW - value
+					: value > referenceGap + GAP_ABOVE
+						? value - (referenceGap + GAP_ABOVE)
+						: 0;
+			const withGap = drawn.filter(
+				(picture): picture is SweepPicture & { skyGap: number } => picture.skyGap !== null,
 			);
-			if (outside.length > 0) {
-				const first = outside[0] as SweepPicture;
-				const figure = (first.skyGap as number).toFixed(3);
+			const charged = withGap.reduce((worst, picture) =>
+				deviationOf(picture.skyGap) > deviationOf(worst.skyGap) ? picture : worst,
+			);
+			gap = { drawn: charged.skyGap, reference: referenceGap };
+			gapField = 'enclosed sky';
+			if (deviationOf(charged.skyGap) > 0) {
+				const direction = charged.skyGap < referenceGap - GAP_BELOW ? 'too closed' : 'too open';
 				failures.push(
-					`the crown's open sky ${figure} in ${first.file} against the reference's ${referenceGap.toFixed(3)}, past the ${GAP_BELOW.toFixed(2)}/${GAP_ABOVE.toFixed(2)} band (${least.toFixed(3)} to ${most.toFixed(3)} across ${skyGaps.length} pictures)`,
+					`the crown's open sky ${charged.skyGap.toFixed(3)} in ${charged.file} against the reference's ${referenceGap.toFixed(3)}: ${direction}, past the ${GAP_BELOW.toFixed(2)}/${GAP_ABOVE.toFixed(2)} band (the pictures run ${least.toFixed(3)} to ${most.toFixed(3)} across ${skyGaps.length})`,
 				);
 			}
 		}
@@ -741,24 +749,34 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 				.map((picture) => (picture.covered === null ? null : 1 - picture.covered))
 				.filter((value): value is number => value !== null);
 			if (filled.length > 0) {
+				const least = Math.min(...filled);
 				const most = Math.max(...filled);
 				const referenceOpen = 1 - reference.solidity;
-				gap = { drawn: most, reference: referenceOpen };
+				// The charged figure is the picture furthest outside the band, so the row's figure and
+				// its reason name one picture and one direction; the range shows both sides.
+				const deviationOf = (open: number) =>
+					open < referenceOpen - GAP_BELOW
+						? referenceOpen - GAP_BELOW - open
+						: open > referenceOpen + GAP_ABOVE
+							? open - (referenceOpen + GAP_ABOVE)
+							: 0;
+				const openness = drawn
+					.filter(
+						(picture): picture is SweepPicture & { covered: number } => picture.covered !== null,
+					)
+					.map((picture) => ({ picture, open: 1 - picture.covered }));
+				const charged = openness.reduce((worst, entry) =>
+					deviationOf(entry.open) > deviationOf(worst.open) ? entry : worst,
+				);
+				gap = { drawn: charged.open, reference: referenceOpen };
 				gapField = 'filled-frame openness';
-				const outside = drawn.filter((picture) => {
-					if (picture.covered === null) return false;
-					const open = 1 - picture.covered;
-					return open > referenceOpen + GAP_ABOVE || open < referenceOpen - GAP_BELOW;
-				});
-				if (outside.length > 0) {
-					const first = outside[0] as SweepPicture;
-					const drawnOpen = 1 - (first.covered as number);
+				if (deviationOf(charged.open) > 0) {
 					const direction =
-						drawnOpen < referenceOpen - GAP_BELOW
+						charged.open < referenceOpen - GAP_BELOW
 							? 'the card keeps too little of its own silhouette box open, so it is too closed'
 							: 'the card keeps too much of its own silhouette box open, so it is too open';
 					failures.push(
-						`the filled-frame openness ${drawnOpen.toFixed(3)} in ${first.file} against the reference's ${referenceOpen.toFixed(3)}: ${direction}; the enclosed sky cannot read here, so the filled-frame share is used`,
+						`the filled-frame openness ${charged.open.toFixed(3)} in ${charged.picture.file} against the reference's ${referenceOpen.toFixed(3)}: ${direction}, past the band (the pictures run ${least.toFixed(3)} to ${most.toFixed(3)} across ${filled.length}); the enclosed sky cannot read here, so the filled-frame share is used`,
 					);
 				}
 			}
@@ -1355,6 +1373,15 @@ export function patchCover(
 		readonly [number, number],
 		readonly [number, number],
 	];
+	// A patch that projects under the least a figure needs reads a solid texel or two, not the
+	// crown: at four hundred metres a four-metre patch is about ten pixels wide, and its 1.000
+	// is the sampling, not a solid card.
+	const span = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(d[0] - a[0], d[1] - a[1]));
+	if (span < LEAST_PLANT_WIDTH)
+		return {
+			value: null,
+			note: `the fixed patch spans ${Math.round(span)} px, under the ${LEAST_PLANT_WIDTH} px a figure needs`,
+		};
 	const edge = (from: readonly [number, number], to: readonly [number, number]) =>
 		[to[0] - from[0], to[1] - from[1]] as const;
 	const across = edge(a, b);
