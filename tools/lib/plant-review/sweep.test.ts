@@ -287,7 +287,7 @@ describe('the sweep’s rungs and orbit', () => {
 		const far = shots.find((shot) => shot.cells[0]?.file.includes('sweep-far-card/'));
 		expect(far?.query.distance).toBeGreaterThan(900);
 		const near = shots.find((shot) => shot.cells[0]?.file.includes('sweep-switch/'));
-		expect(near?.query.distance).toBe(3.7);
+		expect(near?.query.distance).toBeCloseTo(3.7 * 0.3, 5);
 		expect(near?.query.view).toBe('inside');
 		const inside = shots.find((shot) => shot.cells[0]?.file.includes('sweep-inside/'));
 		expect(inside?.query.distance).toBeUndefined();

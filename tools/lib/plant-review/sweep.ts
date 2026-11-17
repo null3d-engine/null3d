@@ -94,6 +94,11 @@ export interface SweepRung {
 	 * on the ladder's distance. A rung with none keeps its view's own camera.
 	 */
 	readonly camera?: { readonly elevation: number; readonly distanceFactor: number };
+	/**
+	 * A factor on the ladder's distance where the rung's view is closer than the probe's whole view:
+	 * a narrower lens switches to cards nearer, so the inside camera's own switch comes first.
+	 */
+	readonly distanceFactor?: number;
 }
 
 /**
@@ -129,6 +134,9 @@ export const SWEEP_RUNGS: readonly SweepRung[] = [
 		distance: 'near',
 		level: 'near',
 		compare: 'level',
+		// The inside camera's narrower lens switches to cards nearer than the whole view's ladder,
+		// so the rung stands well inside the probe's switch to draw the near form.
+		distanceFactor: 0.3,
 	},
 	{
 		id: 'inside',
@@ -328,8 +336,8 @@ export function sweepShots(
 		if (!slot) continue;
 		const view = slot.view;
 		const [width, height] = VIEW_SPECS[view].size;
-		const asked =
-			distance === null ? null : rung.camera ? distance * rung.camera.distanceFactor : distance;
+		const factor = rung.distanceFactor ?? rung.camera?.distanceFactor ?? 1;
+		const asked = distance === null ? null : distance * factor;
 		for (const camera of sweepCameras(rung, slot, step, orbit)) {
 			const name = `${rung.id}-t${camera.turn}-h${camera.height}`;
 			shots.push(
