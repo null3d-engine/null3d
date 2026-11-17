@@ -50,6 +50,7 @@ import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metri
 import { addMeasurementRelease } from '../shared/page-measurement';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
+import { onAddonChecked } from '../shared/version';
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
@@ -1744,6 +1745,10 @@ async function startEngine(
 ): Promise<Engine> {
 	const { hold, holdScript } = modes;
 	const startedAt = performance.now();
+	/** Ends a development build's hearing of add-ons for a runner that does not exist yet. */
+	let stopEarlyAddons: (() => void) | undefined;
+	/** Set once the start reaches the try whose failure stops the engine. */
+	let startTried = false;
 	const { signal } = options;
 	// A page's progress handler that throws is the page's error: the console shows it, and the
 	// start goes on.
@@ -1837,12 +1842,21 @@ async function startEngine(
 	// numbers, so that code draws the same numbers on every run.
 	if (sketchOnPage) void awaitLater(loadGlue(build));
 	const runnerModule = sketchOnPage ? loadRunnerModule() : undefined;
-	// A development build with input off loads the sketch after its runner instead, so the runner
-	// hears each add-on that the sketch's module loads, such as @null3d/controls.
+	// A development build with input off hears each add-on that the sketch's module loads, such as
+	// @null3d/controls, from before the load begins, and hands them to the runner once it exists.
+	let earlyAddons: string[] | undefined;
+	if (DEV && sketchOnPage && hold === undefined && options.input === false) {
+		const heard: string[] = [];
+		earlyAddons = heard;
+		stopEarlyAddons = onAddonChecked((name) => heard.push(name));
+		// The start runs on with no wait to the try below, whose failure stops the engine and this
+		// hearing with it. A start that throws before that try ends the hearing here.
+		queueMicrotask(() => {
+			if (!startTried) stopEarlyAddons?.();
+		});
+	}
 	const sketchModule =
-		sketchOnPage && hold === undefined && !(DEV && options.input === false)
-			? awaitLater(loadSketch(sketchUrl))
-			: undefined;
+		sketchOnPage && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
@@ -2208,6 +2222,7 @@ async function startEngine(
 	 * the core and the GPU device, unless it failed. A second call returns the first call's promise.
 	 */
 	const stop = () => {
+		if (DEV) stopEarlyAddons?.();
 		stopping ??= (async () => {
 			holder.beginStop();
 			Atomics.store(slots, Slot.Running, 0);
@@ -2305,6 +2320,7 @@ async function startEngine(
 		canvasWorker.detach();
 		parkWorker(options.canvas, canvasHold, canvasWorker.handle, canvasHold.movedTo);
 	};
+	startTried = true;
 	try {
 		const report = await abortable(
 			probeCapabilities(powerPreference, presetRequest.hints, switches.multiDraw),
@@ -2724,6 +2740,14 @@ async function startEngine(
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
 					reportSketchError: (message) => events.sketchError(new Error(message)),
+					// What the sketch's module loaded before the runner existed, then each later load.
+					...(DEV && {
+						hearAddons: (heard: (name: string) => void) => {
+							stopEarlyAddons?.();
+							for (const name of earlyAddons ?? []) heard(name);
+							return onAddonChecked(heard);
+						},
+					}),
 				},
 				hold,
 				holdScript,

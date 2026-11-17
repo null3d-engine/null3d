@@ -32,7 +32,7 @@ import {
 } from '../shared/metrics';
 import { decodeRecording, type ReplayProgram } from '../shared/recording';
 import { jobAsker } from '../shared/task-host';
-import { checkAddonVersion, VERSION } from '../shared/version';
+import { checkAddonVersion, onAddonChecked, VERSION } from '../shared/version';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import { INPUT_OFF_NOTES } from './input-off';
 import type { QualityStart, QualityUpdate } from './quality';
@@ -252,6 +252,7 @@ async function start(
 		jobs = { most: 0, handedMs: 0, asked: [] },
 		device,
 		answers,
+		hearAddons = onAddonChecked,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -274,6 +275,8 @@ async function start(
 		jobs?: { most: number; handedMs: number; asked: number[]; timing?: boolean[] };
 		device?: Partial<CoreDevice>;
 		answers?: GlueAnswers;
+		/** How the runner hears add-ons, which a worker gives as `onAddonChecked`. */
+		hearAddons?: (heard: (name: string) => void) => () => void;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -349,6 +352,7 @@ async function start(
 			twoStepProbe: false,
 			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
 			sendLabelSlot: () => {},
+			hearAddons,
 		},
 		holdSeconds,
 		holdScript,
@@ -1558,6 +1562,45 @@ describe('a runner on a page that writes no input', () => {
 			});
 			expect(controlsNotes(warn)).toBe(0);
 			runner.dispose();
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it('hears add-ons through the hearing that its thread gives it, from before it existed', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			// The page's thread gives the controls that the sketch's module loaded before the runner
+			// existed, then each later load.
+			let stopped = 0;
+			const { runner } = await start(() => ({}), undefined, {
+				control: inputOff(),
+				hearAddons: (heard) => {
+					heard('@null3d/physics');
+					heard('@null3d/controls');
+					const stop = onAddonChecked(heard);
+					return () => {
+						stopped++;
+						stop();
+					};
+				},
+			});
+			expect(controlsNotes(warn)).toBe(1);
+			// Said once, when the sketch loads them again later.
+			checkAddonVersion('@null3d/controls', VERSION);
+			expect(controlsNotes(warn)).toBe(1);
+			runner.dispose();
+			expect(stopped).toBe(1);
+			// A runner on a page that writes input asks for no hearing.
+			let asked = 0;
+			const writing = await start(() => ({}), undefined, {
+				hearAddons: () => {
+					asked++;
+					return () => {};
+				},
+			});
+			writing.runner.dispose();
+			expect(asked).toBe(0);
 		} finally {
 			warn.mockRestore();
 		}

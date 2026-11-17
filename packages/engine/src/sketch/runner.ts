@@ -106,7 +106,6 @@ import {
 } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { plansPending, tasksPending } from '../shared/task-pending';
-import { onAddonChecked } from '../shared/version';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -214,6 +213,15 @@ export interface SketchCore {
 	 * frames whose update failed.
 	 */
 	reportSketchError?(message: string): void;
+	/**
+	 * Calls `heard` with each add-on that checks its version for the sketch, and returns a function
+	 * that stops it. A development build's runner names the controls with it when the page writes no
+	 * input. The thread's own code gives it: a worker hears from before the sketch's module loads,
+	 * and the page from before it loads the module beside the runner's code. The runner imports no
+	 * hearing of its own, since code that the page's files and the runner's share stays in a
+	 * production build.
+	 */
+	hearAddons?(heard: (name: string) => void): () => void;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -803,9 +811,8 @@ export class SketchRunner {
 			this.input.inputOffNotes = notes;
 			noteInputReads(this.context, notes);
 			// The controls read the input, whenever the sketch loads them: in its module, in its
-			// setup, or later. The runner exists before its sketch's module loads, so it hears the
-			// module's own imports, and it hears no load from before it.
-			this.stopAddonNotes = onAddonChecked((name) => {
+			// setup, or later.
+			this.stopAddonNotes = sketch.hearAddons?.((name) => {
 				if (name === '@null3d/controls') notes.note('controls');
 			});
 		}
