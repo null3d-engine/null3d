@@ -960,6 +960,14 @@ not when a reviewer believes it. A species that fails any check fails, however g
 Every check names a test in the repository or a coverage rule in the review tool. A check with neither is not a gate.
 A species is not counted landed, and a shared change is not merged, while one of its checks is red.
 
+## Card baselines retire with the bake's fixes
+
+A fix to the fitted picture or to the card's mask changes every card species' coverage, so every shell,
+density or card-level figure measured before it is retired. A shell or density comparison pairs the same
+level on both sides and names both heads; a ratio against an old card level is not evidence. The directed
+bamboo's own card level moved from 48,523 triangles to 25,991 under one rule: that pair is the example, and
+the 48,523 is retired, not adjusted.
+
 ## The sweep draws every species at every distance
 
 A reviewer who opens a page and looks around finds faults the stills never draw. So the faults are found by a sweep,
