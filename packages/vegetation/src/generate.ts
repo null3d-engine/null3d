@@ -1024,6 +1024,9 @@ function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 			for (const row of order.list) if ((held[row] as number) >= 0) kept.push(held[row] as number);
 			walk = Uint32Array.from(kept);
 		}
+		// A plant that never cuts a grown plant carries no order, but the row-place cards still need a
+		// walk: its own rows in array order, which is the order its own fill carries them in.
+		walk ??= Uint32Array.from({ length: of.rows.count }, (_, i) => i);
 		let carriers = 0;
 		if (order && !order.byRows) {
 			const origin = of.skeleton.axes.origin;
