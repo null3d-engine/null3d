@@ -37,8 +37,8 @@ const TRUNK = [
  * 90 less the degrees it droops below level, so the low pads' floors fall with their limbs.
  */
 const LEVELS = [
-	{ at: 0.46, count: 2, angle: 80, end: 138 },
-	{ at: 0.52, count: 2, angle: 58, end: 128 },
+	{ at: 0.46, count: 2, angle: 80, end: 158 },
+	{ at: 0.52, count: 2, angle: 58, end: 142 },
 	{ at: 0.61, count: 3, angle: 58, end: 145 },
 	{ at: 0.69, count: 3, angle: 57, end: 145 },
 	{ at: 0.755, count: 4, angle: 56, end: 118 },
