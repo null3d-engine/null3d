@@ -24,7 +24,15 @@ import {
 	type Palette,
 	paletteOf,
 } from './card-bake';
-import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull, tilesAt } from './cards';
+import {
+	cardKeep,
+	cardMesh,
+	cardRows,
+	connectedCards,
+	foliageHull,
+	tilesAt,
+	turnedClumpCards,
+} from './cards';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -1074,6 +1082,51 @@ describe('the first card level of a clump-card plant', () => {
 				})
 				.join(',');
 			expect(second).toBe('2cee829b1cb57200');
+		},
+		scaledBudget(120_000),
+	);
+
+	it(
+		'turns a clump card set evenly over half a turn, the prototype’s planes among them',
+		async () => {
+			// A crown whose clumps leave gaps closes them with more faces at each clump's own middle.
+			// The set is evenly spaced over half a turn, the prototype's two vertical planes are
+			// among the faces, and each face takes its picture from those two in turn; the top plane
+			// stands as it is.
+			const { buildKitNow, loadPlantCode } = await import('../generate');
+			const { species } = await import('../species/olive');
+			await loadPlantCode(species.record);
+			const kit = buildKitNow(species, { placeholders: 'missing', detail: 'medium' });
+			/** A plane's normal, and the azimuth its face points along, in degrees over half a turn. */
+			const normalOf = (plane: { right: readonly number[]; up: readonly number[] }) => {
+				const [right, up] = [plane.right, plane.up];
+				const normal = [
+					(right[1] as number) * (up[2] as number) - (right[2] as number) * (up[1] as number),
+					(right[2] as number) * (up[0] as number) - (right[0] as number) * (up[2] as number),
+					(right[0] as number) * (up[1] as number) - (right[1] as number) * (up[0] as number),
+				];
+				const length =
+					Math.hypot(normal[0] as number, normal[1] as number, normal[2] as number) || 1;
+				return normal.map((v) => (v as number) / length);
+			};
+			const azimuth = (plane: { right: readonly number[]; up: readonly number[] }) => {
+				const normal = normalOf(plane);
+				const angle = (Math.atan2(normal[0] as number, normal[2] as number) * 180) / Math.PI;
+				return (angle + 360) % 180;
+			};
+			// Every prototype's faces turn, including the one whose faces are tilted.
+			for (const index of [0, 1, 2, 3]) {
+				const base = kit.prototypes[index]?.card.planes ?? [];
+				const turned = turnedClumpCards(kit, 6).prototypes[index]?.card.planes ?? [];
+				expect(turned.length).toBe(base.length + 4);
+				const faces = turned.filter((plane) => Math.abs(normalOf(plane)[1] as number) < 0.5);
+				const tops = turned.filter((plane) => Math.abs(normalOf(plane)[1] as number) >= 0.5);
+				expect(faces.length).toBe(6);
+				expect(tops.length).toBe(base.length - 2);
+				const angles = faces.map(azimuth).sort((a, b) => a - b);
+				angles.forEach((angle, i) => expect(Math.abs(angle - i * 30)).toBeLessThan(1e-6));
+				expect(faces.map((plane) => plane.role)).toEqual([0, 1, 0, 1, 0, 1]);
+			}
 		},
 		scaledBudget(120_000),
 	);
