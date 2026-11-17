@@ -112,8 +112,18 @@ async function kitOf(id: (typeof SPECIES)[number]): Promise<SpeciesKitData> {
 /** The overlap of each species at each maximum and sparseness, which the last test prints. */
 const table = new Map<string, number>();
 
-/** The species whose capped outline is recorded open in D-374, the crown-card coverage rail. */
-const OUTLINE_OPEN = new Set<string>(['pedunculate-oak', 'silver-birch', 'hawthorn-shrub']);
+/**
+ * The species whose capped outline is recorded open: D-374's crown-card coverage rail for the
+ * oak, the birch and the hawthorn, and the pine's crown-share currency, ruled at 23.10. The pine's
+ * pads are many small clumps, and the plan keeps the crown share as a clump-card count over a
+ * socket bound, so a pad that carries many sockets a card keeps a small share of them.
+ */
+const OUTLINE_OPEN = new Set<string>([
+	'pedunculate-oak',
+	'silver-birch',
+	'hawthorn-shrub',
+	'scots-pine',
+]);
 
 /** The capped-body fault recorded open: the saguaro's free leaf triangles at its sparsest state. */
 const bodyOpen = (id: string, sparse: number): boolean => id === 'saguaro' && sparse === 1;

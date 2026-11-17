@@ -69,7 +69,7 @@ const SHELL = { pitch: 0.021, reach: 0.029 } as const;
 const CLUMP = 0.1;
 const TUFT = { width: CLUMP, depth: CLUMP * 0.29 } as const;
 
-const tuft = () => ({
+const tuft = (pad: number) => ({
 	name: 'tuft',
 	role: 'branch' as const,
 	count: 1,
@@ -85,7 +85,7 @@ const tuft = () => ({
 	taper: 0.7,
 	sway: 4,
 	elbows: 1,
-	patch: { kind: 'clump', width: TUFT.width, depth: TUFT.depth, fill: SHELL },
+	patch: { kind: 'clump', width: pad, depth: TUFT.depth, fill: SHELL },
 });
 
 const arm = () => ({
@@ -106,7 +106,7 @@ const arm = () => ({
 	elbows: 1,
 });
 
-const spray = (band: readonly [number, number]) => ({
+const spray = (band: readonly [number, number], pad: number) => ({
 	name: 'spray',
 	role: 'branch' as const,
 	count: 5,
@@ -122,7 +122,7 @@ const spray = (band: readonly [number, number]) => ({
 	taper: 0.6,
 	sway: 8,
 	elbows: 1,
-	children: [tuft()],
+	children: [tuft(pad)],
 });
 
 const rule = (
@@ -133,6 +133,7 @@ const rule = (
 		readonly end: number;
 		readonly pad: number;
 		readonly band: readonly [number, number];
+		readonly lowPad?: number;
 	},
 	stubs = true,
 ) => ({
@@ -157,7 +158,7 @@ const rule = (
 	sway: 6,
 	elbows: 3,
 	apart: 0.01,
-	...(stubs ? { children: [arm(), spray(level.band)] } : {}),
+	...(stubs ? { children: [arm(), spray(level.band, level.pad * 0.33)] } : {}),
 });
 
 /** The Scots pine's frame. */
