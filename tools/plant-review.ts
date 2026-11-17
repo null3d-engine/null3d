@@ -12,6 +12,7 @@
 //   bun run plants:review <species> --sweep [--out <folder>] [--run <name>] [--draw-only]
 //     [--sweep-step <degrees>] [--rungs-only]
 //   bun run plants:review --sweep-compare <run folder>
+//   bun run plants:review --redraw-series <run folder>
 //   bun run plants:review --sweep-all [--species a,b] [--out <folder>] [--run <name>]
 //     [--sweep-step <degrees>] [--rungs-only] [--rungs-after HH:MM] [--until HH:MM]
 //
@@ -1574,6 +1575,55 @@ async function main(): Promise<void> {
 				step: manifest.sweep.step ?? 30,
 				orbit: manifest.sweep.orbit ?? true,
 				head: { commit: manifest.commit, dirty: manifest.dirty },
+			}),
+			dir,
+		);
+		return;
+	}
+	if (flag('redraw-series')) {
+		const dir = resolve(option('redraw-series'));
+		const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as Manifest;
+		if (!manifest.sweep) throw new Error(`${dir} is not a sweep run`);
+		const steps = manifest.sweep.series;
+		if (steps.length === 0) throw new Error(`${dir} recorded no pull-back series`);
+		const shots: Shot[] = [];
+		for (const step of steps) {
+			const frame = manifest.frames.find((candidate) => candidate.file === step.file);
+			if (!frame) continue;
+			shots.push(
+				singleShot(
+					'sweep-series',
+					step.file.replace('sweep-series/', ''),
+					frame.query,
+					VIEW_SPECS.whole.size,
+					true,
+				),
+			);
+		}
+		const gpu = flag('gpu') ? option('gpu') : undefined;
+		const release = await takeDrawSlot();
+		let fresh: RunFrame[];
+		try {
+			fresh = await drawShots(dir, shots, { ...(gpu !== undefined && { gpu }) });
+		} finally {
+			release();
+		}
+		const byFile = new Map(fresh.map((frame) => [frame.file, frame]));
+		const updated: Manifest = {
+			...manifest,
+			frames: manifest.frames.map((frame) => byFile.get(frame.file) ?? frame),
+		};
+		writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(updated, null, '\t')}\n`);
+		const set = updated.references
+			? readReferenceSet(updated.references, await formsOf(updated.species))
+			: undefined;
+		if (!set) throw new Error(`${dir} names no reference folder`);
+		const plan = planFromManifest(set, updated.sweep as SweepManifest);
+		printSweep(
+			sweepRun(dir, updated.species, set, updated.frames, plan, steps, {
+				step: updated.sweep?.step ?? 30,
+				orbit: updated.sweep?.orbit ?? true,
+				head: { commit: updated.commit, dirty: updated.dirty },
 			}),
 			dir,
 		);
