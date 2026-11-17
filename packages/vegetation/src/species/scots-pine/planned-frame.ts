@@ -75,7 +75,7 @@ const rule = (level: {
 	angle: level.angle,
 	from: 'plumb' as const,
 	angleSpread: 4,
-	length: { outline: 0.5 },
+	length: { outline: 1 },
 	vary: 0.05,
 	radius: 0.12,
 	taper: 0.4,
