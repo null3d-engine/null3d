@@ -335,7 +335,9 @@ export const record: Species = {
 			// photographs part between a warm and a grey tone, so its tint lifts the red and the blue
 			// together and stands the drawn bark between them.
 			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [1.2, 1.15, 1] },
-			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.85, 0.79, 0.73] },
+			// Stills 01 and 02: the bole's own grey-brown is darker and greener than the drawn one,
+			// which stands too near white against it.
+			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.49, 0.48, 0.37] },
 			// Still 16: a great limb's bark reads darker than the limb in its photograph, so wood
 			// thinner than the bole takes a lighter tone of its own.
 			{ layer: 0, by: 'radius', from: 0, to: 0.3, blend: 0.05, tint: [1.38, 1.4, 1.22] },
