@@ -4,8 +4,9 @@
 import { beforeAll, describe, expect, it } from 'bun:test';
 import type { SpeciesKitData } from '../asset';
 import { BUD_FLOWER } from '../core/graph';
-import type { SpeciesModule } from '../core/record';
+import type { FrondCrown, SpeciesModule } from '../core/record';
 import { loadSpecies } from '../core/registry';
+import { spreadMean } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { crownOf } from './model';
 import { emitFrondCrown } from './planned-rosette';
@@ -26,9 +27,17 @@ describe('the frond crown adapter', () => {
 		const { buds } = asset.skeleton;
 		let grown = 0;
 		for (let b = 0; b < buds.count; b++) if ((buds.kind[b] as number) !== BUD_FLOWER) grown++;
-		// The adapter's own draw purposes lay 76 sockets where the directed grower lays 79 without
-		// the flower sites. That three-socket difference is the conversion's one mover, named to the
-		// lead; the shared grow will follow the model. Both figures are pinned, so a change fails.
+		// The record's means are 56 living and 20 dead. Each grower samples each count within its
+		// spread: the model lays the means, 56 + 20, at seed 11, and the directed grower happens to
+		// lay 59 + 20. The three sockets are the seed's sampling, which the planned model drops, not a
+		// loss. The means, the sums and the sampled counts are all pinned, so a record edit fails on
+		// the figure it changed.
+		const growth = palm.record.growth as FrondCrown;
+		const living = spreadMean(growth.fronds.count);
+		const dead = growth.dead ? spreadMean(growth.dead.count) : 0;
+		expect(living).toBe(56);
+		expect(dead).toBe(20);
+		expect(model.sockets.length).toBe(living + dead);
 		expect(model.sockets.length).toBe(76);
 		expect(grown).toBe(79);
 		expect(model.pieces.map((piece) => piece.name)).toEqual(
