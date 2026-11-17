@@ -32,8 +32,9 @@
 //! through [`LevelRule::pick`], and the GPU's culling shader by the same steps.
 //!
 //! A level with a measured error changes the picture by under a pixel at the threshold the asset
-//! tool measures it at, so it switches at once. A governed threshold above
-//! [`MEASURED_FADE_FROM`] makes the switch show, and the measured level then fades too. A level
+//! tool measures it at, so it switches at once. Once the governor raises the threshold above
+//! [`MEASURED_FADE_FROM`], the switch shows, and the measured level then fades too. A preset's
+//! own threshold never makes it fade, so a preset pays for no second draw. A level
 //! given by distance or by a hand-set error changes the picture far more, and it always fades
 //! where the switch would show: past each switch distance lies a fading band, [`FADE_BAND`] of the
 //! switch distance long, in which the new level and the one before both draw. A fade amount `t`
@@ -89,7 +90,9 @@ pub const FADE_BAND: f32 = 0.08;
 /// A measured error covers this many pixels at its switch, so the switch shows once the governed
 /// threshold rises past about one and a half pixels. Below this the picture changes by under a
 /// pixel and the band costs a second draw for nothing. The threshold here is the one in force after
-/// the governor's detail steps, which the frame receives.
+/// the governor's detail steps, which the frame receives. Only a threshold that the governor
+/// raised counts: Low's own two pixels keep its measured levels switching at once, as its phones
+/// pay for each second draw.
 pub const MEASURED_FADE_FROM: f32 = 1.5;
 
 /// The smallest fade value of the new level in a band, so that its sign marks it even at the
