@@ -41,6 +41,7 @@ import {
 	clusterTriangles,
 	type DrawnWood,
 	plannedClumpCards,
+	tilesAt,
 	woodSurface,
 } from './cards';
 
@@ -913,12 +914,30 @@ export function rowLevel(
 			// each row place, in the crown's draw order, until every row has one or the allowance is
 			// spent; what is left after every place stays unspent, as a maximum is a ceiling.
 			const left = budget - leaves;
-			if (cards && left > 2 * planes) {
-				const place = (count: number) => {
-					const made = cardClusters(mesh, walk, count, drawn, planes, surface);
+			// A record may place the crown's row cards only where the clump cards do not cover, or
+			// carry the nearest clump's tiled picture on them; absent draws one plain card at every
+			// place, as the dense rule does.
+			const placement = mesh.record.lod.crownPlace;
+			const tiles = placement === 'tiled' ? tilesAt(level === 1 ? 1 : 2) : 1;
+			const crownClumps = input.mesh.skeleton.clumps ?? [];
+			const covered = (place: CardCluster): boolean =>
+				crownClumps.some(
+					(clump) =>
+						Math.hypot(
+							(place.centre[0] as number) - (clump.centre[0] as number),
+							(place.centre[1] as number) - (clump.centre[1] as number),
+							(place.centre[2] as number) - (clump.centre[2] as number),
+						) <= (clump.radius as number),
+				);
+			if (cards && left > 2 * planes * tiles * tiles) {
+				const place = (number: number) => {
+					let made = cardClusters(mesh, walk, number, drawn, planes, surface);
+					if (placement === 'covered') made = made.filter((place) => !covered(place));
+					if (tiles > 1)
+						made = made.map((cluster) => ({ ...cluster, faces: planes * tiles * tiles }));
 					return { made, cost: clusterTriangles(made, planes) };
 				};
-				let high = Math.min(rows.count, Math.floor(left / (2 * planes)));
+				let high = Math.min(rows.count, Math.floor(left / (2 * planes * tiles * tiles)));
 				let places: CardCluster[] = [];
 				const most = place(high);
 				if (most.cost <= left) places = most.made;
@@ -936,12 +955,51 @@ export function rowLevel(
 				if (places.length > 0) {
 					const both = new MeshWriter();
 					both.append(cards, () => {});
+					// The tiled places take the rows of the clump nearest each place, spread across the
+					// tiles as a clump card spreads its own rows.
+					const tiled =
+						tiles > 1
+							? {
+									tiles,
+									row: (index: number, tile: number): number => {
+										const place = places[index] as CardCluster;
+										let best = -1;
+										let least = Number.POSITIVE_INFINITY;
+										for (let k = 0; k < crownClumps.length; k++) {
+											const clump = crownClumps[k] as NonNullable<(typeof crownClumps)[number]>;
+											const distance = Math.hypot(
+												(place.centre[0] as number) - (clump.centre[0] as number),
+												(place.centre[1] as number) - (clump.centre[1] as number),
+												(place.centre[2] as number) - (clump.centre[2] as number),
+											);
+											if (distance < least) {
+												least = distance;
+												best = k;
+											}
+										}
+										const clump = crownClumps[best];
+										const list: number[] = [];
+										if (clump)
+											for (let r = 0; r < rows.count; r++) {
+												const dx = (rows.position[r * 3] as number) - (clump.centre[0] as number);
+												const dy =
+													(rows.position[r * 3 + 1] as number) - (clump.centre[1] as number);
+												const dz =
+													(rows.position[r * 3 + 2] as number) - (clump.centre[2] as number);
+												if (dx * dx + dy * dy + dz * dz <= (clump.radius as number) ** 2)
+													list.push(r);
+											}
+										const near = list.length > 0 ? list : [place.row];
+										return near[Math.floor((tile * near.length) / (tiles * tiles))] as number;
+									},
+								}
+							: undefined;
 					clusterCardMesh(
 						input.mesh,
 						places,
 						planes,
 						undefined,
-						undefined,
+						tiled,
 						both,
 						level === 1 ? 0.5 : 0,
 					);

@@ -2949,6 +2949,12 @@ export interface LodSpec {
 	 */
 	readonly cardCover?: number;
 	/**
+	 * Where a capped crown's row-place cards stand: absent draws one at every place the allowance
+	 * reaches, 'covered' draws them only where the clump cards do not cover, and 'tiled' carries the
+	 * nearest clump's tiled picture on them.
+	 */
+	readonly crownPlace?: 'covered' | 'tiled';
+	/**
 	 * How far the sun's light thins inside the crown, from 0 to 1: each shoot row dims by its own
 	 * share of the sky, so a row under other rows reads dark and a row on the crown's top reads lit.
 	 * Absent or 0 lights every row alike.

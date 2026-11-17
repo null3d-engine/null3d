@@ -1257,6 +1257,8 @@ export function speciesProblems(record: Species): string[] {
 		out.push(
 			`lod.cardCover is ${cover}; it is a factor from 0.5 to 2 on the first card level's coverage`,
 		);
+	if (lod.crownPlace !== undefined && lod.crownPlace !== 'covered' && lod.crownPlace !== 'tiled')
+		out.push(`lod.crownPlace is ${String(lod.crownPlace)}; it is 'covered' or 'tiled', or absent`);
 	const planes = lod.cardPlanes;
 	if (planes !== undefined) {
 		if (!Array.isArray(planes) || planes.length !== 2)
