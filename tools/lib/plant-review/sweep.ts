@@ -867,9 +867,12 @@ export function sweepSeriesRows(pictures: readonly SweepSeriesRow[]): readonly S
 		const change = before !== null && picture.covered !== null ? picture.covered - before : null;
 		let verdict: SweepSeriesRow['verdict'] = picture.verdict;
 		let reason = picture.reason;
-		if (picture.covered === null && verdict === 'pass') {
+		if (picture.covered !== null && picture.level === 3 && 1 - picture.covered <= 0.01) {
+			verdict = 'fail';
+			reason = `the far card fills its own span: openness ${(1 - picture.covered).toFixed(3)}, a solid card and not a crown`;
+		} else if (picture.covered === null && verdict === 'pass') {
 			verdict = 'unmeasured';
-			reason = 'unmeasured: no covered share read at this distance';
+			reason = `unmeasured: ${picture.reason === '' ? 'no covered share read at this distance' : picture.reason}`;
 		} else if (change !== null && change < -SERIES_OPEN) {
 			verdict = 'fail';
 			reason = `the crown's covered share falls ${(-change).toFixed(3)} from ${previous?.file ?? 'the step before'} (${previous?.covered?.toFixed(3)} to ${picture.covered?.toFixed(3)})`;
@@ -1060,7 +1063,7 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 			skyGap,
 			// The orbit's share reads the matte, which separates a filled frame that the photograph's
 			// colour rule cannot: the same figure on the crown and at a close piece.
-			covered: seriesCovered(runDir, frame),
+			covered: seriesCovered(runDir, frame).value,
 		};
 	} catch (error) {
 		return {
@@ -1076,15 +1079,30 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
  * reads at every distance rather than at the few the photograph's rule can find. A frame with no
  * matte, or no plant in it, reads no share.
  */
-export function seriesCovered(runDir: string, frame: RunFrame): number | null {
-	if (frame.matte === undefined) return null;
+export function seriesCovered(
+	runDir: string,
+	frame: RunFrame,
+): { readonly value: number | null; readonly note: string } {
+	if (frame.matte === undefined) return { value: null, note: 'no matte' };
 	const image = readImage(join(runDir, frame.matte));
 	const own = matteOwnMask(image);
 	const box = boxOf(own.mask, own.width, own.height);
-	if (!box) return null;
+	if (!box) return { value: null, note: 'no plant in the frame' };
+	// A silhouette the frame cuts has no box of its own: its share swings with the framing rather
+	// than with the crown, so the step is unmeasured rather than a reading.
+	if (
+		box.left === 0 ||
+		box.top === 0 ||
+		box.right === own.width - 1 ||
+		box.bottom === own.height - 1
+	)
+		return { value: null, note: 'the plant fills the frame; its own silhouette is cut by it' };
 	let plant = 0;
 	for (const value of own.mask) if (value === 1) plant++;
-	return plant / ((box.right - box.left + 1) * (box.bottom - box.top + 1));
+	return {
+		value: plant / ((box.right - box.left + 1) * (box.bottom - box.top + 1)),
+		note: '',
+	};
 }
 
 /** One species' round: its rows, its series, its coverage and its sheets, written into the run. */
@@ -1184,7 +1202,7 @@ export function sweepRun(
 			file: step.file,
 			distance: step.distance,
 			level: typeof record?.level === 'number' ? record.level : null,
-			covered: seriesCovered(runDir, frame),
+			covered: seriesCovered(runDir, frame).value,
 			change: null,
 			verdict: 'pass',
 			reason: '',
