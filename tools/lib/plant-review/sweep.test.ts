@@ -439,6 +439,19 @@ describe('the sweep’s verdicts', () => {
 		expect(result.reason).toContain('at 120°');
 	});
 
+	test('reads a close view for pieces that leave the wood, not for its own turning cover', () => {
+		const leaf = SWEEP_RUNGS[5] as (typeof SWEEP_RUNGS)[number];
+		const jumping = orbit(0, 0.8, 60);
+		expect(row(leaf, jumping).verdict).toBe('pass');
+		const floating = orbit(0);
+		floating[0] = picture(floating[0]!.file, 0, {
+			turn: floating[0]!.turn,
+			height: floating[0]!.height,
+			measures: measures([{ area: 30, box: 'a' }]),
+		});
+		expect(row(leaf, floating).verdict).toBe('fail');
+	});
+
 	test('reads a cluster jump apart from the covered share', () => {
 		const drawn = orbit(3);
 		drawn[3] = picture('sweep/rung-t60-hlow.png', 3, {
