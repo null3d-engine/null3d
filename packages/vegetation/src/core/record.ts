@@ -1648,6 +1648,23 @@ export interface Planned {
 	 * the plant. Absent, the wood.
 	 */
 	readonly capCards?: 'wood' | 'stated';
+	/**
+	 * The plant is a ribbed column: the mesher's ribbed section and the fill's crest areoles. The
+	 * stem's ribs are drawn once for the plant and each arm's for its own axis; the areoles stand
+	 * this many metres apart along every crest, and the rounded top is this many stem widths tall.
+	 */
+	readonly column?: {
+		/** Ribs round the stem. */
+		readonly ribs: Spread;
+		/** Ribs round each arm. */
+		readonly armRibs: Spread;
+		/** How deep a groove cuts, as a share of the radius. */
+		readonly ribDepth: number;
+		/** Metres between two areoles along a crest. */
+		readonly areoles: number;
+		/** The rounded top's height, in stem widths. */
+		readonly dome: number;
+	};
 	/** The triangles one drawn piece of each kind costs, which the plan prices its shares from. */
 	readonly prices: Readonly<Record<'piece' | 'card' | 'clumpCard' | 'tubeSegment', number>>;
 }
