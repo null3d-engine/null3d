@@ -118,10 +118,10 @@ const rule = (
 	// The crown's own outline is the foliage's edge, so the wood stops a pad's radius inside it.
 	length: { outline: 0.85 },
 	vary: 0.05,
-	// Still 01: the limb leaves the trunk at 0.58 of its radius, the collar at the joint, and keeps
-	// 0.85 of its radius along the run. The frame reads one radius at the joint, so the collar's
-	// value stands and no swell fades behind it.
-	radius: 0.58,
+	// Still 01, at the measured place outside the collar: the limb is 0.20 of the trunk's radius
+	// and keeps 0.85 of it along the run. The collar's swell to 0.58 at the joint is the form's
+	// limit, since a frame radius holds one value along a limb.
+	radius: 0.2,
 	taper: 0.85,
 	bends: [{ from: 0.3, to: 1, level: [[0, level.leave] as const, [1, level.end] as const] }],
 	sway: 6,
