@@ -1,11 +1,54 @@
-// The shared generator's intermediate model: what a family's adapter writes and no more. A family
-// states axes, the sockets that carry its pieces and the pieces' own measured figures. It writes no
-// geometry, no material and no level: the shared stages price, grow, close, allocate and bake it.
+// The shared generator's intermediate model, and the contract every family's adapter follows.
 //
-// The model is plain data so a family can be checked against it without building anything: each
-// socket names its carrying axis, its order and its share along that axis, and each piece carries
-// the record figures its size comes from. The crown box is the pieces' own reach, so a family does
-// not state a box beside them.
+// An adapter is a family's only contribution to the generator. It writes a PlantModel for one
+// state of one record and nothing else. The shared stages then do the rest, once for every family:
+//
+//   emit      the adapter writes the model at the state asked for, its maturity and its season.
+//   price     the model's pieces and sockets are priced from the record's figures.
+//   grow      the skeleton is built from the axes and sockets, and the pieces are scaled with it.
+//   close     every kept socket's carrier is drawn or the socket is dropped, a piece's scale is
+//             the record's, and a card level's cover comes from the leaf form's.
+//   allocate  the maximum reaches each part, the crown first at low maximums, with the closure's
+//             carriers counted, and every level inside its maximum.
+//   bake      the card atlas, the far picture and the levels' draws.
+//
+// What an adapter emits, and what each field means:
+//
+//   axes      Parents before children, axis 0 the plant's foot. Each states its order, its parent
+//             and the share along that parent, its course (from and to, with its own nodes where it
+//             bends), its girth at the foot and the tip, and whether it is body: drawn at every
+//             state, so a piece that hangs from it is never left without wood.
+//   sockets   One for each piece. Each states the axis that carries it, the piece's order, its
+//             share along that axis, its place and direction, the piece's index in the kit's class
+//             order, its scale against the kit's piece, its keep rank (0 for the least plant's)
+//             and its group (a shoot thins whole, with every piece on it).
+//   pieces    One for each kit class. Each states its name, length, width and depth, the height it
+//             stands above its socket and its reach out from it, and the record's own figures by
+//             name. The crown box is read from these, never stated beside them.
+//   least     The sockets whose keep is 0: what a sparseness never takes.
+//   scale     The share of the adult height the emitted state stands at.
+//   keepShare The share of the grown sockets the state keeps, from its sparseness.
+//   crown     The box the pieces fill, as crownOf reads it.
+//
+// What an adapter may not do:
+//
+//   - write geometry, a material, a level or a bake, or carry a piece's mesh;
+//   - price anything: a price that is not read from the record is a fault, not a default;
+//   - thin outside the keep rank: no frame's thin array and no family allowance moves a piece;
+//   - hold a cap decision: the maximum and the crown-first split belong to the shared allocator;
+//   - name another family's piece class, or a species' number in code both families read.
+//
+// What the shared stages expect of a model:
+//
+//   - the model is the state asked for: maturity's counts, the season's pieces and the request's
+//     flower ramp are the adapter's, while the sparseness cut belongs to the grow stage;
+//   - axis 0's first two nodes are the seat the other axes leave from, and every other axis's
+//     parent is a lower index;
+//   - a socket's axis is an index into the axes, and a socket never outlasts its axis;
+//   - a socket's piece index names the pieces' order, which is the kit's class order;
+//   - a plant's top and box are its own at every sparseness: the grow reads every grown socket,
+//     never only the kept ones, so no sparseness moves the frame;
+//   - the body axis is the stool or the trunk, so the closure keeps the plant's base under any cap.
 import { length3 } from '../core/math';
 import type { Vec3 } from '../core/types';
 
