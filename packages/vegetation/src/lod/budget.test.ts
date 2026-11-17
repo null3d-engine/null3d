@@ -112,18 +112,21 @@ async function kitOf(id: Parameters<typeof loadSpecies>[0]): Promise<SpeciesKitD
 /** The overlap of each species at each maximum and sparseness, which the last test prints. */
 const table = new Map<string, number>();
 
+/** The species whose capped outline is recorded open at every maximum, from D-374's rail. */
+const OUTLINE_OPEN = new Set<string>(['pedunculate-oak', 'silver-birch', 'hawthorn-shrub']);
+
 /**
- * The species whose capped outline is recorded open: D-374's crown-card coverage rail for the
- * oak, the birch and the hawthorn, and the pine's crown-share currency, ruled at 23.10. The pine's
- * pads are many small clumps, and the plan keeps the crown share as a clump-card count over a
- * socket bound, so a pad that carries many sockets a card keeps a small share of them.
+ * The pine's capped outline at its low maximums, recorded open at 23.10 for the crown share's
+ * currency: the plan keeps the share as a clump-card count over a socket bound, and a pad of the
+ * conifer class carries many sockets a card. The top maximum is not on this list: it passed
+ * before the class build and now draws the capped level's leaf share, a fault with its own pass.
  */
-const OUTLINE_OPEN = new Set<string>([
-	'pedunculate-oak',
-	'silver-birch',
-	'hawthorn-shrub',
-	'scots-pine',
-]);
+const PINE_LOW_MAXIMA = new Set<number>([50_000, 10_000, 2_000, 500]);
+
+/** Whether a maximum's capped outline is recorded open for a species. */
+function outlineRecordedOpen(id: string, max: number): boolean {
+	return OUTLINE_OPEN.has(id) || (id === 'scots-pine' && PINE_LOW_MAXIMA.has(max));
+}
 
 /** The capped-body fault recorded open: the saguaro's free leaf triangles at its sparsest state. */
 const bodyOpen = (id: string, sparse: number): boolean => id === 'saguaro' && sparse === 1;
@@ -251,6 +254,8 @@ for (const id of SPECIES) {
 					const { capped } = await capSession(id, sparse);
 					const low: string[] = [];
 					for (const { at, max, overlap } of capped) {
+						// The pine's low maxima are recorded open; its top maximum is asserted.
+						if (outlineRecordedOpen(id, max) && !OUTLINE_OPEN.has(id)) continue;
 						const floor = (FLOORS[MAXIMA.indexOf(max)] as readonly [number, number])[
 							WOODY.has(id) ? 0 : 1
 						];
