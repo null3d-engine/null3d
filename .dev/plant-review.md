@@ -916,6 +916,21 @@ Every merge into the shared line also compares all twenty species' digests befor
 [the vegetation process guide](vegetation-process.md#merges-into-the-shared-line) says. A switched
 species whose look moves stops the merge until the change is made opt-in or the reviewer judges it.
 
+## A species is judged close up
+
+A species' verdict comes from its full form — sparseness 0, no triangle maximum, the preset's high tier — and from
+close views of that form. The distant views show a crown's outline and the sky inside it. They do not show a plate
+where a leaf belongs, bark that tiles into blocks, or a spray that hangs off its wood. One evening's close views found
+a card baked as a broad pale plate, twigs that read as poles, and a needle pad standing a metre from its bough, while
+every distant view showed the same faults as small shapes.
+
+Every round draws these views: inside the crown, at the trunk, and at a leaf's own scale. Each stands at the distance
+the reference states where it states one, and each is compared beside the reference's own close crop. A row passes
+only when its close views are drawn and compared; a verdict without them is a verdict on the outline alone.
+
+The close views hold the page's default setting. A close view at another sparseness, maximum or tier measures that
+setting, and it is labelled with it.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
