@@ -27,8 +27,8 @@ describe('the conifer adapter', () => {
 		expect(model.least).toBe(1);
 		expect(model.scale).toBe(1);
 		expect(model.keepShare).toBe(1);
-		// The inner body is drawn wood at every state, and its ring count is the figure the shared
-		// bake reads: its nodes less the one the closed surface ends on.
+		// The inner body is drawn wood at every state, and its steps are the figure the shared draw
+		// samples: its nodes less one, not the rings the adaptive draw places.
 		const body = model.axes.find((axis) => axis.body === true);
 		expect(body).toBeDefined();
 		expect(body?.nodes?.length).toBe(44);

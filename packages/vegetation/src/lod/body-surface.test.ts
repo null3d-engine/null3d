@@ -1,118 +1,106 @@
-// The body surface, read on the Italian cypress's inner body: the model's ring count is the
-// surface's, the sides follow the level and its coarsening, and every edge closes on two triangles.
-// The axis's own rings and the drawn surface's rings are stated apart: the surface draws one ring
-// for each step the model states.
-import { describe, expect, it } from 'bun:test';
+// The body surface, read on the Italian cypress's inner body: the model states the axis's steps,
+// and the surface draws the family's own adaptive rings, so its mesh is the family's mesh to the
+// byte. The rings, the triangles and the mesh's digest are pinned at each level.
+import { beforeAll, describe, expect, it } from 'bun:test';
+import type { PlantAsset, SpeciesKitData } from '../asset';
+import { AXIS_LIMB, SkeletonBuilder } from '../core/graph';
+import { hashBytes } from '../core/hash';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { emitConifer } from '../grow/conifer';
+import { species as cypressModule } from '../species/italian-cypress';
 import { directed as cypress } from '../species/italian-cypress/directed';
-import { bodySurface } from './body-surface';
+import type { MeshInput } from '../stages';
+import { meshWoodReport } from '../wood/wood-mesh';
+import { type BodyNode, bodySurface } from './body-surface';
 
-const model = emitConifer({
-	record: cypress,
-	seed: 11,
-	variant: 0,
-	season: cypress.seasons.default,
+let kit: SpeciesKitData;
+let asset: PlantAsset;
+let input: MeshInput;
+
+/** A hash of a mesh's arrays, so two draws of the same body compare byte for byte. */
+function digest(arrays: readonly ArrayBufferView[]): string {
+	let hash = 0;
+	for (const view of arrays)
+		hash = hashBytes(new Uint8Array(view.buffer, view.byteOffset, view.byteLength), hash);
+	return String(hash);
+}
+
+beforeAll(async () => {
+	await loadPlantCode(cypressModule.record);
+	kit = buildKitNow(cypressModule, { detail: 'high', placeholders: 'missing' });
+	asset = growPlantNow(kit, { seed: 11, variant: 0, season: 'summer', near: true });
+	const { min, max } = asset.skeleton.bounds;
+	input = {
+		record: kit.record,
+		seed: asset.seed,
+		variant: asset.variant,
+		season: asset.season,
+		kit,
+		skeleton: asset.skeleton,
+		coarseness: asset.coarseness,
+		rows: asset.shoots,
+		crown: {
+			cells: [1, 1, 1],
+			min,
+			cell: Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]),
+			sky: new Float32Array([1]),
+		},
+		detail: 'high',
+	};
 });
-const body = model.axes.find((axis) => axis.body === true);
 
-/** The ladder the allocator coarsens the wood by: a coarseness and a section sparsity each. */
-const RUNGS: readonly (readonly [number, number])[] = [
-	[0, 0],
-	[0.5, 0],
-	[1, 0],
-	[1, 0.25],
-	[1, 0.5],
-	[1, 0.75],
-	[1, 1],
-];
+/** The cypress's inner body as the model states it. */
+function body(): { readonly nodes: readonly BodyNode[]; readonly segments: number } {
+	const model = emitConifer({
+		record: cypress,
+		seed: 11,
+		variant: 0,
+		season: cypress.seasons.default,
+	});
+	const axis = model.axes.find((one) => one.body === true);
+	if (!axis?.nodes || axis.segments === undefined) throw new Error('the cypress has no body');
+	return { nodes: axis.nodes, segments: axis.segments };
+}
 
 describe('the body surface', () => {
-	it('draws the cypress body’s stated rings at each level', () => {
-		const nodes = body?.nodes;
-		const segments = body?.segments;
-		if (!nodes || segments === undefined) throw new Error('the cypress has no body');
+	it('draws the family’s adaptive rings from the stated steps', () => {
+		const { nodes, segments } = body();
 		expect(nodes.length).toBe(44);
 		expect(segments).toBe(43);
-		const at = [
-			bodySurface(nodes, segments, 0, 'high'),
-			bodySurface(nodes, segments, 1, 'high'),
-			bodySurface(nodes, segments, 2, 'high'),
-		];
-		for (const surface of at) {
-			expect(surface.rings).toBe(43);
-			expect(surface.positions.length / 3).toBe(43 * surface.sides + 2);
-			expect(surface.triangles).toBe(2 * surface.sides * surface.rings);
-			expect(surface.indices.length / 3).toBe(surface.triangles);
-		}
-		expect(at.map((surface) => surface.sides)).toEqual([96, 48, 24]);
-		expect(at.map((surface) => surface.triangles)).toEqual([8256, 4128, 2064]);
+		const drawn = ([0, 1, 2] as const).map((level) => bodySurface(nodes, segments, input, level));
+		// The mesher adapts the 44 nodes: the rings it draws, not the steps the model states.
+		expect(drawn.map((surface) => surface.rings)).toEqual([19, 18, 18]);
+		expect(drawn.map((surface) => surface.triangles)).toEqual([3340, 1574, 787]);
 	});
 
-	it('coarsens its sides by the allocator’s ladder, with the triangles pinned', () => {
-		const nodes = body?.nodes;
-		const segments = body?.segments;
-		if (!nodes || segments === undefined) throw new Error('the cypress has no body');
-		const drawn = RUNGS.map(([coarseness, sections]) =>
-			bodySurface(nodes, segments, 1, 'high', coarseness, sections),
-		);
-		expect(drawn.map((surface) => surface.sides)).toEqual([48, 48, 33, 12, 7, 5, 3]);
-		expect(drawn.map((surface) => surface.triangles)).toEqual([
-			4128, 4128, 2838, 1032, 602, 430, 258,
-		]);
+	it('draws the body the family’s own mesh draws, to the byte', () => {
+		const { nodes, segments } = body();
+		for (const level of [0, 1, 2] as const) {
+			const surface = bodySurface(nodes, segments, input, level);
+			// The same axis, meshed as the family's grower writes it: a parentless limb, unlit.
+			const builder = new SkeletonBuilder();
+			const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 1, kind: AXIS_LIMB });
+			let previous = -1;
+			for (const node of nodes)
+				previous = builder.addNode({
+					x: node.at[0],
+					y: node.at[1],
+					z: node.at[2],
+					radius: node.radius,
+					parent: previous,
+					axis,
+					light: 0,
+				});
+			const family = meshWoodReport({ ...input, skeleton: builder.finish(0) }, level);
+			expect(digest([surface.mesh.positions, surface.mesh.normals, surface.mesh.indices])).toBe(
+				digest([family.mesh.positions, family.mesh.normals, family.mesh.indices]),
+			);
+			expect(surface.mesh.uvs).toEqual(family.mesh.uvs);
+		}
 	});
 
-	it('closes every edge on two triangles', () => {
-		const nodes = body?.nodes;
-		const segments = body?.segments;
-		if (!nodes || segments === undefined) throw new Error('the cypress has no body');
-		const surface = bodySurface(nodes, segments, 1, 'high', 1, 1);
-		const edges = new Map<number, number>();
-		const vertices = surface.positions.length / 3;
-		for (let t = 0; t < surface.triangles; t++) {
-			for (let k = 0; k < 3; k++) {
-				const a = surface.indices[t * 3 + k] as number;
-				const b = surface.indices[t * 3 + ((k + 1) % 3)] as number;
-				const key = Math.min(a, b) * vertices + Math.max(a, b);
-				edges.set(key, (edges.get(key) ?? 0) + 1);
-			}
-		}
-		let open = 0;
-		for (const count of edges.values()) if (count !== 2) open++;
-		expect(open).toBe(0);
-	});
-
-	it('stands its ring vertices on the axis’s own radius', () => {
-		const nodes = body?.nodes;
-		const segments = body?.segments;
-		if (!nodes || segments === undefined) throw new Error('the cypress has no body');
-		const surface = bodySurface(nodes, segments, 1, 'high');
-		const least = Math.min(...nodes.map((node) => node.radius));
-		const most = Math.max(...nodes.map((node) => node.radius));
-		let off = 0;
-		for (let ring = 0; ring < surface.rings; ring++) {
-			const cx = surface.centres[ring * 3] as number;
-			const cy = surface.centres[ring * 3 + 1] as number;
-			const cz = surface.centres[ring * 3 + 2] as number;
-			let radius = 0;
-			for (let j = 0; j < surface.sides; j++) {
-				const i = (ring * surface.sides + j) * 3;
-				const dx = (surface.positions[i] as number) - cx;
-				const dy = (surface.positions[i + 1] as number) - cy;
-				const dz = (surface.positions[i + 2] as number) - cz;
-				const r = Math.sqrt(dx * dx + dy * dy + dz * dz);
-				if (j === 0) radius = r;
-				else if (Math.abs(r - radius) > 1e-3) off++;
-			}
-			// A ring is a circle at the axis's own radius for its place.
-			if (radius < least - 1e-6 || radius > most + 1e-6) off++;
-		}
-		expect(off).toBe(0);
-		// Every normal is a unit vector.
-		for (let v = 0; v < surface.normals.length / 3; v++) {
-			const x = surface.normals[v * 3] as number;
-			const y = surface.normals[v * 3 + 1] as number;
-			const z = surface.normals[v * 3 + 2] as number;
-			expect(Math.abs(Math.sqrt(x * x + y * y + z * z) - 1)).toBeLessThan(1e-4);
-		}
+	it('refuses a step count the axis does not hold', () => {
+		const { nodes } = body();
+		expect(() => bodySurface(nodes, 42, input, 1)).toThrow();
 	});
 });

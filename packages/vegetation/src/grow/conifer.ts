@@ -2300,8 +2300,9 @@ export function emitConifer(input: GrowInput): PlantModel {
 	};
 	const trunk = place(plan.trunk, 0, -1, 0);
 	// The inner body is a surface of revolution on the trunk's line at the record's own radius: the
-	// axis states its rings, so the shared draw reproduces the family's triangles. It has no parent,
-	// as the family draws it joined to nothing, so the allocator's trunk part keeps it.
+	// axis states its steps, and the shared draw samples them into the family's adaptive rings. It
+	// has no parent, as the family draws it joined to nothing, so the allocator's trunk part keeps
+	// it.
 	if (plan.body.length > 1) place(plan.body, 1, -1, 0, true, countOf(plan.body));
 	const limbs: number[] = [];
 	const arms: { readonly limb: number; readonly arm: number; readonly axis: number }[] = [];

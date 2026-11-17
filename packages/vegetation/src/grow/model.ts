@@ -85,9 +85,10 @@ export interface ModelAxis {
 	 */
 	readonly body: boolean;
 	/**
-	 * The rings a body axis's own closed surface draws, where the family states them: the figure the
-	 * shared bake reads instead of a constant in the draw, so the surface reproduces the family's
-	 * triangles. Left out on an axis that is not a body.
+	 * The steps the axis holds, which the body surface is sampled from, where the family states
+	 * them: not the rings the draw places, since the shared draw crowds or thins its rings over the
+	 * axis's nodes and radii. The figure travels with the model without becoming a draw constant.
+	 * Left out on an axis that is not a body.
 	 */
 	readonly segments?: number;
 }
