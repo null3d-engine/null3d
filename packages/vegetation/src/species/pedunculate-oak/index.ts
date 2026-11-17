@@ -14,12 +14,7 @@ import { plannedGrowth } from './planned-record';
 const planned: SpeciesForm = {
 	form: 'the oak grown straight to the asked state, at any maturity, sparseness or maximum',
 	growth: plannedGrowth,
-	// The second card level draws six vertical faces at each clump. Its three pictures a side leave
-	// the crown's clump gaps open: in a fixed four-metre patch at the level's own switch the covered
-	// share fell 7.7 points from the first card level's (0.992 to 0.914). Six faces close the gap to
-	// a step of 0.8 points (0.992 to 1.000), at 41,644 triangles inside the level's 44,600; four
-	// faces leave the fall at 6.6 points, and a seventh face would pass the cap.
-	lod: { clumpCard: [1, 1], clumpPlanes: [2, 6] },
+	lod: { clumpCard: [1, 1] },
 };
 
 /** The species' measured fields, without the growth the planned form states itself. */

@@ -1084,9 +1084,9 @@ describe('the first card level of a clump-card plant', () => {
 				})
 				.join(',');
 			// The second level keeps its three pictures a side (the tile count's own test holds
-			// that); its mesh is pinned at the record's own six faces, which split it into two parts
-			// at the 65,536-vertex limit.
-			expect(second).toBe('d303bedd447ef425,8e1530f84b4a767');
+			// that) and draws the prototype's two faces; its mesh is pinned with the cover gate's own
+			// mark in its second coordinate, which the level's cover factor reads.
+			expect(second).toBe('69e208a6a67a5086');
 		},
 		scaledBudget(120_000),
 	);
