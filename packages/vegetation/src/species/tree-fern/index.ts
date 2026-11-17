@@ -2,7 +2,7 @@
 // species names. The generated registry loads this entry as a chunk of its own.
 import { files } from '@null3d/vegetation-textures/tree-fern';
 import type { SpeciesModule } from '../../core/record';
-import { directed } from './directed';
+import { planned } from './planned-record';
 
-/** The soft tree fern, grown as a directed crown that carries its fronds at sockets. */
-export const species: SpeciesModule = { record: directed, textures: files };
+/** The soft tree fern, grown as one stout trunk under a planned rosette of fronds. */
+export const species: SpeciesModule = { record: planned, textures: files };

@@ -11,6 +11,8 @@ import type {
 	Envelope,
 	FrondCrown,
 	GrowthModel,
+	Planned,
+	PlannedRosette,
 	ShootClass,
 	ShootSpec,
 	Species,
@@ -846,6 +848,8 @@ function growthProblems(record: Species, out: string[]): void {
 		if (tip !== undefined && !(tip >= 0 && tip <= 90))
 			out.push(`growth.turn.out is ${tip}; it is degrees from 0 to 90`);
 	}
+	if (growth.model === 'planned' && growth.rosette)
+		rosetteProblems(record, growth.rosette, growth.frame, out);
 	if (growth.model === 'conifer') {
 		const { trunk, limbs, top, patch } = growth;
 		curveProblems(trunk.width, 'growth.trunk.width', out);
@@ -1159,6 +1163,100 @@ function frameSpecProblems(frame: FrameSpec, path: string, out: string[]): void 
 	});
 	if (!(frame.stems.count >= 1))
 		out.push(`${path}.stems.count is ${frame.stems.count}; a plant has one stem or more`);
+}
+
+/**
+ * A rosette's problems: its frame is one stem with no children, its fronds stand on one point, its
+ * ranks' shares add to one and name pieces the record holds, and its dead skirt and croziers lie
+ * within their ranges.
+ */
+function rosetteProblems(
+	record: Species,
+	rosette: PlannedRosette,
+	frame: FrameSpec | undefined,
+	out: string[],
+): void {
+	const path = 'growth.rosette';
+	const planned = record.growth as Planned;
+	if (frame === undefined) {
+		out.push(`${path} needs growth.frame: a rosette's trunk is a frame of one stem`);
+	} else {
+		if (Math.round(frame.stems.count) !== 1)
+			out.push(
+				`${path} needs a frame of one stem; growth.frame.stems.count is ${frame.stems.count}`,
+			);
+		if ((frame.stems.children ?? []).length > 0)
+			out.push(`${path} has a frame with children; a rosette branches on no woody axis`);
+	}
+	if (planned.piece !== undefined)
+		out.push(`${path} names its pieces by rank; growth.piece stays absent`);
+	spreadProblems(rosette.fronds.count, `${path}.fronds.count`, true, out);
+	const fronds =
+		typeof rosette.fronds.count === 'number' ? rosette.fronds.count : rosette.fronds.count.mean;
+	if (!(fronds >= 1 && fronds <= 200))
+		out.push(`${path}.fronds.count is ${fronds}; a rosette carries 1 to 200 fronds`);
+	if (!(rosette.fronds.divergence >= 0 && rosette.fronds.divergence <= 360))
+		out.push(
+			`${path}.fronds.divergence is ${rosette.fronds.divergence}; it is degrees from 0 to 360`,
+		);
+	if (rosette.fronds.layout !== 'rings' && rosette.fronds.layout !== 'spiral')
+		out.push(`${path}.fronds.layout is ${rosette.fronds.layout}; it is 'rings' or 'spiral'`);
+	notNegative(rosette.fronds.clasp, `${path}.fronds.clasp`, out);
+	if (rosette.fronds.scale !== undefined && !(rosette.fronds.scale > 0))
+		out.push(`${path}.fronds.scale is ${rosette.fronds.scale}; it must be above 0`);
+	if (rosette.ranks.length === 0) out.push(`${path}.ranks is empty; give one rank at least`);
+	let shares = 0;
+	rosette.ranks.forEach((rank, i) => {
+		const at = `${path}.ranks[${i}]`;
+		if (!(rank.share > 0 && rank.share <= 1))
+			out.push(`${at}.share is ${rank.share}; a rank's share lies above 0 and up to 1`);
+		shares += rank.share;
+		if (!(record.pieces ?? []).some((piece) => piece.name === rank.piece))
+			out.push(`${at}.piece is '${rank.piece}'; the record holds no piece of that name`);
+		if (!(rank.leave >= -90 && rank.leave <= 90))
+			out.push(`${at}.leave is ${rank.leave}; it is degrees above level, from -90 to 90`);
+		if (rank.spread !== undefined && rank.spread < 0)
+			out.push(`${at}.spread is ${rank.spread}; a spread is not negative`);
+	});
+	if (Math.abs(shares - 1) > 1e-6)
+		out.push(`${path}.ranks' shares add to ${shares}; they add to 1`);
+	const dead = rosette.dead;
+	if (dead) {
+		spreadProblems(dead.count, `${path}.dead.count`, true, out);
+		const count = typeof dead.count === 'number' ? dead.count : dead.count.mean;
+		if (!(count >= 0)) out.push(`${path}.dead.count is ${count}; it is not negative`);
+		if (!(record.pieces ?? []).some((piece) => piece.name === dead.piece))
+			out.push(`${path}.dead.piece is '${dead.piece}'; the record holds no piece of that name`);
+		spreadProblems(dead.hang, `${path}.dead.hang`, false, out);
+		for (const [name, value] of [
+			['from', dead.from],
+			['to', dead.to],
+		] as const)
+			if (!(value >= 0 && value <= 1))
+				out.push(`${path}.dead.${name} is ${value}; it is a share of the height from 0 to 1`);
+		if (!(dead.from <= dead.to))
+			out.push(
+				`${path}.dead.from and .to are ${dead.from} and ${dead.to}; from is no higher than to`,
+			);
+		if (!(dead.length > 0 && dead.length <= 1))
+			out.push(
+				`${path}.dead.length is ${dead.length}; it is a share of a living frond, above 0 and at most 1`,
+			);
+	}
+	const croziers = rosette.croziers;
+	if (croziers) {
+		spreadProblems(croziers.count, `${path}.croziers.count`, true, out);
+		const count = typeof croziers.count === 'number' ? croziers.count : croziers.count.mean;
+		if (!(count >= 0)) out.push(`${path}.croziers.count is ${count}; it is not negative`);
+		spreadProblems(croziers.length, `${path}.croziers.length`, true, out);
+		notNegative(croziers.coil, `${path}.croziers.coil`, out);
+		if (!(croziers.radius > 0))
+			out.push(`${path}.croziers.radius is ${croziers.radius}; it must be above 0`);
+		if (!(croziers.lean >= 0 && croziers.lean <= 90))
+			out.push(`${path}.croziers.lean is ${croziers.lean}; it is degrees from 0 to 90`);
+	}
+	if (planned.orders.length > 0)
+		out.push(`${path} grows no woody order; growth.orders stays empty`);
 }
 
 /**

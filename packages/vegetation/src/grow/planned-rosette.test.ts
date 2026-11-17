@@ -1,0 +1,85 @@
+// The planned model's rosette, read on the one species that grows it: one socket a frond at the
+// growing point, whole fronds under sparseness and a cap, and a crown whose box is the fronds' own
+// reach. The tree fern's record is the fixture; its pictures are judged by a review round.
+import { describe, expect, it } from 'bun:test';
+import { speciesProblems } from '../core/check';
+import { planned } from '../species/tree-fern/planned-record';
+import type { GrowRequest } from '../stages';
+import { growPlanned, planTree } from './planned';
+
+/** Grows the tree fern at a state, with the plan the generator would hand it. */
+function grow(request: GrowRequest, seed = 11, variant = 0) {
+	const plan = planTree(planned, request);
+	const plant = growPlanned({ record: planned, seed, variant, season: 'summer', request, plan });
+	return { plan, plant };
+}
+
+/** The sockets' places, which name the same frond across states. */
+function places(plant: ReturnType<typeof growPlanned>): number[] {
+	const origin = plant.buds.origin;
+	return Array.from({ length: plant.buds.count }, (_, b) => origin?.[b] ?? b).sort((a, b) => a - b);
+}
+
+describe('the planned rosette', () => {
+	it('passes every record rule', () => {
+		expect(speciesProblems(planned)).toEqual([]);
+	});
+
+	it('lays one socket a frond from one point, with every rank’s piece', () => {
+		const { plant } = grow({ maturity: 1, sparse: 0 });
+		// Three dozen living fronds and about sixteen dead ones, drawn within their spreads.
+		expect(plant.buds.count).toBeGreaterThan(40);
+		expect(plant.buds.count).toBeLessThan(56);
+		const piece = plant.buds.sockets?.piece;
+		expect(piece).toBeDefined();
+		expect(new Set(Array.from(piece ?? [])).size).toBe(3);
+		// A bud a frond at the growing point: its piece reaches above the trunk and no tip falls
+		// under the ground.
+		expect(plant.height).toBeGreaterThan(4);
+		expect(plant.crownBase).toBeGreaterThan(0);
+	});
+
+	it('takes its crown box from the fronds, not from the trunk', () => {
+		const { plant } = grow({ maturity: 1, sparse: 0 });
+		// The crown is wider than the fact sheet's narrowest and narrower than its widest, and its
+		// top stands above the trunk's growing point, which the frame's stem ends at.
+		const width = plant.bounds.max[0] - plant.bounds.min[0];
+		expect(width).toBeGreaterThan(4);
+		expect(width).toBeLessThan(6);
+		expect(plant.height).toBeGreaterThan(plant.bounds.max[1] - 1e-6);
+	});
+
+	it('keeps whole fronds under sparseness, and each sparser plant is a subset', () => {
+		const full = grow({ maturity: 1, sparse: 0 }).plant;
+		const sparse = grow({ maturity: 1, sparse: 1 }).plant;
+		expect(sparse.buds.count).toBeLessThan(full.buds.count);
+		// The specification's sparsest fern keeps about four tenths of its fronds.
+		expect(sparse.buds.count / full.buds.count).toBeGreaterThan(0.3);
+		expect(sparse.buds.count / full.buds.count).toBeLessThan(0.5);
+		const kept = new Set(places(sparse));
+		for (const place of kept) expect(places(full)).toContain(place);
+	});
+
+	it('keeps the plant’s shape at the 400-triangle cap', () => {
+		const full = grow({ maturity: 1, sparse: 0 }).plant;
+		const capped = grow({ maturity: 1, sparse: 0, maxTriangles: 400 });
+		expect(capped.plan.rankCut[4]).toBeLessThan(1);
+		expect(capped.plan.expected[4]).toBeGreaterThan(0);
+		expect(capped.plant.buds.count).toBeLessThan(full.buds.count);
+		expect(capped.plant.buds.count).toBeGreaterThan(0);
+		// The cap pays a card a frond and leaves the trunk; it never collapses the crown or drops the
+		// growing point to the ground.
+		expect(capped.plant.height / full.height).toBeGreaterThan(0.9);
+		expect(capped.plant.crownBase).toBeGreaterThan(0);
+		expect(capped.plan.triangles.fruit).toBe(0);
+	});
+
+	it('grows a young plant as a rosette above the ground', () => {
+		const adult = grow({ maturity: 1, sparse: 0 }).plant;
+		const young = grow({ maturity: 0.1, sparse: 0 }).plant;
+		expect(young.height).toBeLessThan(adult.height);
+		expect(young.crownBase).toBeGreaterThan(0);
+		expect(young.buds.count).toBeGreaterThan(0);
+		expect(young.buds.count).toBeLessThan(adult.buds.count);
+	});
+});

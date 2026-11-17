@@ -27,8 +27,8 @@ import { targetHeight } from './height';
 import { radicalInverse } from './ranked';
 
 const LONG = scaledBudget(120_000);
-/** The species the grower serves. */
-const SPECIES = ['date-palm', 'tree-fern'] as const;
+/** The species the grower still serves: the tree fern grows by the planned rosette instead. */
+const SPECIES = ['date-palm'] as const;
 /** The variants each test grows. */
 const VARIANTS = [0, 1, 2] as const;
 
