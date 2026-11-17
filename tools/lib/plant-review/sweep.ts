@@ -537,7 +537,10 @@ function piecesDrawn(picture: SweepPicture): number | null {
  * neighbours' mean, or whose pieces that meet nothing stand beyond the band over theirs. Each
  * fault names the frame, its angle and the step.
  */
-export function sweepOrbitJumps(pictures: readonly SweepPicture[]): readonly string[] {
+export function sweepOrbitJumps(
+	pictures: readonly SweepPicture[],
+	cover = true,
+): readonly string[] {
 	const jumps: string[] = [];
 	for (const height of SWEEP_HEIGHTS) {
 		const run = pictures
@@ -551,7 +554,7 @@ export function sweepOrbitJumps(pictures: readonly SweepPicture[]): readonly str
 			const shares = [previous.covered, next.covered].filter(
 				(value): value is number => value !== null,
 			);
-			if (share !== null && shares.length === 2) {
+			if (cover && share !== null && shares.length === 2) {
 				const around = ((shares[0] as number) + (shares[1] as number)) / 2;
 				if (Math.abs(share - around) > ORBIT_COVERED_BAND)
 					jumps.push(
@@ -702,8 +705,12 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 		}
 	}
 	// The orbit's frames must hold together with the frames either side of them, not only with the
-	// photograph: a side that closes while the other opens shows here as a number.
-	for (const jump of sweepOrbitJumps(pictures)) failures.push(`the orbit jumps: ${jump}`);
+	// photograph: a side that closes while the other opens shows here as a number. The covered
+	// share is read at the ladder's crown rungs; a close view frames one piece, whose own
+	// silhouette turns, so its share says nothing about the crown's density. A piece that leaves
+	// the wood is read at every rung.
+	for (const jump of sweepOrbitJumps(pictures, rung.distance !== 'fit'))
+		failures.push(`the orbit jumps: ${jump}`);
 	const nearNote = (): string => {
 		if (nearShort === null) return '';
 		const names = ['leaf form', 'first card level', 'second card level', 'far card'];
