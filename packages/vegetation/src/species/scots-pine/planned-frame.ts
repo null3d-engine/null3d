@@ -151,7 +151,7 @@ const rule = (
 	from: 'plumb' as const,
 	angleSpread: 4,
 	// The crown's own outline is the foliage's edge, so the wood stops a pad's radius inside it.
-	length: { outline: 0.84 },
+	length: { outline: 0.83 },
 	vary: 0.05,
 	// Still 01, at the measured place outside the collar: the limb is 0.20 of the trunk's radius
 	// and keeps 0.85 of it along the run. The collar's swell to 0.58 at the joint is the form's

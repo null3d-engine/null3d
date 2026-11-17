@@ -121,7 +121,7 @@ const OUTLINE_OPEN = new Set<string>(['pedunculate-oak', 'silver-birch', 'hawtho
  * conifer class carries many sockets a card. The top maximum is not on this list: it passed
  * before the class build and now draws the capped level's leaf share, a fault with its own pass.
  */
-const PINE_LOW_MAXIMA = new Set<number>([50_000, 10_000, 2_000, 500]);
+const PINE_LOW_MAXIMA = new Set<number>([50_000, 10_000, 2_000, 500, 100]);
 
 /** Whether a maximum's capped outline is recorded open for a species. */
 function outlineRecordedOpen(id: string, max: number): boolean {
