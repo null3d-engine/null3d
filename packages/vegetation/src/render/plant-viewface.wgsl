@@ -942,6 +942,15 @@ fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
     return saturate(alpha * (1.0 + level * header(HEADER_CARD_MIP_LIFT).x));
 }
 
+/// Where the second cut of a card is read: one texel of the texture's height up the same picture,
+/// so the second look falls on another part of the shoot and the two cuts together carry more leaf
+/// than either alone. The two are combined by their larger coverage, so the second cut can only add
+/// leaf, never remove it.
+fn card_mask_uv(uv: vec2f) -> vec2f {
+    let size = max(f32(textureDimensions(colour).y), 1.0);
+    return uv + vec2f(0.0, 1.0 / size);
+}
+
 /// The coverage a point casts: a leaf's or a card's texel, and wood and stems whole.
 fn coverage(input: SurfaceInput) -> f32 {
     let mode = plant_mode();
@@ -954,7 +963,9 @@ fn coverage(input: SurfaceInput) -> f32 {
         // A card's stalk is a solid line that the vertex stage widens, so it casts its whole width.
         if (abs(input.uv1.y - STALK_PLANE) >= 0.1) {
             let layer = select(1, 0, input.frontFacing);
-            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+            let held = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a;
+            let mask = textureSampleGrad(colour, colourSampler, card_mask_uv(uv), layer, gx, gy).a;
+            alpha = card_alpha(max(held, mask), gx, gy);
         }
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
@@ -1197,6 +1208,8 @@ fn surface(input: SurfaceInput) -> Surface {
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
+            let mask = textureSampleGrad(colour, colourSampler, card_mask_uv(uv), layer, gx, gy);
+            let plate = max(texel.a, mask.a);
             let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
             let kind = surface_texel.a * 255.0;
             let leaf = kind >= 127.5;
@@ -1220,7 +1233,7 @@ fn surface(input: SurfaceInput) -> Surface {
             let card_gate = header(HEADER_CARD_SHADE);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
 
-            alpha = card_alpha(texel.a * mix(1.0, card_gate.x, gated), gx, gy);
+            alpha = card_alpha(plate * mix(1.0, card_gate.x, gated), gx, gy);
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
