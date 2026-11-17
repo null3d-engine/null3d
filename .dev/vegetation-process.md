@@ -78,7 +78,9 @@ that prints a figure, or a tool that exists, is not coverage.
 
 The partial checks (2, and the review side of 5) take their coverage rules from the sweep's owner; the
 missing ones (7, 8 and 9) are with the level builder, and the bar below is check 9's specification. A
-species is not counted landed while one of them is red.
+species is not counted landed while one of them is red. **The mapping is open:** every entry that says
+no failing test is unclosed, and the mapping must not be read as complete until the sweep's owner and
+the level builder close them.
 
 ### Check 9's tone bar
 
