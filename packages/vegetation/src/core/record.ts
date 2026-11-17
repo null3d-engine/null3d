@@ -3060,10 +3060,12 @@ export interface LodSpec {
 	 */
 	readonly cardPlanes?: readonly [lod1: number, lod2: number];
 	/**
-	 * A multiplier on the first card level's coverage, 1 drawing it as the cards are: above 1 closes
-	 * the crown's gaps and below 1 opens them. Absent draws it as 1.
+	 * A multiplier on each card level's coverage, 1 drawing it as the cards are: above 1 closes the
+	 * crown's gaps and below 1 opens them. One number sets the first card level alone, which is what
+	 * a species that names one number has always asked for; a pair sets each level. Absent draws the
+	 * level as 1.
 	 */
-	readonly cardCover?: number;
+	readonly cardCover?: number | readonly [lod1: number, lod2: number];
 	/**
 	 * How far the sun's light thins inside the crown, from 0 to 1: each shoot row dims by its own
 	 * share of the sky, so a row under other rows reads dark and a row on the crown's top reads lit.

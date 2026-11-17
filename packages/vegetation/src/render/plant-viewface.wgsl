@@ -141,6 +141,8 @@ const HEADER_BARK_RELIEF: i32 = 75;
 // How much a card's alpha rises for each mip level its sample reads, 0 raising none.
 const HEADER_CARD_MIP_LIFT: i32 = 73;
 const HEADER_CARD_SHADE: i32 = 77;
+// The second card level's cover multiplier, beside the first level's at its own texel.
+const HEADER_CARD_COVER_SECOND: i32 = 78;
 // The darkest and lightest a card's shade takes a patch of its own colour, at full strength.
 const CARD_SHADE_DARK: f32 = 0.5;
 const CARD_SHADE_LIT: f32 = 1.4;
@@ -1228,12 +1230,16 @@ fn surface(input: SurfaceInput) -> Surface {
             let crown = crown_shade(input.vertexColor.a);
             base *= crown;
             through *= crown;
-            // The first card level's own coverage: a factor on its alpha, at that level alone. The
-            // stalk strips carry their own uv1.y and stand outside the gate.
+            // Each card level's own coverage: a factor on its alpha, at that level alone. The stalk
+            // strips carry their own uv1.y and stand outside both gate bands.
             let card_gate = header(HEADER_CARD_SHADE);
+            let card_gate_second = header(HEADER_CARD_COVER_SECOND);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
+            let gated_second = step(0.9, input.uv1.y);
 
-            alpha = card_alpha(plate * mix(1.0, card_gate.x, gated), gx, gy);
+            var card_fill = mix(1.0, card_gate.x, gated);
+            card_fill = mix(card_fill, card_gate_second.x, gated_second);
+            alpha = card_alpha(plate * card_fill, gx, gy);
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
