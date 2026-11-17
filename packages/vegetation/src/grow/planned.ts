@@ -374,7 +374,7 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 }
 
 /** A ramp from nothing to one over a band, from the maturity a thing starts at. */
-function ramp(maturity: number, from: number, band: number): number {
+export function ramp(maturity: number, from: number, band: number): number {
 	if (!(maturity > from)) return 0;
 	return Math.min(1, (maturity - from) / Math.max(1e-9, band));
 }

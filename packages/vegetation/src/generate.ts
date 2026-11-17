@@ -80,6 +80,7 @@ import {
 } from './grow/height';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
+import { ramp as growthRamp } from './grow/planned';
 import {
 	FOLIAGE_FLOOR,
 	GREAT_LIMB_SHARE,
@@ -880,9 +881,19 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		placeholders === true
 			? 0
 			: coarsenessFor(kit, { ...calibratedInput, skeleton: calibrated, ...lit }, detail, options);
+	// A planned record's fruit draws by the plan's ramp, read here from the same request the grower
+	// takes, so a plant below its fruiting maturity draws no fruit and one at the ramp's end draws
+	// its record's full share.
+	const plannedGrowth = calibratedRecord.growth;
+	const maturity = calibratedInput.request?.maturity ?? 1;
+	const fruitShare =
+		plannedGrowth?.model === 'planned'
+			? growthRamp(maturity, plannedGrowth.fruitFrom, plannedGrowth.fruitBand)
+			: undefined;
 	const dressInput: DressInput = {
 		...calibratedInput,
 		kit,
+		...(fruitShare !== undefined ? { fruitShare } : {}),
 		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
 		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,
