@@ -359,12 +359,10 @@ export const record: Species = {
 			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.12, tint: [1.15, 0.95, 1.18] },
 			// Stills 15 and 26: white and papery above, with black diamond marks and dark lenticel
 			// dashes.
-			// The photograph's white is a chalky low-contrast white with grey marks, not a bright one:
-			// the tint lowers the layer's lightness and warms it toward the picture.
-			{ layer: 1, by: 'height', from: 0.8, to: 6, blend: 0.2, tint: [0.85, 0.84, 0.8] },
+			{ layer: 1, by: 'height', from: 0.8, to: 6, blend: 0.2, tint: [1, 1, 1] },
 			// The upper bole and the great limbs carry the same white bark. They stand as a zone of
 			// their own so the lower bole alone lifts its peeling strips.
-			{ layer: 1, by: 'height', from: 6, to: 40, blend: 0.2, tint: [0.85, 0.84, 0.8] },
+			{ layer: 1, by: 'height', from: 6, to: 40, blend: 0.2, tint: [1, 1, 1] },
 		],
 		young: 2,
 		// Stills 16 and 28: the white bark fades to the young purple-brown layer on wood thinner than
