@@ -37,9 +37,10 @@ export const plannedGrowth: Planned = {
 		{ density: 12, angle: 50, length: 0.3, birth: 0, kink: 18 },
 		{ density: 16, angle: 45, length: 0.25, birth: 0, kink: 15 },
 	],
-	// The boughs are the plan's order 1, so the ladder starts there; a ladder from order 2 leaves
-	// them whole and the sparseness inert.
-	thin: [0, 0.25, 0.45, 0.65, 0.75],
+	// The whorl boughs are the record's limbs, as the cypress and the sequoia keep them: the thinning
+	// loop reads orders 2 and up, so the order-1 share is zero and the rows and the orders below
+	// carry the sparseness. A share at index 1 would also misprice the cap's kept boughs.
+	thin: [0, 0, 0.45, 0.65, 0.75],
 	leavesAt: [
 		[0, 1],
 		[0.5, 0.45],
