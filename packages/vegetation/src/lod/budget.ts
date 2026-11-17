@@ -549,11 +549,21 @@ export function rowLevel(
 	const measured: (number | undefined)[][] = [[], [], []];
 	const priced = (part: number, rung: number): number =>
 		measured[part]?.[rung] ?? ((quick[rung] as number[])[part] as number);
+	const last = WOOD_RUNGS.length - 1;
+	// The coarsest rung that still reads as wood: no capped trunk or great limb draws below it,
+	// whichever branch of the ladder reaches it.
+	let coarsest = -1;
+	for (let rung = last; rung >= 0; rung--)
+		if ((tubes[rung] as TubeDetail).maxSides >= SIDES_LEAST) {
+			coarsest = rung;
+			break;
+		}
 	// The trunk and the great limbs are few axes, and the quick count misses a stem's foot and a
-	// leader's first ring, so each step that could fit is meshed and counted before any choice.
+	// leader's first ring, so each step that could fit is meshed and counted before any choice. The
+	// coarsest legal step is always counted, since the floor prices it whatever the quick count says.
 	for (let rung = 0; rung < tubes.length; rung++) {
 		const count = quick[rung] as number[];
-		if ((count[0] as number) + (count[1] as number) > 4 * max) continue;
+		if (rung !== coarsest && (count[0] as number) + (count[1] as number) > 4 * max) continue;
 		const tube = tubes[rung] as TubeDetail;
 		const counted = meshWoodParts(mesh, level, parts, { tubes: [tube, tube, null] }).triangles;
 		(measured[0] as (number | undefined)[])[rung] = counted[0];
@@ -575,23 +585,17 @@ export function rowLevel(
 						(skeleton.radius[axes.first[a] as number] as number) || a - b,
 			),
 	);
-	const last = WOOD_RUNGS.length - 1;
 	// What one straight run costs where only the thickest limbs or branches are drawn: the thickest
 	// cost more than the part's mean, so their price is measured apart.
 	const eachKept: (number | undefined)[] = [];
 	const fitWood = (part: number, budget: number): WoodChoice => {
 		for (let rung = 0; rung < tubes.length; rung++) {
+			if ((tubes[rung] as TubeDetail).maxSides < SIDES_LEAST) continue;
 			const cost = priced(part, rung);
 			if (cost <= budget) return { rung, cost };
 		}
 		// Not even one straight run for each axis fits: the thickest limbs or branches that do, at
 		// the coarsest rung that still reads as wood — the fallback may not draw a pinch either.
-		let coarsest = -1;
-		for (let rung = last; rung >= 0; rung--)
-			if ((tubes[rung] as TubeDetail).maxSides >= SIDES_LEAST) {
-				coarsest = rung;
-				break;
-			}
 		if (coarsest < 0) return { rung: -1, cost: 0 };
 		if (part === 0) return { rung: -1, cost: 0 };
 		const each = eachKept[part] ?? priced(part, coarsest) / Math.max(1, axesOf[part] as number);
@@ -644,11 +648,14 @@ export function rowLevel(
 	// cap before the leaves, because a crown standing on one three-sided run is not a tree at any
 	// distance. The share is paid even where the crown would take the whole maximum.
 	const skeletonFloor = Math.floor(max * SKELETON_SHARE);
+	// The floor prices the coarsest rung the sides rule allows, not the ladder's last step: a
+	// maximum that cannot pay for a legal trunk pays for none rather than for a pinch.
+	const cheapest = coarsest >= 0 ? coarsest : last;
 	const floor = (part: Part): number =>
 		part === 'trunk'
-			? Math.max(priced(0, last), Math.floor(skeletonFloor * SKELETON_TRUNK))
+			? Math.max(priced(0, cheapest), Math.floor(skeletonFloor * SKELETON_TRUNK))
 			: part === 'limbs'
-				? Math.max(priced(1, last), Math.floor(skeletonFloor * (1 - SKELETON_TRUNK)))
+				? Math.max(priced(1, cheapest), Math.floor(skeletonFloor * (1 - SKELETON_TRUNK)))
 				: part === 'leaves' && rows.count > 0
 					? 4
 					: 0;
