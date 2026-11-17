@@ -327,17 +327,29 @@ function coverageOf(color: Uint8Array, texels: number): Uint8Array {
 
 /**
  * The far atlases at their own size from the finer bake: each far texel's coverage is the share of
- * its fine texels that drew, raised so that `FAR_SHARE` meets the cards' cutoff of one half; its
- * colour and surface are the means of the fine texels that drew.
+ * its fine texels that drew; its colour and surface are the means of the fine texels that drew.
+ * A view with a target draws covered texels until its covered share meets the target, so a far
+ * picture keeps the cover its leaf form draws at that view; a view with none keeps the bake's own
+ * share.
+ *
+ * @param fine The bake's colour and surface layers at the finer size.
+ * @param side The far atlas's texels a side.
+ * @param s The bake's supersampling: fine texels a far texel a side.
+ * @param views The atlas's views across and down.
+ * @param targets The leaf form's covered share per view, in the atlas's frame order, or undefined.
+ * @returns The far colour and surface layers.
  */
 function filtered(
 	fine: { readonly color: Uint8Array; readonly surface: Uint8Array },
 	side: number,
 	s: number,
+	views: number,
+	targets?: readonly number[],
 ): { readonly color: Uint8Array; readonly surface: Uint8Array } {
 	const wide = side * s;
 	const color = new Uint8Array(side * side * 4);
 	const surface = new Uint8Array(side * side * 4);
+	const shares = new Float32Array(side * side);
 	const sum = new Float64Array(6);
 	for (let y = 0; y < side; y++)
 		for (let x = 0; x < side; x++) {
@@ -353,18 +365,72 @@ function filtered(
 						sum[3 + k] = (sum[3 + k] as number) + (fine.surface[at + k] as number);
 					}
 				}
-			const at = (y * side + x) * 4;
 			if (drawn === 0) continue;
 			const share = drawn / (s * s);
-			const alpha = Math.round(255 * Math.min(1, share / (2 * FAR_SHARE)));
+			shares[y * side + x] = share;
+			const at = (y * side + x) * 4;
 			for (let k = 0; k < 3; k++) {
 				color[at + k] = Math.round((sum[k] as number) / drawn);
 				surface[at + k] = Math.round((sum[3 + k] as number) / drawn);
 			}
-			color[at + 3] = alpha;
-			surface[at + 3] = alpha;
+		}
+	const cell = side / views;
+	for (let row = 0; row < views; row++)
+		for (let column = 0; column < views; column++) {
+			const target = targets?.[row * views + column];
+			const cut =
+				target === undefined
+					? FAR_SHARE
+					: cutFor(shares, side, column * cell, row * cell, cell, target);
+			for (let y = row * cell; y < (row + 1) * cell; y++)
+				for (let x = column * cell; x < (column + 1) * cell; x++) {
+					const share = shares[y * side + x] as number;
+					if (share === 0) continue;
+					const at = (y * side + x) * 4;
+					const alpha = Math.round(255 * Math.min(1, share / (2 * cut)));
+					color[at + 3] = alpha;
+					surface[at + 3] = alpha;
+				}
 		}
 	return { color, surface };
+}
+
+/** Covered shares a cell's cut is searched over, which span the whole range of coverage. */
+const CUT_STEPS = 20;
+
+/**
+ * The share a far texel must reach to draw so that a view draws its target covered share: the cut
+ * its texels would need, found by halving the range while the cover stays above the target. A cut
+ * above what the view can draw leaves the view at its most open, and one below leaves it at its
+ * most closed.
+ *
+ * @param shares Each far texel's share of fine texels that drew, a side square.
+ * @param side The far atlas's texels a side.
+ * @param x0 The cell's first column.
+ * @param y0 The cell's first row.
+ * @param cell The cell's texels a side.
+ * @param target The covered share the view must draw.
+ * @returns The cut, from 0 to 1.
+ */
+function cutFor(
+	shares: Float32Array,
+	side: number,
+	x0: number,
+	y0: number,
+	cell: number,
+	target: number,
+): number {
+	let lo = 0;
+	let hi = 1;
+	for (let step = 0; step < CUT_STEPS; step++) {
+		const cut = (lo + hi) / 2;
+		let drawn = 0;
+		for (let y = y0; y < y0 + cell; y++)
+			for (let x = x0; x < x0 + cell; x++) if ((shares[y * side + x] as number) >= cut) drawn++;
+		if (drawn / (cell * cell) > target) lo = cut;
+		else hi = cut;
+	}
+	return (lo + hi) / 2;
 }
 
 /**
@@ -466,6 +532,8 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 		{ color: bake.color.data, surface: bake.surface.data },
 		views * texels,
 		supersample,
+		views,
+		kit.record.lod.farCover,
 	);
 	return {
 		views,
