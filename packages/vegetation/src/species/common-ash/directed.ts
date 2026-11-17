@@ -139,26 +139,29 @@ const spurs: FrameBranchRule = {
 
 /** The common ash's frame. */
 export const frame: FrameSpec = {
-	// Still 01, the outline's half width in bands from the top down, each at its own height.
+	// The outline's half width in bands from the top down, each at its own height: still 01's
+	// measured bands, taken out to the widest reach the turning video's hull shows, 0.55 of the
+	// height at the crown's middle. The picture's crown stands about four fifths of the plant's
+	// height across, so a frame drawn inside a narrower outline leaves the crown short of it.
 	outline: evenOutline(
 		[
-			[0.265, 0.21],
-			[0.305, 0.4],
-			[0.345, 0.438],
-			[0.385, 0.457],
-			[0.464, 0.448],
-			[0.543, 0.395],
-			[0.583, 0.41],
-			[0.623, 0.457],
-			[0.662, 0.467],
-			[0.702, 0.429],
-			[0.742, 0.424],
-			[0.782, 0.4],
-			[0.821, 0.334],
-			[0.861, 0.319],
-			[0.901, 0.272],
-			[0.94, 0.148],
-			[0.98, 0.119],
+			[0.265, 0.248],
+			[0.305, 0.472],
+			[0.345, 0.517],
+			[0.385, 0.539],
+			[0.464, 0.529],
+			[0.543, 0.466],
+			[0.583, 0.484],
+			[0.623, 0.539],
+			[0.662, 0.551],
+			[0.702, 0.506],
+			[0.742, 0.5],
+			[0.782, 0.472],
+			[0.821, 0.394],
+			[0.861, 0.376],
+			[0.901, 0.321],
+			[0.94, 0.175],
+			[0.98, 0.14],
 			[1, 0],
 		],
 		// Still 01 looks across the wide side. The turning video: the crown is about 0.95 as wide
