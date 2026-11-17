@@ -1941,10 +1941,10 @@ export function plannedClumpCards(
 		const anchor = nearestWood(clump.centre);
 		const clear =
 			anchor !== undefined
-				? Math.hypot(
-						(anchor[0] as number) - (clump.centre[0] as number),
-						(anchor[1] as number) - (clump.centre[1] as number),
-						(anchor[2] as number) - (clump.centre[2] as number),
+				? Math.sqrt(
+						((anchor[0] as number) - (clump.centre[0] as number)) ** 2 +
+							((anchor[1] as number) - (clump.centre[1] as number)) ** 2 +
+							((anchor[2] as number) - (clump.centre[2] as number)) ** 2,
 					)
 				: 0;
 		return {
