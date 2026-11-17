@@ -2984,6 +2984,14 @@ export interface LodSpec {
 	 */
 	readonly clumpCard?: readonly [lod1: number, lod2: number];
 	/**
+	 * The vertical planes a clump card draws at each card level, an even whole number from 2 to 16:
+	 * a clump card stands for a mass of foliage, and more faces at its own middle close the gaps
+	 * between clumps without enlarging a picture. The prototype's own two vertical planes are among
+	 * them, each plane takes its picture from those two in turn, and the prototype's horizontal
+	 * plane stands as it is. Absent or 2 draws the prototype's set as it stands.
+	 */
+	readonly clumpPlanes?: readonly [lod1: number, lod2: number];
+	/**
 	 * The first card level that draws no extras: 1 for both card levels, 2 for the second alone. A
 	 * cone or a fruit that the nearest level draws whole may still cost many triangles at a card
 	 * level where it spans a few pixels. Absent, a card level leaves out only the extras too small to

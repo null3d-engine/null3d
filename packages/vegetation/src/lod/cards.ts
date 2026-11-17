@@ -1032,6 +1032,56 @@ function clumpTiles(grow: number): number {
  * shoot cards lit one by one. The rows of each clump stand together in the walk, so `cardClusters`
  * cuts them into one run per clump.
  */
+/**
+ * A kit whose card sets repeat their vertical planes evenly over half a turn. A clump card stands
+ * for a mass of foliage, and the gaps between clumps close when each clump shows more faces: the
+ * record names how many vertical planes a clump card draws, the prototype's own two among them, and
+ * each plane takes its picture from those two in turn, so one face does not repeat round the set.
+ * The prototype's horizontal plane, which covers the clump from above, stands as it is. A count that
+ * is not an even whole number, or a prototype without exactly two vertical planes, leaves the kit
+ * as it stands.
+ */
+export function turnedClumpCards(kit: SpeciesKitData, count: number): SpeciesKitData {
+	if (!Number.isInteger(count) || count < 4 || count > 16 || count % 2 !== 0) return kit;
+	const turned = kit.prototypes.map((prototype) => {
+		const base = prototype.card.planes;
+		const verticals = base.filter((plane) => Math.abs(plane.up[1]) > 0.5);
+		if (verticals.length !== 2) return prototype;
+		const direction = (v: readonly number[]): [number, number] => {
+			const length = Math.hypot(v[0] as number, v[2] as number) || 1;
+			return [(v[0] as number) / length, (v[2] as number) / length];
+		};
+		const faces: ((typeof verticals)[number])[] = [];
+		for (let k = 0; k < count; k++) {
+			const angle = (k * Math.PI) / count;
+			const cos = Math.cos(angle);
+			const sin = Math.sin(angle);
+			const source = verticals[k % 2] as (typeof verticals)[number];
+			// The face stands at its own even angle, and keeps the width of the picture it shows.
+			const width = Math.hypot(source.right[0] as number, source.right[2] as number);
+			const right: Vector3 = [width * cos, source.right[1] as number, -width * sin];
+			const wanted = direction(right);
+			// A face the prototype already draws keeps its own plane, and with it its own extent.
+			const existing = verticals.find((plane) => {
+				const [x, z] = direction(plane.right);
+				return Math.abs(x - wanted[0]) < 1e-6 && Math.abs(z - wanted[1]) < 1e-6;
+			});
+			faces.push(
+				existing ?? {
+					...source,
+					right,
+				},
+			);
+		}
+		const horizontal = base.filter((plane) => Math.abs(plane.up[1]) <= 0.5);
+		return {
+			...prototype,
+			card: { ...prototype.card, planes: [...faces, ...horizontal] },
+		};
+	});
+	return { ...kit, prototypes: turned };
+}
+
 function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2): MeshArrays {
 	const share = clumpShare(input.record, level);
 	// A share below every clump keeps a spread share of them in the walk's order, so a thinned level
@@ -1064,8 +1114,10 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 				: 0;
 		},
 	};
+	const asked = input.record.lod.clumpPlanes?.[level - 1] ?? 0;
+	const setInput = asked > 2 ? { ...input, kit: turnedClumpCards(input.kit, asked) } : input;
 	return clusterCardMesh(
-		input,
+		setInput,
 		clusters,
 		planes,
 		(index, height) => {

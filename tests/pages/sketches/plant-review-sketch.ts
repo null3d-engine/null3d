@@ -705,10 +705,16 @@ export default defineSketch(async (ctx) => {
 			: loadedModule.record;
 	const module = {
 		...loadedModule,
-		record:
-			QUERY.cardCover !== undefined
-				? { ...record, lod: { ...record.lod, cardCover: QUERY.cardCover } }
-				: record,
+		record: {
+			...record,
+			lod: {
+				...record.lod,
+				...(QUERY.cardCover !== undefined && { cardCover: QUERY.cardCover }),
+				...(QUERY.clumpPlanes !== undefined && {
+					clumpPlanes: [QUERY.clumpPlanes, QUERY.clumpPlanes] as const,
+				}),
+			},
+		},
 	};
 	// The query's form, another habit or the young plant, grows when the record has it. A record
 	// without that form grows as it stands, with a note, so a still of another habit is still drawn.

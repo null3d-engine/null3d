@@ -1271,6 +1271,19 @@ export function speciesProblems(record: Species): string[] {
 					);
 			});
 	}
+	if (lod.clumpPlanes !== undefined) {
+		if (!Array.isArray(lod.clumpPlanes) || lod.clumpPlanes.length !== 2)
+			out.push(
+				`lod.clumpPlanes is ${JSON.stringify(lod.clumpPlanes)}; it is a pair of counts, one each card level`,
+			);
+		else
+			lod.clumpPlanes.forEach((value, i) => {
+				if (!Number.isInteger(value) || value < 2 || value > 16 || value % 2 !== 0)
+					out.push(
+						`lod.clumpPlanes[${i}] is ${value}; it is an even whole number of vertical planes from 2 to 16`,
+					);
+			});
+	}
 	const cardCell = lod.cardCell;
 	if (cardCell)
 		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {

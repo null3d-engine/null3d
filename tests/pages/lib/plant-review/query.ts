@@ -103,6 +103,8 @@ export interface PlantReviewQuery {
 	readonly cardDebug?: number;
 	/** The record's card-level cover factor for this run, which a review sets to measure the cover. */
 	readonly cardCover?: number;
+	/** The record's clump-card plane count for this run, which a review sets to measure the cover. */
+	readonly clumpPlanes?: number;
 	/** The quality preset whose mesh tier the plant grows at; high by default. */
 	readonly preset?: (typeof PLANT_PRESETS)[number];
 	/** The frame's width and height in pixels, which give the page its aspect. */
@@ -429,6 +431,7 @@ export interface PlantReviewQuery {
 const NUMBER_FIELDS = [
 	'cardDebug',
 	'cardCover',
+	'clumpPlanes',
 	'variant',
 	'seed',
 	'turn',
