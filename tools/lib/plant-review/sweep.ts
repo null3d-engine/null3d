@@ -463,6 +463,8 @@ export interface SweepPicture {
 	readonly height: string;
 	/** The level the page drew, or null where its frame names none. */
 	readonly level: number | null;
+	/** Whether the query forced that level rather than the camera's distance choosing it. */
+	readonly forced: boolean;
 	/** The distance from the lens to the plant's foot, in metres, where the frame names it. */
 	readonly away: number | null;
 	/** Why the picture did not draw. */
@@ -544,13 +546,20 @@ function levelHolds(rung: SweepRung, level: number | null): boolean {
 /** The levels drawn by a row's pictures, in level order, as words. */
 function levelsDrawn(pictures: readonly SweepPicture[]): string {
 	const names = ['leaf form', 'first card level', 'second card level', 'far card'];
-	const counts = new Map<number, number>();
+	const counts = new Map<string, number>();
 	for (const picture of pictures)
-		if (picture.level !== null) counts.set(picture.level, (counts.get(picture.level) ?? 0) + 1);
+		if (picture.level !== null) {
+			const key = `${picture.level}|${picture.forced ? 1 : 0}`;
+			counts.set(key, (counts.get(key) ?? 0) + 1);
+		}
 	if (counts.size === 0) return 'none';
 	return [...counts.entries()]
-		.sort((a, b) => a[0] - b[0])
-		.map(([level, count]) => `${names[level] ?? 'far card'} ×${count}`)
+		.sort((a, b) => Number(a[0].split('|')[0]) - Number(b[0].split('|')[0]))
+		.map(([key, count]) => {
+			const [level, forced] = key.split('|');
+			const name = names[Number(level)] ?? 'far card';
+			return `${name}${forced === '1' ? ' (forced)' : ''} ×${count}`;
+		})
 		.join(', ');
 }
 
@@ -1108,8 +1117,9 @@ function referenceOf(set: ReferenceSet, slot: Slot | undefined): SweepReference 
 
 /** A drawn picture's figures: its matte's pieces and, by the colour rule, its covered share. */
 function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): SweepPicture {
-	const record = (frame.cell as { level?: { level?: unknown; distance?: unknown } } | undefined)
-		?.level;
+	const record = (
+		frame.cell as { level?: { level?: unknown; distance?: unknown; forced?: unknown } } | undefined
+	)?.level;
 	const level = record?.level;
 	const away = record?.distance;
 	const elevation = (frame.query as { elevation?: number } | undefined)?.elevation;
@@ -1122,6 +1132,7 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 		turn: frame.turn,
 		height,
 		level: typeof level === 'number' ? level : null,
+		forced: record?.forced === true,
 		away: typeof away === 'number' ? away : null,
 		measures: null,
 		skyGap: null,

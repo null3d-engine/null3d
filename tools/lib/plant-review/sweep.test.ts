@@ -108,6 +108,7 @@ function picture(
 		turn: 0,
 		height: 'low',
 		level,
+		forced: false,
 		away: null,
 		measures: measures(),
 		skyGap: covered === null ? null : 1 - covered,
@@ -472,6 +473,12 @@ describe('the sweep’s verdicts', () => {
 		expect(result.verdict).toBe('open');
 		expect(result.reason).toContain('cut by the frame');
 		expect(result.reason).toContain(drawn[5]!.file);
+	});
+
+	test('marks a forced level in the row’s level words', () => {
+		const drawn = orbit(3).map((entry) => ({ ...entry, forced: true }));
+		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], drawn);
+		expect(result.levels).toContain('far card (forced)');
 	});
 
 	test('fails a rung with a missing picture, and names how many drew', () => {
