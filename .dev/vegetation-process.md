@@ -14,7 +14,9 @@ of culms, and ground tufts, rosettes and colonies.
 
 - **The frame.** A trunk, great limbs balanced round it, and a counted set of crown lobes with sky
   between them. The frame is planned from the species' own outline by height, with each side's reach and
-  the crown's lower boundary under each limb. Every branch ends in a socket.
+  the crown's lower boundary under each limb. Every branch ends in a socket. A planned plant's crown
+  width comes from the frame's limb reach and its clumps, never from a spread curve: the frame's
+  outline is the lever.
 - **Ranked sockets.** Each socket's rank is set once across the whole plant. A rank that restarts in each
   pad or patch is another field and is not called rank.
 - **Branch pieces.** A socket carries one branch piece: a cut branch end with its leaves, a frond or a

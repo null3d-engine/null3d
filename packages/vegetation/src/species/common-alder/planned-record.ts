@@ -25,27 +25,12 @@ const HEIGHT: Planned['height'] = [
 	[1, 20],
 ];
 
-/**
- * The crown's radius as a share of its height, by age share. The alder's whole views show a crown
- * about 0.59 to 0.63 of the height across on its wide side, so it is a narrow cone on a straight
- * leader, not the oak's broad dome.
- */
-const SPREAD: Planned['spread'] = [
-	[0, 0.04],
-	[0.05, 0.10],
-	[0.15, 0.16],
-	[0.35, 0.20],
-	[0.7, 0.22],
-	[1, 0.22],
-];
-
 /** The common alder's planned growth. */
 export const plannedGrowth: Planned = {
 	model: 'planned',
 	// Model years at maturity 1. An open-grown common alder lives about sixty years.
 	fullAge: 60,
 	height: HEIGHT,
-	spread: SPREAD,
 	// The leader, its near-level branches and their twigs, with the clumps they end in, are the
 	// frame's stated axes; the plan reads them with the frame's fine fill switched off.
 	adult: 'frame',

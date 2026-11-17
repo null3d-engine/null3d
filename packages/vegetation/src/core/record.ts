@@ -1653,8 +1653,6 @@ export interface Planned {
 	readonly fullAge: number;
 	/** The plant's height in metres by age. */
 	readonly height: Curve;
-	/** The crown's spread as a share of the height, by age. */
-	readonly spread: Curve;
 	/**
 	 * Where the trunk, limbs, boughs and their clumps come from: the species' frame, planned to order
 	 * two, or stated directly in its record.

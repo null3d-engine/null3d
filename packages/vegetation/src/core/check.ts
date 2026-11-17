@@ -466,6 +466,14 @@ function growthProblems(record: Species, out: string[]): void {
 		out.push(`growth.model is '${String(growth.model)}'; use one of ${MODELS.join(', ')}`);
 		return;
 	}
+	if (growth.model === 'planned') {
+		// The crown's width comes from the frame's limb reach and its clumps. A spread curve states
+		// nothing the planned grower reads, so a record that keeps one still holds a dead lever.
+		if ((growth as { readonly spread?: unknown }).spread !== undefined)
+			out.push(
+				'growth.spread: a planned record draws its crown width from its frame, so it states no spread curve',
+			);
+	}
 	if (growth.model === 'self-organizing') {
 		if (!record.envelope) out.push('a self-organizing species needs an envelope');
 		if (growth.years < 1) out.push(`growth.years is ${growth.years}; grow at least one cycle`);

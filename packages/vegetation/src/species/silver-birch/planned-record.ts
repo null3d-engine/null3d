@@ -24,27 +24,12 @@ const HEIGHT: Planned['height'] = [
 	[1, 21],
 ];
 
-/**
- * The crown's radius as a share of its height, by age share. The birch's whole views show a slender
- * open flame, narrow at the foot of the crown and at its tip, so the spread stays well under the
- * oak's and never widens into a dome.
- */
-const SPREAD: Planned['spread'] = [
-	[0, 0.04],
-	[0.05, 0.1],
-	[0.15, 0.16],
-	[0.35, 0.2],
-	[0.7, 0.22],
-	[1, 0.22],
-];
-
 /** The silver birch's planned growth. */
 export const plannedGrowth: Planned = {
 	model: 'planned',
 	// Model years at maturity 1. A silver birch on a wet ground lives about sixty years.
 	fullAge: 60,
 	height: HEIGHT,
-	spread: SPREAD,
 	// The bole, its great limbs and their branches, with the clumps they end in, are the frame's
 	// stated axes; the plan reads them with the frame's fine fill switched off.
 	adult: 'frame',

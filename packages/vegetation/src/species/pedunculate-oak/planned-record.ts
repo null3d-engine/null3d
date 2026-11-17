@@ -26,26 +26,12 @@ const HEIGHT: Planned['height'] = [
 	[1, 20],
 ];
 
-/**
- * The crown's radius as a share of its height, by age share: a whip is narrow, and an open-grown
- * oak's crown runs out to about 0.85 of its height either side (width about 1.7 times the height).
- */
-const SPREAD: Planned['spread'] = [
-	[0, 0.1],
-	[0.04, 0.3],
-	[0.13, 0.55],
-	[0.27, 0.7],
-	[0.6, 0.82],
-	[1, 0.85],
-];
-
 /** The oak's planned growth. */
 export const plannedGrowth: Planned = {
 	model: 'planned',
 	// Model years at maturity 1. An open-grown pedunculate oak lives about a century and a half.
 	fullAge: 150,
 	height: HEIGHT,
-	spread: SPREAD,
 	// The trunk, the nine great limbs and the boughs, with the clumps they end in, are the frame's
 	// stated axes; the plan reads them with the frame's fine fill switched off.
 	adult: 'frame',

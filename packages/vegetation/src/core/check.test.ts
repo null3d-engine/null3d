@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { meadowGrassRecord } from '../grow/ground.fixture';
 import { record as template } from '../species/_template/record';
 import { record as meadow } from '../species/meadow-grass/record';
+import { species as oakModule } from '../species/pedunculate-oak/index';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
 import { checkSpecies, speciesProblems } from './check';
 import type { ShootSpec, Species } from './record';
@@ -11,6 +12,18 @@ describe('the record check', () => {
 	it('passes the template', () => {
 		expect(speciesProblems(template)).toEqual([]);
 		expect(checkSpecies(template)).toBe(template);
+	});
+
+	it('rejects a spread curve on a planned record', () => {
+		const oak = oakModule.record;
+		expect(speciesProblems(oak).filter((problem) => problem.startsWith('growth.spread'))).toEqual([]);
+		const stale = {
+			...oak,
+			growth: { ...oak.growth, spread: [[0, 0.1], [1, 0.85]] },
+		} as unknown as Species;
+		expect(speciesProblems(stale)).toContain(
+			'growth.spread: a planned record draws its crown width from its frame, so it states no spread curve',
+		);
 	});
 
 	it('reads a sky-to-leaf extinction as a share from 0 to 1', () => {

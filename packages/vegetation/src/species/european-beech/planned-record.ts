@@ -24,26 +24,12 @@ const HEIGHT: Planned['height'] = [
 	[1, 20],
 ];
 
-/**
- * The crown's radius as a share of its height, by age share: a broad low dome, wider than the oak's
- * open crown of the same height and far wider than the birch's flame.
- */
-const SPREAD: Planned['spread'] = [
-	[0, 0.06],
-	[0.05, 0.18],
-	[0.15, 0.3],
-	[0.35, 0.38],
-	[0.6, 0.42],
-	[1, 0.42],
-];
-
 /** The European beech's planned growth. */
 export const plannedGrowth: Planned = {
 	model: 'planned',
 	// Model years at maturity 1. A beech lives two centuries or more; this is an open-grown dome.
 	fullAge: 90,
 	height: HEIGHT,
-	spread: SPREAD,
 	// The bole, its low limbs and their branches, with the clumps they end in, are the frame's stated
 	// axes; the plan reads them with the frame's fine fill switched off.
 	adult: 'frame',

@@ -25,28 +25,12 @@ const HEIGHT: Planned['height'] = [
 	[1, 8],
 ];
 
-/**
- * The crown's radius as a share of its height, by age share. Stills 01, 02 and 18: the mature crown
- * is a broad dome wider than tall, about 1.15 times its height across, so its radius runs to a
- * little under 0.6. Young shoots stand under a compact bushy crown, already round rather than
- * spire-like.
- */
-const SPREAD: Planned['spread'] = [
-	[0, 0.12],
-	[0.05, 0.25],
-	[0.15, 0.4],
-	[0.35, 0.5],
-	[0.7, 0.56],
-	[1, 0.58],
-];
-
 /** The holm oak's planned growth. */
 export const plannedGrowth: Planned = {
 	model: 'planned',
 	// Model years at maturity 1. An open-grown holm oak clump lives well over a century.
 	fullAge: 120,
 	height: HEIGHT,
-	spread: SPREAD,
 	// The stems of the stool, their forks, their arms and branches, with the clumps they end in, are
 	// the frame's stated axes; the plan reads them with the frame's fine fill switched off.
 	adult: 'frame',

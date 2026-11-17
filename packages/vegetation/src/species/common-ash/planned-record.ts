@@ -25,27 +25,12 @@ const HEIGHT: Planned['height'] = [
 	[1, 22],
 ];
 
-/**
- * The crown's radius as a share of its height, by age share. The fit measures the crown's width at
- * 0.9 of the plant's height (fit.ts), so the radius runs to about 0.45: a broad open dome a little
- * taller than wide, wider than the alder's or the birch's crown.
- */
-const SPREAD: Planned['spread'] = [
-	[0, 0.05],
-	[0.05, 0.13],
-	[0.15, 0.24],
-	[0.35, 0.34],
-	[0.7, 0.42],
-	[1, 0.45],
-];
-
 /** The common ash's planned growth. */
 export const plannedGrowth: Planned = {
 	model: 'planned',
 	// Model years at maturity 1. An open-grown common ash lives about a hundred years.
 	fullAge: 100,
 	height: HEIGHT,
-	spread: SPREAD,
 	// The bole, the steep limbs and the branches with the bunches they end in are the frame's stated
 	// axes; the plan reads them with the frame's fine fill switched off.
 	adult: 'frame',
