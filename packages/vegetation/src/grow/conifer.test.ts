@@ -917,4 +917,62 @@ describe("the Italian cypress's closed shell", () => {
 		},
 		scaledBudget(120_000),
 	);
+
+	it(
+		'keeps its inner body at a 400 triangle maximum, at every level',
+		async () => {
+			await loadPlantCode(cypressModule.record);
+			const kit = buildKitNow(cypressModule, { detail: 'high', placeholders: 'missing' });
+			const asset = growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				season: 'summer',
+				near: false,
+				maxTriangles: 400,
+			});
+			const plan = planConifer({
+				record: cypressModule.record,
+				seed: 11,
+				variant: 0,
+				season: 'summer',
+			});
+			const scale = asset.skeleton.height / plan.height;
+			const { min, max } = kit.box;
+			// The body's radius at a height, between the plan's nodes.
+			const radiusAt = (y: number): number => {
+				for (let k = 1; k < plan.body.length; k++) {
+					const below = plan.body[k - 1] as (typeof plan.body)[number];
+					const above = plan.body[k] as (typeof plan.body)[number];
+					if (y < below.y || y > above.y) continue;
+					return (
+						below.radius + ((above.radius - below.radius) * (y - below.y)) / (above.y - below.y)
+					);
+				}
+				return -1;
+			};
+			asset.levels.forEach((level) => {
+				const total = level.parts.reduce((sum, part) => sum + part.arrays.indices.length / 3, 0);
+				expect(total).toBeLessThanOrEqual(400);
+				// The body is the one surface round the trunk at the record's radius for its height. A
+				// capped level draws it coarser, so each vertex is read at its own height, not at one
+				// ring's, and a band round that height's radius finds it.
+				let hits = 0;
+				for (const part of level.parts) {
+					const raw = part.arrays.positions;
+					for (let v = 0; v < raw.length / 3; v++) {
+						const x = min[0] + (raw[v * 3] as number) * ((max[0] - min[0]) / 65535);
+						const y = min[1] + (raw[v * 3 + 1] as number) * ((max[1] - min[1]) / 65535);
+						const z = min[2] + (raw[v * 3 + 2] as number) * ((max[2] - min[2]) / 65535);
+						if (!Number.isFinite(y)) continue;
+						const want = radiusAt(y / scale);
+						if (want <= 0) continue;
+						const r = Math.sqrt(x * x + z * z);
+						if (Math.abs(r - want * scale) <= 0.2 * want * scale) hits++;
+					}
+				}
+				expect(hits).toBeGreaterThan(5);
+			});
+		},
+		scaledBudget(120_000),
+	);
 });
