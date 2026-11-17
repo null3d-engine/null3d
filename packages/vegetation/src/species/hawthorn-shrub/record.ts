@@ -295,9 +295,12 @@ export const record: Species = {
 			twist: 5,
 			wave: [0.002, 4],
 			optics: {
-				reflectance: [0.0404, 0.0849, 0.0116],
+				// The whole-plant light draws the leaf lighter and greener than the photographs'
+				// grey-olive (#64644d against #555133 at 01), so the front face darkens and warms a
+				// little and the transmitted light comes down with it.
+				reflectance: [0.0319, 0.0619, 0.0092],
 				reflectanceBack: [0.1935, 0.2701, 0.1787],
-				transmittance: [0.12, 0.084, 0.013],
+				transmittance: [0.0945, 0.0646, 0.0103],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -305,7 +308,10 @@ export const record: Species = {
 	bark: {
 		// Stills 15 and 26: the sampled plates read darker than the photographs, so the zone lifts the
 		// measured colour, a little more in green and blue, toward the grey-brown the photographs show.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [2.8, 3.2, 3.2] }],
+		// The lift was written for the sampled plates, but under the whole-plant light it draws the bole
+		// far lighter and bluer than the photographs — 86, 84, 62 against the picture's darker
+		// grey-brown — so the tint comes down and keeps almost no blue.
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1.7, 1.9, 1.1] }],
 		young: 0,
 		// Still 16: the young bark draws redder than its photograph, so thin wood lifts green and blue
 		// more than red. Still 28's young stem asks for a neutral cast instead, a recorded conflict.
