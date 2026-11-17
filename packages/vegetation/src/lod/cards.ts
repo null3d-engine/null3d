@@ -1006,8 +1006,15 @@ function evenShare<T>(list: readonly T[], share: number): T[] {
 	);
 }
 
-/** The pictures a side that one clump card shows of its own rows. */
-const CLUMP_TILES = 3;
+/**
+ * The pictures a side that one clump card shows of its own rows, at each card level: a finer grid
+ * at the first, so a plate there reads at a leaf's scale rather than a clump's, and the second
+ * level keeps its count so the far band does not move.
+ */
+const CLUMP_TILES: readonly [first: number, second: number] = [3, 3];
+
+/** The tiles a side at a card level. */
+export const tilesAt = (level: 1 | 2): number => CLUMP_TILES[level - 1] as number;
 
 /**
  * A card level's clump cards: one card set for each clump of sockets, at the clump's middle and
@@ -1033,12 +1040,13 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	const clusters = cardClusters(input, walk, kept.length, drawn, planes, undefined, more);
 	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
 	// own scale rather than one shoot's picture grown over the clump.
+	const tiles = tilesAt(level);
 	const tiled = {
-		tiles: CLUMP_TILES,
+		tiles,
 		row: (index: number, tile: number): number => {
 			const list = kept[index]?.rows ?? [];
 			return list.length > 0
-				? (list[Math.floor((tile * list.length) / (CLUMP_TILES * CLUMP_TILES))] as number)
+				? (list[Math.floor((tile * list.length) / (tiles * tiles))] as number)
 				: 0;
 		},
 	};
@@ -1051,6 +1059,8 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 			return clump ? clumpSky(clump, height) : 1;
 		},
 		tiled,
+		undefined,
+		level === 1 ? 0.5 : 0,
 	);
 }
 
@@ -1126,12 +1136,54 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
+					[
+						plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]),
+						level === 1 ? 0.5 : 0,
+					],
 					colour,
 				);
 			}
 			mesh.quad(first, first + 1, first + 2, first + 3);
 		});
+		// A record may ask for crossed planes at a card level: each extra plane is the card's first,
+		// turned a quarter about the vertical, so it closes the crown's gaps without enlarging a
+		// picture.
+		const extra = input.record.lod.cardPlanes?.[level - 1] ?? 0;
+		const lead = prototype.card.planes[0];
+		const quarter = (v: readonly number[], turns: number): Vector3 => {
+			let out: Vector3 = [v[0] as number, v[1] as number, v[2] as number];
+			for (let t = 0; t < turns % 4; t++)
+				out = [-out[2] as number, out[1] as number, out[0] as number];
+			return out;
+		};
+		for (let e = 1; lead && e <= extra; e++) {
+			const right = quarter(lead.right, e);
+			const up = quarter(lead.up, e);
+			const n = normalize3([
+				right[1] * up[2] - right[2] * up[1],
+				right[2] * up[0] - right[0] * up[2],
+				right[0] * up[1] - right[1] * up[0],
+			]);
+			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
+			const first = mesh.vertices;
+			const [rx, ry, rw, rh] = lead.front;
+			for (const [sx, sy] of CARD_CORNERS) {
+				for (let c = 0; c < 3; c++)
+					local[c] =
+						((lead.centre[c] as number) +
+							grow * (sx * (right[c] as number) + sy * (up[c] as number))) *
+						scale;
+				quatRotate(rows.rotation, r * 4, local, world);
+				mesh.vertex(
+					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
+					normal,
+					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
+					[lead.along[0] + ((sy + 1) / 2) * (lead.along[1] - lead.along[0]), level === 1 ? 0.5 : 0],
+					colour,
+				);
+			}
+			mesh.quad(first, first + 1, first + 2, first + 3);
+		}
 		// A twig join's line runs from the card to the nearest branch the level draws, so the card
 		// stands on the plant even where its own twig is not drawn.
 		if (twigs?.has(r)) {
@@ -1808,7 +1860,8 @@ export function plannedClumpCards(
 	input: MeshInput,
 	planes = 3,
 	share = 1,
-	tiles = CLUMP_TILES,
+	tiles = CLUMP_TILES[1],
+	gate = 0,
 ): MeshArrays | undefined {
 	const clumps = input.skeleton.clumps;
 	if (!clumps || clumps.length === 0) return undefined;
@@ -1935,6 +1988,8 @@ export function plannedClumpCards(
 			);
 		},
 		tiled,
+		undefined,
+		gate,
 	);
 }
 
@@ -1962,6 +2017,7 @@ export function clusterCardMesh(
 		readonly row: (cluster: number, tile: number) => number;
 	},
 	into?: MeshWriter,
+	gate = 0,
 ): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = into ?? new MeshWriter();
@@ -2057,7 +2113,7 @@ export function clusterCardMesh(
 						at,
 						normal,
 						[(rx + ((us + 1) / 2) * rw) / size, (ry + ((vt + 1) / 2) * rh) / size],
-						[plane.along[0] + ((vt + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
+						[plane.along[0] + ((vt + 1) / 2) * (plane.along[1] - plane.along[0]), gate],
 						colourAt(at[1]),
 					);
 				}

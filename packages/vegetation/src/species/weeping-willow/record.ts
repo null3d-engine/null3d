@@ -523,6 +523,9 @@ export const record: Species = {
 		// cover, 0.25 and 0.18 at this value. Larger values stand on the leaf form's outline: 1.4
 		// draws 0.0299 of it outside against the 0.03 the card test allows, and 1.3 reads 0.0256.
 		cardGrow: 1.3,
+		// The curtain's cards stand open at the whole view, so the first card level crosses one
+		// more plane at each card: the crown closes without a picture growing coarser.
+		cardPlanes: [1, 0],
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,

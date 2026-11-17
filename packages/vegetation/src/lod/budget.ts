@@ -814,7 +814,13 @@ export function rowLevel(
 			for (let pass = 0; pass < 8 && count > 0; pass++) {
 				// One picture a side under a maximum: a tiled card costs the square of its tiles and a
 				// small cap cannot afford one, so the capped crown keeps the bare card.
-				const made = plannedClumpCards(input.mesh, planes, count / clumps, 1);
+				const made = plannedClumpCards(
+					input.mesh,
+					planes,
+					count / clumps,
+					1,
+					level === 1 ? 0.5 : 0,
+				);
 				if (!made) break;
 				const cost = trianglesOf(made);
 				if (cost <= budget) {

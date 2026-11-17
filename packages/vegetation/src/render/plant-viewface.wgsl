@@ -140,6 +140,10 @@ const HEADER_CROWN_DIM: i32 = 72;
 const HEADER_BARK_RELIEF: i32 = 75;
 // How much a card's alpha rises for each mip level its sample reads, 0 raising none.
 const HEADER_CARD_MIP_LIFT: i32 = 73;
+const HEADER_CARD_SHADE: i32 = 77;
+// The darkest and lightest a card's shade takes a patch of its own colour, at full strength.
+const CARD_SHADE_DARK: f32 = 0.5;
+const CARD_SHADE_LIT: f32 = 1.4;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
@@ -1211,7 +1215,12 @@ fn surface(input: SurfaceInput) -> Surface {
             let crown = crown_shade(input.vertexColor.a);
             base *= crown;
             through *= crown;
-            alpha = card_alpha(texel.a, gx, gy);
+            // The first card level's own coverage: a factor on its alpha, at that level alone. The
+            // stalk strips carry their own uv1.y and stand outside the gate.
+            let card_gate = header(HEADER_CARD_SHADE);
+            let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
+
+            alpha = card_alpha(texel.a * mix(1.0, card_gate.x, gated), gx, gy);
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
