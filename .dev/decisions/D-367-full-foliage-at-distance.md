@@ -31,6 +31,7 @@ across the eight turn angles the review already uses.
 | Keeping the leaf form longer | the near band's switch | the near level holds 623,220 triangles against the card level's 62,023, so a raise costs about ten times the triangles for every metre | rejected: and at one distance the leaf form reads more open than the cards |
 | A second cut over each plate, one texel up | the leaf a plate carries, not its size | one texture sample | kept and landed |
 | Two plates a clump with radial normals | the projected area of every plate from every angle | 0 triangles: a rotation | withdrawn: the card material reads no vertex normal |
+| Radial plate orientations, a turn a clump | what a plate shows at each angle | 0 triangles: a rotation | rejected: the mean open sky rises 2.2 points, the spread widens, and the shade tilts |
 
 The second cut's eight turn angles, open sky in the plant's box on the matte, unmasked against masked, one camera and
 slot, the oak at seed 11, variant 0:
@@ -93,6 +94,13 @@ barely moves, so the cut lifts every quarter evenly.
    normal from the card's own surface map and never reads the vertex normal; the face-turning path runs only for merged
    foliage. Turning a plate's normal would therefore be inert, and the plane orientations themselves would have to change,
    which is a geometry change and not this route.
+
+4. **Radial plate orientations: rejected.** Turning each clump's plate set so its lead upright plane's own normal faces
+   the clump's azimuth away from the crown's axis was built behind a record value and measured across the eight angles:
+   the mean open sky rises from 0.4268 to 0.4491, the spread widens from 0.065 to 0.084, and the crown's mean lightness
+   swings 4.6 levels across the angles against 3.5 today. Geometry alone cannot turn a plate without tilting its shade,
+   because the baked surface normals turn with it. The parts pictures are the evidence and are why the route stops:
+   runs `sw-turn3-<turn>` in the oak-reset build's `switch` folder, beside their `sw-cut1-<turn>` twins.
 
 More cards per clump stays in reserve for a band where neither applies. The done-when is met with the second cut landed:
 the swap itself steps 0.014 of open sky at one camera, and the cut across the eight angles closes 1.0 point in the
