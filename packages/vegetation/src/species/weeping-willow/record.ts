@@ -414,13 +414,13 @@ export const record: Species = {
 			twist: 7,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.125, 0.275, 0.015],
+				reflectance: [0.144, 0.316, 0.017],
 				// The crown draws a mixture of the three faces. Its whole views stand too green and
 				// too yellow against their photographs, so the back face and the light through the
 				// leaf carry the photograph-to-render ratio per channel: a tenth more red, a little
 				// more green and a third more blue. The front face keeps its measured values.
-				reflectanceBack: [0.25, 0.328, 0.174],
-				transmittance: [0.114, 0.2325, 0.0325],
+				reflectanceBack: [0.275, 0.361, 0.191],
+				transmittance: [0.131, 0.267, 0.037],
 				roughness: [0.45, 0.6],
 			},
 		},
