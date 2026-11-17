@@ -696,6 +696,23 @@ describe('the plant shader', () => {
 		// 32 numbers less one for each texture.
 		expect(numbers).toBeLessThanOrEqual(26);
 	});
+
+	test('reads the card-level instrument in every role that draws foliage', () => {
+		// The instrument reached the card material alone, so a page that asked for it saw its cards
+		// change and its leaves stay, which reads as a texture fault at the near level. Both roles
+		// carry the three modes, and the placement gives the uniform to every material that draws
+		// foliage.
+		for (const mode of [
+			/material\.cardDebug > 0\.5 && material\.cardDebug < 1\.5/,
+			/material\.cardDebug > 1\.5 && material\.cardDebug < 2\.5/,
+			/material\.cardDebug > 2\.5/,
+		])
+			expect(wgsl.match(new RegExp(mode.source, 'g'))?.length ?? 0).toBeGreaterThanOrEqual(2);
+		const placement = readFileSync(new URL('./static-shoots.ts', import.meta.url), 'utf8');
+		expect(placement).toMatch(
+			/\[materials\.shoots, materials\.cards, materials\.foliage, materials\.foliageFar\],\s*\{\s*cardDebug: options\.cardDebug \?\? 0,?\s*\}/,
+		);
+	});
 });
 
 describe('the wind rows', () => {

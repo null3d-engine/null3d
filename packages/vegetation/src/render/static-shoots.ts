@@ -205,8 +205,10 @@ export function placeStaticPlants(
 	// The shoots hand over to the first card level by the rule that sets the asset's own start.
 	const near = firstCardStart(kit, options.view) * bias;
 	writePlantWind(kit, assets);
-	setPlacedUniforms([materials.cards], {
-		nearDistance: near,
+	setPlacedUniforms([materials.cards], { nearDistance: near });
+	// The card-level instrument reaches every role that draws foliage, since the leaf roles carry
+	// the same modes as a card's.
+	setPlacedUniforms([materials.shoots, materials.cards, materials.foliage, materials.foliageFar], {
 		cardDebug: options.cardDebug ?? 0,
 	});
 	// The season the copies stand in, which a stem whose colour turns reads for its bark, and the

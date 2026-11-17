@@ -1610,6 +1610,19 @@ fn surface(input: SurfaceInput) -> Surface {
             let flatten = 1.0 / max(leaf_normal.z, 0.5);
             base = min(base * flatten, vec3f(1.0));
             through *= flatten;
+            // The card role's instrument, on a leaf's own sample: mode one draws the sampled colour
+            // with no light through it, mode two the blade's plane as its surface, mode three the
+            // face with no light through.
+            if (material.cardDebug > 0.5 && material.cardDebug < 1.5) {
+                base = texel.rgb;
+                through = vec3f(0.0);
+                share = 0.0;
+            } else if (material.cardDebug > 1.5 && material.cardDebug < 2.5) {
+                mapped = vec3f(0.0, 0.0, 1.0);
+            } else if (material.cardDebug > 2.5) {
+                through = vec3f(0.0);
+                share = 0.0;
+            }
             // A pale collar marks where the blade leaves its sheath, over the share the record
             // names at the blade's base.
             // A shoot's leaf holds its metres along there, so the band is a merged leaf's or a
