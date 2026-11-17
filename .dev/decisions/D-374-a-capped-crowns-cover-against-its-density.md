@@ -51,22 +51,29 @@ form's 0.6505 with the boxes matching, 7.8 points fuller. The refinement's light
 
 ## Look
 
-Pending: Oak-L draws the pair from 82692ca5a and Oak-A rules. The dense rule wins the outline rows by four to seven
-points. It reads overfilled against the leaf form. The refinement reads lighter and loses those points. A look
-question is the eye's, not the overlap figure's.
+Ruled by Oak-A on one-camera trios (build/verdicts/look-2115-crown-fill.md and its addendum). The dense crown holds the
+uncapped box, 555 by 406 against 579 by 410, and the fine leaf grain; the refinement gives back about 13 per cent of the
+crown's width, 505 by 389, and draws leaf plates several times the tree's own scale. So the hawthorn favours the dense rule.
+On the matched cameras the refinement does reduce the relative overfill: the dense rule overfills by 12.5 points on the
+hawthorn and 5.5 on the birch, the refinement by 7.5 and 3.5, so density is not the dense rule's failing alone. The birch
+cannot decide: its uncapped reference is under-drawn, and the dense run with the walk draws a stray green sheet at the
+crown's lower left which the dense rule without the walk does not draw (build/crown/birch-crown-cap1m-dense-nowalk at
+2ba74282e), so that artifact belongs to the walk's row-place card at its base size and not to the rule.
 
 ## Decision
 
-The eye's ruling decides in one sentence. If the dense rule stays, the root-of-count refinement is rejected. It loses
-the outline where the hull bound clips the grown plate; its figures above are the reason. If the refinement is taken,
-it lands as written. The hull bound's interaction with the grown plate is then the next work item, since the two aims
-meet there. Neither option is chosen on effort or schedule.
+The dense row-place rule stays. The root-of-count refinement is rejected and stays on its branch: it loses the outline
+where the hull bound clips the grown plate, and on matched cameras it buys less than its shape costs. Density stays open
+for both rules, and the species split is recorded for a later pass: the cover approach as a record value per species,
+defaulting to dense, with the birch naming the refinement only after the walk's wedge is fixed, the refinement's immunity
+is shown at more than one turn, and the birch's uncapped reference is repaired. Neither option was chosen on effort or
+schedule.
 
 ## Consequences
 
-The coverage clause becomes its own recorded case in the budget suite. It names this record and the dense rule's
-0.712 and 0.857 as its figures. The cap and allowance cases stay green while the coverage rail is open. The
-refinement stays on oak/levels-cap-walk and does not enter the pull-request branch until the eye rules. Three levers
-stay open for the density without the outline. They are fewer planes a card, a smaller cap on a card's growth, and
-the card texture's own coverage. The saguaro's capped-body fault keeps its own recorded case, apart from the cap
-assertions.
+The coverage clause is its own recorded case in the budget suite, naming this record and the dense rule's 0.712 and
+0.857, so the cap and allowance cases stay green while the coverage rail is open. The saguaro's capped-body fault keeps
+its own recorded case, apart from the cap assertions. The four levers left open for the density without the outline are
+fewer planes a card, a smaller cap on a card's growth, the card texture's own coverage, and a per-species cover approach.
+The walk's wedge is recorded as a look fault of the walk, with the control run named, and its fix is checked at more than
+one turn.
