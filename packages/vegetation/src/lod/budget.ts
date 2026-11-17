@@ -812,6 +812,8 @@ export function rowLevel(
 			// drops by the overrun's price until the level's own triangles fit.
 			let count = Math.min(clumps, Math.max(0, Math.floor(budget / each)));
 			for (let pass = 0; pass < 8 && count > 0; pass++) {
+				// One picture a side under a maximum: a tiled card costs the square of its tiles and a
+				// small cap cannot afford one, so the capped crown keeps the bare card.
 				const made = plannedClumpCards(input.mesh, planes, count / clumps, 1);
 				if (!made) break;
 				const cost = trianglesOf(made);
