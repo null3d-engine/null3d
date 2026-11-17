@@ -1419,6 +1419,14 @@ export function speciesProblems(record: Species): string[] {
 		out.push(`lod.cardStalkShade is ${lod.cardStalkShade}; it is more than 0 and at most 1`);
 	if (lod.impostor.views < 2 || lod.impostor.texels < 8)
 		out.push('lod.impostor needs at least 2 views across and 8 texels a view');
+	if (lod.farCover !== undefined) {
+		const cells = lod.impostor.views * lod.impostor.views;
+		if (lod.farCover.length !== cells)
+			out.push(`lod.farCover holds ${lod.farCover.length} shares; its atlas draws ${cells} views`);
+		for (const [at, share] of lod.farCover.entries())
+			if (!(Number.isFinite(share) && share >= 0 && share <= 1))
+				out.push(`lod.farCover[${at}] is ${share}; a covered share is from 0 to 1`);
+	}
 	for (const [key, value] of Object.entries(lod.budget))
 		if (value < 0) out.push(`lod.budget.${key} is ${value}; a budget is not negative`);
 	shareProblem(record.roundBand, 'roundBand', out);

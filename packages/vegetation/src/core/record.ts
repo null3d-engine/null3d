@@ -3181,6 +3181,13 @@ export interface LodSpec {
 	readonly cardStalkToFoliage?: boolean;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
+	/**
+	 * The covered share the leaf form draws at each far view, from 0 to 1, in the atlas's frame
+	 * order: along each row, then down. The far bake corrects each view's card to its own share, so
+	 * a far picture keeps the cover its leaves draw at that angle rather than the bake's one share.
+	 * Absent, every view keeps the bake's own share.
+	 */
+	readonly farCover?: readonly number[];
 	/** The level that casts shadows. */
 	readonly shadowLevel: number;
 	/** This species' own limits. */

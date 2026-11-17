@@ -19,6 +19,11 @@
 import { frameDirection, type OctahedralAtlas } from './octahedral';
 import { encodeImpostorSurface } from './surface';
 
+export type { OctahedralAtlas } from './octahedral';
+// A caller that measures a view's own figures reads the atlas's grid and its directions through
+// this module, as the bake does, so the two agree on every cell.
+export { frameDirection } from './octahedral';
+
 /**
  * A map that a bake samples: its pixels, four bytes a texel in the first row first, and the cell
  * that a part draws.
@@ -337,7 +342,7 @@ function vertexNormals(
 }
 
 /** The view's right and up for a direction toward the eye, with the world's up kept upright. */
-function viewFrame(
+export function viewFrame(
 	direction: readonly [number, number, number],
 	right: [number, number, number],
 	up: [number, number, number],

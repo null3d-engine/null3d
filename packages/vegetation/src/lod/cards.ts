@@ -226,6 +226,8 @@ function turned(
  * planes, in plant space, for a card moved by a shift and grown about each plane's middle. A plane
  * is turned once, and each point is its middle and its extents in proportion.
  *
+ * @param ends Where to record each picture's last point, in points, when the caller needs a polygon
+ *   a plane.
  * @returns The number of points.
  */
 function rowEdge(
@@ -237,6 +239,7 @@ function rowEdge(
 	shiftX: number,
 	shiftY: number,
 	shiftZ: number,
+	ends?: number[],
 ): number {
 	const prototype = kit.prototypes[rows.prototype[r] as number];
 	if (!prototype) return 0;
@@ -269,8 +272,32 @@ function rowEdge(
 			edgePoints[at + 2] = mz + u * RIGHT[2] + v * UP[2];
 			count++;
 		}
+		ends?.push(count);
 	}
 	return count;
+}
+
+/**
+ * The edge of each picture a row draws, each at its own size, in plant space: the leaf form's own
+ * footprint at that shoot. The points are a plane's picture, a polygon each, and the buffer is
+ * shared by every call, so a caller reads it before the next row.
+ *
+ * @param kit The species' kit.
+ * @param rows The plant's shoot rows.
+ * @param r The row.
+ * @param ends The last point of each picture's polygon, in points.
+ * @returns The points, three numbers a point.
+ * @category api/vegetation
+ */
+export function rowPictureEdges(
+	kit: SpeciesKitData,
+	rows: ShootRows,
+	r: number,
+	ends: number[],
+): { readonly points: Float64Array; readonly count: number } {
+	ends.length = 0;
+	const count = rowEdge(kit, rows, r, Number.POSITIVE_INFINITY, 1, 0, 0, 0, ends);
+	return { points: edgePoints, count };
 }
 
 /** No move of a card from its row's own place. */
