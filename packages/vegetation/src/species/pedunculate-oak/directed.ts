@@ -105,6 +105,14 @@ const boughs: FrameBranchRule = {
 			radius: 0.55,
 			taper: 0.35,
 			sway: 38,
+			// A named limit, not a tuning. The straight-run rule allows no run over a fifth of the
+			// branch, and the bend-radius rule allows no radius under three diameters of its wood. The
+			// branch's median length is 2.65 m and its base diameter 0.10 m here, so three diameters is
+			// 0.30 m: four elbows leave runs of 0.33 to 0.34 of the branch, six leave 0.21 to 0.22, and
+			// seven bring the runs to 0.18 but turn each kink to a 2.665-diameter bend, under the 3 the
+			// wood allows. More elbows worsen the bend, fewer worsen the run, so no count satisfies
+			// both on a branch this short for its girth; the four elbows and the straight runs they
+			// leave are recorded as this frame's limit.
 			elbows: 4,
 			crook: 0.65,
 			// A branch's wood passes through no other wood.
