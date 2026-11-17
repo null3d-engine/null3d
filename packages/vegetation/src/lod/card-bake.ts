@@ -639,6 +639,11 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		const base = outline.base[1];
 		const tip = outline.tip[1];
 		const areas = (profile: readonly number[]) => bandAreas(mask, base, tip, profile.length);
+		// A needle's leaf picture is a bundle of needles, so the crop's outline is not the shape the
+		// card stands for: a needle's geometry makes its own tuft, and clipping its fragments to the
+		// crop would shape the card as one broad bundle instead. A flat leaf keeps its crop's outline,
+		// which is the leaf itself.
+		const needle = record.foliage.kind === 'needle' || record.foliage.kind === 'fascicle';
 		return {
 			upper: leaf.mean.upper,
 			lower: leaf.mean.lower,
@@ -650,7 +655,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			},
 			base,
 			tip,
-			mask,
+			mask: needle ? undefined : mask,
 			extras,
 			...browning,
 		};

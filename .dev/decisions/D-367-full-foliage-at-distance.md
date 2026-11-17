@@ -124,3 +124,17 @@ crown's own area cover steps 3.6 points at that camera and 6.6 at the inside-cro
 steps 5.9 and 9.1. The grain matches the leaf form's separate shapes within a fifth. The cut across the eight angles
 closes 1.0 point in the mean. The area cover's further closing is the card level's own fuller cover. The cover factor
 below one opens it only by coarsening the leaf.
+
+## The card's picture follows the leaf it stands for
+
+A card's mask and its colour came from the texture manifest's leaf crop. A needle species' crop is a
+picture of a needle bundle, so its cards baked the bundle's silhouette: the pine's close view showed
+flat pale plates among the needles. A needle kind no longer clips its fragments to the crop's outline,
+so each needle's geometry makes its own tuft. A flat blade keeps the crop's outline, which is the leaf.
+
+The pine's close view at one camera reads as needle sprays after the change. The card atlases of the
+oak, the birch and the cypress are byte-identical (`4ed6e51065f5f32a`, `8ad6727e8832a2d1`,
+`b3276d7be6e8825`), while the pine's and the sequoia's move. The card's base colour divides the baked
+mean out: `leaf_light` multiplies the texel by the face's scale, `reflectance / mean / (1 - share)`, so
+the paleness is not the mean's brightness. A panel of one term at a time on the pine's close view reads
+which term pays it.
