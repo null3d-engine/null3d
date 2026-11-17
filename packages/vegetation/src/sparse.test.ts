@@ -201,18 +201,6 @@ function trianglesOf(asset: PlantAsset, level: 0 | 1 | 2, name: string): number 
 	return triangles;
 }
 
-/** The vertices of a level's parts of one name, each as one number of its three box steps. */
-function vertexSet(asset: PlantAsset, level: 0 | 1 | 2, name: string): Set<number> {
-	const out = new Set<number>();
-	for (const part of asset.levels[level].parts) {
-		if (part.name !== name) continue;
-		const p = part.arrays.positions;
-		for (let i = 0; i < p.length; i += 3)
-			out.add((p[i] as number) + (p[i + 1] as number) * 65536 + (p[i + 2] as number) * 4294967296);
-	}
-	return out;
-}
-
 /**
  * Where each foliage carrier of a plant stands: its sockets on a plant of sockets, each with all its
  * rows, its shoot rows, or its end axes' tips. A carrier keeps its number as grown.
@@ -223,14 +211,22 @@ function carriers(asset: PlantAsset): Map<number, readonly [number, number, numb
 	const { buds } = asset.skeleton;
 	const sockets = rowSockets(asset.skeleton, rows);
 	if (sockets) {
+		// A socket's identity is the smallest row id among the rows it carries: the row identity
+		// nests at every sparseness, which the row subset case proves, while the bud handle is a
+		// looser name for the same place.
+		const keys = new Map<number, number>();
 		for (let r = 0; r < rows.count; r++) {
 			const b = sockets[r] as number;
-			out.set(buds.origin?.[b] ?? b, [
+			const id = rows.id?.[r] ?? r;
+			const key = keys.get(b);
+			if (key === undefined || id < key) keys.set(b, id);
+		}
+		for (const [b, key] of keys)
+			out.set(key, [
 				buds.position[b * 3] as number,
 				buds.position[b * 3 + 1] as number,
 				buds.position[b * 3 + 2] as number,
 			]);
-		}
 		return out;
 	}
 	if (rows.count > 0) {
@@ -370,7 +366,12 @@ for (const id of SPECIES) {
 						for (let a = 0; a < great.length; a++)
 							if (great[a]) expect([at, a, axes.get(a)]).toEqual([at, a, fullAxes.get(a)]);
 						// Even round the crown and through its height: each octant about the middle of the
-						// grown plant's foliage keeps the whole plant's share of its own.
+						// grown plant's foliage keeps the whole plant's share of its own. The carrier is
+						// keyed by the smallest row id among its rows, the identity the row subset proves
+						// nests; keying it by the bud handle read the same figures, so the identity was not
+						// the gap. The planned fill's kept sockets read 0.237, 0.398 and 0.311 off the share
+						// on the oak at sparse 0.25, 0.5 and 1, so this case is red until its octant spread
+						// is even within the slack.
 						const kept = carriers(plant);
 						const share = kept.size / fullCarriers.size;
 						const middle: [number, number, number] = [0, 0, 0];
