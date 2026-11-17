@@ -40,6 +40,7 @@ import { unitAt } from '../core/hash';
 import { cos, PI, pow, radians, sin, type Vector3 } from '../core/math';
 import {
 	type GrassBlade,
+	type Planned,
 	type Species,
 	type Tuft,
 	type TuftPanicle,
@@ -401,6 +402,30 @@ interface TuftTune {
 /** The adult tuning of a plant at its record's own counts, size and density. */
 const ADULT: TuftTune = { fill: 1, flowers: 1, size: 1, keepShare: 1 };
 
+/**
+ * A count of pieces on a growing plant: the least's count first, then the rest as the plant fills,
+ * and the record's full count once it has.
+ */
+function filled(adult: number, least: number, fill: number): number {
+	return fill >= 1 ? adult : Math.max(least, Math.round(least + (adult - least) * fill));
+}
+
+/** The flowering stems a plant keeps at its flowers' share: none before they open, the least after. */
+function stemsAt(adult: number, shoots: number, least: number, flowers: number): number {
+	if (flowers <= 0) return 0;
+	if (flowers >= 1) return Math.min(shoots, adult);
+	return Math.min(shoots, Math.max(least, Math.round(adult * flowers)));
+}
+
+/** How far a planned plant's flowering has come at a maturity, from 0 to 1. */
+function flowersAt(growth: Planned, maturity: number): number {
+	if (growth.flowers === undefined) return 1;
+	return Math.max(
+		0,
+		Math.min(1, (maturity - growth.flowers.from) / Math.max(1e-9, growth.flowers.band)),
+	);
+}
+
 /** The stool and a socket for each shoot's sheath column, each blade and each flowering stem. */
 function buildTuft(input: GrowInput, tune: TuftTune): MacroSkeleton {
 	const { growth, blade } = tuftOf(input.record);
@@ -432,25 +457,14 @@ function buildTuft(input: GrowInput, tune: TuftTune): MacroSkeleton {
 	growSoil(input, builder, crown, crownTop, stoolRadius);
 	// A young plant carries the least's shoots first and fills to the record's count as it grows.
 	const adultShoots = Math.max(1, Math.round(spreadAt(growth.shoots, draw(input, Purpose.Shoots))));
-	const shoots =
-		tune.fill >= 1
-			? adultShoots
-			: Math.max(
-					growth.least.shoots,
-					Math.round(growth.least.shoots + (adultShoots - growth.least.shoots) * tune.fill),
-				);
+	const shoots = filled(adultShoots, growth.least.shoots, tune.fill);
 	const places = discPlaces(shoots, stoolRadius, draw(input, Purpose.Shoots, 1) * 2 * PI);
 	const stems = growth.stalks;
 	const adultStalks =
 		stems?.seasons.includes(input.season) && plan.stalks.length > 0
 			? Math.max(0, Math.round(spreadAt(stems.count, draw(input, Purpose.Stalks))))
 			: 0;
-	const stalks =
-		tune.flowers <= 0
-			? 0
-			: tune.flowers >= 1
-				? Math.min(shoots, adultStalks)
-				: Math.min(shoots, Math.max(growth.least.stalks, Math.round(adultStalks * tune.flowers)));
+	const stalks = stemsAt(adultStalks, shoots, growth.least.stalks, tune.flowers);
 	const ranks = Math.max(1, growth.ranks);
 	const sockets: Socket[] = [];
 	// An upright piece heads the level way its socket points.
@@ -521,13 +535,7 @@ function buildTuft(input: GrowInput, tune: TuftTune): MacroSkeleton {
 		top = Math.max(top, tilt[1] * column);
 		// The blades, the oldest first: it stands lowest and outermost, and it is the last to go.
 		const adultBlades = Math.max(1, Math.round(spreadAt(growth.blades, unit(1))));
-		const blades =
-			tune.fill >= 1
-				? adultBlades
-				: Math.max(
-						growth.least.blades,
-						Math.round(growth.least.blades + (adultBlades - growth.least.blades) * tune.fill),
-					);
+		const blades = filled(adultBlades, growth.least.blades, tune.fill);
 		const rankTurn = unit(2) * 2 * PI;
 		for (let k = 0; k < blades; k++) {
 			const draws = (m: number) => draw(input, Purpose.Blade, i, k, m);
@@ -648,13 +656,7 @@ function plannedTune(input: GrowInput): TuftTune {
 	const maturity = Math.max(0, Math.min(1, request.maturity));
 	const top = Math.max(1e-9, curveAt(growth.height, 1));
 	const size = Math.max(0, Math.min(1, curveAt(growth.height, maturity) / top));
-	const flowers =
-		growth.flowers === undefined
-			? 1
-			: Math.max(
-					0,
-					Math.min(1, (maturity - growth.flowers.from) / Math.max(1e-9, growth.flowers.band)),
-				);
+	const flowers = flowersAt(growth, maturity);
 	const sparse = Math.max(0, Math.min(1, request.sparse));
 	const floor = input.record.sparse?.foliage ?? FOLIAGE_FLOOR;
 	return { fill: size, flowers, size, keepShare: 1 - sparse * (1 - floor) };
@@ -706,19 +708,8 @@ export function planTuft(record: Species, request: GrowRequest): DetailPlan {
 	const blades = Math.max(1, Math.round(spreadMean(tuft.blades)));
 	const stalks =
 		tuft.stalks === undefined ? 0 : Math.max(0, Math.round(spreadMean(tuft.stalks.count)));
-	const flowers =
-		growth.flowers === undefined
-			? 1
-			: Math.max(
-					0,
-					Math.min(1, (maturity - growth.flowers.from) / Math.max(1e-9, growth.flowers.band)),
-				);
-	const stems =
-		flowers <= 0
-			? 0
-			: flowers >= 1
-				? Math.min(shoots, stalks)
-				: Math.min(shoots, Math.max(tuft.least.stalks, Math.round(stalks * flowers)));
+	const flowers = flowersAt(growth, maturity);
+	const stems = stemsAt(stalks, shoots, tuft.least.stalks, flowers);
 	const sockets = shoots + shoots * blades + stems;
 	const sparse = Math.max(0, Math.min(1, request.sparse));
 	const floor = record.sparse?.foliage ?? FOLIAGE_FLOOR;
