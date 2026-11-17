@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { meadowGrassRecord } from '../grow/ground.fixture';
 import { record as template } from '../species/_template/record';
+import { species as meadowSpecies } from '../species/meadow-grass';
 import { record as meadow } from '../species/meadow-grass/record';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
 import { checkSpecies, speciesProblems } from './check';
@@ -671,6 +672,18 @@ describe('a tuft sheath colour', () => {
 		};
 		expect(speciesProblems(overReach).some((p) => p.startsWith('growth.sheathColour.reach'))).toBe(
 			true,
+		);
+	});
+});
+
+describe('a planned tuft', () => {
+	it('checks its tuft numbers and refuses a record that states none', () => {
+		expect(speciesProblems(meadowSpecies.record)).toEqual([]);
+		const growth = meadowSpecies.record.growth;
+		if (growth.model !== 'planned') throw new Error('the meadow grass grows by the planned model');
+		const { tuft: _tuft, ...without } = growth;
+		expect(speciesProblems({ ...meadowSpecies.record, growth: without })).toContain(
+			'growth.tuft is missing; a planned tuft states the tuft numbers it grows by',
 		);
 	});
 });

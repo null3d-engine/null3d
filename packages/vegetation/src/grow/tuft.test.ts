@@ -709,3 +709,25 @@ describe('the meadow grass before its flowering', () => {
 		expect(Math.abs(asset.skeleton.height - aim) / aim).toBeLessThan(0.02);
 	});
 });
+
+describe("the planned tuft's thinning", () => {
+	it("keeps the sockets' rank ladder and reads no planned thin array", async () => {
+		const module = await loadSpecies('meadow-grass');
+		await loadPlantCode(module.record);
+		const growth = module.record.growth;
+		if (growth.model !== 'planned' || growth.adult !== 'tuft')
+			throw new Error('the meadow grass has no planned tuft');
+		const altered: Species = { ...module.record, growth: { ...growth, thin: [1, 1, 1, 1, 1] } };
+		const options = { seed: 11, variant: 0, near: false, detail: 'high', sparse: 1 } as const;
+		const plain = growPlantNow(
+			buildKitNow(module, { detail: 'high', placeholders: 'missing' }),
+			options,
+		);
+		const thinned = growPlantNow(
+			buildKitNow({ ...module, record: altered }, { detail: 'high', placeholders: 'missing' }),
+			options,
+		);
+		// The thin array is the planned frame's own; the tuft adult never reads it.
+		expect(plantAssetDigest(thinned)).toBe(plantAssetDigest(plain));
+	});
+});
