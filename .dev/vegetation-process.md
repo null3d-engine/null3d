@@ -57,6 +57,28 @@ Each helper works on its own branch, its line, and never in another's copy.
 A species switches to its new structure once the reviewer passes it under the gate. A ready branch then
 switches that species alone, as judged.
 
+## The gate's checks and their automated tests
+
+The gate is stated in [Plant review](plant-review.md#the-gate-a-species-must-pass). Every check must
+name a test in the repository or a coverage rule in the review tool; a check with neither is not a
+gate. This is the mapping at the gate's first head. The numbers are the gate's own items, so its
+distance ladder and zoom (items 3 and 4) are the sweep's covered rounds, folded here into the
+reference views and the switch.
+
+| # | Check | Test or coverage rule | Covered today |
+| --- | --- | --- | --- |
+| 1 | Every reference view compared beside its same-named crop | `tools/lib/plant-review/coverage.test.ts`, "the coverage list": "is complete only when every file in use has a full comparison" and "blocks a pass for a missing render, an unmatched frame or a short wind clip"; `references.test.ts` holds the same-named crop rules | Yes |
+| 2 | Three close views: inside the crown, at the trunk, at a leaf's scale, each beside its crop | The cameras are tested (`close.test.ts`, "the framing a close view reports"; `subject-shots.test.ts`, "the view from inside the crown"), but no test requires the three views in a round or compares each to its crop | No; build the run's coverage entry |
+| 5 | Every drawn cluster's base within a cell of drawn wood, no row off a drawn carrier, at every sparseness and maximum | `packages/vegetation/src/lod/budget.test.ts`, "keeps one body at each maximum, at sparseness X" (the 0.4 m body fill, free wood and free leaves 0); `sparse.test.ts` holds each carrier and every sparser state's rows at their places; `leaf/piece-rows.test.ts` and `lod/clump-card.test.ts` hold the row and socket joins. The review side is the sweep's body rail, a coverage rule | Yes for the generator; B owns the review-side figure |
+| 6 | A crown at 400, 1,000 and 10,000 with the leaves first | `lod/budget.test.ts`, "keeps every level within the maximum and each part within its allowance, at sparseness X" (every maximum, the floors and the sharing); the contract's X3 in `grow/planned-contract.test.ts` reads the cap's leaf triangles and the floors | Yes; B owns the cap cases |
+| 7 | The switch's grain and open sky either side of the first card level, inside the record's bars, at the from-below camera | The sky side has `lod/card-size.test.ts`, "keeps the sky inside the crown outline of the species within the review band"; the grain and the crossing have no test — D-374's step was measured by a run, not asserted | No; the level builder must add the switch case |
+| 8 | The bake's mask follows the leaf kind, and a needle species' atlases differ from the broadleaves' | None. `compare.test.ts`, "the mask check gate", checks the review's mask against the reference crop, not the bake's mask by kind | No; build with the mask fix, the level builder |
+| 9 | The crown's tone against its crop, found by isolating one cause at a time | The measures are tested (`compare.test.ts`, "the measures"; the CIELAB clusters in `references.test.ts`), but the one-cause method and a per-species tone bar have no automated check | No; the review records the tinted panel and a bar must be stated |
+
+Of the seven, one is covered outright and two have their parts tested; three need their checks built,
+and the tone's method is a review record rather than a test. A species is not counted landed while
+one of them is red.
+
 ## Rules every helper follows
 
 1. **Every bun process goes through the machine's job queue**, the script the git setting
