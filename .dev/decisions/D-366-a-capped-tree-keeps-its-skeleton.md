@@ -20,13 +20,26 @@ must show a better read at that distance or it is not taken.
 
 ## Data
 
-| Measure | Value | Device |
-| --- | --- | --- |
-| Willow at a 1,000 cap | leaves take most of the budget; the trunk draws as a ribbon | the owner's recording, this Mac |
-| Alder at 400 and 500 caps, before the repairs | a fan of bare stalks with leaf tufts; the crown in pieces | the cap strip, build/sheets |
+| Measure, at caps of 1,000 / 500 / 400 | 1,000 | 500 | 400 |
+| --- | --- | --- | --- |
+| Oak, trunk triangles (share of cap) | 6 (0.6%) | 6 (1.2%) | 6 (1.5%) |
+| Oak, first-order limbs | 54 (5.4%) | 54 (10.8%) | 54 (13.5%) |
+| Oak, rest of the wood | 216 (21.6%) | 108 (21.6%) | 84 (21%) |
+| Oak, leaves | 600 (60%) | 54 (10.8%) | 54 (13.5%) |
+| Oak, leaf cards, each 2 triangles | 300 | 27 | 27 |
+| Willow, trunk | 6 | 6 | 6 |
+| Willow, first-order limbs | 18 | 18 | 18 |
+| Willow, rest of the wood | 0 | 0 | 0 |
+| Willow, leaves (share of cap) | 972 (97.2%) | 458 (91.6%) | 372 (93%) |
+| Willow, leaf cards, 2.4 to 2.5 triangles each | 390 | 188 | 153 |
 
-How the data was produced: the cap strips drawn with `bun run plants:review` at each cap, one drawing at a time, and the
-owner's own recording of the willow at 1,000.
+The trunk's six triangles are the ladder's bottom: one straight run with three sides. The allocator buys the trunk no
+more than that floor at any cap, and the leaf side is many single-picture cards rather than a few large ones.
+
+How the data was produced: one probe script, seed 11, variant 0, detail high, the planned oak and the directed willow,
+caps as above, each part's triangles counted at the first level and given as a share of the cap.
+
+The owner's recording of the willow at 1,000 triangles is what the rules in this record answer.
 
 ## Look
 
