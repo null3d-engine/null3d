@@ -1,7 +1,11 @@
 // Failures after the start, and engines that follow one another on one canvas. ?case= picks one:
 // - fault: the engine's frame step throws once, and the page must hear E1404 while it stays
-//   responsive. E1404 ends the engine's frames, so its `onStop` handler runs once, and one added
-//   after the destroy runs at once.
+//   responsive. E1404 ends the engine's frames, so its `onStop` handlers run once, after the
+//   failure handler has heard why, and one added after the destroy runs at once. The first stop
+//   handler throws, and the others still run.
+// - stop-order: the page destroys a running engine. Its stop handlers run as destroy() begins,
+//   after the stop has begun, and one that throws, then or added late, stops neither the others
+//   nor the destroy.
 // - material-fault: the sketch creates a custom material after the start, and the test blocks the
 //   download of its builds, so the page must hear E1424 while it stays responsive.
 // - job-fault: the test makes a job worker fail inside the job system (it rewrites the job
@@ -59,13 +63,23 @@ async function firstFailure(
 ): Promise<Record<string, unknown>> {
 	const failures: EngineError[] = [];
 	let seen = false;
+	/** The handlers in the order they ran. */
+	const order: string[] = [];
 	engine.onFailure((error) => {
 		failures.push(error);
 		seen = true;
+		order.push('failure');
+	});
+	engine.onStop(() => {
+		order.push('throwing stop');
+		throw new Error('a stop handler failed on purpose');
 	});
 	// How often the engine said that it stopped drawing: once, at a failure that ends its frames.
 	let stops = 0;
-	engine.onStop(() => stops++);
+	engine.onStop(() => {
+		stops++;
+		order.push('stop');
+	});
 	let ticks = 0;
 	const timer = setInterval(() => ticks++, TICK_MS);
 	const messages: string[] = [];
@@ -96,7 +110,43 @@ async function firstFailure(
 		ticks,
 		stops,
 		lateStop,
+		order,
 	};
+}
+
+/**
+ * Destroys a running engine whose stop handlers record when they ran. The second asks for a
+ * capture, which fails once the stop has begun.
+ */
+async function stopOrder(engine: Engine): Promise<Record<string, unknown>> {
+	const order: string[] = [];
+	let captureCode = 'none';
+	let captured: Promise<void> | undefined;
+	engine.onStop(() => {
+		order.push('throwing stop');
+		throw new Error('a stop handler failed on purpose');
+	});
+	engine.onStop(() => {
+		order.push('stop');
+		captured = engine.capture().then(
+			() => {},
+			(error: EngineError) => {
+				captureCode = error.code;
+			},
+		);
+	});
+	order.push('destroy called');
+	const destroyed = engine.destroy();
+	order.push('destroy returned');
+	await destroyed;
+	order.push('destroyed');
+	await captured;
+	// A handler added after the stop runs at once, and one that throws leaves onStop to return.
+	engine.onStop(() => {
+		throw new Error('a late stop handler failed on purpose');
+	});
+	order.push('late handler added');
+	return { order, captureCode };
 }
 
 /**
@@ -132,6 +182,7 @@ run('failures', async () => {
 		faulty.searchParams.set('fault', which === 'fault' ? 'step' : 'material');
 		return firstFailure(await started(faulty));
 	}
+	if (which === 'stop-order') return stopOrder(await started());
 	if (which === 'late-handler') {
 		const faulty = new URL(sketch);
 		faulty.searchParams.set('fault', 'step');

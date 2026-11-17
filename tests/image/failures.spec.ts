@@ -17,7 +17,19 @@ interface FailureResult {
 	/** How often `onStop`'s handler ran before the page destroyed the engine, and whether a late one ran. */
 	stops?: number;
 	lateStop?: boolean;
+	/** The failure and stop handlers in the order they ran. */
+	order?: string[];
 	error?: string;
+}
+
+/** The page's console errors that `fragment` is part of. */
+function consoleErrors(page: Page, fragment: string): string[] {
+	const errors: string[] = [];
+	page.on('console', (message) => {
+		if (message.type() === 'error' && message.text().includes(fragment))
+			errors.push(message.text());
+	});
+	return errors;
 }
 
 /**
@@ -42,6 +54,7 @@ async function failingJobWorker(page: Page): Promise<void> {
 
 for (const mode of ENGINE_MODES) {
 	test(`a frame step that throws reaches onFailure as E1404, ${mode.name}`, async ({ page }) => {
+		const thrown = consoleErrors(page, 'a stop handler failed on purpose');
 		await page.goto(`failures.html?case=fault&${mode.query}`);
 		const result = await pageResult<FailureResult>(page, 30_000);
 		expect(result.error).toBeUndefined();
@@ -51,6 +64,35 @@ for (const mode of ENGINE_MODES) {
 		// E1404 ends the frames, so onStop's handler heard it once, and not again at destroy().
 		expect(result.stops).toBe(1);
 		expect(result.lateStop).toBe(true);
+		// The failure handler hears why before the stop handlers hear that the frames ended, and the
+		// stop handler that throws, which runs first, stops neither the other nor the destroy.
+		expect(result.order?.slice(0, 3)).toEqual(['failure', 'throwing stop', 'stop']);
+		expect(thrown).toHaveLength(1);
+	});
+}
+
+for (const mode of ENGINE_MODES) {
+	test(`onStop's handlers run as destroy() begins, after the stop, past one that throws, ${mode.name}`, async ({
+		page,
+	}) => {
+		const thrown = consoleErrors(page, 'stop handler failed on purpose');
+		await page.goto(`failures.html?case=stop-order&${mode.query}`);
+		const result = await pageResult<{ order: string[]; captureCode: string; error?: string }>(
+			page,
+			30_000,
+		);
+		expect(result.error).toBeUndefined();
+		expect(result.order).toEqual([
+			'destroy called',
+			'throwing stop',
+			'stop',
+			'destroy returned',
+			'destroyed',
+			'late handler added',
+		]);
+		// The engine had stopped when its handlers ran, so a capture they asked for failed.
+		expect(result.captureCode).toBe('E1414');
+		expect(thrown.map((text) => text.includes('a late'))).toEqual([false, true]);
 	});
 }
 

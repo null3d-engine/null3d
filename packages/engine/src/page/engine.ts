@@ -697,14 +697,17 @@ export interface Engine {
 	 * draws on without the objects that failed. The engine reports each failure once. A failure that
 	 * no handler listened for when the engine reported it reaches the first handler that listens, so
 	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
-	 * console. Returns a function that removes the handler.
+	 * console. A failure that ends the frames reaches these handlers before `onStop`'s. Returns a
+	 * function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
 	 * Calls `handler` once, when the engine stops drawing for good: as `destroy()` begins, or at a
-	 * failure after which it draws no new frames (E1302, E1404 or E1424). A handler added after that
-	 * runs at once. Use it to end the page's own work for the engine, such as a frame loop that sends
-	 * the sketch messages. Returns a function that removes the handler.
+	 * failure after which it draws no new frames (E1302, E1404 or E1424). At such a failure, the
+	 * `onFailure` handlers hear it first. A handler added after that runs at once. A handler that
+	 * throws reaches the console, and the other handlers and the stop go on. Use it to end the page's
+	 * own work for the engine, such as a frame loop that sends the sketch messages. Returns a
+	 * function that removes the handler.
 	 */
 	onStop(handler: () => void): () => void;
 	/**
@@ -1871,11 +1874,21 @@ async function startEngine(
 	const stopHandlers = new Set<() => void>();
 	/** True once the engine draws no new frames, which each stop handler hears once. */
 	let drawingEnded = false;
+	/** Runs a stop handler. One that throws is the page's error, which the console shows. */
+	const runStopHandler = (handler: () => void) => {
+		try {
+			handler();
+		} catch (error) {
+			console.error(error);
+		}
+	};
 	const endDrawing = () => {
 		if (drawingEnded) return;
 		drawingEnded = true;
-		for (const handler of stopHandlers) handler();
+		const handlers = [...stopHandlers];
 		stopHandlers.clear();
+		// The other handlers and the stop go on past one that throws.
+		for (const handler of handlers) runStopHandler(handler);
 	};
 	const sketchErrorHandlers = new Set<(error: Error) => void>();
 	/**
@@ -1906,13 +1919,16 @@ async function startEngine(
 			start.abort(error);
 			return;
 		}
-		if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing();
-		if (failureHandlers.size === 0) {
-			earlyFailures.push(error);
-			console.error(error);
-			return;
+		// The failure reaches its handlers, or the console, before the stop handlers hear that the
+		// frames ended, so a page hears why before it hears that.
+		try {
+			if (failureHandlers.size === 0) {
+				earlyFailures.push(error);
+				console.error(error);
+			} else for (const handler of failureHandlers) handler(error);
+		} finally {
+			if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing();
 		}
-		for (const handler of failureHandlers) handler(error);
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
 	// handlers below read them only after that.
@@ -2192,7 +2208,6 @@ async function startEngine(
 	 * the core and the GPU device, unless it failed. A second call returns the first call's promise.
 	 */
 	const stop = () => {
-		endDrawing();
 		stopping ??= (async () => {
 			holder.beginStop();
 			Atomics.store(slots, Slot.Running, 0);
@@ -2255,6 +2270,8 @@ async function startEngine(
 			release();
 			keepCoreMemory();
 		})();
+		// The stop has begun, its slots written, before the stop handlers hear of it.
+		endDrawing();
 		return stopping;
 	};
 	/**
@@ -2871,7 +2888,7 @@ async function startEngine(
 			},
 			onStop(handler) {
 				if (drawingEnded) {
-					handler();
+					runStopHandler(handler);
 					return () => {};
 				}
 				stopHandlers.add(handler);

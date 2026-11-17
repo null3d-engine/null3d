@@ -82,7 +82,7 @@ const metrics = await engine.measure(5);          // CPU time per thread and pha
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
-engine.onStop(() => { /* (0.3) once: destroy() began, or E1302, E1404 or E1424 ended the frames; end the page's own loop */ });
+engine.onStop(() => { /* (0.3) once: destroy() began, or E1302, E1404 or E1424 ended the frames, after onFailure heard it; end the page's own loop */ });
 engine.onSketchError((error) => { /* (0.2) the sketch's update threw; the engine keeps drawing, and measure().updateErrors counts the frames */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
