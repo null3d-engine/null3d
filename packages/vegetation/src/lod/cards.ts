@@ -2000,6 +2000,68 @@ export function plannedClumpCards(
  * @returns The cards' mesh.
  * @category api/vegetation
  */
+/** The four corners of a card plane, as the signs of its own right and up. */
+const PLATE_CORNERS = [
+	[-1, -1],
+	[1, -1],
+	[1, 1],
+	[-1, 1],
+] as const;
+
+/**
+ * How far a clump's plate may grow about its centre and keep inside the leaf form's hull, the same
+ * bound the row cards take: the growth asked for where it fits, the most that does otherwise, and
+ * never under one. A plate whose own size already stands outside the hull keeps its size, since a
+ * smaller plate would lose the shoot it pictures.
+ */
+function clumpGrowthInHull(
+	input: MeshInput,
+	centre: readonly number[],
+	row: number,
+	plane: CardPlane,
+	scale: number,
+	first0: readonly number[],
+	wanted: number,
+): number {
+	if (!(wanted > 1)) return 1;
+	const hull = foliageHull(input);
+	const tall = (hull.high - hull.low) * HULL_SLACK;
+	const local: Vector3 = [0, 0, 0];
+	const world: Vector3 = [0, 0, 0];
+	const fits = (grow: number): boolean => {
+		for (const [sx, sy] of PLATE_CORNERS) {
+			for (let c = 0; c < 3; c++)
+				local[c] =
+					((plane.centre[c] as number) +
+						grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+					scale;
+			quatRotate(input.rows.rotation, row * 4, local, world);
+			const x = (centre[0] as number) + world[0] - (first0[0] as number);
+			const y = (centre[1] as number) + world[1] - (first0[1] as number);
+			const z = (centre[2] as number) + world[2] - (first0[2] as number);
+			if (y < hull.low - tall || y > hull.high + tall) return false;
+			if (x < hull.across[0] || x > hull.across[1] || z < hull.depth[0] || z > hull.depth[1])
+				return false;
+			if (
+				(x - hull.x) ** 2 + (z - hull.z) ** 2 >
+				(hull.reach[hullCell(hull, x, y, z)] as number) * (1 + HULL_SLACK)
+			)
+				return false;
+		}
+		return true;
+	};
+	if (fits(wanted)) return wanted;
+	if (!fits(1)) return 1;
+	let low = 1;
+	let high = wanted;
+	for (let step = 0; step < GROW_STEPS; step++) {
+		const middle = (low + high) / 2;
+		if (fits(middle)) low = middle;
+		else high = middle;
+	}
+	return low;
+}
+
 export function clusterCardMesh(
 	input: MeshInput,
 	clusters: readonly CardCluster[],
@@ -2058,6 +2120,9 @@ export function clusterCardMesh(
 		local[1] = (lead?.centre[1] ?? 0) * scale;
 		local[2] = (lead?.centre[2] ?? 0) * scale;
 		quatRotate(rows.rotation, r * 4, local, first0);
+		const grow = lead
+			? clumpGrowthInHull(input, cluster.centre, r, lead, scale, first0, cluster.grow)
+			: cluster.grow;
 		prototype.card.planes.forEach((plane) => {
 			if (plane.role >= planes) return;
 			const n = normalize3([
@@ -2094,7 +2159,7 @@ export function clusterCardMesh(
 					for (let c = 0; c < 3; c++)
 						local[c] =
 							((plane.centre[c] as number) +
-								cluster.grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+								grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
 							scale;
 					quatRotate(rows.rotation, r * 4, local, world);
 					const at: Vector3 = [
