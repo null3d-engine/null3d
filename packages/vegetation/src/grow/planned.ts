@@ -757,7 +757,9 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		growth.prices.clumpCard,
 	);
 	if (capped) {
-		const keep = cardedSet(clumps, sizes, orders, cards, most !== undefined && most <= CARD_SEEDS_MAX);
+		// The kept clumps grow from the wood down to the smallest budget that carries a connected
+		// crown; below it they stand only on the wood every cap draws, whose cards meet the limbs.
+		const keep = cardedSet(clumps, sizes, orders, cards, most !== undefined && most < 500);
 		const kept = [...keep].sort((a, b) => a - b);
 		const keptIds = new Set(kept.map((index) => (clumps[index] as ClumpData).id));
 		clumps.splice(0, clumps.length, ...kept.map((index) => clumps[index] as ClumpData));
