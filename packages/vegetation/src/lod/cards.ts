@@ -789,48 +789,6 @@ function joinedCards(
 	return joined;
 }
 
-/** The least gap a card-to-card join spans and still asks for a drawn line, in metres. */
-const LINK_LEAST = 0.12;
-
-/**
- * The joins the level's cards make with one another across more than a short gap: each is a hop
- * the join already counts as attached, which a line draws so the chain is real on screen rather
- * than merely counted.
- */
-export function cardLinks(input: MeshInput, level: 1 | 2): [number, number][] {
-	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
-	const orders = input.skeleton.axes.order;
-	const joined = connectedCards(input, level);
-	const kept = keptRows(input, level);
-	const links: [number, number][] = [];
-	const least = LINK_LEAST * LINK_LEAST;
-	for (const b of kept) {
-		if (joined[b] === 0) continue;
-		let best = Number.POSITIVE_INFINITY;
-		let parent = -1;
-		for (const a of kept) {
-			if (a === b || joined[a] === 0) continue;
-			const dx = (input.rows.position[a * 3] as number) - (input.rows.position[b * 3] as number);
-			const dy = (input.rows.position[a * 3 + 1] as number) - (input.rows.position[b * 3 + 1] as number);
-			const dz = (input.rows.position[a * 3 + 2] as number) - (input.rows.position[b * 3 + 2] as number);
-			const d = dx * dx + dy * dy + dz * dz;
-			if (d > least && d < best) {
-				best = d;
-				parent = a;
-			}
-		}
-		if (parent >= 0) links.push([b, parent]);
-	}
-	// A join that reaches drawn wood directly needs no line; keep only the hops.
-	return links.filter(([b, a]) => {
-		const axisB = input.rows.node ? (input.skeleton.axisOf[input.rows.node[b] as number] as number) : -1;
-		const drawnB = axisB >= 0 && (orders[axisB] as number) <= keep;
-		const axisA = input.rows.node ? (input.skeleton.axisOf[input.rows.node[a] as number] as number) : -1;
-		const drawnA = axisA >= 0 && (orders[axisA] as number) <= keep;
-		return !drawnB && !drawnA;
-	});
-}
-
 /** The axis a card row stands on: the axis of its node, or of the nearest node where the rows name none. */
 function rowAxis(input: MeshInput, r: number): number {
 	const { skeleton, rows } = input;
@@ -1297,33 +1255,6 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 				mesh.quad(first + 3, first + 2, first + 1, first);
 			}
 		}
-	}
-	// A join the level counts as attached across a short gap draws its hop as a line, so the chain
-	// is real on screen rather than merely counted: a card whose wood the level does not draw hangs
-	// on the card beside it instead of floating free.
-	for (const [b, a] of cardLinks(input, level)) {
-		const ax = rows.position[a * 3] as number;
-		const ay = rows.position[a * 3 + 1] as number;
-		const az = rows.position[a * 3 + 2] as number;
-		const bx = rows.position[b * 3] as number;
-		const by = rows.position[b * 3 + 1] as number;
-		const bz = rows.position[b * 3 + 2] as number;
-		const dx = bx - ax;
-		const dy = by - ay;
-		const dz = bz - az;
-		const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-		if (length <= 1e-6) continue;
-		const record = base + (rows.record[a] as number);
-		const colour = [(record >>> 8) & 255, record & 255, rows.phase[a] as number, rows.sky[a] as number];
-		const normal: Vector3 = [dx / length, dy / length, dz / length];
-		const twig = input.record.lod.cardStalkWidth ? stalkRadius(input, a) : 0;
-		const first = mesh.vertices;
-		mesh.vertex([ax, ay, az], normal, [0, twig], [0, STALK_PLANE], colour);
-		mesh.vertex([ax, ay, az], normal, [1, twig], [0, STALK_PLANE], colour);
-		mesh.vertex([bx, by, bz], normal, [1, twig], [1, STALK_PLANE], colour);
-		mesh.vertex([bx, by, bz], normal, [0, twig], [1, STALK_PLANE], colour);
-		mesh.quad(first, first + 1, first + 2, first + 3);
-		mesh.quad(first + 3, first + 2, first + 1, first);
 	}
 	return mesh.finishMesh();
 }
