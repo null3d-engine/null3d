@@ -1687,6 +1687,12 @@ export interface Planned {
 	readonly fruitBand: number;
 	/** The flowering season and the ramp the catkins come in over, where the species carries them. */
 	readonly flowers?: { readonly season: Season; readonly from: number; readonly band: number };
+	/**
+	 * Where a capped crown's cards stand: at the middle of the wood that draws them, so a sparse cap
+	 * still hangs together, or at each clump's own stated place and size, so a maximum never reshapes
+	 * the plant. Absent, the wood.
+	 */
+	readonly capCards?: 'wood' | 'stated';
 	/** The triangles one drawn piece of each kind costs, which the plan prices its shares from. */
 	readonly prices: Readonly<Record<'piece' | 'card' | 'clumpCard' | 'tubeSegment', number>>;
 }
