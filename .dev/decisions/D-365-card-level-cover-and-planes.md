@@ -6,8 +6,8 @@ the planes ship unused. Task: none.
 Summary: The first card level carries a factor on its cut alpha, read from the species record and found by a mark in the
 card quads' second texture coordinate. A factor above one closes a crown and is kept where the eye accepts the coarser
 leaf — the beech names 1.35 — and a factor below one is not used, because opening a crown that way coarsens its leaf. A
-record may name crossed planes a card level; the willow's single extra plane moved its sky by 0.2 of a point for 11,492
-triangles, so it ships inert and no species names one.
+record may name crossed planes a card level. The willow named one during the experiment and it moved its sky by 0.2 of a
+point for 11,492 triangles, so no species ships one and the willow's landing removes its value.
 
 ## Question
 
