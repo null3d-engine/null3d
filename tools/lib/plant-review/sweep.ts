@@ -294,10 +294,14 @@ export interface SweepManifest {
 
 /** The probe: one whole view whose frame names the plant's own level distances. */
 export function sweepProbe(base: PlantReviewQuery): Shot {
+	// The probe reads the page's own ladder, so a forced level never reaches it: a forced near form
+	// at a whole view posts the ladder's distances from a level the page would not draw there, and
+	// the rungs' cameras would stand at nonsense distances.
+	const { lod: _forced, ...query } = base;
 	return singleShot(
 		'sweep-probe',
 		'probe.png',
-		{ ...base, view: 'whole', measure: true },
+		{ ...query, view: 'whole', measure: true },
 		VIEW_SPECS.whole.size,
 		false,
 	);

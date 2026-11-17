@@ -34,6 +34,7 @@ import {
 	sweepMarkdown,
 	sweepOrbitJumps,
 	sweepPictures,
+	sweepProbe,
 	sweepReference,
 	sweepRow,
 	sweepSeriesDistances,
@@ -289,6 +290,15 @@ describe('the sweep’s rungs and orbit', () => {
 		expect(first).toBeLessThan(156.6);
 		expect(near).toBe(3.7);
 		expect(sweepDistanceOf(SWEEP_RUNGS[3] as (typeof SWEEP_RUNGS)[number], starts)).toBeNull();
+	});
+
+	test('draws the probe on the page’s own ladder, never on a forced level', () => {
+		// A forced level at a whole view posts the ladder's distances from a level the page would not
+		// draw there, so the probe drops the forced level and the rungs keep the real switches.
+		const probe = sweepProbe({ species: 'species', lod: 2 });
+		expect(probe.query.lod).toBeUndefined();
+		expect(probe.query.view).toBe('whole');
+		expect(probe.query.measure).toBe(true);
 	});
 
 	test('draws every rung beside its reference view, and forces no level', () => {
