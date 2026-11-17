@@ -31,12 +31,24 @@ import {
 	sin,
 	type Vector3,
 } from '../core/math';
-import type { CulmClump, Species } from '../core/record';
-import { curveAt, spreadAt } from '../core/types';
-import type { GrowInput } from '../stages';
+import { thinningRanks } from '../core/rank';
+import type { CulmClump, Planned as PlannedGrowth, Species } from '../core/record';
+import { curveAt, spreadAt, spreadMean, type Vec3 } from '../core/types';
+import type { DetailPlan, GrowInput, GrowRequest } from '../stages';
+import { type FrameAxis, type FramePatch, planFrame } from './frame';
 import { targetHeight } from './height';
+import {
+	crownOf,
+	type ModelAxis,
+	type ModelPiece,
+	type ModelSocket,
+	type PlantModel,
+} from './model';
+import { growPlantModel } from './model-grow';
 import type { Grower } from './models';
+import { clumpCounts, planTree } from './planned';
 import { pieceNamed, radicalInverse } from './ranked';
+import { FOLIAGE_FLOOR } from './sparse';
 
 /** The golden angle in radians, which spreads the culms' feet over the clump's foot. */
 const GOLDEN = radians(137.50776405);
@@ -346,3 +358,276 @@ export function growCulmClump(input: GrowInput): MacroSkeleton {
 
 /** The culm-clump grower. */
 export const grower: Grower = { grow: growCulmClump };
+
+/** Sockets a square metre of a patch's own width carries, as the planned fill states it. */
+const PATCH_SOCKETS_PER_AREA = 8.5;
+
+/** How deep inside its patch a socket point stands, as a keyed draw, and the patch's flattening. */
+const DEPTH_FROM = 0.41;
+const DEPTH_TO = 0.89;
+const DEPTH_SHARE = 0.7;
+
+/** The slots one patch may carry, which fix each point's place in its patch. */
+const SLOTS = 320;
+
+/** The exponent that slims a young plant's wood against its height. */
+const SLIM = 2.5;
+
+/** The record's planned culm growth, or an error for a record of another adult. */
+function plannedCulmOf(record: Species): PlannedGrowth {
+	const growth = record.growth as PlannedGrowth;
+	if (growth.model !== 'planned' || growth.adult !== 'culm' || growth.frame === undefined)
+		throw new Error(`@null3d/vegetation: '${record.id}' is not a planned culm clump`);
+	return growth;
+}
+
+/** The share of the adult height the asked maturity stands at. */
+function reachOf(growth: PlannedGrowth, maturity: number): number {
+	const top = Math.max(1e-9, curveAt(growth.height, 1));
+	const at = curveAt(growth.height, Math.max(0, Math.min(1, maturity)));
+	return Math.max(0, Math.min(1, at / top));
+}
+
+/**
+ * The frame axes a triangle maximum leaves: the shared clump rule's culm and pair counts, each
+ * order ranked over the plant, and every axis under a dropped one dropped with it.
+ */
+function cappedAxes(
+	axes: readonly FrameAxis[],
+	counts: { readonly culms: number; readonly pairs: number } | undefined,
+): Set<number> {
+	const kept = new Set<number>(axes.map((_, index) => index));
+	if (counts === undefined) return kept;
+	const limits: readonly (readonly [number, number])[] = [
+		[0, counts.culms],
+		[1, counts.pairs],
+	];
+	for (const [order, cap] of limits) {
+		const list = axes
+			.map((axis, index) => ({ axis, index }))
+			.filter((one) => one.axis.order === order);
+		if (list.length <= cap) continue;
+		const ranks = thinningRanks(
+			list.map((one) => {
+				const node = one.axis.nodes[0];
+				return [node?.x ?? 0, node?.y ?? 0, node?.z ?? 0];
+			}),
+		);
+		const ranked = list
+			.map((one, at) => ({ index: one.index, rank: ranks[at] as number }))
+			.sort((a, b) => a.rank - b.rank);
+		for (const one of ranked.slice(cap)) kept.delete(one.index);
+	}
+	axes.forEach((axis, index) => {
+		if (axis.parent >= 0 && !kept.has(axis.parent)) kept.delete(index);
+	});
+	return kept;
+}
+
+/** A frame axis's parent, as a share along the parent's nodes where its first node stands. */
+function parentShareOf(axis: FrameAxis, parent: FrameAxis | undefined): number {
+	if (parent === undefined || parent.nodes.length < 2) return 0;
+	return Math.max(0, Math.min(1, axis.parentNode / (parent.nodes.length - 1)));
+}
+
+/** A piece's measured figures, from the rule the record names. */
+function fanPiece(record: Species, name: string): ModelPiece {
+	const rule = record.pieces?.find((piece) => piece.name === name) ?? record.pieces?.[0];
+	if (rule === undefined)
+		throw new Error(`@null3d/vegetation: '${record.id}' names a piece it does not hold`);
+	const stem = spreadMean(rule.stem.length);
+	const leaf = record.foliage.kind === 'blade' ? spreadMean(record.foliage.leaf.length) : 0.1;
+	// The fan lies out along its twig: its leaves rise about half a leaf's length above the socket
+	// and reach about four fifths of one out from it.
+	const top = leaf * 0.5;
+	const reach = leaf * 0.8;
+	return {
+		name: rule.name,
+		length: stem,
+		width: reach * 2,
+		depth: leaf,
+		top,
+		reach,
+		figures: { stem, leaf, top, reach },
+	};
+}
+
+/**
+ * Writes the bamboo's culm adult as the shared intermediate model: one axis a culm of the frame,
+ * the branch axes that leave it, a socket a fan at each patch's fill points, the fan piece from the
+ * record's measured figures, and the crown box read from the pieces. The clump cap's counts come
+ * from the shared allocator's rule.
+ *
+ * @param input The record, the seed, the variant, the season and the request.
+ * @returns The model.
+ * @category api/vegetation
+ */
+export function emitCulm(input: GrowInput): PlantModel {
+	const growth = plannedCulmOf(input.record);
+	const request = input.request ?? { maturity: 1, sparse: 0 };
+	const reach = reachOf(growth, request.maturity);
+	const frame = planFrame(growth.frame as NonNullable<PlannedGrowth['frame']>, input, false);
+	const kept = cappedAxes(frame.axes, clumpCounts(input.record, request));
+	const slim = pow(reach, SLIM);
+	const axes: ModelAxis[] = [];
+	const built = new Map<number, number>();
+	frame.axes.forEach((axis, index) => {
+		if (!kept.has(index)) return;
+		const parentAxis = axis.parent < 0 ? undefined : frame.axes[axis.parent];
+		const parent = axis.parent < 0 ? -1 : (built.get(axis.parent) ?? -1);
+		const nodes = axis.nodes.map((node) => ({
+			at: [node.x * reach, node.y * reach, node.z * reach] as Vec3,
+			radius: node.radius * slim,
+		}));
+		const first = nodes[0];
+		const last = nodes[nodes.length - 1];
+		if (first === undefined || last === undefined) return;
+		built.set(index, axes.length);
+		axes.push({
+			order: axis.order,
+			parent,
+			parentShare: parentShareOf(axis, parentAxis),
+			from: first.at,
+			to: last.at,
+			nodes,
+			radius: [first.radius, last.radius],
+			body: axis.role === 'stem',
+		});
+	});
+	// The sockets: the socket at each patch's own end, then the points its fill spreads over it.
+	// They stand in the order the fill hung them, so a plant that keeps them all draws the same
+	// pieces it drew before any maximum was asked for.
+	const orderDensity = growth.orders[0]?.density;
+	const density = typeof orderDensity === 'number' ? orderDensity : 8;
+	const points: {
+		readonly frameAxis: number;
+		readonly at: Vec3;
+		readonly direction: Vec3;
+	}[] = [];
+	// The lowest foliage the pieces stand, as the planned fill reads a patch: its middle less half
+	// its width, which is the clump's radius there.
+	let base = Number.POSITIVE_INFINITY;
+	frame.patches.forEach((patch: FramePatch) => {
+		if (!kept.has(patch.axis)) return;
+		base = Math.min(base, (patch.centre[1] - patch.width / 2) * reach);
+		if (patch.fill === undefined) return;
+		const radius = (patch.width / 2) * reach;
+		if (!(radius > 1e-6)) return;
+		// The socket at the patch's own end, which every patch carries before any other.
+		points.push({
+			frameAxis: patch.axis,
+			at: [patch.centre[0] * reach, patch.centre[1] * reach, patch.centre[2] * reach],
+			direction: [0, 1, 0],
+		});
+		const variety = 1 + 0.6 * (unitAt(input.seed, patch.axis, input.variant, 2) - 0.5);
+		const count = Math.round(PATCH_SOCKETS_PER_AREA * (density / 8) * (2 * radius) ** 2 * variety);
+		const filled = Math.min(1, count / SLOTS);
+		const spin = unitAt(input.seed, patch.axis, input.variant, 1) * 2 * PI;
+		for (let k = 0; k < SLOTS; k++) {
+			if ((k + 0.5) / SLOTS > filled) continue;
+			const y = 1 - (2 * (k + 0.5)) / SLOTS;
+			const ring = Math.sqrt(Math.max(0, 1 - y * y));
+			const angle = spin + k * radians(137.507);
+			const deep = DEPTH_FROM + (DEPTH_TO - DEPTH_FROM) * unitAt(input.seed, patch.axis, k, 1);
+			const offset: Vec3 = [
+				radius * deep * ring * cos(angle),
+				radius * DEPTH_SHARE * deep * y,
+				radius * deep * ring * sin(angle),
+			];
+			const length = Math.sqrt(offset[0] ** 2 + offset[1] ** 2 + offset[2] ** 2) || 1;
+			const direction: Vec3 = [offset[0] / length, offset[1] / length, offset[2] / length];
+			points.push({
+				frameAxis: patch.axis,
+				at: [
+					patch.centre[0] * reach + offset[0],
+					patch.centre[1] * reach + offset[1],
+					patch.centre[2] * reach + offset[2],
+				],
+				direction,
+			});
+		}
+	});
+	const pieceScale = frame.scale / Math.max(1e-9, spreadMean(input.record.size.height));
+	const piece = growth.piece ?? input.record.pieces?.[0]?.name ?? '';
+	const pieceIndex = pieceNamed(input.record, piece).index;
+	const sockets: ModelSocket[] = [];
+	points.forEach((point, at) => {
+		const axis = built.get(point.frameAxis);
+		if (axis === undefined) return;
+		const carrier = frame.axes[point.frameAxis] as FrameAxis;
+		sockets.push({
+			axis,
+			order: carrier.order + 1,
+			share: 1,
+			at: point.at,
+			direction: point.direction,
+			piece: pieceIndex,
+			scale: pieceScale,
+			// The sockets keep the order they were placed in, so a plant that keeps them all draws
+			// each piece where it stood before any maximum was asked for.
+			keep: points.length > 1 ? at / (points.length - 1) : 0,
+			group: axis,
+		});
+	});
+	const pieces = [fanPiece(input.record, piece)];
+	const crown = crownOf(sockets, pieces);
+	const sparse = Math.max(0, Math.min(1, request.sparse));
+	const floor = input.record.sparse?.foliage ?? FOLIAGE_FLOOR;
+	return {
+		species: input.record.id,
+		axes,
+		sockets,
+		pieces,
+		least: 0,
+		scale: reach,
+		// The sparseness keeps its share of the crown's sockets; a triangle maximum's share belongs
+		// to the shared allocator, which draws the pieces and cards the level can afford.
+		keepShare: Math.max(0, Math.min(1, 1 - sparse * (1 - floor))),
+		crown: {
+			top: crown.top,
+			base: Number.isFinite(base) ? Math.max(0, base) : crown.base,
+			reach: crown.reach,
+		},
+	};
+}
+
+/**
+ * Grows the bamboo from its culm adult's model at the asked state.
+ *
+ * @param input The record, the seed, the variant, the season and the request.
+ * @returns The skeleton.
+ * @category api/vegetation
+ */
+export function growPlannedCulm(input: GrowInput): MacroSkeleton {
+	const model = emitCulm(input);
+	const grown = growPlantModel(model, {
+		// A culm is wood of the plant's own, never a root: the model's body axes are its stems.
+		kind: (axis) => (axis.body ? 'stem' : 'limb'),
+		beside: (model.pieces[0]?.width ?? 0) / 2,
+		crownBase: model.crown.base,
+	});
+	return {
+		...grown,
+		crownBase: model.crown.base,
+		made: model.axes.length + model.sockets.length,
+		shed: 0,
+	};
+}
+
+/**
+ * What the bamboo's culm adult costs at the asked state, read by the shared planned allocator.
+ *
+ * @param record The species record.
+ * @param request The asked maturity, sparseness and maximum.
+ * @returns The plan.
+ * @category api/vegetation
+ */
+export function planCulm(record: Species, request: GrowRequest): DetailPlan {
+	return planTree(record, request);
+}
+
+/** The culm adult of the planned model: the same culm numbers, grown to its state. */
+export const plannedGrower: Grower = {
+	grow: growPlannedCulm,
+	plan: planCulm,
+};

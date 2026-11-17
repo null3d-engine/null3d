@@ -8,8 +8,11 @@ import type { CulmClump } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { spreadAt } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { directed } from '../species/bamboo/directed';
+import { emitCulm, planCulm } from './culm-clump';
 import { azimuthOf, drawnTop } from './directed.test-support';
 import { targetHeight } from './height';
+import { crownOf } from './model';
 
 const LONG = scaledBudget(180_000);
 const VARIANTS = [0, 1, 2] as const;
@@ -19,9 +22,12 @@ let growth: CulmClump;
 
 beforeAll(async () => {
 	const module = await loadSpecies('bamboo');
-	await loadPlantCode(module.record);
-	kit = buildKitNow(module, { placeholders: 'missing', detail: 'high' });
-	growth = kit.record.growth as CulmClump;
+	await loadPlantCode(directed);
+	kit = buildKitNow(
+		{ record: directed, textures: module.textures },
+		{ placeholders: 'missing', detail: 'high' },
+	);
+	growth = directed.growth as CulmClump;
 }, LONG);
 
 /** The culms of a skeleton: each culm axis with its joints' positions, foot first. */
@@ -166,4 +172,60 @@ describe('the culm-clump grower on the bamboo', () => {
 		}
 		expect(jointsWithBud).toBe(joints.size);
 	});
+});
+
+describe('the bamboo on its planned culm adult', () => {
+	it(
+		'writes body axes for the culms, a socket a fan, and the crown from the pieces',
+		async () => {
+			const module = await loadSpecies('bamboo');
+			const record = module.record;
+			const request = { maturity: 1, sparse: 0 };
+			const plan = planCulm(record, request);
+			const model = emitCulm({
+				record,
+				seed: 11,
+				variant: 0,
+				season: record.seasons.default,
+				request,
+				plan,
+			});
+			// Every culm is a body axis, and every axis leaves one that stands before it.
+			expect(model.axes.filter((axis) => axis.body).length).toBeGreaterThan(1);
+			model.axes.forEach((axis, index) => {
+				if (axis.parent >= 0) expect(axis.parent).toBeLessThan(index);
+			});
+			// A socket names an axis, a piece of the kit, and its keep rank.
+			expect(model.sockets.length).toBeGreaterThan(100);
+			expect(model.pieces[0]?.name).toBe('fan');
+			for (const socket of model.sockets) {
+				expect(socket.axis).toBeGreaterThanOrEqual(0);
+				expect(socket.axis).toBeLessThan(model.axes.length);
+				expect(socket.piece).toBe(0);
+				expect(socket.keep).toBeGreaterThanOrEqual(0);
+				expect(socket.keep).toBeLessThanOrEqual(1);
+			}
+			const crown = crownOf(model.sockets, model.pieces);
+			expect(model.crown.top).toBeCloseTo(crown.top, 6);
+			expect(model.crown.reach).toBeCloseTo(crown.reach, 6);
+		},
+		LONG,
+	);
+
+	it(
+		'grows the shipped bamboo inside every cap it is asked for',
+		async () => {
+			const module = await loadSpecies('bamboo');
+			await loadPlantCode(module.record);
+			const plannedKit = buildKitNow(module, { detail: 'low', placeholders: 'missing' });
+			for (const cap of [400, 500, 1000, 2000]) {
+				const plant = growPlantNow(plannedKit, { seed: 11, variant: 0, maxTriangles: cap });
+				for (const total of plant.stats.triangles) expect(total).toBeLessThanOrEqual(cap);
+				// The plant's box is its pieces': the crown stands above the soil under a cap too.
+				expect(plant.skeleton.crownBase).toBeGreaterThan(1);
+				expect(plant.skeleton.height).toBeGreaterThan(plant.skeleton.crownBase);
+			}
+		},
+		LONG,
+	);
 });

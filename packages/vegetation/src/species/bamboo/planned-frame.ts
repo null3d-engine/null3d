@@ -6,8 +6,8 @@
 // grower states; its bow is a foot lean and a bend above it. A child is one branching joint, a
 // short spur whose patch carries the pair piece the crown is made of.
 //
-// This is a candidate for the class study, not the shipped record: index.ts still exports the
-// directed clump.
+// This is the bamboo's planned frame: its culm adult's measured numbers, which the culm family
+// emits as the shared model.
 import type { Planned } from '../../core/record';
 import type { Spread } from '../../core/types';
 import { evenOutline, type FramePatchRule, type FrameSpec } from '../../grow/frame';
@@ -307,6 +307,8 @@ export const plannedFrame400: FrameSpec = {
 export const plannedGrowthDeep: Planned = {
 	...plannedGrowth,
 	frame: plannedFrameDeep,
+	// The culm family grows this crowd of culms itself, from the frame's measured numbers.
+	adult: 'culm',
 	piece: 'fan',
 };
 

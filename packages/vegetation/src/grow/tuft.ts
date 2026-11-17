@@ -632,7 +632,7 @@ export function emitTuft(input: GrowInput): PlantModel {
 		least: sockets.reduce((count, socket) => count + (socket.keep === 0 ? 1 : 0), 0),
 		scale: tune.size,
 		keepShare: tune.keepShare,
-		crown: { top: crown.top, reach: crown.reach },
+		crown: { top: crown.top, base: crown.base, reach: crown.reach },
 	};
 }
 

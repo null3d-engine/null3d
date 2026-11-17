@@ -6,12 +6,15 @@
 // exist. It is not a species counted done.
 //
 // The record states these choices, each with what it stands against:
-// - The shell: at the landed head 761196098 the near card level draws 51,540 triangles, its cards
-//   34,182, against the directed clump's card level 25,991 at the same head and probe, 198 per cent:
-//   an over-run whose cost is the cards' density, and the eye judges whether it reads. The old
-//   48,523 and 39,336 were measured under the retired card rule and are not compared.
-// - The crown base: 0.307 of the height against the fit's 0.083, because the fit's base is the
-//   hull's lowest foliage while the record's branching starts at 0.35.
+// - The shell: the near card level draws 51,378 triangles, its cards 34,020, against the directed
+//   clump's card level 25,991 at the same probe, 198 per cent: an over-run whose cost is the cards'
+//   density, and the eye judges whether it reads. The old 48,523 and 39,336, measured under the
+//   retired card rule, are not compared.
+// - The far card level draws fewer cards than the planned fill did: the model states a socket's
+//   direction, while the planned fill also turned each socket's piece by a roll and a tilt about
+//   it, so the far cover differs. Every level stays inside its triangle maximum.
+// - The crown base: 0.261 of the height at full size and 0.320 under a cap, against the fit's
+//   0.083, because the fit's base is the hull's lowest foliage while the branching starts at 0.35.
 // - The thin culm subset: 33 per cent of the culms, half the diameter and 0.6 to 0.8 of the height,
 //   most at the rim, is a stated limit; the frame's width curve is read along a stem, not by the
 //   stem's place.
@@ -22,7 +25,7 @@
 //   record names one piece for every socket. This record carries one fan at the twigs.
 // - The reference conflict stands as the directed record states it: still 01's crown sky reads 0.16
 //   against 0.13, and 02 and 18 close at 0.38 and 0.40 against 0.40.
-// - The caps draw 397 / 399 / 393 at 400 through 1,992 / 1,992 / 1,996 at 2,000, inside every cap.
+// - The caps draw 400 / 400 / 335 at 400 through 1,986 / 1,985 / 1,412 at 2,000, inside every cap.
 import { files } from '@null3d/vegetation-textures/bamboo';
 import { formRecord } from '../../core/forms';
 import type { SpeciesForm, SpeciesModule } from '../../core/record';

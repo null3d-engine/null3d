@@ -1626,9 +1626,10 @@ export interface Planned {
 	readonly spread: Curve;
 	/**
 	 * Where the adult plan comes from: the species' frame, planned to order two, stated directly in
-	 * its record, or a tuft of shoots on one stool, which the tuft family plans from its own numbers.
+	 * its record, a tuft of shoots on one stool, which the tuft family plans from its own numbers, or
+	 * a culm clump, which the culm family plans from its frame.
 	 */
-	readonly adult: 'frame' | 'stated' | 'tuft';
+	readonly adult: 'frame' | 'stated' | 'tuft' | 'culm';
 	/**
 	 * The frame the adult plan comes from, where the record says it comes from a frame. It never
 	 * grows as it stands: the plan reads only its stems, its limbs and its boughs.

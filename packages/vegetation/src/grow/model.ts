@@ -153,8 +153,11 @@ export interface PlantModel {
 	readonly scale: number;
 	/** The share of the grown sockets the state keeps, from its sparseness. */
 	readonly keepShare: number;
-	/** The tall piece's height above the soil and the widest piece's reach from the middle. */
-	readonly crown: { readonly top: number; readonly reach: number };
+	/**
+	 * The box the pieces fill, as crownOf reads it: the tall piece's height above the soil, the
+	 * lowest foliage's height, and the widest piece's reach from the middle.
+	 */
+	readonly crown: { readonly top: number; readonly base: number; readonly reach: number };
 }
 
 /**

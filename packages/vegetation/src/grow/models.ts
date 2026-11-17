@@ -82,7 +82,8 @@ export async function loadGrower(model: GrowthModel): Promise<Grower> {
 
 /**
  * The family whose grower serves a record: a planned tuft's adult, its pieces and its stool are the
- * tuft family's, so the planned model never carries the tuft's geometry itself.
+ * tuft family's, and a planned culm clump's axes and pieces are the culm family's, so the planned
+ * model never carries their geometry itself.
  *
  * @param record The species record.
  * @returns The model whose grower serves it.
@@ -90,7 +91,8 @@ export async function loadGrower(model: GrowthModel): Promise<Grower> {
  */
 export function familyModel(record: Species): GrowthModel {
 	const growth = record.growth;
-	return growth.model === 'planned' && growth.adult === 'tuft' ? 'tuft' : growth.model;
+	if (growth.model !== 'planned') return growth.model;
+	return growth.adult === 'tuft' ? 'tuft' : growth.adult === 'culm' ? 'culm-clump' : growth.model;
 }
 
 /**

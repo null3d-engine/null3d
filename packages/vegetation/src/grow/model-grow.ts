@@ -21,10 +21,18 @@ import { atan2, cos, sin } from '../core/math';
 import type { ModelAxis, ModelSocket, PlantModel } from './model';
 import { addSockets, type Socket } from './sockets';
 
-/** The kinds of wood a model's axis may state. */
+/**
+ * The kind of wood a model's axis is drawn as: a root, a stem, a culm or a limb.
+ *
+ * @category api/vegetation
+ */
 export type ModelWoodKind = 'root' | 'stem' | 'culm' | 'limb';
 
-/** What a family's own form adds to the shared grow. */
+/**
+ * What a family's own form adds to the shared grow.
+ *
+ * @category api/vegetation
+ */
 export interface ModelGrowOptions {
 	/** The kind of wood each axis is drawn as. By default a root axis, then a stem or a limb. */
 	readonly kind?: (axis: ModelAxis, index: number) => ModelWoodKind;
@@ -77,6 +85,17 @@ export function growPlantModel(model: PlantModel, options: ModelGrowOptions = {}
 	const kindOf = options.kind ?? defaultKind;
 	const builder = new SkeletonBuilder();
 	const built: { builderAxis: number; nodes: number[] }[] = [];
+	// The wood's own extent, which the box carries beside the pieces'.
+	const woodLow: [number, number, number] = [
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+	];
+	const woodHigh: [number, number, number] = [
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+	];
 	for (let index = 0; index < model.axes.length; index++) {
 		const spec = model.axes[index] as ModelAxis;
 		const parent = spec.parent < 0 ? undefined : built[spec.parent];
@@ -107,6 +126,10 @@ export function growPlantModel(model: PlantModel, options: ModelGrowOptions = {}
 				light: 1,
 			});
 			builtNodes.push(prior);
+			for (let k = 0; k < 3; k++) {
+				woodLow[k] = Math.min(woodLow[k] as number, node.at[k] as number);
+				woodHigh[k] = Math.max(woodHigh[k] as number, node.at[k] as number);
+			}
 		}
 		built.push({ builderAxis, nodes: builtNodes });
 		if (index === 0) options.extra?.(builder, built);
@@ -162,12 +185,21 @@ export function growPlantModel(model: PlantModel, options: ModelGrowOptions = {}
 		high[1] = Math.max(high[1], z);
 	}
 	const beside = options.beside ?? 0;
+	const hasWood = Number.isFinite(woodLow[0]);
 	return {
 		...finished,
-		height: top,
+		height: Math.max(top, hasWood ? (woodHigh[1] as number) : top),
 		bounds: {
-			min: [low[0] - beside, 0, low[1] - beside],
-			max: [high[0] + beside, top, high[1] + beside],
+			min: [
+				Math.min(low[0] - beside, hasWood ? (woodLow[0] as number) : low[0] - beside),
+				0,
+				Math.min(low[1] - beside, hasWood ? (woodLow[2] as number) : low[1] - beside),
+			],
+			max: [
+				Math.max(high[0] + beside, hasWood ? (woodHigh[0] as number) : high[0] + beside),
+				Math.max(top, hasWood ? (woodHigh[1] as number) : top),
+				Math.max(high[1] + beside, hasWood ? (woodHigh[2] as number) : high[1] + beside),
+			],
 		},
 	};
 }

@@ -446,12 +446,15 @@ export interface FramePatch {
 	 * whip's does. Absent, the patch stands at the axis's end.
 	 */
 	readonly clothes?: number;
-}
-
-/** A patch while its plan is built, with the fine wood it asks for, in metres. */
-interface Mass extends FramePatch {
+	/**
+	 * The fine wood the patch asks for: the pitch between the sockets its fill carries and the
+	 * length of the piece at each, in metres. Absent where the patch asks for none.
+	 */
 	readonly fill?: { readonly pitch: number; readonly reach: number };
 }
+
+/** A patch while its plan is built. */
+type Mass = FramePatch;
 
 /**
  * A plant's frame: its axes and their foliage patches.

@@ -204,7 +204,7 @@ function boundsOf(record: Species, growth: Planned): FrameBounds {
 	const height = curveAt(growth.height, 1);
 	const spec = growth.frame;
 	void record;
-	if (growth.adult !== 'frame' || spec === undefined)
+	if ((growth.adult !== 'frame' && growth.adult !== 'culm') || spec === undefined)
 		return { expected: [0, 0, 0, 0, 0], clumps: 0 };
 	// The stated levels: the stems, then the axes that leave them.
 	const stems = spec.stems;
@@ -264,8 +264,25 @@ function clumpKeep(growth: Planned, bounds: FrameBounds, max: number): ClumpKeep
 	return { culms, pairs };
 }
 
-/** The adult plan of a seed and variant, planned once and kept. */
-function adultFor(
+/**
+ * The culms and pairs a clump class keeps under a triangle maximum, from the record's own bands.
+ * The decision is the shared allocator's, so a family's adapter reads it rather than choosing.
+ *
+ * @param record The species record.
+ * @param request The asked state.
+ * @returns The kept counts, or undefined where the record names no clump class or no maximum.
+ * @category api/vegetation
+ */
+export function clumpCounts(
+	record: Species,
+	request: GrowRequest,
+): { readonly culms: number; readonly pairs: number } | undefined {
+	const growth = record.growth as Planned;
+	if (growth.clump === undefined || request.maxTriangles === undefined) return undefined;
+	return clumpKeep(growth, boundsOf(record, growth), request.maxTriangles);
+}
+
+/** The adult plan of a seed and variant, planned once and kept. */ function adultFor(
 	record: Species,
 	growth: Planned,
 	seed: number,
@@ -622,8 +639,6 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	// capped clump stays even. Only a record that names the clump class takes this rule.
 	if (most !== undefined && growth.clump !== undefined) {
 		const bounds = boundsOf(input.record, growth);
-		const cardCost = growth.prices.clumpCard;
-		const cards = crownCards(most, Math.max(1, Math.round(bounds.clumps)), cardCost);
 		const keep = clumpKeep(growth, bounds, most);
 		if (keep !== undefined) {
 			for (const order of [0, 1]) {
