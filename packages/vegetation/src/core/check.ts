@@ -1239,6 +1239,23 @@ export function speciesProblems(record: Species): string[] {
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
 	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
 		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
+	// The judged cover factors run from 0.65 to 1.35: below half a first card level loses its
+	// cards altogether, and above two the factor saturates and moves nothing.
+	const cover = lod.cardCover;
+	if (cover !== undefined && !(cover >= 0.5 && cover <= 2))
+		out.push(`lod.cardCover is ${cover}; it is a factor from 0.5 to 2 on the first card level's coverage`);
+	const planes = lod.cardPlanes;
+	if (planes !== undefined) {
+		if (!Array.isArray(planes) || planes.length !== 2)
+			out.push(`lod.cardPlanes is ${JSON.stringify(planes)}; it is a pair of counts, one each card level`);
+		else
+			planes.forEach((value, i) => {
+				if (!Number.isInteger(value) || value < 0 || value > 2)
+					out.push(
+						`lod.cardPlanes[${i}] is ${value}; it is a whole number of extra planes from 0 to 2`,
+					);
+			});
+	}
 	const cardCell = lod.cardCell;
 	if (cardCell)
 		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {
