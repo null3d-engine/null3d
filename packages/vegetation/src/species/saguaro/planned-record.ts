@@ -20,7 +20,9 @@ import { frame } from './directed';
 /**
  * The height in metres by age share, for a full-grown plant of about 12 m. A saguaro grows slowly:
  * a seedling stands centimetres for years, a metre in a decade or two, and a 12 m plant is a
- * century and a half old.
+ * century and a half old. The drawn adult stands 13.12 m, the frame's own plan height, 0.12 m above
+ * the record's 12 m mean plus its 1 m spread; the plan scales the frame's shares to the adult, so
+ * the figure is the frame's plan and the pictures read it.
  */
 const HEIGHT: Planned['height'] = [
 	[0, 0],
