@@ -10,7 +10,8 @@
 // ends with the camera where the run left it. Its page part stops with the demo, by its signal, its
 // engine's destroy or its engine's failure, and a page part that does not load fails the demo's
 // start, also after the first frame. A demo that the page leaves while its part loads starts no
-// part and leaves the next demo's choices, HUD and overlay alone.
+// part and leaves the next demo's choices, HUD and overlay alone. A finger whose capture the
+// browser refuses is not counted among the fingers down.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -386,6 +387,47 @@ test('a press whose capture the browser refuses leaves the next drag free to tur
 		})
 		.toBeGreaterThan(0.05);
 	expect(errors).toEqual([]);
+});
+
+test.describe('on a touch screen', () => {
+	test.use({ hasTouch: true });
+
+	test('a finger whose capture the browser refuses does not count as a second finger later', async ({
+		page,
+	}) => {
+		const errors = await open(page, 'replay');
+		// A touch of a finger that is not down: the browser refuses its capture.
+		await page.evaluate(() => {
+			const scope = globalThis as unknown as {
+				document: { querySelector(selector: string): { dispatchEvent(event: unknown): boolean } };
+				PointerEvent: new (type: string, init: Record<string, unknown>) => unknown;
+			};
+			const press = { pointerId: 78, pointerType: 'touch', isPrimary: false, bubbles: true };
+			scope.document
+				.querySelector('canvas')
+				.dispatchEvent(new scope.PointerEvent('pointerdown', press));
+		});
+		const start = await rest(page, await probe(page));
+		// One real finger drags across the view and stays down for a second of sketch time. Two
+		// fingers down would walk forward.
+		const touch = await page.context().newCDPSession(page);
+		const at = (x: number, y: number) => [{ x, y, id: 1 }];
+		await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(300, 180) });
+		for (let step = 1; step <= 8; step++)
+			await touch.send('Input.dispatchTouchEvent', {
+				type: 'touchMove',
+				touchPoints: at(300 + step * 15, 180 - step * 4),
+			});
+		await expect
+			.poll(async () => apart((await probe(page)).cameraTurn, start.cameraTurn), {
+				timeout: PATIENCE,
+			})
+			.toBeGreaterThan(0.05);
+		const held = await probeAt(page, (await probe(page)).time + 1);
+		await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: at(420, 148) });
+		expect(apart(held.camera, start.camera)).toBeLessThan(0.02);
+		expect(errors).toEqual([]);
+	});
 });
 
 test('a page part that does not load fails the demo start, says why, and takes the controls away', async ({

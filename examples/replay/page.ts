@@ -70,9 +70,10 @@ export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 			try {
 				canvas.setPointerCapture(event.pointerId);
 			} catch {
-				// The pointer is no longer active, or the lock began meanwhile: no drag to follow, so the
-				// next press may start one.
+				// The pointer is no longer active, or the lock began meanwhile: no drag to follow and no
+				// finger down, so the next press starts afresh.
 				looking = -1;
+				fingers.delete(event.pointerId);
 			}
 		},
 		listen,
