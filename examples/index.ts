@@ -113,11 +113,14 @@ function heading(demo: Demo, growthBar = false): (string | HTMLElement)[] {
 		'transition:width 120ms linear',
 	].join(';');
 	track.append(fill);
+	const spin = element('span');
+	spin.className = 'growth-spin';
+	spin.setAttribute('aria-hidden', 'true');
 	const percent = element('span');
 	percent.id = 'demo-growth-percent';
 	percent.textContent = '0%';
 	percent.style.cssText = 'font-variant-numeric:tabular-nums;font-size:11px;opacity:0.8';
-	growth.append(track, percent);
+	growth.append(track, spin, percent);
 	return growthBar ? [name, scene, growth] : [name, scene];
 }
 
