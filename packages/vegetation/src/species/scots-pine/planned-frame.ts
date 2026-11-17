@@ -20,14 +20,18 @@ const REACH = [
 /** The turning video: the crown is round within 5 per cent, so the narrow side is 0.95 of the wide. */
 const NARROW = 0.95;
 
-/** Still 01, the trunk's taper through its line, in shares of the height: the record's own width. */
+/**
+ * The trunk's taper through its line, in shares of the height. The species record states a breast
+ * height diameter of 0.9 m at a 20 m tree, 0.045 of the height; the directed form's own still reads
+ * 0.076 and so draws 1.5 m, so this curve is the record's size, scaled from the directed taper.
+ */
 const TRUNK = [
-	[0, 0.084],
-	[0.14, 0.07],
-	[0.28, 0.064],
-	[0.42, 0.054],
-	[0.69, 0.04],
-	[1, 0.034],
+	[0, 0.05],
+	[0.14, 0.042],
+	[0.28, 0.038],
+	[0.42, 0.032],
+	[0.69, 0.024],
+	[1, 0.02],
 ] as const;
 
 /**
