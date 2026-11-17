@@ -3,7 +3,7 @@
 // drive the keyboard, the mouse, a trackpad's pinch, touch and a stand-in gamepad, and ask what the
 // sketch saw. With ?setupInput, the page presses W, the main mouse button and the wheel while the
 // sketch's setup runs, before the first frame; the input test runs it in hold mode too, where the
-// sketch must see none of it.
+// sketch must see none of it. With ?noInput, the engine starts with its `input` option off.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -35,11 +35,14 @@ function sendSetupInput(canvas: HTMLCanvasElement): void {
 run('input', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
-	const setupInput = new URLSearchParams(location.search).has('setupInput');
+	const switches = new URLSearchParams(location.search);
+	const setupInput = switches.has('setupInput');
 	const engine = await createEngine({
 		canvas,
 		sketch: new URL('./sketches/input-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
+		// ?noInput starts the engine with its listening off, as a page whose input another library records.
+		...(switches.has('noInput') ? { input: false } : {}),
 		onSketchMessage: (name) => {
 			if (name === 'setup' && setupInput) sendSetupInput(canvas);
 		},

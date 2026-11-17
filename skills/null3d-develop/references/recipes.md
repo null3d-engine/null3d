@@ -911,11 +911,11 @@ export function tick(input: { turn: number; thrust: number }): void {
 }
 ```
 
-The page sends the state to the sketch after each tick:
+The page starts the engine with its listening off, because another library records the input, and sends the state to the sketch after each tick:
 
 ```ts
 // page.ts
-const engine = await createEngine({ canvas, sketch: new URL('./sketch.ts', import.meta.url) });
+const engine = await createEngine({ canvas, sketch: new URL('./sketch.ts', import.meta.url), input: false });
 // After each tick of the simulation:
 engine.postToSketch('state', { position: [...state.position], heading: [...state.heading] });
 ```

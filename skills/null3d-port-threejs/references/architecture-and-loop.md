@@ -186,6 +186,7 @@ Enemies that need different meshes become one batch per mesh. An enemy loaded fr
 | `FlyControls`, `FirstPersonControls` | `createFlyControls` or `createFirstPersonControls` with the same option names and defaults (0.2); `controls.update(dt)` every frame |
 | `PointerLockControls` | `createFirstPersonControls(ctx, camera, { movementSpeed: 0, pointerSpeed })` (0.2). The page calls `engine.requestPointerLock()` in a click handler in place of `controls.lock()`; the sketch reads `input.pointer.locked` in place of `isLocked` and the lock events, and keeps `controls.moveForward(d)` and `controls.moveRight(d)` |
 | Clicks on UI buttons over the canvas | Handled on the page; send the action to the sketch |
+| Input that a game records for a server to replay, with its own listeners on the page | Keep the game's recorder. Pass `input: false` to `createEngine` (0.3), so the engine adds no listener and `ctx.input` stays at rest. Picking, controls and physics that decide a result move into the game's simulation (`guides/deterministic-simulation`) |
 
 Pointer events that land on HTML UI elements above the canvas do not reach the engine, which matches what users expect.
 

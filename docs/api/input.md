@@ -208,6 +208,7 @@ The page reads the gamepads once per display frame while at least one is connect
 - The engine leaves the browser's own actions for keys and the wheel alone. On a page that scrolls, stop Space and the arrow keys from scrolling it with a `keydown` listener on the page that calls `preventDefault()`. When the sketch zooms with the wheel or a pinch, stop the page from scrolling and zooming with a wheel listener on the canvas: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`.
 - On a Mac, the browser sends no release for a key pressed while Cmd is down. So when Cmd comes up, the sketch sees every key come up.
 - In hold mode, the sketch gets no input, so a held frame is the same on every run. See [Testing your sketch](../guides/testing.md).
+- `createEngine({ input: false })` turns the engine's listening off, for a page whose input another library records, such as a game whose simulation a server replays from a log. The engine then adds no pointer, key, wheel, focus, visibility, pointer lock or gamepad listener. It captures no pointer on the canvas, and leaves the canvas's context menu to the browser. The sketch's `ctx.input` stays at rest: every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons, and objects get no pointer events. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md#input-that-another-library-records) shows the page.
 
 ## API reference
 

@@ -3,7 +3,7 @@ id: guides/deterministic-simulation
 title: Using null3D with a deterministic simulation
 status: experimental
 since: "0.3"
-summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; a production build of a game's engine files."
+summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a production build of a game's engine files."
 ---
 
 # Using null3D with a deterministic simulation
@@ -97,13 +97,31 @@ An exact library and the browser's `Math` can differ in the last bit. So the ske
 
 Nothing in the sketch is in the input log, and no server runs it. So anything that decides a result belongs in the simulation:
 
-- **Input.** The sketch's `ctx.input` hears the page's events, which the log does not hold. The simulation reads its input from the library that records it.
+- **Input.** The sketch's `ctx.input` hears the page's events, which the log does not hold. The simulation reads its input from the library that records it. Turn null3D's own listening off, as the next section shows.
 - **Picking.** Pointer events on objects, `scene.raycast` and `camera.screenToRay` test the scene that the engine last drew, in its WebAssembly core. A replay has no such scene. Hit-test the recorded pointer position against the simulation's own shapes, with a camera that the simulation owns. The simulation builds the camera's projection matrix itself. Then `mat4.multiply`, `mat4.invert` and `vec3.transformMat4` turn a screen point into a ray.
 - **Physics.** A physics library in the sketch, as [Using a physics library](physics.md) shows, moves things that only look right. Collisions and forces that decide a result run in the simulation, written with exact arithmetic.
 - **The camera.** [Camera controls](../api/controls.md) move the camera from the sketch's input. A camera that the game's rules aim, such as one that follows the player, comes from the simulation's state.
 - **Time.** The sketch's `dt` follows the display. The simulation steps by its own ticks, and the sketch draws the latest state it got, or blends between the last two.
 
 The sketch still draws with the main entry's helpers, which use the browser's `Math` at full speed.
+
+## Input that another library records
+
+`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no pointer, key, wheel, focus, visibility, pointer lock or gamepad listener. It captures no pointer on the canvas, and leaves the canvas's context menu to the browser. The library that records the player's input listens alone.
+
+```ts
+// page.ts
+import { createEngine } from '@null3d/engine';
+
+const canvas = document.querySelector('canvas')!;
+await createEngine({
+  canvas,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  input: false, // another library records the input
+});
+```
+
+The sketch's `ctx.input` then stays at rest. Every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons. Objects get no pointer events. A game that locks the pointer locks it through the library that records the input, which reads the movement.
 
 ## Sending the state to the sketch
 
@@ -151,4 +169,4 @@ A small game scene with three lanes and a ship drew with 5 words. Its folder hel
 
 ## API reference
 
-The [Math helpers reference](../api/reference/math.md) lists `createMath` and its types.
+The [Math helpers reference](../api/reference/math.md) lists `createMath` and its types, and the [createEngine reference](../api/reference/engine.md) lists the `input` option.

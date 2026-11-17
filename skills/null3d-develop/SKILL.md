@@ -178,7 +178,7 @@ Interaction:
 | --- | --- | --- |
 | Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'`, or `camera.screenToRay` with `scene.raycast` (all 0.2) | `api/input`, `api/raycast` |
 | Keys, pointer, touch, gamepad | `input.isDown`, `input.wasPressed`, `input.value`, `input.pointer`, `input.touches`, `input.actions.define` | `api/input` |
-| Rules a server replays | `@null3d/engine/math` and `createMath` (0.3) | `guides/deterministic-simulation` |
+| Rules a server replays | `@null3d/engine/math`, `createMath`, `input: false` (0.3) | `guides/deterministic-simulation` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
 | A product or marketing page with a 3D scene | Fallback page first, a load deadline, reveal on `engine.firstFrame`, pause off screen | `guides/content-pages`, `references/content-pages.md` |

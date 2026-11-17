@@ -408,6 +408,16 @@ export interface EngineOptions {
 	 */
 	hold?: number;
 	/**
+	 * False keeps the engine from listening for input, for a page whose input another library
+	 * records, such as a game whose simulation replays a log of it. The engine then adds no pointer,
+	 * key, wheel, blur, visibility, pointer lock or gamepad listener, captures no pointer on the
+	 * canvas, and leaves the canvas's context menu to the browser. The sketch's `ctx.input` stays at
+	 * rest: every key, button and action is up, `value` gives 0, `input.touches` is empty, and the
+	 * pointer stays at the canvas's top-left corner with no movement, wheel or buttons. Objects get
+	 * no pointer events. The default is true.
+	 */
+	input?: boolean;
+	/**
 	 * Features whose shaders load before the first frame, for a game that must fetch nothing while
 	 * it plays. Each feature's shaders otherwise download the first time the sketch uses it:
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
@@ -2454,8 +2464,9 @@ async function startEngine(
 		canvasHold.sized = true;
 		canvasWatch = watch;
 		watch.listen(true);
-		// Hold mode keeps input out, so a held frame never depends on it.
-		const takesInput = hold === undefined && replay === undefined;
+		// Hold mode keeps input out, so a held frame never depends on it. A page whose input another
+		// library records turns it off, and then the engine adds no listener at all.
+		const takesInput = hold === undefined && replay === undefined && options.input !== false;
 		const pageInput = captureInput(options.canvas, control);
 		input = pageInput;
 		pageInput.listen(takesInput);

@@ -57,6 +57,7 @@ const engine = await createEngine({
   onWorkerRetry: (worker, script) => {},   // (0.2) a worker's script did not load and the engine started a second copy; the console warns too
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
+  input: false,          // (0.3) another library records the input: no listeners, no pointer capture, ctx.input stays at rest
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
   hdr: true,             // false draws the 8-bit path; both paths honour toneMapped: false, apart from a blended surface on the HDR path
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
@@ -625,6 +626,8 @@ dragger.dragging; dragger.hovered;      // the object each names, or null
 ```
 
 Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches. When the wheel or a pinch zooms the camera, stop the page from scrolling and zooming with `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })` on the page.
+
+The option `input: false` of `createEngine` (0.3) turns the engine's listening off, for a page whose input another library records. The engine then adds no pointer, key, wheel, focus, visibility, pointer lock or gamepad listener. It captures no pointer and leaves the context menu alone. The sketch's input stays at rest: every key, button and action is up, and `value` gives 0. There are no touches, the pointer rests at the canvas's top-left corner, and objects get no pointer events. A game whose simulation a server replays decides nothing from input, object events, raycasts or controls. None of them is in its input log (`guides/deterministic-simulation`).
 
 ## 15. Post-processing (`api/post`)
 
