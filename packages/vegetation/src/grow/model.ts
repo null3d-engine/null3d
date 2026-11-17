@@ -128,6 +128,13 @@ export interface ModelPiece {
 	/** How high the piece stands above its socket and how far it reaches out, in metres. */
 	readonly top: number;
 	readonly reach: number;
+	/**
+	 * How far the piece hangs below its socket, in metres, where it does: a dead frond's skirt reaches
+	 * under the crown. Absent, 0.
+	 */
+	readonly bottom?: number;
+	/** The piece's middle in its own rest frame, where its clump card stands. Absent, half its reach. */
+	readonly middle?: Vec3;
 	/** The record's own figures for it, by name, in the units the record states them. */
 	readonly figures: Readonly<Record<string, number>>;
 }
@@ -178,7 +185,7 @@ export function crownOf(
 		if (!piece) continue;
 		const height = (socket.at[1] as number) + piece.top * socket.scale;
 		top = Math.max(top, height);
-		base = Math.min(base, socket.at[1] as number);
+		base = Math.min(base, (socket.at[1] as number) - (piece.bottom ?? 0) * socket.scale);
 		reach = Math.max(
 			reach,
 			length3(socket.at[0] as number, 0, socket.at[2] as number) + piece.reach * socket.scale,

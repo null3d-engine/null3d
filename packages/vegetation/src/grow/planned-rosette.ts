@@ -18,10 +18,17 @@ import {
 	type Vector3,
 } from '../core/math';
 import { thinningRanks } from '../core/rank';
-import type { Planned, PlannedRosette, Species } from '../core/record';
-import { spreadAt, spreadMean, type Vec3 } from '../core/types';
+import type { FrondCrown, Planned, PlannedRosette, Species } from '../core/record';
+import { curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
 import { type PieceRule, pieceKey, pieceTurn, planPiece } from '../leaf/piece';
 import { layCrozier } from './frond-crown';
+import {
+	crownOf,
+	type ModelAxis,
+	type ModelPiece,
+	type ModelSocket,
+	type PlantModel,
+} from './model';
 import { pieceNamed, radicalInverse } from './ranked';
 
 /**
@@ -71,7 +78,7 @@ export interface RosetteSocket {
 	readonly scale: number;
 	/** The rank it belongs to: the living ranks' places, then the dead skirt. */
 	readonly group: number;
-	/** Its share in its group's order, which ranks it across the plant. */
+	/** Its share in its group's order. */
 	readonly share: number;
 	/** Its place in the plant's full layout, so a kept socket keeps its variant. */
 	readonly place: number;
@@ -79,6 +86,8 @@ export interface RosetteSocket {
 	readonly y: number;
 	/** Its piece's reach from the base, in metres. */
 	readonly reach: number;
+	/** Its place in the order the plant thins by, from 0 at the best kept. */
+	readonly rank: number;
 }
 
 /** What a rosette's fill adds to a skeleton. */
@@ -206,18 +215,73 @@ function turnPoint(
 	out[2] = at[2] + out[2] * scale;
 }
 
-/**
- * Lays a rosette's sockets: the living fronds in their ranks, then the dead skirt. Each socket's
- * place in the plant's full layout is fixed, so a socket kept at one sparseness keeps its variant
- * at every other.
- *
- * @param input The record, the growth, the seed, the variant, the trunk's built top, the share that
- *   sparseness keeps and the fronds a maximum pays for.
- * @returns The sockets the share keeps, and how many it laid.
- */
-export function layRosette(input: {
+/** The fronds and dead skirt a record states, whether it grows by the planned model or the frond crown. */
+interface RosetteShape {
+	readonly count: Spread;
+	readonly divergence: number;
+	readonly layout: 'rings' | 'spiral';
+	readonly clasp: number;
+	readonly scale?: number;
+	readonly ranks: readonly {
+		readonly share: number;
+		readonly piece: string;
+		readonly leave: number;
+		readonly spread?: number;
+		readonly length?: number;
+	}[];
+	readonly dead?: {
+		readonly count: Spread;
+		readonly piece: string;
+		readonly hang: Spread;
+		readonly from: number;
+		readonly to: number;
+		readonly length: number;
+	};
+	/** Whether the dead skirt's band is shares of the height; a frond crown states metres. */
+	readonly deadShares: boolean;
+}
+
+/** The rosette shape a record states, from either of the family's two growth blocks. */
+function shapeOf(record: Species): RosetteShape {
+	const growth = record.growth;
+	if (growth.model === 'planned' && growth.rosette) {
+		const rosette = growth.rosette as PlannedRosette;
+		return {
+			count: rosette.fronds.count,
+			divergence: rosette.fronds.divergence,
+			layout: rosette.fronds.layout,
+			clasp: rosette.fronds.clasp,
+			...(rosette.fronds.scale === undefined ? {} : { scale: rosette.fronds.scale }),
+			ranks: rosette.ranks,
+			...(rosette.dead === undefined ? {} : { dead: rosette.dead }),
+			deadShares: true,
+		};
+	}
+	if (growth.model === 'frond-crown') {
+		const crown = growth as FrondCrown;
+		return {
+			count: crown.fronds.count,
+			divergence: crown.fronds.divergence,
+			layout: crown.fronds.layout ?? 'spiral',
+			clasp: crown.fronds.clasp,
+			ranks: crown.fronds.ranks.map((rank) => ({
+				share: rank.share,
+				piece: rank.piece,
+				leave: rank.leave,
+				...(rank.spread === undefined ? {} : { spread: rank.spread }),
+				...(rank.length === undefined ? {} : { length: rank.length }),
+			})),
+			...(crown.dead === undefined ? {} : { dead: crown.dead }),
+			deadShares: false,
+		};
+	}
+	throw new Error(`@null3d/vegetation: '${record.id}' is not a frond-crown or rosette plant`);
+}
+
+/** What a rosette's layout reads: the record, its state and the trunk the shared grow built. */
+export interface RosetteLayoutInput {
 	readonly record: Species;
-	readonly growth: Planned;
+	readonly growth: Planned | FrondCrown;
 	readonly seed: number;
 	readonly variant: number;
 	readonly at: Readonly<Vector3>;
@@ -225,32 +289,30 @@ export function layRosette(input: {
 	readonly adultHeight: number;
 	readonly topRadius: number;
 	readonly trunkNodes: readonly { readonly y: number; readonly radius: number }[];
-	/** The share of the fronds sparseness keeps. */
-	readonly leaves: number;
-	/** The fronds a maximum pays a card for; absent when no maximum bites. */
-	readonly cards?: number;
-}): {
-	readonly kept: RosetteSocket[];
-	readonly laid: number;
-	readonly all: readonly RosetteSocket[];
-} {
-	const { record, growth, seed, variant, at, height, adultHeight, topRadius, trunkNodes, leaves } =
-		input;
-	const rosette = growth.rosette as PlannedRosette;
+}
+
+/**
+ * Lays a rosette's sockets: the living fronds in their ranks, then the dead skirt. Each socket's
+ * place in the plant's full layout is fixed, so a socket kept at one sparseness keeps its variant
+ * at every other. The rank orders the sockets for the shared grow's thinning.
+ *
+ * @param input The record, the growth, the seed, the variant and the trunk's built top.
+ * @returns The plant's full layout, ranked.
+ */
+export function layoutRosette(input: RosetteLayoutInput): RosetteSocket[] {
+	const { record, seed, variant, at, height, adultHeight, topRadius, trunkNodes } = input;
+	const form = shapeOf(record);
 	const salt = record.seedSalt >>> 0;
 	const draw = (purpose: number, index = 0) => unitAt(seed, salt, variant, purpose, index);
 	const share = Math.max(0, Math.min(1, height / Math.max(1e-9, adultHeight)));
 	const size = FROND_START + (1 - FROND_START) * share;
 	const young = FRONDS_START + (1 - FRONDS_START) * share;
 	const laid: RosetteSocket[] = [];
-	const ranks = rosette.ranks;
-	const full = Math.max(
-		ranks.length,
-		Math.round(spreadAt(rosette.fronds.count, draw(DRAW.fronds)) * young),
-	);
+	const ranks = form.ranks;
+	const full = Math.max(ranks.length, Math.round(spreadAt(form.count, draw(DRAW.fronds)) * young));
 	const start = draw(DRAW.start) * 2 * Math.PI;
-	const divergence = radians(rosette.fronds.divergence);
-	const rings = rosette.fronds.layout === 'rings';
+	const divergence = radians(form.divergence);
+	const rings = form.layout === 'rings';
 	// The living fronds, youngest first, shared out over the ranks in order.
 	let first = 0;
 	let sum = 0;
@@ -274,13 +336,13 @@ export function layRosette(input: {
 			const leave = Math.min(LEAVE_MOST, rank.leave + offset);
 			// The bases stand down the trunk's top as the fronds age, the oldest lowest, and out from
 			// its axis: the youngest near it, the oldest at its surface.
-			const drop = Math.min(height, rosette.fronds.clasp * age);
+			const drop = Math.min(height, form.clasp * age);
 			const out = topRadius * (BASE_IN + (BASE_OUT - BASE_IN) * age);
 			const base: Vector3 = [at[0] + cos(azimuth) * out, at[1] - drop, at[2] + sin(azimuth) * out];
 			const shape = pieceShape(record, named.index, named.rule);
 			// A young plant's fronds stay above the ground: the piece's reach is the most a frond can
 			// drop from its base, so a shorter piece keeps the crown on the plant.
-			const wanted = (rosette.fronds.scale ?? 1) * (rank.length ?? 1) * size;
+			const wanted = (form.scale ?? 1) * (rank.length ?? 1) * size;
 			const scale = Math.min(
 				wanted,
 				Math.max(0, base[1] - ABOVE_GROUND) / Math.max(1e-3, shape.reach),
@@ -295,13 +357,14 @@ export function layRosette(input: {
 				place: laid.length,
 				y: base[1],
 				reach: shape.reach * scale,
+				rank: 0,
 			});
 		}
 		first = last;
 	});
 	// The dead fronds: a ring under the living crown, hanging against the trunk. A young plant has
 	// built no trunk to hang them against, so the skirt shows once the stem has grown.
-	const dead = rosette.dead && share >= DEAD_FROM ? rosette.dead : undefined;
+	const dead = form.dead && share >= DEAD_FROM ? form.dead : undefined;
 	if (dead) {
 		const named = pieceNamed(record, dead.piece);
 		const n = Math.max(0, Math.round(spreadAt(dead.count, draw(DRAW.dead)) * young));
@@ -311,7 +374,9 @@ export function layRosette(input: {
 				ring +
 				(2 * Math.PI * (k + 0.5)) / Math.max(1, n) +
 				radians((draw(DRAW.deadTurn, k) * 2 - 1) * RING_JITTER);
-			const drop = (dead.from + (dead.to - dead.from) * radicalInverse(k)) * height;
+			const from = form.deadShares ? dead.from * height : dead.from;
+			const to = form.deadShares ? dead.to * height : dead.to;
+			const drop = from + (to - from) * radicalInverse(k);
 			const hang = Math.min(90, Math.max(0, spreadAt(dead.hang, draw(DRAW.deadHang, k))));
 			const radius = radiusAt(trunkNodes, Math.max(0, at[1] - drop));
 			const base: Vector3 = [
@@ -320,7 +385,7 @@ export function layRosette(input: {
 				at[2] + sin(azimuth) * radius,
 			];
 			const shape = pieceShape(record, named.index, named.rule);
-			const wanted = (rosette.fronds.scale ?? 1) * dead.length * size;
+			const wanted = (form.scale ?? 1) * dead.length * size;
 			const scale = Math.min(
 				wanted,
 				Math.max(0, base[1] - ABOVE_GROUND) / Math.max(1e-3, shape.reach),
@@ -335,6 +400,7 @@ export function layRosette(input: {
 				place: laid.length,
 				y: base[1],
 				reach: shape.reach * scale,
+				rank: 0,
 			});
 		}
 	}
@@ -357,30 +423,258 @@ export function layRosette(input: {
 	ranked.forEach(({ i }, rank) => {
 		rankAt.set(i, ranksOf[rank] as number);
 	});
+	return laid.map((socket, i) => ({ ...socket, rank: rankAt.get(i) ?? i }));
+}
+
+/**
+ * The sockets sparseness and a maximum keep: the plant's own rank, the dead skirt after the living
+ * under a cap, and each kept frond whole. The layout is the same at every state, so a sparser plant
+ * is a subset of a denser one.
+ *
+ * @param input The layout's own input, the share sparseness keeps and the fronds a maximum pays for.
+ * @returns The kept sockets, how many the layout laid, and the full ranked layout.
+ */
+export function layRosette(
+	input: RosetteLayoutInput & {
+		/** The share of the fronds sparseness keeps. */
+		readonly leaves: number;
+		/** The fronds a maximum pays a card for; absent when no maximum bites. */
+		readonly cards?: number;
+	},
+): {
+	readonly kept: RosetteSocket[];
+	readonly laid: number;
+	readonly all: readonly RosetteSocket[];
+} {
+	const all = layoutRosette(input);
+	const ranks = shapeOf(input.record).ranks;
 	const capped = input.cards !== undefined;
-	const order = laid
-		.map((socket, i) => ({ socket, i, rank: rankAt.get(i) ?? i }))
-		.sort((a, b) => {
-			// A maximum drops the dead skirt before any living frond: the living fountain carries the
-			// species at a low cap, and the skirt is the first thing the owner's standard gives up.
-			if (capped) {
-				const aDead = a.socket.group >= ranks.length ? 1 : 0;
-				const bDead = b.socket.group >= ranks.length ? 1 : 0;
-				if (aDead !== bDead) return aDead - bDead;
-			}
-			return a.rank - b.rank || a.i - b.i;
-		});
+	const order = all.slice().sort((a, b) => {
+		// A maximum drops the dead skirt before any living frond: the living fountain carries the
+		// species at a low cap, and the skirt is the first thing the owner's standard gives up.
+		if (capped) {
+			const aDead = a.group >= ranks.length ? 1 : 0;
+			const bDead = b.group >= ranks.length ? 1 : 0;
+			if (aDead !== bDead) return aDead - bDead;
+		}
+		return a.rank - b.rank || a.place - b.place;
+	});
 	// A maximum keeps the fronds its cards pay for; sparseness keeps its own share. A frond is kept
 	// whole, so a sparse or capped crown is a set of whole fronds, never half of one.
 	const keep = Math.min(
-		Math.max(0, Math.min(1, leaves)),
-		input.cards === undefined
-			? 1
-			: Math.max(0, Math.min(1, input.cards / Math.max(1, laid.length))),
+		Math.max(0, Math.min(1, input.leaves)),
+		input.cards === undefined ? 1 : Math.max(0, Math.min(1, input.cards / Math.max(1, all.length))),
 	);
-	const most = Math.max(0, Math.round(laid.length * keep));
-	const kept = order.slice(0, most).map(({ socket }) => socket);
-	return { kept, laid: laid.length, all: laid };
+	const most = Math.max(0, Math.round(all.length * keep));
+	return { kept: order.slice(0, most), laid: all.length, all };
+}
+
+/** A piece's points in the plant at one socket, and the piece's own middle, turned as it is held. */
+function placedPoints(
+	record: Species,
+	socket: RosetteSocket,
+): { readonly points: readonly Vector3[]; readonly middle: Vector3 } {
+	const rule = (record.pieces ?? [])[socket.piece] as PieceRule;
+	const spin = [0, 0, 0, 1];
+	const rolled = [0, 0, 0, 1];
+	const turned = pieceTurn(rule.attitude, socket.direction);
+	quatAxisAngle([0, 1, 0], radians(rule.roll ?? 0), spin);
+	quatMultiply(turned, 0, spin, 0, rolled);
+	const shape = pieceShape(record, socket.piece, rule);
+	const at = socket.at;
+	const placed = (local: Readonly<Vector3>): Vector3 => {
+		const out: Vector3 = [0, 0, 0];
+		quatRotate(rolled, 0, local, out);
+		return [
+			at[0] + out[0] * socket.scale,
+			at[1] + out[1] * socket.scale,
+			at[2] + out[2] * socket.scale,
+		];
+	};
+	return { points: shape.points.map(placed), middle: placed(shape.middle) };
+}
+
+/**
+ * Writes the frond-crown and rosette family's intermediate model at one state: the trunk axis, one
+ * socket a frond with its carrier, and the pieces their own measured figures state. The adapter
+ * writes no geometry, material or level; the shared stages price, grow, close, allocate and bake
+ * the model (D-377). Its crown box is read from the pieces, never stated beside them.
+ *
+ * @param input The layout's input, the share sparseness keeps and the share of the adult height the
+ *   state stands at.
+ * @returns The model.
+ * @category api/vegetation
+ */
+function modelOf(
+	record: Species,
+	all: readonly RosetteSocket[],
+	trunk: {
+		readonly at: Readonly<Vector3>;
+		readonly height: number;
+		readonly topRadius: number;
+		readonly trunkNodes: readonly { readonly y: number; readonly radius: number }[];
+	},
+	floor: number,
+	leaves: number,
+	scale: number,
+): PlantModel {
+	const { at, height, topRadius, trunkNodes } = trunk;
+	const floorShare = Math.max(0, Math.min(1, floor));
+	const least = Math.max(1, Math.round(all.length * floorShare));
+	const sockets: ModelSocket[] = all.map((socket) => ({
+		axis: 0,
+		order: 1,
+		share: Math.max(0, Math.min(1, socket.at[1] / Math.max(1e-9, height))),
+		at: socket.at,
+		direction: socket.direction,
+		piece: socket.piece,
+		scale: socket.scale,
+		keep: socket.rank < least ? 0 : (socket.rank - least + 1) / (all.length - least + 1),
+		group: socket.group,
+	}));
+	const pieces: ModelPiece[] = (record.pieces ?? []).map((rule, index) => {
+		const shape = pieceShape(record, index, rule);
+		const carriers = all.filter((socket) => socket.piece === index);
+		const own = Math.max(1e-9, carriers[0]?.scale ?? 1);
+		let top = 0;
+		let reach = 0;
+		let bottom = 0;
+		for (const socket of carriers) {
+			for (const point of placedPoints(record, socket).points) {
+				const dx = point[0] - socket.at[0];
+				const dz = point[2] - socket.at[2];
+				top = Math.max(top, point[1] - socket.at[1]);
+				bottom = Math.max(bottom, socket.at[1] - point[1]);
+				reach = Math.max(reach, Math.sqrt(dx * dx + dz * dz));
+			}
+		}
+		return {
+			name: rule.name,
+			length: spreadMean(rule.stem.length),
+			width: rule.stem.radius[0] * 2,
+			depth: rule.stem.radius[0] * 2,
+			top: top / own,
+			reach: reach / own,
+			bottom: bottom / own,
+			middle: shape.middle,
+			figures: {
+				length: spreadMean(rule.stem.length),
+				width: rule.stem.radius[0] * 2,
+				top: top / own,
+				reach: reach / own,
+				bottom: bottom / own,
+			},
+		};
+	});
+	const foot = trunkNodes[0] ?? { y: 0, radius: topRadius };
+	const axis: ModelAxis = {
+		order: 0,
+		parent: -1,
+		parentShare: 0,
+		from: [0, 0, 0],
+		to: [at[0], at[1], at[2]],
+		nodes: trunkNodes.map((node) => ({
+			at: [
+				at[0] * (node.y / Math.max(1e-9, height)),
+				node.y,
+				at[2] * (node.y / Math.max(1e-9, height)),
+			],
+			radius: node.radius,
+		})),
+		radius: [foot.radius, topRadius],
+		body: true,
+	};
+	const crown = crownOf(sockets, pieces);
+	return {
+		species: record.id,
+		axes: [axis],
+		sockets,
+		pieces,
+		least,
+		scale,
+		keepShare: Math.max(0, Math.min(1, leaves)),
+		crown: { top: crown.top, reach: crown.reach },
+	};
+}
+
+/**
+ * Writes a planned rosette's intermediate model at one state: the trunk axis, one socket a frond
+ * with its carrier, and the pieces their own measured figures state. The adapter writes no
+ * geometry, material or level; the shared stages price, grow, close, allocate and bake the model
+ * (D-377). Its crown box is read from the pieces, never stated beside them.
+ *
+ * @param input The layout's input, the share sparseness keeps and the share of the adult height the
+ *   state stands at.
+ * @returns The model.
+ * @category api/vegetation
+ */
+export function emitRosette(
+	input: RosetteLayoutInput & {
+		/** The share of the fronds the state's sparseness keeps. */
+		readonly leaves: number;
+		/** The share of the adult height the emitted state stands at. */
+		readonly scale: number;
+		/** The share of the fronds the sparsest plant keeps; the planned record's own curve by default. */
+		readonly floor?: number;
+	},
+): PlantModel {
+	const all = layoutRosette(input);
+	const floor =
+		input.floor ?? Math.max(0, Math.min(1, curveAt((input.record.growth as Planned).leavesAt, 1)));
+	return modelOf(
+		input.record,
+		all,
+		{
+			at: input.at,
+			height: input.height,
+			topRadius: input.topRadius,
+			trunkNodes: input.trunkNodes,
+		},
+		floor,
+		input.leaves,
+		input.scale,
+	);
+}
+
+/**
+ * Writes a frond crown's intermediate model at its record's own adult: the trunk axis, one socket a
+ * frond with its carrier, the dead skirt and the pieces' measured figures. The adapter writes no
+ * geometry, material or level.
+ *
+ * @param input The record, the seed and the variant.
+ * @returns The model.
+ * @category api/vegetation
+ */
+export function emitFrondCrown(input: {
+	readonly record: Species;
+	readonly seed: number;
+	readonly variant: number;
+}): PlantModel {
+	const growth = input.record.growth;
+	if (growth.model !== 'frond-crown')
+		throw new Error(`@null3d/vegetation: '${input.record.id}' does not grow a frond crown`);
+	const crown = growth as FrondCrown;
+	const height = crown.trunk.height;
+	const at: Vector3 = [0, height, 0];
+	const topRadius = curveAt(crown.trunk.width, 1) / 2;
+	const steps = Math.max(2, Math.round(height / 0.3));
+	const trunkNodes = Array.from({ length: steps + 1 }, (_, k) => ({
+		y: (height * k) / steps,
+		radius: curveAt(crown.trunk.width, k / steps) / 2,
+	}));
+	const all = layoutRosette({
+		record: input.record,
+		growth,
+		seed: input.seed,
+		variant: input.variant,
+		at,
+		height,
+		adultHeight: height,
+		topRadius,
+		trunkNodes,
+	});
+	const floor = Math.max(0, Math.min(1, input.record.sparse?.foliage ?? 0.08));
+	return modelOf(input.record, all, { at, height, topRadius, trunkNodes }, floor, 1, 1);
 }
 
 /**
