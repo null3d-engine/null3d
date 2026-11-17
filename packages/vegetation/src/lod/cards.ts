@@ -1018,6 +1018,15 @@ const CLUMP_TILES: readonly [first: number, second: number] = [3, 3];
 export const tilesAt = (level: 1 | 2): number => CLUMP_TILES[level - 1] as number;
 
 /**
+ * The pictures a side that a grown clump card shows: one picture for each of the row's own picture
+ * widths the plate covers, so every picture is one shoot at its own scale. A card grown k times its
+ * row's picture holds k pictures a side.
+ */
+function clumpTiles(grow: number): number {
+	return Math.max(1, Math.round(grow));
+}
+
+/**
  * A card level's clump cards: one card set for each clump of sockets, at the clump's middle and
  * grown to cover its rows, so the clump reads with the shade its card bakes rather than as many
  * shoot cards lit one by one. The rows of each clump stand together in the walk, so `cardClusters`
@@ -1040,14 +1049,18 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	const more = input.record.lod.cardGrow ?? 1;
 	const clusters = cardClusters(input, walk, kept.length, drawn, planes, undefined, more);
 	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
-	// own scale rather than one shoot's picture grown over the clump.
+	// own scale rather than one shoot's picture grown over the clump. The first card level fits the
+	// grid to each clump's grown extent, so one picture is one shoot at its own size: the swap from
+	// real leaves to pictures then reads as the same crown losing detail. The second level keeps a
+	// fixed count, so the far band does not move.
 	const tiles = tilesAt(level);
 	const tiled = {
 		tiles,
-		row: (index: number, tile: number): number => {
+		fitted: level === 1,
+		row: (index: number, tile: number, count: number): number => {
 			const list = kept[index]?.rows ?? [];
 			return list.length > 0
-				? (list[Math.floor((tile * list.length) / (tiles * tiles))] as number)
+				? (list[Math.floor((tile * list.length) / (count * count))] as number)
 				: 0;
 		},
 	};
@@ -1941,10 +1954,10 @@ export function plannedClumpCards(
 		const anchor = nearestWood(clump.centre);
 		const clear =
 			anchor !== undefined
-				? Math.hypot(
-						(anchor[0] as number) - (clump.centre[0] as number),
-						(anchor[1] as number) - (clump.centre[1] as number),
-						(anchor[2] as number) - (clump.centre[2] as number),
+				? Math.sqrt(
+						((anchor[0] as number) - (clump.centre[0] as number)) ** 2 +
+							((anchor[1] as number) - (clump.centre[1] as number)) ** 2 +
+							((anchor[2] as number) - (clump.centre[2] as number)) ** 2,
 					)
 				: 0;
 		return {
@@ -1959,7 +1972,7 @@ export function plannedClumpCards(
 	});
 	const tiled = {
 		tiles,
-		row: (index: number, tile: number): number => {
+		row: (index: number, tile: number, count: number): number => {
 			const clump = kept[index];
 			if (!clump) return 0;
 			// The rows nearest the clump, spread across its picture's tiles.
@@ -1971,7 +1984,7 @@ export function plannedClumpCards(
 				if (dx * dx + dy * dy + dz * dz <= clump.radius * clump.radius) near.push(r);
 			}
 			const list = near.length > 0 ? near : [0];
-			return list[Math.floor((tile * list.length) / (tiles * tiles))] as number;
+			return list[Math.floor((tile * list.length) / (count * count))] as number;
 		},
 	};
 	return clusterCardMesh(
@@ -2077,7 +2090,12 @@ export function clusterCardMesh(
 	shade?: (cluster: number, height: number) => number,
 	tiled?: {
 		readonly tiles: number;
-		readonly row: (cluster: number, tile: number) => number;
+		/**
+		 * Whether each cluster's tile count follows its grown extent against its own row's picture,
+		 * so one picture is one shoot at its own scale, or every cluster keeps `tiles`.
+		 */
+		readonly fitted?: boolean;
+		readonly row: (cluster: number, tile: number, tiles: number) => number;
 	},
 	into?: MeshWriter,
 	gate = 0,
@@ -2131,6 +2149,9 @@ export function clusterCardMesh(
 		const grow = lead
 			? clumpGrowthInHull(input, cluster.centre, r, lead, scale, first0, cluster.grow)
 			: cluster.grow;
+		// A picture covers the row's own picture's share of the grown plate: the plate's half extent
+		// over the row's own half extent is the count of pictures that brings the grain back.
+		const tiles = tiled ? (tiled.fitted ? clumpTiles(grow) : tiled.tiles) : 1;
 		prototype.card.planes.forEach((plane) => {
 			if (plane.role >= planes) return;
 			const n = normalize3([
@@ -2139,11 +2160,10 @@ export function clusterCardMesh(
 				plane.right[0] * plane.up[1] - plane.right[1] * plane.up[0],
 			]);
 			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
-			const tiles = tiled?.tiles ?? 1;
 			for (let tile = 0; tile < tiles * tiles; tile++) {
 				// A tile shows one of the cluster's rows' pictures at its own scale, so a card that
 				// stands for many shoots reads as their clump rather than as one shoot grown large.
-				const shown = tiles > 1 ? (tiled as NonNullable<typeof tiled>).row(index, tile) : r;
+				const shown = tiles > 1 ? (tiled as NonNullable<typeof tiled>).row(index, tile, tiles) : r;
 				const shownPrototype = kit.prototypes[rows.prototype[shown] as number];
 				const cell =
 					shownPrototype?.card.planes.find((other) => other.role === plane.role) ??

@@ -80,6 +80,7 @@ import {
 } from './grow/height';
 import { leadOnThickest } from './grow/leaders';
 import { loadPlantGrowers, plantGrower } from './grow/models';
+import { ramp as growthRamp } from './grow/planned';
 import {
 	FOLIAGE_FLOOR,
 	GREAT_LIMB_SHARE,
@@ -683,15 +684,17 @@ function maxOf(kit: SpeciesKitData, options: GrowOptions): number | undefined {
 }
 
 /**
- * The maximum a plant's own levels take. A maximum above what the plan's parts cost never bites, so
- * the levels take none and the plant draws exactly as it would with no maximum at all.
+ * The maximum a plant's own levels take from its plan's price. A maximum above what the plan's parts
+ * cost never bites, so the levels take none and the plant draws exactly as it would with no maximum
+ * at all. A model without a plan cannot be priced here: its name returns nothing, and the caller
+ * measures the drawn levels instead, which is the only honest test for a plant with no plan.
  *
  * @param plan The grown plan, where the model plans its state.
  * @param max The maximum the growth was asked for.
- * @returns The maximum the levels draw under, or undefined for none.
+ * @returns The maximum the levels draw under, or undefined for none, or for a model without a plan.
  */
 function bitingMax(plan: DetailPlan | undefined, max: number | undefined): number | undefined {
-	if (max === undefined || plan === undefined) return max;
+	if (max === undefined || plan === undefined) return undefined;
 	const t = plan.triangles;
 	return t.trunk + t.limbs + t.branches + t.twigs + t.foliage + t.fruit > max ? max : undefined;
 }
@@ -801,7 +804,6 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	grownFromSeed++;
 	const record = cuttingLeaves(kit.record, options.cutting);
 	const placeholders = kit.placeholders;
-	const model = record.growth.model;
 	const most = maxOf(kit, options);
 	const request: GrowRequest = {
 		maturity: options.maturity ?? 1,
@@ -877,9 +879,19 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		placeholders === true
 			? 0
 			: coarsenessFor(kit, { ...calibratedInput, skeleton: calibrated, ...lit }, detail, options);
+	// A planned record's fruit draws by the plan's ramp, read here from the same request the grower
+	// takes, so a plant below its fruiting maturity draws no fruit and one at the ramp's end draws
+	// its record's full share.
+	const plannedGrowth = calibratedRecord.growth;
+	const maturity = calibratedInput.request?.maturity ?? 1;
+	const fruitShare =
+		plannedGrowth?.model === 'planned'
+			? growthRamp(maturity, plannedGrowth.fruitFrom, plannedGrowth.fruitBand)
+			: undefined;
 	const dressInput: DressInput = {
 		...calibratedInput,
 		kit,
+		...(fruitShare !== undefined ? { fruitShare } : {}),
 		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
 		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,

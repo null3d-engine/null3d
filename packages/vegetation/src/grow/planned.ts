@@ -17,6 +17,7 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { hashAt } from '../core/hash';
+import { pow } from '../core/math';
 import { thinningRanks } from '../core/rank';
 import type { Planned, Species } from '../core/record';
 import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
@@ -82,11 +83,10 @@ function cardedSet(
 			for (const k of kept) {
 				const other = clumps[k] as { centre: Vec3 };
 				const sum = ((sizes[i] as number) + (sizes[k] as number)) * CARD_MEET;
-				const d = Math.hypot(
-					(centre[0] as number) - (other.centre[0] as number),
-					(centre[1] as number) - (other.centre[1] as number),
-					(centre[2] as number) - (other.centre[2] as number),
-				);
+				const dx = (centre[0] as number) - (other.centre[0] as number);
+				const dy = (centre[1] as number) - (other.centre[1] as number);
+				const dz = (centre[2] as number) - (other.centre[2] as number);
+				const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
 				if (d < sum) meeting += sum - d;
 			}
 			if (meeting > best) {
@@ -124,6 +124,16 @@ const CARD_MEET = 1.8;
 
 /** Below this maximum the crown keeps only the clumps on the wood every cap draws. */
 const CARD_SEEDS_MAX = 800;
+
+/**
+ * The triangles one segment of a capped culm's tube costs at the coarsest step: the tube's three
+ * sides draw about two a segment, where the fine tube's own price is far higher. A clump's cap pays
+ * the coarse step, as the conifers' bough rule does.
+ */
+const COARSE_SEGMENT = 2;
+
+/** The segments a culm keeps at the coarsest step, about one in eight of its joints. */
+const CULM_SEGMENTS = 6;
 
 /** Adult plans kept a thread, by species, seed and variant. */
 const ADULTS = new Map<string, Adult>();
@@ -229,6 +239,31 @@ function boundsOf(record: Species, growth: Planned): FrameBounds {
 	};
 }
 
+/** A capped clump's kept culms and pairs, by the plan's low-cap bands; each pair's card is paid after. */
+interface ClumpKeep {
+	readonly culms: number;
+	readonly pairs: number;
+}
+
+/**
+ * The culms and pairs a capped clump keeps: the count follows the plan's low-cap bands, about
+ * seven culms at 400, eight at 500, eleven at 1,000 and sixteen at 2,000, one pair a culm, so the
+ * crowned clump's cost (a culm, a pair and its card) stays inside the cap and the fine orders take
+ * the room that is left. The culm is paid at the coarsest step's two triangles a segment, never the
+ * fine tube's price. Only a record that names the clump class takes this rule.
+ */
+function clumpKeep(growth: Planned, bounds: FrameBounds, max: number): ClumpKeep | undefined {
+	const rule = growth.clump;
+	if (rule === undefined) return undefined;
+	// The number of culms a clump reads at this cap: the ruled low-cap bands.
+	const want = Math.round(0.35 * Math.sqrt(max));
+	const mostCulms = Math.max(rule.leastCulms, Math.round(bounds.expected[0] ?? 1));
+	const culms = Math.max(rule.leastCulms, Math.min(mostCulms, want));
+	const mostPairs = Math.max(rule.leastPairs, Math.round(bounds.expected[1] ?? 1));
+	const pairs = Math.max(rule.leastPairs, Math.min(mostPairs, culms));
+	return { culms, pairs };
+}
+
 /** The adult plan of a seed and variant, planned once and kept. */
 function adultFor(
 	record: Species,
@@ -328,6 +363,17 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const socketsBound = Math.max(1, expected[4] as number);
 	const woodRoom = max === undefined ? 0 : Math.max(0, max - cards * cardCost);
 	const woodTotal = priced.trunk + priced.limbs + priced.branches;
+	// A clump class pays its culms and pairs at the coarse step, then each kept pair's card, and the
+	// fine orders take the room that is left. The bands set the counts; the cards follow them.
+	const clump = max === undefined ? undefined : clumpKeep(growth, bounds, max);
+	const classWood =
+		clump === undefined
+			? 0
+			: clump.culms * CULM_SEGMENTS * COARSE_SEGMENT + clump.pairs * (COARSE_SEGMENT + cardCost);
+	const fineRoom = clump === undefined ? woodRoom : Math.max(0, (max as number) - classWood);
+	const fineTotal = (wood[2] as number) + (wood[3] as number);
+	const fineKept =
+		clump === undefined ? 1 : fineTotal > 0 ? Math.max(0, Math.min(1, fineRoom / fineTotal)) : 1;
 	const woodKept =
 		max === undefined ? 1 : woodTotal > 0 ? Math.max(0, Math.min(1, woodRoom / woodTotal)) : 1;
 	// The fill keeps the plan's share of the crown: one anchor socket a carded clump, its lowest
@@ -357,11 +403,11 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 			{ form: clumpCard ? 'clump-card' : 'cards', blend: 1 },
 		],
 		triangles: {
-			trunk: priced.trunk,
-			limbs: priced.limbs,
-			branches: priced.branches,
+			trunk: clump === undefined ? priced.trunk : clump.culms * CULM_SEGMENTS * COARSE_SEGMENT,
+			limbs: clump === undefined ? priced.limbs : clump.pairs * COARSE_SEGMENT,
+			branches: clump === undefined ? priced.branches : priced.branches * fineKept,
 			twigs: priced.twigs,
-			foliage: priced.foliage,
+			foliage: clump === undefined ? priced.foliage : clump.pairs * cardCost,
 			fruit: priced.fruit,
 		},
 		fruit: ramp(request.maturity, growth.fruitFrom, growth.fruitBand),
@@ -369,12 +415,16 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 			growth.flowers === undefined
 				? 0
 				: ramp(request.maturity, growth.flowers.from, growth.flowers.band),
-		rankCut: expected.map((_, order) => (order < 2 ? 1 : cut(order))),
+		rankCut: expected.map((_, order) => {
+			if (order < 2) return 1;
+			if (clump !== undefined) return order >= 4 ? crownKept : fineKept;
+			return cut(order);
+		}),
 	};
 }
 
 /** A ramp from nothing to one over a band, from the maturity a thing starts at. */
-function ramp(maturity: number, from: number, band: number): number {
+export function ramp(maturity: number, from: number, band: number): number {
 	if (!(maturity > from)) return 0;
 	return Math.min(1, (maturity - from) / Math.max(1e-9, band));
 }
@@ -401,7 +451,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const reachShare =
 		curveAt(growth.height, age / fullAge) / Math.max(1e-9, curveAt(growth.height, 1));
 	const height = adultHeight * Math.min(1, reachShare);
-	const slim = Math.min(1, height / adultHeight) ** SLIM;
+	const slim = pow(Math.min(1, height / adultHeight), SLIM);
 	const matureAge = ageAtHeight(growth.height, fullAge, adultHeight, adultHeight);
 	// A maximum coarsens each axis's own nodes: every second or fourth node stands.
 	const most = request.maxTriangles;
@@ -567,6 +617,41 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		}
 	}
 
+	// A clump class lowers its culm and pair counts under a maximum, before the blades: the crown's
+	// cards take their share first, and the kept culms and pairs are spread round the clump so a
+	// capped clump stays even. Only a record that names the clump class takes this rule.
+	if (most !== undefined && growth.clump !== undefined) {
+		const bounds = boundsOf(input.record, growth);
+		const cardCost = growth.prices.clumpCard;
+		const cards = crownCards(most, Math.max(1, Math.round(bounds.clumps)), cardCost);
+		const keep = clumpKeep(growth, bounds, most);
+		if (keep !== undefined) {
+			for (const order of [0, 1]) {
+				const cap = order === 0 ? keep.culms : keep.pairs;
+				const axesOf = [...keptAxis].filter(
+					(index) =>
+						(bones.axes[index] as FrameAxis).order === order && (reveal[index] as Reveal).present,
+				);
+				if (axesOf.length <= cap) continue;
+				const ranks = thinningRanks(
+					axesOf.map((index) => {
+						const node = (bones.axes[index] as FrameAxis).nodes[0] as FrameNode;
+						return [node.x, node.y, node.z];
+					}),
+				);
+				const byRank = axesOf
+					.map((index, at) => ({ index, rank: ranks[at] as number }))
+					.sort((a, b) => a.rank - b.rank);
+				for (const one of byRank.slice(cap)) keptAxis.delete(one.index);
+			}
+			// A dropped culm or pair takes its branches with it.
+			for (let index = 0; index < bones.axes.length; index++) {
+				const axis = bones.axes[index] as FrameAxis;
+				if (axis.parent >= 0 && !keptAxis.has(axis.parent)) keptAxis.delete(index);
+			}
+		}
+	}
+
 	// The scale of a socket's piece against the species' own, from the frame's own scale.
 	const pieceScale = bones.scale / Math.max(1e-9, spreadMean(input.record.size.height));
 	const builder = new SkeletonBuilder();
@@ -668,7 +753,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	bones.axes.forEach((axis, index) => {
 		if (axis.order !== 1) return;
 		let reach = 0;
-		for (const node of axis.nodes) reach = Math.max(reach, Math.hypot(node.x, node.z));
+		for (const node of axis.nodes)
+			reach = Math.max(reach, Math.sqrt(node.x * node.x + node.z * node.z));
 		limbReach.set(index, reach);
 	});
 
@@ -688,6 +774,9 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		const axis = bones.axes[patch.axis] as FrameAxis;
 		const where = reveal[patch.axis] as Reveal;
 		if (where === undefined || !where.present) return;
+		// A capped clump's dropped culm or pair takes its clumps with it. A tree's clumps stand
+		// whatever sparseness thins, so its crown's box and base never move with it.
+		if (growth.clump !== undefined && !keptAxis.has(patch.axis)) return;
 		// The clump follows its carrying axis: it stands at the grown tip, at the size the axis has
 		// reached, so a young crown is small and at the wood and never floats ahead of it.
 		const radius = (patch.width / 2) * where.growth;

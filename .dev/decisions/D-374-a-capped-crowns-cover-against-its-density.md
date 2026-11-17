@@ -87,3 +87,28 @@ stays on oak/levels-cap-walk. The walk's row-place card placement holds an open 
 fix is in that placement and is checked at more than one angle. Three levers stay open for the density without the
 outline. They are fewer planes a card, a smaller cap on a card's growth, and the card texture's own coverage. The
 saguaro's capped-body fault keeps its own recorded case, apart from the cap assertions.
+
+The wedge pair decided. Two placement candidates were built behind lod.crownPlace, off by default. 'tiled' is
+rejected: it draws the sheet at all three turns and costs 999,993 triangles at the million against today's 421,577.
+'covered' is kept and named per species.
+
+The birch names it. At turn 0 its box is 314 by 493 with a parts-picture fill of 0.3129, against the uncapped look's
+317 by 495 and 0.3127 and today's 0.3506; its outline overlap is 0.788 against the dense rule's 0.857, and its leaf
+draw 11,184 triangles against 88,592. The matched uncapped controls at 45 and 90 read, by the judge's parts measure,
+0.3468 and 0.3702 with boxes 277 by 495 and 245 by 495, against covered 0.3390 and 0.3759 with 279 by 491 and 236 by
+492; by the crown camera's own fill the same pair reads 0.310 and 0.332 against 0.320 and 0.362, with boxes 277 by 495
+against 279 by 491 and 244 by 495 against 231 by 492. The two fields differ by up to eight thousandths and by five
+pixels; the judge's parts measure is the ruling one. On both fields the narrowing at 45 and 90 is the tree's own turn,
+since the uncapped look narrows 317 to 277 to 245 the same way, so the covered rule loses nothing and no buy-back is
+taken.
+
+The hawthorn names nothing: covered removes every row card there, 19,124 leaf triangles to 744, because all its rows
+sit under clump radii, and its outline falls from 0.712 to 0.609 with its fill 0.525 against the dense rule's 0.612
+and its uncapped 0.487. Its covered run stays as the evidence.
+
+One caveat for the record: the 'not barer' is total plant coverage in the parts picture, where the uncapped's twigs
+carry a similar share; the covered's leaf coverage reads far above the uncapped's, whose leaf form draws sub-pixel
+leaves at those two turns.
+
+Runs and heads: birch-crown-covered-0/45/90 at 13ba6b88e, birch-crown-tiled-0/45/90 at 4bcaa8338, the hawthorn's
+covered run at 887452f70, today at ed0bf39f6.

@@ -7,7 +7,15 @@
 // the rim clumps with sky bays, the inner layer and the branch kinks all live here.
 import { BUD_FLOWER, BUD_TERMINAL, type SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { quatAxisAngle, quatFromFrame, quatMultiply, radians, type Vector3 } from '../core/math';
+import {
+	cos,
+	quatAxisAngle,
+	quatFromFrame,
+	quatMultiply,
+	radians,
+	sin,
+	type Vector3,
+} from '../core/math';
 import { thinningRanks } from '../core/rank';
 import type { Vec3 } from '../core/types';
 
@@ -170,9 +178,9 @@ export function fillClumps(input: FillInput): FillCount {
 			const angle = spin + k * radians(137.507);
 			const depth = DEPTH_FROM + (DEPTH_TO - DEPTH_FROM) * unitAt(seed, clump.id, k, 1);
 			const point: [number, number, number] = [
-				clump.centre[0] + radius * depth * ring * Math.cos(angle),
+				clump.centre[0] + radius * depth * ring * cos(angle),
 				clump.centre[1] + radius * DEPTH_SHARE * depth * y,
-				clump.centre[2] + radius * depth * ring * Math.sin(angle),
+				clump.centre[2] + radius * depth * ring * sin(angle),
 			];
 			point[1] = dippedY(clump, point, input.crown);
 			goals.push({
@@ -293,8 +301,9 @@ function dippedY(
 	const lowness =
 		1 - Math.min(1, Math.max(0, (clump.centre[1] - crown.base) / (crown.height * 0.5)));
 	if (lowness <= 0) return point[1];
-	const out =
-		Math.hypot(point[0] - clump.root[0], point[2] - clump.root[2]) / Math.max(1e-6, clump.radius);
+	const outX = point[0] - clump.root[0];
+	const outZ = point[2] - clump.root[2];
+	const out = Math.sqrt(outX * outX + outZ * outZ) / Math.max(1e-6, clump.radius);
 	const dip = DIP_SHARE * clump.radius * Math.min(1, out) * lowness;
 	return Math.max(crown.base, point[1] - dip);
 }

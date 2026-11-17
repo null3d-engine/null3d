@@ -2,7 +2,7 @@
 
 Status: decided, with the measurement still to come. Task: none.
 
-Summary: At a low triangle maximum a tree must keep a legible skeleton — a trunk, a fork and its first limb orders —
+Summary: At a low triangle maximum a tree must keep a legible skeleton, a trunk, a fork and its first limb orders ,
 before any leaf is drawn, and its leaves should be a few large approximations rather than many small ones. A capped tree
 is drawn for distance, so its evidence carries a picture at that distance as well as a close one. The trade is accepted:
 a capped tree reads sparser in leaf than an uncapped one, and it should lose leaf detail before it loses its structure.
@@ -15,9 +15,9 @@ as a dark twisted ribbon. What should a low cap spend its triangles on, and what
 ## Rule
 
 The picture a cap is judged by is the picture at the distance the cap is *looked at*: for a cap that is spent on the
-near level, that is the close view, because at a distance where the card level draws, a near-level floor changes nothing —
+near level, that is the close view, because at a distance where the card level draws, a near-level floor changes nothing ,
 the willow at 1,000 draws byte-identical pictures at 150 metres with and without the floor. A tree at any cap keeps a trunk with enough
-sides to read as wood — five or six at the lowest cap — its fork, and its first two limb orders with enough sides to read
+sides to read as wood, five or six at the lowest cap, its fork, and its first two limb orders with enough sides to read
 as limbs; the leaf budget takes what remains. A cap also leaves no piece standing free: a strip that loses its carrier is
 joined or dropped, as the connectedness rule asks at every level. And a cap draws wood only down to the lowest order it
 can make look like wood: a subbranch of two triangles reads as a needle, which is worse than drawing no wood at all, so
@@ -58,13 +58,13 @@ crown's edges.
 ## Look
 
 The owner's reading, which this record adopts: at a low cap a coarser leaf over a good skeleton looks worse up close and
-right from a distance, and that is the better trade. The earlier cap repairs point the same way — the failures they fixed
+right from a distance, and that is the better trade. The earlier cap repairs point the same way, the failures they fixed
 were structural, not leafy.
 
 ## Decision
 
-Three parts. A floor for the skeleton — a minimum share of any cap for the trunk and the first two limb orders, taken
-before the leaves. Fewer, larger leaf approximations — one grown plate a clump rather than a scatter of small cards,
+Three parts. A floor for the skeleton, a minimum share of any cap for the trunk and the first two limb orders, taken
+before the leaves. Fewer, larger leaf approximations, one grown plate a clump rather than a scatter of small cards,
 which the tiled grid's judged pair already showed gathers into mass where finer pictures speckle. And a stated contract:
 a capped tree is drawn for distance, its evidence carries a picture at that distance, and the page says what a low cap
 promises. The wood-against-leaf measurement comes first: triangles by part as shares of the cap, the trunk's sides and

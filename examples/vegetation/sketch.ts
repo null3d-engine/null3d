@@ -37,8 +37,18 @@ export default defineSketch(async (ctx) => {
 	camera.setPosition(...cam);
 	scene.setActiveCamera(camera);
 	// The wheel steps a little further than the default, since a close approach makes each notch a
-	// small change in metres, and the shadows reach only as far as the meadow the camera can see.
-	const view = interact(ctx, camera, { target: look, groundY: 1.7, zoomSpeed: 1.5 });
+	// small change in metres, and the shadows reach only as far as the meadow the camera can see. The
+	// meadow is walked, not flown: no panning, no camera under the ground, and the widest view is the
+	// whole field rather than a dot in the distance.
+	const view = interact(ctx, camera, {
+		target: look,
+		groundY: 1.7,
+		zoomSpeed: 1.5,
+		enablePan: false,
+		maxPolarAngle: Math.PI / 2 - 0.05,
+		maxDistance: 240,
+		minDistance: 1.2,
+	});
 
 	// The meadow's grass, grown by the add-on over the field that the camera frames, so the ground
 	// reads as pasture rather than as one flat colour. The cover takes the meadow grass's own blade,

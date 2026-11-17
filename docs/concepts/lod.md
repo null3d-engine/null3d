@@ -183,6 +183,20 @@ The fragments that the dither drops cost a tile GPU, such as a phone's or an App
 
 One add-on morphs a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach. The block then matches its parent when the selection hands over. It writes the target in the mesh's four-number vertex record, which its own custom material's `vertexOffset` reads. The morph adds no draw and writes no vertex in a frame. The vegetation add-on fades its card levels with the dither instead. Each level draws on until the next stands at full coverage, then thins out, so no pixel drops out of both. File meshes keep the dither too: the asset tool's simplifier records no mapping between one level's vertices and the next.
 
+## A switch that keeps the object's shape
+
+A fade dissolves one level into the next. It cannot make two arrangements read as one object. The eye follows where the parts are and how big they are more than how much of them there is, so a far level that moves a part, or draws a few parts larger, reads as a different object arriving even under a fade. Every pixel of a band draws either the old arrangement or the new one.
+
+Build each level from the level above it: keep every part in its place and at its size, and drop detail inside the parts. Many small pieces become one picture for the cluster they stood in, at the cluster's centre, at its extent, and inside its outline. Fewer, larger pictures for several clusters, or plates grown past the form they replace, move the outline, and the swap shows even where the sky share is unchanged.
+
+Check a switch the way the eye does:
+
+1. Draw the same camera either side of the switch, one picture of each level, and compare the parts' places and sizes as well as the outline and the sky share. A matched outline with rearranged parts still pops.
+2. Cross the switch in motion at the speed a player moves. A band narrow enough to read as a cut in a still reads as a jump in motion, and a very wide band reads as a flutter at its edges.
+3. Look across the band at a shallow angle, where one large plate covers much of the view, and at the level's own coverage: a pair that matches at a low angle can still step here.
+
+A wider fade does not fix a level that fails these. It spreads the fault across the band.
+
 ## Small objects
 
 An object far away can cover less than a pixel. Its levels then save vertex work, but the object still draws a fragment or two that no one sees. The engine hides it: the mesh's last level holds no geometry. Only a mesh with levels has that last level, so a mesh without levels draws at every distance.

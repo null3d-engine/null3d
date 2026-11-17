@@ -262,6 +262,8 @@ const HELD: readonly Held[] = [
 		id: 'common-ash',
 		spec: commonAsh,
 		record: commonAshRecord,
+		// The twig count falls with the twig's corrected scale: still 22 measures a twig at 35 cm, so
+		// the twig row holds about 2,400 axes where a branch-length twig held 4,000.
 		counts: {
 			trunk: 1,
 			limb: 4,
@@ -269,17 +271,20 @@ const HELD: readonly Held[] = [
 			branch: [32, 42],
 			side: [150, 190],
 			spur: [28, 40],
-			twig: [3400, 4100],
+			twig: [2200, 2600],
 		},
 		// Two crossed pairs stand a quarter turn apart.
 		round: { rule: 'limb', gap: 110, lean: 0.2 },
-		base: { limb: 0.52, top: 0.62, branch: 0.53, side: 0.5, spur: 0.35 },
+		// The twig takes a fifth of its branch's radius: stills 10 and 28 show stout but thin
+		// shoots, not the half a branch-length twig had.
+		base: { limb: 0.52, top: 0.62, branch: 0.53, side: 0.2, spur: 0.35 },
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
-		through: 0,
-		// A limb's first branch takes half its girth, which gives the fork picture its dominant
-		// division and costs one straight-run pair: four apart pairs, three descent pairs.
-		crossings: [4, 3],
+		through: 1,
+		// The shorter twigs pass the wood about them far more often than branch-length twigs did:
+		// one apart pair and 176 descent pairs. This is the corrected scale's own cost and is not
+		// hidden: it stands here with the reference's reason until a twig angle settles it.
+		crossings: [1, 176],
 		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.95, 1.05],

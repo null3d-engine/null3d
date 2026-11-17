@@ -916,6 +916,85 @@ Every merge into the shared line also compares all twenty species' digests befor
 [the vegetation process guide](vegetation-process.md#merges-into-the-shared-line) says. A switched
 species whose look moves stops the merge until the change is made opt-in or the reviewer judges it.
 
+## A species is judged close up
+
+A species' verdict comes from its full form, sparseness 0, no triangle maximum, the preset's high tier, and from
+close views of that form. The distant views show a crown's outline and the sky inside it. They do not show a plate
+where a leaf belongs, bark that tiles into blocks, or a spray that hangs off its wood. One evening's close views found
+a card baked as a broad pale plate, twigs that read as poles, and a needle pad standing a metre from its bough, while
+every distant view showed the same faults as small shapes.
+
+Every round draws these views: inside the crown, at the trunk, and at a leaf's own scale. Each stands at the distance
+the reference states where it states one, and each is compared beside the reference's own close crop. A row passes
+only when its close views are drawn and compared; a verdict without them is a verdict on the outline alone.
+
+The close views hold the page's default setting. A close view at another sparseness, maximum or tier measures that
+setting, and it is labelled with it.
+
+## The gate a species must pass
+
+The oak set the standard, and every species is held to it. A species is done when one head passes every check below,
+not when a reviewer believes it. A species that fails any check fails, however good its distant pictures look.
+
+1. The full form, sparseness 0, no triangle maximum, the high tier, drawn and compared at every view its reference
+   store carries, each beside the same-named reference crop. A round that leaves a view uncompared fails coverage.
+2. Three close views of that form: inside the crown, at the trunk, and at a leaf's own scale, each beside its
+   reference crop.
+3. The distance ladder: the same full form drawn at every rung the reference store supports, the far card where the
+   page draws it, the first card level, the near form's own switch distance, and inside the crown, each rung beside
+   the reference's own view at that scale and labelled with its distance. A species passes only when every rung
+   passes, and a rung left uncompared fails. This is the look at all distances, and it is a hard requirement.
+4. The zoom: one continuous approach through the first card level, at the speed a page moves, with the grain and the
+   open sky inside their bars at every step. A crossing that jumps fails even where both of its ends pass.
+5. The body: every drawn cluster's base within a cell of wood the level draws, and no row off a drawn carrier, at
+   every sparseness and every maximum. Rows whose carrier order the level drops are reported apart from these.
+6. The caps: at 400, 1,000 and 10,000 triangles the crown draws at every sparseness, the leaves hold the first share
+   of the allowance, and every level stays inside its maximum.
+7. The switch: the grain and the open sky either side of the first card level, inside the record's bars, at the
+   from-below camera.
+8. The bake: each card's mask follows the shape the card stands for, a leaf for a broadleaf, a needle tuft for a
+   needle species, and the needle species' card atlases differ from the broadleaves'.
+9. The colour: the crown's tone against its reference crop, found by isolating one cause at a time, never fitted to
+   one picture's light.
+
+Every check names a test in the repository or a coverage rule in the review tool. A check with neither is not a gate.
+A species is not counted landed, and a shared change is not merged, while one of its checks is red.
+
+## Card baselines retire with the bake's fixes
+
+A fix to the fitted picture or to the card's mask changes every card species' coverage, so every shell,
+density or card-level figure measured before it is retired. A shell or density comparison pairs the same
+level on both sides and names both heads; a ratio against an old card level is not evidence. The directed
+bamboo's own card level moved from 48,523 triangles to 25,991 under one rule: that pair is the example, and
+the 48,523 is retired, not adjusted.
+
+## The sweep draws every species at every distance
+
+A reviewer who opens a page and looks around finds faults the stills never draw. So the faults are found by a sweep,
+not by a person: every species is rendered at its distance ladder and around it, the far card, the first card level,
+the near form's switch distance, inside the crown, and at the trunk and a leaf's scale, at four turns and two heights
+each, and every picture is compared beside the reference's own view at that scale. The sweep writes one table: a row a
+species and a view, the row's figures, and a pass, a fail or an open fault with its reason. A species without a row per
+view is not judged, and a view the sweep cannot compare fails.
+
+The sweep runs on every build of the branch that draws plants, and its table is the reviewer's evidence. A round of
+hand-picked stills no longer counts as a species review. The sweep is the first place a fault like a pod standing off
+its bough, a plate where a needle belongs or a twig drawn at branch scale must appear, and its cost is what catches
+them before a person does.
+
+## The orbit is watched, not sampled
+
+A still shows what a camera was pointed at. A tree is judged by turning round it. Every species is therefore orbited at
+each rung of its distance ladder, a full turn at an even step, and it is orbited again at close range, because a fault
+that faces one way is invisible from the other. The reviewer records every fault with the frame number and the angle it
+stands at, and the orbit's frames are the evidence behind the verdict. A verdict signed from stills alone is not a
+verdict.
+
+The orbit also feeds a check that does not tire: per frame, the body rail's free-cluster count and the crown's covered
+share are read, and a frame whose figures jump beyond the round's band from its neighbours' fails, naming the frame and
+the step. A cluster that leaves its wood on one side, a card that faces away, or a crown that closes on one side and
+opens on the other then appears as a number before it appears to a person.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
