@@ -322,6 +322,73 @@ const OUTLINE_VIEWS = 4;
 /** Cells over a plant's height in the outline measure. */
 const OUTLINE_CELLS = 32;
 
+/** The frame the outline shares and a crown's card coverage read: four side views of a plant. */
+function outlineFrame(mesh: MeshInput): SilhouetteFrame {
+	const { skeleton } = mesh;
+	const height = Math.max(skeleton.height, 0.001);
+	const { min, max } = skeleton.bounds;
+	const reach =
+		Math.max(
+			Math.abs(min[0] as number),
+			Math.abs(max[0] as number),
+			Math.abs(min[2] as number),
+			Math.abs(max[2] as number),
+			height * 0.1,
+		) * 1.25;
+	const cell = height / OUTLINE_CELLS;
+	return {
+		left: -reach,
+		cell,
+		cols: Math.ceil((2 * reach) / cell),
+		rows: Math.ceil((height * 1.1) / cell),
+	};
+}
+
+/**
+ * The cells the shoot rows cover over the four side views: the leaf form's own covered area, which
+ * a capped crown's cards reach.
+ */
+function shootCells(mesh: MeshInput): number {
+	const frame = outlineFrame(mesh);
+	const lengths = mesh.kit.prototypes.map((prototype) => prototype.length);
+	let covered = 0;
+	for (let view = 0; view < OUTLINE_VIEWS; view++) {
+		const mask = shootSilhouette(mesh.rows, lengths, (view * Math.PI) / 2, frame);
+		for (let k = 0; k < mask.length; k++) covered += mask[k] as number;
+	}
+	return covered;
+}
+
+/** The cells a crown's cards cover over the four side views, each card a disc of its reach. */
+function cardCells(cards: readonly CardCluster[], frame: SilhouetteFrame): number {
+	let covered = 0;
+	const mask = new Uint8Array(frame.cols * frame.rows);
+	for (let view = 0; view < OUTLINE_VIEWS; view++) {
+		const turn = (view * Math.PI) / 2;
+		const across0 = Math.cos(turn);
+		const across2 = Math.sin(turn);
+		mask.fill(0);
+		for (const card of cards) {
+			const across = (card.centre[0] as number) * across0 + (card.centre[2] as number) * across2;
+			const y = card.centre[1] as number;
+			const reach = card.reach;
+			if (!(reach > 0)) continue;
+			const col0 = Math.max(0, Math.floor((across - reach - frame.left) / frame.cell));
+			const col1 = Math.min(frame.cols - 1, Math.ceil((across + reach - frame.left) / frame.cell));
+			const row0 = Math.max(0, Math.floor((y - reach) / frame.cell));
+			const row1 = Math.min(frame.rows - 1, Math.ceil((y + reach) / frame.cell));
+			for (let row = row0; row <= row1; row++)
+				for (let col = col0; col <= col1; col++) {
+					const x = frame.left + (col + 0.5) * frame.cell;
+					const cy = (row + 0.5) * frame.cell;
+					if ((x - across) ** 2 + (cy - y) ** 2 <= reach * reach) mask[row * frame.cols + col] = 1;
+				}
+		}
+		for (let k = 0; k < mask.length; k++) covered += mask[k] as number;
+	}
+	return covered;
+}
+
 /** Each part's share of the visible outline, kept for its dressed variant. */
 const SHARES = new WeakMap<MeshInput, PartTriangles>();
 
@@ -341,23 +408,7 @@ export function visibleShares(input: BudgetInput, reference: PartTriangles): Par
 	if (known) return known;
 	const { mesh, parts } = input;
 	const { skeleton, rows } = mesh;
-	const height = Math.max(skeleton.height, 0.001);
-	const { min, max } = skeleton.bounds;
-	const reach =
-		Math.max(
-			Math.abs(min[0] as number),
-			Math.abs(max[0] as number),
-			Math.abs(min[2] as number),
-			Math.abs(max[2] as number),
-			height * 0.1,
-		) * 1.25;
-	const cell = height / OUTLINE_CELLS;
-	const frame: SilhouetteFrame = {
-		left: -reach,
-		cell,
-		cols: Math.ceil((2 * reach) / cell),
-		rows: Math.ceil((height * 1.1) / cell),
-	};
+	const frame = outlineFrame(mesh);
 	const lengths = mesh.kit.prototypes.map((prototype) => prototype.length);
 	const cells = { trunk: 0, limbs: 0, branches: 0, shoots: 0 };
 	for (let view = 0; view < OUTLINE_VIEWS; view++) {
@@ -909,28 +960,46 @@ export function rowLevel(
 				}
 				count = Math.max(0, count - Math.max(1, Math.ceil((cost - budget) / each)));
 			}
-			// The crown-card coverage rule: where the clump cards leave allowance, a card stands at
-			// each row place, in the crown's draw order, until every row has one or the allowance is
-			// spent; what is left after every place stays unspent, as a maximum is a ceiling.
+			// The crown-card coverage rule: where the clump cards leave allowance, cards stand at the
+			// row places, fewer and larger the more rows each stands for, until their covered area
+			// reaches the leaf form's own, or the allowance is spent; what is left after that stays
+			// unspent, as a maximum is a ceiling.
 			const left = budget - leaves;
 			if (cards && left > 2 * planes) {
+				const frame = outlineFrame(mesh);
+				const reference = shootCells(mesh);
 				const place = (count: number) => {
 					const made = cardClusters(mesh, walk, count, drawn, planes, surface);
-					return { made, cost: clusterTriangles(made, planes) };
+					return { made, cost: clusterTriangles(made, planes), cells: cardCells(made, frame) };
 				};
-				let high = Math.min(rows.count, Math.floor(left / (2 * planes)));
+				const most = Math.min(rows.count, Math.floor(left / (2 * planes)));
 				let places: CardCluster[] = [];
-				const most = place(high);
-				if (most.cost <= left) places = most.made;
-				else {
-					let low = 0;
-					while (high - low > 1) {
-						const middle = (low + high) >> 1;
-						const tried = place(middle);
-						if (tried.cost <= left) {
-							low = middle;
-							places = tried.made;
-						} else high = middle;
+				if (reference <= 0) {
+					const tried = place(most);
+					if (tried.cost <= left) places = tried.made;
+				} else {
+					// The ladder climbs from one card and stops at the first count whose cards cover the
+					// leaf form, or where the allowance can buy no more.
+					let cells = 0;
+					let reached = false;
+					for (
+						let count = 1;
+						count <= most;
+						count = count < 8 ? count + 1 : Math.ceil(count * 1.25)
+					) {
+						const tried = place(count);
+						if (tried.cost > left) break;
+						places = tried.made;
+						cells = tried.cells;
+						if (cells >= reference) {
+							reached = true;
+							break;
+						}
+					}
+					// A crown whose cards never reach the leaf form keeps the most the allowance buys.
+					if (!reached && cells < reference) {
+						const tried = place(most);
+						if (tried.cost <= left) places = tried.made;
 					}
 				}
 				if (places.length > 0) {
