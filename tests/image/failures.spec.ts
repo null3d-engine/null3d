@@ -14,6 +14,9 @@ interface FailureResult {
 	codes: string[];
 	messages: string[];
 	ticks: number;
+	/** How often `onStop`'s handler ran before the page destroyed the engine, and whether a late one ran. */
+	stops?: number;
+	lateStop?: boolean;
 	error?: string;
 }
 
@@ -45,6 +48,9 @@ for (const mode of ENGINE_MODES) {
 		expect(result.codes[0]).toBe('E1404');
 		expect(result.messages[0]).toContain('the frame step failed on purpose');
 		expect(result.ticks).toBeGreaterThan(0);
+		// E1404 ends the frames, so onStop's handler heard it once, and not again at destroy().
+		expect(result.stops).toBe(1);
+		expect(result.lateStop).toBe(true);
 	});
 }
 

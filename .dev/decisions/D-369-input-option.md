@@ -94,6 +94,7 @@ Options rejected:
 ## Consequences
 
 - `packages/engine/src/page/engine.ts` makes the input capture only when the engine takes input, guards the lock's release, refuses the lock with E1426 and writes the development slot.
+- `engine.onStop(handler)` hears the engine stop drawing, as `destroy()` begins or at E1302, E1404 or E1424. `startDemo` stops the demo's page part by it.
 - `packages/engine/src/sketch/input-off.ts` holds the warnings. The runner, the input reader and the pointer events call it behind `DEV`, and `shared/version.ts` tells the runner of each add-on that checks its version.
 - The input test, `tests/image/input.spec.ts`, holds the listeners and the warnings in every thread mode. The lock test, `tests/image/pointer-lock.spec.ts`, holds the refusal and the release in a full Chromium build.
 - A unit test, `sketch/input-off.test.ts`, runs the warnings in a development build and a release build. The release check `debug/release-runner.test.ts` finds none of their text in a release build of the runner.

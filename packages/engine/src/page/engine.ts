@@ -701,6 +701,13 @@ export interface Engine {
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
 	/**
+	 * Calls `handler` once, when the engine stops drawing for good: as `destroy()` begins, or at a
+	 * failure after which it draws no new frames (E1302, E1404 or E1424). A handler added after that
+	 * runs at once. Use it to end the page's own work for the engine, such as a frame loop that sends
+	 * the sketch messages. Returns a function that removes the handler.
+	 */
+	onStop(handler: () => void): () => void;
+	/**
 	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
 	 * while the engine runs. The engine keeps drawing, so this error alone does not stop it: a frame
 	 * whose update failed is counted in `measure().updateErrors` and left out of
@@ -821,6 +828,12 @@ const BENCH_GLOBAL = '__null3dEngine';
 const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 /** How often the page reads the frame records while it measures. */
 const DRAIN_INTERVAL_MS = 250;
+/**
+ * The failures after which the engine draws no new frames, as `onFailure`'s docs say: a GPU that
+ * did not come back, a failed engine thread, and builds that a pipeline needed and did not get.
+ * `onStop`'s handlers hear each of them.
+ */
+const FAILURES_THAT_END_DRAWING: ReadonlySet<string> = new Set(['E1302', 'E1404', 'E1424']);
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
 /**
@@ -1855,6 +1868,15 @@ async function startEngine(
 		for (const handler of messageHandlers) handler(name, data);
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
+	const stopHandlers = new Set<() => void>();
+	/** True once the engine draws no new frames, which each stop handler hears once. */
+	let drawingEnded = false;
+	const endDrawing = () => {
+		if (drawingEnded) return;
+		drawingEnded = true;
+		for (const handler of stopHandlers) handler();
+		stopHandlers.clear();
+	};
 	const sketchErrorHandlers = new Set<(error: Error) => void>();
 	/**
 	 * The failures that the engine reported while no handler listened, for the first handler that
@@ -1884,6 +1906,7 @@ async function startEngine(
 			start.abort(error);
 			return;
 		}
+		if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing();
 		if (failureHandlers.size === 0) {
 			earlyFailures.push(error);
 			console.error(error);
@@ -2169,6 +2192,7 @@ async function startEngine(
 	 * the core and the GPU device, unless it failed. A second call returns the first call's promise.
 	 */
 	const stop = () => {
+		endDrawing();
 		stopping ??= (async () => {
 			holder.beginStop();
 			Atomics.store(slots, Slot.Running, 0);
@@ -2844,6 +2868,14 @@ async function startEngine(
 				failureHandlers.add(handler);
 				for (const error of earlyFailures.splice(0)) handler(error);
 				return () => failureHandlers.delete(handler);
+			},
+			onStop(handler) {
+				if (drawingEnded) {
+					handler();
+					return () => {};
+				}
+				stopHandlers.add(handler);
+				return () => stopHandlers.delete(handler);
 			},
 			onSketchError(handler) {
 				sketchErrorHandlers.add(handler);

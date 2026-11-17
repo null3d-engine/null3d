@@ -1,6 +1,7 @@
 // Failures after the start, and engines that follow one another on one canvas. ?case= picks one:
 // - fault: the engine's frame step throws once, and the page must hear E1404 while it stays
-//   responsive.
+//   responsive. E1404 ends the engine's frames, so its `onStop` handler runs once, and one added
+//   after the destroy runs at once.
 // - material-fault: the sketch creates a custom material after the start, and the test blocks the
 //   download of its builds, so the page must hear E1424 while it stays responsive.
 // - job-fault: the test makes a job worker fail inside the job system (it rewrites the job
@@ -62,6 +63,9 @@ async function firstFailure(
 		failures.push(error);
 		seen = true;
 	});
+	// How often the engine said that it stopped drawing: once, at a failure that ends its frames.
+	let stops = 0;
+	engine.onStop(() => stops++);
 	let ticks = 0;
 	const timer = setInterval(() => ticks++, TICK_MS);
 	const messages: string[] = [];
@@ -80,11 +84,18 @@ async function firstFailure(
 	await new Promise((resolve) => setTimeout(resolve, 500));
 	clearInterval(timer);
 	await engine.destroy();
+	// A handler added after the stop runs at once.
+	let lateStop = false;
+	engine.onStop(() => {
+		lateStop = true;
+	});
 	for (const error of failures) messages.push(error.message.split(' See ')[0] ?? error.message);
 	return {
 		codes: failures.map((error) => error.code),
 		messages,
 		ticks,
+		stops,
+		lateStop,
 	};
 }
 
