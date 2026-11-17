@@ -47,7 +47,7 @@ import {
 	type SurfaceHit,
 	type SurfacePlace,
 } from './junction';
-import { ribPlan, ribSection } from './ribs';
+import { ribPlan, ribSection, ribSource } from './ribs';
 import {
 	AxisRings,
 	bendRings,
@@ -1037,18 +1037,12 @@ class Mesher {
 			const b = 1 / this.bark.scale(path.radius[i] as number);
 			barkV[i] = (barkV[i - 1] as number) + (step * (a + b)) / 2;
 		}
+		const ribNumbers = ribSource(this.record.growth);
 		const ribs =
-			this.record.growth.model === 'column' &&
+			ribNumbers !== undefined &&
 			wood.axis >= 0 &&
 			(wood.stem >= 0 || (this.kinds[wood.axis] as number) === AXIS_ARM)
-				? ribPlan(
-						this.record.growth,
-						this.seed,
-						this.record.seedSalt,
-						variant,
-						wood.axis,
-						wood.stem < 0,
-					)
+				? ribPlan(ribNumbers, this.seed, this.record.seedSalt, variant, wood.axis, wood.stem < 0)
 				: undefined;
 		const section = ribs
 			? ribSection(ribs)

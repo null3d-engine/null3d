@@ -4,7 +4,8 @@
 // radius where it is, so a thin arm and a stout trunk carry pleats of the same proportion.
 import { unitAt } from '../core/hash';
 import { cos } from '../core/math';
-import type { Column } from '../core/record';
+import type { Column, Growth } from '../core/record';
+import type { Spread } from '../core/types';
 import { spreadAt } from '../core/types';
 import type { StemSection } from './flare';
 
@@ -27,11 +28,39 @@ export interface RibPlan {
 	readonly phase: number;
 }
 
+/** The numbers a ribbed section reads: a column's growth or a planned plant's column block. */
+export interface RibSource {
+	/** Ribs round the stem. */
+	readonly ribs: Spread;
+	/** Ribs round each arm. */
+	readonly armRibs: Spread;
+	/** How deep a groove cuts, as a share of the radius. */
+	readonly ribDepth: number;
+}
+
+/** A column's growth as the rib numbers a section reads. */
+export function columnRibs(growth: Column): RibSource {
+	return { ribs: growth.ribs, armRibs: growth.arms.ribs, ribDepth: growth.ribDepth };
+}
+
+/**
+ * The rib numbers a plant's growth states: the column model's growth, or a planned plant whose
+ * record names a column block. A plant without ribs returns undefined.
+ *
+ * @param growth The record's growth.
+ * @returns The source, or undefined for a plant without ribs.
+ */
+export function ribSource(growth: Growth): RibSource | undefined {
+	if (growth.model === 'column') return columnRibs(growth);
+	if (growth.model === 'planned' && growth.column) return growth.column;
+	return undefined;
+}
+
 /**
  * The ribs of one axis of a column: the record's count for the stem or for an arm, and a turn of
  * the axis's own.
  *
- * @param growth The record's column growth.
+ * @param source The plant's rib numbers.
  * @param seed The scene's seed.
  * @param salt The species' salt.
  * @param variant The variant.
@@ -40,7 +69,7 @@ export interface RibPlan {
  * @returns The plan.
  */
 export function ribPlan(
-	growth: Column,
+	source: RibSource,
 	seed: number,
 	salt: number,
 	variant: number,
@@ -52,12 +81,12 @@ export function ribPlan(
 		3,
 		Math.round(
 			arm
-				? spreadAt(growth.arms.ribs, unitAt(seed, salt, variant, Purpose.Count, axis + 1))
-				: spreadAt(growth.ribs, unitAt(seed, salt, variant, Purpose.Count, 0)),
+				? spreadAt(source.armRibs, unitAt(seed, salt, variant, Purpose.Count, axis + 1))
+				: spreadAt(source.ribs, unitAt(seed, salt, variant, Purpose.Count, 0)),
 		),
 	);
 	const phase = unitAt(seed, salt, variant, Purpose.Phase, axis) * 2 * Math.PI;
-	return { count, depth: growth.ribDepth, phase };
+	return { count, depth: source.ribDepth, phase };
 }
 
 /**

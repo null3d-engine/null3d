@@ -34,7 +34,7 @@ import {
 	type PathFrame,
 	roundKinks,
 } from '../wood/frames';
-import { crestAngle, type RibPlan, ribPlan, ribSection } from '../wood/ribs';
+import { columnRibs, crestAngle, type RibPlan, ribPlan, ribSection } from '../wood/ribs';
 import type { Grower } from './models';
 
 /** Purposes of the grower's hash keys, so no two draws share one. */
@@ -476,7 +476,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		domeAt: arcAt(stemPath.path, (trunk[shaftNodes - 1] as Laid).at),
 		domeHeight: stemDome,
 		domeRadius: topRadius,
-		ribs: ribPlan(growth, input.seed, salt, input.variant, stemAxis, false),
+		ribs: ribPlan(columnRibs(growth), input.seed, salt, input.variant, stemAxis, false),
 	};
 	placeFlowerRing(builder, stem, frame);
 	// Arms leave the stem, each on an axis of its own that hangs from the node nearest its height
@@ -568,7 +568,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			domeAt: arcAt(armPath.path, (arm[shaftCount - 1] as Laid).at),
 			domeHeight,
 			domeRadius: tipRadius,
-			ribs: ribPlan(growth, input.seed, salt, input.variant, armAxis, true),
+			ribs: ribPlan(columnRibs(growth), input.seed, salt, input.variant, armAxis, true),
 		};
 		placeFlowerRing(builder, run, frame);
 		// The arm's first stretch stands inside the weld to the stem, so its areoles start past it.
