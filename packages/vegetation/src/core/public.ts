@@ -36,6 +36,7 @@ export {
 	BUD_TERMINAL,
 	type BudSites,
 	type ClumpData,
+	type FillFigures,
 	type MacroSkeleton,
 	NODE_FORK,
 	NODE_GROUND,
