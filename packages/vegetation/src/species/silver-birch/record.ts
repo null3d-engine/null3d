@@ -462,6 +462,7 @@ export const record: Species = {
 		// keeps the second level 0.0294 outside the leaf form's outline against the 0.03 allowed;
 		// 1.15 there stands 0.0312 outside.
 		cardGrow: 1.12,
+		cardStalkWidth: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
