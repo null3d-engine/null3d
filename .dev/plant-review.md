@@ -960,6 +960,20 @@ not when a reviewer believes it. A species that fails any check fails, however g
 Every check names a test in the repository or a coverage rule in the review tool. A check with neither is not a gate.
 A species is not counted landed, and a shared change is not merged, while one of its checks is red.
 
+## The sweep draws every species at every distance
+
+A reviewer who opens a page and looks around finds faults the stills never draw. So the faults are found by a sweep,
+not by a person: every species is rendered at its distance ladder and around it — the far card, the first card level,
+the near form's switch distance, inside the crown, and at the trunk and a leaf's scale — at four turns and two heights
+each, and every picture is compared beside the reference's own view at that scale. The sweep writes one table: a row a
+species and a view, the row's figures, and a pass, a fail or an open fault with its reason. A species without a row per
+view is not judged, and a view the sweep cannot compare fails.
+
+The sweep runs on every build of the branch that draws plants, and its table is the reviewer's evidence. A round of
+hand-picked stills no longer counts as a species review. The sweep is the first place a fault like a pod standing off
+its bough, a plate where a needle belongs or a twig drawn at branch scale must appear, and its cost is what catches
+them before a person does.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
