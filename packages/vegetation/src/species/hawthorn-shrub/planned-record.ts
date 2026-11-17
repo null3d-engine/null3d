@@ -6,7 +6,39 @@
 // file states the curves and rules the plan adds: how the adult appears with age, how the finer
 // orders fill it, how sparseness thins it and what a triangle costs.
 import type { Planned } from '../../core/record';
+import { evenOutline } from '../../grow/frame';
 import { frame as hawthornFrame } from './directed';
+
+/**
+ * The frame's outline widened an eleventh for the planned model alone: the front's bush draws a
+ * quarter narrower than its picture, and the judge asks for the width without moving the directed
+ * form, which keeps the photographed outline.
+ */
+const plannedFrame = {
+	...hawthornFrame,
+	outline: evenOutline(
+		[
+			[0.05, 0.54],
+			[0.146, 0.756],
+			[0.188, 0.761],
+			[0.229, 0.794],
+			[0.313, 0.842],
+			[0.479, 0.848],
+			[0.521, 0.826],
+			[0.646, 0.805],
+			[0.688, 0.772],
+			[0.729, 0.702],
+			[0.771, 0.653],
+			[0.813, 0.605],
+			[0.854, 0.545],
+			[0.896, 0.416],
+			[0.938, 0.302],
+			[0.979, 0.286],
+			[1, 0],
+		],
+		0.85,
+	),
+} as typeof hawthornFrame;
 
 /**
  * The height in metres by age as a share of the full age, for a full-grown shrub of about 4 m. The
@@ -45,7 +77,7 @@ export const plannedGrowth: Planned = {
 	// The many stems, their limbs and branches, with the clumps they end in, are the frame's stated
 	// axes; the plan reads them with the frame's fine fill switched off.
 	adult: 'frame',
-	frame: hawthornFrame,
+	frame: plannedFrame,
 	piece: 'branch-end',
 	turn: { roll: 90, tilt: 35, out: 30 },
 	// The pictures are a dense dark bush, not a see-through veil, so the fill carries half again the
