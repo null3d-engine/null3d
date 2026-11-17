@@ -1070,8 +1070,9 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 			measures,
 			skyGap,
 			// The orbit's share reads the matte, which separates a filled frame that the photograph's
-			// colour rule cannot: the same figure on the crown and at a close piece.
-			covered: seriesCovered(runDir, frame).value,
+			// colour rule cannot: the same figure on the crown and at a close piece. A close piece
+			// whose silhouette the frame cuts reports its fill of the whole frame instead.
+			covered: seriesCovered(runDir, frame).value ?? frameCovered(runDir, frame),
 		};
 	} catch (error) {
 		return {
@@ -1111,6 +1112,20 @@ export function seriesCovered(
 		value: plant / ((box.right - box.left + 1) * (box.bottom - box.top + 1)),
 		note: '',
 	};
+}
+
+/**
+ * The share of the whole frame that the plant fills, read from its matte. A close view whose
+ * silhouette the frame cuts has no box of its own, but its cover is still a figure the judge can
+ * see; the orbit reports it and leaves the judgement to the rung's own bars.
+ */
+export function frameCovered(runDir: string, frame: RunFrame): number | null {
+	if (frame.matte === undefined) return null;
+	const image = readImage(join(runDir, frame.matte));
+	const own = matteOwnMask(image);
+	let plant = 0;
+	for (const value of own.mask) if (value === 1) plant++;
+	return plant / (own.width * own.height);
 }
 
 /** One species' round: its rows, its series, its coverage and its sheets, written into the run. */
