@@ -1220,7 +1220,7 @@ fn surface(input: SurfaceInput) -> Surface {
             let card_gate = header(HEADER_CARD_SHADE);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
 
-            alpha = card_alpha(texel.a * mix(1.0, card_gate.y, gated), gx, gy);
+            alpha = card_alpha(texel.a * mix(1.0, card_gate.x, gated), gx, gy);
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }

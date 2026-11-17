@@ -1405,13 +1405,16 @@ fn surface(input: SurfaceInput) -> Surface {
             // draws the card as before, and the stalk strips stand outside the gate.
             let card_gate = header(HEADER_CARD_SHADE);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
-            let card_fill = mix(1.0, card_gate.y, gated);
+            let card_fill = mix(1.0, card_gate.x, gated);
             alpha = card_alpha(texel.a * card_fill, hx, hy);
             cut_alpha = card_cut_alpha(texel.a * card_fill, surface_texel.z, card_level(hx, hy));
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
             // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
             // record names none, the card draws whole.
-            let card_cover = header(HEADER_CARD_COVERAGE).x;
+            // At the first card level the record's cover value replaces the static share, so the
+            // hash removes whole texels: a factor on the cut moves nothing where a card's alpha is
+            // nearly binary, but removing texels opens the crown whatever the alpha is.
+            let card_cover = mix(header(HEADER_CARD_COVERAGE).x, saturate(card_gate.x), gated);
             if (card_cover < 0.999) {
                 if (value3(input.relativePosition * 5.0) > card_cover) {
                     alpha = 0.0;
