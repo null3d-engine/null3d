@@ -1338,13 +1338,15 @@ export function fittingPatch(
 	frame: RunFrame,
 	sizes: readonly number[] = PATCH_SIZES,
 ): { readonly value: number | null; readonly metres: number | null; readonly note: string } {
-	let note = 'no patch fits the frame';
+	let note: string | null = null;
 	for (const metres of sizes) {
 		const read = patchCover(runDir, frame, metres);
 		if (read.value !== null) return { ...read, metres };
-		note = read.note;
+		// The first refusal is the largest patch's, and its span is the figure a reader needs;
+		// each smaller patch's span only repeats the same conclusion.
+		note ??= read.note;
 	}
-	return { value: null, metres: null, note };
+	return { value: null, metres: null, note: note ?? 'no patch fits the frame' };
 }
 
 export function patchCover(
