@@ -10,6 +10,7 @@ import type { SweepMeasures } from './compare.ts';
 import type { ReferenceSet, Slot } from './references.ts';
 import type { RunFrame } from './render.ts';
 import {
+	forcedLevel,
 	patchCorners,
 	planFromManifest,
 	SERIES_COLUMNS,
@@ -32,6 +33,7 @@ import {
 	sweepMarkdown,
 	sweepOrbitJumps,
 	sweepPictures,
+	sweepProbe,
 	sweepReference,
 	sweepRow,
 	sweepSeriesDistances,
@@ -39,6 +41,7 @@ import {
 	sweepSeriesShots,
 	sweepShots,
 	sweepStarts,
+	switchSweepShots,
 } from './sweep.ts';
 
 /** A reference still of a view, with the number its file name carries. */
@@ -277,6 +280,15 @@ describe('the sweep’s rungs and orbit', () => {
 		expect(sweepDistanceOf(SWEEP_RUNGS[3] as (typeof SWEEP_RUNGS)[number], starts)).toBeNull();
 	});
 
+	test('draws the probe on the page’s own ladder, never on a forced level', () => {
+		// A forced level at a whole view posts the ladder's distances from a level the page would not
+		// draw there, so the probe drops the forced level and the rungs keep the real switches.
+		const probe = sweepProbe({ species: 'species', lod: 2 });
+		expect(probe.query.lod).toBeUndefined();
+		expect(probe.query.view).toBe('whole');
+		expect(probe.query.measure).toBe(true);
+	});
+
 	test('draws every rung beside its reference view, and forces no level', () => {
 		const folder = set([
 			slot(1, 'whole'),
@@ -317,6 +329,56 @@ describe('the sweep’s rungs and orbit', () => {
 		expect(replay.map((entry) => entry.slot?.file ?? null)).toEqual(
 			plan.map((entry) => entry.slot?.file ?? null),
 		);
+	});
+
+	test('draws the switch flag as the full sweep’s own switch row, picture for picture', () => {
+		const folder = set([
+			slot(1, 'whole'),
+			slot(6, 'inside'),
+			slot(17, 'trunk'),
+			slot(18, 'leaf-upper'),
+		]);
+		const base: PlantReviewQuery = { species: 'species' };
+		const starts = [3.7, 156.6, 900] as const;
+		const full = sweepShots(folder, base, starts);
+		const narrow = switchSweepShots(folder, base, starts);
+		const fullRow = full.shots.filter((shot) => shot.group === 'sweep-switch');
+		expect(fullRow).toHaveLength(SWEEP_PICTURES);
+		// The queries are the comparison: the same view, turn, elevation and distance, not only the
+		// plan entry's distance, which the rung's own factor moves.
+		expect(narrow.shots.map((shot) => shot.query)).toEqual(fullRow.map((shot) => shot.query));
+		expect(narrow.shots.map((shot) => shot.cells[0]?.file)).toEqual(
+			fullRow.map((shot) => shot.cells[0]?.file),
+		);
+		expect(narrow.plan).toEqual(full.plan.filter((entry) => entry.rung.id === 'switch'));
+		for (const shot of narrow.shots) expect(shot.query.distance).toBeCloseTo(3.7 * 0.3, 5);
+	});
+
+	test('refuses a forced level outside the ladder by name, never clamping it', () => {
+		expect(forcedLevel('2')).toBe(2);
+		expect(forcedLevel('auto')).toBeUndefined();
+		expect(forcedLevel(undefined)).toBeUndefined();
+		for (const text of ['4', '-1', '1.5', 'far']) {
+			expect(() => forcedLevel(text)).toThrow(`lod=${text} is not a level: use auto, 0, 1, 2 or 3`);
+		}
+		// The switch row may force a level; the full sweep still refuses one.
+		const folder = set([slot(6, 'inside')]);
+		const forced = switchSweepShots(folder, { species: 'species', lod: 1 }, [3.7, 156.6, 900]);
+		for (const shot of forced.shots) expect(shot.query.lod).toBe(1);
+		expect(() => sweepShots(folder, { species: 'species', lod: 1 }, [3.7, 156.6, 900])).toThrow(
+			'cannot force one',
+		);
+	});
+
+	test('replays a switch run from its manifest with one row and no series', () => {
+		const folder = set([slot(6, 'inside')]);
+		const starts = [3.7, 156.6, 900] as const;
+		const built = switchSweepShots(folder, { species: 'species' }, starts);
+		const manifest = sweepManifest(built.plan, starts, []);
+		expect(manifest.rungs).toHaveLength(1);
+		expect(manifest.rungs[0]?.id).toBe('switch');
+		expect(manifest.series).toEqual([]);
+		expect(planFromManifest(folder, manifest)).toEqual(built.plan);
 	});
 });
 

@@ -9,7 +9,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writePng } from '../../../packages/cli/src/png.js';
-import type { PlantReviewQuery } from '../../../tests/pages/lib/plant-review/query.ts';
+import type { ForcedLevel, PlantReviewQuery } from '../../../tests/pages/lib/plant-review/query.ts';
 import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
 import {
 	contactSheets,
@@ -182,6 +182,28 @@ export const SWEEP_RUNGS: readonly SweepRung[] = [
 ];
 
 /**
+ * The rung the switch flag draws: the near form at its own switch, the same plan entry, reference
+ * views, near-form distance and level comparison the full sweep uses, so the flag's row and the
+ * sweep's switch row hold the same figures.
+ */
+export const SWEEP_SWITCH_RUNG: SweepRung = SWEEP_RUNGS.find(
+	(rung) => rung.id === 'switch',
+) as SweepRung;
+
+/**
+ * The level a run forces from its `--lod` text: a level from 0 to 3, or `auto` and none for the
+ * page's own levels. A value outside the ladder is refused by name, never clamped to the nearest
+ * level, so a picture is never labelled as a level the run did not ask for.
+ */
+export function forcedLevel(text: string | undefined): ForcedLevel | undefined {
+	if (text === undefined || text === 'auto') return undefined;
+	const level = Number(text);
+	if (!Number.isInteger(level) || level < 0 || level > 3)
+		throw new Error(`lod=${text} is not a level: use auto, 0, 1, 2 or 3`);
+	return level as ForcedLevel;
+}
+
+/**
  * The pictures a draw failed: the shots whose cells the run recorded an error or a matte failure
  * for. A page that navigated under a cell or lost its worker is drawn once more, so a run fault does
  * not read as a species fault in the table.
@@ -275,10 +297,14 @@ export interface SweepManifest {
 
 /** The probe: one whole view whose frame names the plant's own level distances. */
 export function sweepProbe(base: PlantReviewQuery): Shot {
+	// The probe reads the page's own ladder, so a forced level never reaches it: a forced near form
+	// at a whole view posts the ladder's distances from a level the page would not draw there, and
+	// the rungs' cameras would stand at nonsense distances.
+	const { lod: _forced, ...query } = base;
 	return singleShot(
 		'sweep-probe',
 		'probe.png',
-		{ ...base, view: 'whole', measure: true },
+		{ ...query, view: 'whole', measure: true },
 		VIEW_SPECS.whole.size,
 		false,
 	);
@@ -339,36 +365,72 @@ export function sweepShots(
 	const plan: SweepRungPlan[] = [];
 	const shots: Shot[] = [];
 	for (const rung of SWEEP_RUNGS) {
-		const slot = sweepReference(set, rung);
-		const distance = sweepDistanceOf(rung, starts);
-		plan.push({ rung, slot, distance });
-		if (!slot) continue;
-		const view = slot.view;
-		const [width, height] = VIEW_SPECS[view].size;
-		const factor = rung.distanceFactor ?? rung.camera?.distanceFactor ?? 1;
-		const asked = distance === null ? null : distance * factor;
-		for (const camera of sweepCameras(rung, slot, step, orbit)) {
-			const name = `${rung.id}-t${camera.turn}-h${camera.height}`;
-			shots.push(
-				singleShot(
-					`sweep-${rung.id}`,
-					`${name}.png`,
-					{
-						...base,
-						view,
-						background: slot.background,
-						...slot.query,
-						turn: camera.turn,
-						elevation: camera.elevation,
-						...(rung.distance !== 'fit' && asked !== null && { distance: asked }),
-						measure: true,
-					},
-					[width, height],
-					true,
-					slot.file,
-				),
-			);
-		}
+		const built = sweepRungShots(rung, set, base, starts, step, orbit);
+		plan.push(built.plan);
+		shots.push(...built.shots);
+	}
+	return { plan, shots };
+}
+
+/**
+ * The switch rung's plan and pictures, drawn as a sweep of one row. It reuses the full sweep's own
+ * switch entry, so `--sweep-compare` and `--sweep-round` replay the row without a special case and
+ * its figures stand beside the full sweep's.
+ *
+ * The rung may force a level, which the full sweep refuses: at one switch distance a forced card
+ * level is a fair picture of that level's look, and the summary names a forced level the distance
+ * would not draw.
+ */
+export function switchSweepShots(
+	set: ReferenceSet,
+	base: PlantReviewQuery,
+	starts: readonly [number, number, number],
+	step = SWEEP_STEP,
+	orbit = true,
+): { readonly plan: SweepRungPlan[]; readonly shots: Shot[] } {
+	const built = sweepRungShots(SWEEP_SWITCH_RUNG, set, base, starts, step, orbit);
+	return { plan: [built.plan], shots: built.shots };
+}
+
+/** One rung's plan entry and its orbit's pictures. */
+function sweepRungShots(
+	rung: SweepRung,
+	set: ReferenceSet,
+	base: PlantReviewQuery,
+	starts: readonly [number, number, number],
+	step: number,
+	orbit: boolean,
+): { readonly plan: SweepRungPlan; readonly shots: Shot[] } {
+	const slot = sweepReference(set, rung);
+	const distance = sweepDistanceOf(rung, starts);
+	const plan: SweepRungPlan = { rung, slot, distance };
+	const shots: Shot[] = [];
+	if (!slot) return { plan, shots };
+	const view = slot.view;
+	const [width, height] = VIEW_SPECS[view].size;
+	const factor = rung.distanceFactor ?? rung.camera?.distanceFactor ?? 1;
+	const asked = distance === null ? null : distance * factor;
+	for (const camera of sweepCameras(rung, slot, step, orbit)) {
+		const name = `${rung.id}-t${camera.turn}-h${camera.height}`;
+		shots.push(
+			singleShot(
+				`sweep-${rung.id}`,
+				`${name}.png`,
+				{
+					...base,
+					view,
+					background: slot.background,
+					...slot.query,
+					turn: camera.turn,
+					elevation: camera.elevation,
+					...(rung.distance !== 'fit' && asked !== null && { distance: asked }),
+					measure: true,
+				},
+				[width, height],
+				true,
+				slot.file,
+			),
+		);
 	}
 	return { plan, shots };
 }
@@ -1537,7 +1599,12 @@ export function sweepRun(
 		rows,
 		stepped,
 		sweepPictures(step, orbit),
-		orbit ? SWEEP_SERIES_STEPS : 0,
+		// A run with no series draws none, so it has no series step to fall short of; the switch
+		// flag's one-row run reads its row and no series.
+		series.length === 0 ? 0 : orbit ? SWEEP_SERIES_STEPS : 0,
+		// The plan names the rungs this run drew, so a one-row run's coverage is its own row and not
+		// the five rungs it never asked for.
+		plan.map((entry) => entry.rung),
 	);
 	for (const sheet of sheets) {
 		const pages = contactSheets(

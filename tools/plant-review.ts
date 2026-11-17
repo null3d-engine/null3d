@@ -11,6 +11,8 @@
 //
 //   bun run plants:review <species> --sweep [--out <folder>] [--run <name>] [--draw-only]
 //     [--sweep-step <degrees>] [--rungs-only]
+//   bun run plants:review <species> --sweep-switch [--lod 0|1|2|3] [--out <folder>] [--run <name>]
+//     [--draw-only] [--sweep-step <degrees>] [--rungs-only]
 //   bun run plants:review --sweep-compare <run folder>
 //   bun run plants:review --redraw-series <run folder>
 //   bun run plants:review --sweep-all [--species a,b] [--out <folder>] [--run <name>]
@@ -106,6 +108,7 @@ import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts'
 import { referenceFolder as storeFolder } from './lib/plant-review/store.ts';
 import {
 	failedSweepShots,
+	forcedLevel,
 	planFromManifest,
 	type SweepCoverage,
 	type SweepManifest,
@@ -119,6 +122,7 @@ import {
 	sweepSeriesShots,
 	sweepShots,
 	sweepStarts,
+	switchSweepShots,
 } from './lib/plant-review/sweep.ts';
 import {
 	mergeVerdict,
@@ -1750,6 +1754,9 @@ async function main(): Promise<void> {
 	const run = option('run', `${species}-${stamp}`);
 	const dir = resolve(option('out', RENDERS), run);
 	mkdirSync(dir, { recursive: true });
+	// A forced level is one of the ladder's levels, or none for the page's own; a value outside it
+	// is refused by name here, before a picture is drawn with a label the page would never give it.
+	const lod = flag('lod') ? forcedLevel(option('lod')) : undefined;
 	const base: PlantReviewQuery = {
 		species,
 		seed: Number(option('seed', '11')),
@@ -1761,9 +1768,12 @@ async function main(): Promise<void> {
 		...(flag('max') && { maxTriangles: Number(option('max')) }),
 		// A view drawn at a named sparseness reads the sparse form as a page would draw it.
 		...(flag('sparse') && { sparse: Number(option('sparse')) }),
-		...(flag('lod') && { lod: Number(option('lod')) as PlantReviewQuery['lod'] }),
+		...(lod !== undefined && { lod }),
 	};
-	if (flag('sweep')) {
+	if (flag('sweep') || flag('sweep-switch')) {
+		// The switch flag draws the sweep's own switch rung alone: the same plan, cameras, distance and
+		// comparison, written as a sweep of one row so a replay and a round need no special case.
+		const switchOnly = flag('sweep-switch');
 		if (!set) throw new Error(`the sweep needs ${species}'s reference folder`);
 		const started = Date.now();
 		const gpu = flag('gpu') ? option('gpu') : undefined;
@@ -1782,8 +1792,10 @@ async function main(): Promise<void> {
 			if (!starts) throw new Error("the sweep's probe posted no level distances");
 			const step = Number(option('sweep-step', '30'));
 			const orbit = !flag('rungs-only');
-			const built = sweepShots(set, base, starts, step, orbit);
-			const pull = orbit ? sweepSeriesShots(base, starts) : { shots: [], steps: [] };
+			const built = switchOnly
+				? switchSweepShots(set, base, starts, step, orbit)
+				: sweepShots(set, base, starts, step, orbit);
+			const pull = switchOnly || !orbit ? { shots: [], steps: [] } : sweepSeriesShots(base, starts);
 			const allShots = [...built.shots, ...pull.shots];
 			let frames = await drawShots(dir, allShots, { ...(gpu !== undefined && { gpu }) });
 			// A page that navigated under a cell or lost its worker is drawn once more: a run fault
