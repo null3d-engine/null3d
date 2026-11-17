@@ -31,11 +31,15 @@ was drawn.
 | Dead skirt | 16 sockets on a brown piece | the living piece's color |
 | Pieces a socket names | one by rank | one for all |
 | Crown's box | the fronds' reach: 4.44 m tall, base 1.25 m | the wood's: 0.72 of the height |
+| First card level, high | 2,880 triangles, against the directed fern's 2,136 and a 15,000 budget | the patch's cards |
+| Near form, high | 9,738 triangles, against the directed fern's 5,982 and a 90,000 budget | the patch |
 | 400 triangles | 40 fronds, each a card; the shape holds | the patch's cards, not the fronds |
 
-Sparseness keeps 50, 43, 35, 28 and 20 sockets from 0 to 1. The height and the crown base hold.
-Maturity 0.1 to 0.8 grows 0.86 to 3.48 m. Every crown stays above the ground. The frame plan has no
-NaN, one stem and no children. The record check, the type check and the rosette's unit cases pass.
+Sparseness keeps 50, 43, 35, 28 and 20 sockets from 0 to 1, split between living and dead as 35/15,
+29/14, 25/10, 19/9 and 12/8. The height, crown base and crown box hold. Maturity 0.1 to 0.8 grows
+0.86 to 3.51 m. Every crown stays above the ground. At 400 triangles the cap keeps the 35 living
+fronds and 5 dead ones, and its levels draw 250, 398 and 400 triangles. The frame plan has no NaN,
+one stem and no children. The record check, the type check and the rosette's unit cases pass.
 
 How the data was produced: a probe grew the draft over `planFrame`, `planTree` and `growPlanned`. It
 ran at seeds 3, 11 and 12 and variants 0 to 3. It also ran at five sparseness values, four maxima and

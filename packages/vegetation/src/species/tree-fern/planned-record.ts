@@ -68,16 +68,34 @@ export const plannedGrowth: Planned = {
 	prices: { piece: 24, card: 6, clumpCard: 6, tubeSegment: 14 },
 	rosette: {
 		// Picture 01 at full size: about 20 living fronds from one side, and the turning video 18 to
-		// 24 a frame; the dome hides those behind it, so about 32 in all.
-		fronds: { count: { mean: 32, spread: 4 }, divergence: 137.5, layout: 'rings', clasp: 0.15 },
-		// Picture 01: inner fronds leave at 60 degrees, middle at 35, outer at 5, one even fountain.
+		// 24 a frame; the dome hides those behind it, so about 32 in all. The record's own 34 is the
+		// full count from the same pictures; the directed drawing's 32 was judged near them, and this
+		// record takes 32, whose spread 4 still reaches the record's 34.
+		fronds: {
+			count: { mean: 32, spread: 4 },
+			divergence: 137.5,
+			layout: 'rings',
+			// The record's crown.depth: the metres of stem over which the frond bases stand. Pictures
+			// 06 and 07 show them clustered at one point, so the bases spread over the top 0.2 m
+			// rather than clasping a palm's length.
+			clasp: 0.2,
+		},
+		// Picture 01: the inner fronds leave at 60 to 70 degrees above level, the middle at 30 to 40
+		// and the outer at 0 to 15; the ranks take 60, 35 and 5. The base record's crown.tilt, 24, 38,
+		// 70 and 95 degrees from vertical by age, gives 61, 42 and 7 above level at the 25/40/35
+		// shares' midpoints. The picture reading and the tilt agree within the ranks' measured bands;
+		// the middle's 35 sits between the bands' 30 to 40 and the tilt's 42, and the first round reads
+		// the fountain against picture 01.
 		ranks: [
 			{ share: 0.25, piece: 'frond-inner', leave: 60 },
 			{ share: 0.4, piece: 'frond-arched', leave: 35 },
 			{ share: 0.35, piece: 'frond-arched', leave: 5 },
 		],
-		// Pictures 01, 16 and 20: 14 to 16 dead fronds hang in a dense bell from 0.68 of the height
-		// down to about 0.29; each is 0.65 of a living frond.
+		// Pictures 01, 16 and 20: 14 to 16 dead fronds hang in a dense bell. The record's crown.dead
+		// states 20 with a skirt 0.1 of the height, 0.44 m; the bell's 14 to 16 is taken, and the
+		// picture 20 band, 0.68 of the height down to 0.29, is 0.12 to 0.30 m below the growing point,
+		// or 0.027 to 0.068 of the height. Each dead frond is 0.65 of a living one. The record's hang
+		// 160 from up is 70 degrees below level, and the block's 70 states that.
 		dead: {
 			count: { mean: 16, spread: 2 },
 			piece: 'frond-dead',
@@ -86,19 +104,24 @@ export const plannedGrowth: Planned = {
 			to: 0.07,
 			length: 0.65,
 		},
-		// Pictures 05 and 06: four to six croziers at the centre, each a hairy stalk 0.12 of the
-		// height tall ending in a coil about 0.035 m across.
+		// Pictures 05 and 06: six croziers, spread 1, at the centre. The record states each a hairy
+		// stalk 0.55 m tall with a head 0.06 m across; 0.55 m is 0.125 of the 4.4 m height.
 		croziers: {
-			count: { mean: 5, spread: 1 },
-			length: { mean: 0.12, spread: 0.01 },
+			count: { mean: 6, spread: 1 },
+			length: { mean: 0.125, spread: 0.011 },
 			coil: 540,
-			radius: 0.035,
+			radius: 0.06,
 			lean: 15,
 		},
 	},
 };
 
-/** The soft tree fern on the planned model. */
+/**
+ * The soft tree fern on the planned model. Its record changes from the base crown-rosette record in
+ * three places. The height moves from 3.6 to 4.4 m, because 3.6 m puts the crown at 3.56 m, under
+ * the fact sheet's 4 to 6 m. The dbh moves from 0.5 to 0.70 m, the still's 0.1606 of the height.
+ * The living and dead fronds move from 34 and 20 to 32 and 16, the counted fountain and bell.
+ */
 export const planned: Species = {
 	...record,
 	size: { height: { mean: HEIGHT, spread: 0.4 }, dbh: 0.16 * HEIGHT, aspect: 1 },
