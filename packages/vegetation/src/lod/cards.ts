@@ -2008,6 +2008,129 @@ export function plannedClumpCards(
 }
 
 /**
+ * The far crown as a few large plates: a plant's clumps gathered into regions, one card set at each
+ * region's centre and reach, and each plane tiled so one picture is one shoot. The reach is the
+ * union of the region's clumps, so the plates keep the leaf form's outline and mass without a
+ * per-variant bake. A far picture reads the plate set from any side.
+ *
+ * @param input The dressed variant.
+ * @param regions The regions to gather the clumps into, at least one.
+ * @param planes The card planes each plate draws, from 1 to 3.
+ * @returns The plates' mesh, or undefined on a plant that names no clumps or holds no rows.
+ * @category api/vegetation
+ */
+export function regionalClumpCards(
+	input: MeshInput,
+	regions = 8,
+	planes = 3,
+): MeshArrays | undefined {
+	const clumps = clumpsOf(input);
+	if (!clumps || clumps.length === 0 || input.rows.count === 0) return undefined;
+	const centreOf = (lobe: number): readonly number[] | undefined =>
+		input.skeleton.clumps?.find((clump) => clump.id === lobe)?.centre;
+	const centres = new Map<number, readonly number[]>();
+	const lo = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+	const hi = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	for (const clump of clumps) {
+		const centre = centreOf(clump.lobe);
+		if (!centre) continue;
+		centres.set(clump.lobe, centre);
+		for (let k = 0; k < 3; k++) {
+			lo[k] = Math.min(lo[k] as number, centre[k] as number);
+			hi[k] = Math.max(hi[k] as number, centre[k] as number);
+		}
+	}
+	if (centres.size === 0) return undefined;
+	const size = [0, 1, 2].map((k) => Math.max(0.001, (hi[k] as number) - (lo[k] as number)));
+	const side = Math.max(1, Math.round(Math.cbrt(Math.max(1, regions))));
+	const dims = [side, side, Math.max(1, Math.round(regions / (side * side)))];
+	const groups = new Map<string, { clumps: Clump[]; rows: number[] }>();
+	for (const clump of clumps) {
+		const centre = centres.get(clump.lobe);
+		if (!centre) continue;
+		const key = [0, 1, 2]
+			.map((k) =>
+				Math.min(
+					(dims[k] as number) - 1,
+					Math.floor(
+						(((centre[k] as number) - (lo[k] as number)) / (size[k] as number)) *
+							(dims[k] as number),
+					),
+				),
+			)
+			.join(',');
+		const group = groups.get(key) ?? { clumps: [], rows: [] };
+		group.clumps.push(clump);
+		group.rows.push(...clump.rows);
+		groups.set(key, group);
+	}
+	const { kit, rows } = input;
+	const clusters: CardCluster[] = [];
+	const regionRows: number[][] = [];
+	for (const group of groups.values()) {
+		const own = group.clumps.map((clump) => centres.get(clump.lobe) as readonly number[]);
+		const centre = [0, 1, 2].map(
+			(k) => own.reduce((sum, c) => sum + (c[k] as number), 0) / own.length,
+		) as Vector3;
+		let reach = 0;
+		for (const c of own)
+			reach = Math.max(
+				reach,
+				Math.hypot(
+					(c[0] as number) - centre[0],
+					(c[1] as number) - centre[1],
+					(c[2] as number) - centre[2],
+				),
+			);
+		reach += Math.max(...group.clumps.map((clump) => clump.spread));
+		// The row nearest the region's centre gives the plate its bytes and its picture's own size.
+		let row = group.rows[0] as number;
+		let least = Number.POSITIVE_INFINITY;
+		for (const r of group.rows) {
+			const d = Math.hypot(
+				(rows.position[r * 3] as number) - centre[0],
+				(rows.position[r * 3 + 1] as number) - centre[1],
+				(rows.position[r * 3 + 2] as number) - centre[2],
+			);
+			if (d < least) {
+				least = d;
+				row = r;
+			}
+		}
+		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
+		const scale = rows.scale[row] as number;
+		const half = plane
+			? scale *
+				Math.max(
+					Math.sqrt(plane.right[0] ** 2 + plane.right[1] ** 2 + plane.right[2] ** 2),
+					Math.sqrt(plane.up[0] ** 2 + plane.up[1] ** 2 + plane.up[2] ** 2),
+				)
+			: 0;
+		clusters.push({
+			row,
+			rows: group.rows.length,
+			centre,
+			grow: half > 1e-9 ? Math.max(1, reach / half) : 1,
+			reach,
+			stalk: false,
+			faces: planes,
+		});
+		regionRows.push(group.rows);
+	}
+	const tiled = {
+		tiles: 1,
+		fitted: true,
+		row: (index: number, tile: number, count: number): number => {
+			const list = regionRows[index] ?? [];
+			return list.length > 0
+				? (list[Math.floor((tile * list.length) / (count * count))] as number)
+				: 0;
+		},
+	};
+	return clusterCardMesh(input, clusters, planes, undefined, tiled, undefined, 0, true);
+}
+
+/**
  * The cards of some clusters, as one mesh: each cluster's planes about its centre, and a stalk to
  * its anchor where it takes one.
  *
@@ -2099,6 +2222,11 @@ export function clusterCardMesh(
 	},
 	into?: MeshWriter,
 	gate = 0,
+	/**
+	 * Whether a cluster's growth is its own extent, as a region plate's is, rather than the most the
+	 * leaf form's hull allows about the cluster's own centre.
+	 */
+	unbounded = false,
 ): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = into ?? new MeshWriter();
@@ -2146,9 +2274,10 @@ export function clusterCardMesh(
 		local[1] = (lead?.centre[1] ?? 0) * scale;
 		local[2] = (lead?.centre[2] ?? 0) * scale;
 		quatRotate(rows.rotation, r * 4, local, first0);
-		const grow = lead
-			? clumpGrowthInHull(input, cluster.centre, r, lead, scale, first0, cluster.grow)
-			: cluster.grow;
+		const grow =
+			lead && !unbounded
+				? clumpGrowthInHull(input, cluster.centre, r, lead, scale, first0, cluster.grow)
+				: cluster.grow;
 		// A picture covers the row's own picture's share of the grown plate: the plate's half extent
 		// over the row's own half extent is the count of pictures that brings the grain back.
 		const tiles = tiled ? (tiled.fitted ? clumpTiles(grow) : tiled.tiles) : 1;
