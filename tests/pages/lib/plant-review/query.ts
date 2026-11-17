@@ -101,6 +101,8 @@ export interface PlantReviewQuery {
 	readonly lod?: ForcedLevel;
 	/** A diagnostic panel on the cards: 1 the baked texel alone, 2 the plane's normal, 3 no light through. */
 	readonly cardDebug?: number;
+	/** The record's card-level cover factor for this run, which a review sets to measure the cover. */
+	readonly cardCover?: number;
 	/** The quality preset whose mesh tier the plant grows at; high by default. */
 	readonly preset?: (typeof PLANT_PRESETS)[number];
 	/** The frame's width and height in pixels, which give the page its aspect. */
@@ -426,6 +428,7 @@ export interface PlantReviewQuery {
 /** The query fields that are numbers, in the order a query lists them. */
 const NUMBER_FIELDS = [
 	'cardDebug',
+	'cardCover',
 	'variant',
 	'seed',
 	'turn',
