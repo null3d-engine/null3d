@@ -49,6 +49,8 @@ export interface PlaceOptions {
 	readonly view: PlantView;
 	/** Whether the plants cast shadows. */
 	readonly castShadows?: boolean;
+	/** A diagnostic panel on the cards: 1 the baked texel alone, 2 the plane's normal, 3 no light through. */
+	readonly cardDebug?: number;
 }
 
 export { switchScale } from '../lod/drawn';

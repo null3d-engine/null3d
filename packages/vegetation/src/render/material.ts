@@ -85,6 +85,11 @@ export interface PlacedUniforms {
 	readonly season?: number;
 	/** The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom. */
 	readonly seasonKind?: number;
+	/**
+	 * A diagnostic panel on the cards: 1 carries the baked texel alone, 2 draws the plane's normal,
+	 * 3 draws no transmitted light, 0 draws the plant as it ships. A review reads one term at a time.
+	 */
+	readonly cardDebug?: number;
 }
 
 /** What each material reads beyond its own textures: its kit's records and its wind state. */
@@ -183,6 +188,7 @@ export function plantMaterials(
 				season: 0,
 				seasonKind: 0,
 				matte: silhouette ? 3 : parts ? 2 : matte ? 1 : 0,
+				cardDebug: 0,
 			},
 		});
 		BOUND.set(material, {
@@ -198,6 +204,7 @@ export function plantMaterials(
 				if (uniforms.season !== undefined) material.setUniform('season', uniforms.season);
 				if (uniforms.seasonKind !== undefined)
 					material.setUniform('seasonKind', uniforms.seasonKind);
+				if (uniforms.cardDebug !== undefined) material.setUniform('cardDebug', uniforms.cardDebug);
 			},
 			sentBorn: field?.air.sent[3] ?? Number.NaN,
 		});

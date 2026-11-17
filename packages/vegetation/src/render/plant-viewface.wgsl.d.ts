@@ -16,6 +16,7 @@ declare const shader: CompiledMaterial<
 		readonly season: 'f32';
 		readonly seasonKind: 'f32';
 		readonly matte: 'f32';
+		readonly cardDebug: 'f32';
 	},
 	'wind' | 'records' | 'colour' | 'relief' | 'second' | 'third'
 >;

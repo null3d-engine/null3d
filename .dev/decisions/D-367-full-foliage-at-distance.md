@@ -137,4 +137,18 @@ oak, the birch and the cypress are byte-identical (`4ed6e51065f5f32a`, `8ad6727e
 `b3276d7be6e8825`), while the pine's and the sequoia's move. The card's base colour divides the baked
 mean out: `leaf_light` multiplies the texel by the face's scale, `reflectance / mean / (1 - share)`, so
 the paleness is not the mean's brightness. A panel of one term at a time on the pine's close view reads
-which term pays it.
+the face term as the one that pays: the foliage's mean is (93, 102, 80) as it ships, (77, 95, 76) with
+the face term forced to one, (93, 102, 80) with the plane's normal, and (99, 101, 79) with no
+transmitted light. The division and the bake's colour spread double-count, and the fix is a shader
+change with this figure behind it.
+
+## The far crown's plates
+
+The far crown's plates were measured on the oak against the drawn-tier leaf form's bake, which reads
+sky 0.792. Today's card bake reads IoU 0.965 and sky 0.788. One picture a side on each clump plate
+(1,602 triangles) reads 0.866 and 0.830; two a side (6,408) 0.919 and 0.819; three (14,418) 0.923 and
+0.818. The clumps gathered into regions, one tiled plate set each (4 to 64 regions, 22,560 to 35,802
+triangles), read 0.828 to 0.853, best at 64 regions. None beats the card bake, so today's cards stand
+and the next candidate is a filled outline plate. A measurement that passed the plates unquantised
+read the same 0.949 sky for every count, which is the wood alone; the quantised figures move with the
+picture count.

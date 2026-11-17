@@ -59,6 +59,10 @@ struct Uniforms {
     // each part in a flat colour of its own, cut and layered as the colour picture is, so a reader
     // can tell which part of the plant covers each texel.
     matte: f32,
+    // A diagnostic panel on the cards: 0 draws the plant as it ships, 1 carries a card's baked
+    // texel alone, 2 draws the plane's normal, 3 draws no transmitted light. A review reads one
+    // term at a time.
+    cardDebug: f32,
 }
 
 // The wind field's state, an array of two layers.
@@ -1442,6 +1446,16 @@ fn surface(input: SurfaceInput) -> Surface {
             let card_normal = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
             // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
             mapped = card_normal;
+            // The panel's one term, so a review reads which term pays a card's paleness: the baked
+            // texel without the face's scale, the plane's own normal, or the leaves' light through.
+            if (material.cardDebug > 0.5 && material.cardDebug < 1.5) {
+                base = texel.rgb;
+            } else if (material.cardDebug > 1.5 && material.cardDebug < 2.5) {
+                mapped = vec3f(0.0, 0.0, 1.0);
+            } else if (material.cardDebug > 2.5) {
+                through = vec3f(0.0);
+                share = 0.0;
+            }
             occlusion = input.vertexColor.a * saturate(self_shade);
             occlusion = mix(occlusion, 1.0, leaf_sky);
         }

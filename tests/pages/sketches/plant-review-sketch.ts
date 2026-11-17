@@ -2046,6 +2046,8 @@ export default defineSketch(async (ctx) => {
 				// sun's cast shadow on the backdrop would be counted as plant, so a cell draws
 				// unshadowed, as a release build draws it.
 				castShadows: !PLAIN && VIEW !== 'turntable',
+				// A diagnosis reads one term of the card's colour at a time.
+				...(QUERY.cardDebug !== undefined && { cardDebug: QUERY.cardDebug }),
 			},
 		);
 	// A matte or a picture of the parts draws the level alone that the colour picture draws from the
