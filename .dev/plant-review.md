@@ -995,6 +995,20 @@ share are read, and a frame whose figures jump beyond the round's band from its 
 the step. A cluster that leaves its wood on one side, a card that faces away, or a crown that closes on one side and
 opens on the other then appears as a number before it appears to a person.
 
+## A plant never thins as the camera pulls back
+
+A focused plant is pulled back in one continuous series, from inside its crown to the far distance, at the page's own
+camera and light. Its foliage's covered share is read in every frame inside the plant's own outline, by the same colour
+rule on both sides of each switch. The share must not fall from one frame to the next: every step back may hold it or
+close it, and a step that opens the crown fails, whether it falls inside a level or at a switch. The bar is one point
+of a share; a step that opens more is named by its frame, its distance and its two figures.
+
+The series belongs to the sweep. The rungs are joined by intermediate distances, so a crossing cannot hide between two
+of them, and the table carries the share at each step beside the rung it sits in. The reviewer reads the series with
+the orbits, and a step that opens is a fault of whichever level, card or bake the step draws — never of the measure.
+The owner set this rule on 18 November: an eye pulling back must see the same tree, and a crown that opens as it recedes
+reads as its foliage draining away.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
