@@ -616,7 +616,11 @@ export function rowLevel(
 		// The fork's pair costs more than the part's mean, so it is priced measured: a budget that
 		// buys no mean limb may still buy the pair that keeps the tree's fork.
 		if (part === 1 && forkLimb > 0 && budget >= forkLimb)
-			return { rung: coarsest, kept: 2, cost: forkLimb };
+			return {
+				rung: coarsest,
+				kept: Math.min(2, (byGirth[0] as number[]).length),
+				cost: forkLimb,
+			};
 		return { rung: -1, cost: 0 };
 	};
 	// The shoots' ladder: the rows at each tier the kit holds, then cards.
