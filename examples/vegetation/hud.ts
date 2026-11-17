@@ -10,16 +10,17 @@ export interface MeadowControls {
 }
 
 /**
- * The polygon slider's steps, from the record's own form to a floor under a hundred triangles. A
- * plant draws millions of triangles and the floor is a few dozen, so a linear axis cannot span the
- * range: the slider names a cap at each step, each about a tenth of the one before it.
+ * The polygon slider's steps, from the record's own form down to four hundred triangles: the lowest
+ * cap the cap repairs prove still draws one connected body with nothing floating. A plant draws
+ * millions of triangles, so a linear axis cannot span the range: the slider names a cap at each step,
+ * each about a tenth of the one before it.
  */
 export const POLYGON_STEPS: readonly { readonly label: string; readonly max?: number }[] = [
 	{ label: 'full' },
 	{ label: '100k', max: 100_000 },
 	{ label: '10k', max: 10_000 },
 	{ label: '1k', max: 1_000 },
-	{ label: '96', max: 96 },
+	{ label: '400', max: 400 },
 ];
 
 /** Whether a number names one of the polygon slider's steps. */
