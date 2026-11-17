@@ -107,11 +107,13 @@ import {
 	type SweepCoverage,
 	type SweepManifest,
 	type SweepRow,
+	type SweepSeriesRow,
 	sweepGreen,
 	sweepManifest,
 	sweepMarkdown,
 	sweepProbe,
 	sweepRun,
+	sweepSeriesShots,
 	sweepShots,
 	sweepStarts,
 } from './lib/plant-review/sweep.ts';
@@ -1458,11 +1460,13 @@ function mergeSweepRound(
 ): {
 	readonly rows: readonly SweepRow[];
 	readonly coverage: readonly SweepCoverage[];
+	readonly series: readonly (SweepSeriesRow & { readonly species: string })[];
 	readonly judged: readonly string[];
 	readonly unjudged: readonly string[];
 } {
 	const rows: SweepRow[] = [];
 	const coverage: SweepCoverage[] = [];
+	const series: (SweepSeriesRow & { readonly species: string })[] = [];
 	const judged: string[] = [];
 	const unjudged: string[] = [];
 	for (const id of named) {
@@ -1476,6 +1480,7 @@ function mergeSweepRound(
 				missingPictures: [],
 				failed: [],
 				open: [],
+				series: [],
 				green: false,
 			});
 			continue;
@@ -1483,19 +1488,21 @@ function mergeSweepRound(
 		const result = JSON.parse(readFileSync(file, 'utf8')) as {
 			readonly rows: readonly SweepRow[];
 			readonly coverage: SweepCoverage;
+			readonly series?: readonly (SweepSeriesRow & { readonly species: string })[];
 		};
 		rows.push(...result.rows);
 		coverage.push(result.coverage);
+		series.push(...(result.series ?? []));
 		judged.push(id);
 	}
-	return { rows, coverage, judged, unjudged };
+	return { rows, coverage, series, judged, unjudged };
 }
 
 /** Writes a round's single table, prints it, and fails on a missing row or a failing view. */
 function writeSweepRound(dir: string, merged: ReturnType<typeof mergeSweepRound>): void {
-	writeFileSync(join(dir, 'sweep.md'), sweepMarkdown(merged.rows, merged.coverage));
+	writeFileSync(join(dir, 'sweep.md'), sweepMarkdown(merged.rows, merged.coverage, merged.series));
 	writeFileSync(join(dir, 'sweep.json'), `${JSON.stringify(merged, null, '\t')}\n`);
-	console.log(sweepMarkdown(merged.rows, merged.coverage));
+	console.log(sweepMarkdown(merged.rows, merged.coverage, merged.series));
 	if (!sweepGreen(merged.rows, merged.coverage)) process.exitCode = 1;
 }
 
@@ -1551,7 +1558,10 @@ async function main(): Promise<void> {
 			: undefined;
 		if (!set) throw new Error(`${dir} names no reference folder, so its sweep cannot compare`);
 		const plan = planFromManifest(set, manifest.sweep);
-		printSweep(sweepRun(dir, manifest.species, set, manifest.frames, plan), dir);
+		printSweep(
+			sweepRun(dir, manifest.species, set, manifest.frames, plan, manifest.sweep.series),
+			dir,
+		);
 		return;
 	}
 	if (flag('sweep-all')) {
@@ -1698,10 +1708,12 @@ async function main(): Promise<void> {
 			const starts = sweepStarts(probe);
 			if (!starts) throw new Error("the sweep's probe posted no level distances");
 			const built = sweepShots(set, base, starts);
-			let frames = await drawShots(dir, built.shots, { ...(gpu !== undefined && { gpu }) });
+			const pull = sweepSeriesShots(base, starts);
+			const allShots = [...built.shots, ...pull.shots];
+			let frames = await drawShots(dir, allShots, { ...(gpu !== undefined && { gpu }) });
 			// A page that navigated under a cell or lost its worker is drawn once more: a run fault
 			// must not read as a species fault in the table.
-			const failed = failedSweepShots(built.shots, frames);
+			const failed = failedSweepShots(allShots, frames);
 			if (failed.length > 0) {
 				console.log(`${failed.length} pictures failed; drawing them once more`);
 				const again = await drawShots(dir, failed, { ...(gpu !== undefined && { gpu }) });
@@ -1723,7 +1735,7 @@ async function main(): Promise<void> {
 				windFps,
 				started: new Date(started).toISOString(),
 				seconds: Number(((Date.now() - started) / 1000).toFixed(1)),
-				sweep: sweepManifest(built.plan, starts),
+				sweep: sweepManifest(built.plan, starts, pull.steps),
 				frames: [probe, ...frames],
 			};
 			writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, '\t')}\n`);
@@ -1731,7 +1743,7 @@ async function main(): Promise<void> {
 				console.log(`compare with: bun run plants:review --sweep-compare ${dir}`);
 				return;
 			}
-			printSweep(sweepRun(dir, species, set, frames, built.plan), dir);
+			printSweep(sweepRun(dir, species, set, frames, built.plan, pull.steps), dir);
 		} finally {
 			release();
 		}

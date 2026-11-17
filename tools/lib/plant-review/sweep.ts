@@ -1,9 +1,11 @@
-// The sweep: every species at its distance ladder and around it, at four turns and two heights,
-// each picture beside the reference's own view at its scale. A row is a species and a view: its
-// figures and a pass, a fail or an open fault with its reason. A rung with no reference view, a
-// picture that did not draw and a picture with no matte all fail, because a view the sweep cannot
-// compare fails. The sweep is the evidence of a species review; a round of hand-picked stills is
-// not.
+// The sweep: every species at its distance ladder and around it, orbited at each rung and pulled
+// back in one continuous series. A rung is drawn at a full turn's even step and two heights, and
+// every picture is compared beside the reference's own view at that scale. The orbit's frames are
+// read for the pieces that meet nothing and the crown's covered share, and a frame that jumps
+// beyond the round's band from its neighbours fails with its angle. The series reads the share at
+// each distance, and a step that opens the crown by more than one point fails. One table carries
+// the rungs; a second carries the series. A missing row, a missing picture, an uncompared view and
+// any fail or open fault make the command exit 1.
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writePng } from '../../../packages/cli/src/png.js';
@@ -12,7 +14,6 @@ import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-revie
 import {
 	contactSheets,
 	PIECE_AREA,
-	rubricBand,
 	type SheetRow,
 	type SweepMeasures,
 	sweepMeasures,
@@ -29,15 +30,40 @@ import {
 	soilMaskable,
 } from './references.ts';
 import { type RunFrame, type Shot, singleShot } from './render.ts';
+import { GAP_ABOVE, GAP_BELOW } from './verdict.ts';
 
-/** The turns the sweep stands the camera at, from the reference view's own turn. */
-export const SWEEP_TURNS = [0, 90, 180, 270] as const;
+/** Degrees between the orbit's frames: a full turn at this even step. */
+export const SWEEP_STEP = 30;
 
-/** The two heights the sweep stands the camera at: the view's own rise, and a raised one. */
+/** The turns the orbit stands the camera at, from the reference view's own turn. */
+export const SWEEP_TURNS = Array.from(
+	{ length: 360 / SWEEP_STEP },
+	(_, index) => index * SWEEP_STEP,
+);
+
+/** The two heights the orbit stands the camera at: the view's own rise, and a raised one. */
 export const SWEEP_HEIGHTS = [
 	{ id: 'low', rise: 0 },
 	{ id: 'high', rise: 15 },
 ] as const;
+
+/** The pictures one rung's orbit draws: a turn and a height each. */
+export const SWEEP_PICTURES = SWEEP_TURNS.length * SWEEP_HEIGHTS.length;
+
+/** The distances the pull-back series steps through, before the rungs' own are joined in. */
+export const SWEEP_SERIES_STEPS = 24;
+
+/** The most a step of the pull-back may open the crown's covered share. */
+export const SERIES_OPEN = 0.01;
+
+/** The most a frame's covered share may stand from its neighbours' in the orbit. */
+export const ORBIT_COVERED_BAND = GAP_ABOVE;
+
+/** The most pieces that meet nothing a frame may add over its neighbours in the orbit. */
+export const ORBIT_CLUSTER_BAND = 1;
+
+/** How a rung is judged beside its reference view: by the crown's open sky, or by its level. */
+export type SweepCompare = 'gap' | 'level';
 
 /** How a rung stands its camera: on the plant's own distance ladder, or fitted close. */
 export type SweepDistance = 'far' | 'first-card' | 'near' | 'fit';
@@ -45,7 +71,7 @@ export type SweepDistance = 'far' | 'first-card' | 'near' | 'fit';
 /** The level a rung expects the page to draw at its camera, where the ladder fixes it. */
 export type SweepLevel = 'far' | 'card' | 'near' | 'any';
 
-/** One rung of the sweep: a scale a species is drawn at and judged at. */
+/** One rung of the sweep: a scale a species is drawn at, orbited and judged at. */
 export interface SweepRung {
 	/** Its short name, which names its pictures' group. */
 	readonly id: string;
@@ -55,6 +81,12 @@ export interface SweepRung {
 	readonly referenceViews: readonly PlantView[];
 	readonly distance: SweepDistance;
 	readonly level: SweepLevel;
+	readonly compare: SweepCompare;
+	/**
+	 * The camera the rung stands where the view's own cannot reach its scale, as a rise and a factor
+	 * on the ladder's distance. A rung with none keeps its view's own camera.
+	 */
+	readonly camera?: { readonly elevation: number; readonly distanceFactor: number };
 }
 
 /**
@@ -70,6 +102,7 @@ export const SWEEP_RUNGS: readonly SweepRung[] = [
 		referenceViews: ['whole'],
 		distance: 'far',
 		level: 'far',
+		compare: 'gap',
 	},
 	{
 		id: 'first-card',
@@ -77,13 +110,18 @@ export const SWEEP_RUNGS: readonly SweepRung[] = [
 		referenceViews: ['whole'],
 		distance: 'first-card',
 		level: 'card',
+		compare: 'gap',
 	},
 	{
 		id: 'switch',
 		label: 'the near form at its switch',
-		referenceViews: ['whole'],
+		// The switch lies near the foot, and a whole view's camera looks at the crown's middle, so it
+		// cannot stand that close. The inside-crown camera can, and it is the camera the page draws
+		// the near form from at this scale.
+		referenceViews: ['inside', 'crown-underside', 'crown', 'whole'],
 		distance: 'near',
 		level: 'near',
+		compare: 'level',
 	},
 	{
 		id: 'inside',
@@ -91,6 +129,7 @@ export const SWEEP_RUNGS: readonly SweepRung[] = [
 		referenceViews: ['inside', 'crown-underside', 'crown'],
 		distance: 'fit',
 		level: 'any',
+		compare: 'level',
 	},
 	{
 		id: 'trunk',
@@ -98,6 +137,7 @@ export const SWEEP_RUNGS: readonly SweepRung[] = [
 		referenceViews: ['trunk', 'bark-mid', 'bark-base', 'bark-limb', 'below'],
 		distance: 'fit',
 		level: 'any',
+		compare: 'level',
 	},
 	{
 		id: 'leaf',
@@ -113,11 +153,9 @@ export const SWEEP_RUNGS: readonly SweepRung[] = [
 		],
 		distance: 'fit',
 		level: 'any',
+		compare: 'level',
 	},
 ];
-
-/** The pictures a rung draws: a turn and a height each. */
-export const SWEEP_PICTURES = SWEEP_TURNS.length * SWEEP_HEIGHTS.length;
 
 /**
  * The pictures a draw failed: the shots whose cells the run recorded an error or a matte failure
@@ -138,9 +176,13 @@ export function failedSweepShots(
 
 /** The reference view a rung is judged beside, the first of its views the folder carries. */
 export function sweepReference(set: ReferenceSet, rung: SweepRung): Slot | undefined {
-	return set.stills.find(
-		(slot) => slot.kind === 'still' && rung.referenceViews.includes(slot.view),
-	);
+	// The rung's views stand in the order the folder is searched: the closest scale it names wins
+	// over a wider one that happens to come first in the folder.
+	for (const view of rung.referenceViews) {
+		const slot = set.stills.find((still) => still.kind === 'still' && still.view === view);
+		if (slot) return slot;
+	}
+	return undefined;
 }
 
 /** The three distances of the plant's own ladder, read from a drawn frame. */
@@ -173,7 +215,7 @@ export function sweepDistanceOf(
 			// neighbour where the band is narrow.
 			return (first + Math.max(first, Math.min(second, far))) / 2;
 		case 'near':
-			return first * 0.98;
+			return first;
 		default:
 			return null;
 	}
@@ -186,6 +228,12 @@ export interface SweepRungPlan {
 	readonly distance: number | null;
 }
 
+/** One distance of the pull-back series: the frame it draws and the metres it stands at. */
+export interface SweepSeriesStep {
+	readonly file: string;
+	readonly distance: number;
+}
+
 /** What a sweep run records of its plan, so a replay compares the same rungs. */
 export interface SweepManifest {
 	readonly starts: readonly [number, number, number];
@@ -194,6 +242,7 @@ export interface SweepManifest {
 		readonly reference?: string;
 		readonly distance: number | null;
 	}[];
+	readonly series: readonly SweepSeriesStep[];
 }
 
 /** The probe: one whole view whose frame names the plant's own level distances. */
@@ -207,7 +256,7 @@ export function sweepProbe(base: PlantReviewQuery): Shot {
 	);
 }
 
-/** One of a rung's cameras: the turn in degrees, the rise and the height's name. */
+/** One of an orbit's cameras: the turn in degrees, the rise and the height's name. */
 interface SweepCamera {
 	readonly turn: number;
 	readonly elevation: number;
@@ -219,21 +268,22 @@ export function sweepCameras(rung: SweepRung, slot: Slot | undefined): readonly 
 	const view = slot?.view ?? rung.referenceViews[0] ?? 'whole';
 	const home = slot?.turn ?? 0;
 	const rise = slot?.elevation ?? VIEW_SPECS[view].elevation;
+	const base = rung.camera?.elevation ?? rise;
 	const cameras: SweepCamera[] = [];
 	for (const turn of SWEEP_TURNS)
 		for (const height of SWEEP_HEIGHTS)
 			cameras.push({
 				turn: (home + turn) % 360,
-				elevation: Math.max(-89, Math.min(89, rise + height.rise)),
+				elevation: Math.max(-89, Math.min(89, base + height.rise)),
 				height: height.id,
 			});
 	return cameras;
 }
 
 /**
- * The sweep's rung plans and pictures: each rung at its reference view, its camera distance and
- * every turn and height. A rung whose folder carries no reference view is planned with no slot, so
- * its row is uncompared rather than absent.
+ * The sweep's rung plans and orbit pictures: each rung at its reference view, its camera distance
+ * and every turn and height. A rung whose folder carries no reference view is planned with no
+ * slot, so its row is uncompared rather than absent.
  */
 export function sweepShots(
 	set: ReferenceSet,
@@ -251,6 +301,8 @@ export function sweepShots(
 		if (!slot) continue;
 		const view = slot.view;
 		const [width, height] = VIEW_SPECS[view].size;
+		const asked =
+			distance === null ? null : rung.camera ? distance * rung.camera.distanceFactor : distance;
 		for (const camera of sweepCameras(rung, slot)) {
 			const name = `${rung.id}-t${camera.turn}-h${camera.height}`;
 			shots.push(
@@ -264,7 +316,7 @@ export function sweepShots(
 						...slot.query,
 						turn: camera.turn,
 						elevation: camera.elevation,
-						...(rung.distance !== 'fit' && distance !== null && { distance }),
+						...(rung.distance !== 'fit' && asked !== null && { distance: asked }),
 						measure: true,
 					},
 					[width, height],
@@ -277,10 +329,55 @@ export function sweepShots(
 	return { plan, shots };
 }
 
+/** The distances the pull-back series stands at: evenly spaced in log distance, rungs joined. */
+export function sweepSeriesDistances(
+	starts: readonly [number, number, number],
+	steps = SWEEP_SERIES_STEPS,
+): readonly number[] {
+	const [first, second, far] = starts;
+	const close = Math.max(0.8, first * 0.5);
+	const last = far * 1.05;
+	const ratio = (last / close) ** (1 / Math.max(1, steps - 1));
+	const distances = new Set<number>();
+	for (let step = 0; step < steps; step++)
+		distances.add(Number((close * ratio ** step).toFixed(3)));
+	// A crossing cannot hide between two rungs the series does not stand at, so the ladder's
+	// distances are joined into the series rather than only approached.
+	distances.add(Number(first.toFixed(3)));
+	distances.add(Number(((first + Math.max(first, Math.min(second, far))) / 2).toFixed(3)));
+	distances.add(Number(last.toFixed(3)));
+	return [...distances].sort((a, b) => a - b);
+}
+
+/** The pull-back series' pictures: one whole frame at each distance, at the page's camera. */
+export function sweepSeriesShots(
+	base: PlantReviewQuery,
+	starts: readonly [number, number, number],
+): { readonly shots: Shot[]; readonly steps: SweepSeriesStep[] } {
+	const shots: Shot[] = [];
+	const steps: SweepSeriesStep[] = [];
+	for (const [index, distance] of sweepSeriesDistances(starts).entries()) {
+		const name = `step-${String(index + 1).padStart(2, '0')}-${distance.toFixed(2).replace('.', '_')}`;
+		const file = `sweep-series/${name}.png`;
+		shots.push(
+			singleShot(
+				'sweep-series',
+				`${name}.png`,
+				{ ...base, view: 'whole', distance, measure: true },
+				VIEW_SPECS.whole.size,
+				false,
+			),
+		);
+		steps.push({ file, distance });
+	}
+	return { shots, steps };
+}
+
 /** The manifest's record of a plan, for a replay. */
 export function sweepManifest(
 	plan: readonly SweepRungPlan[],
 	starts: readonly [number, number, number],
+	series: readonly SweepSeriesStep[],
 ): SweepManifest {
 	return {
 		starts,
@@ -289,6 +386,7 @@ export function sweepManifest(
 			...(entry.slot && { reference: entry.slot.file }),
 			distance: entry.distance,
 		})),
+		series,
 	};
 }
 
@@ -308,9 +406,13 @@ export function planFromManifest(
 	});
 }
 
-/** One drawn picture of a rung, as the table reads it. */
+/** One drawn picture of an orbit, as the table reads it. */
 export interface SweepPicture {
 	readonly file: string;
+	/** The turn the picture stands at, in degrees. */
+	readonly turn: number;
+	/** The height it stands at, `low` or `high`. */
+	readonly height: string;
 	/** The level the page drew, or null where its frame names none. */
 	readonly level: number | null;
 	/** The distance from the lens to the plant's foot, in metres, where the frame names it. */
@@ -319,17 +421,24 @@ export interface SweepPicture {
 	readonly error?: string;
 	/** Why the picture has no matte, where its picture drew. */
 	readonly matteError?: string;
-	/** Its connectivity and crown gap, or null where no matte was read. */
+	/** Its connectivity and crown gap, read from its matte, or null where no matte was read. */
 	readonly measures: SweepMeasures | null;
+	/**
+	 * The sky inside the plant's own outline by the photograph's colour rule, or null where the
+	 * picture holds no plant. The colour rule is the same on both sides of every switch.
+	 */
+	readonly skyGap: number | null;
+	/** The share of the crown's outline the foliage covers: one less the sky gap. */
+	readonly covered: number | null;
 }
 
 /** The reference picture a rung is compared beside. */
 export interface SweepReference {
 	readonly file: string;
-	/** Whether the picture separates from its background, so an outline and a crown gap read. */
+	/** Whether the picture separates from its background, so an outline and a sky gap read. */
 	readonly separable: boolean;
-	/** The open sky inside its crown box, or null where the picture's outline does not read. */
-	readonly gap: number | null;
+	/** The sky inside its crown's outline, or null where the picture's outline does not read. */
+	readonly skyGap: number | null;
 	/** Its separate pieces, or null where the picture's outline does not read. */
 	readonly pieces: number | null;
 }
@@ -341,7 +450,6 @@ export interface SweepRowInput {
 	readonly rung: SweepRung;
 	readonly reference: SweepReference | undefined;
 	readonly distance: number | null;
-	readonly band: number;
 	readonly pictures: readonly SweepPicture[];
 }
 
@@ -356,6 +464,8 @@ export interface SweepRow {
 	readonly gap: { readonly drawn: number; readonly reference: number } | null;
 	readonly pieces: { readonly drawn: number; readonly reference: number } | null;
 	readonly floating: number;
+	/** The orbit's covered share, from its least to its most, or null where no frame read one. */
+	readonly covered: { readonly least: number; readonly most: number } | null;
 	readonly verdict: 'pass' | 'fail' | 'open';
 	readonly reason: string;
 }
@@ -392,21 +502,60 @@ function piecesDrawn(picture: SweepPicture): number | null {
 }
 
 /**
- * One rung's verdict: a pass where every picture drew and no piece meets nothing, a fail where a
- * picture is missing, holds no matte or floats, a rung drew another level than the ladder asked, or
- * the crown's open sky stands past its band, and an open fault where a rung cannot compare its
- * reference at all.
+ * The orbit's jumps: a frame whose covered share stands beyond the band from its same-height
+ * neighbours' mean, or whose pieces that meet nothing stand beyond the band over theirs. Each
+ * fault names the frame, its angle and the step.
+ */
+export function sweepOrbitJumps(pictures: readonly SweepPicture[]): readonly string[] {
+	const jumps: string[] = [];
+	for (const height of SWEEP_HEIGHTS) {
+		const run = pictures
+			.filter((picture) => picture.height === height.id)
+			.sort((a, b) => a.turn - b.turn);
+		if (run.length < 3) continue;
+		for (const [index, picture] of run.entries()) {
+			const previous = run[(index - 1 + run.length) % run.length] as SweepPicture;
+			const next = run[(index + 1) % run.length] as SweepPicture;
+			const share = picture.covered;
+			const shares = [previous.covered, next.covered].filter(
+				(value): value is number => value !== null,
+			);
+			if (share !== null && shares.length === 2) {
+				const around = ((shares[0] as number) + (shares[1] as number)) / 2;
+				if (Math.abs(share - around) > ORBIT_COVERED_BAND)
+					jumps.push(
+						`${picture.file} at ${picture.turn}° ${height.id} covers ${share.toFixed(3)} against its neighbours' ${around.toFixed(3)}`,
+					);
+			}
+			const free = picture.measures?.floating.length ?? 0;
+			const neighbours = [
+				previous.measures?.floating.length ?? 0,
+				next.measures?.floating.length ?? 0,
+			];
+			if (free > Math.max(...neighbours) + ORBIT_CLUSTER_BAND)
+				jumps.push(
+					`${picture.file} at ${picture.turn}° ${height.id} holds ${free} pieces that meet nothing, against its neighbours' ${Math.max(...neighbours)}`,
+				);
+		}
+	}
+	return jumps;
+}
+
+/**
+ * One rung's verdict: a pass where every picture drew and stands inside its bars, a fail where a
+ * picture is missing, holds no matte or floats, a rung drew another level than the ladder asked,
+ * the crown's open sky or its pieces stand outside the reference's band, or the orbit jumps beyond
+ * its neighbours' figures, and an open fault where a rung cannot compare its reference at all.
  */
 export function sweepRow(input: SweepRowInput): SweepRow {
-	const { rung, reference, pictures, band } = input;
+	const { rung, reference, pictures } = input;
 	const drawn = pictures.filter((picture) => picture.error === undefined);
 	const failures: string[] = [];
 	const floating: { readonly area: number; readonly box: string }[] = [];
-	/** The first picture a piece meets nothing in, which the reason names. */
 	let floatingIn: string | null = null;
 	let gap: SweepRow['gap'] = null;
 	let pieces: SweepRow['pieces'] = null;
-	let worstGap: number | null = null;
+	let covered: SweepRow['covered'] = null;
 	/** A near-form rung whose page drew a card level, with the foot distances it stood at. */
 	let nearShort: { readonly level: number; awayLeast: number; awayMost: number } | null = null;
 	for (const picture of pictures) {
@@ -420,10 +569,9 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			);
 			continue;
 		}
-		// The near form's switch can lie inside a crown whose whole camera cannot stand that close
-		// to the foot, since that camera looks at the crown's middle. The page then draws a card
-		// level, and the rung is open rather than failed: it names why the near form cannot be drawn
-		// from this scale.
+		// The near form's switch lies near the foot, and a camera aimed at the crown's middle cannot
+		// always stand that close. A page that draws a card level then is open rather than failed:
+		// it names why the near form cannot be drawn from this camera.
 		if (rung.level === 'near' && levelOf(picture) !== null && levelOf(picture) !== 0) {
 			const level = levelOf(picture) as number;
 			const away = picture.away;
@@ -446,8 +594,14 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 		}
 		if (picture.measures.floating.length > 0) floatingIn ??= picture.file;
 		floating.push(...picture.measures.floating);
-		const pictureGap = picture.measures.crownBoxGap;
-		if (pictureGap !== null && (worstGap === null || pictureGap > worstGap)) worstGap = pictureGap;
+		if (picture.covered !== null)
+			covered =
+				covered === null
+					? { least: picture.covered, most: picture.covered }
+					: {
+							least: Math.min(covered.least, picture.covered),
+							most: Math.max(covered.most, picture.covered),
+						};
 	}
 	if (floating.length > 0) {
 		const largest = floating.reduce((most, piece) => (piece.area > most.area ? piece : most));
@@ -455,7 +609,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			`${floating.length} piece${floating.length === 1 ? '' : 's'} meet${floating.length === 1 ? 's' : ''} nothing in ${floatingIn ?? 'a picture'}, the largest ${largest.area} px at ${largest.box}`,
 		);
 	}
-	/** The row as the figures read so far state it, with its verdict and reason. */
+	// The row's own copy of the figures, once the reference's are known.
 	const rowOf = (
 		verdict: SweepRow['verdict'],
 		reason: string,
@@ -470,6 +624,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 		gap,
 		pieces,
 		floating: floating.length,
+		covered,
 		verdict,
 		reason,
 		...over,
@@ -479,24 +634,45 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			gap: null,
 			pieces: null,
 		});
-	if (reference.separable && rung.distance !== 'fit') {
-		const referenceGap = reference.gap;
-		if (referenceGap !== null && worstGap !== null) {
-			gap = { drawn: worstGap, reference: referenceGap };
-			if (Math.abs(worstGap - referenceGap) > band)
+	if (reference.separable && rung.compare === 'gap') {
+		const referenceGap = reference.skyGap;
+		const skyGaps = drawn
+			.map((picture) => picture.skyGap)
+			.filter((value): value is number => value !== null);
+		if (referenceGap !== null && skyGaps.length > 0) {
+			// The bar is the still comparison's: a drawn crown may stand two points more closed
+			// and five points more open than its photograph's outline.
+			const least = Math.min(...skyGaps);
+			const most = Math.max(...skyGaps);
+			gap = { drawn: most, reference: referenceGap };
+			const outside = drawn.filter(
+				(picture) =>
+					picture.skyGap !== null &&
+					(picture.skyGap < referenceGap - GAP_BELOW || picture.skyGap > referenceGap + GAP_ABOVE),
+			);
+			if (outside.length > 0) {
+				const first = outside[0] as SweepPicture;
+				const figure = (first.skyGap as number).toFixed(3);
 				failures.push(
-					`the crown's open sky ${worstGap.toFixed(3)} against the reference's ${referenceGap.toFixed(3)}, past the ${band.toFixed(2)} band`,
+					`the crown's open sky ${figure} in ${first.file} against the reference's ${referenceGap.toFixed(3)}, past the ${GAP_BELOW.toFixed(2)}/${GAP_ABOVE.toFixed(2)} band (${least.toFixed(3)} to ${most.toFixed(3)} across ${skyGaps.length} pictures)`,
 				);
+			}
 		}
 		const drawnPieces = drawn
 			.map(piecesDrawn)
 			.filter((count): count is number => count !== null)
 			.reduce((most, count) => Math.max(most, count), 0);
-		if (reference.pieces !== null) pieces = { drawn: drawnPieces, reference: reference.pieces };
+		if (reference.pieces !== null) {
+			pieces = { drawn: drawnPieces, reference: reference.pieces };
+			if (drawnPieces > reference.pieces + 1)
+				failures.push(
+					`${drawnPieces} pieces against the reference's ${reference.pieces}, more than the one-piece band`,
+				);
+		}
 	}
-	if (drawn.length < SWEEP_PICTURES)
-		failures.unshift(`${drawn.length} of ${SWEEP_PICTURES} pictures drew`);
-	/** The near form's switch could not be reached from the whole camera's height. */
+	// The orbit's frames must hold together with the frames either side of them, not only with the
+	// photograph: a side that closes while the other opens shows here as a number.
+	for (const jump of sweepOrbitJumps(pictures)) failures.push(`the orbit jumps: ${jump}`);
 	const nearNote = (): string => {
 		if (nearShort === null) return '';
 		const names = ['leaf form', 'first card level', 'second card level', 'far card'];
@@ -508,11 +684,13 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 					? `${least.toFixed(1)} m`
 					: `${least.toFixed(1)} to ${nearShort.awayMost.toFixed(1)} m`;
 		const switchAt = input.distance === null ? 'unread' : `${input.distance.toFixed(1)} m`;
-		return `the near form's switch stands ${switchAt} from the foot, and the whole camera reached ${away}, so the page drew the ${names[nearShort.level] ?? 'far card'}`;
+		return `the near form's switch stands ${switchAt} from the foot, and this camera reached ${away}, so the page drew the ${names[nearShort.level] ?? 'far card'}`;
 	};
+	if (drawn.length < SWEEP_PICTURES)
+		failures.unshift(`${drawn.length} of ${SWEEP_PICTURES} pictures drew`);
 	if (failures.length > 0)
 		return rowOf('fail', [failures.join('; '), nearNote()].filter(Boolean).join('; '));
-	if (rung.distance !== 'fit' && (!reference.separable || reference.gap === null))
+	if (rung.compare === 'gap' && (!reference.separable || reference.skyGap === null))
 		return rowOf(
 			'open',
 			`the reference's outline does not separate, so its open sky cannot be compared; the ${drawn.length} pictures hold no floating piece`,
@@ -521,7 +699,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 	if (nearShort !== null) return rowOf('open', nearNote(), { floating: 0 });
 	const beside =
 		gap === null
-			? `no floating piece`
+			? 'no floating piece'
 			: `open sky ${gap.drawn.toFixed(3)} against ${gap.reference.toFixed(3)}`;
 	return rowOf(
 		'pass',
@@ -539,10 +717,12 @@ export interface SweepCoverage {
 	readonly missingRows: readonly string[];
 	/** The rungs whose reference view is missing, so the row is uncompared. */
 	readonly uncompared: readonly string[];
-	/** The rungs with fewer pictures than the sweep draws. */
+	/** The rungs with fewer pictures than the orbit draws. */
 	readonly missingPictures: readonly string[];
 	readonly failed: readonly string[];
 	readonly open: readonly string[];
+	/** The series' steps that open the crown, and the steps that did not draw or read. */
+	readonly series: readonly string[];
 	readonly green: boolean;
 }
 
@@ -550,6 +730,7 @@ export interface SweepCoverage {
 export function sweepCoverage(
 	species: string,
 	rows: readonly SweepRow[],
+	series: readonly SweepSeriesRow[] = [],
 	rungs: readonly SweepRung[] = SWEEP_RUNGS,
 ): SweepCoverage {
 	const byRung = new Map(rows.map((row) => [row.rung, row]));
@@ -569,6 +750,10 @@ export function sweepCoverage(
 		if (row.verdict === 'fail') failed.push(`${rung.label}: ${row.reason}`);
 		if (row.verdict === 'open') open.push(`${rung.label}: ${row.reason}`);
 	}
+	const seriesFaults = series
+		.filter((step) => step.verdict !== 'pass')
+		.map((step) => `${step.file} at ${step.distance.toFixed(2)} m: ${step.reason}`);
+	const short = series.length < SWEEP_SERIES_STEPS;
 	return {
 		species,
 		missingRows,
@@ -576,14 +761,57 @@ export function sweepCoverage(
 		missingPictures,
 		failed,
 		open,
+		series: [
+			...(short ? [`${series.length} of ${SWEEP_SERIES_STEPS} series steps drew`] : []),
+			...seriesFaults,
+		],
 		green:
 			missingRows.length +
 				uncompared.length +
 				missingPictures.length +
 				failed.length +
 				open.length ===
-			0,
+				0 &&
+			seriesFaults.length === 0 &&
+			!short,
 	};
+}
+
+/** One step of the pull-back series, as the table reads it. */
+export interface SweepSeriesRow {
+	readonly file: string;
+	readonly distance: number;
+	readonly level: number | null;
+	readonly covered: number | null;
+	readonly change: number | null;
+	readonly verdict: 'pass' | 'fail' | 'open';
+	readonly reason: string;
+}
+
+/**
+ * The pull-back series' rows: the share at each distance, and a step that opens the crown by more
+ * than one point. A step with no readable share is open, since the rule reads every frame.
+ */
+export function sweepSeriesRows(pictures: readonly SweepSeriesRow[]): readonly SweepSeriesRow[] {
+	const rows: SweepSeriesRow[] = [];
+	let previous: SweepSeriesRow | null = null;
+	for (const picture of [...pictures].sort((a, b) => a.distance - b.distance)) {
+		const before = previous === null ? null : previous.covered;
+		const change = before !== null && picture.covered !== null ? picture.covered - before : null;
+		let verdict: SweepSeriesRow['verdict'] = picture.verdict;
+		let reason = picture.reason;
+		if (picture.covered === null && verdict === 'pass') {
+			verdict = 'open';
+			reason = 'no covered share read at this distance';
+		} else if (change !== null && change < -SERIES_OPEN) {
+			verdict = 'fail';
+			reason = `the crown's covered share falls ${(-change).toFixed(3)} from ${previous?.file ?? 'the step before'} (${previous?.covered?.toFixed(3)} to ${picture.covered?.toFixed(3)})`;
+		}
+		const row: SweepSeriesRow = { ...picture, change, verdict, reason };
+		rows.push(row);
+		previous = row;
+	}
+	return rows;
 }
 
 /** A number of metres for a table, or a dash. */
@@ -596,7 +824,7 @@ function pair(value: { readonly drawn: number; readonly reference: number } | nu
 	return value === null ? '—' : `${value.drawn} / ${value.reference}`;
 }
 
-/** The table's columns, as a reader sees them. */
+/** The rung table's columns, as a reader sees them. */
 export const SWEEP_COLUMNS = [
 	'Species',
 	'View',
@@ -607,14 +835,28 @@ export const SWEEP_COLUMNS = [
 	'Open sky drawn / ref',
 	'Pieces drawn / ref',
 	'Floating',
+	'Orbit covered',
 	'Verdict',
 	'Reason',
 ] as const;
 
-/** The sweep's table, one row a species and a view. */
+/** The series table's columns. */
+export const SERIES_COLUMNS = [
+	'Species',
+	'Frame',
+	'Distance (m)',
+	'Level',
+	'Covered share',
+	'Change',
+	'Verdict',
+	'Reason',
+] as const;
+
+/** The sweep's tables: one row a species and a view, one row a series step. */
 export function sweepMarkdown(
 	rows: readonly SweepRow[],
 	coverage: readonly SweepCoverage[],
+	series: readonly (SweepSeriesRow & { readonly species: string })[] = [],
 ): string {
 	const lines: string[] = [
 		'# The sweep',
@@ -634,10 +876,31 @@ export function sweepMarkdown(
 				row.gap === null ? '—' : `${row.gap.drawn.toFixed(3)} / ${row.gap.reference.toFixed(3)}`,
 				pair(row.pieces),
 				String(row.floating),
+				row.covered === null
+					? '—'
+					: `${row.covered.least.toFixed(3)} to ${row.covered.most.toFixed(3)}`,
 				row.verdict,
 				row.reason,
 			].join(' | ')} |`,
 		);
+	if (series.length > 0) {
+		lines.push('', '## The pull-back series', '');
+		lines.push(`| ${SERIES_COLUMNS.join(' | ')} |`);
+		lines.push(`| ${SERIES_COLUMNS.map(() => '---').join(' | ')} |`);
+		for (const step of series)
+			lines.push(
+				`| ${[
+					step.species,
+					step.file.split('/').pop() ?? step.file,
+					step.distance.toFixed(2),
+					step.level === null ? '—' : String(step.level),
+					step.covered === null ? '—' : step.covered.toFixed(3),
+					step.change === null ? '—' : step.change.toFixed(3),
+					step.verdict,
+					step.reason,
+				].join(' | ')} |`,
+			);
+	}
 	lines.push('');
 	for (const species of coverage) {
 		const faults = [
@@ -650,6 +913,7 @@ export function sweepMarkdown(
 				: []),
 			...(species.failed.length > 0 ? [`failing rows: ${species.failed.join('; ')}`] : []),
 			...(species.open.length > 0 ? [`open faults: ${species.open.join('; ')}`] : []),
+			...(species.series.length > 0 ? [`series: ${species.series.join('; ')}`] : []),
 		];
 		lines.push(
 			`${species.species}: ${species.green ? 'every row drawn and compared' : faults.join('. ')}.`,
@@ -668,12 +932,12 @@ function referenceOf(set: ReferenceSet, slot: Slot | undefined): SweepReference 
 		plant.background.plain ||
 		skyMaskable(plant.background) ||
 		soilMaskable(plant.background, plant.height);
-	if (!separable) return { file: slot.file, separable: false, gap: null, pieces: null };
+	if (!separable) return { file: slot.file, separable: false, skyGap: null, pieces: null };
 	const measures = measurePlant(image, plant);
 	return {
 		file: slot.file,
 		separable: true,
-		gap: measures.box === null ? null : measures.crownBoxGap,
+		skyGap: measures.box === null ? null : measures.gapFraction,
 		pieces:
 			measures.box === null
 				? null
@@ -681,15 +945,66 @@ function referenceOf(set: ReferenceSet, slot: Slot | undefined): SweepReference 
 	};
 }
 
-/** One species' round: its rows, its coverage and its sheets, written into the run's folder. */
+/** A drawn picture's figures: its matte's pieces and, by the colour rule, its covered share. */
+function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): SweepPicture {
+	const record = (frame.cell as { level?: { level?: unknown; distance?: unknown } } | undefined)
+		?.level;
+	const level = record?.level;
+	const away = record?.distance;
+	const elevation = (frame.query as { elevation?: number } | undefined)?.elevation;
+	const height =
+		baseElevation !== undefined && elevation !== undefined && elevation > baseElevation + 0.5
+			? 'high'
+			: 'low';
+	const picture: SweepPicture = {
+		file: frame.file,
+		turn: frame.turn,
+		height,
+		level: typeof level === 'number' ? level : null,
+		away: typeof away === 'number' ? away : null,
+		measures: null,
+		skyGap: null,
+		covered: null,
+	};
+	if (frame.error !== undefined || frame.matteError !== undefined)
+		return {
+			...picture,
+			...(frame.error !== undefined && { error: frame.error }),
+			...(frame.matteError !== undefined && { matteError: frame.matteError }),
+		};
+	try {
+		const measures = sweepMeasures(runDir, frame);
+		const image = readImage(join(runDir, frame.file));
+		const plant = plantMask(image);
+		const read = measurePlant(image, plant);
+		const skyGap = read.box === null ? null : read.gapFraction;
+		return {
+			...picture,
+			measures,
+			skyGap,
+			covered: skyGap === null ? null : 1 - skyGap,
+		};
+	} catch (error) {
+		return {
+			...picture,
+			matteError: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
+
+/** One species' round: its rows, its series, its coverage and its sheets, written into the run. */
 export function sweepRun(
 	runDir: string,
 	species: string,
 	set: ReferenceSet,
 	frames: readonly RunFrame[],
 	plan: readonly SweepRungPlan[],
-	band = rubricBand(species, set.slug),
-): { readonly rows: readonly SweepRow[]; readonly coverage: SweepCoverage } {
+	series: readonly SweepSeriesStep[],
+): {
+	readonly rows: readonly SweepRow[];
+	readonly coverage: SweepCoverage;
+	readonly series: readonly SweepSeriesRow[];
+} {
 	const rows: SweepRow[] = [];
 	const sheets: {
 		readonly rung: string;
@@ -705,36 +1020,16 @@ export function sweepRun(
 	for (const entry of plan) {
 		const rungFrames = frames.filter((frame) => frame.group === `sweep-${entry.rung.id}`);
 		const reference = beside(entry.slot);
-		const pictures: SweepPicture[] = rungFrames.map((frame) => {
-			const record = (frame.cell as { level?: { level?: unknown; distance?: unknown } } | undefined)
-				?.level;
-			const level = record?.level;
-			const away = record?.distance;
-			const picture: SweepPicture = {
-				file: frame.file,
-				level: typeof level === 'number' ? level : null,
-				away: typeof away === 'number' ? away : null,
-				...(frame.error !== undefined && { error: frame.error }),
-				...(frame.matteError !== undefined && { matteError: frame.matteError }),
-				measures: null,
-			};
-			if (picture.error !== undefined || picture.matteError !== undefined) return picture;
-			try {
-				return { ...picture, measures: sweepMeasures(runDir, frame) };
-			} catch (error) {
-				return {
-					...picture,
-					matteError: error instanceof Error ? error.message : String(error),
-				};
-			}
-		});
+		const view = entry.slot?.view ?? entry.rung.referenceViews[0] ?? 'whole';
+		const baseElevation =
+			entry.rung.camera?.elevation ?? entry.slot?.elevation ?? VIEW_SPECS[view].elevation;
+		const pictures = rungFrames.map((frame) => pictureOf(runDir, frame, baseElevation));
 		const row = sweepRow({
 			species,
 			slug: set.slug,
 			rung: entry.rung,
 			reference,
 			distance: entry.distance,
-			band,
 			pictures,
 		});
 		rows.push(row);
@@ -745,8 +1040,6 @@ export function sweepRun(
 			);
 			const sheetRows: SheetRow[] = rungFrames.map((frame, index) => {
 				const picture = pictures[index];
-				// A picture that did not draw keeps its row, so the sheet names the gap rather than
-				// leaving the reader to count the rows.
 				const render =
 					picture?.error === undefined && picture?.matteError === undefined
 						? readImage(join(runDir, frame.file))
@@ -755,8 +1048,8 @@ export function sweepRun(
 					reference: referenceImage,
 					...(render && { render }),
 					lines: [
-						`${entry.rung.label}  ${frame.file.split('/').pop() ?? frame.file}`,
-						`level ${picture?.level ?? '—'}   floating ${picture?.measures?.floating.length ?? '—'}   verdict ${row.verdict}`,
+						`${entry.rung.label}  ${frame.file.split('/').pop() ?? frame.file}  ${frame.turn}°`,
+						`level ${picture?.level ?? '—'}   floating ${picture?.measures?.floating.length ?? '—'}   covered ${picture?.covered?.toFixed(3) ?? '—'}   verdict ${row.verdict}`,
 					],
 				};
 			});
@@ -767,7 +1060,35 @@ export function sweepRun(
 			});
 		}
 	}
-	const coverage = sweepCoverage(species, rows);
+	// The pull-back's frames are read one by one, then stepped against one another.
+	const seriesRows: SweepSeriesRow[] = [];
+	for (const step of series) {
+		const frame = frames.find((candidate) => candidate.file === step.file);
+		if (!frame || frame.error !== undefined) {
+			seriesRows.push({
+				file: step.file,
+				distance: step.distance,
+				level: null,
+				covered: null,
+				change: null,
+				verdict: 'fail',
+				reason: `did not draw: ${frame?.error ?? 'no frame'}`,
+			});
+			continue;
+		}
+		const picture = pictureOf(runDir, frame);
+		seriesRows.push({
+			file: step.file,
+			distance: step.distance,
+			level: picture.level,
+			covered: picture.covered,
+			change: null,
+			verdict: 'pass',
+			reason: '',
+		});
+	}
+	const stepped = sweepSeriesRows(seriesRows);
+	const coverage = sweepCoverage(species, rows, stepped);
 	for (const sheet of sheets) {
 		const pages = contactSheets(
 			`${species}  ${sheet.rung}  against its reference`,
@@ -777,12 +1098,16 @@ export function sweepRun(
 		for (const [index, page] of pages.entries())
 			writePng(join(runDir, `sweep-${sheet.rung}-sheet-${index + 1}.png`), page);
 	}
-	writeFileSync(join(runDir, 'sweep.json'), `${JSON.stringify({ rows, coverage }, null, '\t')}\n`);
-	writeFileSync(join(runDir, 'sweep.md'), sweepMarkdown(rows, [coverage]));
-	return { rows, coverage };
+	const withSpecies = stepped.map((step) => ({ ...step, species }));
+	writeFileSync(
+		join(runDir, 'sweep.json'),
+		`${JSON.stringify({ rows, coverage, series: withSpecies }, null, '\t')}\n`,
+	);
+	writeFileSync(join(runDir, 'sweep.md'), sweepMarkdown(rows, [coverage], withSpecies));
+	return { rows, coverage, series: stepped };
 }
 
-/** Whether every row of a round is green. */
+/** Whether every row and every series step of a round is green. */
 export function sweepGreen(rows: readonly SweepRow[], coverage: readonly SweepCoverage[]): boolean {
 	return coverage.every((entry) => entry.green) && rows.every((row) => row.verdict === 'pass');
 }

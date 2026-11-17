@@ -1,6 +1,7 @@
-// The sweep's table: its six rungs, the cameras it stands them at, the pictures it draws, and the
-// verdicts it reads. A rung with no reference view, a picture missing and a piece that meets
-// nothing fail; a reference that does not separate leaves its row open rather than passing it.
+// The sweep's tables: its six rungs, the orbit's cameras, the pull-back series, and the verdicts.
+// A rung with no reference view, a picture missing, a piece that meets nothing, a crown outside its
+// bar, an orbit that jumps and a series that opens all fail; a switch the camera cannot reach is an
+// open fault that names both distances.
 import { describe, expect, test } from 'bun:test';
 import type { PlantReviewQuery } from '../../../tests/pages/lib/plant-review/query.ts';
 import type { PlantView } from '../../../tests/pages/lib/plant-review/views.ts';
@@ -10,21 +11,30 @@ import type { ReferenceSet, Slot } from './references.ts';
 import type { RunFrame } from './render.ts';
 import {
 	planFromManifest,
+	SERIES_COLUMNS,
+	SERIES_OPEN,
 	SWEEP_COLUMNS,
 	SWEEP_HEIGHTS,
 	SWEEP_PICTURES,
 	SWEEP_RUNGS,
+	SWEEP_SERIES_STEPS,
+	SWEEP_STEP,
 	SWEEP_TURNS,
 	type SweepPicture,
 	type SweepReference,
+	type SweepSeriesRow,
 	sweepCameras,
 	sweepCoverage,
 	sweepDistanceOf,
 	sweepGreen,
 	sweepManifest,
 	sweepMarkdown,
+	sweepOrbitJumps,
 	sweepReference,
 	sweepRow,
+	sweepSeriesDistances,
+	sweepSeriesRows,
+	sweepSeriesShots,
 	sweepShots,
 	sweepStarts,
 } from './sweep.ts';
@@ -72,37 +82,56 @@ function frame(file: string, starts?: readonly number[]): RunFrame {
 /** A picture's connectivity, clean unless a piece is given to float. */
 function measures(
 	floating: readonly { area: number; box: string }[] = [],
-	gap = 0.2,
+	components = 1,
 ): SweepMeasures {
 	return {
-		components: 1,
+		components,
 		footRow: 100,
 		groundBand: null,
 		floating,
 		workWidth: null,
-		crownBoxGap: gap,
+		crownBoxGap: 0.2,
 	};
 }
 
-/** One drawn picture of a rung. */
+/** One drawn picture of an orbit. */
 function picture(
 	file: string,
 	level: number | null,
 	rest: Partial<SweepPicture> = {},
 ): SweepPicture {
-	return { file, level, away: null, measures: measures(), ...rest };
+	const covered = rest.covered === undefined ? 0.8 : rest.covered;
+	return {
+		file,
+		turn: 0,
+		height: 'low',
+		level,
+		away: null,
+		measures: measures(),
+		skyGap: covered === null ? null : 1 - covered,
+		covered,
+		...rest,
+	};
 }
 
-/** Every picture a rung draws, at its level, with the gap its measures carry. */
-function pictures(level: number | null, gap = 0.2): SweepPicture[] {
-	return Array.from({ length: SWEEP_PICTURES }, (_, index) =>
-		picture(`sweep/rung-${index}.png`, level, { measures: measures([], gap) }),
-	);
+/** Every picture an orbit draws, at a level and a covered share. */
+function orbit(level: number | null, covered = 0.8, turn?: number): SweepPicture[] {
+	const out: SweepPicture[] = [];
+	for (const angle of SWEEP_TURNS)
+		for (const height of SWEEP_HEIGHTS)
+			out.push(
+				picture(`sweep/rung-t${angle}-h${height.id}.png`, level, {
+					turn: angle,
+					height: height.id,
+					covered: turn === angle ? 0.5 : covered,
+				}),
+			);
+	return out;
 }
 
-/** The reference of a rung, separable with the gap and pieces it shows. */
+/** The reference of a rung, separable with the sky gap and pieces it shows. */
 function refOf(rest: Partial<SweepReference> = {}): SweepReference {
-	return { file: '01-whole.png', separable: true, gap: 0.2, pieces: 1, ...rest };
+	return { file: '01-whole.png', separable: true, skyGap: 0.2, pieces: 1, ...rest };
 }
 
 /** A rung's row from its pictures and the reference it is compared beside. */
@@ -117,7 +146,6 @@ function rowWith(
 		rung,
 		reference: ref,
 		distance: 18.5,
-		band: 0.25,
 		pictures: drawn,
 	});
 }
@@ -129,16 +157,21 @@ function levelFor(rung: (typeof SWEEP_RUNGS)[number]): number {
 	return 0;
 }
 
-/** A rung's row with the pictures it draws and a reference beside it. */
+/** A rung's row with a clean orbit and a reference beside it. */
 function row(
 	rung: (typeof SWEEP_RUNGS)[number] = SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
-	drawn = pictures(levelFor(rung)),
+	drawn = orbit(levelFor(rung)),
 ) {
 	return rowWith(rung, drawn, refOf());
 }
 
-describe('the sweep’s rungs', () => {
-	test('names six scales, each with a reference view list and the camera it stands at', () => {
+/** One series step's row. */
+function seriesStep(file: string, distance: number, covered: number | null): SweepSeriesRow {
+	return { file, distance, level: 0, covered, change: null, verdict: 'pass', reason: '' };
+}
+
+describe('the sweep’s rungs and orbit', () => {
+	test('names six scales, each with a reference view list and how it is judged', () => {
 		expect(SWEEP_RUNGS.map((rung) => rung.label)).toEqual([
 			'the far card',
 			'the first card level',
@@ -150,17 +183,26 @@ describe('the sweep’s rungs', () => {
 		for (const rung of SWEEP_RUNGS) {
 			expect(rung.referenceViews.length).toBeGreaterThan(0);
 			if (rung.distance === 'fit') expect(rung.level).toBe('any');
-			else expect(rung.referenceViews[0]).toBe('whole');
+			// The far card and the first card level are whole views; the near form's own switch is
+			// drawn from inside the crown.
+			else if (rung.distance !== 'near') expect(rung.referenceViews[0]).toBe('whole');
 		}
+		// The near form's switch lies near the foot, so the rung draws from the inside-crown camera.
+		const near = SWEEP_RUNGS.find((rung) => rung.id === 'switch');
+		expect(near?.referenceViews[0]).toBe('inside');
 	});
 
-	test('stands every rung at four turns and two heights, from the reference view’s own camera', () => {
+	test('orbits each rung at an even step of a full turn and two heights', () => {
+		expect(SWEEP_STEP).toBe(30);
+		expect(SWEEP_TURNS).toHaveLength(12);
+		expect(SWEEP_TURNS[0]).toBe(0);
+		expect(SWEEP_TURNS[11]).toBe(330);
 		expect(SWEEP_TURNS.length * SWEEP_HEIGHTS.length).toBe(SWEEP_PICTURES);
 		const inside = SWEEP_RUNGS.find((rung) => rung.id === 'inside') as (typeof SWEEP_RUNGS)[number];
 		const cameras = sweepCameras(inside, slot(6, 'inside', { turn: 45, elevation: 10 }));
 		expect(cameras).toHaveLength(SWEEP_PICTURES);
-		expect(cameras.map((camera) => camera.turn)).toEqual([45, 45, 135, 135, 225, 225, 315, 315]);
-		expect(cameras.map((camera) => camera.elevation)).toEqual([10, 25, 10, 25, 10, 25, 10, 25]);
+		expect(cameras.slice(0, 4).map((camera) => camera.turn)).toEqual([45, 45, 75, 75]);
+		expect(cameras.slice(0, 4).map((camera) => camera.elevation)).toEqual([10, 25, 10, 25]);
 	});
 
 	test('picks the first in-use still of a rung’s views, and none where the folder carries none', () => {
@@ -174,15 +216,14 @@ describe('the sweep’s rungs', () => {
 		expect(sweepReference(folder, SWEEP_RUNGS[5] as (typeof SWEEP_RUNGS)[number])).toBeUndefined();
 	});
 
-	test('reads the ladder’s three distances from the probe frame, and refuses a frame without them', () => {
+	test('reads the ladder’s three distances from the probe frame, and refuses one without them', () => {
 		expect(sweepStarts(frame('probe.png', [0, 3.7, 156.6, 1e9]))).toEqual([3.7, 156.6, 1e9]);
 		expect(sweepStarts(frame('probe.png'))).toBeNull();
 		expect(sweepStarts(undefined)).toBeNull();
-		// A zero start is a band the plant does not draw, so the ladder cannot name it.
 		expect(sweepStarts(frame('probe.png', [0, 0, 156.6, 1e9]))).toBeNull();
 	});
 
-	test('stands each ladder rung at its own switch, and the first card level inside its band', () => {
+	test('stands each ladder rung at its own switch, the near form nearer and low', () => {
 		const starts = [3.7, 156.6, 900] as const;
 		const far = sweepDistanceOf(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], starts) as number;
 		const first = sweepDistanceOf(SWEEP_RUNGS[1] as (typeof SWEEP_RUNGS)[number], starts) as number;
@@ -190,11 +231,11 @@ describe('the sweep’s rungs', () => {
 		expect(far).toBeGreaterThan(900);
 		expect(first).toBeGreaterThan(3.7);
 		expect(first).toBeLessThan(156.6);
-		expect(near).toBeLessThan(3.7);
+		expect(near).toBe(3.7);
 		expect(sweepDistanceOf(SWEEP_RUNGS[3] as (typeof SWEEP_RUNGS)[number], starts)).toBeNull();
 	});
 
-	test('draws every rung’s pictures beside its reference view, and forces no level', () => {
+	test('draws every rung beside its reference view, and forces no level', () => {
 		const folder = set([
 			slot(1, 'whole'),
 			slot(6, 'inside'),
@@ -212,6 +253,9 @@ describe('the sweep’s rungs', () => {
 		}
 		const far = shots.find((shot) => shot.cells[0]?.file.includes('sweep-far-card/'));
 		expect(far?.query.distance).toBeGreaterThan(900);
+		const near = shots.find((shot) => shot.cells[0]?.file.includes('sweep-switch/'));
+		expect(near?.query.distance).toBe(3.7);
+		expect(near?.query.view).toBe('inside');
 		const inside = shots.find((shot) => shot.cells[0]?.file.includes('sweep-inside/'));
 		expect(inside?.query.distance).toBeUndefined();
 		expect(() => sweepShots(folder, { ...base, lod: 1 }, [3.7, 156.6, 900])).toThrow(
@@ -219,53 +263,96 @@ describe('the sweep’s rungs', () => {
 		);
 	});
 
-	test('records its plan so a replay compares the same rungs', () => {
+	test('records its plan so a replay compares the same rungs and series', () => {
 		const folder = set([slot(1, 'whole'), slot(17, 'trunk')]);
 		const { plan } = sweepShots(folder, { species: 'species' }, [3.7, 156.6, 900]);
-		const manifest = sweepManifest(plan, [3.7, 156.6, 900]);
+		const pull = sweepSeriesShots({ species: 'species' }, [3.7, 156.6, 900]);
+		const manifest = sweepManifest(plan, [3.7, 156.6, 900], pull.steps);
 		expect(manifest.starts).toEqual([3.7, 156.6, 900]);
+		expect(manifest.series.length).toBe(pull.steps.length);
 		const replay = planFromManifest(folder, manifest);
 		expect(replay.map((entry) => entry.rung.id)).toEqual(plan.map((entry) => entry.rung.id));
 		expect(replay.map((entry) => entry.slot?.file ?? null)).toEqual(
 			plan.map((entry) => entry.slot?.file ?? null),
 		);
-		expect(replay.map((entry) => entry.distance)).toEqual(plan.map((entry) => entry.distance));
+	});
+});
+
+describe('the pull-back series', () => {
+	test('joins the rungs with intermediate distances, from inside the crown past the far start', () => {
+		const distances = sweepSeriesDistances([3.7, 156.6, 900]);
+		expect(distances.length).toBeGreaterThanOrEqual(SWEEP_SERIES_STEPS);
+		expect(distances[0]).toBeLessThan(3.7);
+		expect(distances[distances.length - 1]).toBeCloseTo(945, 3);
+		// The switches themselves are steps, so a crossing cannot hide between two of them.
+		expect(distances).toContain(3.7);
+		expect(distances).toContain(945);
+		for (let index = 1; index < distances.length; index++)
+			expect(distances[index]).toBeGreaterThan(distances[index - 1] as number);
+	});
+
+	test('reads a frame at every distance, at the page’s own camera', () => {
+		const { shots, steps } = sweepSeriesShots({ species: 'species' }, [3.7, 156.6, 900]);
+		expect(shots).toHaveLength(steps.length);
+		for (const [index, shot] of shots.entries()) {
+			expect(shot.query.view).toBe('whole');
+			expect(shot.query.distance).toBe(steps[index]?.distance);
+			expect(shot.cells[0]?.file).toBe(steps[index]?.file);
+		}
+	});
+
+	test('passes a series that holds or closes, and fails a step that opens by more than a point', () => {
+		const held = sweepSeriesRows([
+			seriesStep('a.png', 10, 0.6),
+			seriesStep('b.png', 20, 0.6),
+			seriesStep('c.png', 40, 0.65),
+		]);
+		expect(held.every((step) => step.verdict === 'pass')).toBe(true);
+		const opened = sweepSeriesRows([seriesStep('a.png', 10, 0.6), seriesStep('b.png', 20, 0.55)]);
+		expect(opened[1]?.verdict).toBe('fail');
+		expect(opened[1]?.reason).toContain('falls 0.050');
+		expect(opened[1]?.reason).toContain('0.600 to 0.550');
+		expect(SERIES_OPEN).toBe(0.01);
+	});
+
+	test('leaves a step open where no share reads, since the rule reads every frame', () => {
+		const rows = sweepSeriesRows([seriesStep('a.png', 10, null)]);
+		expect(rows[0]?.verdict).toBe('open');
+		expect(rows[0]?.reason).toContain('no covered share');
 	});
 });
 
 describe('the sweep’s verdicts', () => {
-	test('passes a rung whose pictures all drew beside a reference within its band', () => {
+	test('passes a rung whose orbit drew and stands inside its bars', () => {
 		const result = row();
 		expect(result.verdict).toBe('pass');
 		expect(result.pictures).toBe(SWEEP_PICTURES);
-		expect(result.gap).toEqual({ drawn: 0.2, reference: 0.2 });
-		expect(result.reason).toContain(`8 of ${SWEEP_PICTURES} pictures beside the reference`);
+		expect(result.covered).toEqual({ least: 0.8, most: 0.8 });
 	});
 
 	test('fails a rung with no reference view as uncompared', () => {
-		const result = rowWith(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], pictures(3), undefined);
+		const result = rowWith(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], orbit(3), undefined);
 		expect(result.verdict).toBe('fail');
 		expect(result.reason).toContain('uncompared');
 		expect(result.reference).toBeNull();
 	});
 
 	test('fails a rung with a missing picture, and names how many drew', () => {
-		const drawn = pictures(3).slice(1);
+		const drawn = orbit(3).slice(1);
 		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], drawn);
 		expect(result.verdict).toBe('fail');
-		expect(result.reason).toContain(`7 of ${SWEEP_PICTURES} pictures drew`);
+		expect(result.reason).toContain(`23 of ${SWEEP_PICTURES} pictures drew`);
 	});
 
 	test('fails a rung whose picture did not draw or holds no matte', () => {
-		const drawn = pictures(3);
-		drawn[0] = { file: 'sweep/rung-0.png', level: 3, away: null, error: 'E1410', measures: null };
-		drawn[1] = {
-			file: 'sweep/rung-1.png',
-			level: 3,
-			away: null,
-			matteError: 'no matte',
+		const drawn = orbit(3);
+		drawn[0] = picture('sweep/rung-0.png', 3, {
+			error: 'E1410',
 			measures: null,
-		};
+			skyGap: null,
+			covered: null,
+		});
+		drawn[1] = picture('sweep/rung-1.png', 3, { matteError: 'no matte', measures: null });
 		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], drawn);
 		expect(result.verdict).toBe('fail');
 		expect(result.reason).toContain('did not draw: E1410');
@@ -273,7 +360,7 @@ describe('the sweep’s verdicts', () => {
 	});
 
 	test('fails a rung where a piece meets nothing', () => {
-		const drawn = pictures(3);
+		const drawn = orbit(3);
 		drawn[4] = picture('sweep/rung-4.png', 3, {
 			measures: measures([{ area: 120, box: 'x 10..20, y 30..40' }]),
 		});
@@ -283,102 +370,112 @@ describe('the sweep’s verdicts', () => {
 		expect(result.reason).toContain('1 piece meets nothing');
 	});
 
-	test('fails a distance rung whose crown’s open sky stands past the band', () => {
-		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], pictures(3, 0.5));
-		expect(result.verdict).toBe('fail');
-		expect(result.reason).toContain('past the 0.25 band');
-	});
-
-	test('fails a ladder rung that drew another level than the ladder asked', () => {
-		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], pictures(1));
-		expect(result.verdict).toBe('fail');
-		expect(result.reason).toContain('not the far card');
-	});
-
-	test('leaves the near form open where the whole camera cannot reach its switch', () => {
-		const drawn = Array.from({ length: SWEEP_PICTURES }, (_, index) => ({
-			file: `sweep/near-${index}.png`,
-			level: 1,
-			away: 3.28,
-			measures: measures(),
-		}));
-		const result = rowWith(SWEEP_RUNGS[2] as (typeof SWEEP_RUNGS)[number], drawn, refOf());
-		expect(result.verdict).toBe('open');
-		expect(result.reason).toContain("near form's switch");
-		expect(result.reason).toContain('3.3 m');
-		// A failing near row names both its own fault and the switch it could not reach.
-		const floating = [...drawn];
-		floating[0] = {
-			...drawn[0]!,
-			measures: measures([{ area: 40, box: 'x 1..2, y 3..4' }]),
-		};
-		const failed = rowWith(SWEEP_RUNGS[2] as (typeof SWEEP_RUNGS)[number], floating, refOf());
-		expect(failed.verdict).toBe('fail');
-		expect(failed.reason).toContain('1 piece meets nothing');
-		expect(failed.reason).toContain("near form's switch");
-	});
-
-	test('leaves a distance rung open where its reference does not separate', () => {
+	test('fails a crown nearly half again as open as its photograph, with the figure', () => {
+		// The hawthorn's far card reads 0.530 against its reference's 0.362: past the five-point bar.
+		const drawn = orbit(3, 0.47);
 		const result = rowWith(
 			SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
-			pictures(3),
-			refOf({ separable: false, gap: null, pieces: null }),
+			drawn,
+			refOf({ skyGap: 0.36 }),
 		);
-		expect(result.verdict).toBe('open');
-		expect(result.reason).toContain('does not separate');
+		expect(result.verdict).toBe('fail');
+		expect(result.reason).toContain("crown's open sky 0.530");
+		expect(result.reason).toContain('past the 0.02/0.05 band');
 	});
 
-	test('counts every rung, and fails a round with a missing row or an uncompared view', () => {
+	test('fails a rung with more separate pieces than its photograph and the one-piece band', () => {
+		const drawn = orbit(3).map((entry) => ({
+			...entry,
+			measures: measures([], 4),
+		}));
+		const result = rowWith(
+			SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
+			drawn,
+			refOf({ pieces: 1 }),
+		);
+		expect(result.verdict).toBe('fail');
+		expect(result.reason).toContain("4 pieces against the reference's 1");
+	});
+
+	test('fails a ladder rung that drew another level, and leaves a switch the camera cannot reach open', () => {
+		const wrong = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], orbit(1));
+		expect(wrong.verdict).toBe('fail');
+		expect(wrong.reason).toContain('not the far card');
+		const near = row(SWEEP_RUNGS[2] as (typeof SWEEP_RUNGS)[number], orbit(1));
+		expect(near.verdict).toBe('open');
+		expect(near.reason).toContain("near form's switch");
+	});
+
+	test('fails an orbit frame that jumps beyond its neighbours’ covered share, naming its angle', () => {
+		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], orbit(3, 0.8, 120));
+		expect(result.verdict).toBe('fail');
+		expect(result.reason).toContain('the orbit jumps');
+		expect(result.reason).toContain('at 120°');
+	});
+
+	test('reads a cluster jump apart from the covered share', () => {
+		const drawn = orbit(3);
+		drawn[3] = picture('sweep/rung-t60-hlow.png', 3, {
+			turn: 60,
+			height: 'low',
+			measures: measures([
+				{ area: 40, box: 'a' },
+				{ area: 40, box: 'b' },
+			]),
+		});
+		const jumps = sweepOrbitJumps(drawn);
+		expect(jumps.some((jump) => jump.includes('2 pieces that meet nothing'))).toBe(true);
+	});
+
+	test('counts every rung and series step, and fails a round with a gap', () => {
 		const green = sweepCoverage(
 			'species',
 			SWEEP_RUNGS.map((rung) => row(rung)),
+			sweepSeriesRows([seriesStep('a.png', 10, 0.6), seriesStep('b.png', 20, 0.6)]),
 		);
-		expect(green.green).toBe(true);
-		expect(green.missingRows).toEqual([]);
+		expect(green.green).toBe(false);
+		expect(green.series[0]).toContain('2 of 24');
 		const short = sweepCoverage('species', [row()]);
-		expect(short.green).toBe(false);
 		expect(short.missingRows).toHaveLength(SWEEP_RUNGS.length - 1);
-		const uncompared = sweepCoverage('species', [
-			rowWith(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], pictures(3), undefined),
-		]);
+		const uncompared = sweepCoverage(
+			'species',
+			[
+				rowWith(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], orbit(3), undefined),
+				...SWEEP_RUNGS.slice(1).map((rung) => row(rung)),
+			],
+			[],
+		);
 		expect(uncompared.uncompared).toEqual(['the far card']);
 	});
 
-	test('reports a green round only when every row passes and every view is compared', () => {
+	test('reports a green round only when every row and every series step passes', () => {
 		const rows = SWEEP_RUNGS.map((rung) => row(rung));
-		const coverage = [sweepCoverage('species', rows)];
-		expect(sweepGreen(rows, coverage)).toBe(true);
-		const open = sweepCoverage('species', [
-			rowWith(
-				SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
-				pictures(3),
-				refOf({ separable: false, gap: null, pieces: null }),
-			),
-		]);
-		expect(sweepGreen([row()], [open])).toBe(false);
+		const steps = sweepSeriesRows([seriesStep('a.png', 10, 0.6), seriesStep('b.png', 20, 0.6)]);
+		const shortSeries = sweepCoverage('species', rows, steps);
+		expect(sweepGreen(rows, [shortSeries])).toBe(false);
 	});
 });
 
-describe('the sweep’s table', () => {
-	test('writes a row a species and a view, with each column’s figure', () => {
+describe('the sweep’s tables', () => {
+	test('writes a row a species and a view, and a row a series step', () => {
 		const rows = SWEEP_RUNGS.map((rung) => row(rung));
-		const table = sweepMarkdown(rows, [sweepCoverage('species', rows)]);
+		const steps = sweepSeriesRows([seriesStep('sweep-series/a.png', 10, 0.6)]).map((step) => ({
+			...step,
+			species: 'species',
+		}));
+		const table = sweepMarkdown(rows, [sweepCoverage('species', rows, [])], steps);
 		expect(table).toContain(`| ${SWEEP_COLUMNS.join(' | ')} |`);
-		const dataRows = table.split('\n').filter((line) => line.startsWith('| species |'));
-		expect(dataRows).toHaveLength(SWEEP_RUNGS.length);
-		for (const line of dataRows) {
-			const cells = line.split(' | ');
-			// The first and last cells carry the row's own pipes.
-			expect(cells).toHaveLength(SWEEP_COLUMNS.length);
-			expect(cells[0]).toBe('| species');
-			expect(cells[SWEEP_COLUMNS.length - 1]).toContain('|');
-		}
-		expect(table).toContain('species: every row drawn and compared');
+		expect(table).toContain(`| ${SERIES_COLUMNS.join(' | ')} |`);
+		const rungRows = table.split('\n').filter((line) => line.startsWith('| species |'));
+		expect(rungRows.length).toBeGreaterThanOrEqual(SWEEP_RUNGS.length);
+		const cells = (rungRows[0] as string).split(' | ');
+		expect(cells).toHaveLength(SWEEP_COLUMNS.length);
+		expect(table).toContain('## The pull-back series');
 	});
 
-	test('names the round’s faults in its coverage lines', () => {
-		const rows = [rowWith(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], pictures(3), undefined)];
-		const table = sweepMarkdown(rows, [sweepCoverage('species', rows)]);
+	test('names a round’s faults in its coverage lines', () => {
+		const rows = [rowWith(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], orbit(3), undefined)];
+		const table = sweepMarkdown(rows, [sweepCoverage('species', rows, [])]);
 		expect(table).toContain('missing rows:');
 		expect(table).toContain('uncompared');
 	});
