@@ -95,7 +95,7 @@ Options rejected:
 ## Consequences
 
 - `packages/engine/package.json` names the five sub-paths, with the source under `null3d-source` and the built twins in `lib/math/`.
-- `math-entry.test.ts` holds the exports map to the built twins. It holds the modules behind the entry to importing only each other, and to naming nothing that a simulation may not use.
+- `math-entry.test.ts` holds the exports map to the built twins. It holds the modules behind the entry to importing only each other and the engine's error class, through any kind of load. It also holds them to naming nothing that a simulation may not use. Its walk throws at a load that it cannot read as a module.
 - The same test bundles `tests/fixtures/rules-code/sim.ts` as the vbz SDK bundles a simulation. It reads the bundle for every name of clockwork2's list, which it copies, and for the names of page and worker code.
 - That scan reads the bundle through the TypeScript compiler, so it sees each name with its scope. It refuses every use of `Math` but a member access to an exact member. It refuses a global name only where no binding of the bundle shadows it. The type check (`tools/typecheck.ts`) reads the fixture with no DOM types.
 - A namespace member that a maker builds is a constant, declared with a function type of its own. The main entry's declarations then name no type of the maths entry. The API reference reads the signature from that function type and the summary from the member's own comment (`tools/lib/api-docs.ts`).

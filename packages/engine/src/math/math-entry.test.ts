@@ -6,7 +6,15 @@
 // a bundler that keeps a whole module still reaches no page, worker, generated or WebAssembly code,
 // and the package's exports map to naming each module's built twin.
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
@@ -228,13 +236,21 @@ const isImportMetaUrl = (node: ts.Node | undefined): boolean =>
 	node.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
 	node.name.text === 'url';
 
+/** True for the URL class, named alone or as a member of `globalThis`, `self` or `window`. */
+const isUrlClass = (node: ts.Expression): boolean =>
+	(ts.isIdentifier(node) && node.text === 'URL') ||
+	(ts.isPropertyAccessExpression(node) &&
+		node.name.text === 'URL' &&
+		ts.isIdentifier(node.expression) &&
+		['globalThis', 'self', 'window'].includes(node.expression.text));
+
 /**
  * The specifiers of the files that `file` loads in JavaScript: its import and export declarations
  * other than those of types alone, `import x = require(...)`, every `import(...)` and
- * `require(...)` call anywhere in it, and every `new URL(..., import.meta.url)`, which is how
- * engine code names a worker's script or an asset that the bundler copies beside it. An import of
- * types alone leaves nothing in a bundle. A load that names its file with anything but a string
- * cannot be followed, so it throws.
+ * `require(...)` call anywhere in it, and every `new URL(..., import.meta.url)`, also written
+ * `new globalThis.URL(...)`, which is how engine code names a worker's script or an asset that the
+ * bundler copies beside it. An import of types alone leaves nothing in a bundle. A load that names
+ * its file with anything but a string cannot be followed, so it throws.
  */
 function loadedModules(file: string, text: string): string[] {
 	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
@@ -264,8 +280,7 @@ function loadedModules(file: string, text: string): string[] {
 			loaded.push(specifier.text);
 		} else if (
 			ts.isNewExpression(node) &&
-			ts.isIdentifier(node.expression) &&
-			node.expression.text === 'URL' &&
+			isUrlClass(node.expression) &&
 			isImportMetaUrl(node.arguments?.[1])
 		) {
 			const [specifier] = node.arguments ?? [];
@@ -279,10 +294,46 @@ function loadedModules(file: string, text: string): string[] {
 	return loaded;
 }
 
+/** The extensions of a module that the walk reads for what it loads in turn. */
+const MODULE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
+/** The source twins that a built module's name stands for, tried before the built name itself. */
+const SOURCE_TWINS: Record<string, readonly string[]> = {
+	'.js': ['.ts', '.tsx'],
+	'.jsx': ['.tsx'],
+	'.mjs': ['.mts'],
+	'.cjs': ['.cts'],
+};
+
+/**
+ * The module file that `specifier` names from `file`. A built name such as `./vec3.js` stands for
+ * its source twin, `./vec3.ts` or `./vec3.tsx`, and a name with no extension for a module with one,
+ * or for its folder's index. A load of anything else, such as an asset, or of a file that is not
+ * there throws, because the walk cannot tell what it would bring into a bundle.
+ */
+function moduleFile(file: string, specifier: string, root: string): string {
+	const target = resolve(dirname(file), specifier);
+	const extension = extname(target);
+	const stem = target.slice(0, target.length - extension.length);
+	const candidates = [
+		...(SOURCE_TWINS[extension] ?? []).map((twin) => stem + twin),
+		...(MODULE_EXTENSIONS.includes(extension) ? [target] : []),
+		...MODULE_EXTENSIONS.map((each) => target + each),
+		...MODULE_EXTENSIONS.map((each) => join(target, `index${each}`)),
+	];
+	const found = candidates.find(
+		(candidate) => existsSync(candidate) && statSync(candidate).isFile(),
+	);
+	if (found === undefined)
+		throw new Error(
+			`${relative(root, file)} loads ${specifier}, which the walk cannot read as a module`,
+		);
+	return found;
+}
+
 /**
  * The files under `root` that `entry` reaches through what it loads in JavaScript, as paths from
- * `root`: the engine's, unless a test names another folder. A TypeScript module is read for what
- * it loads in turn, and any other file, such as a worker's built script or an asset, is listed.
+ * `root`: the engine's, unless a test names another folder. Each is a module that the walk reads
+ * for what it loads in turn.
  */
 function reachedFiles(entry: string, root = ENGINE): string[] {
 	const reached = new Set<string>();
@@ -293,10 +344,7 @@ function reachedFiles(entry: string, root = ENGINE): string[] {
 		for (const specifier of loadedModules(file, readFileSync(file, 'utf8'))) {
 			if (!specifier.startsWith('.'))
 				throw new Error(`${path} imports ${specifier}, which is not one of the engine's own files`);
-			const target = resolve(dirname(file), specifier);
-			if (target.endsWith('.ts')) walk(target);
-			else if (extname(target) === '') walk(`${target}.ts`);
-			else reached.add(relative(root, target));
+			walk(moduleFile(file, specifier, root));
 		}
 	};
 	walk(join(root, entry));
@@ -401,36 +449,41 @@ describe('the maths entry', () => {
 });
 
 describe('the walk of the modules that a maths module reaches', () => {
-	it('follows import(), require() and new URL() loads as well as declarations, and skips types alone', () => {
+	/** Writes `files` under a new folder and returns it. */
+	const project = (files: Record<string, string>): string => {
 		const root = mkdtempSync(join(tmpdir(), 'null3d-reach-'));
+		for (const [path, text] of Object.entries(files)) {
+			mkdirSync(dirname(join(root, path)), { recursive: true });
+			writeFileSync(join(root, path), text);
+		}
+		return root;
+	};
+
+	it('follows import(), require() and new URL() loads as well as declarations, and skips types alone', () => {
+		const root = project({
+			'math/entry.ts': [
+				"import type { Shape } from './shape';",
+				"export { add } from './add';",
+				"export const later = () => import('../page/later');",
+				"export const worker = () => new Worker(new URL('../page/worker.ts', import.meta.url));",
+				"export const script = new globalThis.URL('../page/script.ts', import.meta.url);",
+				"export const site = new URL('/elsewhere', 'https://example.com/');",
+			].join('\n'),
+			'math/shape.ts': 'export interface Shape { size: number }',
+			'math/add.ts': "export const add = (a: number, b: number) => a + b;\nrequire('../page/old');",
+			'page/later.ts': 'export const page = document.title;',
+			'page/old.ts': 'export const old = 1;',
+			'page/worker.ts': 'postMessage(1);',
+			'page/script.ts': 'postMessage(2);',
+		});
 		try {
-			const files: Record<string, string> = {
-				'math/entry.ts': [
-					"import type { Shape } from './shape';",
-					"export { add } from './add';",
-					"export const later = () => import('../page/later');",
-					"export const worker = () => new Worker(new URL('../page/worker.ts', import.meta.url));",
-					"export const table = new URL('../page/table.bin', import.meta.url);",
-					"export const site = new URL('/elsewhere', 'https://example.com/');",
-				].join('\n'),
-				'math/shape.ts': 'export interface Shape { size: number }',
-				'math/add.ts':
-					"export const add = (a: number, b: number) => a + b;\nrequire('../page/old');",
-				'page/later.ts': 'export const page = document.title;',
-				'page/old.ts': 'export const old = 1;',
-				'page/worker.ts': 'postMessage(1);',
-			};
-			for (const [path, text] of Object.entries(files)) {
-				mkdirSync(dirname(join(root, path)), { recursive: true });
-				writeFileSync(join(root, path), text);
-			}
 			// A maths module that loads page code when called brings that code into its bundle.
 			expect(reachedFiles('math/entry.ts', root)).toEqual([
 				'math/add.ts',
 				'math/entry.ts',
 				'page/later.ts',
 				'page/old.ts',
-				'page/table.bin',
+				'page/script.ts',
 				'page/worker.ts',
 			]);
 			writeFileSync(
@@ -440,13 +493,77 @@ describe('the walk of the modules that a maths module reaches', () => {
 			expect(() => reachedFiles('math/entry.ts', root)).toThrow(
 				'loads a module that it names with no string',
 			);
-			writeFileSync(
-				join(root, 'math/entry.ts'),
-				"const name = './worker';\nexport const w = new URL(name, import.meta.url);",
-			);
+			for (const url of ['URL', 'globalThis.URL']) {
+				writeFileSync(
+					join(root, 'math/entry.ts'),
+					`const name = './worker';\nexport const w = new ${url}(name, import.meta.url);`,
+				);
+				expect(() => reachedFiles('math/entry.ts', root)).toThrow(
+					'loads a module that it names with no string',
+				);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it('follows a built name to its source twin, and a bare name to a .tsx, .mts or index module', () => {
+		const root = project({
+			'math/entry.ts': [
+				"export { a } from './a.js';",
+				"export { b } from './b.js';",
+				"export { c } from './c.mjs';",
+				"export { d } from './d';",
+				"export { e } from './e';",
+				"export { f } from '../page';",
+			].join('\n'),
+			'math/a.ts': "export const a = 1;\nexport { g } from '../page/g.js';",
+			'math/b.tsx': 'export const b = 2;',
+			'math/c.mts': 'export const c = 3;',
+			'math/d.tsx': 'export const d = 4;',
+			'math/e.mts': 'export const e = 5;',
+			'page/index.ts': 'export const f = document.title;',
+			// A module written in JavaScript, with no source twin, is read as it is.
+			'page/g.js': "export { h as g } from './h.mjs';",
+			'page/h.mjs': 'export const h = location.href;',
+		});
+		try {
+			expect(reachedFiles('math/entry.ts', root)).toEqual([
+				'math/a.ts',
+				'math/b.tsx',
+				'math/c.mts',
+				'math/d.tsx',
+				'math/e.mts',
+				'math/entry.ts',
+				'page/g.js',
+				'page/h.mjs',
+				'page/index.ts',
+			]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it('throws at a load that it cannot read as a module: an asset, or a file that is not there', () => {
+		const root = project({
+			'math/entry.ts': "export const table = new URL('../page/table.bin', import.meta.url);",
+			'page/table.bin': 'not a module',
+		});
+		try {
 			expect(() => reachedFiles('math/entry.ts', root)).toThrow(
-				'loads a module that it names with no string',
+				'math/entry.ts loads ../page/table.bin, which the walk cannot read as a module',
 			);
+			for (const load of [
+				"export { gone } from './gone';",
+				"export { gone } from './gone.js';",
+				"export const gone = () => import('./gone.ts');",
+				"export const gone = new globalThis.URL('./gone.ts', import.meta.url);",
+			]) {
+				writeFileSync(join(root, 'math/entry.ts'), load);
+				expect(() => reachedFiles('math/entry.ts', root)).toThrow(
+					'which the walk cannot read as a module',
+				);
+			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
