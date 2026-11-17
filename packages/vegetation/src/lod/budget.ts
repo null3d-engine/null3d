@@ -39,6 +39,7 @@ import {
 	clusterCardMesh,
 	clusterTriangles,
 	type DrawnWood,
+	plannedClumpCards,
 	woodSurface,
 } from './cards';
 
@@ -78,6 +79,13 @@ const HAND_ROUNDS = 4;
 /** The steps in which a level thins its extras' sites, and the least share of the sites it draws. */
 const EXTRAS_STEPS = 20;
 const LEAST_EXTRAS_SHARE = 0.25;
+
+/**
+ * The share of a maximum that the crown takes before any part: a crown is what makes the plant read
+ * as a tree, so it is bought first and the wood, the branches and the extras share what is left. The
+ * clump cards that draw it are priced at the record's own clump-card price.
+ */
+const CROWN_SHARE = 0.6;
 
 /** No triangles in any part. */
 export const NO_TRIANGLES: PartTriangles = {
@@ -415,7 +423,20 @@ export function allocateLevel(
 			weights[k] = Math.max(0, reference[ALLOCATED[k] as keyof PartTriangles]);
 	whole = 0;
 	for (const weight of weights) whole += weight;
-	const exact = weights.map((weight) => (whole > 0 ? (room * weight) / whole : 0));
+	// The crown's share comes off the top; the other parts share what is left by their own weights.
+	const crown = Math.min(room, Math.floor(room * CROWN_SHARE));
+	const rest = room - crown;
+	const wholeRest = ALLOCATED.reduce(
+		(sum, part, k) => (part === 'leaves' ? sum : sum + Math.max(0, shares[part])),
+		0,
+	);
+	const exact = weights.map((weight, k) =>
+		ALLOCATED[k] === 'leaves'
+			? crown
+			: wholeRest > 0
+				? (rest * Math.max(0, weight)) / wholeRest
+				: 0,
+	);
 	const allocated = exact.map((value) => Math.floor(value));
 	let spent = 0;
 	for (const value of allocated) spent += value;
@@ -490,8 +511,9 @@ function planesFor(budget: number): number {
  * @param max The most triangles the level may draw.
  * @param reference What each part holds at the plant's best look, which sets the shares.
  * @returns The level.
+ * @category api/vegetation
  */
-function rowLevel(
+export function rowLevel(
 	input: BudgetInput,
 	level: MeshLevel,
 	max: number,
@@ -778,39 +800,63 @@ function rowLevel(
 	} else if (rows.count > 0) {
 		const budget = max - woodTotal - extras.cost;
 		allowed.leaves = budget;
-		const planes = planesFor(budget);
-		let clusters: CardCluster[] = [];
-		if (planes > 0) {
-			// The most clusters whose cards and stalks fit: the most the planes alone allow, or else
-			// a count found by halving between none and that.
-			const price = (count: number) => {
-				const made = cardClusters(mesh, walk, count, drawn, planes, surface);
-				return { made, cost: clusterTriangles(made, planes) };
-			};
-			let high = Math.min(mostClusters, Math.floor(budget / (2 * planes)));
-			const most = price(high);
-			if (most.cost <= budget) clusters = most.made;
-			else {
-				let low = 0;
-				while (high - low > 1) {
-					const middle = (low + high) >> 1;
-					const tried = price(middle);
-					if (tried.cost <= budget) {
-						low = middle;
-						clusters = tried.made;
-					} else high = middle;
+		const clumps = input.mesh.skeleton.clumps?.length ?? 0;
+		// A plant with clumps draws one clump card a clump: the crown's mass comes from the clumps the
+		// plant holds, not from one small card a row, and the share of them kept follows the leaves'
+		// allowance. A plant without clumps keeps the row clusters.
+		if (clumps > 0) {
+			const planes = budget >= 6 * clumps ? 3 : 2;
+			const each = 2 * planes;
+			// The count comes from what the budget pays, and the mesh itself is the check: a clump that
+			// stands clear of the wood takes a stalk, which costs more than a bare card, so the count
+			// drops by the overrun's price until the level's own triangles fit.
+			let count = Math.min(clumps, Math.max(0, Math.floor(budget / each)));
+			for (let pass = 0; pass < 8 && count > 0; pass++) {
+				const made = plannedClumpCards(input.mesh, planes, count / clumps, 1);
+				if (!made) break;
+				const cost = trianglesOf(made);
+				if (cost <= budget) {
+					cards = made;
+					leaves = cost;
+					break;
+				}
+				count = Math.max(0, count - Math.max(1, Math.ceil((cost - budget) / each)));
+			}
+		} else {
+			const planes = planesFor(budget);
+			let clusters: CardCluster[] = [];
+			if (planes > 0) {
+				// The most clusters whose cards and stalks fit: the most the planes alone allow, or else
+				// a count found by halving between none and that.
+				const price = (count: number) => {
+					const made = cardClusters(mesh, walk, count, drawn, planes, surface);
+					return { made, cost: clusterTriangles(made, planes) };
+				};
+				let high = Math.min(mostClusters, Math.floor(budget / (2 * planes)));
+				const most = price(high);
+				if (most.cost <= budget) clusters = most.made;
+				else {
+					let low = 0;
+					while (high - low > 1) {
+						const middle = (low + high) >> 1;
+						const tried = price(middle);
+						if (tried.cost <= budget) {
+							low = middle;
+							clusters = tried.made;
+						} else high = middle;
+					}
 				}
 			}
+			if (clusters.length > 0) {
+				cards = clusterCardMesh(mesh, clusters, planes);
+				leaves = trianglesOf(cards);
+			}
+			joins = {
+				clusters: clusters.length,
+				stalks: clusters.filter((cluster) => cluster.stalk).length,
+				free: clusters.filter((cluster) => !cluster.anchor).length,
+			};
 		}
-		if (clusters.length > 0) {
-			cards = clusterCardMesh(mesh, clusters, planes);
-			leaves = trianglesOf(cards);
-		}
-		joins = {
-			clusters: clusters.length,
-			stalks: clusters.filter((cluster) => cluster.stalk).length,
-			free: clusters.filter((cluster) => !cluster.anchor).length,
-		};
 	}
 	return {
 		...(level > 0 || input.wood ? { wood: built.mesh } : {}),
