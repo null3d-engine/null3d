@@ -68,7 +68,7 @@ With the option:
 - It keeps the listeners that take no input, the list above. The canvas watch's `visibilitychange` makes a sketch's step after a hidden page count no hidden time.
 - `engine.requestPointerLock()` fails with E1426. The lock is part of the engine's input: the sketch reads the movement through the engine's listeners. The page's own input code locks the canvas and reads the movement.
 - Stopping the engine ends a lock that it took or that its input read. With the option it took none, so a lock on the canvas stays the page's.
-- In a development build, the page writes the control block's `InputOff` slot. The sketch's thread then warns once for each kind of reliance on input. The kinds are a read of `ctx.input`, an object's first pointer event handler, and `@null3d/controls` among the add-ons that checked their version. Each warning names `input: false`. A production build neither writes nor reads the slot, and carries no warning.
+- In a development build, the page writes the control block's `InputOff` slot. The sketch's thread then warns once for each kind of reliance on input. The kinds are a read of `ctx.input`, an object's first pointer event handler, and `@null3d/controls` whenever the sketch loads it. Each warning names `input: false`. A production build neither writes nor reads the slot, and carries no warning.
 
 The deterministic simulation demo, `examples/replay`, shows the switch and the maths entry together. It sits in Motion and interaction, beside the input and math demos. Testing and tools holds the engine's own tools, and this replay is the game's.
 
@@ -85,12 +85,14 @@ Options rejected:
 - Warnings in every build: the owner asked that production pay nothing.
 - Telling the controls apart by a call stack: a stack names bundled files differently in each bundler. The version check that every first-party add-on already calls names the controls in a development build.
 - A new public flag that the controls read: it costs production bytes.
+- A record of the add-ons in the version module's own scope: a thread can hold two copies of that module. One is in the engine's code and one in the sketch's bundle. The record lives on the thread's global object under `Symbol.for('null3d.addonsChecked')`, as the error mark does.
+- Looking for the controls once after the setup: a sketch can load them later, from a callback. The runner listens for add-ons from its start, so a load at any time is named.
 - The demo in Testing and tools: see above.
 
 ## Consequences
 
 - `packages/engine/src/page/engine.ts` makes the input capture only when the engine takes input, guards the lock's release, refuses the lock with E1426 and writes the development slot.
-- `packages/engine/src/sketch/input-off.ts` holds the warnings. The runner, the input reader, the pointer events and `shared/version.ts` call it behind `DEV`.
+- `packages/engine/src/sketch/input-off.ts` holds the warnings. The runner, the input reader and the pointer events call it behind `DEV`, and `shared/version.ts` tells the runner of each add-on that checks its version.
 - The input test, `tests/image/input.spec.ts`, holds the listeners and the warnings in every thread mode. The lock test, `tests/image/pointer-lock.spec.ts`, holds the refusal and the release in a full Chromium build.
 - A unit test, `sketch/input-off.test.ts`, runs the warnings in a development build and a release build. The release check `debug/release-runner.test.ts` finds none of their text in a release build of the runner.
 - `tests/image/demo-interaction.spec.ts` drives the demo's page part and holds its replay to the run's camera. The demo's held frame is an image test. Its SwiftShader pictures were drawn on an x86 Linux machine, which `tests/image/local-references.json` records, and its real-GPU pictures need the Mac.

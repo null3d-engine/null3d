@@ -1,17 +1,18 @@
 // Test support for input-off.test.ts, which runs it as a development build and as a release build.
 // On an input reader that carries the notes, as the sketch's thread makes one for a page that
-// started the engine with `input: false`, it gives an object two pointer event handlers and checks
-// the controls package's version.
+// started the engine with `input: false`, it gives an object two pointer event handlers. It listens
+// for add-ons that check their version, as the sketch's thread does, while the controls check theirs
+// and stops before another add-on checks its own.
 
 import type { PointerTarget } from '../scene/pointer-events';
 import { PointerEvents } from '../scene/pointer-events';
-import { addonChecked, checkAddonVersion, VERSION } from '../shared/version';
+import { checkAddonVersion, onAddonChecked, VERSION } from '../shared/version';
 import { InputOffNotes } from './input-off';
 
-/** What the scenario's notes said, and whether the thread's list holds the controls package. */
+/** What the scenario's notes said, and the add-ons that its handler heard. */
 export interface InputOffResult {
 	said: string[];
-	controls: boolean;
+	heard: string[];
 }
 
 /** Runs the scenario and returns what it said. */
@@ -23,6 +24,10 @@ export function inputOffNotes(): InputOffResult {
 	const target = { destroyedFrame: -1, pointerListeners: undefined } as unknown as PointerTarget;
 	events.add(target, 'click', () => {});
 	events.add(target, 'pointerdown', () => {});
+	const heard: string[] = [];
+	const stop = onAddonChecked((name) => heard.push(name));
 	checkAddonVersion('@null3d/controls', VERSION);
-	return { said, controls: addonChecked('@null3d/controls') };
+	stop();
+	checkAddonVersion('@null3d/water', VERSION);
+	return { said, heard };
 }

@@ -3,8 +3,8 @@
 // the fingers, the gamepad's values, and the frame on screen at the pointer's last event in the
 // sketch's count. It answers the page's 'state' message with all of it. Its setup tells the page
 // when it starts and waits a moment, so the page can send input before the first frame. With
-// `relies` on its address, it also gives a box a pointer event handler and makes orbit controls, as
-// a sketch does that relies on input.
+// `relies` on its address, it also gives a box a pointer event handler, and in its first frame it
+// loads @null3d/controls and makes orbit controls, as a sketch does that relies on input.
 import { defineSketch } from '@null3d/engine';
 import { shownFrame } from '../lib/shown-frame';
 
@@ -26,13 +26,17 @@ const counts = () => Object.fromEntries(NAMES.map((name) => [name, 0])) as Recor
 export default defineSketch(async (ctx) => {
 	const { input, page, scene, geometry, materials } = ctx;
 	input.actions.define({ jump: ['Space', 'GamepadA'] });
-	if (new URL(import.meta.url).searchParams.has('relies')) {
+	const relies = new URL(import.meta.url).searchParams.has('relies');
+	if (relies) {
 		const box = scene.createMesh({ mesh: geometry.box(), material: materials.standard({}) });
 		box.on('click', () => {});
+	}
+	/** Loads the controls after the setup, from a frame's callback, the latest a sketch may. */
+	const loadControls = async () => {
 		const camera = scene.createPerspectiveCamera({ position: [0, 0, 5] });
 		const { createOrbitControls } = await import('@null3d/controls');
 		createOrbitControls(ctx, camera);
-	}
+	};
 	page.post('setup');
 	await new Promise((resolve) => setTimeout(resolve, SETUP_WAIT_MS));
 	let frames = 0;
@@ -60,6 +64,7 @@ export default defineSketch(async (ctx) => {
 	});
 	return {
 		onUpdate() {
+			if (relies && frames === 0) void loadControls();
 			frames++;
 			for (const name of NAMES) {
 				const press = input.wasPressed(name);

@@ -32,8 +32,10 @@ describe('the release build of the sketch runner', () => {
 			expect(holds(development, note)).toBe(true);
 			expect(holds(release, note)).toBe(false);
 		}
-		// Nor the list of the add-ons that checked their version, which only the notes read.
-		expect(holds(development, '@null3d/controls')).toBe(true);
-		expect(holds(release, '@null3d/controls')).toBe(false);
+		// Nor the thread's record of the add-ons that checked their version, which only the notes read.
+		for (const text of ['@null3d/controls', 'null3d.addonsChecked']) {
+			expect(holds(development, text)).toBe(true);
+			expect(holds(release, text)).toBe(false);
+		}
 	});
 });

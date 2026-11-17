@@ -417,7 +417,8 @@ for (const mode of ENGINE_MODES)
 		expect(await menuAllowed(page)).toBe(false);
 
 		// The sketch relies on input as well: it reads ctx.input, gives a box a pointer event handler
-		// and makes orbit controls. A development build says so in the console, once for each.
+		// and makes orbit controls in its first frame. A development build says so in the console, once
+		// for each.
 		const notes: string[] = [];
 		page.on('console', (message) => {
 			if (message.text().startsWith('null3D: ')) notes.push(message.text());
@@ -483,8 +484,10 @@ for (const mode of ENGINE_MODES)
 		expect(off.captures).toBe(0);
 		expect(await menuAllowed(page)).toBe(true);
 		expect(await padReads(page)).toBe(0);
-		expect(notes.map((note) => NOTE_KINDS.findIndex((kind) => note.includes(kind))).sort()).toEqual(
-			[0, 1, 2],
-		);
+		// The sketch loads the controls in its first frame, after its setup, and that late load is named
+		// too.
+		await expect
+			.poll(() => notes.map((note) => NOTE_KINDS.findIndex((kind) => note.includes(kind))).sort())
+			.toEqual([0, 1, 2]);
 		for (const note of notes) expect(note).toContain('input: false');
 	});

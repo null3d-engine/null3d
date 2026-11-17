@@ -106,7 +106,7 @@ import {
 } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { plansPending, tasksPending } from '../shared/task-pending';
-import { addonChecked } from '../shared/version';
+import { onAddonChecked } from '../shared/version';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -433,8 +433,11 @@ export class SketchRunner {
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
-	/** A development build's notes of input that the sketch relies on and the page does not write. */
-	declare private inputOffNotes: InputOffNotes | undefined;
+	/**
+	 * Stops a development build's watch for add-ons that rely on input that the page does not
+	 * write, which the runner keeps while it runs.
+	 */
+	declare private stopAddonNotes: (() => void) | undefined;
 	private readonly quality: SketchQuality;
 	/** The sketch's textures, whose memory budget each frame looks at. */
 	private readonly textures: Textures;
@@ -797,9 +800,13 @@ export class SketchRunner {
 		// says so, once for each kind, when the sketch relies on it.
 		if (DEV && Atomics.load(slots, Slot.InputOff) !== 0) {
 			const notes = new InputOffNotes();
-			this.inputOffNotes = notes;
 			this.input.inputOffNotes = notes;
 			noteInputReads(this.context, notes);
+			// The controls read the input, whenever the sketch loads them: in its module, in its
+			// setup, or later.
+			this.stopAddonNotes = onAddonChecked((name) => {
+				if (name === '@null3d/controls') notes.note('controls');
+			});
 		}
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		const seed =
@@ -820,9 +827,6 @@ export class SketchRunner {
 		this.record.markSetupStart();
 		const growing = performance.now();
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
-		// The sketch's module has loaded, with the add-ons that it imports, and so has any add-on
-		// that its setup imported.
-		if (DEV && addonChecked('@null3d/controls')) this.inputOffNotes?.note('controls');
 		this.record.markSetupDone(performance.now() - growing);
 		const { check } = this.sketch.quality;
 		if (check && !this.holdsFrames) await this.checkPreset();
@@ -951,6 +955,7 @@ export class SketchRunner {
 	 */
 	dispose(): void {
 		if (this.core.stopped) return;
+		if (DEV) this.stopAddonNotes?.();
 		try {
 			this.callbacks.onDestroy?.();
 		} catch (error) {

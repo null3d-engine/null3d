@@ -37,14 +37,39 @@ export interface PluginInterfaceRange {
 }
 
 /**
- * The add-ons that checked their version in this thread, by package name, in a development build:
- * the sketch's thread names one whose use the page's options make useless, such as
- * @null3d/controls on an engine that takes no input. A production build keeps no such list.
+ * Where a thread keeps, in a development build, the add-ons that checked their version and the
+ * handlers that hear each one. The sketch's thread names an add-on whose use the page's options
+ * make useless, such as @null3d/controls on an engine that takes no input. A thread can hold two
+ * copies of this module, one in the engine's code and one in the sketch's bundle, so the record
+ * lives on the thread's global object under a shared symbol, as the error mark does. A production
+ * build keeps no record.
  */
-const checked = /* @__PURE__ */ new Set<string>();
+const ADDONS = /* @__PURE__ */ Symbol.for('null3d.addonsChecked');
 
-/** Whether the add-on of this package name checked its version in this thread. Development builds only. */
-export const addonChecked = (name: string): boolean => checked.has(name);
+/** A thread's record of the add-ons that checked their version. */
+interface AddonRecord {
+	names: Set<string>;
+	hearers: Set<(name: string) => void>;
+}
+
+/** The thread's record, which the first copy of this module to need it makes. */
+function addonRecord(): AddonRecord {
+	const thread = globalThis as { [ADDONS]?: AddonRecord };
+	thread[ADDONS] ??= { names: new Set(), hearers: new Set() };
+	return thread[ADDONS];
+}
+
+/**
+ * Calls `heard` with each add-on that has checked its version in this thread, and then with each
+ * that checks it from now on, whichever copy of this module it calls. Returns a function that stops
+ * it. Development builds only.
+ */
+export function onAddonChecked(heard: (name: string) => void): () => void {
+	const record = addonRecord();
+	record.hearers.add(heard);
+	for (const name of record.names) heard(name);
+	return () => record.hearers.delete(heard);
+}
 
 /**
  * Checks that an add-on, built for `version` of the engine, runs against this engine's version,
@@ -58,7 +83,11 @@ export const addonChecked = (name: string): boolean => checked.has(name);
  * @category api/engine
  */
 export function checkAddonVersion(name: string, version: string): void {
-	if (DEV) checked.add(name);
+	if (DEV) {
+		const record = addonRecord();
+		record.names.add(name);
+		for (const heard of record.hearers) heard(name);
+	}
 	if (version === VERSION) return;
 	throw new EngineError(
 		'E1432',
