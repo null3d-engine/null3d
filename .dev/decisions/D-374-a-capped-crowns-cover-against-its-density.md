@@ -63,13 +63,16 @@ rule's crown is under 2 per cent narrower, with fine grain and a shape-matched l
 refinement draws a real green crown where the dense rule was a null at that distance. Its plates are coarser. The
 trade therefore splits by species: the hawthorn favors the dense rule, the birch favors the refinement.
 
-The walk's green wedge. The dense rule's own picture at the birch's million cap carries a bright green triangular
-sheet on the crown's left flank, about 60 pixels long. The same still at 2ba74282e, the dense rule without the walk,
-draws a clean lower left: build/crown/birch-crown-cap1m-dense-nowalk. The same rule with the walk at ed0bf39f6 draws
-the sheet. The refined tree at 82692ca5a does not draw it. That is one camera's luck, not immunity: the place the walk
-picks varies with the turn. The sheet reads as one of two things. One is a row-place card whose cell samples an
-empty or border texel, painting as a flat color sheet. The other is a card collapsed by a degenerate basis. It is an open look fault of the walk's card
-placement and is fixed there, not avoided.
+The walk's green wedge. The dense rule's own picture at the birch's million cap carries a flat green sheet on the
+crown's left flank, about 60 pixels long. The same still at 2ba74282e, the dense rule without the walk, draws a clean
+lower left: build/crown/birch-crown-cap1m-dense-nowalk. The sheet's flat color, 68,102,20, covers 695 pixels there
+in the walk run and none in the control. The card under the sheet's center is normal in every attribute. Its cell is
+a valid leaf cell, its colors match its neighbours, and its gate is zero like every level-0 row card. Its place is
+right too, 0.27 meters from its nearest row. The sheet is a run of these row cards. Each shows one small leaf
+picture, which blurs to a flat plate at the camera's 28 meters. The control's crown shows the clump cards' tiled
+pictures there instead. So the fault is the row cards' picture granularity where the crown already draws, not a
+stray or degenerate triangle. It is an open look fault of the walk's card placement; the fix is a placement rule
+there, not avoidance.
 
 ## Decision
 
