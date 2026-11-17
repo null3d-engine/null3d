@@ -37,8 +37,8 @@ export const plannedGrowth: Planned = {
 	// square. The first fill order asks for that density through each clump; the second packs the
 	// shoots below them.
 	orders: [
-		{ density: 18, angle: 50, length: 0.3, birth: 0, kink: 18 },
-		{ density: 16, angle: 45, length: 0.25, birth: 0, kink: 15 },
+		{ piece: 'bough', density: 18 },
+		{ piece: 'bough', density: 16 },
 	],
 	// The whorl boughs are the record's limbs, as the cypress and the sequoia keep them: the thinning
 	// loop reads orders 2 and up, so the order-1 share is zero and the rows and the orders below

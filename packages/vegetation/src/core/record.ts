@@ -1576,22 +1576,22 @@ export interface Column {
 }
 
 /**
- * One order of a planned plant's wood, the orders below the boughs: what each parent carries, how
- * far its children reach and where they leave it.
+ * One order of a planned plant's wood, the orders below the boughs: the measured piece its sockets
+ * carry, and how many of them a square metre of the crown's clump width holds.
  *
  * @category api/vegetation
  */
 export interface OrderSpec {
-	/** Children per metre of parent. */
+	/**
+	 * The measured piece the order's sockets carry, by its name among the record's pieces. The
+	 * order reads that piece's length and radius; it states no figures of its own.
+	 */
+	readonly piece: string;
+	/**
+	 * Sockets per square metre of a clump's own width at full sparseness: the plan's look figure,
+	 * not a measured piece figure, so a species may tune it without touching its pieces.
+	 */
 	readonly density: Curve;
-	/** Degrees a child leaves its parent at. */
-	readonly angle: Curve;
-	/** The child's length as a share of its parent's. */
-	readonly length: number;
-	/** Model years after its parent's birth that the child appears at. */
-	readonly birth: number;
-	/** Degrees the child turns where it takes over from its parent. */
-	readonly kink: number;
 }
 
 /**

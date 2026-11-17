@@ -51,8 +51,8 @@ export const plannedGrowth: Planned = {
 	// The pictures are a dense dark bush, not a see-through veil, so the fill carries half again the
 	// twigs the oak's does through each clump.
 	orders: [
-		{ density: 12, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 18, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'branch-end', density: 12 },
+		{ piece: 'branch-end', density: 18 },
 	],
 	// The share of each order kept at full sparseness. The stems and the great limbs never thin.
 	thin: [0, 0, 0.34, 0.67, 0.72],

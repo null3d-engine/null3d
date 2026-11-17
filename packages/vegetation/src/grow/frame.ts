@@ -446,6 +446,11 @@ export interface FramePatch {
 	 * whip's does. Absent, the patch stands at the axis's end.
 	 */
 	readonly clothes?: number;
+	/**
+	 * The fine wood the patch asks for, in metres: the spacing between the sockets that clothe it
+	 * and the length of the piece at each. Absent, the patch states dense sockets instead.
+	 */
+	readonly fill?: { readonly pitch: number; readonly reach: number };
 }
 
 /** A patch while its plan is built, with the fine wood it asks for, in metres. */

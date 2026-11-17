@@ -5,7 +5,7 @@
 //
 // W owns this file from the crown-fill handover: the rows per clump, the depth through each clump,
 // the rim clumps with sky bays, the inner layer and the branch kinks all live here.
-import { BUD_FLOWER, BUD_TERMINAL, type SkeletonBuilder } from '../core/graph';
+import { BUD_FLOWER, BUD_TERMINAL, type FillFigures, type SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
 import {
 	cos,
@@ -119,6 +119,12 @@ export interface FillInput {
 	 * a fuller-leaved species asks for more twigs through the same clump.
 	 */
 	readonly density?: number;
+	/**
+	 * The measured piece figures each fill order reads from the record: its piece's length and
+	 * radius and the record's socket spacing. The fill takes the first order's piece figures, so a
+	 * species' piece size has one source.
+	 */
+	readonly figures?: readonly FillFigures[];
 }
 
 /** One socket the fill places, its place and the clump it belongs to. */
@@ -148,6 +154,8 @@ interface Goal {
  */
 export function fillClumps(input: FillInput): FillCount {
 	const { builder, seed, variant, clumps, leaves, pieceScale, salt, turn, flowers } = input;
+	// The piece's measured foot radius, so the wood a socket hangs on matches the wood it carries.
+	const pieceRadius = input.figures?.[0]?.radius;
 	const goals: Goal[] = [];
 	for (const clump of clumps) {
 		if (!(clump.growth > 0)) continue;
@@ -268,7 +276,7 @@ export function fillClumps(input: FillInput): FillCount {
 			point: goal.point,
 			direction: unitFrom(goal.clump.centre, goal.point),
 			id: goal.clump.id,
-			woodRadius: 0.004,
+			woodRadius: pieceRadius !== undefined ? pieceRadius * goal.scale : 0.004,
 		};
 		const hung = builder.budCount;
 		hangBud(
