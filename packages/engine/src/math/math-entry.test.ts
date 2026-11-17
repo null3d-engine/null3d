@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, extname, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 
@@ -220,11 +220,21 @@ function forbiddenNames(code: string): string[] {
 	return [...found];
 }
 
+/** True for `import.meta.url`, which a `new URL(...)` of a file beside the module takes. */
+const isImportMetaUrl = (node: ts.Node | undefined): boolean =>
+	node !== undefined &&
+	ts.isPropertyAccessExpression(node) &&
+	ts.isMetaProperty(node.expression) &&
+	node.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+	node.name.text === 'url';
+
 /**
- * The specifiers of the modules that `file` loads in JavaScript: its import and export declarations
- * other than those of types alone, `import x = require(...)`, and every `import(...)` and
- * `require(...)` call anywhere in it. An import of types alone leaves nothing in a bundle, and a
- * call that names its module with anything but a string cannot be followed, so it throws.
+ * The specifiers of the files that `file` loads in JavaScript: its import and export declarations
+ * other than those of types alone, `import x = require(...)`, every `import(...)` and
+ * `require(...)` call anywhere in it, and every `new URL(..., import.meta.url)`, which is how
+ * engine code names a worker's script or an asset that the bundler copies beside it. An import of
+ * types alone leaves nothing in a bundle. A load that names its file with anything but a string
+ * cannot be followed, so it throws.
  */
 function loadedModules(file: string, text: string): string[] {
 	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
@@ -252,6 +262,16 @@ function loadedModules(file: string, text: string): string[] {
 			if (!specifier || !ts.isStringLiteralLike(specifier))
 				throw new Error(`${file} loads a module that it names with no string`);
 			loaded.push(specifier.text);
+		} else if (
+			ts.isNewExpression(node) &&
+			ts.isIdentifier(node.expression) &&
+			node.expression.text === 'URL' &&
+			isImportMetaUrl(node.arguments?.[1])
+		) {
+			const [specifier] = node.arguments ?? [];
+			if (!specifier || !ts.isStringLiteralLike(specifier))
+				throw new Error(`${file} loads a module that it names with no string`);
+			loaded.push(specifier.text);
 		}
 		ts.forEachChild(node, visit);
 	};
@@ -260,8 +280,9 @@ function loadedModules(file: string, text: string): string[] {
 }
 
 /**
- * The source files under `root` that `entry` reaches through the modules that it loads in
- * JavaScript, as paths from `root`: the engine's, unless a test names another folder.
+ * The files under `root` that `entry` reaches through what it loads in JavaScript, as paths from
+ * `root`: the engine's, unless a test names another folder. A TypeScript module is read for what
+ * it loads in turn, and any other file, such as a worker's built script or an asset, is listed.
  */
 function reachedFiles(entry: string, root = ENGINE): string[] {
 	const reached = new Set<string>();
@@ -273,7 +294,9 @@ function reachedFiles(entry: string, root = ENGINE): string[] {
 			if (!specifier.startsWith('.'))
 				throw new Error(`${path} imports ${specifier}, which is not one of the engine's own files`);
 			const target = resolve(dirname(file), specifier);
-			walk(target.endsWith('.ts') ? target : `${target}.ts`);
+			if (target.endsWith('.ts')) walk(target);
+			else if (extname(target) === '') walk(`${target}.ts`);
+			else reached.add(relative(root, target));
 		}
 	};
 	walk(join(root, entry));
@@ -378,7 +401,7 @@ describe('the maths entry', () => {
 });
 
 describe('the walk of the modules that a maths module reaches', () => {
-	it('follows import() and require() calls as well as declarations, and skips types alone', () => {
+	it('follows import(), require() and new URL() loads as well as declarations, and skips types alone', () => {
 		const root = mkdtempSync(join(tmpdir(), 'null3d-reach-'));
 		try {
 			const files: Record<string, string> = {
@@ -386,12 +409,16 @@ describe('the walk of the modules that a maths module reaches', () => {
 					"import type { Shape } from './shape';",
 					"export { add } from './add';",
 					"export const later = () => import('../page/later');",
+					"export const worker = () => new Worker(new URL('../page/worker.ts', import.meta.url));",
+					"export const table = new URL('../page/table.bin', import.meta.url);",
+					"export const site = new URL('/elsewhere', 'https://example.com/');",
 				].join('\n'),
 				'math/shape.ts': 'export interface Shape { size: number }',
 				'math/add.ts':
 					"export const add = (a: number, b: number) => a + b;\nrequire('../page/old');",
 				'page/later.ts': 'export const page = document.title;',
 				'page/old.ts': 'export const old = 1;',
+				'page/worker.ts': 'postMessage(1);',
 			};
 			for (const [path, text] of Object.entries(files)) {
 				mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -403,10 +430,19 @@ describe('the walk of the modules that a maths module reaches', () => {
 				'math/entry.ts',
 				'page/later.ts',
 				'page/old.ts',
+				'page/table.bin',
+				'page/worker.ts',
 			]);
 			writeFileSync(
 				join(root, 'math/entry.ts'),
 				"const name = './add';\nexport const load = () => import(name);",
+			);
+			expect(() => reachedFiles('math/entry.ts', root)).toThrow(
+				'loads a module that it names with no string',
+			);
+			writeFileSync(
+				join(root, 'math/entry.ts'),
+				"const name = './worker';\nexport const w = new URL(name, import.meta.url);",
 			);
 			expect(() => reachedFiles('math/entry.ts', root)).toThrow(
 				'loads a module that it names with no string',
