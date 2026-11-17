@@ -1011,7 +1011,7 @@ function evenShare<T>(list: readonly T[], share: number): T[] {
  * at the first, so a plate there reads at a leaf's scale rather than a clump's, and the second
  * level keeps its count so the far band does not move.
  */
-const CLUMP_TILES: readonly [first: number, second: number] = [3, 3];
+const CLUMP_TILES: readonly [first: number, second: number] = [4, 3];
 
 /** The tiles a side at a card level. */
 export const tilesAt = (level: 1 | 2): number => CLUMP_TILES[level - 1] as number;
