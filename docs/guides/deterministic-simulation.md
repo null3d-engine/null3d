@@ -53,7 +53,7 @@ export function stepShip(position: number[], heading: number[], thrust: number):
 }
 ```
 
-Never import `@null3d/engine` itself in simulation code. Its bundle brings the engine's page code with it: `Atomics`, `document`, `navigator`, `requestAnimationFrame`, a top-level `FinalizationRegistry`, and helpers that call `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp` and `Math.random`. A replaying engine that scans the simulation for those names refuses it. Bun 1.3.11 bundled six helpers from `@null3d/engine` into 87,902 bytes. From the sub-paths, the same six took 1,202 bytes.
+Never import `@null3d/engine` itself in simulation code. Bun 1.4.3 bundles six helpers from it into 9,133 bytes, against 1,202 bytes from the sub-paths. The rest is engine code that the simulation never calls, with a top-level `FinalizationRegistry`, which a replaying engine's scan refuses. A bundler that keeps each re-exported namespace whole brings far more. Bun 1.3.11 does, and its bundle of the same six takes 87,857 bytes, with `Atomics`, `document`, `navigator`, `requestAnimationFrame`, and helpers that call `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp` and `Math.random`.
 
 The maths entry leaves out four groups:
 
@@ -89,7 +89,7 @@ export const ease = (speed: number, goal: number, dt: number) => exact.math.damp
 - Each takes the same arguments and does the same arithmetic as the main entry's helper of its name. Given `Math.sin`, `Math.cos`, `Math.acos` and `Math.exp`, its results are the main entry's, bit for bit.
 - Import the four functions by name, as above. A whole namespace passed as a value, as in `createMath(dmath)`, makes a bundler keep every function of the library.
 - `createMath` throws [E1213](../errors/E1213.md) when one of the four is not a function.
-- The helpers cost about 2.2 KB together, in one object, which a bundler keeps whole.
+- The helpers and the error that `createMath` throws cost about 2.7 KB together, in one object, which a bundler keeps whole.
 
 An exact library and the browser's `Math` can differ in the last bit. So the sketch draws the state that the simulation computed, rather than computing it again with its own helpers.
 

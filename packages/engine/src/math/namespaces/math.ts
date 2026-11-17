@@ -13,4 +13,5 @@ export * from '../random';
  * Moves `x` toward `y` by an amount that suits the frame's step `dt` in seconds, so the motion looks
  * the same at every frame rate. A larger `lambda` moves faster.
  */
-export const damp = /* @__PURE__ */ makeDamp(Math.exp);
+export const damp: (x: number, y: number, lambda: number, dt: number) => number =
+	/* @__PURE__ */ makeDamp(Math.exp);

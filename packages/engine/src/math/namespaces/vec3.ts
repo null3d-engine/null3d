@@ -4,8 +4,9 @@
 // `angle` with `createMath`.
 
 import { makeAngle } from '../create-math';
+import type { Vec3Like } from '../types';
 
 export * from '../vec3';
 
 /** The angle between `a` and `b` in radians, from 0 to π. It is π / 2 when either vector is zero. */
-export const angle = /* @__PURE__ */ makeAngle(Math.acos);
+export const angle: (a: Vec3Like, b: Vec3Like) => number = /* @__PURE__ */ makeAngle(Math.acos);

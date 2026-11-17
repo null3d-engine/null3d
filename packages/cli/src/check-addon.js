@@ -24,6 +24,7 @@ import {
 import { placeName, profilePlaces, steadyPlaces, totalSize } from './heap-profile.js';
 import { ENGINE_GLOBAL, holdPath, holdResult, switchedPath } from './page.js';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from './protocol.js';
+import { PUBLIC_ENTRIES } from './public-entries.js';
 import { failure, pollPage, startRunner, visitPage } from './runner.js';
 import { BuildNames } from './source-names.js';
 import { outcomeText, summaryLine } from './test.js';
@@ -39,9 +40,6 @@ import { counted } from './text.js';
 
 /** The file that names an add-on's package, in its folder. */
 const MANIFEST = 'package.json';
-
-/** The engine's entry points that an add-on may import. */
-const PUBLIC_ENTRIES = new Set(['@null3d/engine', '@null3d/engine/stats']);
 
 /** The engine's entry-point prefix. */
 const ENGINE_ENTRY = '@null3d/engine';

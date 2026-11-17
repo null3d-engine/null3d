@@ -12,29 +12,41 @@ import {
 	makeSetAxisAngle,
 	makeSlerp,
 } from '../create-math';
+import type { EulerOrder, QuatLike, Vec3Like } from '../types';
 
 export * from '../quat';
 
 /** The rotation of `rad` radians about `axis`, a vector of length 1. */
-export const setAxisAngle = /* @__PURE__ */ makeSetAxisAngle(Math.sin, Math.cos);
+export const setAxisAngle: <T extends QuatLike>(out: T, axis: Vec3Like, rad: number) => T =
+	/* @__PURE__ */ makeSetAxisAngle(Math.sin, Math.cos);
 
 /**
  * The rotation of Euler angles in radians, applied in `order`, `'XYZ'` by default, as three.js's
  * `setFromEuler`. gl-matrix's `fromEuler` takes degrees, but this one takes radians.
  */
-export const fromEuler = /* @__PURE__ */ makeFromEuler(Math.sin, Math.cos);
+export const fromEuler: <T extends QuatLike>(
+	out: T,
+	x: number,
+	y: number,
+	z: number,
+	order?: EulerOrder,
+) => T = /* @__PURE__ */ makeFromEuler(Math.sin, Math.cos);
 
 /** Turns the rotation `a` by `rad` radians about its own X axis. */
-export const rotateX = /* @__PURE__ */ makeRotateX(Math.sin, Math.cos);
+export const rotateX: <T extends QuatLike>(out: T, a: QuatLike, rad: number) => T =
+	/* @__PURE__ */ makeRotateX(Math.sin, Math.cos);
 
 /** Turns the rotation `a` by `rad` radians about its own Y axis. */
-export const rotateY = /* @__PURE__ */ makeRotateY(Math.sin, Math.cos);
+export const rotateY: <T extends QuatLike>(out: T, a: QuatLike, rad: number) => T =
+	/* @__PURE__ */ makeRotateY(Math.sin, Math.cos);
 
 /** Turns the rotation `a` by `rad` radians about its own Z axis. */
-export const rotateZ = /* @__PURE__ */ makeRotateZ(Math.sin, Math.cos);
+export const rotateZ: <T extends QuatLike>(out: T, a: QuatLike, rad: number) => T =
+	/* @__PURE__ */ makeRotateZ(Math.sin, Math.cos);
 
 /**
  * The rotation a fraction `t` of the way from `a` to `b` along the shortest arc, turning at an even
  * speed, as three.js's `slerp`.
  */
-export const slerp = /* @__PURE__ */ makeSlerp(Math.sin, Math.acos);
+export const slerp: <T extends QuatLike>(out: T, a: QuatLike, b: QuatLike, t: number) => T =
+	/* @__PURE__ */ makeSlerp(Math.sin, Math.acos);

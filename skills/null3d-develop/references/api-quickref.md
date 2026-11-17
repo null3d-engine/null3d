@@ -830,7 +830,7 @@ time.now; time.dt; time.frame;            // seconds, the frame's step in second
 - `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
 - Color options take `'#rrggbb'` or `'#rgb'` strings and `0xrrggbb` numbers, which are sRGB, and `[r, g, b]` arrays from 0 to 1, which are linear, as three.js's `setRGB` reads them. The engine converts hex colors to linear, as three.js does. The `color` helpers give linear RGB, which color options and instance colors take.
 
-A simulation that a server replays (0.3) imports its math from the maths entry, never from `@null3d/engine`. That bundle brings page code, `Math.sin`, `Math.random` and `**`, which a replaying engine's scan refuses:
+A simulation that a server replays (0.3) imports its math from the maths entry, never from `@null3d/engine`. That bundle brings engine code with a top-level `FinalizationRegistry`, which a replaying engine's scan refuses. A bundler that keeps namespaces whole, such as Bun 1.3.11, also brings `Math.sin`, `Math.random` and page code:
 
 ```ts
 import { createMath } from '@null3d/engine/math';          // createMath and the array types

@@ -107,13 +107,20 @@ function isHidden(declaration: ts.Declaration): boolean {
 	return name !== undefined && ts.isPrivateIdentifier(name);
 }
 
-type Callable = ts.FunctionDeclaration | ts.MethodDeclaration | ts.MethodSignature;
+type Callable =
+	| ts.FunctionDeclaration
+	| ts.MethodDeclaration
+	| ts.MethodSignature
+	| ts.FunctionTypeNode;
 
 /** The declarations a caller sees: the overloads when there are some, else the one declaration. */
 function callables(declarations: readonly ts.Declaration[]): Callable[] {
 	const all = declarations.filter(
 		(d): d is Callable =>
-			ts.isFunctionDeclaration(d) || ts.isMethodDeclaration(d) || ts.isMethodSignature(d),
+			ts.isFunctionDeclaration(d) ||
+			ts.isMethodDeclaration(d) ||
+			ts.isMethodSignature(d) ||
+			ts.isFunctionTypeNode(d),
 	);
 	const overloads = all.filter((d) => !('body' in d && d.body));
 	return overloads.length > 0 && overloads.length < all.length ? overloads : all;
@@ -289,8 +296,8 @@ function namespaceDocs(alias: ts.Symbol): { summary: string; page: string | unde
 
 /**
  * The call signatures of a constant whose value is a function, such as a namespace's helper that a
- * maker builds, as the declarations that its type's signatures come from. A constant of any other
- * type has none.
+ * maker builds, as the declarations that its type's signatures come from: the function type that
+ * annotates it. A constant of any other type has none.
  */
 function constantCalls(symbol: ts.Symbol, checker: ts.TypeChecker): ts.Declaration[] {
 	const declaration = symbol.declarations?.[0];

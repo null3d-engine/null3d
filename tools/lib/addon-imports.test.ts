@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	addonImportProblems,
 	exampleImportProblem,
 	importProblem,
+	PUBLIC_ENTRIES,
 	packageFolders,
 	packageImportProblem,
 } from './addon-imports.ts';
@@ -18,6 +19,11 @@ describe('importProblem', () => {
 		for (const specifier of [
 			'@null3d/engine',
 			'@null3d/engine/stats',
+			'@null3d/engine/math',
+			'@null3d/engine/math/vec3',
+			'@null3d/engine/math/quat',
+			'@null3d/engine/math/mat4',
+			'@null3d/engine/math/math',
 			'@null3d/controls',
 			'three',
 			'./local.ts',
@@ -33,6 +39,8 @@ describe('importProblem', () => {
 			'@null3d/engine/internal',
 			'@null3d/engine/early-core',
 			'@null3d/engine/wasm/core.wasm',
+			'@null3d/engine/math/create-math',
+			'@null3d/engine/math/namespaces/quat',
 		]) {
 			expect(importProblem('/repo/examples/demo/sketch.ts', specifier, ENGINE)).toContain(
 				'not a public entry point',
@@ -183,6 +191,38 @@ describe('addonImportProblems', () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('the maths entry in an example', () => {
+	test('passes a maths sub-path, and refuses a file of the maths folder that is not one', () => {
+		const root = fixture({
+			'examples/rules/sim.ts': [
+				"import { createMath } from '@null3d/engine/math';",
+				"import * as vec3 from '@null3d/engine/math/vec3';",
+				"import * as math from '@null3d/engine/math/math';",
+			].join('\n'),
+			'examples/rules/inner.ts': "import { makeSlerp } from '@null3d/engine/math/create-math';",
+			'packages/engine/src/index.ts': "export * from './math/index.ts';",
+		});
+		try {
+			const { problems, files } = addonImportProblems(root);
+			// The two examples, and the engine's entry, which takes the rule about the examples.
+			expect(files).toBe(3);
+			expect(problems).toEqual([
+				'examples/rules/inner.ts: imports @null3d/engine/math/create-math, which is not a public entry point',
+			]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("names only entry points that the engine's package exports", () => {
+		const manifest = JSON.parse(
+			readFileSync(join(import.meta.dir, '../../packages/engine/package.json'), 'utf8'),
+		) as { exports: Record<string, unknown> };
+		const exported = Object.keys(manifest.exports).map((key) => `@null3d/engine${key.slice(1)}`);
+		expect([...PUBLIC_ENTRIES].filter((entry) => !exported.includes(entry))).toEqual([]);
 	});
 });
 

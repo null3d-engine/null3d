@@ -16,6 +16,7 @@
 // the functions as arguments cost JavaScriptCore 11% on `slerp` (D-368). Each helper does its own
 // arithmetic and passes only arrays to other helpers, as quat.ts explains.
 
+import { EngineErrorWithFix } from '../errors/engine-error-core';
 import { normalize } from './quat';
 import type { EulerOrder, QuatLike, Vec3Like } from './types';
 
@@ -266,6 +267,14 @@ export interface MathHelpers {
 	readonly math: NumberHelpers;
 }
 
+/**
+ * The fix of E1213, as errors/fixes.ts words it. The engine loads its table of fixes with a dynamic
+ * import, which a simulation may not hold, so `createMath` gives its error the fix itself.
+ * create-math.test.ts holds the two texts equal.
+ */
+const E1213_FIX =
+	"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.";
+
 /** The names that `createMath` reads from its argument, in the order that its error lists them. */
 const FUNCTION_NAMES = ['sin', 'cos', 'acos', 'exp'] as const;
 
@@ -282,8 +291,10 @@ const FUNCTION_NAMES = ['sin', 'cos', 'acos', 'exp'] as const;
 export function createMath(functions: MathFunctions): MathHelpers {
 	const missing = FUNCTION_NAMES.filter((name) => typeof functions?.[name] !== 'function');
 	if (missing.length > 0)
-		throw new Error(
-			`E1213: createMath() got no function for ${missing.join(', ')}. Pass an object with the functions sin, cos, acos and exp, such as an exact math library's.`,
+		throw new EngineErrorWithFix(
+			'E1213',
+			`createMath() got no function for ${missing.join(', ')}: it takes sin, cos, acos and exp, such as an exact math library's.`,
+			E1213_FIX,
 		);
 	// The functions are read once, so a later change to the object changes no helper.
 	const { sin, cos, acos, exp } = functions;

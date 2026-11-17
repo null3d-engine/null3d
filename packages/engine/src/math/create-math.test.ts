@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { EngineError } from '../errors/engine-error';
+import { ERROR_FIXES } from '../errors/fixes';
 import { createMath, type MathFunctions } from './create-math';
 import * as mat4Exact from './mat4';
 import * as numbersExact from './math';
@@ -6,25 +8,21 @@ import * as math from './namespaces/math';
 import * as quat from './namespaces/quat';
 import * as vec3 from './namespaces/vec3';
 import * as quatExact from './quat';
+import { randFloat, seed } from './random';
 import type { EulerOrder } from './types';
 import * as vec3Exact from './vec3';
 
 const ORDERS: EulerOrder[] = ['XYZ', 'YXZ', 'ZXY', 'ZYX', 'YZX', 'XZY'];
+/** The folder of each code's docs page, as an engine error links it. */
+const DOCS = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
-/** The browser's own functions, which createMath must turn into the main entry's helpers. */
-const BROWSER: MathFunctions = { sin: Math.sin, cos: Math.cos, acos: Math.acos, exp: Math.exp };
-
-/** Numbers from -4 to 4 from a fixed seed, so a failure names the same inputs on every run. */
+/**
+ * Numbers from -4 to 4 from the engine's own generator, seeded, so a failure names the same inputs
+ * on every run.
+ */
 function numbers(count: number): number[] {
-	let s = 7;
-	const out: number[] = [];
-	for (let i = 0; i < count; i++) {
-		s = (s + 0x6d2b79f5) | 0;
-		let t = Math.imul(s ^ (s >>> 15), 1 | s);
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-		out.push((((t ^ (t >>> 14)) >>> 0) / 4294967296) * 8 - 4);
-	}
-	return out;
+	seed(7);
+	return Array.from({ length: count }, () => randFloat(-4, 4));
 }
 
 /** `count` unit quaternions from a fixed seed. */
@@ -45,7 +43,8 @@ const bits = (values: ArrayLike<number>) =>
 
 describe('createMath', () => {
 	it("gives the main entry's results bit for bit when it gets the browser's functions", () => {
-		const built = createMath(BROWSER);
+		// The browser's own `Math` holds the four functions under their names.
+		const built = createMath(Math);
 		const n = numbers(400);
 		const qs = rotations(100);
 		for (let i = 0; i < 100; i++) {
@@ -139,7 +138,8 @@ describe('createMath', () => {
 	});
 
 	it('reads the four functions once, when it is called', () => {
-		const functions = { ...BROWSER };
+		// An object whose four functions are Math's until the test replaces one.
+		const functions: MathFunctions = Object.create(Math);
 		const built = createMath(functions);
 		functions.sin = () => 2;
 		expect(built.quat.setAxisAngle([0, 0, 0, 0], [0, 1, 0], 1)).toEqual(
@@ -147,16 +147,33 @@ describe('createMath', () => {
 		);
 	});
 
-	it('names each function that it did not get, with E1213', () => {
-		expect(() => createMath({ sin: Math.sin, cos: Math.cos } as unknown as MathFunctions)).toThrow(
-			'E1213: createMath() got no function for acos, exp.',
-		);
-		expect(() => createMath({ ...BROWSER, cos: 1 } as unknown as MathFunctions)).toThrow(
-			'E1213: createMath() got no function for cos.',
-		);
-		expect(() => createMath(undefined as unknown as MathFunctions)).toThrow(
-			'E1213: createMath() got no function for sin, cos, acos, exp.',
-		);
+	it('names each function that it did not get, in an engine error with its code, fix and link', () => {
+		/** The error that a call throws, which the test reads whole. */
+		const thrown = (call: () => unknown): unknown => {
+			try {
+				call();
+			} catch (error) {
+				return error;
+			}
+			throw new Error('the call threw nothing');
+		};
+		const takes = ": it takes sin, cos, acos and exp, such as an exact math library's.";
+		const cases: [unknown, string][] = [
+			[{ sin: Math.sin, cos: Math.cos }, 'acos, exp'],
+			[Object.assign(Object.create(Math), { cos: 1 }), 'cos'],
+			[undefined, 'sin, cos, acos, exp'],
+		];
+		for (const [functions, missing] of cases) {
+			const error = thrown(() => createMath(functions as MathFunctions));
+			expect(error instanceof EngineError).toBe(true);
+			const { code, docs, message } = error as EngineError;
+			expect(code).toBe('E1213');
+			expect(docs).toBe(`${DOCS}E1213.md`);
+			// The fix that createMath gives is the table's own, which a simulation never loads.
+			expect(message).toBe(
+				`E1213: createMath() got no function for ${missing}${takes} ${ERROR_FIXES.E1213} See ${DOCS}E1213.md`,
+			);
+		}
 	});
 });
 

@@ -933,7 +933,7 @@ page.onMessage((name, data) => {
 // In onUpdate: ship.setPosition(position[0], position[1], position[2]); ship.setRotation(heading[0], heading[1], heading[2], heading[3]);
 ```
 
-- Never import `@null3d/engine` in the simulation. Its bundle holds page code, and helpers that call `Math.sin`, `Math.random` and `**`, so a replaying engine's scan refuses it (`references/testing-and-debugging.md`, section 8).
+- Never import `@null3d/engine` in the simulation. Its bundle holds engine code with a top-level `FinalizationRegistry`, so a replaying engine's scan refuses it. A bundler that keeps namespaces whole also brings `Math.sin` and `Math.random` (`references/testing-and-debugging.md`, section 8).
 - The sub-paths `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math` hold the exact helpers. `createMath` builds `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The random helpers and `color` are drawing only.
 - Input, pointer events on objects, raycasts, controls and physics in the sketch are not in the input log. Anything that decides a result runs in the simulation: hit-test the recorded pointer against the simulation's own shapes, with its own camera.
 - The sketch draws the state it gets, with the main entry's helpers. It never computes the state again: an exact library and `Math` can differ in the last bit.

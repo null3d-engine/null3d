@@ -8,15 +8,14 @@
 // engine's worker code, and the sketch's bundle imports the engine again from the page's file. So
 // the table of fixes and the mark on each error live under registered symbols, which every copy in
 // the thread shares. Each copy then reads the same table, and instanceof accepts the errors of both.
+// The docs address, the message's form and the mark live in engine-error-core.ts, which code that
+// may not load the fixes, such as a simulation's math, throws its errors from.
 
+import { DOCS_BASE, ENGINE_ERROR, messageFor } from './engine-error-core';
 import type { ErrorCode, ErrorFixes } from './fixes';
-
-const DOCS_BASE = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
 /** The key of the thread's table of fixes on its global object. */
 const FIXES = Symbol.for('null3d.errorFixes');
-/** The mark that every copy of EngineError puts on its errors. */
-const ENGINE_ERROR = Symbol.for('null3d.engineError');
 
 /** The thread's global object, which holds the table of fixes for every copy of this module. */
 const thread = globalThis as { [FIXES]?: ErrorFixes };
@@ -40,13 +39,6 @@ interface Waiting {
 const waiting: Waiting[] = [];
 /** The load of the fixes, which one thread starts once. */
 let loading: Promise<void> | undefined;
-
-/** Texts an error's message: its code and detail, the code's fix once loaded, and its docs page. */
-function messageFor(code: ErrorCode, detail: string, fix: string | undefined): string {
-	// A message that came from another thread may hold its fix already.
-	const text = fix !== undefined && !detail.endsWith(` ${fix}`) ? `${detail} ${fix}` : detail;
-	return `${code}: ${text} See ${DOCS_BASE}${code}.md`;
-}
 
 /** Tells each waiting error the fix, unless its message holds other text by now. */
 function settle(fixes: ErrorFixes): void {

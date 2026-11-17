@@ -2,7 +2,7 @@
 
 Status: decided by the owner, and built. The engine has the maths entry `@null3d/engine/math` with its sub-paths, and `createMath`. One implementation serves each helper that needs a transcendental function. Nothing is pending. Task: none.
 
-Summary: A replayed simulation imports null3D's exact helpers from `@null3d/engine/math` sub-paths: six cost 1,202 bytes and no refused name, against 87,902 bytes and 37 from `@null3d/engine`. The call `createMath({ sin, cos, acos, exp })` builds the other eight on given functions, and the main entry's helpers time within 2% of main's.
+Summary: A replayed simulation imports null3D's exact helpers from `@null3d/engine/math` sub-paths: six cost 1,202 bytes and no refused name. From `@null3d/engine` they cost 9,133 bytes and one refused name under Bun 1.4.3, and 87,857 bytes and 37 under Bun 1.3.11. The call `createMath({ sin, cos, acos, exp })` builds the other eight on given functions, and the main entry's helpers time within 2% of main's.
 
 ## Question
 
@@ -26,8 +26,8 @@ The first table gives what a simulation bundle holds, by how it imports the help
 | --- | --- | --- |
 | A module with no helper | 46 bytes | 46 bytes |
 | `import * as vec3 from '@null3d/engine/math/vec3'`, and the same for `quat`, `mat4` and `math` | 1,202 bytes, no refused name | 1,202 bytes, no refused name |
-| The same, with `createMath` and one built helper called | 3,418 bytes, no refused name | 3,411 bytes, no refused name |
-| `import { mat4, math, quat, vec3 } from '@null3d/engine'` | 87,902 bytes; 37 refused names: `Math.sin` 10, `Math.cos` 9, `Atomics` 5, `requestAnimationFrame` 4, `Math.acos` 2, `document` 2, and `**`, `FinalizationRegistry`, `Math.exp`, `Math.random` and `navigator` once each | 9,114 bytes; 1 refused name, the main entry's top-level `FinalizationRegistry` |
+| The same, with `createMath` and one built helper called | 3,939 bytes, no refused name | 3,934 bytes, no refused name |
+| `import { mat4, math, quat, vec3 } from '@null3d/engine'` | 87,857 bytes; 37 refused names: `Math.sin` 10, `Math.cos` 9, `Atomics` 5, `requestAnimationFrame` 4, `Math.acos` 2, `document` 2, and `**`, `FinalizationRegistry`, `Math.exp`, `Math.random` and `navigator` once each | 9,133 bytes; 1 refused name, the main entry's top-level `FinalizationRegistry` |
 
 How the data was produced: one build of each module of the branch's tree with each Bun, from a scratch folder under `tests/`. A count of each refused name in the output gives the names. An earlier study measured main with Bun 1.3.11. There, the main entry gave 119,981 bytes and 43 refused names for a game's whole simulation. A maths entry written as `export * as vec3 from ...` gave 21, because Bun 1.3.11 keeps each re-exported namespace whole. Modules imported one by one gave 1,134 bytes and none. The packed package could not be bundled for a simulation at all. Its main entry names a shader module that the package leaves out, and its exports map named no maths module.
 
@@ -73,26 +73,34 @@ The eight helpers that need a sine, a cosine, an arc cosine or an exponential ar
 
 - The main entry's namespaces build each helper once, at load, on the browser's functions, and export it. This is the built form.
 - The call `createMath` builds all eight on the caller's functions, and groups them as the namespaces group them.
-- It throws E1213 for an argument that lacks one of the four functions. The error is a coded message, because the engine's error class loads its text by a dynamic import, which a simulation may not hold.
+- It throws E1213 for an argument that lacks one of the four functions. The error is an `EngineErrorWithFix` from `errors/engine-error-core.ts`, which carries its fix text itself.
+- That class carries the code, the docs page and the mark that `instanceof EngineError` reads. The class `EngineError` loads its fix text by a dynamic import, which a simulation may not hold.
+- `create-math.test.ts` holds the fix that `createMath` gives equal to the table's fix for E1213.
 - The random helpers move to a module of their own, `random.ts`, which only the main entry reaches.
+- The maths entry and its four sub-paths join the entry points that add-ons and examples may import, in AGENTS.md rule 12. A simulation in an example imports them as a game does.
+- One list, `packages/cli/src/public-entries.js`, names those entry points for the add-on check and for the repository's import check.
 
 Options rejected:
 
 - `export * as vec3 from ...` in one maths module: Bun 1.3.11 keeps every helper of a re-exported namespace. With them come `Math.sin`, `Math.acos`, `Math.exp` and `Math.random`.
 - Named exports from one module: the namespaces share names, such as `multiply`, `normalize` and `create`. One module would need new names for them, which no sketch uses.
-- The main entry with a bundler that tree-shakes: under Bun 1.4.3 it still brings a top-level `FinalizationRegistry`, and under Bun 1.3.11 87 KB of page code.
+- The main entry with a bundler that tree-shakes: under Bun 1.4.3 it still brings a top-level `FinalizationRegistry`, and under Bun 1.3.11 about 88 KB of page code.
 - One object of every namespace from `createMath`: a bundler keeps an object whole, so a simulation would pay for every helper.
 - The arguments form: JavaScriptCore ran `slerp` 11% slower than main's.
 - The wrapper form: SpiderMonkey ran `setAxisAngle`, `slerp` and `angle` up to 4% slower than main's.
 - A copy of the eight helpers written against `Math`: two implementations, which a drift test could hold to agree only on the inputs that it tries.
-- The maths entry among the entry points that add-ons and examples may import: the main entry's namespaces hold everything in it, and an add-on draws.
+- `createMath` throwing `EngineError` itself: the class reaches the table of fixes through a dynamic import, which a simulation may not hold.
+- `engine-error.ts` registering its table of fixes with a shared class at load: that side effect kept the table in every bundle of the main entry. The six helpers' bundle grew to 34,274 bytes under Bun 1.4.3.
 
 ## Consequences
 
 - `packages/engine/package.json` names the five sub-paths, with the source under `null3d-source` and the built twins in `lib/math/`.
 - `math-entry.test.ts` holds the exports map to the built twins. It holds the modules behind the entry to importing only each other, and to naming nothing that a simulation may not use.
-- The same test bundles `tests/fixtures/rules-code/sim.ts` as the vbz SDK bundles a simulation. It reads the bundle for every name of clockwork2's list, which it copies, and for the names of page and worker code. The type check (`tools/typecheck.ts`) reads the fixture with no DOM types.
-- A namespace member that a maker builds is a constant. The API reference reads its signature from its type and its summary from its own comment (`tools/lib/api-docs.ts`).
+- The same test bundles `tests/fixtures/rules-code/sim.ts` as the vbz SDK bundles a simulation. It reads the bundle for every name of clockwork2's list, which it copies, and for the names of page and worker code.
+- That scan reads the bundle through the TypeScript compiler, so it sees each name with its scope. It refuses every use of `Math` but a member access to an exact member. It refuses a global name only where no binding of the bundle shadows it. The type check (`tools/typecheck.ts`) reads the fixture with no DOM types.
+- A namespace member that a maker builds is a constant, declared with a function type of its own. The main entry's declarations then name no type of the maths entry. The API reference reads the signature from that function type and the summary from the member's own comment (`tools/lib/api-docs.ts`).
+- `create-math.test.ts` draws its inputs from the engine's seeded generator and gives `createMath` the browser's `Math`. `math-entry.test.ts` bundles the fixture with `Math` too.
+- `tools/lib/addon-imports.test.ts` passes an example that imports the maths sub-paths and refuses one that imports a module behind them. It holds the list of entry points to the package's exports map.
 - The tree-shaking checks count such a constant as a helper (`tests/lib/tree-shaking-build.ts`). The quaternion check now also calls `quat.setAxisAngle` and `math.damp`, and finds no other angle helper in the bundle.
 - The reference lists the built helpers first in their namespace's table. It shows `fromEuler`'s `order` as optional, with its default in the summary.
 - In V8, closures of one function share the feedback of their call sites. A thread could call a helper that the main entry built and one that `createMath` built on other functions. Those call sites then see two targets, which no run here timed. A sketch has no use for `createMath`, and the docs show it in simulation code only.
