@@ -153,6 +153,13 @@ export interface DressInput extends GrowInput {
 	 * extras. A site that draws at a share draws at every larger one. Every site when absent.
 	 */
 	readonly extrasShare?: number;
+	/**
+	 * The planned model's fruiting ramp, from 0 to 1: the share of the fruit's own sites that draws a
+	 * fruit or a cone, from a plan read below the maturity it fruits at to none, and all of it at the
+	 * ramp's end. A site that draws at a share draws at every larger one. Absent on a record that does
+	 * not plan its growth, which draws its extras by season and site alone.
+	 */
+	readonly fruitShare?: number;
 }
 
 /**

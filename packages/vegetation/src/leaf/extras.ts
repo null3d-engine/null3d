@@ -67,6 +67,10 @@ const THIN = 1 << 20;
  * number never draw the same sites.
  */
 const GROUP = 44;
+/** The draw that a plan's fruit ramp reads, kept apart from the share's and the cap's. */
+const FRUIT = 48;
+/** The kinds a plan's fruiting ramp thins: its fruit, cones and berries. */
+const FRUITING: ReadonlySet<string> = new Set(['fruit', 'cone', 'berry']);
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
 const MOST = 4;
 /**
@@ -1112,6 +1116,16 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			if (
 				input.extrasShare !== undefined &&
 				unitAt(input.seed, salt, THIN + purpose, s) >= input.extrasShare
+			)
+				return;
+			// A planned plant draws its fruit by the plan's ramp: none below the maturity it fruits
+			// at, more through the band, and the record's own share at the ramp's end. The draw is
+			// keyed on the site's number as grown, so a site that draws at a ramp draws at every
+			// larger one.
+			if (
+				input.fruitShare !== undefined &&
+				FRUITING.has(extra.kind) &&
+				unitAt(input.seed, salt, FRUIT + purpose, s) >= input.fruitShare
 			)
 				return;
 			const turn = unitAt(input.seed, salt, purpose, s, 1) * 2 * Math.PI;

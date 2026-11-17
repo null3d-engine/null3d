@@ -592,6 +592,26 @@ describe('the planned oak contract', () => {
 	);
 
 	it(
+		"M5: the drawn oak draws no acorns below the plan's fruiting maturity, some through the band and its full crop at the end",
+		async () => {
+			const kit = await kitOf();
+			const growth = growthOf(kit);
+			const from = growth.fruitFrom as number;
+			const band = growth.fruitBand ?? 0.1;
+			const season = kit.record.seasons.default;
+			// Below the fruiting maturity the record's acorn sites draw nothing, whatever the season:
+			// the plan's ramp gates the drawn extras, not only their price.
+			expect(extrasOf(await plant(HOME, { maturity: Math.max(0, from - 0.05), season }))).toBe(0);
+			// Through the band the crop stands, and at its end the record's own share draws.
+			const mid = extrasOf(await plant(HOME, { maturity: from + band / 2, season }));
+			const full = extrasOf(await plant(HOME, { maturity: 1, season }));
+			expect(mid).toBeGreaterThan(0);
+			expect(full).toBeGreaterThan(mid);
+		},
+		LONG,
+	);
+
+	it(
 		'M4: acorns and catkins ramp from their fruiting and flowering maturity',
 		async () => {
 			const kit = await kitOf();
