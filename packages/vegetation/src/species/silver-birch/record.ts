@@ -462,9 +462,6 @@ export const record: Species = {
 		// keeps the second level 0.0294 outside the leaf form's outline against the 0.03 allowed;
 		// 1.15 there stands 0.0312 outside.
 		cardGrow: 1.12,
-		// The crown's first card level follows its picture's sky gap: full density reads 0.142 of
-		// sky against the picture's 0.1772, and 0.65 reads 0.204, so this sits between them.
-		cardCover: 0.8,
 		cardStalkWidth: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },

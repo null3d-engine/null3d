@@ -519,8 +519,6 @@ export const record: Species = {
 		// form's 0.2323. A card grows about its middle inside the leaf form's hull, which brings the
 		// first to 0.2195 and the second to 0.2491, inside the review's band.
 		cardGrow: 1.1,
-		// The dome reads too open at the first card level, so its cards keep more of their coverage.
-		cardCover: 1.35,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
