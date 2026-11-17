@@ -75,7 +75,7 @@ export default defineSketch(async (ctx) => {
 	wirePanel(page, controls, () => void growMeadow(seed), showHud);
 
 	// The meadow grows while the field draws, so a live start shows its first frame without waiting
-	// for every species and the plants appear when the last one finishes. A held picture waits for
+	// for every species and each plant stands as its own build finishes. A held picture waits for
 	// the whole meadow, so its frame shows the finished scene.
 	if (ctx.engine.held) await growMeadow(seed);
 	else
