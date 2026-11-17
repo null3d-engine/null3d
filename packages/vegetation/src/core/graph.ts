@@ -155,6 +155,51 @@ export interface MacroSkeleton {
 	readonly crownBase: number;
 	/** Height of the top in metres. */
 	readonly height: number;
+	/**
+	 * The foliage masses the crown was planned in, each with its centre, its radius and the depth
+	 * its sockets fill it through. Absent on a skeleton grown without clumps.
+	 */
+	readonly clumps?: readonly ClumpData[];
+	/**
+	 * The elements the grower made for this plant: everything it built, the part it drew at the
+	 * requested state among them. Absent on a grower that does not count them.
+	 */
+	readonly made?: number;
+	/** The elements the growth shed on the way to the requested state. Absent with `made`. */
+	readonly shed?: number;
+}
+
+/**
+ * What one socket carries beside its bud site's place and wood: the size of its piece, its rank for
+ * thinning and the foliage mass it belongs to.
+ *
+ * @category api/vegetation
+ */
+export interface SocketData {
+	/** The size of the socket's piece against the species' own, 1 for the record's. */
+	readonly scale: number;
+	/** A rank from 0 that orders the sockets for thinning. */
+	readonly rank: number;
+	/** The foliage mass the socket belongs to. */
+	readonly lobe: number;
+}
+
+/**
+ * One foliage mass of a planned crown: the clump a limb's boughs end in, which its sockets fill.
+ *
+ * @category api/vegetation
+ */
+export interface ClumpData {
+	/** The clump's index, which its sockets name by `lobe`. */
+	readonly id: number;
+	/** Its centre in plant space, in metres. */
+	readonly centre: Vec3;
+	/** Its radius in metres. */
+	readonly radius: number;
+	/** How many layers of sockets fill it, from its outside inward. */
+	readonly depth: number;
+	/** The model age at which it appears. */
+	readonly birth: number;
 }
 
 /**

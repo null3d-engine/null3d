@@ -174,6 +174,7 @@ export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	'frond-colony': 'ground',
 	tuft: 'ground',
 	column: 'tree',
+	planned: 'tree',
 };
 
 /**

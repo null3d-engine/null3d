@@ -848,10 +848,13 @@ export function outlineSpan(spec: FrameSpec): { readonly foot: number; readonly 
  *
  * @param spec The species' frame.
  * @param input The record, the seed, the variant and the season.
+ * @param fill Whether to clothe each patch with its fine wood and report the sockets' own patches;
+ *   left out, the frame fills as it always has. A plan that reads only the stated axes asks for the
+ *   patches themselves, which the fill replaces.
  * @returns The frame.
  * @category api/vegetation
  */
-export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
+export function planFrame(spec: FrameSpec, input: GrowInput, fill = true): FramePlan {
 	const { record, variant } = input;
 	const seed = input.seed >>> 0;
 	const salt = record.seedSalt >>> 0;
@@ -2087,7 +2090,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		return out;
 	};
 
-	const clothed = fillMasses();
+	const clothed: FramePatch[] = fill ? fillMasses() : (patches as FramePatch[]);
 
 	let top = 0;
 	let crownBase = Number.POSITIVE_INFINITY;

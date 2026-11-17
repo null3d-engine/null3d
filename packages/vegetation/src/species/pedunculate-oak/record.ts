@@ -326,7 +326,9 @@ export const record: Species = {
 				reflectance: [0.0429, 0.0864, 0.0194],
 				reflectanceBack: [0.2344, 0.2975, 0.212],
 				transmittance: [0.091, 0.195, 0.0195],
-				roughness: [0.45, 0.6],
+				// Still 01: the crown's pale haze comes from the sky's gloss on every leaf, which a
+				// matte leaf keeps little of, so the faces stay near-matte.
+				roughness: [0.75, 0.75],
 			},
 		},
 	},
@@ -340,17 +342,17 @@ export const record: Species = {
 			// daylight, so this tint scales the sampled colour to match it. The flat-lit texture source
 			// drawing the same wood sits a little dark beside its photograph, but a texture source
 			// sets no row.
-			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.69, 0.67, 0.62] },
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.73, 0.69, 0.6] },
 			// The great limbs stand in brighter light than the bole and read a little lighter and
 			// warmer than still 16. Their tint stays close to the bole's and changes over a long blend,
 			// so a limb that crosses the zone's height keeps one colour along its length.
-			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2, tint: [0.52, 0.56, 0.18] },
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2.5, tint: [0.34, 0.34, 0.16] },
 		],
 		young: 0,
 		// The young bark is the smooth grey-green of a young shoot, and the photographs of it are
 		// pale. Only truly thin wood keeps it, so a sub-branch the size of a sapling's stem reads as
 		// the same wood as the limb it leaves, a shade lighter, rather than turning pale grey.
-		youngRadius: 0.05,
+		youngRadius: 0.02,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
@@ -362,7 +364,7 @@ export const record: Species = {
 		moss: { amount: 0.35, up: 1.2, north: 0.3, colour: [0.18, 0.22, 0.06] },
 		// Still 16's limb carries pale sage rosettes on its crests, so the lichen reaches the great
 		// limbs as well as the bole, in the fine flecks the bark shows through.
-		lichen: { amount: 0.3, from: 0.6, colour: [0.36, 0.38, 0.26] },
+		lichen: { amount: 2.5, from: 0.6, colour: [0.26, 0.29, 0.2] },
 	},
 	base: {
 		// Stills 01, 02, 17 and 18 flare the foot to about 1.8 times the bole a quarter metre up, 1.5
@@ -472,6 +474,25 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		woodOrders: [2, 1],
+		// Stills 01, 02 and 18: each clump of the crown runs from a yellow-green top to a near-black
+		// underside, so a leaf deep in the crown takes most of the sun's light away and the clump
+		// reads as a cushion rather than as an even face.
+		crownDim: 0.6,
+		// Stills 01, 02 and 18: the limbs inside the crown are lit on top and dark beneath, where the
+		// photographs show the wood in the crown's shade reading far darker than its bark alone.
+		woodShade: 0.7,
+		// Still 16, full size: the photographs show deep furrows with lit walls, so the bark's own
+		// relief is tilted and deepened beyond what its map alone gives.
+		barkRelief: 0.8,
+		// Still 01: the limbs keep the lichen's pale grey-green as an even tint where its rosettes
+		// fall under a pixel, so the whole view shows the lichen its close view does.
+		lichenFarTint: 1,
+		// Still 18 at full size: the crown's rim is rounded lobes with clean notches of sky, so a far
+		// card's thinnest leaves keep their cover as its mip levels average them with their gaps.
+		cardMipLift: 0.12,
+		// Still 01, full size: inside a lit stretch of the crown, neighbouring pixels change gradually
+		// rather than each texel catching its own light, so a shoot's leaves shade as one rounded mass.
+		cardNormalRound: 0.6,
 		// Stills 01 and 02: the crown's box shows 0.37 and 0.33 of sky in the photographs and 0.48 and
 		// 0.43 at the first card level, whose kept cards stand sparse. The field's largest value that
 		// keeps the second card level within the card tests' sky band, 0.02, reads 0.1433 of sky
