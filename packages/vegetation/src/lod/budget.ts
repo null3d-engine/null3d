@@ -40,6 +40,7 @@ import {
 	clusterTriangles,
 	type DrawnWood,
 	plannedClumpCards,
+	tilesAt,
 	woodSurface,
 } from './cards';
 
@@ -812,7 +813,12 @@ export function rowLevel(
 			// drops by the overrun's price until the level's own triangles fit.
 			let count = Math.min(clumps, Math.max(0, Math.floor(budget / each)));
 			for (let pass = 0; pass < 8 && count > 0; pass++) {
-				const made = plannedClumpCards(input.mesh, planes, count / clumps, 1);
+				const made = plannedClumpCards(
+					input.mesh,
+					planes,
+					count / clumps,
+					tilesAt(level === 2 ? 2 : 1),
+				);
 				if (!made) break;
 				const cost = trianglesOf(made);
 				if (cost <= budget) {

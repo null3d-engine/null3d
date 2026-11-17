@@ -1006,8 +1006,15 @@ function evenShare<T>(list: readonly T[], share: number): T[] {
 	);
 }
 
-/** The pictures a side that one clump card shows of its own rows. */
-const CLUMP_TILES = 3;
+/**
+ * The pictures a side that one clump card shows of its own rows, at each card level: a finer grid
+ * at the first, so a plate there reads at a leaf's scale rather than a clump's, and the second
+ * level keeps its count so the far band does not move.
+ */
+const CLUMP_TILES: readonly [first: number, second: number] = [4, 3];
+
+/** The tiles a side at a card level. */
+export const tilesAt = (level: 1 | 2): number => CLUMP_TILES[level - 1] as number;
 
 /**
  * A card level's clump cards: one card set for each clump of sockets, at the clump's middle and
@@ -1033,12 +1040,13 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 	const clusters = cardClusters(input, walk, kept.length, drawn, planes, undefined, more);
 	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
 	// own scale rather than one shoot's picture grown over the clump.
+	const tiles = tilesAt(level);
 	const tiled = {
-		tiles: CLUMP_TILES,
+		tiles,
 		row: (index: number, tile: number): number => {
 			const list = kept[index]?.rows ?? [];
 			return list.length > 0
-				? (list[Math.floor((tile * list.length) / (CLUMP_TILES * CLUMP_TILES))] as number)
+				? (list[Math.floor((tile * list.length) / (tiles * tiles))] as number)
 				: 0;
 		},
 	};
@@ -1808,7 +1816,7 @@ export function plannedClumpCards(
 	input: MeshInput,
 	planes = 3,
 	share = 1,
-	tiles = CLUMP_TILES,
+	tiles = CLUMP_TILES[0],
 ): MeshArrays | undefined {
 	const clumps = input.skeleton.clumps;
 	if (!clumps || clumps.length === 0) return undefined;
