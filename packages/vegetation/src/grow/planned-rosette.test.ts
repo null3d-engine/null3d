@@ -44,11 +44,12 @@ describe('the planned rosette', () => {
 
 	it('takes its crown box from the fronds, not from the trunk', () => {
 		const { plant } = grow({ maturity: 1, sparse: 0 });
-		// The crown is wider than the fact sheet's narrowest and narrower than its widest, and its
-		// top stands above the trunk's growing point, which the frame's stem ends at.
+		// The box is the still's crown box: about one height wide, its base the skirt's lowest tip.
 		const width = plant.bounds.max[0] - plant.bounds.min[0];
-		expect(width).toBeGreaterThan(4);
-		expect(width).toBeLessThan(6);
+		expect(width / plant.height).toBeGreaterThan(0.98);
+		expect(width / plant.height).toBeLessThan(1.02);
+		expect(plant.crownBase / plant.height).toBeGreaterThan(0.29);
+		expect(plant.crownBase / plant.height).toBeLessThan(0.34);
 		expect(plant.height).toBeGreaterThan(plant.bounds.max[1] - 1e-6);
 	});
 

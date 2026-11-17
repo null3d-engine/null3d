@@ -79,6 +79,11 @@ export const plannedGrowth: Planned = {
 			// 06 and 07 show them clustered at one point, so the bases spread over the top 0.2 m
 			// rather than clasping a palm's length.
 			clasp: 0.2,
+			// The crown's fronds at 0.85 of the rule's size: at the rule's own size the pieces' tips
+			// reach 1.11 of the height wide, past the still's crown box at 0.99. At 0.85 the box is
+			// 0.99 of the height, the growing point 0.73 and the rise 0.28. The cut pieces keep the
+			// rule's size, and a 2.24 m frond stays inside the fact sheet's 1.5 to 3 m.
+			scale: 0.85,
 		},
 		// Picture 01: the inner fronds leave at 60 to 70 degrees above level, the middle at 30 to 40
 		// and the outer at 0 to 15; the ranks take 60, 35 and 5. The base record's crown.tilt, 24, 38,
@@ -94,15 +99,17 @@ export const plannedGrowth: Planned = {
 		// Pictures 01, 16 and 20: 14 to 16 dead fronds hang in a dense bell. The record's crown.dead
 		// states 20 with a skirt 0.1 of the height, 0.44 m; the bell's 14 to 16 is taken, and the
 		// picture 20 band, 0.68 of the height down to 0.29, is 0.12 to 0.30 m below the growing point,
-		// or 0.027 to 0.068 of the height. Each dead frond is 0.65 of a living one. The record's hang
-		// 160 from up is 70 degrees below level, and the block's 70 states that.
+		// or 0.027 to 0.068 of the height. Each dead frond is the record's 0.72 of a living one; the
+		// directed record's 0.65 was its own reading, and the record's fuller skirt governs so the
+		// bell reaches the picture's crown base. The record's hang 160 from up is 70 degrees below
+		// level, and the block's 70 states that.
 		dead: {
 			count: { mean: 16, spread: 2 },
 			piece: 'frond-dead',
 			hang: { mean: 70, spread: 4 },
 			from: 0.03,
 			to: 0.07,
-			length: 0.65,
+			length: 0.72,
 		},
 		// Pictures 05 and 06: six croziers, spread 1, at the centre. The record states each a hairy
 		// stalk 0.55 m tall with a head 0.06 m across; 0.55 m is 0.125 of the 4.4 m height.
@@ -169,9 +176,10 @@ export const planned: Species = {
 	},
 	base: {
 		// Picture 01: the foot widens to 0.175 of the height just above a low root mound 0.53 of the
-		// height wide at the ground and 0.08 tall (the turning video: 0.45 and 0.09). A flare of 2.5
-		// times the trunk's radius fading over 0.13 m draws that mound.
-		flare: { amount: 2.5, height: 0.13 },
+		// height wide at the ground and 0.08 tall (the turning video: 0.45 and 0.09). The still's
+		// flare is 2.23 times the trunk and the video's 2.35, so a flare of 2.3 fading over 0.13 m
+		// draws that mound.
+		flare: { amount: 2.3, height: 0.13 },
 		...(record.base?.roots ? { roots: record.base.roots } : {}),
 	},
 	lod: {
