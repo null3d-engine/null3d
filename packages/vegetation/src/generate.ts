@@ -1336,45 +1336,64 @@ function builtLevels(
 	kit: SpeciesKitData,
 	plant: Dressed,
 	options: GrowOptions,
-): readonly [BuiltLevel, BuiltLevel, BuiltLevel] {
+): {
+	readonly levels: readonly [BuiltLevel, BuiltLevel, BuiltLevel];
+	readonly cap: number | undefined;
+} {
 	const { mesh } = plant;
-	const most = bitingMax(mesh.plan, maxOf(kit, options));
+	const asked = maxOf(kit, options);
 	const input = plant.budget(options.near === true);
-	const reference = most === undefined ? undefined : referenceOf(kit, input);
-	const level = (at: MeshLevel): BuiltLevel => {
-		const standIn = (): BuiltLevel => {
-			const parts = [...(at === 0 && options.near ? nearWood(mesh) : []), ...levelParts(mesh, at)];
-			const rows = at === 0 && mesh.record.lod.nearFoliage === 'instanced';
-			const shoots = rows ? shootPartTriangles(mesh, mesh.rows, mesh.detail) : ([0, 0] as const);
-			return { parts, triangles: countedParts(parts, shoots), clusters: NO_CLUSTERS };
-		};
-		// A planned plant grows straight to the asked state, so its capped level asks the allocator for
-		// what it may draw rather than stepping a ladder down from the full plant.
-		const planned = mesh.record.growth.model === 'planned';
-		const real = (): BuiltLevel => {
-			const build =
-				most === undefined || !reference
-					? levelBuild(input, at)
-					: planned
-						? rowLevel(input, at, most, reference)
-						: levelWithin(input, at, most, reference);
-			return {
-				parts: [
-					...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
-					...partOf(kit, 'foliage', build.foliage, TEXTURE_UV_STEPS),
-					...partOf(kit, 'cards', build.cards, TEXTURE_UV_STEPS),
-					// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
-					...partOf(kit, 'extras', build.extras, TEXTURE_UV_STEPS, true),
-				],
-				triangles: build.triangles,
-				...(build.allowed ? { allowed: build.allowed } : {}),
-				...(build.shoots !== undefined ? { shoots: build.shoots } : {}),
-				clusters: build.clusters ?? NO_CLUSTERS,
+	/** The three levels under one maximum, each as its best look draws it or within that maximum. */
+	const levels = (most: number | undefined): readonly [BuiltLevel, BuiltLevel, BuiltLevel] => {
+		const reference = most === undefined ? undefined : referenceOf(kit, input);
+		const level = (at: MeshLevel): BuiltLevel => {
+			const standIn = (): BuiltLevel => {
+				const parts = [
+					...(at === 0 && options.near ? nearWood(mesh) : []),
+					...levelParts(mesh, at),
+				];
+				const rows = at === 0 && mesh.record.lod.nearFoliage === 'instanced';
+				const shoots = rows ? shootPartTriangles(mesh, mesh.rows, mesh.detail) : ([0, 0] as const);
+				return { parts, triangles: countedParts(parts, shoots), clusters: NO_CLUSTERS };
 			};
+			// A planned plant grows straight to the asked state, so its capped level asks the allocator for
+			// what it may draw rather than stepping a ladder down from the full plant.
+			const planned = mesh.record.growth.model === 'planned';
+			const real = (): BuiltLevel => {
+				const build =
+					most === undefined || !reference
+						? levelBuild(input, at)
+						: planned
+							? rowLevel(input, at, most, reference)
+							: levelWithin(input, at, most, reference);
+				return {
+					parts: [
+						...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
+						...partOf(kit, 'foliage', build.foliage, TEXTURE_UV_STEPS),
+						...partOf(kit, 'cards', build.cards, TEXTURE_UV_STEPS),
+						// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
+						...partOf(kit, 'extras', build.extras, TEXTURE_UV_STEPS, true),
+					],
+					triangles: build.triangles,
+					...(build.allowed ? { allowed: build.allowed } : {}),
+					...(build.shoots !== undefined ? { shoots: build.shoots } : {}),
+					clusters: build.clusters ?? NO_CLUSTERS,
+				};
+			};
+			return stage(kit.placeholders, real, standIn);
 		};
-		return stage(kit.placeholders, real, standIn);
+		return [level(0), level(1), level(2)];
 	};
-	return [level(0), level(1), level(2)];
+	const biting = bitingMax(mesh.plan, asked);
+	const first = levels(biting);
+	// The plan prices the plant's finest orders as tubes, while the level draws them as the shoot rows
+	// and the extras, so a level may draw more than the price counted. A maximum the price said never
+	// bit then bites after all: measure the drawn totals, and where one passes the asked maximum,
+	// build all three levels again under it, so the levels, the far bake's capped figure and the
+	// allowance all agree on one maximum.
+	if (asked === undefined || biting !== undefined) return { levels: first, cap: biting };
+	const over = first.some((level) => partTotal(level.triangles) > asked);
+	return over ? { levels: levels(asked), cap: asked } : { levels: first, cap: undefined };
 }
 
 /** What each part holds at a plant's best look, or undefined where a stage of it is not built. */
@@ -1418,7 +1437,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		() => levelStarts(mesh),
 		() => placeholderStarts(mesh),
 	);
-	const built = builtLevels(kit, plant, options);
+	const { levels: built, cap } = builtLevels(kit, plant, options);
 	const levels = [
 		levelOf(0, built[0].parts, 0),
 		levelOf(1, built[1].parts, starts[0]),
@@ -1440,9 +1459,8 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	for (const level of levels) bytes += level.bytes;
 	// The maximum the growth was asked for is what the asset records, whether or not it bit: a plan
 	// whose own parts sit under it draws as it planned, and a caller that asks for a maximum must see
-	// its figure back. The biting one is what the levels draw under.
+	// its figure back. The levels draw under the maximum the build settled on.
 	const asked = maxOf(kit, options);
-	const most = bitingMax(mesh.plan, asked);
 	const shoots = built[0].shoots;
 	const asset: PlantAsset = {
 		species: record.id,
@@ -1466,9 +1484,9 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 			from: starts[2],
 		},
 		...(asked !== undefined ? { maxTriangles: asked } : {}),
-		// The far bake reads the biting maximum, since a maximum the plant's plan already fits
-		// changes no level and must change no far picture.
-		...(most === undefined ? {} : { capTriangles: most }),
+		// The far bake reads the maximum the levels actually drew under, since a maximum the plant's
+		// own levels fit changes no level and must change no far picture.
+		...(cap === undefined ? {} : { capTriangles: cap }),
 		...(shoots !== undefined && shoots !== mesh.detail ? { shootDetail: shoots } : {}),
 		stats: {
 			milliseconds: now() - started,
