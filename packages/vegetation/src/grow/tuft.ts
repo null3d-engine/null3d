@@ -35,9 +35,9 @@ import {
 	chainLength,
 	chainPath,
 } from '../core/arch';
-import { AXIS_LIMB, AXIS_ROOT, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
+import { AXIS_ROOT, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { atan2, cos, PI, pow, radians, sin, type Vector3 } from '../core/math';
+import { cos, PI, pow, radians, sin, type Vector3 } from '../core/math';
 import {
 	type GrassBlade,
 	type Planned,
@@ -71,8 +71,9 @@ import {
 	type ModelSocket,
 	type PlantModel,
 } from './model';
+import { growPlantModel } from './model-grow';
 import type { Grower } from './models';
-import { addSockets, discPlaces, type Socket } from './sockets';
+import { discPlaces } from './sockets';
 import { FOLIAGE_FLOOR } from './sparse';
 
 /** Purposes of the grower's hash keys, so no two draws share one. */
@@ -505,7 +506,8 @@ export function emitTuft(input: GrowInput): PlantModel {
 		axes.push({
 			order: 1,
 			parent: STOOL,
-			parentShare: 1,
+			// The stool's second node is the seat every shoot leaves from.
+			parentShare: 0.5,
 			from,
 			to,
 			nodes: [
@@ -641,125 +643,25 @@ export function growModel(
 	soil?: (builder: SkeletonBuilder, crown: number, crownTop: number, stoolRadius: number) => void,
 ): MacroSkeleton {
 	const { blade } = tuftOf(input.record);
-	const builder = new SkeletonBuilder();
 	const stool = model.axes[STOOL] as ModelAxis;
 	const stoolRadius = stool.radius[0];
-	const crown = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
-	const stoolNodes =
-		stool.nodes ??
-		([
-			{ at: stool.from, radius: stool.radius[0] },
-			{ at: stool.to, radius: stool.radius[1] },
-		] as const);
-	let crownTop = -1;
-	let prior = -1;
-	stoolNodes.forEach((node, k) => {
-		prior = builder.addNode({
-			x: node.at[0] as number,
-			y: node.at[1] as number,
-			z: node.at[2] as number,
-			radius: node.radius,
-			parent: prior,
-			axis: crown,
-			light: 1,
-		});
-		if (k === 1) crownTop = prior;
-	});
-	soil?.(builder, crown, crownTop, stoolRadius);
-	const built: { axis: number; base: number }[] = [];
-	for (let a = 1; a < model.axes.length; a++) {
-		const spec = model.axes[a] as ModelAxis;
-		const axis = builder.addAxis({
-			parent: crown,
-			parentNode: crownTop,
-			parentT: 1,
-			order: 1,
-			kind: AXIS_LIMB,
-		});
-		const base = builder.addNode({
-			x: spec.from[0] as number,
-			y: spec.from[1] as number,
-			z: spec.from[2] as number,
-			radius: spec.radius[0],
-			parent: crownTop,
-			axis,
-			light: 1,
-		});
-		builder.addNode({
-			x: spec.to[0] as number,
-			y: spec.to[1] as number,
-			z: spec.to[2] as number,
-			radius: spec.radius[1],
-			parent: base,
-			axis,
-			light: 1,
-		});
-		built[a] = { axis, base };
-	}
-	const candidates: Socket[] = model.sockets.map((socket) => {
-		const seat = built[socket.axis] as { axis: number; base: number };
-		return {
-			axis: seat.axis,
-			node: seat.base,
-			at: socket.at,
-			direction: socket.direction,
-			piece: socket.piece,
-			scale: socket.scale,
-			keep: socket.keep,
-			group: socket.group,
-		};
-	});
-	// A sparser plant keeps the first sockets in the order the plant thins by, so every sparser
-	// plant is a subset of a denser one: no piece moves and no shoot outlasts its sheath.
-	let keptSockets = candidates;
-	if (model.keepShare < 1) {
-		const least = candidates.reduce((count, socket) => count + (socket.keep === 0 ? 1 : 0), 0);
-		const most = Math.min(
-			candidates.length,
-			Math.max(least, Math.round(candidates.length * model.keepShare)),
-		);
-		const order = candidates.map((_, index) => index);
-		order.sort((a, b) => (candidates[a] as Socket).keep - (candidates[b] as Socket).keep || a - b);
-		const kept = new Set(order.slice(0, most));
-		keptSockets = candidates.filter((_, index) => kept.has(index));
-	}
-	addSockets(builder, keptSockets);
-	const finished = builder.finish(0);
-	// The skeleton holds only the stool. The plant's top and its box are its pieces': the tallest
-	// piece, and each piece's reach from its shoot with half a blade's width beside it.
-	let top = 0;
-	const low: [number, number] = [-stoolRadius, -stoolRadius];
-	const high: [number, number] = [stoolRadius, stoolRadius];
-	// The box and the top are the plant's own, so no sparseness moves them: every grown socket
-	// counts, as the tuft model's box did.
-	for (const socket of candidates) {
-		const piece = model.pieces[socket.piece];
-		if (!piece) continue;
-		top = Math.max(top, (socket.at[1] as number) + piece.top * socket.scale);
-		const out = piece.reach * socket.scale;
-		if (!(out > 0)) continue;
-		const heading = atan2(socket.direction[2] as number, socket.direction[0] as number);
-		const x = (socket.at[0] as number) + cos(heading) * out;
-		const z = (socket.at[2] as number) + sin(heading) * out;
-		low[0] = Math.min(low[0], x);
-		low[1] = Math.min(low[1], z);
-		high[0] = Math.max(high[0], x);
-		high[1] = Math.max(high[1], z);
-	}
 	const bladePiece = model.pieces.find((piece) => piece.name.startsWith('blade'));
-	const beside = (bladePiece?.width ?? blade.width) / 2;
-	const grown: MacroSkeleton = {
-		...finished,
-		height: top,
-		bounds: {
-			min: [low[0] - beside, 0, low[1] - beside],
-			max: [high[0] + beside, top, high[1] + beside],
-		},
-	};
+	const grown = growPlantModel(model, {
+		kind: (_axis, index) => (index === STOOL ? 'root' : 'limb'),
+		beside: (bladePiece?.width ?? blade.width) / 2,
+		...(soil
+			? {
+					extra: (builder, axes) => {
+						const seat = axes[STOOL] as { builderAxis: number; nodes: number[] };
+						soil(builder, seat.builderAxis, seat.nodes[1] as number, stoolRadius);
+					},
+				}
+			: {}),
+	});
 	// A tuft is its pieces, so each variant stands at the height its record asks for it with its
 	// pieces scaled with it, and the height calibration after the grower finds nothing to scale.
 	const aim = targetHeight(input.record, input.seed, input.variant) * model.scale;
-	const factor = top > 0 ? aim / top : 1;
+	const factor = grown.height > 0 ? aim / grown.height : 1;
 	return scaledWithPieces(grown, factor);
 }
 
