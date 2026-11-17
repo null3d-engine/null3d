@@ -225,7 +225,11 @@ const HELD: readonly Held[] = [
 		directed: commonAlderDirected,
 		heightMean: spreadMean(commonAlderDirected.size.height),
 		record: commonAlderRecord,
-		counts: { leader: 1, limb: 24, side: [70, 105], twig: [3300, 4100] },
+		// The tall picture's fill: the record stands 25 m from stills 01, 02 and 18 (their crowns
+		// are 0.590 and 0.626 of the height wide) with the low foliage edge stills 02, 18 and 30
+		// show. Its twigs run 4,149 to 4,222 over the seeds, against the 20 m frame's 3,883 to
+		// 4,041, and its sides fall to 82 to 83 inside their band.
+		counts: { leader: 1, limb: 24, side: [70, 105], twig: [4100, 4300] },
 		// Twenty-four limbs a golden angle apart leave no gap wider than two even shares and their
 		// jitter.
 		round: { rule: 'limb', gap: 46, lean: 0.25 },
@@ -234,8 +238,11 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.25, side: 0.55 },
 		plumb: ['leader'],
 		through: 0,
-		// The frame's own eight: the leader and the first limb pass the first side twig near the trunk.
-		crossings: [0, 8],
+		// The frame's own twenty-four over the seeds: with the lowest limbs at a tenth of the leader
+		// (the low foliage edge of stills 02, 18 and 30), the leader and each low limb pass their
+		// first side twig near the trunk. Every pair is leader/side or limb/side, the same category
+		// the older frame's eight held.
+		crossings: [0, 24],
 		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.98, 1.02],

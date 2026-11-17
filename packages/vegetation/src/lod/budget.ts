@@ -588,7 +588,15 @@ export function rowLevel(
 			const [leaves, twigs] = shootPartTriangles(mesh, rows, tier);
 			if (leaves + twigs > 0) tiers.push({ tier, leaves, twigs });
 		}
-	const mostClusters = level === 2 ? Math.ceil(rows.count / 2) : rows.count;
+	const clumpsOfPlant = input.mesh.skeleton.clumps?.length ?? 0;
+	// A plant cut to no rows still has its clumps, and its cards count a clump each: a rowless
+	// crown must be able to choose the card tier, or its whole allowance buys nothing.
+	const mostClusters =
+		clumpsOfPlant > 0 && rows.count === 0
+			? clumpsOfPlant
+			: level === 2
+				? Math.ceil(rows.count / 2)
+				: rows.count;
 	const fitLeaves = (budget: number): LeafChoice => {
 		for (const { tier, leaves, twigs } of tiers)
 			if (leaves + twigs <= budget) return { kind: 'rows', tier, cost: leaves + twigs };
@@ -622,13 +630,25 @@ export function rowLevel(
 	};
 	// The least each part asks for before any share: the trunk and the great limbs as one straight
 	// run each, and one card set of two planes.
+	// A crown whose every twig stands above the cap's cut is carried by its clump cards alone, so its
+	// share of the maximum is reserved before the wood, one card a clump or the share where that is
+	// less: a small maximum still buys a crown rather than a bare frame.
+	const cheapestRows =
+		tiers.length === 0
+			? Number.POSITIVE_INFINITY
+			: Math.min(...tiers.map((tier) => tier.leaves + tier.twigs));
+	const crownedNoRows = clumpsOfPlant > 0 && cheapestRows > Math.floor(max * CROWN_SHARE);
 	const floor = (part: Part): number =>
 		part === 'trunk'
 			? priced(0, last)
 			: part === 'limbs'
 				? priced(1, last)
-				: part === 'leaves' && rows.count > 0
-					? 4
+				: part === 'leaves'
+					? rows.count > 0
+						? 4
+						: crownedNoRows
+							? Math.min(clumpsOfPlant * 6, Math.floor(max * 0.6))
+							: 0
 					: 0;
 	let wood: WoodChoice[] = [];
 	let leaf: LeafChoice = { kind: 'none', cost: 0 };
@@ -662,7 +682,11 @@ export function rowLevel(
 		// shared out in proportion to what each part holds at the plant's best look.
 		const least: Record<Part, number> = { trunk: 0, leaves: 0, limbs: 0, branches: 0, extras: 0 };
 		let reserved = 0;
-		for (const part of PARTS)
+		// A rowless crown's share is paid first, so the wood's own floor cannot spend it.
+		const payOrder: readonly Part[] = crownedNoRows
+			? ['leaves', 'trunk', 'limbs', 'branches', 'extras']
+			: PARTS;
+		for (const part of payOrder)
 			if (reserved + floor(part) <= max) {
 				least[part] = floor(part);
 				reserved += least[part];

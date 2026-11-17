@@ -105,6 +105,11 @@ export interface FillInput {
 	 * every part of the crown at the same share.
 	 */
 	readonly anchored?: boolean;
+	/**
+	 * The twigs a square metre of a clump's own width carries, from the record's first fill order:
+	 * a fuller-leaved species asks for more twigs through the same clump.
+	 */
+	readonly density?: number;
 }
 
 /** One socket the fill places, its place and the clump it belongs to. */
@@ -150,7 +155,9 @@ export function fillClumps(input: FillInput): FillCount {
 		// A clump's own share of the sockets, keyed on the clump, so the crown has clumps of many
 		// sizes as today's does rather than an even mesh.
 		const variety = 1 + 0.6 * (unitAt(seed, clump.id, variant, 2) - 0.5);
-		const count = Math.round(SOCKETS_PER_AREA * (2 * radius) ** 2 * variety);
+		const count = Math.round(
+			SOCKETS_PER_AREA * ((input.density ?? 8) / 8) * (2 * radius) ** 2 * variety,
+		);
 		// Each slot is a fixed point of the clump; as the clump opens, more of them fill.
 		const filled = Math.min(1, (count * clump.open) / SLOTS);
 		for (let k = 0; k < SLOTS; k++) {

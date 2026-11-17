@@ -695,20 +695,26 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		const tip = axis.nodes[axis.nodes.length - 1] as FrameNode;
 		const grownTip = planTips[patch.axis] as Vec3;
 		const root = axis.nodes[0] as FrameNode;
-		// A capped crown's cards stand at the middle of the wood that carries them, because a low cap
-		// draws the skeleton shortened and a card past its drawn end hangs in the air. With no
-		// maximum the crown spreads as its patches state.
-		const centre: Vec3 = !capped
-			? [
-					grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
-					grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
-					grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
-				]
-			: [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2];
+		// A capped crown's cards stand at the middle of the wood that draws them, because a low cap
+		// draws the skeleton shortened and a card past its drawn end hangs in the air. A record may
+		// ask for its clumps' stated places instead, so a maximum never reshapes the plant.
+		const woodPlaced = capped && growth.capCards !== 'stated';
+		// A young crown is shrubbier than a mature one: while a clump is still opening, its leaves stand
+		// along the revealed stem rather than past its tip, so the young plant carries a compact crown
+		// instead of a tuft at the top and a skirt at the foot.
+		const young = Math.max(0, Math.min(1, 1 - where.growth / 0.9));
+		const along = 0.55 * young;
+		const centre: Vec3 = woodPlaced
+			? [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2]
+			: [
+					grownTip[0] + (root.x - grownTip[0]) * along + (patch.centre[0] - tip.x) * where.growth,
+					grownTip[1] + (root.y - grownTip[1]) * along + (patch.centre[1] - tip.y) * where.growth,
+					grownTip[2] + (root.z - grownTip[2]) * along + (patch.centre[2] - tip.z) * where.growth,
+				];
 		clumps.push({
 			id,
 			centre,
-			radius: capped ? radius * CARD_MEET : radius,
+			radius: woodPlaced ? radius * CARD_MEET : radius,
 			depth: 3,
 			birth: where.birth,
 		});
@@ -799,6 +805,11 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			? {}
 			: { flowers: detail.flowers }),
 		pieceScale: pieceScale,
+		// The record's own fill density: the twigs through each clump, against the oak's eight.
+		density:
+			typeof growth.orders[0]?.density === 'number'
+				? (growth.orders[0]?.density as number)
+				: undefined,
 		turn: growth.turn,
 		crown: { top, base: crownBaseValue, height: Math.max(0, top - crownBaseValue) },
 	};
