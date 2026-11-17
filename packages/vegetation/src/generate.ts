@@ -1386,18 +1386,15 @@ function builtLevels(
 						? (() => {
 								const form = levelBuild(input, 0);
 								// A plant whose leaves are merged into its wood, as the willow's are, carries
-								// them in the wood part; the body then takes the wood.
+								// them in the wood part; the body takes whichever of the level's parts hold
+								// positions, so nothing is assumed of the form.
 								const carried = [
 									{ name: 'foliage', arrays: form.foliage },
 									{ name: 'cards', arrays: form.cards },
+									{ name: 'wood', arrays: form.wood },
 								].filter((part) => (part.arrays?.positions.length ?? 0) > 0);
 								const pseudo = {
-									levels: [
-										{
-											parts:
-												carried.length > 0 ? carried : [{ name: 'wood', arrays: form.wood }],
-										},
-									],
+									levels: [{ parts: carried }],
 								} as unknown as Parameters<typeof foliageEnvelope>[1];
 								return partOf(
 									kit,
