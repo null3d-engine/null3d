@@ -1050,6 +1050,15 @@ fn card_level(gx: vec2f, gy: vec2f) -> f32 {
     return max(log2(max(footprint, 1.0)), 0.0);
 }
 
+/// Where the second cut of a card is read: one texel of the texture's height up the same picture,
+/// so the second look falls on another part of the shoot and the two cuts together carry more leaf
+/// than either alone. The two are combined by their larger coverage, so the second cut can only add
+/// leaf, never remove it.
+fn card_mask_uv(uv: vec2f) -> vec2f {
+    let size = max(f32(textureDimensions(colour).y), 1.0);
+    return uv + vec2f(0.0, 1.0 / size);
+}
+
 /// How much a card's texture gradients shrink so its sample reads no coarser mip level than the
 /// species' coarsest useful one. Past that level a cell holds under four texels a side and its
 /// average takes in the empty border and the cells beside it, so a card seen at a slant, whose
@@ -1103,7 +1112,9 @@ fn coverage(input: SurfaceInput) -> f32 {
             let hold = card_hold(gx, gy);
             let hx = gx * hold;
             let hy = gy * hold;
-            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, hx, hy).a, hx, hy);
+            let held = textureSampleGrad(colour, colourSampler, uv, layer, hx, hy).a;
+            let mask = textureSampleGrad(colour, colourSampler, card_mask_uv(uv), layer, hx, hy).a;
+            alpha = card_alpha(max(held, mask), hx, hy);
         }
     } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
         let layer = select(1, 0, input.frontFacing);
@@ -1381,6 +1392,8 @@ fn surface(input: SurfaceInput) -> Surface {
             let hx = gx * hold;
             let hy = gy * hold;
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, hx, hy);
+            let mask = textureSampleGrad(colour, colourSampler, card_mask_uv(uv), layer, hx, hy);
+            let plate = max(texel.a, mask.a);
             let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, hx, hy);
             let kind = surface_texel.a * 255.0;
             let leaf = kind >= 127.5;
@@ -1406,8 +1419,8 @@ fn surface(input: SurfaceInput) -> Surface {
             let card_gate = header(HEADER_CARD_SHADE);
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
             let card_fill = mix(1.0, card_gate.x, gated);
-            alpha = card_alpha(texel.a * card_fill, hx, hy);
-            cut_alpha = card_cut_alpha(texel.a * card_fill, surface_texel.z, card_level(hx, hy));
+            alpha = card_alpha(plate * card_fill, hx, hy);
+            cut_alpha = card_cut_alpha(plate * card_fill, surface_texel.z, card_level(hx, hy));
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
             // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
             // record names none, the card draws whole.
