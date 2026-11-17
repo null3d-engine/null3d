@@ -50,9 +50,11 @@ export const plannedGrowth: Planned = {
 	frame: beechFrame,
 	piece: 'branch-end',
 	turn: { roll: 90, tilt: 25, out: 30 },
+	// The beech's pictures are a solid bright dome, so its fill carries half again the twigs the
+	// oak's does through each clump, whose own widths the frame raises beside it.
 	orders: [
-		{ density: 8, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 12, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ density: 12, angle: 50, length: 0.35, birth: 0, kink: 20 },
+		{ density: 18, angle: 45, length: 0.3, birth: 0, kink: 18 },
 	],
 	// The share of each order kept at full sparseness. The bole and the low limbs never thin.
 	thin: [0, 0, 0.34, 0.67, 0.72],

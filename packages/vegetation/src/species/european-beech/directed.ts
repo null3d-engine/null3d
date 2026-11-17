@@ -103,7 +103,7 @@ const skirt: FrameBranchRule = {
 	elbows: 5,
 	crook: 0.3,
 	apart: 0.006,
-	patch: { kind: 'clump', width: 0.19, depth: 0.06, fill: ENDS },
+	patch: { kind: 'clump', width: 0.24, depth: 0.075, fill: ENDS },
 };
 
 /**
@@ -238,7 +238,7 @@ export const frame: FrameSpec = {
 				// Still 05: the limbs fan round the tree and none lies along another.
 				apart: 0.012,
 				// A limb's end carries a spray of its own, so no limb ends bare inside the crown.
-				patch: { kind: 'clump', width: 0.13, depth: 0.06 },
+				patch: { kind: 'clump', width: 0.16, depth: 0.075 },
 				children: [boughs, skirt],
 			},
 		],
