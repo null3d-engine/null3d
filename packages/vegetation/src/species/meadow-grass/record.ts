@@ -8,10 +8,143 @@
 // the blade from the texture source's contour and the single-blade stills; the sheath and collar
 // are part of the blade's own stalk, so the species carries no bark. The record is plain data: no
 // code runs in it.
-import type { Species } from '../../core/record';
+import type { Foliage, Species, Tuft } from '../../core/record';
 import { aspect, roundBand } from './fit';
 
-/** The meadow grass's record. */
+/** The meadow grass's tuft numbers: its stool, shoots, blades and flowering stems. */
+export const tuftGrowth: Tuft = {
+	model: 'tuft',
+	// Still 01: the leaf mound is 262 px tall under heads that reach 525 px; still 02's vase of
+	// blades stands taller, about 0.55 of the plant's height.
+	mound: 0.55,
+	// Still 01: twelve flowering stems. Still 04 shows about forty-five blades at its fullest
+	// ring, but from above only the outer ring shows: still 01 shows forty to fifty blades in
+	// the tuft's front alone, and sixteen shoots of three or four blades drew 0.85 of sky inside
+	// its outline against the photograph's 0.49. Still 01's cover asks for three times that.
+	// With the narrowed poses below, still 01's enclosed sky reads 0.78 at the first card level
+	// against the photograph's 0.49, a named limit: a crown of seventy-two shoots reads 0.77, so
+	// the cover the gap wants cannot come from the shoot count while the crown keeps the stills'
+	// width.
+	shoots: { mean: 48, spread: 9 },
+	// Still 01: the sheath bases span 96 px at the soil against a mound of 262 px.
+	stool: 0.36,
+	// Stills 01 and 03: pale green sheath columns stand 0.12 to 0.15 of the mound's height, each
+	// one blade width across.
+	sheath: { height: 0.14, width: 0.035 },
+	// Stills 07 and 15: the sheaths are pale straw-green from foot to collar.
+	sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
+	// The fact sheet: two to four blades a tiller; still 22 shows three or four, and still 02's
+	// vase of many blades asks for the upper part of that.
+	blades: { mean: 3.6, spread: 0.6 },
+	// The fact sheet and stills 22 and 23: blades in two ranks.
+	ranks: 2,
+	// Still 01, read on a 2.6 times crop, in mound heights. The inner blades stand within 10
+	// degrees of plumb; the middle ones leave at 20 to 30 degrees from plumb and end 0.6 to 0.8
+	// high; the outer ones leave at 45 to 60 degrees, arch at 0.4 to 0.5 and end 0.1 to 0.35 above
+	// the soil, 0.7 to 0.8 out. Still 02's vase is taller: most of its blades reach the vase's
+	// top at about half the plant's height, so the inner blades end at the mound's top and the
+	// middle ones at 0.85 of it, where 0.72 drew a vase a third of the height. The outer pose
+	// reaches 0.58, short of still 01's traced 0.7 to 0.8, because the whole-plant stills stand
+	// the plant 1.26 times as tall as wide and the crown must keep that width; the turning video's
+	// wider plant is recorded as a reference conflict.
+	poses: [
+		{ share: 0.4, leave: 85, apex: 1, drop: 0, reach: 0.08 },
+		{ share: 0.35, leave: 65, apex: 0.85, drop: 0.02, reach: 0.4 },
+		{ share: 0.25, leave: 38, apex: 0.45, drop: 0.15, reach: 0.58 },
+	],
+	bladeSpread: 0.12,
+	stalks: {
+		// Stills 01 and 02: some twenty flowering stems, whose heads overlap into one crown;
+		// stills 04 and 17 show about twelve from the sides they look from.
+		count: { mean: 20, spread: 2 },
+		// The fact sheet: in flower in late spring and early summer.
+		seasons: ['blossom', 'summer'],
+		// Still 01: the heads' tips spread evenly from 0.725 to 1.0 of the plant's height, 1.32 to
+		// 1.82 of the mound's.
+		top: [1.32, 1.82],
+		// Still 01: the middle stem is plumb and the rim's lean up to 35 degrees. The stills'
+		// height over width of 1.26 sets the rim's lean at 22 degrees, short of the traced 35, so
+		// the heads' spread stays inside the stills' width.
+		lean: [0, 22],
+		// Still 01: a stem is straight, with a slight outward curve over its upper part.
+		bow: { from: 0.5, turn: [4, 12] },
+		// Still 01: a stem is 2 to 3 px across against a mound of 262 px.
+		width: 0.012,
+		sides: 5,
+		// Still 02: a head is an open panicle 0.4 of the mound's height long and 0.22 wide at its
+		// lowest whorl, six or seven whorls of short branches leaving the stem at about 45 degrees
+		// with sky inside the head, each carrying a few plump spikelets. The fact sheet: three to
+		// five branches a whorl and a spikelet of 4 to 6 mm.
+		head: {
+			kind: 'panicle',
+			length: 0.4,
+			width: 0.22,
+			whorls: 7,
+			branches: 3,
+			angle: 45,
+			spikelets: 4,
+			spikelet: 0.03,
+		},
+	},
+	// The least plant that still reads as the species: seven shoots of two blades and four stems.
+	least: { shoots: 7, blades: 2, stalks: 4 },
+	soil: {
+		// Still 14: dense fine pale roots leave the crown straight down and out, with no rhizome.
+		// Still 21: lifted, they hold a ball of soil about 0.11 m across and 0.1 m deep.
+		roots: { mean: 32, spread: 5 },
+		rootLength: { mean: 0.1, spread: 0.02 },
+		rootRadius: 0.002,
+		droop: { mean: 60, spread: 15 },
+	},
+};
+
+/** The meadow grass's seedling: its shoot, its few blades and no flowering stem. */
+export const seedlingGrowth: Tuft = {
+	model: 'tuft',
+	// Still 20: one shoot, with no flowering stem, so the leaves are the whole height.
+	mound: 1,
+	shoots: { mean: 1, spread: 0 },
+	stool: 0.1,
+	sheath: { height: 0.15, width: 0.06 },
+	blades: { mean: 3.5, spread: 0.5 },
+	ranks: 2,
+	// Still 20: one blade near plumb and the others leaning out to about 45 degrees, all
+	// straight.
+	poses: [
+		{ share: 0.4, leave: 82, apex: 0.97, drop: 0, reach: 0.14 },
+		{ share: 0.6, leave: 55, apex: 0.72, drop: 0, reach: 0.5 },
+	],
+	bladeSpread: 0,
+	least: { shoots: 1, blades: 2, stalks: 0 },
+};
+
+/** The seedling's foliage: short, narrow, slightly twisted blades. */
+export const seedlingFoliage: Foliage = {
+	kind: 'grass-blade',
+	blade: {
+		length: { mean: 0.09, spread: 0.01 },
+		width: 0.0028,
+		profile: [
+			[0, 0.85],
+			[0.1, 1],
+			[1, 1],
+		],
+		tip: 'hooded',
+		tipLength: 0.05,
+		fold: 18,
+		twist: 30,
+		arch: { mean: 30, spread: 10 },
+		dryTip: 0,
+		optics: {
+			reflectance: [0.1284, 0.272, 0.0218],
+			reflectanceBack: [0.0654, 0.158, 0.0104],
+			transmittance: [0.16, 0.33, 0.03],
+			roughness: [0.55, 0.6],
+		},
+	},
+};
+
+/** The meadow grass's directed record. */
 export const record: Species = {
 	id: 'meadow-grass',
 	name: 'Meadow grass',
@@ -20,91 +153,7 @@ export const record: Species = {
 	// The fact sheet: flowering stems 30 to 60 cm, the tuft 15 to 30 cm in leaf. Still 01 stands the
 	// tallest head at about twice the leaf mound's height, still 02 at 1.8 times.
 	size: { height: { mean: 0.5, spread: 0.08 }, aspect },
-	growth: {
-		model: 'tuft',
-		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px; still 02's vase of
-		// blades stands taller, about 0.55 of the plant's height.
-		mound: 0.55,
-		// Still 01: twelve flowering stems. Still 04 shows about forty-five blades at its fullest
-		// ring, but from above only the outer ring shows: still 01 shows forty to fifty blades in
-		// the tuft's front alone, and sixteen shoots of three or four blades drew 0.85 of sky inside
-		// its outline against the photograph's 0.49. Still 01's cover asks for three times that.
-		// With the narrowed poses below, still 01's enclosed sky reads 0.78 at the first card level
-		// against the photograph's 0.49, a named limit: a crown of seventy-two shoots reads 0.77, so
-		// the cover the gap wants cannot come from the shoot count while the crown keeps the stills'
-		// width.
-		shoots: { mean: 48, spread: 9 },
-		// Still 01: the sheath bases span 96 px at the soil against a mound of 262 px.
-		stool: 0.36,
-		// Stills 01 and 03: pale green sheath columns stand 0.12 to 0.15 of the mound's height, each
-		// one blade width across.
-		sheath: { height: 0.14, width: 0.035 },
-		// Stills 07 and 15: the sheaths are pale straw-green from foot to collar.
-		sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
-		// The fact sheet: two to four blades a tiller; still 22 shows three or four, and still 02's
-		// vase of many blades asks for the upper part of that.
-		blades: { mean: 3.6, spread: 0.6 },
-		// The fact sheet and stills 22 and 23: blades in two ranks.
-		ranks: 2,
-		// Still 01, read on a 2.6 times crop, in mound heights. The inner blades stand within 10
-		// degrees of plumb; the middle ones leave at 20 to 30 degrees from plumb and end 0.6 to 0.8
-		// high; the outer ones leave at 45 to 60 degrees, arch at 0.4 to 0.5 and end 0.1 to 0.35 above
-		// the soil, 0.7 to 0.8 out. Still 02's vase is taller: most of its blades reach the vase's
-		// top at about half the plant's height, so the inner blades end at the mound's top and the
-		// middle ones at 0.85 of it, where 0.72 drew a vase a third of the height. The outer pose
-		// reaches 0.58, short of still 01's traced 0.7 to 0.8, because the whole-plant stills stand
-		// the plant 1.26 times as tall as wide and the crown must keep that width; the turning video's
-		// wider plant is recorded as a reference conflict.
-		poses: [
-			{ share: 0.4, leave: 85, apex: 1, drop: 0, reach: 0.08 },
-			{ share: 0.35, leave: 65, apex: 0.85, drop: 0.02, reach: 0.4 },
-			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.15, reach: 0.58 },
-		],
-		bladeSpread: 0.12,
-		stalks: {
-			// Stills 01 and 02: some twenty flowering stems, whose heads overlap into one crown;
-			// stills 04 and 17 show about twelve from the sides they look from.
-			count: { mean: 20, spread: 2 },
-			// The fact sheet: in flower in late spring and early summer.
-			seasons: ['blossom', 'summer'],
-			// Still 01: the heads' tips spread evenly from 0.725 to 1.0 of the plant's height, 1.32 to
-			// 1.82 of the mound's.
-			top: [1.32, 1.82],
-			// Still 01: the middle stem is plumb and the rim's lean up to 35 degrees. The stills'
-			// height over width of 1.26 sets the rim's lean at 22 degrees, short of the traced 35, so
-			// the heads' spread stays inside the stills' width.
-			lean: [0, 22],
-			// Still 01: a stem is straight, with a slight outward curve over its upper part.
-			bow: { from: 0.5, turn: [4, 12] },
-			// Still 01: a stem is 2 to 3 px across against a mound of 262 px.
-			width: 0.012,
-			sides: 5,
-			// Still 02: a head is an open panicle 0.4 of the mound's height long and 0.22 wide at its
-			// lowest whorl, six or seven whorls of short branches leaving the stem at about 45 degrees
-			// with sky inside the head, each carrying a few plump spikelets. The fact sheet: three to
-			// five branches a whorl and a spikelet of 4 to 6 mm.
-			head: {
-				kind: 'panicle',
-				length: 0.4,
-				width: 0.22,
-				whorls: 7,
-				branches: 3,
-				angle: 45,
-				spikelets: 4,
-				spikelet: 0.03,
-			},
-		},
-		// The least plant that still reads as the species: seven shoots of two blades and four stems.
-		least: { shoots: 7, blades: 2, stalks: 4 },
-		soil: {
-			// Still 14: dense fine pale roots leave the crown straight down and out, with no rhizome.
-			// Still 21: lifted, they hold a ball of soil about 0.11 m across and 0.1 m deep.
-			roots: { mean: 32, spread: 5 },
-			rootLength: { mean: 0.1, spread: 0.02 },
-			rootRadius: 0.002,
-			droop: { mean: 60, spread: 15 },
-		},
-	},
+	growth: tuftGrowth,
 	foliage: {
 		kind: 'grass-blade',
 		blade: {
@@ -218,46 +267,8 @@ export const record: Species = {
 		seedling: {
 			form: 'a few short blades from one point, before the tuft forms',
 			size: { height: { mean: 0.07, spread: 0.01 }, aspect: 0.9 },
-			growth: {
-				// Still 20: one shoot, with no flowering stem, so the leaves are the whole height.
-				mound: 1,
-				shoots: { mean: 1, spread: 0 },
-				stool: 0.1,
-				sheath: { height: 0.15, width: 0.06 },
-				blades: { mean: 3.5, spread: 0.5 },
-				// Still 20: one blade near plumb and the others leaning out to about 45 degrees, all
-				// straight.
-				poses: [
-					{ share: 0.4, leave: 82, apex: 0.97, drop: 0, reach: 0.14 },
-					{ share: 0.6, leave: 55, apex: 0.72, drop: 0, reach: 0.5 },
-				],
-				stalks: null,
-				least: { shoots: 1, blades: 2, stalks: 0 },
-			},
-			foliage: {
-				kind: 'grass-blade',
-				blade: {
-					length: { mean: 0.09, spread: 0.01 },
-					width: 0.0028,
-					profile: [
-						[0, 0.85],
-						[0.1, 1],
-						[1, 1],
-					],
-					tip: 'hooded',
-					tipLength: 0.05,
-					fold: 18,
-					twist: 30,
-					arch: { mean: 30, spread: 10 },
-					dryTip: 0,
-					optics: {
-						reflectance: [0.1284, 0.272, 0.0218],
-						reflectanceBack: [0.0654, 0.158, 0.0104],
-						transmittance: [0.16, 0.33, 0.03],
-						roughness: [0.55, 0.6],
-					},
-				},
-			},
+			growth: seedlingGrowth,
+			foliage: seedlingFoliage,
 		},
 	},
 	cuttings: {

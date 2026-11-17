@@ -36,9 +36,13 @@ const Purpose = { Variant: 0x31, Phase: 0x32 } as const;
  * @returns Whether its kit holds pieces and its rows stand at sockets.
  */
 export function carriesPieces(record: Species): boolean {
+	const growth = record.growth;
+	// A planned tuft's sockets carry the tuft family's pieces, as the tuft model's do.
+	const tuft = growth.model === 'planned' && growth.adult === 'tuft';
 	return (
-		(DIRECTED.includes(record.growth.model) && (record.pieces?.length ?? 0) > 0) ||
-		WRITTEN.includes(record.growth.model)
+		(DIRECTED.includes(growth.model) && (record.pieces?.length ?? 0) > 0) ||
+		WRITTEN.includes(growth.model) ||
+		tuft
 	);
 }
 
@@ -50,7 +54,8 @@ export function carriesPieces(record: Species): boolean {
  * @returns Whether its grower writes the pieces.
  */
 export function writesPieces(record: Species): boolean {
-	return WRITTEN.includes(record.growth.model);
+	const growth = record.growth;
+	return WRITTEN.includes(growth.model) || (growth.model === 'planned' && growth.adult === 'tuft');
 }
 
 /**

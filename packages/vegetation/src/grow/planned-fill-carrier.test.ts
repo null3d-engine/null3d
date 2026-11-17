@@ -27,7 +27,7 @@ const SPECIES = [
 const grown = new Map<string, PlantAsset>();
 
 /** Grows one planned species at a state where its clumps carry sockets. */
-async function plantOf(id: string): Promise<PlantAsset> {
+async function plantOf(id: (typeof SPECIES)[number]): Promise<PlantAsset> {
 	const kept = grown.get(id);
 	if (kept) return kept;
 	const module = await loadSpecies(id);

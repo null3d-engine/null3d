@@ -25,7 +25,7 @@ import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE } from '../core/graph';
 import { NotBuiltError } from '../core/not-built';
 import { DETAILS, type Detail } from '../core/types';
 import { type SilhouetteFrame, shootSilhouette, woodPartSilhouettes } from '../grow/envelope';
-import { grower } from '../grow/models';
+import { plantGrower } from '../grow/models';
 import { extrasMesh } from '../leaf/extras';
 import { writesPieces } from '../leaf/piece-rows';
 import { MeshWriter } from '../leaf/writer';
@@ -252,7 +252,7 @@ const isMerged = (mesh: MeshInput) => mesh.record.lod.nearFoliage === 'merged';
 export function mergedFoliage(mesh: MeshInput, level: MeshLevel): MeshArrays | undefined {
 	const merged = isMerged(mesh);
 	if (!merged && !writesPieces(mesh.record)) return undefined;
-	const build = grower(mesh.record.growth.model).foliage;
+	const build = plantGrower(mesh.record).foliage;
 	if (!build && merged) throw new NotBuiltError(`merged ${mesh.record.growth.model} foliage`);
 	return build?.(mesh, level);
 }

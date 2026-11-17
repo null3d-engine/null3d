@@ -38,18 +38,34 @@ import {
 import { AXIS_LIMB, AXIS_ROOT, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
 import { cos, PI, pow, radians, sin, type Vector3 } from '../core/math';
-import type { GrassBlade, Species, Tuft, TuftPanicle, TuftPose, TuftSpikes } from '../core/record';
+import {
+	type GrassBlade,
+	type Species,
+	type Tuft,
+	type TuftPanicle,
+	type TuftPose,
+	type TuftSpikes,
+	tuftGrowth,
+} from '../core/record';
 import type { TextureManifest } from '../core/textures';
-import { DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
+import { curveAt, DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
 import { BLADE_ACROSS, BLADE_ROWS, bladeTexture, writeBlade } from '../leaf/grass-blade';
 import type { WrittenPiece } from '../leaf/ground-piece';
 import { MeshWriter } from '../leaf/writer';
-import type { CrownLight, GrowInput, MeshInput, MeshLevel } from '../stages';
+import type {
+	CrownLight,
+	DetailPlan,
+	GrowInput,
+	GrowRequest,
+	MeshInput,
+	MeshLevel,
+} from '../stages';
 import { type AxisPath, axisPath, emptyFrame, frameAt } from '../wood/frames';
 import { axisBytes, leafStrip, stalkRange, wholePath, writeStem } from './ground';
 import { scaledWithPieces, targetHeight } from './height';
 import type { Grower } from './models';
 import { addSockets, discPlaces, type Socket } from './sockets';
+import { FOLIAGE_FLOOR } from './sparse';
 
 /** Purposes of the grower's hash keys, so no two draws share one. */
 const Purpose = {
@@ -146,9 +162,10 @@ function draw(input: GrowInput, purpose: number, a = 0, b = 0, c = 0): number {
 
 /** The record's tuft and blade, or an error for a record of another model. */
 function tuftOf(record: Species): { readonly growth: Tuft; readonly blade: GrassBlade } {
-	if (record.growth.model !== 'tuft' || record.foliage.kind !== 'grass-blade')
+	const growth = tuftGrowth(record);
+	if (!growth || record.foliage.kind !== 'grass-blade')
 		throw new Error(`@null3d/vegetation: '${record.id}' is not a tuft of grass blades`);
-	return { growth: record.growth, blade: record.foliage.blade };
+	return { growth, blade: record.foliage.blade };
 }
 
 /** A direction in the vertical plane of a heading: `elevation` radians above the horizontal. */
@@ -367,14 +384,25 @@ function keepOf(index: number, count: number, least: number): number {
 }
 
 /**
- * Grows a tuft: the stool, its shoots, and a socket for each shoot's sheath column, each blade and
- * each flowering stem in season.
- *
- * @param input The record, the seed, the variant and the season.
- * @returns The skeleton.
- * @category api/vegetation
+ * How a tuft is tuned from its adult: the shares a younger, sparser or flowerless plant takes of
+ * the record's own counts and of its size. The tuft model's own plant takes the adult tuning.
  */
-export function growTuft(input: GrowInput): MacroSkeleton {
+interface TuftTune {
+	/** The share of the adult's shoot and blade counts the plant carries. */
+	readonly fill: number;
+	/** The share of the adult's flowering stems the plant carries, 0 out of season. */
+	readonly flowers: number;
+	/** The share of the adult's height the plant stands at. */
+	readonly size: number;
+	/** The share of the grown sockets the plant keeps, from its sparseness. */
+	readonly keepShare: number;
+}
+
+/** The adult tuning of a plant at its record's own counts, size and density. */
+const ADULT: TuftTune = { fill: 1, flowers: 1, size: 1, keepShare: 1 };
+
+/** The stool and a socket for each shoot's sheath column, each blade and each flowering stem. */
+function buildTuft(input: GrowInput, tune: TuftTune): MacroSkeleton {
 	const { growth, blade } = tuftOf(input.record);
 	const plan = planOf(input.record);
 	const { mound } = plan;
@@ -402,16 +430,27 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 		light: 1,
 	});
 	growSoil(input, builder, crown, crownTop, stoolRadius);
-	const shoots = Math.max(1, Math.round(spreadAt(growth.shoots, draw(input, Purpose.Shoots))));
+	// A young plant carries the least's shoots first and fills to the record's count as it grows.
+	const adultShoots = Math.max(1, Math.round(spreadAt(growth.shoots, draw(input, Purpose.Shoots))));
+	const shoots =
+		tune.fill >= 1
+			? adultShoots
+			: Math.max(
+					growth.least.shoots,
+					Math.round(growth.least.shoots + (adultShoots - growth.least.shoots) * tune.fill),
+				);
 	const places = discPlaces(shoots, stoolRadius, draw(input, Purpose.Shoots, 1) * 2 * PI);
 	const stems = growth.stalks;
-	const stalks =
+	const adultStalks =
 		stems?.seasons.includes(input.season) && plan.stalks.length > 0
-			? Math.min(
-					shoots,
-					Math.max(0, Math.round(spreadAt(stems.count, draw(input, Purpose.Stalks)))),
-				)
+			? Math.max(0, Math.round(spreadAt(stems.count, draw(input, Purpose.Stalks))))
 			: 0;
+	const stalks =
+		tune.flowers <= 0
+			? 0
+			: tune.flowers >= 1
+				? Math.min(shoots, adultStalks)
+				: Math.min(shoots, Math.max(growth.least.stalks, Math.round(adultStalks * tune.flowers)));
 	const ranks = Math.max(1, growth.ranks);
 	const sockets: Socket[] = [];
 	// An upright piece heads the level way its socket points.
@@ -481,7 +520,14 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 		});
 		top = Math.max(top, tilt[1] * column);
 		// The blades, the oldest first: it stands lowest and outermost, and it is the last to go.
-		const blades = Math.max(1, Math.round(spreadAt(growth.blades, unit(1))));
+		const adultBlades = Math.max(1, Math.round(spreadAt(growth.blades, unit(1))));
+		const blades =
+			tune.fill >= 1
+				? adultBlades
+				: Math.max(
+						growth.least.blades,
+						Math.round(growth.least.blades + (adultBlades - growth.least.blades) * tune.fill),
+					);
 		const rankTurn = unit(2) * 2 * PI;
 		for (let k = 0; k < blades; k++) {
 			const draws = (m: number) => draw(input, Purpose.Blade, i, k, m);
@@ -535,7 +581,21 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			reaches(at, heading, shape.out * size);
 		}
 	});
-	addSockets(builder, sockets);
+	// A sparser plant keeps the first sockets in the order the plant thins by, so every sparser
+	// plant is a subset of a denser one: no piece moves and no shoot outlasts its sheath.
+	let keptSockets = sockets;
+	if (tune.keepShare < 1) {
+		const least = sockets.reduce((count, socket) => count + (socket.keep === 0 ? 1 : 0), 0);
+		const most = Math.min(
+			sockets.length,
+			Math.max(least, Math.round(sockets.length * tune.keepShare)),
+		);
+		const order = sockets.map((_, index) => index);
+		order.sort((a, b) => (sockets[a] as Socket).keep - (sockets[b] as Socket).keep || a - b);
+		const kept = new Set(order.slice(0, most));
+		keptSockets = sockets.filter((_, index) => kept.has(index));
+	}
+	addSockets(builder, keptSockets);
 	const finished = builder.finish(0);
 	// The skeleton holds only the stool. The plant's top and its box are its pieces': the tallest
 	// piece, and each piece's reach from its shoot with half a blade's width beside it.
@@ -550,8 +610,146 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 	};
 	// A tuft is its pieces, so each variant stands at the height its record asks for it with its
 	// pieces scaled with it, and the height calibration after the grower finds nothing to scale.
-	const factor = top > 0 ? targetHeight(input.record, input.seed, input.variant) / top : 1;
+	const aim = targetHeight(input.record, input.seed, input.variant) * tune.size;
+	const factor = top > 0 ? aim / top : 1;
 	return scaledWithPieces(grown, factor);
+}
+
+/**
+ * Grows a tuft of the tuft model: the stool, its shoots, and a socket for each shoot's sheath
+ * column, each blade and each flowering stem in season.
+ *
+ * @param input The record, the seed, the variant and the season.
+ * @returns The skeleton.
+ * @category api/vegetation
+ */
+export function growTuft(input: GrowInput): MacroSkeleton {
+	return buildTuft(input, ADULT);
+}
+
+/**
+ * A plant that has not grown: no parts, no rows, no triangles.
+ */
+function emptyTuft(): MacroSkeleton {
+	const builder = new SkeletonBuilder();
+	return { ...builder.finish(0), clumps: [], made: 0, shed: 0 };
+}
+
+/**
+ * The shares a planned tuft takes of its adult at the asked maturity, sparseness and season. The
+ * height curve sets the plant's size and its fill; the flowers' ramp sets the flowering stems; the
+ * sparseness keeps the first sockets in the order the plant thins by, down to the record's floor.
+ */
+function plannedTune(input: GrowInput): TuftTune {
+	const growth = input.record.growth;
+	if (growth.model !== 'planned' || growth.adult !== 'tuft')
+		throw new Error(`@null3d/vegetation: '${input.record.id}' is not a planned tuft`);
+	const request = input.request ?? { maturity: 1, sparse: 0 };
+	const maturity = Math.max(0, Math.min(1, request.maturity));
+	const top = Math.max(1e-9, curveAt(growth.height, 1));
+	const size = Math.max(0, Math.min(1, curveAt(growth.height, maturity) / top));
+	const flowers =
+		growth.flowers === undefined
+			? 1
+			: Math.max(
+					0,
+					Math.min(1, (maturity - growth.flowers.from) / Math.max(1e-9, growth.flowers.band)),
+				);
+	const sparse = Math.max(0, Math.min(1, request.sparse));
+	const floor = input.record.sparse?.foliage ?? FOLIAGE_FLOOR;
+	return { fill: size, flowers, size, keepShare: 1 - sparse * (1 - floor) };
+}
+
+/**
+ * Grows a planned tuft straight to the asked state: the stool, its shoots and its flowering stems,
+ * with the plant's size, its fill and its flowering from its maturity, and its pieces thinned by
+ * sparseness. The pieces, their places and the stool are the tuft family's, so no part is grown and
+ * then cut.
+ *
+ * A tree's frame cannot read this plant. It has one stem population where a tuft has two, the leaf
+ * shoots and the flowering stems; its fill clothes a clump in rows of leaves, where a blade is one
+ * strap; it has no body for the stool the pictures show; and its piece rules build a stem with
+ * leaves, where a bare blade is a piece of its own. The tuft adult therefore keeps the tuft model's
+ * own plan, pieces and stool mesh, and the planned model adds only the state it is asked for.
+ *
+ * @param input The record, the seed, the variant, the season and the plan.
+ * @returns The skeleton.
+ * @category api/vegetation
+ */
+export function growPlannedTuft(input: GrowInput): MacroSkeleton {
+	const growth = input.record.growth;
+	if (growth.model !== 'planned' || growth.adult !== 'tuft')
+		throw new Error(`@null3d/vegetation: '${input.record.id}' is not a planned tuft`);
+	const request = input.request ?? { maturity: 1, sparse: 0 };
+	const detail = input.plan ?? planTuft(input.record, request);
+	if (!(detail.age > 0)) return emptyTuft();
+	return buildTuft(input, plannedTune(input));
+}
+
+/**
+ * What a planned tuft's state costs, as numbers, before any geometry is built: its age, its adult
+ * counts and the sockets its sparseness keeps. A tuft has no wood above its stool, so its priced
+ * part is the foliage alone: one piece at each socket.
+ *
+ * @param record The species record.
+ * @param request The asked maturity and sparseness.
+ * @returns The plan.
+ * @category api/vegetation
+ */
+export function planTuft(record: Species, request: GrowRequest): DetailPlan {
+	const growth = record.growth;
+	if (growth.model !== 'planned' || growth.adult !== 'tuft' || growth.tuft === undefined)
+		throw new Error(`@null3d/vegetation: '${record.id}' is not a planned tuft`);
+	const tuft = growth.tuft;
+	const maturity = Math.max(0, Math.min(1, request.maturity));
+	const shoots = Math.max(1, Math.round(spreadMean(tuft.shoots)));
+	const blades = Math.max(1, Math.round(spreadMean(tuft.blades)));
+	const stalks =
+		tuft.stalks === undefined ? 0 : Math.max(0, Math.round(spreadMean(tuft.stalks.count)));
+	const flowers =
+		growth.flowers === undefined
+			? 1
+			: Math.max(
+					0,
+					Math.min(1, (maturity - growth.flowers.from) / Math.max(1e-9, growth.flowers.band)),
+				);
+	const stems =
+		flowers <= 0
+			? 0
+			: flowers >= 1
+				? Math.min(shoots, stalks)
+				: Math.min(shoots, Math.max(tuft.least.stalks, Math.round(stalks * flowers)));
+	const sockets = shoots + shoots * blades + stems;
+	const sparse = Math.max(0, Math.min(1, request.sparse));
+	const floor = record.sparse?.foliage ?? FOLIAGE_FLOOR;
+	const share = 1 - sparse * (1 - floor);
+	const least =
+		Math.min(shoots, tuft.least.shoots) * (1 + tuft.least.blades) +
+		(tuft.stalks === undefined ? 0 : Math.min(stalks, tuft.least.stalks));
+	const kept = Math.max(least, Math.round(sockets * share));
+	const piece = growth.prices.piece;
+	return {
+		age: maturity * growth.fullAge,
+		finestOrder: 1,
+		expected: [1, shoots, sockets],
+		tubeSides: [4, 4, 4, 4, 4],
+		foliage: [
+			{ form: 'piece', blend: 1 },
+			{ form: 'cards', blend: 1 },
+			{ form: 'cards', blend: 1 },
+		],
+		triangles: {
+			trunk: 0,
+			limbs: 0,
+			branches: 0,
+			twigs: 0,
+			foliage: sockets * piece,
+			fruit: 0,
+		},
+		fruit: 0,
+		flowers,
+		rankCut: [1, 1, kept / Math.max(1, sockets)],
+	};
 }
 
 /**
@@ -1188,6 +1386,14 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 /** The tuft grower. */
 export const grower: Grower = {
 	grow: growTuft,
+	foliage: meshTuft,
+	pieces: tuftPieces,
+};
+
+/** The tuft adult of the planned model: the same stool, pieces and meshes, grown to its state. */
+export const plannedGrower: Grower = {
+	grow: growPlannedTuft,
+	plan: planTuft,
 	foliage: meshTuft,
 	pieces: tuftPieces,
 };
