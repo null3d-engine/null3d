@@ -18,8 +18,16 @@ import {
 import { unitAt } from '../core/hash';
 import { acos, atan2, cos, PI, quatFromFrame, radians, sin, tan, type Vector3 } from '../core/math';
 import type { Conifer, Species } from '../core/record';
-import { type Curve, curveAt, spreadAt, spreadMean } from '../core/types';
+import { type Curve, curveAt, spreadAt, spreadMean, type Vec3 } from '../core/types';
+import { pieceKey, planPiece } from '../leaf/piece';
 import type { GrowInput } from '../stages';
+import {
+	crownOf,
+	type ModelAxis,
+	type ModelPiece,
+	type ModelSocket,
+	type PlantModel,
+} from './model';
 import type { Grower } from './models';
 
 /** The golden angle in degrees, which turns each limb level on from the last. */
@@ -2243,6 +2251,171 @@ export function growConifer(input: GrowInput): MacroSkeleton {
 		});
 	}
 	return builder.finish(plan.crownBase);
+}
+
+/**
+ * Writes the conifer family's intermediate model at the record's own state: the trunk, the inner
+ * body, the limbs, their arms and twigs as axes; one socket a foliage piece on the wood it stands
+ * on; and the pieces the record's figures state. The body axis carries its own ring count, so the
+ * shared bake draws the family's body surface and not a constant's. The adapter writes no geometry,
+ * material or level; the shared stages price, grow, close, allocate and bake the model (D-377).
+ *
+ * @param input The record, the seed, the variant and the season.
+ * @returns The model.
+ * @category api/vegetation
+ */
+export function emitConifer(input: GrowInput): PlantModel {
+	const { record } = input;
+	const plan = planConifer(input);
+	const countOf = (nodes: readonly ConiferNode[]): number => Math.max(1, nodes.length - 1);
+	const axes: ModelAxis[] = [];
+	const nodesOf: number[] = [];
+	const place = (
+		nodes: readonly ConiferNode[],
+		order: number,
+		parent: number,
+		parentShare: number,
+		body = false,
+		segments?: number,
+	): number => {
+		const first = nodes[0] as ConiferNode;
+		const last = nodes[nodes.length - 1] as ConiferNode;
+		const at = axes.length;
+		axes.push({
+			order,
+			parent,
+			parentShare,
+			from: [first.x, first.y, first.z],
+			to: [last.x, last.y, last.z],
+			nodes: nodes.map((node) => ({
+				at: [node.x, node.y, node.z] as Vec3,
+				radius: node.radius,
+			})),
+			radius: [first.radius, last.radius],
+			body,
+			...(segments === undefined ? {} : { segments }),
+		});
+		nodesOf.push(countOf(nodes));
+		return at;
+	};
+	const trunk = place(plan.trunk, 0, -1, 0);
+	// The inner body is a surface of revolution on the trunk's line at the record's own radius: the
+	// axis states its rings, so the shared draw reproduces the family's triangles. It has no parent,
+	// as the family draws it joined to nothing, so the allocator's trunk part keeps it.
+	if (plan.body.length > 1) place(plan.body, 1, -1, 0, true, countOf(plan.body));
+	const limbs: number[] = [];
+	const arms: { readonly limb: number; readonly arm: number; readonly axis: number }[] = [];
+	const twigs: number[] = [];
+	const twigOrder: number[] = [];
+	plan.limbs.forEach((limb, index) => {
+		const axis = place(limb.nodes, 1, trunk, limb.trunkNode / countOf(plan.trunk));
+		limbs[index] = axis;
+		limb.arms.forEach((arm, at) => {
+			arms.push({
+				limb: index,
+				arm: at,
+				axis: place(arm.nodes, 2, axis, arm.node / countOf(limb.nodes)),
+			});
+		});
+	});
+	const armAxis = (limb: number, arm: number): number =>
+		(arms.find((one) => one.limb === limb && one.arm === arm)?.axis ??
+			(limbs[limb] as number)) as number;
+	plan.twigs.forEach((twig, index) => {
+		const parent =
+			twig.twig >= 0
+				? (twigs[twig.twig] as number)
+				: twig.arm >= 0
+					? armAxis(twig.limb, twig.arm)
+					: (limbs[twig.limb] as number);
+		const order = twig.twig >= 0 ? (twigOrder[twig.twig] as number) + 1 : 3;
+		const share = twig.node / (nodesOf[parent] as number);
+		twigs[index] = place(twig.nodes, order, parent, share);
+		twigOrder[index] = order;
+	});
+	const sockets: ModelSocket[] = plan.sockets.map((socket) => {
+		const axis =
+			socket.twig >= 0
+				? (twigs[socket.twig] as number)
+				: socket.arm >= 0
+					? armAxis(socket.limb, socket.arm)
+					: socket.limb >= 0
+						? (limbs[socket.limb] as number)
+						: trunk;
+		const order = (axes[axis]?.order ?? 0) + 1;
+		return {
+			axis,
+			order,
+			share: socket.node / (nodesOf[axis] as number),
+			at: [socket.at[0], socket.at[1], socket.at[2]],
+			direction: [socket.heading[0], socket.heading[1], socket.heading[2]],
+			piece: 0,
+			scale: socket.scale,
+			keep: plan.sockets.length > 1 ? socket.rank / (plan.sockets.length - 1) : 0,
+			group: socket.patch,
+		};
+	});
+	// Each piece's own size is its plan at the kit's scale: the socket's scale sets it against that,
+	// so the breadth, the rise and the reach are the piece's, not a patch's.
+	const needle =
+		record.foliage.kind === 'needle' || record.foliage.kind === 'fascicle'
+			? spreadMean(record.foliage.needle.length)
+			: 0;
+	const pieces: ModelPiece[] = (record.pieces ?? []).map((rule, index) => {
+		const shape = planPiece(record, rule, pieceKey(index, 0), 1);
+		let top = 0;
+		let bottom = 0;
+		let reach = 0;
+		let halfWidth = 0;
+		let halfDepth = 0;
+		const note = (point: Readonly<Vector3>): void => {
+			top = Math.max(top, point[1]);
+			bottom = Math.max(bottom, -point[1]);
+			reach = Math.max(reach, Math.sqrt(point[0] * point[0] + point[2] * point[2]));
+			halfWidth = Math.max(halfWidth, Math.abs(point[0]));
+			halfDepth = Math.max(halfDepth, Math.abs(point[2]));
+		};
+		for (const axis of shape.axes) for (const point of axis) note(point.at);
+		for (const leaf of shape.leaves) {
+			const out = needle * leaf.scale;
+			note([
+				leaf.at[0] + leaf.direction[0] * out,
+				leaf.at[1] + leaf.direction[1] * out,
+				leaf.at[2] + leaf.direction[2] * out,
+			]);
+		}
+		return {
+			name: rule.name,
+			length: spreadMean(rule.stem.length),
+			width: halfWidth * 2,
+			depth: halfDepth * 2,
+			top,
+			reach,
+			...(bottom > 0 ? { bottom } : {}),
+			figures: {
+				stemLength: spreadMean(rule.stem.length),
+				pieceWidth: halfWidth * 2,
+				pieceDepth: halfDepth * 2,
+				top,
+				reach,
+				...(bottom > 0 ? { bottom } : {}),
+				needleLength: needle,
+				pieces: shape.leaves.length,
+				...(rule.depth === undefined ? {} : { depth: rule.depth }),
+			},
+		};
+	});
+	const crown = crownOf(sockets, pieces);
+	return {
+		species: record.id,
+		axes,
+		sockets,
+		pieces,
+		least: sockets.reduce((count, socket) => count + (socket.keep === 0 ? 1 : 0), 0),
+		scale: 1,
+		keepShare: 1,
+		crown,
+	};
 }
 
 /** The conifer grower. */

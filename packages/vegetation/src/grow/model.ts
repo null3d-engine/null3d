@@ -44,12 +44,14 @@
 //   - the model is the state asked for: maturity's counts, the season's pieces and the request's
 //     flower ramp are the adapter's, while the sparseness cut belongs to the grow stage;
 //   - axis 0's first two nodes are the seat the other axes leave from, and every other axis's
-//     parent is a lower index;
+//     parent is a lower index, except a body axis, which has none: it stands on the trunk's line
+//     joined to nothing, so the allocator's trunk part keeps it at every maximum;
 //   - a socket's axis is an index into the axes, and a socket never outlasts its axis;
 //   - a socket's piece index names the pieces' order, which is the kit's class order;
 //   - a plant's top and box are its own at every sparseness: the grow reads every grown socket,
 //     never only the kept ones, so no sparseness moves the frame;
-//   - the body axis is the stool or the trunk, so the closure keeps the plant's base under any cap.
+//   - the body is the axis drawn at every state, the stool, the culm or a tree's inner body, so the
+//     closure keeps the plant's base under any cap.
 import { length3 } from '../core/math';
 import type { Vec3 } from '../core/types';
 
@@ -78,9 +80,16 @@ export interface ModelAxis {
 	readonly radius: readonly [number, number];
 	/**
 	 * Whether it is drawn wood at every state: the plant's body. A piece whose carrier is not drawn
-	 * is dropped, so a body is the axis a plant's pieces hang from.
+	 * is dropped, so a body is the axis a plant's pieces hang from. A body has no parent: it stands
+	 * on the trunk's line joined to nothing, and the allocator's trunk part keeps it.
 	 */
 	readonly body: boolean;
+	/**
+	 * The rings a body axis's own closed surface draws, where the family states them: the figure the
+	 * shared bake reads instead of a constant in the draw, so the surface reproduces the family's
+	 * triangles. Left out on an axis that is not a body.
+	 */
+	readonly segments?: number;
 }
 
 /**
