@@ -1124,7 +1124,9 @@ describe('the first card level of a clump-card plant', () => {
 				expect(faces.length).toBe(6);
 				expect(tops.length).toBe(base.length - 2);
 				const angles = faces.map(azimuth).sort((a, b) => a - b);
-				angles.forEach((angle, i) => expect(Math.abs(angle - i * 30)).toBeLessThan(1e-6));
+				angles.forEach((angle, i) => {
+					expect(Math.abs(angle - i * 30)).toBeLessThan(1e-6);
+				});
 				expect(faces.map((plane) => plane.role)).toEqual([0, 1, 0, 1, 0, 1]);
 			}
 		},
