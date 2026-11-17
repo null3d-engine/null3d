@@ -45,11 +45,12 @@ const TRUNK = [
  * and the conifer fills 54 limbs across them; here each level is its own rule, four or five boughs
  * turned evenly round the trunk, so the crown keeps the rings the pictures show rather than filling
  * evenly. The angle at each level is the record's leave angle turned to plumb: 90 less the degrees
- * it leaves above level, so 115 at the lowest level and 36 at the highest.
+ * it leaves above level, so 115 at the lowest level and 36 at the highest. The two lowest levels stand less steeply than the conifer's own
+ * measurement, so their tips do not droop below the fit's crown base.
  */
 const LEVELS = [
-	{ at: 0.34, count: 4, angle: 115, leave: -25 },
-	{ at: 0.385, count: 5, angle: 112, leave: -22 },
+	{ at: 0.385, count: 5, angle: 97, leave: -7 },
+	{ at: 0.42, count: 4, angle: 100, leave: -10 },
 	{ at: 0.44, count: 4, angle: 108, leave: -18 },
 	{ at: 0.495, count: 5, angle: 100, leave: -10 },
 	{ at: 0.55, count: 4, angle: 94, leave: -4 },
