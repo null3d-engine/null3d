@@ -190,7 +190,9 @@ const fanPatch: FramePatchRule = {
 		[0, 0.025],
 		[1, 0.035],
 	],
-	fill: { pitch: 0.03, reach: 0.015 },
+	// The fan sockets: one a fan's width over the patch's surface, so the near card level carries
+	// the fans the directed clump's crown carries, not a handful.
+	fill: { pitch: 0.012, reach: 0.008 },
 };
 
 /**
@@ -207,6 +209,9 @@ const seedPatch: FramePatchRule = {
 		[0, 0.03],
 		[1, 0.04],
 	],
+	// The pair's own fan cluster carries sockets too, so the shell's density does not rest on the
+	// twigs alone.
+	fill: { pitch: 0.02, reach: 0.01 },
 };
 
 /**
