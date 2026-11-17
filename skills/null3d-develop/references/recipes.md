@@ -937,8 +937,30 @@ page.onMessage((name, data) => {
 - The sub-paths `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math` hold the exact helpers. `createMath` builds `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The random helpers and `color` are drawing only.
 - Input, pointer events on objects, raycasts, controls and physics in the sketch are not in the input log. Anything that decides a result runs in the simulation: hit-test the recorded pointer against the simulation's own shapes, with its own camera.
 - The sketch draws the state it gets, with the main entry's helpers. It never computes the state again: an exact library and `Math` can differ in the last bit.
-- The state goes to the sketch once per tick, where rule 7 of the skill keeps other messages rare. Send only the numbers that the sketch draws.
+- The state goes to the sketch once per tick, where rule 7 of the skill keeps other messages rare. Send only the numbers that the sketch draws, in a small typed array, and a new one each time. A display can draw more frames than there are ticks. Send the last two ticks' poses and how far the frame is between them, and blend them in the sketch with `vec3.lerp` and `quat.slerp`.
 - `engine.requestPointerLock()` fails with E1426 on an engine with `input: false`. A development build warns once for each kind when the sketch reads `ctx.input`, gives an object a pointer event handler or imports `@null3d/controls`.
+
+When the result depends on where the player looks, the look is input and the camera is the simulation's. The page locks the pointer itself and records the mouse's movement each tick, as whole counts. The simulation turns the counts into a yaw and a pitch, and the sketch sets its camera to the pose in the state. The examples' deterministic simulation demo (`examples/replay/`) plays and replays a run this way:
+
+```ts
+// page.ts: the page's own lock, and whole counts in the log
+canvas.addEventListener('click', () => canvas.requestPointerLock());
+let turn = 0;
+canvas.addEventListener('pointermove', (event) => {
+  if (document.pointerLockElement === canvas) turn += event.movementX;
+});
+// In each tick: a browser can report a fraction of a pixel, so the fraction waits for the next tick
+const counts = Math.trunc(turn);
+turn -= counts;
+log.push(counts);
+step(state, counts);
+```
+
+```ts
+// sim.ts: the camera's rotation, with createMath's exact helper
+state.yaw = math.euclideanModulo(state.yaw - counts * 0.0024, 2 * Math.PI);
+exact.quat.fromEuler(state.look, state.pitch, state.yaw, 0, 'YXZ');
+```
 
 To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A small scene drew with 5 words, and its folder held 297 files, 4.7 MB after Brotli. The 172 words of null3D's examples make a folder of 226 MB. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
 

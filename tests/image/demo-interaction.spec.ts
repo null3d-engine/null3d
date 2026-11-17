@@ -1,11 +1,13 @@
-// The demos take the user's input at any moment. Playwright drives the mouse and the keys over three
+// The demos take the user's input at any moment. Playwright drives the mouse and the keys over the
 // live demos, and the probe sketch reports where each demo's camera and moving objects are, with the
 // sketch time of the frame that answered. A hover leads the math demo's lamp and leaves its camera
 // alone. In the instances demo, a drag hands the scripted camera over to the user with no jump, the
 // script then stops moving it, and the wheel zooms. In the walk and fly demo, a key hands the
 // scripted walk over to first-person controls, and Space switches to fly controls. In the weighted
 // transparency demo, a key and the controls HUD swap the two blends and the picture follows, while
-// the pointer leaves the blend alone.
+// the pointer leaves the blend alone. In the deterministic simulation demo, the page's own listeners
+// take a key and a drag, which walk and turn the camera that the simulation computes, and its replay
+// ends with the camera where the run left it.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -271,5 +273,50 @@ test('a key swaps the weighted demo between its two blends, as the HUD does, and
 	await page.keyboard.press('KeyS');
 	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
 	await expect(weighted).toHaveAttribute('aria-pressed', 'true');
+	expect(errors).toEqual([]);
+});
+
+test('the deterministic simulation demo takes its own input, and its replay ends where the run did', async ({
+	page,
+}) => {
+	const errors = await open(page, 'replay');
+	const run = page.getByRole('group', { name: 'Run' });
+	const status = run.locator('[aria-live="polite"]');
+	await expect(status).toHaveText('0 of 12 orbs', { timeout: PATIENCE });
+	const start = await probe(page);
+	// The page's own listeners take a held key and a drag, as the engine runs with input off. The
+	// simulation walks the camera forward and turns it.
+	await page.keyboard.down('KeyW');
+	await expect
+		.poll(async () => apart((await probe(page)).camera, start.camera), { timeout: PATIENCE })
+		.toBeGreaterThan(1);
+	await page.mouse.move(300, 180);
+	await page.mouse.down();
+	await page.mouse.move(420, 150, { steps: 8 });
+	await page.mouse.up();
+	await page.keyboard.up('KeyW');
+	// The walk eases to a stop, so the camera keeps creeping after it rests to the eye. The replay is
+	// judged from where it stopped.
+	let played = await rest(page, await probe(page));
+	await expect
+		.poll(
+			async () => {
+				const next = await probeAt(page, played.time + 0.2);
+				const moved = apart(next.camera, played.camera);
+				played = next;
+				return moved;
+			},
+			{ timeout: PATIENCE },
+		)
+		.toBeLessThan(1e-5);
+	expect(apart(played.cameraTurn, start.cameraTurn)).toBeGreaterThan(0.05);
+	// The replay starts again from the seed: the camera goes back to the run's start, then follows
+	// the logged ticks to the run's own state.
+	await run.getByRole('button', { name: 'Replay' }).click();
+	await expect(status).toHaveText(/^Replaying/, { timeout: PATIENCE });
+	await expect(status).toHaveText('Replay ended on the same state', { timeout: PATIENCE });
+	const replayed = await rest(page, await probe(page));
+	expect(apart(replayed.camera, played.camera)).toBeLessThan(1e-3);
+	expect(apart(replayed.cameraTurn, played.cameraTurn)).toBeLessThan(1e-3);
 	expect(errors).toEqual([]);
 });

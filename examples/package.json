@@ -3,6 +3,7 @@
 	"private": true,
 	"type": "module",
 	"devDependencies": {
+		"@clockwork2/engine": "0.10.0",
 		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",
 		"@null3d/geometry": "workspace:*",

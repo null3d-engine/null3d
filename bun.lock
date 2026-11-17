@@ -45,6 +45,7 @@
     "examples": {
       "name": "@null3d/examples",
       "devDependencies": {
+        "@clockwork2/engine": "0.10.0",
         "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
         "@null3d/geometry": "workspace:*",
@@ -295,6 +296,8 @@
     "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.5.14", "", { "os": "win32", "cpu": "arm64" }, "sha512-pHgAFffmZtaYoxavEsWEYNvcA7NwOIjLyqw2HXyLbt16xYryX0L4fMV2u0G9ag6LNYPIoqWaWqzUcnc6rLGGXg=="],
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
+
+    "@clockwork2/engine": ["@clockwork2/engine@0.10.0", "", { "peerDependencies": { "pixi.js": "^8.0.0", "three": ">=0.170.0", "typescript": ">=5.5.0" }, "optionalPeers": ["pixi.js", "three", "typescript"], "bin": { "clockwork2-validate": "dist/validate/cli.js" } }, "sha512-QG6O2Tjdwj6/rJtar2ww0vorBUnsNB1OMH8wgyQMUGN8NY7v/0+wVMkCaqSElMSjnruK+3oHH4yQeGwFS1FpUA=="],
 
     "@commitlint/cli": ["@commitlint/cli@21.2.3", "", { "dependencies": { "@commitlint/config-conventional": "^21.2.3", "@commitlint/format": "^21.2.3", "@commitlint/lint": "^21.2.3", "@commitlint/load": "^21.2.3", "@commitlint/read": "^21.2.3", "@commitlint/types": "^21.2.3", "tinyexec": "^1.0.0", "yargs": "^18.0.0" }, "bin": { "commitlint": "cli.js" } }, "sha512-5yOX6IRjcrIReCxpyAd04hgI/yhUMpVBJ/ouwFV0wk9yx5+fYRDWZWJ5h55Tbedgfol+5m2mU5nqzbB8g3v0vQ=="],
 

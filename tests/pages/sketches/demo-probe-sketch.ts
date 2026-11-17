@@ -2,7 +2,8 @@
 // so that a test can drive the pointer and see the camera or a steered object move. ?demo= names
 // the demo's sketch module from the server's root. The sketch answers the page's 'probe' message
 // with a 'probe' message: the active camera's place in the world, and the world places of the
-// demo's dynamic meshes and lights, in the order the demo made them.
+// demo's dynamic meshes and lights, in the order the demo made them. It gives the camera's rotation
+// too.
 import {
 	type Camera,
 	defineSketch,
@@ -48,11 +49,17 @@ export default defineSketch(async (context) => {
 		object.getWorldPosition(at);
 		return [...at];
 	};
+	const rotation = new Float64Array(4);
+	const turn = (object: Object3D) => {
+		object.getWorldQuaternion(rotation);
+		return [...rotation];
+	};
 	page.onMessage((name) => {
 		if (name !== 'probe') return;
 		const probe: DemoProbe = {
 			time: time.now,
 			camera: camera ? place(camera) : [],
+			cameraTurn: camera ? turn(camera) : [],
 			objects: moving.map(place),
 		};
 		page.post('probe', probe);

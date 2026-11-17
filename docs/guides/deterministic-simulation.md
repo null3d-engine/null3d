@@ -3,7 +3,7 @@ id: guides/deterministic-simulation
 title: Using null3D with a deterministic simulation
 status: experimental
 since: "0.3"
-summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a production build of a game's engine files."
+summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a camera that the player aims from recorded input; a production build of a game's engine files."
 ---
 
 # Using null3D with a deterministic simulation
@@ -126,9 +126,56 @@ The sketch's `ctx.input` then stays at rest. Every key, button and action is up,
 - `engine.requestPointerLock()` fails with [E1426](../errors/E1426.md). A game that locks the pointer locks it through the library that records the input, which reads the movement. Stopping the engine leaves that lock.
 - A development build warns in the console when the sketch relies on input anyway. It warns once for each kind: a read of `ctx.input`, an object's pointer event handler, and `@null3d/controls`. A production build carries no trace of the warnings.
 
+## Where the player looks
+
+A game whose result depends on where the player looks records the look as input. An example is a game that scores what the player aims at. The camera is then the simulation's, and the sketch only draws it:
+
+1. The page's input code locks the pointer on the canvas with `canvas.requestPointerLock()`, in a click handler. When a drag also turns the view, ask only on a click that barely moved, since a drag ends in a click too. The engine's own `requestPointerLock()` belongs to its input, and fails with [E1426](../errors/E1426.md) when that is off.
+2. Each tick, the page records the mouse's movement since the last tick as whole counts, and carries the fraction to the next tick. A browser can report a fraction of a pixel, and the log holds what the simulation reads.
+3. The simulation turns the counts into a yaw and a pitch, and builds the camera's rotation with `createMath`'s `quat.fromEuler`.
+4. The sketch sets its camera to the pose in the state. It turns no camera of its own, and neither `ctx.input` nor camera controls take part.
+
+A replay of the log then gives the same camera path, and every aim that it decided. The [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) does this:
+
+```ts
+// page.ts: the page's own lock, and the movement that each tick records
+canvas.addEventListener('click', () => canvas.requestPointerLock());
+let turn = 0;
+canvas.addEventListener('pointermove', (event) => {
+  if (document.pointerLockElement === canvas) turn += event.movementX;
+});
+// In each tick:
+const counts = Math.trunc(turn);
+turn -= counts;
+log.push(counts);
+step(state, counts);
+```
+
+```ts
+// sim.ts: simulation code
+const TURN = 0.0024; // radians for each count
+
+export function step(state: State, counts: number): void {
+  state.yaw = math.euclideanModulo(state.yaw - counts * TURN, 2 * Math.PI);
+  exact.quat.fromEuler(state.look, state.pitch, state.yaw, 0, 'YXZ');
+}
+```
+
 ## Sending the state to the sketch
 
-The page sends the simulation's state after each tick with `engine.postToSketch`. The sketch takes it with `page.onMessage`, as [Messages between the page and the sketch](../api/page.md) shows, and draws it in `onUpdate`. The page sends one message per tick, so send only the numbers that the sketch draws. When the sketch runs in a worker, the browser copies each message's data.
+The page sends the simulation's state with `engine.postToSketch`. The sketch takes it with `page.onMessage`, as [Messages between the page and the sketch](../api/page.md) shows, and draws it in `onUpdate`. Send only the numbers that the sketch draws, in a small typed array. Send a new array each time: a sketch on the page's thread gets the very array that the page sent. When the sketch runs in a worker, the browser copies each message's data.
+
+Until the first state arrives, as in a held frame, the sketch can draw the run's start. It imports the simulation's start function and builds the first state from the same seed, and it never steps the state.
+
+A display can draw more frames than the simulation has ticks, such as 120 frames a second against 60 ticks. Send the poses of the last two ticks, and how far the frame is between them, once a frame. The sketch then blends them with the main entry's `vec3.lerp` and `quat.slerp`, so the camera moves smoothly at any rate:
+
+```ts
+// sketch.ts, in onUpdate
+vec3.lerp(at, before, now, between);
+quat.slerp(turned, beforeTurn, nowTurn, between);
+camera.setPosition(at[0], at[1], at[2]);
+camera.setRotation(turned[0], turned[1], turned[2], turned[3]);
+```
 
 ## A production build of a game's engine files
 

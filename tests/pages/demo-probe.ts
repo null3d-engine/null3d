@@ -1,7 +1,8 @@
 // Runs one demo of examples/ live, as the examples page starts it, through the probe sketch, which
 // reports where the demo's camera and its moving objects are. ?demo= names the demo. Once the
 // engine draws, the page publishes its result and offers `demoProbe()` on the window, which
-// resolves to the sketch's report.
+// resolves to the sketch's report. The page shows a demo's choices, and a page part's buttons, below
+// the canvas.
 import { DEMOS } from '../../examples/demos';
 import { startDemo } from '../../examples/lib/run';
 import type { DemoProbe } from './lib/demo-probe';
@@ -22,7 +23,10 @@ run('demo-probe', async () => {
 	// The plugin reads the sketch's address as a literal, so the query goes on after.
 	const sketch = new URL('./sketches/demo-probe-sketch.ts', import.meta.url);
 	sketch.searchParams.set('demo', new URL(demo.sketch).pathname);
-	const engine = await startDemo({ canvas, demo: { ...demo, sketch } });
+	// The bar of a demo's choices, where a demo with a page part shows its buttons too.
+	const choices = document.createElement('div');
+	document.body.append(choices);
+	const engine = await startDemo({ canvas, demo: { ...demo, sketch }, choices });
 	await engine.firstFrame;
 	window.demoProbe = () =>
 		new Promise((resolve) => {

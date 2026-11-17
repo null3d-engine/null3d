@@ -115,6 +115,12 @@ export interface Demo {
 	 * sketch as a message named by the choice, with the option's text as its value.
 	 */
 	choices?: readonly DemoChoice[];
+	/**
+	 * True for a demo whose page takes the input itself, as a game's page does whose simulation a
+	 * server replays. `startDemo` then starts the engine with `input: false`, and on a live page it
+	 * starts the demo's page part, `examples/<name>/page.ts`. A held frame draws the sketch alone.
+	 */
+	pagePart?: boolean;
 }
 
 /** A choice that a page offers for a demo: one button for each option. */
@@ -811,6 +817,26 @@ export const DEMOS: readonly Demo[] = [
 			'A flock of 300 drones, each with its own light, chases a lamp over a landing pad at dusk, each at its own lag and speed. vec3 and quat helpers place, turn and bank each drone from the time, with no allocation.',
 		hold: 8,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'replay',
+		group: 'Motion and interaction',
+		sketch: new URL('./replay/sketch.ts', import.meta.url),
+		code: 'replay/',
+		title: 'Deterministic simulation',
+		scene: 'Orb hunt at dusk',
+		summary:
+			"A seeded simulation runs an orb hunt in a walled court at dusk: an orb counts when the view points at it from close by. The page takes the keys, the mouse and the pointer lock itself, and the engine takes no input. The simulation steps by ticks with null3D's maths entry and exact sines, and the sketch draws the camera that it computes. Replay steps the recorded input from the seed again and ends on the same picture.",
+		controls: [
+			{ keys: ['W', 'A', 'S', 'D'], does: 'Walk, or with the arrow keys' },
+			{ keys: ['Click'], does: 'Lock the pointer, so the mouse looks' },
+			{ keys: ['Drag'], does: 'Look, or with one finger' },
+			{ keys: ['Two fingers'], does: 'Walk forward' },
+			{ keys: ['Replay'], does: 'Run the recorded input again from the seed' },
+		],
+		hold: 2,
+		timeoutSeconds: 60,
+		pagePart: true,
 	},
 	{
 		name: 'terrain',

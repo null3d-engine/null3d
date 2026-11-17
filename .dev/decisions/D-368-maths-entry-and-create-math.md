@@ -106,3 +106,4 @@ Options rejected:
 - In V8, closures of one function share the feedback of their call sites. A thread could call a helper that the main entry built and one that `createMath` built on other functions. Those call sites then see two targets, which no run here timed. A sketch has no use for `createMath`, and the docs show it in simulation code only.
 - The docs page `guides/deterministic-simulation` says which helpers a simulation may import and from where. It shows `createMath` with an exact math library. It keeps input, picking and physics that decide a result out of the sketch, and gives a production recipe for a game's engine files.
 - `api/math`, `guides/physics`, both skills and the three.js mapping link to it.
+- The deterministic simulation demo, `examples/replay`, imports the sub-paths and builds `createMath` on clockwork2's `dmath`. [D-369](D-369-input-option.md) says why that library.

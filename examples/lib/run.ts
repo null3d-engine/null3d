@@ -105,6 +105,23 @@ const LOADER_QUIET_MS = 400;
 /** The most of the sketch's early messages that the page keeps, as the engine keeps its own. */
 const MAX_EARLY_MESSAGES = 256;
 
+/**
+ * A demo's page part, `examples/<name>/page.ts`, which `startDemo` loads and starts for a demo with
+ * `pagePart`. The bundler ships every such module as a chunk of its own, which only that demo loads.
+ */
+export interface DemoPage {
+	/**
+	 * Starts the part on the demo's canvas. `controls` is the element that `startDemo` takes as
+	 * `choices`, where the part shows its buttons, and `signal` ends the part with the demo.
+	 */
+	start(
+		engine: Engine,
+		canvas: HTMLCanvasElement,
+		controls: HTMLElement | undefined,
+		signal: AbortSignal | undefined,
+	): void;
+}
+
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
 export async function startDemo({
 	canvas,
@@ -254,6 +271,8 @@ export async function startDemo({
 			hdr: demo.hdr,
 			momentTransparency: demo.momentTransparency,
 			transparent: behind,
+			// A demo whose page takes the input itself keeps the engine from listening.
+			...(demo.pagePart ? { input: false } : {}),
 			preset,
 			antialias,
 			...settings,
@@ -276,6 +295,13 @@ export async function startDemo({
 		throw error;
 	}
 	if (choices) showChoices(engine, demo, choices);
+	// A demo whose page takes the input starts its page part on a live page. A held frame draws the
+	// sketch alone, and the engine reads `?hold` from the page's address.
+	const running = engine;
+	if (demo.pagePart && !new URLSearchParams(location.search).has('hold'))
+		void (import(`../${demo.name}/page.ts`) as Promise<DemoPage>).then((part) =>
+			part.start(running, canvas, choices, signal),
+		);
 	// One message handler for the page: the engine gives the messages that a sketch sent before the
 	// page listened to the first handler alone, so two handlers would drop the help that a showcase
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.

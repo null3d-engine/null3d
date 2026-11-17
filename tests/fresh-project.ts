@@ -70,7 +70,7 @@ const DEPENDENCIES = Object.keys(PACKAGES)
 /** Tools from npm, at the versions that the repository pins. */
 const TOOLS = ['vite', 'typescript'];
 /** Packages that the examples import besides null3D's, at the versions that the examples pin. */
-const EXAMPLE_DEPENDENCIES = ['three'];
+const EXAMPLE_DEPENDENCIES = ['three', '@clockwork2/engine'];
 
 /** The project's package manifest, with each package from its tarball. */
 export function projectManifest(
@@ -92,7 +92,8 @@ export function projectManifest(
 		// npm may not have the packed version of a package that another one names, such as the
 		// engine that the controls name, so every copy comes from its tarball.
 		overrides: versions([...DEPENDENCIES, ...DEV_DEPENDENCIES], tarball),
-		// A website that shows the comparisons with three.js installs three.js too.
+		// A website that shows the comparisons with three.js installs three.js too, and the exact math
+		// library of the deterministic simulation demo.
 		dependencies: {
 			...versions(DEPENDENCIES, tarball),
 			...versions(EXAMPLE_DEPENDENCIES, (name) => {
