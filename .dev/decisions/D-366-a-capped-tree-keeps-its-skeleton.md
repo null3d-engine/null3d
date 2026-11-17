@@ -21,7 +21,9 @@ sides to read as wood — five or six at the lowest cap — its fork, and its fi
 as limbs; the leaf budget takes what remains. A cap also leaves no piece standing free: a strip that loses its carrier is
 joined or dropped, as the connectedness rule asks at every level. And a cap draws wood only down to the lowest order it
 can make look like wood: a subbranch of two triangles reads as a needle, which is worse than drawing no wood at all, so
-below that order the leaf approximation stands in and attaches to the last order drawn. A change of budget order must show a better read at
+below that order the leaf approximation stands in and attaches to the last order drawn. The crown's plates also set the
+outline: no wood is drawn outside the crown's foliage at any cap, and a clump's plate grows to its own extent so a few
+large plates surface whole sections of the crown rather than the wood surfacing it. A change of budget order must show a better read at
 that distance or it is not taken.
 
 ## Data
