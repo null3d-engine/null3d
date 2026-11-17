@@ -27,6 +27,7 @@ import type { FrameAxis, FrameNode, FramePlan } from './frame';
 import { planFrame } from './frame';
 import type { Grower } from './models';
 import { type FillClump, type FillInput, fillClumps } from './planned-fill';
+import { fillRosette } from './planned-rosette';
 
 /**
  * The share of a triangle maximum that the crown is paid before the wood takes its share: a clump
@@ -205,6 +206,14 @@ function boundsOf(record: Species, growth: Planned): FrameBounds {
 	const height = curveAt(growth.height, 1);
 	const spec = growth.frame;
 	void record;
+	// A rosette's crown is its fronds: one socket a frond, and the dead skirt's sockets too. The
+	// trunk is the one axis, and it carries no woody order between it and the fronds.
+	if (growth.rosette) {
+		const fronds = Math.round(spreadMean(growth.rosette.fronds.count));
+		const dead = growth.rosette.dead ? Math.round(spreadMean(growth.rosette.dead.count)) : 0;
+		const sockets = Math.max(1, fronds + dead);
+		return { expected: [1.2, 0, 0, 0, sockets * 1.2], clumps: sockets };
+	}
 	if (growth.adult !== 'frame' || spec === undefined)
 		return { expected: [0, 0, 0, 0, 0], clumps: 0 };
 	// The stated levels: the stems, then the axes that leave them.
@@ -346,7 +355,13 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const wood = kept.slice(0, 4).map((count, order) => count * (segments[order] as number) * tube);
 	const sockets = kept[4] as number;
 	const foliage = sockets * (clumpCard ? growth.prices.clumpCard : piece);
-	const fruit = request.maturity >= growth.fruitFrom ? sockets * piece * 0.05 : 0;
+	// A rosette carries no fruit: its species' sori are painted in its leaf texture.
+	const fruit =
+		growth.rosette !== undefined
+			? 0
+			: request.maturity >= growth.fruitFrom
+				? sockets * piece * 0.05
+				: 0;
 	const priced = {
 		trunk: wood[0] as number,
 		limbs: wood[1] as number,
@@ -411,7 +426,8 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 			foliage: clump === undefined ? priced.foliage : clump.pairs * cardCost,
 			fruit: priced.fruit,
 		},
-		fruit: ramp(request.maturity, growth.fruitFrom, growth.fruitBand),
+		fruit:
+			growth.rosette !== undefined ? 0 : ramp(request.maturity, growth.fruitFrom, growth.fruitBand),
 		flowers:
 			growth.flowers === undefined
 				? 0
@@ -462,7 +478,18 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	const capped =
 		most !== undefined &&
 		price.trunk + price.limbs + price.branches + price.twigs + price.foliage + price.fruit > most;
-	const woodStep = most === undefined ? 1 : most >= 20_000 ? 1 : most >= 5_000 ? 2 : 8;
+	// A rosette's growing point is its trunk's top, and every frond is placed there: a coarsened stem
+	// would drop the point to the ground, so a rosette's trunk keeps every node at every cap.
+	const woodStep =
+		growth.rosette !== undefined
+			? 1
+			: most === undefined
+				? 1
+				: most >= 20_000
+					? 1
+					: most >= 5_000
+						? 2
+						: 8;
 
 	// Where every adult axis stands at this age, before sparseness or a maximum is read.
 	const reveal: Reveal[] = bones.axes.map((axis) => {
@@ -737,6 +764,70 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			nodes.push(last);
 		});
 		builtNodes[index] = nodes;
+	}
+
+	// A rosette's crown is its fronds, not a fill of woody clumps: one socket a frond at the growing
+	// point. Its crown's box comes from the pieces' own reach, so the plant's top and its lowest
+	// foliage are the fronds' and the skirt's.
+	if (growth.rosette) {
+		const stem = (bones.axes[0] as FrameAxis | undefined) ?? undefined;
+		const stemAxis = stem ? (built[0] as number) : -1;
+		const stemNodes = stem ? builtNodes[0] : undefined;
+		if (stem === undefined || stemAxis < 0 || stemNodes === undefined || stemNodes.length === 0)
+			return emptyPlant();
+		const topNode = stemNodes[stemNodes.length - 1] as number;
+		const at: Vec3 = [
+			builder.position[topNode * 3] as number,
+			builder.position[topNode * 3 + 1] as number,
+			builder.position[topNode * 3 + 2] as number,
+		];
+		const trunkNodes = stemNodes.map((node) => ({
+			y: builder.position[node * 3 + 1] as number,
+			radius: builder.radius[node] as number,
+		}));
+		const leaves = Math.min(1, Math.max(0.08, curveAt(growth.leavesAt, sparse)));
+		// At a maximum the crown keeps the cards the plan pays for, as a count of fronds. The plan
+		// prices the crown's sockets as pieces, and a cap pays a clump card a frond.
+		const cards = capped
+			? Math.round((detail.rankCut[4] ?? 1) * (detail.expected[4] ?? 0))
+			: undefined;
+		const filled = fillRosette({
+			record: input.record,
+			growth,
+			builder,
+			seed,
+			variant: input.variant,
+			at,
+			height,
+			adultHeight,
+			topRadius: builder.radius[topNode] as number,
+			trunkAxis: stemAxis,
+			trunkTop: topNode,
+			trunkNodes,
+			leaves,
+			cards,
+			croziersAllowed: most === undefined || most >= 5_000,
+		});
+		const finished = builder.finish(filled.crownBase);
+		const axesOrigin = new Uint32Array(finished.axes.count);
+		origins.forEach((origin, atIndex) => {
+			if (atIndex < axesOrigin.length) axesOrigin[atIndex] = origin;
+		});
+		const buds =
+			filled.origins.length === finished.buds.count
+				? { ...finished.buds, origin: filled.origins }
+				: finished.buds;
+		return {
+			...finished,
+			axes: { ...finished.axes, origin: axesOrigin },
+			buds,
+			bounds: filled.bounds,
+			height: filled.height,
+			crownBase: filled.crownBase,
+			clumps: filled.clumps,
+			made: filled.laid + finished.axes.count,
+			shed: filled.shed,
+		};
 	}
 
 	// Which limb each axis belongs to, and how far each limb reaches from the centre line: the

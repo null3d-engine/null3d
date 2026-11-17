@@ -1590,6 +1590,83 @@ export interface Column {
 }
 
 /**
+ * A crown of fronds from one growing point: a rosette. Each frond is one socket at the trunk's top,
+ * carrying a whole piece. The ranks spread the living fronds by their leaving angle and their
+ * piece, and the dead skirt hangs below them on its own piece. A rosette grows no woody axis above
+ * the trunk, so its plan takes its crown's box from the pieces' own reach.
+ *
+ * @category api/vegetation
+ */
+export interface PlannedRosette {
+	/**
+	 * The living fronds: how many, how they stand round the trunk and how far their bases stand
+	 * from its axis.
+	 */
+	readonly fronds: {
+		/** Fronds on a full-grown plant. */
+		readonly count: Spread;
+		/** Degrees from one frond to the next round the trunk, where they stand on a spiral. */
+		readonly divergence: number;
+		/**
+		 * How the fronds stand round the trunk: each rank spread evenly round it, or each turned on
+		 * from the last by the divergence.
+		 */
+		readonly layout: 'rings' | 'spiral';
+		/**
+		 * How far down the trunk's top the oldest frond's base stands, in metres: the youngest stand
+		 * at the growing point, and the bases of the older ones stand lower in order.
+		 */
+		readonly clasp: number;
+		/** The size of a frond piece against its rule's own; absent, 1. */
+		readonly scale?: number;
+	};
+	/**
+	 * The ranks of the living fronds, from the youngest and steepest: its share of the fronds, its
+	 * piece and its leaving angle above level.
+	 */
+	readonly ranks: readonly {
+		/** Its share of the living fronds. The ranks' shares add to 1. */
+		readonly share: number;
+		/** The piece these fronds carry, by its name among the record's pieces. */
+		readonly piece: string;
+		/** Degrees above level the fronds leave at. */
+		readonly leave: number;
+		/** Degrees a frond strays from its rank's leaving angle, either way. Absent, a few degrees. */
+		readonly spread?: number;
+		/** The rank's fronds' length as a share of the piece's own. Absent, 1. */
+		readonly length?: number;
+	}[];
+	/** The dead fronds that hang under the living crown, where the species carries them. */
+	readonly dead?: {
+		/** Dead fronds on a full-grown plant. */
+		readonly count: Spread;
+		/** The piece they carry, brown as its rule states. */
+		readonly piece: string;
+		/** Degrees below level a dead frond hangs. */
+		readonly hang: Spread;
+		/** The share of the height below the growing point where the lowest attaches. */
+		readonly from: number;
+		/** The share of the height below the growing point where the highest attaches. */
+		readonly to: number;
+		/** The length of a dead frond as a share of a living one. */
+		readonly length: number;
+	};
+	/** The young fronds still rolled, drawn as the trunk's own hairy wood. */
+	readonly croziers?: {
+		/** Croziers at the centre of the crown. */
+		readonly count: Spread;
+		/** A crozier's length as a share of the height. */
+		readonly length: Spread;
+		/** Degrees the crozier's head coils through. */
+		readonly coil: number;
+		/** The head's radius, in metres at its first turn. */
+		readonly radius: number;
+		/** Degrees a crozier leans out from plumb. */
+		readonly lean: number;
+	};
+}
+
+/**
  * One order of a planned plant's wood, the orders below the boughs: the measured piece its sockets
  * carry, and how many of them a square metre of the crown's clump width holds.
  *
@@ -1620,7 +1697,10 @@ export interface Planned {
 	readonly model: 'planned';
 	/** The age in model years of the full-grown plant. */
 	readonly fullAge: number;
-	/** The plant's height in metres by age. */
+	/**
+	 * The plant's height in metres by age. A rosette states its trunk's height: its frame is the
+	 * trunk, and the crown's fronds stand above that.
+	 */
 	readonly height: Curve;
 	/** The crown's spread as a share of the height, by age. */
 	readonly spread: Curve;
@@ -1661,6 +1741,11 @@ export interface Planned {
 	readonly fruitBand: number;
 	/** The flowering season and the ramp the catkins come in over, where the species carries them. */
 	readonly flowers?: { readonly season: Season; readonly from: number; readonly band: number };
+	/**
+	 * The plant is a rosette: one growing point, one socket a frond, and no woody axis above the
+	 * trunk. The fill lays the fronds and the dead skirt, and the crown's box is the pieces' reach.
+	 */
+	readonly rosette?: PlannedRosette;
 	/**
 	 * Where a capped crown's cards stand: at the middle of the wood that draws them, so a sparse cap
 	 * still hangs together, or at each clump's own stated place and size, so a maximum never reshapes
