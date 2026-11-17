@@ -2,6 +2,7 @@
 // one pass. It checks what any record must hold (names, numbers in their ranges, curves that rise,
 // the envelope a self-organizing plant needs, shoot classes whose shares add up, the detail levels
 // and the budget under the owner's caps). Each grower may hold its model's finer rules beside it.
+import type { FrameSpec } from '../grow/frame';
 import { capProblems } from './caps';
 import { FORM_FIELDS, formRecord } from './forms';
 import type {
@@ -814,6 +815,21 @@ function growthProblems(record: Species, out: string[]): void {
 		if (ribs.depth < 0 || ribs.sweep <= 0)
 			out.push('foliage.leaf.ribs needs a depth from 0 and a sweep above 0');
 	}
+	// The frame spec the planned model reads, wherever a record carries one: the plan reads its
+	// outline, its stems and its boughs, and a conifer may state the same spec.
+	const frameSpec = 'frame' in growth ? growth.frame : undefined;
+	if (frameSpec) frameSpecProblems(frameSpec, 'growth.frame', out);
+	// The planned record's socket turn: the degrees each socket's piece turns. The fill states its
+	// own sockets, so no rows or fan is read here.
+	if (growth.model === 'planned' && growth.turn) {
+		const { roll, tilt, out: tip } = growth.turn;
+		if (!(roll >= 0 && roll <= 360))
+			out.push(`growth.turn.roll is ${roll}; it is degrees from 0 to 360`);
+		if (!(tilt >= 0 && tilt <= 90))
+			out.push(`growth.turn.tilt is ${tilt}; it is degrees from 0 to 90`);
+		if (tip !== undefined && !(tip >= 0 && tip <= 90))
+			out.push(`growth.turn.out is ${tip}; it is degrees from 0 to 90`);
+	}
 	if (growth.model === 'conifer') {
 		const { trunk, limbs, top, patch } = growth;
 		curveProblems(trunk.width, 'growth.trunk.width', out);
@@ -1106,6 +1122,27 @@ function formProblems(record: Species, out: string[]): void {
 			);
 		}
 	}
+}
+
+/**
+ * The problems of a frame spec: the outline's sides in their order, its curves, and its stems. A
+ * planned record carries one, and a conifer may carry one, so a new or edited spec fails here.
+ */
+function frameSpecProblems(frame: FrameSpec, path: string, out: string[]): void {
+	const sides = frame.outline;
+	if (sides.length < 2)
+		out.push(`${path}.outline has ${sides.length} sides; an outline states two or more`);
+	sides.forEach((side, k) => {
+		const at = `${path}.outline[${k}]`;
+		if (!(side.toward >= 0 && side.toward < 360))
+			out.push(`${at}.toward is ${side.toward}; it is degrees from 0 to under 360`);
+		if (k > 0 && side.toward <= (sides[k - 1]?.toward ?? 0))
+			out.push(`${at}.toward is ${side.toward}; the sides run in their order round the plant`);
+		curveProblems(side.reach, `${at}.reach`, out);
+		curveProblems(side.under, `${at}.under`, out);
+	});
+	if (!(frame.stems.count >= 1))
+		out.push(`${path}.stems.count is ${frame.stems.count}; a plant has one stem or more`);
 }
 
 /**

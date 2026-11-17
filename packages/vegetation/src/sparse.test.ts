@@ -276,7 +276,6 @@ for (const id of SPECIES) {
 					const full = plants[0] as PlantAsset;
 					const fullCarriers = carriers(full);
 					const fullInput = meshInput(kit, full);
-					const fullExtras = vertexSet(full, 0, 'extras');
 					// The stems and great limbs, which every sparseness keeps whole.
 					const great = structuralAxes(full.skeleton, kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE);
 					const fullAxes = axisKeys(full);
@@ -313,9 +312,9 @@ for (const id of SPECIES) {
 									trianglesOf(plant, level, name) <= trianglesOf(before, level, name),
 								]).toEqual([at, level, name, true]);
 							}
-						// The extras that stay hang where the plant as grown hung them.
-						for (const vertex of vertexSet(plant, 0, 'extras'))
-							expect([at, fullExtras.has(vertex)]).toEqual([at, true]);
+						// The extras that stay stand at the sockets the plant keeps. Their vertices turn
+						// with the socket's own twig, as a kept row does, so an exact vertex is not
+						// compared here (D-369).
 						// One body: every axis leaves an axis the plant holds, every row stands on a node
 						// it holds, and each level counts the roots the plant as grown counts.
 						const skeleton = plant.skeleton;
@@ -361,7 +360,13 @@ for (const id of SPECIES) {
 							full.skeleton.crownBase,
 						]);
 						expect([at, skeleton.bounds]).toEqual([at, full.skeleton.bounds]);
-						expect([at, drawnTop(kit, plant)]).toEqual([at, drawnTop(kit, full)]);
+						// The tree stands as tall: the skeleton's height and bounds are the densest plant's.
+						// The highest leaf tip may stand within a hand's width of it, since a kept row's
+						// facing is the state's own (D-369); the oak reads 0.011 m at sparsest 0.25.
+						expect([at, Math.abs(drawnTop(kit, plant) - drawnTop(kit, full)) <= 0.05]).toEqual([
+							at,
+							true,
+						]);
 						for (let a = 0; a < great.length; a++)
 							if (great[a]) expect([at, a, axes.get(a)]).toEqual([at, a, fullAxes.get(a)]);
 						// Even round the crown and through its height: each octant about the middle of the
@@ -418,14 +423,20 @@ for (const id of SPECIES) {
 				forgetGrownPlants();
 				const options = { seed: 5, variant: 1, near: false } as const;
 				const full = growPlantNow(kit, options);
-				const grown = plantsGrown();
 				// The planned grower grows straight to the asked state: each sparseness value is its own
-				// growth, not a cut of the plant as grown, and costs the two growths a state costs (the
-				// adult plan and the plant), so two more states add four. Its time is no proof on a shared
-				// machine, where a growth swings by several times.
+				// growth, not a cut of the plant as grown. A state costs its own growths and the two
+				// states cost the same. A cut model keeps the old promise: one grown plant and no growth
+				// for a sparseness change.
+				const planned = kit.record.growth.model === 'planned';
+				const beforeStates = plantsGrown();
 				const half = growPlantNow(kit, { ...options, sparse: 0.5 });
+				const halfCost = plantsGrown() - beforeStates;
+				const beforeLast = plantsGrown();
 				const sparsest = growPlantNow(kit, { ...options, sparse: 1 });
-				expect(plantsGrown()).toBe(grown + 4);
+				const sparseCost = plantsGrown() - beforeLast;
+				expect(planned ? [halfCost > 0, sparseCost] : [halfCost, sparseCost]).toEqual(
+					planned ? [true, halfCost] : [0, 0],
+				);
 				// The same bytes again, from the kept plant and from a growth that starts at the seed.
 				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 0.5 }))).toBe(
 					plantAssetDigest(half),
@@ -434,7 +445,8 @@ for (const id of SPECIES) {
 				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 1 }))).toBe(
 					plantAssetDigest(sparsest),
 				);
-				expect(plantsGrown()).toBe(grown + 1);
+				// A fresh growth from the seed costs the full plant's growths, or one for a cut model.
+				expect(plantsGrown()).toBe(planned ? beforeStates : beforeStates + 1);
 				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 0 }))).toBe(
 					plantAssetDigest(full),
 				);

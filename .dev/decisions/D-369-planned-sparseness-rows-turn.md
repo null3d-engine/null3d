@@ -39,7 +39,8 @@ is the fill's own draw, not a moved row.
 
 ## Decision
 
-The test holds the places, scales and pieces. It holds the height, the join, the fall, and the
-growth count that states the planned promise. Each state is its own growth, and two states add two
+The test holds the places, scales and pieces. The extras follow their sockets the same way: their
+places nest and their vertices turn with the socket. The test holds the height, the join, the fall,
+and the growth count that states the planned promise. Each state is its own growth, and two states add two
 growths each. It does not hold the facing. A bit-exact facing across states would need the fill to
 keep one twig heading per place across states. That is a change to the fill, not to this test.

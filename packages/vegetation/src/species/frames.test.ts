@@ -11,7 +11,7 @@ import { hashBytes } from '../core/hash';
 import type { Vector3 } from '../core/math';
 import type { Species } from '../core/record';
 import { loadSpecies, speciesIds } from '../core/registry';
-import { curveAt, spreadMean } from '../core/types';
+import { curveAt } from '../core/types';
 import {
 	evenOutline,
 	FRAME_TURN_MOST,
@@ -98,8 +98,6 @@ interface Held {
 	readonly id: string;
 	readonly spec: FrameSpec;
 	readonly record: Species;
-	/** The middle of the species' height in metres. */
-	readonly heightMean: number;
 	/** The axes each rule makes on one plant: a count, or the least and the most. */
 	readonly counts: Readonly<Record<string, number | readonly [number, number]>>;
 	/** The rule whose axes must stand round the plant, and the widest gap between two of them. */
@@ -119,7 +117,7 @@ interface Held {
 	 * descent, and the axes that run back through an elder, summed over the seeds. Both may only fall.
 	 */
 	readonly crossings: readonly [apart: number, descent: number];
-	/** The plant's height over the record's, as the least and the most. */
+	/** The plant's height over the height drawn for its seed, as the least and the most. */
 	readonly tall: readonly [number, number];
 	/** The axes for each socket over the seeds, to three places: also a number that may only fall. */
 	readonly axesPerSocket: number;
@@ -141,7 +139,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'silver-birch',
 		spec: silverBirch,
-		heightMean: spreadMean(silverBirchRecord.size.height),
 		record: silverBirchRecord,
 		counts: {
 			leader: 1,
@@ -165,7 +162,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'common-alder',
 		spec: commonAlder,
-		heightMean: spreadMean(commonAlderRecord.size.height),
 		record: commonAlderRecord,
 		// The tall picture's fill: the record stands 25 m from stills 01, 02 and 18 (their crowns
 		// are 0.590 and 0.626 of the height wide) with the low foliage edge stills 02, 18 and 30
@@ -192,7 +188,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'weeping-willow',
 		spec: weepingWillow,
-		heightMean: spreadMean(weepingWillowRecord.size.height),
 		record: weepingWillowRecord,
 		// The top limbs carry branches only on their rising part and the secondary limbs none on their
 		// first stretch, so 96 to 104 branches and 566 to 619 whips grow over the seeds.
@@ -213,7 +208,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'holm-oak',
 		spec: holmOak,
-		heightMean: spreadMean(holmOakRecord.size.height),
 		record: holmOakRecord,
 		counts: { stem: 10, arm: 20, fork: 40, branch: [110, 120], side: [20, 80], twig: [300, 1200] },
 		// Eight outer stems stand an eighth of a turn apart, and the two inner ones lean where they
@@ -234,7 +228,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'hawthorn-shrub',
 		spec: hawthornShrub,
-		heightMean: spreadMean(hawthornShrubRecord.size.height),
 		record: hawthornShrubRecord,
 		counts: { stem: 8, limb: [24, 32], side: [22, 32], shoot: [56, 104], twig: [1800, 2400] },
 		// Seven outer stems stand a seventh of a turn apart round the one at the middle.
@@ -252,7 +245,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'european-beech',
 		spec: europeanBeech,
-		heightMean: spreadMean(europeanBeechRecord.size.height),
 		record: europeanBeechRecord,
 		counts: { trunk: 1, limb: 10, bough: [85, 86], skirt: [14, 17], twig: [2481, 2691] },
 		// Ten limbs a golden angle apart leave no gap wider than that and their jitter.
@@ -269,7 +261,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'common-ash',
 		spec: commonAsh,
-		heightMean: spreadMean(commonAshRecord.size.height),
 		record: commonAshRecord,
 		counts: {
 			trunk: 1,
@@ -296,7 +287,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'olive',
 		spec: olive,
-		heightMean: spreadMean(oliveRecord.size.height),
 		record: oliveRecord,
 		counts: { trunk: 1, outer: 4, centre: 2, branch: 12, spray: 48, twig: [1782, 1849] },
 		// Four outer limbs leave a quarter of a turn apart; each one's end wanders with its elbows.
@@ -313,7 +303,6 @@ const HELD: readonly Held[] = [
 	{
 		id: 'pedunculate-oak',
 		spec: pedunculateOak,
-		heightMean: spreadMean(pedunculateOakRecord.size.height),
 		record: pedunculateOakRecord,
 		counts: {
 			trunk: 1,
