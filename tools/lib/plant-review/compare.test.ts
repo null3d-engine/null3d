@@ -50,6 +50,7 @@ import {
 	sameDrawing,
 	setAsideOf,
 	sheathDifference,
+	sparseOutline,
 	spread,
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
@@ -1031,6 +1032,21 @@ describe('a picture that answers nothing', () => {
 		);
 		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
 		expect(levelName({})).toBe(undefined);
+	});
+
+	test('refuses an enclosed-sky figure over an outline that collapsed', () => {
+		// A far card at a fifth of its coverage draws a sparse speckle; the sky its own outline
+		// encloses is nearly none, which reads as a solid crown. The figure is left out instead.
+		const speckle = { mask: new Uint8Array(100 * 100), width: 100, height: 100 };
+		speckle.mask.fill(0);
+		for (let at = 0; at < 50; at++) speckle.mask[at] = 1;
+		expect(sparseOutline(speckle)).toBe(
+			'the drawn plant covers 0.5 per cent of the frame, under the subject floor, so its outline is a speckle and no enclosed sky is read',
+		);
+		const solid = { mask: new Uint8Array(100 * 100).fill(1), width: 100, height: 100 };
+		expect(sparseOutline(solid)).toBe(undefined);
+		const empty = { mask: new Uint8Array(100 * 100), width: 100, height: 100 };
+		expect(sparseOutline(empty)).toBe(undefined);
 	});
 
 	test('names a forced level the distance would not draw as out of range', () => {
