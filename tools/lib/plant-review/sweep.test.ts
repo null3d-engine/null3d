@@ -395,6 +395,20 @@ describe('the pull-back series', () => {
 		expect(solid[0]?.reason).toContain('fills its own span');
 	});
 
+	test('reports a fall on a smaller patch without charging it, and charges the four-metre one', () => {
+		const crop = sweepSeriesRows([
+			seriesStep('a.png', 2.1, 0.7, '2 m patch'),
+			seriesStep('b.png', 2.7, 0.683, '2 m patch'),
+		]);
+		expect(crop[1]?.verdict).toBe('pass');
+		expect(crop[1]?.reason).toContain('crop cannot see a crown fall');
+		const crown = sweepSeriesRows([
+			seriesStep('a.png', 14, 0.7, '4 m patch'),
+			seriesStep('b.png', 16, 0.683, '4 m patch'),
+		]);
+		expect(crown[1]?.verdict).toBe('fail');
+	});
+
 	test('does not compare across a change of patch, and names the change', () => {
 		const across = sweepSeriesRows([
 			seriesStep('a.png', 5, 0.7, '2 m patch'),
@@ -495,7 +509,16 @@ describe('the sweep’s verdicts', () => {
 		);
 		expect(failed.verdict).toBe('fail');
 		expect(failed.reason).toContain('filled-frame openness 0.500');
-		expect(failed.reason).toContain('outline covers too little');
+		expect(failed.reason).toContain('too open');
+		// The direction is named: a card under the reference's openness is too closed.
+		const closed = orbit(3).map((entry) => ({ ...entry, skyGap: null, covered: 0.9 }));
+		const tooClosed = rowWith(
+			SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
+			closed,
+			refOf({ skyGap: 0.2, solidity: 0.72 }),
+		);
+		expect(tooClosed.verdict).toBe('fail');
+		expect(tooClosed.reason).toContain('too closed');
 	});
 
 	test('fails a crown nearly half again as open as its photograph, with the figure', () => {
@@ -534,6 +557,20 @@ describe('the sweep’s verdicts', () => {
 		expect(near.reason).toContain("near form's switch");
 	});
 
+	test('leaves a near rung the camera cannot reach open even where another figure fails', () => {
+		const drawn = orbit(1);
+		drawn[0] = picture(drawn[0]!.file, 1, {
+			turn: drawn[0]!.turn,
+			height: drawn[0]!.height,
+			measured: undefined,
+			measures: measures([{ area: 40, box: 'a' }]),
+		} as never);
+		const result = row(SWEEP_RUNGS[2] as (typeof SWEEP_RUNGS)[number], drawn);
+		expect(result.verdict).toBe('open');
+		expect(result.reason).toContain("near form's switch");
+		expect(result.reason).toContain('meets nothing');
+	});
+
 	test('fails an orbit frame that jumps beyond its neighbours’ covered share, naming its angle', () => {
 		const result = row(SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number], orbit(3, 0.8, 120));
 		expect(result.verdict).toBe('fail');
@@ -545,13 +582,19 @@ describe('the sweep’s verdicts', () => {
 		const leaf = SWEEP_RUNGS[5] as (typeof SWEEP_RUNGS)[number];
 		const jumping = orbit(0, 0.8, 60);
 		expect(row(leaf, jumping).verdict).toBe('pass');
+		// A pinnate leaf's leaflets are separate pictures: a leaflet is foliage, not a float.
 		const floating = orbit(0);
 		floating[0] = picture(floating[0]!.file, 0, {
 			turn: floating[0]!.turn,
 			height: floating[0]!.height,
 			measures: measures([{ area: 30, box: 'a' }]),
 		});
-		expect(row(leaf, floating).verdict).toBe('fail');
+		const leafRow = row(leaf, floating);
+		expect(leafRow.verdict).toBe('pass');
+		expect(leafRow.floating).toBe(1);
+		// The same piece inside the crown is still a float, so the exclusion is the leaf's alone.
+		const inside = SWEEP_RUNGS[3] as (typeof SWEEP_RUNGS)[number];
+		expect(row(inside, floating).verdict).toBe('fail');
 	});
 
 	test('reads a cluster jump apart from the covered share', () => {
