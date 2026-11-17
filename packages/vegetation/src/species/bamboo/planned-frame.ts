@@ -10,7 +10,7 @@
 // directed clump.
 import type { Planned } from '../../core/record';
 import type { Spread } from '../../core/types';
-import { evenOutline, type FrameSpec } from '../../grow/frame';
+import { evenOutline, type FramePatchRule, type FrameSpec } from '../../grow/frame';
 import { directed } from './directed';
 import { envelope } from './fit';
 
@@ -169,4 +169,143 @@ export const plannedGrowth: Planned = {
 	fruitBand: 0.1,
 	capCards: 'stated',
 	prices: { piece: 24, card: 6, clumpCard: 6, tubeSegment: 14 },
+};
+
+/**
+ * The fan cluster a planned twig carries: the blades crowd on one short twig. Its sockets are the
+ * plan's fourth order, where the crown's pieces are priced.
+ */
+const fanPatch: FramePatchRule = {
+	kind: 'clump',
+	width: [
+		[0, 0.025],
+		[1, 0.035],
+	],
+	depth: [
+		[0, 0.025],
+		[1, 0.035],
+	],
+	fill: { pitch: 0.03, reach: 0.015 },
+};
+
+/**
+ * The cluster a pair carries: the seed a low cap draws as a card, so the crown keeps a card on the
+ * wood every cap draws before any twig is paid for.
+ */
+const seedPatch: FramePatchRule = {
+	kind: 'clump',
+	width: [
+		[0, 0.03],
+		[1, 0.04],
+	],
+	depth: [
+		[0, 0.03],
+		[1, 0.04],
+	],
+};
+
+/**
+ * Candidate two: the pair's wood stated as three orders, with a fan at the twig. The culm is order
+ * 0, its branch pair order 1, the pair's sub-branches order 2, their twigs order 3, and the fan
+ * piece stands at the twigs' sockets, the plan's fourth order.
+ */
+export const plannedFrameDeep: FrameSpec = {
+	...plannedFrame,
+	stems: {
+		...plannedFrame.stems,
+		children: [
+			{
+				name: 'pair',
+				role: 'branch',
+				// Two branches a joint, a pair every internode of about 0.06 of the height.
+				count: { every: 0.03, least: 4, most: 24 },
+				along: [growth.branches.from.rim, 0.95],
+				around: 'opposite',
+				angle: [
+					[0, meanOf(growth.branches.leave)],
+					[1, meanOf(growth.branches.leave) - 5],
+				],
+				from: 'parent',
+				// The pair's branches: 0.9 to 2.45 m on the record's 8 m plant.
+				length: {
+					share: [
+						[0, 0.11],
+						[1, 0.31],
+					],
+				},
+				radius: 0.35,
+				taper: 0.2,
+				sway: 5,
+				elbows: 3,
+				patch: seedPatch,
+				children: [
+					{
+						name: 'sub',
+						role: 'branch',
+						// 4 to 6 alternate sub-branches on a branch.
+						count: 5,
+						along: [0.25, 0.95],
+						around: 'spiral',
+						angle: 45,
+						from: 'parent',
+						length: {
+							parent: [
+								[0, 0.2],
+								[1, 0.3],
+							],
+						},
+						radius: 0.5,
+						taper: 0.5,
+						sway: 4,
+						elbows: 2,
+						children: [
+							{
+								name: 'twig',
+								role: 'branch',
+								count: 4,
+								along: [0.3, 0.95],
+								around: 'spiral',
+								angle: 50,
+								from: 'parent',
+								length: { parent: 0.4 },
+								radius: 0.5,
+								taper: 0.5,
+								sway: 3,
+								elbows: 2,
+								patch: fanPatch,
+							},
+						],
+					},
+				],
+			},
+		],
+	},
+};
+
+/**
+ * The ruled 400 cap's counts as a frame: seven culms, one pair a culm, the blades carded. It is the
+ * read the ruling asks for, not the allocator rule, which is not placed here.
+ */
+export const plannedFrame400: FrameSpec = {
+	...plannedFrameDeep,
+	stems: {
+		...plannedFrameDeep.stems,
+		count: 7,
+		children: plannedFrameDeep.stems.children?.map((rule) =>
+			rule.name === 'pair' ? { ...rule, count: 1, along: [0.45, 0.85] } : rule,
+		),
+	},
+};
+
+/** The deep frame's planned growth, with the fan at every twig's socket. */
+export const plannedGrowthDeep: Planned = {
+	...plannedGrowth,
+	frame: plannedFrameDeep,
+	piece: 'fan',
+};
+
+/** The ruled 400 read's planned growth: seven culms, one pair each, the fan carded. */
+export const plannedGrowth400: Planned = {
+	...plannedGrowthDeep,
+	frame: plannedFrame400,
 };
