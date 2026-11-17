@@ -505,6 +505,8 @@ export interface SweepRow {
 	readonly levels: string;
 	readonly distance: number | null;
 	readonly gap: { readonly drawn: number; readonly reference: number } | null;
+	/** The field the gap figures belong to: the enclosed sky, or the filled-frame openness. */
+	readonly gapField: 'enclosed sky' | 'filled-frame openness' | null;
 	readonly pieces: { readonly drawn: number; readonly reference: number } | null;
 	readonly floating: number;
 	/** The orbit's covered share, from its least to its most, or null where no frame read one. */
@@ -600,6 +602,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 	const floating: { readonly area: number; readonly box: string }[] = [];
 	let floatingIn: string | null = null;
 	let gap: SweepRow['gap'] = null;
+	let gapField: SweepRow['gapField'] = null;
 	let pieces: SweepRow['pieces'] = null;
 	let covered: SweepRow['covered'] = null;
 	/** A near-form rung whose page drew a card level, with the foot distances it stood at. */
@@ -674,6 +677,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 		verdict,
 		reason,
 		...over,
+		gapField: over.gapField ?? gapField,
 	});
 	if (reference === undefined)
 		return rowOf('fail', `uncompared: the reference folder carries no view for ${rung.label}`, {
@@ -692,6 +696,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			const least = Math.min(...skyGaps);
 			const most = Math.max(...skyGaps);
 			gap = { drawn: most, reference: referenceGap };
+			gapField = 'enclosed sky';
 			const outside = drawn.filter(
 				(picture) =>
 					picture.skyGap !== null &&
@@ -713,6 +718,7 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 				const most = Math.max(...filled);
 				const referenceOpen = 1 - reference.solidity;
 				gap = { drawn: most, reference: referenceOpen };
+				gapField = 'filled-frame openness';
 				const outside = drawn.filter((picture) => {
 					if (picture.covered === null) return false;
 					const open = 1 - picture.covered;
@@ -910,7 +916,8 @@ export const SWEEP_COLUMNS = [
 	'Pictures',
 	'Levels drawn',
 	'Distance (m)',
-	'Open sky drawn / ref',
+	'Openness drawn / ref',
+	'Field',
 	'Pieces drawn / ref',
 	'Floating',
 	'Orbit covered',
@@ -952,6 +959,7 @@ export function sweepMarkdown(
 				row.levels,
 				metres(row.distance),
 				row.gap === null ? '—' : `${row.gap.drawn.toFixed(3)} / ${row.gap.reference.toFixed(3)}`,
+				row.gapField ?? '—',
 				pair(row.pieces),
 				String(row.floating),
 				row.covered === null

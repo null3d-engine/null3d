@@ -446,6 +446,7 @@ describe('the sweep’s verdicts', () => {
 		expect(passed.verdict).toBe('pass');
 		expect(passed.gap?.drawn).toBeCloseTo(0.3, 5);
 		expect(passed.gap?.reference).toBeCloseTo(0.28, 5);
+		expect(passed.gapField).toBe('filled-frame openness');
 		const hollow = orbit(3).map((entry) => ({ ...entry, skyGap: null, covered: 0.5 }));
 		const failed = rowWith(
 			SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
