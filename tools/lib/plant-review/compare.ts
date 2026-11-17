@@ -88,7 +88,7 @@ const EDGE_FLOOR = 6;
  * The smallest run of pixels that counts as a piece of the plant. A smaller run is the outline's
  * own speckle rather than a part of the plant.
  */
-const PIECE_AREA = 24;
+export const PIECE_AREA = 24;
 
 /** The views that photograph the bark close up, whatever words a species puts in its file names. */
 const BARK_VIEWS: ReadonlySet<string> = new Set([
