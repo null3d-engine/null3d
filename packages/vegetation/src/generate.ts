@@ -1438,7 +1438,11 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	);
 	let bytes = wind.records.byteLength;
 	for (const level of levels) bytes += level.bytes;
-	const most = bitingMax(mesh.plan, maxOf(kit, options));
+	// The maximum the growth was asked for is what the asset records, whether or not it bit: a plan
+	// whose own parts sit under it draws as it planned, and a caller that asks for a maximum must see
+	// its figure back. The biting one is what the levels draw under.
+	const asked = maxOf(kit, options);
+	const most = bitingMax(mesh.plan, asked);
 	const shoots = built[0].shoots;
 	const asset: PlantAsset = {
 		species: record.id,
@@ -1461,7 +1465,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 			texels: record.lod.impostor.texels,
 			from: starts[2],
 		},
-		...(most !== undefined ? { maxTriangles: most } : {}),
+		...(asked !== undefined ? { maxTriangles: asked } : {}),
 		...(shoots !== undefined && shoots !== mesh.detail ? { shootDetail: shoots } : {}),
 		stats: {
 			milliseconds: now() - started,
@@ -1472,12 +1476,18 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 				partTotal(built[2].triangles),
 			],
 			parts: [built[0].triangles, built[1].triangles, built[2].triangles],
-			...(built[0].allowed && built[1].allowed && built[2].allowed
-				? {
-						allowed: [built[0].allowed, built[1].allowed, built[2].allowed] as const,
+			// A cap that did not bite allowed exactly what the level drew, so its allowance is the
+			// drawn part counts; a cap that bit carries the allocator's own allowance.
+			...(asked === undefined
+				? {}
+				: {
+						allowed: [
+							built[0].allowed ?? built[0].triangles,
+							built[1].allowed ?? built[1].triangles,
+							built[2].allowed ?? built[2].triangles,
+						] as const,
 						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
-					}
-				: {}),
+					}),
 			shoots:
 				record.lod.nearFoliage === 'instanced' ? shootTriangles(kit, mesh.rows, kit.detail) : 0,
 		},
