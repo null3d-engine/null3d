@@ -427,7 +427,7 @@ export function allocateLevel(
 	const crown = Math.min(room, Math.floor(room * CROWN_SHARE));
 	const rest = room - crown;
 	const wholeRest = ALLOCATED.reduce(
-		(sum, part, k) => (part === 'leaves' ? sum : sum + Math.max(0, shares[part])),
+		(sum, part) => (part === 'leaves' ? sum : sum + Math.max(0, shares[part])),
 		0,
 	);
 	const exact = weights.map((weight, k) =>

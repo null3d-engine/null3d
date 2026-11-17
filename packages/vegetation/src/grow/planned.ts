@@ -337,7 +337,8 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	// A maximum above the plant's own cost never bites: it draws the plant the uncapped plan draws.
 	const bites =
 		max !== undefined &&
-		priced.trunk + priced.limbs + priced.branches + priced.twigs + priced.foliage + priced.fruit > max;
+		priced.trunk + priced.limbs + priced.branches + priced.twigs + priced.foliage + priced.fruit >
+			max;
 	// The wood's own sides follow the maximum, and an unreached maximum keeps the plant's own.
 	const sides = !bites ? 10 : (max as number) >= 20_000 ? 8 : (max as number) >= 5_000 ? 6 : 3;
 	const cut = (order: number): number => {
@@ -697,14 +698,13 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		// A capped crown's cards stand at the middle of the wood that carries them, because a low cap
 		// draws the skeleton shortened and a card past its drawn end hangs in the air. With no
 		// maximum the crown spreads as its patches state.
-		const centre: Vec3 =
-			!capped
-				? [
-						grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
-						grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
-						grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
-					]
-				: [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2];
+		const centre: Vec3 = !capped
+			? [
+					grownTip[0] + (patch.centre[0] - tip.x) * where.growth,
+					grownTip[1] + (patch.centre[1] - tip.y) * where.growth,
+					grownTip[2] + (patch.centre[2] - tip.z) * where.growth,
+				]
+			: [(grownTip[0] + root.x) / 2, (grownTip[1] + root.y) / 2, (grownTip[2] + root.z) / 2];
 		clumps.push({
 			id,
 			centre,
@@ -757,7 +757,13 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		growth.prices.clumpCard,
 	);
 	if (capped) {
-		const keep = cardedSet(clumps, sizes, orders, cards, most !== undefined && most <= CARD_SEEDS_MAX);
+		const keep = cardedSet(
+			clumps,
+			sizes,
+			orders,
+			cards,
+			most !== undefined && most <= CARD_SEEDS_MAX,
+		);
 		const kept = [...keep].sort((a, b) => a - b);
 		const keptIds = new Set(kept.map((index) => (clumps[index] as ClumpData).id));
 		clumps.splice(0, clumps.length, ...kept.map((index) => clumps[index] as ClumpData));

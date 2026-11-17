@@ -232,7 +232,9 @@ export function fillClumps(input: FillInput): FillCount {
 				return a.goal.rank - b.goal.rank || a.k - b.k;
 			})
 			.slice(0, take[octant] as number)
-			.forEach((entry) => kept.push(entry));
+			.forEach((entry) => {
+				kept.push(entry);
+			});
 	});
 	// The kept sockets stand in their own places' order, so a plant that keeps every socket draws
 	// each piece turned exactly as it was before any maximum was asked for.
