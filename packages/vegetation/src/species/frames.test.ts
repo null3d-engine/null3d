@@ -940,7 +940,6 @@ const REGISTERED_FRAMES = [
 	'holm-oak',
 	'olive',
 	'pedunculate-oak',
-	'silver-birch',
 	'weeping-willow',
 ] as const;
 
