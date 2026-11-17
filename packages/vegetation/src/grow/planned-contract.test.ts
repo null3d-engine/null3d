@@ -1069,11 +1069,16 @@ describe('the planned oak contract', () => {
 	);
 
 	it(
-		'P1: another species grows with the three options and ignores the planned maturity',
+		'P1: a stand-in ignores the planned maturity, and the alder honours its own',
 		async () => {
-			// Maturity and the oak's plan must not leak into another species. Sparseness and the
-			// maximum are pre-existing generic options that every grower already honours, so they are
-			// exercised for determinism, never required to leave the plant unchanged.
+			// The oak's planned model must not leak into a species that has no planned growth: the
+			// stand-in's maturity leaves its asset unchanged. The alder is not such a species now. Its
+			// own landing made it planned — its index declares only the planned form — so a maturity it
+			// is given is its own parameter, not the oak's leak, and it must move the plant
+			// deterministically. The earlier case used the alder as the other species, which was true
+			// only while the alder was a directed species. Sparseness and the maximum are pre-existing
+			// generic options that every grower honours, so they are exercised for determinism, never
+			// required to leave the plant unchanged.
 			const options = { seed: HOME, variant: 0, near: false, detail: 'low' } as const;
 			const stub = standInSpecies('contract-stub', { height: 6 });
 			await loadPlantCode(stub.record);
@@ -1103,7 +1108,10 @@ describe('the planned oak contract', () => {
 			const repeatAlder = growPlantNow(alderKit, options);
 			expect(plantAssetDigest(repeatAlder)).toBe(plantAssetDigest(plainAlder));
 			const agedAlder = growPlantNow(alderKit, { ...options, maturity: 0.3 } as never);
-			expect(plantAssetDigest(agedAlder)).toBe(plantAssetDigest(plainAlder));
+			// The alder's own planned growth reads the maturity, so the asset must move, and repeat.
+			expect(plantAssetDigest(agedAlder)).not.toBe(plantAssetDigest(plainAlder));
+			const repeatedAgedAlder = growPlantNow(alderKit, { ...options, maturity: 0.3 } as never);
+			expect(plantAssetDigest(repeatedAgedAlder)).toBe(plantAssetDigest(agedAlder));
 			const optionedAlder = growPlantNow(alderKit, {
 				...options,
 				maturity: 0.3,
@@ -1118,7 +1126,7 @@ describe('the planned oak contract', () => {
 			} as never);
 			expect(plantAssetDigest(repeatedAlder)).toBe(plantAssetDigest(optionedAlder));
 			console.log(
-				'P1: maturity leaves the stand-in and the alder unchanged; sparse 1 and max 1,000 are generic and their digests repeat',
+				'P1: maturity leaves the stand-in unchanged and moves the alder, as its own planned growth reads it; sparse 1 and max 1,000 are generic and their digests repeat',
 			);
 		},
 		LONG,
