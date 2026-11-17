@@ -119,6 +119,7 @@ import {
 	shootPartTriangles,
 } from './lod/budget';
 import { cardLevelMost } from './lod/card-bake';
+import { foliageEnvelope } from './lod/envelope';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
@@ -1377,6 +1378,35 @@ function builtLevels(
 						: planned
 							? rowLevel(input, at, most, reference)
 							: levelWithin(input, at, most, reference);
+				// The far band's closed body, where the record asks for it: the leaf form's own
+				// outer surface at the farthest level, so the crown cannot thin as the camera pulls
+				// back. The form is rebuilt once for the body alone.
+				const farBody =
+					at === 2 && mesh.record.lod.farBody === 'envelope'
+						? (() => {
+								const form = levelBuild(input, 0);
+								// A plant whose leaves are merged into its wood, as the willow's are, carries
+								// them in the wood part; the body then takes the wood.
+								const carried = [
+									{ name: 'foliage', arrays: form.foliage },
+									{ name: 'cards', arrays: form.cards },
+								].filter((part) => (part.arrays?.positions.length ?? 0) > 0);
+								const pseudo = {
+									levels: [
+										{
+											parts:
+												carried.length > 0 ? carried : [{ name: 'wood', arrays: form.wood }],
+										},
+									],
+								} as unknown as Parameters<typeof foliageEnvelope>[1];
+								return partOf(
+									kit,
+									'foliage',
+									foliageEnvelope(kit, pseudo, 0, {}, true),
+									TEXTURE_UV_STEPS,
+								);
+							})()
+						: [];
 				return {
 					parts: [
 						...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
@@ -1384,6 +1414,7 @@ function builtLevels(
 						...partOf(kit, 'cards', build.cards, TEXTURE_UV_STEPS),
 						// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
 						...partOf(kit, 'extras', build.extras, TEXTURE_UV_STEPS, true),
+						...farBody,
 					],
 					triangles: build.triangles,
 					...(build.allowed ? { allowed: build.allowed } : {}),

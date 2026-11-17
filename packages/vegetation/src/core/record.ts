@@ -3065,6 +3065,12 @@ export interface LodSpec {
 	 */
 	readonly cardCover?: number;
 	/**
+	 * The far band's body: `envelope` draws the leaf form's outer surface as one closed body at the
+	 * farthest level, so the crown's covered share cannot thin as the camera pulls back. Absent
+	 * keeps the card levels and the far card as the species draws them.
+	 */
+	readonly farBody?: 'envelope';
+	/**
 	 * How far the sun's light thins inside the crown, from 0 to 1: each shoot row dims by its own
 	 * share of the sky, so a row under other rows reads dark and a row on the crown's top reads lit.
 	 * Absent or 0 lights every row alike.

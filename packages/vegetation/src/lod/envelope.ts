@@ -30,6 +30,7 @@ export function foliageEnvelope(
 	asset: PlantAsset,
 	form: 0 | 1 | 2 = 0,
 	steps: { readonly rings?: number; readonly sectors?: number } = {},
+	metres = false,
 ): MeshArrays {
 	const RINGS = Math.max(2, Math.round(steps.rings ?? RING_COUNT));
 	const SECTORS = Math.max(3, Math.round(steps.sectors ?? SECTOR_COUNT));
@@ -51,7 +52,11 @@ export function foliageEnvelope(
 		if (foliaged && !FOLIAGE.has(part.name)) continue;
 		const positions = part.arrays.positions;
 		for (let i = 0; i < positions.length / 3; i++) {
-			dequantisePosition(positions, i, kit.box, point);
+			if (metres) {
+				point[0] = positions[i * 3] as number;
+				point[1] = positions[i * 3 + 1] as number;
+				point[2] = positions[i * 3 + 2] as number;
+			} else dequantisePosition(positions, i, kit.box, point);
 			const x = point[0] as number;
 			const y = point[1] as number;
 			const z = point[2] as number;

@@ -30,6 +30,12 @@ const plannedRecord: Species = formRecord(
  * the planned form is the only one a page can name.
  */
 export const species: SpeciesModule = {
-	record: { ...plannedRecord, forms: { planned } },
+	record: {
+		...plannedRecord,
+		// The far band draws the leaf form's outer surface as one closed body, so the crown cannot
+		// thin as the camera pulls back; the willow is the body's first species.
+		lod: { ...plannedRecord.lod, farBody: 'envelope' },
+		forms: { planned },
+	},
 	textures: files,
 };
