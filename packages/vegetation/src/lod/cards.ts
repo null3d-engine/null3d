@@ -1816,7 +1816,7 @@ export function plannedClumpCards(
 	input: MeshInput,
 	planes = 3,
 	share = 1,
-	tiles = CLUMP_TILES[0],
+	tiles = CLUMP_TILES[1],
 ): MeshArrays | undefined {
 	const clumps = input.skeleton.clumps;
 	if (!clumps || clumps.length === 0) return undefined;
