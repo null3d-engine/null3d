@@ -348,6 +348,35 @@ describe('the pull-back series', () => {
 		expect(SERIES_OPEN).toBe(0.01);
 	});
 
+	test('names why a cut silhouette reads no share, and fails a solid far card', () => {
+		const cut = sweepSeriesRows([
+			{
+				file: 'a.png',
+				distance: 3,
+				level: 1,
+				covered: null,
+				change: null,
+				verdict: 'pass',
+				reason: 'the plant fills the frame; its own silhouette is cut by it',
+			},
+		]);
+		expect(cut[0]?.verdict).toBe('unmeasured');
+		expect(cut[0]?.reason).toContain('plant fills the frame');
+		const solid = sweepSeriesRows([
+			{
+				file: 'b.png',
+				distance: 284,
+				level: 3,
+				covered: 1,
+				change: null,
+				verdict: 'pass',
+				reason: '',
+			},
+		]);
+		expect(solid[0]?.verdict).toBe('fail');
+		expect(solid[0]?.reason).toContain('fills its own span');
+	});
+
 	test('marks a step unmeasured where no share reads, never as an opening', () => {
 		const rows = sweepSeriesRows([seriesStep('a.png', 10, null)]);
 		expect(rows[0]?.verdict).toBe('unmeasured');
