@@ -66,7 +66,7 @@ export const frame: FrameSpec = {
 		// Stills 01 and 17: no lean and no bend.
 		sway: 0.6,
 		elbows: 4,
-		patch: { kind: 'clump', width: 0.115, depth: 0.1035, fill: ENDS },
+		patch: { kind: 'clump', width: 0.13, depth: 0.117, fill: ENDS },
 		children: [
 			{
 				name: 'limb',
@@ -76,7 +76,7 @@ export const frame: FrameSpec = {
 				// so the tree carries about half as many again as the 16 seen. The shares here are of
 				// the leader's own length.
 				count: 24,
-				along: [0.12, 0.975],
+				along: [0.2, 0.975],
 				stagger: 0.25,
 				// Stills 07, 17 and 03: single, at clearly different heights, on every side.
 				// Still 30: the photograph's lowest sixth carries more of its mass right of the trunk, and
