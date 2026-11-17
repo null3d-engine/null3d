@@ -105,7 +105,9 @@ const boughs: FrameBranchRule = {
 			radius: 0.55,
 			taper: 0.35,
 			sway: 38,
-			elbows: 4,
+			// The branch rule's own kink: seven elbows bring the longest straight run inside the frame's
+			// allowance, where four left a third of each branch straight.
+			elbows: 7,
 			crook: 0.65,
 			// A branch's wood passes through no other wood.
 			apart: 0.004,
