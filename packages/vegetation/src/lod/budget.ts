@@ -588,7 +588,7 @@ export function rowLevel(
 	// The fork's own price: the two thickest great limbs at the coarsest legal step cost more than
 	// the part's mean, so the floor and the fallback take the pair measured, not averaged.
 	let forkLimb = 0;
-	if (level === 0 && coarsest >= 0 && (byGirth[0] as number[]).length > 0) {
+	if (level <= 1 && coarsest >= 0 && (byGirth[0] as number[]).length > 0) {
 		const keep = new Uint8Array(axes.count);
 		for (const a of (byGirth[0] as number[]).slice(0, 2)) keep[a] = 1;
 		const tube = tubes[coarsest] as TubeDetail;
