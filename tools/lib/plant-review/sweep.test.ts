@@ -175,8 +175,13 @@ function row(
 }
 
 /** One series step's row. */
-function seriesStep(file: string, distance: number, covered: number | null): SweepSeriesRow {
-	return { file, distance, level: 0, covered, change: null, verdict: 'pass', reason: '' };
+function seriesStep(
+	file: string,
+	distance: number,
+	covered: number | null,
+	field = '4 m patch',
+): SweepSeriesRow {
+	return { file, distance, level: 0, covered, field, change: null, verdict: 'pass', reason: '' };
 }
 
 describe('the sweep’s rungs and orbit', () => {
@@ -366,6 +371,7 @@ describe('the pull-back series', () => {
 				distance: 3,
 				level: 1,
 				covered: null,
+				field: null,
 				change: null,
 				verdict: 'pass',
 				reason: 'the plant fills the frame; its own silhouette is cut by it',
@@ -379,6 +385,7 @@ describe('the pull-back series', () => {
 				distance: 284,
 				level: 3,
 				covered: 1,
+				field: '4 m patch',
 				change: null,
 				verdict: 'pass',
 				reason: '',
@@ -386,6 +393,21 @@ describe('the pull-back series', () => {
 		]);
 		expect(solid[0]?.verdict).toBe('fail');
 		expect(solid[0]?.reason).toContain('fills its own span');
+	});
+
+	test('does not compare across a change of patch, and names the change', () => {
+		const across = sweepSeriesRows([
+			seriesStep('a.png', 5, 0.7, '2 m patch'),
+			seriesStep('b.png', 7, 0.6, '4 m patch'),
+		]);
+		expect(across[1]?.verdict).toBe('pass');
+		expect(across[1]?.change).toBeNull();
+		expect(across[1]?.reason).toContain('not compared across');
+		const within = sweepSeriesRows([
+			seriesStep('a.png', 7, 0.7, '4 m patch'),
+			seriesStep('b.png', 9, 0.6, '4 m patch'),
+		]);
+		expect(within[1]?.verdict).toBe('fail');
 	});
 
 	test('passes a step that opens exactly one point, and fails one that opens more', () => {

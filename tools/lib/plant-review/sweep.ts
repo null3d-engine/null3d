@@ -867,6 +867,8 @@ export interface SweepSeriesRow {
 	readonly distance: number;
 	readonly level: number | null;
 	readonly covered: number | null;
+	/** The patch the share was read on, such as `4 m patch`; a step is compared only within one. */
+	readonly field: string | null;
 	readonly change: number | null;
 	readonly verdict: 'pass' | 'fail' | 'unmeasured';
 	readonly reason: string;
@@ -880,10 +882,18 @@ export function sweepSeriesRows(pictures: readonly SweepSeriesRow[]): readonly S
 	const rows: SweepSeriesRow[] = [];
 	let previous: SweepSeriesRow | null = null;
 	for (const picture of [...pictures].sort((a, b) => a.distance - b.distance)) {
-		const before = previous === null ? null : previous.covered;
+		const before = previous === null || previous.field !== picture.field ? null : previous.covered;
 		const change = before !== null && picture.covered !== null ? picture.covered - before : null;
 		let verdict: SweepSeriesRow['verdict'] = picture.verdict;
 		let reason = picture.reason;
+		if (
+			verdict === 'pass' &&
+			reason === '' &&
+			previous !== null &&
+			previous.field !== picture.field &&
+			picture.covered !== null
+		)
+			reason = `the field changes from ${previous.field ?? 'none'} to ${picture.field ?? 'none'}; not compared across the boundary`;
 		if (picture.covered !== null && picture.level === 3 && 1 - picture.covered <= 0.01) {
 			verdict = 'fail';
 			reason = `the far card fills its own span: openness ${(1 - picture.covered).toFixed(3)}, a solid card and not a crown`;
@@ -934,6 +944,7 @@ export const SERIES_COLUMNS = [
 	'Frame',
 	'Distance (m)',
 	'Level',
+	'Field',
 	'Covered share',
 	'Change',
 	'Verdict',
@@ -978,6 +989,7 @@ export function sweepMarkdown(
 			'## The pull-back series',
 			'',
 			`A step fails only when it opens the crown by more than ${SERIES_OPEN.toFixed(3)}; a step that opens exactly ${SERIES_OPEN.toFixed(3)} passes.`,
+			`A close step reads the largest fixed patch that fits its frame, and a step is compared only with one read on the same patch; a change of patch is named and not compared across.`,
 			'',
 		);
 		lines.push(`| ${SERIES_COLUMNS.join(' | ')} |`);
@@ -988,7 +1000,14 @@ export function sweepMarkdown(
 					step.species,
 					step.file.split('/').pop() ?? step.file,
 					step.distance.toFixed(2),
-					step.level === null ? '—' : String(step.level),
+					step.level === null
+						? '—'
+						: step.level === 0
+							? 'leaf form'
+							: step.level === 3
+								? 'far card'
+								: `card level ${step.level}`,
+					step.field ?? '—',
 					step.covered === null ? '—' : step.covered.toFixed(3),
 					step.change === null ? '—' : step.change.toFixed(3),
 					step.verdict,
@@ -1223,6 +1242,28 @@ export function patchCorners(
  * patch's world size is fixed, so the figure is the crown's density and does not move with the
  * plant's box as the camera pulls back.
  */
+/** The patch sizes a close step may read on, largest first. */
+export const PATCH_SIZES = [4, 2, 1] as const;
+
+/**
+ * The largest fixed patch whose corners stand in the frame, read from the matte, with the size it
+ * used. A close step reads a smaller patch, and the table names the field so a step is never
+ * compared across a change of it.
+ */
+export function fittingPatch(
+	runDir: string,
+	frame: RunFrame,
+	sizes: readonly number[] = PATCH_SIZES,
+): { readonly value: number | null; readonly metres: number | null; readonly note: string } {
+	let note = 'no patch fits the frame';
+	for (const metres of sizes) {
+		const read = patchCover(runDir, frame, metres);
+		if (read.value !== null) return { ...read, metres };
+		note = read.note;
+	}
+	return { value: null, metres: null, note };
+}
+
 export function patchCover(
 	runDir: string,
 	frame: RunFrame,
@@ -1376,6 +1417,7 @@ export function sweepRun(
 				distance: step.distance,
 				level: null,
 				covered: null,
+				field: null,
 				change: null,
 				verdict: 'fail',
 				reason: `did not draw: ${frame?.error ?? 'no frame'}`,
@@ -1385,12 +1427,13 @@ export function sweepRun(
 		const record = (frame.cell as { level?: { level?: unknown } } | undefined)?.level;
 		// The series reads one field at every distance: the fixed crown patch, whose world size
 		// never changes, so a fall is the crown's density and not the plant's box changing.
-		const read = patchCover(runDir, frame);
+		const read = fittingPatch(runDir, frame);
 		seriesRows.push({
 			file: step.file,
 			distance: step.distance,
 			level: typeof record?.level === 'number' ? record.level : null,
 			covered: read.value,
+			field: read.metres === null ? null : `${read.metres} m patch`,
 			change: null,
 			verdict: 'pass',
 			reason: read.note,
