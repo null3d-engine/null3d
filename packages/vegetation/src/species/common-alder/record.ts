@@ -558,7 +558,7 @@ export const record: Species = {
 			share: 0.18,
 			count: { mean: 3, spread: 0 },
 			tipShare: 0.9,
-			seasons: ['summer', 'autumn', 'winter'],
+			seasons: ['summer', 'autumn', 'winter', 'blossom'],
 			shape: { catkin: { length: 0.055, radius: 0.0028 } },
 			// Still 19: a yellow-green string of pollen sacs, lighter than the cones beside it.
 			colour: [0.14, 0.13, 0.045],
@@ -570,6 +570,9 @@ export const record: Species = {
 		default: 'summer',
 		deciduous: true,
 		winter: 'bare',
+		// Still 19: the catkins hang before the leaves are out, so blossom draws the catkins and a
+		// third of the leaves.
+		blossom: { extra: 1, leaves: 0.35 },
 		// The species turns yellow-green late and drops its leaves without colour.
 		autumn: { reflectance: [0.09, 0.11, 0.025], transmittance: [0.12, 0.16, 0.03] },
 	},

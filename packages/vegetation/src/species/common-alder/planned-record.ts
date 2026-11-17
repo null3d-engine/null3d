@@ -73,6 +73,8 @@ export const plannedGrowth: Planned = {
 	// The alder bears its cones on a mature tree; the crop fills over a tenth of the model's age.
 	fruitFrom: 0.25,
 	fruitBand: 0.1,
+	// The catkins hang in the blossom season, from the same age as the cones and over the same band.
+	flowers: { season: 'blossom', from: 0.25, band: 0.1 },
 	// Priced at the nearest level's own draw: a branch end's leaves, a leaf card's triangles, one
 	// clump card and one wood tube segment.
 	// A maximum takes the finest rows away, never the alder's shape or its size: its capped crowns
