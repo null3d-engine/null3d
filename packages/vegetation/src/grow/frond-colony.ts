@@ -27,8 +27,11 @@ import { archPath } from '../core/arch';
 import {
 	AXIS_ROOT,
 	AXIS_STIPE,
+	type AxisInput,
 	BUD_TERMINAL,
+	type BudInput,
 	type MacroSkeleton,
+	type NodeInput,
 	SkeletonBuilder,
 } from '../core/graph';
 import { unitAt } from '../core/hash';
@@ -45,7 +48,15 @@ import {
 } from '../core/math';
 import type { FrondColony, FrondShape, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
-import { type Curve, DETAILS, type Detail, type Season, spreadAt, spreadMean } from '../core/types';
+import {
+	type Curve,
+	DETAILS,
+	type Detail,
+	type Season,
+	spreadAt,
+	spreadMean,
+	type Vec3,
+} from '../core/types';
 import {
 	FrondBlade,
 	foldWeight,
@@ -65,6 +76,13 @@ import type { GrowInput, MeshInput, MeshLevel } from '../stages';
 import { axisPath } from '../wood/frames';
 import { axisBytes, leafStrip, stalkRange, wholePath, writeStem } from './ground';
 import { scaledWithPieces, targetHeight } from './height';
+import {
+	crownOf,
+	type ModelAxis,
+	type ModelPiece,
+	type ModelSocket,
+	type PlantModel,
+} from './model';
 import type { Grower } from './models';
 import { discPlaces } from './sockets';
 
@@ -280,7 +298,66 @@ function keepOf(index: number, count: number, least: number): number {
  * @returns The skeleton.
  * @category api/vegetation
  */
-export function growFrondColony(input: GrowInput): MacroSkeleton {
+/** One builder call a colony's layout records, in the order the builder makes it. */
+type ColonyOp =
+	| { readonly kind: 'axis'; readonly input: AxisInput }
+	| { readonly kind: 'node'; readonly input: NodeInput }
+	| { readonly kind: 'bud'; readonly input: BudInput };
+
+/** One leaf socket a colony's layout stands, as the model states it. */
+export interface ColonySocketData {
+	readonly axis: number;
+	readonly at: Vector3;
+	readonly direction: Vector3;
+	readonly face: Vector3;
+	readonly piece: number;
+	readonly scale: number;
+	readonly keep: number;
+	readonly group: number;
+}
+
+/** A colony's layout: its builder calls in order, its leaf sockets, and its own box. */
+export interface ColonyLayout {
+	readonly ops: readonly ColonyOp[];
+	readonly sockets: readonly ColonySocketData[];
+	readonly top: number;
+	readonly stood: number;
+	readonly low: readonly [number, number];
+	readonly high: readonly [number, number];
+}
+
+/**
+ * Records the builder calls a colony's layout makes, so the plant and the model read one pass. It
+ * hands back the indices a skeleton builder would, so every parent reference is the same.
+ */
+class ColonyRecorder {
+	readonly ops: ColonyOp[] = [];
+	private axes = 0;
+	private nodes = 0;
+	private buds = 0;
+	addAxis(input: AxisInput): number {
+		this.ops.push({ kind: 'axis', input: { ...input } });
+		return this.axes++;
+	}
+	addNode(input: NodeInput): number {
+		this.ops.push({ kind: 'node', input: { ...input } });
+		return this.nodes++;
+	}
+	addBud(input: BudInput): number {
+		this.ops.push({
+			kind: 'bud',
+			input: {
+				...input,
+				frame: Array.from(input.frame),
+				...(input.socket === undefined ? {} : { socket: { ...input.socket } }),
+			},
+		});
+		return this.buds++;
+	}
+}
+
+/** Lays a colony: the rhizome, the stipes, the leaves and the box the pieces fill. */
+export function layFrondColony(input: GrowInput): ColonyLayout {
 	const { record, seed, variant, season } = input;
 	const colony = colonyOf(record);
 	const shape = colony.frond;
@@ -299,14 +376,15 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 	const short = new Set(byFront.slice(0, shortCount));
 	const kinds = leafKinds();
 	const extents = extentsOf(colony);
-	const builder = new SkeletonBuilder();
+	const builder = new ColonyRecorder();
+	const laid: ColonySocketData[] = [];
 	const frame = new Float32Array(4);
 	const { depth } = colony.rhizome;
 	// The kit's leaf is the longest a socket asks for, so a socket's size is its leaf over that.
 	const longestLeaf =
 		typeof shape.length === 'number' ? shape.length : shape.length.mean + shape.length.spread;
 	// The sockets enter the skeleton in the patch's order, so each one's rank is its place.
-	let sockets = 0;
+	let laidSockets = 0;
 	// The rhizome: each foot's piece runs under the soil to the nearest foot that stands before it.
 	const under: number[] = [];
 	const rhizomes: number[] = [];
@@ -491,7 +569,17 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 			light: 1 - keepOf(f, count, colony.least),
 			axis: stipeAxis,
 			woodRadius: stalkEnd,
-			socket: { scale: bladeLength / longestLeaf, rank: sockets++, lobe: f, piece: kind },
+			socket: { scale: bladeLength / longestLeaf, rank: laidSockets++, lobe: f, piece: kind },
+		});
+		laid.push({
+			axis: stipeAxis,
+			at: [x, y, z],
+			direction: up,
+			face: lower,
+			piece: kind,
+			scale: bladeLength / longestLeaf,
+			keep: keepOf(f, count, colony.least),
+			group: f,
 		});
 		// The leaf's own rise and reach from its socket, and its width across its heading.
 		const extent = extents[kind] as LeafExtent;
@@ -517,22 +605,175 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 			holds(tip[0] + across[0] * half * side, tip[2] + across[2] * half * side);
 		}
 	});
+	return { ops: builder.ops, sockets: laid, top, stood, low, high };
+}
+
+/** Builds a colony's skeleton from its layout and stands it at its own height. */
+function buildColony(layout: ColonyLayout, input: GrowInput): MacroSkeleton {
+	const { record, seed, variant } = input;
+	const builder = new SkeletonBuilder();
+	for (const op of layout.ops) {
+		if (op.kind === 'axis') builder.addAxis(op.input);
+		else if (op.kind === 'node') builder.addNode(op.input);
+		else builder.addBud(op.input);
+	}
 	const finished = builder.finish();
 	// The skeleton holds the stalks and the rhizome. The plant's box is its leaves' too: the
 	// highest leaf, and each leaf's reach from its stalk. Its height is the height its fronds
 	// stand at when grown, which a patch of croziers or of dead fronds on the ground keeps.
-	const drawn = Math.max(finished.height, top);
+	const drawn = Math.max(finished.height, layout.top);
 	const grown: MacroSkeleton = {
 		...finished,
-		height: stood,
+		height: layout.stood,
 		bounds: {
-			min: [low[0], 0, low[1]],
-			max: [high[0], drawn, high[1]],
+			min: [layout.low[0], 0, layout.low[1]],
+			max: [layout.high[0], drawn, layout.high[1]],
 		},
 	};
 	// A colony is its fronds, so each variant stands at the height its record asks for it with its
 	// leaves scaled with it, and the height calibration after the grower finds nothing to scale.
-	return scaledWithPieces(grown, stood > 0 ? targetHeight(record, seed, variant) / stood : 1);
+	return scaledWithPieces(
+		grown,
+		layout.stood > 0 ? targetHeight(record, seed, variant) / layout.stood : 1,
+	);
+}
+
+/**
+ * Grows a frond colony from its layout.
+ *
+ * @param input The record, the seed, the variant and the season.
+ * @returns The skeleton.
+ * @category api/vegetation
+ */
+export function growFrondColony(input: GrowInput): MacroSkeleton {
+	return buildColony(layFrondColony(input), input);
+}
+
+/**
+ * Writes the frond-colony family's intermediate model at the record's own state: the rhizome and
+ * the stipes as axes, one socket a frond leaf with its carrier, and the leaf classes their own
+ * measured figures. The adapter writes no geometry, material or level; the shared stages price,
+ * grow, close, allocate and bake the model (D-377). Its crown box is read from the pieces.
+ *
+ * @param input The record, the seed, the variant and the season.
+ * @returns The model.
+ * @category api/vegetation
+ */
+export function emitFrondColony(input: GrowInput): PlantModel {
+	const { record } = input;
+	const colony = colonyOf(record);
+	const shape = colony.frond;
+	const layout = layFrondColony(input);
+	const longest =
+		typeof shape.length === 'number' ? shape.length : shape.length.mean + shape.length.spread;
+	const extents = extentsOf(colony);
+	const kinds = leafKinds();
+	// The model's axes, in the builder's order: each axis's own nodes, and the share along its
+	// parent where it leaves.
+	const axes: ModelAxis[] = [];
+	const nodesOf: { readonly at: Vec3; readonly radius: number }[][] = [];
+	const axisRules: {
+		readonly order: number;
+		readonly parent: number;
+		readonly parentNode: number;
+		readonly kind: number;
+	}[] = [];
+	const nodeAt = new Map<number, { readonly axis: number; readonly index: number }>();
+	let nodes = 0;
+	for (const op of layout.ops) {
+		if (op.kind === 'axis') {
+			axes.push({
+				order: op.input.order,
+				parent: op.input.parent,
+				parentShare: 0,
+				from: [0, 0, 0],
+				to: [0, 0, 0],
+				nodes: [],
+				radius: [0, 0],
+				body: op.input.kind === AXIS_STIPE,
+			});
+			nodesOf.push([]);
+			axisRules.push({
+				order: op.input.order,
+				parent: op.input.parent,
+				parentNode: op.input.parentNode,
+				kind: op.input.kind,
+			});
+		} else if (op.kind === 'node') {
+			const axis = op.input.axis;
+			nodeAt.set(nodes++, {
+				axis,
+				index: (nodesOf[axis] as { at: Vec3; radius: number }[]).length,
+			});
+			(nodesOf[axis] as { at: Vec3; radius: number }[]).push({
+				at: [op.input.x, op.input.y, op.input.z],
+				radius: op.input.radius,
+			});
+		}
+	}
+	for (let a = 0; a < axes.length; a++) {
+		const nodesHere = nodesOf[a] as { at: Vec3; radius: number }[];
+		const first = nodesHere[0];
+		const last = nodesHere[nodesHere.length - 1];
+		const rule = axisRules[a] as { readonly parentNode: number };
+		const seat = nodeAt.get(rule.parentNode);
+		const siblings = seat === undefined ? 0 : (nodesOf[seat.axis] as unknown[]).length;
+		axes[a] = {
+			...(axes[a] as ModelAxis),
+			from: (first ? [...first.at] : [0, 0, 0]) as Vec3,
+			to: (last ? [...last.at] : [0, 0, 0]) as Vec3,
+			nodes: nodesHere.map((node) => ({ at: [...node.at] as Vec3, radius: node.radius })),
+			radius: [first?.radius ?? 0, last?.radius ?? 0],
+			parentShare: seat === undefined || siblings <= 1 ? 0 : seat.index / (siblings - 1),
+		};
+	}
+	const sockets: ModelSocket[] = layout.sockets.map((socket) => ({
+		axis: socket.axis,
+		order: 1,
+		share: 1,
+		at: socket.at,
+		direction: socket.direction,
+		face: socket.face,
+		piece: socket.piece,
+		scale: socket.scale,
+		keep: socket.keep,
+		group: socket.group,
+	}));
+	const pieces: ModelPiece[] = kinds.map((kind, index) => {
+		const extent = extents[index] as LeafExtent;
+		const length = longest;
+		return {
+			name: kind.name,
+			length,
+			width: extent.half * 2 * length,
+			depth: extent.half * 2 * length,
+			top: extent.rise * length,
+			reach: extent.out * length,
+			bottom: 0,
+			middle: [0, (extent.rise * length) / 2, (extent.out * length) / 2],
+			figures: {
+				frondLength: length,
+				leafLength: spreadMean(shape.length),
+				leafWidth: shape.petiole.width,
+				rise: extent.rise,
+				out: extent.out,
+				half: extent.half,
+				roll: kind.roll,
+				age: kind.age,
+			},
+		};
+	});
+	const crown = crownOf(sockets, pieces);
+	return {
+		species: record.id,
+		axes,
+		sockets,
+		pieces,
+		least: sockets.reduce((count, socket) => count + (socket.keep === 0 ? 1 : 0), 0),
+		scale: 1,
+		keepShare: 1,
+		crown,
+	};
 }
 
 /**
