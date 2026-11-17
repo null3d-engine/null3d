@@ -48,7 +48,8 @@ export interface FillCount {
 	/** The sockets that carry a piece. */
 	readonly sockets: number;
 	/** Each socket's place in the plant as grown, in the order the sockets were hung. */
-	readonly socketOrigins: number[];
+	/** Each bud's place, in the order the buds were hung, so a bud answers to its own socket. */
+	readonly budOrigins: number[];
 }
 
 /** One clump of the adult plan, as the age of its carrying axis leaves it. */
@@ -247,11 +248,10 @@ export function fillClumps(input: FillInput): FillCount {
 	// each piece turned exactly as it was before any maximum was asked for.
 	kept.sort((a, b) => a.k - b.k);
 	let made = 0;
-	const socketOrigins: number[] = [];
+	const budOrigins: number[] = [];
 	const rollFrom = unitAt(seed, salt, variant, TURN, 0);
 	const tiltFrom = unitAt(seed, salt, variant, TURN, 1);
 	kept.forEach(({ goal }, socket) => {
-		socketOrigins.push(goal.place);
 		const seat: SocketSeat = {
 			node: goal.clump.node,
 			axis: goal.clump.axis,
@@ -260,6 +260,7 @@ export function fillClumps(input: FillInput): FillCount {
 			id: goal.clump.id,
 			woodRadius: 0.004,
 		};
+		const hung = builder.budCount;
 		hangBud(
 			builder,
 			seat,
@@ -268,9 +269,11 @@ export function fillClumps(input: FillInput): FillCount {
 			turn === undefined ? undefined : { turn, socket, rollFrom, tiltFrom },
 			flowerAt(seed, goal.place, flowers),
 		);
+		// Every bud the socket hangs, its flower site too, answers to the socket's place.
+		for (let k = hung; k < builder.budCount; k++) budOrigins.push(goal.place);
 		made++;
 	});
-	return { made, sockets: kept.length, socketOrigins };
+	return { made, sockets: kept.length, budOrigins };
 }
 
 /**

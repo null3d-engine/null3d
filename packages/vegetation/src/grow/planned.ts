@@ -822,8 +822,11 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 	origins.forEach((origin, at) => {
 		if (at < axesOrigin.length) axesOrigin[at] = origin;
 	});
+	// Every bud carries its own address up front, so a bud the fill does not place a socket on, such
+	// as a flower site, never answers to the array's default zero and shares a place with another.
 	const budsOrigin = new Uint32Array(finished.buds.count);
-	grown.socketOrigins.forEach((origin, at) => {
+	for (let at = 0; at < budsOrigin.length; at++) budsOrigin[at] = at;
+	grown.budOrigins.forEach((origin, at) => {
 		if (at < budsOrigin.length) budsOrigin[at] = origin;
 	});
 	// The crown's own box: the bones and every clump that stands at this age, so sparseness never
