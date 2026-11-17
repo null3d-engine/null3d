@@ -549,11 +549,21 @@ export function rowLevel(
 	const measured: (number | undefined)[][] = [[], [], []];
 	const priced = (part: number, rung: number): number =>
 		measured[part]?.[rung] ?? ((quick[rung] as number[])[part] as number);
+	const last = WOOD_RUNGS.length - 1;
+	// The coarsest rung that still reads as wood: no capped trunk or great limb draws below it,
+	// whichever branch of the ladder reaches it.
+	let coarsest = -1;
+	for (let rung = last; rung >= 0; rung--)
+		if ((tubes[rung] as TubeDetail).maxSides >= SIDES_LEAST) {
+			coarsest = rung;
+			break;
+		}
 	// The trunk and the great limbs are few axes, and the quick count misses a stem's foot and a
-	// leader's first ring, so each step that could fit is meshed and counted before any choice.
+	// leader's first ring, so each step that could fit is meshed and counted before any choice. The
+	// coarsest legal step is always counted, since the floor prices it whatever the quick count says.
 	for (let rung = 0; rung < tubes.length; rung++) {
 		const count = quick[rung] as number[];
-		if ((count[0] as number) + (count[1] as number) > 4 * max) continue;
+		if (rung !== coarsest && (count[0] as number) + (count[1] as number) > 4 * max) continue;
 		const tube = tubes[rung] as TubeDetail;
 		const counted = meshWoodParts(mesh, level, parts, { tubes: [tube, tube, null] }).triangles;
 		(measured[0] as (number | undefined)[])[rung] = counted[0];
@@ -575,30 +585,39 @@ export function rowLevel(
 						(skeleton.radius[axes.first[a] as number] as number) || a - b,
 			),
 	);
-	const last = WOOD_RUNGS.length - 1;
+	// The fork's own price: the two thickest great limbs at the coarsest legal step cost more than
+	// the part's mean, so the floor and the fallback take the pair measured, not averaged.
+	let forkLimb = 0;
+	if (level === 0 && coarsest >= 0 && (byGirth[0] as number[]).length > 0) {
+		const keep = new Uint8Array(axes.count);
+		for (const a of (byGirth[0] as number[]).slice(0, 2)) keep[a] = 1;
+		const tube = tubes[coarsest] as TubeDetail;
+		forkLimb = meshWoodParts(mesh, level, parts, {
+			tubes: [tubes[coarsest] as TubeDetail, tube, null],
+			keep,
+		}).triangles[1] as number;
+	}
 	// What one straight run costs where only the thickest limbs or branches are drawn: the thickest
 	// cost more than the part's mean, so their price is measured apart.
 	const eachKept: (number | undefined)[] = [];
 	const fitWood = (part: number, budget: number): WoodChoice => {
 		for (let rung = 0; rung < tubes.length; rung++) {
+			if ((tubes[rung] as TubeDetail).maxSides < SIDES_LEAST) continue;
 			const cost = priced(part, rung);
 			if (cost <= budget) return { rung, cost };
 		}
 		// Not even one straight run for each axis fits: the thickest limbs or branches that do, at
 		// the coarsest rung that still reads as wood — the fallback may not draw a pinch either.
-		let coarsest = -1;
-		for (let rung = last; rung >= 0; rung--)
-			if ((tubes[rung] as TubeDetail).maxSides >= SIDES_LEAST) {
-				coarsest = rung;
-				break;
-			}
 		if (coarsest < 0) return { rung: -1, cost: 0 };
 		if (part === 0) return { rung: -1, cost: 0 };
 		const each = eachKept[part] ?? priced(part, coarsest) / Math.max(1, axesOf[part] as number);
 		const kept = each > 0 ? Math.floor(budget / each) : 0;
-		return kept > 0
-			? { rung: coarsest, kept, cost: Math.ceil(kept * each) }
-			: { rung: -1, cost: 0 };
+		if (kept > 0) return { rung: coarsest, kept, cost: Math.ceil(kept * each) };
+		// The fork's pair costs more than the part's mean, so it is priced measured: a budget that
+		// buys no mean limb may still buy the pair that keeps the tree's fork.
+		if (part === 1 && forkLimb > 0 && budget >= forkLimb)
+			return { rung: coarsest, kept: 2, cost: forkLimb };
+		return { rung: -1, cost: 0 };
 	};
 	// The shoots' ladder: the rows at each tier the kit holds, then cards.
 	const tiers: { tier: Detail; leaves: number; twigs: number }[] = [];
@@ -662,11 +681,14 @@ export function rowLevel(
 	// cap before the leaves, because a crown standing on one three-sided run is not a tree at any
 	// distance. The share is paid even where the crown would take the whole maximum.
 	const skeletonFloor = Math.floor(max * SKELETON_SHARE);
+	// The floor prices the coarsest rung the sides rule allows, not the ladder's last step: a
+	// maximum that cannot pay for a legal trunk pays for none rather than for a pinch.
+	const cheapest = coarsest >= 0 ? coarsest : last;
 	const floor = (part: Part): number =>
 		part === 'trunk'
-			? Math.max(priced(0, last), Math.floor(skeletonFloor * SKELETON_TRUNK))
+			? Math.max(priced(0, cheapest), Math.floor(skeletonFloor * SKELETON_TRUNK))
 			: part === 'limbs'
-				? Math.max(priced(1, last), Math.floor(skeletonFloor * (1 - SKELETON_TRUNK)))
+				? Math.max(priced(1, cheapest), forkLimb, Math.floor(skeletonFloor * (1 - SKELETON_TRUNK)))
 				: part === 'leaves'
 					? rows.count > 0
 						? 4
@@ -710,11 +732,15 @@ export function rowLevel(
 		const payOrder: readonly Part[] = crownedNoRows
 			? ['leaves', 'trunk', 'limbs', 'branches', 'extras']
 			: PARTS;
-		for (const part of payOrder)
-			if (reserved + floor(part) <= max) {
-				least[part] = floor(part);
+		for (const part of payOrder) {
+			// The whole limb set is the floor where the cap can hold it; where it cannot, the fork's
+			// pair is, so a low cap keeps a legible fork rather than no limbs at all.
+			const amount = part === 'limbs' && reserved + floor(part) > max ? forkLimb : floor(part);
+			if (reserved + amount <= max) {
+				least[part] = amount;
 				reserved += least[part];
 			}
+		}
 		let left = max;
 		for (const part of PARTS) {
 			fit(part, Math.min(left, least[part] + share(part) * (1 - reserved / max)));
