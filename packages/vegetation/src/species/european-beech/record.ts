@@ -303,10 +303,12 @@ export const record: Species = {
 			twist: 5,
 			wave: [0.002, 4],
 			optics: {
-				// The texture sources' measured means.
-				reflectance: [0.0689, 0.1513, 0.0171],
+				// The texture sources' measured means, lifted a fifth: the whole-plant light draws the lit
+				// face darker and greyer than the photographs' bright dome, so the front face and the
+				// transmitted light rise together while the back keeps the measured bright underside.
+				reflectance: [0.0827, 0.1816, 0.0205],
 				reflectanceBack: [0.259, 0.2929, 0.1355],
-				transmittance: [0.12, 0.22, 0.028],
+				transmittance: [0.144, 0.264, 0.0336],
 				roughness: [0.45, 0.6],
 			},
 		},
