@@ -2,7 +2,7 @@
 // leave it one at a time, the lowest the longest, so the crown is a broad cone. Each figure names
 // the reference picture it was read on. Shares are of the tree's height. Still 30 and the whole-tree
 // turning video are the one tree the frame follows; still 01 is the same tree on a river bank.
-import { evenOutline, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameSpec } from '../../grow/frame';
 import { pieceRecord } from '../../leaf/piece';
 import { PIECE_LEAF, PIECES } from './pieces';
 import { record } from './record';
@@ -179,27 +179,11 @@ export const frame: FrameSpec = {
 };
 
 /**
- * The common alder's record with the frame as its growth and the branch end of still 21 at each
- * socket, wearing the leaf on the stalk the pieces were measured with. The shoot rows are working
- * figures, not measured ones: a kit with no pieces draws them.
+ * The common alder's record with the measured overrides the planned form grows from, and the
+ * branch end of still 21 at each socket, wearing the leaf on the stalk the pieces were measured
+ * with. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
  */
 export const directed = {
-	...pieceRecord(
-		framedRecord(record, frame, {
-			rows: { mean: 4, spread: 1 },
-			fan: 45,
-			piece: 'branch-end',
-			// The crown's clumps stand a little larger than the cut branch's measured piece, so
-			// neighbouring clumps meet into the one leafy mass the whole views show; the cutting still
-			// draws the piece its studio photograph measured.
-			scale: 1.05,
-			// With every branch end's flat side to the sky, a crown seen from the side shows most of
-			// its leaves slanted or edge on. Stills 07 and 17: the alder's leafy shoots face every way,
-			// so each piece rolls up to a quarter turn either way about its own line and tilts a
-			// little off the wood's.
-			turn: { roll: 90, tilt: 25 },
-		}),
-		PIECE_LEAF,
-	),
+	...pieceRecord(record, PIECE_LEAF),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };

@@ -143,6 +143,26 @@ function rowKeys(asset: PlantAsset): Map<number, string> {
 	return out;
 }
 
+/**
+ * Each row's place, scale and prototype, by its index in the plant as grown. A sparser planned
+ * plant keeps every row it draws at the denser plant's place, scale and piece; its facing is the
+ * state's own, because the fill grows each state's twigs (D-369).
+ */
+function rowPlaces(asset: PlantAsset): Map<number, string> {
+	const rows = asset.shoots;
+	const out = new Map<number, string>();
+	for (let r = 0; r < rows.count; r++)
+		out.set(
+			rows.id?.[r] ?? r,
+			keyOf(
+				rows.position.subarray(r * 3, r * 3 + 3),
+				rows.scale.subarray(r, r + 1),
+				rows.prototype.subarray(r, r + 1),
+			),
+		);
+	return out;
+}
+
 /** Each axis's nodes and radii, its kind and its order, by its index in the plant as grown. */
 function axisKeys(asset: PlantAsset): Map<number, string> {
 	const { axes, position, radius } = asset.skeleton;
@@ -265,10 +285,12 @@ for (const id of SPECIES) {
 					for (let k = 1; k < plants.length; k++) {
 						const plant = plants[k] as PlantAsset;
 						const at = `${id} seed ${seed} sparse ${LEVELS[k]}`;
-						// A subset: each row and each axis is one the denser plant holds, to the bit, so
-						// nothing moved and no leaf was scaled.
-						const denserRows = rowKeys(before);
-						const rows = rowKeys(plant);
+						// A subset in place: each row the sparser plant keeps stands at the denser plant's
+						// place and scale, with the piece its socket carries, so nothing moved and no leaf
+						// was scaled. Its facing is the state's own: the planned fill grows each state's
+						// twigs itself, so a kept row may turn another way (D-369).
+						const denserRows = rowPlaces(before);
+						const rows = rowPlaces(plant);
 						for (const [row, key] of rows)
 							expect([at, row, denserRows.get(row)]).toEqual([at, row, key]);
 						const denserAxes = axisKeys(before);
@@ -397,12 +419,13 @@ for (const id of SPECIES) {
 				const options = { seed: 5, variant: 1, near: false } as const;
 				const full = growPlantNow(kit, options);
 				const grown = plantsGrown();
-				// A change of sparseness cuts the kept plant: the count of growths shows no new one. Its
-				// time is no proof on a shared machine, where a cheap plant's growth and cut both swing
-				// by several times between runs.
+				// The planned grower grows straight to the asked state: each sparseness value is its own
+				// growth, not a cut of the plant as grown, and costs the two growths a state costs (the
+				// adult plan and the plant), so two more states add four. Its time is no proof on a shared
+				// machine, where a growth swings by several times.
 				const half = growPlantNow(kit, { ...options, sparse: 0.5 });
 				const sparsest = growPlantNow(kit, { ...options, sparse: 1 });
-				expect(plantsGrown()).toBe(grown);
+				expect(plantsGrown()).toBe(grown + 4);
 				// The same bytes again, from the kept plant and from a growth that starts at the seed.
 				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 0.5 }))).toBe(
 					plantAssetDigest(half),
@@ -422,7 +445,7 @@ for (const id of SPECIES) {
 	});
 }
 
-/** The plants of sockets: a tuft of pieces, and the pine and the oak as directed frames. */
+/** The plants of sockets: a tuft of pieces, and the pine as a directed frame. */
 const SOCKET_PLANTS: readonly (readonly [name: string, load: () => Promise<SpeciesModule>])[] = [
 	['sedge', () => loadSpecies('sedge')],
 	[
@@ -430,13 +453,6 @@ const SOCKET_PLANTS: readonly (readonly [name: string, load: () => Promise<Speci
 		async () => ({
 			record: (await import('./species/scots-pine/directed')).directed as Species,
 			textures: (await import('@null3d/vegetation-textures/scots-pine')).files,
-		}),
-	],
-	[
-		'directed pedunculate oak',
-		async () => ({
-			record: (await import('./species/pedunculate-oak/directed')).directed as Species,
-			textures: (await import('@null3d/vegetation-textures/pedunculate-oak')).files,
 		}),
 	],
 ];

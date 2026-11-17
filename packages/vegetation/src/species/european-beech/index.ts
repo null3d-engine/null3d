@@ -16,9 +16,12 @@ const planned: SpeciesForm = {
 	lod: { clumpCard: [1, 1] },
 };
 
+/** The species' measured fields, without the growth the planned form states itself. */
+const { forms: _forms, growth: _growth, ...measured } = directed;
+
 /** The record the planned form grows from, found exactly as a page asking for it would. */
 const plannedRecord: Species = formRecord(
-	{ ...directed, forms: { ...(directed.forms ?? {}), planned } },
+	{ ...measured, growth: plannedGrowth, forms: { planned } },
 	'planned',
 );
 
@@ -27,6 +30,6 @@ const plannedRecord: Species = formRecord(
  * the planned form is the only one a page can name.
  */
 export const species: SpeciesModule = {
-	record: { ...plannedRecord, forms: { ...(directed.forms ?? {}), planned } },
+	record: { ...plannedRecord, forms: { planned } },
 	textures: files,
 };

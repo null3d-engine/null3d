@@ -30,7 +30,6 @@ const SOCKET_MODELS: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
 	'scaffold',
-	'frame',
 	'architectural',
 	'conifer',
 	'crown-rosette',
@@ -815,31 +814,6 @@ function growthProblems(record: Species, out: string[]): void {
 		if (ribs.depth < 0 || ribs.sweep <= 0)
 			out.push('foliage.leaf.ribs needs a depth from 0 and a sweep above 0');
 	}
-	if (growth.model === 'frame') {
-		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
-		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
-			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
-		if (growth.sockets.scale !== undefined && !(growth.sockets.scale > 0))
-			out.push(
-				`growth.sockets.scale is ${growth.sockets.scale}; it is a size over the piece's own, above 0`,
-			);
-		const sides = growth.frame.outline;
-		if (sides.length < 2)
-			out.push(`growth.frame.outline has ${sides.length} sides; an outline states two or more`);
-		sides.forEach((side, k) => {
-			const path = `growth.frame.outline[${k}]`;
-			if (!(side.toward >= 0 && side.toward < 360))
-				out.push(`${path}.toward is ${side.toward}; it is degrees from 0 to under 360`);
-			if (k > 0 && side.toward <= (sides[k - 1]?.toward ?? 0))
-				out.push(`${path}.toward is ${side.toward}; the sides run in their order round the plant`);
-			curveProblems(side.reach, `${path}.reach`, out);
-			curveProblems(side.under, `${path}.under`, out);
-		});
-		if (!(growth.frame.stems.count >= 1))
-			out.push(
-				`growth.frame.stems.count is ${growth.frame.stems.count}; a plant has one stem or more`,
-			);
-	}
 	if (growth.model === 'conifer') {
 		const { trunk, limbs, top, patch } = growth;
 		curveProblems(trunk.width, 'growth.trunk.width', out);
@@ -1243,11 +1217,15 @@ export function speciesProblems(record: Species): string[] {
 	// cards altogether, and above two the factor saturates and moves nothing.
 	const cover = lod.cardCover;
 	if (cover !== undefined && !(cover >= 0.5 && cover <= 2))
-		out.push(`lod.cardCover is ${cover}; it is a factor from 0.5 to 2 on the first card level's coverage`);
+		out.push(
+			`lod.cardCover is ${cover}; it is a factor from 0.5 to 2 on the first card level's coverage`,
+		);
 	const planes = lod.cardPlanes;
 	if (planes !== undefined) {
 		if (!Array.isArray(planes) || planes.length !== 2)
-			out.push(`lod.cardPlanes is ${JSON.stringify(planes)}; it is a pair of counts, one each card level`);
+			out.push(
+				`lod.cardPlanes is ${JSON.stringify(planes)}; it is a pair of counts, one each card level`,
+			);
 		else
 			planes.forEach((value, i) => {
 				if (!Number.isInteger(value) || value < 0 || value > 2)

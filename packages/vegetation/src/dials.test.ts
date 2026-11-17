@@ -230,7 +230,10 @@ describe('the connectivity helper', () => {
 			// the patch's fill pitch, a share of the plant's height. A run whose first node stands
 			// farther from that node floats away from the wood that carries it.
 			const growth = kit.record.growth;
-			const share = growth.model === 'frame' ? fillPitchShare(growth.frame.stems) : undefined;
+			const share =
+				growth.model === 'planned' && growth.adult === 'frame' && growth.frame
+					? fillPitchShare(growth.frame.stems)
+					: undefined;
 			if (share === undefined) throw new Error('the oak states no fill pitch');
 			const height = kit.record.size.height;
 			const tolerance = 0.6 * share * (typeof height === 'number' ? height : height.mean) + 0.01;

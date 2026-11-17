@@ -4,7 +4,7 @@
 // bunches stand. Each figure names the reference picture it was read on. Shares are of the tree's
 // height, measured from the true foot. Still 01 and the whole-tree turning video are the one tree
 // the frame follows.
-import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -247,19 +247,12 @@ export const frame: FrameSpec = {
 const KEYS_SHARE = 0.0203;
 
 /**
- * The common ash's record with the frame as its growth and the branch end of still 21 at each
- * socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
+ * The common ash's record with the measured overrides the planned form grows from, and the branch
+ * end of still 21 at each socket. The shoot rows are working figures, not measured ones: a kit
+ * with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, {
-		rows: { mean: 4, spread: 1 },
-		fan: 45,
-		piece: 'branch-end',
-		// With every branch end's flat side to the sky, a crown seen from the side shows most of its
-		// leaves slanted or edge on. Still 04: an ash's tip bunches face every way, so each piece
-		// rolls up to a quarter turn either way about its own line and tilts a little off the wood's.
-		turn: { roll: 90, tilt: 25 },
-	}),
+	...record,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// The second card level keeps one of each four of the frame's cards, each grown inside the leaf
 	// form's outline: a socket's branch end is a card of its own, so the smaller kept cards leave no

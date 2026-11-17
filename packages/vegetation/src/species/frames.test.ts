@@ -6,12 +6,11 @@
 // is held to what its photographs show and a smooth dome does not.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
-import { speciesProblems } from '../core/check';
 import type { MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
-import { quatRotate, type Vector3 } from '../core/math';
-import type { Framed, Species } from '../core/record';
-import { loadSpecies } from '../core/registry';
+import type { Vector3 } from '../core/math';
+import type { Species } from '../core/record';
+import { loadSpecies, speciesIds } from '../core/registry';
 import { curveAt, spreadMean } from '../core/types';
 import {
 	evenOutline,
@@ -21,10 +20,8 @@ import {
 	type FramePatch,
 	type FramePlan,
 	type FrameSpec,
-	framedRecord,
 	frameSkeleton,
 	frameSockets,
-	growFrame,
 	outlineRadius,
 	outlineSpan,
 	outlineUnder,
@@ -53,36 +50,24 @@ import {
 	woodThrough,
 } from '../grow/frame-measure';
 import { stemSection, surfaceRoots } from '../wood/flare';
-import { frame as commonAlder, directed as commonAlderDirected } from './common-alder/directed';
+import { frame as commonAlder } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
-import { frame as commonAsh, directed as commonAshDirected } from './common-ash/directed';
+import { frame as commonAsh } from './common-ash/directed';
 import { record as commonAshRecord } from './common-ash/record';
-import {
-	frame as europeanBeech,
-	directed as europeanBeechDirected,
-} from './european-beech/directed';
+import { frame as europeanBeech } from './european-beech/directed';
 import { record as europeanBeechRecord } from './european-beech/record';
-import {
-	frame as hawthornShrub,
-	directed as hawthornShrubDirected,
-} from './hawthorn-shrub/directed';
+import { frame as hawthornShrub } from './hawthorn-shrub/directed';
 import { record as hawthornShrubRecord } from './hawthorn-shrub/record';
-import { frame as holmOak, directed as holmOakDirected } from './holm-oak/directed';
+import { frame as holmOak } from './holm-oak/directed';
 import { record as holmOakRecord } from './holm-oak/record';
-import { frame as olive, directed as oliveDirected } from './olive/directed';
+import { frame as olive } from './olive/directed';
 import { record as oliveRecord } from './olive/record';
 import clumpsFirst from './pedunculate-oak/clumps-first.fixture.json';
-import {
-	frame as pedunculateOak,
-	directed as pedunculateOakDirected,
-} from './pedunculate-oak/directed';
+import { frame as pedunculateOak } from './pedunculate-oak/directed';
 import { record as pedunculateOakRecord } from './pedunculate-oak/record';
-import { frame as silverBirch, directed as silverBirchDirected } from './silver-birch/directed';
+import { frame as silverBirch } from './silver-birch/directed';
 import { record as silverBirchRecord } from './silver-birch/record';
-import {
-	frame as weepingWillow,
-	directed as weepingWillowDirected,
-} from './weeping-willow/directed';
+import { frame as weepingWillow } from './weeping-willow/directed';
 import { record as weepingWillowRecord } from './weeping-willow/record';
 
 const SEEDS = [11, 12, 13, 14] as const;
@@ -96,51 +81,11 @@ const PLAN_LEAST = 0.75;
 const FILL_MEAN: readonly [number, number] = [0.75, 1.15];
 const FILL_SIDE = 0.5;
 /**
- * The owner's five rules as the scaffold build's tests state them, held on every frame. Sky spread
- * evenly and balance through the turn: each eighth of the turn round the trunk holds this share of
- * an even eighth of the sockets, and the crown's width at eight angles differs by no more than the
- * species' all-round band. No kinks: no bend's radius is under this many of the wood's diameters
- * there, and no limb that leaves a stem runs back toward where it left by more than this share of
- * the height.
- * Not too many branches: the axes for each socket. No branch end bare is the socket test's.
- */
-const EIGHTH_SHARE: readonly [number, number] = [0.45, 1.8];
-const ROUND_BAND = 0.25;
-const BEND_DIAMETERS_LEAST = 3;
-const BACK_MOST = 0.03;
-const BACKWARD_JOINTS_MOST = 0.02;
-const AXES_PER_SOCKET_MOST = 1.6;
-/**
  * How far, as a share of the height, the end of an axis that runs down may stand under the lower
  * boundary beyond where the axis left: its length is found on a course summed in steps, and the
  * course is then laid in arches.
  */
 const UNDER_SLACK = 0.02;
-const DEG = 180 / Math.PI;
-
-/** The unit step from one node of a skeleton to another, and its length. */
-function step(s: MacroSkeleton, from: number, to: number): [number, number, number, number] {
-	const x = (s.position[to * 3] as number) - (s.position[from * 3] as number);
-	const y = (s.position[to * 3 + 1] as number) - (s.position[from * 3 + 1] as number);
-	const z = (s.position[to * 3 + 2] as number) - (s.position[from * 3 + 2] as number);
-	const length = Math.hypot(x, y, z);
-	return length > 0 ? [x / length, y / length, z / length, length] : [0, 1, 0, 0];
-}
-
-/** The radians between two unit steps. */
-function between(a: readonly number[], b: readonly number[]): number {
-	return Math.acos(
-		Math.max(
-			-1,
-			Math.min(
-				1,
-				(a[0] as number) * (b[0] as number) +
-					(a[1] as number) * (b[1] as number) +
-					(a[2] as number) * (b[2] as number),
-			),
-		),
-	);
-}
 /** The longest share of a limb or a branch that may hold one direction. */
 const STRAIGHT_MOST = 0.2;
 const STUB_DIAMETERS = 8;
@@ -153,8 +98,7 @@ interface Held {
 	readonly id: string;
 	readonly spec: FrameSpec;
 	readonly record: Species;
-	/** The species' record with the frame as its growth, and the middle of its height in metres. */
-	readonly directed: Species;
+	/** The middle of the species' height in metres. */
 	readonly heightMean: number;
 	/** The axes each rule makes on one plant: a count, or the least and the most. */
 	readonly counts: Readonly<Record<string, number | readonly [number, number]>>;
@@ -197,8 +141,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'silver-birch',
 		spec: silverBirch,
-		directed: silverBirchDirected,
-		heightMean: spreadMean(silverBirchDirected.size.height),
+		heightMean: spreadMean(silverBirchRecord.size.height),
 		record: silverBirchRecord,
 		counts: {
 			leader: 1,
@@ -222,8 +165,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'common-alder',
 		spec: commonAlder,
-		directed: commonAlderDirected,
-		heightMean: spreadMean(commonAlderDirected.size.height),
+		heightMean: spreadMean(commonAlderRecord.size.height),
 		record: commonAlderRecord,
 		// The tall picture's fill: the record stands 25 m from stills 01, 02 and 18 (their crowns
 		// are 0.590 and 0.626 of the height wide) with the low foliage edge stills 02, 18 and 30
@@ -250,8 +192,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'weeping-willow',
 		spec: weepingWillow,
-		directed: weepingWillowDirected,
-		heightMean: spreadMean(weepingWillowDirected.size.height),
+		heightMean: spreadMean(weepingWillowRecord.size.height),
 		record: weepingWillowRecord,
 		// The top limbs carry branches only on their rising part and the secondary limbs none on their
 		// first stretch, so 96 to 104 branches and 566 to 619 whips grow over the seeds.
@@ -272,8 +213,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'holm-oak',
 		spec: holmOak,
-		directed: holmOakDirected,
-		heightMean: spreadMean(holmOakDirected.size.height),
+		heightMean: spreadMean(holmOakRecord.size.height),
 		record: holmOakRecord,
 		counts: { stem: 10, arm: 20, fork: 40, branch: [110, 120], side: [20, 80], twig: [300, 1200] },
 		// Eight outer stems stand an eighth of a turn apart, and the two inner ones lean where they
@@ -294,8 +234,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'hawthorn-shrub',
 		spec: hawthornShrub,
-		directed: hawthornShrubDirected,
-		heightMean: spreadMean(hawthornShrubDirected.size.height),
+		heightMean: spreadMean(hawthornShrubRecord.size.height),
 		record: hawthornShrubRecord,
 		counts: { stem: 8, limb: [24, 32], side: [22, 32], shoot: [56, 104], twig: [1800, 2400] },
 		// Seven outer stems stand a seventh of a turn apart round the one at the middle.
@@ -313,8 +252,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'european-beech',
 		spec: europeanBeech,
-		directed: europeanBeechDirected,
-		heightMean: spreadMean(europeanBeechDirected.size.height),
+		heightMean: spreadMean(europeanBeechRecord.size.height),
 		record: europeanBeechRecord,
 		counts: { trunk: 1, limb: 10, bough: [85, 86], skirt: [14, 17], twig: [2481, 2691] },
 		// Ten limbs a golden angle apart leave no gap wider than that and their jitter.
@@ -331,8 +269,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'common-ash',
 		spec: commonAsh,
-		directed: commonAshDirected,
-		heightMean: spreadMean(commonAshDirected.size.height),
+		heightMean: spreadMean(commonAshRecord.size.height),
 		record: commonAshRecord,
 		counts: {
 			trunk: 1,
@@ -359,8 +296,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'olive',
 		spec: olive,
-		directed: oliveDirected,
-		heightMean: spreadMean(oliveDirected.size.height),
+		heightMean: spreadMean(oliveRecord.size.height),
 		record: oliveRecord,
 		counts: { trunk: 1, outer: 4, centre: 2, branch: 12, spray: 48, twig: [1782, 1849] },
 		// Four outer limbs leave a quarter of a turn apart; each one's end wanders with its elbows.
@@ -377,8 +313,7 @@ const HELD: readonly Held[] = [
 	{
 		id: 'pedunculate-oak',
 		spec: pedunculateOak,
-		directed: pedunculateOakDirected,
-		heightMean: spreadMean(pedunculateOakDirected.size.height),
+		heightMean: spreadMean(pedunculateOakRecord.size.height),
 		record: pedunculateOakRecord,
 		counts: {
 			trunk: 1,
@@ -422,8 +357,6 @@ function madePatch(centre: Vector3, width: number, depth: number): FramePatch {
 
 /** A species' frame at one seed. */
 const PLANS = new Map<string, FramePlan>();
-const GROWN = new Map<string, MacroSkeleton>();
-
 /** A species' frame at one seed, planned once for all the tests that read it. */
 function planOf(held: Held, seed: number, variant = 0): FramePlan {
 	const key = `${held.id}:${seed}:${variant}`;
@@ -433,17 +366,6 @@ function planOf(held: Held, seed: number, variant = 0): FramePlan {
 		PLANS.set(key, plan);
 	}
 	return plan;
-}
-
-/** A species' frame with its sockets, grown once for all the tests that read it. */
-function grownOf(held: Held, seed: number): MacroSkeleton {
-	const key = `${held.id}:${seed}`;
-	let skeleton = GROWN.get(key);
-	if (!skeleton) {
-		skeleton = growFrame({ record: held.directed, seed, variant: 0, season: 'summer' });
-		GROWN.set(key, skeleton);
-	}
-	return skeleton;
 }
 
 /** The digest of the arrays a frame's skeleton holds, so two runs compare byte for byte. */
@@ -575,16 +497,6 @@ describe('a crown outline stated side by side', () => {
 			expect(outlineRadius(even, HEIGHT, 6, azimuth)).toBeCloseTo(ellipse, 9);
 		}
 		expect(outlineRadius(even, HEIGHT, 2.5, 1)).toBe(0);
-	});
-
-	it('is refused by the record check with one side, or with sides out of their order', () => {
-		const stated = (outline: FrameSpec['outline']) =>
-			speciesProblems(
-				framedRecord(pedunculateOakRecord, { ...lopsided, outline }, { rows: 4, fan: 45 }),
-			).filter((problem) => problem.includes('frame.outline'));
-		expect(stated(lopsided.outline)).toEqual([]);
-		expect(stated(lopsided.outline.slice(0, 1))).toHaveLength(1);
-		expect(stated([...lopsided.outline].reverse())).not.toEqual([]);
 	});
 
 	it('states the oak by the two sides of still 01 and the two of still 02', () => {
@@ -731,172 +643,6 @@ for (const held of HELD)
 		);
 
 		it(
-			'gives its sockets as bud sites in the socket record, ranked once across the plant',
-			() => {
-				expect(speciesProblems(held.directed)).toEqual([]);
-				for (const seed of SEEDS) {
-					const input = { record: held.directed, seed, variant: 0, season: 'summer' } as const;
-					const plan = planOf(held, seed);
-					const sockets = frameSockets(plan);
-					const skeleton = growFrame(input);
-					const table = skeleton.buds.sockets;
-					// One socket at the end of each patch's wood, and the rest along the wood under it.
-					expect(
-						sockets.filter((socket) => socket.along === 1).map((socket) => socket.patch),
-					).toEqual(plan.patches.map((_, k) => k));
-					for (const socket of sockets) {
-						const patch = plan.patches[socket.patch];
-						expect(patch?.axis).toBe(socket.axis);
-						if (socket.along < 1) expect(patch?.sockets).toBeDefined();
-					}
-					expect(skeleton.buds.count).toBe(sockets.length);
-					expect(table).toBeDefined();
-					if (!table) continue;
-					// One rank for each socket, every rank from 0 used once.
-					expect([...table.rank].sort((a, b) => a - b)).toEqual(sockets.map((_, k) => k));
-					const along: Vector3 = [0, 0, 0];
-					sockets.forEach((socket, b) => {
-						expect(table.lobe[b]).toBe(socket.patch);
-						expect(table.rank[b]).toBe(socket.rank);
-						// Shoot rows are the plant's own height over the species' middle height; a branch
-						// piece is the size its leaves make it, or the size the record names for its crown.
-						const growth = held.directed.growth;
-						const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
-						const named =
-							growth.model === 'frame' && growth.sockets.scale !== undefined
-								? growth.sockets.scale
-								: 1;
-						expect(table.scale[b]).toBeCloseTo(piece ? named : plan.scale / held.heightMean, 5);
-						expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
-						// The bud runs along its socket's heading, or within the tilt and the tip the record
-						// states.
-						quatRotate(skeleton.buds.frame, b * 4, [0, 1, 0], along);
-						const turn = growth.model === 'frame' ? growth.sockets.turn : undefined;
-						const tilt = (turn?.tilt ?? 0) + (turn?.out ?? 0);
-						expect(
-							along[0] * socket.heading[0] +
-								along[1] * socket.heading[1] +
-								along[2] * socket.heading[2],
-						).toBeGreaterThan(Math.min(0.999, Math.cos((tilt * Math.PI) / 180) - 1e-6));
-					});
-					// The first quarter of the ranks stands in every quarter round the trunk that any
-					// socket stands in, so a plant thinned to it keeps every side.
-					const quarter = (socket: (typeof sockets)[number]) =>
-						(socket.at[0] >= 0 ? 1 : 0) + (socket.at[2] >= 0 ? 2 : 0);
-					const kept = sockets.filter((socket) => socket.rank < Math.ceil(sockets.length / 4));
-					expect(new Set(kept.map(quarter)).size).toBe(new Set(sockets.map(quarter)).size);
-				}
-			},
-			scaledBudget(20_000),
-		);
-
-		required('spread')(
-			'spreads its sockets through the whole turn round the trunk',
-			() => {
-				for (const seed of SEEDS) {
-					const s = grownOf(held, seed);
-					const eighths = new Float64Array(8);
-					for (let b = 0; b < s.buds.count; b++) {
-						const turn = Math.atan2(
-							s.buds.position[b * 3 + 2] as number,
-							s.buds.position[b * 3] as number,
-						);
-						const eighth = Math.floor(((turn + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 4)) % 8;
-						eighths[eighth] = (eighths[eighth] as number) + 1;
-					}
-					const even = s.buds.count / 8;
-					expect(Math.min(...eighths) / even).toBeGreaterThan(EIGHTH_SHARE[0]);
-					expect(Math.max(...eighths) / even).toBeLessThan(EIGHTH_SHARE[1]);
-					const widths: number[] = [];
-					for (let k = 0; k < 8; k++) {
-						const turn = (k * Math.PI) / 4;
-						let low = Number.POSITIVE_INFINITY;
-						let high = Number.NEGATIVE_INFINITY;
-						for (let b = 0; b < s.buds.count; b++) {
-							const across =
-								(s.buds.position[b * 3] as number) * Math.cos(turn) -
-								(s.buds.position[b * 3 + 2] as number) * Math.sin(turn);
-							low = Math.min(low, across);
-							high = Math.max(high, across);
-						}
-						widths.push(high - low);
-					}
-					const mean = widths.reduce((sum, width) => sum + width, 0) / widths.length;
-					expect((Math.max(...widths) - Math.min(...widths)) / mean).toBeLessThan(
-						held.directed.roundBand ?? ROUND_BAND,
-					);
-				}
-			},
-			scaledBudget(20_000),
-		);
-
-		required('bends')("bends on no radius under three of its wood's diameters", () => {
-			for (const seed of SEEDS) {
-				const plan = planOf(held, seed);
-				const s = grownOf(held, seed);
-				let tightest = Number.POSITIVE_INFINITY;
-				for (let n = 0; n < s.nodeCount; n++) {
-					const at = s.parent[n] as number;
-					const before = at >= 0 ? (s.parent[at] as number) : -1;
-					if (before < 0 || s.axisOf[at] !== s.axisOf[n] || s.axisOf[before] !== s.axisOf[n])
-						continue;
-					if (held.fine?.includes(plan.axes[s.axisOf[n] as number]?.rule ?? '')) continue;
-					// The radius of the bend at a node: the mean of its two pieces over the turn between
-					// them.
-					const last = step(s, before, at);
-					const next = step(s, at, n);
-					const turn = between(last, next);
-					if (turn > 0.01)
-						tightest = Math.min(
-							tightest,
-							(last[3] + next[3]) / 2 / turn / (2 * (s.radius[at] as number)),
-						);
-				}
-				expect(tightest).toBeGreaterThanOrEqual(BEND_DIAMETERS_LEAST);
-			}
-		});
-
-		it('runs no limb back toward the trunk and leaves its branches forward', () => {
-			for (const seed of SEEDS) {
-				const plan = planOf(held, seed);
-				const s = grownOf(held, seed);
-				let back = 0;
-				let sides = 0;
-				let backward = 0;
-				for (let a = 0; a < s.axes.count; a++) {
-					// A hanging axis leaves its branch downward, which on rising wood is backward, and a
-					// twig that clothes a clump leaves toward the clump's surface, wherever that is;
-					// neither is held to a limb's bounds.
-					const hangs =
-						plan.axes[a]?.role === 'whip' || held.fine?.includes(plan.axes[a]?.rule ?? '') === true;
-					const joint = s.axes.parentNode[a] as number;
-					const before = joint >= 0 ? (s.parent[joint] as number) : -1;
-					if (before >= 0 && !hangs) {
-						sides++;
-						if (
-							between(step(s, before, joint), step(s, joint, s.axes.first[a] as number)) * DEG >
-							90
-						)
-							backward++;
-					}
-					if ((s.axes.order[a] as number) !== 1 || joint < 0 || hangs) continue;
-					// How far the limb stands out from where it leaves its stem, node by node.
-					let reach = -1;
-					for (let n = s.axes.first[a] as number; n <= (s.axes.last[a] as number); n++) {
-						const out = Math.hypot(
-							(s.position[n * 3] as number) - (s.position[joint * 3] as number),
-							(s.position[n * 3 + 2] as number) - (s.position[joint * 3 + 2] as number),
-						);
-						if (reach >= 0) back = Math.max(back, reach - out);
-						reach = Math.max(reach, out);
-					}
-				}
-				expect(back).toBeLessThan(BACK_MOST * plan.scale);
-				expect(backward / Math.max(1, sides)).toBeLessThan(BACKWARD_JOINTS_MOST);
-			}
-		});
-
-		it(
 			'passes no wood through other wood, beyond the pairs it is known to',
 			() => {
 				let pairs = 0;
@@ -915,18 +661,6 @@ for (const held of HELD)
 				descent += found.descent.length;
 			}
 			expect([apart, descent]).toEqual([...held.crossings]);
-		});
-
-		it('keeps its branch count to its sockets, at the figure it is known by', () => {
-			let axes = 0;
-			let sockets = 0;
-			for (const seed of SEEDS) {
-				const s = grownOf(held, seed);
-				axes += s.axes.count;
-				sockets += s.buds.count;
-			}
-			expect(axes / sockets).toBeLessThan(AXES_PER_SOCKET_MOST);
-			expect(Number((axes / sockets).toFixed(3))).toBe(held.axesPerSocket);
 		});
 
 		it('is one connected body that stands at the height of its record', () => {
@@ -970,99 +704,27 @@ for (const held of HELD)
  * is a set of patches placed against a plain dome's outline.
  */
 /**
- * The species whose registered entry gives the frame record, so the review and the scenes draw the
- * frame. A merge can take another line's entry, which gives the record the old grower grows, so
- * this list changes in the same commit as an entry does.
+ * The owner's ruling: a species record grows by the current mechanism, never by the frame model.
+ * This is the registration list's guard without the list: a record that grows a frame, or a form
+ * that names one, fails here by species.
  */
-const REGISTERED_FRAMES = [] as const;
-
-describe('a species entry that gives its frame', () => {
-	for (const id of REGISTERED_FRAMES)
-		it(`registers the ${id} as its frame record`, async () => {
-			const held = HELD.find((candidate) => candidate.id === id);
-			expect(held).toBeDefined();
-			const module = await loadSpecies(id);
-			expect(module.record.growth.model).toBe('frame');
-			expect(module.record === held?.directed).toBe(true);
-		});
-});
-
-describe('the size a frame socket carries its piece at', () => {
-	/** One stem with three boughs whose ends are sockets, small enough to grow in a moment. */
-	const spec: FrameSpec = {
-		outline: evenOutline(0.62, 1),
-		stems: {
-			name: 'trunk',
-			count: 1,
-			width: [
-				[0, 0.09],
-				[1, 0.06],
-			],
-			length: { share: 0.55 },
-			sway: 2,
-			elbows: 2,
-			children: [
-				{
-					name: 'bough',
-					role: 'branch',
-					count: 3,
-					along: [0.4, 1],
-					around: 'spiral',
-					angle: 50,
-					from: 'parent',
-					length: { share: 0.28 },
-					radius: 0.4,
-					taper: 0.4,
-					sway: 4,
-					elbows: 2,
-					patch: { kind: 'clump', width: 0.2, depth: 0.12 },
-				},
-			],
+describe('every registered species', () => {
+	it(
+		'grows by a model other than the frame',
+		async () => {
+			const wrong: string[] = [];
+			for (const id of speciesIds()) {
+				const module = await loadSpecies(id);
+				const models = [
+					module.record.growth.model,
+					...Object.values(module.record.forms ?? {}).map((form) => form.growth?.model),
+				];
+				if (models.some((model) => (model as string | undefined) === 'frame')) wrong.push(id);
+			}
+			expect(wrong).toEqual([]);
 		},
-	};
-	const sockets = (extra: {
-		readonly piece?: string;
-		readonly scale?: number;
-	}): Framed['sockets'] => ({
-		rows: { mean: 4, spread: 1 },
-		fan: 45,
-		...extra,
-	});
-	const grown = (named: { readonly piece?: string; readonly scale?: number }) =>
-		growFrame({
-			record: framedRecord(europeanBeechRecord, spec, sockets(named)),
-			seed: 11,
-			variant: 0,
-			season: 'summer',
-		});
-
-	it("stands every piece at its rule's own size unless the record names one", () => {
-		const own = grown({ piece: 'branch-end' });
-		const scale = own.buds.sockets?.scale;
-		expect(scale?.length).toBeGreaterThan(0);
-		for (const piece of scale ?? []) expect(piece).toBe(1);
-		const named = grown({ piece: 'branch-end', scale: 1.25 });
-		expect(named.buds.sockets?.scale.length).toBe(scale?.length);
-		for (const piece of named.buds.sockets?.scale ?? []) expect(piece).toBeCloseTo(1.25, 6);
-	});
-
-	it('is inert on a plant of shoot rows, which names no piece', () => {
-		const rows = grown({});
-		const named = grown({ scale: 1.25 });
-		expect(rows.buds.sockets?.scale.length).toBeGreaterThan(0);
-		expect(named.buds.sockets?.scale).toEqual(rows.buds.sockets?.scale);
-	});
-
-	it('is refused by the record check with a size of zero or less', () => {
-		const framed = framedRecord(
-			europeanBeechRecord,
-			spec,
-			sockets({ piece: 'branch-end', scale: 0 }),
-		);
-		expect(
-			speciesProblems(framed).some((problem) => problem.includes('growth.sockets.scale')),
-		).toBe(true);
-	});
+		scaledBudget(60_000),
+	);
 });
 
 describe('the crown test, on crowns made by hand', () => {
@@ -1368,7 +1030,7 @@ describe.skip("the pedunculate oak's frame against its photographs", () => {
 	});
 
 	it("stands on still 01's rounded foot, with no fins", () => {
-		const base = pedunculateOakDirected.base;
+		const base = pedunculateOakRecord.base;
 		for (const seed of SEEDS) {
 			const plan = planOf(oak, seed);
 			const trunk = plan.axes[0] as FramePlan['axes'][number];
@@ -1387,7 +1049,7 @@ describe.skip("the pedunculate oak's frame against its photographs", () => {
 				expect(Math.abs(widthAt(height) - width)).toBeLessThanOrEqual(FOOT_WITHIN);
 			const foot = trunk.nodes[0] as FrameNode;
 			for (let variant = 0; variant < 6; variant++) {
-				const section = stemSection(base, seed, pedunculateOakDirected.seedSalt, variant, 0);
+				const section = stemSection(base, seed, pedunculateOakRecord.seedSalt, variant, 0);
 				for (let k = 0; k < 36; k++) {
 					const theta = (k / 72) * 2 * Math.PI;
 					const across =
@@ -1402,7 +1064,7 @@ describe.skip("the pedunculate oak's frame against its photographs", () => {
 					[1, 0, 0],
 					[0, 0, 1],
 					seed,
-					pedunculateOakDirected.seedSalt,
+					pedunculateOakRecord.seedSalt,
 					variant,
 					0,
 				);

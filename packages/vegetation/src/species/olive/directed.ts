@@ -10,7 +10,7 @@
 // buttress with burred crests at the foot, and a few thick roots that run from the lobes.
 
 import type { ExtraSpec } from '../../core/record';
-import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -205,11 +205,12 @@ const fruit = (extra: ExtraSpec): ExtraSpec =>
 	extra.kind === 'fruit' && extra.at === 'shoot-tip' ? { ...extra, share: FRUIT_SHARE } : extra;
 
 /**
- * The olive's record with the frame as its growth and the branch end of still 21 at each socket.
- * The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
+ * The olive's record with the measured overrides the planned form grows from, and the branch end
+ * of still 21 at each socket. The shoot rows are working figures, not measured ones: a kit with no
+ * pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...record,
 	base: {
 		...record.base,
 		// The frame's trunk already widens to still 01's foot, so the stem base adds no flare of its

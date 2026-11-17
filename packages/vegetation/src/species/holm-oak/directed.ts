@@ -4,13 +4,7 @@
 // the reference picture it was read on. Shares are of the plant's height. Still 01 and the
 // whole-plant turning video are the one plant the frame follows.
 import type { Curve } from '../../core/types';
-import {
-	type FrameBranchRule,
-	type FrameLength,
-	type FrameSide,
-	type FrameSpec,
-	framedRecord,
-} from '../../grow/frame';
+import type { FrameBranchRule, FrameLength, FrameSide, FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -283,11 +277,12 @@ export const frame: FrameSpec = {
 };
 
 /**
- * The holm oak's record with the frame as its growth and the branch end of still 21 at each socket.
- * The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
+ * The holm oak's record with the measured overrides the planned form grows from, and the branch
+ * end of still 21 at each socket. The shoot rows are working figures, not measured ones: a kit
+ * with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...record,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// Each of the frame's ten stems takes the foot's flare, so the record's flare for one stem of the
 	// clump spreads into a disc. Still 07: each stem swells a little where it joins the stool, and

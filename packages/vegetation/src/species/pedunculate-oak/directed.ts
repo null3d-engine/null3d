@@ -9,12 +9,7 @@
 
 import type { ExtraSpec } from '../../core/record';
 import type { Vec2 } from '../../core/types';
-import {
-	type FrameBranchRule,
-	type FrameSide,
-	type FrameSpec,
-	framedRecord,
-} from '../../grow/frame';
+import type { FrameBranchRule, FrameSide, FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -560,25 +555,12 @@ const foliage =
 		: record.foliage;
 
 /**
- * The pedunculate oak's record with the frame as its growth and the branch end of still 21 at each
- * socket. The shoot rows are the figures the scaffold build's oak states for the same branch ends;
- * a kit with no pieces draws them.
+ * The pedunculate oak's record with the measured overrides the planned form grows from, and the
+ * branch end of still 21 at each socket. The shoot rows are the figures the scaffold build's oak
+ * states for the same branch ends; a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, {
-		rows: { mean: 5, spread: 1 },
-		fan: 45,
-		piece: 'branch-end',
-		// The bake worker's reading of round `pedunculate-oak-9178db536`: with every branch end's
-		// flat side to the sky, a crown seen from the side shows most of its cards slanted or edge
-		// on, and the sky shows through. A real crown's rosettes face every way, so each piece rolls
-		// up to a quarter turn either way about its own line and tilts a little off the wood's.
-		// Rolled round the sky, more than half the pieces showed their pale lower faces to a side view
-		// (the bake worker's count at `95257a144`). A crown's outer leaves turn their upper faces to
-		// the light, so each piece first tips down from straight out of its clump, its upper face
-		// leaning out and up; a steeper tip opens the crown.
-		turn: { roll: 90, tilt: 25, out: 30 },
-	}),
+	...record,
 	base,
 	foliage,
 	lod: {

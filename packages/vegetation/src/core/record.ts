@@ -206,7 +206,6 @@ export interface PlantSize {
 export type Growth =
 	| SelfOrganizing
 	| Scaffold
-	| Framed
 	| Architectural
 	| Conifer
 	| CrownRosette
@@ -713,50 +712,6 @@ export interface ArchitecturalOrder {
 	readonly upturn: number;
 	/** Degrees it bends over its length. */
 	readonly curve: number;
-}
-
-/**
- * A plant built in a set order from a tree of axis rules: its stems and, under each, the axes that
- * leave it, with their counts, places, angles, bends, lengths and widths as the species measured
- * them, and a foliage patch on each axis whose rule states one. Every wood end that carries a patch
- * is a socket, in the scaffold model's own socket record.
- *
- * @category api/vegetation
- */
-export interface Framed {
-	/** The model's name. */
-	readonly model: 'frame';
-	/** The stems, the axes under them and the crown outline. */
-	readonly frame: FrameSpec;
-	/** What each socket holds: shoot rows as the scaffold model states them, or one branch piece. */
-	readonly sockets: {
-		/** Shoot rows that one socket holds. */
-		readonly rows: Spread;
-		/** Degrees the rows of one socket fan from its line. */
-		readonly fan: number;
-		/**
-		 * The branch piece each socket carries, by its name among the record's pieces. Absent, a
-		 * socket holds shoot rows.
-		 */
-		readonly piece?: string;
-		/**
-		 * The size of each socket's piece over its rule's own. A crown's sprays and the cutting a close
-		 * view draws may stand at different sizes of one measured piece: the crown's at the species'
-		 * leaf, the cut's at the size its photograph's frame asks. Absent, 1. It reads only where a
-		 * piece is named, so a plant of shoot rows is unaffected.
-		 */
-		readonly scale?: number;
-		/**
-		 * The most degrees each piece turns at its socket: its roll about its own line, from the
-		 * side its upper face starts toward, and its tilt off the wood's line. Each is a share spread
-		 * evenly over the sockets in their order, so no two neighbours turn alike and the crown's
-		 * leaf faces every way. With `out`, each piece's line first tips that many degrees down from
-		 * its socket's heading, which runs out of its patch, so its upper face starts out of the
-		 * patch and up, as a crown's outer leaves turn their upper faces to the light; else its upper
-		 * face starts toward the sky. Absent, every piece's flat side faces the sky.
-		 */
-		readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
-	};
 }
 
 /**

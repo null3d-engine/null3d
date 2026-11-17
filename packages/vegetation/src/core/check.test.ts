@@ -237,9 +237,9 @@ describe('the record check', () => {
 			[0.5, 0],
 			[-1, 0],
 		] as unknown as readonly [number, number][])
-			expect(
-				speciesProblems(withPlanes(planes)).some((p) => p.startsWith('lod.cardPlanes')),
-			).toBe(true);
+			expect(speciesProblems(withPlanes(planes)).some((p) => p.startsWith('lod.cardPlanes'))).toBe(
+				true,
+			);
 		const withCuts = (cardCuts: NonNullable<Species['lod']['cardCuts']>): Species => ({
 			...template,
 			lod: { ...template.lod, cardCuts },

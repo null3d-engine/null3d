@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
-import type { PlantAsset } from '../asset.ts';
-import type { SpeciesKitData } from '../core/kit.ts';
+import type { PlantAsset, SpeciesKitData } from '../asset.ts';
 import { farCardLift, farGrid } from './impostor.ts';
 
 /** A kit whose record's second level is the full level a capped one is measured against. */

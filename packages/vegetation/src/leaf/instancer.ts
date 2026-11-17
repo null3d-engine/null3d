@@ -498,8 +498,7 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 	if (!shoots || kit.prototypes.length === 0) return rows;
 	// A scaffold plant's foliage stands at its sockets, where its foliage masses put it: no shade or
 	// sky line thins it afterwards.
-	if (record.growth.model === 'scaffold' || record.growth.model === 'frame')
-		return socketRows(input, record.growth);
+	if (record.growth.model === 'scaffold') return socketRows(input, record.growth);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(seed, salt, variant * 64 + purpose, a, b);
 	const pick = (purpose: number, a = 0, b = 0) => hashAt(seed, salt, variant * 64 + purpose, a, b);

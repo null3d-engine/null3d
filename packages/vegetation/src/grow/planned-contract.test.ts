@@ -2,9 +2,9 @@
 // the oak plan names each case and its pass rule. The quick set is seed 11 and runs at each push; the
 // full set adds seeds 3, 7, 19 and 23 at the checkpoints. Set NULL3D_CONTRACT_FULL=1 for the full set.
 //
-// The anchor is today's oak: the directed frame record, grown at the same commit and seed beside the
-// planned oak. A0 and the fill target (F1) compare the two, so they follow the frame as it moves.
-// The fill target is a target for the grower, not a gate: the eye decides.
+// Every case grows the registered planned oak. A case prints its figures beside its pass rule, so a
+// move is read beside the change that made it; the fill target is a target for the grower, not a
+// gate: the eye decides.
 import { describe, expect, it, spyOn } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
@@ -19,9 +19,7 @@ import {
 	loadPlantCode,
 	plantsGrown,
 } from '../generate';
-import { planFrame } from '../grow/frame';
 import * as sparseModule from '../grow/sparse';
-import { rowSockets } from '../grow/sparse';
 import * as budgetModule from '../lod/budget';
 
 /** Whether the run states the full set of seeds. */
@@ -88,42 +86,31 @@ const SWEEP_FLOORS: Readonly<Record<number, number>> = {
  */
 const T1_BASE_MS = 2308;
 
-/** The fill target's tolerances, frozen at C1: the median rows a clump holds, and its spread. */
-const FILL = { median: 0.15, spread: 0.25, inner: 0.05, sky: 0.05, cover: 0.02 } as const;
-
 /** A budget for a case that grows many plants: a busy machine takes minutes. */
 const LONG = scaledBudget(180_000);
 
-/** The oak's planned kit and its anchor kit, built once. */
-const kits = new Map<string, Promise<SpeciesKitData>>();
+/** The oak's planned kit, built once. */
+let plannedKit: Promise<SpeciesKitData> | undefined;
 
-/** The two records the contract grows: the planned oak and the directed frame it replaces. */
-async function moduleOf(kind: 'planned' | 'anchor'): Promise<SpeciesModule> {
-	if (kind === 'planned') {
-		const { loadSpecies } = await import('../core/registry');
-		return (await loadSpecies('pedunculate-oak')) as SpeciesModule;
-	}
-	const record = (await import('../species/pedunculate-oak/directed')).directed;
-	const textures = (await import('@null3d/vegetation-textures/pedunculate-oak')).files;
-	return { record, textures } as SpeciesModule;
+/** The record the contract grows: the registered planned oak. */
+async function moduleOf(): Promise<SpeciesModule> {
+	const { loadSpecies } = await import('../core/registry');
+	return (await loadSpecies('pedunculate-oak')) as SpeciesModule;
 }
 
-/** A species' kit at the low tier, built once. The planned kit grows the oak's planned form. */
-function kitOf(kind: 'planned' | 'anchor'): Promise<SpeciesKitData> {
-	let kit = kits.get(kind);
-	if (!kit) {
-		kit = (async () => {
-			const module = await moduleOf(kind);
+/** The oak's planned kit at the low tier, built once. */
+function kitOf(): Promise<SpeciesKitData> {
+	if (!plannedKit)
+		plannedKit = (async () => {
+			const module = await moduleOf();
 			await loadPlantCode(module.record);
 			return buildKitNow(module, {
 				placeholders: 'missing',
 				detail: 'low',
-				...(kind === 'planned' ? { form: 'planned' } : {}),
+				form: 'planned',
 			});
 		})();
-		kits.set(kind, kit);
-	}
-	return kit;
+	return plannedKit;
 }
 
 /** The options one plant grows from. */
@@ -138,15 +125,11 @@ interface Request {
 const grown = new Map<string, PlantAsset>();
 
 /** One plant of the planned oak, kept by its request. */
-async function plant(
-	seed: number,
-	request: Request,
-	kind: 'planned' | 'anchor' = 'planned',
-): Promise<PlantAsset> {
-	const key = `${kind}|${seed}|${request.maturity ?? 1}|${request.sparse ?? 0}|${request.maxTriangles ?? 'none'}|${request.season ?? 'default'}`;
+async function plant(seed: number, request: Request): Promise<PlantAsset> {
+	const key = `${seed}|${request.maturity ?? 1}|${request.sparse ?? 0}|${request.maxTriangles ?? 'none'}|${request.season ?? 'default'}`;
 	const kept = grown.get(key);
 	if (kept) return kept;
-	const kit = await kitOf(kind);
+	const kit = await kitOf();
 	const asset = growPlantNow(kit, {
 		seed,
 		variant: 0,
@@ -174,15 +157,6 @@ function median(values: readonly number[]): number {
 	return sorted.length % 2 === 0
 		? ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2
 		: (sorted[middle] as number);
-}
-
-/** The quartile range of a list, as its spread. */
-function spreadOf(values: readonly number[]): number {
-	const sorted = [...values].sort((a, b) => a - b);
-	if (sorted.length === 0) return 0;
-	const at = (p: number) =>
-		sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] as number;
-	return at(0.75) - at(0.25);
 }
 
 /** How far a numbered value stands from another, as a share of the other. */
@@ -385,142 +359,6 @@ function overlap(a: Uint8Array, b: Uint8Array): number {
 	return either === 0 ? 1 : both / either;
 }
 
-/** One clump of the fill target: a place with a radius and the socket places that fill it. */
-interface Clump {
-	readonly id: number;
-	readonly centre: readonly [number, number, number];
-	readonly radius: number;
-	readonly sockets: number[];
-}
-
-/**
- * The adult plan's clumps: the frame's own bough-end patches, before the fine fill replaces them.
- * The planned grower names its own clumps the same way, one `lobe` id to a clump.
- */
-async function anchorClumps(
-	seed: number,
-): Promise<{ clumps: readonly Clump[]; ofBud: Map<number, number> }> {
-	const module = await moduleOf('anchor');
-	const record = module.record;
-	const input = { record, seed, variant: 0, season: record.seasons.default } as never;
-	// The third argument asks for the stated patches, before the fine fill replaces them. A head
-	// that does not take it yet reports every fine patch, which the fill target notes.
-	const planOf = planFrame as unknown as (
-		spec: never,
-		input: never,
-		fill?: boolean,
-	) => ReturnType<typeof planFrame>;
-	const plan = planOf((record.growth as unknown as { frame: never }).frame, input, false);
-	const clumps: Clump[] = plan.patches.map((patch, id) => ({
-		id,
-		centre: patch.centre as [number, number, number],
-		radius: Math.max(patch.width, patch.depth) / 2,
-		sockets: [],
-	}));
-	const asset = await plant(seed, {}, 'anchor');
-	const { buds } = asset.skeleton;
-	const ofBud = new Map<number, number>();
-	for (let b = 0; b < buds.count; b++) {
-		const at: [number, number, number] = [
-			buds.position[b * 3] as number,
-			buds.position[b * 3 + 1] as number,
-			buds.position[b * 3 + 2] as number,
-		];
-		let nearest = 0;
-		let distance = Number.POSITIVE_INFINITY;
-		for (let c = 0; c < clumps.length; c++) {
-			const d = away(at, (clumps[c] as Clump).centre);
-			if (d < distance) {
-				distance = d;
-				nearest = c;
-			}
-		}
-		ofBud.set(b, nearest);
-		clumps[nearest]?.sockets.push(b);
-	}
-	return { clumps, ofBud };
-}
-
-/** The planned plant's clumps, from its own table, and the clump each socket fills. */
-function plannedClumps(
-	asset: PlantAsset,
-): { clumps: readonly Clump[]; ofBud: Map<number, number> } | undefined {
-	const table = asset.skeleton.clumps;
-	const sockets = asset.skeleton.buds.sockets;
-	if (!table || !sockets) return undefined;
-	const byId = new Map<number, Clump>();
-	const clumps = table.map((entry) => {
-		const clump: Clump = { id: entry.id, centre: entry.centre, radius: entry.radius, sockets: [] };
-		byId.set(entry.id, clump);
-		return clump;
-	});
-	const ofBud = new Map<number, number>();
-	for (let b = 0; b < asset.skeleton.buds.count; b++) {
-		const clump = byId.get(sockets.lobe[b] as number);
-		if (!clump) continue;
-		ofBud.set(b, clump.id);
-		clump.sockets.push(b);
-	}
-	return { clumps, ofBud };
-}
-
-/** The fill measures of a clump table: rows a clump holds, the inner-half share, and the sky bins. */
-interface FillFigures {
-	readonly clumps: number;
-	readonly medianRows: number;
-	readonly spreadRows: number;
-	readonly inner: number;
-	readonly sky: readonly number[];
-}
-
-function fillFigures(
-	asset: PlantAsset,
-	table: { readonly clumps: readonly Clump[]; readonly ofBud: Map<number, number> },
-): FillFigures {
-	const rows = asset.shoots;
-	const rowSocket = rowSockets(asset.skeleton, rows);
-	const rowsOf = new Map<number, number>();
-	if (rowSocket)
-		for (let r = 0; r < rows.count; r++) {
-			const clump = table.ofBud.get(rowSocket[r] as number);
-			if (clump === undefined) continue;
-			rowsOf.set(clump, (rowsOf.get(clump) ?? 0) + 1);
-		}
-	const inner: number[] = [];
-	for (const clump of table.clumps) {
-		let within = 0;
-		for (const b of clump.sockets) {
-			const at: [number, number, number] = [
-				asset.skeleton.buds.position[b * 3] as number,
-				asset.skeleton.buds.position[b * 3 + 1] as number,
-				asset.skeleton.buds.position[b * 3 + 2] as number,
-			];
-			if (away(at, clump.centre) <= clump.radius / 2) within++;
-		}
-		if (clump.sockets.length > 0) inner.push(within / clump.sockets.length);
-	}
-	const rowsPer = table.clumps.map((clump) => rowsOf.get(clump.id) ?? 0);
-	return {
-		clumps: table.clumps.length,
-		medianRows: median(rowsPer),
-		spreadRows: spreadOf(rowsPer),
-		inner: inner.length === 0 ? 0 : inner.reduce((s, v) => s + v, 0) / inner.length,
-		sky: skyBins(asset),
-	};
-}
-
-/** The rows' sky share in five equal bins. */
-function skyBins(asset: PlantAsset): number[] {
-	const bins = [0, 0, 0, 0, 0];
-	const rows = asset.shoots;
-	for (let r = 0; r < rows.count; r++) {
-		const share = (rows.sky[r] as number) / 250;
-		const bin = Math.min(4, Math.max(0, Math.floor(share * 5)));
-		bins[bin] = (bins[bin] as number) + 1;
-	}
-	return bins.map((n) => n / Math.max(1, rows.count));
-}
-
 /** The planned growth's fruit and flower data, when the record states it. */
 interface GrowthOptions {
 	readonly fruitFrom?: number;
@@ -533,12 +371,8 @@ function growthOf(kit: SpeciesKitData): GrowthOptions {
 }
 
 /** A fresh growth of one request, uncached, so a case that measures growth itself starts clean. */
-async function freshPlant(
-	kind: 'planned' | 'anchor',
-	seed: number,
-	request: Request,
-): Promise<PlantAsset> {
-	const kit = await kitOf(kind);
+async function freshPlant(seed: number, request: Request): Promise<PlantAsset> {
+	const kit = await kitOf();
 	forgetGrownPlants();
 	return growPlantNow(kit, {
 		seed,
@@ -558,7 +392,7 @@ const ladderSpy = spyOn(budgetModule, 'levelWithin');
 
 describe('the planned oak contract', () => {
 	it('loads the planned record, with an address on every element', async () => {
-		const kit = await kitOf('planned');
+		const kit = await kitOf();
 		expect(kit.record.growth.model).toBe('planned');
 		// The cases that compare one plant with another match elements by this address, so a model
 		// that leaves it out fails here rather than passing on an accidental index.
@@ -571,8 +405,8 @@ describe('the planned oak contract', () => {
 	it(
 		'M0: m 0 is empty and returns in under a millisecond',
 		async () => {
-			const kit = await kitOf('planned');
-			const empty = await freshPlant('planned', HOME, { maturity: 0 });
+			const kit = await kitOf();
+			const empty = await freshPlant(HOME, { maturity: 0 });
 			expect([empty.skeleton.axes.count, empty.shoots.count]).toEqual([0, 0]);
 			expect(empty.stats.triangles).toEqual([0, 0, 0]);
 			expect(extrasOf(empty)).toBe(0);
@@ -602,9 +436,9 @@ describe('the planned oak contract', () => {
 	it(
 		'D0: no maturity given is the same bytes as m 1',
 		async () => {
-			const kit = await kitOf('planned');
+			const kit = await kitOf();
 			const plain = growPlantNow(kit, { seed: HOME, variant: 0, near: false, detail: 'low' });
-			const one = await freshPlant('planned', HOME, { maturity: 1 });
+			const one = await freshPlant(HOME, { maturity: 1 });
 			expect(plantAssetDigest(plain)).toBe(plantAssetDigest(one));
 		},
 		LONG,
@@ -613,7 +447,7 @@ describe('the planned oak contract', () => {
 	it(
 		'M1: the maturity curve rises in height, width and girth, and leaf area falls only by what sheds',
 		async () => {
-			const kit = await kitOf('planned');
+			const kit = await kitOf();
 			for (const seed of SEEDS) {
 				let before: PlantAsset | undefined;
 				let beforeLeaf = 0;
@@ -660,7 +494,7 @@ describe('the planned oak contract', () => {
 	it(
 		'M2: a 0.01 step moves leaf area, triangles and outline by a bounded amount',
 		async () => {
-			const kit = await kitOf('planned');
+			const kit = await kitOf();
 			for (const seed of SEEDS)
 				for (const maturity of [0.1, 0.3, 0.5, 0.7, 0.9])
 					for (const max of [undefined, 5000, 1000]) {
@@ -760,7 +594,7 @@ describe('the planned oak contract', () => {
 	it(
 		'M4: acorns and catkins ramp from their fruiting and flowering maturity',
 		async () => {
-			const kit = await kitOf('planned');
+			const kit = await kitOf();
 			const growth = growthOf(kit);
 			expect(typeof growth.fruitFrom).toBe('number');
 			const from = growth.fruitFrom as number;
@@ -816,7 +650,7 @@ describe('the planned oak contract', () => {
 	it(
 		'S1: sparseness thins branches and leaves at every step',
 		async () => {
-			const kit = await kitOf('planned');
+			const kit = await kitOf();
 			for (const seed of SEEDS)
 				for (const maturity of [1, 0.5]) {
 					const levels = [0, 0.25, 0.5, 0.75, 1];
@@ -857,8 +691,8 @@ describe('the planned oak contract', () => {
 		async () => {
 			for (const seed of SEEDS)
 				for (const maturity of [1, 0.5]) {
-					const plain = await freshPlant('planned', seed, { maturity, sparse: 0 });
-					const thin = await freshPlant('planned', seed, { maturity, sparse: 1 });
+					const plain = await freshPlant(seed, { maturity, sparse: 0 });
+					const thin = await freshPlant(seed, { maturity, sparse: 1 });
 					const at = `${seed} ${maturity}`;
 					const plainAxes = new Map<number, number>();
 					for (let a = 0; a < plain.skeleton.axes.count; a++)
@@ -888,7 +722,7 @@ describe('the planned oak contract', () => {
 			for (const seed of SEEDS) {
 				const plants = [] as PlantAsset[];
 				for (const sparse of [0, 0.25, 0.5, 0.75, 1])
-					plants.push(await freshPlant('planned', seed, { maturity: 1, sparse }));
+					plants.push(await freshPlant(seed, { maturity: 1, sparse }));
 				for (let i = 1; i < plants.length; i++) {
 					const denser = plants[i - 1] as PlantAsset;
 					const sparser = plants[i] as PlantAsset;
@@ -977,107 +811,12 @@ describe('the planned oak contract', () => {
 	);
 
 	it(
-		'A0: orders 0 to 2 and the clumps match the frame at the same commit and seed',
-		async () => {
-			const anchor = await plant(HOME, {}, 'anchor');
-			const planned = await plant(HOME, {});
-			const anchorBones = [] as number[];
-			for (let a = 0; a < anchor.skeleton.axes.count; a++)
-				if ((anchor.skeleton.axes.order[a] as number) <= 2) anchorBones.push(a);
-			const plannedBones: number[] = [];
-			for (let a = 0; a < planned.skeleton.axes.count; a++)
-				if ((planned.skeleton.axes.order[a] as number) <= 2) plannedBones.push(a);
-			expect(plannedBones.length).toBe(anchorBones.length);
-			// Every anchor bone finds a planned bone at its place, its radius and its order.
-			for (const a of anchorBones) {
-				const first = anchor.skeleton.axes.first[a] as number;
-				const last = anchor.skeleton.axes.last[a] as number;
-				const order = anchor.skeleton.axes.order[a] as number;
-				let nearest = -1;
-				let distance = Number.POSITIVE_INFINITY;
-				for (const b of plannedBones) {
-					if ((planned.skeleton.axes.order[b] as number) !== order) continue;
-					const d = away(
-						nodeAt(anchor, first),
-						nodeAt(planned, planned.skeleton.axes.first[b] as number),
-					);
-					if (d < distance) {
-						distance = d;
-						nearest = b;
-					}
-				}
-				expect([a, distance <= 0.01]).toEqual([a, true]);
-				expect([
-					a,
-					away(
-						nodeAt(anchor, last),
-						nodeAt(planned, planned.skeleton.axes.last[nearest] as number),
-					) <= 0.01,
-				]).toEqual([a, true]);
-				expect([
-					a,
-					off(
-						planned.skeleton.radius[planned.skeleton.axes.last[nearest] as number] as number,
-						anchor.skeleton.radius[last] as number,
-					) <= 0.01,
-				]).toEqual([a, true]);
-			}
-			// The clumps are the adult plan's own bough-end patches, at the same centres and radii,
-			// and the planned plant names each socket's clump by `lobe`.
-			const anchorTable = await anchorClumps(HOME);
-			const plannedTable = plannedClumps(planned);
-			expect(plannedTable !== undefined).toBe(true);
-			expect(plannedTable?.clumps.length).toBe(anchorTable.clumps.length);
-			for (let i = 0; i < anchorTable.clumps.length; i++) {
-				const anchorClump = anchorTable.clumps[i] as Clump;
-				const clump = plannedTable?.clumps[i];
-				expect([
-					i,
-					clump?.id,
-					clump !== undefined ? away(clump.centre, anchorClump.centre) <= 0.01 : false,
-				]).toEqual([i, clump?.id, true]);
-				expect([
-					i,
-					clump !== undefined ? Math.abs(clump.radius - anchorClump.radius) <= 0.01 : false,
-				]).toEqual([i, true]);
-			}
-		},
-		LONG,
-	);
-
-	it(
-		'F1: the fill target, measured against the frame at the same commit and seed',
-		async () => {
-			const anchor = await plant(HOME, {}, 'anchor');
-			const planned = await plant(HOME, {});
-			const target = fillFigures(anchor, await anchorClumps(HOME));
-			const plannedTable = plannedClumps(planned);
-			const candidate = plannedTable ? fillFigures(planned, plannedTable) : undefined;
-			console.log(`F1 target (the frame's clumps): ${JSON.stringify(target)}`);
-			console.log(
-				`F1 candidate (planned): ${candidate ? JSON.stringify(candidate) : 'no clumps on the skeleton'}`,
-			);
-			if (candidate) {
-				// The target is for the grower, not a gate: print the distance and let the eye decide.
-				console.log(
-					`F1 distances: median ${(off(candidate.medianRows, target.medianRows) * 100).toFixed(1)}%, spread ${(off(candidate.spreadRows, target.spreadRows) * 100).toFixed(1)}%, inner ${Math.abs(candidate.inner - target.inner).toFixed(3)}, sky ${candidate.sky.map((v, i) => Math.abs(v - (target.sky[i] as number)).toFixed(3)).join('/')}`,
-				);
-			}
-			console.log(
-				`F1 crown cover tolerance ${FILL.cover}: read from the CPU preview over 01 in the verdict.`,
-			);
-			expect(target.clumps).toBeGreaterThan(0);
-		},
-		LONG,
-	);
-
-	it(
 		'G1: made equals delivered plus shed, and stays within the plan',
 		async () => {
 			for (const seed of SEEDS)
 				for (const request of [{}, { maturity: 0.3, sparse: 1 }, { maxTriangles: 1000 }] as const) {
-					const kit = await kitOf('planned');
-					const asset = await freshPlant('planned', seed, request);
+					const kit = await kitOf();
+					const asset = await freshPlant(seed, request);
 					const made = asset.skeleton.made;
 					const shed = asset.skeleton.shed;
 					expect(typeof made).toBe('number');
@@ -1113,7 +852,7 @@ describe('the planned oak contract', () => {
 	it(
 		'G2: no cut path runs, and the kept plant is keyed by maturity, sparseness and the maximum',
 		async () => {
-			const kit = await kitOf('planned');
+			const kit = await kitOf();
 			const requests: readonly Request[] = [
 				{},
 				{ maturity: 0.3, sparse: 1 },
@@ -1200,7 +939,7 @@ describe('the planned oak contract', () => {
 		'T1: the sparse, capped and combined growths take a fifth, a tenth and a twentieth',
 		async () => {
 			// The speed table is gated on the full set; the quick set prints the times it measures.
-			const kit = await kitOf('planned');
+			const kit = await kitOf();
 			const settings: readonly (readonly [string, Request])[] = [
 				['default', {}],
 				['(0.3, 1)', { maturity: 0.3, sparse: 1 }],
