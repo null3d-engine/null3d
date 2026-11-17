@@ -53,6 +53,8 @@ export function createMeadow(
 	let planted: Piece[] = [];
 	/** The field's fill: a build that a newer one overtook stands nothing. */
 	const fill = createFill<SpeciesId>();
+	/** Whether the field's signs stand: they name the species, which no control changes. */
+	let signsStand = false;
 	/** The page's bar that shows while the meadow grows, counting the species it has finished. */
 	const growing = (() => {
 		// A sketch runs in a worker, where the page has no document, so the bar is the page's: it is
@@ -74,6 +76,9 @@ export function createMeadow(
 	})();
 
 	return async function growMeadow(seed: number): Promise<void> {
+		// The field changes hands before any work, so a build whose species fail to load has still
+		// stopped the build before it: no plant of the older build lands in a field this one cleared.
+		const build = fill.take();
 		for (const piece of planted) piece.destroy();
 		planted = [];
 		const { season, sparse, maxTriangles } = options.controls();
@@ -81,9 +86,12 @@ export function createMeadow(
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
 		// The bar shows on the first build too, so the meadow's first plants announce their progress
-		// once the sketch has started rather than only on a regrow.
-		growing.begin();
-		growing.set(0, ids.length);
+		// once the sketch has started rather than only on a regrow. A build that a newer one took the
+		// field from leaves the bar to the newer build.
+		if (build.current()) {
+			growing.begin();
+			growing.set(0, ids.length);
+		}
 		/** Where one species' plant stands: its column and row in the meadow's grid. */
 		const slotOf = (index: number): [number, number] => [
 			((index % across) - (across - 1) / 2) * step,
@@ -91,69 +99,87 @@ export function createMeadow(
 		];
 		// The species load together, and every sign stands as soon as its record is in hand: the meadow
 		// is named before any plant starts to grow, so the names are there while the first build runs.
-		const modules = await Promise.all(ids.map((id) => loadSpecies(id)));
-		ids.forEach((_id, index) => {
-			const record = modules[index]?.record;
-			if (!record) return;
-			const [x, z] = slotOf(index);
-			// The sign stands beside the plant's foot, clear of its trunk.
-			plantSign(ctx, record.name, record.latin, [x + 13, z + 6]);
-		});
+		// A species that fails to load is named and left out, rather than holding the meadow.
+		const modules = await Promise.all(
+			ids.map((id) =>
+				loadSpecies(id).catch((error: unknown) => {
+					console.error(`the meadow could not load ${id}`, error);
+					return undefined;
+				}),
+			),
+		);
+		if (!build.current()) return;
+		// The signs name the species, and no control changes them, so they stand on the first build
+		// and a regrow leaves them where they are.
+		if (!signsStand) {
+			ids.forEach((_id, index) => {
+				const record = modules[index]?.record;
+				if (!record) return;
+				const [x, z] = slotOf(index);
+				// The sign stands beside the plant's foot, clear of its trunk.
+				plantSign(ctx, record.name, record.latin, [x + 13, z + 6]);
+			});
+			signsStand = true;
+		}
 		// Load, prepare and grow every species at once, and stand each plant the moment its own build
 		// finishes: the field fills as the builds land rather than standing empty until the last one.
 		// One species that fails is named and left out; it must not hold the meadow or its bar.
-		await fill(ids, {
-			grow: async (id, index, current) => {
-				if (!current()) return undefined;
-				const module = (modules[index] ?? (await loadSpecies(id))) as (typeof modules)[number];
-				// The meadow carries several species at once, and at close range every copy near the camera
-				// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
-				// level's triangles, which is what made a pan after a zoom crawl.
-				const kit = await prepareSpecies(ctx, module, {
-					detail: 'medium',
-					placeholders: 'missing',
-				});
-				const asset = await growPlant(kit, {
-					seed,
-					variant: index % Math.max(1, kit.record.variants),
-					near: true,
-					season,
-					sparse,
-					maxTriangles,
-				});
-				// The plant stands at its own slot as soon as it is grown; its materials are made
-				// here, so the field shows every plant that has finished while the others grow.
-				const materials = plantMaterials(ctx, kit, {});
-				const [x, z] = slotOf(index);
-				const piece = placePlants(
-					ctx,
-					kit,
-					[asset],
-					{
-						count: 1,
-						position: new Float32Array([x, 0, z]),
-						turn: new Float32Array([index * 0.4]),
-						scale: new Float32Array([1]),
-						variant: new Uint8Array([0]),
-					},
-					{ materials, view: { height: 1080, fov: 45 }, castShadows: true },
-				);
-				return { piece, plant: { x, z, height: asset.skeleton.height, name: kit.record.name } };
+		await fill.fill(
+			ids,
+			{
+				grow: async (id, index, current) => {
+					if (!current()) return undefined;
+					const module = modules[index] ?? (await loadSpecies(id));
+					// The meadow carries several species at once, and at close range every copy near the camera
+					// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
+					// level's triangles, which is what made a pan after a zoom crawl.
+					const kit = await prepareSpecies(ctx, module, {
+						detail: 'medium',
+						placeholders: 'missing',
+					});
+					const asset = await growPlant(kit, {
+						seed,
+						variant: index % Math.max(1, kit.record.variants),
+						near: true,
+						season,
+						sparse,
+						maxTriangles,
+					});
+					// The plant stands at its own slot as soon as it is grown; its materials are made
+					// here, so the field shows every plant that has finished while the others grow.
+					const materials = plantMaterials(ctx, kit, {});
+					const [x, z] = slotOf(index);
+					const piece = placePlants(
+						ctx,
+						kit,
+						[asset],
+						{
+							count: 1,
+							position: new Float32Array([x, 0, z]),
+							turn: new Float32Array([index * 0.4]),
+							scale: new Float32Array([1]),
+							variant: new Uint8Array([0]),
+						},
+						{ materials, view: { height: 1080, fov: 45 }, castShadows: true },
+					);
+					return { piece, plant: { x, z, height: asset.skeleton.height, name: kit.record.name } };
+				},
+				// Each species keeps its slot's place in the list, so a picker sees the meadow in its grid
+				// order whatever order the builds finish in. The picker hears of the field as it fills, so
+				// a double-click finds a plant that has already landed.
+				land: (grown) => {
+					planted = grown.map((item) => item.piece);
+					options.onPlants?.(grown.map((item) => item.plant));
+				},
+				// Count each species as it finishes, so the bar moves while the rest still grow.
+				progress: (done, total) => growing.set(done, total),
+				// A plant that a newer build overtook never joins a field that is no longer its own.
+				discard: (grown) => grown.piece.destroy(),
+				failed: (id, error) => console.error(`the meadow could not grow ${id}`, error),
+				// A build that a newer one overtook leaves the bar to the newer build.
+				settled: () => growing.end(),
 			},
-			// Each species keeps its slot's place in the list, so a picker sees the meadow in its grid
-			// order whatever order the builds finish in. The picker hears of the field as it fills, so
-			// a double-click finds a plant that has already landed.
-			land: (grown) => {
-				planted = grown.map((item) => item.piece);
-				options.onPlants?.(grown.map((item) => item.plant));
-			},
-			// Count each species as it finishes, so the bar moves while the rest still grow.
-			progress: (done, total) => growing.set(done, total),
-			// A plant that a newer build overtook never joins a field that is no longer its own.
-			discard: (grown) => grown.piece.destroy(),
-			failed: (id, error) => console.error(`the meadow could not grow ${id}`, error),
-			// A build that a newer one overtook leaves the bar to the newer build.
-			settled: () => growing.end(),
-		});
+			build,
+		);
 	};
 }

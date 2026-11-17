@@ -23,7 +23,7 @@ describe('createFill', () => {
 		const alpha = deferred<string>();
 		const beta = deferred<string>();
 		const landed: string[][] = [];
-		const running = fill(['alpha', 'beta'], {
+		const running = fill.fill(['alpha', 'beta'], {
 			grow: (id) => (id === 'alpha' ? alpha.promise : beta.promise),
 			land: (plants) => landed.push([...plants]),
 			progress: () => {},
@@ -39,23 +39,27 @@ describe('createFill', () => {
 		await running;
 	});
 
-	it('counts every finished species, and the last count reads the whole field', async () => {
+	it('counts each species as it finishes, and the last count reads the whole field', async () => {
 		const fill = createFill();
 		const progress: [number, number][] = [];
-		await fill(['alpha', 'beta'], {
+		await fill.fill(['alpha', 'beta'], {
 			grow: async (id) => `${id} plant`,
 			land: () => {},
 			progress: (done, total) => progress.push([done, total]),
 			discard: () => {},
 		});
-		expect(progress.at(-1)).toEqual([2, 2]);
+		// A count for every finished species, so the bar moves while the rest still grow.
+		expect(progress).toEqual([
+			[1, 2],
+			[2, 2],
+		]);
 	});
 
 	it('leaves the slot of a species that cannot grow empty, and the rest still land', async () => {
 		const fill = createFill();
 		const landed: string[][] = [];
 		const failed: string[] = [];
-		await fill(['alpha', 'beta'], {
+		await fill.fill(['alpha', 'beta'], {
 			grow: async (id) => {
 				if (id === 'beta') throw new Error('no seed left');
 				return 'alpha plant';
@@ -75,7 +79,7 @@ describe('createFill', () => {
 		const discarded: string[] = [];
 		let olderCount = 0;
 		let olderLanded = 0;
-		const older = fill(['alpha'], {
+		const older = fill.fill(['alpha'], {
 			grow: () => held.promise,
 			land: () => {
 				olderLanded++;
@@ -85,7 +89,7 @@ describe('createFill', () => {
 			},
 			discard: (plant) => discarded.push(plant),
 		});
-		await fill(['beta'], {
+		await fill.fill(['beta'], {
 			grow: async () => 'beta plant',
 			land: () => {},
 			progress: () => {},
@@ -103,7 +107,7 @@ describe('createFill', () => {
 		const fill = createFill();
 		const gate = deferred<void>();
 		const reads: boolean[] = [];
-		const older = fill(['alpha'], {
+		const older = fill.fill(['alpha'], {
 			grow: async (_id, _index, current) => {
 				const before = current();
 				await gate.promise;
@@ -114,7 +118,7 @@ describe('createFill', () => {
 			progress: () => {},
 			discard: () => {},
 		});
-		await fill(['beta'], {
+		await fill.fill(['beta'], {
 			grow: async () => 'beta plant',
 			land: () => {},
 			progress: () => {},
@@ -130,7 +134,7 @@ describe('createFill', () => {
 		const held = deferred<string>();
 		let olderSettled = 0;
 		let newerSettled = 0;
-		const older = fill(['alpha'], {
+		const older = fill.fill(['alpha'], {
 			grow: () => held.promise,
 			land: () => {},
 			progress: () => {},
@@ -139,7 +143,7 @@ describe('createFill', () => {
 				olderSettled++;
 			},
 		});
-		await fill(['beta'], {
+		await fill.fill(['beta'], {
 			grow: async () => 'beta plant',
 			land: () => {},
 			progress: () => {},
@@ -152,5 +156,48 @@ describe('createFill', () => {
 		await older;
 		expect(newerSettled).toBe(1);
 		expect(olderSettled).toBe(0);
+	});
+
+	it('takes the field before any work, so an older build stops at once', async () => {
+		const fill = createFill();
+		const held = deferred<string>();
+		const discarded: string[] = [];
+		let olderLanded = 0;
+		const older = fill.fill(['alpha'], {
+			grow: () => held.promise,
+			land: () => {
+				olderLanded++;
+			},
+			progress: () => {},
+			discard: (plant) => discarded.push(plant),
+		});
+		// The newer build claims the field before it loads anything, so the older build's plant is
+		// taken down even though the newer build has not grown a plant of its own yet.
+		const claim = fill.take();
+		expect(claim.current()).toBe(true);
+		held.resolve('alpha plant');
+		await older;
+		expect(discarded).toEqual(['alpha plant']);
+		expect(olderLanded).toBe(0);
+	});
+
+	it('grows under a claim taken earlier, and stands nothing once a newer claim exists', async () => {
+		const fill = createFill();
+		const claim = fill.take();
+		const landed: string[][] = [];
+		const running = fill.fill(
+			['alpha'],
+			{
+				grow: async () => 'alpha plant',
+				land: (plants) => landed.push([...plants]),
+				progress: () => {},
+				discard: () => {},
+			},
+			claim,
+		);
+		// A newer build claims the field before the older grow returns, so nothing lands.
+		fill.take();
+		await running;
+		expect(landed).toEqual([]);
 	});
 });

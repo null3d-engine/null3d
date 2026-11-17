@@ -29,7 +29,7 @@ species pass; a threshold taken from evidence names the evidence in its comment.
 | Nine species kept a stale frame-registration line | one invariant: a frame-grown species is in the list and a planned one is absent, for every registered species | the species tests |
 | A new record field could ship with a bad value | every registered species' record is run through the record check | the species tests |
 | A species run was drawn against another species' photographs | the review tool refuses a run whose reference folder names another species | the plant-review tests |
-| A demo drew its plants only after the last build, and a regrow mixed two builds' plants | the fill's tests: a plant lands as its own grow finishes, the list keeps the species' order, a species that cannot grow leaves its slot empty, and a fill that a newer one took the field from stands nothing | the vegetation demo's tests |
+| A demo drew its plants only after the last build, and a regrow mixed two builds' plants | the fill's tests: a plant lands as its own grow finishes, the list keeps the species' order, a species that cannot grow leaves its slot empty, a fill that a newer one took the field from stands nothing, and a claim taken before any work stops the build before it | the vegetation demo's tests |
 
 ## Look
 
@@ -40,4 +40,6 @@ factor and the plate's grain, recorded in D-365, D-366 and D-367 beside their pi
 
 The rule stands: a review fault lands with its test. All seven are written. The meadow's fault
 came after the streaming change let the field fill plant by plant. Its test reads that change:
-the fill is a module of its own, driven by held promises rather than a page.
+the fill is a module of its own, driven by held promises rather than a page. The meadow takes its
+claim on the field before it clears or loads anything, and the fill's tests hold the claim's own
+rules; the meadow's order of work is read in its code, not in a test.
