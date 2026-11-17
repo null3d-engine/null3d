@@ -12,9 +12,9 @@ import type { SpeciesKitData } from '../asset';
 import { dequantisePosition } from './quantise';
 
 /** How many rings a body lofts between the crown's base and its top. */
-const RINGS = 12;
+const RING_COUNT = 12;
 /** How many sectors round the body a ring holds. */
-const SECTORS = 24;
+const SECTOR_COUNT = 24;
 
 /**
  * One closed body of the leaf form's outer surface.
@@ -29,7 +29,10 @@ export function foliageEnvelope(
 	kit: SpeciesKitData,
 	asset: PlantAsset,
 	form: 0 | 1 | 2 = 0,
+	steps: { readonly rings?: number; readonly sectors?: number } = {},
 ): MeshArrays {
+	const RINGS = Math.max(2, Math.round(steps.rings ?? RING_COUNT));
+	const SECTORS = Math.max(3, Math.round(steps.sectors ?? SECTOR_COUNT));
 	const leaves = asset.levels[form]?.parts ?? [];
 	// A plant whose foliage is merged into its wood, as the willow's trailing whips are, hides its
 	// leaves in the wood part; its body then takes every part, the trunk standing inside it.
