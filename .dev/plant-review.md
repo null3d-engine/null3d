@@ -940,15 +940,21 @@ not when a reviewer believes it. A species that fails any check fails, however g
    store carries, each beside the same-named reference crop. A round that leaves a view uncompared fails coverage.
 2. Three close views of that form: inside the crown, at the trunk, and at a leaf's own scale, each beside its
    reference crop.
-3. The body: every drawn cluster's base within a cell of wood the level draws, and no row off a drawn carrier, at
+3. The distance ladder: the same full form drawn at every rung the reference store supports — the far card where the
+   page draws it, the first card level, the near form's own switch distance, and inside the crown — each rung beside
+   the reference's own view at that scale and labelled with its distance. A species passes only when every rung
+   passes, and a rung left uncompared fails. This is the look at all distances, and it is a hard requirement.
+4. The zoom: one continuous approach through the first card level, at the speed a page moves, with the grain and the
+   open sky inside their bars at every step. A crossing that jumps fails even where both of its ends pass.
+5. The body: every drawn cluster's base within a cell of wood the level draws, and no row off a drawn carrier, at
    every sparseness and every maximum. Rows whose carrier order the level drops are reported apart from these.
-4. The caps: at 400, 1,000 and 10,000 triangles the crown draws at every sparseness, the leaves hold the first share
+6. The caps: at 400, 1,000 and 10,000 triangles the crown draws at every sparseness, the leaves hold the first share
    of the allowance, and every level stays inside its maximum.
-5. The switch: the grain and the open sky either side of the first card level, inside the record's bars, at the
+7. The switch: the grain and the open sky either side of the first card level, inside the record's bars, at the
    from-below camera.
-6. The bake: each card's mask follows the shape the card stands for — a leaf for a broadleaf, a needle tuft for a
+8. The bake: each card's mask follows the shape the card stands for — a leaf for a broadleaf, a needle tuft for a
    needle species — and the needle species' card atlases differ from the broadleaves'.
-7. The colour: the crown's tone against its reference crop, found by isolating one cause at a time, never fitted to
+9. The colour: the crown's tone against its reference crop, found by isolating one cause at a time, never fitted to
    one picture's light.
 
 Every check names a test in the repository or a coverage rule in the review tool. A check with neither is not a gate.
