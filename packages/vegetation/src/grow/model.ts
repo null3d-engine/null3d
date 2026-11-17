@@ -19,9 +19,10 @@
 //             bends), its girth at the foot and the tip, and whether it is body: drawn at every
 //             state, so a piece that hangs from it is never left without wood.
 //   sockets   One for each piece. Each states the axis that carries it, the piece's order, its
-//             share along that axis, its place and direction, the piece's index in the kit's class
-//             order, its scale against the kit's piece, its keep rank (0 for the least plant's)
-//             and its group (a shoot thins whole, with every piece on it).
+//             share along that axis, its place and direction and, where it is not the world's
+//             down, its lower side, the piece's index in the kit's class order, its scale against
+//             the kit's piece, its keep rank (0 for the least plant's) and its group (a shoot
+//             thins whole, with every piece on it).
 //   pieces    One for each kit class. Each states its name, length, width and depth, the height it
 //             stands above its socket and its reach out from it, and the record's own figures by
 //             name. The crown box is read from these, never stated beside them.
@@ -98,6 +99,12 @@ export interface ModelSocket {
 	/** Its attach point and the way it points, in plant space. */
 	readonly at: Vec3;
 	readonly direction: Vec3;
+	/**
+	 * The piece's lower side where it is not the world's down, as a rolled leaf's is. The shared
+	 * grow turns the socket by the direction and this side, so a leaf's face reads on the plant.
+	 * Absent, the grow reads the side from the direction.
+	 */
+	readonly face?: Vec3;
 	/** The piece's index among the kit's pieces. */
 	readonly piece: number;
 	/** The piece's size against the one the kit holds. */
