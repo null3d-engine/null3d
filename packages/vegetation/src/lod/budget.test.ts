@@ -98,7 +98,7 @@ function trianglesOf(asset: PlantAsset, level: 0 | 1 | 2, name: string): number 
 const kits = new Map<string, SpeciesKitData>();
 
 /** A species' kit at the low tier, built once. */
-async function kitOf(id: (typeof SPECIES)[number]): Promise<SpeciesKitData> {
+async function kitOf(id: Parameters<typeof loadSpecies>[0]): Promise<SpeciesKitData> {
 	let kit = kits.get(id);
 	if (!kit) {
 		const module = await loadSpecies(id);
@@ -390,6 +390,41 @@ describe('the triangle maximum option', () => {
 			expect(plant.capTriangles).toBe(max);
 			for (const level of [0, 1, 2] as const)
 				expect([level, partTotal(plant.stats.parts[level]) <= max]).toEqual([level, true]);
+		},
+		LONG,
+	);
+
+	it(
+		"keeps a tuft's stool through the cap, at the levels whose allowance pays it",
+		async () => {
+			// A plant of written pieces draws its base as the grower's foliage part: the meadow grass's
+			// stool and the sedge's. The capped path carries it, and loses it only at a nearest level
+			// whose allowance cannot pay it, where the level draws its cards instead.
+			for (const id of ['meadow-grass', 'sedge'] as const) {
+				const kit = await kitOf(id);
+				const base = { seed: 11, variant: 0, near: true, sparse: 0 } as const;
+				const full = growPlantNow(kit, base);
+				const stool = (plant: PlantAsset, level: 0 | 1 | 2) =>
+					plant.levels[level].parts.find((part) => part.name === 'foliage')?.arrays.indices
+						.length ?? 0;
+				// The uncapped card levels hold the stool, which the cap must keep.
+				expect([id, stool(full, 2) > 0]).toEqual([id, true]);
+				for (const max of [400, 500, 1_000, 2_000] as const) {
+					const plant = growPlantNow(kit, { ...base, maxTriangles: max });
+					const at = `${id} max ${max}`;
+					for (const level of [1, 2] as const)
+						expect([at, level, stool(plant, level)]).toEqual([at, level, stool(full, level)]);
+					// The nearest level carries the whole stool or none of it.
+					const own = stool(plant, 0);
+					expect([at, own === 0 || own === stool(full, 0)]).toEqual([at, true]);
+					for (const level of [0, 1, 2] as const)
+						expect([at, level, partTotal(plant.stats.parts[level]) <= max]).toEqual([
+							at,
+							level,
+							true,
+						]);
+				}
+			}
 		},
 		LONG,
 	);
