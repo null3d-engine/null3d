@@ -66,9 +66,6 @@ export const SERIES_OPEN = 0.01;
 /** The slack under one point that the bar allows, so a fall of exactly one point still passes. */
 const SERIES_SLACK = 0.0005;
 
-/** The patch whose step a never-thins fault is charged on: the one that sees the crown. */
-export const SERIES_JUDGED_FIELD = '4 m patch';
-
 /** The least a plant may draw wide in a picture for its figures to mean anything, in pixels. */
 export const LEAST_PLANT_WIDTH = 24;
 
@@ -941,8 +938,10 @@ export interface SweepSeriesRow {
 	readonly distance: number;
 	readonly level: number | null;
 	readonly covered: number | null;
-	/** The patch the share was read on, such as `4 m patch`; a step is compared only within one. */
+	/** The patch the share was read on; a step is compared only within one. */
 	readonly field: string | null;
+	/** Whether a fall on this step is charged: false where the frame capped the patch to a crop. */
+	readonly charged: boolean;
 	readonly change: number | null;
 	readonly verdict: 'pass' | 'fail' | 'unmeasured';
 	readonly reason: string;
@@ -975,13 +974,13 @@ export function sweepSeriesRows(pictures: readonly SweepSeriesRow[]): readonly S
 			verdict = 'unmeasured';
 			reason = `unmeasured: ${picture.reason === '' ? 'no covered share read at this distance' : picture.reason}`;
 		} else if (change !== null && change < -SERIES_OPEN - SERIES_SLACK) {
-			// The fault is charged only on the four-metre field, the patch that sees the crown; a
-			// close step's smaller patch sees a crop, so its fall is reported and not charged.
-			if (picture.field === SERIES_JUDGED_FIELD) {
+			// A frame-capped patch sees a crop of the crown, so a fall read on it is reported and
+			// not charged; a patch the frame did not cap sees the crown and carries the charge.
+			if (picture.charged) {
 				verdict = 'fail';
 				reason = `the crown's covered share falls ${(-change).toFixed(3)} from ${previous?.file ?? 'the step before'} (${previous?.covered?.toFixed(3)} to ${picture.covered?.toFixed(3)})`;
 			} else if (reason === '')
-				reason = `it falls ${(-change).toFixed(3)} but is read on a ${picture.field ?? 'smaller patch'}: the crop cannot see a crown fall, so it is not charged`;
+				reason = `it falls ${(-change).toFixed(3)} but is read on a ${picture.field ?? 'frame-capped patch'}: the crop cannot see a crown fall, so it is not charged`;
 		}
 		const row: SweepSeriesRow = { ...picture, change, verdict, reason };
 		rows.push(row);
@@ -1068,8 +1067,8 @@ export function sweepMarkdown(
 			'## The pull-back series',
 			'',
 			`A step fails only when it opens the crown by more than ${SERIES_OPEN.toFixed(3)}; a step that opens exactly ${SERIES_OPEN.toFixed(3)} passes.`,
-			`A close step reads the largest fixed patch that fits its frame, and a step is compared only with one read on the same patch; a change of patch is named and not compared across.`,
-			`A never-thins fault is charged only on a ${SERIES_JUDGED_FIELD}; a smaller patch reports its figures and is not charged, because it sees a crop of the crown.`,
+			`Each step reads the largest fixed patch that fits its frame and spans the pixels a figure needs, from sixteen metres down to one; a step is compared only with a step on the same patch, and a change of patch is named and not compared across.`,
+			`A patch the frame capped to a crop reports its fall and is not charged; a patch the frame did not cap sees the crown and carries the charge.`,
 			'',
 		);
 		lines.push(`| ${SERIES_COLUMNS.join(' | ')} |`);
@@ -1333,8 +1332,12 @@ export function patchCorners(
  * patch's world size is fixed, so the figure is the crown's density and does not move with the
  * plant's box as the camera pulls back.
  */
-/** The patch sizes a close step may read on, largest first. */
-export const PATCH_SIZES = [4, 2, 1] as const;
+/**
+ * The patch sizes a series step may read on, largest first. A far step needs a large patch to
+ * span a readable number of pixels at the crown, and a close step needs a small one to fit the
+ * frame; the largest that fits and reads is the step's field.
+ */
+export const PATCH_SIZES = [16, 8, 4, 2, 1] as const;
 
 /**
  * The largest fixed patch whose corners stand in the frame, read from the matte, with the size it
@@ -1345,16 +1348,29 @@ export function fittingPatch(
 	runDir: string,
 	frame: RunFrame,
 	sizes: readonly number[] = PATCH_SIZES,
-): { readonly value: number | null; readonly metres: number | null; readonly note: string } {
+): {
+	readonly value: number | null;
+	readonly metres: number | null;
+	readonly note: string;
+	/** Whether the frame refused a larger patch, so the chosen one sees a crop of the crown. */
+	readonly capped: boolean;
+} {
 	let note: string | null = null;
+	let largerNote: string | null = null;
 	for (const metres of sizes) {
 		const read = patchCover(runDir, frame, metres);
-		if (read.value !== null) return { ...read, metres };
-		// The first refusal is the largest patch's, and its span is the figure a reader needs;
-		// each smaller patch's span only repeats the same conclusion.
+		if (read.value !== null) {
+			// The patch just larger than this one was refused: if it left the frame, this patch is
+			// the frame's crop and its fall is not the crown's; if it was too small, this patch is
+			// the first that can read, and it sees the crown at this distance.
+			const capped = largerNote !== null && largerNote.includes('leaves the frame');
+			return { ...read, metres, capped };
+		}
+		// The first refusal is the largest patch's, and its span is the figure a reader needs.
 		note ??= read.note;
+		largerNote = read.note;
 	}
-	return { value: null, metres: null, note: note ?? 'no patch fits the frame' };
+	return { value: null, metres: null, capped: false, note: note ?? 'no patch fits the frame' };
 }
 
 export function patchCover(
@@ -1520,6 +1536,7 @@ export function sweepRun(
 				level: null,
 				covered: null,
 				field: null,
+				charged: true,
 				change: null,
 				verdict: 'fail',
 				reason: `did not draw: ${frame?.error ?? 'no frame'}`,
@@ -1535,7 +1552,11 @@ export function sweepRun(
 			distance: step.distance,
 			level: typeof record?.level === 'number' ? record.level : null,
 			covered: read.value,
-			field: read.metres === null ? null : `${read.metres} m patch`,
+			field:
+				read.metres === null
+					? null
+					: `${read.metres} m patch${read.capped ? ', frame-capped' : ''}`,
+			charged: !read.capped,
 			change: null,
 			verdict: 'pass',
 			reason: read.note,

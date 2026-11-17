@@ -10,6 +10,7 @@ import type { SweepMeasures } from './compare.ts';
 import type { ReferenceSet, Slot } from './references.ts';
 import type { RunFrame } from './render.ts';
 import {
+	PATCH_SIZES,
 	patchCorners,
 	planFromManifest,
 	SERIES_COLUMNS,
@@ -183,8 +184,19 @@ function seriesStep(
 	distance: number,
 	covered: number | null,
 	field = '4 m patch',
+	charged = true,
 ): SweepSeriesRow {
-	return { file, distance, level: 0, covered, field, change: null, verdict: 'pass', reason: '' };
+	return {
+		file,
+		distance,
+		level: 0,
+		covered,
+		field,
+		charged,
+		change: null,
+		verdict: 'pass',
+		reason: '',
+	};
 }
 
 describe('the sweep’s rungs and orbit', () => {
@@ -331,6 +343,30 @@ describe('the pull-back series', () => {
 		expect(close.inside).toBe(false);
 	});
 
+	test('spans a far step on the larger patch and not on the smaller', () => {
+		const spanOf = (metres: number) => {
+			const patch = patchCorners(
+				{ position: [0, 0, 284], target: [0, 0, 0], fov: 38 },
+				480,
+				360,
+				metres,
+			);
+			const [a, b, , d] = patch.corners as readonly [
+				readonly [number, number],
+				readonly [number, number],
+				readonly [number, number],
+				readonly [number, number],
+			];
+			return Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(d[0] - a[0], d[1] - a[1]));
+		};
+		// At the far card's distance a sixteen-metre patch spans the pixels a figure needs, and
+		// the four-metre patch no longer does.
+		expect(spanOf(16)).toBeGreaterThanOrEqual(24);
+		expect(spanOf(4)).toBeLessThan(24);
+		expect(PATCH_SIZES[0]).toBe(16);
+		expect(PATCH_SIZES).toContain(1);
+	});
+
 	test('refuses a patch whose projected span is under the least a figure needs', () => {
 		const spanOf = (corners: readonly (readonly [number, number])[]) => {
 			const [a, b, , d] = corners as readonly [
@@ -391,6 +427,7 @@ describe('the pull-back series', () => {
 				level: 1,
 				covered: null,
 				field: null,
+				charged: true,
 				change: null,
 				verdict: 'pass',
 				reason: 'the plant fills the frame; its own silhouette is cut by it',
@@ -404,7 +441,8 @@ describe('the pull-back series', () => {
 				distance: 284,
 				level: 3,
 				covered: 1,
-				field: '4 m patch',
+				field: '16 m patch',
+				charged: true,
 				change: null,
 				verdict: 'pass',
 				reason: '',
@@ -416,8 +454,8 @@ describe('the pull-back series', () => {
 
 	test('reports a fall on a smaller patch without charging it, and charges the four-metre one', () => {
 		const crop = sweepSeriesRows([
-			seriesStep('a.png', 2.1, 0.7, '2 m patch'),
-			seriesStep('b.png', 2.7, 0.683, '2 m patch'),
+			seriesStep('a.png', 2.1, 0.7, '2 m patch, frame-capped', false),
+			seriesStep('b.png', 2.7, 0.683, '2 m patch, frame-capped', false),
 		]);
 		expect(crop[1]?.verdict).toBe('pass');
 		expect(crop[1]?.reason).toContain('crop cannot see a crown fall');
