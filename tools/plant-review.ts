@@ -9,13 +9,24 @@
 //     [--max <triangles>] [--sparse 0..1] [--lod 0|1|2] [--gpu webgpu]
 //     [--no-matte] [--draw-only] [--compare <run folder>]
 //
+//   bun run plants:review <species> --sweep [--out <folder>] [--run <name>] [--draw-only]
+//   bun run plants:review --sweep-compare <run folder>
+//   bun run plants:review --sweep-all [--species a,b] [--out <folder>] [--run <name>]
+//
+// The sweep draws a species at six rungs — the far card, the first card level, the near form at its
+// switch, inside the crown, the trunk and a leaf's scale — at four turns and two heights each,
+// compares every picture beside its reference view, and writes one table of passes, fails and open
+// faults. A rung with no reference view, a picture missing and a picture with no matte fail it.
+// `--sweep-all` runs every species that has a reference folder into one round folder and writes the
+// round's single table.
+//
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
 // when none answers there. tools/lib/plant-review/README.md describes every part.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isSpeciesId, loadSpecies } from '../packages/vegetation/src/core/registry.ts';
+import { isSpeciesId, loadSpecies, speciesIds } from '../packages/vegetation/src/core/registry.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import type { PlantReviewQuery } from '../tests/pages/lib/plant-review/query.ts';
 import {
@@ -91,6 +102,20 @@ import { pictureRulings, reviewDataOfSpecies } from './lib/plant-review/review-d
 import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 import { referenceFolder as storeFolder } from './lib/plant-review/store.ts';
 import {
+	failedSweepShots,
+	planFromManifest,
+	type SweepCoverage,
+	type SweepManifest,
+	type SweepRow,
+	sweepGreen,
+	sweepManifest,
+	sweepMarkdown,
+	sweepProbe,
+	sweepRun,
+	sweepShots,
+	sweepStarts,
+} from './lib/plant-review/sweep.ts';
+import {
 	mergeVerdict,
 	toolVerdict,
 	VERDICT_FILE,
@@ -133,6 +158,8 @@ interface Manifest {
 	readonly sizeBand?: { readonly mean: number; readonly spread: number };
 	/** Whether the run was asked for a part of the species' references, not for all of them. */
 	readonly part?: true;
+	/** A sweep run's plan: the plant's ladder and the rungs it drew, so a replay compares the same. */
+	readonly sweep?: SweepManifest;
 	readonly frames: readonly RunFrame[];
 }
 
@@ -1413,6 +1440,75 @@ function pieceLines(pairs: readonly StillResult[]): string[] {
 	return lines;
 }
 
+/** A species' record height band, which a sweep picture's height is read against. */
+async function sizeBandOf(species: string): Promise<Manifest['sizeBand']> {
+	const height = isSpeciesId(species) ? (await loadSpecies(species)).record.size.height : undefined;
+	if (height === undefined) return undefined;
+	return {
+		mean: typeof height === 'number' ? height : height.mean,
+		spread: typeof height === 'number' ? height : height.spread,
+	};
+}
+
+/** The species tables a sweep round left under a folder, merged into one table. */
+function mergeSweepRound(
+	dir: string,
+	named: readonly string[],
+	reason: (id: string) => string,
+): {
+	readonly rows: readonly SweepRow[];
+	readonly coverage: readonly SweepCoverage[];
+	readonly judged: readonly string[];
+	readonly unjudged: readonly string[];
+} {
+	const rows: SweepRow[] = [];
+	const coverage: SweepCoverage[] = [];
+	const judged: string[] = [];
+	const unjudged: string[] = [];
+	for (const id of named) {
+		const file = join(dir, id, 'sweep.json');
+		if (!existsSync(file)) {
+			unjudged.push(id);
+			coverage.push({
+				species: id,
+				missingRows: [reason(id)],
+				uncompared: [],
+				missingPictures: [],
+				failed: [],
+				open: [],
+				green: false,
+			});
+			continue;
+		}
+		const result = JSON.parse(readFileSync(file, 'utf8')) as {
+			readonly rows: readonly SweepRow[];
+			readonly coverage: SweepCoverage;
+		};
+		rows.push(...result.rows);
+		coverage.push(result.coverage);
+		judged.push(id);
+	}
+	return { rows, coverage, judged, unjudged };
+}
+
+/** Writes a round's single table, prints it, and fails on a missing row or a failing view. */
+function writeSweepRound(dir: string, merged: ReturnType<typeof mergeSweepRound>): void {
+	writeFileSync(join(dir, 'sweep.md'), sweepMarkdown(merged.rows, merged.coverage));
+	writeFileSync(join(dir, 'sweep.json'), `${JSON.stringify(merged, null, '\t')}\n`);
+	console.log(sweepMarkdown(merged.rows, merged.coverage));
+	if (!sweepGreen(merged.rows, merged.coverage)) process.exitCode = 1;
+}
+
+/** Prints one species' sweep table and sets the exit code when a row or a view is not green. */
+function printSweep(
+	result: { readonly rows: readonly SweepRow[]; readonly coverage: SweepCoverage },
+	dir: string,
+): void {
+	console.log(sweepMarkdown(result.rows, [result.coverage]));
+	console.log(`written: ${join(dir, 'sweep.md')} and ${join(dir, 'sweep.json')}`);
+	if (!sweepGreen(result.rows, [result.coverage])) process.exitCode = 1;
+}
+
 async function main(): Promise<void> {
 	const windFps = Number(option('wind-fps', '8'));
 	if (flag('compare')) {
@@ -1443,6 +1539,76 @@ async function main(): Promise<void> {
 		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
+		return;
+	}
+	if (flag('sweep-compare')) {
+		const dir = resolve(option('sweep-compare'));
+		const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as Manifest;
+		if (!manifest.sweep)
+			throw new Error(`${dir} is not a sweep run: its manifest records no sweep plan`);
+		const set = manifest.references
+			? readReferenceSet(manifest.references, await formsOf(manifest.species))
+			: undefined;
+		if (!set) throw new Error(`${dir} names no reference folder, so its sweep cannot compare`);
+		const plan = planFromManifest(set, manifest.sweep);
+		printSweep(sweepRun(dir, manifest.species, set, manifest.frames, plan), dir);
+		return;
+	}
+	if (flag('sweep-all')) {
+		if (flag('refs'))
+			throw new Error(
+				'--sweep-all reads each species’ own folder from the store: set NULL3D_PLANT_REFERENCES, or sweep one species with --refs',
+			);
+		const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
+		const dir = resolve(option('out', RENDERS), option('run', `sweep-${stamp}`));
+		mkdirSync(dir, { recursive: true });
+		const named = flag('species') ? option('species').split(',') : [...speciesIds()];
+		for (const id of named) {
+			if (!referenceFolder(id)) continue;
+			const args = [
+				join(REPO_ROOT, 'tools/plant-review.ts'),
+				id,
+				'--sweep',
+				'--out',
+				dir,
+				'--run',
+				id,
+				'--seed',
+				option('seed', '11'),
+				'--variant',
+				option('variant', '0'),
+				'--preset',
+				option('preset', 'high'),
+				...(flag('sparse') ? ['--sparse', option('sparse')] : []),
+				...(flag('gpu') ? ['--gpu', option('gpu')] : []),
+			];
+			// A child whose table names a failing row exits 1: that is a species fault the round's
+			// table carries, not a reason to leave the round short.
+			try {
+				execFileSync(process.execPath, args, { cwd: REPO_ROOT, stdio: 'inherit' });
+			} catch {
+				// The child's own table, written before its exit, is read below.
+			}
+		}
+		writeSweepRound(
+			dir,
+			mergeSweepRound(dir, named, (id) =>
+				referenceFolder(id)
+					? 'every rung: the species’ sweep wrote no table'
+					: 'every rung: the species has no reference folder',
+			),
+		);
+		return;
+	}
+	if (flag('sweep-round')) {
+		const dir = resolve(option('sweep-round'));
+		const named = flag('species')
+			? option('species').split(',')
+			: [...speciesIds()].filter((id) => existsSync(join(dir, id)));
+		writeSweepRound(
+			dir,
+			mergeSweepRound(dir, named, () => 'every rung: no table in the round folder'),
+		);
 		return;
 	}
 	if (flag('subjects')) {
@@ -1514,6 +1680,63 @@ async function main(): Promise<void> {
 		...(flag('sparse') && { sparse: Number(option('sparse')) }),
 		...(flag('lod') && { lod: Number(option('lod')) as PlantReviewQuery['lod'] }),
 	};
+	if (flag('sweep')) {
+		if (!set) throw new Error(`the sweep needs ${species}'s reference folder`);
+		const started = Date.now();
+		const gpu = flag('gpu') ? option('gpu') : undefined;
+		const release = await takeDrawSlot();
+		try {
+			// One whole view names the plant's own level distances, so the ladder's rungs stand at
+			// the switches the page itself draws at, not at distances the sweep guesses.
+			const probe = (
+				await drawShots(dir, [sweepProbe(base)], {
+					...(gpu !== undefined && { gpu }),
+				})
+			)[0];
+			if (!probe || probe.error !== undefined)
+				throw new Error(`the sweep's probe drew no frame: ${probe?.error ?? 'no frame'}`);
+			const starts = sweepStarts(probe);
+			if (!starts) throw new Error("the sweep's probe posted no level distances");
+			const built = sweepShots(set, base, starts);
+			let frames = await drawShots(dir, built.shots, { ...(gpu !== undefined && { gpu }) });
+			// A page that navigated under a cell or lost its worker is drawn once more: a run fault
+			// must not read as a species fault in the table.
+			const failed = failedSweepShots(built.shots, frames);
+			if (failed.length > 0) {
+				console.log(`${failed.length} pictures failed; drawing them once more`);
+				const again = await drawShots(dir, failed, { ...(gpu !== undefined && { gpu }) });
+				const byFile = new Map(again.map((frame) => [frame.file, frame]));
+				frames = frames.map((frame) => byFile.get(frame.file) ?? frame);
+			}
+			const band = await sizeBandOf(species);
+			const manifest: Manifest = {
+				tool: 'tools/plant-review.ts',
+				species,
+				run,
+				commit,
+				dirty,
+				...(band && { sizeBand: band }),
+				references: set.folder,
+				seed: base.seed ?? 11,
+				variant: base.variant ?? 0,
+				preset: base.preset ?? 'high',
+				windFps,
+				started: new Date(started).toISOString(),
+				seconds: Number(((Date.now() - started) / 1000).toFixed(1)),
+				sweep: sweepManifest(built.plan, starts),
+				frames: [probe, ...frames],
+			};
+			writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, '\t')}\n`);
+			if (flag('draw-only')) {
+				console.log(`compare with: bun run plants:review --sweep-compare ${dir}`);
+				return;
+			}
+			printSweep(sweepRun(dir, species, set, frames, built.plan), dir);
+		} finally {
+			release();
+		}
+		return;
+	}
 	const matte = !flag('no-matte');
 	// A video's renders are drawn at a still's size unless asked otherwise, and measured as a still
 	// is, so a turn's frame and a still from the same camera take the same detail level and give
