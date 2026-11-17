@@ -793,6 +793,8 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			? {}
 			: { flowers: detail.flowers }),
 		pieceScale: pieceScale,
+		// The record's own fill density: the twigs through each clump, against the oak's eight.
+		density: typeof growth.orders[0]?.density === 'number' ? (growth.orders[0]?.density as number) : undefined,
 		turn: growth.turn,
 		crown: { top, base: crownBaseValue, height: Math.max(0, top - crownBaseValue) },
 	};
