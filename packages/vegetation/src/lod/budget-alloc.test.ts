@@ -53,9 +53,7 @@ function oakKit(): Promise<SpeciesKitData> {
 		kitPromise = (async () => {
 			const module = await loadSpecies('pedunculate-oak');
 			await loadPlantCode(module.record);
-			// This file's oak assertions describe the frame oak, whose leaves dominate its outline; the
-			// species' default is now the planned grower, whose sparse crown exposes more of its wood.
-			return buildKitNow(module, { placeholders: 'missing', detail: 'low', form: 'frame' });
+			return buildKitNow(module, { placeholders: 'missing', detail: 'low' });
 		})();
 	return kitPromise;
 }
@@ -112,18 +110,44 @@ describe('a level allocation', () => {
 	});
 
 	it(
-		'shares an oak by its outline, not by its best-look triangles',
+		'shares a planned oak by its outline, and records where the outline outweighs its triangles',
 		async () => {
 			const input = await oakInput();
 			const reference = referenceTriangles(input);
 			const shares = visibleShares(input, reference);
 			const whole = partTotal(reference);
-			const woodReference = (reference.trunk + reference.limbs + reference.branches) / whole;
-			const woodVisible = shares.trunk + shares.limbs + shares.branches;
-			const shootsReference = (reference.leaves + reference.twigs) / whole;
+			// The planned oak's sparse crown shows more of its wood and less of its shoots in the
+			// outline than its best look spends on them: the outline reads 0.1016 wood and 0.7716
+			// shoots against the triangles' 0.0709 and 0.8022. The rule divides a capped level by the
+			// outline, so the wood takes the larger part here. The frame oak had the opposite relation,
+			// since its leaves dominated its outline; the old strict inequality stated that plant's
+			// shape, not the rule, and pinning it of the planned oak would test another plant.
 			expect(partTotal(shares)).toBeCloseTo(1, 6);
-			expect(woodVisible).toBeLessThan(woodReference);
-			expect(shares.leaves + shares.twigs).toBeGreaterThan(shootsReference);
+			expect(shares.trunk).toBeCloseTo(0.033, 3);
+			expect(shares.limbs).toBeCloseTo(0.031, 3);
+			expect(shares.branches).toBeCloseTo(0.038, 3);
+			expect(shares.twigs).toBeCloseTo(0.192, 3);
+			expect(shares.leaves).toBeCloseTo(0.58, 3);
+			expect(shares.extras).toBeCloseTo(0.127, 3);
+			expect(shares.trunk + shares.limbs + shares.branches).toBeCloseTo(0.1016, 3);
+			expect((reference.trunk + reference.limbs + reference.branches) / whole).toBeCloseTo(
+				0.0709,
+				3,
+			);
+			// The allocation divides the room the crown does not take by these weights, so each part's
+			// own allowance is its outline share of that room, within the one triangle a floor loses.
+			const max = 50_000;
+			const allowed = allocateLevel(max, reference, shares);
+			const rest =
+				allowed.trunk + allowed.limbs + allowed.branches + allowed.twigs + allowed.extras;
+			const wholeRest =
+				shares.trunk + shares.limbs + shares.branches + shares.twigs + shares.extras;
+			expect(allowed.leaves).toBe(max - rest);
+			for (const part of ['trunk', 'limbs', 'branches', 'twigs', 'extras'] as const)
+				expect([part, Math.abs(allowed[part] - (rest * shares[part]) / wholeRest) <= 1]).toEqual([
+					part,
+					true,
+				]);
 		},
 		LONG,
 	);
