@@ -774,10 +774,9 @@ describe('the card levels', () => {
 		for (const mark of [...first, ...second]) expect([0, 0.5, 0.75]).toContain(mark);
 	});
 
-	it('tiles a clump card three pictures a side at both card levels', () => {
-		// The judged pair at the deciding camera keeps three: larger plates gather into crown mass,
-		// where four's finer plates scatter into speckle at 11,214 more card triangles.
-		expect(tilesAt(1)).toBe(3);
+	it('keeps three pictures a side at the second card level', () => {
+		// The far band keeps the judged count: a plate there is a few pixels across, and the first
+		// card level fits its own count to each clump rather than reading this one.
 		expect(tilesAt(2)).toBe(3);
 	});
 
@@ -1044,4 +1043,38 @@ describe('a record that asks for a finer card cell', () => {
 		expect(fine.cells[0]?.planes[0]?.front).toEqual([2, 2, 124, 124]);
 		expect(base.cells[0]?.planes[0]?.front).toEqual([2, 2, 60, 60]);
 	});
+});
+
+describe('the first card level of a clump-card plant', () => {
+	it(
+		'brings one shoot’s picture to each tile and leaves the second level fixed',
+		async () => {
+			// The oak's planned form draws clump cards at both card levels. Its first level fits each
+			// plate's picture count to the clump it stands for, so the swap from real leaves to the
+			// plates keeps the grain; its second level keeps the judged count, so the far band cannot
+			// move and its mesh stays the bytes measured before the fitting.
+			const { buildKitNow, growPlantNow, loadPlantCode } = await import('../generate');
+			const { species } = await import('../species/pedunculate-oak');
+			await loadPlantCode(species.record);
+			const kit = buildKitNow(species, { placeholders: 'missing', detail: 'high' });
+			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+			const cards = (level: 1 | 2) =>
+				asset.levels[level].parts.filter((part) => part.name === 'cards');
+			const triangles = (level: 1 | 2) =>
+				cards(level).reduce((sum, part) => sum + part.arrays.indices.length / 3, 0);
+			expect(triangles(1)).toBe(47076);
+			expect(asset.levels[1].triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod1Triangles);
+			const second = cards(2)
+				.map((part) => {
+					const { positions, normals, uvs, uvs1, colors, indices } = part.arrays;
+					const bytes = [positions, normals, uvs, uvs1, colors, indices].map((array) =>
+						Buffer.from(array.buffer, array.byteOffset, array.byteLength),
+					);
+					return Bun.hash(Buffer.concat(bytes)).toString(16);
+				})
+				.join(',');
+			expect(second).toBe('2cee829b1cb57200');
+		},
+		scaledBudget(120_000),
+	);
 });
