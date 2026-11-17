@@ -47,8 +47,13 @@ export const SWEEP_HEIGHTS = [
 	{ id: 'high', rise: 15 },
 ] as const;
 
-/** The pictures one rung's orbit draws: a turn and a height each. */
+/** The pictures one rung draws at the default step with its orbit: a turn and a height each. */
 export const SWEEP_PICTURES = SWEEP_TURNS.length * SWEEP_HEIGHTS.length;
+
+/** The pictures one rung draws at a step, or one alone where the round draws no orbit. */
+export function sweepPictures(step: number, orbit = true): number {
+	return orbit ? (360 / step) * SWEEP_HEIGHTS.length : 1;
+}
 
 /** The distances the pull-back series steps through, before the rungs' own are joined in. */
 export const SWEEP_SERIES_STEPS = 24;
@@ -239,6 +244,8 @@ export interface SweepManifest {
 	readonly starts: readonly [number, number, number];
 	/** Degrees between the orbit's frames, so a table names the step it drew at. */
 	readonly step: number;
+	/** Whether the run drew a full turn at each rung, or one picture a rung. */
+	readonly orbit: boolean;
 	readonly rungs: readonly {
 		readonly id: string;
 		readonly reference?: string;
@@ -266,13 +273,27 @@ interface SweepCamera {
 }
 
 /** The cameras a rung stands at: every turn and height, from the reference view's own. */
-export function sweepCameras(rung: SweepRung, slot: Slot | undefined): readonly SweepCamera[] {
+export function sweepCameras(
+	rung: SweepRung,
+	slot: Slot | undefined,
+	step = SWEEP_STEP,
+	orbit = true,
+): readonly SweepCamera[] {
 	const view = slot?.view ?? rung.referenceViews[0] ?? 'whole';
 	const home = slot?.turn ?? 0;
 	const rise = slot?.elevation ?? VIEW_SPECS[view].elevation;
 	const base = rung.camera?.elevation ?? rise;
+	// A round with no time for an orbit draws each rung once, from the reference's own camera.
+	if (!orbit)
+		return [
+			{
+				turn: home,
+				elevation: Math.max(-89, Math.min(89, base)),
+				height: SWEEP_HEIGHTS[0].id,
+			},
+		];
 	const cameras: SweepCamera[] = [];
-	for (const turn of SWEEP_TURNS)
+	for (let turn = 0; turn < 360; turn += step)
 		for (const height of SWEEP_HEIGHTS)
 			cameras.push({
 				turn: (home + turn) % 360,
@@ -291,6 +312,8 @@ export function sweepShots(
 	set: ReferenceSet,
 	base: PlantReviewQuery,
 	starts: readonly [number, number, number],
+	step = SWEEP_STEP,
+	orbit = true,
 ): { readonly plan: SweepRungPlan[]; readonly shots: Shot[] } {
 	if (base.lod !== undefined)
 		throw new Error('a sweep reads the page’s own levels, so it cannot force one with --lod');
@@ -305,7 +328,7 @@ export function sweepShots(
 		const [width, height] = VIEW_SPECS[view].size;
 		const asked =
 			distance === null ? null : rung.camera ? distance * rung.camera.distanceFactor : distance;
-		for (const camera of sweepCameras(rung, slot)) {
+		for (const camera of sweepCameras(rung, slot, step, orbit)) {
 			const name = `${rung.id}-t${camera.turn}-h${camera.height}`;
 			shots.push(
 				singleShot(
@@ -380,10 +403,13 @@ export function sweepManifest(
 	plan: readonly SweepRungPlan[],
 	starts: readonly [number, number, number],
 	series: readonly SweepSeriesStep[],
+	step = SWEEP_STEP,
+	orbit = true,
 ): SweepManifest {
 	return {
 		starts,
-		step: SWEEP_STEP,
+		step,
+		orbit,
 		rungs: plan.map((entry) => ({
 			id: entry.rung.id,
 			...(entry.slot && { reference: entry.slot.file }),
@@ -454,6 +480,8 @@ export interface SweepRowInput {
 	readonly reference: SweepReference | undefined;
 	readonly distance: number | null;
 	readonly pictures: readonly SweepPicture[];
+	/** The pictures the rung was asked to draw at the round's step and orbit. */
+	readonly expected?: number;
 }
 
 /** One row of the sweep's table. */
@@ -689,8 +717,8 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 		const switchAt = input.distance === null ? 'unread' : `${input.distance.toFixed(1)} m`;
 		return `the near form's switch stands ${switchAt} from the foot, and this camera reached ${away}, so the page drew the ${names[nearShort.level] ?? 'far card'}`;
 	};
-	if (drawn.length < SWEEP_PICTURES)
-		failures.unshift(`${drawn.length} of ${SWEEP_PICTURES} pictures drew`);
+	const expected = input.expected ?? SWEEP_PICTURES;
+	if (drawn.length < expected) failures.unshift(`${drawn.length} of ${expected} pictures drew`);
 	if (failures.length > 0)
 		return rowOf('fail', [failures.join('; '), nearNote()].filter(Boolean).join('; '));
 	if (rung.compare === 'gap' && (!reference.separable || reference.skyGap === null))
@@ -704,13 +732,9 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 		gap === null
 			? 'no floating piece'
 			: `open sky ${gap.drawn.toFixed(3)} against ${gap.reference.toFixed(3)}`;
-	return rowOf(
-		'pass',
-		`${drawn.length} of ${SWEEP_PICTURES} pictures beside the reference; ${beside}`,
-		{
-			floating: 0,
-		},
-	);
+	return rowOf('pass', `${drawn.length} of ${expected} pictures beside the reference; ${beside}`, {
+		floating: 0,
+	});
 }
 
 /** The coverage of one species' round: a row per rung, and every row compared. */
@@ -734,6 +758,8 @@ export function sweepCoverage(
 	species: string,
 	rows: readonly SweepRow[],
 	series: readonly SweepSeriesRow[] = [],
+	expected = SWEEP_PICTURES,
+	seriesExpected = SWEEP_SERIES_STEPS,
 	rungs: readonly SweepRung[] = SWEEP_RUNGS,
 ): SweepCoverage {
 	const byRung = new Map(rows.map((row) => [row.rung, row]));
@@ -749,14 +775,14 @@ export function sweepCoverage(
 			continue;
 		}
 		if (row.reference === null) uncompared.push(rung.label);
-		if (row.pictures !== SWEEP_PICTURES) missingPictures.push(rung.label);
+		if (row.pictures !== expected) missingPictures.push(rung.label);
 		if (row.verdict === 'fail') failed.push(`${rung.label}: ${row.reason}`);
 		if (row.verdict === 'open') open.push(`${rung.label}: ${row.reason}`);
 	}
 	const seriesFaults = series
 		.filter((step) => step.verdict !== 'pass')
 		.map((step) => `${step.file} at ${step.distance.toFixed(2)} m: ${step.reason}`);
-	const short = series.length < SWEEP_SERIES_STEPS;
+	const short = series.length < seriesExpected;
 	return {
 		species,
 		missingRows,
@@ -765,7 +791,7 @@ export function sweepCoverage(
 		failed,
 		open,
 		series: [
-			...(short ? [`${series.length} of ${SWEEP_SERIES_STEPS} series steps drew`] : []),
+			...(short ? [`${series.length} of ${seriesExpected} series steps drew`] : []),
 			...seriesFaults,
 		],
 		green:
@@ -1003,12 +1029,18 @@ export function sweepRun(
 	frames: readonly RunFrame[],
 	plan: readonly SweepRungPlan[],
 	series: readonly SweepSeriesStep[],
-	head?: { readonly commit: string; readonly dirty: boolean },
+	options: {
+		readonly head?: { readonly commit: string; readonly dirty: boolean };
+		readonly step?: number;
+		readonly orbit?: boolean;
+	} = {},
 ): {
 	readonly rows: readonly SweepRow[];
 	readonly coverage: SweepCoverage;
 	readonly series: readonly SweepSeriesRow[];
 } {
+	const step = options.step ?? SWEEP_STEP;
+	const orbit = options.orbit ?? true;
 	const rows: SweepRow[] = [];
 	const sheets: {
 		readonly rung: string;
@@ -1035,6 +1067,7 @@ export function sweepRun(
 			reference,
 			distance: entry.distance,
 			pictures,
+			expected: sweepPictures(step, orbit),
 		});
 		rows.push(row);
 		if (entry.slot) {
@@ -1092,7 +1125,13 @@ export function sweepRun(
 		});
 	}
 	const stepped = sweepSeriesRows(seriesRows);
-	const coverage = sweepCoverage(species, rows, stepped);
+	const coverage = sweepCoverage(
+		species,
+		rows,
+		stepped,
+		sweepPictures(step, orbit),
+		orbit ? SWEEP_SERIES_STEPS : 0,
+	);
 	for (const sheet of sheets) {
 		const pages = contactSheets(
 			`${species}  ${sheet.rung}  against its reference`,
@@ -1109,18 +1148,23 @@ export function sweepRun(
 	);
 	writeFileSync(
 		join(runDir, 'sweep.md'),
-		`${headLine(species, head)}${sweepMarkdown(rows, [coverage], withSpecies)}`,
+		`${headLine(species, options.head, step, orbit)}${sweepMarkdown(rows, [coverage], withSpecies)}`,
 	);
 	return { rows, coverage, series: stepped };
 }
 
-/** The line above a species' table: the head it drew at and the orbit's step. */
+/** The line above a species' table: the head it drew at and the orbit's step, or none. */
 function headLine(
 	species: string,
-	head?: { readonly commit: string; readonly dirty: boolean },
+	head: { readonly commit: string; readonly dirty: boolean } | undefined,
+	step: number,
+	orbit: boolean,
 ): string {
 	const where = head ? `Head: ${head.commit.slice(0, 12)}${head.dirty ? ' (dirty)' : ''}. ` : '';
-	return `${species}. ${where}Orbit step: ${SWEEP_STEP} degrees. Pictures a rung: ${SWEEP_PICTURES}.\n\n`;
+	const drawn = orbit
+		? `Orbit step: ${step} degrees. Pictures a rung: ${sweepPictures(step, orbit)}.`
+		: 'Rungs only: one picture a rung, no orbit.';
+	return `${species}. ${where}${drawn}\n\n`;
 }
 
 /** Whether every row and every series step of a round is green. */
