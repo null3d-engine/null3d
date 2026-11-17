@@ -281,7 +281,15 @@ async function runDemo(demo: Demo): Promise<void> {
 	const sketch = new URL(demo.sketch);
 	for (const [key, value] of params) if (key !== 'demo') sketch.searchParams.set(key, value);
 	try {
-		await startDemo({ canvas, demo: { ...demo, sketch }, labels, choices, hud, preset });
+		await startDemo({
+			canvas,
+			demo: { ...demo, sketch },
+			labels,
+			choices,
+			hud,
+			preset,
+			memoryMaximumMiB: demo.memoryMaximumMiB,
+		});
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';

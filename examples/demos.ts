@@ -106,6 +106,11 @@ export interface Demo {
 	 */
 	timeoutSeconds?: number;
 	/**
+	 * The engine's memory ceiling for this demo, in MiB, where a scene needs more than its preset's
+	 * own. A demo of every registered species holds each one's texture set and card levels at once.
+	 */
+	memoryMaximumMiB?: number;
+	/**
 	 * Why the demo loads files. A demo makes its meshes, textures, environments and grading tables
 	 * in code, and loads files only when loading them is what it shows.
 	 */
@@ -873,6 +878,11 @@ export const DEMOS: readonly Demo[] = [
 		// capture needs more than 240 s on CI's software GPU. The wait takes the 600 s ceiling that
 		// the island and the timed script use.
 		timeoutSeconds: 600,
+		// Every registered species in one scene, each with its own texture set and card levels, needs
+		// more than a High preset's one gigabyte: the frame failed E1109 at about seventy per cent of
+		// the grow once the planned records for the eight species landed. Half as much again is the
+		// ceiling, so a device that cannot afford it fails the scene rather than a frame.
+		memoryMaximumMiB: 1536,
 	},
 	{
 		name: 'vegetation-wind',

@@ -68,6 +68,11 @@ export interface StartOptions {
 	/** The anti-aliasing mode that the page asks for, instead of the preset's own. */
 	antialias?: 'msaa' | 'fxaa' | 'none';
 	/**
+	 * The engine's memory ceiling in MiB, for a demo whose scene needs more than its preset's own.
+	 * The engine reads it before any download, so a device that cannot afford it fails at the start.
+	 */
+	memoryMaximumMiB?: number;
+	/**
 	 * Settings that the page fixes at the engine's start, such as a measurement's shadow shape. They
 	 * win over the preset's values, as `createEngine`'s options do.
 	 */
@@ -113,6 +118,7 @@ export async function startDemo({
 	stats = true,
 	preset,
 	antialias,
+	memoryMaximumMiB,
 	settings,
 	choices,
 	hud,
@@ -281,6 +287,9 @@ export async function startDemo({
 			transparent: behind,
 			preset,
 			antialias,
+			// A scene of every species holds each one's texture set and card levels at once, so a demo
+			// may name a memory ceiling above its preset's own.
+			memory: memoryMaximumMiB === undefined ? undefined : { maximumMiB: memoryMaximumMiB },
 			...settings,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
