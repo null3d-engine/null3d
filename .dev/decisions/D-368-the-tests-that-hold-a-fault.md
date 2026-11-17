@@ -1,6 +1,6 @@
 # D-368: Every fault found in review gets a test before its fix lands
 
-Status: decided, with six of the seven tests written or being written. Task: none.
+Status: decided, with all seven tests written. Task: none.
 
 Summary: Each fault found in review during one day of the vegetation release now has a test that
 fails on it, so the same fault cannot land twice. The rule is general: when a review finds a fault,
@@ -29,15 +29,15 @@ species pass; a threshold taken from evidence names the evidence in its comment.
 | Nine species kept a stale frame-registration line | one invariant: a frame-grown species is in the list and a planned one is absent, for every registered species | the species tests |
 | A new record field could ship with a bad value | every registered species' record is run through the record check | the species tests |
 | A species run was drawn against another species' photographs | the review tool refuses a run whose reference folder names another species | the plant-review tests |
-| A demo failed its memory limit and drew no plants | the meadow's page test checks plants exist at the end of the grow | the page tests |
+| A demo drew its plants only after the last build, and a regrow mixed two builds' plants | the fill's tests: a plant lands as its own grow finishes, the list keeps the species' order, a species that cannot grow leaves its slot empty, and a fill that a newer one took the field from stands nothing | the vegetation demo's tests |
 
 ## Look
 
-None of these are look decisions; the look faults of the same day — the tile grid, the cover factor,
-the plate's grain — are recorded in D-365, D-366 and D-367 beside their pictures.
+None of these are look decisions. The look faults of that day are the tile grid, the cover
+factor and the plate's grain, recorded in D-365, D-366 and D-367 beside their pictures.
 
 ## Decision
 
-The rule stands: a review fault lands with its test. The six machine-checkable ones above are written
-or in hand; the seventh, the meadow's plants at the end of its grow, follows the streaming change so
-the test knows what the end of a grow means in the new code.
+The rule stands: a review fault lands with its test. All seven are written. The meadow's fault
+came after the streaming change let the field fill plant by plant. Its test reads that change:
+the fill is a module of its own, driven by held promises rather than a page.
