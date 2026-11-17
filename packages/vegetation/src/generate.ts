@@ -47,7 +47,7 @@ import {
 	placeholderWind,
 	placeholderWood,
 } from './core/placeholder';
-import type { Growth, GrowthModel, Species, SpeciesModule } from './core/record';
+import type { Growth, Species, SpeciesModule } from './core/record';
 import { loadSpeciesHooks, speciesHooks } from './core/registry';
 import type { TextureManifest } from './core/textures';
 import {
@@ -79,7 +79,7 @@ import {
 	targetHeight,
 } from './grow/height';
 import { leadOnThickest } from './grow/leaders';
-import { grower, loadGrower } from './grow/models';
+import { loadPlantGrowers, plantGrower } from './grow/models';
 import {
 	FOLIAGE_FLOOR,
 	GREAT_LIMB_SHARE,
@@ -381,12 +381,9 @@ function cuttingRecord(record: Species, part?: CuttingPart): Species {
  */
 export async function loadPlantCode(record: Species): Promise<void> {
 	// A form may hand its plant to another growth model, which its own code walks, so every model a
-	// record or one of its forms names is loaded here.
-	const models = new Set<GrowthModel>([record.growth.model]);
-	for (const name of Object.keys(record.forms ?? {}))
-		models.add(formRecord(record, name).growth.model);
+	// record or one of its forms names is loaded here; a planned adult loads its family's grower.
 	await Promise.all([
-		...[...models].map((model) => loadGrower(model)),
+		loadPlantGrowers(record),
 		loadFoliage(record.foliage.kind),
 		loadSpeciesHooks(record.id),
 	]);
@@ -522,7 +519,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	// them; any other keeps its shoot prototypes.
 	const written =
 		writesPieces(record) && placeholders !== true
-			? grower(record.growth.model).pieces?.(record, manifest)
+			? plantGrower(record).pieces?.(record, manifest)
 			: undefined;
 	if (record.shoots || written) {
 		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
@@ -813,7 +810,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	};
 	// A model that plans its grown state states the plan's numbers before any geometry is built. A kit
 	// that asks for the missing stages' stand-ins is still a real plant, so it plans.
-	const plan = placeholders === true ? undefined : grower(model).plan?.(record, request);
+	const plan = placeholders === true ? undefined : plantGrower(record).plan?.(record, request);
 	const growInput: GrowInput = {
 		record,
 		seed: options.seed >>> 0,
@@ -826,7 +823,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	const grown = stage(
 		placeholders,
 		() => {
-			const skeleton = grower(record.growth.model).grow(growInput);
+			const skeleton = plantGrower(record).grow(growInput);
 			// A self-organizing plant's wood runs on into the larger limb where its leader collapsed.
 			return record.growth.model === 'self-organizing' ? leadOnThickest(skeleton) : skeleton;
 		},
@@ -848,7 +845,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		// A planned plant grows its own height from its age, so no drawn height rescales it.
 		record.growth.model !== 'planned' &&
 		(merged
-			? grower(record.growth.model).foliage !== undefined
+			? plantGrower(record).foliage !== undefined
 			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
 			? targetHeight(record, options.seed, options.variant)
 			: 0;
@@ -1073,7 +1070,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
  */
 function mergedTop(input: MeshInput, level: MeshLevel): number {
 	let top = input.skeleton.height;
-	const build = grower(input.record.growth.model).foliage;
+	const build = plantGrower(input.record).foliage;
 	for (const mesh of [build?.(input, level), extrasMesh(input, level)]) {
 		if (!mesh) continue;
 		const positions = mesh.positions;
@@ -1288,8 +1285,7 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 		}
 		// A plant whose pieces stand at sockets may draw a part of its own beside them, such as
 		// what lies in the soil under a stool.
-		const own =
-			!record.shoots && placeholders !== true ? grower(record.growth.model).foliage : undefined;
+		const own = !record.shoots && placeholders !== true ? plantGrower(record).foliage : undefined;
 		if (own) parts.push(...partOf(kit, 'foliage', own(mesh, level), TEXTURE_UV_STEPS));
 	}
 	const extras = stage(

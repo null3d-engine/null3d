@@ -1379,6 +1379,20 @@ export interface Tuft {
 }
 
 /**
+ * The tuft numbers a record grows by, from its own tuft model or from the tuft adult of the planned
+ * model. The tuft family reads its pieces and its stool from them wherever they stand.
+ *
+ * @param record The species record.
+ * @returns Its tuft numbers, or undefined for a record that is not a tuft.
+ * @category api/vegetation
+ */
+export function tuftGrowth(record: Species): Tuft | undefined {
+	const growth = record.growth;
+	if (growth.model === 'tuft') return growth;
+	return growth.model === 'planned' && growth.adult === 'tuft' ? growth.tuft : undefined;
+}
+
+/**
  * What a tuft draws under its shoots: a rhizome lying at the soil's surface and the roots that leave
  * it. A tufted grass leaves the rhizome absent and draws fibrous roots; a sedge shows both.
  *
@@ -1611,15 +1625,20 @@ export interface Planned {
 	/** The crown's spread as a share of the height, by age. */
 	readonly spread: Curve;
 	/**
-	 * Where the trunk, limbs, boughs and their clumps come from: the species' frame, planned to order
-	 * two, or stated directly in its record.
+	 * Where the adult plan comes from: the species' frame, planned to order two, stated directly in
+	 * its record, or a tuft of shoots on one stool, which the tuft family plans from its own numbers.
 	 */
-	readonly adult: 'frame' | 'stated';
+	readonly adult: 'frame' | 'stated' | 'tuft';
 	/**
 	 * The frame the adult plan comes from, where the record says it comes from a frame. It never
 	 * grows as it stands: the plan reads only its stems, its limbs and its boughs.
 	 */
 	readonly frame?: FrameSpec;
+	/**
+	 * The tuft's own numbers, where the adult is a tuft: the stool, its shoots and their blades, and
+	 * the flowering stems. The tuft family plans and meshes the adult from them.
+	 */
+	readonly tuft?: Tuft;
 	/**
 	 * The branch piece each socket carries, by its name among the record's pieces. Absent, a socket
 	 * holds shoot rows.

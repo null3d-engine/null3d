@@ -11,7 +11,7 @@
 import type { WindTable } from '../asset';
 import type { SpeciesBox } from '../core/box';
 import { radians } from '../core/math';
-import type { BarkZone, LeafOptics, Species } from '../core/record';
+import { type BarkZone, type LeafOptics, type Species, tuftGrowth } from '../core/record';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import { type Rgb, spreadMean } from '../core/types';
 import { WIND_RECORD_FLOATS, windSway } from '../wind/records';
@@ -363,10 +363,10 @@ export function speciesHeader(
 		texel(header, HEADER.collar, [...foliage.blade.collar.colour, foliage.blade.collar.share]);
 	// A tuft's basal sheath column draws in the record's own colour where it names one; the
 	// roughness keeps the sheath from reading as polished wood beside the matt leaf.
-	const growth = record.growth;
-	if (growth.model === 'tuft' && growth.sheathColour) {
-		texel(header, HEADER.sheath, [...growth.sheathColour.foot, 0.7]);
-		texel(header, HEADER.sheathCollar, [...growth.sheathColour.collar, growth.sheathColour.reach]);
+	const sheath = tuftGrowth(record)?.sheathColour;
+	if (sheath) {
+		texel(header, HEADER.sheath, [...sheath.foot, 0.7]);
+		texel(header, HEADER.sheathCollar, [...sheath.collar, sheath.reach]);
 	}
 	const minParts = box.min.map(split);
 	const spanParts = box.max.map((max, k) => split(max - (box.min[k] as number)));
