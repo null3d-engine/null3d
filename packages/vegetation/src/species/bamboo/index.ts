@@ -6,9 +6,10 @@
 // exist. It is not a species counted done.
 //
 // The record states these choices, each with what it stands against:
-// - The shell: the near card level draws 39,336 triangles at the record's own levels against the
-//   directed clump's 48,523, 81 per cent and inside the half-to-full band; the cards alone are
-//   21,978, 45 per cent, so the eye accepts the whole draw, not the cards alone.
+// - The shell: at the landed head 761196098 the near card level draws 51,540 triangles, its cards
+//   34,182, against the directed clump's card level 25,991 at the same head and probe, 198 per cent:
+//   an over-run whose cost is the cards' density, and the eye judges whether it reads. The old
+//   48,523 and 39,336 were measured under the retired card rule and are not compared.
 // - The crown base: 0.307 of the height against the fit's 0.083, because the fit's base is the
 //   hull's lowest foliage while the record's branching starts at 0.35.
 // - The thin culm subset: 33 per cent of the culms, half the diameter and 0.6 to 0.8 of the height,
