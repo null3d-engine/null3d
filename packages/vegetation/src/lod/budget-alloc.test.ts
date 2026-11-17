@@ -53,7 +53,9 @@ function oakKit(): Promise<SpeciesKitData> {
 		kitPromise = (async () => {
 			const module = await loadSpecies('pedunculate-oak');
 			await loadPlantCode(module.record);
-			return buildKitNow(module, { placeholders: 'missing', detail: 'low' });
+			// This file's oak assertions describe the frame oak, whose leaves dominate its outline; the
+			// species' default is now the planned grower, whose sparse crown exposes more of its wood.
+			return buildKitNow(module, { placeholders: 'missing', detail: 'low', form: 'frame' });
 		})();
 	return kitPromise;
 }
