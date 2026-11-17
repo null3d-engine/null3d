@@ -71,8 +71,10 @@ export const frame: FrameSpec = {
 			{
 				name: 'limb',
 				role: 'limb',
-				// Still 30: 7 to 8 branches show on each side in outline, leaving from 0.23 of the height
-				// to the tip. A branch that points at the camera or away does not show in an outline,
+				// Still 30: 7 to 8 branches show on each side in outline, leaving from 0.12 of the
+				// leader's length to the tip, which puts the lowest foliage at the tenth of the height
+				// the record states for stills 02, 18 and 30. A branch that points at the camera or
+				// away does not show in an outline,
 				// so the tree carries about half as many again as the 16 seen. The shares here are of
 				// the leader's own length.
 				count: 24,
