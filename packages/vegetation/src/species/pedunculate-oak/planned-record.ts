@@ -55,8 +55,8 @@ export const plannedGrowth: Planned = {
 	// The orders under the boughs: the boughs themselves and their branches are stated by the frame;
 	// these describe the woody branches and twigs the keyed fill grows inside each clump.
 	orders: [
-		{ density: 8, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 12, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'branch-end', density: 8 },
+		{ piece: 'branch-end', density: 12 },
 	],
 	// The share of each order kept at full sparseness. The trunk, the nine great limbs and the top
 	// never thin; at sparseness 1 about two thirds of the boughs and a third of the branches and

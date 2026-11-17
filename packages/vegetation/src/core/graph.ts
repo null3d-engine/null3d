@@ -161,6 +161,11 @@ export interface MacroSkeleton {
 	 */
 	readonly clumps?: readonly ClumpData[];
 	/**
+	 * The measured piece figures the planned fill read, one per fill order, so a level and a case
+	 * read the figures the fill drew rather than a copy. Absent on another growth model.
+	 */
+	readonly fillFigures?: readonly FillFigures[];
+	/**
 	 * The elements the grower made for this plant: everything it built, the part it drew at the
 	 * requested state among them. Absent on a grower that does not count them.
 	 */
@@ -194,6 +199,23 @@ export interface SocketData {
 	 * Absent, the piece hangs at the carrier's tip.
 	 */
 	readonly carrierAlong?: number;
+}
+
+/**
+ * The measured figures of the piece a planned fill order's sockets carry, read from the species
+ * record rather than restated beside it.
+ *
+ * @category api/vegetation
+ */
+export interface FillFigures {
+	/** The piece's name among the record's pieces. */
+	readonly piece: string;
+	/** Its stem's length in metres, where the record measures one. */
+	readonly length?: number;
+	/** Its stem's radius at its foot, in metres, where the record measures one. */
+	readonly radius?: number;
+	/** The closest spacing in metres that the record states between two sockets. */
+	readonly pitch?: number;
 }
 
 /**

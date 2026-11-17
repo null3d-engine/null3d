@@ -54,8 +54,8 @@ export const plannedGrowth: Planned = {
 	// The orders under the branches: the branches themselves are stated by the frame; these describe
 	// the woody twigs the keyed fill grows inside each clump.
 	orders: [
-		{ density: 8, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 12, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'spray', density: 8 },
+		{ piece: 'spray', density: 12 },
 	],
 	// The share of each order kept at full sparseness. The bole and the great limbs never thin; at
 	// sparseness 1 about two thirds of the branches and a third of the twigs stay.

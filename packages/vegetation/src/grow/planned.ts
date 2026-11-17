@@ -22,6 +22,7 @@ import { thinningRanks } from '../core/rank';
 import type { Planned, Species } from '../core/record';
 import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
 import type { DetailPlan, GrowInput, GrowRequest } from '../stages';
+import { resolveFillFigures } from './fill-figures';
 import type { FrameAxis, FrameNode, FramePlan } from './frame';
 import { planFrame } from './frame';
 import type { Grower } from './models';
@@ -894,11 +895,14 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 			? {}
 			: { flowers: detail.flowers }),
 		pieceScale: pieceScale,
-		// The record's own fill density: the twigs through each clump, against the oak's eight.
+		// The record's own fill density: the sockets through each clump, against the oak's eight.
 		density:
 			typeof growth.orders[0]?.density === 'number'
 				? (growth.orders[0]?.density as number)
 				: undefined,
+		// The measured piece figures each order reads, from the record's pieces and its socket
+		// spacing: the fill draws and sizes its pieces by these, never by a copy beside them.
+		figures: resolveFillFigures(input.record, bones.patches),
 		turn: growth.turn,
 		crown: { top, base: crownBaseValue, height: Math.max(0, top - crownBaseValue) },
 	};
@@ -951,6 +955,7 @@ export function growPlanned(input: GrowInput): MacroSkeleton {
 		height: max[1],
 		crownBase: Number.isFinite(crownBase) ? Math.max(0, crownBase) : 0,
 		clumps,
+		fillFigures: sighted.figures,
 		// Every element the grower made is delivered: the axes and the bud sites it built.
 		made: finished.axes.count + finished.buds.count,
 		shed: 0,

@@ -58,8 +58,8 @@ export const plannedGrowth: Planned = {
 	// a dense fine-textured mass of small leathery leaves, its sky only in the small bays between
 	// one clump and the next, so each clump carries half again the alder's twigs.
 	orders: [
-		{ density: 16, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 22, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'branch-end', density: 16 },
+		{ piece: 'branch-end', density: 22 },
 	],
 	// The share of each order kept at full sparseness. The stems and their forks never thin; at
 	// sparseness 1 about two thirds of the branches and a third of the twigs stay.

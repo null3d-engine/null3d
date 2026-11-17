@@ -156,7 +156,7 @@ export const plannedGrowth: Planned = {
 	piece: 'pair-full',
 	turn: { roll: 90, tilt: 25, out: 30 },
 	// The fill's woody twigs through a clump: the pair piece carries the fans, so the fill is thin.
-	orders: [{ density: 3, angle: 55, length: 0.12, birth: 0, kink: 12 }],
+	orders: [{ piece: 'fan', density: 3 }],
 	// The culms and their branch pairs never thin: the pairs are the record's limbs, as a pine's
 	// whorl boughs are, and the grower's own thinning starts at order 2. The sub-branches and twigs
 	// carry the sparseness, at orders 2 and 3.

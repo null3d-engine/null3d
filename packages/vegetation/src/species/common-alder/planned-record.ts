@@ -57,8 +57,8 @@ export const plannedGrowth: Planned = {
 	// The alder's pictures show one leafy mass at every branch end, where the oak's show bays: its
 	// fill carries half again the twigs through each clump.
 	orders: [
-		{ density: 16, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 22, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'branch-end', density: 16 },
+		{ piece: 'branch-end', density: 22 },
 	],
 	// The share of each order kept at full sparseness. The leader and the great branches never thin;
 	// at sparseness 1 about two thirds of the branches and a third of the twigs stay.

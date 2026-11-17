@@ -51,8 +51,8 @@ export const plannedGrowth: Planned = {
 	piece: 'branch-end',
 	turn: { roll: 90, tilt: 25, out: 30 },
 	orders: [
-		{ density: 8, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 12, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'branch-end', density: 8 },
+		{ piece: 'branch-end', density: 12 },
 	],
 	// The share of each order kept at full sparseness. The bole and the low limbs never thin.
 	thin: [0, 0, 0.34, 0.67, 0.72],

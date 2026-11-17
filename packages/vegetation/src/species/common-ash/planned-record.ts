@@ -86,8 +86,8 @@ export const plannedGrowth: Planned = {
 	// the woody twigs the keyed fill grows inside each bunch. Stills 04 and 05: pinnate leaves stand
 	// in bunches at the upturned shoot tips with sky between the bunches, so the bunches stay open.
 	orders: [
-		{ density: 8, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 12, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'branch-end', density: 8 },
+		{ piece: 'branch-end', density: 12 },
 	],
 	// The share of each order kept at full sparseness. The bole and the great limbs never thin; at
 	// sparseness 1 about two thirds of the branches and a third of the twigs stay.

@@ -58,8 +58,8 @@ export const plannedGrowth: Planned = {
 	// many fine branches along every limb, so the fill carries more twigs a clump than the open
 	// broadleaves.
 	orders: [
-		{ density: 12, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 16, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ piece: 'branch-end', density: 12 },
+		{ piece: 'branch-end', density: 16 },
 	],
 	// The share of each order kept at full sparseness. The bole and the great limbs never thin; at
 	// sparseness 1 about two thirds of the branches and a third of the twigs stay.
