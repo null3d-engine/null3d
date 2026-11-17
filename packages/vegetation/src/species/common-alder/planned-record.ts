@@ -31,12 +31,12 @@ const HEIGHT: Planned['height'] = [
  * leader, not the oak's broad dome.
  */
 const SPREAD: Planned['spread'] = [
-	[0, 0.05],
-	[0.05, 0.14],
-	[0.15, 0.22],
-	[0.35, 0.28],
-	[0.7, 0.3],
-	[1, 0.3],
+	[0, 0.04],
+	[0.05, 0.10],
+	[0.15, 0.16],
+	[0.35, 0.20],
+	[0.7, 0.22],
+	[1, 0.22],
 ];
 
 /** The common alder's planned growth. */
@@ -57,8 +57,8 @@ export const plannedGrowth: Planned = {
 	// The alder's pictures show one leafy mass at every branch end, where the oak's show bays: its
 	// fill carries half again the twigs through each clump.
 	orders: [
-		{ density: 12, angle: 50, length: 0.35, birth: 0, kink: 20 },
-		{ density: 18, angle: 45, length: 0.3, birth: 0, kink: 18 },
+		{ density: 16, angle: 50, length: 0.35, birth: 0, kink: 20 },
+		{ density: 22, angle: 45, length: 0.3, birth: 0, kink: 18 },
 	],
 	// The share of each order kept at full sparseness. The leader and the great branches never thin;
 	// at sparseness 1 about two thirds of the branches and a third of the twigs stay.

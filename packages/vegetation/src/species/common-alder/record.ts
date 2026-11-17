@@ -151,7 +151,7 @@ export const record: Species = {
 	// Stills 01, 02 and 18 stand the bole about 0.036 of the tree's height across at breast height.
 	// The whole views' crowns are 0.590 and 0.626 of the height wide, so the tree is taller than it is
 	// broad and the crown is a narrow cone rather than the fitting tool's wider hull.
-	size: { height: { mean: 20, spread: 2 }, dbh: 0.72, aspect: 0.61 },
+	size: { height: { mean: 25, spread: 2 }, dbh: 0.72, aspect: 0.61 },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
