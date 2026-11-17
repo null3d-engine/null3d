@@ -87,6 +87,13 @@ const LEAST_EXTRAS_SHARE = 0.25;
  */
 const CROWN_SHARE = 0.6;
 
+/**
+ * The least share of a maximum the trunk and the great limbs take before the leaves, and the part
+ * of it the trunk takes: a capped tree keeps a read of wood at any distance.
+ */
+const SKELETON_SHARE = 0.3;
+const SKELETON_TRUNK = 0.4;
+
 /** No triangles in any part. */
 export const NO_TRIANGLES: PartTriangles = {
 	trunk: 0,
@@ -622,11 +629,15 @@ export function rowLevel(
 	};
 	// The least each part asks for before any share: the trunk and the great limbs as one straight
 	// run each, and one card set of two planes.
+	// A low maximum buys the tree's shape first: the trunk and the great limbs take a share of the
+	// cap before the leaves, because a crown standing on one three-sided run is not a tree at any
+	// distance. The share is paid even where the crown would take the whole maximum.
+	const skeletonFloor = Math.floor(max * SKELETON_SHARE);
 	const floor = (part: Part): number =>
 		part === 'trunk'
-			? priced(0, last)
+			? Math.max(priced(0, last), Math.floor(skeletonFloor * SKELETON_TRUNK))
 			: part === 'limbs'
-				? priced(1, last)
+				? Math.max(priced(1, last), Math.floor(skeletonFloor * (1 - SKELETON_TRUNK)))
 				: part === 'leaves' && rows.count > 0
 					? 4
 					: 0;
