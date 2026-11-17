@@ -223,11 +223,7 @@ export const record: Species = {
 			twist: 6,
 			wave: [0, 0],
 			optics: {
-				// Stills 01, 02 and 18: the crown's foliage averages a grey-olive, and a leaf deep in
-				// the clump takes most of the sun's light. The leaf form shows its average as the
-				// record's reflectance, so the reflectance carries that tone under the crown's dim
-				// rather than the darker green the front face would draw alone.
-				reflectance: [0.058, 0.1, 0.016],
+				reflectance: [0.0271, 0.0546, 0.009],
 				reflectanceBack: [0.365, 0.368, 0.3],
 				transmittance: [0.04, 0.08, 0.012],
 				roughness: [0.32, 0.72],
@@ -326,10 +322,6 @@ export const record: Species = {
 		cardStalkToFoliage: true,
 		switchPixels: [500, 12, 160],
 		woodOrders: [2, 1],
-		// Stills 01, 02 and 18: the crown runs from a lit grey-green top to a dark under-face, so a
-		// leaf deep in the crown takes most of the sun's light away and a clump reads as a leathery
-		// cushion rather than as an even, pale face.
-		crownDim: 0.6,
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
