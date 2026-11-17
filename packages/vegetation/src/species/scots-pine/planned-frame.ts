@@ -41,7 +41,7 @@ const TRUNK = [
  * its bend states both in the record's own degrees, so the low pads' floors fall with their limbs.
  */
 const LEVELS = [
-	{ at: 0.46, count: 2, leave: 30, end: -28, pad: 0.23, band: [0.25, 0.75] },
+	{ at: 0.43, count: 2, leave: 30, end: -28, pad: 0.23, band: [0.25, 0.75] },
 	{ at: 0.52, count: 2, leave: 30.7, end: -28, pad: 0.25, band: [0.2, 0.65] },
 	{ at: 0.61, count: 3, leave: 31.7, end: -55, pad: 0.28, band: [0.15, 0.5] },
 	{ at: 0.69, count: 3, leave: 32.9, end: -55, pad: 0.31, band: [0.15, 0.5] },
@@ -83,7 +83,7 @@ const tuft = (pad: number) => ({
 	angle: 20,
 	from: 'parent' as const,
 	angleSpread: 8,
-	length: { share: 0.15 },
+	length: { share: 0.05 },
 	vary: 0.2,
 	radius: 0.7,
 	taper: 0.7,
@@ -110,6 +110,25 @@ const arm = () => ({
 	elbows: 1,
 });
 
+const tip = (pad: number) => ({
+	name: 'tip',
+	role: 'branch' as const,
+	count: 1,
+	along: [0.96, 1] as const,
+	stagger: 0,
+	around: 'ring' as const,
+	angle: 8,
+	from: 'parent' as const,
+	angleSpread: 6,
+	length: { share: 0.02 },
+	vary: 0.1,
+	radius: 0.8,
+	taper: 0.8,
+	sway: 4,
+	elbows: 1,
+	patch: { kind: 'clump', width: pad, depth: TUFT.depth, fill: SHELL },
+});
+
 const spray = (band: readonly [number, number], pad: number) => ({
 	name: 'spray',
 	role: 'branch' as const,
@@ -120,7 +139,7 @@ const spray = (band: readonly [number, number], pad: number) => ({
 	angle: 20,
 	from: 'parent' as const,
 	angleSpread: 12,
-	length: { share: 0.12 },
+	length: { share: 0.02 },
 	vary: 0.25,
 	radius: 0.35,
 	taper: 0.6,
@@ -151,7 +170,7 @@ const rule = (
 	from: 'plumb' as const,
 	angleSpread: 4,
 	// The crown's own outline is the foliage's edge, so the wood stops a pad's radius inside it.
-	length: { outline: 0.83 },
+	length: { outline: 1 },
 	vary: 0.05,
 	// Still 01, at the measured place outside the collar: the limb is 0.20 of the trunk's radius
 	// and keeps 0.85 of it along the run. The collar's swell to 0.58 at the joint is the form's
@@ -162,7 +181,7 @@ const rule = (
 	sway: 6,
 	elbows: 3,
 	apart: 0.01,
-	...(stubs ? { children: [arm(), spray(level.band, level.pad * 0.33)] } : {}),
+	...(stubs ? { children: [arm(), spray(level.band, level.pad * 0.33), tip(level.pad * 0.3)] } : {}),
 });
 
 /** The Scots pine's frame. */
@@ -172,10 +191,12 @@ export const frame: FrameSpec = {
 		name: 'trunk',
 		count: 1,
 		width: TRUNK as unknown as (readonly [number, number])[],
-		length: { share: 0.93 },
+		length: { share: 1 },
 		sway: 3,
 		elbows: 3,
 		crook: 0.2,
 		children: [...LEVELS.map((level) => rule(level)), rule(TOP, false)],
+		// Still 01: one pad stands on top over the trunk's line, and the leader ends inside it.
+		patch: { kind: 'clump', width: 0.12, depth: 0.035, fill: SHELL },
 	},
 };
