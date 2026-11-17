@@ -2,7 +2,8 @@
 // engine.requestPointerLock(), and Playwright's mouse moves then reach the sketch's first-person
 // controls through the engine's input, and three.js's PointerLockControls on the same canvas
 // through their DOM listeners. Both cameras must reach the same rotation, and both must see the
-// lock begin and end.
+// lock begin and end. The deterministic simulation demo locks the pointer with its page's own code,
+// and a click under that lock raises no error.
 import { expect, type Page, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -144,4 +145,39 @@ test('with input off, the engine refuses the lock with E1426, and leaves the pag
 	// Stopping the engine leaves the lock that the page took.
 	await destroyEngine(page);
 	expect(await lockedToCanvas(page)).toBe(true);
+});
+
+test("a click while the deterministic simulation demo's page holds the lock raises no error", async ({
+	page,
+}) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.goto('demo-probe.html?demo=replay&preset=low');
+	const result = await pageResult<{ error?: string }>(page, 60_000);
+	expect(result.error).toBeUndefined();
+	// A click that drags nothing asks for the page's own lock.
+	await page.mouse.click(320, 180);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(globalThis as unknown as { document: { pointerLockElement: unknown } }).document
+						.pointerLockElement !== null,
+			),
+		)
+		.toBe(true);
+	// Under the lock a press goes to the canvas, which the page must not capture: the browser
+	// refuses a capture while the pointer is locked.
+	await page.mouse.click(320, 180);
+	await page.mouse.click(320, 180);
+	// A frame on, so an error that the presses raised has reached the page's handler.
+	await page.evaluate(
+		() =>
+			new Promise((resolve) =>
+				(
+					globalThis as unknown as { requestAnimationFrame(callback: () => void): void }
+				).requestAnimationFrame(() => resolve(null)),
+			),
+	);
+	expect(errors).toEqual([]);
 });

@@ -130,7 +130,7 @@ The sketch's `ctx.input` then stays at rest. Every key, button and action is up,
 
 A game whose result depends on where the player looks records the look as input. An example is a game that scores what the player aims at. The camera is then the simulation's, and the sketch only draws it:
 
-1. The page's input code locks the pointer on the canvas with `canvas.requestPointerLock()`, in a click handler. When a drag also turns the view, ask only on a click that barely moved, since a drag ends in a click too. The engine's own `requestPointerLock()` belongs to its input, and fails with [E1426](../errors/E1426.md) when that is off.
+1. The page's input code locks the pointer on the canvas with `canvas.requestPointerLock()`, in a click handler. When a drag also turns the view, ask only on a click that barely moved, since a drag ends in a click too. Read `document.pointerLockElement` at each event, since a press can come before `pointerlockchange` does. Take no pointer capture under the lock: the browser refuses one with an `InvalidStateError`. The engine's own `requestPointerLock()` belongs to its input, and fails with [E1426](../errors/E1426.md) when that is off.
 2. Each tick, the page records the mouse's movement since the last tick as whole counts, and carries the fraction to the next tick. A browser can report a fraction of a pixel, and the log holds what the simulation reads.
 3. The simulation turns the counts into a yaw and a pitch, and builds the camera's rotation with `createMath`'s `quat.fromEuler`.
 4. The sketch sets its camera to the pose in the state. It turns no camera of its own, and neither `ctx.input` nor camera controls take part.

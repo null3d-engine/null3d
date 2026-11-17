@@ -95,7 +95,8 @@ export interface StartOptions {
 	/**
 	 * Aborting it removes the listeners, the loading overlay and the controls HUD that this demo
 	 * added, so a page that starts a second demo in the same document leaves nothing of the first.
-	 * The page still owns the canvas, its own elements and the engine.
+	 * The page still owns the canvas, its own elements and the engine. A demo's page part also stops
+	 * when the page destroys the engine.
 	 */
 	signal?: AbortSignal;
 }
@@ -112,17 +113,21 @@ const MAX_EARLY_MESSAGES = 256;
 export interface DemoPage {
 	/**
 	 * Starts the part on the demo's canvas. `controls` is the element that `startDemo` takes as
-	 * `choices`, where the part shows its buttons, and `signal` ends the part with the demo.
+	 * `choices`, where the part shows its buttons. `signal` ends the part with the demo: it aborts
+	 * when the page aborts the demo's own signal or destroys the engine.
 	 */
 	start(
 		engine: Engine,
 		canvas: HTMLCanvasElement,
 		controls: HTMLElement | undefined,
-		signal: AbortSignal | undefined,
+		signal: AbortSignal,
 	): void;
 }
 
-/** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
+/**
+ * Starts the demo's sketch on the canvas, and resolves to its engine once it runs. A demo with a
+ * page part resolves once the part runs too; a part that fails to load or start fails the start.
+ */
 export async function startDemo({
 	canvas,
 	demo,
@@ -295,13 +300,6 @@ export async function startDemo({
 		throw error;
 	}
 	if (choices) showChoices(engine, demo, choices);
-	// A demo whose page takes the input starts its page part on a live page. A held frame draws the
-	// sketch alone, and the engine reads `?hold` from the page's address.
-	const running = engine;
-	if (demo.pagePart && !new URLSearchParams(location.search).has('hold'))
-		void (import(`../${demo.name}/page.ts`) as Promise<DemoPage>).then((part) =>
-			part.start(running, canvas, choices, signal),
-		);
 	// One message handler for the page: the engine gives the messages that a sketch sent before the
 	// page listened to the first handler alone, so two handlers would drop the help that a showcase
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
@@ -317,7 +315,40 @@ export async function startDemo({
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}), { signal });
+	// A demo whose page takes the input starts its page part on a live page. A held frame draws the
+	// sketch alone, and the engine reads `?hold` from the page's address.
+	if (demo.pagePart && !new URLSearchParams(location.search).has('hold')) {
+		const stop = stopWithDemo(engine, signal);
+		try {
+			const part = (await import(`../${demo.name}/page.ts`)) as DemoPage;
+			part.start(engine, canvas, choices, stop.signal);
+		} catch (error) {
+			// A demo whose page part fails cannot be played, so its start fails as a failed engine's
+			// does: the overlay and the caller say why, and the engine leaves the page.
+			const text = `The demo's page part did not start: ${error instanceof Error ? error.message : String(error)}`;
+			stop.abort();
+			loader.fail(text);
+			await engine.destroy();
+			throw new Error(text);
+		}
+	}
 	return engine;
+}
+
+/**
+ * The stop of a demo's page part, which aborts when the page aborts the demo's signal or destroys
+ * its engine. Either ends the demo, so the part's listeners and frame loop leave the page with it.
+ */
+function stopWithDemo(engine: Engine, signal: AbortSignal | undefined): AbortController {
+	const stop = new AbortController();
+	if (signal?.aborted) stop.abort();
+	signal?.addEventListener('abort', () => stop.abort(), { once: true });
+	const destroy = engine.destroy.bind(engine);
+	engine.destroy = (options) => {
+		stop.abort();
+		return destroy(options);
+	};
+	return stop;
 }
 
 /** The text that a scene posts while it loads its files, for the loading overlay. */

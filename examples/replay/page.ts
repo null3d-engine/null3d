@@ -3,22 +3,11 @@
 // `input: false`, so nothing of null3D listens: the keys, the mouse, the fingers and the pointer
 // lock are this page's own, as they are the code's that records a game's input. Each tick's input
 // goes into a log. Replay steps a new run from the seed through the log, at the same rate, and it
-// ends on the state that the run had, so it ends on the same picture.
+// ends on the state that the run had, so it ends on the same picture. The play itself, without the
+// page, is session.ts.
 import type { DemoPage } from '../lib/run';
-import {
-	BACK,
-	FORWARD,
-	INPUT_NUMBERS,
-	LEFT,
-	ORBS,
-	RIGHT,
-	type Run,
-	sameRun,
-	startRun,
-	step,
-	TICK_HZ,
-} from './sim';
-import { BEFORE, BETWEEN, CAUGHT, NOW, VIEW_NUMBERS } from './view';
+import { Session, TickClock } from './session';
+import { BACK, FORWARD, LEFT, RIGHT } from './sim';
 
 /** The keys that walk, as the simulation's bits. */
 const KEYS: Readonly<Record<string, number>> = {
@@ -31,32 +20,17 @@ const KEYS: Readonly<Record<string, number>> = {
 	KeyD: RIGHT,
 	ArrowRight: RIGHT,
 };
-const TICK_MS = 1000 / TICK_HZ;
-/** The most time that one frame steps, so a page that was hidden does not race to catch up. */
-const MOST_MS = 250;
 /** How far a press may move, in CSS pixels, and still count as a click that asks for the lock. */
 const CLICK_PX = 4;
-/** How long the replay's verdict shows, in ticks of the run that goes on after it. */
-const VERDICT_TICKS = 4 * TICK_HZ;
-
-/** Writes a run's pose, its eye and its view's rotation, into the view from `at`. */
-function writePose(view: Float64Array, at: number, run: Run): void {
-	view.set(run.position, at);
-	view.set(run.look, at + 3);
-}
 
 /** Starts the page part: see `DemoPage` in `examples/lib/run.ts`. */
 export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
-	const listen: AddEventListenerOptions = signal ? { signal } : {};
-	let run = startRun();
-	let log: number[] = [];
-	let replaying: Run | undefined;
-	let replayAt = 0;
+	const listen: AddEventListenerOptions = { signal };
+	const session = new Session();
 	// The input since the last tick: the keys held, and the mouse's movement in CSS pixels.
 	let keys = 0;
 	let turn = 0;
 	let tilt = 0;
-	let locked = false;
 	let looking = -1;
 	let lastX = 0;
 	let lastY = 0;
@@ -78,30 +52,32 @@ export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 	window.addEventListener('keyup', (event) => (keys &= ~(KEYS[event.code] ?? 0)), listen);
 	window.addEventListener('blur', () => (keys = 0), listen);
 	// The pointer lock is the page's own: a click that drags nothing asks for it, and the mouse then
-	// turns the view. A finger turns it by dragging, so the page scrolls nothing under it.
+	// turns the view. A finger turns it by dragging, so the page scrolls nothing under it. The lock
+	// is read where it matters, because a press can come before the lock's change event does.
 	canvas.style.touchAction = 'none';
-	document.addEventListener(
-		'pointerlockchange',
-		() => (locked = document.pointerLockElement === canvas),
-		listen,
-	);
+	const locked = () => document.pointerLockElement === canvas;
 	// Without the lock, the first pointer down drags the view, and a second finger walks forward.
 	canvas.addEventListener(
 		'pointerdown',
 		(event) => {
 			if (event.pointerType === 'touch') fingers.add(event.pointerId);
-			if (looking >= 0) return;
+			// Under the lock the mouse turns the view by its movement, and the browser refuses a capture.
+			if (locked() || looking >= 0) return;
 			looking = event.pointerId;
 			lastX = downX = event.clientX;
 			lastY = downY = event.clientY;
-			canvas.setPointerCapture(event.pointerId);
+			try {
+				canvas.setPointerCapture(event.pointerId);
+			} catch {
+				// The pointer is no longer active, or the lock began meanwhile: no drag to keep.
+			}
 		},
 		listen,
 	);
 	canvas.addEventListener(
 		'pointermove',
 		(event) => {
-			if (locked) {
+			if (locked()) {
 				turn += event.movementX;
 				tilt += event.movementY;
 			} else if (event.pointerId === looking) {
@@ -118,7 +94,7 @@ export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 		if (event.pointerId !== looking) return;
 		looking = -1;
 		const still = Math.hypot(event.clientX - downX, event.clientY - downY) < CLICK_PX;
-		if (event.type === 'pointerup' && event.pointerType === 'mouse' && still && !locked)
+		if (event.type === 'pointerup' && event.pointerType === 'mouse' && still && !locked())
 			canvas.requestPointerLock()?.catch(() => {});
 	};
 	canvas.addEventListener('pointerup', lift, listen);
@@ -141,80 +117,29 @@ export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 		made.addEventListener('click', press);
 		return made;
 	};
-	const replayButton = button('Replay', () => {
-		if (replaying || log.length === 0) return;
-		replaying = startRun();
-		replayAt = 0;
-		replayButton.setAttribute('aria-pressed', 'true');
-	});
-	const restart = button('Restart', () => {
-		run = startRun();
-		log = [];
-		replaying = undefined;
-		replayButton.setAttribute('aria-pressed', 'false');
-	});
+	const replayButton = button('Replay', () => session.replay());
+	const restart = button('Restart', () => session.restart());
 	group.append(label, restart, replayButton, status);
 	controls?.append(group);
-	signal?.addEventListener('abort', () => group.remove());
+	signal.addEventListener('abort', () => group.remove());
 
-	let verdict = '';
-	let verdictUntil = 0;
-	let shown = '';
-	const say = (text: string) => {
-		if (text !== shown) status.textContent = shown = text;
-	};
-	const seconds = (numbers: number) => (numbers / INPUT_NUMBERS / TICK_HZ).toFixed(1);
-	const view = new Float64Array(VIEW_NUMBERS);
-	writePose(view, NOW, run);
-
-	/** One tick: the live run takes the input and logs it, or the replay takes the log's next tick. */
-	const tick = () => {
-		writePose(view, BEFORE, replaying ?? run);
-		if (!replaying) {
+	const clock = new TickClock(performance.now());
+	const frame = (now: number) => {
+		if (signal.aborted) return;
+		for (let due = clock.due(now); due > 0; due--) {
 			const whole = Math.trunc(turn);
 			const steep = Math.trunc(tilt);
 			turn -= whole;
 			tilt -= steep;
-			log.push(keys | (fingers.size > 1 ? FORWARD : 0), whole, steep);
-			step(run, log[log.length - 3] as number, whole, steep);
-		} else {
-			const at = replayAt;
-			step(replaying, log[at] as number, log[at + 1] as number, log[at + 2] as number);
-			replayAt += INPUT_NUMBERS;
-			if (replayAt >= log.length) {
-				// The replay ran every logged tick from the seed: its state is the run's, bit for bit.
-				verdict = sameRun(replaying, run)
-					? 'Replay ended on the same state'
-					: 'Replay ended on another state';
-				verdictUntil = run.tick + VERDICT_TICKS;
-				replaying = undefined;
-				turn = 0;
-				tilt = 0;
-				replayButton.setAttribute('aria-pressed', 'false');
-			}
+			session.tick(keys | (fingers.size > 1 ? FORWARD : 0), whole, steep);
 		}
-		writePose(view, NOW, replaying ?? run);
-	};
-	let last = performance.now();
-	let carry = 0;
-	const frame = (now: number) => {
-		if (signal?.aborted) return;
-		carry = Math.min(carry + now - last, MOST_MS);
-		last = now;
-		while (carry >= TICK_MS) {
-			carry -= TICK_MS;
-			tick();
-		}
-		const shownRun = replaying ?? run;
-		view[BETWEEN] = carry / TICK_MS;
-		let caught = 0;
-		for (let i = 0; i < ORBS; i++) if ((shownRun.caught[i] as number) >= 0) caught |= 1 << i;
-		view[CAUGHT] = caught;
+		// Input that came while a replay ran belongs to no tick.
+		if (session.replays) turn = tilt = 0;
 		// A copy each frame: a sketch on the page's thread gets the very array that the page sends.
-		engine.postToSketch('view', view.slice());
-		if (replaying) say(`Replaying ${seconds(replayAt)} of ${seconds(log.length)} s`);
-		else if (run.tick < verdictUntil) say(verdict);
-		else say(`${run.score} of ${ORBS} orbs`);
+		engine.postToSketch('view', session.frame(clock.between).slice());
+		replayButton.setAttribute('aria-pressed', String(session.replays));
+		const line = session.status();
+		if (status.textContent !== line) status.textContent = line;
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);

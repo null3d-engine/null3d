@@ -18,7 +18,12 @@ const GOLD = '#ffc864';
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, page, time } = ctx;
 	scene.setBackground({ sky: { sunPosition: SUN, turbidity: 7, cloudCoverage: 0.5 } });
-	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.12 });
+	// The room's soft fill arrives after the first frame on a live page, so the start shows the court
+	// at once, and the fill lands when it is ready. A held picture waits for it.
+	const fill = async () =>
+		scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.12 });
+	if (ctx.engine.held) await fill();
+	else fill().catch((error: unknown) => console.error(error));
 	scene.setFog({ color: '#3d3242', density: 0.018, heightFalloff: 0.35, sunGlow: 1 });
 	post.set({ bloom: { intensity: 0.35, threshold: 1 }, ao: { radius: 0.5 }, vignette: {} });
 	const run = startRun();

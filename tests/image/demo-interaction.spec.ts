@@ -7,7 +7,8 @@
 // transparency demo, a key and the controls HUD swap the two blends and the picture follows, while
 // the pointer leaves the blend alone. In the deterministic simulation demo, the page's own listeners
 // take a key and a drag, which walk and turn the camera that the simulation computes, and its replay
-// ends with the camera where the run left it.
+// ends with the camera where the run left it. Its page part stops with the demo, and a page part
+// that does not load fails the demo's start.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -319,4 +320,29 @@ test('the deterministic simulation demo takes its own input, and its replay ends
 	expect(apart(replayed.camera, played.camera)).toBeLessThan(1e-3);
 	expect(apart(replayed.cameraTurn, played.cameraTurn)).toBeLessThan(1e-3);
 	expect(errors).toEqual([]);
+});
+
+test("the deterministic simulation demo's page part stops with the demo, by its signal or its engine's destroy", async ({
+	page,
+}) => {
+	for (const how of ['signal', 'destroy'] as const) {
+		const errors = await open(page, 'replay');
+		const run = page.getByRole('group', { name: 'Run' });
+		await expect(run).toHaveCount(1, { timeout: PATIENCE });
+		await page.evaluate(
+			(stop) => (globalThis as { stopDemo?: (how: string) => Promise<void> }).stopDemo?.(stop),
+			how,
+		);
+		// The part takes its buttons away with its listeners and its frame loop.
+		await expect(run).toHaveCount(0);
+		expect(errors).toEqual([]);
+	}
+});
+
+test('a page part that does not load fails the demo start and says why', async ({ page }) => {
+	// The math demo has no page part, so the one that the page asks for does not load.
+	await page.goto('demo-probe.html?demo=math&preset=low&pagePart');
+	const result = await pageResult<{ error?: string }>(page, PATIENCE);
+	expect(result.error).toMatch(/^The demo's page part did not start: /);
+	await expect(page.locator('.loader')).toContainText("The demo's page part did not start");
 });

@@ -143,12 +143,18 @@ export function step(run: Run, keys: number, turn: number, tilt: number): void {
 	run.tick++;
 }
 
-/** Steps a new run from the seed through a log of inputs, `INPUT_NUMBERS` numbers a tick. */
-export function replay(log: readonly number[], seed = SEED): Run {
-	const run = startRun(seed);
-	for (let k = 0; k < log.length; k += INPUT_NUMBERS)
-		step(run, log[k] as number, log[k + 1] as number, log[k + 2] as number);
-	return run;
+/**
+ * Steps the run by the log's entry for its own next tick, `INPUT_NUMBERS` numbers a tick. Live play
+ * logs a tick's input and then steps by it, and a replay steps a new run from the seed through the
+ * same log, so both go through this one call. Throws for a tick that the log does not hold.
+ */
+export function stepLogged(run: Run, log: readonly number[]): void {
+	const at = run.tick * INPUT_NUMBERS;
+	if (at + INPUT_NUMBERS > log.length)
+		throw new Error(
+			`the log holds ${log.length / INPUT_NUMBERS} ticks, and the run is at tick ${run.tick}`,
+		);
+	step(run, log[at] as number, log[at + 1] as number, log[at + 2] as number);
 }
 
 /** True when two runs hold the same numbers, bit for bit. */
