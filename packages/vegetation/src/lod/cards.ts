@@ -1045,38 +1045,54 @@ export function turnedClumpCards(kit: SpeciesKitData, count: number): SpeciesKit
 	if (!Number.isInteger(count) || count < 4 || count > 16 || count % 2 !== 0) return kit;
 	const turned = kit.prototypes.map((prototype) => {
 		const base = prototype.card.planes;
-		const verticals = base.filter((plane) => Math.abs(plane.up[1]) > 0.5);
-		if (verticals.length !== 2) return prototype;
-		const direction = (v: readonly number[]): [number, number] => {
-			const length = Math.hypot(v[0] as number, v[2] as number) || 1;
-			return [(v[0] as number) / length, (v[2] as number) / length];
+		/** A plane's normal, and the azimuth its face points along, in half a turn. */
+		const normalOf = (plane: (typeof base)[number]): Vector3 => {
+			const [right, up] = [plane.right, plane.up];
+			const normal: Vector3 = [
+				((right[1] as number) * (up[2] as number) -
+					(right[2] as number) * (up[1] as number)) as number,
+				((right[2] as number) * (up[0] as number) -
+					(right[0] as number) * (up[2] as number)) as number,
+				((right[0] as number) * (up[1] as number) -
+					(right[1] as number) * (up[0] as number)) as number,
+			];
+			const length = Math.hypot(...normal) || 1;
+			return [normal[0] / length, normal[1] / length, normal[2] / length];
 		};
-		const faces: ((typeof verticals)[number])[] = [];
-		for (let k = 0; k < count; k++) {
-			const angle = (k * Math.PI) / count;
+		const azimuth = (plane: (typeof base)[number]): number => {
+			const normal = normalOf(plane);
+			const angle = Math.atan2(normal[0], normal[2]);
+			return (angle + Math.PI * 2) % Math.PI;
+		};
+		// A face is a plane whose normal lies in the ground: the prototypes tilt some of theirs, so
+		// the plane's up vector is not the test.
+		const facesOf = base.filter((plane) => Math.abs(normalOf(plane)[1]) < 0.5);
+		if (facesOf.length !== 2) return prototype;
+		const turn = (v: readonly number[], angle: number): Vector3 => {
 			const cos = Math.cos(angle);
 			const sin = Math.sin(angle);
-			const source = verticals[k % 2] as (typeof verticals)[number];
-			// The face stands at its own even angle, and keeps the width of the picture it shows.
-			const width = Math.hypot(source.right[0] as number, source.right[2] as number);
-			const right: Vector3 = [width * cos, source.right[1] as number, -width * sin];
-			const wanted = direction(right);
-			// A face the prototype already draws keeps its own plane, and with it its own extent.
-			const existing = verticals.find((plane) => {
-				const [x, z] = direction(plane.right);
-				return Math.abs(x - wanted[0]) < 1e-6 && Math.abs(z - wanted[1]) < 1e-6;
-			});
-			faces.push(
-				existing ?? {
-					...source,
-					right,
-				},
-			);
+			return [
+				(v[0] as number) * cos + (v[2] as number) * sin,
+				v[1] as number,
+				-(v[0] as number) * sin + (v[2] as number) * cos,
+			];
+		};
+		const faces: (typeof base)[number][] = [];
+		for (let k = 0; k < count; k++) {
+			const angle = (k * Math.PI) / count;
+			const source = facesOf[k % 2] as (typeof base)[number];
+			// The face stands at its own even azimuth, turned about the clump's vertical, and keeps
+			// the picture and the tilt of the face it cycles.
+			const delta = angle - azimuth(source);
+			const right = turn(source.right, delta);
+			const up = turn(source.up, delta);
+			const existing = facesOf.find((plane) => Math.abs(azimuth(plane) - angle) < 1e-6);
+			faces.push(existing ?? { ...source, right, up });
 		}
-		const horizontal = base.filter((plane) => Math.abs(plane.up[1]) <= 0.5);
+		const others = base.filter((plane) => Math.abs(normalOf(plane)[1]) >= 0.5);
 		return {
 			...prototype,
-			card: { ...prototype.card, planes: [...faces, ...horizontal] },
+			card: { ...prototype.card, planes: [...faces, ...others] },
 		};
 	});
 	return { ...kit, prototypes: turned };
