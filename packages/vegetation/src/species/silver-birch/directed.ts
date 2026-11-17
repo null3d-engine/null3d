@@ -128,7 +128,7 @@ export const frame: FrameSpec = {
 				// crown's widest row, so their strands fill its lower half.
 				length: {
 					outline: [
-						[0, 0.88],
+						[0, 1],
 						[0.4, 0.78],
 						[1, 0.7],
 					],
