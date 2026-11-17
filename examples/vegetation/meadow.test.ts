@@ -1,7 +1,8 @@
 // Ten regrows across the meadow's whole species list, with the controls moving, against a fake
 // vegetation package and a fake sketch context: the figures show that each regrow reuses the page's
 // plant materials instead of making a new set a species, which is what filled the render's material
-// table.
+// table. Before the sharing, the same ten regrows counted 120 sets — twelve species on each of the
+// ten — and the case below expects 24: one a species for each of the two seasons used.
 import { describe, expect, it, mock } from 'bun:test';
 
 /** The page's species, as many as the meadow's real list. */
