@@ -58,6 +58,12 @@ How the data was produced: `bun run plants:review` runs on the oak under the sha
 state at the same camera and slot, the sky read on the matte and the boards on the parts picture. The runs are
 `sw-base-<turn>` and `sw-cut1-<turn>` in the oak-reset build's `switch` folder.
 
+The switch's own step, with the second cut landed: the oak at seed 11, variant 0, at one camera near its first card
+switch with both levels forced so only the drawing swaps, the same camera and slot, the review's from-below slot with
+the species framing at 4.6 metres and the record's switch pixels raised for the run. The leaf form leaves 0.219 of the
+frame open and the cards 0.205, a step of 0.014 of open sky: the swap closes the crown slightly rather than opening it.
+The runs are `step5-l0` and `step5-l1` in the oak-reset build's `switch` folder.
+
 ## Look
 
 The owner's own recordings decide this row: the leaves at close range are the reference, and the pulled-back crown must
@@ -88,5 +94,6 @@ barely moves, so the cut lifts every quarter evenly.
    foliage. Turning a plate's normal would therefore be inert, and the plane orientations themselves would have to change,
    which is a geometry change and not this route.
 
-More cards per clump stays in reserve for a band where neither applies. The done-when is met: the sky's step across the
-switch is one point in the mean, under the two hundredths the rule sets, and the grain does not coarsen.
+More cards per clump stays in reserve for a band where neither applies. The done-when is met with the second cut landed:
+the swap itself steps 0.014 of open sky at one camera, and the cut across the eight angles closes 1.0 point in the
+mean, both under the two hundredths the rule sets, and the grain does not coarsen.
