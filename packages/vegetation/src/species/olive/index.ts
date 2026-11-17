@@ -19,13 +19,6 @@ const planned: SpeciesForm = {
 	lod: { clumpCard: [1, 1], cardGrow: 1.4 },
 };
 
-/** The olive as its directed frame grows it, which carries its branch ends at sockets. */
-const frame: SpeciesForm = {
-	form: directed.form,
-	growth: directed.growth,
-	lod: directed.lod,
-};
-
 /** The record the planned form grows from, found exactly as a page asking for it would. */
 const plannedRecord: Species = formRecord(
 	{ ...directed, forms: { ...(directed.forms ?? {}), planned } },
@@ -34,9 +27,9 @@ const plannedRecord: Species = formRecord(
 
 /**
  * The olive. The record as it stands grows the planned model, whose form words it carries; the
- * directed frame stays a form, so a page can still ask for the old tree by name.
+ * planned form is the only one a page can name.
  */
 export const species: SpeciesModule = {
-	record: { ...plannedRecord, forms: { ...(directed.forms ?? {}), planned, frame } },
+	record: { ...plannedRecord, forms: { ...(directed.forms ?? {}), planned } },
 	textures: files,
 };

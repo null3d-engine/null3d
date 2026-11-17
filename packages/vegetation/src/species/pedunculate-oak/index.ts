@@ -17,13 +17,6 @@ const planned: SpeciesForm = {
 	lod: { clumpCard: [1, 1] },
 };
 
-/** The pedunculate oak as its directed frame grows it, which carries its branch ends at sockets. */
-const frame: SpeciesForm = {
-	form: directed.form,
-	growth: directed.growth,
-	lod: directed.lod,
-};
-
 /**
  * The record the planned form grows from, found by merging the form into the frame record exactly as
  * a page asking for it would. The record as it stands is this one.
@@ -34,11 +27,10 @@ const plannedRecord: Species = formRecord(
 );
 
 /**
- * The pedunculate oak. The record as it stands grows the planned model, whose form words it carries;
- * the frame oak stays a form, so a page can still ask for today's tree by name, and `planned` stays a
- * form so a page that names it grows the same default plant.
+ * The pedunculate oak. The record as it stands grows the planned model, whose form words it
+ * carries, and `planned` stays a form so a page that names it grows the same default plant.
  */
 export const species: SpeciesModule = {
-	record: { ...plannedRecord, forms: { ...(directed.forms ?? {}), planned, frame } },
+	record: { ...plannedRecord, forms: { ...(directed.forms ?? {}), planned } },
 	textures: files,
 };
