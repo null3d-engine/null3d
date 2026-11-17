@@ -470,6 +470,8 @@ export interface SweepReference {
 	readonly separable: boolean;
 	/** The sky inside its crown's outline, or null where the picture's outline does not read. */
 	readonly skyGap: number | null;
+	/** The share of its own silhouette box that the plant fills: the filled-frame figure. */
+	readonly solidity: number | null;
 	/** Its separate pieces, or null where the picture's outline does not read. */
 	readonly pieces: number | null;
 }
@@ -672,10 +674,11 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 		});
 	if (reference.separable && rung.compare === 'gap') {
 		const referenceGap = reference.skyGap;
+		const allEnclosed = drawn.every((picture) => picture.skyGap !== null);
 		const skyGaps = drawn
 			.map((picture) => picture.skyGap)
 			.filter((value): value is number => value !== null);
-		if (referenceGap !== null && skyGaps.length > 0) {
+		if (referenceGap !== null && skyGaps.length > 0 && allEnclosed) {
 			// The bar is the still comparison's: a drawn crown may stand two points more closed
 			// and five points more open than its photograph's outline.
 			const least = Math.min(...skyGaps);
@@ -692,6 +695,27 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 				failures.push(
 					`the crown's open sky ${figure} in ${first.file} against the reference's ${referenceGap.toFixed(3)}, past the ${GAP_BELOW.toFixed(2)}/${GAP_ABOVE.toFixed(2)} band (${least.toFixed(3)} to ${most.toFixed(3)} across ${skyGaps.length} pictures)`,
 				);
+			}
+		}
+		if (!allEnclosed && reference.solidity !== null) {
+			const filled = drawn
+				.map((picture) => (picture.covered === null ? null : 1 - picture.covered))
+				.filter((value): value is number => value !== null);
+			if (filled.length > 0) {
+				const most = Math.max(...filled);
+				const referenceOpen = 1 - reference.solidity;
+				gap = { drawn: most, reference: referenceOpen };
+				const outside = drawn.filter((picture) => {
+					if (picture.covered === null) return false;
+					const open = 1 - picture.covered;
+					return open > referenceOpen + GAP_ABOVE || open < referenceOpen - GAP_BELOW;
+				});
+				if (outside.length > 0) {
+					const first = outside[0] as SweepPicture;
+					failures.push(
+						`the filled-frame openness ${(1 - (first.covered as number)).toFixed(3)} in ${first.file} against the reference's ${referenceOpen.toFixed(3)}, past the ${GAP_BELOW.toFixed(2)}/${GAP_ABOVE.toFixed(2)} band (the outline covers too little of the frame for the enclosed sky)`,
+					);
+				}
 			}
 		}
 		const drawnPieces = drawn
@@ -975,12 +999,14 @@ function referenceOf(set: ReferenceSet, slot: Slot | undefined): SweepReference 
 		plant.background.plain ||
 		skyMaskable(plant.background) ||
 		soilMaskable(plant.background, plant.height);
-	if (!separable) return { file: slot.file, separable: false, skyGap: null, pieces: null };
+	if (!separable)
+		return { file: slot.file, separable: false, skyGap: null, solidity: null, pieces: null };
 	const measures = measurePlant(image, plant);
 	return {
 		file: slot.file,
 		separable: true,
 		skyGap: measures.box === null ? null : measures.gapFraction,
+		solidity: measures.box === null ? null : measures.solidity,
 		pieces:
 			measures.box === null
 				? null
@@ -1020,7 +1046,14 @@ function pictureOf(runDir: string, frame: RunFrame, baseElevation?: number): Swe
 		const image = readImage(join(runDir, frame.file));
 		const plant = plantMask(image);
 		const read = measurePlant(image, plant);
-		const skyGap = read.box === null ? null : read.gapFraction;
+		// A far card's crown outline can collapse onto a sparse speckle, and then the enclosed sky
+		// reads solid while the card is hollow. An outline that covers less than a fiftieth of the
+		// frame is refused, and the row reads the filled-frame share instead.
+		const frameArea = image.width * image.height;
+		const boxArea = read.box
+			? (read.box.right - read.box.left + 1) * (read.box.bottom - read.box.top + 1)
+			: 0;
+		const skyGap = read.box === null || boxArea < frameArea / 50 ? null : read.gapFraction;
 		return {
 			...picture,
 			measures,

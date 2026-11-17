@@ -132,7 +132,14 @@ function orbit(level: number | null, covered = 0.8, turn?: number): SweepPicture
 
 /** The reference of a rung, separable with the sky gap and pieces it shows. */
 function refOf(rest: Partial<SweepReference> = {}): SweepReference {
-	return { file: '01-whole.png', separable: true, skyGap: 0.2, pieces: 1, ...rest };
+	return {
+		file: '01-whole.png',
+		separable: true,
+		skyGap: 0.2,
+		solidity: 0.75,
+		pieces: 1,
+		...rest,
+	};
 }
 
 /** A rung's row from its pictures and the reference it is compared beside. */
@@ -397,6 +404,28 @@ describe('the sweep’s verdicts', () => {
 		expect(result.verdict).toBe('fail');
 		expect(result.floating).toBe(1);
 		expect(result.reason).toContain('1 piece meets nothing');
+	});
+
+	test('refuses enclosed sky on a collapsed outline and reads the filled-frame share', () => {
+		// A far card whose outline is a speckle: every picture refused the enclosed figure.
+		const filled = orbit(3).map((entry) => ({ ...entry, skyGap: null, covered: 0.7 }));
+		const passed = rowWith(
+			SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
+			filled,
+			refOf({ skyGap: 0.2, solidity: 0.72 }),
+		);
+		expect(passed.verdict).toBe('pass');
+		expect(passed.gap?.drawn).toBeCloseTo(0.3, 5);
+		expect(passed.gap?.reference).toBeCloseTo(0.28, 5);
+		const hollow = orbit(3).map((entry) => ({ ...entry, skyGap: null, covered: 0.5 }));
+		const failed = rowWith(
+			SWEEP_RUNGS[0] as (typeof SWEEP_RUNGS)[number],
+			hollow,
+			refOf({ skyGap: 0.2, solidity: 0.72 }),
+		);
+		expect(failed.verdict).toBe('fail');
+		expect(failed.reason).toContain('filled-frame openness 0.500');
+		expect(failed.reason).toContain('outline covers too little');
 	});
 
 	test('fails a crown nearly half again as open as its photograph, with the figure', () => {
