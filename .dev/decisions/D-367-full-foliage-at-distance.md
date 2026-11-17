@@ -41,11 +41,9 @@ read as the same tree. The style change at the switch is the failure, not the gr
 
 ## Decision
 
-Two mechanisms, in the order they are measured.
+The plan, with its first mechanism measured and rejected.
 
-1. **Keep the leaf form longer.** The switch is in pixels of the plant's height on screen, so it is a record number.
-   Measure, do not assume: at least two raises, reading the plant's triangles, the sky and the level drawn on both sides.
-1. **Keep the leaf form longer — measured and rejected.** The switch move is priced: the near leaf level is 10,974,912
+1. **Keeping the leaf form longer — measured and rejected.** The switch move is priced: the near leaf level is 10,974,912
    triangles against the card level's 62,023, so drawing it out to ten metres costs that over a band of 3.3 metres. No
    preset carries it, and the whole-view pair shows the leaf form reads *more* open at forty-six metres anyway, because a
    leaf there is smaller than a pixel.
