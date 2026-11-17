@@ -1514,7 +1514,7 @@ describe('a runner on a page that writes no input', () => {
 		}
 	});
 
-	it('stops hearing add-ons when its setup fails, and when it is disposed', async () => {
+	it('stops hearing add-ons when its setup fails at any step, and when it is disposed', async () => {
 		const warn = spyOn(console, 'warn').mockImplementation(() => {});
 		try {
 			let failed = '';
@@ -1530,6 +1530,15 @@ describe('a runner on a page that writes no input', () => {
 				failed = messageOf(error);
 			}
 			expect(failed).toContain('the setup failed on purpose');
+			// A setup refused before the sketch's own setup runs, here for a rate of fixed steps that
+			// is no rate, stops the hearing too.
+			let refused = '';
+			try {
+				await start(() => ({}), { fixedRate: 0 }, { control: inputOff() });
+			} catch (error) {
+				refused = messageOf(error);
+			}
+			expect(refused).toContain('E1214');
 			checkAddonVersion('@null3d/controls', VERSION);
 			const { runner } = await start(() => ({}), undefined, { control: inputOff() });
 			runner.dispose();

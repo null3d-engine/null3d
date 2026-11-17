@@ -823,33 +823,34 @@ export class SketchRunner {
 	 * `hold`). Options out of range fail with E1214 before the setup function runs.
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
-		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
-		// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
-		this.record.markSetupStart();
-		const growing = performance.now();
 		try {
+			this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+			// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
+			this.record.markSetupStart();
+			const growing = performance.now();
 			this.callbacks = (await sketch.setup(this.context)) ?? {};
+			this.record.markSetupDone(performance.now() - growing);
+			const { check } = this.sketch.quality;
+			if (check && !this.holdsFrames) await this.checkPreset();
+			// Warm-ups that the setup started without waiting for them publish their frames first, so
+			// the frame loop never records while a setup frame does.
+			await this.setupFrames;
+			if (this.records) {
+				// The format's code loads only for a session that records one, so a page that records
+				// nothing downloads none of it.
+				const { Recorder: Recording } = await import('../shared/recording');
+				this.recorder = new Recording(RECORDING_SEED, this.sketch.keyCodes);
+				this.input.recorder = this.recorder;
+			}
+			this.setUp = true;
+			if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
+			else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
 		} catch (error) {
-			// A setup that fails leaves no runner to dispose, so the runner stops hearing add-ons now.
+			// A setup that fails, at any step, leaves no runner to dispose, so the runner stops hearing
+			// add-ons now.
 			if (DEV) this.stopAddonNotes?.();
 			throw error;
 		}
-		this.record.markSetupDone(performance.now() - growing);
-		const { check } = this.sketch.quality;
-		if (check && !this.holdsFrames) await this.checkPreset();
-		// Warm-ups that the setup started without waiting for them publish their frames first, so
-		// the frame loop never records while a setup frame does.
-		await this.setupFrames;
-		if (this.records) {
-			// The format's code loads only for a session that records one, so a page that records
-			// nothing downloads none of it.
-			const { Recorder: Recording } = await import('../shared/recording');
-			this.recorder = new Recording(RECORDING_SEED, this.sketch.keyCodes);
-			this.input.recorder = this.recorder;
-		}
-		this.setUp = true;
-		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
-		else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
 	}
 
 	/**
