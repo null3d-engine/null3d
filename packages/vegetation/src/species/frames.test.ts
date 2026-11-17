@@ -936,6 +936,7 @@ for (const held of HELD)
  * this list changes in the same commit as an entry does.
  */
 const REGISTERED_FRAMES = [
+	'european-beech',
 	'holm-oak',
 	'olive',
 	'pedunculate-oak',
