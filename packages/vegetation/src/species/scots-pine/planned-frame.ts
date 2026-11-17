@@ -102,7 +102,7 @@ const arm = () => ({
 	angle: 39,
 	from: 'parent' as const,
 	angleSpread: 10,
-	length: { share: 0.2 },
+	length: { share: 0.08 },
 	vary: 0.2,
 	radius: 0.7,
 	taper: 0.6,
