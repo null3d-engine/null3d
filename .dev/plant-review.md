@@ -931,6 +931,29 @@ only when its close views are drawn and compared; a verdict without them is a ve
 The close views hold the page's default setting. A close view at another sparseness, maximum or tier measures that
 setting, and it is labelled with it.
 
+## The gate a species must pass
+
+The oak set the standard, and every species is held to it. A species is done when one head passes every check below,
+not when a reviewer believes it. A species that fails any check fails, however good its distant pictures look.
+
+1. The full form — sparseness 0, no triangle maximum, the high tier — drawn and compared at every view its reference
+   store carries, each beside the same-named reference crop. A round that leaves a view uncompared fails coverage.
+2. Three close views of that form: inside the crown, at the trunk, and at a leaf's own scale, each beside its
+   reference crop.
+3. The body: every drawn cluster's base within a cell of wood the level draws, and no row off a drawn carrier, at
+   every sparseness and every maximum. Rows whose carrier order the level drops are reported apart from these.
+4. The caps: at 400, 1,000 and 10,000 triangles the crown draws at every sparseness, the leaves hold the first share
+   of the allowance, and every level stays inside its maximum.
+5. The switch: the grain and the open sky either side of the first card level, inside the record's bars, at the
+   from-below camera.
+6. The bake: each card's mask follows the shape the card stands for — a leaf for a broadleaf, a needle tuft for a
+   needle species — and the needle species' card atlases differ from the broadleaves'.
+7. The colour: the crown's tone against its reference crop, found by isolating one cause at a time, never fitted to
+   one picture's light.
+
+Every check names a test in the repository or a coverage rule in the review tool. A check with neither is not a gate.
+A species is not counted landed, and a shared change is not merged, while one of its checks is red.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
