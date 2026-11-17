@@ -1585,6 +1585,17 @@ fn surface(input: SurfaceInput) -> Surface {
             let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
             mapped = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
             occlusion = mix(input.vertexColor.a * saturate(self_shade), 1.0, leaf_sky);
+            // The instrument's modes, on the card atlas a brush kit binds in the leaf's place.
+            if (material.cardDebug > 0.5 && material.cardDebug < 1.5) {
+                base = texel.rgb;
+                through = vec3f(0.0);
+                share = 0.0;
+            } else if (material.cardDebug > 1.5 && material.cardDebug < 2.5) {
+                mapped = vec3f(0.0, 0.0, 1.0);
+            } else if (material.cardDebug > 2.5) {
+                through = vec3f(0.0);
+                share = 0.0;
+            }
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
