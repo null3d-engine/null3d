@@ -22,7 +22,7 @@ import { thinningRanks } from '../core/rank';
 import type { Planned, Species } from '../core/record';
 import { type Curve, curveAt, spreadMean, type Vec3 } from '../core/types';
 import type { DetailPlan, GrowInput, GrowRequest } from '../stages';
-import type { FrameAxis, FrameNode, FramePlan } from './frame';
+import type { FrameAxis, FrameLength, FrameNode, FramePlan } from './frame';
 import { planFrame } from './frame';
 import type { Grower } from './models';
 import { type FillClump, type FillInput, fillClumps } from './planned-fill';
@@ -180,6 +180,27 @@ function countMost(
 	return Math.max(0, Math.round(count.most));
 }
 
+/**
+ * The areoles a column's crests carry: its stem and arms' lengths at the record's rib counts and
+ * areole pitch. A tree's crown is priced by its socketed clumps; a column has no clumps, so its
+ * leaves are the areole cards and the plan prices them here.
+ *
+ * @param growth The planned growth, with its column block and frame.
+ * @returns The areole count at the plant's full height.
+ */
+function areoleCount(growth: Planned): number {
+	const column = growth.column;
+	const spec = growth.frame;
+	if (column === undefined || spec === undefined) return 0;
+	const height = curveAt(growth.height, 1);
+	const metres = (length: FrameLength): number =>
+		'share' in length ? curveAt(length.share, 1) * height : 0;
+	let crests = metres(spec.stems.length) * spreadMean(column.ribs);
+	for (const rule of spec.stems.children ?? [])
+		crests += countMost(rule.count) * metres(rule.length) * spreadMean(column.armRibs);
+	return column.areoles > 0 ? crests / column.areoles : 0;
+}
+
 /** The most elements that leave one axis of a rule, all its child rules together. */
 function childrenMost(rule: {
 	readonly children?: readonly { readonly count: Parameters<typeof countMost>[0] }[];
@@ -309,7 +330,16 @@ export function planTree(record: Species, request: GrowRequest): DetailPlan {
 	const segments = [12, 9, 5, 4, 1];
 	const wood = kept.slice(0, 4).map((count, order) => count * (segments[order] as number) * tube);
 	const sockets = kept[4] as number;
-	const foliage = sockets * (clumpCard ? growth.prices.clumpCard : piece);
+	// A column's leaves are its areole cards, one a place on its crests; the plan prices them at the
+	// card's own triangles, since a column has no order-4 sockets to carry a clump card.
+	const areoles =
+		growth.column === undefined
+			? 0
+			: Math.round(areoleCount(growth) * curveAt(growth.leavesAt, sparse));
+	const foliage =
+		areoles > 0
+			? areoles * growth.prices.card
+			: sockets * (clumpCard ? growth.prices.clumpCard : piece);
 	const fruit = request.maturity >= growth.fruitFrom ? sockets * piece * 0.05 : 0;
 	const priced = {
 		trunk: wood[0] as number,

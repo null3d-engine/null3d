@@ -3,7 +3,17 @@
 // numbers are the record's own, written here as the plan reads them.
 //
 // The plant has no crown of boughs, so it has no woody orders below the arms and no clumps: every
-// socket is an areole on a crest, and the leaf area is the areole cards' own.
+// socket is an areole on a crest, and the leaf area is the areole cards' own. The plan therefore
+// prices the leaves explicitly, an areole card's two triangles a place, because the tree's price
+// counts foliage at order-4 sockets and a column has none.
+//
+// The skin's density target is the record's own: its first card level's areole cards measure 109,223
+// triangles at the finest tier against that level's 112,000 budget, and the second level 46,892.
+// The crest fill predicts 5,571 areoles at full cover, 11,142 triangles at a two-triangle card each,
+// a tenth of the record's first card level; the first card level's own card price and tiling are the
+// open question the fill must settle. The nest holes are the old column grower's own number, 30 in
+// the 0.5 to 0.85 band, not the record's: the record's extra is the berry at old-wood, and a planned
+// extras site for them is still open.
 import type { Planned } from '../../core/record';
 import { frame } from './directed';
 
@@ -48,8 +58,9 @@ export const plannedGrowth: Planned = {
 	orders: [],
 	// The stem and the arms never thin: sparseness thins the areoles, not the axes.
 	thin: [0, 0],
-	// The share of the areole cards that stays, by sparseness; the sparsest plant keeps a fifth, above
-	// the species contract's floor.
+	// The share of the areole cards that stays, by sparseness: 5,571 areoles at none, 2,786 at a half
+	// and 1,114 at full sparseness, while the four arms stand at every setting. The sparsest plant
+	// keeps a fifth, above the species contract's floor.
 	leavesAt: [
 		[0, 1],
 		[0.5, 0.5],
@@ -62,11 +73,12 @@ export const plannedGrowth: Planned = {
 	// A capped crown's cards stand at the middle of the wood that draws them, so a hard cap keeps the
 	// areoles on the drawn column rather than reshaping the plant.
 	capCards: 'wood',
-	// One areole card is two triangles, the spur's card alone; there is no clump card to price.
+	// One areole card is two triangles, the spur's card alone, and the plan prices the areoles at that
+	// figure: with no order-4 sockets a clump card would price no leaves at all. There is no clump.
 	prices: { piece: 24, card: 2, clumpCard: 0, tubeSegment: 14 },
 	// The mesher's ribbed section and the fill's crests: eighteen ribs round the stem, fourteen an
 	// arm, grooves 0.17 of the radius deep, areoles 0.084 m apart along a crest, and a rounded top 1.3
-	// stem widths tall.
+	// radii of the wood below it tall.
 	column: {
 		ribs: { mean: 18, spread: 1 },
 		armRibs: { mean: 14, spread: 1 },

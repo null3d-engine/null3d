@@ -1662,7 +1662,7 @@ export interface Planned {
 		readonly ribDepth: number;
 		/** Metres between two areoles along a crest. */
 		readonly areoles: number;
-		/** The rounded top's height, in stem widths. */
+		/** The rounded top's height, in radii of the wood below it. */
 		readonly dome: number;
 	};
 	/** The triangles one drawn piece of each kind costs, which the plan prices its shares from. */
