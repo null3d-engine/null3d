@@ -1787,7 +1787,9 @@ async function main(): Promise<void> {
 			if (!starts) throw new Error("the sweep's probe posted no level distances");
 			const step = Number(option('sweep-step', '30'));
 			const orbit = !flag('rungs-only');
-			const built = seriesOnly ? { plan: [], shots: [] } : sweepShots(set, base, starts, step, orbit);
+			const built = seriesOnly
+				? { plan: [], shots: [] }
+				: sweepShots(set, base, starts, step, orbit);
 			const pull = orbit ? sweepSeriesShots(base, starts) : { shots: [], steps: [] };
 			const allShots = [...built.shots, ...pull.shots];
 			let frames = await drawShots(dir, allShots, { ...(gpu !== undefined && { gpu }) });

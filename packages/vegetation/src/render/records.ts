@@ -468,7 +468,8 @@ export function speciesHeader(
 	texel(header, HEADER.crownDim, [record.lod.crownDim ?? 0, 0, 0, 0]);
 	texel(header, HEADER.cardMipLift, [record.lod.cardMipLift ?? CARD_MIP_LIFT, 0, 0, 0]);
 	const cover = record.lod.cardCover;
-	const pair: readonly [number, number] = typeof cover === 'number' ? [cover, 1] : (cover ?? [1, 1]);
+	const pair: readonly [number, number] =
+		typeof cover === 'number' ? [cover, 1] : (cover ?? [1, 1]);
 	texel(header, HEADER.cardCover, [pair[0], 0, 0, 0]);
 	texel(header, HEADER.cardCoverSecond, [pair[1], 0, 0, 0]);
 	texel(header, HEADER.woodShade, [record.lod.woodShade ?? WOOD_SHADE, 0, 0, 0]);

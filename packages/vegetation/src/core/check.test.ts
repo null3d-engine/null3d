@@ -261,9 +261,7 @@ describe('the record check', () => {
 			);
 		// A clump card's face count is an even pair, from two to sixteen, so one picture a face
 		// stands on the prototype's own two and every face turns by an even share of the half turn.
-		const withClumpPlanes = (
-			clumpPlanes: NonNullable<Species['lod']['clumpPlanes']>,
-		): Species => ({
+		const withClumpPlanes = (clumpPlanes: NonNullable<Species['lod']['clumpPlanes']>): Species => ({
 			...template,
 			lod: { ...template.lod, clumpPlanes },
 		});
