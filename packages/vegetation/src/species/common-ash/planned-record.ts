@@ -6,7 +6,7 @@
 // file states the curves and rules the plan adds: how the adult appears with age, how the finer
 // orders fill it, how sparseness thins it and what a triangle costs.
 import type { Planned } from '../../core/record';
-import { evenOutline, type FrameSpec } from '../../grow/frame';
+import { type FrameBranchRule, type FrameSpec, evenOutline } from '../../grow/frame';
 import { crownOutline, frame as ashFrame } from './directed';
 
 /**
@@ -20,8 +20,23 @@ const plannedOutline = evenOutline(
 	0.78,
 );
 
-/** The planned ash's frame: the ash's own axes, with the crown reaching its measured width. */
-const plannedFrame: FrameSpec = { ...ashFrame, outline: plannedOutline };
+/**
+ * The planned ash's limbs: its first, lowest pair leaves the trunk a little lower than the still
+ * states, so the crown's foliage reaches down toward the pictures' crown base, which stands at about
+ * 0.37 of the plant's height against the still's higher fork.
+ */
+const lowerFirstLimbs = (rule: FrameBranchRule): FrameBranchRule =>
+	rule.name === 'limb' ? { ...rule, along: [0.4, 0.81] } : rule;
+
+/** The planned ash's frame: the ash's own axes, with its measured width and its first limbs lower. */
+const plannedFrame: FrameSpec = {
+	...ashFrame,
+	outline: plannedOutline,
+	stems: {
+		...ashFrame.stems,
+		children: ashFrame.stems.children?.map(lowerFirstLimbs),
+	},
+};
 
 /**
  * The height in metres by age as a share of the full age, for a full-grown tree of about 22 m. The
