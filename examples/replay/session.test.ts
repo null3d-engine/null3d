@@ -68,6 +68,27 @@ describe("the deterministic simulation demo's session", () => {
 		expect(session.status()).toBe(`0 of ${ORBS} orbs`);
 	});
 
+	test('keeps the fraction of the gathered movement for a later tick', () => {
+		const session = new Session();
+		const gathered = { keys: 0, turn: 2.5, tilt: -1.25 };
+		session.steps(1, gathered);
+		expect(gathered).toEqual({ keys: 0, turn: 0.5, tilt: -0.25 });
+	});
+
+	test('drops the movement that came during a replay, at the tick where the replay ends too', () => {
+		const session = new Session();
+		play(session);
+		const turned = pose(session.frame(0), NOW).slice(3);
+		session.replay();
+		// The mouse moved while the replay ran. The frame's loop runs the replay's last ticks and then
+		// live ticks, which must not turn the run by it.
+		const gathered = { keys: 0, turn: 300, tilt: 200 };
+		session.steps(240 + 5, gathered);
+		expect(session.replays).toBe(false);
+		expect(gathered).toEqual({ keys: 0, turn: 0, tilt: 0 });
+		expect(pose(session.frame(0), NOW).slice(3)).toEqual(turned);
+	});
+
 	test('steps only a tick that the log holds', () => {
 		const run = startRun();
 		expect(() => stepLogged(run, [])).toThrow('the log holds 0 ticks, and the run is at tick 0');

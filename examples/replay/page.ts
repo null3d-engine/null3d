@@ -6,7 +6,7 @@
 // ends on the state that the run had, so it ends on the same picture. The play itself, without the
 // page, is session.ts.
 import type { DemoPage } from '../lib/run';
-import { Session, TickClock } from './session';
+import { type Gathered, Session, TickClock } from './session';
 import { BACK, FORWARD, LEFT, RIGHT } from './sim';
 
 /** The keys that walk, as the simulation's bits. */
@@ -27,10 +27,9 @@ const CLICK_PX = 4;
 export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 	const listen: AddEventListenerOptions = { signal };
 	const session = new Session();
-	// The input since the last tick: the keys held, and the mouse's movement in CSS pixels.
+	// The keys held, and the input since the last tick, which the session takes tick by tick.
 	let keys = 0;
-	let turn = 0;
-	let tilt = 0;
+	const gathered: Gathered = { keys: 0, turn: 0, tilt: 0 };
 	let looking = -1;
 	let lastX = 0;
 	let lastY = 0;
@@ -69,7 +68,9 @@ export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 			try {
 				canvas.setPointerCapture(event.pointerId);
 			} catch {
-				// The pointer is no longer active, or the lock began meanwhile: no drag to keep.
+				// The pointer is no longer active, or the lock began meanwhile: no drag to follow, so the
+				// next press may start one.
+				looking = -1;
 			}
 		},
 		listen,
@@ -78,11 +79,11 @@ export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 		'pointermove',
 		(event) => {
 			if (locked()) {
-				turn += event.movementX;
-				tilt += event.movementY;
+				gathered.turn += event.movementX;
+				gathered.tilt += event.movementY;
 			} else if (event.pointerId === looking) {
-				turn += event.clientX - lastX;
-				tilt += event.clientY - lastY;
+				gathered.turn += event.clientX - lastX;
+				gathered.tilt += event.clientY - lastY;
 				lastX = event.clientX;
 				lastY = event.clientY;
 			}
@@ -124,22 +125,24 @@ export const start: DemoPage['start'] = (engine, canvas, controls, signal) => {
 	signal.addEventListener('abort', () => group.remove());
 
 	const clock = new TickClock(performance.now());
+	// What the buttons and the status line show, so the page writes them only when they change.
+	let pressed = false;
+	let line = '';
 	const frame = (now: number) => {
 		if (signal.aborted) return;
-		for (let due = clock.due(now); due > 0; due--) {
-			const whole = Math.trunc(turn);
-			const steep = Math.trunc(tilt);
-			turn -= whole;
-			tilt -= steep;
-			session.tick(keys | (fingers.size > 1 ? FORWARD : 0), whole, steep);
-		}
-		// Input that came while a replay ran belongs to no tick.
-		if (session.replays) turn = tilt = 0;
+		gathered.keys = keys | (fingers.size > 1 ? FORWARD : 0);
+		session.steps(clock.due(now), gathered);
 		// A copy each frame: a sketch on the page's thread gets the very array that the page sends.
 		engine.postToSketch('view', session.frame(clock.between).slice());
-		replayButton.setAttribute('aria-pressed', String(session.replays));
-		const line = session.status();
-		if (status.textContent !== line) status.textContent = line;
+		if (session.replays !== pressed) {
+			pressed = session.replays;
+			replayButton.setAttribute('aria-pressed', String(pressed));
+		}
+		const said = session.status();
+		if (said !== line) {
+			line = said;
+			status.textContent = line;
+		}
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);

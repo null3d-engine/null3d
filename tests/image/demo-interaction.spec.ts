@@ -7,8 +7,9 @@
 // transparency demo, a key and the controls HUD swap the two blends and the picture follows, while
 // the pointer leaves the blend alone. In the deterministic simulation demo, the page's own listeners
 // take a key and a drag, which walk and turn the camera that the simulation computes, and its replay
-// ends with the camera where the run left it. Its page part stops with the demo, and a page part
-// that does not load fails the demo's start.
+// ends with the camera where the run left it. Its page part stops with the demo, by its signal, its
+// engine's destroy or its engine's failure, and a page part that does not load fails the demo's
+// start, also after the first frame.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -34,8 +35,8 @@ const FIRST_FRAME_MS = 300_000;
  */
 const CHANGE_MS = 180_000;
 
-/** Opens a demo on the probe page, and collects the page's errors. */
-async function open(page: Page, demo: string): Promise<string[]> {
+/** Opens a demo on the probe page, with any more switches, and collects the page's errors. */
+async function open(page: Page, demo: string, switches = ''): Promise<string[]> {
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	page.on('console', (message) => {
@@ -45,7 +46,7 @@ async function open(page: Page, demo: string): Promise<string[]> {
 	});
 	// The interaction does not depend on the look. The Low preset draws the light version of each
 	// demo, as on a phone, which CI's software GPU draws several times faster than the full look.
-	await page.goto(`demo-probe.html?demo=${demo}&preset=low`);
+	await page.goto(`demo-probe.html?demo=${demo}&preset=low${switches && `&${switches}`}`);
 	// A software GPU on a busy machine can take half a minute to start a demo, so the wait is the
 	// same one that the probes below give a frame. A page that never publishes still fails.
 	const result = await pageResult<{ error?: string }>(page, PATIENCE);
@@ -325,24 +326,97 @@ test('the deterministic simulation demo takes its own input, and its replay ends
 test("the deterministic simulation demo's page part stops with the demo, by its signal or its engine's destroy", async ({
 	page,
 }) => {
-	for (const how of ['signal', 'destroy'] as const) {
-		const errors = await open(page, 'replay');
+	// A sketch on the page's thread reports its errors on the page, where a stray one would show.
+	for (const [how, switches] of [
+		['signal', ''],
+		['destroy', ''],
+		['destroy', 'sketch-thread=main'],
+	] as const) {
+		const errors = await open(page, 'replay', switches);
 		const run = page.getByRole('group', { name: 'Run' });
 		await expect(run).toHaveCount(1, { timeout: PATIENCE });
 		await page.evaluate(
 			(stop) => (globalThis as { stopDemo?: (how: string) => Promise<void> }).stopDemo?.(stop),
 			how,
 		);
-		// The part takes its buttons away with its listeners and its frame loop.
+		// The part takes its buttons away with its listeners and its frame loop. The destroy comes
+		// right after the start, before the room's fill arrives, which then ends quietly.
 		await expect(run).toHaveCount(0);
 		expect(errors).toEqual([]);
 	}
 });
 
-test('a page part that does not load fails the demo start and says why', async ({ page }) => {
-	// The math demo has no page part, so the one that the page asks for does not load.
-	await page.goto('demo-probe.html?demo=math&preset=low&pagePart');
+test("the deterministic simulation demo's page part stops when its engine fails", async ({
+	page,
+}) => {
+	await open(page, 'replay');
+	const run = page.getByRole('group', { name: 'Run' });
+	await expect(run).toHaveCount(1, { timeout: PATIENCE });
+	// The engine's next frame step throws, and E1404 ends its frames.
+	await page.evaluate(() =>
+		(globalThis as { stopDemo?: (how: string) => Promise<void> }).stopDemo?.('fail'),
+	);
+	await expect(run).toHaveCount(0, { timeout: PATIENCE });
+});
+
+test('a press whose capture the browser refuses leaves the next drag free to turn the view', async ({
+	page,
+}) => {
+	const errors = await open(page, 'replay');
+	const start = await probe(page);
+	// A press of a pointer that is not down: the browser refuses its capture.
+	await page.evaluate(() => {
+		const scope = globalThis as unknown as {
+			document: { querySelector(selector: string): { dispatchEvent(event: unknown): boolean } };
+			PointerEvent: new (type: string, init: Record<string, unknown>) => unknown;
+		};
+		const press = { pointerId: 77, pointerType: 'mouse', isPrimary: false, bubbles: true };
+		scope.document
+			.querySelector('canvas')
+			.dispatchEvent(new scope.PointerEvent('pointerdown', press));
+	});
+	await page.mouse.move(300, 180);
+	await page.mouse.down();
+	await page.mouse.move(420, 150, { steps: 8 });
+	await page.mouse.up();
+	await expect
+		.poll(async () => apart((await probe(page)).cameraTurn, start.cameraTurn), {
+			timeout: PATIENCE,
+		})
+		.toBeGreaterThan(0.05);
+	expect(errors).toEqual([]);
+});
+
+test('a page part that does not load fails the demo start, says why, and takes the controls away', async ({
+	page,
+}) => {
+	// The gizmos demo has choices and no page part, so the part that the page asks for does not load.
+	await page.goto('demo-probe.html?demo=gizmos&preset=low&pagePart&hud');
 	const result = await pageResult<{ error?: string }>(page, PATIENCE);
 	expect(result.error).toMatch(/^The demo's page part did not start: /);
+	await expect(page.locator('.loader')).toContainText("The demo's page part did not start");
+	await expect(page.locator('.choice button')).toHaveCount(0);
+	await expect(page.locator('.hud')).toBeHidden();
+});
+
+test('a page part that fails after the first frame brings the overlay back with the reason', async ({
+	page,
+}) => {
+	// The page part's module answers only once the overlay has gone, and then with a failure.
+	await page.route('**/examples/replay/page.ts*', async (route) => {
+		await page.waitForFunction(
+			() =>
+				(
+					globalThis as unknown as { document: { querySelector(selector: string): unknown } }
+				).document.querySelector('.loader') === null,
+			undefined,
+			{ timeout: PATIENCE },
+		);
+		await route.fulfill({ status: 500, body: 'the page part failed on purpose' });
+	});
+	await page.goto('demo-probe.html?demo=replay&preset=low');
+	const result = await pageResult<{ error?: string }>(page, PATIENCE);
+	expect(result.error).toMatch(/^The demo's page part did not start: /);
+	await expect(page.locator('.loader')).toBeVisible();
 	await expect(page.locator('.loader')).toContainText("The demo's page part did not start");
 });

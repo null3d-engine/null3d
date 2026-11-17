@@ -96,7 +96,7 @@ export interface StartOptions {
 	 * Aborting it removes the listeners, the loading overlay and the controls HUD that this demo
 	 * added, so a page that starts a second demo in the same document leaves nothing of the first.
 	 * The page still owns the canvas, its own elements and the engine. A demo's page part also stops
-	 * when the page destroys the engine.
+	 * when the engine stops drawing, as the page destroys it or at a failure that ends its frames.
 	 */
 	signal?: AbortSignal;
 }
@@ -114,7 +114,8 @@ export interface DemoPage {
 	/**
 	 * Starts the part on the demo's canvas. `controls` is the element that `startDemo` takes as
 	 * `choices`, where the part shows its buttons. `signal` ends the part with the demo: it aborts
-	 * when the page aborts the demo's own signal or destroys the engine.
+	 * when the page aborts the demo's own signal, and when the engine stops drawing, as the page
+	 * destroys it or at a failure that ends its frames.
 	 */
 	start(
 		engine: Engine,
@@ -324,10 +325,13 @@ export async function startDemo({
 			part.start(engine, canvas, choices, stop.signal);
 		} catch (error) {
 			// A demo whose page part fails cannot be played, so its start fails as a failed engine's
-			// does: the overlay and the caller say why, and the engine leaves the page.
+			// does: the overlay comes back to say why, also after the first frame, the controls that
+			// would act on the demo leave, and so does the engine.
 			const text = `The demo's page part did not start: ${error instanceof Error ? error.message : String(error)}`;
 			stop.abort();
 			loader.fail(text);
+			if (hud) hud.hidden = true;
+			choices?.replaceChildren();
 			await engine.destroy();
 			throw new Error(text);
 		}
@@ -336,18 +340,17 @@ export async function startDemo({
 }
 
 /**
- * The stop of a demo's page part, which aborts when the page aborts the demo's signal or destroys
- * its engine. Either ends the demo, so the part's listeners and frame loop leave the page with it.
+ * The stop of a demo's page part, which aborts when the page aborts the demo's signal, and when
+ * the engine stops drawing: as the page destroys it, or at a failure that ends its frames. Either
+ * ends the demo, so the part's listeners and frame loop leave the page with it.
  */
 function stopWithDemo(engine: Engine, signal: AbortSignal | undefined): AbortController {
 	const stop = new AbortController();
-	if (signal?.aborted) stop.abort();
-	signal?.addEventListener('abort', () => stop.abort(), { once: true });
-	const destroy = engine.destroy.bind(engine);
-	engine.destroy = (options) => {
-		stop.abort();
-		return destroy(options);
-	};
+	const end = () => stop.abort();
+	if (signal?.aborted) end();
+	signal?.addEventListener('abort', end, { once: true, signal: stop.signal });
+	const offStop = engine.onStop(end);
+	stop.signal.addEventListener('abort', offStop, { once: true });
 	return stop;
 }
 
@@ -457,6 +460,8 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 	let sceneStarted = false;
 	let painted = 0;
 	let hidden = false;
+	/** The timer that takes the overlay away after its fade, which a later failure cancels. */
+	let removal: ReturnType<typeof setTimeout> | undefined;
 	let said = '';
 
 	/** The row for a lane's phase, made on first use and kept in lane order. */
@@ -568,7 +573,7 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 		overlay.classList.add('loader--done');
 		const remove = () => overlay.remove();
 		if (matchMedia('(prefers-reduced-motion: reduce)').matches) remove();
-		else setTimeout(remove, 320);
+		else removal = setTimeout(remove, 320);
 	};
 
 	// The overlay shows before the engine reports anything: the main bar begins its first stretch.
@@ -662,6 +667,11 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 			hidden = true;
 			if (painted) cancelAnimationFrame(painted);
 			painted = 0;
+			// A failure after the first frame brings the overlay back, so the reason shows over the
+			// canvas wherever the start had got to.
+			clearTimeout(removal);
+			overlay.classList.remove('loader--done');
+			if (!overlay.isConnected) host.append(overlay);
 			overlay.classList.add('loader--error');
 			label.textContent = text;
 			label.classList.add('loader__label--error');

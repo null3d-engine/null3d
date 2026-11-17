@@ -42,15 +42,26 @@ export class TickClock {
 	}
 }
 
+/**
+ * The input that the page gathered since the last tick: the movement keys' bits, and the mouse's
+ * turn and tilt in CSS pixels, whose fractions wait for a later tick.
+ */
+export interface Gathered {
+	keys: number;
+	turn: number;
+	tilt: number;
+}
+
 /** The live run, its log and its replay, and the view that the sketch draws them from. */
 export class Session {
 	/** The numbers that the page sends the sketch, as `view.ts` lays them out. */
 	readonly view = new Float64Array(VIEW_NUMBERS);
-	private run = startRun();
-	private log: number[] = [];
+	// `restart` sets each of these, and the constructor calls it.
+	private run!: Run;
+	private log!: number[];
 	private replaying: Run | undefined;
-	private verdict = '';
-	private verdictUntil = 0;
+	private verdict!: string;
+	private verdictUntil!: number;
 
 	constructor() {
 		this.restart();
@@ -77,6 +88,27 @@ export class Session {
 		if (this.replaying || this.log.length === 0) return false;
 		this.replaying = startRun();
 		return true;
+	}
+
+	/**
+	 * Steps the ticks that a frame owes. A live tick takes the whole counts of the gathered movement
+	 * and leaves the fractions. A replay's tick takes none, and drops the movement that came while
+	 * the replay ran, the tick where it ends included, so none of it reaches the live run after it.
+	 */
+	steps(due: number, gathered: Gathered): void {
+		for (let k = 0; k < due; k++) {
+			if (this.replaying) {
+				this.tick(0, 0, 0);
+				gathered.turn = 0;
+				gathered.tilt = 0;
+				continue;
+			}
+			const turn = Math.trunc(gathered.turn);
+			const tilt = Math.trunc(gathered.tilt);
+			gathered.turn -= turn;
+			gathered.tilt -= tilt;
+			this.tick(gathered.keys, turn, tilt);
+		}
 	}
 
 	/**
