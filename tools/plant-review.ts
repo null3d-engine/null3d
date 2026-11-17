@@ -10,7 +10,7 @@
 //     [--no-matte] [--draw-only] [--compare <run folder>]
 //
 //   bun run plants:review <species> --sweep [--out <folder>] [--run <name>] [--draw-only]
-//     [--sweep-step <degrees>] [--rungs-only]
+//     [--sweep-step <degrees>] [--rungs-only] [--series-only]
 //   bun run plants:review --sweep-compare <run folder>
 //   bun run plants:review --redraw-series <run folder>
 //   bun run plants:review --sweep-all [--species a,b] [--out <folder>] [--run <name>]
@@ -1765,6 +1765,11 @@ async function main(): Promise<void> {
 	};
 	if (flag('sweep')) {
 		if (!set) throw new Error(`the sweep needs ${species}'s reference folder`);
+		// The pull-back series alone measures a level's switch at every distance, so a run that
+		// reads only the series draws none of the six rungs' orbit.
+		const seriesOnly = flag('series-only');
+		if (seriesOnly && flag('rungs-only'))
+			throw new Error('--series-only draws the series, so drop --rungs-only');
 		const started = Date.now();
 		const gpu = flag('gpu') ? option('gpu') : undefined;
 		const release = await takeDrawSlot();
@@ -1782,7 +1787,7 @@ async function main(): Promise<void> {
 			if (!starts) throw new Error("the sweep's probe posted no level distances");
 			const step = Number(option('sweep-step', '30'));
 			const orbit = !flag('rungs-only');
-			const built = sweepShots(set, base, starts, step, orbit);
+			const built = seriesOnly ? { plan: [], shots: [] } : sweepShots(set, base, starts, step, orbit);
 			const pull = orbit ? sweepSeriesShots(base, starts) : { shots: [], steps: [] };
 			const allShots = [...built.shots, ...pull.shots];
 			let frames = await drawShots(dir, allShots, { ...(gpu !== undefined && { gpu }) });
