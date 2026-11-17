@@ -23,7 +23,11 @@ export interface GrowRequest {
 	readonly maxTriangles?: number;
 }
 
-/** The form a plan draws the foliage of one level in. */
+/**
+ * The form a plan draws the foliage of one level in.
+ *
+ * @category api/vegetation
+ */
 export type FoliageForm = 'piece' | 'cards' | 'clump-card';
 
 /**
