@@ -850,9 +850,11 @@ export function sweepRow(input: SweepRowInput): SweepRow {
 			{ floating: 0 },
 		);
 	const beside =
-		gap === null
-			? 'no floating piece'
-			: `open sky ${gap.drawn.toFixed(3)} against ${gap.reference.toFixed(3)}`;
+		gap !== null
+			? `${gapField} ${gap.drawn.toFixed(3)} against ${gap.reference.toFixed(3)}`
+			: floating.length > 0
+				? `${floating.length} piece${floating.length === 1 ? '' : 's'} meet${floating.length === 1 ? 's' : ''} nothing at a leaf's own scale, read as leaves and not charged`
+				: 'no floating piece';
 	// The floating figure stands as read: at a leaf's own scale it is the leaflets, a figure the
 	// judge sees and not a fault.
 	return rowOf('pass', `${drawn.length} of ${expected} pictures beside the reference; ${beside}`);

@@ -685,6 +685,7 @@ describe('the sweep’s verdicts', () => {
 		const leafRow = row(leaf, floating);
 		expect(leafRow.verdict).toBe('pass');
 		expect(leafRow.floating).toBe(1);
+		expect(leafRow.reason).toContain('read as leaves and not charged');
 		// The same piece inside the crown is still a float, so the exclusion is the leaf's alone.
 		const inside = SWEEP_RUNGS[3] as (typeof SWEEP_RUNGS)[number];
 		expect(row(inside, floating).verdict).toBe('fail');
