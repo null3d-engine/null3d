@@ -52,41 +52,52 @@ export interface Gathered {
 	tilt: number;
 }
 
+/** A session's play: the live run, its log, a replay of it, and the replay's verdict. */
+interface Play {
+	run: Run;
+	log: number[];
+	replaying: Run | undefined;
+	verdict: string;
+	/** The live run's tick until which the verdict shows. */
+	verdictUntil: number;
+}
+
+/** A new play: a run from the seed, with an empty log, no replay and no verdict. */
+function freshPlay(): Play {
+	return { run: startRun(), log: [], replaying: undefined, verdict: '', verdictUntil: 0 };
+}
+
 /** The live run, its log and its replay, and the view that the sketch draws them from. */
 export class Session {
 	/** The numbers that the page sends the sketch, as `view.ts` lays them out. */
 	readonly view = new Float64Array(VIEW_NUMBERS);
-	// `restart` sets each of these, and the constructor calls it.
-	private run!: Run;
-	private log!: number[];
-	private replaying: Run | undefined;
-	private verdict!: string;
-	private verdictUntil!: number;
+	private play = freshPlay();
 
 	constructor() {
-		this.restart();
+		this.showStart();
 	}
 
 	/** True while a replay runs. */
 	get replays(): boolean {
-		return this.replaying !== undefined;
+		return this.play.replaying !== undefined;
 	}
 
-	/** A new run from the seed, with an empty log and no verdict. Both poses are its start. */
+	/** A new run from the seed, with an empty log and no verdict. */
 	restart(): void {
-		this.run = startRun();
-		this.log = [];
-		this.replaying = undefined;
-		this.verdict = '';
-		this.verdictUntil = 0;
-		writePose(this.view, BEFORE, this.run);
-		writePose(this.view, NOW, this.run);
+		this.play = freshPlay();
+		this.showStart();
+	}
+
+	/** Puts the run's start in both poses, so a frame between them draws the start. */
+	private showStart(): void {
+		writePose(this.view, BEFORE, this.play.run);
+		writePose(this.view, NOW, this.play.run);
 	}
 
 	/** Starts a replay of the log from the seed. Returns false while one runs or the log is empty. */
 	replay(): boolean {
-		if (this.replaying || this.log.length === 0) return false;
-		this.replaying = startRun();
+		if (this.play.replaying || this.play.log.length === 0) return false;
+		this.play.replaying = startRun();
 		return true;
 	}
 
@@ -97,7 +108,7 @@ export class Session {
 	 */
 	steps(due: number, gathered: Gathered): void {
 		for (let k = 0; k < due; k++) {
-			if (this.replaying) {
+			if (this.play.replaying) {
 				this.tick(0, 0, 0);
 				gathered.turn = 0;
 				gathered.tilt = 0;
@@ -117,27 +128,27 @@ export class Session {
 	 * ends with a verdict on whether it reached the run's state.
 	 */
 	tick(keys: number, turn: number, tilt: number): void {
-		writePose(this.view, BEFORE, this.replaying ?? this.run);
-		if (this.replaying) {
-			stepLogged(this.replaying, this.log);
-			if (this.replaying.tick * INPUT_NUMBERS >= this.log.length) {
+		writePose(this.view, BEFORE, this.play.replaying ?? this.play.run);
+		if (this.play.replaying) {
+			stepLogged(this.play.replaying, this.play.log);
+			if (this.play.replaying.tick * INPUT_NUMBERS >= this.play.log.length) {
 				// The replay ran every logged tick from the seed: its state is the run's, bit for bit.
-				this.verdict = sameRun(this.replaying, this.run)
+				this.play.verdict = sameRun(this.play.replaying, this.play.run)
 					? 'Replay ended on the same state'
 					: 'Replay ended on another state';
-				this.verdictUntil = this.run.tick + VERDICT_TICKS;
-				this.replaying = undefined;
+				this.play.verdictUntil = this.play.run.tick + VERDICT_TICKS;
+				this.play.replaying = undefined;
 			}
 		} else {
-			this.log.push(keys, turn, tilt);
-			stepLogged(this.run, this.log);
+			this.play.log.push(keys, turn, tilt);
+			stepLogged(this.play.run, this.play.log);
 		}
-		writePose(this.view, NOW, this.replaying ?? this.run);
+		writePose(this.view, NOW, this.play.replaying ?? this.play.run);
 	}
 
 	/** The view for a frame `between` the last two ticks, with the orbs that the shown run caught. */
 	frame(between: number): Float64Array {
-		const shown = this.replaying ?? this.run;
+		const shown = this.play.replaying ?? this.play.run;
 		let caught = 0;
 		for (let i = 0; i < ORBS; i++) if ((shown.caught[i] as number) >= 0) caught |= 1 << i;
 		this.view[BETWEEN] = between;
@@ -148,11 +159,11 @@ export class Session {
 	/** The line that the page shows: the replay's progress, its verdict for a while, or the score. */
 	status(): string {
 		const seconds = (ticks: number) => (ticks / TICK_HZ).toFixed(1);
-		if (this.replaying) {
-			const total = this.log.length / INPUT_NUMBERS;
-			return `Replaying ${seconds(this.replaying.tick)} of ${seconds(total)} s`;
+		if (this.play.replaying) {
+			const total = this.play.log.length / INPUT_NUMBERS;
+			return `Replaying ${seconds(this.play.replaying.tick)} of ${seconds(total)} s`;
 		}
-		if (this.run.tick < this.verdictUntil) return this.verdict;
-		return `${this.run.score} of ${ORBS} orbs`;
+		if (this.play.run.tick < this.play.verdictUntil) return this.play.verdict;
+		return `${this.play.run.score} of ${ORBS} orbs`;
 	}
 }
