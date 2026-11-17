@@ -357,9 +357,19 @@ export function layRosette(input: {
 	ranked.forEach(({ i }, rank) => {
 		rankAt.set(i, ranksOf[rank] as number);
 	});
+	const capped = input.cards !== undefined;
 	const order = laid
 		.map((socket, i) => ({ socket, i, rank: rankAt.get(i) ?? i }))
-		.sort((a, b) => a.rank - b.rank || a.i - b.i);
+		.sort((a, b) => {
+			// A maximum drops the dead skirt before any living frond: the living fountain carries the
+			// species at a low cap, and the skirt is the first thing the owner's standard gives up.
+			if (capped) {
+				const aDead = a.socket.group >= ranks.length ? 1 : 0;
+				const bDead = b.socket.group >= ranks.length ? 1 : 0;
+				if (aDead !== bDead) return aDead - bDead;
+			}
+			return a.rank - b.rank || a.i - b.i;
+		});
 	// A maximum keeps the fronds its cards pay for; sparseness keeps its own share. A frond is kept
 	// whole, so a sparse or capped crown is a set of whole fronds, never half of one.
 	const keep = Math.min(

@@ -1,8 +1,11 @@
 // The planned model's rosette, read on the one species that grows it: one socket a frond at the
 // growing point, whole fronds under sparseness and a cap, and a crown whose box is the fronds' own
 // reach. The tree fern's record is the fixture; its pictures are judged by a review round.
+
 import { describe, expect, it } from 'bun:test';
+import { files } from '@null3d/vegetation-textures/tree-fern';
 import { speciesProblems } from '../core/check';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { planned } from '../species/tree-fern/planned-record';
 import type { GrowRequest } from '../stages';
 import { growPlanned, planTree } from './planned';
@@ -72,6 +75,36 @@ describe('the planned rosette', () => {
 		expect(capped.plant.height / full.height).toBeGreaterThan(0.9);
 		expect(capped.plant.crownBase).toBeGreaterThan(0);
 		expect(capped.plan.triangles.fruit).toBe(0);
+	});
+
+	it('drops the dead skirt before a living frond at a cap', () => {
+		const deadPiece = (planned.pieces ?? []).findIndex((piece) => piece.name === 'frond-dead');
+		const counts = (plant: ReturnType<typeof growPlanned>) => {
+			const piece = plant.buds.sockets?.piece ?? [];
+			let dead = 0;
+			for (const one of piece) if (one === deadPiece) dead++;
+			return { living: piece.length - dead, dead };
+		};
+		const full = counts(grow({ maturity: 1, sparse: 0 }).plant);
+		const capped = counts(grow({ maturity: 1, sparse: 0, maxTriangles: 400 }).plant);
+		// The living fountain stays whole; the skirt is the first thing the cap gives up.
+		expect(capped.living).toBe(full.living);
+		expect(capped.dead).toBeLessThan(full.dead);
+	});
+
+	it('draws a first card level denser than the directed fern and inside its budget', async () => {
+		await loadPlantCode(planned);
+		const kit = buildKitNow(
+			{ record: planned, textures: files },
+			{ placeholders: 'missing', detail: 'high' },
+		);
+		const card = growPlantNow(kit, { seed: 11, variant: 0, near: false, detail: 'high' });
+		// The directed fern's measured first card level is 2,136 triangles at the high tier. The
+		// planned shell must not be thinner, and the record's own budgets hold it and the near form.
+		expect(card.levels[1].triangles).toBeGreaterThanOrEqual(2_136);
+		expect(card.levels[1].triangles).toBeLessThanOrEqual(15_000);
+		const near = growPlantNow(kit, { seed: 11, variant: 0, near: true, detail: 'high' });
+		expect(near.levels[0].triangles).toBeLessThanOrEqual(90_000);
 	});
 
 	it('grows a young plant as a rosette above the ground', () => {
