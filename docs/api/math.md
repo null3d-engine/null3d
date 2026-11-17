@@ -3,7 +3,7 @@ id: api/math
 title: Math helpers
 status: experimental
 since: "0.1"
-summary: "vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds."
+summary: "vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds; the maths entry and createMath for a deterministic simulation."
 ---
 
 # Math helpers
@@ -21,7 +21,7 @@ vec3.add(offset, offset, [0, 1, 0]);   // offset is now [1, 3, 3]
 const length = vec3.length(offset);
 ```
 
-The engine exports five groups of helpers: `vec3` for vectors, `quat` for rotations, `mat4` for matrices, `color` for colors and `math` for single numbers. They work in the sketch and on the page. A bundler keeps only the helpers that your code calls, so a sketch that calls `vec3.add` downloads that one function.
+The engine exports five groups of helpers: `vec3` for vectors, `quat` for rotations, `mat4` for matrices, `color` for colors and `math` for single numbers. They work in the sketch and on the page. A simulation that a server replays imports the exact ones from the [maths entry](#the-maths-entry-for-a-deterministic-simulation). A bundler keeps only the helpers that your code calls, so a sketch that calls `vec3.add` downloads that one function.
 
 ## Arrays
 
@@ -106,6 +106,24 @@ Each row's color multiplies its material's base color and opacity, as [Instances
 - `math.seed(n)` starts it again from the seed `n`, and the same numbers follow on every run. `math.seed(n)` followed by `math.random()` gives what three.js's `MathUtils.seededRandom(n)` gives.
 - Hold mode seeds it before the sketch loads, and makes `Math.random` draw from it too. A held frame is then the same on every run. See [Testing your sketch](../guides/testing.md).
 - `math.randFloat`, `math.randInt` and `math.randFloatSpread` draw their numbers from it.
+
+## The maths entry, for a deterministic simulation
+
+A simulation that a server replays must give the same bits on every JavaScript engine, and may not use page APIs. It imports its helpers from the maths entry, never from `@null3d/engine`:
+
+- `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math` hold every helper of the namespace of that name that uses exact arithmetic alone. Each is the main entry's own function.
+- `@null3d/engine/math` holds `createMath` and the array types.
+
+```ts
+import { createMath } from '@null3d/engine/math';
+import * as quat from '@null3d/engine/math/quat';
+import { acos, cos, exp, sin } from '@clockwork2/engine/dmath'; // an exact math library
+
+const exact = createMath({ sin, cos, acos, exp }); // once, at load
+const turn = exact.quat.setAxisAngle(quat.create(), [0, 1, 0], 0.5);
+```
+
+The entry leaves out the helpers that need a sine, a cosine, an arc cosine or an exponential, which `Math` computes differently on different engines. They are `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The call `createMath({ sin, cos, acos, exp })` builds those eight on the functions that you pass, with the main entry's arithmetic. It also leaves out the random helpers, which start from `Math.random`, and `color`. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md) lists each sub-path's helpers, and says what else stays out of a simulation.
 
 ## API reference
 

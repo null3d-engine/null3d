@@ -29,7 +29,7 @@ import {
 	rotateY,
 	rotateZ,
 	rotationTo,
-} from '../math/quat';
+} from '../math/namespaces/quat';
 import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';

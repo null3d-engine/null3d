@@ -3,6 +3,10 @@
 // before it writes, so `out` may be one of them. Where three.js has the same operation, the
 // arithmetic follows three.js's, so the results match it. Each helper does its own arithmetic, as
 // the quaternion helpers explain.
+//
+// Each helper here uses exact arithmetic only, so a deterministic simulation can import this module
+// through the maths entry (`@null3d/engine/math/vec3`). `angle` needs an arc cosine and lives in
+// create-math.ts; the main entry's `vec3` namespace (namespaces/vec3.ts) adds it.
 
 import type { Mat4Like, QuatLike, Vec3Like } from './types';
 
@@ -172,20 +176,6 @@ export function max<T extends Vec3Like>(out: T, a: Vec3Like, b: Vec3Like): T {
 	out[1] = Math.max(a[1] as number, b[1] as number);
 	out[2] = Math.max(a[2] as number, b[2] as number);
 	return out;
-}
-
-/** The angle between `a` and `b` in radians, from 0 to π. It is π / 2 when either vector is zero. */
-export function angle(a: Vec3Like, b: Vec3Like): number {
-	const ax = a[0] as number;
-	const ay = a[1] as number;
-	const az = a[2] as number;
-	const bx = b[0] as number;
-	const by = b[1] as number;
-	const bz = b[2] as number;
-	const denominator = Math.sqrt((ax * ax + ay * ay + az * az) * (bx * bx + by * by + bz * bz));
-	if (denominator === 0) return Math.PI / 2;
-	// Rounding can put the cosine just past 1 or -1, where it has no angle.
-	return Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / denominator)));
 }
 
 /** Turns `a` by the rotation `q`, a quaternion of length 1, as three.js's `applyQuaternion`. */

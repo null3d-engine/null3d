@@ -827,6 +827,24 @@ time.now; time.dt; time.frame;            // seconds, the frame's step in second
 - `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
 - Color options take `'#rrggbb'` or `'#rgb'` strings and `0xrrggbb` numbers, which are sRGB, and `[r, g, b]` arrays from 0 to 1, which are linear, as three.js's `setRGB` reads them. The engine converts hex colors to linear, as three.js does. The `color` helpers give linear RGB, which color options and instance colors take.
 
+A simulation that a server replays (0.3) imports its math from the maths entry, never from `@null3d/engine`. That bundle brings page code, `Math.sin`, `Math.random` and `**`, which a replaying engine's scan refuses:
+
+```ts
+import { createMath } from '@null3d/engine/math';          // createMath and the array types
+import * as vec3 from '@null3d/engine/math/vec3';          // every vec3 helper but angle
+import * as quat from '@null3d/engine/math/quat';          // create, set, copy, identity, fromMat4, lookAt, rotationTo, multiply, invert, normalize, dot
+import * as mat4 from '@null3d/engine/math/mat4';          // every mat4 helper
+import * as math from '@null3d/engine/math/math';          // clamp, lerp, inverseLerp, mapLinear, smoothstep, degToRad, radToDeg, euclideanModulo
+import { acos, cos, exp, sin } from '@clockwork2/engine/dmath';  // an exact math library, imported by name
+const exact = createMath({ sin, cos, acos, exp });         // once, at load
+exact.quat.setAxisAngle(q, [0, 1, 0], a); exact.quat.fromEuler(q, x, y, z, 'YXZ'); exact.quat.slerp(q, a, b, t);
+// Also exact.quat.rotateX/Y/Z, exact.vec3.angle and exact.math.damp: the main entry's arithmetic on the functions given.
+```
+
+- The sub-paths hold only helpers of exact arithmetic, each the main entry's own function. The eight that need a sine, a cosine, an arc cosine or an exponential come from `createMath`. Given `Math`'s functions, it gives the main entry's results bit for bit. It throws E1213 without one of the four.
+- The random helpers and `color` are drawing only. A simulation draws random numbers from its own seeded generator.
+- The sketch keeps the main entry's helpers and draws the state that the simulation sends; it never computes that state again (`guides/deterministic-simulation`).
+
 ## 21. Tasks on the job workers (`api/tasks`, 0.3)
 
 ```ts

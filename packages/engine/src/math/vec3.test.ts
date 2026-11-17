@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { Matrix4, Quaternion, Vector3 } from 'three';
-import * as vec3 from './vec3';
+import * as vec3 from './namespaces/vec3';
 
 type Tuple = [number, number, number];
 const A: Tuple = [1.5, -2.25, 3.125];

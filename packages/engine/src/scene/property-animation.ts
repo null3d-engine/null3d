@@ -11,7 +11,7 @@
 // weight with the value that the property had when its action started. Sampling and writing
 // allocate nothing, so a track costs a few key lookups a frame.
 
-import { slerp } from '../math/quat';
+import { slerp } from '../math/namespaces/quat';
 
 /** A material's value, named by its binding's `name`. */
 export const PROPERTY_MATERIAL = 0;

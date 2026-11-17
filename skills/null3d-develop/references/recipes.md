@@ -28,6 +28,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 22. Terrain from a height field
 23. Outdoor land with an edge the camera never sees
 24. Trees, shrubs and grass from a species record
+25. A game whose simulation a server replays (0.3)
 
 ## 1. Start a new project
 
@@ -436,7 +437,7 @@ return {
 };
 ```
 
-WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`.
+WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`. Physics in the sketch only moves what the player sees. A game whose server replays its simulation keeps the physics that decides a result in that simulation (recipe 25).
 
 ## 12. Minimap with a second camera (0.2)
 
@@ -884,3 +885,59 @@ Twelve species ship, each grown from its own record. For any other id, `loadSpec
 To place the plants rather than set them out by hand, read the ground once with `groundMaps`, write a rule for each species, and call `scatterVegetation`. A record's own `ecology` gives a rule through `speciesRule(record)`. The scatter returns flat point arrays, one record for each plant, so a page reads the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths. `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
 
 To cover a hill with grass, await `createGrass(ctx, { height, area, count, seed, mask, wind, camera })` in the sketch's setup. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, the one the leaf material reads, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. Give the drawing `camera` to cull the tiles outside its view and thin the far tufts, whose blades widen so the cover stays the same, and each view, a shadow cascade included, then culls the kept list to its own box. On WebGPU a compute pass builds the blade list and writes its count; WebGL2 fills one instance batch for each tuft shape. The grass casts and receives the sun's shadows, and `swayDistance` stops the blades past that distance so a far cascade that only the grass reaches stays cached. Take it from `swayDistanceFor(quality.preset)`, and give `grass.setSwayDistance` the new one when the preset changes. Docs: `api/vegetation` (Grass on the ground).
+
+## 25. A game whose simulation a server replays (0.3)
+
+The rules run in a simulation that steps by ticks from a seed and an input log, which a server replays to check a score. The simulation takes its math from the maths entry, and builds the helpers that need a sine or an exponential on an exact math library:
+
+```ts
+// sim.ts: no null3D import but the maths entry, and no page API
+import { createMath } from '@null3d/engine/math';
+import * as quat from '@null3d/engine/math/quat';
+import * as vec3 from '@null3d/engine/math/vec3';
+import { acos, cos, exp, sin } from '@clockwork2/engine/dmath'; // named, so the bundle keeps four functions
+
+const exact = createMath({ sin, cos, acos, exp }); // once: it allocates the helpers
+const turn = quat.create();
+const forward = vec3.create();
+export const state = { position: vec3.create(), heading: quat.create(), speed: 0 };
+
+export function tick(input: { turn: number; thrust: number }): void {
+  exact.quat.setAxisAngle(turn, [0, 1, 0], input.turn * 0.05);
+  quat.multiply(state.heading, state.heading, turn);
+  state.speed = exact.math.damp(state.speed, input.thrust * 12, 4, 1 / 60);
+  vec3.transformQuat(forward, [0, 0, -1], state.heading);
+  vec3.scaleAndAdd(state.position, state.position, forward, state.speed / 60);
+}
+```
+
+The page sends the state to the sketch after each tick:
+
+```ts
+// page.ts
+const engine = await createEngine({ canvas, sketch: new URL('./sketch.ts', import.meta.url) });
+// After each tick of the simulation:
+engine.postToSketch('state', { position: [...state.position], heading: [...state.heading] });
+```
+
+```ts
+// sketch.ts, in the setup: draw the latest state; decide nothing here
+const position = vec3.create();
+const heading = quat.create();
+page.onMessage((name, data) => {
+  if (name !== 'state') return;
+  const next = data as { position: number[]; heading: number[] };
+  vec3.copy(position, next.position);
+  quat.copy(heading, next.heading);
+});
+// In onUpdate: ship.setPosition(position[0], position[1], position[2]); ship.setRotation(heading[0], heading[1], heading[2], heading[3]);
+```
+
+- Never import `@null3d/engine` in the simulation. Its bundle holds page code, and helpers that call `Math.sin`, `Math.random` and `**`, so a replaying engine's scan refuses it (`references/testing-and-debugging.md`, section 8).
+- The sub-paths `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math` hold the exact helpers. `createMath` builds `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The random helpers and `color` are drawing only.
+- Input, pointer events on objects, raycasts, controls and physics in the sketch are not in the input log. Anything that decides a result runs in the simulation: hit-test the recorded pointer against the simulation's own shapes, with its own camera.
+- The sketch draws the state it gets, with the main entry's helpers. It never computes the state again: an exact library and `Math` can differ in the last bit.
+- The state goes to the sketch once per tick, where rule 7 of the skill keeps other messages rare. Send only the numbers that the sketch draws.
+
+To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A small scene drew with 5 words, and its folder held 297 files, 4.7 MB after Brotli. The 172 words of null3D's examples make a folder of 226 MB. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
+
