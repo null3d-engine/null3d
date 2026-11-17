@@ -211,6 +211,35 @@ describe('the record check', () => {
 			expect(speciesProblems(withStalk(cardStalk)).some((p) => p.startsWith('lod.cardStalk'))).toBe(
 				true,
 			);
+		const withCover = (cardCover: number): Species => ({
+			...template,
+			lod: { ...template.lod, cardCover },
+		});
+		for (const cover of [0.5, 0.65, 1, 1.35, 2])
+			expect(speciesProblems(withCover(cover))).toEqual([]);
+		for (const cover of [0, 0.49, 2.01, -1, Number.NaN])
+			expect(speciesProblems(withCover(cover)).some((p) => p.startsWith('lod.cardCover'))).toBe(
+				true,
+			);
+		const withPlanes = (cardPlanes: NonNullable<Species['lod']['cardPlanes']>): Species => ({
+			...template,
+			lod: { ...template.lod, cardPlanes },
+		});
+		for (const planes of [
+			[0, 0],
+			[1, 0],
+			[2, 2],
+		] as const)
+			expect(speciesProblems(withPlanes(planes))).toEqual([]);
+		for (const planes of [
+			[3, 0],
+			[0, 3],
+			[0.5, 0],
+			[-1, 0],
+		] as unknown as readonly [number, number][])
+			expect(
+				speciesProblems(withPlanes(planes)).some((p) => p.startsWith('lod.cardPlanes')),
+			).toBe(true);
 		const withCuts = (cardCuts: NonNullable<Species['lod']['cardCuts']>): Species => ({
 			...template,
 			lod: { ...template.lod, cardCuts },
