@@ -498,6 +498,8 @@ interface WoodChoice {
 interface LeafChoice {
 	/** `rows` for the shoot rows at a tier, `clusters` for card clusters, `none` for nothing. */
 	readonly kind: 'rows' | 'clusters' | 'none';
+	/** The level's own foliage triangles the allowance paid, such as a tuft's stool. */
+	readonly stool?: number;
 	/** The tier of the shoot rows. */
 	readonly tier?: Detail;
 	/** The clusters. */
@@ -534,6 +536,11 @@ export function rowLevel(
 	const { skeleton, rows } = mesh;
 	const axes = skeleton.axes;
 	const walk = input.walk ?? new Uint32Array(0);
+	// A plant of written pieces may draw a foliage mesh of its own beside its cards, such as a tuft's
+	// stool: it is the level's base, it counts in the leaves as it does uncapped, and the leaves'
+	// allowance pays it before the crown.
+	const foliage = mergedFoliage(mesh, level);
+	const stool = trianglesOf(foliage);
 	// The shares: each part's share of the plant's visible outline, with the shoots' twigs beside
 	// their leaves, since one choice draws both.
 	const allowance = allocateLevel(max, reference, visibleShares(input, reference));
@@ -642,13 +649,19 @@ export function rowLevel(
 				? Math.ceil(rows.count / 2)
 				: rows.count;
 	const fitLeaves = (budget: number): LeafChoice => {
+		// The level's own foliage, where the allowance pays it: a tuft's stool is its base, and the
+		// crown draws from what the stool leaves.
+		const stoolHere = budget >= stool ? stool : 0;
+		const room = Math.max(0, budget - stoolHere);
+		const paid = stoolHere > 0 ? { stool: stoolHere } : {};
 		for (const { tier, leaves, twigs } of tiers)
-			if (leaves + twigs <= budget) return { kind: 'rows', tier, cost: leaves + twigs };
-		const planes = planesFor(budget);
-		const clusters = planes > 0 ? Math.min(mostClusters, Math.floor(budget / (2 * planes))) : 0;
+			if (leaves + twigs <= room)
+				return { kind: 'rows', tier, cost: leaves + twigs + stoolHere, ...paid };
+		const planes = planesFor(room);
+		const clusters = planes > 0 ? Math.min(mostClusters, Math.floor(room / (2 * planes))) : 0;
 		return clusters > 0
-			? { kind: 'clusters', clusters, planes, cost: clusters * 2 * planes }
-			: { kind: 'none', cost: 0 };
+			? { kind: 'clusters', clusters, planes, cost: clusters * 2 * planes + stoolHere, ...paid }
+			: { kind: 'none', cost: stoolHere, ...paid };
 	};
 	// The extras' ladder: this level's form on every site, then on a share of the sites, then each
 	// farther level's form, then none.
@@ -877,8 +890,8 @@ export function rowLevel(
 		leaves = tier?.leaves ?? 0;
 		twigs = tier?.twigs ?? 0;
 	} else if (rows.count > 0) {
-		const budget = max - woodTotal - extras.cost;
-		allowed.leaves = budget;
+		const budget = Math.max(0, max - woodTotal - extras.cost - (chosen.stool ?? 0));
+		allowed.leaves = budget + (chosen.stool ?? 0);
 		const clumps = input.mesh.skeleton.clumps?.length ?? 0;
 		// A plant with clumps draws one clump card a clump: the crown's mass comes from the clumps the
 		// plant holds, not from one small card a row, and the share of them kept follows the leaves'
@@ -985,16 +998,20 @@ export function rowLevel(
 			};
 		}
 	}
+	// The stool draws only where the leaves' allowance paid it, so a maximum too small for it loses it
+	// rather than pass the cap.
+	const drawnStool = stool > 0 && chosen.stool === stool ? foliage : undefined;
 	return {
 		...(level > 0 || input.wood ? { wood: built.mesh } : {}),
 		...(cards ? { cards } : {}),
+		...(drawnStool ? { foliage: drawnStool } : {}),
 		...(extras.mesh ? { extras: extras.mesh } : {}),
 		triangles: {
 			trunk: built.triangles[0],
 			limbs: built.triangles[1],
 			branches: built.triangles[2],
 			twigs,
-			leaves,
+			leaves: leaves + (drawnStool ? stool : 0),
 			extras: extras.cost,
 		},
 		allowed: {
