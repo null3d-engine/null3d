@@ -2956,10 +2956,12 @@ export interface LodSpec {
 	 */
 	readonly cardPlanes?: readonly [lod1: number, lod2: number];
 	/**
-	 * A multiplier on the first card level's coverage, 1 drawing it as the cards are: above 1 closes
-	 * the crown's gaps and below 1 opens them. Absent draws it as 1.
+	 * A multiplier on each card level's coverage, 1 drawing it as the cards are: above 1 closes the
+	 * crown's gaps and below 1 opens them. One number sets the first card level alone, which is what
+	 * a species that names one number has always asked for; a pair sets each level. Absent draws the
+	 * level as 1.
 	 */
-	readonly cardCover?: number;
+	readonly cardCover?: number | readonly [lod1: number, lod2: number];
 	/**
 	 * How far the sun's light thins inside the crown, from 0 to 1: each shoot row dims by its own
 	 * share of the sky, so a row under other rows reads dark and a row on the crown's top reads lit.
@@ -2995,6 +2997,14 @@ export interface LodSpec {
 	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.
 	 */
 	readonly clumpCard?: readonly [lod1: number, lod2: number];
+	/**
+	 * The vertical planes a clump card draws at each card level, an even whole number from 2 to 16:
+	 * a clump card stands for a mass of foliage, and more faces at its own middle close the gaps
+	 * between clumps without enlarging a picture. The prototype's own two vertical planes are among
+	 * them, each plane takes its picture from those two in turn, and the prototype's horizontal
+	 * plane stands as it is. Absent or 2 draws the prototype's set as it stands.
+	 */
+	readonly clumpPlanes?: readonly [lod1: number, lod2: number];
 	/**
 	 * The first card level that draws no extras: 1 for both card levels, 2 for the second alone. A
 	 * cone or a fruit that the nearest level draws whole may still cost many triangles at a card

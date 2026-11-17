@@ -143,6 +143,8 @@ const HEADER_CARD_LEVEL_MOST: i32 = 71;
 const HEADER_CROWN_DIM: i32 = 72;
 const HEADER_CARD_MIP_LIFT: i32 = 73;
 const HEADER_CARD_SHADE: i32 = 77;
+// The second card level's cover multiplier, beside the first level's at its own texel.
+const HEADER_CARD_COVER_SECOND: i32 = 78;
 // The darkest and lightest a card's shade takes a patch of its own colour, at full strength.
 const CARD_SHADE_DARK: f32 = 0.5;
 const CARD_SHADE_LIT: f32 = 1.4;
@@ -1412,24 +1414,31 @@ fn surface(input: SurfaceInput) -> Surface {
             let crown = crown_shade(input.vertexColor.a);
             base *= crown;
             through *= crown;
-            // The first card level's own coverage: a factor on the texel's alpha before the cut, so
-            // the threshold moves in the card's own alpha space. Scaling the already-cut value moves
-            // nothing, since a card's alpha at distance is nearly binary. A record naming no factor
-            // draws the card as before, and the stalk strips stand outside the gate.
+            // The card level's own coverage: a factor on the texel's alpha before the cut, so the
+            // threshold moves in the card's own alpha space. Scaling the already-cut value moves
+            // nothing, since a card's alpha at distance is nearly binary. Each card level carries
+            // its own factor at its own gate band, so a level's cover can close without moving the
+            // level beside it. A record naming no factor draws the card as before, and the stalk
+            // strips stand outside the gate.
             let card_gate = header(HEADER_CARD_SHADE);
+            let card_gate_second = header(HEADER_CARD_COVER_SECOND);
+            // A card's stalk strips stand at their own mark between the two gate bands.
             let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
-            let card_fill = mix(1.0, card_gate.x, gated);
+            let gated_second = step(0.9, input.uv1.y);
+            var card_fill = mix(1.0, card_gate.x, gated);
+            card_fill = mix(card_fill, card_gate_second.x, gated_second);
             alpha = card_alpha(plate * card_fill, hx, hy);
             cut_alpha = card_cut_alpha(plate * card_fill, surface_texel.z, card_level(hx, hy));
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
             // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
             // record names none, the card draws whole.
-            // At the first card level the record's cover value replaces the static share, so the
-            // hash removes whole texels: a factor on the cut moves nothing where a card's alpha is
-            // nearly binary, but removing texels opens the crown whatever the alpha is.
+            // At a card level that names a cover value the record's value replaces the static share,
+            // so the hash removes whole texels: a factor on the cut moves nothing where a card's
+            // alpha is nearly binary, but removing texels opens the crown whatever the alpha is.
             let card_cover = mix(header(HEADER_CARD_COVERAGE).x, saturate(card_gate.x), gated);
-            if (card_cover < 0.999) {
-                if (value3(input.relativePosition * 5.0) > card_cover) {
+            let covered = mix(card_cover, saturate(card_gate_second.x), gated_second);
+            if (covered < 0.999) {
+                if (value3(input.relativePosition * 5.0) > covered) {
                     alpha = 0.0;
                     cut_alpha = 0.0;
                 }

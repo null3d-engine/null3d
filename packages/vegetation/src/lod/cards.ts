@@ -1142,7 +1142,7 @@ function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2)
 		},
 		tiled,
 		undefined,
-		level === 1 ? 0.5 : 0,
+		level === 1 ? 0.5 : 0.95,
 	);
 }
 
@@ -1220,7 +1220,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
 					[
 						plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]),
-						level === 1 ? 0.5 : 0,
+						level === 1 ? 0.5 : 0.95,
 					],
 					colour,
 				);
@@ -1260,7 +1260,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[lead.along[0] + ((sy + 1) / 2) * (lead.along[1] - lead.along[0]), level === 1 ? 0.5 : 0],
+					[lead.along[0] + ((sy + 1) / 2) * (lead.along[1] - lead.along[0]), level === 1 ? 0.5 : 0.95],
 					colour,
 				);
 			}
@@ -2289,6 +2289,10 @@ export function clusterCardMesh(
 		readonly row: (cluster: number, tile: number, tiles: number) => number;
 	},
 	into?: MeshWriter,
+	/**
+	 * The mark a card writes in its second coordinate's y, which the shader reads as the band that
+	 * gives one card level its own cover factor. 0 stands the card outside every band.
+	 */
 	gate = 0,
 	/**
 	 * Whether a cluster's growth is its own extent, as a region plate's is, rather than the most the

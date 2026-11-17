@@ -221,6 +221,24 @@ describe('the record check', () => {
 			expect(speciesProblems(withCover(cover)).some((p) => p.startsWith('lod.cardCover'))).toBe(
 				true,
 			);
+		// A pair sets each card level's cover, and either level outside the band is named.
+		const withCoverPair = (cardCover: NonNullable<Species['lod']['cardCover']>): Species => ({
+			...template,
+			lod: { ...template.lod, cardCover },
+		});
+		for (const cover of [
+			[0.5, 2],
+			[1, 1],
+			[1.1, 1.05],
+		] as const)
+			expect(speciesProblems(withCoverPair(cover))).toEqual([]);
+		for (const cover of [
+			[0.4, 1],
+			[1, 2.5],
+		] as const)
+			expect(speciesProblems(withCoverPair(cover)).some((p) => p.startsWith('lod.cardCover'))).toBe(
+				true,
+			);
 		const withPlanes = (cardPlanes: NonNullable<Species['lod']['cardPlanes']>): Species => ({
 			...template,
 			lod: { ...template.lod, cardPlanes },
@@ -240,6 +258,28 @@ describe('the record check', () => {
 			expect(speciesProblems(withPlanes(planes)).some((p) => p.startsWith('lod.cardPlanes'))).toBe(
 				true,
 			);
+		// A clump card's face count is an even pair, from two to sixteen, so one picture a face
+		// stands on the prototype's own two and every face turns by an even share of the half turn.
+		const withClumpPlanes = (
+			clumpPlanes: NonNullable<Species['lod']['clumpPlanes']>,
+		): Species => ({
+			...template,
+			lod: { ...template.lod, clumpPlanes },
+		});
+		for (const planes of [
+			[2, 2],
+			[16, 12],
+		] as const)
+			expect(speciesProblems(withClumpPlanes(planes))).toEqual([]);
+		for (const planes of [
+			[0, 2],
+			[1, 2],
+			[2, 17],
+			[2, 3],
+		] as const)
+			expect(
+				speciesProblems(withClumpPlanes(planes)).some((p) => p.startsWith('lod.clumpPlanes')),
+			).toBe(true);
 		const withCuts = (cardCuts: NonNullable<Species['lod']['cardCuts']>): Species => ({
 			...template,
 			lod: { ...template.lod, cardCuts },

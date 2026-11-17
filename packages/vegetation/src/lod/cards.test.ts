@@ -766,9 +766,9 @@ describe('the card levels', () => {
 		return count;
 	};
 
-	it('marks each card quad with the level the cover gate reads, and leaves the stalks alone', () => {
-		// The first card level's cover factor finds its cards by this mark: a half at that level and
-		// nought at the second, while a stalk keeps the plane value the stalk tests use.
+	it('marks each card quad with the cover gate’s band for its level, and leaves the stalks alone', () => {
+		// Each card level carries its own cover band mark, so a level's cover factor can move without
+		// the level beside it; a stalk keeps the plane value the stalk tests use.
 		const marks = (arrays: { uvs1: ArrayLike<number> }): number[] => {
 			const seen = new Set<number>();
 			for (let v = 0; v < arrays.uvs1.length / 2; v++) seen.add(arrays.uvs1[v * 2 + 1] as number);
@@ -777,9 +777,11 @@ describe('the card levels', () => {
 		const first = marks(cardMesh(mesh, 1));
 		const second = marks(cardMesh(mesh, 2));
 		expect(first).toContain(0.5);
-		expect(second).toContain(0);
+		// The array keeps a half-float, so the mark is compared to the value it came from.
+		expect(second.some((mark) => Math.abs(mark - 0.95) < 1e-6)).toBe(true);
 		expect(second).not.toContain(0.5);
-		for (const mark of [...first, ...second]) expect([0, 0.5, 0.75]).toContain(mark);
+		for (const mark of [...first, ...second])
+			expect([0, 0.5, 0.75, 0.95].some((allowed) => Math.abs(mark - allowed) < 1e-6)).toBe(true);
 	});
 
 	it('keeps three pictures a side at the second card level', () => {
@@ -1081,7 +1083,10 @@ describe('the first card level of a clump-card plant', () => {
 					return Bun.hash(Buffer.concat(bytes)).toString(16);
 				})
 				.join(',');
-			expect(second).toBe('2cee829b1cb57200');
+			// The second level keeps its three pictures a side (the tile count's own test holds
+			// that); its mesh is pinned at the record's own six faces, which split it into two parts
+			// at the 65,536-vertex limit.
+			expect(second).toBe('d303bedd447ef425,8e1530f84b4a767');
 		},
 		scaledBudget(120_000),
 	);

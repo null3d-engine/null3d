@@ -1253,10 +1253,20 @@ export function speciesProblems(record: Species): string[] {
 	// The judged cover factors run from 0.65 to 1.35: below half a first card level loses its
 	// cards altogether, and above two the factor saturates and moves nothing.
 	const cover = lod.cardCover;
-	if (cover !== undefined && !(cover >= 0.5 && cover <= 2))
-		out.push(
-			`lod.cardCover is ${cover}; it is a factor from 0.5 to 2 on the first card level's coverage`,
-		);
+	if (cover !== undefined) {
+		if (Array.isArray(cover) && cover.length !== 2)
+			out.push(
+				`lod.cardCover is ${JSON.stringify(cover)}; it is one factor or a pair, one for each card level`,
+			);
+		else
+			for (const [i, value] of (Array.isArray(cover) ? cover : [cover, 1]).entries())
+				if (!(value >= 0.5 && value <= 2))
+					out.push(
+						Array.isArray(cover)
+							? `lod.cardCover[${i}] is ${value}; it is a factor from 0.5 to 2 on ${i === 0 ? 'the first' : 'the second'} card level's coverage`
+							: `lod.cardCover is ${value}; it is a factor from 0.5 to 2 on the first card level's coverage`,
+					);
+	}
 	const planes = lod.cardPlanes;
 	if (planes !== undefined) {
 		if (!Array.isArray(planes) || planes.length !== 2)
@@ -1268,6 +1278,19 @@ export function speciesProblems(record: Species): string[] {
 				if (!Number.isInteger(value) || value < 0 || value > 2)
 					out.push(
 						`lod.cardPlanes[${i}] is ${value}; it is a whole number of extra planes from 0 to 2`,
+					);
+			});
+	}
+	if (lod.clumpPlanes !== undefined) {
+		if (!Array.isArray(lod.clumpPlanes) || lod.clumpPlanes.length !== 2)
+			out.push(
+				`lod.clumpPlanes is ${JSON.stringify(lod.clumpPlanes)}; it is a pair of counts, one each card level`,
+			);
+		else
+			lod.clumpPlanes.forEach((value, i) => {
+				if (!Number.isInteger(value) || value < 2 || value > 16 || value % 2 !== 0)
+					out.push(
+						`lod.clumpPlanes[${i}] is ${value}; it is an even whole number of vertical planes from 2 to 16`,
 					);
 			});
 	}
