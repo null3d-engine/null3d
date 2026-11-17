@@ -263,6 +263,8 @@ export function fillClumps(input: FillInput): FillCount {
 		const seat: SocketSeat = {
 			node: goal.clump.node,
 			axis: goal.clump.axis,
+			order: goal.clump.order,
+			along: alongCarrier(builder, goal.clump.axis, goal.clump.node),
 			point: goal.point,
 			direction: unitFrom(goal.clump.centre, goal.point),
 			id: goal.clump.id,
@@ -316,6 +318,17 @@ function dippedY(
 	return flowers !== undefined && flowers > 0 && unitAt(seed, place, 2) < flowers;
 }
 
+/**
+ * The share along a carrier axis where a socket's piece stands: the node the socket hangs on,
+ * from 0 at the axis's base node to 1 at its tip. The fill seats every socket at its carrier's
+ * tip, so its pieces read 1: the whole carrier has to draw for the piece to hang on wood.
+ */
+function alongCarrier(builder: SkeletonBuilder, axis: number, node: number): number {
+	const [first, last] = builder.axisEnds(axis);
+	if (first < 0 || last <= first || node < first) return 1;
+	return Math.max(0, Math.min(1, (node - first) / (last - first)));
+}
+
 /** The unit direction from one point toward another, or straight up for one point. */
 function unitFrom(from: Vec3, to: Vec3): Vector3 {
 	const dx = to[0] - from[0];
@@ -329,8 +342,12 @@ function unitFrom(from: Vec3, to: Vec3): Vector3 {
 interface SocketSeat {
 	/** The SkeletonBuilder node it hangs on. */
 	readonly node: number;
-	/** The axis that node belongs to. */
+	/** The axis that node belongs to: the socket's carrier. */
 	readonly axis: number;
+	/** The botanical order of the carrier. */
+	readonly order: number;
+	/** The share along the carrier where its piece stands. */
+	readonly along: number;
 	/** Where the socket stands. */
 	readonly point: Vector3;
 	/** The direction its piece stands out along. */
@@ -371,7 +388,14 @@ function hangBud(
 		light: 1,
 		axis: seat.axis,
 		woodRadius: seat.woodRadius,
-		socket: { scale, rank, lobe: seat.id },
+		socket: {
+			scale,
+			rank,
+			lobe: seat.id,
+			carrierAxis: seat.axis,
+			carrierOrder: seat.order,
+			carrierAlong: seat.along,
+		},
 	});
 	// A blossom season's catkins hang on their own sites beside the leaves, so the leaf piece stays.
 	if (flower)
