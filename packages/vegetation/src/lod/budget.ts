@@ -28,6 +28,7 @@ import { type SilhouetteFrame, shootSilhouette, woodPartSilhouettes } from '../g
 import { grower } from '../grow/models';
 import { extrasMesh } from '../leaf/extras';
 import { writesPieces } from '../leaf/piece-rows';
+import { MeshWriter } from '../leaf/writer';
 import type { MeshInput, MeshLevel } from '../stages';
 import { woodLadderTriangles, woodPartTriangles } from '../wood/estimate';
 import { type TubeDetail, tubeDetail } from '../wood/tube';
@@ -907,6 +908,46 @@ export function rowLevel(
 					break;
 				}
 				count = Math.max(0, count - Math.max(1, Math.ceil((cost - budget) / each)));
+			}
+			// The crown-card coverage rule: where the clump cards leave allowance, a card stands at
+			// each row place, in the crown's draw order, until every row has one or the allowance is
+			// spent; what is left after every place stays unspent, as a maximum is a ceiling.
+			const left = budget - leaves;
+			if (cards && left > 2 * planes) {
+				const place = (count: number) => {
+					const made = cardClusters(mesh, walk, count, drawn, planes, surface);
+					return { made, cost: clusterTriangles(made, planes) };
+				};
+				let high = Math.min(rows.count, Math.floor(left / (2 * planes)));
+				let places: CardCluster[] = [];
+				const most = place(high);
+				if (most.cost <= left) places = most.made;
+				else {
+					let low = 0;
+					while (high - low > 1) {
+						const middle = (low + high) >> 1;
+						const tried = place(middle);
+						if (tried.cost <= left) {
+							low = middle;
+							places = tried.made;
+						} else high = middle;
+					}
+				}
+				if (places.length > 0) {
+					const both = new MeshWriter();
+					both.append(cards, () => {});
+					clusterCardMesh(
+						input.mesh,
+						places,
+						planes,
+						undefined,
+						undefined,
+						both,
+						level === 1 ? 0.5 : 0,
+					);
+					cards = both.finishMesh();
+					leaves = trianglesOf(cards);
+				}
 			}
 		} else {
 			const planes = planesFor(budget);
