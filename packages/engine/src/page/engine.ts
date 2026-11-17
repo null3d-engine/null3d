@@ -418,7 +418,10 @@ export interface EngineOptions {
 	 * and the pointer stays at the canvas's top-left corner with no movement, wheel or buttons.
 	 * Objects get no pointer events, and `requestPointerLock` fails with E1426. A development build
 	 * warns in the console, once for each kind, when the sketch reads `ctx.input`, gives an object a
-	 * pointer event handler or imports `@null3d/controls`. The default is true.
+	 * pointer event handler or imports `@null3d/controls`. The warning about the controls comes as
+	 * they load in the sketch's thread, so it misses controls that another sketch in that thread
+	 * loaded first. Two engines on the page's thread both hear a load by either one's sketch. The
+	 * default is true.
 	 */
 	input?: boolean;
 	/**
@@ -1818,8 +1821,12 @@ async function startEngine(
 	// numbers, so that code draws the same numbers on every run.
 	if (sketchOnPage) void awaitLater(loadGlue(build));
 	const runnerModule = sketchOnPage ? loadRunnerModule() : undefined;
+	// A development build with input off loads the sketch after its runner instead, so the runner
+	// hears each add-on that the sketch's module loads, such as @null3d/controls.
 	const sketchModule =
-		sketchOnPage && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
+		sketchOnPage && hold === undefined && !(DEV && options.input === false)
+			? awaitLater(loadSketch(sketchUrl))
+			: undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();

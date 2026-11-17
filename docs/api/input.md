@@ -236,6 +236,7 @@ The sketch's `ctx.input` stays at rest. Every key, button and action is up, `val
 - `engine.requestPointerLock()` fails with [E1426](../errors/E1426.md). The lock is part of the engine's input, since the sketch reads the mouse's movement through the engine's listeners. Lock the canvas with the code that records the input, which reads the movement.
 - Stopping the engine leaves a lock that the page took. It ends only a lock that the engine took or that its input read.
 - A development build warns in the console when the sketch relies on input. It warns once for each kind: a read of `ctx.input`, an object's pointer event handler, and `@null3d/controls`. Each warning names `input: false`. A production build carries none of them.
+- The warning about the controls comes as they load in the sketch's thread. A thread loads a module once, so it misses controls that another sketch in the same worker loaded first. Two engines that run their sketches on the page's thread both hear a load by either one's sketch.
 
 [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md#input-that-another-library-records) shows the page.
 

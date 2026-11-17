@@ -37,38 +37,31 @@ export interface PluginInterfaceRange {
 }
 
 /**
- * Where a thread keeps, in a development build, the add-ons that checked their version and the
- * handlers that hear each one. The sketch's thread names an add-on whose use the page's options
- * make useless, such as @null3d/controls on an engine that takes no input. A thread can hold two
- * copies of this module, one in the engine's code and one in the sketch's bundle, so the record
- * lives on the thread's global object under a shared symbol, as the error mark does. A production
- * build keeps no record.
+ * Where a thread keeps, in a development build, the handlers that hear each add-on check its
+ * version. The sketch's thread names an add-on whose use the page's options make useless, such as
+ * @null3d/controls on an engine that takes no input. A thread can hold two copies of this module,
+ * one in the engine's code and one in the sketch's bundle, so the handlers live on the thread's
+ * global object under a shared symbol, as the error mark does. A production build keeps none.
  */
 const ADDONS = /* @__PURE__ */ Symbol.for('null3d.addonsChecked');
 
-/** A thread's record of the add-ons that checked their version. */
-interface AddonRecord {
-	names: Set<string>;
-	hearers: Set<(name: string) => void>;
-}
-
-/** The thread's record, which the first copy of this module to need it makes. */
-function addonRecord(): AddonRecord {
-	const thread = globalThis as { [ADDONS]?: AddonRecord };
-	thread[ADDONS] ??= { names: new Set(), hearers: new Set() };
+/** The thread's handlers, which the first copy of this module to need them makes. */
+function addonHearers(): Set<(name: string) => void> {
+	const thread = globalThis as { [ADDONS]?: Set<(name: string) => void> };
+	thread[ADDONS] ??= new Set();
 	return thread[ADDONS];
 }
 
 /**
- * Calls `heard` with each add-on that has checked its version in this thread, and then with each
- * that checks it from now on, whichever copy of this module it calls. Returns a function that stops
- * it. Development builds only.
+ * Calls `heard` with each add-on that checks its version in this thread from now on, whichever copy
+ * of this module it calls. An add-on that checked before is not heard: a module checks once, as it
+ * loads, so a check that came earlier belongs to another sketch's load. Returns a function that
+ * stops it. Development builds only.
  */
 export function onAddonChecked(heard: (name: string) => void): () => void {
-	const record = addonRecord();
-	record.hearers.add(heard);
-	for (const name of record.names) heard(name);
-	return () => record.hearers.delete(heard);
+	const hearers = addonHearers();
+	hearers.add(heard);
+	return () => hearers.delete(heard);
 }
 
 /**
@@ -83,11 +76,7 @@ export function onAddonChecked(heard: (name: string) => void): () => void {
  * @category api/engine
  */
 export function checkAddonVersion(name: string, version: string): void {
-	if (DEV) {
-		const record = addonRecord();
-		record.names.add(name);
-		for (const heard of record.hearers) heard(name);
-	}
+	if (DEV) for (const heard of addonHearers()) heard(name);
 	if (version === VERSION) return;
 	throw new EngineError(
 		'E1432',

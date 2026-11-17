@@ -87,6 +87,8 @@ Options rejected:
 - A new public flag that the controls read: it costs production bytes.
 - A record of the add-ons in the version module's own scope: a thread can hold two copies of that module. One is in the engine's code and one in the sketch's bundle. The record lives on the thread's global object under `Symbol.for('null3d.addonsChecked')`, as the error mark does.
 - Looking for the controls once after the setup: a sketch can load them later, from a callback. The runner listens for add-ons from its start, so a load at any time is named.
+- Replaying to a runner the add-ons that checked before it. A worker that ran an earlier sketch, or another engine on the page's thread, loaded those. The warning would then name another sketch's controls. A runner hears only checks from its start until its dispose or a failed setup. With input off on the page's thread, a development build loads the sketch after its runner. The runner then hears the module's own imports.
+- Telling apart two engines on the page's thread: a module's check carries nothing that names the engine whose sketch loaded it. Both engines hear a load by either sketch, and the input option's docs say so. A thread also loads a module once. So a worker that loaded the controls for an earlier sketch gives the next sketch no warning about them.
 - The demo in Testing and tools: see above.
 
 ## Consequences

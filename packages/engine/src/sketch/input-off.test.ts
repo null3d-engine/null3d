@@ -80,11 +80,13 @@ describe('the notes of input that the page does not write', () => {
 			copy.checkAddonVersion('@null3d/controls', VERSION);
 			stop();
 			expect(heard).toEqual(['@null3d/controls']);
-			// A handler that the second copy adds later hears what the first copy recorded.
-			checkAddonVersion('@null3d/water', VERSION);
+			// A handler that the second copy adds hears the first copy's checks, and none from before
+			// it listened.
 			const late: string[] = [];
-			copy.onAddonChecked((name) => late.push(name))();
-			expect(late).toEqual(['@null3d/controls', '@null3d/water']);
+			const stopLate = copy.onAddonChecked((name) => late.push(name));
+			checkAddonVersion('@null3d/water', VERSION);
+			stopLate();
+			expect(late).toEqual(['@null3d/water']);
 		} finally {
 			if (before === undefined) delete thread[record];
 			else thread[record] = before;

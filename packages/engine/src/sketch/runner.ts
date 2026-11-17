@@ -803,7 +803,8 @@ export class SketchRunner {
 			this.input.inputOffNotes = notes;
 			noteInputReads(this.context, notes);
 			// The controls read the input, whenever the sketch loads them: in its module, in its
-			// setup, or later.
+			// setup, or later. The runner exists before its sketch's module loads, so it hears the
+			// module's own imports, and it hears no load from before it.
 			this.stopAddonNotes = onAddonChecked((name) => {
 				if (name === '@null3d/controls') notes.note('controls');
 			});
@@ -826,7 +827,13 @@ export class SketchRunner {
 		// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
 		this.record.markSetupStart();
 		const growing = performance.now();
-		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		try {
+			this.callbacks = (await sketch.setup(this.context)) ?? {};
+		} catch (error) {
+			// A setup that fails leaves no runner to dispose, so the runner stops hearing add-ons now.
+			if (DEV) this.stopAddonNotes?.();
+			throw error;
+		}
 		this.record.markSetupDone(performance.now() - growing);
 		const { check } = this.sketch.quality;
 		if (check && !this.holdsFrames) await this.checkPreset();
@@ -954,8 +961,9 @@ export class SketchRunner {
 	 * It also gives the thread its own Math.random back, where hold mode seeded it.
 	 */
 	dispose(): void {
-		if (this.core.stopped) return;
+		// Before the check below: a runner whose core stopped first still stops hearing add-ons.
 		if (DEV) this.stopAddonNotes?.();
+		if (this.core.stopped) return;
 		try {
 			this.callbacks.onDestroy?.();
 		} catch (error) {

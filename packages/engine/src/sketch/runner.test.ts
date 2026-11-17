@@ -32,7 +32,9 @@ import {
 } from '../shared/metrics';
 import { decodeRecording, type ReplayProgram } from '../shared/recording';
 import { jobAsker } from '../shared/task-host';
+import { checkAddonVersion, VERSION } from '../shared/version';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
+import { INPUT_OFF_NOTES } from './input-off';
 import type { QualityStart, QualityUpdate } from './quality';
 import { runPipelined, SketchRunner } from './runner';
 
@@ -1471,5 +1473,84 @@ describe('recording a session and replaying it', () => {
 		await expect(
 			start(logging([]), undefined, { keyCodes: KEYS, replay: program }),
 		).rejects.toThrow('the recording used the key "KeyZ"');
+	});
+});
+
+describe('a runner on a page that writes no input', () => {
+	/** A control block whose page started the engine with `input: false`, as a development build writes it. */
+	const inputOff = () => {
+		const control = controlViews(createControlBuffer(false));
+		control.slots[Slot.InputOff] = 1;
+		return control;
+	};
+	/** The controls' notes among the console's warnings. */
+	const controlsNotes = (warn: { mock: { calls: unknown[][] } }) =>
+		warn.mock.calls.filter(([note]) => note === INPUT_OFF_NOTES.controls).length;
+
+	it('names the controls that its own sketch loads, in its setup or later, and none from before', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			// A worker that ran an earlier sketch, or another engine on the thread, loaded the controls
+			// before this runner: that load is not this sketch's.
+			checkAddonVersion('@null3d/controls', VERSION);
+			const { runner } = await start(
+				() => {
+					checkAddonVersion('@null3d/controls', VERSION);
+					return {};
+				},
+				undefined,
+				{ control: inputOff() },
+			);
+			expect(controlsNotes(warn)).toBe(1);
+			runner.dispose();
+			const late = await start(() => ({}), undefined, { control: inputOff() });
+			expect(controlsNotes(warn)).toBe(1);
+			// A load from a callback after the setup.
+			checkAddonVersion('@null3d/controls', VERSION);
+			expect(controlsNotes(warn)).toBe(2);
+			late.runner.dispose();
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it('stops hearing add-ons when its setup fails, and when it is disposed', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			let failed = '';
+			try {
+				await start(
+					() => {
+						throw new Error('the setup failed on purpose');
+					},
+					undefined,
+					{ control: inputOff() },
+				);
+			} catch (error) {
+				failed = messageOf(error);
+			}
+			expect(failed).toContain('the setup failed on purpose');
+			checkAddonVersion('@null3d/controls', VERSION);
+			const { runner } = await start(() => ({}), undefined, { control: inputOff() });
+			runner.dispose();
+			checkAddonVersion('@null3d/controls', VERSION);
+			expect(controlsNotes(warn)).toBe(0);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it('hears no add-on on a page that writes input', async () => {
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			const { runner } = await start(() => {
+				checkAddonVersion('@null3d/controls', VERSION);
+				return {};
+			});
+			expect(controlsNotes(warn)).toBe(0);
+			runner.dispose();
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });
