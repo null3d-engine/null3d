@@ -19,7 +19,7 @@ const { forms: _forms, ...own } = record;
  * The top band's median, 0.017, stands at its middle, where the shell ends, so the top is blunt, as
  * picture 18's is.
  */
-const OUTLINE: readonly (readonly [number, number])[] = [
+export const OUTLINE: readonly (readonly [number, number])[] = [
 	[0.011, 0.035],
 	[0.02, 0.052],
 	[0.05, 0.068],
