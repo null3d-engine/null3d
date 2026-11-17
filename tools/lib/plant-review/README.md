@@ -51,6 +51,7 @@ Look at the sheets first. In an outline overlay, the reference is magenta and th
 | `--draw-only` | Draw the frames and write the manifest, then stop: the run's comparison is left for `--compare`. A round whose drawing and comparison would not fit one process's time limit runs as these two steps. |
 | `--compare <run folder>` | Compare an existing run again, without drawing. |
 | `--sweep` | Draw the sweep of one species: the six rungs at four turns and two heights each, and write its table. |
+| `--series-only` | Draw the sweep's pull-back series alone, with the probe that names the ladder's distances: the rungs' orbits are left out. It measures a level's switch at every distance, and its run answers `--redraw-series`. |
 | `--sweep-compare <run folder>` | Compare an existing sweep run again, without drawing. |
 | `--sweep-all`, `--species a,b` | Run `--sweep` for every species that has a reference folder, or for the named ones, and write the round's one table. `bun run plants:sweep` is this command. |
 
