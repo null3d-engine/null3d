@@ -4,7 +4,8 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { COMPARISONS } from '../../examples/compare/comparisons.ts';
-import { DEMOS, sketchPath } from '../../examples/demos.ts';
+import { sketchPath } from '../../examples/demos.ts';
+import { ALL_DEMOS } from '../../examples/hidden-demos.ts';
 import { IMAGE_RUNS, IMAGE_TESTS, manifestRun } from '../image/manifest.ts';
 import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import {
@@ -126,7 +127,7 @@ afterEach(() => rmSync(join(dirs.references, '..'), { recursive: true, force: tr
 const facts = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as CandidateFacts;
 
 /** A demo's source: its sketch, or every module in its folder for a demo of several files. */
-const demoSources = (demo: (typeof DEMOS)[number]) => {
+const demoSources = (demo: (typeof ALL_DEMOS)[number]) => {
 	const sketch = join(REPO_ROOT, 'examples', sketchPath(demo));
 	if (!demo.code?.endsWith('/')) return readFileSync(sketch, 'utf8');
 	const folder = dirname(sketch);
@@ -170,12 +171,12 @@ describe('the manifest', () => {
 					if (existsSync(join(examples, path, 'sketch.ts'))) return [`${path}/sketch.ts`];
 					return path === 'showcase' ? sketches(path) : [];
 				});
-		expect(DEMOS.map(sketchPath).sort()).toEqual(sketches('').sort());
+		expect(ALL_DEMOS.map(sketchPath).sort()).toEqual(sketches('').sort());
 		const tests = new Set(
 			IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch.split('?')[0] : '')),
 		);
-		expect(DEMOS.filter((demo) => !tests.has(`examples/${sketchPath(demo)}`))).toEqual([]);
-		const long = DEMOS.filter(
+		expect(ALL_DEMOS.filter((demo) => !tests.has(`examples/${sketchPath(demo)}`))).toEqual([]);
+		const long = ALL_DEMOS.filter(
 			(demo) =>
 				demo.group !== 'Showcase' &&
 				readFileSync(join(examples, sketchPath(demo)), 'utf8')
@@ -187,9 +188,9 @@ describe('the manifest', () => {
 
 	it('loads files only in the demos that say why', () => {
 		// A demo of several files loads a file when any of its modules does.
-		const loads = (demo: (typeof DEMOS)[number]) =>
+		const loads = (demo: (typeof ALL_DEMOS)[number]) =>
 			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(demoSources(demo));
-		expect(DEMOS.filter((demo) => loads(demo) !== (demo.assets !== undefined))).toEqual([]);
+		expect(ALL_DEMOS.filter((demo) => loads(demo) !== (demo.assets !== undefined))).toEqual([]);
 	});
 
 	it('sets an exposure in each demo that uses timeOfDay', () => {
@@ -198,7 +199,7 @@ describe('the manifest', () => {
 		// Creek is exempt: the owner approved its look, which is tuned at the default exposure, and a
 		// new exposure would change it.
 		const exempt = new Set(['creek']);
-		const skipped = DEMOS.filter((demo) => {
+		const skipped = ALL_DEMOS.filter((demo) => {
 			const code = demoSources(demo);
 			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\w*/.test(code);
 		});

@@ -45,8 +45,13 @@ draw as stand-ins for most species, which look worse than either.
   tests, its picture tests and its tools keep running, so work on it goes on.
 - The add-on's code stays whole. Code that moves to a published package for the demos, the grass
   and the far-card hand-over, is re-exported from the add-on under its old name.
-- The vegetation demo keeps its folder and its entry in `examples/demos.ts`, which marks it
-  `hidden`: no page lists it, its own address still starts it, and its image test still draws it.
+- The vegetation demo keeps its folder, and its entry moves to `examples/hidden-demos.ts`: no
+  page lists it, its own address still starts it, and its image test still draws it. A website
+  imports only `examples/demos.ts`, so its build never takes in the meadow, whose add-on a website
+  cannot install. A flag on the entry was rejected for that reason: the website's build would
+  still bundle the sketch that the list names.
+- The shader permutation list records the listed demos only, so the engine's shipped shader set
+  keeps no variant that only the hidden meadow uses.
 - Feature demos make their content in code ([Examples](../examples.md#procedural-first)), so
   the stone garden, the light shafts wood, the atmosphere valley and the wind demo grow their own
   plants in code. Loading Blender models in them was rejected: it breaks that rule for no gain in

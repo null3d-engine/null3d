@@ -13,7 +13,8 @@
 // settles once the first demo's start ends, and the page then destroys its engine.
 // `startAbortedPart()` starts the demo's page part on a signal that is already aborted, and
 // resolves to how many elements it left in the choices.
-import { DEMOS, type Demo } from '../../examples/demos';
+import { type Demo } from '../../examples/demos';
+import { ALL_DEMOS } from '../../examples/hidden-demos';
 import { type DemoPage, startDemo } from '../../examples/lib/run';
 import type { DemoProbe } from './lib/demo-probe';
 import { run } from './lib/result';
@@ -30,7 +31,7 @@ declare global {
 
 /** The demo that `name` names, or a failure that says to name one. */
 function namedDemo(name: string | null): Demo {
-	const demo = DEMOS.find((candidate) => candidate.name === name);
+	const demo = ALL_DEMOS.find((candidate) => candidate.name === name);
 	if (!demo) throw new Error(`Add ?demo= with the name of a demo, not ${name}.`);
 	return demo;
 }

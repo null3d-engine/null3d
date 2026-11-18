@@ -7,7 +7,7 @@
 // the page's own animation rate and the render scale the governor settled at, which separate the
 // frame's own work from the cost of presenting it.
 import type { Engine } from '@null3d/engine';
-import { DEMOS } from '../../examples/demos';
+import { ALL_DEMOS } from '../../examples/hidden-demos';
 import { startDemo } from '../../examples/lib/run';
 import { progress, run } from './lib/result';
 
@@ -96,7 +96,7 @@ async function settledScale(engine: Engine): Promise<string | null> {
 
 run('demo-frames', async () => {
 	const name = params.get('demo');
-	const demo = DEMOS.find((candidate) => candidate.name === name);
+	const demo = ALL_DEMOS.find((candidate) => candidate.name === name);
 	if (!demo) throw new Error(`Add ?demo= with the name of a demo, not ${name}.`);
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');

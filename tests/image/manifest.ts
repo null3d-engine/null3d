@@ -44,7 +44,8 @@ import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { TRANSMISSION_IMAGE } from '../../bench/scenes/transmission.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { COMPARISONS } from '../../examples/compare/comparisons.ts';
-import { DEMOS, sketchPath } from '../../examples/demos.ts';
+import { sketchPath } from '../../examples/demos.ts';
+import { ALL_DEMOS } from '../../examples/hidden-demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import {
@@ -3782,7 +3783,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
 	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
-	...DEMOS.map((demo): ImageTest => {
+	...ALL_DEMOS.map((demo): ImageTest => {
 		// The held vegetation pictures draw the fixed documented subset, so their cost does not
 		// grow with the catalogue; the live pages draw every registered species. The subset rides
 		// on the sketch's own address, which the image page passes to the scene, not on a page

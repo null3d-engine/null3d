@@ -1,7 +1,7 @@
 // The addresses of the demos' code that the "View code" links give.
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
-import { DEMOS } from '../../examples/demos.ts';
+import { ALL_DEMOS } from '../../examples/hidden-demos.ts';
 import { codePath, REPOSITORY_URL, sourceUrl } from '../../examples/lib/source.ts';
 
 describe("a demo's code address", () => {
@@ -37,7 +37,7 @@ describe("a demo's code address", () => {
 
 	test('names a file or a folder in this checkout for every demo', () => {
 		const examples = new URL('../../examples/', import.meta.url);
-		for (const demo of DEMOS) {
+		for (const demo of ALL_DEMOS) {
 			const path = codePath(demo);
 			expect(existsSync(new URL(path, examples)), path).toBe(true);
 		}

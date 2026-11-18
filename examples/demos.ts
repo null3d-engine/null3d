@@ -121,11 +121,6 @@ export interface Demo {
 	 * starts the demo's page part, `examples/<name>/page.ts`. A held frame draws the sketch alone.
 	 */
 	pagePart?: boolean;
-	/**
-	 * True for a demo that a page leaves out of its list. Its own address still starts it, and its
-	 * image test still draws it, so work on what it shows can go on while no visitor sees it.
-	 */
-	hidden?: boolean;
 }
 
 /** A choice that a page offers for a demo: one button for each option. */
@@ -888,24 +883,6 @@ export const DEMOS: readonly Demo[] = [
 			'100,000 columns in one batch at golden hour, and 10,000 on phones, with 30,000 to 100,000 hover cars streaming along the sky lanes above them. The sketch writes the height of every column, and the traffic-lanes add-on moves the cars in the vertex shader, so a frame costs no work per car.',
 		hold: 2,
 		timeoutSeconds: 180,
-	},
-	{
-		name: 'vegetation',
-		group: 'Building scenes',
-		sketch: new URL('./vegetation/sketch.ts', import.meta.url),
-		code: 'vegetation/',
-		title: 'Vegetation',
-		scene: 'A meadow of every species',
-		summary:
-			"The vegetation add-on's meadow: every species the catalogue registers, each grown from its own record through the add-on's public functions and planted across a field. The pedunculate oak stands there today with the species that follow it, so the page fills as records land. Drag to turn round the meadow and use the wheel to step in, and press R to grow it all again from another seed.",
-		controls: [{ keys: ['R'], does: 'Grow the meadow again from another seed' }],
-		hold: 2,
-		// The vegetation add-on is not published, so no page lists its meadow.
-		hidden: true,
-		// The meadow grows every registered species at medium detail with shadows, and its held
-		// capture needs more than 240 s on CI's software GPU. The wait takes the 600 s ceiling that
-		// the island and the timed script use.
-		timeoutSeconds: 600,
 	},
 	{
 		name: 'vegetation-wind',
