@@ -3,7 +3,9 @@
 // a part that it leaves out reads its share never, so the check passes by testing less ([Test
 // memory](../../.dev/tests.md)).
 import { describe, expect, it } from 'bun:test';
-import { HEAVY_CHECKS, PART_ENV } from './heavy-checks.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { HEAVY_CHECKS, HEAVY_JOBS, PART_ENV } from './heavy-checks.ts';
 
 /** The parts that a check's entries name, and the count of parts that each of them states. */
 interface Parts {
@@ -29,5 +31,23 @@ describe('the heavy checks', () => {
 			const every = Array.from({ length: of }, (_, index) => index + 1);
 			expect([file, [...named].sort((a, b) => a - b)]).toEqual([file, every]);
 		}
+	});
+
+	it('run in the jobs that CI starts, each of which runs some', () => {
+		// A job that the workflow's matrix leaves out runs its checks nowhere, and they pass by not
+		// running.
+		const workflow = readFileSync(
+			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
+			'utf8',
+		);
+		const matrix = /^ {6}matrix:\n {8}job: \[([^\]]*)\]/m.exec(
+			workflow.slice(workflow.indexOf('\n  heavy-checks:')),
+		);
+		expect(matrix?.[1]?.split(',').map((job) => job.trim())).toEqual([...HEAVY_JOBS]);
+		for (const job of HEAVY_JOBS)
+			expect([job, HEAVY_CHECKS.some((check) => (check.job ?? 'engine') === job)]).toEqual([
+				job,
+				true,
+			]);
 	});
 });

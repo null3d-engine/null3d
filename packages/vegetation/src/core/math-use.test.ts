@@ -11,7 +11,6 @@ const SOURCE = join(import.meta.dir, '..');
 
 /** Files that may use the browser's maths, each with the reason its numbers never reach a plant. */
 const OUTSIDE: Readonly<Record<string, string>> = {
-	'render/hand-over.ts': 'the distances where drawn levels hand over, worked out in the page',
 	'render/material.ts': 'the culling spheres of drawn copies, worked out in the page',
 	'render/stand-in.ts': "each drawn stand-in's turn, set in the page",
 	'render/static-shoots.ts': "the camera's view scale and each drawn copy's turn",

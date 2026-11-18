@@ -53,12 +53,6 @@
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
-	"chromium-swiftshader/compat/demo-contact-shadows.png": {
-		"test": "demo-contact-shadows",
-		"tier": "compat",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
-	},
 	"chromium-swiftshader/compat/demo-depth-only.png": {
 		"test": "demo-depth-only",
 		"tier": "compat",
@@ -316,12 +310,6 @@
 		"tier": "webgl2",
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
-	},
-	"chromium-swiftshader/webgl2/demo-contact-shadows.png": {
-		"test": "demo-contact-shadows",
-		"tier": "webgl2",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -605,12 +593,6 @@
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
-	"chromium-swiftshader/webgpu/demo-contact-shadows.png": {
-		"test": "demo-contact-shadows",
-		"tier": "webgpu",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
-	},
 	"chromium-swiftshader/webgpu/demo-depth-only.png": {
 		"test": "demo-depth-only",
 		"tier": "webgpu",
@@ -658,12 +640,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/demo-vegetation.png": {
-		"test": "demo-vegetation",
-		"tier": "webgpu",
-		"date": "2026-11-13",
-		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",

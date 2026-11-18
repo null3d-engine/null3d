@@ -1,5 +1,5 @@
-// The hand-over from a band of near meshes to their far cards: each draws over its own range of
-// distance, and the two dithered edges never overlap, so no pixel of a crown drops out of both.
+// The hand-over from a batch of near meshes to their far cards: each draws over its own range of
+// distance, and the two dithered edges never overlap, so no pixel drops out of both.
 import type { InstanceBatch } from '@null3d/engine';
 
 /**
@@ -7,6 +7,8 @@ import type { InstanceBatch } from '@null3d/engine';
  * phase comes from each copy's own source. The mesh and the card are different sources, so their
  * phases differ: a card that faded in while the mesh faded out would drop the pixels that both left
  * out, and the background would show through the crown.
+ *
+ * @category api/impostors
  */
 export const EDGE_BAND = 0.08;
 
@@ -28,19 +30,18 @@ function cardsStart(cards: InstanceBatch, switchDistance: number): number {
 const FAR = 1e9;
 
 /**
- * Hands a band of trees from their meshes to their cards. The meshes draw up to
- * `switchDistance`, and the engine dithers their last few per cent of that range out. The cards
- * start far enough before it that their own dithered edge finishes before the mesh's edge begins to
- * thin: each dropped mesh pixel shows its card at full coverage, one dither moves the tree from its
- * mesh to its card, and the background never shows through the crown. Write the cards' turns and
- * sizes before this call, and call it at setup.
+ * Hands a batch of near meshes over to their far cards. The meshes draw up to `switchDistance`,
+ * and the engine dithers the last few per cent of that range out. The cards start early enough
+ * that their own dithered edge ends before the meshes' edge begins to thin. So each pixel that a
+ * mesh drops shows its card at full coverage, and the background never shows through. Write the
+ * cards' turns and sizes before this call, and call it at setup.
  *
- * @param meshes The batch of near meshes, whose rows stand at the same trees.
+ * @param meshes The batch of near meshes, whose rows stand at the same places as the cards' rows.
  * @param cards The card batch, such as `ImpostorBatch.batch`.
  * @param switchDistance The distance from the camera at which a tree hands over, in meters.
  * @param start The distance from which the meshes draw, in meters: 0 for a batch that draws from
- *   the tree out, or the start of a coarser level's own band.
- * @category api/vegetation
+ *   the camera out, or the start of a coarser level's own band.
+ * @category api/impostors
  */
 export function handOverToCards(
 	meshes: InstanceBatch,
