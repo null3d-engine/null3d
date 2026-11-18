@@ -136,7 +136,7 @@ function listDemos(): void {
 			}
 		}
 		for (const demo of DEMOS) {
-			if (demo.group !== group) continue;
+			if (demo.group !== group || demo.hidden) continue;
 			const link = element('a', '', demoLink(demo));
 			link.append(...heading(demo));
 			if (demo.assets) link.title = demo.assets;
