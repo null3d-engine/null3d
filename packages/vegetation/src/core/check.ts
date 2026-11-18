@@ -946,6 +946,12 @@ function growthProblems(record: Species, out: string[]): void {
 function extraProblems(record: Species, out: string[]): void {
 	record.extras?.forEach((extra, i) => {
 		const path = `extras[${i}]`;
+		// A per-tree fruit count is the record's own figure: a whole count of sites, whatever the
+		// crown's tips, so a crown that grows denser does not multiply the crop.
+		if (extra.perTree !== undefined && (!Number.isInteger(extra.perTree) || extra.perTree < 0))
+			out.push(
+				`${path}.perTree is ${extra.perTree}; it is a whole count of fruit sites per tree, zero or more`,
+			);
 		const stalked = 'lathe' in extra.shape || 'samara' in extra.shape;
 		if (stalked && extra.shape.stalkSides !== undefined)
 			wholeProblem(extra.shape.stalkSides, `${path}.shape.stalkSides`, 4, 16, out);

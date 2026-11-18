@@ -2754,6 +2754,13 @@ export interface ExtraSpec {
 		| 'culm-joint';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
+	/**
+	 * The fruit per tree, as a whole count, where the species' references state it: the placement
+	 * seats this many sites at every variant, whatever number of tips the grown crown happens to
+	 * have, so a denser crown does not multiply the crop. `share` is then unread. Absent, `share`
+	 * of the matching sites carries one.
+	 */
+	readonly perTree?: number;
 	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
 	readonly count?: Spread;
 	/**

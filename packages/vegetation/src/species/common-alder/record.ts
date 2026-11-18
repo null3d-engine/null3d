@@ -518,6 +518,9 @@ export const record: Species = {
 			kind: 'cone',
 			at: 'shoot-tip',
 			share: 0.16,
+			// Still 19: the crop the references show on a tree of this size, seated as a count so a
+			// denser crown does not multiply it.
+			perTree: 450,
 			count: { mean: 3, spread: 1 },
 			tipShare: 0.8,
 			seasons: ['summer', 'autumn', 'winter'],
@@ -556,6 +559,7 @@ export const record: Species = {
 			kind: 'catkin',
 			at: 'shoot-tip',
 			share: 0.18,
+			perTree: 450,
 			count: { mean: 3, spread: 0 },
 			tipShare: 0.9,
 			seasons: ['summer', 'autumn', 'winter', 'blossom'],
