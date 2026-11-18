@@ -29,14 +29,15 @@ import bpy
 import numpy as np
 from mathutils import Vector, noise
 from mathutils.bvhtree import BVHTree
+from mathutils.kdtree import KDTree
 
 # The shared module loads from beside this script, and leaves no bytecode cache in the repository.
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    Builder, arguments, blend_up, card, dilate, export, fbm, fitted, frame_of, half, image, leaf_color,
-    leaf_mask, link, material, normal_map, occlusion_of, orm, over, preview, smoothstep, strip, tube,
-    value_noise,
+    Builder, arguments, at_distance, blend_up, close_up, dilate, export, fbm, frame_of, half, image, leaf_color,
+    leaf_mask, link, material, normal_map, occlusion_of, orm, over, preview, smoothstep, sprig_atlas, strip,
+    tent, tube, value_noise,
 )
 
 SEED = 20261011
@@ -47,41 +48,13 @@ SEED = 20261011
 
 def leaf_atlas(size, rng):
     """
-    Four clusters of broad leaves on twigs, in the cells of a 2 x 2 atlas. Each twig runs up its
-    cell from the middle of its bottom edge, so a card's base sits on its branch. Every leaf stays
-    inside its cell, so no card shows a straight edge, and each edge fades over two texels, which
-    alpha to coverage turns into a soft outline.
+    Four dense sprays of small broad leaves on branching twigs, in the cells of a 2 x 2 atlas. Each twig
+    runs up its cell from the middle of its bottom edge, so a card's base sits on its branch, and
+    side twigs carry leaves out from it, so a spray reads as many leaves, not one sheet. Every leaf
+    stays inside its cell, so no card shows a straight edge.
     """
-    cell = size // 2
-    out = np.zeros((size, size, 4), np.float32)
-    mottle = fbm(size, size, 8, 8, rng, 4)
-    py, px = np.mgrid[0:cell, 0:cell].astype(np.float32) / cell
-    tones = [np.array(c) for c in ([0.30, 0.46, 0.13], [0.36, 0.50, 0.14], [0.27, 0.42, 0.15], [0.40, 0.52, 0.17])]
-    for k in range(4):
-        oy, ox = (k // 2) * cell, (k % 2) * cell
-        tile = np.zeros((cell, cell, 4), np.float32)
-        bend = (rng.random() - 0.5) * 0.25
-        twig = lambda v: 0.5 + bend * v * v
-        # The twig: a thin brown line up the middle, which the leaves cover.
-        dist = np.abs(px - twig(py)) - 0.008 * (1 - py)
-        over(tile, np.array([0.30, 0.24, 0.16]), np.clip(-dist * cell + 0.5, 0, 1) * (py < 0.82))
-        leaves = 22 + int(rng.random() * 6)
-        for j in range(leaves):
-            v = 0.08 + 0.74 * j / leaves + 0.04 * rng.random()
-            side = 1 if j % 2 else -1
-            angle = math.pi / 2 - side * (0.6 + 0.8 * rng.random()) * (1 - 0.3 * v)
-            length = (0.19 + 0.08 * rng.random()) * (1.05 - 0.35 * abs(v - 0.45))
-            length = fitted((twig(v), v), angle, length)
-            coverage, s, t = leaf_mask(px, py, (twig(v), v), angle, length, 0.36 + 0.06 * rng.random(), 0.02, cell / 2)
-            tone = tones[k] * (0.85 + 0.3 * rng.random())
-            color = leaf_color(s, t, tone, mottle[oy:oy + cell, ox:ox + cell])
-            over(tile, color, coverage)
-        # The top leaf continues the twig.
-        top = fitted((twig(0.78), 0.78), math.pi / 2 + bend, 0.2)
-        coverage, s, t = leaf_mask(px, py, (twig(0.78), 0.78), math.pi / 2 + bend, top, 0.36, 0.02, cell / 2)
-        over(tile, leaf_color(s, t, tones[k], mottle[oy:oy + cell, ox:ox + cell]), coverage)
-        out[oy:oy + cell, ox:ox + cell] = tile
-    return dilate(out)
+    tones = ([0.30, 0.46, 0.13], [0.36, 0.50, 0.14], [0.27, 0.42, 0.15], [0.40, 0.52, 0.17])
+    return sprig_atlas(size, rng, 84, 0.14, 0.38, tones, 0.0, [0.30, 0.24, 0.16], 0.72, (0.5, 1.5), 7)
 
 
 def bark(kind, w, h, rng):
@@ -175,7 +148,7 @@ def broad_leaf(size, rng):
 def flower_atlas(size, rng):
     """
     Wildflowers in a 2 x 2 atlas: a daisy, a buttercup and a cornflower, each seen from above, and a
-    cell of green with a leaf blade on its left and a stem stripe on its right.
+    cell of green with a broad lobed basal leaf on its left and a stem stripe on its right.
     """
     cell = size // 2
     out = np.zeros((size, size, 4), np.float32)
@@ -203,9 +176,10 @@ def flower_atlas(size, rng):
         over(tile, np.array(center)[None, None] * (0.75 + 0.4 * mottle[..., None]), disc_cover)
         oy, ox = (k // 2) * cell, (k % 2) * cell
         out[oy:oy + cell, ox:ox + cell] = tile
-    # The green cell: a leaf blade up its left part, and a stem stripe at its right edge.
+    # The green cell: a broad leaf with lobed edges up its left part, widest toward its tip as an
+    # oxeye daisy's basal leaf is, and a stem stripe at its right edge.
     tile = np.zeros((cell, cell, 4), np.float32)
-    coverage, s, t = leaf_mask(px, py, (0.3, 0.02), math.pi / 2, 0.95, 0.12, 0.0, cell / 2)
+    coverage, s, t = leaf_mask(px, py, (0.36, 0.02), math.pi / 2, 0.95, 0.3, 0.12, cell / 2, 0.85)
     over(tile, leaf_color(s, t, np.array([0.2, 0.38, 0.1]), mottle), coverage)
     stem = np.clip((0.04 - np.abs(px - 0.82)) * cell / 2 + 0.5, 0, 1)
     over(tile, np.array([0.24, 0.4, 0.12])[None, None] * (0.8 + 0.3 * py[..., None]), stem)
@@ -217,20 +191,24 @@ def flower_atlas(size, rng):
 # Trees
 # ---------------------------------------------------------------------------------------------
 
+# Each tree's shape. `cards` are the leaf sprays on each twig of the outermost branches, `card` is a
+# spray's size in meters, and `inner` adds sprays along the branches one level in, which fill the
+# crown's depth and shade darker, as a full crown's inside does. `fill` adds sprays where the crown's
+# rounded outline has a hole between its limbs.
 TREES = {
     'oak': dict(
         height=7.2, radius=0.3, flare=0.7, crown=0.34, children=(7, 5, 4), angles=(62, 48, 42),
-        ratio=(0.6, 0.55, 0.5), tropism=(0.12, 0.08, 0.0), wobble=0.22, cards=16, card=0.8,
+        ratio=(0.6, 0.55, 0.5), tropism=(0.12, 0.08, 0.0), wobble=0.22, cards=46, card=0.48, inner=24, fill=900,
         tint=(0.86, 0.95, 0.82), bark='oak', sides=(12, 7, 5, 3),
     ),
     'beech': dict(
         height=8.6, radius=0.24, flare=0.45, crown=0.3, children=(8, 5, 4), angles=(44, 40, 36),
-        ratio=(0.5, 0.55, 0.5), tropism=(0.25, 0.15, 0.05), wobble=0.14, cards=16, card=0.75,
+        ratio=(0.5, 0.55, 0.5), tropism=(0.25, 0.15, 0.05), wobble=0.14, cards=46, card=0.45, inner=24, fill=250,
         tint=(1.0, 1.0, 0.88), bark='beech', sides=(10, 6, 4, 3),
     ),
     'birch': dict(
         height=7.8, radius=0.14, flare=0.3, crown=0.32, children=(9, 4, 3), angles=(48, 52, 58),
-        ratio=(0.46, 0.6, 0.55), tropism=(0.1, -0.12, -0.28), wobble=0.18, cards=13, card=0.62,
+        ratio=(0.46, 0.6, 0.55), tropism=(0.1, -0.12, -0.28), wobble=0.18, cards=32, card=0.31,
         tint=(1.08, 1.06, 0.72), bark='birch', sides=(9, 5, 4, 3),
     ),
 }
@@ -238,12 +216,14 @@ TREES = {
 
 # The trees' lower levels of detail, from the finest down. Each keeps one card in `every` of the
 # full tree's, larger by `grow` so the crown stays as full, and draws branches up to `branches`
-# levels deep with `sides` fewer sides each (three at least). `error` is the level's surface error
-# in meters, which the engine compares with the size of a pixel at the tree's distance: these
-# switch about 25 m and 50 m away on a screen 1,080 pixels high, at the scene's 45 degree view.
+# levels deep with `sides` fewer sides each (three at least). The cards grow little, so a crown's
+# leaves keep nearly one size from near to far: the scene stands few trees, and its views reach
+# them from 25 m on. `error` is the level's surface error in meters, which the engine compares with
+# the size of a pixel at the tree's distance: on a screen 1,080 pixels high, at the scene's 45
+# degree view, a pixel spans 0.00077 m per meter away, so these switch about 50 m and 100 m away.
 TREE_LEVELS = (
-    dict(every=3, grow=1.55, branches=2, sides=2, error=0.02),
-    dict(every=8, grow=2.4, branches=1, sides=4, error=0.04),
+    dict(every=3, grow=1.5, branches=2, sides=2, error=0.038),
+    dict(every=8, grow=2.2, branches=1, sides=4, error=0.077),
 )
 
 
@@ -299,6 +279,9 @@ def grow_tree(spec, rng):
         if level == last - 1:
             p, d, _ = at(points, radii, 1.0)
             cards.append((p, d, len(branches) - 1))
+            for _ in range(spec.get('inner', 0)):
+                p, d, _ = at(points, radii, 0.3 + 0.7 * rng.random())
+                cards.append((p, d, len(branches) - 1))
         n = spec['children'][level]
         first = spec['crown'] if level == 0 else 0.25
         for k in range(n):
@@ -314,6 +297,50 @@ def grow_tree(spec, rng):
 
     grow(Vector((0, 0, -0.35)), Vector((0, 0, 1)), spec['height'] + 0.35, spec['radius'], 0)
     return branches, cards
+
+
+def fill_crown(spec, branches, cards, rng):
+    """
+    Sprays for the holes in a crown: points in the outer part of the ellipsoid that the crown's
+    sprays span, each kept only where no spray lies within a spray's reach, and hung from the
+    branch of the nearest spray, facing out of the crown. A park tree's crown then reads as one
+    rounded mass, not as tufts on separate limbs.
+    """
+    wanted = spec.get('fill', 0)
+    if not wanted:
+        return []
+    places = np.array([tuple(p) for p, _, _ in cards])
+    middle = places.mean(axis=0)
+    reach = np.percentile(np.abs(places - middle), 95, axis=0) * 1.05
+    tree = KDTree(len(cards))
+    for k, (p, _, _) in enumerate(cards):
+        tree.insert(p, k)
+    tree.balance()
+    gap = spec['card'] * 1.1
+    # The filled places by grid cell of the gap's size, so a new place checks only its neighbors.
+    taken = {}
+    added = []
+    tries = 0
+    while len(added) < wanted and tries < wanted * 30:
+        tries += 1
+        n = Vector(rng.normal(0, 1, 3)).normalized()
+        shell = 0.55 + 0.45 * rng.random() ** 0.5
+        p = Vector(middle) + Vector((n.x * reach[0], n.y * reach[1], n.z * reach[2])) * shell
+        if p.z < 1.8:
+            continue
+        _, nearest, distance = tree.find(p)
+        if distance < gap:
+            continue
+        cell = tuple(int(math.floor(c / gap)) for c in p)
+        near = (
+            q for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+            for q in taken.get((cell[0] + dx, cell[1] + dy, cell[2] + dz), ())
+        )
+        if any((q - p).length < gap for q in near):
+            continue
+        taken.setdefault(cell, []).append(p)
+        added.append((p, (n + Vector((0, 0, 0.5))).normalized(), cards[nearest][2]))
+    return added
 
 
 def tree_wood(spec, branches, rng, depth=None, fewer=0):
@@ -377,7 +404,7 @@ def tree_leaves(spec, cards, top, rng, grow=1.0):
         color = tuple(ao * hue * c for c in tint)
         # A card swings with its twig, and the cards at the crown's rim swing the most.
         sway = (max(0.0, p.z) / top + LEAF_FREEDOM * min(depth, 1.0), branch_phase(branch))
-        card(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway)
+        tent(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, 0.18)
     return leaves
 
 
@@ -389,6 +416,7 @@ def build_tree(name, spec, bark_mat, leaf_mat, rng):
     and every model built after it, as they were.
     """
     branches, cards = grow_tree(spec, rng)
+    cards = cards + fill_crown(spec, branches, cards, rng)
     top = tree_top(branches)
     wood = tree_wood(spec, branches, rng)
     leaves = tree_leaves(spec, cards, top, rng)
@@ -503,67 +531,109 @@ def build_shrub(mat, rng):
             b, [Vector((0, 0, 0)), tip * 0.5, tip], [0.025] * 3, [side] * 3, 0.0, lambda t: (0.6,) * 3, (0.24, 0.0, 0.26, 0.06), 0,
             lambda t, k=k: (t, branch_phase(k)),
         )
-        for c in range(5):
-            p = tip * (0.35 + 0.65 * rng.random())
+        for c in range(12):
+            p = tip * (0.3 + 0.7 * rng.random())
             out = (p - center).normalized()
             facing = (out + Vector(rng.normal(0, 0.4, 3)) + Vector((0, 0, 0.4))).normalized()
             along = (d - facing * d.dot(facing)).normalized()
-            size = 0.45 + 0.2 * rng.random()
+            size = 0.24 + 0.1 * rng.random()
             cell = int(rng.random() * 4)
             cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
             depth = (p - center).length / 0.8
             ao = 0.5 + 0.5 * min(1.0, depth)
             sway = (p.length / length, branch_phase(k))
-            card(b, p, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), (ao * 0.9, ao, ao * 0.85), center, sway, 0.1)
+            tent(b, p, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), (ao * 0.9, ao, ao * 0.85), center, sway, 0.18)
     return b
 
 
 def build_flowers(mat, rng):
     """
-    A clump of wildflowers: blades from the ground, and stems that carry daisies, buttercups and
-    cornflowers, each head a small card that faces up and out. One atlas gives all of them.
+    A clump of wildflowers that reads as a low flowering mound: a rosette of broad lobed leaves
+    flat on the ground, a ring of leaves standing among the stems, and short stems that lean out
+    from the middle and carry the heads low over the leaves. Daisies are cups whose ray petals rise
+    from a raised yellow disc, buttercups are small deep cups, and cornflowers are tufts of two
+    crossed cups. A few buds stand among them. One atlas gives all of them.
     """
     b = Builder()
-    for k in range(7):
-        az = k * 2.39996 + rng.random() * 0.5
+    leaf = (0.515, 0.5, 0.845, 0.98)
+    stem_strip = (0.89, 0.5, 0.93, 1.0)
+    # The rosette: broad leaves that rise from the middle and fall to the ground, and the leaves
+    # that stand among the stems.
+    for k in range(24):
+        az = k * 2.39996 + rng.random() * 0.4
         heading = Vector((math.cos(az), math.sin(az), 0))
         side = Vector((-math.sin(az), math.cos(az), 0))
-        length = 0.16 + 0.12 * rng.random()
-        rise = math.radians(55 + 25 * rng.random())
+        standing = k >= 12
+        length = (0.17 if standing else 0.18) + 0.09 * rng.random()
+        rise = math.radians((68 if standing else 25) + 14 * rng.random())
         points = []
-        p, d = Vector((0, 0, 0)), (heading * math.cos(rise) + Vector((0, 0, math.sin(rise)))).normalized()
+        p = Vector((0, 0, 0.005))
+        d = (heading * math.cos(rise) + Vector((0, 0, math.sin(rise)))).normalized()
         for i in range(4):
             points.append(p.copy())
-            d = (d + Vector((0, 0, -0.5)) * 0.25).normalized()
+            d = (d + Vector((0, 0, -0.45)) * (0.15 if standing else 0.3)).normalized()
             p = p + d * (length / 3)
+        width = length * 0.6
+        shade = 0.75 + 0.2 * rng.random()
         strip(
-            b, points, [0.035, 0.03, 0.022, 0.01], [side] * 4, 0.1, lambda t: (0.55 + 0.45 * t,) * 3, (0.5, 0.5, 0.75, 1.0), 1,
-            lambda t, k=k: (t, branch_phase(k)),
+            b, points, [width * 0.35, width * 0.85, width, width * 0.8], [side] * 4, 0.12,
+            lambda t, s=shade: (s * (0.5 + 0.5 * t),) * 3, leaf, 1,
+            lambda t, k=k: (0.5 * t, branch_phase(k)),
         )
-    for k in range(16):
-        species = min(2, int(rng.random() ** 1.4 * 3))
-        az = rng.random() * 2 * math.pi
-        foot = Vector((math.cos(az), math.sin(az), 0)) * 0.14 * math.sqrt(rng.random())
-        height = 0.3 + 0.25 * rng.random()
-        lean = Vector((rng.normal(0, 0.12), rng.normal(0, 0.12), 1)).normalized()
+    # The heads: stems that lean out from the middle, so the blooms spread over the mound.
+    heads = 15
+    for k in range(heads):
+        pick = rng.random()
+        species = 0 if pick < 0.5 else (1 if pick < 0.78 else 2)
+        az = k * 2.39996 + rng.random() * 0.6
+        out = Vector((math.cos(az), math.sin(az), 0))
+        foot = out * 0.05 * math.sqrt(rng.random())
+        height = 0.14 + 0.13 * rng.random()
+        lean = (Vector((0, 0, 1)) + out * (0.25 + 0.45 * rng.random())).normalized()
         top = foot + lean * height
         side = frame_of(lean)[0]
-        stem = [foot.lerp(top, t) + Vector((0, 0, 0.0)) for t in (0, 0.5, 1)]
+        stem = [foot.lerp(top, t) + Vector((0, 0, 0.02 * math.sin(math.pi * t))) for t in (0, 0.5, 1)]
         strip(
-            b, stem, [0.008] * 3, [side] * 3, 0.0, lambda t: (0.6 + 0.4 * t,) * 3, (0.89, 0.5, 0.93, 1.0), 0,
-            lambda t, k=k: (t, branch_phase(k + 7)),
+            b, stem, [0.006] * 3, [side] * 3, 0.0, lambda t: (0.5 + 0.5 * t,) * 3, stem_strip, 0,
+            lambda t, k=k: (t, branch_phase(k + 20)),
         )
-        # The head: a card that faces up, tipped a little toward the stem's lean.
-        facing = (Vector((0, 0, 1)) + (lean - Vector((0, 0, lean.z))) * 2.5).normalized()
+        facing = (Vector((0, 0, 1)) + out * 0.5 + Vector(rng.normal(0, 0.15, 3))).normalized()
         across, ahead = frame_of(facing)
-        size = 0.08 + 0.05 * rng.random()
         cu, cv = (species % 2) * 0.5, (species // 2) * 0.5
-        ids = []
-        for row in (0, 1):
-            for col in (0, 1):
-                q = top + across * (col - 0.5) * size + ahead * (row - 0.5) * size
-                ids.append(b.vertex(q, (cu + col * 0.5, cv + row * 0.5), (1, 1, 1), facing, (1.0, branch_phase(k + 7))))
-        b.face(ids[0], ids[1], ids[3], ids[2])
+        cell = (cu, cv, cu + 0.5, cv + 0.5)
+        sway = (1.0, branch_phase(k + 20))
+        if species == 0:
+            # A daisy: a shallow cup of ray petals, and its disc raised in the middle.
+            size = 0.05 + 0.012 * rng.random()
+            tent(b, top - ahead * size * 0.5, ahead, facing, size, cell, (1, 1, 1), top - facing * size, sway, -0.16, 0.3)
+            disc = size * 0.32
+            tent(b, top + facing * size * 0.02 - ahead * disc * 0.5, ahead, facing, disc,
+                 (cu + 0.19, cv + 0.19, cu + 0.31, cv + 0.31), (1, 1, 1), top - facing * size, sway, 0.45, 0.3)
+        elif species == 1:
+            # A buttercup: a small deep cup.
+            size = 0.035 + 0.01 * rng.random()
+            tent(b, top - ahead * size * 0.5, ahead, facing, size, cell, (1, 1, 1), top - facing * size, sway, -0.35, 0.3)
+        else:
+            # A cornflower: a tuft of two cups crossed and tipped apart.
+            size = 0.04 + 0.01 * rng.random()
+            for tip in (-1, 1):
+                tilted = (facing + across * tip * 0.6).normalized()
+                along = tilted.cross(across).normalized()
+                tent(b, top - along * size * 0.5, along, tilted, size, cell, (1, 1, 1), top - facing * size, sway, -0.25, 0.3)
+    # A few buds: small closed heads among the blooms, green going to the petals' color.
+    for k in range(5):
+        az = rng.random() * 2 * math.pi
+        out = Vector((math.cos(az), math.sin(az), 0))
+        top = out * (0.04 + 0.08 * rng.random()) + Vector((0, 0, 0.12 + 0.1 * rng.random()))
+        facing = (Vector((0, 0, 1)) + out * 0.4).normalized()
+        across, ahead = frame_of(facing)
+        size = 0.018
+        cu, cv = (k % 2) * 0.5, 0.0
+        tent(b, top - ahead * size * 0.5, ahead, facing, size, (cu + 0.2, cv + 0.2, cu + 0.3, cv + 0.3), (0.75, 0.85, 0.6), top - facing * size, (1.0, branch_phase(k + 40)), 0.5, 0.3)
+        strip(
+            b, [top - Vector((0, 0, 0.1)), top - Vector((0, 0, 0.05)), top], [0.005] * 3, [frame_of(facing)[0]] * 3, 0.0,
+            lambda t: (0.5 + 0.5 * t,) * 3, stem_strip, 0, lambda t, k=k: (t, branch_phase(k + 40)),
+        )
     return b
 
 
@@ -804,9 +874,16 @@ def main():
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
     if shots:
         for name in TREES:
-            preview([bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']], os.path.join(shots, f'{name}.png'))
+            parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
+            preview(parts, os.path.join(shots, f'{name}.png'))
+            close_up(parts, os.path.join(shots, f'{name}-close.png'))
+            # The full tree beside its two lower levels, as a page's camera sees them at 40 m and 80 m.
+            levels = [parts] + [[bpy.data.objects[f'{name}-wood-{k}'], bpy.data.objects[f'{name}-leaves-{k}']] for k in (1, 2)]
+            for distance in (40, 80):
+                at_distance(levels, os.path.join(shots, f'{name}-levels-{distance}m.png'), distance)
         for plant in plants:
             preview([plant], os.path.join(shots, f'{plant.name}.png'))
+            close_up([plant], os.path.join(shots, f'{plant.name}-close.png'), box=(0.25, 0.75, 0.2, 0.7))
         preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
 
 

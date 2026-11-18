@@ -5571,18 +5571,18 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek/cave.glb",
-					"bytes": 796804,
-					"sha256": "b22b56ac7b686a6c794e2eaf3d8255c142f0f48c7103e9415bfeaad1f3b37fca"
+					"bytes": 803088,
+					"sha256": "ba4bcdf5fdf612ce4bb79a9a845b19ee4541f7f0b720b42cb1e4a7cc2d489675"
 				},
 				{
 					"path": "sources/showcase/creek/plants.glb",
-					"bytes": 457588,
-					"sha256": "a5d1e756b7356af4e3752a31f29854771e89ce7529e74c83baf4d04e29db2e9b"
+					"bytes": 481656,
+					"sha256": "b5403c9678149c1569ccbedb7601f83eb0880dfc766108a89020d9d67c5ab2fc"
 				},
 				{
 					"path": "sources/showcase/creek/trees.glb",
-					"bytes": 1927532,
-					"sha256": "5fa7bf9f76fecd488a74f37b2fae3c44ebc663a957f902e4c0d0a1805dc62d4c"
+					"bytes": 3849784,
+					"sha256": "5d7a3a58bfcbac108aebc556a918837619b37e2bf474248f1c92e0505247a5ae"
 				}
 			]
 		},
@@ -5609,13 +5609,13 @@
 			"files": [
 				{
 					"path": "sources/showcase/island/shrubs.glb",
-					"bytes": 236344,
-					"sha256": "a57758701165a9fbbdf649ffd23c34f37b201122838c589e990fff600fae18f7"
+					"bytes": 261660,
+					"sha256": "1e4a00c832eddc57732e139ac1740d0b757f2a65e763f2a6c0d6fec2a8284a3e"
 				},
 				{
 					"path": "sources/showcase/island/trees.glb",
-					"bytes": 1194088,
-					"sha256": "ee679762bcf087a5fa735f628586864e17a435c3fae50ab41c266c185b1772f2"
+					"bytes": 1266944,
+					"sha256": "9a3e998d57fd6ac1011da80f469a36cc9c485e3bd3bd02a3c50dc05027693d4c"
 				}
 			]
 		},

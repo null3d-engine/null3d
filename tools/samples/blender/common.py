@@ -379,6 +379,154 @@ def card(builder, base, along, facing, size, uv_rect, color, center, sway, fold=
     builder.face(a1, a2, b2, b1)
 
 
+def tent(builder, base, along, facing, size, uv_rect, color, center, sway, rise=0.15, bend=0.65):
+    """
+    A leaf card bent both across and along: four corners and a middle raised by `rise` of its size
+    toward `facing`, in four triangles, so a crown of them never shows a flat sheet. It rises from
+    `base` along `along`, and the texture fills `uv_rect`. The normals bend away from `center` by
+    `bend`, and the corners' lean out from the card's middle, so each card shades as a small dome.
+    """
+    u0, v0, u1, v1 = uv_rect
+    across = along.cross(facing)
+    middle = base + along * size * 0.5
+    corners = []
+    for u, v in ((0, 0), (1, 0), (1, 1), (0, 1)):
+        q = base + across * (u - 0.5) * size + along * v * size
+        corners.append((q, u, v))
+    corners.append((middle + facing * rise * size, 0.5, 0.5))
+    ids = []
+    for q, u, v in corners:
+        out = q - center
+        out = out.normalized() if out.length > 1e-4 else facing
+        lean = q - middle
+        lean = lean.normalized() * 0.35 if lean.length > 1e-4 else Vector((0, 0, 0))
+        normal = (facing * (1 - bend) + out * bend + lean).normalized()
+        ids.append(builder.vertex(q, (u0 + (u1 - u0) * u, v0 + (v1 - v0) * v), color, normal, sway))
+    c0, c1, c2, c3, m = ids
+    for a, b in ((c0, c1), (c1, c2), (c2, c3), (c3, c0)):
+        builder.face(a, b, m)
+
+
+# ---------------------------------------------------------------------------------------------
+# Sprays of leaves
+# ---------------------------------------------------------------------------------------------
+
+
+def window(size, a, b, pad):
+    """The texel rows and columns of a box around two points (in cell units), padded, clipped to the cell."""
+    x0 = max(0, int((min(a[0], b[0]) - pad) * size))
+    x1 = min(size, int((max(a[0], b[0]) + pad) * size) + 2)
+    y0 = max(0, int((min(a[1], b[1]) - pad) * size))
+    y1 = min(size, int((max(a[1], b[1]) + pad) * size) + 2)
+    return y0, y1, x0, x1
+
+
+def paint_line(tile, a, b, width, color):
+    """A line from `a` to `b` that tapers to a point, in a cell's units, painted over a cell."""
+    size = tile.shape[0]
+    y0, y1, x0, x1 = window(size, a, b, width + 2 / size)
+    if y1 <= y0 or x1 <= x0:
+        return
+    py, px = np.mgrid[y0:y1, x0:x1].astype(np.float32) / size
+    ab = np.array(b) - np.array(a)
+    length2 = max(float(ab @ ab), 1e-9)
+    t = np.clip(((px - a[0]) * ab[0] + (py - a[1]) * ab[1]) / length2, 0, 1)
+    dx, dy = px - (a[0] + t * ab[0]), py - (a[1] + t * ab[1])
+    reach = width * (1 - 0.85 * t)
+    coverage = np.clip((reach - np.hypot(dx, dy)) * size + 0.5, 0, 1)
+    shade = (0.8 + 0.3 * t)[..., None]
+    over(tile[y0:y1, x0:x1], np.array(color)[None, None] * shade, coverage)
+
+
+def paint_leaf(tile, base, angle, length, width, tone, underside, mottle, taper=0.72, gloss=0.0):
+    """
+    One leaf on a cell, from `base` at `angle`, painted only in its own box. `underside` from 0 to 1
+    blends its upper face's tone toward the pale felt that some leaves show beneath, and `gloss`
+    lays a light streak beside the midrib, as a waxy leaf catches the sky.
+    """
+    size = tile.shape[0]
+    tip = (base[0] + math.cos(angle) * length, base[1] + math.sin(angle) * length)
+    y0, y1, x0, x1 = window(size, base, tip, width * length + 2 / size)
+    if y1 <= y0 or x1 <= x0:
+        return
+    py, px = np.mgrid[y0:y1, x0:x1].astype(np.float32) / size
+    coverage, s, t = leaf_mask(px, py, base, angle, length, width, 0.0, size / 2, taper)
+    midrib = np.exp(-((t / 0.08) ** 2))
+    edge = smoothstep(0.6, 1.0, np.abs(t))
+    shade = 0.84 + 0.2 * s + 0.1 * midrib - 0.14 * edge + 0.14 * (mottle[y0:y1, x0:x1] - 0.5)
+    shade = shade + gloss * np.exp(-(((t - 0.35) / 0.25) ** 2)) * np.clip(4 * s * (1 - s), 0, 1)
+    color = np.array(tone)[None, None] * shade[..., None]
+    pale = np.array([0.62, 0.66, 0.58])[None, None] * (0.9 + 0.1 * s[..., None])
+    color = color * (1 - underside) + pale * underside
+    over(tile[y0:y1, x0:x1], color, coverage)
+
+
+def cells(size):
+    """The four cells of a 2 x 2 atlas, as their texel offsets."""
+    cell = size // 2
+    return cell, [((k // 2) * cell, (k % 2) * cell) for k in range(4)]
+
+
+def sprig_atlas(size, rng, leaves, length, width, tones, underside, twig, taper=0.72, spread=(0.5, 1.1), twigs=0, gloss=0.0):
+    """
+    Four sprigs of leaves in a 2 x 2 atlas, each a twig up its cell from the middle of the bottom
+    edge with `twigs` side twigs off it, and `leaves` leaves along them all. `length` is a leaf's
+    length as a share of the cell. `underside` is the share of leaves that turn their pale side to
+    the viewer, and `spread` is the range of their angles from their twig, in radians. Every leaf
+    stays inside its cell, so no card shows a straight edge.
+    """
+    cell, offsets = cells(size)
+    out = np.zeros((size, size, 4), np.float32)
+    mottle = fbm(size, size, 8, 8, rng, 4)
+    for k, (oy, ox) in enumerate(offsets):
+        tile = np.zeros((cell, cell, 4), np.float32)
+        bend = (rng.random() - 0.5) * 0.3
+        main = [(0.5 + bend * (i / 8 * 0.85) ** 2, i / 8 * 0.85) for i in range(9)]
+        # Each twig is a polyline in the cell's units, with the width of its foot.
+        lines = [(main, 0.008)]
+        for j in range(twigs):
+            v = 0.15 + 0.6 * (j + 0.5) / twigs
+            foot = (0.5 + bend * v * v, v)
+            side = 1 if j % 2 else -1
+            a = math.pi / 2 - side * (0.6 + 0.4 * rng.random())
+            reach = (0.24 + 0.12 * rng.random()) * (1.1 - 0.5 * v)
+            mid = (foot[0] + math.cos(a) * reach * 0.5, foot[1] + math.sin(a) * reach * 0.5 + 0.02)
+            end = (foot[0] + math.cos(a + side * 0.25) * reach, foot[1] + math.sin(a + side * 0.25) * reach + 0.05)
+            lines.append(([foot, mid, end], 0.005))
+        spans = []
+        for points, w in lines:
+            for a, b in zip(points, points[1:]):
+                paint_line(tile, a, b, w, twig)
+                spans.append((a, b))
+        lengths = np.array([math.dist(a, b) for a, b in spans])
+        for j in range(leaves):
+            a, b = spans[rng.choice(len(spans), p=lengths / lengths.sum())]
+            t = rng.random()
+            base = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+            heading = math.atan2(b[1] - a[1], b[0] - a[0])
+            side = 1 if j % 2 else -1
+            angle = heading - side * (spread[0] + (spread[1] - spread[0]) * rng.random())
+            reach = length * (0.8 + 0.4 * rng.random())
+            tip = (base[0] + math.cos(angle) * reach, base[1] + math.sin(angle) * reach)
+            # Shorten a leaf whose tip would leave the cell.
+            room = 1.0
+            for value, start, step in ((tip[0], base[0], math.cos(angle)), (tip[1], base[1], math.sin(angle))):
+                if value > 0.96 and step > 0:
+                    room = min(room, (0.96 - start) / (step * reach))
+                if value < 0.04 and step < 0:
+                    room = min(room, (0.04 - start) / (step * reach))
+            tone = np.array(tones[k % len(tones)]) * (0.85 + 0.3 * rng.random())
+            flip = 1.0 if rng.random() < underside else 0.0
+            paint_leaf(tile, base, angle, reach * max(room, 0.2), width, tone, flip, mottle[oy:oy + cell, ox:ox + cell], taper, gloss)
+        for points, _ in lines:
+            # Each twig ends in a leaf that carries it on.
+            a, b = points[-2], points[-1]
+            heading = math.atan2(b[1] - a[1], b[0] - a[0])
+            paint_leaf(tile, b, heading, min(length, 0.96 - b[1]) if b[1] < 0.9 else 0.03, width, np.array(tones[0]), 0.0, mottle[oy:oy + cell, ox:ox + cell], taper, gloss)
+        out[oy:oy + cell, ox:ox + cell] = tile
+    return dilate(out)
+
+
 # ---------------------------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------------------------
@@ -461,8 +609,11 @@ def export(path, objects, masked, levels=(), one_sided=()):
     return triangles
 
 
-def preview(objects, path, view=(0.9, -2.2, 0.5), sky=(0.45, 0.6, 0.85), size=(640, 480), samples=24):
-    """Renders the objects with Cycles under a sun and a sky color, framed from `view`."""
+def stage(objects, sky, size, samples):
+    """
+    Shows only the objects to the renderer, under a sun and a sky color, with Cycles at the given
+    size, and returns the preview camera and the objects' lowest and highest points.
+    """
     scene = bpy.context.scene
     for o in scene.collection.objects:
         if o.type == 'MESH':
@@ -470,10 +621,7 @@ def preview(objects, path, view=(0.9, -2.2, 0.5), sky=(0.45, 0.6, 0.85), size=(6
     points = [o.matrix_world @ Vector(c) for o in objects for c in o.bound_box]
     low = Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points)))
     high = Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points)))
-    middle, radius = (low + high) / 2, (high - low).length / 2
     cam = bpy.data.objects.get('preview-camera') or link(bpy.data.objects.new('preview-camera', bpy.data.cameras.new('preview-camera')))
-    cam.location = middle + Vector(view) * radius
-    cam.rotation_euler = (middle - cam.location).to_track_quat('-Z', 'Y').to_euler()
     scene.camera = cam
     sun = bpy.data.objects.get('preview-sun') or link(bpy.data.objects.new('preview-sun', bpy.data.lights.new('preview-sun', 'SUN')))
     sun.data.energy = 4
@@ -488,8 +636,97 @@ def preview(objects, path, view=(0.9, -2.2, 0.5), sky=(0.45, 0.6, 0.85), size=(6
     scene.cycles.device = 'CPU'
     scene.render.resolution_x, scene.render.resolution_y = size
     scene.render.image_settings.file_format = 'PNG'
-    scene.render.filepath = path
+    return cam, low, high
+
+
+def preview(objects, path, view=(0.9, -2.2, 0.5), sky=(0.45, 0.6, 0.85), size=(640, 480), samples=24):
+    """Renders the objects with Cycles under a sun and a sky color, framed from `view`."""
+    cam, low, high = stage(objects, sky, size, samples)
+    middle, radius = (low + high) / 2, (high - low).length / 2
+    cam.data.type = 'PERSP'
+    cam.data.sensor_fit = 'AUTO'
+    cam.data.lens = 50
+    cam.location = middle + Vector(view) * radius
+    cam.rotation_euler = (middle - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    bpy.context.scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
+
+
+def at_distance(groups, path, distance, gap=2.0, sky=(0.45, 0.6, 0.85)):
+    """
+    Renders groups of objects side by side as a page's camera sees them from `distance` meters: a
+    45 degree view on a screen 1,080 pixels high, so each group draws at the size in pixels that the
+    page gives it there. The picture is cut to the groups, over the sky's color.
+    """
+    moved, x = [], 0.0
+    for group in groups:
+        half = max(max(abs(v.co.x) for v in o.data.vertices) for o in group)
+        x += half
+        for o in group:
+            o.location.x = x
+        x += half + gap
+        moved += group
+    bpy.context.view_layer.update()
+    width, height = 1920, 1080
+    cam, low, high = stage(moved, sky, (width, height), 32)
+    cam.data.type = 'PERSP'
+    cam.data.sensor_fit = 'VERTICAL'
+    cam.data.angle_y = math.radians(45)
+    middle = (low + high) / 2
+    cam.location = (middle.x, middle.y - distance, middle.z)
+    cam.rotation_euler = (math.radians(90), 0, 0)
+    scene = bpy.context.scene
+    scene.render.film_transparent = True
+    whole = f'{path[:-4]}-whole.png'
+    scene.render.filepath = whole
+    bpy.ops.render.render(write_still=True)
+    scene.render.film_transparent = False
+    for o in moved:
+        o.location.x = 0
+    bpy.context.view_layer.update()
+    shot = bpy.data.images.load(whole)
+    texels = np.array(shot.pixels[:], np.float32).reshape(height, width, 4)
+    bpy.data.images.remove(shot)
+    os.remove(whole)
+    rows = np.where(texels[..., 3].max(axis=1) > 0)[0]
+    cols = np.where(texels[..., 3].max(axis=0) > 0)[0]
+    y0, y1 = max(0, rows[0] - 8), min(height, rows[-1] + 9)
+    x0, x1 = max(0, cols[0] - 8), min(width, cols[-1] + 9)
+    part = texels[y0:y1, x0:x1]
+    alpha = part[..., 3:4]
+    # Over the sky's color as the display shows it.
+    behind = np.array([(c ** (1 / 2.2)) for c in sky], np.float32)
+    flat = np.ones_like(part)
+    flat[..., :3] = part[..., :3] * alpha + behind * (1 - alpha)
+    img = bpy.data.images.new(os.path.basename(path), x1 - x0, y1 - y0, alpha=False)
+    img.pixels.foreach_set(np.ascontiguousarray(flat).ravel())
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
+
+
+def close_up(objects, path, view=(0.9, -2.2, 0.35), box=(0.25, 0.75, 0.45, 0.9)):
+    """
+    Renders the objects as `preview` frames them, at three times the size, and keeps the share of
+    the picture that `box` names (left, right, bottom, top), so a crown's leaves show at full size.
+    """
+    width, height = 1920, 1440
+    whole = f'{path[:-4]}-whole.png'
+    preview(objects, whole, view, size=(width, height))
+    shot = bpy.data.images.load(whole)
+    texels = np.array(shot.pixels[:], np.float32).reshape(height, width, 4)
+    bpy.data.images.remove(shot)
+    os.remove(whole)
+    x0, x1 = int(box[0] * width), int(box[1] * width)
+    y0, y1 = int(box[2] * height), int(box[3] * height)
+    part = np.ascontiguousarray(texels[y0:y1, x0:x1])
+    img = bpy.data.images.new(os.path.basename(path), x1 - x0, y1 - y0, alpha=False)
+    img.pixels.foreach_set(part.ravel())
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
 
 
 def arguments(script):

@@ -41,8 +41,9 @@ from mathutils import Vector
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    TEXTURE_DIR, Builder, arguments, card, dilate, export, fbm, frame_of, half, image, leaf_mask, material,
-    normal_map, occlusion_of, orm, over, preview, smoothstep, tube, value_noise,
+    TEXTURE_DIR, Builder, arguments, card, cells, close_up, dilate, export, fbm, frame_of, half, image, material,
+    normal_map, occlusion_of, orm, over, paint_leaf, paint_line, preview, smoothstep, sprig_atlas, tent,
+    tube, value_noise,
 )
 
 SEED = 20261118
@@ -50,59 +51,6 @@ SEED = 20261118
 # ---------------------------------------------------------------------------------------------
 # Painting
 # ---------------------------------------------------------------------------------------------
-
-
-def window(size, a, b, pad):
-    """The texel rows and columns of a box around two points (in cell units), padded, clipped to the cell."""
-    x0 = max(0, int((min(a[0], b[0]) - pad) * size))
-    x1 = min(size, int((max(a[0], b[0]) + pad) * size) + 2)
-    y0 = max(0, int((min(a[1], b[1]) - pad) * size))
-    y1 = min(size, int((max(a[1], b[1]) + pad) * size) + 2)
-    return y0, y1, x0, x1
-
-
-def paint_line(tile, a, b, width, color):
-    """A line from `a` to `b` that tapers to a point, in a cell's units, painted over a cell."""
-    size = tile.shape[0]
-    y0, y1, x0, x1 = window(size, a, b, width + 2 / size)
-    if y1 <= y0 or x1 <= x0:
-        return
-    py, px = np.mgrid[y0:y1, x0:x1].astype(np.float32) / size
-    ab = np.array(b) - np.array(a)
-    length2 = max(float(ab @ ab), 1e-9)
-    t = np.clip(((px - a[0]) * ab[0] + (py - a[1]) * ab[1]) / length2, 0, 1)
-    dx, dy = px - (a[0] + t * ab[0]), py - (a[1] + t * ab[1])
-    reach = width * (1 - 0.85 * t)
-    coverage = np.clip((reach - np.hypot(dx, dy)) * size + 0.5, 0, 1)
-    shade = (0.8 + 0.3 * t)[..., None]
-    over(tile[y0:y1, x0:x1], np.array(color)[None, None] * shade, coverage)
-
-
-def paint_leaf(tile, base, angle, length, width, tone, underside, mottle, taper=0.72):
-    """
-    One leaf on a cell, from `base` at `angle`, painted only in its own box. `underside` from 0 to 1
-    blends its upper face's tone toward the pale felt that an olive's leaves show beneath.
-    """
-    size = tile.shape[0]
-    tip = (base[0] + math.cos(angle) * length, base[1] + math.sin(angle) * length)
-    y0, y1, x0, x1 = window(size, base, tip, width * length + 2 / size)
-    if y1 <= y0 or x1 <= x0:
-        return
-    py, px = np.mgrid[y0:y1, x0:x1].astype(np.float32) / size
-    coverage, s, t = leaf_mask(px, py, base, angle, length, width, 0.0, size / 2, taper)
-    midrib = np.exp(-((t / 0.08) ** 2))
-    edge = smoothstep(0.6, 1.0, np.abs(t))
-    shade = 0.84 + 0.2 * s + 0.1 * midrib - 0.14 * edge + 0.14 * (mottle[y0:y1, x0:x1] - 0.5)
-    color = np.array(tone)[None, None] * shade[..., None]
-    pale = np.array([0.62, 0.66, 0.58])[None, None] * (0.9 + 0.1 * s[..., None])
-    color = color * (1 - underside) + pale * underside
-    over(tile[y0:y1, x0:x1], color, coverage)
-
-
-def cells(size):
-    """The four cells of a 2 x 2 atlas, as their texel offsets."""
-    cell = size // 2
-    return cell, [((k // 2) * cell, (k % 2) * cell) for k in range(4)]
 
 
 def needle_atlas(size, rng):
@@ -124,7 +72,7 @@ def needle_atlas(size, rng):
                     reach = 0.12 + 0.2 * rng.random()
                     end = (cx + math.cos(a) * reach, cy + math.sin(a) * reach)
                     end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                    tone = np.array([0.13, 0.25, 0.09]) * (0.75 + 0.5 * rng.random())
+                    tone = np.array([0.2, 0.33, 0.15]) * (0.75 + 0.5 * rng.random())
                     paint_line(tile, (cx, cy), end, 0.0045, tone)
         else:
             # A twig from the middle of the bottom edge, with needles in pairs along it.
@@ -136,109 +84,104 @@ def needle_atlas(size, rng):
                 reach = 0.15 + 0.12 * rng.random()
                 end = (0.5 + math.cos(a) * reach, v + math.sin(a) * reach)
                 end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                tone = np.array([0.14, 0.26, 0.1]) * (0.75 + 0.5 * rng.random())
+                tone = np.array([0.21, 0.34, 0.16]) * (0.75 + 0.5 * rng.random())
                 paint_line(tile, (0.5, v), end, 0.0045, tone)
         out[oy:oy + cell, ox:ox + cell] = tile
     return dilate(out)
 
 
-def sprig_atlas(size, rng, leaves, length, width, tones, underside, twig, taper=0.72, spread=(0.5, 1.1), twigs=0):
+def clump_atlas(size, rng, leaves, length, width, tones, twig, gloss):
     """
-    Four sprigs of leaves in a 2 x 2 atlas, each a twig up its cell from the middle of the bottom
-    edge with `twigs` side twigs off it, and `leaves` leaves along them all. `length` is a leaf's
-    length as a share of the cell. `underside` is the share of leaves that turn their pale side to
-    the viewer, and `spread` is the range of their angles from their twig, in radians. Every leaf
-    stays inside its cell, so no card shows a straight edge.
+    Four clumps of small leaves in a 2 x 2 atlas, as a dense evergreen's foliage looks from a few
+    meters away: twigs that fan out from the middle of the bottom edge, and leaves set every way
+    around them, thick in the middle and scattered toward a lobed edge, so a card reads as a loose
+    tuft of leaves with sky between its outer ones, never as one round sheet.
     """
     cell, offsets = cells(size)
     out = np.zeros((size, size, 4), np.float32)
     mottle = fbm(size, size, 8, 8, rng, 4)
     for k, (oy, ox) in enumerate(offsets):
         tile = np.zeros((cell, cell, 4), np.float32)
-        bend = (rng.random() - 0.5) * 0.3
-        main = [(0.5 + bend * (i / 8 * 0.85) ** 2, i / 8 * 0.85) for i in range(9)]
-        # Each twig is a polyline in the cell's units, with the width of its foot.
-        lines = [(main, 0.008)]
-        for j in range(twigs):
-            v = 0.15 + 0.6 * (j + 0.5) / twigs
-            foot = (0.5 + bend * v * v, v)
-            side = 1 if j % 2 else -1
-            a = math.pi / 2 - side * (0.6 + 0.4 * rng.random())
-            reach = (0.24 + 0.12 * rng.random()) * (1.1 - 0.5 * v)
-            mid = (foot[0] + math.cos(a) * reach * 0.5, foot[1] + math.sin(a) * reach * 0.5 + 0.02)
-            end = (foot[0] + math.cos(a + side * 0.25) * reach, foot[1] + math.sin(a + side * 0.25) * reach + 0.05)
-            lines.append(([foot, mid, end], 0.005))
-        spans = []
-        for points, w in lines:
-            for a, b in zip(points, points[1:]):
-                paint_line(tile, a, b, w, twig)
-                spans.append((a, b))
-        lengths = np.array([math.dist(a, b) for a, b in spans])
+        for j in range(5):
+            a = math.pi / 2 + (j - 2) * 0.45 + rng.normal(0, 0.1)
+            paint_line(tile, (0.5, 0.0), (0.5 + 0.35 * math.cos(a), 0.12 + 0.35 * math.sin(a)), 0.007, twig)
+        lobes = rng.random(5) * 2 * math.pi
         for j in range(leaves):
-            a, b = spans[rng.choice(len(spans), p=lengths / lengths.sum())]
-            t = rng.random()
-            base = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-            heading = math.atan2(b[1] - a[1], b[0] - a[0])
-            side = 1 if j % 2 else -1
-            angle = heading - side * (spread[0] + (spread[1] - spread[0]) * rng.random())
-            reach = length * (0.8 + 0.4 * rng.random())
+            # A point in a lobed disc, its edge pulled in and out by a few waves.
+            a = rng.random() * 2 * math.pi
+            edge = 0.38 + 0.08 * math.cos(3 * a + lobes[0]) + 0.05 * math.cos(5 * a + lobes[1]) + 0.03 * math.cos(7 * a + lobes[2])
+            r = edge * min(1.0, abs(rng.normal(0, 0.55)))
+            base = (0.5 + r * math.cos(a), 0.52 + r * math.sin(a))
+            angle = rng.random() * 2 * math.pi
+            reach = length * (0.75 + 0.5 * rng.random())
             tip = (base[0] + math.cos(angle) * reach, base[1] + math.sin(angle) * reach)
-            # Shorten a leaf whose tip would leave the cell.
-            room = 1.0
-            for value, start, step in ((tip[0], base[0], math.cos(angle)), (tip[1], base[1], math.sin(angle))):
-                if value > 0.96 and step > 0:
-                    room = min(room, (0.96 - start) / (step * reach))
-                if value < 0.04 and step < 0:
-                    room = min(room, (0.04 - start) / (step * reach))
-            tone = np.array(tones[k % len(tones)]) * (0.85 + 0.3 * rng.random())
-            flip = 1.0 if rng.random() < underside else 0.0
-            paint_leaf(tile, base, angle, reach * max(room, 0.2), width, tone, flip, mottle[oy:oy + cell, ox:ox + cell], taper)
-        for points, _ in lines:
-            # Each twig ends in a leaf that carries it on.
-            a, b = points[-2], points[-1]
-            heading = math.atan2(b[1] - a[1], b[0] - a[0])
-            paint_leaf(tile, b, heading, min(length, 0.96 - b[1]) if b[1] < 0.9 else 0.03, width, np.array(tones[0]), 0.0, mottle[oy:oy + cell, ox:ox + cell], taper)
+            if not (0.04 < tip[0] < 0.96 and 0.04 < tip[1] < 0.96):
+                continue
+            tone = np.array(tones[k % len(tones)]) * (0.75 + 0.5 * rng.random())
+            paint_leaf(tile, base, angle, reach, width, tone, 0.0, mottle[oy:oy + cell, ox:ox + cell], 0.85, gloss * rng.random())
         out[oy:oy + cell, ox:ox + cell] = tile
     return dilate(out)
 
 
+def flower(tile, center, radius, tilt, turn, rng, px, py):
+    """
+    One oleander flower on a cell: five broad petals that twist around a pale throat, each lit on
+    its leading side so the petals read as tilted, a darker ring where they meet, and the whole
+    flower foreshortened by `tilt` toward `turn`, as a flower that faces a little away does.
+    """
+    cell = tile.shape[0]
+    dx, dy = px - center[0], py - center[1]
+    # Foreshortening: the flower's axis leans by `tilt` toward the direction `turn`.
+    ca, sa = math.cos(turn), math.sin(turn)
+    a = (dx * ca + dy * sa) / max(math.cos(tilt), 0.3)
+    b = -dx * sa + dy * ca
+    rr = np.hypot(a, b) / radius
+    theta = np.arctan2(b, a) + rng.random() * 6.3
+    twisted = theta - 0.9 * rr
+    petal = 0.8 + 0.2 * np.cos(5 * twisted)
+    coverage = np.clip((petal - rr) * radius * cell * 0.8 + 0.5, 0, 1)
+    pink = np.array([0.9, 0.36, 0.52]) * (0.85 + 0.25 * rng.random())
+    light = 0.62 + 0.3 * np.sin(5 * twisted + 0.8) + 0.25 * np.clip(rr, 0, 1)
+    over(tile, pink[None, None] * light[..., None], coverage)
+    ring = np.clip((0.34 - rr) * radius * cell + 0.5, 0, 1) * np.clip((rr - 0.18) * radius * cell + 0.5, 0, 1)
+    over(tile, (pink * 0.6)[None, None] * np.ones((cell, cell, 1)), ring * coverage)
+    throat = np.clip((0.18 - rr) * radius * cell + 0.5, 0, 1)
+    over(tile, np.array([0.98, 0.88, 0.84])[None, None] * np.ones((cell, cell, 1)), throat)
+
+
 def oleander_atlas(size, rng):
     """
-    The oleander: two cells of leaves in whorls of three, long and narrow, and two cells of its
-    flower heads, loose clusters of pink five-petalled flowers with their buds.
+    The oleander: two cells of long, narrow, dark leaves in whorls along a stem, and two cells of
+    its flower heads: cymes of pink five-petalled flowers that face every way a little, among a few
+    leaves, with a cluster of closed buds.
     """
-    out = sprig_atlas(size, rng, 14, 0.42, 0.13, ([0.17, 0.3, 0.1], [0.15, 0.27, 0.09]), 0.0, [0.3, 0.32, 0.2], 0.55, (0.3, 0.75))
+    out = sprig_atlas(size, rng, 22, 0.42, 0.12, ([0.16, 0.3, 0.11], [0.17, 0.32, 0.12]), 0.0, [0.28, 0.3, 0.18], 0.5, (0.25, 0.7), 0, 0.15)
     cell, offsets = cells(size)
     py, px = np.mgrid[0:cell, 0:cell].astype(np.float32) / cell
     for k, (oy, ox) in enumerate(offsets[2:]):
         tile = np.zeros((cell, cell, 4), np.float32)
-        # A few leaves behind the flowers, so the head sits in green.
         mottle = value_noise(cell, cell, 16, 16, rng)
-        for j in range(6):
-            a = j * 2 * math.pi / 6 + rng.random() * 0.4
-            paint_leaf(tile, (0.5, 0.5), a, 0.42, 0.13, np.array([0.16, 0.29, 0.1]), 0.0, mottle, 0.55)
-        for j in range(16 + k * 3):
-            r = 0.3 * math.sqrt(rng.random())
+        for j in range(7):
+            a = j * 2 * math.pi / 7 + rng.random() * 0.4
+            paint_leaf(tile, (0.5, 0.5), a, 0.44, 0.12, np.array([0.16, 0.3, 0.11]), 0.0, mottle, 0.5, 0.15)
+        heads = []
+        for j in range(11 + k):
+            r = 0.27 * math.sqrt(rng.random())
+            a = rng.random() * 2 * math.pi
+            heads.append((0.5 + r * math.cos(a), 0.5 + r * math.sin(a)))
+        # The flowers lower in the cell lie under the ones above, as a head seen from its side does.
+        for cx, cy in sorted(heads, key=lambda h: -h[1]):
+            flower(tile, (cx, cy), 0.1 + 0.035 * rng.random(), 0.55 * rng.random(), rng.random() * 6.3, rng, px, py)
+        for j in range(7):
+            r = 0.3 + 0.08 * rng.random()
             a = rng.random() * 2 * math.pi
             cx, cy = 0.5 + r * math.cos(a), 0.5 + r * math.sin(a)
-            radius = 0.075 + 0.035 * rng.random()
-            dx, dy = px - cx, py - cy
-            rr = np.hypot(dx, dy) / radius
-            theta = np.arctan2(dy, dx) + rng.random() * 6.3
-            # Five broad petals, each a little twisted, as an oleander's are.
-            petal = 0.72 + 0.28 * np.cos(5 * theta + 1.2 * rr)
-            coverage = np.clip((petal - rr) * radius * cell + 0.5, 0, 1)
-            pink = np.array([0.93, 0.42, 0.58]) * (0.85 + 0.25 * rng.random())
-            shade = (0.75 + 0.35 * np.clip(rr, 0, 1))[..., None]
-            over(tile, pink[None, None] * shade, coverage)
-            throat = np.clip((0.22 - rr) * radius * cell + 0.5, 0, 1)
-            over(tile, np.array([0.98, 0.85, 0.82])[None, None] * np.ones_like(shade), throat)
-        for j in range(8):
-            r = 0.36 * math.sqrt(rng.random())
-            a = rng.random() * 2 * math.pi
-            cx, cy = 0.5 + r * math.cos(a), 0.5 + r * math.sin(a)
-            bud = np.clip((0.022 - np.hypot(px - cx, py - cy)) * cell + 0.5, 0, 1)
-            over(tile, np.array([[[0.8, 0.3, 0.42]]]) * np.ones((cell, cell, 1)), bud)
+            ca, sa = math.cos(a), math.sin(a)
+            u = ((px - cx) * ca + (py - cy) * sa) / 0.045
+            v = (-(px - cx) * sa + (py - cy) * ca) / 0.024
+            bud = np.clip((1 - np.hypot(u, v)) * 0.024 * cell + 0.5, 0, 1)
+            shade = (0.8 + 0.25 * np.clip(u, -1, 1))[..., None]
+            over(tile, np.array([[[0.72, 0.24, 0.38]]]) * shade, bud)
         out[oy:oy + cell, ox:ox + cell] = dilate(tile)
     return out
 
@@ -398,45 +341,48 @@ def olive(rng):
 
 def holm_oak(rng):
     """
-    A holm oak: a short trunk that soon parts into rising limbs, under a dense dark dome of leafy
-    pads that reaches nearly to the ground.
+    A holm oak: a short, stout trunk that parts into a few thick limbs, which show under the
+    crown's edge, and a dense, dark dome of rounded sub-domes, one at each limb's and twig's end.
     """
     plant = Plant()
-    lean = outward(rng.random() * 2 * math.pi, math.radians(3))
-    points, radii = path((0, 0, -0.3), lean, 2.6, 0.34, 0.26, 4, rng, 0.05)
+    lean = outward(rng.random() * 2 * math.pi, math.radians(4))
+    points, radii = path((0, 0, -0.3), lean, 2.3, 0.5, 0.36, 4, rng, 0.06)
     trunk = plant.branch(points, radii, 0)
     top = points[-1]
-    limbs = 6
+    limbs = 5
     for k in range(limbs):
-        az = k * 2 * math.pi / limbs + rng.random() * 0.5
-        lp, lr = path(top, outward(az, math.radians(18 + 12 * rng.random())), 5.8 + 0.8 * rng.random(), 0.17, 0.06, 6, rng, 0.1)
+        az = k * 2 * math.pi / limbs + rng.random() * 0.6
+        lp, lr = path(top, outward(az, math.radians(34 + 14 * rng.random())), 3.9 + 0.8 * rng.random(), 0.24, 0.08, 6, rng, 0.12, (0, 0, 0.6))
         limb = plant.branch(lp, lr, 1)
-        plant.pad(lp[-1] + Vector((0, 0, 0.3)), (1.8, 1.8, 1.8), limb)
-        for j in range(3):
-            p, d = at(lp, 0.3 + 0.55 * j / 3 + 0.1 * rng.random())
-            a = az + (j - 1) * 0.8 + rng.normal(0, 0.2)
-            sp, sr = path(p, outward(a, math.radians(40 + 20 * rng.random())), 1.2 + 0.8 * rng.random(), 0.06, 0.025, 3, rng, 0.1)
+        plant.pad(lp[-1] + Vector((0, 0, 0.5)), (2.2, 2.2, 1.9), limb)
+        for j in range(2):
+            p, d = at(lp, 0.55 + 0.3 * j + 0.1 * rng.random())
+            a = az + (j - 0.5) * 1.4 + rng.normal(0, 0.2)
+            sp, sr = path(p, outward(a, math.radians(35 + 20 * rng.random())), 1.4 + 0.6 * rng.random(), 0.07, 0.03, 3, rng, 0.1)
             twig = plant.branch(sp, sr, 2)
-            size = 1.6 + 0.4 * rng.random()
-            plant.pad(sp[-1], (size, size, size * 0.9), twig)
-    plant.pad(top + Vector((0, 0, 5.4)), (2.6, 2.6, 2.8), trunk)
+            size = 1.7 + 0.4 * rng.random()
+            plant.pad(sp[-1] + Vector((0, 0, 0.2)), (size, size, size * 0.9), twig)
+    plant.pad(top + Vector((0, 0, 5.8)), (2.6, 2.6, 2.2), trunk)
+    plant.pad(top + Vector((0, 0, 3.9)), (3.0, 3.0, 1.9), trunk)
     return plant
 
 
 def oleander(rng):
     """
-    An oleander: stems that rise from the ground in a clump and arch a little outward, each leafy
-    along its upper part and flowering at its tip. Its pads are the stems' own leafy lengths.
+    An oleander: many stems from one clump, from upright in the middle to nearly level at the rim,
+    where they arch up, each as long as reaches the shrub's rounded outline, about as wide as it is
+    high.
     """
     plant = Plant()
-    stems = 14
+    stems = 16
     for k in range(stems):
         az = k * 2.39996 + rng.random() * 0.5
-        foot = Vector((math.cos(az), math.sin(az), 0)) * 0.25 * math.sqrt(rng.random()) + Vector((0, 0, -0.15))
-        upright = k % 3 == 0
-        d = outward(az, math.radians(2 + 8 * rng.random() if upright else 14 + 20 * rng.random()))
-        length = (1.75 if upright else 1.45) + 0.45 * rng.random()
-        sp, sr = path(foot, d, length, 0.024, 0.009, 4, rng, 0.05, (math.cos(az) * 0.4, math.sin(az) * 0.4, 0))
+        foot = Vector((math.cos(az), math.sin(az), 0)) * 0.18 * math.sqrt(rng.random()) + Vector((0, 0, -0.15))
+        tilt = math.radians(70 * (k + 0.5) / stems)
+        d = outward(az, tilt)
+        # The stem ends on an upright half ellipsoid about two meters across and two meters high.
+        length = (0.92 + 0.12 * rng.random()) / math.sqrt((math.sin(tilt) / 1.1) ** 2 + (math.cos(tilt) / 2.25) ** 2)
+        sp, sr = path(foot, d, length, 0.028, 0.01, 2, rng, 0.05, (0, 0, 0.35 * math.sin(tilt)))
         plant.branch(sp, sr, 1)
     return plant
 
@@ -559,55 +505,75 @@ def leaf_part(spec, plant, places, rng, grow):
         hue = 0.9 + 0.2 * rng.random()
         color = tuple(ao * hue * c for c in tint)
         sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
-        card(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
+        if spec.get('tent'):
+            tent(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
+        else:
+            card(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
     return leaves
 
 
 def oleander_places(plant, rng):
-    """The oleander's cards: leaf whorls along each stem's upper part, and flower heads at its tip."""
+    """
+    The oleander's cards: leaf whorls from low on each stem to its tip, more on short side shoots
+    that fill the clump, and at each tip a cyme of three flower heads that face up and out.
+    Each is (point, facing, stem, flower).
+    """
     places = []
     for index, (points, _, _) in enumerate(plant.branches):
-        for k in range(7):
-            t = 0.25 + 0.7 * k / 7
-            p, d = at(points, t)
-            n = Vector(rng.normal(0, 1, 3))
-            n = (n - d * n.dot(d)).normalized()
+        for k in range(11):
+            p, d = at(points, 0.03 + 0.94 * k / 11)
+            n = Vector((p.x, p.y, 0)) + Vector(rng.normal(0, 0.6, 3))
+            n = (n - d * n.dot(d))
+            n = n.normalized() if n.length > 1e-3 else frame_of(d)[0]
             places.append((p, n, index, False))
-        # The heads face up and out of the clump, so they show from the side as well as from above.
-        for t, rise in ((1.0, 1.0), (0.82, 0.45)):
+        for k in range(5):
+            p, d = at(points, 0.2 + 0.6 * rng.random())
+            out = Vector((p.x, p.y, 0.3))
+            out = out.normalized() if out.length > 1e-3 else Vector((0, 0, 1))
+            places.append((p + out * 0.15, (out + Vector(rng.normal(0, 0.3, 3))).normalized(), index, False))
+        # A cyme at the tip, and on every other stem a second one on a side shoot below it.
+        for t, heads in ((1.0, 3), (0.78, 2 if index % 2 else 0)):
             p, d = at(points, t)
             out = Vector((p.x, p.y, 0))
             out = out.normalized() if out.length > 1e-3 else Vector((1, 0, 0))
-            places.append((p + Vector((0, 0, 0.04)), (out + Vector((0, 0, rise))).normalized(), index, True))
+            p = p + out * (0.0 if t == 1.0 else 0.18)
+            for k in range(heads):
+                offset = Vector(rng.normal(0, 0.08, 3))
+                facing = (out * 0.6 + Vector((0, 0, 1)) + Vector(rng.normal(0, 0.35, 3))).normalized()
+                places.append((p + offset + Vector((0, 0, 0.03)), facing, index, True))
     return places
 
 
 def oleander_cards(spec, plant, places, rng, grow):
-    """The oleander's cards: leaves along the stems, and flower heads that face up and out."""
+    """The oleander's cards: leaves that run along their stems, and flower heads that face up and out."""
     cards = Builder()
     top = plant_top(plant)
-    center = Vector((0, 0, top * 0.55))
+    center = Vector((0, 0, top * 0.5))
     for p, n, branch, flower in places:
         if flower:
-            facing = (n + Vector(rng.normal(0, 0.2, 3))).normalized()
+            facing = n
             along = frame_of(facing)[0]
-            size = (0.58 + 0.15 * rng.random()) * grow
+            size = (0.36 + 0.08 * rng.random()) * grow
             cell = 2 + int(rng.random() * 2)
             base = p - along * size * 0.5
             color = (1.0, 1.0, 1.0)
+            rise = 0.3
         else:
             _, d = at(plant.branches[branch][0], 0.5)
             facing = n
-            along = (d - facing * d.dot(facing)).normalized()
-            size = (0.55 + 0.15 * rng.random()) * grow
+            along = (d + Vector((0, 0, 0.3)) - facing * d.dot(facing))
+            along = along.normalized() if along.length > 1e-3 else frame_of(facing)[0]
+            size = (0.42 + 0.12 * rng.random()) * grow
             cell = int(rng.random() * 2)
-            base = p - along * size * 0.15
-            depth = min(1.0, Vector((p.x, p.y, 0)).length / 0.6)
-            ao = 0.55 + 0.45 * depth * float(smoothstep(0.2, 1.4, p.z))
+            base = p - along * size * 0.2
+            # Darker deep in the clump and near the ground.
+            depth = min(1.0, Vector((p.x, p.y, 0)).length / 0.7)
+            ao = 0.45 + 0.55 * min(1.0, 0.5 * depth + 0.5 * float(smoothstep(0.0, 1.6, p.z)))
             color = (ao * 0.95, ao, ao * 0.9)
+            rise = 0.18
         cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
         sway = (max(0.0, p.z) / top, branch_phase(branch))
-        card(cards, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, 0.1, 0.5)
+        tent(cards, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, rise, 0.5)
     return cards
 
 
@@ -617,6 +583,9 @@ def oleander_cards(spec, plant, places, rng, grow):
 #   scatter  the random turn of each card's face
 #   centered the share of a card that reaches behind its place: 0.5 centers a tuft on it
 #   cells    the atlas cells the cards draw from; fold and bend shape them as `card` says
+#   tent     true draws each card as a `tent`, bent across and along, whose rise is `fold`
+#   depth    how deep under the pads' surface the cards reach, as a share of a pad's size
+#   levels   the species' own lower levels, where its cards differ in size from the others'
 #   flare    how far the trunk's foot spreads into roots; sides are each level's sides
 TREES = {
     'stone-pine': dict(
@@ -628,8 +597,13 @@ TREES = {
         cells=(0, 1, 2, 3), fold=0.12, bend=0.6, flare=0.35, sides=(7, 5, 3), tint=(1.0, 1.0, 1.0), up=0.5,
     ),
     'holm-oak': dict(
-        grow=holm_oak, bark='holm', cards=800, card=1.45, lift=0.1, scatter=0.4, centered=0.35,
-        cells=(0, 1, 2, 3), fold=0.12, bend=0.7, flare=0.5, sides=(7, 5, 3), tint=(1.0, 1.0, 1.0), up=0.45,
+        grow=holm_oak, bark='holm', cards=1800, card=1.0, lift=0.1, scatter=0.4, centered=0.5,
+        cells=(0, 1, 2, 3), tent=True, fold=0.2, bend=0.55, flare=0.35, sides=(9, 6, 3), tint=(1.0, 1.0, 1.0),
+        up=0.5, depth=0.6,
+        levels=(
+            dict(every=4, grow=1.9, branches=1, sides=2, thin=2, error=0.03),
+            dict(every=16, grow=3.7, branches=1, sides=6, thin=3, error=0.07),
+        ),
     ),
 }
 SHRUB = dict(bark='stem', sides=(4, 3, 3), flare=0.0)
@@ -647,18 +621,18 @@ TREE_LEVELS = (
 # The shrub's levels switch about 15 m and 35 m away, since it stands a fifth as high.
 SHRUB_LEVELS = (
     dict(every=2, grow=1.35, branches=1, sides=1, thin=2, error=0.012),
-    dict(every=5, grow=2.0, branches=1, sides=1, thin=4, error=0.027),
+    dict(every=5, grow=2.1, branches=1, sides=1, thin=4, error=0.027),
 )
 
 
 def build_tree(name, spec, bark_mat, leaf_mat, rng):
     """A tree's wood and leaves objects, their lower levels, and the triangles of each part."""
     plant = spec['grow'](rng)
-    places = crown_cards(plant, rng, spec['cards'], spec['up'])
+    places = crown_cards(plant, rng, spec['cards'], spec['up'], spec.get('depth', 0.25))
     wood = wood_part(spec, plant, 2, 0, 1)
     leaves = leaf_part(spec, plant, places, rng, 1.0)
     objects = [wood.build(f'{name}-wood', bark_mat), leaves.build(f'{name}-leaves', leaf_mat)]
-    for k, level in enumerate(TREE_LEVELS, start=1):
+    for k, level in enumerate(spec.get('levels', TREE_LEVELS), start=1):
         # Each level draws with a random stream of its own, so it leaves the other models as they were.
         own = np.random.default_rng((SEED, k, sum(map(ord, name))))
         objects += [
@@ -680,6 +654,9 @@ def build_oleander(bark_mat, leaf_mat, rng):
         own = np.random.default_rng((SEED, k, 7))
         # The flower heads stay at every level, so the shrub keeps its color far away.
         kept = [place for i, place in enumerate(places) if place[3] or i % level['every'] == 0]
+        # The far levels keep one head of each cyme, larger.
+        if k == 2:
+            kept = [place for i, place in enumerate(kept) if not place[3] or i % 3 == 0]
         objects += [
             wood_part(SHRUB, plant, 1, level['sides'], level['thin']).build(f'oleander-wood-{k}', bark_mat),
             oleander_cards(SHRUB, plant, kept, own, level['grow']).build(f'oleander-leaves-{k}', leaf_mat),
@@ -708,14 +685,6 @@ CARD_TOP_AT = 0.65
 # How far each face of a quad stands out from the quad's middle toward its own side, in meters, so
 # a ray tracer meets the face that looks at it first.
 CARD_GAP = 0.01
-# The bake's light: an even white sky and a soft sun from above and in front, so a card sits in
-# any hour's light. A card lies flat where the crown it stands for is deep, and the scene lights it
-# again, so the bake stays a little under the leaves' own color.
-BAKE_SKY = 0.8
-BAKE_SUN = 1.05
-# How much the bake's colors gain in saturation: the white sky greys the leaves a little, and a
-# far card should keep the green of the near crown.
-CARD_SATURATION = 1.15
 
 
 def bounds(objects):
@@ -724,8 +693,48 @@ def bounds(objects):
     return co.min(axis=0), co.max(axis=0)
 
 
+def unlit(objects):
+    """
+    Turns each material of the objects into an emitter of its own base color, the texture times the
+    vertex colors, with its cutout, so a render shows the surfaces' colors and no light. It returns
+    the call that puts the materials back.
+    """
+    undo = []
+    for mat in {slot.material for o in objects for slot in o.material_slots if slot.material}:
+        nodes, links = mat.node_tree.nodes, mat.node_tree.links
+        output = nodes.get('Material Output')
+        bsdf = nodes.get('Principled BSDF')
+        surface = output.inputs['Surface'].links[0].from_socket
+        color = bsdf.inputs['Base Color'].links[0].from_socket
+        alpha = bsdf.inputs['Alpha'].links[0].from_socket if bsdf.inputs['Alpha'].links else None
+        glow = nodes.new('ShaderNodeEmission')
+        clear = nodes.new('ShaderNodeBsdfTransparent')
+        mix = nodes.new('ShaderNodeMixShader')
+        links.new(color, glow.inputs['Color'])
+        glow.inputs['Strength'].default_value = 1.0
+        if alpha is not None:
+            links.new(alpha, mix.inputs['Fac'])
+        else:
+            mix.inputs['Fac'].default_value = 1.0
+        links.new(clear.outputs['BSDF'], mix.inputs[1])
+        links.new(glow.outputs['Emission'], mix.inputs[2])
+        links.new(mix.outputs['Shader'], output.inputs['Surface'])
+        undo.append((mat, surface, (glow, clear, mix)))
+
+    def restore():
+        for mat, surface, added in undo:
+            mat.node_tree.links.new(surface, mat.node_tree.nodes.get('Material Output').inputs['Surface'])
+            for node in added:
+                mat.node_tree.nodes.remove(node)
+
+    return restore
+
+
 def render_view(objects, path, size, location, rotation, scale):
-    """Renders the objects with an orthographic camera into a transparent image, and returns its texels."""
+    """
+    Renders the objects' own colors, unlit, with an orthographic camera into a transparent image,
+    and returns its texels as the PNG stores them, in sRGB.
+    """
     scene = bpy.context.scene
     for o in scene.collection.objects:
         if o.type == 'MESH':
@@ -740,26 +749,22 @@ def render_view(objects, path, size, location, rotation, scale):
     cam.location = location
     cam.rotation_euler = rotation
     scene.camera = cam
-    sun = bpy.data.objects.get('bake-sun')
-    if sun is None:
-        sun = bpy.data.objects.new('bake-sun', bpy.data.lights.new('bake-sun', 'SUN'))
-        scene.collection.objects.link(sun)
-    sun.data.energy = BAKE_SUN
-    sun.data.angle = math.radians(30)
-    sun.rotation_euler = (math.radians(40), 0, math.radians(20))
-    sun.hide_render = False
     world = scene.world or bpy.data.worlds.new('bake')
     scene.world = world
     world.use_nodes = True
-    world.node_tree.nodes['Background'].inputs['Color'].default_value = (1, 1, 1, 1)
-    world.node_tree.nodes['Background'].inputs['Strength'].default_value = BAKE_SKY
+    world.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.0
+    lights = [o for o in scene.collection.objects if o.type == 'LIGHT' and not o.hide_render]
+    for light in lights:
+        light.hide_render = True
+    restore = unlit(objects)
     scene.render.engine = 'CYCLES'
-    scene.cycles.samples = 48
+    scene.cycles.samples = 32
     scene.cycles.device = 'CPU'
     scene.cycles.use_denoising = False
     scene.cycles.filter_width = 0.8
     scene.render.film_transparent = True
-    # The plain view transform keeps the texels as the render's light, with no tone curve.
+    # The plain view transform writes each color with sRGB's own curve and no tone curve, so the
+    # PNG holds the surfaces' colors as a texture stores them.
     previous = scene.view_settings.view_transform
     scene.view_settings.view_transform = 'Standard'
     scene.render.resolution_x, scene.render.resolution_y = size, size
@@ -771,17 +776,20 @@ def render_view(objects, path, size, location, rotation, scale):
     rendered = bpy.data.images.load(path)
     texels = np.array(rendered.pixels[:], np.float32).reshape(size, size, 4)
     bpy.data.images.remove(rendered)
+    restore()
+    for light in lights:
+        light.hide_render = False
     scene.render.film_transparent = False
     scene.view_settings.view_transform = previous
-    sun.hide_render = True
     return texels
 
 
 def card_atlas(name, objects, size, side, top):
     """
     The card's atlas: the plant from the side and from above, each rendered orthographically over
-    a square that `side` and `top` give in meters. Its alpha is the render's, hardened so a cutoff
-    at one half keeps the outline, and its colors spread into the clear texels as `dilate` does.
+    a square that `side` and `top` give in meters, in its own unlit colors, which carry the crown's
+    depth in their vertex colors. Its alpha is the render's, hardened so a cutoff at one half keeps
+    the outline, and its colors spread into the clear texels as `dilate` does.
     """
     low, high = bounds(objects)
     folder = os.path.join(TEXTURE_DIR, 'cards')
@@ -793,8 +801,6 @@ def card_atlas(name, objects, size, side, top):
     atlas = np.concatenate([front, above], axis=1)
     alpha = atlas[..., 3]
     atlas[..., 3] = np.clip((alpha - 0.5) * 2.5 + 0.5, 0, 1)
-    luma = atlas[..., :3] @ np.array([0.2126, 0.7152, 0.0722], np.float32)
-    atlas[..., :3] = np.clip(luma[..., None] + (atlas[..., :3] - luma[..., None]) * CARD_SATURATION, 0, 1)
     return dilate(atlas)
 
 
@@ -889,28 +895,36 @@ def compare_card(name, path):
     bpy.data.images.remove(img)
 
 
+def stream(name, part):
+    """The random stream of one part of one plant: its atlas, its bark or its shape."""
+    return np.random.default_rng((SEED, part, sum(map(ord, name)), len(name)))
+
+
 def main():
     out, shots = arguments('island.py')
-    rng = np.random.default_rng(SEED)
 
     atlases = {
-        'stone-pine': needle_atlas(1024, rng),
-        'olive': sprig_atlas(1024, rng, 90, 0.13, 0.15, ([0.36, 0.4, 0.28], [0.32, 0.37, 0.25]), 0.3, [0.36, 0.33, 0.28], 0.6, (0.35, 0.9), 4),
-        'holm-oak': sprig_atlas(1024, rng, 150, 0.075, 0.5, ([0.1, 0.17, 0.07], [0.12, 0.19, 0.08], [0.09, 0.15, 0.06]), 0.04, [0.25, 0.2, 0.15], 0.78, (0.4, 1.3), 6),
-        'oleander': oleander_atlas(1024, rng),
+        'stone-pine': lambda rng: needle_atlas(1024, rng),
+        'olive': lambda rng: sprig_atlas(1024, rng, 90, 0.13, 0.15, ([0.36, 0.4, 0.28], [0.32, 0.37, 0.25]), 0.3, [0.36, 0.33, 0.28], 0.6, (0.35, 0.9), 4),
+        # Small oval leaves, 2 to 4 cm on a card, dark and waxy, many to a spray.
+        'holm-oak': lambda rng: clump_atlas(1024, rng, 620, 0.05, 0.55, ([0.19, 0.29, 0.14], [0.21, 0.31, 0.15], [0.17, 0.26, 0.12]), [0.22, 0.18, 0.14], 0.5),
+        'oleander': lambda rng: oleander_atlas(1024, rng),
     }
     leaf_mats = {
-        name: material(f'{name}-leaves', image(f'{name}-leaves', texels), cutout=True, roughness=0.6 if name == 'holm-oak' else 0.7)
-        for name, texels in atlases.items()
+        name: material(f'{name}-leaves', image(f'{name}-leaves', paint(stream(name, 0))), cutout=True, roughness=0.62 if name == 'holm-oak' else 0.7)
+        for name, paint in atlases.items()
     }
-    barks = {kind: bark_material(kind, rng, strength) for kind, strength in (('pine', 8), ('olive', 6), ('holm', 5), ('stem', 2))}
+    barks = {
+        kind: bark_material(kind, stream(f'bark-{kind}', 1), strength)
+        for kind, strength in (('pine', 8), ('olive', 6), ('holm', 5), ('stem', 2))
+    }
 
     trees, plants = [], {}
     for name, spec in TREES.items():
-        objects, plant = build_tree(name, spec, barks[spec['bark']], leaf_mats[name], rng)
+        objects, plant = build_tree(name, spec, barks[spec['bark']], leaf_mats[name], stream(name, 2))
         trees += objects
         plants[name] = plant
-    shrubs, plants['oleander'] = build_oleander(barks['stem'], leaf_mats['oleander'], rng)
+    shrubs, plants['oleander'] = build_oleander(barks['stem'], leaf_mats['oleander'], stream('oleander', 2))
     # Each plant's far card is baked from its full level, so it draws what the near plant does.
     cards = {}
     for name in [*TREES, 'oleander']:
@@ -937,7 +951,9 @@ def main():
     if shots:
         names = [*TREES, 'oleander']
         for name in names:
-            preview([bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']], os.path.join(shots, f'{name}.png'), (0.9, -2.2, 0.35))
+            parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
+            preview(parts, os.path.join(shots, f'{name}.png'), (0.9, -2.2, 0.35))
+            close_up(parts, os.path.join(shots, f'{name}-close.png'))
         lineup(names, '', os.path.join(shots, 'lineup.png'))
         lineup(names, '-2', os.path.join(shots, 'lineup-far.png'), (480, 160))
         for name in names:
