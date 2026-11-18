@@ -1,8 +1,6 @@
 # D-244: A started CI run is never cancelled, except by a push to main
 
-Status: decided. Built: `cancel-in-progress` holds only for pushes to main, and a workflow test
-guards it. [D-249](D-249-milestone-push-runs.md) runs a milestone's quick checks on its branch's
-pushes instead of its pull request's runs, under the same rule. Task: none.
+Status: superseded by [D-379](D-379-one-pull-request-per-piece-of-work.md). A newer push to a pull request, or to main, cancels the run in progress. Only a run started by hand keeps a group of its own. Task: none.
 
 Summary: Only a push to main cancels a CI run in progress. A newer push leaves a started run to
 finish. GitHub keeps only the newest waiting run in the group, so a burst of landings collapses into

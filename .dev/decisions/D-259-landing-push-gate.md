@@ -1,8 +1,6 @@
 # D-259: The CI session checks and pushes each landing on the milestone branch
 
-Status: decided by the owner. Built: the CI session's seven checks on each landing range, and the
-push hook's landing checks. The checks include the whole unit suite, the tests that hold gigabytes
-of memory and the fresh-project test. Task: none.
+Status: superseded by [D-379](D-379-one-pull-request-per-piece-of-work.md): work lands through a pull request of its own, and no session pushes a milestone branch. The owner's task rule below still holds: a fresh agent tries to disprove a task before its pull request merges. The merges that `tools/hooks/check-merges.ts` names still stand. Task: none.
 
 Summary: The coordinator's landing session merges helpers' branches, and the CI session checks each
 range and pushes it to the milestone branch. The CI session refuses a range that fails a check, and

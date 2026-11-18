@@ -31,7 +31,6 @@
 		"shaders": "bun tools/shaders.ts",
 		"check": "biome check . && bun tests/check-references.ts && bun tools/check-memory-views.ts && bun tools/check-address-reads.ts && bun tools/check-addon-imports.ts && bun tools/check-addon-layout.ts",
 		"limits": "bun tools/limits.ts",
-		"pr-status": "bun tools/pr-status.ts",
 		"check:fix": "biome check --write .",
 		"chrome:install": "bun tools/install-chrome.ts",
 		"typecheck": "bun tools/typecheck.ts --shaders",

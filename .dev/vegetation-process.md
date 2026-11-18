@@ -46,13 +46,12 @@ Each helper works on its own branch, its line, and never in another's copy.
 | Role | Line | Work |
 | --- | --- | --- |
 | Builders, by species | `veg/frames` (pedunculate oak, silver birch), `veg/trees` (holm oak, weeping willow), `veg/trees-b` (common ash, common alder, hawthorn), `veg/conifers` (Scots pine, Italian cypress, giant sequoia), `veg/forms` (sedge, meadow grass, hosta, bracken, saguaro), `veg/fronds` (date palm, tree fern, bamboo), `veg/pieces` (the branch pieces, the beech and the olive) | Each species' frame, pieces, record, textures and tints, and its rounds |
-| Merge helper | `veg/integrate`, the shared line | Merges the lines, runs the checks and the digests, and hands the landing its head |
+| Merge helper | `veg/integrate`, the shared line | Merges the lines, runs the checks and the digests, and keeps the shared line's pull request ready |
 | Card bake | `veg/bake` | The card atlas and the card cut |
 | Limit | `veg/limit` | Sparseness, the triangle maximum, the card join and the scene budget |
 | Review tool | `veg/review-next` | The review page, its cameras, slots and figures |
 | Independent reviewer | none | Judges rounds and audits tests and merges; builds nothing |
-| Lead | none | Orders the work, rules where the owner has not, and relays between roles |
-| Landing session | the milestone branch | Gates the shared line and lands it |
+| Lead | none | Orders the work, rules where the owner has not, relays between roles, and gates the shared line's pull request |
 
 A species switches to its new structure once the reviewer passes it under the gate. A ready branch then
 switches that species alone, as judged.
@@ -71,7 +70,7 @@ switches that species alone, as judged.
    review standard's band, in both views for a branch piece.
 5. **A helper does not change a budget or a cap the owner set.** It asks the lead.
 6. **Do the items in order and stop when the list is done.** Start no work that is not ordered.
-7. **Never merge or push into the milestone branch.** Only the landing session lands.
+7. **Never push to main or to another helper's line.** The merge helper merges the lines, and the shared line reaches main only through its own pull request.
 8. **Begin every report with your exact model name.**
 9. **A real round is drawn by its builder**, at the builder's newest pushed head, after merging the shared
    line. Name it `<species>-<commit>`. A run drawn on another line judges cameras only and says so with
@@ -123,20 +122,22 @@ switches that species alone, as judged.
   its turning video. The hawthorn's default season is autumn with fruit. The olive's trunk has the dark
   opening of picture `01`. The birch's picture `33` is a second form, and the ash's picture `21` is a
   limit of the reference.
-- **The vegetation work lands in the milestone branch** once the shared line is green, by the landing below.
+- **The vegetation work lands on main through the shared line's pull request** once the shared line is green, by the landing below.
 
 ## The landing
 
-The landing session gates and lands the shared line. Until it is handed over, the shared line takes only
-the landing's steps, and builders keep working on their own lines.
+The shared line lands on main through a pull request of its own, which the lead gates. While the landing
+runs, the shared line takes only the landing's steps, and builders keep working on their own lines.
 
 1. The ready branches that switch passed species merge, each by the merge rules above.
-2. The milestone branch merges into the shared line.
+2. Main merges into the shared line.
 3. A full run at the head: the type check, the shaders and the unit tests. Then the species walk, the
    plant picture tests, and the docs and limits checks.
-4. The species digests against the milestone branch: every species whose drawn data moves, with its cause.
+4. The species digests against main: every species whose drawn data moves, with its cause.
 5. The limit line joins only if its GPU walk has passed by then. The hawthorn's first card level must
    also fit 155,000 triangles. Otherwise the limit line lands next.
+6. The merge helper opens the pull request against main, `gh pr create --base main`. CI runs every job on
+   it, and it merges when `ci-passed` passes and the lead clears it.
 
 ## Resume from the repository
 

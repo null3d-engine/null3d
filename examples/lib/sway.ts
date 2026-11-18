@@ -298,9 +298,6 @@ fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let texel = textureSample(colorMap, colorMapSampler, input.uv);
     s.baseColor = texel.rgb * s.baseColor;
-    if (material.cutout > 0.5) {
-        s.alpha = texel.a;
-    }
     // A mesh made without tangents takes its frame from how the position and the texture
     // coordinates change across the screen. The samples and the derivatives run outside the
     // branches, in uniform control flow; a material without the maps reads a white texel.
@@ -310,6 +307,14 @@ fn surface(input: SurfaceInput) -> Surface {
     let dp2 = dpdy(input.relativePosition);
     let duv1 = dpdx(input.uv);
     let duv2 = dpdy(input.uv);
+    // A cut-out's alpha thins in the smaller mip levels, so far leaves would fade away. The alpha
+    // grows with the level the texture reads, which keeps a far crown's cover.
+    if (material.cutout > 0.5) {
+        let texels = vec2f(textureDimensions(colorMap, 0));
+        let stretch = max(dot(duv1 * texels, duv1 * texels), dot(duv2 * texels, duv2 * texels));
+        let mip = max(0.0, 0.5 * log2(max(stretch, 1e-8)));
+        s.alpha = texel.a * (1.0 + 0.25 * mip);
+    }
     if (material.normalMapOn > 0.5) {
         let n = s.normal;
         let across1 = cross(n, dp1);
@@ -337,7 +342,11 @@ export interface SwayMaterialOptions {
 	readonly normalMap?: Texture;
 	/** An occlusion, roughness and metalness map in linear color, which scales the three in turn. */
 	readonly ormMap?: Texture;
-	/** The color map, times the vertex colors. Without one, the vertex colors alone color the surface. */
+	/**
+	 * The color map, times the vertex colors and a batch's row colors. The map carries the plant's
+	 * own color, so keep the row colors near white: a dark tint on a dark map leaves only the
+	 * specular light. Without a map, the vertex and row colors alone color the surface.
+	 */
 	readonly map?: Texture;
 	/** True cuts the surface, and its shadow, where the map's alpha is under one half. */
 	readonly cutout?: boolean;
