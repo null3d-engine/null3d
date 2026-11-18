@@ -1,347 +1,225 @@
-// Creek's valley, placed by the vegetation add-on's ecological rules: rushes and sedges at the
-// waterline, willows and alders on the banks, oaks, beeches and birches over the flat and up the
-// slopes, spruces at the valley's rim, bracken in the shade, wildflower clumps in the open patches
-// and hawthorns at the wood's edge. The points come from the ground's own maps and one integer
-// hash, so every device and both GPU paths place the same valley. The scene then keeps only the
-// four trees nearest the water: the slopes and the hillsides above stand as ground cover, with no
-// tree dotted over them. A plant that the camera's route would fly into is left out, so the river
-// pass never crosses a crown.
-import {
-	type EcoRule,
-	groundMaps,
-	SCATTER_STRIDE,
-	type ScatterPoints,
-	scatterVegetation,
-} from '@null3d/vegetation';
+// Creek's valley: where its trees, its bank plants and its dead wood stand. The trees stand in
+// groves on the far bank and in a looser line on the near bank, the lines that the camera's route
+// runs behind. The plants below them follow the ground's own rules: ferns in the shade and the damp
+// under the crowns, hostas in the moist shade near the water, shrubs at the woods' edges,
+// wildflower clumps in the open sun, and fallen wood on the woods' floor. Each rule scores a
+// candidate place by how well the ground there suits it, so the valley's look follows the land.
+// One seed places it all, so every device and both GPU paths draw the same valley. A plant that the
+// camera's route would fly into is left out, so no pass crosses a crown.
 import { routePosition, routeTimeline } from '../../lib/cinematic';
-import { fromStream, groundHeight, LAND, WATER } from './land';
+import { random } from '../../lib/procedural';
+import { groundHeight, streamHalf, streamZ, WATER } from './land';
+import type { PlantKind, TreeKind } from './models';
 import { SHOTS } from './route';
 
-/**
- * The valley's species and the seed that places them. The table is plain data, so the mesh-hash
- * guard builds each stand-in from the same numbers the page grows it with.
- */
-import { type CreekSpecies, SEED, SPECIES, VARIANTS } from './species';
+/** The seed that places the valley. */
+export const SEED = 7;
 
-export type { CreekSpecies } from './species';
-export { SEED, SPECIES, VARIANTS };
-
-/** A tolerance curve, in the shortest form. */
-const curve = (
-	input: EcoRule['tolerances'][number]['input'],
-	min: number,
-	best: number,
-	worst: number,
-	max: number,
-) => ({ input, min, best, worst, max });
+/** The size of each model at scale 1: its height and the reach of its leaves about its foot. */
+export const SIZES: Record<TreeKind | PlantKind | 'deadwood', { height: number; reach: number }> = {
+	oak: { height: 9.5, reach: 4.9 },
+	beech: { height: 11.8, reach: 4 },
+	birch: { height: 9.7, reach: 4.6 },
+	fern: { height: 0.7, reach: 0.7 },
+	hosta: { height: 0.5, reach: 0.65 },
+	shrub: { height: 1.35, reach: 0.85 },
+	flowers: { height: 0.56, reach: 0.25 },
+	deadwood: { height: 0.45, reach: 2.5 },
+};
 
 /**
- * Every rule that places the valley: the waterline, the canopy, the young trees that gather under
- * it, the understory, the ground layer, the shrubs and the dead wood. Each adult rule keeps its
- * species' crown as its radius. The order and the numbers set every point, so a rule keeps its
- * place in the list.
+ * The trees: each one's place along the stream, its distance from the stream's middle, its kind and
+ * its size. Groves stand on the far bank, with young trees among them, and a few trees on the near
+ * bank frame the view.
  */
-const ALL_RULES: readonly EcoRule[] = [
+const TREES: readonly (readonly [number, number, TreeKind, number])[] = [
+	[-3, -8.5, 'oak', 0.85],
+	[5.5, -10, 'beech', 0.85],
+	[15, -7.5, 'birch', 0.8],
+	[-16, -9, 'beech', 0.9],
+	[13, 8.5, 'oak', 0.85],
+	[-9, -12, 'birch', 0.75],
+	[21, -10, 'oak', 0.9],
+	[1, -13.5, 'beech', 1],
+	[8.5, -14, 'oak', 0.95],
+	[18, -13, 'beech', 0.9],
+	[24, -6, 'birch', 0.7],
+	[-20, -6, 'oak', 0.8],
+	[2, -6.8, 'birch', 0.5],
+	[17, 6.5, 'birch', 0.65],
+	[22, 9, 'beech', 0.85],
+	[8, 9.5, 'oak', 0.75],
+	[-14, 7.5, 'birch', 0.7],
+];
+
+/** One placed model: its kind, its foot on the ground, its turn about y and its size. */
+export interface Spot<Kind extends string = string> {
+	readonly kind: Kind;
+	readonly x: number;
+	readonly y: number;
+	readonly z: number;
+	readonly yaw: number;
+	readonly size: number;
+}
+
+/** The ground's measures that a rule reads, at one point. */
+interface Ground {
+	/** The ground's height over the water, in meters. */
+	readonly height: number;
+	/** The distance from the water's edge, in meters. */
+	readonly water: number;
+	/** The rise over the run of the ground. */
+	readonly slope: number;
+	/** How deep in a crown's shade the point lies, from 0 in the open to 1 at a trunk. */
+	readonly shade: number;
+	/** How near a crown's rim the point lies, from 0 away from it to 1 just past it. */
+	readonly edge: number;
+	/** A slow wave over the banks, from 0 to 1, whose crests gather a kind into patches. */
+	readonly patch: number;
+}
+
+/**
+ * A tolerance of one measure: no plant below `min` or above `max`, every plant from `best` to
+ * `worst`, and fewer toward each end.
+ */
+type Tolerance = readonly [keyof Ground, number, number, number, number];
+
+/** A rule of the ground cover: what it places, how far apart, how large, and where. */
+interface Rule {
+	readonly kind: PlantKind | 'deadwood';
+	/** The side of the grid's cell that holds one candidate, in meters. */
+	readonly spacing: number;
+	/** The smallest and largest size of a copy. */
+	readonly scale: readonly [number, number];
+	readonly tolerances: readonly Tolerance[];
+	/**
+	 * The most copies that gather around each placed one, and how far from it, in meters: ferns,
+	 * hostas and wildflowers grow in clumps, as they spread from their roots and their seed.
+	 */
+	readonly clump?: readonly [number, number];
+}
+
+/**
+ * The rules of the ground cover, in the order they place. A plant keeps its room from every plant
+ * that stood before it, so the rules that place first take the best ground.
+ */
+const RULES: readonly Rule[] = [
 	{
-		species: 'rush',
-		scale: [0.8, 1.3],
-		radius: 0.8800000000000001,
-		layer: 'ground',
-		spacing: 1.2,
+		kind: 'deadwood',
+		spacing: 5,
+		scale: [0.6, 1.2],
 		tolerances: [
-			// The waterline's own species stand on wet ground beside the stream, never in it: the
-			// owner ruled that no vegetation grows below the water's surface.
-			curve('heightAboveWater', 0, 0.05, 0.1, 0.55),
-			curve('distanceToWater', 0, 0, 2.5, 4.5),
-			curve('wetness', 0.15, 0.4, 1, 1.01),
+			['shade', 0.25, 0.5, 1, 1.01],
+			['height', 0.1, 0.3, 8, 12],
+			['slope', -1, 0, 0.35, 0.7],
 		],
-		clump: [0.2, 1],
 	},
 	{
-		species: 'sedge',
-		scale: [0.8, 1.4],
-		radius: 0.6400000000000001,
-		layer: 'ground',
-		spacing: 1.4,
-		tolerances: [
-			curve('heightAboveWater', 0, 0.05, 0.5, 1.1),
-			curve('distanceToWater', 0, 0.5, 3.5, 6),
-			curve('wetness', 0.1, 0.3, 1, 1.01),
-		],
-		clump: [0.2, 1],
-	},
-	{
-		species: 'weeping-willow',
-		scale: [0.8, 1.4],
-		radius: 4.42,
-		layer: 'canopy',
-		spacing: 7,
-		tolerances: [
-			curve('heightAboveWater', 0.05, 0.3, 1.5, 3),
-			curve('distanceToWater', 0.5, 1.5, 6, 10),
-			curve('wetness', 0.05, 0.2, 1, 1.01),
-			curve('slope', 0, 0, 0.5, 0.85),
-		],
-		clump: [0.25, 1],
-	},
-	{
-		species: 'common-alder',
-		scale: [0.8, 1.3],
-		radius: 4.1000000000000005,
-		layer: 'canopy',
-		spacing: 8,
-		tolerances: [
-			curve('heightAboveWater', 0.15, 0.5, 2.2, 5),
-			curve('distanceToWater', 1.5, 4, 10, 18),
-			curve('wetness', 0.04, 0.15, 1, 1.01),
-		],
-		clump: [0.25, 1],
-	},
-	{
-		species: 'pedunculate-oak',
-		scale: [0.8, 1.35],
-		radius: 5.7,
-		layer: 'canopy',
-		spacing: 9,
-		tolerances: [
-			curve('heightAboveWater', 0.6, 1.8, 11, 20),
-			curve('slope', 0, 0.15, 0.55, 0.95),
-			curve('northness', -1, -1, 0.15, 1.01),
-		],
-		clump: [0.25, 1],
-	},
-	{
-		species: 'european-beech',
-		scale: [0.8, 1.3],
-		radius: 6.000000000000001,
-		layer: 'canopy',
-		spacing: 9,
-		tolerances: [
-			curve('heightAboveWater', 0.6, 1.8, 10, 18),
-			curve('northness', -0.3, 0.25, 1, 1.01),
-			curve('wetness', 0.02, 0.1, 1, 1.01),
-		],
-		clump: [0.25, 1],
-	},
-	{
-		species: 'silver-birch',
-		scale: [0.75, 1.25],
-		radius: 5.500000000000001,
-		layer: 'canopy',
-		spacing: 8,
-		tolerances: [
-			curve('heightAboveWater', 0.4, 1.2, 8, 14),
-			curve('distanceToWater', 4, 9, 40, 70),
-			curve('openness', 0.05, 0.35, 1, 1.01),
-		],
-		clump: [0.25, 1],
-	},
-	{
-		species: 'norway-spruce',
-		scale: [0.7, 1.25],
-		radius: 7.1,
-		layer: 'canopy',
-		spacing: 7,
-		tolerances: [
-			curve('heightAboveWater', 3, 7, 22, 40),
-			curve('slope', 0.18, 0.3, 1.4, 2.2),
-			curve('northness', -0.6, 0, 1, 1.01),
-		],
-		clump: [0.2, 1],
-	},
-	{
-		species: 'pedunculate-oak',
-		scale: [0.8, 1.35],
-		radius: 1.2,
-		layer: 'young',
-		spacing: 4,
-		tolerances: [curve('heightAboveWater', 0.4, 1.8, 11, 20), curve('slope', 0, 0.2, 0.7, 1.2)],
-		cluster: { species: ['pedunculate-oak', 'european-beech'], radius: 7, min: 1, max: 3 },
-		overlaps: ['young'],
-	},
-	{
-		species: 'silver-birch',
-		scale: [0.75, 1.25],
-		radius: 1.1,
-		layer: 'young',
-		spacing: 4,
-		tolerances: [
-			curve('heightAboveWater', 0.3, 1.2, 8, 14),
-			curve('openness', 0.02, 0.25, 1, 1.01),
-		],
-		cluster: {
-			species: ['silver-birch', 'weeping-willow', 'common-alder'],
-			radius: 6,
-			min: 1,
-			max: 3,
-		},
-		overlaps: ['young'],
-	},
-	{
-		species: 'common-alder',
-		scale: [0.8, 1.3],
-		radius: 1,
-		layer: 'young',
-		spacing: 4,
-		tolerances: [curve('heightAboveWater', 0.15, 0.5, 2.2, 5)],
-		cluster: { species: ['common-alder', 'weeping-willow'], radius: 6, min: 1, max: 2 },
-		overlaps: ['young'],
-	},
-	{
-		species: 'bracken',
-		scale: [0.7, 1.4],
-		radius: 0.7200000000000001,
-		layer: 'understory',
+		kind: 'shrub',
 		spacing: 1.8,
+		scale: [0.9, 1.5],
+		clump: [2, 1.8],
 		tolerances: [
-			curve('canopy', 0.08, 0.3, 1, 1.01),
-			curve('wetness', 0.05, 0.2, 1, 1.01),
-			curve('heightAboveWater', 0.15, 0.5, 6, 12),
+			['edge', 0.15, 0.5, 1, 1.01],
+			['height', 0.2, 0.4, 6, 10],
+			['slope', -1, 0, 0.5, 0.9],
 		],
-		clump: [0.25, 1],
-		overlaps: ['understory'],
 	},
 	{
-		species: 'hosta',
-		scale: [0.75, 1.35],
-		radius: 0.44000000000000006,
-		layer: 'ground',
-		spacing: 2.4,
+		kind: 'hosta',
+		spacing: 1.8,
+		scale: [1, 1.6],
+		clump: [3, 1.6],
 		tolerances: [
-			curve('canopy', 0.06, 0.25, 1, 1.01),
-			curve('wetness', 0.05, 0.2, 1, 1.01),
-			curve('distanceToWater', 0.4, 1.5, 14, 26),
+			['shade', -0.4, 0.3, 1, 1.01],
+			['water', 0.2, 0.8, 6, 10],
+			['height', 0.05, 0.2, 2, 4],
 		],
-		clump: [0.3, 1],
-		overlaps: ['ground'],
-	},
-	// The open patches: wildflower clumps where the canopy is thin and the ground is dry.
-	{
-		species: 'wildflower',
-		scale: [0.8, 1.4],
-		radius: 0.272,
-		layer: 'ground',
-		spacing: 3.2,
-		tolerances: [
-			curve('openness', 0.4, 0.6, 1, 1.01),
-			curve('heightAboveWater', 0.2, 0.5, 8, 15),
-			curve('slope', 0, 0, 0.6, 1.1),
-		],
-		clump: [0.5, 0.66],
-		overlaps: ['ground'],
 	},
 	{
-		species: 'hawthorn-shrub',
-		scale: [0.7, 1.4],
-		radius: 1.16,
-		layer: 'shrub',
-		spacing: 2.6,
+		kind: 'fern',
+		spacing: 1.2,
+		scale: [1, 1.6],
+		clump: [4, 1.8],
 		tolerances: [
-			curve('edge', 0.1, 0.4, 1, 1.01),
-			curve('heightAboveWater', 0.2, 0.5, 8, 15),
-			curve('slope', 0, 0, 0.6, 1.1),
+			['shade', -0.5, 0.35, 1, 1.01],
+			['water', 0.3, 0.8, 8, 14],
+			['height', 0.1, 0.3, 4, 8],
 		],
-		clump: [0.2, 1],
-		overlaps: ['shrub'],
 	},
-	// Dead wood is a prop, with no species: its rule names the prop it places.
 	{
-		species: 'deadwood',
-		layer: 'deadwood',
-		spacing: 11,
-		radius: 2.5,
-		overlaps: ['deadwood'],
-		tolerances: [curve('canopy', 0.2, 0.5, 1, 1.01), curve('slope', 0, 0, 0.4, 0.8)],
-		clump: [0.3, 1],
+		kind: 'flowers',
+		spacing: 1.2,
+		scale: [1.3, 1.9],
+		clump: [5, 1.2],
+		tolerances: [
+			['shade', -1, 0, 0.05, 0.2],
+			['water', 0.6, 1.5, 9, 14],
+			['slope', -1, 0, 0.4, 0.8],
+			['patch', 0.5, 0.62, 1, 1.01],
+		],
 	},
 ];
 
-/** The species that only the valley's edges carry: the spruces at its rim, bracken and hawthorns. */
-const EDGE_SPECIES: readonly string[] = ['norway-spruce', 'bracken', 'hawthorn-shrub'];
-
-/**
- * The rules of the stream's own species, without the valley's edges, at six variants a copy. The
- * scatter test page holds every device to their checksum.
- */
-export const CREEK_RULES: readonly EcoRule[] = ALL_RULES.filter(
-	(rule) => !EDGE_SPECIES.includes(rule.species),
-);
-
-/** The rules that place the valley, with each species drawn in the number of variants that Creek grows. */
-export const RULES: readonly EcoRule[] = ALL_RULES.map((rule) => ({ ...rule, variants: VARIANTS }));
-
-/** What the placement reads of the scene: where the stones stand, which no plant grows on. */
-export interface ValleyOptions {
-	/** True where a stone covers the ground. */
-	readonly rocks?: (x: number, z: number) => boolean;
-}
-
-/** How close the camera may come to a plant, in meters: its own clearance from a crown. */
+/** How far along the valley the ground cover reaches from the middle, in meters. */
+const REACH_X = 44;
+/** How far from the stream's middle the ground cover reaches, in meters. */
+const REACH_Z = 24;
+/** How close the camera may come to a model, in meters, beyond the reach of its leaves. */
 const CLEARANCE = 0.6;
 /** The points along the route that the clearance is measured from. */
 const ROUTE_SAMPLES = 2000;
 
-/** A plant's room, as a cylinder about its trunk: its crown's reach and its crown's top. */
-export interface PlantSolid {
-	/** The species' id. */
-	readonly species: string;
-	readonly x: number;
-	readonly z: number;
-	/** The reach of the plant about its trunk, in meters, with the camera's clearance. */
-	readonly radius: number;
-	/** The height that its crown reaches, with the camera's clearance, in meters. */
-	readonly top: number;
+/** What the placement reads of the scene: where the stones and the cave stand. */
+export interface ValleyOptions {
+	/** True where a stone covers the ground, which nothing grows through. */
+	readonly rocks?: (x: number, z: number) => boolean;
 }
 
-/** The room that one placed plant keeps, from its species and its copy's size. */
-function solidOf(
-	species: CreekSpecies,
-	at: readonly [number, number, number],
-	scale: number,
-): PlantSolid {
+/** The placed valley. */
+export interface Valley {
+	readonly trees: readonly Spot<TreeKind>[];
+	readonly plants: readonly Spot<PlantKind>[];
+	readonly deadwood: readonly Spot<'deadwood'>[];
+}
+
+/** The share of a tolerance that a value meets, from 0 to 1. */
+function meets(value: number, [, min, best, worst, max]: Tolerance): number {
+	if (value <= min || value >= max) return 0;
+	if (value < best) return (value - min) / (best - min);
+	if (value > worst) return (max - value) / (max - worst);
+	return 1;
+}
+
+/** The ground's measures at a point, with the shade and the woods' edges of the trees. */
+function groundAt(x: number, z: number, trees: readonly Spot[]): Ground {
+	const step = 0.5;
+	const height = groundHeight(x, z);
+	const slope =
+		Math.hypot(
+			groundHeight(x + step, z) - groundHeight(x - step, z),
+			groundHeight(x, z + step) - groundHeight(x, z - step),
+		) /
+		(2 * step);
+	let shade = 0;
+	let edge = 0;
+	for (const tree of trees) {
+		const reach = SIZES[tree.kind as TreeKind].reach * tree.size;
+		const across = Math.hypot(x - tree.x, z - tree.z) / reach;
+		shade = Math.max(shade, Math.min(1, Math.max(0, (1.05 - across) / 0.7)));
+		edge = Math.max(edge, Math.max(0, 1 - Math.abs(across - 1.15) / 0.45));
+	}
 	return {
-		species: species.id,
-		x: at[0],
-		z: at[2],
-		radius: species.crown * scale + CLEARANCE,
-		top: at[1] + species.height * scale + CLEARANCE,
+		height: height - WATER,
+		water: Math.max(0, Math.abs(z - streamZ(x)) - streamHalf(x)),
+		slope,
+		shade,
+		edge,
+		patch: (Math.sin(x * 0.45 + 1.7) + Math.sin(z * 0.6 - x * 0.2) + 2) / 4,
 	};
 }
 
-/** The valley's species by id. */
-const BY_ID: ReadonlyMap<string, CreekSpecies> = new Map(
-	SPECIES.map((species) => [species.id, species]),
-);
-
-/**
- * The room that every placed plant keeps, which the camera's route must miss. A page measures its
- * route against these, so a plant never grows where a pose could fly into it.
- *
- * @param points The plants that `placeValley` placed.
- * @returns One cylinder for each plant.
- */
-export function plantSolids(points: ScatterPoints): PlantSolid[] {
-	const solids: PlantSolid[] = [];
-	for (let index = 0; index < points.count; index++) {
-		const at = index * SCATTER_STRIDE;
-		const rule = points.rules[points.data[at + 3] as number];
-		const species = rule && BY_ID.get(rule.species);
-		if (!species) continue;
-		solids.push(
-			solidOf(
-				species,
-				[points.data[at] as number, points.data[at + 1] as number, points.data[at + 2] as number],
-				points.data[at + 5] as number,
-			),
-		);
-	}
-	return solids;
-}
-
-/**
- * The camera's route as a list of places, which a plant is measured against. The route bends
- * between its shots, so the list samples it finely enough that no bend slips between two points.
- */
+/** The camera's route as a list of places, finely enough that no bend slips between two points. */
 function routeSamples(): [number, number, number][] {
 	const route = routeTimeline(SHOTS);
 	const pose = new Float32Array(6);
@@ -353,96 +231,114 @@ function routeSamples(): [number, number, number][] {
 	return places;
 }
 
-/** True when a route pose passes through a plant's room. */
-function hits(solid: PlantSolid, pose: readonly [number, number, number]): boolean {
-	return pose[1] <= solid.top && Math.hypot(pose[0] - solid.x, pose[2] - solid.z) < solid.radius;
+/** A model's room, as a cylinder about its foot: the reach of its leaves and its top. */
+export interface Solid {
+	readonly kind: string;
+	readonly x: number;
+	readonly z: number;
+	/** The reach about its foot, with the camera's clearance, in meters. */
+	readonly radius: number;
+	/** The height of its top, with the camera's clearance, in meters. */
+	readonly top: number;
 }
 
-/** Keeps the plants that a camera route cannot pass through. */
-function clearOfRoute(
-	points: ScatterPoints,
-	route: readonly (readonly [number, number, number])[],
-): ScatterPoints {
-	const kept = new Float32Array(points.data.length);
-	let count = 0;
-	for (let index = 0; index < points.count; index++) {
-		const at = index * SCATTER_STRIDE;
-		const rule = points.rules[points.data[at + 3] as number];
-		const species = rule && BY_ID.get(rule.species);
-		// A prop such as the dead wood has no species, and lies low enough for the route to clear.
-		if (species) {
-			const solid = solidOf(
-				species,
-				[points.data[at] as number, points.data[at + 1] as number, points.data[at + 2] as number],
-				points.data[at + 5] as number,
-			);
-			if (route.some((pose) => hits(solid, pose))) continue;
-		}
-		kept.set(points.data.subarray(at, at + SCATTER_STRIDE), count * SCATTER_STRIDE);
-		count++;
-	}
+/** The room that one placed model keeps. */
+export function solidOf(spot: Spot): Solid {
+	const size = SIZES[spot.kind as keyof typeof SIZES];
 	return {
-		data: kept,
-		stride: SCATTER_STRIDE,
-		count,
-		rules: points.rules,
-		size: points.size,
+		kind: spot.kind,
+		x: spot.x,
+		z: spot.z,
+		radius: size.reach * spot.size + CLEARANCE,
+		top: spot.y + size.height * spot.size + CLEARANCE,
 	};
 }
 
-/** How many trees stand beside the water. */
-const CANAL_TREES = 4;
-
-/** The ground layers that dress the valley below the trees, and the dead wood that lies on it. */
-const CANAL_LAYERS: readonly string[] = ['ground', 'shrub', 'understory', 'deadwood'];
-
-/**
- * Keeps the canal's four trees and the layers that dress the ground beneath them. The four canopy
- * trees nearest the stream stay; every other canopy tree and every young tree goes, so no tree dots
- * the slopes or the hillsides above.
- */
-function thinValley(points: ScatterPoints): ScatterPoints {
-	const kept = new Float32Array(points.data.length);
-	let count = 0;
-	const canopy: { index: number; stream: number }[] = [];
-	for (let index = 0; index < points.count; index++) {
-		const at = index * points.stride;
-		const layer = points.rules[points.data[at + 3] as number]?.layer;
-		if (layer === 'canopy') {
-			canopy.push({
-				index,
-				stream: fromStream(points.data[at] as number, points.data[at + 2] as number),
-			});
-			continue;
-		}
-		if (!layer || !CANAL_LAYERS.includes(layer)) continue;
-		kept.set(points.data.subarray(at, at + points.stride), count * points.stride);
-		count++;
-	}
-	canopy.sort((a, b) => a.stream - b.stream);
-	for (const { index } of canopy.slice(0, CANAL_TREES)) {
-		const at = index * points.stride;
-		kept.set(points.data.subarray(at, at + points.stride), count * points.stride);
-		count++;
-	}
-	return { data: kept, stride: points.stride, count, rules: points.rules, size: points.size };
+/** True when a route pose passes through a model's room. */
+export function hits(solid: Solid, pose: readonly [number, number, number]): boolean {
+	return pose[1] <= solid.top && Math.hypot(pose[0] - solid.x, pose[2] - solid.z) < solid.radius;
 }
 
 /**
- * Places the valley's plants: the ground read once into maps, the rules scored over it, the plants
- * that the camera's route would fly into left out, and the planting thinned to the canal's four
- * trees and the ground cover.
+ * Places the valley: the trees on the banks, then each rule of the ground cover over a jittered
+ * grid, where the ground suits it, with room from what stood before and clear of the route.
  *
  * @param options Where the stones stand.
- * @returns The placed plants, as the scatter's flat rows.
+ * @returns The trees, the plants and the dead wood.
  */
-export function placeValley(options: ValleyOptions = {}): ScatterPoints {
-	const ground = groundMaps({
-		size: LAND,
-		water: WATER,
-		height: groundHeight,
-		...(options.rocks && { rocks: (x: number, z: number) => (options.rocks?.(x, z) ? 1 : 0) }),
-	});
-	const placed = scatterVegetation({ seed: SEED, ground, rules: RULES });
-	return thinValley(clearOfRoute(placed, routeSamples()));
+export function placeValley(options: ValleyOptions = {}): Valley {
+	const next = random(SEED);
+	const route = routeSamples();
+	const clearOfRoute = (spot: Spot) => {
+		const solid = solidOf(spot);
+		return !route.some((pose) => hits(solid, pose));
+	};
+	const trees = TREES.map(([x, dz, kind, size]): Spot<TreeKind> => {
+		const z = streamZ(x) + dz;
+		return {
+			kind,
+			x,
+			y: groundHeight(x, z) - 0.1,
+			z,
+			yaw: next() * Math.PI * 2,
+			size: size * (0.92 + 0.16 * next()),
+		};
+	}).filter(clearOfRoute);
+	/** The rooms that the placed ground cover keeps, and the trunks, which nothing grows through. */
+	const taken: { x: number; z: number; r: number }[] = trees.map(({ x, z }) => ({ x, z, r: 0.8 }));
+	const plants: Spot<PlantKind>[] = [];
+	const deadwood: Spot<'deadwood'>[] = [];
+	/** How well the ground at a point suits a rule, from 0 to 1, or 0 where a stone covers it. */
+	const scoreAt = (rule: Rule, x: number, z: number): number => {
+		if (options.rocks?.(x, z)) return 0;
+		const ground = groundAt(x, z, trees);
+		let score = 1;
+		for (const tolerance of rule.tolerances) score *= meets(ground[tolerance[0]], tolerance);
+		return score;
+	};
+	/** Places a copy of a rule's kind where it keeps its room and the route misses it. */
+	const place = (rule: Rule, x: number, z: number, yaw: number, size: number): boolean => {
+		const r = SIZES[rule.kind].reach * size * 0.8;
+		if (taken.some((t) => (x - t.x) ** 2 + (z - t.z) ** 2 < (r + t.r) ** 2)) return false;
+		const spot = { kind: rule.kind, x, y: groundHeight(x, z), z, yaw, size };
+		if (!clearOfRoute(spot)) return false;
+		taken.push({ x, z, r });
+		if (spot.kind === 'deadwood') deadwood.push(spot as Spot<'deadwood'>);
+		else plants.push(spot as Spot<PlantKind>);
+		return true;
+	};
+	for (const rule of RULES) {
+		for (let gx = -REACH_X; gx < REACH_X; gx += rule.spacing)
+			for (let gz = -REACH_Z; gz < REACH_Z; gz += rule.spacing) {
+				const x = gx + next() * rule.spacing;
+				const z = streamZ(x) + gz + next() * rule.spacing;
+				const chance = next();
+				const size = rule.scale[0] + (rule.scale[1] - rule.scale[0]) * next();
+				const yaw = next() * Math.PI * 2;
+				if (chance >= scoreAt(rule, x, z)) continue;
+				if (!place(rule, x, z, yaw, size)) continue;
+				// The clump: copies that gather about this one, where the ground suits them too.
+				const [count, spread] = rule.clump ?? [0, 0];
+				for (let k = 0; k < count; k++) {
+					const turn = next() * Math.PI * 2;
+					const away = spread * Math.sqrt(next());
+					const cx = x + Math.cos(turn) * away;
+					const cz = z + Math.sin(turn) * away;
+					const grown = size * (0.7 + 0.3 * next());
+					const cyaw = next() * Math.PI * 2;
+					if (next() < scoreAt(rule, cx, cz)) place(rule, cx, cz, cyaw, grown);
+				}
+			}
+	}
+	return { trees, plants, deadwood };
+}
+
+/**
+ * The room that every placed model keeps, which the camera's route must miss.
+ *
+ * @param valley The models that `placeValley` placed.
+ * @returns One cylinder for each tree and plant.
+ */
+export function valleySolids(valley: Valley): Solid[] {
+	return [...valley.trees, ...valley.plants].map(solidOf);
 }

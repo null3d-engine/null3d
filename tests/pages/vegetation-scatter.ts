@@ -6,7 +6,7 @@
 // ?seed= changes the seed, ?runs= the number of timed runs, and ?tile= a second tile size to check.
 import { EcoScatter, groundMaps, scatterChecksum, scatterVegetation } from '@null3d/vegetation';
 import { groundHeight, LAND, WATER } from '../../examples/showcase/creek/land';
-import { CREEK_RULES } from '../../examples/showcase/creek/valley';
+import { CREEK_RULES } from './lib/creek-rules';
 import { progress, run } from './lib/result';
 
 const params = new URLSearchParams(location.search);

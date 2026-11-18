@@ -496,6 +496,7 @@ const stop = assets.registerGltfExtension({                     // (0.3) an add-
 });
 stop();                                                          // unregisters the handler
 ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material, occluder }
+ship.find('Turret').maps;  // (0.3) its material's textures: { map, metalnessRoughnessMap, normalMap, aoMap, emissiveMap }, for a material of your own
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
 ship.clips;                // (0.2) clip names, which a copy's animator plays

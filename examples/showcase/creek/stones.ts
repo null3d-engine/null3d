@@ -1,7 +1,8 @@
-// The creek's stones: mossy rocks along the water's edge, in the stream and on the banks, and
-// pebbles on the bed. Each kind of rock is an instance batch whose rows cast and receive the sun's
-// shadows. The rocks are noise-shaped spheres with a texture made in code, and moss on the parts
-// that face up. The pebbles are small and lie under the water, so they cast none.
+// The creek's stones: mossy rocks along the water's edge, in the stream and on the banks, pebbles on
+// the bed, and the cave mouth, a model built in Blender. Each kind of rock is an instance batch whose
+// rows cast and receive the sun's shadows. The rocks are noise-shaped spheres with a texture made in
+// code, and moss on the parts that face up. The pebbles are small and lie under the water, so they
+// cast none.
 import {
 	type MeshArrays,
 	math,
@@ -9,6 +10,8 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
+import { type Part, placed } from '../../lib/blender-models';
+import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import { fromStream, groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
 
@@ -18,6 +21,12 @@ export interface Obstacle {
 	z: number;
 	r: number;
 }
+
+/**
+ * The cave mouth: the middle of its foot, the reach of its rock around it, and its turn about y.
+ * The model opens toward +z; the turn faces it down the valley, toward the camera's usual view.
+ */
+export const CAVE = { x: 11, z: streamZ(11) - 6.2, reach: 3.8, yaw: -0.9 };
 
 /** Pebbles at each preset, over all their batches. */
 const PEBBLES: Record<QualityPreset, number> = { low: 1200, medium: 3000, high: 4800, ultra: 6000 };
@@ -85,7 +94,40 @@ export function rockPlaces(): { x: number; z: number; size: number }[] {
 	return places;
 }
 
-/** The stones and the pebbles, and a test of whether anything may stand at a point. */
+/**
+ * A test of whether a stone or the cave's rock covers a point of the ground, where nothing grows.
+ *
+ * @param places The rocks' places, which `rockPlaces` gives.
+ */
+export function stoneFootprints(places = rockPlaces()): (x: number, z: number) => boolean {
+	return within([
+		...places.map(({ x, z, size }) => ({ x, z, r: size * 1.1 })),
+		{ x: CAVE.x, z: CAVE.z, r: CAVE.reach },
+	]);
+}
+
+/**
+ * Stands the cave mouth on the far bank. The floor of its tunnel meets the ground at the opening,
+ * and the back of the rock sinks into the rising bank. A visitor may enter it, so its rock takes the
+ * interior layer, which the sun's shadows see.
+ */
+export function placeCave({ scene }: SketchContext, cave: Part): void {
+	const mouth = groundHeight(CAVE.x + 2.4 * Math.sin(CAVE.yaw), CAVE.z + 2.4 * Math.cos(CAVE.yaw));
+	scene.createMesh({
+		mesh: cave.mesh,
+		material: cave.material,
+		...placed(cave, [CAVE.x, mouth - 0.15, CAVE.z], CAVE.yaw, 1),
+		occluder: cave.occluder,
+		layers: INTERIOR_LAYER,
+		castShadows: true,
+		receiveShadows: true,
+	});
+}
+
+/**
+ * The stones, the pebbles and the cave's footprint, and a test of whether anything may stand at a
+ * point.
+ */
 export function createStones(
 	{ scene, geometry, materials, textures }: SketchContext,
 	detail: number,
@@ -157,10 +199,9 @@ export function createStones(
 		}),
 	);
 
-	const footprints = places.map(({ x, z, size }) => ({ x, z, r: size * 1.1 }));
 	return {
 		obstacles,
-		clear: within(footprints),
+		clear: stoneFootprints(places),
 		fit(preset) {
 			for (const batch of pebbleBatches) batch.setActiveCount(Math.ceil(PEBBLES[preset] / 6));
 		},

@@ -243,7 +243,7 @@ export type {
 	VignetteSettings,
 	WhiteBalanceSettings,
 } from './scene/post';
-export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
+export type { Prefab, PrefabBounds, PrefabMaps, PrefabNode } from './scene/prefab';
 export type { ReflectionProbe, ReflectionProbeOptions } from './scene/probes';
 export type {
 	PropertyAnimation,
