@@ -11,7 +11,8 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
-import { createGrass, type PlantMaterial, setWindLayer } from '@null3d/vegetation';
+import { createGrass } from '@null3d/grass';
+import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../../lib/plants';
 import { Noise } from '../../lib/procedural';
