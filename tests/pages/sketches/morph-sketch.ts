@@ -7,7 +7,9 @@
 // ?late adds the spheres during play, on the page's 'spheres' message, and posts 'added' once
 // their pipelines are built: the first morphed mesh needs its shader file. ?tone=none
 // turns off the engine's default curve, as the parity test asks: the three.js twin draws with no
-// tone mapping, three.js's default.
+// tone mapping, three.js's default. ?bounce=off draws without screen-space bounce light, whose
+// builds live in the ambient occlusion file, so a test of which shader files load sees the morph
+// file alone.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -27,7 +29,8 @@ const CAPPED = params.has('capped');
 const NAMES = params.has('names');
 const LATE = params.has('late');
 
-export default defineSketch(({ scene, materials, geometry, post, page }) => {
+export default defineSketch(({ scene, materials, geometry, post, page, quality }) => {
+	if (params.get('bounce') === 'off') quality.set({ bounceRays: 0 });
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	const camera = params.has('closeup') ? MORPH_CLOSEUP_CAMERA : MORPH_CAMERA;

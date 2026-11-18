@@ -3,6 +3,8 @@
 // animated glTF characters in the sketch's setup, whose skins start the skinning file's download
 // as the file is read. ?mode=gltf-morph loads a glTF file whose mesh has morph targets and no
 // skin, and no textures, so the sketch pauses after the file loads as a texture decode would. ?mode=morph preloads morph targets alone, then adds morphed spheres during play.
+// Both morph modes draw without the preset's screen-space bounce light, as the skinning sketch
+// does, since its builds live in the ambient occlusion file and would load beside the morph file.
 // ?mode=unknown names a feature that does not exist. The page tells the test
 // when the first frame came, through the `__mark` binding, so the test can split the shader files
 // that downloaded before it from those after it. It captures the first frame and one after play
@@ -32,10 +34,14 @@ function options(canvas: HTMLCanvasElement): EngineOptions {
 	if (MODE === 'gltf-morph')
 		return {
 			...common,
-			sketch: sketch('./sketches/gltf-sketch.ts?model=morph-cube&mark&pause=500'),
+			sketch: sketch('./sketches/gltf-sketch.ts?model=morph-cube&mark&pause=500&bounce=off'),
 		};
 	if (MODE === 'morph')
-		return { ...common, sketch: sketch('./sketches/morph-sketch.ts?late'), preload: ['morph'] };
+		return {
+			...common,
+			sketch: sketch('./sketches/morph-sketch.ts?late&bounce=off'),
+			preload: ['morph'],
+		};
 	// ?preload=off starts the same scene without the list, to time what the list adds to the start.
 	const list = params.get('preload') === 'off' ? [] : ['skinning', 'bloom', 'lines'];
 	const preload = (MODE === 'unknown' ? ['skining'] : list) as never;
