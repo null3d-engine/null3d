@@ -2,14 +2,12 @@
 // the middle. The pines stand tall on bare trunks, with their crowns high up, so a low sun shines
 // between the trunks. The forest floor, the bark and the rocks wear maps made in code from seeded
 // noise, and the floor's vertex colors lay the needles, the moss and the path's bare earth. The
-// pines come from the vegetation add-on, and draw as the plant core's stand-ins until their species
-// lands.
+// pines are made in code, and sway in the wind add-on's field.
 import { type Camera, type MeshGeometry, math, type SketchContext } from '@null3d/engine';
-import { setWindLayer } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
-import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { Noise, rock, type TexelSample, terrain, textureSet } from '../lib/procedural';
-import { LIGHT_SHAFTS_SPRUCE } from '../lib/stand-ins';
+import { createSway } from '../lib/sway';
+import { type Fir, lean, meshOf, type Part, partsOf, TURN, woodTexture } from '../lib/trees';
 
 const [TREES, ROCKS] = [150, 24];
 /** Linear colors of the forest floor: fallen needles, moss and the path's bare earth. */
@@ -18,14 +16,40 @@ const MOSS = [0.045, 0.085, 0.02];
 const EARTH = [0.17, 0.11, 0.06];
 
 /**
- * The wood's pines: Norway spruces, tall and sparse, with their crowns high up so a low sun shines
- * between the trunks.
+ * The wood's pines, 1 high: tall and sparse, a bare trunk to half their height and a crown of
+ * narrow tiers above it, so a low sun shines between the trunks.
  */
-const PINE = {
-	id: LIGHT_SHAFTS_SPRUCE.id,
-	height: 18,
-	standIn: LIGHT_SHAFTS_SPRUCE.standIn,
-} as const;
+const PINE: Fir = { tiers: 6, low: 0.5, width: 0.2, branches: 8, droop: 0.25 };
+/** The trunk's radius at its foot, as a share of the tree's height, and its linear color. */
+const FOOT = 0.022;
+const BARK = [0.26, 0.18, 0.13];
+/** How many times the bark's tile repeats up the trunk. */
+const BARK_TILES = 8;
+
+/**
+ * The trunk of a pine 1 high, from its foot to the top of the crown, on the bark's tiling maps
+ * rather than the shared texture's band, since the near trunks fill the frame's edges.
+ */
+const trunk: Part = {
+	at: (u, v) => {
+		const [a, r] = [u * TURN, FOOT * (1 - 0.8 * v)];
+		return [
+			Math.cos(a) * r,
+			v * 0.97,
+			Math.sin(a) * r,
+			...lean(a, 0.1),
+			u,
+			v * BARK_TILES,
+			...BARK,
+		];
+	},
+	grids: [
+		[14, 1],
+		[10, 1],
+		[6, 1],
+		[4, 1],
+	],
+};
 
 const noise = new Noise(7);
 const { smoothstep, lerp, randFloat } = math;
@@ -66,8 +90,10 @@ function barkTexel(u: number, v: number, out: TexelSample) {
 	out.occlusion = 0.4 + 0.6 * plates;
 }
 
-/** Makes the wood: the floor, the add-on's conifers and the rocks. Gives the bark's maps for
- * wooden parts, and an update that steps the scene's wind field. */
+/**
+ * Makes the wood: the floor, the pines and the rocks. Gives the bark's maps for wooden parts, and an
+ * update that steps the scene's wind field.
+ */
 export async function createWood(
 	ctx: SketchContext,
 	camera: Camera,
@@ -86,23 +112,40 @@ export async function createWood(
 		...solid,
 	});
 
-	// The pines are the vegetation add-on's spruces: each copy its own height and turn, grown in the
-	// job workers and placed with every level, in the scene's one wind field.
+	// Each pine is a bare trunk and a crown above it, its own height and turn. Both bend from the
+	// foot in the scene's one wind field, as a share of the tree's height.
 	const wind = createWind(ctx, { camera, box: 32, grid: 64 });
-	const spots: PlantSpot[] = [];
+	const sway = createSway(ctx, { wind });
+	const look = { colorSpace: 'srgb', mipmaps: true, anisotropy: 8 } as const;
+	const wood = textures.fromData({ ...woodTexture(), ...look, wrap: ['repeat', 'clamp'] });
+	const bend = { sway: 0.004, perSize: true } as const;
+	const trunks = scene.createInstances(meshOf(geometry, [trunk]), TREES, {
+		material: sway.material({
+			...bend,
+			map: bark.map,
+			normalMap: bark.normalMap,
+			ormMap: bark.metalnessRoughnessMap,
+			roughness: 1,
+		}),
+		...solid,
+	});
+	// The crown draws the fir's tiers alone, over the trunk above.
+	const crowns = scene.createInstances(meshOf(geometry, partsOf(PINE).slice(1)), TREES, {
+		material: sway.material({ ...bend, map: wood, rustle: 0.0006 }),
+		...solid,
+	});
 	math.seed(11);
 	for (let k = 0; k < TREES; k++) {
 		const [x, z] = [randFloat(2.6, 26) * (k % 2 ? 1 : -1), randFloat(-60, 14)];
 		const [tall, y, turn] = [randFloat(11, 17), height(x, z) - 0.1, randFloat(0, Math.PI)];
-		spots.push({ x, y, z, turn: turn * 2, scale: tall / PINE.height, variant: 0 });
+		for (const batch of [trunks, crowns]) {
+			batch.positions.set([x, y, z], k * 3);
+			batch.scales.set([tall, tall, tall], k * 3);
+			batch.rotations.set([0, Math.sin(turn), 0, Math.cos(turn)], k * 4);
+		}
 	}
-	const pines = await plantSpecies(ctx, {
-		id: PINE.id,
-		standIn: PINE.standIn,
-		seed: 11,
-		spots,
-		wind: wind.field,
-	});
+	trunks.markDirty(0, TREES);
+	crowns.markDirty(0, TREES);
 
 	// Mossy rocks beside the path, in three shapes.
 	const shapes = [0, 1, 2].map((s) => geometry.fromArrays(rock(20 + s, 2, [1, 0.55, 0.8])));
@@ -123,8 +166,7 @@ export async function createWood(
 		update() {
 			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
 			wind.update();
-			// The field keeps two states, so the plants read the one that this frame's run wrote.
-			setWindLayer(pines.materials, wind.field);
+			sway.update();
 		},
 	};
 }
