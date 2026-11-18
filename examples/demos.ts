@@ -493,7 +493,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Contact shadows',
 		scene: 'Stone garden',
 		summary:
-			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of meadow grass and pines from the vegetation add-on, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass and pines that sway in the wind, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
 		controls: [{ keys: ['Move', 'Tap'], does: 'Swing the sun around the garden' }],
 		hold: 1,
 		// The garden draws 640 pebbles' contact shadows in one batch, and a software GPU needs past a
