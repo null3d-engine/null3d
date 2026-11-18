@@ -15,12 +15,9 @@ import {
 	type Textures,
 } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
-import { unitAt } from '../core/hash';
-import { radians } from '../core/math';
-import type { GrassBlade } from '../core/record';
-import { bladeWidth } from '../leaf/grass-blade';
 import grassShader from './grass.wgsl';
 import bladesShader from './grass-blades.wgsl';
+import { unitAt } from './hash';
 
 /** The share of the High count that each preset draws. */
 const PRESET_SHARE: Record<QualityPreset, number> = {
@@ -43,9 +40,28 @@ const TUFT_COLUMNS = 2048;
 const CULL_VALUES = 24;
 
 /**
+ * The shape of a cover's blades, which `createGrass` gives every blade in place of its own narrowing
+ * strip.
+ *
+ * @category api/grass
+ */
+export interface GrassBladeShape {
+	/**
+	 * The blade's width in meters at a share of its length, from 0 at the root to 1 at the tip. A
+	 * width of 0 at the tip closes the blade there.
+	 */
+	readonly widthAt: (t: number) => number;
+	/**
+	 * The degrees that each half of the blade rises from its keel. Above 0, a row across the blade
+	 * holds a third vertex at the keel and the two halves light apart. At 0 the blade is a flat strip.
+	 */
+	readonly fold: number;
+}
+
+/**
  * What `createGrass` takes: the ground, the area, the count at the High preset, and the seed.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export interface GrassOptions {
 	/** The ground's height at a point, in meters. The grass stands on it and avoids steep ground. */
@@ -67,11 +83,11 @@ export interface GrassOptions {
 	/** The blades' color, which meets the ground's own at their roots. The default is a fresh green. */
 	readonly color?: string;
 	/**
-	 * A species' blade, whose width, profile and tip the cover's blades take. Give it with the
-	 * species' own colour, as `grassCover` returns them, so the cover reads as the same grass where
-	 * a plant of that species stands in it. Without it a blade narrows to a point from its root.
+	 * The shape that every blade takes: its width along its length and the fold of its keel. Give a
+	 * plant's own blade with the plant's own color, so the cover reads as the same grass where the
+	 * plant stands in it. Without it each blade narrows to a point from its root.
 	 */
-	readonly blade?: GrassBlade;
+	readonly blade?: GrassBladeShape;
 	/** The steepest ground that a tuft grows on, as rise over run. The default is 0.6. */
 	readonly maxSlope?: number;
 	/**
@@ -80,8 +96,8 @@ export interface GrassOptions {
 	 */
 	readonly mask?: (x: number, z: number) => boolean;
 	/**
-	 * The wind add-on's field, the one that the leaf material reads. The blades bend in its air,
-	 * and a page that leaves it out grows grass that stands still.
+	 * The wind add-on's field, the one that the scene's other swaying things read. The blades bend
+	 * in its air, and a page that leaves it out grows grass that stands still.
 	 */
 	readonly wind?: WindField;
 	/** How far a blade bends at its tip for each meter a second of air. The default is 0.04. */
@@ -110,7 +126,7 @@ export interface GrassOptions {
  * The grass that `createGrass` made: the draws, and the calls that draw a preset's share and give
  * them the frame's air.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export interface Grass {
 	/** The drives, one for each shape: WebGPU's compute list, or WebGL2's instance batch. */
@@ -125,8 +141,8 @@ export interface Grass {
 	 */
 	setSwayDistance(distance: number): void;
 	/**
-	 * Gives the blades the field's newest state for this frame, as the leaf material takes it, and
-	 * the blade list the camera's view. Call it once in each frame, before the frame draws.
+	 * Gives the blades the field's newest state for this frame, and the blade list the camera's
+	 * view. Call it once in each frame, before the frame draws.
 	 */
 	setWindLayer(field: WindField): void;
 }
@@ -134,7 +150,7 @@ export interface Grass {
 /**
  * One shape's tufts: the rows that draw them and the draw that fills them.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export interface GrassDraw {
 	/** The instance batch that WebGL2 draws, or undefined when a compute pass fills the rows. */
@@ -146,7 +162,7 @@ export interface GrassDraw {
 /**
  * The part of a grass material that the grass itself sets.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export interface GrassMaterial {
 	/** Sets one of the material's uniforms, by the name of its WGSL's field. */
@@ -157,7 +173,7 @@ export interface GrassMaterial {
  * A tuft's place, turn and traits, as the rows take them. The placement reads only integer
  * hashes, so every device places the same tufts from the same seed.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export interface GrassTuft {
 	/** The place on the ground, with the root's lift. */
@@ -177,7 +193,7 @@ export interface GrassTuft {
  * the option allows and the ground that the mask refuses. The calls with one seed, shape and count
  * give the same list on every device.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export function placeTufts(options: GrassOptions, shape: number, count: number): GrassTuft[] {
 	const { area, seed, height, mask } = options;
@@ -207,7 +223,7 @@ export function placeTufts(options: GrassOptions, shape: number, count: number):
 /**
  * One tuft's mesh arrays, which `scene.geometry.fromArrays` takes.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export interface TuftMesh {
 	readonly positions: Float32Array;
@@ -220,21 +236,21 @@ export interface TuftMesh {
 /**
  * One tuft's mesh: blades that lean out from its middle and curve over. Each blade is a strip
  * whose normal leans up so it lights like the ground, and whose colours run from a dark root to a
- * lighter tip. A blade narrows to a point, or takes the profile and tip that a species' blade
+ * lighter tip. A blade narrows to a point, or takes the width and the keel that a blade shape
  * gives it.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export function tuftMesh(
 	seed: number,
 	blades: number,
 	segments: number,
-	blade?: GrassBlade,
+	blade?: GrassBladeShape,
 ): TuftMesh {
 	let index = 0;
 	const next = () => unitAt(seed, index++);
-	// A species' blade shows its keel: the two halves rise from the midrib by the record's fold, so
-	// a row of its cross-section holds a vertex at the midrib between the two sides.
+	// A shape with a fold shows its keel: the two halves rise from the midrib by the fold, so a row
+	// of its cross-section holds a vertex at the midrib between the two sides.
 	const across = blade && blade.fold > 0 ? 3 : 2;
 	const perBlade = segments * across + 1;
 	const positions = new Float32Array(blades * perBlade * 3);
@@ -248,7 +264,8 @@ export function tuftMesh(
 		const root = 0.015 + 0.11 * next();
 		const height = 0.12 + 0.22 * next() ** 1.5;
 		const lean = (0.1 + 0.25 * next()) * height;
-		const width = blade?.width ?? 0.016 + 0.012 * next();
+		// A shaped blade takes its width from the shape, so it draws no width of its own.
+		const width = blade ? 0 : 0.016 + 0.012 * next();
 		const twist = angle + Math.PI / 2 + (next() - 0.5) * 0.8;
 		const [sx, sz] = [Math.cos(twist), Math.sin(twist)];
 		// The face's normal, across the strip, leaned up by two thirds.
@@ -256,7 +273,7 @@ export function tuftMesh(
 		const length = Math.hypot(fx * 0.35, 1, fz * 0.35);
 		const [nx, ny, nz] = [(fx * 0.35) / length, 1 / length, (fz * 0.35) / length];
 		// A keel turns each half's normal away from the flat face by the fold, so the two halves
-		// light apart as the plant's blade does. The across direction, square to the face, is the
+		// light apart as a keeled blade does. The across direction, square to the face, is the
 		// axis the normal turns about.
 		const fold = across === 3 && blade ? radians(blade.fold) : 0;
 		const [sinFold, cosFold] = [Math.sin(fold), Math.cos(fold)];
@@ -269,7 +286,7 @@ export function tuftMesh(
 			const cx = ox * (root + lean * t * t);
 			const cz = oz * (root + lean * t * t);
 			const cy = height * (t - 0.15 * t * t);
-			const half = blade ? 0.5 * bladeWidth(width, blade, t) : (width / 2) * (1 - t) ** 0.9;
+			const half = blade ? 0.5 * blade.widthAt(t) : (width / 2) * (1 - t) ** 0.9;
 			// A keel lifts each side of the cross-section, and the tip closes on one vertex.
 			const rise = across === 3 && blade ? half * Math.sin(radians(blade.fold)) : 0;
 			const shade = 0.3 + 0.7 * t;
@@ -314,6 +331,11 @@ export function tuftMesh(
 	return { positions, normals, colors, uvs, indices };
 }
 
+/** An angle in degrees as radians. */
+function radians(degrees: number): number {
+	return (degrees * Math.PI) / 180;
+}
+
 /** A scratch quaternion for each tuft's turn. */
 const spin = quat.create();
 
@@ -340,7 +362,7 @@ function ordered(tufts: readonly GrassTuft[], high: number): GrassTuft[] {
  * @param ctx The sketch's context.
  * @param options The ground, the area, the count and the seed.
  * @returns The grass's draws, ready to draw.
- * @category api/vegetation
+ * @category api/grass
  */
 export async function createGrass(ctx: SketchContext, options: GrassOptions): Promise<Grass> {
 	const shapes = Math.max(1, Math.floor(options.shapes ?? 1));

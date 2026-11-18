@@ -33,6 +33,7 @@
 		"packages/engine/**",
 		"packages/controls/**",
 		"packages/geometry/**",
+		"packages/grass/**",
 		"packages/particles/**",
 		"packages/impostors/**",
 		"packages/terrain/**",

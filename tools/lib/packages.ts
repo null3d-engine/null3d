@@ -197,6 +197,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		docs: false,
 		required: ['dist/splats.wasm'],
 	},
+	// Its blade material and its blade-list pass compile from .wgsl files into modules of their own.
+	grass: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		required: [],
+	},
 	// Its surface and underwater WGSL compile into modules of their own.
 	water: {
 		compile: true,

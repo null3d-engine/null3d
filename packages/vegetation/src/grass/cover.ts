@@ -2,7 +2,9 @@
 // upper face reflects. A page passes the pair to `createGrass`, so the ground cover meets a plant
 // of that species with the same blade shape and the same green, and the two read as one meadow.
 import { color } from '@null3d/engine';
-import type { GrassBlade, Species } from '../core/record';
+import type { GrassBladeShape } from '@null3d/grass';
+import type { Species } from '../core/record';
+import { bladeWidth } from '../leaf/grass-blade';
 
 /**
  * A cover grass's blade shape and colour, which `createGrass` takes.
@@ -12,8 +14,8 @@ import type { GrassBlade, Species } from '../core/record';
 export interface GrassCover {
 	/** The blades' colour, from the mean reflectance of the species' upper face. */
 	readonly color: string;
-	/** The species' blade, whose width, profile and tip the cover's blades take. */
-	readonly blade: GrassBlade;
+	/** The species' blade: the width that its profile and tip give it, and the fold of its keel. */
+	readonly blade: GrassBladeShape;
 }
 
 /**
@@ -29,10 +31,12 @@ export function grassCover(record: Species): GrassCover {
 	const { foliage } = record;
 	if (foliage.kind !== 'grass-blade')
 		throw new Error(`the species ${record.id} has no grass blade to cover the ground with`);
-	const [r, g, b] = foliage.blade.optics.reflectance;
+	const { blade } = foliage;
+	const [r, g, b] = blade.optics.reflectance;
 	return {
 		color: `#${channel(r)}${channel(g)}${channel(b)}`,
-		blade: foliage.blade,
+		// The plant's own width along the blade, so the cover's blades and the plant's match.
+		blade: { widthAt: (t) => bladeWidth(blade.width, blade, t), fold: blade.fold },
 	};
 }
 
