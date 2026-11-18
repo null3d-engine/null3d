@@ -898,6 +898,9 @@ export const DEMOS: readonly Demo[] = [
 			"A grove of oaks, birches and firs, with bushes, ferns and grass at its feet, all made in code and swaying in the wind add-on's field. Each plant's material reads the air at its root, so trunks stay firm while crowns, fronds and blades bend and flutter. Set the wind's strength and its bearing on the sliders. The Hold button stops the air, so a still frame can be compared with a moving one.",
 		controls: [],
 		hold: 2,
+		// The grove's crowns and grass take CI's software GPU close to a minute to draw on WebGPU and
+		// WebGL2, so the held capture waits longer than the default.
+		timeoutSeconds: 300,
 	},
 	{
 		name: 'forest',
