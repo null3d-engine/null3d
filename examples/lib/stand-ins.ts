@@ -44,26 +44,6 @@ export interface PageStandIns {
 	readonly plants: readonly PagePlantStandIn[];
 }
 
-/** The contact-shadows garden's pine: a Scots pine, dark against the sky above the wall. */
-export const CONTACT_SHADOWS_PINE: PagePlantStandIn = {
-	id: 'scots-pine',
-	standIn: { height: 15, aspect: 0.45, leaf: [0.06, 0.17, 0.07], bark: [0.26, 0.18, 0.13] },
-};
-/** The contact-shadows garden's grass: meadow grass, about a hand high at scale 1. */
-export const CONTACT_SHADOWS_GRASS: PagePlantStandIn = {
-	id: 'meadow-grass',
-	standIn: { height: 0.5, aspect: 0.4, leaf: [0.24, 0.4, 0.1], bark: [0.2, 0.18, 0.1] },
-};
-/** The light shafts wood's pine: a tall Norway spruce on a bare trunk. */
-export const LIGHT_SHAFTS_SPRUCE: PagePlantStandIn = {
-	id: 'norway-spruce',
-	standIn: { height: 18, aspect: 0.3, leaf: [0.1, 0.24, 0.1], bark: [0.26, 0.18, 0.13] },
-};
-/** The atmosphere valley's pine: a Norway spruce with its crown a little under half as wide as tall. */
-export const ATMOSPHERE_SPRUCE: PagePlantStandIn = {
-	id: 'norway-spruce',
-	standIn: { height: 15, aspect: 0.45, leaf: [0.08, 0.2, 0.09], bark: [0.26, 0.18, 0.13] },
-};
 /** The island's umbrella pine: a tall bare red trunk under a wide flat dark crown. */
 export const ISLAND_STONE_PINE: PagePlantStandIn = {
 	id: 'stone-pine',
@@ -102,9 +82,6 @@ export const CREEK_STAND_INS: readonly PagePlantStandIn[] = CREEK_SPECIES.map((s
 
 /** Every page's stand-ins, one entry per seed the page grows them with. */
 export const PAGE_STAND_INS: readonly PageStandIns[] = [
-	{ page: 'contact-shadows', seed: 5, plants: [CONTACT_SHADOWS_PINE, CONTACT_SHADOWS_GRASS] },
-	{ page: 'light-shafts', seed: 11, plants: [LIGHT_SHAFTS_SPRUCE] },
-	{ page: 'atmosphere', seed: 11, variants: 3, plants: [ATMOSPHERE_SPRUCE] },
 	{
 		page: 'island',
 		seed: 17,
