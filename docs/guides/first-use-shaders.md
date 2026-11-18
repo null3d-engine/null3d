@@ -1,0 +1,57 @@
+---
+id: guides/first-use-shaders
+title: Shaders that load on first use
+status: generated
+since: "0.1"
+summary: "The features whose shaders download on first use, which createEngine's preload takes."
+---
+
+# Shaders that load on first use
+
+> [Loading screens](loading-screens.md#loading-everything-up-front) explains this table. The engine's shader manifest makes it, so it lists every feature of this version.
+
+Most shaders come with the engine's start. The shaders of each feature below download the first time the sketch uses the feature. `createEngine`'s `preload` option takes these names, and loads their shaders before the first frame.
+
+| Feature | Its shaders download |
+| --- | --- |
+| `'decals'` | with the first mesh of a decal material (`materials.decal`) |
+| `'probe_grid'` | when the sketch first sets a light probe grid (`scene.setLightProbeGrid`) |
+| `'sprites'` | with the first sprite batch |
+| `'particles'` | with the first particle system (`@null3d/particles`) |
+| `'lines'` | with the first line batch |
+| `'texcoords'` | only in the engine's own tests, which draw meshes colored by their texture coordinates |
+| `'effect_groups'` | the first time custom effects join into one pass, or fold into the final pass. Until its shaders are built, each effect draws a pass of its own |
+| `'bloom'` | when `post.set` turns bloom on |
+| `'picking'` | with the first `scene.pick()` call, which waits for the shaders |
+| `'ao'` | when `post.set` turns ambient occlusion on, or when the preset draws the screen-space bounce light that reads its steps |
+| `'dof'` | when `post.set` turns depth of field on |
+| `'subsurface'` | with the first material whose light spreads under its surface (`subsurfaceRadius`). The skin pass and the blur draw its light |
+| `'exposure'` | when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built |
+| `'fog_volume'` | when `scene.setFog` turns the volumetric fog on. The fog keeps its sun glow until the fog is built |
+| `'taa'` | when `post.set` turns the temporal resolve on, a prototype for measuring only (D-206) |
+| `'views'` | with the first scene pass. Its texture shows nothing until its shaders are built |
+| `'color_copy'` | with the first step that reads the color that the frame before showed: the first material that lets light through, screen-space reflections, or the bounce light that the preset draws from the start of the page |
+| `'transmission'` | with the first material that lets light through (`transmission`) |
+| `'coat_sheen'` | with the first material with a clear coat, a sheen, iridescence or anisotropy |
+| `'weighted'` | with the first material of the `'weighted'` blending |
+| `'single_layer'` | with MSAA, when the first blended draw of a feature at the `'resolve'` frame point draws. Its surfaces blend in the transparent pass until the layer is built |
+| `'moment'` | when the quality setting `momentTransparency` is on and the first blended surface draws. The surfaces draw sorted until the layer and its anti-aliasing are built |
+| `'area_lights'` | with the first rectangle or tube light |
+| `'translucency'` | with the first material that lets light through a thin surface (`diffuseTransmission`) |
+| `'cutout'` | with the first masked object that casts shadows. It casts none until its shaders are built |
+| `'cluster_levels'` | with the first frame that draws a tree of cluster patches (`setMeshPatches`), which builds the pass that picks a tree of patches. A scene without a tree downloads none of it, and WebGL2 never builds that pass |
+| `'motion'` | when a pass first reads the motion. The motion debug view is such a pass, and it exists in development builds only |
+| `'background'` | with the first texture, environment or cube map background |
+| `'sky'` | with the first sky background |
+| `'clouds'` | with the first frame that draws the sky's volumetric cloud tier: the preset's `cloudSteps` above 0, or `quality.set({ cloudSteps })`. A page that draws the flat layer downloads none of it. The noise field of its march is made in the browser then |
+| `'physical_sky'` | with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built |
+| `'skinning'` | with the first skinned mesh, or as soon as the sketch reads a glTF file with skins |
+| `'morph'` | with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders |
+| `'coverage'` | with the first masked material that MSAA smooths with alpha to coverage |
+| `'hash'` | with the first material whose alpha mode is `'hash'` |
+| `'instance_index'` | only in the engine's own tests, through a test switch of WebGPU's instance data |
+| `'row_values'` | with the first instance batch whose rows have colors or values (`colors: true` or `values: true`) |
+| `'displacement'` | with the first material with a displacement map, which also loads the builds of parallax. Its mesh draws nothing until they are built |
+| `'bump'` | with the first material with a bump map |
+| `'lod_fade'` | with the first mesh whose levels of detail fade, or whose distance bands fade. The quality setting `lodFade` turns the bands' fades off on Low, not a level's fade |
+| `'occlusion'` | with the first opaque object that may hide others, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders |

@@ -1,0 +1,213 @@
+# Architecture and the loop: from one thread to two
+
+three.js apps usually run everything on the main thread: DOM, input, scene updates and rendering. null3D splits this in two: the page (main thread) and the sketch (a worker). In null3D, a 3D scene is called a sketch: the module that builds the scene and updates it every frame. It takes the place of the three.js scene setup and animation loop. This file shows where each piece goes, how the two talk, and how to convert the loop. Engine docs: `concepts/architecture`, `api/page`, `porting/threejs-loop-and-threads`.
+
+## Contents
+
+1. What goes where
+2. Messages between page and sketch
+3. Converting the loop
+4. Converting per-object classes to arrays
+5. Input and camera controls
+6. Libraries in the port
+7. The two-step route for large apps
+
+## 1. What goes where
+
+| Piece of the three.js app | null3D location | How |
+| --- | --- | --- |
+| `<canvas>` or `renderer.domElement` | `index.html` and `page.ts` | Put the canvas in HTML; pass it to `createEngine` |
+| Renderer options (antialias, alpha, pixel ratio, tone mapping) | `createEngine` options, `post.set` | Mapping table, "Renderer and loop" |
+| Resize handling | Nowhere | The engine follows the canvas's CSS size |
+| Scene, cameras, lights, meshes, loaders | `sketch.ts` | `defineSketch` setup code |
+| The animation loop | `sketch.ts` | `onUpdate`, `onFixedUpdate`, `onLateUpdate` |
+| DOM input listeners for the 3D view | `sketch.ts` reads `ctx.input` | The page shim forwards input through shared memory |
+| Camera controls | `sketch.ts` | `@null3d/controls` |
+| HTML UI, menus, HUD, lil-gui panels, stats panels | `page.ts` | Messages to and from the sketch |
+| Labels (CSS2DRenderer, CSS3DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2); `transform: 'world'` or `'billboard'` makes the element a plane of the scene |
+| Audio (Web Audio, three.js Audio) | `page.ts` | Sketch sends events and positions |
+| Video elements | `page.ts` | `engine.registerVideo` on the page and `textures.fromVideo` in the sketch (0.3): the page sends one image per frame that the video presents. Keep a frame within the upload budget (null3d-develop recipe 14) |
+| `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
+| `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
+| A cache of generated geometry in IndexedDB | `sketch.ts` | Keep it, with arrays only, never engine objects; key it by the build (null3d-develop `references/performance.md`, section 12) |
+| `GLTFLoader` with `KTX2Loader` (0.2) | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
+| Physics libraries | `sketch.ts` | WebAssembly physics runs in workers |
+| Analytics, ads, routing | `page.ts` | Unchanged |
+
+### Porting a CSS3D example, such as the periodic table
+
+three.js's `css3d_periodictable` example is a table of DOM cells that `CSS3DRenderer` places in the scene. The sketch holds the scene and the page holds the DOM:
+
+```ts
+// sketch.ts
+const camera = scene.createPerspectiveCamera({ fov: 40, near: 1, far: 10000, position: [0, 0, 3000], target: [0, 0, 0] });
+scene.setActiveCamera(camera);
+ELEMENTS.forEach((cell, index) => {
+  const object = scene.createGroup({ position: [cell.group * 140 - 1330, -cell.period * 180 + 990, 0] });
+  ui.trackLabel(object, `cell-${index}`, { transform: 'world' });
+});
+```
+
+```ts
+// page.ts
+for (let index = 0; index < ELEMENTS.length; index++) {
+  const element = cell(index);   // The example's .element markup, 120 x 160 CSS pixels.
+  layer.append(element);
+  engine.labels.bind(`cell-${index}`, element);
+}
+```
+
+- A label element is sized in CSS pixels, which are the scene's units, so the example's camera and positions carry over unchanged.
+- The example fills the window. A port with a fixed frame gives the camera that frame's aspect ratio.
+- `createEngine`'s `maxLabels3d` holds 256 labels by default. The table's 118 cells fit, and a scene with more planes raises it, as the sprites example's 512 do.
+- The cells' CSS goes in the page's stylesheet, and the layer that holds the elements covers the canvas.
+- The example's random start positions and tints have no held picture. Take them from the cell's place instead, as the port does with an integer hash of the index.
+- The engine hides a plane whose anchor is behind the camera or outside the near and far planes. `CSS3DRenderer` draws it there, mirrored.
+- A billboard label also takes the object's scale, so a sprite that grows and shrinks ports as it is. `rotation` is the sprite's `rotation2D`.
+- A hidden object hides its element. A scene that shows only some of its objects therefore needs no extra call, as the molecules port shows by hiding one atom.
+- An element can hold an iframe or any other markup. Give it `pointer-events: auto` for the clicks that `CSS3DRenderer` gives its elements.
+- An orthographic camera carries the planes too. Give `scene.createOrthographicCamera` the height, or the four edges, that the example's camera uses.
+
+All seven three.js CSS3D examples have a port under `tests/pages/`: `css3d_periodictable`, `css3d_molecules`, `css3d_sprites`, `css3d_sandbox`, `css3d_orthographic`, `css3d_mixed` and `css3d_youtube`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. The mixed port's test also compares the two drawn frames. Where an example adds an invisible plane that writes depth and no color, give its material `colorWrite: false` (0.3). Read a port before porting a CSS3D scene of your own.
+
+## 2. Messages between page and sketch
+
+Messages are fire-and-forget and structured-cloned, so keep them small and infrequent.
+
+```ts
+// sketch.ts
+page.post('score', { value: score });                 // on change only
+page.onMessage((type, data) => {
+  if (type === 'settings') applySettings(data);
+});
+```
+
+```ts
+// page.ts
+engine.onSketchMessage((type, data) => {
+  if (type === 'score') scoreEl.textContent = String(data.value);
+});
+engine.postToSketch('settings', { volume: 0.8, quality: 'medium' });
+```
+
+Rules:
+
+- Send events and changes, not per-frame state. Some three.js apps update the DOM every frame from scene data, such as a speedometer. Send such a value only when it changes by a visible amount.
+- Positions for HTML elements use `ui.trackLabel` (0.2), which needs no messages at all.
+- Give message types names and a TypeScript union type shared by both sides, so typos fail at compile time.
+- Large one-off data (a level file) goes straight to the sketch with `fetch`, not through the page.
+
+## 3. Converting the loop
+
+```js
+// three.js
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const t = clock.getElapsedTime();
+  updatePlayer(dt);
+  updateEnemies(dt);
+  physicsWorld.step(1 / 60, dt, 3);
+  followCamera(player);
+  controls.update();
+  composer.render();
+}
+animate();
+```
+
+```ts
+// null3d sketch.ts
+return {
+  onFixedUpdate(step) { physicsWorld.step(); syncBodies(); },   // fixed rate, 0 to n times per frame
+  onUpdate(dt) { updatePlayer(dt); updateEnemies(dt); controls.update(dt); },
+  onLateUpdate() { followCamera(player); },                     // after transforms: camera sees final positions
+};
+```
+
+- `clock.getDelta()` becomes the `dt` argument, also in `ctx.time.dt`; `clock.getElapsedTime()` becomes `ctx.time.now`.
+- Physics moves to `onFixedUpdate`, at the rate that `defineSketch(setup, { fixedRate: 60 })` sets, 60 steps per second by default. One call of `world.step()` per fixed step replaces `world.step(1 / 60, dt, 3)`. The engine counts the steps, and `maxFixedSteps` (default 8) caps them per frame.
+- Camera-follow code moves to `onLateUpdate`, so the camera uses this frame's final object positions, and its moves show in the same frame.
+- Rendering calls and `composer.render()` disappear.
+- Code that ran "every N frames" can use `ctx.time.frame % N === 0`.
+
+## 4. Converting per-object classes to arrays
+
+three.js code often wraps each object in a class with an `update()` method. That shape allocates, calls setters one object at a time, and scatters data across the heap. Convert it to arrays: keep the class for setup if it helps readability, but run the per-frame work as loops.
+
+```js
+// three.js
+class Enemy {
+  constructor(scene) { this.mesh = new THREE.Mesh(geo, mat); this.vel = new THREE.Vector3(); scene.add(this.mesh); }
+  update(dt, player) {
+    const dir = player.position.clone().sub(this.mesh.position).normalize();   // allocates
+    this.vel.lerp(dir, 0.1);
+    this.mesh.position.addScaledVector(this.vel, dt);
+  }
+}
+enemies.forEach((e) => e.update(dt, player));
+```
+
+```ts
+// null3d
+const N = 2000;
+const enemies = scene.createInstances(enemyMesh, N, { material: enemyMat, dynamic: true });
+const vel = new Float32Array(N * 3);
+const playerPos = new Float32Array(3);
+
+function updateEnemies(dt: number) {
+  player.getPosition(playerPos);
+  const p = enemies.positions;
+  for (let i = 0; i < N; i++) {
+    const o = i * 3;
+    let dx = playerPos[0] - p[o], dy = playerPos[1] - p[o + 1], dz = playerPos[2] - p[o + 2];
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    dx /= len; dy /= len; dz /= len;
+    vel[o] += (dx - vel[o]) * 0.1; vel[o + 1] += (dy - vel[o + 1]) * 0.1; vel[o + 2] += (dz - vel[o + 2]) * 0.1;
+    p[o] += vel[o] * dt; p[o + 1] += vel[o + 1] * dt; p[o + 2] += vel[o + 2] * dt;
+  }
+}
+```
+
+Enemies that need different meshes become one batch per mesh. An enemy loaded from a glTF file with several meshes takes `scene.createInstances(prefab, N, { dynamic: true })` (0.2): one batch whose rows move every mesh of the model. Per-enemy state (health, target, timers) goes into typed arrays indexed by row. When an enemy dies, swap-remove its row with the last live row and lower the active count (null3d-develop `references/recipes.md`, recipe 5).
+
+## 5. Input and camera controls
+
+| three.js | null3D |
+| --- | --- |
+| `addEventListener('pointermove', ...)` with NDC math | `input.pointer.ndcX`, `ndcY`; `input.pointer.x`, `y` in CSS pixels |
+| `addEventListener('keydown', ...)` and a key-state object | `input.isDown('KeyW')`, `input.wasPressed('Space')` |
+| `addEventListener('touchstart', ...)` and a list of touches | `input.touches`, and `touch-action: none` on the canvas |
+| Gamepad API polling | `input.isDown('GamepadA')`, `input.value('GamepadLeftStickRight')`, or an action map |
+| `OrbitControls(camera, renderer.domElement)`, `MapControls` | `createOrbitControls(ctx, camera, options)`, `createMapControls`; same option names and defaults; `controls.update(dt)` every frame |
+| `controls.listenToKeyEvents(window)` | Read the keys with `input.isDown`, and call `controls.pan(dx, dy)` or `controls.rotateLeft(angle)` |
+| The controls' own `preventDefault` on wheel events | On the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`, so the wheel and a pinch zoom the camera, not the page |
+| `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work. `update(dt)` returns true when the camera moved |
+| `FlyControls`, `FirstPersonControls` | `createFlyControls` or `createFirstPersonControls` with the same option names and defaults (0.2); `controls.update(dt)` every frame |
+| `PointerLockControls` | `createFirstPersonControls(ctx, camera, { movementSpeed: 0, pointerSpeed })` (0.2). The page calls `engine.requestPointerLock()` in a click handler in place of `controls.lock()`; the sketch reads `input.pointer.locked` in place of `isLocked` and the lock events, and keeps `controls.moveForward(d)` and `controls.moveRight(d)`. On an engine with `input: false`, `engine.requestPointerLock()` fails with E1426, and the game's own input code locks the canvas |
+| Clicks on UI buttons over the canvas | Handled on the page; send the action to the sketch |
+| Input that a game records for a server to replay, with its own listeners on the page | Keep the game's recorder. Pass `input: false` to `createEngine` (0.3), so the engine adds no listener and `ctx.input` stays at rest. Picking, controls and physics that decide a result move into the game's simulation (`guides/deterministic-simulation`). When the aim decides a result, the camera is the simulation's too: the page locks the pointer and records the movement each tick as whole counts, the simulation turns them into a yaw and a pitch, and the sketch draws that pose |
+
+Pointer events that land on HTML UI elements above the canvas do not reach the engine, which matches what users expect.
+
+## 6. Libraries in the port
+
+| Library | What to do |
+| --- | --- |
+| lil-gui, dat.gui, Tweakpane | Keep on the page; send values to the sketch |
+| stats.js | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it sits at the canvas's top right, takes a `{ collapsed }` option, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
+| GSAP, tween.js | For a scene value, `scene.animateProperty(target, path, { times, values })`; a value that a tween drives from code still lerps in `onUpdate`. DOM tweens stay on the page |
+| cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
+| three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
+| troika-three-text | The MSDF text add-on (0.3, not built yet). Until then, use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
+| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping, and the effects (0.2) (`references/post-processing.md`) |
+| three-stdlib, three/addons utilities | Check each import in the mapping table; many become built-in features |
+
+## 7. The two-step route for large apps
+
+Large apps mix DOM and scene code everywhere, which makes a direct move to the worker slow and risky. Split the work.
+
+1. Port with `createEngine({ sketchThread: 'main' })`. Sketch code runs on the main thread, so DOM access keeps working while you replace three.js calls. Reach parity here.
+2. Move the DOM-touching code into `page.ts` and messages, then switch to the default worker mode. The scanner's "DOM access" warning lists the files to fix.
+
+Main-thread mode keeps the render and job workers. But sketch code then shares the main thread with the page, so layout work and page scripts can delay frames. Treat it as a stage of the port, not the destination.

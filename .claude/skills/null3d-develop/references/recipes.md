@@ -1,0 +1,972 @@
+# null3D recipes
+
+Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Check the docs status before using a part.
+
+## Contents
+
+1. Start a new project
+2. Orbit camera around a model
+3. Load a glTF model and play its animations (0.2)
+4. Thousands of moving objects
+5. Pool short-lived objects such as bullets
+6. Click to select, with an outline (0.2)
+7. HTML labels above objects (0.2)
+8. Loading screen with progress and warm-up
+9. HTML settings panel that controls the scene
+10. Day and night: sun, sky and environment (0.2)
+11. Physics with a library in the sketch worker
+12. Minimap with a second camera (0.2)
+13. Screenshots
+14. Video on a surface, with frames from the page
+15. A screen drawn on a canvas (0.2)
+16. Custom full-screen effect (0.2)
+17. Very large worlds (0.2)
+18. Move a player with keys, a gamepad or touch
+19. Camera that follows a moving object
+20. Water and mirror floors with a reflection
+21. Fire, smoke and sparks with particles
+22. Terrain from a height field
+23. Outdoor land with an edge the camera never sees
+24. Trees that sway in the wind
+25. A game whose simulation a server replays (0.3)
+
+## 1. Start a new project
+
+```sh
+mkdir my-project && cd my-project
+bun add @null3d/engine
+bun add -d vite @null3d/vite-plugin
+```
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import null3d from '@null3d/vite-plugin';
+
+export default defineConfig({ plugins: [null3d()] });
+```
+
+Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. It caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build is fast. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
+
+## 2. Orbit camera around a model
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { createOrbitControls } from '@null3d/controls';
+
+export default defineSketch(async (ctx) => {
+  const { scene, geometry, materials } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 45, position: [3, 2, 5], target: [0, 1, 0] });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#4a8cff' }), position: [0, 1, 0] });
+  const controls = createOrbitControls(ctx, camera, {
+    target: [0, 1, 0], enableDamping: true, dampingFactor: 0.08,
+    minDistance: 1.5, maxDistance: 12, maxPolarAngle: Math.PI * 0.49,
+  });
+  return { onUpdate(dt) { controls.update(dt); } };
+});
+```
+
+Controls read forwarded input inside the sketch worker, so the sketch adds no DOM listeners. On the page, give the canvas `touch-action: none` in its CSS, and stop its wheel events from scrolling and zooming the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`. Damping only works when `update(dt)` runs every frame, and it takes the same time at every frame rate. Docs: `api/controls`.
+
+## 3. Load a glTF model and play its animations (0.2)
+
+```ts
+const heroPrefab = await assets.loadGltf('/models/hero.glb');  // parsed in a worker
+const hero = scene.instantiate(heroPrefab, { position: [0, 0, 0], dynamic: true, castShadows: true });
+const sword = hero.find('Sword');           // this copy's mesh named Sword, which follows its bone
+const anim = hero.animator();               // the copy's group plays the file's clips: heroPrefab.clips
+anim.playBlend({ idle: 0, walk: 1.4, run: 4 }); // clips at speeds in m/s; their steps stay in time
+
+let speed = 0;
+return {
+  onUpdate(dt) {
+    const target = input.isDown('KeyW') ? (input.isDown('ShiftLeft') ? 4 : 1.4) : 0;
+    speed += (target - speed) * Math.min(1, 6 * dt);  // ease toward the speed the keys ask for
+    anim.setBlend(speed);                   // engine memory: free to set every frame
+    hero.translate(0, 0, -speed * dt);
+    debug.skeleton(hero);                   // development builds draw the joints
+  },
+};
+```
+
+For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. Give the copies the camera sees from far a longer pose interval with `copy.animator().setUpdateInterval(quality.governor.farAnimationInterval)`, and hold the near ones at 1. The job workers then sample and blend the far copies less often. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. To switch a walk and a run without sliding the feet through a mix of both gaits, give the play `transition: 'inertial'`. It samples only the new clip, and the pose that the layer leaves eases into it at its own speed. It needs a fade above 0. A new scene should use it for `play` with a fade. `crossFade` keeps the blend that three.js's `crossFadeTo` shows. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`. To aim a walking character, turn its spine chain toward the target with `anim.lookAt(target, AIM, weight)`, where `AIM` is a frozen `{ joints: ['Spine', 'Chest', 'Neck'], limit }`. Do not turn the whole object to aim. `anim.setJointRotation(joint, q, weight)` and `anim.addJointRotation(joint, q, weight)` turn one joint on top of the clips, as setting `bone.quaternion` after `mixer.update` does in three.js. They hold until `anim.clearJoint(joint)`, and calling them every frame allocates nothing.
+
+The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+
+## 4. Thousands of moving objects
+
+```ts
+import { defineSketch, math } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 60, far: 300, position: [0, 40, 90], target: [0, 10, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  const N = 10_000;
+  const boids = scene.createInstances(geometry.cone({ radius: 0.1, height: 0.3, radialSegments: 8 }), N, {
+    material: materials.standard({ color: '#e0e0e0' }),
+    dynamic: true,
+  });
+  const vel = new Float32Array(N * 3);        // your own data, next to the engine's arrays
+  const start = boids.positions;
+  for (let i = 0; i < N; i++) {
+    start[i * 3] = math.randFloat(-50, 50); start[i * 3 + 1] = math.randFloat(0, 20); start[i * 3 + 2] = math.randFloat(-50, 50);
+    vel[i * 3] = math.randFloat(-1, 1); vel[i * 3 + 2] = math.randFloat(-1, 1);
+  }
+  return {
+    onUpdate(dt) {
+      const p = boids.positions;              // read the view each frame: engine memory can grow
+      for (let i = 0; i < N * 3; i++) p[i] += vel[i] * dt;   // no allocation, no setters
+    },
+  };
+});
+```
+
+A dynamic batch uploads all rows every frame, so no `markDirty` call is needed. Small objects need few triangles, so the cones have 8 sides instead of the default 32. Keep per-object data (velocity, health) in your own typed arrays indexed by row. The batch's arrays are views of engine memory, which can grow when you create meshes or batches, so read them in each frame. Docs: `concepts/instances`, `concepts/static-dynamic`.
+
+## 5. Pool short-lived objects such as bullets
+
+```ts
+import { defineSketch, math } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, input }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 60, position: [0, 3, 12], target: [0, 0, -10] }));
+  const MAX = 512;
+  const bullets = scene.createInstances(geometry.sphere({ radius: 0.05 }), MAX, {
+    material: materials.unlit({ color: '#ffee88' }), dynamic: true,
+  });
+  bullets.setActiveCount(0);
+  const life = new Float32Array(MAX);
+  const dir = new Float32Array(MAX * 3);
+  let active = 0;
+  let cooldown = 0;
+
+  function fire() {
+    if (active === MAX) return;
+    const i = active++;
+    const p = bullets.positions;
+    p[i * 3] = 0; p[i * 3 + 1] = 0; p[i * 3 + 2] = 0;
+    dir[i * 3] = math.randFloatSpread(0.4); dir[i * 3 + 1] = math.randFloat(0, 0.3); dir[i * 3 + 2] = -1;
+    life[i] = 2;
+  }
+
+  return {
+    onUpdate(dt) {
+      cooldown -= dt;
+      if (cooldown <= 0 || input.wasPressed('Space')) { fire(); cooldown = 0.05; }
+      const p = bullets.positions;
+      for (let i = 0; i < active; i++) {
+        life[i] -= dt;
+        if (life[i] <= 0) {                 // swap-remove: copy the last live row over this one
+          const last = --active;
+          p.copyWithin(i * 3, last * 3, last * 3 + 3);
+          dir.copyWithin(i * 3, last * 3, last * 3 + 3);
+          life[i] = life[last];
+          i--;
+          continue;
+        }
+        p[i * 3] += dir[i * 3] * 30 * dt; p[i * 3 + 1] += dir[i * 3 + 1] * 30 * dt; p[i * 3 + 2] += dir[i * 3 + 2] * 30 * dt;
+      }
+      bullets.setActiveCount(active);
+    },
+  };
+});
+```
+
+No objects are created or destroyed during play. `setActiveCount` draws only the live rows, so keep them at the front of the arrays. Unlit bullets need no lights. Docs: `concepts/instances`.
+
+## 6. Click to select, with an outline (0.2)
+
+```ts
+post.set({ outline: { color: '#ffcc00', width: 3 } });   // a crisp line, width in CSS pixels
+
+let selected: (typeof units)[number] | null = null;
+let clicked = false;
+for (const unit of units) {
+  unit.on('click', () => {
+    clicked = true;
+    selected?.setOutlined(false);
+    selected = unit;
+    unit.setOutlined(true);
+    page.post('selected', { name: unit.name });
+  });
+}
+// in onUpdate: a click on nothing clears the selection. Handlers run before onUpdate.
+if (input.wasReleased('Mouse0') && !clicked && selected) {
+  selected.setOutlined(false);
+  selected = null;
+}
+clicked = false;
+```
+
+A click goes to the closest object under the pointer that the camera draws. So a wall in front of a unit takes the click, and the unit behind it stays unselected. A drag that turns the camera is no click. On a model, put the handler on the group that `scene.instantiate` returns: clicks on its parts go on up to it. Each click casts its ray from the frame that was on screen, and a frame with no handlers casts none.
+
+A ray of your own skips objects that should not block, such as effects:
+
+```ts
+const PICKABLE = 1 << 1;
+const WORLD = 1 << 2;   // walls and terrain: they block the ray
+for (const u of units) u.setLayers(1 | PICKABLE);   // layer 0 stays on so cameras still draw it
+for (const wall of walls) wall.setLayers(1 | WORLD);
+const unitSet = new Set(units);
+const ray = { origin: vec3.create(), direction: vec3.create() };
+const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
+// in onUpdate:
+if (input.wasPressed('Mouse0')) {
+  camera.screenToRay(input.pointer.x, input.pointer.y, ray);
+  if (scene.raycast(ray.origin, ray.direction, { layers: PICKABLE | WORLD }, hit) && unitSet.has(hit.object)) {
+    /* select hit.object */
+  }
+}
+```
+
+The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/input` (pointer events on objects), `api/raycast`, `concepts/render-layers`, `api/post`.
+
+A hit on a mesh with texture coordinates also carries `uv`, where on the surface the ray landed, and `hasUv` says whether to read it. So a click on an in-world screen becomes a pixel of the image it shows, with no plane maths in the sketch:
+
+```ts
+screen.on('click', (event) => {
+  if (!event.hasUv) return;
+  const px = Math.floor((event.uv[0] as number) * IMAGE_WIDTH);
+  const py = Math.floor((1 - (event.uv[1] as number)) * IMAGE_HEIGHT);   // uv's y runs up
+  page.post('screenTap', { px, py });
+});
+```
+
+For a pixel-exact pick, use `scene.pick`. It tests the pixel that the camera draws, such as a thin wire or a leaf with a cut-out mask. It answers one or more frames later:
+
+```ts
+if (input.wasPressed('Mouse0')) {
+  void scene.pick(input.pointer.x, input.pointer.y).then((hit) => {
+    if (hit?.object !== target || !hit.hasUv || !hit.uv) return;
+    // The mesh's own texture coordinates, as a raycast on the same point gives them.
+    const u = hit.uv[0] as number;
+    const v = hit.uv[1] as number;
+  });
+}
+```
+
+The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. A custom material with a vertex offset is the exception: the engine's pick build repeats the offset, so that surface is picked where it draws. A blend, a transmissive material, a sprite, a point or a line answers with a raycast too. A raycast tests triangles, so it ignores masks. A pick that waits for its read when the browser takes the GPU away rejects with E1436: ask again on the new device. Docs: `api/raycast#pixel-exact-picking`.
+
+## 7. HTML labels above objects (0.2)
+
+```ts
+// sketch.ts
+ui.trackLabel(unit, `hp-${id}`, { offset: [0, 2.2, 0] });
+page.post('hp', { id, value: 80 });           // only when the value changes
+```
+
+```ts
+// page.ts: labelsLayer is a div over the canvas with position: absolute; inset: 0; pointer-events: none
+const el = document.createElement('div');
+el.id = `hp-${id}`;
+el.className = 'hp';
+labelsLayer.appendChild(el);
+const unbind = engine.labels.bind(`hp-${id}`, el);   // centers el over the label; unbind() stops it
+engine.onSketchMessage((type, d) => { if (type === 'hp') document.getElementById(`hp-${d.id}`)!.textContent = String(d.value); });
+```
+
+The sketch places each label with each frame's camera. The page moves the element over it in the frame on screen, so labels never run ahead of the image. Only value changes travel as messages. The engine sets `visibility: hidden` while the object is hidden, off the camera's layers, or outside its near and far planes. The offset turns and scales with the object, like a `CSS2DObject` child in three.js. The engine holds 4,096 labels by default (`createEngine({ maxLabels })`); more fail with E1219. Docs: `guides/ui-overlays`, `api/ui`.
+
+For a panel that turns with the scene, or text that always faces the camera, give the label a transform. The element is then a plane of the scene, and the scene's units are its CSS pixels, as with three.js's `CSS3DRenderer`. The page binds it the same way.
+
+```ts
+ui.trackLabel(panel, 'panel-name', { transform: 'world', offset: [0, 1.4, 0] });   // turns with the panel
+ui.trackLabel(head, 'title', { transform: 'billboard', rotation: 0.1 });           // faces the camera
+```
+
+The engine moves a plane's element into a container of its own inside the element's parent, and writes its matrix. Keep that parent over the canvas. Planes count against `createEngine({ maxLabels3d })`, 256 by default.
+
+To show a page under the drawn scene, start the engine with `createEngine({ transparent: true })`, put the labels' layer below the canvas, and set no background. A plane at the page writes its depth and no color with `materials.unlit({ colorWrite: false })`, so the scene behind the page never draws over it, while a glass object in front still shows the page through itself. Size the plane like the label: an element's CSS pixels are the scene's units. Docs: `guides/ui-overlays#a-page-under-the-scene`, `api/materials#invisible-surfaces-that-hide`.
+
+## 8. Loading screen with progress and warm-up
+
+```ts
+// sketch.ts
+assets.onProgress((loaded, total) =>
+  // With no length announced there is no total, so the page shows the count and no fraction.
+  page.post('loading', {
+    text: 'Downloading the scene files',
+    value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+  }),
+);
+await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
+const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
+const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
+buildLevel(scene, level, terrain);
+await scene.warmUp();                          // build every pipeline before the first frame
+```
+
+```ts
+// page.ts
+let phase = '';
+let shown = 0;
+const show = (text: string, value?: number) => {
+  if (text !== phase) { phase = text; shown = 0; } // a new phase is a new measure
+  label.textContent = text;
+  if (value === undefined) return;             // no total: hold the bar moving
+  shown = Math.max(shown, value);              // the number never moves back within a phase
+  bar.style.width = `${Math.round(shown * 100)}%`;
+};
+try {
+  const engine = await createEngine({
+    canvas,
+    sketch: new URL('./sketch.ts', import.meta.url),
+    onProgress: (stage, progress) => {
+      if (stage === 'core-download' && progress?.total)
+        show('Downloading the engine', progress.done / progress.total);
+    },
+    onSketchMessage: (type, data) => {
+      const message = data as { text?: string; value?: number };
+      if (type === 'loading') show(message.text ?? '', message.value);
+    },
+  });
+  engine.onFailure((error) => showMessage(`The scene stopped: ${error.message}`));
+  await engine.firstFrame;                     // the GPU has finished the first frame
+  loadingScreen.remove();
+} catch (error) {
+  showMessage(`This browser cannot show the scene: ${(error as Error).message}`);
+}
+```
+
+- A percentage comes from measured work. `onProgress` reports the engine core's bytes, and `assets.onProgress` reports the scene's files. A phase with no total has no percentage: keep its bar moving instead of taking a number from a timer or from the stage's place in the start. The label names the phase, so the number always measures the work that it names. The figure never falls within a phase, but it can fall across the whole start, because a later phase that counts starts a new measure.
+- `onProgress` reports `memory-wait` when the browser has refused the engine's memory for 10 s (0.2). The engine then tries for about 35 s more before E1109, so show a "taking longer than usual" message.
+- Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
+- Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
+- `createEngine` rejects when the browser cannot run the engine. Examples are Safari before 18 and every iPhone or iPad browser before iOS 18 (E1306), and a browser without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
+- `warmUp` resolves once every pipeline that the scene needs is built, hidden objects included. For a later loading stage, create its objects hidden, await it, then show them, so nothing appears late or stalls a frame. The Godot browser port measured seconds of such stalls.
+
+Docs: `guides/loading-screens`, `api/engine`.
+
+## 9. HTML settings panel that controls the scene
+
+```ts
+// page.ts (any UI library works here, including lil-gui)
+const gui = new GUI();
+const settings = { sun: 3, spin: true };
+gui.add(settings, 'sun', 0, 6).onChange((v: number) => engine.postToSketch('sun', v));
+gui.add(settings, 'spin').onChange((v: boolean) => engine.postToSketch('spin', v));
+```
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, page }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 1.5, 4], target: [0, 0, 0] }));
+  const sun = scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  const cube = scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#4a8cff' }), dynamic: true });
+  let spin = true;
+  page.onMessage((type, value) => {
+    if (type === 'sun') sun.setIntensity(value as number);
+    if (type === 'spin') spin = value as boolean;
+  });
+  return { onUpdate(dt) { if (spin) cube.rotateY(dt); } };
+});
+```
+
+UI libraries need the DOM, so they live on the page. Each change sends one message, and the sketch keeps the value until the next one. Docs: `guides/ui-overlays`, `api/page`.
+
+## 10. Day and night: sun, sky and environment (0.2)
+
+```ts
+import { timeOfDay } from '@null3d/engine';
+
+const skyLight = await assets.skyEnvironment();     // the sky's light; it follows setBackground({ sky })
+const sun = scene.createDirectionalLight({ castShadows: true });
+let hours = 15;
+let shown = -1;
+return {
+  onUpdate(dt) {
+    hours = (hours + dt / 10) % 24;                  // a 4-minute day
+    const step = Math.floor(hours * 20);              // a new time of day 2 times a second
+    if (step === shown) return;
+    shown = step;
+    const day = timeOfDay(hours);                     // sun or moon, sky, fog and exposure of the hour
+    scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.3 } }, { intensity: day.skyIntensity });
+    scene.setEnvironment(skyLight, { intensity: day.skyIntensity });
+    sun.setDirection(...day.light.direction);
+    sun.setColor(day.light.color);
+    sun.setIntensity(day.light.intensity);
+    scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
+    post.set({ exposure: day.exposure });
+  },
+};
+```
+
+`timeOfDay` returns a new object, so this updates a few times a second, not in every frame. The sky's environment takes about 20 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue. Then the sunset's sky fades into a navy night sky lit from the moon, whose disc the sky draws. Copy every field of `day.sky` each time: it holds the moon's sky as a second sky while night falls. The sky lights nothing by itself, so the sun light and the sky's environment light the scene.
+
+For a landscape, use the physical sky instead. Its air hazes far hills blue and pale, its twilight lasts after sunset, and at night it shows the moon's phase and the stars. Pass `{ model: 'physical' }`, then in place of the two `setBackground` and `setEnvironment` lines and the fog:
+
+```ts
+const day = timeOfDay(hours, { model: 'physical' });
+scene.setBackground({ atmosphere: { ...day.atmosphere, cloudCoverage: 0.3, aerialPerspective: 2 } });
+```
+
+Its `skyIntensity` is 1, so the environment takes no intensity. `aerialPerspective` scales the haze: 1 is the real air, which shows over kilometers, so a small scene takes more. Set `metersPerUnit` when the scene's units are not meters. Docs: `concepts/lighting`, `api/scene`.
+
+## 11. Physics with a library in the sketch worker
+
+```ts
+import RAPIER from '@dimforge/rapier3d-compat';
+
+await RAPIER.init();
+const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+const N = 1000;
+const crates = scene.createInstances(geometry.box({ width: 1, height: 1, depth: 1 }), N, {
+  material: materials.standard({ color: '#a0703c' }), dynamic: true,
+});
+const bodies = Array.from({ length: N }, (_, i) =>
+  world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation((i % 10) * 1.1, 5 + Math.floor(i / 10), 0)));
+bodies.forEach((b) => world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5), b));
+
+return {
+  onFixedUpdate() {
+    world.step();
+    const p = crates.positions, r = crates.rotations;
+    for (let i = 0; i < N; i++) {
+      const t = bodies[i].translation(), q = bodies[i].rotation();
+      p[i * 3] = t.x; p[i * 3 + 1] = t.y; p[i * 3 + 2] = t.z;
+      r[i * 4] = q.x; r[i * 4 + 1] = q.y; r[i * 4 + 2] = q.z; r[i * 4 + 3] = q.w;
+    }
+  },
+};
+```
+
+WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`. Physics in the sketch only moves what the player sees. A game whose server replays its simulation keeps the physics that decides a result in that simulation (recipe 25).
+
+## 12. Minimap with a second camera (0.2)
+
+```ts
+const MAP = 1 << 2;                                    // layer for map-only markers
+const mapCamera = scene.createOrthographicCamera({ height: 200, near: 1, far: 500, position: [0, 300, 0] });
+mapCamera.setRotationEuler(-Math.PI / 2, 0, 0);        // look straight down, north at the top
+mapCamera.setLayers(1 | MAP);
+const pass = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const map = materials.unlit({ map: textures.fromPass(pass) });
+// Show `map` on a screen in the world. The pass leaves the screen out of the map by itself.
+```
+
+To save GPU time, draw the map every few frames: `render.setPassEvery(pass, 4)`. Do not pace it with the switch. A pass that has never drawn is out of the plan while it is off, so switching it on compiles the render graph. Once it has drawn, the switch only skips its recording. `setPassEvery` compiles nothing at any time. For a view of the scene shown on the canvas itself, use `scene.createView({ camera, rect })` instead. It draws after the camera's view, into a rectangle of the canvas, for a split screen or a picture in picture. Each view culls the scene again and costs one more scene draw at its rectangle's pixels. Docs: `guides/multiple-views`, `guides/custom-passes`, `api/render`.
+
+## 13. Screenshots
+
+```ts
+// page.ts
+shotButton.onclick = async () => {
+  const blob = await engine.capture();          // the next frame, as a PNG
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'shot.png' });
+  a.click();
+};
+```
+
+The thread that draws reads the frame back and encodes it, so the canvas needs no `preserveDrawingBuffer`. After `destroy()` the call fails with E1414. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
+
+## 14. Video on a surface (0.3)
+
+A video element lives on the page. `engine.registerVideo` follows it there, and `textures.fromVideo` in the sketch shows it. The page sends one `ImageBitmap` per frame that the video presents, scaled to `maxSize`. The engine closes the image once it is on the GPU:
+
+```ts
+// page.ts
+const video = Object.assign(document.createElement('video'), { src: '/intro.mp4', muted: true, loop: true, playsInline: true });
+// In the page but out of sight: an element that display: none hides may give no frame.
+Object.assign(video.style, { position: 'absolute', left: '-10000px', width: '1px', height: '1px' });
+document.body.append(video);
+engine.registerVideo(video, { name: 'intro', maxSize: 512 });   // 512 x 288: 576 KiB a frame
+await video.play();                                             // muted, so no click is needed
+```
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, textures }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 0, 1.6], target: [0, 0, 0] }));
+  // The first frame gives the texture its size. Create it at setup, so no pipeline compiles during play.
+  const screen = textures.fromVideo('intro', { mipmaps: false });
+  scene.createMesh({ mesh: geometry.plane({ width: 16 / 9, height: 1 }), material: materials.unlit({ map: screen }) });
+});
+```
+
+Keep a frame within the preset's upload budget, 2 MiB on Low: a frame larger than that drops the frames that come during its upload. A video with sound needs a click before it plays. `texture.destroy()` or the function that `registerVideo` returns stops the frames. A cross-origin video needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Docs: `guides/video-textures`, `api/textures`.
+
+## 15. A screen drawn on a canvas (0.2)
+
+An `OffscreenCanvas` is a texture, and a refresh uploads only the rectangle that changed. A score board is 512 square texels, and the score's rectangle refreshes at most 30 times a second.
+
+```ts
+const canvas = new OffscreenCanvas(512, 512);
+const context = canvas.getContext('2d', { willReadFrequently: true })!;   // cheap pixel reads
+const board = textures.fromCanvas(canvas, { refreshHz: 30 });
+context.fillStyle = '#0c1420';
+context.fillRect(0, 0, 512, 512);
+context.font = 'bold 88px sans-serif';
+scene.createMesh({ mesh: geometry.plane({ width: 2.2, height: 2.2 }), material: materials.unlit({ map: board }) });
+// In onUpdate, when the score changes, paint the score's rectangle and refresh only that part:
+context.fillRect(32, 32, 448, 96);
+context.fillText(String(score), 32, 32);
+board.refresh({ x: 32, y: 32, width: 448, height: 96 });                  // uploads only those texels
+```
+
+The rectangle counts from the canvas's top-left corner. `fromCanvas` puts the canvas's last row at the bottom of a plane, so the canvas stands upright. `refreshHz` caps the canvas reads. A call that comes sooner reads nothing. The next read covers both rectangles. A 256 x 256 rectangle is 256 KiB, well within the upload budget at 30 Hz. Ask for the 2D context with `willReadFrequently: true`. Docs: `api/textures#canvases`, `cookbook/index`.
+
+The screens example add-on in `examples/addons/screens` wraps this pattern: `createScreen` draws its first picture in the setup, adds a refresh rate per screen, an LCD look by distance, a boot glitch, and `screen.pointOf(event)` for a click on the canvas. A screen's mesh is a plane with texture coordinates, so a click on it lands on a canvas pixel without plane maths. Docs: `guides/screens`.
+
+## 16. Custom full-screen effect (0.2)
+
+```ts
+const pixelate = /* wgsl */ `
+  struct Uniforms { size: f32 }
+
+  fn effect(input: EffectInput) -> vec4f {
+    let px = max(uniforms.size, 1.0);
+    let center = (floor(input.pixel / px) + 0.5) * px;   // the middle of this pixel's block
+    return effectColor(center / input.size);
+  }`;
+
+const blocks = post.addEffect({ wgsl: pixelate, uniforms: { size: 4 } });
+post.setEffectUniform(blocks, 'size', 8);
+```
+
+The effect runs on HDR color before bloom and the tone curve. The engine joins an effect that reads only its own pixel into the pass of the effect before it, and folds the last pass into the final pass when bloom and FXAA are off, so per-pixel looks can stay separate effects. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
+
+## 17. Very large worlds (0.2)
+
+```ts
+// page.ts
+await createEngine({ canvas, sketch, largeWorld: true });
+```
+
+```ts
+// sketch.ts: keep vertex data small; put large coordinates in object positions and batch origins
+const tileCenter = computeTileCenterEcef(x, y, zoom);          // JavaScript numbers are 64-bit
+const tile = scene.createMesh({ mesh: buildTileRelativeTo(tileCenter), material });
+tile.setPosition(tileCenter[0], tileCenter[1], tileCenter[2]); // stored as a cell plus a small offset
+
+const trees = scene.createInstances(treeMesh, 5000, { material: bark, origin: tileCenter });
+// trees.positions rows are relative to the origin, so they stay small and precise
+```
+
+The engine stores positions relative to cells 1,024 m wide, and each frame it sends the GPU one camera-to-cell offset per cell in use. So objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. With `largeWorld: true`, setters keep each position exact: without it, a position you set moves in steps of 0.5 m at the Earth's radius. Batch origins work in both modes. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. At most 512 cells are in use at once: keep thinly spread content under a few parents, which share their root's cell. When they run out, the console warns once, and new far content jitters. Docs: `concepts/large-worlds`.
+
+## 18. Move a player with keys, a gamepad or touch
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, input }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 4, 10], target: [0, 0, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  const player = scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
+    material: materials.standard({ color: '#4a8cff' }),
+    dynamic: true,
+  });
+  input.actions.define({
+    left: ['KeyA', 'ArrowLeft', 'GamepadLeftStickLeft', 'GamepadDpadLeft'],
+    right: ['KeyD', 'ArrowRight', 'GamepadLeftStickRight', 'GamepadDpadRight'],
+    jump: ['Space', 'GamepadA'],
+  });
+  let x = 0, y = 0, vy = 0, fingers = 0;
+  return {
+    onUpdate(dt) {
+      let steer = input.value('right') - input.value('left');            // -1 to 1
+      // Touch: a finger on the left or right half steers, and a second finger jumps.
+      if (input.pointer.isTouch && input.isDown('Mouse0')) steer = input.pointer.ndcX < 0 ? -1 : 1;
+      const secondFinger = input.touches.length === 2 && fingers < 2;
+      fingers = input.touches.length;
+      if (y === 0 && (input.wasPressed('jump') || secondFinger)) vy = 6;
+      vy -= 20 * dt;
+      y = Math.max(0, y + vy * dt);
+      if (y === 0) vy = 0;
+      x += steer * 5 * dt;
+      player.setPosition(x, y + 0.5, 0);
+    },
+  };
+});
+```
+
+An action names the keys and buttons for one move, so keyboard and gamepad players share one code path. With `value`, a stick pushed part of the way steers slowly, and a key steers at full speed. Touch has no keys: the first finger presses `Mouse0` and moves `input.pointer`, and `input.touches` lists every finger. Give the canvas `touch-action: none` in the page's CSS, or the browser scrolls the page and cancels the touches. Input changes once per frame, before `onUpdate`, and a tap shorter than a frame still counts as a press. Docs: `api/input`.
+
+## 19. Camera that follows a moving object
+
+```ts
+import { defineSketch, vec3 } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, input }) => {
+  const camera = scene.createPerspectiveCamera({ fov: 50 });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  const player = scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
+    material: materials.standard({ color: '#4a8cff' }),
+    dynamic: true,
+  });
+  const at = vec3.create();                  // scratch arrays, made once
+  const eye = vec3.create();
+  const offset = vec3.create();
+  vec3.set(offset, 0, 4, 10);                // above and behind the player
+  let x = 0;
+  return {
+    onUpdate(dt) {
+      x += (input.value('ArrowRight') - input.value('ArrowLeft')) * 5 * dt;
+      player.setPosition(x, 0.5, 0);
+    },
+    onLateUpdate() {
+      player.getWorldPosition(at);           // this frame's position, after onUpdate moved it
+      vec3.add(eye, at, offset);
+      camera.setPosition(eye[0], eye[1], eye[2]);
+      camera.lookAt(at[0], at[1], at[2]);
+    },
+  };
+});
+```
+
+`onLateUpdate` runs after the engine updates transforms and before it culls and draws. So `getWorldPosition` gives the player's place in this frame, and the camera's move shows in the same frame. In `onUpdate` the same code reads the previous frame's place. The camera then trails the player by a frame, which shows as jitter at speed. For a softer follow, keep the camera's own position in a vector. Ease it toward `eye` with `vec3.lerp` and the factor `1 - Math.exp(-lambda * dt)`, where `dt` is the argument that `onLateUpdate` gets. Docs: `api/sketch`, `api/time`.
+
+## 20. Water and mirror floors with a reflection
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+const water = /* wgsl */ `
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+struct Uniforms { ripple: f32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz;
+    let slope = vec2f(cos(p.x * 3.1 + frame.time * 1.3), cos(p.y * 4.7 + frame.time * 1.9)) * material.ripple;
+    s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let uv = reflection_uv(clip, s.normal.xz * 0.05);   // the ripples bend the reflection
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, 1.0);
+    return s;
+}
+`;
+
+export default defineSketch(({ scene, geometry, materials, textures, render }) => {
+  scene.setBackground({ sky: { sunPosition: [0.4, 1, 0.5] } });
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 2.5, 8], target: [0, 0.5, 0] }));
+  scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
+  scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#e03030' }), position: [0, 0.5, 0] });
+  // The camera's view mirrored across the water's plane; nothing below the plane shows in it.
+  const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point: [0, 0, 0] } });
+  const surface = materials.shader({
+    wgsl: water,
+    color: '#0b2a33',
+    roughness: 0.05,
+    uniforms: { ripple: 0.08 },
+    textures: { mirror: textures.fromPass(pass) },
+  });
+  const plane = scene.createMesh({ mesh: geometry.plane({ width: 30, height: 30 }), material: surface });
+  plane.setRotationEuler(-Math.PI / 2, 0, 0);
+  return {};
+});
+```
+
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. A slow stream takes a small `waveAmplitude`, which leaves the surface nearly flat while its fine ripples stay. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
+
+## 21. Fire, smoke and sparks with particles
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { createParticles, particleTextures } from '@null3d/particles';
+
+export default defineSketch(async (ctx) => {
+  const { scene, geometry, materials, textures, post } = ctx;
+  post.set({ bloom: { intensity: 0.4, threshold: 1 } });
+  scene.setBackground('#10131a');
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 1.8, 5], target: [0, 0.8, 0] }));
+  scene.createAmbientLight({ intensity: 0.3 });
+  const ground = scene.createMesh({ mesh: geometry.plane({ width: 20, height: 20 }), material: materials.standard({ color: '#2a2622' }) });
+  ground.setRotationEuler(-Math.PI / 2, 0, 0);
+  const fire = await createParticles(ctx, {
+    ...particleTextures.flame(textures),
+    rate: 60,
+    lifetime: [0.5, 0.8],
+    shape: { type: 'cone', radius: 0.25, angle: 0.2 },
+    speed: [0.8, 1.4],
+    size: [0.5, 0.7],
+    sizeOverLife: [1, 0.7, 0.2],
+    colors: ['#ffb35c', '#ff7a2a'],
+    intensity: 4,
+    alphaOverLife: [0, 1, 0],
+    softness: 0.3,
+  });
+  const smoke = await createParticles(ctx, {
+    ...particleTextures.smoke(textures),
+    blending: 'normal',
+    position: [0, 0.8, 0],
+    rate: 10,
+    lifetime: 4,
+    shape: { type: 'disc', radius: 0.2 },
+    speed: 0.6,
+    drag: 0.5,
+    wind: [0.4, 0.5, 0],
+    turbulence: 0.3,
+    size: [0.6, 0.8],
+    sizeOverLife: [0.6, 2.5],
+    colors: ['#3a3a40', '#2c2c30'],
+    alphaOverLife: [0, 0.5, 0],
+  });
+  const sparks = await createParticles(ctx, {
+    ...particleTextures.spark(textures),
+    rate: 30,
+    lifetime: [1, 1.6],
+    shape: { type: 'cone', radius: 0.2, angle: 0.5 },
+    speed: [1.5, 3],
+    gravity: [0, -2, 0],
+    turbulence: 0.2,
+    facing: 'velocity',
+    stretch: 0.05,
+    size: [0.02, 0.03],
+    colors: ['#ffb347', '#ff8c30'],
+    intensity: 6,
+    colorOverLife: ['#ffffff', '#ff5020'],
+    alphaOverLife: [1, 0],
+  });
+  const systems = [fire, smoke, sparks];
+  return {
+    onLateUpdate() {
+      for (const system of systems) system.update();
+    },
+  };
+});
+```
+
+Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.
+
+## 22. Terrain from a height field
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { createTerrain, terrainTextures } from '@null3d/terrain';
+
+/** Hills with a valley that runs along z, in meters. */
+const ground = (x: number, z: number) =>
+  30 * Math.sin(x * 0.012) * Math.cos(z * 0.01) + 8 * Math.sin(x * 0.05 + z * 0.03) +
+  -20 * Math.exp(-(z * z) / (2 * 220 * 220));
+
+export default defineSketch((ctx) => {
+  const { scene, textures } = ctx;
+  const camera = scene.createPerspectiveCamera({ fov: 55, near: 0.5, far: 4000, position: [0, 60, 320] });
+  camera.lookAt(0, 10, 0);
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-0.5, -1, -0.35], intensity: 3, castShadows: true, shadow: { distance: 260 } });
+  scene.createAmbientLight({ intensity: 0.5 });
+
+  const layers = terrainTextures(textures, { size: 128, seed: 7 });
+  const terrain = createTerrain(ctx, {
+    size: 1000,
+    height: ground,
+    resolution: 256,
+    layers: [
+      { map: layers.grass, tile: 6, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.soil, tile: 10, roughness: 1, heightFrom: 'alpha' },
+      { map: layers.rock, tile: 7, roughness: 0.85, heightFrom: 'alpha' },
+      { map: layers.snow, tile: 12, roughness: 0.7, heightFrom: 'alpha' },
+    ],
+    maxLevel: 6,
+    camera,
+  });
+
+  // Seat an object on the ground with heightAt, since the terrain carries no collision.
+  const at = [120, 0, -60];
+  scene.createMesh({
+    mesh: ctx.geometry.sphere({ radius: 3, widthSegments: 10, heightSegments: 6 }),
+    material: ctx.materials.standard({ color: '#6d6559', roughness: 0.95, flatShading: true }),
+    position: [at[0], terrain.heightAt(at[0], at[2]) + 3, at[2]],
+    castShadows: true,
+    receiveShadows: true,
+  });
+
+  const eye = [0, 0, 0];
+  return {
+    onUpdate() {
+      // The ground follows the camera: fine blocks near it, coarse blocks far away.
+      camera.getWorldPosition(eye);
+      terrain.update(eye);
+    },
+  };
+});
+```
+
+The quadtree splits a block by the screen error of its cells. The camera's position, field of view and the preset's `lodThreshold` set that error, so a still camera costs no work. The quadtree walk and the block build run in the add-on's WebAssembly module on the engine's job workers. The thread that runs the sketch only starts them. Every pixel lights from normals that the add-on bakes over the ground, so the far hills keep their relief. Set `bakedNormals: false` to light from the mesh's own normals. Read `heightAt` and `normalAt` to place objects, and call `terrain.destroy()` to free the ground. The layers blend by a splat map that the add-on fills from the height and the slope by default. Each layer's own height pushes it through its neighbours at a boundary, and `contrast` sets how strongly. Give `splat` to paint the weights yourself. Each block also morphs toward its parent block's surface before it hands over, so the ground does not pop as the camera moves; `morph: false` switches each block at once. Docs: `api/terrain`.
+
+## 23. Outdoor land with an edge the camera never sees
+
+The background takes no fog. So past the edge of the land, the camera sees the plain background below the horizon, and fog cannot hide it. Hide the edge with geometry, and keep the camera inside it:
+
+```ts
+import { createOrbitControls } from '@null3d/controls';
+
+const controls = createOrbitControls(ctx, camera, {
+  target: [0, 2, 0],
+  enableDamping: true,
+  maxDistance: 60,       // the target's highest point plus this stays below the ring's lowest crest
+  maxPolarAngle: 1.85,   // a little past level; the ground clamp stops the camera lower down
+});
+```
+
+- A ring of hills or mountains stands around the land. Its lowest crest stands above the highest point the camera can reach, so every line of sight below the horizon meets ground.
+- After `controls.update(dt)`, move `controls.target` back inside the land when a pan takes it out, and move the camera by the same amount. Lift a camera that dips under the ground along its orbit, at the same distance from the target. Then a push against the ground never pulls it closer.
+- Where a valley must run out of the scene, stand a row of unlit, blended sheets across its far end, in the fog's color. Each hides more than the one before. Give them `fog: false` and `depthWrite: false`.
+- Give far scenery `receiveShadows: false`. The automatic shadow distance measures to the far side of each receiver's bounds, so a far mountain that receives shadows makes the near shadows coarse.
+
+Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haze sheets in code, `api/controls`, `concepts/shadows`.
+
+## 24. Trees that sway in the wind
+
+null3D has no plant generator. Draw trees from a glTF model, such as one exported from Blender, or from a mesh that you build in code. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling.
+
+To make the trees sway, give them one custom material whose vertex offset reads the wind add-on's field:
+
+```ts
+import type { Camera, SketchContext } from '@null3d/engine';
+import { createWind } from '@null3d/wind';
+
+/** The distance from the camera out to which the trees move, in meters. */
+const SWAY_DISTANCE = 120;
+
+/** Copies of one tree from a glTF file, swaying in the wind. Call `update` in each frame. */
+export async function swayingTrees(
+  ctx: SketchContext,
+  camera: Camera,
+  wgsl: string, // the wind page's sampling blocks, then a vertexOffset that reads the uniforms
+  url: string,
+  count: number,
+) {
+  const wind = createWind(ctx, { camera, box: 256 });
+  const { field } = wind;
+  const sway = ctx.materials.shader({
+    wgsl,
+    // Past this distance the offset is zero, so far trees and their cached shadows stand still.
+    swayDistance: SWAY_DISTANCE,
+    textures: { wind: field.texture },
+    uniforms: {
+      origin: field.origin,
+      size: field.size,
+      layer: field.texture.layer,
+      base: field.air.base,
+      gust: field.air.gust,
+      swirl: field.air.swirl,
+      sent: field.air.sent,
+      swayDistance: SWAY_DISTANCE,
+    },
+  });
+  const model = await ctx.assets.loadGltf(url);
+  const mesh = model.find('Tree')?.mesh;
+  if (!mesh) throw new Error(`${url} has no node named Tree with a mesh`);
+  // One batch for the species: write each copy's place, turn and size into its rows.
+  const trees = ctx.scene.createInstances(mesh, count, { material: sway });
+  return {
+    trees,
+    update() {
+      // The field steps first, then the material takes its newest layer and the box's place.
+      wind.update();
+      sway.setUniform('layer', field.texture.layer);
+      sway.setUniform('origin', field.origin);
+      sway.setUniform('sent', field.air.sent);
+    },
+  };
+}
+```
+
+- Copy the two sampling blocks from the wind page into the material's WGSL, ahead of its `vertexOffset`.
+- In `vertexOffset`, read the air at the tree's root, `object.position`, with `wind_reading` and `wind_sample`. Bend each vertex by its height share squared, so the foot stays put.
+- Fade the offset to nothing by `swayDistance`, and declare the same distance on the material. A far tree then stands still, and the far shadow cascades stay cached.
+- Past the last level, draw the far trees as cards from `@null3d/impostors`.
+- `handOverToCards(meshes, cards.batch, switchDistance)` sets the distance bands of the meshes and the cards. A tree then moves from its mesh to its card with one dither.
+
+To cover a hill with grass, use `@null3d/grass`. Await `createGrass(ctx, { height, area, count, seed, mask, wind, camera })` in the sketch's setup. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. Give the drawing `camera` to cull the tiles outside its view and thin the far tufts, whose blades widen so the cover stays the same, and each view, a shadow cascade included, then culls the kept list to its own box. On WebGPU a compute pass builds the blade list and writes its count; WebGL2 fills one instance batch for each tuft shape. The grass casts and receives the sun's shadows, and `swayDistance` stops the blades past that distance so a far cascade that only the grass reaches stays cached. Take it from `swayDistanceFor(quality.preset)` in the same package, and give `grass.setSwayDistance` the new one when the preset changes.
+
+Docs: `api/wind` (the sampling blocks and the vertex offset), `api/impostors`, `concepts/instances`, `api/grass`.
+
+## 25. A game whose simulation a server replays (0.3)
+
+The rules run in a simulation that steps by ticks from a seed and an input log, which a server replays to check a score. The simulation takes its math from the maths entry, and builds the helpers that need a sine or an exponential on an exact math library:
+
+```ts
+// sim.ts: no null3D import but the maths entry, and no page API
+import { createMath } from '@null3d/engine/math';
+import * as quat from '@null3d/engine/math/quat';
+import * as vec3 from '@null3d/engine/math/vec3';
+import { acos, cos, exp, sin } from '@clockwork2/engine/dmath'; // named, so the bundle keeps four functions
+
+const exact = createMath({ sin, cos, acos, exp }); // once: it allocates the helpers
+const turn = quat.create();
+const forward = vec3.create();
+export const state = { position: vec3.create(), heading: quat.create(), speed: 0 };
+
+export function tick(input: { turn: number; thrust: number }): void {
+  exact.quat.setAxisAngle(turn, [0, 1, 0], input.turn * 0.05);
+  quat.multiply(state.heading, state.heading, turn);
+  state.speed = exact.math.damp(state.speed, input.thrust * 12, 4, 1 / 60);
+  vec3.transformQuat(forward, [0, 0, -1], state.heading);
+  vec3.scaleAndAdd(state.position, state.position, forward, state.speed / 60);
+}
+```
+
+The page starts the engine with its listening off, because another library records the input, and sends the state to the sketch after each tick:
+
+```ts
+// page.ts
+const engine = await createEngine({ canvas, sketch: new URL('./sketch.ts', import.meta.url), input: false });
+// After each tick of the simulation:
+engine.postToSketch('state', { position: [...state.position], heading: [...state.heading] });
+```
+
+```ts
+// sketch.ts, in the setup: draw the latest state; decide nothing here
+const position = vec3.create();
+const heading = quat.create();
+page.onMessage((name, data) => {
+  if (name !== 'state') return;
+  const next = data as { position: number[]; heading: number[] };
+  vec3.copy(position, next.position);
+  quat.copy(heading, next.heading);
+});
+// In onUpdate: ship.setPosition(position[0], position[1], position[2]); ship.setRotation(heading[0], heading[1], heading[2], heading[3]);
+```
+
+- Never import `@null3d/engine` in the simulation. Its bundle holds engine code with a top-level `FinalizationRegistry`, so a replaying engine's scan refuses it. A bundler that keeps namespaces whole also brings `Math.sin` and `Math.random` (`references/testing-and-debugging.md`, section 8).
+- The sub-paths `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math` hold the exact helpers. `createMath` builds `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The random helpers and `color` are drawing only.
+- Input, pointer events on objects, raycasts, controls and physics in the sketch are not in the input log. Anything that decides a result runs in the simulation: hit-test the recorded pointer against the simulation's own shapes, with its own camera.
+- The sketch draws the state it gets, with the main entry's helpers. It never computes the state again: an exact library and `Math` can differ in the last bit.
+- The state goes to the sketch once per tick, where rule 7 of the skill keeps other messages rare. Send only the numbers that the sketch draws, in a small typed array, and a new one each time. A display can draw more frames than there are ticks. Send the last two ticks' poses and how far the frame is between them, and blend them in the sketch with `vec3.lerp` and `quat.slerp`.
+- `engine.requestPointerLock()` fails with E1426 on an engine with `input: false`. A development build warns once for each kind when the sketch reads `ctx.input`, gives an object a pointer event handler or imports `@null3d/controls`.
+
+When the result depends on where the player looks, the look is input and the camera is the simulation's. The page locks the pointer itself and records the mouse's movement each tick, as whole counts. The simulation turns the counts into a yaw and a pitch, and the sketch sets its camera to the pose in the state. The examples' deterministic simulation demo (`examples/replay/`) plays and replays a run this way:
+
+```ts
+// page.ts: the page's own lock, and whole counts in the log
+canvas.addEventListener('click', () => canvas.requestPointerLock());
+let turn = 0;
+canvas.addEventListener('pointermove', (event) => {
+  if (document.pointerLockElement === canvas) turn += event.movementX;
+});
+// In each tick: a browser can report a fraction of a pixel, so the fraction waits for the next tick
+const counts = Math.trunc(turn);
+turn -= counts;
+log.push(counts);
+step(state, counts);
+```
+
+```ts
+// sim.ts: the camera's rotation, with createMath's exact helper
+state.yaw = math.euclideanModulo(state.yaw - counts * 0.0024, 2 * Math.PI);
+exact.quat.fromEuler(state.look, state.pitch, state.yaw, 0, 'YXZ');
+```
+
+To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A small scene drew with 5 words, and its folder held 297 files, 4.7 MB after Brotli. The 172 words of null3D's examples make a folder of 226 MB. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
+
