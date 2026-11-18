@@ -1,6 +1,6 @@
 // The public names of the plant core's page side: preparing a species, its materials, placing its
-// copies, the hand-over to far cards and the scene's near pool.
-export { handOverToCards } from './hand-over';
+// copies, the hand-over to far cards, which the impostors add-on holds, and the scene's near pool.
+export { handOverToCards } from '@null3d/impostors';
 export {
 	type PlantMaterial,
 	type PlantMaterialOptions,

@@ -28,6 +28,17 @@ import { IMAGE_RUNS } from './manifest.ts';
 
 test.describe.configure({ mode: 'parallel' });
 
+// A plant picks its card level by the crown's size on the screen, and the row scales each copy with
+// its distance so that every crown covers the same share of the frame. All three crowns therefore
+// draw one card level, and the measure compares that level with itself: the honest crowns read
+// within 3 per cent of each other, and neither proving control moves the far crown from the near
+// one (the sparse grow reads 0.998 of it, the solid cards 0.997). The checks stand off until the
+// row draws each level by force, on the card levels of the vegetation work in pull request 554.
+test.fixme(
+	true,
+	'the three crowns draw one card level, so the measure compares a level with itself; the row draws each level by force with the card-level work of pull request 554',
+);
+
 /** The image test that the spec reads. */
 const NAME = 'plant-coverage';
 

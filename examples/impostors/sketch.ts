@@ -4,8 +4,12 @@
 // draws in one call. The far band is one batch of impostor cards baked from the pine's own mesh,
 // handing over from meshes to cards through a shared band. Press L for detail meshes instead.
 import { defineSketch, timeOfDay } from '@null3d/engine';
-import { createImpostors, farCellGroups, mergeFarGeometry } from '@null3d/impostors';
-import { handOverToCards } from '@null3d/vegetation';
+import {
+	createImpostors,
+	farCellGroups,
+	handOverToCards,
+	mergeFarGeometry,
+} from '@null3d/impostors';
 import { interact } from '../lib/interact';
 import {
 	BAND_OVERLAP,

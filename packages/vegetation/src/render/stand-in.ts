@@ -11,7 +11,7 @@ import type {
 	SketchContext,
 	Texture,
 } from '@null3d/engine';
-import { createImpostors, type ImpostorBatch } from '@null3d/impostors';
+import { createImpostors, handOverToCards, type ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart, QuantisedArrays, SpeciesKitData } from '../asset';
 import type { SpeciesBox } from '../core/box';
 import type { Species, SpeciesModule } from '../core/record';
@@ -19,7 +19,6 @@ import { barkColourOf } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { TEXTURE_UV_STEPS, WOOD_UV_STEPS } from '../lod/quantise';
 import { buildKit } from '../tasks';
-import { handOverToCards } from './hand-over';
 import type { PlantMaterials } from './material';
 import type { NearPool } from './near-pool';
 import { type PlacedPlants, type PlaceOptions, type PlantCopies, switchScale } from './place';
