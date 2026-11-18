@@ -121,8 +121,8 @@ Rejected:
   pictures, the atlas, leaf card, coverage, wind and impostor plant pictures, and the specs, pages
   and device plans that only it used. The species and the core's far cards and near pool bring their own
   tests back on the new core.
-- `docs/api/vegetation.md` describes the core and says that the species are being rebuilt.
-  `docs/api/vegetation-species.md` is generated.
+- `packages/vegetation/docs/api.md` describes the core and says that the species are being rebuilt.
+  `packages/vegetation/docs/species.md` is generated.
 - The shipped textures live in their own package, `@null3d/vegetation-textures`, one folder per
   species, so a code update carries none of them. The package is private until its first species
   ships textures.

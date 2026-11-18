@@ -5,6 +5,8 @@
 // One list, because the two halves of it must agree: a file that the unit run leaves out and no
 // runner names runs nowhere, and a file that a runner names without the unit run leaving it out
 // runs twice.
+import { isVegetationFile, vegetationOn } from '../../tools/lib/vegetation-switch.ts';
+
 export interface HeavyCheck {
 	/** The test file, relative to the repository. */
 	readonly file: string;
@@ -16,20 +18,7 @@ export interface HeavyCheck {
 	 * own; a check without parts has none.
 	 */
 	readonly env?: Readonly<Record<string, string>>;
-	/**
-	 * The CI job that runs the check, for a check that takes most of a job's time limit on its own:
-	 * each such job runs beside the others, so a slow machine keeps every one under its limit. A
-	 * check without one runs in the engine's job.
-	 */
-	readonly job?: HeavyJob;
 }
-
-/** The CI jobs that share the heavy checks, each named in the workflow's matrix. */
-export const HEAVY_JOBS = ['engine', 'plant-budget', 'plant-caps'] as const;
-export type HeavyJob = (typeof HEAVY_JOBS)[number];
-
-/** The variable that names the CI job whose checks a run takes; without it, a run takes them all. */
-export const JOB_ENV = 'NULL3D_HEAVY_JOB';
 
 /**
  * The variable that names the part of a check's work that its process runs, as `part/parts`. A
@@ -38,6 +27,10 @@ export const JOB_ENV = 'NULL3D_HEAVY_JOB';
  */
 export const PART_ENV = 'NULL3D_CHECK_PART';
 
+/**
+ * The checks. The vegetation add-on's join only with its switch on: the add-on is a work in progress
+ * that no CI job checks (D-378).
+ */
 export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// The whole generated set beside the text the tests read their counts from. The set grows with
 	// each feature that adds builds, and shares of it are held while the check runs: CI measured
@@ -100,14 +93,12 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// MiB in one run and 3,833 in another, near the unit run's own ceiling and most of a local unit
 	// run's time, so it takes a process and a ceiling of its own. The ceiling leaves about a fifth
 	// above the higher measurement for a busier machine.
-	// CI measured 394 s on one runner and 617 s on a slower one, so it takes a job of its own.
-	{ file: 'packages/vegetation/src/lod/budget.test.ts', ceilingMiB: 4608, job: 'plant-budget' },
+	{ file: 'packages/vegetation/src/lod/budget.test.ts', ceilingMiB: 4608 },
 	// The owner's byte caps over eleven seeds: every variant of each, at every tier, which builds a kit
 	// for each tier and grows a tree for each variant. The unit run sweeps one seed and this one the
-	// rest, and the whole measures 247 MiB and 55 s on the Mac. CI measured 280 s on one runner and
-	// more than 340 s on a slower one, so it takes a job of its own.
-	{ file: 'packages/vegetation/src/core/caps-heavy.test.ts', ceilingMiB: 512, job: 'plant-caps' },
-];
+	// rest, and the whole measures 247 MiB and 55 s on the Mac.
+	{ file: 'packages/vegetation/src/core/caps-heavy.test.ts', ceilingMiB: 512 },
+].filter(({ file }) => vegetationOn() || !isVegetationFile(file));
 
 /**
  * The pattern that `bun test --path-ignore-patterns` takes to leave one check's file out of a run.

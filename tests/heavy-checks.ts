@@ -10,11 +10,12 @@
 // Each process gets a memory ceiling of its own, which is the peak its check measured with room for
 // a busier machine, so a check that grows past its need stops with a message that names the ceiling
 // rather than taking the machine's memory. Split a check that reaches its ceiling; the guide says
-// how. CI shares the checks between parallel jobs, and each job runs those that the job variable
-// names; a run without it runs them all.
+// how. `--vegetation` runs the vegetation add-on's checks alone, which `bun run test:vegetation`
+// asks for with the add-on's switch on.
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { HEAVY_CHECKS, HEAVY_JOBS, type HeavyJob, JOB_ENV } from './lib/heavy-checks.ts';
+import { isVegetationFile } from '../tools/lib/vegetation-switch.ts';
+import { HEAVY_CHECKS } from './lib/heavy-checks.ts';
 import { budgetNote, checkTimeoutMs, LOAD_FACTOR_ENV, loadFactor } from './lib/run-budget.ts';
 import { exactTestPath } from './lib/test-paths.ts';
 
@@ -23,16 +24,10 @@ const ROOT = join(import.meta.dirname, '..');
 /** The preload that reads a run's memory and stops it past its ceiling. */
 const CEILING = './tests/lib/memory-ceiling.ts';
 
-const job = process.env[JOB_ENV];
-if (job && !HEAVY_JOBS.includes(job as HeavyJob)) {
-	console.error(
-		`heavy-checks: ${JOB_ENV} names no job: ${job}. It takes ${HEAVY_JOBS.join(', ')}.`,
-	);
-	process.exit(1);
-}
-const checks = job ? HEAVY_CHECKS.filter((check) => (check.job ?? 'engine') === job) : HEAVY_CHECKS;
-
 let failed = 0;
+const checks = process.argv.includes('--vegetation')
+	? HEAVY_CHECKS.filter(({ file }) => isVegetationFile(file))
+	: HEAVY_CHECKS;
 for (const { file, ceilingMiB, env } of checks) {
 	const started = Date.now();
 	const factor = loadFactor();

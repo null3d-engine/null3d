@@ -1,0 +1,18 @@
+{
+	// The vegetation add-on's own pages, which the pages' project leaves out: the add-on is a work in
+	// progress that no CI job checks (D-378). `bun run test:vegetation` checks this project.
+	"extends": "./tsconfig.json",
+	"include": [
+		"plant-*.ts",
+		"leaves-wind-cost.ts",
+		"tree-generation.ts",
+		"vegetation-scatter.ts",
+		"sketches/plant-*.ts",
+		"sketches/leaves-wind-cost-sketch.ts",
+		"lib/plant-*.ts",
+		"lib/plant-review/**/*.ts",
+		"lib/tree-generation-worker.ts",
+		"lib/creek-rules.ts"
+	],
+	"exclude": []
+}

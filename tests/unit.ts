@@ -11,6 +11,9 @@
 // close to half of that. The lanes are held at two: each group may reach the memory ceiling, so each
 // lane can add a run's worth of memory, and the queue's booking for the run covers two.
 //
+// `--vegetation` runs the vegetation add-on's groups alone, which `bun run test:vegetation` asks for
+// with the add-on's switch on.
+//
 // The checks that hold gigabytes are not here; `bun run test:heavy` runs them in processes of their
 // own, one at a time, because a process that holds one of them holds it for good.
 import { spawn } from 'node:child_process';
@@ -18,7 +21,7 @@ import { join } from 'node:path';
 import { HEAVY_CHECKS, ignorePatternOf } from './lib/heavy-checks.ts';
 import { budgetNote, checkTimeoutMs, LOAD_FACTOR_ENV, loadFactor } from './lib/run-budget.ts';
 import { exactTestPath } from './lib/test-paths.ts';
-import { UNIT_GROUPS, type UnitGroup } from './lib/unit-groups.ts';
+import { UNIT_GROUPS, type UnitGroup, vegetationUnitGroups } from './lib/unit-groups.ts';
 
 /** The repository, which the groups' paths are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -29,6 +32,8 @@ const CEILING_MIB = 4096;
 /** How many groups run at once. */
 const LANES = 2;
 
+/** The groups that this run takes. */
+const GROUPS = process.argv.includes('--vegetation') ? vegetationUnitGroups() : UNIT_GROUPS;
 /** Groups that have failed, which the run's exit status reports. */
 let failed = 0;
 /** The next group for a free lane to take. */
@@ -97,7 +102,7 @@ function runGroup(group: UnitGroup): Promise<void> {
 
 /** Takes the next group and runs it, until no group is left. */
 async function lane(): Promise<void> {
-	for (let group = UNIT_GROUPS[next]; group; group = UNIT_GROUPS[next]) {
+	for (let group = GROUPS[next]; group; group = GROUPS[next]) {
 		next += 1;
 		await runGroup(group);
 	}

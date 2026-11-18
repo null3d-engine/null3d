@@ -292,7 +292,7 @@ that darkens itself.
   masked caster through it and keeps a still caster out of the moving list.
 - Docs: `docs/api/impostors.md` states the local frame, the turn, the bake, the depth's use and the
   two shadow flags. `docs/api/materials.md` and `docs/shaders/surface-functions.md` state the
-  `coverage` function, `Surface.shadowOffset` and `castsStill`. `docs/api/vegetation.md` states the
+  `coverage` function, `Surface.shadowOffset` and `castsStill`. `packages/vegetation/docs/api.md` states the
   far tree and the hand-over. `docs/concepts/lod.md` states that the card is lit by the scene's sun
   and casts its crown. The three.js mapping gains nothing, because three.js has no impostor
   counterpart.
