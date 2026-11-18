@@ -62,9 +62,10 @@ the picture test then fails on every run.
 
 ## Consequences
 
-`examples/showcase/creek/plants.ts` and `examples/forest/sketch.ts` carry their preset ceilings.
-`examples/lib/plants.ts` passes the ceiling to the add-on. The Creek and forest references are
-redrawn in both sets. The measurement after the cap shows the caps buy triangles, not frame time. The
+Both ceilings went with the add-on's plants, which no demo draws now: the forest grows its own
+trees in code and Creek draws models built in Blender
+([D-378](D-378-vegetation-add-on-unpublished.md)). The Creek and forest references were redrawn in
+both sets. The measurement after the cap shows the caps buy triangles, not frame time. The
 iPad's High window lost 930,000 triangles and 1.84 ms. At High the later passes read 73.8 ms of the
 frame's 85.9 ms, and those passes hold the opaque pass and what follows. The rows therefore stay
 open. The pixels the later passes shade are the cost that remains, not the near trees' triangles.
