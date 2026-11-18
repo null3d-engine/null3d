@@ -146,7 +146,7 @@ The rows carry the points:
 | Point | Judged on |
 | --- | --- |
 | even sky through the crown | row 6, with row 12's plausibility |
-| no bare termination | row 12, subdivision and no strays |
+| no bare termination, and no stump ends | row 12, subdivision and no strays, and the stump check |
 | gentle upward bends | row 7, with row 1's limb angles |
 | branch count | row 2 |
 | lateral spacing along the parent | row 2, with row 12's neatness |
@@ -169,7 +169,7 @@ A species that fails a point fails the row that carries it.
 | 9 | Proportions | Height against width, the crown's share of the height, and the trunk's diameter against its height | The whole view, measured rather than eyeballed |
 | 10 | Color and season | Whether the foliage's color is the species' own, and whether a season variant is a variant of that color rather than a different hue pretending to be one | The whole view |
 | 11 | Distinctness | Whether the species can be told from its nearest neighbor in the catalogue by silhouette alone | The two whole views side by side |
-| 12 | Plausibility, neatness and pattern | Whether what is drawn is a plant that could exist: every part joined to the wood it grows from, every order dividing into the next, no stray twigs, no parts crossing where no plant crosses, no scatter of loose shapes, and a branch pattern the eye can follow through the crown | Every view, and the whole view at close range |
+| 12 | Plausibility, neatness and pattern | Whether what is drawn is a plant that could exist: every part joined to the wood it grows from, every order dividing into the next, no stray twigs, no parts crossing where no plant crosses, no scatter of loose shapes, no drawn branch or sub-branch ending as a stump — every tip carries a piece, a terminal bud or a continuation — and a branch pattern the eye can follow through the crown | Every view, and the whole view at close range, plus the stump check on every drawn level |
 
 Row 11 is judged against a built neighbor, named in the verdict. A species with no built neighbor
 states that instead of passing.
@@ -440,7 +440,7 @@ standard picture map:
 | 5 Leaf cluster density | The photograph's leaf count, the cluster's spread and tightness, the terminal bud where the species has one, and one joined piece | `11`, `23`, and `04` for the crown close-up | The count differs beyond the photograph's own spread, the gap leaves its band, or the cluster breaks into pieces |
 | 7 Bark curviness | The stem plumb or bending as the species does; the surface's own figure, such as plates, strips, lenticels, a sheath or fibres; the collar and the fork | `03`, `05`, `07`, `08`, `14`, `15`, `16`, `17`, as the species has them | The stem is kinked where the reference is straight, the limb angle is wrong, the surface reads as generic bark, or the join is hard |
 | 11 Distinctness | A silhouette that differs from the named built neighbour in aspect, fork height, crown form or branching | The species' `01`, `02`, `18` beside the neighbour's whole view | The two share the neighbour's aspect, fork or crown, and only the leaf differs; or the row is passed with no neighbour named |
-| 12 Plausibility, neatness and pattern | Every part joined to its wood; each order dividing into the next; no crossing; a readable species pattern; no bare strays; no scatter | Every view; the species' own review names the pictures where its fault shows | Any one entry of the checklist fails |
+| 12 Plausibility, neatness and pattern | Every part joined to its wood; each order dividing into the next; no crossing; a readable species pattern; no bare strays; no scatter; no stump ends — a drawn axis's tip outside every piece's reach fails the row | Every view; the species' own review names the pictures where its fault shows | Any one entry of the checklist fails |
 
 **A picture that cannot show the subject decides nothing.** A bark view with no bark, a cut turn
 whose crown box is void, a silhouette with no recorded angle, or a piece at the wrong subject is
