@@ -27,6 +27,8 @@ const docsFile = new URL('../../../docs/api/wind.md', import.meta.url);
 const grassFile = new URL('../../vegetation/src/grass/grass.wgsl', import.meta.url);
 /** The engine's particle shader, which reads the field once for each particle. */
 const particleFile = new URL('../../../crates/null3d-shaders/wgsl/particle.wgsl', import.meta.url);
+/** The demos' plant material, which bends each plant in the field. */
+const swayFile = new URL('../../../examples/lib/sway.ts', import.meta.url);
 describe('the shaders of the grid', () => {
 	test('the compute form, the WebGL2 form and the sampling file hold one steady field', () => {
 		// The shader build resolves only the engine's library, so a shader cannot import another
@@ -154,6 +156,9 @@ describe('the sampling function', () => {
 		// The engine's particle shader reads the same field, once for each particle.
 		expect(marked(particleFile, 'wind-steady')).toBe(steady);
 		expect(marked(particleFile, 'wind-sample')).toBe(sample);
+		// The demos' plants read it in the vertex offset of their one material.
+		expect(marked(swayFile, 'wind-steady')).toBe(steady);
+		expect(marked(swayFile, 'wind-sample')).toBe(sample);
 	});
 
 	test('the copy reads the texture inside the box and the steady field outside it', () => {

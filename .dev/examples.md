@@ -18,9 +18,11 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/stage.ts`, `examples/lib/procedural.ts` | The showcase scenes' moods, and their generators of detail: seeded noise, texture sets from numbers, terrain and rocks |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/plants.ts` | `plantSpecies`, which grows a species' variants through the vegetation add-on's plant core and places its copies with their levels and far cards. A demo names each species by its id with the size and colors of its stand-in, so it draws the stand-in until the species ships and the species after. Species that a demo plants together grow at once, but make their textures, materials and batches in the order of the calls: the batches' order sets each copy's dither pattern, so an order that followed the growths' finish would change a held picture from run to run |
-| `examples/forest/woods.ts` | The forest demo's scenery: three firs and a broadleaf tree made in code at four levels of detail, the bushes of its understory, the land and its ridges, the bark, needle and leaf textures, and the cut-out cards that draw the far trees on phones |
+| `examples/lib/trees.ts` | Trees made in code at four levels of detail: firs and broadleaf trees from one surface formula each, the understory's bush, and the bark, needle and leaf texture, with a birch's pale bark as an option. A demo builds a plant of its own parts on the same levels. The forest and the wind demo draw them |
+| `examples/forest/woods.ts` | The forest demo's scenery: its four kinds of tree, the rows of the trees and the understory, the land and its ridges, and the cut-out cards that draw the far trees on phones |
 | `examples/forest/planting.ts` | The forest demo's build: one batch for each kind of tree and one for the understory, the far rows as cards, the hero fir and the counts that each preset draws. The sketch keeps the look and the frame, so it stays under the feature demos' 150-line rule |
-| `examples/forest/sway.ts` | The forest demo's trees' material, whose trunk and crown bend in the wind add-on's field, read at each tree's root and fading out by the sway distance |
+| `examples/lib/sway.ts` | The plants' material that the demos share, whose vertices bend in the wind add-on's field. It reads the field at each copy's root and fades out by the sway distance. Each vertex's weight comes from its height or from its second texture coordinates |
+| `examples/vegetation-wind/plants.ts`, `planting.ts` | The wind demo's scenery: tufts of grass, ferns with a cut-out frond, the meadow's texture, the land, and the grove's oaks, birches, firs and undergrowth in one instance batch per kind, each kind with its own sway |
 | `examples/impostors/forest.ts` | The impostors demo's scenery: the shared pines split into three bands by distance, the octahedral atlas drawn in code from the pine's own tiers, and the transform that places each copy in a merged far mesh. The two nearer bands overlap, and each fades through the other's edge, so the rings never meet on a line |
 | `examples/replay/` | The deterministic simulation demo ([below](#the-deterministic-simulation-demo)): `sim.ts`, the simulation; `session.ts`, the play without the page: the run, its log, the replay and the clock; `page.ts`, its page part, which takes the input and runs the session, and which `startDemo` loads by the demo's `pagePart`; `view.ts`, the numbers that the page sends the sketch; `court.ts`, the scenery; and `sketch.ts` |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
@@ -126,10 +128,11 @@ after the other. This machine's neighbour load alone moves a figure by a quarter
 demo or moves one carries its measured figure in the commit body instead. The figure names the load
 average beside it, and a reader checks it.
 
-The wind demo's start is the case that set the rule. The owner's recording showed three costs. About
-twenty seconds passed before the first plant. The twelve species finished growing at thirty-three
-seconds. The first frame came at about sixty. Those stages are the model for every other demo: the
-engine's download, the engine's create, the workers, the scene's growth, then the first frame.
+The rule comes from a demo that grew twelve plant species before its first frame. The owner's
+recording showed three costs. About twenty seconds passed before the first plant. The species finished
+growing at thirty-three seconds. The first frame came at about sixty. Those stages are the model for
+every other demo: the engine's download, the engine's create, the workers, the scene's growth, then
+the first frame.
 
 ## A page backdrop under a demo
 

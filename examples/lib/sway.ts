@@ -1,23 +1,27 @@
-// The trees' sway: the material that draws the forest, whose trunk and crown bend in the wind
-// add-on's one field, and the settings that material reads.
+// Plants that sway in the wind add-on's field: one material that any demo gives its trees, shrubs,
+// ferns and grasses, whether made in code or loaded from a file. The bend is read at each copy's
+// root, solved in world space and turned back into the mesh's own space, so turned and scaled
+// copies all lean downwind. The offset fades out by the sway distance, so a far plant stands still
+// and keeps its shadow in the cached far cascade, and the shadow casters run the same offset.
 import type { Material, SketchContext, Texture } from '@null3d/engine';
 import type { Wind } from '@null3d/wind';
 
-/** The distance from the camera out to which the trees sway, in meters. */
+/** The distance from the camera out to which plants sway, in meters, unless a page names another. */
 export const SWAY_DISTANCE = 120;
 
 /**
- * The trees' material: the wood and leaf map, lit as the standard material lights it, with the
- * trunk bending in the wind add-on's field. One field moves every tree whose material names it, and
- * the offset fades out by the sway distance so a far tree stands still and keeps its shadow in the
- * cached far cascade.
+ * The plants' material: a color map lit as the standard material lights it, with each vertex bent
+ * in the wind add-on's field. The field's two blocks are copies of the add-on's sampling file, which
+ * the wind add-on's own test holds equal.
  */
-const treeShader = /* wgsl */ `
+const swayShader = /* wgsl */ `
 #import null3d::noise::{value3}
 
-var wood: texture_2d<f32>;
+var colorMap: texture_2d<f32>;
 var wind: texture_2d_array<f32>;
 var airSettings: texture_2d<f32>;
+var normalMap: texture_2d<f32>;
+var ormMap: texture_2d<f32>;
 
 struct Uniforms {
     // The field's box across the ground, in meters, and 0 without a field.
@@ -26,12 +30,27 @@ struct Uniforms {
     windStrength: f32,
     // The layer of the field's texture that holds the newest state.
     windLayer: f32,
-    // The height over which the trunk's bend grows, in meters.
+    // The height in the mesh's own units at which a plant read by its height bends in full.
     height: f32,
-    // How far from the camera the tree sways, in meters.
+    // How far from the camera the plant sways, in meters.
     swayDistance: f32,
-    // The most that the top of the trunk moves in a brisk wind, as a share of its height.
+    // How far a vertex of full weight moves for each meter a second of wind, in meters.
     sway: f32,
+    // The power of the weight: high keeps a trunk stiff and bends its crown, low bends a whole stem.
+    stiffness: f32,
+    // How far a vertex of full weight flutters for each meter a second of wind, in meters.
+    rustle: f32,
+    // 0 reads the weight from the vertex's height, 1 from the second texture coordinates, which
+    // also carry each branch's phase.
+    weightFromUv1: f32,
+    // 1 scales the sway and the rustle by the copy's own height scale, for a mesh 1 unit high.
+    perSize: f32,
+    // 1 cuts the surface where the color map's alpha is under the cutoff.
+    cutout: f32,
+    // 1 bends the normal by the normal map, in a frame from the screen's derivatives.
+    normalMapOn: f32,
+    // 1 scales the occlusion, the roughness and the metalness by the occlusion map's channels.
+    ormMapOn: f32,
 }
 
 // <wind-steady>
@@ -215,6 +234,9 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 }
 // </wind-sample>
 
+/// The strongest wind that bends a plant further, in meters a second.
+const SWAY_TOP_SPEED: f32 = 14.0;
+
 fn vertexOffset(input: VertexInput) -> vec3f {
     if (material.windStrength <= 0.0) {
         return vec3f(0.0);
@@ -245,28 +267,123 @@ fn vertexOffset(input: VertexInput) -> vec3f {
         return vec3f(0.0);
     }
     let dir = across / speed;
-    // A trunk bends as a cantilever, most at its top, and each tree flutters a little on its own.
-    let rise = clamp(input.position.y / max(material.height, 0.001), 0.0, 1.0);
-    let flutter = 0.8 + 0.2 * sin(frame.time * 1.7 + dot(root.xz, vec2f(0.37, 0.11)));
-    let bend = rise * rise * material.sway * min(speed, 14.0) * flutter;
-    return vec3f(dir.x, 0.0, dir.y) * (bend * fade);
+    // The copy's axes in the world, whose lengths are its scale on each axis.
+    let m = object.worldMatrix;
+    let ax = m[0].xyz;
+    let ay = m[1].xyz;
+    let az = m[2].xyz;
+    let size = mix(1.0, length(ay), material.perSize);
+    // The weight grows from the root to the tips, and its power sets where the plant bends.
+    let byHeight = input.position.y / max(material.height, 0.001);
+    let weight = clamp(mix(byHeight, input.uv1.x, material.weightFromUv1), 0.0, 1.0);
+    let phase = input.uv1.y * 6.2831853 * material.weightFromUv1;
+    let bend = pow(max(weight, 1e-4), material.stiffness);
+    // Each plant sways a little on its own, and a branch read by its phase out of step with the rest.
+    let flutter = 0.8 + 0.2 * sin(frame.time * 1.7 + dot(root.xz, vec2f(0.37, 0.11)) + phase);
+    let push = min(speed, SWAY_TOP_SPEED) * size * fade;
+    var world = vec3f(dir.x, 0.0, dir.y) * (bend * material.sway * flutter * push);
+    // The leaves rustle quickly, each vertex out of step with its neighbors.
+    if (material.rustle > 0.0) {
+        let own = dot(input.position, vec3f(37.0, 23.0, 29.0)) + phase * 3.0;
+        let t = frame.time * 6.0 + own;
+        let shake = vec3f(sin(t), 0.5 * sin(t * 1.3 + 1.1), cos(t * 0.9 + 2.3));
+        world += shake * (weight * material.rustle * push);
+    }
+    // The world offset in the mesh's own space: each axis over its squared length undoes the
+    // copy's turn and scale.
+    return vec3f(dot(ax, world) / dot(ax, ax), dot(ay, world) / dot(ay, ay), dot(az, world) / dot(az, az));
 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let texel = textureSample(wood, woodSampler, input.uv);
+    let texel = textureSample(colorMap, colorMapSampler, input.uv);
     s.baseColor = texel.rgb * s.baseColor;
+    if (material.cutout > 0.5) {
+        s.alpha = texel.a;
+    }
+    // A mesh made without tangents takes its frame from how the position and the texture
+    // coordinates change across the screen. The samples and the derivatives run outside the
+    // branches, in uniform control flow; a material without the maps reads a white texel.
+    let bent = textureSample(normalMap, normalMapSampler, input.uv).xyz * 2.0 - 1.0;
+    let orm = textureSample(ormMap, ormMapSampler, input.uv).rgb;
+    let dp1 = dpdx(input.relativePosition);
+    let dp2 = dpdy(input.relativePosition);
+    let duv1 = dpdx(input.uv);
+    let duv2 = dpdy(input.uv);
+    if (material.normalMapOn > 0.5) {
+        let n = s.normal;
+        let across1 = cross(n, dp1);
+        let across2 = cross(dp2, n);
+        let t = across2 * duv1.x + across1 * duv2.x;
+        let b = across2 * duv1.y + across1 * duv2.y;
+        let scale = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
+        let mapped = normalize(t * (bent.x * scale) + b * (bent.y * scale) + n * bent.z);
+        s.normal = mapped;
+        s.diffuseNormal = mapped;
+        s.ambientNormal = mapped;
+    }
+    if (material.ormMapOn > 0.5) {
+        s.occlusion *= orm.r;
+        s.roughness *= orm.g;
+        s.metalness *= orm.b;
+    }
     return s;
 }
 `;
 
-/** The forest's material, and the frame that keeps its wind layer current. */
+/** One plant material's settings. */
+export interface SwayMaterialOptions {
+	/** A tangent-space normal map in linear color, read at the first texture coordinates. */
+	readonly normalMap?: Texture;
+	/** An occlusion, roughness and metalness map in linear color, which scales the three in turn. */
+	readonly ormMap?: Texture;
+	/** The color map, times the vertex colors. Without one, the vertex colors alone color the surface. */
+	readonly map?: Texture;
+	/** True cuts the surface, and its shadow, where the map's alpha is under one half. */
+	readonly cutout?: boolean;
+	/**
+	 * Where each vertex's weight comes from: its height over `height` in the mesh's own units, or
+	 * the second texture coordinates, whose u is the weight from 0 at the root to 1 at the tips and
+	 * whose v is the branch's phase as a share of a turn.
+	 */
+	readonly weight?: 'height' | 'uv1';
+	/** The height in the mesh's own units at which a plant read by its height bends in full. */
+	readonly height?: number;
+	/** How far a vertex of full weight moves for each meter a second of wind, in meters. */
+	readonly sway: number;
+	/** The power of the weight: 2 keeps a trunk stiff and bends its crown, about 1.3 bends a stem. */
+	readonly stiffness?: number;
+	/** How far a vertex of full weight flutters for each meter a second of wind, in meters. */
+	readonly rustle?: number;
+	/** True scales the sway and the rustle by each copy's height scale, for a mesh 1 unit high. */
+	readonly perSize?: boolean;
+	/** False draws a mesh without vertex colors. */
+	readonly vertexColors?: boolean;
+	/** The surface's roughness, which an occlusion map's green channel scales. */
+	readonly roughness?: number;
+}
+
+/** The materials that sway in one wind field, and the frame step that keeps them current. */
+export interface Sway {
+	/** Makes a material whose vertices bend in the field. */
+	material(options: SwayMaterialOptions): Material;
+	/** Gives every material the field's newest layer. Call it once a frame, after the wind steps. */
+	update(): void;
+}
+
+/**
+ * Plant materials that read one wind field.
+ *
+ * @param ctx The sketch.
+ * @param options The wind, and the distance from the camera out to which the plants sway.
+ * @returns The maker of materials and their frame step.
+ */
 export function createSway(
 	ctx: SketchContext,
-	options: { readonly wood: Texture; readonly wind: Wind },
-): { readonly material: Material; update(): void } {
+	options: { readonly wind: Wind; readonly swayDistance?: number },
+): Sway {
 	const { materials, textures } = ctx;
-	const { wood, wind } = options;
+	const { wind, swayDistance = SWAY_DISTANCE } = options;
 	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
 	let sentBorn = Number.NaN;
 	const airSettings = textures.fromData({
@@ -275,26 +392,49 @@ export function createSway(
 		format: 'rgba16float',
 		data: airSettingsData(wind.field.air),
 	});
-	const material = materials.shader({
-		wgsl: treeShader,
-		roughness: 0.85,
-		vertexColors: true,
-		doubleSided: true,
-		swayDistance: SWAY_DISTANCE,
-		textures: { wood, wind: wind.field.texture, airSettings },
-		uniforms: {
-			windBox: wind.field.size,
-			windStrength: 1,
-			windLayer: 0,
-			height: 18,
-			swayDistance: SWAY_DISTANCE,
-			sway: 0.06,
-		},
-	});
+	let white: Texture | undefined;
+	const make = (settings: SwayMaterialOptions) => {
+		white ??= textures.fromData({ width: 1, height: 1, data: new Uint8Array(4).fill(255) });
+		return materials.shader({
+			wgsl: swayShader,
+			roughness: settings.roughness ?? 0.85,
+			vertexColors: settings.vertexColors ?? true,
+			doubleSided: true,
+			...(settings.cutout && { alphaMode: 'mask' as const, alphaCutoff: 0.5 }),
+			swayDistance,
+			textures: {
+				colorMap: settings.map ?? white,
+				normalMap: settings.normalMap ?? white,
+				ormMap: settings.ormMap ?? white,
+				wind: wind.field.texture,
+				airSettings,
+			},
+			uniforms: {
+				windBox: wind.field.size,
+				windStrength: 1,
+				windLayer: 0,
+				height: settings.height ?? 1,
+				swayDistance,
+				sway: settings.sway,
+				stiffness: settings.stiffness ?? 2,
+				rustle: settings.rustle ?? 0,
+				weightFromUv1: settings.weight === 'uv1' ? 1 : 0,
+				perSize: settings.perSize ? 1 : 0,
+				cutout: settings.cutout ? 1 : 0,
+				normalMapOn: settings.normalMap ? 1 : 0,
+				ormMapOn: settings.ormMap ? 1 : 0,
+			},
+		});
+	};
+	const made: ReturnType<typeof make>[] = [];
 	return {
-		material,
+		material(settings) {
+			const material = make(settings);
+			made.push(material);
+			return material;
+		},
 		update() {
-			material.setUniform('windLayer', wind.field.texture.layer);
+			for (const material of made) material.setUniform('windLayer', wind.field.texture.layer);
 			// A gust that a page sends travels through the steady field, which the settings carry. The
 			// texels go up when a gust is sent, not once a frame.
 			if ((wind.field.air.sent[3] as number) !== sentBorn) {
