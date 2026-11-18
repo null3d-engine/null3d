@@ -68,6 +68,7 @@ import {
 	type MorphTemplate,
 	type PartTemplate,
 	Prefab,
+	type PrefabMaps,
 	type PropertyAnimationData,
 	type TemplateNode,
 } from './prefab';
@@ -1139,6 +1140,7 @@ async function buildPrefab(
 			materials: materials.all(),
 			geometry: context.geometry,
 			error: context.scene.checks.error,
+			maps: materials.maps,
 		},
 		properties,
 	);
@@ -1478,8 +1480,10 @@ function nodeLightMap(
  * them on, one without normals shades flat, and one without tangents turns its normal map's
  * green channel over, as three.js does where it finds tangents from screen derivatives.
  */
-class FileMaterials {
+export class FileMaterials {
 	private readonly made = new Map<string, Material>();
+	/** The textures of each material made so far, by the standard material's options. */
+	readonly maps = new Map<Material, PrefabMaps>();
 	/** The materials that the extension handlers made, which the model frees too. */
 	private readonly extra: Material[] = [];
 
@@ -1559,10 +1563,25 @@ class FileMaterials {
 		const key = `${k} ${vertexColors} ${flat} ${tangents}${lightMap ? ` ${lightMap.key}` : ''}`;
 		let material = this.made.get(key);
 		if (!material) {
-			material = this.create(this.data.materials[k], vertexColors, flat, tangents, lightMap);
+			const m = this.data.materials[k];
+			material = this.create(m, vertexColors, flat, tangents, lightMap);
 			this.made.set(key, material);
+			this.maps.set(material, this.texturesOf(m));
 		}
 		return material;
+	}
+
+	/** The textures that a file's material samples, by the standard material's options. */
+	private texturesOf(m: MaterialData | undefined): PrefabMaps {
+		const map = (k: number | undefined) => (k === undefined ? undefined : this.textures[k]);
+		if (!m) return {};
+		return {
+			map: map(m.maps.map),
+			metalnessRoughnessMap: map(m.maps.metalnessRoughnessMap),
+			normalMap: map(m.maps.normalMap),
+			aoMap: map(m.maps.aoMap),
+			emissiveMap: map(m.maps.emissiveMap),
+		};
 	}
 
 	private create(

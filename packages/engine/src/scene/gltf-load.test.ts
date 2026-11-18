@@ -1,9 +1,13 @@
-// The glTF loader's texture step and its levels, with a fake engine: a load whose textures fail
-// part way frees what it made, a level whose primitive names its base's accessors shares the
-// base's vertices, and a file's error fades unless the tool's coverage comes beside it.
+// The glTF loader's texture step, its materials' textures and its levels, with a fake engine: a
+// load whose textures fail part way frees what it made, a material gives the textures it samples
+// by slot, a level whose primitive names its base's accessors shares the base's vertices, and a
+// file's error fades unless the tool's coverage comes beside it.
 
 import { expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
+	FileMaterials,
 	fileLevelMeasure,
 	type GltfContext,
 	makeTextures,
@@ -11,7 +15,15 @@ import {
 	readStageBand,
 	sharesVertices,
 } from './gltf';
-import type { GltfData, PrimitiveData, TextureUse } from './gltf-parse';
+import {
+	type GltfData,
+	type PrimitiveData,
+	parseGltf,
+	readContainer,
+	type TextureUse,
+} from './gltf-parse';
+import type { Material } from './resources';
+import type { Texture } from './textures';
 
 const use = (image: number): TextureUse => ({
 	image,
@@ -224,4 +236,31 @@ test('a band stage gives the patches and indices of one band of a tree', () => {
 	expect(readStageBand(wrongVersion)).toBeUndefined();
 	expect(readStageBand(bandStage(bounds, records, list).slice(0, 40))).toBeUndefined();
 	expect(readStageBand(bandStage([], [], list))).toBeUndefined();
+});
+
+test("a file's material gives the textures it samples by slot, and a shared occlusion texture once", () => {
+	const file = new Uint8Array(
+		readFileSync(join(import.meta.dir, '../../../../tests/pages/assets/models/asset-scene.glb')),
+	);
+	const url = 'https://example.com/models/asset-scene.glb';
+	const data = parseGltf(readContainer(file, url), new Map(), url);
+	const textures = data.textures.map((_, k) => ({ id: k }) as unknown as Texture);
+	const context = {
+		materials: { standard: (options: Record<string, unknown>) => ({ options }) },
+	} as unknown as GltfContext;
+	const materials = new FileMaterials(context, data, textures);
+	materials.makeBase();
+	const painted = data.materials.findIndex((m) => m.name === 'painted');
+	const material = materials.list()[painted] as Material;
+	const { options } = material as unknown as { options: Record<string, unknown> };
+	const maps = materials.maps.get(material);
+	// The node's maps are the textures that its material samples.
+	expect(maps?.map).toBe(options.map as Texture);
+	expect(maps?.metalnessRoughnessMap).toBe(options.metalnessRoughnessMap as Texture);
+	expect(maps?.normalMap).toBe(options.normalMap as Texture);
+	expect(maps?.aoMap).toBe(options.aoMap as Texture);
+	// The file packs its occlusion with its metalness and roughness, so one texture serves both.
+	expect(maps?.aoMap).toBe(maps?.metalnessRoughnessMap);
+	expect(new Set([maps?.map, maps?.metalnessRoughnessMap, maps?.normalMap]).size).toBe(3);
+	expect(maps?.emissiveMap).toBeUndefined();
 });
