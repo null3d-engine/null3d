@@ -9,8 +9,8 @@
 // of their own at the same time. The first checks the toasts of the camera, the time of day, the
 // shadows, the bloom and the quality, and where the toast sits. The second turns the sky and then
 // the fog off and on, and the third does the same with the environment light. Each test first sets
-// up the state its checks need: the switches run with the camera held, the time of day on Auto and
-// the snow off, and the environment light with the fog on. Each name starts with "the showcase
+// up the state its checks need: the switches run with the camera held at the hour the scene opens
+// on, and the environment light with the fog on. Each name starts with "the showcase
 // HUD": the job of the other tests that run alone leaves the three out by those words, and the rest
 // of the name picks one test.
 import { expect, type Page, test } from '@playwright/test';
@@ -81,11 +81,13 @@ async function turnOn(page: Page, tab: string, group: string, label: string): Pr
 }
 
 /**
- * A mean difference that only a change of the look gives; the scene at rest differs less. The
- * environment light's switch changes the least of the parts, about 1.5 of the mean on the software
- * GPU, so the limit sits below it and well above the look at rest.
+ * A mean difference that only a change of the look gives; the scene at rest differs less. Held at
+ * its opening hour with its trees grown, the island at rest differs by 0.002 to 0.031 between two
+ * frames on this Mac's software GPU. Of the parts, the fog's switch changes the least, 1.06, against
+ * 3.71 for the environment light and 47.5 for the sky. The limit sits at half the fog's change and
+ * sixteen times the largest change at rest.
  */
-const CHANGED = 1.2;
+const CHANGED = 0.5;
 /**
  * The share of the change that turning a part off made that turning it back on must make again. A
  * part whose own light is drawn into the environment map fills that map a stage a frame, so a slow
@@ -133,7 +135,11 @@ async function settle(page: Page): Promise<Frame> {
 	while (Date.now() < until) {
 		await new Promise((r) => setTimeout(r, 250));
 		const next = await frame(page);
-		if (difference(next, previous) < STILL) return next;
+		const rest = difference(next, previous);
+		if (rest < STILL) {
+			progress(`the look at rest, ${rest.toFixed(3)} between two frames`);
+			return next;
+		}
 		previous = next;
 	}
 	return previous;
@@ -175,11 +181,19 @@ async function switchPart(page: Page, label: string, tab: string, group: string)
 		expect(difference(off, before), `${label} stays off`).toBeGreaterThan(CHANGED);
 	}
 	const departure = difference(off, before);
+	progress(`${label} off, ${departure.toFixed(2)} from the look with it on`);
 	await pick(page, tab, group, label, `${label}: on`);
+	let returned = 0;
 	await expect
-		.poll(async () => difference(await frame(page), off), { timeout: WAIT_MS })
+		.poll(
+			async () => {
+				returned = difference(await frame(page), off);
+				return returned;
+			},
+			{ timeout: WAIT_MS },
+		)
 		.toBeGreaterThan(departure * RETURNED);
-	progress(`${label} off and on again`);
+	progress(`${label} off and on again, ${returned.toFixed(2)} from the look with it off`);
 }
 
 /** When the test's page opened, for the progress lines that each stage prints. */
@@ -195,8 +209,11 @@ function progress(stage: string): void {
 
 /**
  * Opens the island's HUD as a visitor finds it, once the engine has drawn its first frame, and
- * watches the page for problems from the start, in a window of `size` when given. Gives the list of
- * problems, which each test checks last.
+ * watches the page for problems from the start. A test that compares the canvas's frames passes
+ * `size`, the window it reads them in, and the island then grows its trees before that first frame.
+ * A live page grows them after it, and their arrival minutes later changes the look by more than
+ * the fog's switch does: run here, a fog that measured 1.06 off read 1.21 once they landed.
+ * Gives the list of problems, which each test checks last.
  */
 async function openHud(page: Page, size?: { width: number; height: number }): Promise<string[]> {
 	const errors = watchPageProblems(page);
@@ -205,7 +222,7 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its own
 	// look from code, so the toast text does not depend on the preset. `bench` publishes the demo's
 	// engine on the page, which is how these tests read the canvas's frames.
-	await page.goto('/examples/index.html?demo=island&preset=low&bench');
+	await page.goto(`/examples/index.html?demo=island&preset=low&bench${size ? '&grown' : ''}`);
 	const hud = page.locator('.hud');
 	// The sketch posts the HUD as soon as its controls exist, which is before it builds the island's
 	// town, its trees and its grass, and the page shows the controls when that message arrives. The
@@ -230,16 +247,20 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 }
 
 /**
- * Sets up the scene for the switches, and checks the toast of each pick. The manual camera holds
- * the view and the snow goes off, so the scene holds still between frames. The time of day goes to
- * Auto, so each part is checked against the sky rather than the studio backdrop.
+ * Sets up the scene for the switches, and checks the toast of the pick. The manual camera holds the
+ * view, and the scene keeps the fixed hour that it opens on, under the sky, so the look holds still
+ * between frames and each part is checked against the sky rather than the studio backdrop.
+ *
+ * Auto would move the sun: a whole day passes in 80 seconds of the scene's time, and each frame
+ * advances that time by up to a quarter of a second, about four and a half minutes of the day. The
+ * environment light's switch takes eight minutes on CI's software GPU, so the frames that a check
+ * compares would hold the sun hours apart, and the return would measure the sun's move as much as
+ * the part's.
  */
 async function holdForSwitches(page: Page): Promise<void> {
 	// Camera is a radio group: a pick names the group and the new mode. The town opens on its
 	// cinematic route, and Manual stops the camera where the route stands.
 	await pick(page, 'Camera', 'camera', 'Manual', 'camera: manual');
-	// The town opens at a fixed hour, and Auto moves the hour through the day.
-	await pick(page, 'Time of day', 'hour', 'Auto', 'Auto: on');
 	progress('the scene held still for the switches');
 }
 
