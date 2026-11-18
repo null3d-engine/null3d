@@ -1,9 +1,10 @@
 // The integer hash that places the tufts and grows their blades. It works with 32-bit integer
 // arithmetic, so the grass is the same on every device, and it matches the shaders'
 // `null3d::noise::pcg`, so a page can reproduce a choice in WGSL. No choice reads a clock, a
-// floating-point noise or the order in which a worker happens to run. The module imports nothing,
-// so code that runs on the job workers without the engine, such as a plant generator, can take it
-// from its own entry, `@null3d/grass/hash`.
+// floating-point noise or the order in which a worker happens to run. The module imports nothing
+// and has an entry of its own, `@null3d/grass/hash`. The vegetation add-on's plant generator keeps
+// its own copy, because it runs on the job workers and reads no other package, and that copy's test
+// holds the two to the same bits.
 
 /**
  * The permutation of one 32-bit value, with the same bits as the shaders' `pcg`.
