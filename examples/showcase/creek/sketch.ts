@@ -331,7 +331,7 @@ export default defineSketch(async (ctx) => {
 				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
-	const flora = await createFlora(ctx, wind);
+	const flora = await createFlora(ctx);
 	const valley = placeValley({ rocks: (x, z) => stones.clear(x, z) });
 	// The models download while the valley draws, so a live start shows its first frame without
 	// waiting for them, and the trees, the plants and the cave appear as they land. A held picture
@@ -571,11 +571,12 @@ export default defineSketch(async (ctx) => {
 			underwater?.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
 			if (lens) post.set(lens);
-			flora.update(t);
-			air.update(t);
 			water?.update();
 		},
 		onLateUpdate() {
+			// The particles start where the frame's objects stand, after the wind's field has stepped.
+			flora.update();
+			air.update();
 			shafts.update();
 		},
 	};

@@ -1,23 +1,26 @@
-// What drifts in the creek's air: leaves that fall from the trees and spin on the breeze, motes of
+// What drifts in the creek's air: leaves that fall from the trees and tumble on the wind, motes of
 // dust that glow in the low sun, and mist that lies over the water at dusk and at night. Each is a
-// sprite batch whose rows the sketch moves from the time alone, so a held frame shows what the live
-// scene shows at that time. Sprites are not lit, so each mood tints them.
-//
-// The particles add-on will take these over when it ships: emitters with their own update on the
-// GPU. Until then, sprite batches carry them.
-import { math, type SketchContext, type Texture } from '@null3d/engine';
+// particle system of the particles add-on, whose particles the GPU moves from their birth and age,
+// so a held frame shows what the live scene shows at that time and the sketch runs no loop over
+// them. Particles are not lit, so each mood tints them.
+import { math, type SketchContext } from '@null3d/engine';
+import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import type { WindField } from '@null3d/wind';
-import { markEffect } from '../../lib/layers';
-import { random } from '../../lib/procedural';
+import { EFFECT_LAYER } from '../../lib/layers';
 import type { Mood, MoodMix } from '../../lib/stage';
-import { groundHeight, streamZ, WATER } from './land';
+import { FLOW, streamSlope, streamZ, WATER } from './land';
 
-/** Falling leaves, dust motes and puffs of mist. */
-const LEAVES = 80;
+/** Leaves that fall from each crown each second, and how long a leaf takes to fall. */
+const LEAF_RATE = 0.5;
+const LEAF_LIFE: readonly [number, number] = [9, 15];
+/** Dust motes over the near bank, and how long each glows. */
 const MOTES = 220;
-const MIST = 40;
-/** How fast a falling leaf drifts with the base wind, as a share of the wind's speed. */
-const CARRY = 0.12;
+const MOTE_LIFE: readonly [number, number] = [6, 10];
+/** The lengths of stream that each carry a bank of mist, and the puffs over each. */
+const MIST_REACHES = 6;
+const MIST_REACH = 10;
+const MIST_PUFFS = 7;
+const MIST_LIFE: readonly [number, number] = [14, 22];
 
 /** A crown that leaves fall from: its middle on the ground, its height and its reach. */
 export interface Crown {
@@ -82,214 +85,142 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 	Studio: { leaves: [0.8, 0.8, 0.8], motes: [0, 0, 0], mist: [0, 0, 0], mistOpacity: 0 },
 };
 
-/** An atlas of four leaves, side by side: two greens, a yellow and a russet, each tip up. */
-function leafAtlas({ textures }: SketchContext): Texture {
-	const size = 32;
-	const tones = [
-		[78, 120, 40],
-		[110, 140, 50],
-		[200, 160, 50],
-		[170, 80, 35],
-	];
-	const data = new Uint8Array(size * 4 * size * 4);
-	for (let y = 0; y < size; y++)
-		for (let x = 0; x < size * 4; x++) {
-			const frame = Math.floor(x / size);
-			const u = ((x % size) + 0.5) / size - 0.5;
-			const v = (y + 0.5) / size;
-			// An ovate leaf with a point, inside a border of a few texels.
-			const half =
-				0.3 * Math.max(Math.sin(Math.PI * Math.min(Math.max((v - 0.1) / 0.8, 0), 1)), 0) ** 0.8;
-			const inside = Math.min(Math.max((half - Math.abs(u)) * size + 0.5, 0), 1);
-			const midrib = Math.abs(u) < 0.03 ? 1.15 : 1;
-			const tone = tones[frame] as number[];
-			data.set(
-				[
-					Math.min(255, tone[0] * midrib),
-					Math.min(255, tone[1] * midrib),
-					Math.min(255, tone[2] * midrib),
-					Math.round(255 * inside),
-				],
-				(y * size * 4 + x) * 4,
-			);
-		}
-	return textures.fromData({
-		width: size * 4,
-		height: size,
-		data,
-		colorSpace: 'srgb',
-		mipmaps: true,
-	});
-}
-
-/** A soft round puff, brightest in its middle, for motes and mist. */
-function puff({ textures }: SketchContext, size: number, falloff: number): Texture {
-	const data = new Uint8Array(size * size * 4);
-	for (let i = 0; i < size * size; i++) {
-		const r =
-			Math.hypot((i % size) - (size - 1) / 2, Math.floor(i / size) - (size - 1) / 2) / (size / 2);
-		data.set([255, 255, 255, Math.round(255 * Math.max(0, 1 - r) ** falloff)], i * 4);
-	}
-	return textures.fromData({ width: size, height: size, data, mipmaps: true });
-}
-
-/** Makes the air's batches, with what moves them in each frame and what each mood sets. */
+/** Makes the air's particle systems, with what each frame steps and what each mood sets. */
 export async function createAir(
 	ctx: SketchContext,
 	crowns: readonly Crown[],
 	wind: WindField,
 ): Promise<{
-	update(t: number): void;
+	/** Steps the systems, which a frame calls in its late update, after the wind's field steps. */
+	update(): void;
 	/** Shows the look of a mix of moods, each value blended between the two moods' own. */
 	setLook(mix: MoodMix): void;
 	setFireflies(on: boolean): void;
 	/** Shows or hides the mist over the water, which the fog switch owns. */
 	setMist(on: boolean): void;
 }> {
-	const { scene } = ctx;
-	const next = random(71);
-	const [leaves, motes, mist] = await Promise.all([
-		scene.createSprites({
-			count: LEAVES,
-			map: leafAtlas(ctx),
-			atlas: { columns: 4, rows: 1 },
-			alphaMode: 'mask',
-			dynamic: true,
+	const { textures } = ctx;
+	// What fills the air is on the effect layer, so the clearance guard never treats it as a wall,
+	// and the water's reflection leaves it out.
+	const air = { layers: EFFECT_LAYER, prewarm: true } as const;
+	const leafLook = particleTextures.leaves(textures);
+	// Leaves: each crown sheds a few, which fall slowly from inside it and tumble as the wind's field
+	// carries them.
+	const leaves = await Promise.all(
+		crowns.map((crown, k) =>
+			createParticles(ctx, {
+				...air,
+				...leafLook,
+				seed: 71 + k,
+				position: [crown.x, crown.top - crown.reach * 0.5, crown.z],
+				shape: { type: 'sphere', radius: crown.reach * 0.6 },
+				rate: LEAF_RATE,
+				lifetime: LEAF_LIFE,
+				speed: [0, 0.2],
+				gravity: [0, -0.9, 0],
+				drag: 1.2,
+				windField: wind,
+				turbulence: 0.35,
+				turbulenceScale: 1.5,
+				facing: 'tumble',
+				spin: [-2.5, 2.5],
+				size: [0.07, 0.11],
+				colors: ['#6f8a2c', '#b8862e'],
+				alphaOverLife: [0, 1, 1, 1, 1, 1, 0],
+				groundHeight: WATER,
+				groundMode: 'kill',
+				blending: 'normal',
+			}),
+		),
+	);
+	// Motes: a box of dust over the near bank and the water, where the camera looks, that drifts and
+	// swirls and glows through bloom.
+	const motes = await createParticles(ctx, {
+		...air,
+		...particleTextures.glow(textures, { size: 16 }),
+		seed: 72,
+		position: [1, 1.8, 0],
+		shape: { type: 'box', size: [16, 3, 8] },
+		rate: MOTES / MOTE_LIFE[1],
+		lifetime: MOTE_LIFE,
+		speed: [0, 0.05],
+		turbulence: 0.5,
+		turbulenceScale: 2,
+		turbulenceSpeed: 0.2,
+		size: [0.012, 0.032],
+		alphaOverLife: [0, 1, 0.4, 1, 0],
+		blending: 'additive',
+	});
+	// Mist: broad puffs that lie low over each reach of the water and drift downstream with the
+	// current, in each mood's own color.
+	const smoke = particleTextures.smoke(textures);
+	const mist = await Promise.all(
+		Array.from({ length: MIST_REACHES }, (_, k) => {
+			const x = (k - (MIST_REACHES - 1) / 2) * MIST_REACH;
+			const along = Math.hypot(1, streamSlope(x));
+			return createParticles(ctx, {
+				...air,
+				...smoke,
+				seed: 73 + k,
+				position: [x, WATER + 0.5, streamZ(x)],
+				shape: { type: 'box', size: [MIST_REACH, 0.5, 4] },
+				rate: MIST_PUFFS / MIST_LIFE[1],
+				lifetime: MIST_LIFE,
+				speed: [0, 0],
+				velocity: [(FLOW * 0.4) / along, 0, (FLOW * 0.4 * streamSlope(x)) / along],
+				size: [2.5, 5],
+				alphaOverLife: [0, 1, 1, 0],
+				blending: 'normal',
+			});
 		}),
-		scene.createSprites({
-			count: MOTES,
-			map: puff(ctx, 16, 2),
-			blending: 'additive',
-			depthWrite: false,
-			dynamic: true,
-		}),
-		// The mist takes no fog: its color is the fog's own, for each mood.
-		scene.createSprites({
-			count: MIST,
-			map: puff(ctx, 64, 1.6),
-			depthWrite: false,
-			fog: false,
-			dynamic: true,
-		}),
-	]);
-	// The air fills the scene, so the clearance guard must not treat a leaf, a mote or the mist as a
-	// wall.
-	markEffect(leaves);
-	markEffect(motes);
-	markEffect(mist);
-	// Each row's own four numbers from 0 to 1: where it starts in its cycle, its speed and its path.
-	const seeds = (count: number) => Float32Array.from({ length: count * 4 }, () => next());
-	const leafSeed = seeds(LEAVES);
-	const moteSeed = seeds(MOTES);
-	const mistSeed = seeds(MIST);
-	for (let k = 0; k < LEAVES; k++) leaves.frames[k] = k % 4;
-	if (crowns.length === 0) leaves.setActiveCount(0);
-	const glow: Rgb = [...LOOK.Afternoon.motes];
+	);
 	const tint: Rgb = [...LOOK.Afternoon.leaves];
+	const glow: Rgb = [...LOOK.Afternoon.motes];
+	/** The glow's hue, at its brightest channel's full strength. */
+	const hue: Rgb = [1, 1, 1];
 	const haze: Rgb = [...LOOK.Afternoon.mist];
 	let fireflies = false;
+	let glowing = true;
 	/** False while the fog is off, which hides the mist with it. */
 	let mistShown = true;
+	let mistOpacity = LOOK.Afternoon.mistOpacity;
+	/** Shows the motes while the low sun lights them or the fireflies are on. */
+	const showMotes = () => motes.set({ opacity: glowing || fireflies ? 1 : 0 });
+	const showMist = () => {
+		for (const bank of mist) bank.set({ opacity: mistShown ? mistOpacity : 0 });
+	};
+	const systems: readonly ParticleSystem[] = [...leaves, motes, ...mist];
 	return {
 		setLook({ from, to, share }) {
 			const a = LOOK[from];
 			const b = LOOK[to];
 			for (let c = 0; c < 3; c++) {
 				tint[c] = math.lerp(a.leaves[c] as number, b.leaves[c] as number, share);
-				// A material's color stops at white, so the motes' glow, which bloom needs above white,
-				// goes into each row's color.
 				glow[c] = math.lerp(a.motes[c] as number, b.motes[c] as number, share);
 				haze[c] = math.lerp(a.mist[c] as number, b.mist[c] as number, share);
 			}
-			const opacity = math.lerp(a.mistOpacity, b.mistOpacity, share);
-			leaves.material.set({ color: tint });
-			motes.setActiveCount(glow[0] === 0 && !fireflies ? 0 : MOTES);
-			mist.setActiveCount(!mistShown || opacity === 0 ? 0 : MIST);
-			mist.material.set({ color: haze, opacity });
+			mistOpacity = math.lerp(a.mistOpacity, b.mistOpacity, share);
+			for (const fall of leaves) fall.set({ colorOverLife: [tint, tint] });
+			// A particle's color stops at white, so the motes' glow, which bloom needs above white, goes
+			// in as the color's hue and an intensity that carries its strength.
+			const peak = Math.max(glow[0], glow[1], glow[2]);
+			glowing = peak > 0;
+			if (glowing) for (let c = 0; c < 3; c++) hue[c] = (glow[c] as number) / peak;
+			motes.set({ colorOverLife: [hue, hue], intensity: peak });
+			showMotes();
+			for (const bank of mist) bank.set({ colorOverLife: [haze, haze] });
+			showMist();
 		},
 		setFireflies(on) {
 			fireflies = on;
-			motes.setActiveCount(on || glow[0] !== 0 ? MOTES : 0);
+			showMotes();
 		},
 		setMist(on) {
 			mistShown = on;
-			mist.setActiveCount(on ? MIST : 0);
+			showMist();
 		},
-		update(t) {
-			// Leaves: each falls from a crown over its own time, swaying and spinning, carried along the
-			// wind's heading, then starts again from the crown.
-			if (crowns.length > 0) {
-				const [speed, heading] = wind.air.base;
-				const carryX = Math.cos(heading) * speed * CARRY;
-				const carryZ = Math.sin(heading) * speed * CARRY;
-				const { positions, sizes, rotations, colors } = leaves;
-				for (let k = 0; k < LEAVES; k++) {
-					const a = leafSeed[k * 4] as number;
-					const b = leafSeed[k * 4 + 1] as number;
-					const c = leafSeed[k * 4 + 2] as number;
-					const d = leafSeed[k * 4 + 3] as number;
-					const crown = crowns[Math.floor(a * crowns.length)] as Crown;
-					const fall = 9 + 6 * b;
-					const age = (t / fall + c) % 1;
-					const lap = Math.floor(t / fall + c);
-					const turn = d * 6.283 + lap * 2.4;
-					const x0 = crown.x + Math.cos(turn) * crown.reach * 0.7;
-					const z0 = crown.z + Math.sin(turn) * crown.reach * 0.7;
-					const drift = age * fall;
-					const x = x0 + carryX * drift + 0.5 * Math.sin(t * 1.3 + d * 20);
-					const z = z0 + carryZ * drift + 0.4 * Math.cos(t * 1.1 + b * 20);
-					const ground = groundHeight(x, z);
-					const y = Math.max(crown.top - (crown.top - ground) * age, ground + 0.02);
-					positions[k * 3] = x;
-					positions[k * 3 + 1] = Math.max(y, WATER + 0.02);
-					positions[k * 3 + 2] = z;
-					const flutter = Math.sin(t * 3 + a * 30);
-					const size = 0.07 + 0.04 * b;
-					sizes[k * 2] = size * (0.55 + 0.45 * Math.abs(flutter));
-					sizes[k * 2 + 1] = size;
-					rotations[k] = t * (0.8 + c) + d * 6.283;
-					colors[k * 4 + 3] = Math.min(1, age * 20, (1 - age) * 12);
-				}
-			}
-			// Motes: each wanders in a box over the near bank and the water, where the camera looks.
-			{
-				const { positions, sizes, colors } = motes;
-				for (let k = 0; k < MOTES; k++) {
-					const a = moteSeed[k * 4] as number;
-					const b = moteSeed[k * 4 + 1] as number;
-					const c = moteSeed[k * 4 + 2] as number;
-					const d = moteSeed[k * 4 + 3] as number;
-					positions[k * 3] = -7 + 16 * a + 0.4 * Math.sin(t * 0.21 + d * 40);
-					positions[k * 3 + 1] = 0.3 + 3 * b + 0.3 * Math.sin(t * 0.17 + c * 40);
-					positions[k * 3 + 2] = -4 + 8 * c + 0.4 * Math.cos(t * 0.19 + a * 40);
-					const s = 0.012 + 0.02 * d;
-					sizes[k * 2] = s;
-					sizes[k * 2 + 1] = s;
-					colors[k * 4] = glow[0];
-					colors[k * 4 + 1] = glow[1];
-					colors[k * 4 + 2] = glow[2];
-					colors[k * 4 + 3] = 0.35 + 0.65 * Math.max(0, Math.sin(t * 0.7 + a * 60));
-				}
-			}
-			// Mist: broad puffs that lie low over the water and drift downstream, fading in and out.
-			{
-				const { positions, sizes, colors } = mist;
-				for (let k = 0; k < MIST; k++) {
-					const a = mistSeed[k * 4] as number;
-					const b = mistSeed[k * 4 + 1] as number;
-					const c = mistSeed[k * 4 + 2] as number;
-					const d = mistSeed[k * 4 + 3] as number;
-					const run = 60;
-					const x = ((((a * run + t * (0.12 + 0.1 * b)) % run) + run) % run) - run / 2;
-					positions[k * 3] = x;
-					positions[k * 3 + 1] = WATER + 0.25 + 0.5 * c;
-					positions[k * 3 + 2] = streamZ(x) + (d - 0.5) * 6;
-					const s = 3 + 3 * b;
-					sizes[k * 2] = s * 1.5;
-					sizes[k * 2 + 1] = s * 0.4;
-					colors[k * 4 + 3] = 0.12 + 0.1 * Math.sin(t * 0.13 + a * 40);
-				}
-			}
+		update() {
+			for (const system of systems) system.update();
 		},
 	};
 }
