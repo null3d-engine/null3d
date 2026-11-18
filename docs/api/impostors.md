@@ -104,7 +104,25 @@ The bake is arithmetic over the arrays. It gives the same pixels on every device
 
 The bake stores each point's normal in the object's own frame. At draw time the card turns that normal by the copy's turn and lights it, so a turned copy lights as its turned mesh does. The bake reads the mesh's own normals, and makes them where the part gives none.
 
-The vegetation add-on bakes a plant's far cards in a job worker with `bakeFarPlant`, and hands the near meshes over to the cards with `handOverToCards` ([Vegetation](vegetation.md)).
+## Hand the near meshes over to the cards
+
+`handOverToCards(meshes, cards, switchDistance, start)` sets the distance bands of a batch of near meshes and the batch of their cards. Call it once at setup, after you write the cards' sizes.
+
+```ts
+import { handOverToCards } from '@null3d/impostors';
+
+// The cards from the example above, and the same trees as meshes: same order, places and turns.
+const meshes = scene.createInstances(treeMesh, 20_000, { material: bark });
+meshes.positions.set(positions);
+meshes.markDirty();
+handOverToCards(meshes, trees.batch, 300);
+```
+
+The meshes draw from `start`, 0 by default, up to the switch. A coarser level's batch passes the start of its own band. The engine dithers the last `EDGE_BAND` share of that range out, 8 per cent of it. The cards start earlier, by as much as the largest card's size and both edges need. Their own dithered edge then ends before the mesh's edge begins to thin.
+
+The mesh and the card are different sources, so their dither phases differ. If both edges fell on the same distances, some pixels would drop out of both, and the sky would show through the crown. With the bands apart, each pixel that a mesh's dither drops shows its card. A tree moves from its mesh to its card with one dither.
+
+To draw every tree as its mesh again, call `trees.batch.setActiveCount(0)` and `meshes.setDrawRange(0, 1e9)`. The demo's L key does this.
 
 ## The surface atlas
 

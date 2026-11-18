@@ -297,9 +297,10 @@ that darkens itself.
   and casts its crown. The three.js mapping gains nothing, because three.js has no impostor
   counterpart.
 - Skills: the develop skill's impostor, vegetation and shader notes.
-- Two things to keep the split honest as it grows. A second add-on that wants the same distance
-  hand-over moves the band into the impostors add-on then, rather than copying it. And the bake
-  helper's public shape stays plant-neutral. The four `impostorSource` fields are the guard that
+- Two things keep the split honest as it grows. The distance hand-over, `handOverToCards`, lives
+  in the impostors add-on, so the impostors demo and any other caller use it without the vegetation
+  add-on, which re-exports it under the same name ([D-378](D-378-vegetation-add-on-unpublished.md)).
+  And the bake helper's public shape stays plant-neutral. The four `impostorSource` fields are the guard that
   keeps a caller from passing a plant's own nouns through it.
 - Tests: `impostor-turn` and `impostor-turn-sun-back` draw a turned tree beside its card,
   `impostor-plant` draws a grown plant beside its card, and `impostor-shadow` draws a row of cards

@@ -4594,16 +4594,18 @@ pub fn stage_frames(mesh: u32) -> u32 {
 /// How objects and batches pick their meshes' levels of detail, from the next frame on. The call
 /// values give the error in pixels under which a coarser level draws, 0 for none, and the error
 /// in texels of a shadow map under which a caster draws a coarser level there, 0 for none.
-/// `bands` says whether a source's distance band fades at each edge.
-/// Turning the bands on or off rebuilds the draw tables.
+/// `bands` says whether a source's distance band fades at each edge, and `governed` whether the
+/// frame-time governor raised the thresholds above the quality settings' own.
+/// Turning the bands on or off, or measured levels' fades, rebuilds the draw tables.
 #[wasm_bindgen(js_name = setLevelQuality)]
-pub fn set_level_quality(bands: bool) -> u32 {
+pub fn set_level_quality(bands: bool, governed: bool) -> u32 {
     with_engine(|e| {
         let [threshold, shadow_threshold] = e.call_values();
         let quality = LevelQuality {
             threshold,
             shadow_threshold,
             distance_bands: bands,
+            governed,
         };
         if e.renderer.settings_mut().set_level_quality(quality) {
             e.structure_changed = true;

@@ -670,18 +670,19 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		// Asks for 2 job workers after the first 30 busy frames, and for the third after 30 more. A
 		// software GPU draws so few frames a second that its window must be longer than four. CI draws
 		// with SwiftShader in every Chrome project, the production build among them, and only the plain
-		// project's name says so.
+		// project's name says so. A slow runner's SwiftShader drew too few of the 60 frames in a
+		// window of 30 s, and the third worker never started, so the window is a minute.
 		const soft =
 			Boolean(process.env.CI) || test.info().project.name.startsWith('chromium-swiftshader');
-		const seconds = soft ? 30 : 4;
+		const seconds = soft ? 60 : 4;
 		await page.goto(`engine.html?gpu=${gpu}&seconds=${seconds}&${mode.query}&sketch=busy`);
 		// The wait covers the page's own window plus the start of a slow software GPU, which alone
 		// measured about a third of a minute: a wait of the window plus a small multiple of the
 		// start leaves room for both on a loaded runner. The project's own minute would kill the
 		// test before that wait ran out, as it did in the production build, so the test sets a
 		// limit that contains it.
-		test.setTimeout(180_000);
-		const result = await pageResult<EngineResult & { error?: string }>(page, 90_000);
+		test.setTimeout(210_000);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 150_000);
 		expect(result.error).toBeUndefined();
 		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));

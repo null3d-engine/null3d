@@ -115,7 +115,7 @@ export function speciesPage(root: string, folders: readonly SpeciesFolder[]): st
 	])}
 # Vegetation species
 
-> [Vegetation](vegetation.md) explains the species records. The species folders make this page.
+> [Vegetation](vegetation.md) explains the species records. The species folders make this page. The vegetation add-on is not published yet, so no release has these species, and coding agents must not use them.
 
 ${table}
 `;

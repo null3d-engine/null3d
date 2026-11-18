@@ -1,14 +1,14 @@
 ---
 id: api/vegetation
 title: "Vegetation (@null3d/vegetation)"
-status: experimental
+status: planned
 since: "0.3"
 summary: "The plant core that grows each species from its own record and a seed, twenty species, each grown from its own record, a stand-in for any other id, and the scatter that places plants by ecological rules."
 ---
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Twenty species ship, each grown from its own record, and a page draws a stand-in for any species id it names that has none. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the wind records that sway each branch and leaf, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), the crown rosette that palms and tree ferns use (one stem crowned by a spiral of pinnate fronds, drawn as separate leaflets along each rachis), the directed crown of fronds (one trunk to a single growing point, with each frond a piece of the record placed whole at a ranked socket), the directed culm clump (jointed culms from one foot, each branching joint a ranked socket that carries a branch pair from the record's pieces), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the level distances and the near pool; the far cards are built, and the page documents them below. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's two GPU paths and its near shadows, and the floating leaves that ride the wind.
+> Not published yet. No release has the vegetation add-on, so a project cannot install it, and coding agents must not use it. The page describes the add-on as it stands. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the wind records that sway each branch and leaf, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), the crown rosette that palms and tree ferns use (one stem crowned by a spiral of pinnate fronds, drawn as separate leaflets along each rachis), the directed crown of fronds (one trunk to a single growing point, with each frond a piece of the record placed whole at a ranked socket), the directed culm clump (jointed culms from one foot, each branching joint a ranked socket that carries a branch pair from the record's pieces), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the level distances and the near pool; the far cards are built, and the page documents them below. This page covers the plant core's records and stages, the stand-ins, the scatter, and the floating leaves that ride the wind. The GPU grass is its own package, `@null3d/grass`.
 
 ```mermaid
 flowchart LR
@@ -24,6 +24,8 @@ flowchart LR
 The `@null3d/vegetation` package grows plants from a record of numbers and a seed, and places them by ecological rules. Each species lives in a folder of its own, with its record, its entry and its textures. A page loads only the species that it places, and grows them in the engine's job workers at first use.
 
 Twenty species ship on the plant core, each grown from its own record. For an id that has no record, a page gives the size and colors of a stand-in, which draws in its place through the same calls that a record-grown species takes. So a scene keeps its scatter, placement, wind and far cards, and draws the real species once it ships.
+
+Once the add-on is published, a project adds it with one install:
 
 ```sh
 bun add @null3d/vegetation
@@ -315,7 +317,7 @@ Reading Creek's 160 m valley into the ground maps and placing its species takes 
 
 `placePlants` draws a species' far cards past the distance where a plant spans a few pixels, when the page passes the variants' far bakes as its `far` option. `bakeFarPlant(kit, asset)` bakes a variant's two impostor atlases in a job worker, for the cards of the [impostors add-on](impostors.md).
 
-`handOverToCards(meshes, cards, switchDistance, start)` sets the distance bands of a batch of near meshes and the batch of their cards. The meshes draw from `start`, 0 by default, up to the switch: a coarser level's batch starts where its own band starts. Over the last 8 per cent of that range the engine dithers their pixels out. The cards start earlier, by as much as the largest card's size and both edges need, so write the cards' sizes first. Their own dithered edge then finishes before the mesh's edge begins to thin. Each pixel that a mesh's dither drops shows its card, and no pixel ever drops out of both. The mesh and the card are different sources, so their dither phases differ, and the two edges must not fall on the same pixels. Within one plant, `placePlants` hands the levels over in the same way. Each level draws on past the next level's start until the next stands at full coverage, and only then thins out.
+The impostors add-on's `handOverToCards(meshes, cards, switchDistance, start)` hands a batch of near meshes over to its cards, and this add-on exports it under the same name ([Impostors](impostors.md#hand-the-near-meshes-over-to-the-cards)). Within one plant, `placePlants` hands the levels over in the same way. Each level draws on past the next level's start until the next stands at full coverage, and only then thins out. The mesh and the card, like two levels, are different sources, so their dither phases differ, and no pixel may drop out of both.
 
 ## Compared with three.js
 

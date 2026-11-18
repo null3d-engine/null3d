@@ -1225,7 +1225,7 @@ export class SketchRunner {
 		const values = this.core.callValues();
 		values[0] = this.lodThreshold * this.governor.detailFactor;
 		values[1] = this.lodShadowThreshold * this.governor.detailFactor;
-		return this.sketch.glue.setLevelQuality(this.lodFade);
+		return this.sketch.glue.setLevelQuality(this.lodFade, this.governor.detailFactor > 1);
 	}
 
 	/** Gives the core the share of the render size that reflection targets take by default. */

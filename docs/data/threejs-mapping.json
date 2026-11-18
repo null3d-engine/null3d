@@ -583,7 +583,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createPointLight({ position, color, intensity, range, decay, castShadows, shadow, intensityUnit })",
-      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. intensity stays in candela. light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by 4\u03c0 as power does; setIntensity then takes lumens.",
+      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. intensity stays in candela. light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by 4π as power does; setIntensity then takes lumens.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
     },
@@ -594,7 +594,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, map, castShadows, shadow, intensityUnit })",
-      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by \u03c0 at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. light.map becomes map: sRGB pixels as { width, height, data }, or an engine texture, and setMap takes the same. The light projects it over its cone as three.js projects it; its top row follows the world's up, as three.js aims its map's camera, so a light rolled about its axis shows the same map. The engine copies a texture into its own light image once, so a texture that changes every frame, a VideoTexture included, throws E1112. The engine keeps the picture's detail up to 512 texels a side and reduces a larger texture to that, where three.js samples the texture itself. Up to 32 lights show a map at once.",
+      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. light.map becomes map: sRGB pixels as { width, height, data }, or an engine texture, and setMap takes the same. The light projects it over its cone as three.js projects it; its top row follows the world's up, as three.js aims its map's camera, so a light rolled about its axis shows the same map. The engine copies a texture into its own light image once, so a texture that changes every frame, a VideoTexture included, throws E1112. The engine keeps the picture's detail up to 512 texels a side and reduces a larger texture to that, where three.js samples the texture itself. Up to 32 lights show a map at once.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -1972,14 +1972,14 @@
       "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
     },
     {
-      "id": "vegetation",
+      "id": "trees",
       "category": "Geometry",
-      "three": "A tree model per species loaded from a glTF file, or a procedural plant from an add-on such as Sapling or ez-tree",
+      "three": "A tree model per species loaded from a glTF file, or a procedural plant from an add-on such as Sapling or ez-tree, swaying in a custom wind shader",
       "status": "changed",
       "since": "0.3",
-      "target": "loadSpecies(id) or, until a species ships, loadSpeciesOrStandIn(id, { height, leaf, bark }); prepareSpecies(ctx, module), growPlant(kit, { seed, variant }) and bakeFarPlant(kit, asset) in the job workers; plantMaterials(ctx, kit, { wind }) and placePlants(ctx, kit, assets, copies, { materials, far, view }) to draw the copies with their levels and far cards; await createGrass(ctx, { height, area, count, seed, wind }) for tufts of grass on a ground, with grass.setWindLayer(field) to bend them in the wind add-on's field and grass.fit(preset) for a preset's share; groundMaps({ size, water, height, paths, rocks, caves }) and scatterVegetation({ seed, ground, rules }) from @null3d/vegetation to place the plants by ecological rules, with scatterChecksum(points) to compare a placement across devices",
-      "notes": "three.js has no plant system. A port replaces a model file or a private generator with a species id and a seed: the add-on grows the species from its record at first use, in a job worker, so the page downloads no model. The species are being rebuilt, so a port draws stand-ins of each species' size and colours until the species ship, through the same calls. Each variant keeps its levels and its far cards. Where a three.js scene scatters its copies by a random number, the port reads the ground once into maps and places each species where its tolerance curves allow, from an integer hash, so one seed places the same plants on every device.",
-      "docs": "api/vegetation",
+      "target": "const tree = await assets.loadGltf(url); scene.createInstances(tree.find(name).mesh, count, { material }) for the copies of each species; a materials.shader material whose vertexOffset samples the field of createWind(ctx, { camera }) from @null3d/wind, with swayDistance; far copies as cards from @null3d/impostors, with handOverToCards(meshes, cards.batch, switchDistance)",
+      "notes": "null3D ships no plant generator. A port keeps its tree models: export a procedural tree from Blender's Sapling, ez-tree or a similar tool as a glTF file, or build the tree in code as the forest demo does. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling. For wind, replace the three.js shader's sway with one custom material whose vertex offset reads the wind add-on's field, as examples/forest/sway.ts does. The sway fades to nothing at the material's swayDistance, so far trees stand still and keep their cached shadows. Past the last level, cards from the impostors add-on stand in for the trees, and handOverToCards sets the two distance bands.",
+      "docs": "api/wind",
       "detect": "\\b(Tree|Foliage|Vegetation)(Generator|Factory)\\b|\\bSapling\\b|\\bez-tree\\b"
     },
     {

@@ -224,21 +224,38 @@ fn a_level_that_switches_at_once_adds_no_fade_bucket() {
 
 #[test]
 fn a_measured_level_fades_only_above_the_governed_threshold() {
-    // The quality settings report a rebuild only where the governed threshold crosses the point
-    // where a measured switch shows.
+    // The quality settings report a rebuild only where a threshold that the governor raised crosses
+    // the point where a measured switch shows.
     let mut world = World::new();
     give_levels(&mut world, 0);
     let settings = world.renderer.settings_mut();
     assert!(settings.set_level_quality(LevelQuality {
         threshold: 4.0,
+        governed: true,
         ..LevelQuality::default()
     }));
+    assert!(!settings.set_level_quality(LevelQuality {
+        threshold: 2.0,
+        governed: true,
+        ..LevelQuality::default()
+    }));
+    assert!(settings.set_level_quality(LevelQuality {
+        threshold: 1.0,
+        ..LevelQuality::default()
+    }));
+    // A preset's own threshold, such as Low's two pixels, never makes a measured level fade: only
+    // the governor's raise does, so a preset pays for no fade bucket until its frames run late.
     assert!(!settings.set_level_quality(LevelQuality {
         threshold: 2.0,
         ..LevelQuality::default()
     }));
     assert!(settings.set_level_quality(LevelQuality {
-        threshold: 1.0,
+        threshold: 2.0,
+        governed: true,
+        ..LevelQuality::default()
+    }));
+    assert!(settings.set_level_quality(LevelQuality {
+        threshold: 4.0,
         ..LevelQuality::default()
     }));
     // Above it, a measured set draws the buckets of a set that names its fades, and at the default
@@ -250,6 +267,7 @@ fn a_measured_level_fades_only_above_the_governed_threshold() {
         .settings_mut()
         .set_level_quality(LevelQuality {
             threshold: 4.0,
+            governed: true,
             ..LevelQuality::default()
         });
     let mut named = World::new();
@@ -270,6 +288,7 @@ fn a_measured_level_fades_only_above_the_governed_threshold() {
     let at_once = draws(&cpu).len();
     cpu.renderer.settings_mut().set_level_quality(LevelQuality {
         threshold: 4.0,
+        governed: true,
         ..LevelQuality::default()
     });
     cpu.record(true);
