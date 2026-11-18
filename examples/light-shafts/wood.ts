@@ -16,10 +16,11 @@ const MOSS = [0.045, 0.085, 0.02];
 const EARTH = [0.17, 0.11, 0.06];
 
 /**
- * The wood's pines, 1 high: tall and sparse, a bare trunk to half their height and a crown of
- * narrow tiers above it, so a low sun shines between the trunks.
+ * The wood's pines, 1 high: tall and sparse, a bare trunk to nearly three quarters of their
+ * height and a narrow crown above it, so the low sun's beams fall between the trunks and the
+ * crowns onto the path.
  */
-const PINE: Fir = { tiers: 6, low: 0.5, width: 0.2, branches: 8, droop: 0.25 };
+const PINE: Fir = { tiers: 5, low: 0.72, width: 0.1, branches: 8, droop: 0.2 };
 /** The trunk's radius at its foot, as a share of the tree's height, and its linear color. */
 const FOOT = 0.022;
 const BARK = [0.26, 0.18, 0.13];
