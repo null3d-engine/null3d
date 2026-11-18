@@ -28,6 +28,8 @@ export const PROJECTS = [
 	'packages/controls/tsconfig.test.json',
 	'packages/geometry',
 	'packages/geometry/tsconfig.test.json',
+	'packages/grass',
+	'packages/grass/tsconfig.test.json',
 	'packages/impostors',
 	'packages/impostors/tsconfig.test.json',
 	'packages/particles',

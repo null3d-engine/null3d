@@ -14,7 +14,6 @@ const OUTSIDE: Readonly<Record<string, string>> = {
 	'render/material.ts': 'the culling spheres of drawn copies, worked out in the page',
 	'render/stand-in.ts': "each drawn stand-in's turn, set in the page",
 	'render/static-shoots.ts': "the camera's view scale and each drawn copy's turn",
-	'grass/grass.ts': 'grass made in the page, on the GPU where WebGPU runs',
 	'floating-leaves/floating-leaves.ts': "the wind add-on's falling leaves, made in the page",
 	'wood/wood-measure.ts': "measures of the wood mesher's output for its tests",
 	'wood/wood-test-tree.ts': "a hand-built tree for the wood mesher's tests",

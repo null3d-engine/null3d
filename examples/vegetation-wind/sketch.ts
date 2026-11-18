@@ -3,8 +3,8 @@
 // slowly, and its strength rises and falls, so the leaves lift and settle as they do in a real
 // breeze. Press W to hold the wind still for comparison, and R to grow the clump again.
 import { defineSketch, timeOfDay } from '@null3d/engine';
+import { createGrass } from '@null3d/grass';
 import {
-	createGrass,
 	grassCover,
 	isSpeciesId,
 	loadSpecies,
