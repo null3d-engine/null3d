@@ -1009,6 +1009,13 @@ the orbits, and a step that opens is a fault of whichever level, card or bake th
 The owner set this rule on 18 November: an eye pulling back must see the same tree, and a crown that opens as it recedes
 reads as its foliage draining away.
 
+The rule outranks the other far-picture bars. Where a route can hold the share but costs the silhouette's outline match,
+the colour difference, the grain, or the price, the share is held and the other bar is recorded as compromised, with
+its figure, beside the route. The owner's ruling of 18 November, restated at 09.00: a plant that never thins with a
+poorer outline is preferred to a plant that matches its outline and drains away as it recedes. The same precedence
+applies to the meadow's own zoom: the page's camera steps are read as a series, and a step that opens fails the species
+however well it matches a still.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
