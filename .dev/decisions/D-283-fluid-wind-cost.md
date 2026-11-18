@@ -877,8 +877,9 @@ The task's evidence entry states the same, and names the runs that back the figu
 
 The wind work grew the forest demo's sketch past the 150 lines that a feature demo's sketch may
 take, and landing it turned the branch's `tests/lib` red. The demo's build moved into helpers, the
-way the dressed Creek's build did, so the rule holds without a change to it. `examples/forest/sway.ts`
-holds the trees' material and the field's settings, and `examples/forest/planting.ts` holds the
+way the dressed Creek's build did, so the rule holds without a change to it. `examples/lib/sway.ts`
+holds the trees' material and the field's settings, which other demos share, and
+`examples/forest/planting.ts` holds the
 batches, the hero fir and the counts that each preset draws. The sketch keeps the look, the field
 and the frame, at 85 lines.
 

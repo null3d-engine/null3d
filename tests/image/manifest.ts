@@ -1084,7 +1084,7 @@ const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'
 /** The sketch of the room scene's tests. */
 const ROOM_SKETCH = 'tests/pages/sketches/room-sketch.ts';
 
-// The species the held vegetation pictures draw, one per growth model present on the milestone:
+// The species the held vegetation picture draws, one per growth model present on the milestone:
 // great-limb broadleaf (oak), fine-twig broadleaf (silver birch), pinnate broadleaf (ash), weeping
 // broadleaf (willow), shrub (hawthorn), fern (bracken), ground grass (meadow grass) and herb
 // (hosta). The fixed list bounds the pictures' cost as the catalogue grows, and every other species
@@ -3784,14 +3784,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
 	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
 	...ALL_DEMOS.map((demo): ImageTest => {
-		// The held vegetation pictures draw the fixed documented subset, so their cost does not
-		// grow with the catalogue; the live pages draw every registered species. The subset rides
-		// on the sketch's own address, which the image page passes to the scene, not on a page
-		// switch, which stops at the page.
+		// The held vegetation picture draws the fixed documented subset, so its cost does not grow
+		// with the catalogue; the live page draws every registered species. The subset rides on the
+		// sketch's own address, which the image page passes to the scene, not on a page switch,
+		// which stops at the page.
 		const heldSpecies =
-			demo.name === 'vegetation' || demo.name === 'vegetation-wind'
-				? `?species=${HELD_VEGETATION_SPECIES.join(',')}`
-				: '';
+			demo.name === 'vegetation' ? `?species=${HELD_VEGETATION_SPECIES.join(',')}` : '';
 		const switches = [
 			...(demo.largeWorld ? ['largeWorld'] : []),
 			// A demo with a backdrop draws over a page, so the image page starts the engine on the
