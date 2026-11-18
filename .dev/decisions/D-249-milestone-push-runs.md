@@ -1,7 +1,6 @@
 # D-249: A milestone branch's pushes run its quick checks, in the branch's caches
 
-Status: decided by the owner. Built: `ci.yml` runs on pushes to main and to milestone branches and
-when started by hand, with no `pull_request` trigger. Task: none.
+Status: superseded by [D-379](D-379-one-pull-request-per-piece-of-work.md): no milestone branch takes work, and CI runs every job on each pull request to main. Task: none.
 
 Summary: Each push to a milestone branch, such as `m3-start`, runs the quick checks as a push run,
 and CI answers no pull request event. A pull request's runs keep caches that the branch's full runs

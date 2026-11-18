@@ -1,7 +1,6 @@
 # D-268: Three sessions share the milestone's work, and one of them audits the ticks
 
-Status: decided by the owner. The CI session's work includes making every build faster and cutting
-the memory that each build needs. Task: none.
+Status: superseded by [D-379](D-379-one-pull-request-per-piece-of-work.md): no milestone branch, landing session or audit of a milestone pull request's ticks remains. Task: none.
 
 Summary: The milestone's work runs in three agent sessions. The landing session runs the
 helpers, merges their branches and keeps the ticks. The CI session checks and pushes each landing,
@@ -44,7 +43,7 @@ The options do not change how anything looks.
 The owner set up three sessions:
 
 - The landing session runs the helpers and merges their branches into the milestone branch, in the
-  landing checkout. It keeps the task ticks, the pull request's description (`bun run pr-status`)
+  landing checkout. It keeps the task ticks, the pull request's description (`tools/pr-status.ts`)
   and the status notes.
 - The CI session checks each landing range and pushes it, as [D-259](D-259-landing-push-gate.md)
   says. It also improves CI. It makes every build faster and cuts the memory that each build needs,

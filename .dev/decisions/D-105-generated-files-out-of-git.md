@@ -81,7 +81,6 @@ Option C, with these generated pages:
 | The version numbers, `CHANGELOG.md` and `.claude-plugin/marketplace.json` | The release writes them. Claude Code reads the marketplace file straight from GitHub |
 | The vegetation species' textures in `packages/vegetation-textures/textures/<species>/`: the KTX2 files, `manifest.json` and the module that names them | `bun run plants:textures` makes them from the private reference repository, which CI and users cannot read. The textures package's test checks each file against its manifest ([D-309](D-309-plant-textures-from-references.md)) |
 | `bun.lock`, `Cargo.lock` and the sample content's manifest in `tools/samples/` | They must exist before any install or download |
-| The list of milestone task IDs, `tools/hooks/task-ids.txt` | The commit-msg hook reads it, and its source, the milestone plans, is kept outside git. The maintainers write it from the plans and commit it ([D-157](D-157-direct-pushes-to-main.md#task-footers-and-merge-commits)) |
 
 ## Consequences
 
