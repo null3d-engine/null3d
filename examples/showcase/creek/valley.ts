@@ -92,6 +92,11 @@ interface Rule {
 	/** The smallest and largest size of a copy. */
 	readonly scale: readonly [number, number];
 	readonly tolerances: readonly Tolerance[];
+	/**
+	 * The most copies that gather around each placed one, and how far from it, in meters: ferns,
+	 * hostas and wildflowers grow in clumps, as they spread from their roots and their seed.
+	 */
+	readonly clump?: readonly [number, number];
 }
 
 /**
@@ -101,7 +106,7 @@ interface Rule {
 const RULES: readonly Rule[] = [
 	{
 		kind: 'deadwood',
-		spacing: 9,
+		spacing: 5,
 		scale: [0.6, 1.2],
 		tolerances: [
 			['shade', 0.25, 0.5, 1, 1.01],
@@ -110,28 +115,10 @@ const RULES: readonly Rule[] = [
 		],
 	},
 	{
-		kind: 'hosta',
-		spacing: 2.2,
-		scale: [0.8, 1.3],
-		tolerances: [
-			['shade', 0.05, 0.3, 1, 1.01],
-			['water', 0.2, 0.8, 6, 10],
-			['height', 0.05, 0.2, 2, 4],
-		],
-	},
-	{
-		kind: 'fern',
-		spacing: 1.6,
-		scale: [0.8, 1.35],
-		tolerances: [
-			['shade', 0.1, 0.35, 1, 1.01],
-			['height', 0.1, 0.3, 4, 8],
-		],
-	},
-	{
 		kind: 'shrub',
-		spacing: 2.4,
-		scale: [0.75, 1.3],
+		spacing: 1.8,
+		scale: [0.9, 1.5],
+		clump: [2, 1.8],
 		tolerances: [
 			['edge', 0.15, 0.5, 1, 1.01],
 			['height', 0.2, 0.4, 6, 10],
@@ -139,22 +126,45 @@ const RULES: readonly Rule[] = [
 		],
 	},
 	{
+		kind: 'hosta',
+		spacing: 1.8,
+		scale: [1, 1.6],
+		clump: [3, 1.6],
+		tolerances: [
+			['shade', -0.4, 0.3, 1, 1.01],
+			['water', 0.2, 0.8, 6, 10],
+			['height', 0.05, 0.2, 2, 4],
+		],
+	},
+	{
+		kind: 'fern',
+		spacing: 1.2,
+		scale: [1, 1.6],
+		clump: [4, 1.8],
+		tolerances: [
+			['shade', -0.5, 0.35, 1, 1.01],
+			['water', 0.3, 0.8, 8, 14],
+			['height', 0.1, 0.3, 4, 8],
+		],
+	},
+	{
 		kind: 'flowers',
-		spacing: 1.5,
-		scale: [1.1, 1.6],
+		spacing: 1.2,
+		scale: [1.3, 1.9],
+		clump: [5, 1.2],
 		tolerances: [
 			['shade', -1, 0, 0.05, 0.2],
 			['water', 0.6, 1.5, 9, 14],
 			['slope', -1, 0, 0.4, 0.8],
-			['patch', 0.6, 0.7, 1, 1.01],
+			['patch', 0.5, 0.62, 1, 1.01],
 		],
 	},
 ];
 
 /** How far along the valley the ground cover reaches from the middle, in meters. */
-const REACH_X = 34;
+const REACH_X = 44;
 /** How far from the stream's middle the ground cover reaches, in meters. */
-const REACH_Z = 20;
+const REACH_Z = 24;
 /** How close the camera may come to a model, in meters, beyond the reach of its leaves. */
 const CLEARANCE = 0.6;
 /** The points along the route that the clearance is measured from. */
@@ -278,8 +288,26 @@ export function placeValley(options: ValleyOptions = {}): Valley {
 	const taken: { x: number; z: number; r: number }[] = trees.map(({ x, z }) => ({ x, z, r: 0.8 }));
 	const plants: Spot<PlantKind>[] = [];
 	const deadwood: Spot<'deadwood'>[] = [];
+	/** How well the ground at a point suits a rule, from 0 to 1, or 0 where a stone covers it. */
+	const scoreAt = (rule: Rule, x: number, z: number): number => {
+		if (options.rocks?.(x, z)) return 0;
+		const ground = groundAt(x, z, trees);
+		let score = 1;
+		for (const tolerance of rule.tolerances) score *= meets(ground[tolerance[0]], tolerance);
+		return score;
+	};
+	/** Places a copy of a rule's kind where it keeps its room and the route misses it. */
+	const place = (rule: Rule, x: number, z: number, yaw: number, size: number): boolean => {
+		const r = SIZES[rule.kind].reach * size * 0.8;
+		if (taken.some((t) => (x - t.x) ** 2 + (z - t.z) ** 2 < (r + t.r) ** 2)) return false;
+		const spot = { kind: rule.kind, x, y: groundHeight(x, z), z, yaw, size };
+		if (!clearOfRoute(spot)) return false;
+		taken.push({ x, z, r });
+		if (spot.kind === 'deadwood') deadwood.push(spot as Spot<'deadwood'>);
+		else plants.push(spot as Spot<PlantKind>);
+		return true;
+	};
 	for (const rule of RULES) {
-		const reach = SIZES[rule.kind].reach;
 		for (let gx = -REACH_X; gx < REACH_X; gx += rule.spacing)
 			for (let gz = -REACH_Z; gz < REACH_Z; gz += rule.spacing) {
 				const x = gx + next() * rule.spacing;
@@ -287,18 +315,19 @@ export function placeValley(options: ValleyOptions = {}): Valley {
 				const chance = next();
 				const size = rule.scale[0] + (rule.scale[1] - rule.scale[0]) * next();
 				const yaw = next() * Math.PI * 2;
-				if (options.rocks?.(x, z)) continue;
-				const ground = groundAt(x, z, trees);
-				let score = 1;
-				for (const tolerance of rule.tolerances) score *= meets(ground[tolerance[0]], tolerance);
-				if (chance >= score) continue;
-				const r = reach * size * 0.8;
-				if (taken.some((t) => (x - t.x) ** 2 + (z - t.z) ** 2 < (r + t.r) ** 2)) continue;
-				const spot = { kind: rule.kind, x, y: groundHeight(x, z), z, yaw, size };
-				if (!clearOfRoute(spot)) continue;
-				taken.push({ x, z, r });
-				if (spot.kind === 'deadwood') deadwood.push(spot as Spot<'deadwood'>);
-				else plants.push(spot as Spot<PlantKind>);
+				if (chance >= scoreAt(rule, x, z)) continue;
+				if (!place(rule, x, z, yaw, size)) continue;
+				// The clump: copies that gather about this one, where the ground suits them too.
+				const [count, spread] = rule.clump ?? [0, 0];
+				for (let k = 0; k < count; k++) {
+					const turn = next() * Math.PI * 2;
+					const away = spread * Math.sqrt(next());
+					const cx = x + Math.cos(turn) * away;
+					const cz = z + Math.sin(turn) * away;
+					const grown = size * (0.7 + 0.3 * next());
+					const cyaw = next() * Math.PI * 2;
+					if (next() < scoreAt(rule, cx, cz)) place(rule, cx, cz, cyaw, grown);
+				}
 			}
 	}
 	return { trees, plants, deadwood };
