@@ -1382,7 +1382,7 @@ function builtLevels(
 				// outer surface at the farthest level, so the crown cannot thin as the camera pulls
 				// back. The form is rebuilt once for the body alone.
 				const farBody =
-					at === 2 && mesh.record.lod.farBody === 'envelope'
+					at >= 1 && mesh.record.lod.farBody === 'envelope'
 						? (() => {
 								const form = levelBuild(input, 0);
 								// A plant whose leaves are merged into its wood, as the willow's are, carries
