@@ -2,8 +2,10 @@
 // file that imports the add-on, or imports a file of the list, belongs to the list. A file missing
 // from it would bring the add-on back into the commands that leave it out.
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize, relative } from 'node:path';
+import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { isVegetationFile, VEGETATION_FILES, VEGETATION_PACKAGES } from './vegetation-switch.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -25,42 +27,49 @@ function specifiers(text: string): string[] {
 const ADDON = new RegExp(`^@null3d/(${VEGETATION_PACKAGES.join('|')})(/|$)`);
 
 describe('the vegetation add-on files', () => {
-	it('name every file outside the packages that reaches the add-on', () => {
-		const files = SCANNED.flatMap((folder) =>
-			[...new Bun.Glob(`${folder}/**/*.{ts,tsx,js,mjs,html}`).scanSync({ cwd: ROOT })].filter(
-				(path) => !path.includes('node_modules/') && !path.includes('/dist/'),
-			),
-		);
-		const reaching = new Set(files.filter((path) => isVegetationFile(path)));
-		const imports = new Map(
-			files
-				.filter((path) => !reaching.has(path))
-				.map((path) => [path, specifiers(readFileSync(join(ROOT, path), 'utf8'))] as const),
-		);
-		const outside: string[] = [];
-		let grew = true;
-		while (grew) {
-			grew = false;
-			for (const [path, list] of imports) {
-				const hit = list.find((spec) => {
-					if (ADDON.test(spec)) return true;
-					if (!spec.startsWith('.')) return false;
-					const target = relative(
-						ROOT,
-						normalize(join(ROOT, dirname(path), spec.split('?')[0] as string)),
-					);
-					return isVegetationFile(target) || reaching.has(target);
-				});
-				if (!hit) continue;
-				outside.push(`${path} imports ${hit}`);
-				reaching.add(path);
-				imports.delete(path);
-				grew = true;
+	it(
+		'name every file outside the packages that reaches the add-on',
+		() => {
+			// The files that git keeps: a run's leftovers, such as the type check's copies of the skills'
+			// sketches, are not the repository's code.
+			const files = execFileSync('git', ['ls-files', '-z', '--', ...SCANNED], {
+				cwd: ROOT,
+				encoding: 'utf8',
+			})
+				.split('\0')
+				.filter((path) => /\.(ts|tsx|js|mjs|html)$/.test(path) && existsSync(join(ROOT, path)));
+			const reaching = new Set(files.filter((path) => isVegetationFile(path)));
+			const imports = new Map(
+				files
+					.filter((path) => !reaching.has(path))
+					.map((path) => [path, specifiers(readFileSync(join(ROOT, path), 'utf8'))] as const),
+			);
+			const outside: string[] = [];
+			let grew = true;
+			while (grew) {
+				grew = false;
+				for (const [path, list] of imports) {
+					const hit = list.find((spec) => {
+						if (ADDON.test(spec)) return true;
+						if (!spec.startsWith('.')) return false;
+						const target = relative(
+							ROOT,
+							normalize(join(ROOT, dirname(path), spec.split('?')[0] as string)),
+						);
+						return isVegetationFile(target) || reaching.has(target);
+					});
+					if (!hit) continue;
+					outside.push(`${path} imports ${hit}`);
+					reaching.add(path);
+					imports.delete(path);
+					grew = true;
+				}
 			}
-		}
-		expect(outside).toEqual([]);
-		// Reading every source file of the repository takes a few seconds.
-	}, 60_000);
+			expect(outside).toEqual([]);
+			// Reading every source file of the repository takes a few seconds.
+		},
+		scaledBudget(60_000),
+	);
 
 	it('are left out of the type check projects that CI checks, and checked in their own', () => {
 		// The configs are JSON with comments, so the check reads each glob as a quoted string.
