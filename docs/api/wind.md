@@ -282,22 +282,37 @@ const leaf = ctx.materials.shader({
     base: wind.field.air.base,
     gust: wind.field.air.gust,
     swirl: wind.field.air.swirl,
+    sent: wind.field.air.sent,
   },
 });
 ```
 
-The three vectors hold the air's steady settings. They hold the base wind's speed, heading, ground sink and seed, the gust's strength, radius, wave number and speed, and the swirl's shape. A material takes them once, and again after `setBase` or a change to the air.
+The first three vectors hold the air's steady settings. They hold the base wind's speed, heading, ground sink and seed, the gust's strength, radius, wave number and speed, and the swirl's shape. A material takes them once, and again after `setBase` or a change to the air. The fourth, `sent`, holds the gust that the page sent last: its place, its strength and the time it was sent. Give it to the material again after each `wind.gust` call.
 
 The pass keeps two states, so the texture is an array. `layer` names the first layer of the newest state, which `field.texture.layer` gives. Give it to the material once and again in each frame, through `setUniform`. That call takes one number and allocates nothing.
 
-A vertex offset reads the air at the vertex's own place and moves the vertex with it:
+A vertex offset reads the air at the vertex's own place and moves the vertex with it. The material's WGSL declares the field's texture and the uniforms above, then the two sampling blocks, then the offset:
 
 ```wgsl
+var wind: texture_2d_array<f32>;
+
+struct Uniforms {
+    base: vec4f,
+    gust: vec4f,
+    swirl: vec4f,
+    sent: vec4f,
+    origin: vec2f,
+    size: f32,
+    layer: f32,
+}
+
+// The two sampling blocks go here.
+
 fn vertexOffset(input: VertexInput) -> vec3f {
     let place = object.position + input.position;
-    // The settings come from the material's three vectors, and the time from the engine's frame.
-    let air = wind_reading(material.base, material.gust, material.swirl, frame.time);
-    let air_at_place = wind_sample(place, material.origin, material.size, material.layer, air);
+    // The settings come from the material's four vectors, and the time from the engine's frame.
+    let air = wind_reading(material.base, material.gust, material.swirl, material.sent, frame.time);
+    let air_at_place = wind_sample(place, material.origin, material.size, i32(material.layer), air);
     // A plant's top leans more than its foot. The share is meters of lean for each meter a second
     // of air: a steady wind of 4 leans the top of a 1 meter plant by about 0.3 meters.
     return vec3f(air_at_place.r, 0.0, air_at_place.b) * (0.08 * input.uv.y);
