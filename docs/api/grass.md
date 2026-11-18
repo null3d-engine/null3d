@@ -66,13 +66,13 @@ export default defineSketch(async (ctx) => {
 
 ## Grass on the ground
 
-`await createGrass(ctx, { height, area, count, seed, mask, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)`, skip ground steeper than `maxSlope`, and skip the ground that `mask` refuses, such as water, a stone or a footprint. Their turn and size come from integer hashes, so one seed places the same grass on every device, and each tuft's tint comes from a hash of its root's place in the shader. `count` is the tufts at the High preset; Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one. Await the call in the sketch's setup, because WebGPU makes its draw then.
+`await createGrass(ctx, { height, area, count, seed, mask, wind })` draws tufts of bent blades over a square of ground. The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. They also skip the ground that `mask` refuses, such as water, a stone or a footprint. Their turn and size come from integer hashes, so one seed places the same grass on every device. Each tuft's tint comes from a hash of its root's place in the shader. `count` is the tufts at the High preset. Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one. Await the call in the sketch's setup, because WebGPU makes its draw then.
 
 The blades bend in the wind add-on's field. Give `createGrass` its `wind` field, and call `grass.setWindLayer(field)` in each frame with the field's newest state. A page that gives no field grows grass that stands still.
 
 ## The blade shape
 
-Without a shape, each blade narrows to a point from its root. `blade` gives every blade one shape: `widthAt(t)` is the blade's width in meters at a share of its length, from 0 at the root to 1 at the tip, and `fold` is the degrees that each half rises from the keel. A blade with a fold draws a vertex at its keel, so its two halves light apart. Give a plant's own blade with the plant's own `color`, so the cover reads as the same grass where the plant stands in it.
+Without a shape, each blade narrows to a point from its root. The `blade` option gives every blade one shape. Its `widthAt(t)` is the blade's width in meters at a share `t` of its length, from 0 at the root to 1 at the tip. Its `fold` is the degrees that each half rises from the keel. A blade with a fold draws a vertex at its keel, so its two halves light apart. Give a plant's own blade with the plant's own `color`, so the cover reads as the same grass where the plant stands.
 
 ```ts
 const grass = await createGrass(ctx, {
@@ -87,13 +87,17 @@ const grass = await createGrass(ctx, {
 
 ## The two GPU paths
 
-On WebGPU and compatibility mode a compute pass builds the blade list: it writes each tuft's row and the count into a draw that the frame culls no further, and the engine copies the count into the main view and every drawn shadow view. Give it the drawing `camera` and the pass culls the tiles outside the view and thins the far tufts: a far tuft draws the share that its root's hash picks, and its blades widen by the inverse of that share, so the hill's cover stays the same. The draw shader then culls each view to its own box, from that view's matrix: the camera's view draws its frustum, and a light's view draws its cascade, whose box reaches toward the light over the casters. So a shadow view does not draw the whole kept list. WebGL2 fills one instance batch for each tuft shape on the CPU, and its vertex shader applies the same share and the same per-view cull, so both paths draw the same hill. The rows are built for Ultra's share once, so a preset change only changes how many rows draw, not the memory. A page that drives the rows itself gives `compute: false`, which keeps the instance batch on both paths.
+On WebGPU and compatibility mode a compute pass builds the blade list. It writes each tuft's row and the count into a draw that the frame culls no further. The engine copies the count into the main view and every drawn shadow view.
+
+Give the pass the drawing `camera`, and it culls the tiles outside the view and thins the far tufts. A far tuft draws the share that its root's hash picks. Its blades widen by the inverse of that share, so the hill's cover stays the same. The draw shader then culls each view to its own box, from that view's matrix. The camera's view draws its frustum. A light's view draws its cascade, whose box reaches toward the light over the casters. So a shadow view does not draw the whole kept list.
+
+WebGL2 fills one instance batch for each tuft shape on the CPU. Its vertex shader applies the same share and the same per-view cull, so both paths draw the same hill. The rows are built for Ultra's share once. A preset change then changes only how many rows draw, not the memory. A page that drives the rows itself gives `compute: false`, which keeps the instance batch on both paths.
 
 The tuft meshes plan no levels of detail: the wind bends their blades in the shader, and the tufts thin with distance by themselves.
 
 ## Near shadows and the sway distance
 
-The grass casts and receives the sun's shadows on both paths. Give it a `swayDistance` to stop the blades past that distance, so a far cascade that only the grass reaches keeps its cached layer, and call `grass.setSwayDistance(distance)` when the preset changes. `swayDistanceFor(preset)` gives each preset's distance from `PLANT_SWAY_DISTANCE`: 8, 16, 24 and 32 meters from Low to Ultra. Give a swaying plant's material the same distance, so plants and grass stop at one line. The ground's own color and the blades' root colors should meet at the hill's foot.
+The grass casts and receives the sun's shadows on both paths. Give it a `swayDistance` to stop the blades past that distance. A far cascade that only the grass reaches then keeps its cached layer. Call `grass.setSwayDistance(distance)` when the preset changes. `swayDistanceFor(preset)` gives each preset's distance from `PLANT_SWAY_DISTANCE`: 8, 16, 24 and 32 meters from Low to Ultra. Give a swaying plant's material the same distance, so plants and grass stop at one line. The ground's own color and the blades' root colors should meet at the hill's foot.
 
 ## The placement hash
 

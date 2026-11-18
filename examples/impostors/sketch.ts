@@ -12,6 +12,7 @@ import {
 } from '@null3d/impostors';
 import { interact } from '../lib/interact';
 import {
+	atlasTextures,
 	BAND_OVERLAP,
 	bands,
 	CARD_EDGE,
@@ -83,22 +84,7 @@ export default defineSketch(async (ctx) => {
 	// The far band: one batch of cards. Each blends the three atlas views nearest the camera and is
 	// lit by the sun that the scene has now, so the band follows a moving sun with the meshes.
 	const picture = impostorAtlases();
-	const atlas = textures.fromData({
-		width: picture.color.width,
-		height: picture.color.height,
-		data: picture.color.data,
-		colorSpace: 'srgb',
-		wrap: 'clamp',
-		mipmaps: false,
-	});
-	const surface = textures.fromData({
-		width: picture.surface.width,
-		height: picture.surface.height,
-		data: picture.surface.data,
-		colorSpace: 'linear',
-		wrap: 'clamp',
-		mipmaps: false,
-	});
+	const { color: atlas, surface } = atlasTextures(textures, picture);
 	const cards = createImpostors(
 		{ scene, materials, geometry },
 		{

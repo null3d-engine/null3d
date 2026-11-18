@@ -60,6 +60,8 @@
 			}
 			.sidebar li a:hover { background: var(--pick); }
 			.scene { display: block; font-size: 0.85em; color: var(--muted); font-weight: 400; }
+			/* The bar's own inline style lays it out as a row, which would show it while it is hidden. */
+			.growth[hidden] { display: none !important; }
 			.name { display: block; }
 			.sidebar li a[aria-current="page"] {
 				background: var(--pick);

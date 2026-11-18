@@ -1,6 +1,7 @@
-// Pre-push guard: a merge commit holds only conflict resolutions and mechanical fixes (AGENTS.md,
-// "Commit gates"). Git hides a merge's own edits from `git log -p`, `git log -S` and most review
-// tools, so a feature, test or shading change written inside a merge has no commit of its own.
+// Commit gate: a merge commit holds only conflict resolutions and mechanical fixes (AGENTS.md,
+// "Commit gates"). Git hides a merge's own edits from `git log -p`, `git log -S` and a review of a
+// pull request by commit, so a feature, test or shading change written inside a merge has no
+// commit of its own. CI's commit check runs it over each pull request's commits.
 //
 // For each merge it rebuilds the tree that git's automatic merge gives, conflict markers included
 // (what `git show --remerge-diff` compares against), and reads the merge's changes from that tree:
@@ -27,9 +28,10 @@ export const MERGE_EDIT_TRAILER = 'Merge-Edit';
 export const MERGE_RULE_SINCE = '2026-10-15T14:28:48+0800';
 
 /**
- * Merges on the milestone branch that hold new work beyond their resolutions, from before landings
- * ran this check. By the owner's ruling they stay, named here, and the rule holds for every other
- * merge: their content is on the branch, and rewriting them would risk more than it fixes (D-259).
+ * Merges in the history of the 0.2 release work that hold new work beyond their resolutions, from
+ * before the check ran on them. By the owner's ruling they stay, named here, and the rule holds for
+ * every other merge: rewriting them would risk more than it fixes (D-259). Main holds that work as
+ * one squashed commit, so only a branch that still carries that history reaches these merges.
  *
  * The owner widened this set, answering a request that named the forty-three merges bringing the
  * vegetation branches into the range, in their words: "they're in" (D-359). The work each of those

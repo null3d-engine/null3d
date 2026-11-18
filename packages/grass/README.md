@@ -1,8 +1,8 @@
 # Grass for null3D
 
 `@null3d/grass` draws grass over a ground in a null3D scene. Tufts of bent blades stand on the
-ground's height, skip steep ground and the ground that a mask refuses, and take their places from
-integer hashes. One seed therefore places the same grass on every device. The blades bend in the
+ground's height, and skip steep ground and the ground that a mask refuses. They take their places
+from integer hashes. One seed therefore places the same grass on every device. The blades bend in the
 air of the wind add-on's field, so the grass answers the same gusts as the rest of the scene.
 
 On WebGPU a compute pass builds the blade list each frame. It culls the list to the view, thins the

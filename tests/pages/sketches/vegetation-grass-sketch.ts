@@ -3,7 +3,7 @@
 // which this picture holds still. The camera and the light are fixed, so two runs draw the same
 // frame.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
-import { createGrass, type GrassOptions } from '@null3d/vegetation';
+import { createGrass, type GrassOptions } from '@null3d/grass';
 import { createWind } from '@null3d/wind';
 
 /** The hill's width and depth, in meters. */

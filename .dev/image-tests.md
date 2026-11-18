@@ -190,15 +190,15 @@ Two faults, put back on purpose in builds of their own, show what the figures ca
 
 A figure passes a change that draws worse. Task V12 showed it: every shadow check stayed inside its limit while the crowns lost their leaf angles and the trunks lost their bend. So a change to a look gets a second check, which reads pictures.
 
-- Who: a reviewer subagent with a fresh context. It sees the pictures, the task and the rule below. It does not see the author's reasons, so it cannot share the author's judgment. The landing session starts it, and an author never reviews its own pictures.
+- Who: a reviewer subagent with a fresh context. It sees the pictures, the task and the rule below. It does not see the author's reasons, so it cannot share the author's judgment. The coordinator starts it, and an author never reviews its own pictures.
 - What it sees: before pictures from the branch's base and after pictures from its head. Each side uses the same page, frame, camera, preset and GPU path. Where a scene allows it, one frame holds both, as the crown comparison does; otherwise each side draws its own still.
 - What it judges, with a verdict and a reason for each:
   - Foliage quality: leaf shape, the angles and directions of the leaves, the bend of trunk and branch, the density and silhouette of the crown.
   - Visual fidelity: the light on the leaves, the shadowing inside the crown, and the contact with the ground. Any fault belongs here too, such as acne or a caster that floats.
   - Aesthetics: whether the picture reads as well as the older one to a person who did not make the change.
 - The rule: it approves nothing that is worse than the before picture in any of the three. On par is the floor. A loss in one test needs a gain that the reviewer judges the scene better for.
-- Where the verdict goes: `look-<head>.md` beside the other audit verdicts. It holds each test's verdict, the pictures it read with their paths, and the shortest list of changes that would earn an approval. The landing session reads it before it merges.
-- When: every change to vegetation, shadows, lighting or materials, every preset change that moves a picture, and every reference that a change replaces. It runs before the landing session merges the branch, never after.
+- Where the verdict goes: `look-<head>.md` beside the other audit verdicts. It holds each test's verdict, the pictures it read with their paths, and the shortest list of changes that would earn an approval. The coordinator reads it before the pull request merges.
+- When: every change to vegetation, shadows, lighting or materials, every preset change that moves a picture, and every reference that a change replaces. It runs before the pull request merges, never after.
 
 ## Large-world jitter
 
