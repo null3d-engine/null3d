@@ -1,7 +1,8 @@
 // The showcase scenes' Blender model files (tools/samples/blender/) as plain data: each file's path
-// in the sample content, and the texture slots that each of its materials fills, in the file's
-// material order. A scene finds its textures by these layouts (`blender-models.ts`), and
-// `tools/samples/blender/models.test.ts` checks each layout against the pinned file it names.
+// in the sample content, and each of its materials in the file's order, with the texture slots that
+// it fills and the parts that it draws. A scene finds a part's textures by these lists
+// (`examples/lib/blender-models.ts`), and `tools/samples/blender/models.test.ts` checks each list
+// against the pinned file it names.
 
 /** A texture slot of a material of the scripts. */
 export type Slot = 'map' | 'orm' | 'normal';
@@ -14,37 +15,59 @@ export const CUTOUT: Slots = ['map'];
 /** A bark's or a rock's material: its base color, its packed occlusion and roughness, its normals. */
 export const SURFACE: Slots = ['map', 'orm', 'normal'];
 
-/** One model file: its path in the sample content and its materials' slots. */
+/** One material of a file: the slots it fills and the names of the parts it draws. */
+export interface ModelMaterial {
+	readonly slots: Slots;
+	readonly parts: readonly string[];
+}
+
+/** One model file: its path in the sample content and its materials, in the file's order. */
 export interface ModelFile {
 	readonly path: string;
-	readonly layout: readonly Slots[];
+	readonly materials: readonly ModelMaterial[];
 }
 
 /** Creek's files: its trees, its bank plants and its cave mouth. */
 export const CREEK_FILES = {
 	trees: {
 		path: 'sources/showcase/creek/trees.glb',
-		// The leaves, then the beech's, the birch's and the oak's bark.
-		layout: [CUTOUT, SURFACE, SURFACE, SURFACE],
+		materials: [
+			{ slots: CUTOUT, parts: ['oak-leaves', 'beech-leaves', 'birch-leaves'] },
+			{ slots: SURFACE, parts: ['beech-wood'] },
+			{ slots: SURFACE, parts: ['birch-wood'] },
+			{ slots: SURFACE, parts: ['oak-wood'] },
+		],
 	},
 	plants: {
 		path: 'sources/showcase/creek/plants.glb',
-		// The fern, the flowers, the hosta and the shrub.
-		layout: [CUTOUT, CUTOUT, CUTOUT, CUTOUT],
+		materials: [
+			{ slots: CUTOUT, parts: ['fern'] },
+			{ slots: CUTOUT, parts: ['flowers'] },
+			{ slots: CUTOUT, parts: ['hosta'] },
+			{ slots: CUTOUT, parts: ['shrub'] },
+		],
 	},
-	cave: { path: 'sources/showcase/creek/cave.glb', layout: [SURFACE] },
+	cave: {
+		path: 'sources/showcase/creek/cave.glb',
+		materials: [{ slots: SURFACE, parts: ['cave'] }],
+	},
 } as const satisfies Record<string, ModelFile>;
+
+/** The materials of one island plant: its card, its leaves and its wood, in the files' order. */
+const islandPlant = (plant: string): ModelMaterial[] => [
+	{ slots: CUTOUT, parts: [`${plant}-card`] },
+	{ slots: CUTOUT, parts: [`${plant}-leaves`] },
+	{ slots: SURFACE, parts: [`${plant}-wood`] },
+];
 
 /** The island's files: its trees and its shrubs. */
 export const ISLAND_FILES = {
 	trees: {
 		path: 'sources/showcase/island/trees.glb',
-		// The holm oak's card, leaves and bark, then the olive's and the stone pine's.
-		layout: [CUTOUT, CUTOUT, SURFACE, CUTOUT, CUTOUT, SURFACE, CUTOUT, CUTOUT, SURFACE],
+		materials: [...islandPlant('holm-oak'), ...islandPlant('olive'), ...islandPlant('stone-pine')],
 	},
 	shrubs: {
 		path: 'sources/showcase/island/shrubs.glb',
-		// The oleander's card, its leaves and flowers, and its stems.
-		layout: [CUTOUT, CUTOUT, SURFACE],
+		materials: islandPlant('oleander'),
 	},
 } as const satisfies Record<string, ModelFile>;

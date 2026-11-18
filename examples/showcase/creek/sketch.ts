@@ -1,10 +1,11 @@
 // Creek: a showcase scene of a small stream in a grassy valley. Clear water runs over a stony bed:
 // a reflection pass mirrors the banks and the sky in it, and the bed shows through it, bent by its
-// ripples. The whole valley is dressed by the vegetation add-on, which grows every tree, shrub,
-// fern and tuft of grass from a species record and a seed, places them by the ground's own
-// ecological rules and moves them in the scene's one wind field. Its trees, shrubs and ferns draw
-// as the plant core's stand-ins until their species land. Fallen leaves float on the current
-// and fireflies hover at night. The land, its textures, the rocks and the water are made in code.
+// ripples. Oaks, beeches and birches stand on the banks, with ferns, hostas, shrubs and wildflowers
+// below them where the ground suits each, and a cave opens in the far bank: models built by script
+// in Blender, which the scene loads from the sample content. The leaves, the bank plants and the
+// GPU grass sway in the scene's one wind field. Leaves fall from the crowns and float on the
+// current, and fireflies hover at night. The land, its textures, the rocks and the water are made
+// in code.
 //
 // The controls pick a time of day and turn the effects on and off, among them a "DSLR" lens with
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
@@ -42,11 +43,12 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
+import { loadModels } from './models';
 import { createPlants, type Plants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
-import { createStones, type Obstacle } from './stones';
-import { SEED } from './valley';
+import { createStones, type Obstacle, placeCave } from './stones';
+import { placeValley, SEED, SIZES } from './valley';
 
 // The camera route, which this scene's frames and the shared route check both read.
 export { SHOTS };
@@ -330,18 +332,26 @@ export default defineSketch(async (ctx) => {
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
 	const flora = await createFlora(ctx, wind);
-	// The plants grow while the valley draws, so a live start shows its first frame without waiting
-	// for every species and the plants appear as the growth finishes. A held picture waits for the
-	// whole growth, so its frame shows the finished scene.
+	const valley = placeValley({ rocks: (x, z) => stones.clear(x, z) });
+	// The models download while the valley draws, so a live start shows its first frame without
+	// waiting for them, and the trees, the plants and the cave appear as they land. A held picture
+	// waits for them, so its frame shows the finished scene.
 	let plants: Plants | undefined;
-	const growPlants = async (): Promise<void> => {
-		plants = await createPlants(ctx, wind.field, {
-			rocks: (x, z) => stones.clear(x, z),
-		});
+	const dress = async (): Promise<void> => {
+		const models = await loadModels(ctx);
+		plants = createPlants(ctx, wind, valley, models);
+		placeCave(ctx, models.cave);
 	};
-	if (ctx.engine.held) await growPlants();
-	else growPlants().catch((error: unknown) => console.error(error));
-	const air = await createAir(ctx, camera, wind.field);
+	if (ctx.engine.held) await dress();
+	else dress().catch((error: unknown) => console.error(error));
+	// Leaves fall from the crowns, from high in each one and across its reach.
+	const crowns = valley.trees.map(({ kind, x, y, z, size }) => ({
+		x,
+		z,
+		top: y + SIZES[kind].height * size * 0.85,
+		reach: SIZES[kind].reach * size,
+	}));
+	const air = await createAir(ctx, crowns, wind.field);
 	const shafts = createShafts(ctx, camera);
 	// The grass covers the valley: denser along the banks that the camera flies past, thinner over
 	// the slopes above, and never on the water or a stone.
@@ -540,7 +550,7 @@ export default defineSketch(async (ctx) => {
 			wind.update();
 			// The field keeps two states, so the plants and the grass read this frame's one.
 			for (const field of grass) field.setWindLayer(wind.field);
-			plants?.setWindLayer(wind.field);
+			plants?.update();
 			stage.update(dt);
 			for (const haze of hazes) haze.update(stage.airColor, stage.light);
 			controls.update(t);
@@ -562,7 +572,7 @@ export default defineSketch(async (ctx) => {
 			const lens = controls.lens();
 			if (lens) post.set(lens);
 			flora.update(t);
-			air.update(t, dt);
+			air.update(t);
 			water?.update();
 		},
 		onLateUpdate() {

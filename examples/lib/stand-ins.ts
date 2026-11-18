@@ -1,12 +1,6 @@
 // The stand-ins that the demo pages plant, as each page passes them to the plant core. A page
 // imports its own entry from here, so the mesh-hash guard builds exactly the plants the page draws
 // and the two cannot drift apart. The seeds are the pages' own.
-import {
-	SEED as CREEK_SEED,
-	SPECIES as CREEK_SPECIES,
-	VARIANTS as CREEK_VARIANTS,
-	type CreekSpecies,
-} from '../showcase/creek/species';
 
 /**
  * The sparse level that the demos growing plants through the add-on pass unless they set their
@@ -84,22 +78,6 @@ export const ISLAND_OLEANDER: PagePlantStandIn = {
 	id: 'oleander',
 	standIn: { height: 1.5, aspect: 1, leaf: [0.15, 0.3, 0.1], bark: [0.22, 0.18, 0.13] },
 };
-/** The stand-in the valley grows a species at: its height, its crown's width about its trunk, and its colours. */
-export function creekStandIn(species: CreekSpecies): StandInLook {
-	return {
-		height: species.height,
-		aspect: (2 * species.crown) / species.height,
-		leaf: species.leaf,
-		bark: species.bark,
-	};
-}
-
-/** Creek's species as stand-ins, each at its own size and in its own colours. */
-export const CREEK_STAND_INS: readonly PagePlantStandIn[] = CREEK_SPECIES.map((species) => ({
-	id: species.id,
-	standIn: creekStandIn(species),
-}));
-
 /** Every page's stand-ins, one entry per seed the page grows them with. */
 export const PAGE_STAND_INS: readonly PageStandIns[] = [
 	{ page: 'contact-shadows', seed: 5, plants: [CONTACT_SHADOWS_PINE, CONTACT_SHADOWS_GRASS] },
@@ -111,5 +89,4 @@ export const PAGE_STAND_INS: readonly PageStandIns[] = [
 		plants: [ISLAND_STONE_PINE, ISLAND_OLIVE, ISLAND_HOLM_OAK],
 	},
 	{ page: 'island', seed: 23, plants: [ISLAND_OLEANDER] },
-	{ page: 'creek', seed: CREEK_SEED, variants: CREEK_VARIANTS, plants: CREEK_STAND_INS },
 ];

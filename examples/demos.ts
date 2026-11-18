@@ -146,11 +146,13 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Creek',
 		scene: 'A stream in a grassy valley',
 		summary:
-			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with a valley dressed by the vegetation add-on that bends in the wind: trees, ferns, shrubs and grass on the banks and the slopes, mossy rocks and leaves that ride the air, under the sky of the time of day.',
+			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, in a valley of oaks, beeches and birches with ferns, hostas, shrubs and wildflowers below them and a cave in the far bank. Trees, plants and grass sway in one wind, leaves fall and float down the stream, under the sky of the time of day.',
+		assets:
+			'Shows how a scene loads its trees, plants and cave as optimized glTF models with levels of detail, built by script in Blender.',
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,
-		// A software GPU draws the scene with its bloom and the whole valley of grown plants, which
+		// A software GPU draws the scene with its bloom and the whole valley of plants, which
 		// takes it well past a minute on a loaded runner, past three on an emulated Firefox GPU, and
 		// past five while the machine runs other work.
 		timeoutSeconds: 600,

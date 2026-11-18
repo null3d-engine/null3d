@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import {
 	CREEK_FILES as CREEK,
 	ISLAND_FILES as ISLAND,
+	type ModelFile,
 	type Slot,
 	type Slots,
 } from '../../../examples/lib/model-files';
@@ -32,6 +33,8 @@ interface Gltf {
 		readonly sampler?: number;
 		readonly extensions?: Record<string, { readonly source: number }>;
 	}[];
+	readonly nodes: readonly { readonly name?: string; readonly mesh?: number }[];
+	readonly meshes: readonly { readonly primitives: readonly { readonly material?: number }[] }[];
 }
 
 /** The JSON chunk of a binary glTF file. */
@@ -70,27 +73,34 @@ function slotsOf(gltf: Gltf): Slots[] {
 	});
 }
 
-test("Creek's layouts name the slots of each material in its files", () => {
-	const files = {
-		trees: samplePath('sources/showcase/creek/trees.glb'),
-		plants: samplePath('sources/showcase/creek/plants.glb'),
-		cave: samplePath('sources/showcase/creek/cave.glb'),
-	};
-	for (const [name, file] of Object.entries(files)) {
-		const { path, layout } = CREEK[name as keyof typeof CREEK];
-		expect(file.endsWith(path)).toBe(true);
-		expect(slotsOf(readJson(file)), name).toEqual(layout.map((slots) => [...slots]));
-	}
+/**
+ * Checks a file against its list: each material fills the slots that the list gives, and each part
+ * that the list names draws with that material alone.
+ */
+function check(file: string, model: ModelFile): void {
+	expect(file.endsWith(model.path)).toBe(true);
+	const json = readJson(file);
+	expect(slotsOf(json), model.path).toEqual(model.materials.map((m) => [...m.slots]));
+	model.materials.forEach((material, k) => {
+		for (const part of material.parts) {
+			const node = json.nodes.find((n) => n.name === part);
+			const primitives = json.meshes[node?.mesh ?? -1]?.primitives ?? [];
+			expect(primitives.length, `${model.path} has no part named ${part}`).toBeGreaterThan(0);
+			expect(
+				primitives.map((p) => p.material),
+				`${part} in ${model.path}`,
+			).toEqual(primitives.map(() => k));
+		}
+	});
+}
+
+test("Creek's lists name each material's slots and parts in its files", () => {
+	check(samplePath('sources/showcase/creek/trees.glb'), CREEK.trees);
+	check(samplePath('sources/showcase/creek/plants.glb'), CREEK.plants);
+	check(samplePath('sources/showcase/creek/cave.glb'), CREEK.cave);
 });
 
-test("the island's layouts name the slots of each material in its files", () => {
-	const files = {
-		trees: samplePath('sources/showcase/island/trees.glb'),
-		shrubs: samplePath('sources/showcase/island/shrubs.glb'),
-	};
-	for (const [name, file] of Object.entries(files)) {
-		const { path, layout } = ISLAND[name as keyof typeof ISLAND];
-		expect(file.endsWith(path)).toBe(true);
-		expect(slotsOf(readJson(file)), name).toEqual(layout.map((slots) => [...slots]));
-	}
+test("the island's lists name each material's slots and parts in its files", () => {
+	check(samplePath('sources/showcase/island/trees.glb'), ISLAND.trees);
+	check(samplePath('sources/showcase/island/shrubs.glb'), ISLAND.shrubs);
 });
