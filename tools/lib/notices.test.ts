@@ -57,6 +57,21 @@ describe('noticesProblems', () => {
 		expect(noticesProblems(fixture(files([ENGINE_ROW, WIND_ROW])))).toEqual([]);
 	});
 
+	test('gives a private package no row, and refuses one', () => {
+		const privateFiles = {
+			...files([ENGINE_ROW, WIND_ROW]),
+			'packages/garden/package.json': JSON.stringify({ name: '@null3d/garden', private: true }),
+		};
+		expect(noticesProblems(fixture(privateFiles))).toEqual([]);
+		const listed = {
+			...privateFiles,
+			[NOTICES_PAGE]: page([ENGINE_ROW, WIND_ROW, '| `@null3d/garden` | None | None | None |']),
+		};
+		expect(noticesProblems(fixture(listed)).join('\n')).toContain(
+			'has a row for garden, which is private and ships nowhere',
+		);
+	});
+
 	test('refuses a package with no row on the page', () => {
 		expect(noticesProblems(fixture(files([ENGINE_ROW]))).join('\n')).toContain(
 			'packages/wind: has no row',

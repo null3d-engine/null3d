@@ -15,6 +15,12 @@ export type { HudButton, HudGroup, HudModel } from './controls';
 /** How long a tip stays after a press, in milliseconds. */
 const TIP_HOLD = 2800;
 
+/**
+ * How long a dial keeps the hour it posted while the scene's reports still hold another, in
+ * milliseconds: longer than a report takes to come back from a slow scene.
+ */
+const POSTED_WAIT_MS = 1000;
+
 /** The controls HUD of a showcase scene. */
 export interface Hud {
 	/** Draws the model, and shows or hides the whole control. */
@@ -170,6 +176,12 @@ function createDial(
 
 	/** True while a finger or the pointer holds the dial, so a render does not move it back. */
 	let holding = false;
+	/**
+	 * The hour that the dial last posted, until the scene reports it back. A report that the scene
+	 * sent before it read the post still holds the hour before, and would move the dial back, so a
+	 * key pressed next would step from there. A report that never matches stops the wait at its end.
+	 */
+	let posted: { value: number; until: number } | null = null;
 	let value = slider.value;
 	let latest = slider;
 	const nameOf = (v: number) =>
@@ -197,6 +209,7 @@ function createDial(
 	};
 	const set = (v: number): void => {
 		value = wrap(v);
+		posted = { value, until: performance.now() + POSTED_WAIT_MS };
 		show(value, { ...latest, live: false, dial: { ...dial, off: undefined } as typeof dial });
 		post(String(value));
 	};
@@ -242,6 +255,11 @@ function createDial(
 		update(next) {
 			latest = next;
 			if (holding) return;
+			if (posted) {
+				const reported = Math.abs(wrap(next.value) - posted.value) < 1e-3;
+				if (!reported && performance.now() < posted.until) return;
+				posted = null;
+			}
 			value = next.value;
 			show(value, next);
 		},

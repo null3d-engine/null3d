@@ -1377,12 +1377,17 @@ pub struct LevelQuality {
     /// True when a source's distance band fades at each edge. A level's own hand-over fades
     /// where the level says so, whatever this setting.
     pub distance_bands: bool,
+    /// True when the frame-time governor raised `threshold` above the quality setting's own.
+    pub governed: bool,
 }
 
-/// True when a governed threshold, in pixels, is high enough that a measured level's switch shows,
-/// so the level hands over in a fading band.
-fn measured_fades_at(threshold: f32) -> bool {
-    threshold > MEASURED_FADE_FROM
+impl LevelQuality {
+    /// True when a measured level hands over in a fading band: the governor raised the threshold,
+    /// and past the point where a measured switch shows. A preset's own threshold never makes a
+    /// measured level fade, so a preset pays for no second draw until its frames run late.
+    fn measured_fades(&self) -> bool {
+        self.governed && self.threshold > MEASURED_FADE_FROM
+    }
 }
 
 impl Default for LevelQuality {
@@ -1391,6 +1396,7 @@ impl Default for LevelQuality {
             threshold: 1.0,
             shadow_threshold: 1.0,
             distance_bands: true,
+            governed: false,
         }
     }
 }
@@ -2754,12 +2760,11 @@ impl SceneSettings {
     }
 
     /// Sets how the levels of detail are picked. Returns true when the buckets change: the
-    /// distance bands turned on or off, or the governed threshold crossed the point where a
-    /// measured level starts to fade. Either way the scene's structure must count as changed.
+    /// distance bands turned on or off, or measured levels started or stopped fading. Either way
+    /// the scene's structure must count as changed.
     pub fn set_level_quality(&mut self, quality: LevelQuality) -> bool {
         let rebuild = quality.distance_bands != self.level_quality.distance_bands
-            || measured_fades_at(quality.threshold)
-                != measured_fades_at(self.level_quality.threshold);
+            || quality.measured_fades() != self.level_quality.measured_fades();
         self.level_quality = quality;
         rebuild
     }
@@ -2797,11 +2802,11 @@ impl SceneSettings {
         self.level_quality.distance_bands
     }
 
-    /// True when a measured level hands over in a fading band: the governed threshold is high
-    /// enough that a measured switch shows, so the level fades where it would otherwise switch at
-    /// once.
+    /// True when a measured level hands over in a fading band: the governor raised the threshold
+    /// far enough that a measured switch shows, so the level fades where it would otherwise switch
+    /// at once.
     pub(crate) fn measured_levels_fade(&self) -> bool {
-        measured_fades_at(self.level_quality.threshold)
+        self.level_quality.measured_fades()
     }
 
     /// The level inputs of `view`, for a canvas of `canvas` pixels drawn at the frame's render scale.

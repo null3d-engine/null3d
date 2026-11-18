@@ -27,7 +27,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 21. Fire, smoke and sparks with particles
 22. Terrain from a height field
 23. Outdoor land with an edge the camera never sees
-24. Trees, shrubs and grass from a species record
+24. Trees that sway in the wind
 25. A game whose simulation a server replays (0.3)
 
 ## 1. Start a new project
@@ -825,64 +825,70 @@ const controls = createOrbitControls(ctx, camera, {
 
 Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haze sheets in code, `api/controls`, `concepts/shadows`.
 
-## 24. Trees, shrubs and grass from a species record
+## 24. Trees that sway in the wind
+
+null3D has no plant generator. Draw trees from a glTF model, such as one exported from Blender, or from a mesh that you build in code. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling.
+
+To make the trees sway, give them one custom material whose vertex offset reads the wind add-on's field:
 
 ```ts
-import { defineSketch } from '@null3d/engine';
-import {
-  bakeFarPlant,
-  growPlant,
-  loadSpeciesOrStandIn,
-  placePlants,
-  plantMaterials,
-  prepareSpecies,
-} from '@null3d/vegetation';
+import type { Camera, SketchContext } from '@null3d/engine';
+import { createWind } from '@null3d/wind';
 
-/** Each species by its id, with the size and colors of the stand-in that draws until it ships. */
-const SPECIES = [
-  { id: 'pedunculate-oak', height: 13, leaf: [0.09, 0.19, 0.045], bark: [0.18, 0.15, 0.12] },
-  { id: 'silver-birch', height: 12, leaf: [0.2, 0.34, 0.1], bark: [0.62, 0.6, 0.55] },
-  { id: 'hawthorn-shrub', height: 2.4, leaf: [0.15, 0.3, 0.1], bark: [0.22, 0.18, 0.13] },
-] as const;
+/** The distance from the camera out to which the trees move, in meters. */
+const SWAY_DISTANCE = 120;
 
-export default defineSketch(async (ctx) => {
-  const { scene } = ctx;
-  const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 500, position: [18, 8, 26] });
-  camera.lookAt(0, 5, 0);
-  scene.setActiveCamera(camera);
-  scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
-  scene.createAmbientLight({ intensity: 0.45 });
-
-  let x = -12;
-  for (const { id, ...standIn } of SPECIES) {
-    const module = await loadSpeciesOrStandIn(id, standIn);
-    // The kit and the variants grow in the job workers, and stages not built yet grow stand-ins.
-    const kit = await prepareSpecies(ctx, module, { placeholders: true });
-    const assets = await Promise.all(
-      [0, 1, 2].map((variant) => growPlant(kit, { seed: 7, variant, near: true })),
-    );
-    const far = await Promise.all(assets.map((asset) => bakeFarPlant(kit, asset)));
-    placePlants(
-      ctx,
-      kit,
-      assets,
-      {
-        count: 3,
-        position: new Float32Array([x, 0, -6, x, 0, 0, x, 0, 6]),
-        turn: new Float32Array([0, 2, 4]),
-        scale: new Float32Array([1, 0.9, 1.1]),
-        variant: new Uint8Array([0, 1, 2]),
-      },
-      { materials: plantMaterials(ctx, kit), far, view: { height: 1080, fov: 50 }, castShadows: true },
-    );
-    x += 12;
-  }
-});
+/** Copies of one tree from a glTF file, swaying in the wind. Call `update` in each frame. */
+export async function swayingTrees(
+  ctx: SketchContext,
+  camera: Camera,
+  wgsl: string, // the wind page's sampling blocks, then a vertexOffset that reads the uniforms
+  url: string,
+  count: number,
+) {
+  const wind = createWind(ctx, { camera, box: 256 });
+  const { field } = wind;
+  const sway = ctx.materials.shader({
+    wgsl,
+    // Past this distance the offset is zero, so far trees and their cached shadows stand still.
+    swayDistance: SWAY_DISTANCE,
+    textures: { wind: field.texture },
+    uniforms: {
+      origin: field.origin,
+      size: field.size,
+      layer: field.texture.layer,
+      base: field.air.base,
+      gust: field.air.gust,
+      swirl: field.air.swirl,
+      sent: field.air.sent,
+      swayDistance: SWAY_DISTANCE,
+    },
+  });
+  const model = await ctx.assets.loadGltf(url);
+  const mesh = model.find('Tree')?.mesh;
+  if (!mesh) throw new Error(`${url} has no node named Tree with a mesh`);
+  // One batch for the species: write each copy's place, turn and size into its rows.
+  const trees = ctx.scene.createInstances(mesh, count, { material: sway });
+  return {
+    trees,
+    update() {
+      // The field steps first, then the material takes its newest layer and the box's place.
+      wind.update();
+      sway.setUniform('layer', field.texture.layer);
+      sway.setUniform('origin', field.origin);
+      sway.setUniform('sent', field.air.sent);
+    },
+  };
+}
 ```
 
-Twelve species ship, each grown from its own record. For any other id, `loadSpeciesOrStandIn` makes a stand-in of the size and colors that you give, and the same calls draw a real species once it ships. So write the scene against species ids now. `placePlants` draws each copy with its levels by distance, and with far cards from the far bakes. Docs: `api/vegetation`.
+- Copy the two sampling blocks from the wind page into the material's WGSL, ahead of its `vertexOffset`.
+- In `vertexOffset`, read the air at the tree's root, `object.position`, with `wind_reading` and `wind_sample`. Bend each vertex by its height share squared, so the foot stays put.
+- Fade the offset to nothing by `swayDistance`, and declare the same distance on the material. A far tree then stands still, and the far shadow cascades stay cached.
+- Past the last level, draw the far trees as cards from `@null3d/impostors`.
+- `handOverToCards(meshes, cards.batch, switchDistance)` sets the distance bands of the meshes and the cards. A tree then moves from its mesh to its card with one dither.
 
-To place the plants rather than set them out by hand, read the ground once with `groundMaps`, write a rule for each species, and call `scatterVegetation`. A record's own `ecology` gives a rule through `speciesRule(record)`. The scatter returns flat point arrays, one record for each plant, so a page reads the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths. `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
+Docs: `api/wind` (the sampling blocks and the vertex offset), `api/impostors`, `concepts/instances`.
 
 To cover a hill with grass, await `createGrass(ctx, { height, area, count, seed, mask, wind, camera })` in the sketch's setup. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, the one the leaf material reads, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. Give the drawing `camera` to cull the tiles outside its view and thin the far tufts, whose blades widen so the cover stays the same, and each view, a shadow cascade included, then culls the kept list to its own box. On WebGPU a compute pass builds the blade list and writes its count; WebGL2 fills one instance batch for each tuft shape. The grass casts and receives the sun's shadows, and `swayDistance` stops the blades past that distance so a far cascade that only the grass reaches stays cached. Take it from `swayDistanceFor(quality.preset)`, and give `grass.setSwayDistance` the new one when the preset changes. Docs: `api/vegetation` (Grass on the ground).
 
