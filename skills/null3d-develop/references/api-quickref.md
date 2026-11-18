@@ -342,7 +342,7 @@ mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material:
 // every object and batch of `mesh` draws the coarsest level whose switch the distance passes:
 // error (in the mesh's units), distance (meters at scale 1) or coverage (a share of the screen height);
 // a level given by distance or a hand-set error fades over a band; a measured error switches at once
-// while the governed threshold stays small, and fades above about one and a half pixels;
+// and fades only once the governor raises the threshold above about one and a half pixels;
 // setLevels(levels, { fade: false }) or { fade } on one level switches it at once below that point; switches grow; E1221 for bad levels;
 // a level's `material` shades its own way, and a level without one draws with the level before's
 object.setLevelBias(0.5);   // (0.2) this object's own threshold: below 1 keeps detail, above 1 turns coarse sooner

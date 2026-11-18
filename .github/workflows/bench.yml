@@ -255,6 +255,21 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
+      # The benchmark draws both builds' pages on the real GPU with the pinned Chrome for Testing
+      # alone, which the Mac machine lacks. Its version and its archive's hash live in the launcher,
+      # which keys the cache.
+      - uses: actions/cache/restore@v4
+        id: chrome-restore
+        with:
+          path: ~/.cache/null3d/chrome-for-testing
+          key: chrome-for-testing-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/cli/src/browser.js') }}
+      - name: Install the pinned Chrome for Testing
+        run: bun run chrome:install
+      - uses: actions/cache/save@v4
+        if: env.SAVE_CACHES == 'true' && steps.chrome-restore.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/null3d/chrome-for-testing
+          key: ${{ steps.chrome-restore.outputs.cache-primary-key }}
       # S5's pages import their character from the sample content, so each build of the pages needs
       # it, even while the comparison leaves S5 out. This restores the checked-out commit's pin from
       # the Actions cache; the setup step below fetches each build's own pin.

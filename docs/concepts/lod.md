@@ -163,7 +163,7 @@ The same factor moves the distance at which the object hides. A detailed hero ob
 
 A level that switches in at once can pop. The engine fades only where a switch would show:
 
-- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at a small threshold. It switches at once there, so it pays for no second draw. A governed threshold above about one and a half pixels makes the switch show, and the level fades then. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
+- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at a small threshold. It switches at once there, so it pays for no second draw. When the governor raises the threshold above about one and a half pixels, the switch shows, and the level fades then. A preset's own threshold, Low's two pixels among them, never makes it fade. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
 - A level given by a distance, by a coverage or by a hand-set error changes the picture more. It fades at every threshold.
 
 A fading level hands over in a short band past its switch distance. The band is 8% of the distance long, and the old level and the new one both draw in it. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
@@ -175,7 +175,7 @@ mesh.setLevels(levels, { fade: false });
 mesh.setLevels([{ mesh: low, distance: 80, fade: false }]);
 ```
 
-Above about one and a half pixels the engine fades a level whose switch is an error that would otherwise switch at once, whatever the level says, because the switch shows at that size. The band costs a second draw there, and nothing at a smaller threshold.
+Once the governor raises the threshold above about one and a half pixels, the engine fades a level whose switch is an error that would otherwise switch at once, whatever the level says, because the switch shows at that size. The band costs a second draw there. It costs nothing at a smaller threshold, or at a preset's own threshold, so Low's phones pay for no fade until their frames run late.
 
 The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade. These builds follow the level, whatever the `lodFade` quality setting, because a hand-set level pops without them.
 
