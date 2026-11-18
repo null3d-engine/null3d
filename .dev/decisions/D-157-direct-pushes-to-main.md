@@ -1,6 +1,6 @@
 # D-157: Work lands on main by direct push, without pull requests
 
-Status: decided by the owner. The owner also approved the rules for task footers and merge commits, and the check before each push to main. The coordinator ruled that a push that changes no Rust file needs the type check only. Built: the commit-msg hook's task check, the trailer and merge checks, and the check before each push to main with its keepalive test. Task: none (process).
+Status: superseded by [D-379](D-379-one-pull-request-per-piece-of-work.md). Each piece of work lands through a pull request of its own, whose CI run runs every job. The push hook refuses a direct push to main. The merge commit rule and the merge check below still hold, and CI's commit check runs the merge check on each pull request. Task: none (process).
 
 Summary: Work reaches main by direct push, without pull requests: each branch merges main, passes its local checks and the pre-push check, and lands. CI then runs on main, nobody waits for it, and whoever turns main red fixes it at once. A `Task:` footer names a listed task or says `none`, and a merge commit holds only conflict resolutions and mechanical fixes; hooks check both.
 

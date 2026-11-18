@@ -1,6 +1,6 @@
 # D-86: Which CI jobs run on a pull request, in the merge queue and on main
 
-Status: superseded by [D-99](D-99-no-merge-queue.md), which [D-157](D-157-direct-pushes-to-main.md) supersedes in turn. Work lands on main by direct push, with no merge queue, and every push to main runs every CI job. Decided by the owner.
+Status: superseded by [D-99](D-99-no-merge-queue.md), which [D-157](D-157-direct-pushes-to-main.md) and then [D-379](D-379-one-pull-request-per-piece-of-work.md) supersede in turn. Each piece of work lands through a pull request of its own, with no merge queue. Each pull request and each push to main runs every CI job. Decided by the owner.
 
 Summary: Superseded: every push to main runs every CI job ([D-99](D-99-no-merge-queue.md)). Two reasons from this record still hold. GitHub's cache rules make main's runs save the caches, and the browser and benchmark page shards take most of a full run's runner time.
 

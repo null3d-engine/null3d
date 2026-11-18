@@ -1,6 +1,6 @@
 // Checks how the background priority guard of Playwright's runs (priority-setup.ts) tells a run that
 // times frames: one on the real GPU, or one that a cost switch turns on. The switch test reads every
-// spec, so it is one of the guards that the pre-push check runs before a landing.
+// spec, so a merge that adds a spec can break it with no conflict.
 import { describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { COST_VARIABLE, timesFrames } from './priority-setup.ts';
