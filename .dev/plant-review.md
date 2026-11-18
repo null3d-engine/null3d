@@ -1016,6 +1016,18 @@ poorer outline is preferred to a plant that matches its outline and drains away 
 applies to the meadow's own zoom: the page's camera steps are read as a series, and a step that opens fails the species
 however well it matches a still.
 
+## No branch ends as a stump
+
+Every branch and sub-branch that is drawn ends in something: a piece, a terminal bud the species has, or an axis that
+continues. A drawn axis whose tip carries nothing within its own piece's reach is a stump, and a stump fails the row
+however well the rest of the plant reads. This is the piece rule read backwards: the closure raises a kept piece onto
+its wood, and this rule refuses wood that ends in the air. The owner set it on 18 November, after bare stubs stood in
+the pine's and the sequoia's trunk views.
+
+The instrument reads it on every drawn level. Each axis's tip is compared with the nearest piece's own reach: a tip
+inside that reach is clothed, and a tip outside it is a stump, named by its axis, its level and the gap. A level that
+draws an axis but not the piece must raise the piece, shorten the axis to its last piece, or not draw the axis.
+
 ## Closing a figure without fitting it
 
 A figure checks the plant. A builder does not tune the plant to the figure.
