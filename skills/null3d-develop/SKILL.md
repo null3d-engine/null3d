@@ -134,15 +134,15 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | `api/geometry` | built |
 | Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | `api/impostors` | built |
 | Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | `api/particles` | built |
-| Gaussian splats from a scan or a training run, as SPZ or `KHR_gaussian_splatting` files | `@null3d/splats` | `api/splats` | built |
+| Gaussian splats from SPZ or `KHR_gaussian_splatting` files | `@null3d/splats` | `api/splats` | built |
 | Hills, valleys and other ground from a height field | `@null3d/terrain` | `api/terrain` | built |
-| Grass over a ground, swaying in the wind, with near shadows | `@null3d/grass` | `api/grass` | built |
+| Grass that sways in the wind | `@null3d/grass` | `api/grass` | built |
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
-| Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
+| Sharp text in the scene | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
 | An open sea whose waves come from GPU-transformed spectra | `@null3d/water` | `api/water` | built |
 | Trees that sway in the wind | a glTF or code-made mesh, with a material that reads `@null3d/wind`'s field | `api/wind` | built (recipe 24) |
-| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the preset sets the step interval, pressure count and grid) |
+| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
