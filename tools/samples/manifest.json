@@ -5561,8 +5561,8 @@
 				"CC0-1.0"
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
-			"fetched": "2026-10-11",
-			"changes": "Built in Blender 5.2 by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/creek.ts.",
+			"fetched": "2026-11-18",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each tree and plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek",
 			"origin": {
 				"kind": "blender",
@@ -5571,18 +5571,51 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek/cave.glb",
-					"bytes": 796728,
-					"sha256": "278c2e22e3e6de40b2a0bbc2138a6f48f2cb4dfa1d4b361618f42a012bf5eafd"
+					"bytes": 796804,
+					"sha256": "b22b56ac7b686a6c794e2eaf3d8255c142f0f48c7103e9415bfeaad1f3b37fca"
 				},
 				{
 					"path": "sources/showcase/creek/plants.glb",
-					"bytes": 453632,
-					"sha256": "5914339906c581a994f3bc4b98942b98c01ec1a3027b660e5286e725df51fec4"
+					"bytes": 457588,
+					"sha256": "a5d1e756b7356af4e3752a31f29854771e89ce7529e74c83baf4d04e29db2e9b"
 				},
 				{
 					"path": "sources/showcase/creek/trees.glb",
-					"bytes": 1835860,
-					"sha256": "4eb309f320e2a8e6608e981fa98e90fc6c18bf5688870c7a58187fc753acb55e"
+					"bytes": 1927532,
+					"sha256": "5fa7bf9f76fecd488a74f37b2fae3c44ebc663a957f902e4c0d0a1805dc62d4c"
+				}
+			]
+		},
+		{
+			"id": "showcase/island",
+			"title": "Island trees and oleander",
+			"purpose": "The plants of the engine's island showcase scene: a Mediterranean stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail and a card for its far copies",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island.py",
+			"fetched": "2026-11-18",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts.",
+			"dir": "sources/showcase/island",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island/shrubs.glb",
+					"bytes": 236344,
+					"sha256": "a57758701165a9fbbdf649ffd23c34f37b201122838c589e990fff600fae18f7"
+				},
+				{
+					"path": "sources/showcase/island/trees.glb",
+					"bytes": 1194088,
+					"sha256": "ee679762bcf087a5fa735f628586864e17a435c3fae50ab41c266c185b1772f2"
 				}
 			]
 		},

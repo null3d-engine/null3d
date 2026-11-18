@@ -27,6 +27,7 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | Four Poly Haven environments at 2048 x 1024, with one OpenEXR copy | Environment light and backgrounds (M2-B2, M2-E2, M2-E3) and the HDR readers (M2-E4) |
 | Colour grading tables in `.cube` and `.3dl` form | Colour grading (M2-F3) |
 | The Creek's trees, plants and cave mouth (`sources/showcase/creek/`), built by script in Blender | The Creek showcase scene (M2-EX8) |
+| The island's stone pines, olives, holm oaks and oleanders (`sources/showcase/island/`), built by script in Blender | The island showcase scene |
 | Dok11's drone scan of Bolton Priory (`sources/splats/bolton-priory/`): 1,710,551 Gaussian splats, as the SOG file that SuperSplat publishes | The source of the splat stream below |
 | The same scan as a splat stream (`sources/splats/bolton-priory-stream/`): an index and 84 SPZ chunk files, 27.6 MB, made by script | The Gaussian splats demo, and a real scan for the splats add-on's devices |
 
@@ -63,20 +64,49 @@ Build the stream with `bun tools/samples/splats/bolton-priory.ts <folder>`. It n
 
 SuperSplat lets only a signed-in account download a scan, so the published file's origin kind is `manual`, which names the page to download it from. A page names only the stream's index, and the add-on reads the chunks from it. So `copyNamedSamples` copies the chunk files that a named stream index lists beside it.
 
-## Splat scans converted by script
+## Models built in Blender
 
-The splats add-on reads SPZ files and splat streams, and the scans that sites publish come in other forms. A script in this repository converts a published scan into a stream, and the sample-assets repository keeps both the published file and the stream. The published file keeps the author's own bytes, and the manifest records the stream with the origin kind `converted`, which names the script and the asset it reads.
+The showcase scenes' trees and plants, and Creek's cave, are organic shapes that code in a sketch would make poorly. A Python script builds them in Blender, with no hand work and no downloads, and the sample-assets repository keeps its output. The scripts live in this repository, in `tools/samples/blender/`, so a change to a model is a reviewed change to code.
 
 | Script | Builds |
 | --- | --- |
-| `tools/samples/splats/bolton-priory.ts` | The Bolton Priory stream from the SOG file that SuperSplat publishes |
+| `common.py` | The parts that both scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the export with levels of detail, and the Cycles preview |
+| `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers and a cave mouth with boulders. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss |
+| `island.py` | The island's models: a stone pine, an olive, a holm oak and an oleander, each with a card of the whole plant for the far copies. numpy paints every leaf, needle, flower and bark texture, and Blender bakes the cards from the plants themselves |
+| `build.ts` | Runs a script in Blender, optimizes each model with the asset tool, packs each model's KTX2 textures into its own file, and checks that every part that sways kept its sway |
+| `creek.ts`, `island.ts` | Each scene's models for `build.ts` |
 
-Build the stream with `bun tools/samples/splats/bolton-priory.ts <folder>`. It needs libwebp's `dwebp` (`brew install webp`), or the executable that `DWEBP` names, and takes about a second. A SOG file is a zip of lossless WebP images, and `dwebp` gives every byte exactly. A browser's decoder may multiply a pixel's color by its alpha, and every splat's color pixel in a SOG file is partly transparent, so a browser would change the colors. The script turns the cloud upright, since the training wrote it with its vertical axis pointing down, moves the ground to height 0 and the site over the origin, keeps the first spherical-harmonic band, and cuts and writes the chunks with the add-on's own `chunkSplats` and `encodeSpz`. To publish it:
+Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bun tools/samples/blender/island.ts <folder>`. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
 
-1. Copy the folder into `sources/splats/bolton-priory-stream/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
+1. Copy the files into `sources/showcase/<scene>/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
 2. Commit, push, and pin the commit here, as "Add or change an asset" says.
 
-SuperSplat lets only a signed-in account download a scan, so the published file's origin kind is `manual`, which names the page to download it from. A page names only the stream's index, and the add-on reads the chunks from it. So `copyNamedSamples` copies the chunk files that a named stream index lists beside it.
+The sample-assets repository records these models with the origin kind `blender`, which links to the script. Its import script has nothing to download for them, and its check does not build them again, because the check would need Blender.
+
+The models are optimized before they go into the sample-assets repository, unlike the other sources there. A sketch loads them with `sampleUrl`, so a website's build copies one file for each model. The asset tool writes its KTX2 textures as separate files, and the build would not copy those. So `build.ts` moves each texture into the model's binary chunk, as an image with a buffer view.
+
+Every vertex of a tree or a plant carries its sway in the second texture coordinates (`TEXCOORD_1`). The first value is the bend weight, from 0 at the root to 1 at the freest tips. The second is a phase from 0 to 1, which sets each branch apart, so the plant flutters part by part. Both stay between 0 and 1, since the asset tool's quantizer keeps no negative texture coordinate. The scenes' wind material (`examples/lib/sway.ts`) reads them. Vertex color alpha cannot carry the weight. glTF multiplies it into the base color's alpha, so a masked card would lose its leaves near the root.
+
+A scene finds a material's textures by the order in which the loader makes them. `examples/lib/model-files.ts` lists each file's materials and the textures each one samples. `tools/samples/blender/models.test.ts` reads each pinned file's materials as the loader does. A rebuilt file whose materials change then fails there.
+
+Each model draws with few triangles, so a scene can place many copies. The trees' leaves are cards. Each card holds a cluster of small leaves from an atlas, and its alpha cuts their outline. The alpha fades over two texels at each leaf's edge, which softens the outline where alpha to coverage runs. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided. Each tree part also has two lower levels of detail, in the MSFT_lod extension, with each level's error in `NULL3D_lod_error`. The asset tool keeps each level in its base mesh's frame.
+
+| Part | Triangles at each level |
+| --- | --- |
+| Creek oak: wood, leaves | 5,048, 1,688, 562; 9,100, 3,036, 1,140 |
+| Creek beech: wood, leaves | 5,276, 1,756, 588; 10,400, 3,468, 1,300 |
+| Creek birch: wood, leaves | 3,882, 1,380, 510; 5,760, 1,920, 720 |
+| Creek fern, hosta, shrub, wildflowers | 416, 560, 252, 244 |
+| Creek cave mouth | 9,863 |
+| Island stone pine: wood, leaves | 766, 150, 84; 2,692, 900, 272 |
+| Island olive: wood, leaves | 960, 228, 126; 2,008, 672, 204 |
+| Island holm oak: wood, leaves | 740, 128, 84; 3,208, 1,072, 324 |
+| Island oleander: stems, leaves and flowers | 336, 168, 84; 504, 308, 192 |
+| Each island plant's far card | 20 |
+
+The Creek's trees file takes 1,882 KB, its plants file 447 KB and its cave file 778 KB. The island's trees file takes 1,166 KB and its shrubs file 231 KB. The Creek's tree levels switch about 25 m and 50 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away.
+
+An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 
 ## The sample check
 
@@ -86,7 +116,7 @@ SuperSplat lets only a signed-in account download a scan, so the published file'
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 268 MB now.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 270 MB now.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -104,7 +134,7 @@ Well-known sample models that may not go into the sample-assets repository, and 
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 268 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 270 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.
