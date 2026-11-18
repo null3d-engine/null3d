@@ -307,8 +307,15 @@ export function referenceLink(id: string): string {
 	return `(reference/${id.slice('api/'.length)}.md)`;
 }
 
-/** The generated reference page of a written API page: its exports, from their doc comments. */
-export function referencePage(page: PageEntry, reference: string): string {
+/** The note on a planned page's reference page, since the reference lists APIs that no release has. */
+export const PLANNED_REFERENCE_NOTE =
+	'These APIs are planned: no release has them yet, so coding agents must not use them.';
+
+/**
+ * The generated reference page of a written API page: its exports, from their doc comments. The
+ * reference of a planned page says that no release has its APIs.
+ */
+export function referencePage(page: PageEntry, reference: string, planned = false): string {
 	return `${renderFrontMatter([
 		['id', referencePageId(page.id)],
 		['title', `${page.title}: API reference`],
@@ -318,7 +325,7 @@ export function referencePage(page: PageEntry, reference: string): string {
 	])}
 # ${page.title}: API reference
 
-> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.
+> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.${planned ? ` ${PLANNED_REFERENCE_NOTE}` : ''}
 
 ${reference}
 `;
@@ -591,7 +598,11 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 		else if (symbols)
 			out.set(
 				pagePath(referencePageId(page.id)),
-				referencePage(page, renderReference(symbols, '##')),
+				referencePage(
+					page,
+					renderReference(symbols, '##'),
+					parseFrontMatter(current)?.data.status === 'planned',
+				),
 			);
 	}
 

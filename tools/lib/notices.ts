@@ -118,7 +118,11 @@ function entriesOf(page: string): Map<string, Entry> {
 }
 
 /** A package's manifest, or nothing that the checks can use when it does not parse. */
-function manifestOf(dir: string): { files?: string[]; exports?: Record<string, unknown> } {
+function manifestOf(dir: string): {
+	files?: string[];
+	exports?: Record<string, unknown>;
+	private?: boolean;
+} {
 	try {
 		return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
 	} catch {
@@ -212,7 +216,7 @@ function upstreamProblems(root: string): string[] {
 
 /**
  * Every way that the packages under `root` and the notices page disagree, as `path: problem`:
- * a package with no entry, an entry with no package, a package whose notices the page leaves out,
+ * a published package with no entry, an entry with no package or for a private package, a package whose notices the page leaves out,
  * a notices file that its tarball would not carry, an example add-on that the page leaves out, or
  * shipped code and a decision record that claim an upstream that the notices leave out.
  */
@@ -227,6 +231,12 @@ export function noticesProblems(root: string): string[] {
 	for (const name of packages) {
 		const dir = join(packageRoot, name);
 		const entry = entries.get(name);
+		// A private package ships nowhere, so the page that lists what ships gives it no row.
+		if (manifestOf(dir).private === true) {
+			if (entry)
+				problems.push(`${NOTICES_PAGE}: has a row for ${name}, which is private and ships nowhere`);
+			continue;
+		}
 		const hasNotices = existsSync(join(dir, NOTICES_FILE));
 		if (!entry) {
 			problems.push(
