@@ -19,7 +19,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
 	REFERENCE_PRESET_SWITCH,
@@ -36,6 +36,7 @@ import {
 } from '../../packages/cli/src/compare.js';
 import { REPORTED_TIERS } from '../../packages/cli/src/page.js';
 import { readPng, writePng } from '../../packages/cli/src/png.js';
+import { VEGETATION_PICTURE, vegetationOn } from '../../tools/lib/vegetation-switch.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -615,8 +616,11 @@ export function referenceFileProblems(
 	const missing = [...needed]
 		.filter(([file]) => !present.has(file))
 		.map(([file, command]) => `${file} is missing. Make it: ${command}`);
+	// The vegetation add-on's pictures leave the manifest unless its switch is on (D-378), and their
+	// references stay in place for the add-on's work by hand.
 	const unused = files
 		.filter((file) => !needed.has(file))
+		.filter((file) => vegetationOn() || !VEGETATION_PICTURE.test(basename(file)))
 		.map((file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`);
 	return [...missing.sort(), ...unused.sort()];
 }
