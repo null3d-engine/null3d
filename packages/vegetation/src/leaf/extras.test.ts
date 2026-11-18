@@ -163,6 +163,25 @@ describe('the extras', () => {
 		expect(bumpy).toBeGreaterThan(plain);
 	});
 
+	it('seats the fruit per tree the record states, whatever the crown’s tips', () => {
+		const perAcorn = (ACORN.shape as { lathe: unknown[] }).lathe.length * 9;
+		const seated = (perTree: number, share = 0.5): number => {
+			const input = dressed(
+				oakRecord({ extras: [{ ...ACORN, share, perTree }] }),
+				'summer',
+			);
+			const mesh = extrasMesh(input, 0);
+			return (mesh?.positions.length ?? 0) / 3 / perAcorn;
+		};
+		// The count, not the share: nine sites whatever share the record also states.
+		expect(seated(9, 0.1)).toBe(9);
+		expect(seated(9, 0.9)).toBe(9);
+		// A count past what the crown carries seats every site, and never invents fruit.
+		const all = seated(1_000_000);
+		expect(all).toBeGreaterThan(0);
+		expect(all).toBeLessThan(1_000_000);
+	});
+
 	it('puts one on about the record share of the matching sites', () => {
 		const input = dressed(oakRecord({ extras: [ACORN] }), 'summer');
 		const mesh = extrasMesh(input, 0);

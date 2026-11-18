@@ -69,6 +69,8 @@ const THIN = 1 << 20;
 const GROUP = 44;
 /** The draw that a plan's fruit ramp reads, kept apart from the share's and the cap's. */
 const FRUIT = 48;
+/** The rank that a per-tree fruit count seats its sites by, kept apart from the share's draw. */
+const SEAT = 52;
 /** The kinds a plan's fruiting ramp thins: its fruit, cones and berries. */
 const FRUITING: ReadonlySet<string> = new Set(['fruit', 'cone', 'berry']);
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
@@ -1103,13 +1105,44 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 				: STALK_SIDES;
 		// The stalks take the band colour where the record gives one, as an acorn's peduncle does.
 		const stalkBand = extra.bandColour ? 1 : 0;
-		sitesOf(input, extra).forEach((given: Site) => {
+		const sites = sitesOf(input, extra);
+		// A record that states its fruit per tree seats exactly that many sites: the sites are
+		// ranked by a fixed hash of their number as grown and the first count take the fruit, so the
+		// crop does not grow with the crown's tips and the same sites carry it at every level.
+		const seated =
+			extra.perTree === undefined
+				? undefined
+				: new Set(
+						[...sites]
+							.sort(
+								(a, b) =>
+									unitAt(
+										input.seed,
+										salt,
+										SEAT +
+											(extra.group === undefined ? PURPOSE + index : GROUP + extra.group),
+										a.key,
+									) -
+									unitAt(
+										input.seed,
+										salt,
+										SEAT +
+											(extra.group === undefined ? PURPOSE + index : GROUP + extra.group),
+										b.key,
+									),
+							)
+							.slice(0, extra.perTree)
+							.map((site) => site.key),
+					);
+		sites.forEach((given: Site) => {
 			const s = given.key;
 			// Extras that name one group pick the same sites, so the parts of one fruit hang on one
 			// twig; each part keeps its own place on the shoot through its tip share and offset.
 			const purpose =
 				input.variant * 64 + (extra.group === undefined ? PURPOSE + index : GROUP + extra.group);
-			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
+			if (seated === undefined) {
+				if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
+			} else if (!seated.has(s)) return;
 			// A triangle maximum may draw a share of the sites: a draw of its own, by the site's number
 			// as grown, so the sites that stay at a share stay at every larger one. The parts of one
 			// fruit share the draw, as they share their sites.
