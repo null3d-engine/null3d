@@ -1,69 +1,105 @@
-// Vegetation in wind: the add-on's plants under the wind add-on's field, close enough to see the
-// crowns move. Every species the registry holds is planted in a clump, the wind's direction sweeps
-// slowly, and its strength rises and falls, so the leaves lift and settle as they do in a real
-// breeze. Press W to hold the wind still for comparison, and R to grow the clump again.
+// Plants in wind: a grove at the edge of a meadow, swaying in the wind add-on's one field. Oaks,
+// birches and firs, bushes and ferns are made in code (./planting.ts, ./crowns.ts, ./plants.ts), and
+// each kind's material reads the field at every copy's root (../lib/sway.ts). The bend grows toward
+// each plant's tips, so trunks stay firm while crowns and fronds move, and each kind bends as its
+// stiffness lets it. The meadow's grass comes from the grass add-on and bends in the same air. The
+// wind's bearing sweeps slowly and its strength rises and falls, so the grove lifts and settles as
+// it does in a real breeze. The sliders set the strength and the bearing, and Hold stills the air.
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createGrass } from '@null3d/grass';
-import {
-	grassCover,
-	isSpeciesId,
-	loadSpecies,
-	type PlantMaterial,
-	setWindLayer,
-} from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
+import { createSway } from '../lib/sway';
+import type { woodTexture } from '../lib/trees';
+import { BIRCH_LEAF, leafAtlas, NEEDLES, OAK_LEAF } from './crowns';
 import { applyWindControl, postWindHud, type WindControls } from './hud';
-import { plantWindClump } from './planting';
+import { land, landArrays, plantStand } from './planting';
+import { fernTexture, meadowTexture } from './plants';
 
-/**
- * The species a held picture draws, named in its switch by folder id; the live page names none and
- * draws every registered species.
- */
-const HELD_SPECIES = (new URL(import.meta.url).searchParams.get('species') ?? '')
-	.split(',')
-	.filter(isSpeciesId);
-
-/** Metres a second at the field's top, at the strongest of the sweep. */
+/** Meters a second at the field's top, at the strongest of the sweep. */
 const GUST = 7;
+/** The distance from the camera out to which the plants sway, in meters. */
+const SWAY_DISTANCE = 90;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, input, time, page } = ctx;
-	const day = timeOfDay('afternoon', { heading: 2.1 });
-	scene.setBackground({ sky: day.sky }, { intensity: day.skyIntensity });
-	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 0.8 });
-	scene.setFog({ ...day.fog, density: 0.0005 });
-	post.set({ exposure: day.exposure });
-	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 90 } });
+	const { scene, assets, geometry, materials, textures, post, time, page } = ctx;
+	const day = timeOfDay(15.2, { heading: 0.5 });
+	scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.2 } }, { intensity: day.skyIntensity });
+	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 1.25 });
+	scene.setFog({ ...day.fog, density: 0.0012, heightFalloff: 0.02 });
+	post.set({
+		exposure: day.exposure * 1.3,
+		bloom: { intensity: 0.15, threshold: 1 },
+		vignette: {},
+	});
+	const shadow = { distance: SWAY_DISTANCE };
+	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow });
 	scene.createAmbientLight(day.ambient);
 
+	const camera = scene.createPerspectiveCamera({ fov: 55, near: 0.1, far: 3000 });
+	camera.setPosition(0, land(0, 26) + 2.4, 26);
+	camera.lookAt(0, 4.6, -14);
+	scene.setActiveCamera(camera);
+	const view = interact(ctx, camera, { target: [0, 4.6, -14], groundY: 0 });
+
+	// Textures made in code: for each kind of tree, bark below and a cut-out spray of leaves or
+	// needles above; a fern's frond; and the meadow's ground.
+	const look = { colorSpace: 'srgb', mipmaps: true, anisotropy: 8 } as const;
+	const atlas = (data: ReturnType<typeof woodTexture>) =>
+		textures.fromData({ ...data, ...look, wrap: ['repeat', 'clamp'] });
+	const needles = atlas(leafAtlas('furrowed', NEEDLES, 7));
+	const oakLeaves = atlas(leafAtlas('furrowed', OAK_LEAF, 3));
+	const birchLeaves = atlas(leafAtlas('birch', BIRCH_LEAF, 5, 512));
+	const frond = textures.fromData({ ...fernTexture(), ...look, wrap: 'clamp' });
+	const meadow = textures.fromData({ ...meadowTexture(), ...look, wrap: 'repeat' });
 	scene.createMesh({
-		mesh: ctx.geometry.plane({ width: 400, height: 400 }),
-		material: ctx.materials.standard({ color: [0.3, 0.34, 0.16], roughness: 0.95 }),
-		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+		mesh: geometry.fromArrays(landArrays(1500)),
+		material: materials.standard({ map: meadow, vertexColors: true, roughness: 0.95 }),
 		receiveShadows: true,
 	});
 
-	const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 400 });
-	camera.setPosition(0, 12, 34);
-	scene.setActiveCamera(camera);
-	// The wind: one field for the whole page, read at each plant's root.
+	// The wind: one field for the whole page. Each kind bends as its build lets it: an oak's trunk
+	// is stiff and its crown moves, a birch is whippy, a fir barely gives, and a fern's frond bends
+	// along its whole length. The leaves flutter on top of the bend.
 	const wind = createWind(ctx, { camera, box: 160 });
-	// The meadow's grass, which bends in the same air as the plants. The cover takes the meadow
-	// grass's own blade and colour, so a plant of that species stands in it without a seam.
-	const meadow = await loadSpecies('meadow-grass');
-	// The cover fills the ground that the camera sees, and each blade bends in the field's air.
+	const sway = createSway(ctx, { wind, swayDistance: SWAY_DISTANCE });
+	const leafy = { perSize: true, cutout: true } as const;
+	const stand = plantStand(ctx, {
+		oak: sway.material({ ...leafy, map: oakLeaves, sway: 0.01, stiffness: 2.2, rustle: 0.003 }),
+		birch: sway.material({
+			...leafy,
+			map: birchLeaves,
+			sway: 0.016,
+			stiffness: 1.7,
+			rustle: 0.004,
+		}),
+		fir: sway.material({ ...leafy, map: needles, sway: 0.006, stiffness: 2.4, rustle: 0.0015 }),
+		bush: sway.material({ ...leafy, map: oakLeaves, sway: 0.02, stiffness: 1.5, rustle: 0.005 }),
+		fern: sway.material({
+			...leafy,
+			map: frond,
+			weight: 'uv1',
+			sway: 0.03,
+			stiffness: 1.4,
+			rustle: 0.006,
+		}),
+	});
+	// The meadow's grass bends in the same air. The grass add-on keeps its tufts on the GPU, and
+	// keeps them clear of the trunks.
 	const grass = await createGrass(ctx, {
-		height: () => 0,
-		area: { x: 0, z: 0, size: 120 },
-		count: 100_000,
+		height: land,
+		area: { x: 0, z: -4, size: 96 },
+		count: 90_000,
 		seed: 11,
 		blades: 14,
-		...grassCover(meadow.record),
+		where: (x, z) => stand.trunks.every(([tx, tz]) => (x - tx) ** 2 + (z - tz) ** 2 > 1.5),
 		wind: wind.field,
+		camera,
+		swayDistance: SWAY_DISTANCE,
 	});
-	// The wind's own state: its strength in metres a second, its bearing in degrees, and whether it
-	// is held still. The controls post these, and the H key holds it too.
+
+	// The wind's own state: its strength in meters a second, its bearing in degrees, and whether it
+	// is held still. The panel posts these.
 	const controls: WindControls = { power: GUST, bearing: 35, still: false };
 	const postHud = () => postWindHud(page, controls);
 	page.onMessage((name, value) => {
@@ -72,28 +108,6 @@ export default defineSketch(async (ctx) => {
 		Object.assign(controls, next);
 		postHud();
 	});
-	const view = interact(ctx, camera, { target: [0, 6, 0], groundY: 1.7 });
-
-	let planted: { destroy(): void }[] = [];
-	/** Every plant material, so each frame gives the plants the field's newest air. */
-	let plantMats: PlantMaterial[] = [];
-	const seed = 11;
-	const plant = async () => {
-		for (const piece of planted) piece.destroy();
-		const clump = await plantWindClump(
-			ctx,
-			wind.field,
-			seed,
-			HELD_SPECIES.length > 0 ? HELD_SPECIES : undefined,
-		);
-		planted = clump.planted;
-		plantMats = clump.materials;
-	};
-	// The clump grows while the meadow draws, so a live start shows its first frame without waiting
-	// for every species and the plants appear as each one finishes. A held picture waits for the
-	// whole clump, so its frame shows the finished scene.
-	if (ctx.engine.held) await plant();
-	else plant().catch((error: unknown) => console.error(error));
 
 	let announced = false;
 	return {
@@ -107,7 +121,7 @@ export default defineSketch(async (ctx) => {
 				: controls.power * (0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time.now * 0.7)));
 			wind.setBase(strength, sweep);
 			wind.update();
-			setWindLayer(plantMats, wind.field);
+			sway.update();
 			grass.setWindLayer(wind.field);
 			if (!announced) {
 				announced = true;
