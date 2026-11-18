@@ -6,8 +6,12 @@
 // dither out over it. Were the two fades to share the band, both would drop the same pixels and the
 // background would show through the crown as a dotted hole.
 import { defineSketch, type MeshArrays } from '@null3d/engine';
-import { bakeImpostorAtlas, createImpostors, octahedralAtlas } from '@null3d/impostors';
-import { handOverToCards } from '@null3d/vegetation';
+import {
+	bakeImpostorAtlas,
+	createImpostors,
+	handOverToCards,
+	octahedralAtlas,
+} from '@null3d/impostors';
 import { pineArrays } from '../lib/pines';
 
 /** The distance from the camera at which the meshes hand over to the cards, in meters. */
