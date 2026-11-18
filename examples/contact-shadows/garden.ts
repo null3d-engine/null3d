@@ -16,12 +16,12 @@ import { type Fir, meshOf, woodTexture } from '../lib/trees';
  * The garden's pines, 1 high: spruces whose tiers widen to the foot and taper to a point, so their
  * crowns show above the wall as a dark skyline.
  */
-const PINE: Fir = { tiers: 8, low: 0.12, width: 0.34, branches: 10, droop: 0.35 };
+const PINE: Fir = { tiers: 6, low: 0.12, width: 0.36, branches: 10, droop: 0.5 };
 /**
- * The pines' tint over the needles' green: dark, as a backlit conifer's needles are, and with
- * little red, which turns khaki in the low sun's orange light.
+ * The pines' tint over the needle texture's green: it takes some red out and keeps the blue,
+ * since a green with more red turns khaki in the low sun's orange light.
  */
-const NEEDLES = [0.16, 0.42, 0.28, 1] as const;
+const NEEDLES = [0.6, 1, 0.8] as const;
 /** The radius of each clump of grass at the rocks and the lantern, in meters. */
 const CLUMP = 0.2;
 
@@ -203,7 +203,13 @@ export async function garden(
 	const look = { colorSpace: 'srgb', mipmaps: true, anisotropy: 8 } as const;
 	const wood = textures.fromData({ ...woodTexture(), ...look, wrap: ['repeat', 'clamp'] });
 	const pines = scene.createInstances(meshOf(geometry, PINE), PINES.length, {
-		material: sway.material({ map: wood, sway: 0.004, rustle: 0.0006, perSize: true }),
+		material: sway.material({
+			map: wood,
+			sway: 0.004,
+			rustle: 0.0006,
+			perSize: true,
+			roughness: 1,
+		}),
 		colors: true,
 		...solid,
 	});
@@ -211,7 +217,8 @@ export async function garden(
 		pines.positions.set([x, 0, z], i * 3);
 		pines.scales.set([height, height, height], i * 3);
 		pines.rotations.set([0, Math.sin(i), 0, Math.cos(i)], i * 4);
-		pines.colors?.set(NEEDLES, i * 4);
+		const shade = 0.85 + 0.25 * ((i * 0.37) % 1);
+		pines.colors?.set([...NEEDLES.map((c) => c * shade), 1], i * 4);
 	});
 	pines.markDirty();
 	// Bamboo: tall jointless stalks that lean a little, with narrow leaves that hang from their
@@ -365,7 +372,8 @@ export async function garden(
 		height: () => 0,
 		area: { x: 0, z: -1, size: 8 },
 		count: 1500,
-		blades: 18,
+		blades: 22,
+		color: '#86b83a',
 		seed: 9,
 		mask: (x, z) => roots.some(([rx, rz]) => Math.hypot(x - rx, z - rz) < CLUMP),
 		wind: wind.field,
