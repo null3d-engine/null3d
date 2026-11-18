@@ -5,6 +5,7 @@
 // so a page stops the same way when its interface lies outside that range. The module reads the
 // error class alone, so the start code pays a few hundred bytes and no other file.
 import { EngineError } from '../errors/engine-error';
+import { DEV } from './dev';
 
 /**
  * The engine version, which the WebAssembly core and this package always share.
@@ -36,6 +37,34 @@ export interface PluginInterfaceRange {
 }
 
 /**
+ * Where a thread keeps, in a development build, the handlers that hear each add-on check its
+ * version. The sketch's thread names an add-on whose use the page's options make useless, such as
+ * @null3d/controls on an engine that takes no input. A thread can hold two copies of this module,
+ * one in the engine's code and one in the sketch's bundle, so the handlers live on the thread's
+ * global object under a shared symbol, as the error mark does. A production build keeps none.
+ */
+const ADDONS = /* @__PURE__ */ Symbol.for('null3d.addonsChecked');
+
+/** The thread's handlers, which the first copy of this module to need them makes. */
+function addonHearers(): Set<(name: string) => void> {
+	const thread = globalThis as { [ADDONS]?: Set<(name: string) => void> };
+	thread[ADDONS] ??= new Set();
+	return thread[ADDONS];
+}
+
+/**
+ * Calls `heard` with each add-on that checks its version in this thread from now on, whichever copy
+ * of this module it calls. An add-on that checked before is not heard: a module checks once, as it
+ * loads, so a check that came earlier belongs to another sketch's load. Returns a function that
+ * stops it. Development builds only.
+ */
+export function onAddonChecked(heard: (name: string) => void): () => void {
+	const hearers = addonHearers();
+	hearers.add(heard);
+	return () => hearers.delete(heard);
+}
+
+/**
  * Checks that an add-on, built for `version` of the engine, runs against this engine's version,
  * and throws E1432 when the two differ. An add-on calls it once, as its module loads, with its own
  * package name and version. An add-on from another developer calls `checkPluginInterface` instead,
@@ -47,6 +76,7 @@ export interface PluginInterfaceRange {
  * @category api/engine
  */
 export function checkAddonVersion(name: string, version: string): void {
+	if (DEV) for (const heard of addonHearers()) heard(name);
 	if (version === VERSION) return;
 	throw new EngineError(
 		'E1432',

@@ -200,7 +200,7 @@ no target.
 - The terrain's casters count as moving casters, so a shadow view that a caster touches draws again
   in every frame, with the morph on or off: three cascades draw a frame at High, each at 0.2 to
   0.39 ms on the S25, under the frame's ambient occlusion pass.
-- Docs: `docs/api/terrain.md` states the morph and its option. `docs/api/vegetation.md` states the
+- Docs: `docs/api/terrain.md` states the morph and its option. `packages/vegetation/docs/api.md` states the
   leaf-card morph and the material's settings. `docs/concepts/lod.md` states which shapes morph and
   which switch. `docs/shaders/surface-functions.md`, `docs/shaders/builtins.md` and
   `docs/api/geometry.md` state the record and its cost.

@@ -12,6 +12,12 @@
 // file directly under `examples`, and a test file with another extension, are outside it.
 import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+	VEGETATION_FILES,
+	VEGETATION_PACKAGES,
+	VEGETATION_SWITCH,
+	vegetationOn,
+} from '../../tools/lib/vegetation-switch.ts';
 
 /** The repository, which the groups' paths are relative to. */
 export const REPO_ROOT = join(import.meta.dirname, '..', '..');
@@ -79,16 +85,22 @@ export interface UnitGroup {
 }
 
 /**
+ * Whether the run takes the vegetation add-on's tests: only with its switch on, since the add-on is a
+ * work in progress that no CI job tests (D-378). Without it the run reads none of its folders.
+ */
+const VEGETATION = vegetationOn();
+
+/**
  * The species walk's slices, which take a group each. The walk is the run's longest single piece of
  * work, and the run starts a group only after the one before it has ended, so one group of it sets
  * the run's floor whatever the lanes.
  */
-const SPECIES_SLICES: readonly string[] = readdirSync(
-	join(REPO_ROOT, 'packages/vegetation/src/species'),
-)
-	.filter((name) => /^species-slice-\d+\.test\.ts$/.test(name))
-	.map((name) => `packages/vegetation/src/species/${name}`)
-	.sort();
+const SPECIES_SLICES: readonly string[] = VEGETATION
+	? readdirSync(join(REPO_ROOT, 'packages/vegetation/src/species'))
+			.filter((name) => /^species-slice-\d+\.test\.ts$/.test(name))
+			.map((name) => `packages/vegetation/src/species/${name}`)
+			.sort()
+	: [];
 
 /**
  * The plant package's own folders that take a group each. The LOD folder holds the plant cases a
@@ -104,8 +116,12 @@ const PLANT_SECONDS = { folder: 356, slices: [27, 77, 135, 79], lod: 114 } as co
 /** The seconds each other package's folder took in a whole run; a folder not named here weighs nothing. */
 const PACKAGE_SECONDS: Readonly<Record<string, number>> = { cli: 23, engine: 18, 'vite-plugin': 2 };
 
-/** The groups one package folder takes: the folder, and a group per slice that the folder leaves out. */
+/**
+ * The groups one package folder takes: the folder, and a group per slice that the folder leaves out.
+ * The vegetation add-on's packages take none unless its switch is on.
+ */
 function groupsOfPackage(name: string): UnitGroup[] {
+	if (!VEGETATION && VEGETATION_PACKAGES.includes(name)) return [];
 	const paths = [`packages/${name}`];
 	if (name !== 'vegetation' || SPECIES_SLICES.length === 0)
 		return [{ paths, seconds: PACKAGE_SECONDS[name] ?? 0 }];
@@ -124,6 +140,15 @@ function groupsOfPackage(name: string): UnitGroup[] {
 }
 
 /**
+ * The patterns that leave the vegetation add-on's own files under `folder` out of a group, unless its
+ * switch is on.
+ */
+function vegetationIgnore(folder: string): string[] {
+	if (VEGETATION) return [];
+	return VEGETATION_FILES.filter((glob) => glob.startsWith(folder)).map((glob) => `**/${glob}`);
+}
+
+/**
  * The groups of the run: the tools, each package, the benchmark's scenes and pages, the test
  * helpers, and every demo folder that holds a test file.
  *
@@ -133,10 +158,29 @@ function groupsOfPackage(name: string): UnitGroup[] {
  */
 export const UNIT_GROUPS: readonly UnitGroup[] = (
 	[
-		{ paths: ['tools'], seconds: 66 },
+		{ paths: ['tools'], ignore: vegetationIgnore('tools/'), seconds: 66 },
 		...readdirSync(join(REPO_ROOT, 'packages')).flatMap((name) => groupsOfPackage(name)),
 		{ paths: ['bench/scenes', 'bench/pages', 'bench/lib'], seconds: 11 },
-		{ paths: ['tests/lib'], seconds: 30 },
+		{ paths: ['tests/lib'], ignore: vegetationIgnore('tests/lib/'), seconds: 30 },
 		{ paths: foldersHoldingTests('examples').map((name) => `examples/${name}`), seconds: 25 },
 	] satisfies UnitGroup[]
 ).sort((a, b) => (b.seconds ?? 1) - (a.seconds ?? 1));
+
+/**
+ * The vegetation add-on's groups alone, for `bun run test:vegetation`: its packages' groups, and one
+ * group of its test files outside them. Its switch must be on.
+ */
+export function vegetationUnitGroups(): UnitGroup[] {
+	if (!VEGETATION) throw new Error(`the vegetation add-on's tests run with ${VEGETATION_SWITCH}=1`);
+	const outside = VEGETATION_FILES.filter(
+		(glob) => glob.startsWith('tools/') || glob.startsWith('tests/lib/'),
+	).flatMap((glob) =>
+		[...new Bun.Glob(glob).scanSync({ cwd: REPO_ROOT })].filter((path) =>
+			path.endsWith(TEST_SUFFIX),
+		),
+	);
+	return [
+		...VEGETATION_PACKAGES.flatMap((name) => groupsOfPackage(name)),
+		{ paths: [...new Set(outside)].sort() },
+	];
+}

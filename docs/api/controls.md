@@ -194,6 +194,8 @@ canvas.addEventListener('click', () => {
 });
 ```
 
+An engine started with `input: false` reads no movement, and `engine.requestPointerLock()` fails there with [E1426](../errors/E1426.md). The page's own input code then locks the canvas and reads the movement, as [Input off](input.md#input-off) says.
+
 While the pointer is locked, `ctx.input.pointer.locked` is true, and `pointer.dx` and `pointer.dy` give the mouse's movement ([Input](input.md#the-pointer)). First-person controls then turn the view by the movement, as three.js's `PointerLockControls` do:
 
 - Each pixel turns the view by 0.002 radians times `pointerSpeed`.

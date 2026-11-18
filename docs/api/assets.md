@@ -94,10 +94,10 @@ Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them o
 
 | Member | Gives |
 | --- | --- |
-| `prefab.find(name)` | The first node with the name: its `position`, `rotation`, `scale`, `mesh`, `material` and `occluder`. `occluder` is true when the asset tool gave the mesh a blocker. Pass it to `createMesh` to keep that choice |
+| `prefab.find(name)` | The first node with the name: its `position`, `rotation`, `scale`, `mesh`, `material`, `maps` and `occluder`. `maps` holds the textures of the node's material by the standard material's options: `map`, `metalnessRoughnessMap`, `normalMap`, `aoMap` and `emissiveMap`. A material of your own, such as a custom shader that bends leaves in the wind, can sample them. `occluder` is true when the asset tool gave the mesh a blocker. Pass it to `createMesh` to keep that choice |
 | `prefab.bounds` | `min`, `max`, `center` and `radius` of the whole model, around the origin of its copies |
 | `prefab.materials` | The file's materials, in the file's order. `set` changes them in every copy |
-| `prefab.textures` | The textures that the materials sample |
+| `prefab.textures` | The textures that the materials sample, in the order that the materials first sample them. Each material gives its base color, then its metalness and roughness, its normals, its occlusion and its emission, and a texture that comes earlier is not repeated. `find(name).maps` gives one node's textures by name |
 | `prefab.clips` | The names of the model's clips, which a copy's animator plays |
 | `prefab.url` | The address the model came from |
 | `prefab.destroy()` | Frees the model: [Freeing a model](#freeing-a-model) |
@@ -341,8 +341,6 @@ Every namespace shares one budget: a tenth of the storage that the browser allow
 The browser can still delete the origin's storage. Under storage pressure, it deletes the storage of whole origins, the least recently used first. Safari deletes it after seven days of browsing without a visit to the site, unless the game runs from the Home Screen. The engine never asks for persistent storage, because Firefox asks the player with a prompt. A game can ask for it with `navigator.storage.persist()`.
 
 The `?derived-cache=off` switch turns the cache off, so every load makes its data again, as on a first visit ([Testing](../guides/testing.md#switches-for-tests)).
-
-The vegetation add-on keeps its grown plants in a namespace that the page gives it: `prepareSpecies(ctx, module, { cache: ctx.assets.cache('@null3d/vegetation', 1) })` ([Vegetation](vegetation.md)).
 
 ## Errors
 

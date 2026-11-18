@@ -13,7 +13,7 @@ null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch c
 
 ## 1. Find the docs that match the installed engine
 
-The engine docs are the source of truth. This skill describes null3D 0.1.0 and marks the parts not built yet. A project may use another version, so check it first.
+The engine docs are the source of truth. This skill describes null3D 0.1.0 and marks the parts not built yet. A project may use another version: check it first.
 
 1. Find the engine version: `bunx @null3d/cli --version`, or the `@null3d/engine` entry in `package.json`.
 2. Read docs pages by ID, in this order:
@@ -21,9 +21,9 @@ The engine docs are the source of truth. This skill describes null3D 0.1.0 and m
    - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`;
    - from any terminal (0.3, not built yet): `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
 3. Each page starts with front matter. `status: stable` or `experimental` means the API exists, and experimental APIs may still change. `planned` means it does not exist in this version. A note under an experimental title can name parts not built yet: treat those as planned. Do not call a planned API; tell the user, and use the page's workaround.
-4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
+4. If the docs and this skill disagree, follow the docs and report the difference, so the skill can be fixed.
 
-Doc IDs appear in backticks throughout, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3.
+Doc IDs appear in backticks, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3.
 
 ## 2. The model
 
@@ -36,12 +36,12 @@ HTML, CSS, UI, audio   -->   input, onUpdate, scene changes -->  GPU uploads and
 creates the engine           shared typed arrays                 never runs your code
 ```
 
-- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread, where it can reach the DOM. Use it only for DOM-heavy apps and debugging, because its frames then share the page thread. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
+- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread, where it can reach the DOM. Use it only for DOM-heavy apps and debugging: its frames share the page thread. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
-- For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
-- Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
+- For many objects, write typed arrays directly: instance batches and dynamic objects, where null3D gets its speed. (`concepts/instances`)
+- Objects are static by default: they cost nothing per frame until a setter changes them. Objects with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
 - The engine renders every frame. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
-- The same code runs on WebGPU and WebGL2. The page's `engine.capabilities` reports optional features to the sketch; never check browser or GPU names. (`concepts/backends`)
+- The same code runs on WebGPU and WebGL2. The page's `engine.capabilities` reports optional features; never check browser or GPU names. (`concepts/backends`)
 
 A complete minimal project:
 
@@ -135,14 +135,15 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | `api/geometry` | built |
 | Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | `api/impostors` | built |
 | Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | `api/particles` | built |
-| Gaussian splats from a scan or a training run, as SPZ or `KHR_gaussian_splatting` files | `@null3d/splats` | `api/splats` | built |
+| Gaussian splats from SPZ or `KHR_gaussian_splatting` files | `@null3d/splats` | `api/splats` | built |
 | Hills, valleys and other ground from a height field | `@null3d/terrain` | `api/terrain` | built |
+| Grass that sways in the wind | `@null3d/grass` | `api/grass` | built |
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
-| Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
+| Sharp text in the scene | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
 | An open sea whose waves come from GPU-transformed spectra | `@null3d/water` | `api/water` | built |
-| Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (scatter, grass, twenty species; other ids draw a stand-in) |
-| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the preset sets the step interval, pressure count and grid) |
+| Trees that sway in the wind | a glTF or code-made mesh, with a material that reads `@null3d/wind`'s field | `api/wind` | built (recipe 24) |
+| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
@@ -179,6 +180,7 @@ Interaction:
 | --- | --- | --- |
 | Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'`, or `camera.screenToRay` with `scene.raycast` (all 0.2) | `api/input`, `api/raycast` |
 | Keys, pointer, touch, gamepad | `input.isDown`, `input.wasPressed`, `input.value`, `input.pointer`, `input.touches`, `input.actions.define` | `api/input` |
+| Rules a server replays | `@null3d/engine/math`, `createMath`, `input: false` (0.3) | `guides/deterministic-simulation` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
 | A product or marketing page with a 3D scene | Fallback page first, a load deadline, reveal on `engine.firstFrame`, pause off screen | `guides/content-pages`, `references/content-pages.md` |

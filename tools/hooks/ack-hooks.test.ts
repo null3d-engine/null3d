@@ -17,14 +17,14 @@ import { touchesRust } from './check-rust';
 import { scriptReferencesProblem } from './check-script-references';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
-import { knownTaskIds, TASK_ID_SHAPE, TASK_RULE_SINCE, taskProblem } from './check-task';
-import { keptCommits } from './check-trailers';
+import { keptCommits, squashedMessage } from './check-trailers';
 import {
 	checkAck,
 	findAckValue,
 	findAckValues,
 	readsTrailerBlock,
 	TRAILER_BLOCK_SINCE,
+	trailers,
 } from './commit-ack';
 
 describe('docBearingFiles', () => {
@@ -593,43 +593,97 @@ describe('scriptReferencesProblem', () => {
 	});
 });
 
-describe('taskProblem', () => {
-	const known = new Set(['M2-J4', 'M2-F10', 'M3-A1']);
-	const msg = (task: string) => `feat(engine): add bump maps\n\nTask: ${task}\n`;
+describe('squashedMessage', () => {
+	// The shape of GitHub's squash merge: the title with the pull request's number, each squashed
+	// commit's message under a `* ` line with its trailers inside the body, then the co-authors.
+	const squash = [
+		'feat(engine): grow the page and the worker (#612)',
+		'',
+		'* feat(engine): grow the page',
+		'',
+		'The key table of the input ring moves into the page.',
+		'',
+		'Docs-Checked: updated docs/api/input.md',
+		'Size-Growth: js/page.js +3.1%, the key table of the input ring',
+		'',
+		'* fix(engine): grow the worker',
+		'',
+		'Size-Growth: js/render-worker.js +2.4%, the second',
+		'  shadow pass',
+		'Task: none',
+		'',
+		'* docs: say why',
+		'',
+		'A list in a body stays in the body:',
+		'',
+		'* the first point',
+		'',
+		'Co-authored-by: Claude <noreply@anthropic.com>',
+		'',
+	].join('\n');
+	const files = ['js/page.js', 'js/render-worker.js', 'js/core.js'];
 
-	it('accepts a listed task ID, several IDs, none, and no footer', () => {
-		for (const task of ['M2-J4', 'M2-J4, M3-A1', 'none'])
-			expect(taskProblem(msg(task), known)).toBeNull();
-		expect(taskProblem('fix(engine): mend a bound\n', known)).toBeNull();
+	it("finds every squashed commit's Size-Growth trailer, as main's size check reads it", () => {
+		// Read as written, git's last block holds only the co-author, and no growth reads explained.
+		expect([...explainedFiles([{ sha: 'sq', message: squash }], files).keys()]).toEqual([]);
+		const message = squashedMessage(squash);
+		expect(message.split('\n')[0]).toBe('feat(engine): grow the page and the worker (#612)');
+		expect(trailers(message)).toEqual([
+			{ key: 'Docs-Checked', value: 'updated docs/api/input.md' },
+			{ key: 'Size-Growth', value: 'js/page.js +3.1%, the key table of the input ring' },
+			{ key: 'Size-Growth', value: 'js/render-worker.js +2.4%, the second shadow pass' },
+			{ key: 'Task', value: 'none' },
+		]);
+		const explained = explainedFiles([{ sha: 'sq', message }], files);
+		expect([...explained.keys()].sort()).toEqual(['js/page.js', 'js/render-worker.js']);
 	});
 
-	it('refuses free text and says to write an ID or none', () => {
-		for (const task of ['main CI repair', 'build artifact cache', 'none (Factory follow-up)', 'CI'])
-			expect(taskProblem(msg(task), known)).toContain('is not a task ID');
+	it('reads a squash of one commit, whose body is that commit with the co-authors after it', () => {
+		const one = [
+			'docs: show the Electron host (#556)',
+			'',
+			'The guide gets a section.',
+			'',
+			'Docs-Checked: updated docs/getting-started/hosting.md',
+			'Task: none',
+			'',
+			'Co-authored-by: Claude <noreply@anthropic.com>',
+			'',
+		].join('\n');
+		expect(findAckValue(one, 'Docs-Checked')).toBeNull();
+		expect(findAckValue(squashedMessage(one), 'Docs-Checked')).toBe(
+			'updated docs/getting-started/hosting.md',
+		);
 	});
 
-	it('refuses an ID that is not in the list', () => {
-		expect(taskProblem(msg('M2-J99'), known)).toContain('not in tools/hooks/task-ids.txt');
-		expect(taskProblem(msg('M2-J4, M2-Q1'), known)).toContain('M2-Q1');
+	it("leaves a pull request's own commits as their authors wrote them", () => {
+		const plain =
+			'feat(engine): grow the page\n\n* a list item\n\nSize-Growth: js/page.js +3.1%, the key table';
+		expect(squashedMessage(plain)).toBe(plain);
+		const numbered = 'fix(engine): mend the cull (#12)';
+		expect(squashedMessage(numbered)).toBe(numbered);
 	});
 
-	it('exempts merges and commits authored before the rule', () => {
-		expect(taskProblem('Merge branch x\n\nTask: main CI repair\n', known)).toBeNull();
-		const before = new Date(Date.parse(TASK_RULE_SINCE) - 60_000).toISOString();
-		expect(taskProblem(msg('main CI repair'), known, before)).toBeNull();
-		const after = new Date(Date.parse(TASK_RULE_SINCE) + 60_000).toISOString();
-		expect(taskProblem(msg('main CI repair'), known, after)).not.toBeNull();
-	});
-
-	it('reads the list beside the hook, where each line is a task ID', () => {
-		const ids = knownTaskIds();
-		expect(ids.has('M2-J4')).toBe(true);
-		expect([...ids].every((id) => TASK_ID_SHAPE.test(id))).toBe(true);
-	});
-
-	it('keeps the accepted process labels in the list', () => {
-		const ids = knownTaskIds();
-		expect(ids.has('M2-process')).toBe(true);
-		expect(ids.has('M3-plan')).toBe(true);
+	it('reads a squash commit that git holds, through keptCommits', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-squash-'));
+		const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+		const git = (...args: string[]) =>
+			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+				cwd: dir,
+				env,
+				encoding: 'utf8',
+			}).trim();
+		try {
+			git('init', '--quiet', '--initial-branch=main');
+			git('commit', '--quiet', '--allow-empty', '-m', 'chore: base');
+			git('commit', '--quiet', '--allow-empty', '--cleanup=verbatim', '-m', squash);
+			const kept = keptCommits('HEAD~1..HEAD', dir);
+			expect([...explainedFiles(kept, files).keys()].sort()).toEqual([
+				'js/page.js',
+				'js/render-worker.js',
+			]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

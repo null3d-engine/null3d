@@ -506,6 +506,43 @@ fn a_vertex_offset_that_reads_the_record_takes_the_record_attribute() {
     assert!(!plain.locations.contains(&8), "{:?}", plain.locations);
 }
 
+/// A vertex offset that moves each vertex along its mesh's tangent attribute.
+const KEEL: &str = "fn vertexOffset(input: VertexInput) -> vec3f {
+    return input.tangent.xyz * 0.01;
+}
+";
+
+/// A surface whose own frame names its fields as the engine's inputs do: a tangent, colors and an
+/// instance of its own, none of them the mesh's.
+const OWN_FRAME: &str = "struct Frame {
+    tangent: vec3f,
+    colors: vec4f,
+    instance: u32,
+}
+
+fn frame_of(input: SurfaceInput) -> Frame {
+    return Frame(normalize(dpdx(input.worldPosition)), vec4f(input.uv, 0.0, 1.0), 0u);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let frame = frame_of(input);
+    s.baseColor *= abs(frame.tangent) * frame.colors.rgb * f32(frame.instance + 1u);
+    return s;
+}
+";
+
+#[test]
+fn only_a_read_of_an_engine_input_takes_its_vertex_attribute() {
+    let keel = compile_with(KEEL, None, &[0]).expect("the keel builds");
+    assert_eq!(keel.attributes & vertex::TANGENT, vertex::TANGENT);
+    // A field of the material's own structure is no input of the mesh, so a mesh without tangents
+    // or colors still draws with the material.
+    let own = compile_with(OWN_FRAME, None, &[0]).expect("the own frame builds");
+    assert_eq!(own.attributes & (vertex::TANGENT | vertex::COLOR), 0);
+    assert!(!own.object_ids);
+}
+
 #[test]
 fn a_vertex_offset_with_another_signature_is_refused_at_its_name() {
     let problem = only_problem(&WAVE.replace("-> vec3f", "-> vec4f"));

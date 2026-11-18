@@ -113,14 +113,11 @@ function heading(demo: Demo, growthBar = false): (string | HTMLElement)[] {
 		'transition:width 120ms linear',
 	].join(';');
 	track.append(fill);
-	const spin = element('span');
-	spin.className = 'growth-spin';
-	spin.setAttribute('aria-hidden', 'true');
 	const percent = element('span');
 	percent.id = 'demo-growth-percent';
 	percent.textContent = '0%';
 	percent.style.cssText = 'font-variant-numeric:tabular-nums;font-size:11px;opacity:0.8';
-	growth.append(track, spin, percent);
+	growth.append(track, percent);
 	return growthBar ? [name, scene, growth] : [name, scene];
 }
 
@@ -263,8 +260,10 @@ async function runDemo(demo: Demo): Promise<void> {
 	const keys = keyHelp(demo);
 	if (keys) corner.append(keys);
 	stage.append(canvas, labels, corner);
-	// A showcase scene's choices, such as its time of day, sit in a bar at the bottom of the panel.
-	const choices = demo.choices && !params.has('hold') ? element('div') : undefined;
+	// A demo's choices, such as a showcase scene's time of day, and a page part's buttons sit in a bar
+	// at the bottom of the panel.
+	const choices =
+		(demo.choices || demo.pagePart) && !params.has('hold') ? element('div') : undefined;
 	if (choices) {
 		choices.className = 'choices';
 		stage.append(choices);
@@ -281,15 +280,7 @@ async function runDemo(demo: Demo): Promise<void> {
 	const sketch = new URL(demo.sketch);
 	for (const [key, value] of params) if (key !== 'demo') sketch.searchParams.set(key, value);
 	try {
-		await startDemo({
-			canvas,
-			demo: { ...demo, sketch },
-			labels,
-			choices,
-			hud,
-			preset,
-			memoryMaximumMiB: demo.memoryMaximumMiB,
-		});
+		await startDemo({ canvas, demo: { ...demo, sketch }, labels, choices, hud, preset });
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';

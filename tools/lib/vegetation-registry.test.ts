@@ -58,8 +58,8 @@ describe('the vegetation species registry', () => {
 	});
 
 	it('matches the folders in the repository, and the page lists every species', () => {
-		// The install step, the git hooks and `bun run docs` write both files. A species folder added
-		// without them shows here.
+		// `bun tools/vegetation-registry.ts` writes both files, and `bun run test:vegetation` runs it
+		// first. A species folder added without them shows here.
 		const files = vegetationRegistryFiles(ROOT);
 		expect(readFileSync(join(ROOT, REGISTRY_FILE), 'utf8')).toBe(files.get(REGISTRY_FILE) ?? '');
 		const page = files.get(SPECIES_PAGE) ?? '';

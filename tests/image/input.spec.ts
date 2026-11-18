@@ -1,6 +1,7 @@
 // Input in the sketch: Playwright drives the keyboard, the mouse, the wheel and touch, and a stand-in
 // gamepad plays a connected pad. The sketch records what ctx.input reports each frame, and the tests
-// read it back in every thread mode. Hold mode must keep all input out of the sketch.
+// read it back in every thread mode. Hold mode must keep all input out of the sketch, and so must
+// the `input: false` option, which also adds no listener to the canvas and reads no gamepad.
 import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -295,4 +296,198 @@ for (const mode of ENGINE_MODES)
 			pinch: 0,
 			touchDx: 0,
 		});
+	});
+
+/** What the page records of the calls on its canvases and of the listeners that it adds. */
+interface CanvasCalls {
+	/** The type of each listener added to a canvas, in order. */
+	listeners: string[];
+	/**
+	 * Each listener that the engine's code added on the page's thread, as its target and its type,
+	 * such as `document:visibilitychange`: the target is `canvas`, `window`, `document`, `media` for
+	 * a media query, or `other`. The engine's code is a call from its files, which the dev server
+	 * serves from `packages/engine/`: Playwright's own scripts add listeners to the window too.
+	 */
+	all: string[];
+	/** The calls that captured a pointer on a canvas. */
+	captures: number;
+}
+
+/**
+ * Runs in the page before its scripts: records each listener that the engine's code adds on the
+ * page's thread, with its target, and counts the calls that capture a pointer on a canvas.
+ */
+function watchCanvasCalls(): void {
+	// The page's globals, which this file's types do not describe.
+	type Method = (this: unknown, ...args: unknown[]) => unknown;
+	const page = globalThis as unknown as {
+		canvasCalls: CanvasCalls;
+		document: unknown;
+		EventTarget: { prototype: { addEventListener: Method } };
+		HTMLCanvasElement: { new (): unknown; prototype: { setPointerCapture: Method } };
+		MediaQueryList: new () => unknown;
+	};
+	const calls: CanvasCalls = { listeners: [], all: [], captures: 0 };
+	page.canvasCalls = calls;
+	const canvas = page.HTMLCanvasElement;
+	const add = page.EventTarget.prototype.addEventListener;
+	page.EventTarget.prototype.addEventListener = function (this: unknown, ...args: unknown[]) {
+		if (this instanceof canvas) calls.listeners.push(String(args[0]));
+		const target =
+			this instanceof canvas
+				? 'canvas'
+				: this === page
+					? 'window'
+					: this === page.document
+						? 'document'
+						: this instanceof page.MediaQueryList
+							? 'media'
+							: 'other';
+		if (new Error().stack?.includes('/packages/engine/'))
+			calls.all.push(`${target}:${String(args[0])}`);
+		return add.apply(this, args);
+	};
+	const capture = canvas.prototype.setPointerCapture;
+	canvas.prototype.setPointerCapture = function (this: unknown, ...args: unknown[]) {
+		calls.captures++;
+		return capture.apply(this, args);
+	};
+}
+
+/** What the page recorded of the calls on its canvas. */
+const canvasCalls = (page: Page) =>
+	page.evaluate(() => (globalThis as unknown as { canvasCalls: CanvasCalls }).canvasCalls);
+
+/** True when a context menu event on the canvas keeps its default, which the engine otherwise stops. */
+const menuAllowed = (page: Page) =>
+	page.evaluate(() => {
+		// The page's globals, which this file's types do not describe.
+		const scope = globalThis as unknown as {
+			document: { querySelector(selector: string): { dispatchEvent(event: unknown): boolean } };
+			MouseEvent: new (type: string, init: { bubbles: boolean; cancelable: boolean }) => unknown;
+		};
+		const menu = new scope.MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+		return scope.document.querySelector('canvas').dispatchEvent(menu);
+	});
+
+/** The types of the listeners that the engine adds to its canvas while it listens for input. */
+const CANVAS_INPUT = ['pointermove', 'pointerdown', 'pointerleave', 'wheel', 'contextmenu'];
+/** Every type of listener that takes input, on any target. */
+const INPUT_TYPES = new Set([
+	...CANVAS_INPUT,
+	'pointerup',
+	'pointercancel',
+	'pointerlockchange',
+	'pointerlockerror',
+	'keydown',
+	'keyup',
+	'blur',
+	'focus',
+	'gamepadconnected',
+	'gamepaddisconnected',
+	'mousedown',
+	'mousemove',
+	'mouseup',
+	'touchstart',
+	'touchmove',
+	'touchend',
+]);
+/** How many listeners of a target and type the page added, such as `document:visibilitychange`. */
+const added = (calls: CanvasCalls, listener: string) =>
+	calls.all.filter((each) => each === listener).length;
+/** The part of each development note that names what the sketch relies on. */
+const NOTE_KINDS = ['ctx.input was read', 'pointer event handler', '@null3d/controls'];
+
+for (const mode of ENGINE_MODES)
+	test(`the input option off adds no input listener, and the sketch hears nothing, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.addInitScript(standInGamepad);
+		await page.addInitScript(watchCanvasCalls);
+		// The same page with the option on adds the listeners and captures the pointer, so the
+		// records below can see them.
+		const live = await open(page, mode);
+		await page.mouse.move(40, 30);
+		await page.mouse.down();
+		await page.mouse.up();
+		await expect.poll(live).toMatchObject({ pressed: { Mouse0: 1 } });
+		const on = await canvasCalls(page);
+		expect(on.listeners).toEqual(expect.arrayContaining(CANVAS_INPUT));
+		expect(on.captures).toBe(1);
+		expect(await menuAllowed(page)).toBe(false);
+
+		// The sketch relies on input as well: it reads ctx.input, gives a box a pointer event handler
+		// and makes orbit controls in its first frame. A development build says so in the console, once
+		// for each.
+		const notes: string[] = [];
+		page.on('console', (message) => {
+			if (message.text().startsWith('null3D: ')) notes.push(message.text());
+		});
+		const state = await open(page, mode, 'noInput&relies');
+		await expect.poll(async () => (await state()).frames).toBeGreaterThan(0);
+		await page.keyboard.press('KeyW');
+		await page.keyboard.press('Space');
+		await page.mouse.move(40, 30);
+		await page.mouse.move(100, 50, { steps: 4 });
+		await page.mouse.down({ button: 'left' });
+		await page.mouse.move(130, 70, { steps: 3 });
+		await page.mouse.up({ button: 'left' });
+		await page.mouse.down({ button: 'right' });
+		await page.mouse.up({ button: 'right' });
+		await page.mouse.wheel(0, 120);
+		await page.evaluate(() => {
+			const stand = (globalThis as unknown as { standInPad: StandInPad }).standInPad;
+			stand.pad.buttons[0] = { pressed: true, value: 1 };
+			stand.connect();
+		});
+		// Frames that run after every event above see none of it.
+		const before = (await state()).frames;
+		await expect.poll(async () => (await state()).frames).toBeGreaterThan(before + 2);
+		const quiet = await state();
+		expect(quiet.pressed).toMatchObject({
+			KeyW: 0,
+			Space: 0,
+			jump: 0,
+			Mouse0: 0,
+			Mouse2: 0,
+			GamepadA: 0,
+		});
+		expect(quiet.down).toMatchObject({ KeyW: false, Mouse0: false, GamepadA: false });
+		expect(quiet.pointer).toMatchObject({
+			x: 0,
+			y: 0,
+			ndcX: -1,
+			ndcY: 1,
+			buttons: 0,
+			isTouch: false,
+		});
+		expect(quiet.moved).toEqual({
+			dx: 0,
+			dy: 0,
+			dragDx: 0,
+			dragDy: 0,
+			wheel: 0,
+			pinch: 0,
+			touchDx: 0,
+		});
+		expect(quiet.touches).toEqual([]);
+		const off = await canvasCalls(page);
+		expect(off.listeners.filter((type) => CANVAS_INPUT.includes(type))).toEqual([]);
+		// No listener of the engine's takes input, on any target. The canvas watch keeps its
+		// visibilitychange, which takes none, and the input's own is gone.
+		expect(off.all.filter((listener) => INPUT_TYPES.has(listener.split(':')[1] ?? ''))).toEqual([]);
+		expect(added(off, 'document:visibilitychange')).toBe(
+			added(on, 'document:visibilitychange') - 1,
+		);
+		expect(added(off, 'document:visibilitychange')).toBeGreaterThan(0);
+		console.log(`${mode.name}: listeners with input off: ${[...new Set(off.all)].join(', ')}`);
+		expect(off.captures).toBe(0);
+		expect(await menuAllowed(page)).toBe(true);
+		expect(await padReads(page)).toBe(0);
+		// The sketch loads the controls in its first frame, after its setup, and that late load is named
+		// too.
+		await expect
+			.poll(() => notes.map((note) => NOTE_KINDS.findIndex((kind) => note.includes(kind))).sort())
+			.toEqual([0, 1, 2]);
+		for (const note of notes) expect(note).toContain('input: false');
 	});

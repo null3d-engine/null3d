@@ -583,7 +583,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createPointLight({ position, color, intensity, range, decay, castShadows, shadow, intensityUnit })",
-      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. intensity stays in candela. light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by 4\u03c0 as power does; setIntensity then takes lumens.",
+      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. intensity stays in candela. light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by 4π as power does; setIntensity then takes lumens.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
     },
@@ -594,7 +594,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity, map, castShadows, shadow, intensityUnit })",
-      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by \u03c0 at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. light.map becomes map: sRGB pixels as { width, height, data }, or an engine texture, and setMap takes the same. The light projects it over its cone as three.js projects it; its top row follows the world's up, as three.js aims its map's camera, so a light rolled about its axis shows the same map. The engine copies a texture into its own light image once, so a texture that changes every frame, a VideoTexture included, throws E1112. The engine keeps the picture's detail up to 512 texels a side and reduces a larger texture to that, where three.js samples the texture itself. Up to 32 lights show a map at once.",
+      "notes": "distance becomes range, which every spot light needs. intensity stays in candela; light.power = lumens becomes intensity: lumens with intensityUnit: 'lumen', which divides by π at any cone angle, as power does. target is a point: call light.lookAt(x, y, z) when it moves. castShadow becomes castShadows, and shadow takes bias and normalBias in meters. The quality preset sets the tile size in place of shadow.mapSize, and shadow.camera has no equivalent. light.map becomes map: sRGB pixels as { width, height, data }, or an engine texture, and setMap takes the same. The light projects it over its cone as three.js projects it; its top row follows the world's up, as three.js aims its map's camera, so a light rolled about its axis shows the same map. The engine copies a texture into its own light image once, so a texture that changes every frame, a VideoTexture included, throws E1112. The engine keeps the picture's detail up to 512 texels a side and reduces a larger texture to that, where three.js samples the texture itself. Up to 32 lights show a map at once.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -1385,7 +1385,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. KTX2 textures, WebP and AVIF textures (EXT_texture_webp, EXT_texture_avif) and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. A node's textures, which three.js reads from mesh.material.map and its other maps, come from prefab.find(name).maps (0.3). KTX2 textures, WebP and AVIF textures (EXT_texture_webp, EXT_texture_avif) and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1648,7 +1648,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Plain arrays and the vec3, quat, mat4 and color helpers from @null3d/engine, such as vec3.add(out, a, b) and quat.slerp(out, a, b, t)",
-      "notes": "Create scratch arrays once with vec3.create(), quat.create() or mat4.create(), outside onUpdate. Most names match three.js. applyQuaternion is vec3.transformQuat, applyMatrix4 is vec3.transformMat4, multiplyScalar is vec3.scale and addScaledVector is vec3.scaleAndAdd. setFromUnitVectors is quat.rotationTo, and setFromEuler is quat.fromEuler, in radians. There are no helpers for Box3, Sphere, Ray or Plane. three.js math classes may stay in setup code during a port, but not in per-frame code.",
+      "notes": "Create scratch arrays once with vec3.create(), quat.create() or mat4.create(), outside onUpdate. Most names match three.js. applyQuaternion is vec3.transformQuat, applyMatrix4 is vec3.transformMat4, multiplyScalar is vec3.scale and addScaledVector is vec3.scaleAndAdd. setFromUnitVectors is quat.rotationTo, and setFromEuler is quat.fromEuler, in radians. There are no helpers for Box3, Sphere, Ray or Plane. three.js math classes may stay in setup code during a port, but not in per-frame code. Game rules that a server replays import the exact helpers from @null3d/engine/math/vec3, quat, mat4 and math, and build setAxisAngle, fromEuler, rotateX, rotateY, rotateZ, slerp, vec3.angle and math.damp with createMath on an exact math library (0.3).",
       "docs": "api/math",
       "detect": "new\\s+(THREE\\.)?(Vector[234]|Quaternion|Matrix[34]|Euler|Color|Box[23]|Sphere|Ray|Plane|Frustum|Spherical|Cylindrical)\\s*\\("
     },
@@ -1670,7 +1670,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "math.degToRad, radToDeg, clamp, lerp, inverseLerp, mapLinear, damp, smoothstep, euclideanModulo, randFloat, randInt and randFloatSpread; math.seed and math.random",
-      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random(). smootherstep, pingpong, generateUUID and the power of two helpers have no equivalent.",
+      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random(). smootherstep, pingpong, generateUUID and the power of two helpers have no equivalent. Game rules that a server replays import clamp, lerp and the other exact helpers from @null3d/engine/math/math, build damp with createMath on an exact math library, and draw random numbers from a generator of their own (0.3).",
       "docs": "api/math",
       "detect": "\\bMathUtils\\.\\w+"
     },
@@ -1972,14 +1972,14 @@
       "detect": "\\bImprovedNoise\\b|\\bgenerateHeight\\b|\\bgetHeightAt\\b"
     },
     {
-      "id": "vegetation",
+      "id": "trees",
       "category": "Geometry",
-      "three": "A tree model per species loaded from a glTF file, or a procedural plant from an add-on such as Sapling or ez-tree",
+      "three": "A tree model per species loaded from a glTF file, or a procedural plant from an add-on such as Sapling or ez-tree, swaying in a custom wind shader",
       "status": "changed",
       "since": "0.3",
-      "target": "loadSpecies(id) or, until a species ships, loadSpeciesOrStandIn(id, { height, leaf, bark }); prepareSpecies(ctx, module), growPlant(kit, { seed, variant }) and bakeFarPlant(kit, asset) in the job workers; plantMaterials(ctx, kit, { wind }) and placePlants(ctx, kit, assets, copies, { materials, far, view }) to draw the copies with their levels and far cards; await createGrass(ctx, { height, area, count, seed, wind }) for tufts of grass on a ground, with grass.setWindLayer(field) to bend them in the wind add-on's field and grass.fit(preset) for a preset's share; groundMaps({ size, water, height, paths, rocks, caves }) and scatterVegetation({ seed, ground, rules }) from @null3d/vegetation to place the plants by ecological rules, with scatterChecksum(points) to compare a placement across devices",
-      "notes": "three.js has no plant system. A port replaces a model file or a private generator with a species id and a seed: the add-on grows the species from its record at first use, in a job worker, so the page downloads no model. The species are being rebuilt, so a port draws stand-ins of each species' size and colours until the species ship, through the same calls. Each variant keeps its levels and its far cards. Where a three.js scene scatters its copies by a random number, the port reads the ground once into maps and places each species where its tolerance curves allow, from an integer hash, so one seed places the same plants on every device.",
-      "docs": "api/vegetation",
+      "target": "const tree = await assets.loadGltf(url); scene.createInstances(tree.find(name).mesh, count, { material }) for the copies of each species; a materials.shader material whose vertexOffset samples the field of createWind(ctx, { camera }) from @null3d/wind, with swayDistance; far copies as cards from @null3d/impostors, with handOverToCards(meshes, cards.batch, switchDistance)",
+      "notes": "null3D ships no plant generator. A port keeps its tree models: export a procedural tree from Blender's Sapling, ez-tree or a similar tool as a glTF file, or build the tree in code as the forest demo does. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling. For wind, replace the three.js shader's sway with one custom material whose vertex offset reads the wind add-on's field, as examples/lib/sway.ts does. The sway fades to nothing at the material's swayDistance, so far trees stand still and keep their cached shadows. Past the last level, cards from the impostors add-on stand in for the trees, and handOverToCards sets the two distance bands.",
+      "docs": "api/wind",
       "detect": "\\b(Tree|Foliage|Vegetation)(Generator|Factory)\\b|\\bSapling\\b|\\bez-tree\\b"
     },
     {
@@ -1992,6 +1992,17 @@
       "notes": "The sketch places each label with the camera of each frame, and the page moves the element over it in the frame on screen; no messages per frame. The element's center sits where CSS2DRenderer puts a CSS2DObject's, and the offset turns and scales with the object, as a CSS2DObject's position does under its parent. Put the elements in a container that covers the canvas. Hidden labels get visibility: hidden, not display: none. No z-index by distance, and no center. For CSS3DRenderer, a label with transform 'world' takes a CSS3DObject's matrix and 'billboard' takes a CSS3DSprite's, with rotation2D as rotation: the page moves the element into a container inside its parent, which holds the camera's perspective, and turns the element with its world matrix, as CSS3DRenderer draws it. An element is sized in CSS pixels, which are the scene's units. Both a perspective camera and an orthographic camera carry the planes, so a scene that uses either lens ports as it is. The engine hides a plane whose anchor is behind the camera or outside the near and far planes, which CSS3DRenderer does not do, and it leaves the pointer to your CSS, so give an element pointer-events: auto for the clicks that CSS3DRenderer gives it. The engine has no camera view offset, which some examples offer only in a debug panel. It writes a transform only when it changes, and a page holds its planes with maxLabels3d. All seven of three.js's CSS3D examples have a port: css3d_periodictable, css3d_molecules, css3d_sprites, css3d_sandbox, css3d_orthographic, css3d_mixed and css3d_youtube. Each port's test draws its scene with null3D, and with three.js's CSS3DRenderer from the same data and camera. It then compares the two layers of elements. Three examples also draw WebGL content: mixed, sandbox and orthographic. Only the mixed port's twin draws that content, the example's room, light, cut-out and frame, and the test compares those frames, so a surface that the engine draws over the page shows. The sandbox and orthographic twins return elements only; their drawn wireframe planes are not compared. Where the mixed example's invisible plane writes depth alone to show its embedded page clean, a material with colorWrite: false does the same. The comparison shows where a port matches three.js and where it differs by design. A cell table ports directly: one object and one ui.trackLabel(object, id, { transform: 'world' }) for each cell, the cell's HTML in the element, and the example's camera; the port skill's architecture guide shows it.",
       "docs": "api/ui",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
+    },
+    {
+      "id": "grass",
+      "category": "Geometry",
+      "three": "A field of grass blades as an InstancedMesh or a custom shader that bends them in a time-based wind",
+      "status": "changed",
+      "since": "0.3",
+      "target": "await createGrass(ctx, { height, area, count, seed, mask, wind, camera, swayDistance }) from @null3d/grass, with grass.setWindLayer(field) in each frame to bend the blades in the wind add-on's field, grass.fit(preset) for a preset's share and grass.setSwayDistance(swayDistanceFor(preset)) when the preset changes",
+      "notes": "three.js has no grass. A port replaces the hand-made blades and their wind shader with one call: the add-on places the tufts on the ground's height by integer hash, so one seed places the same grass on every device, and bends the blades in the wind add-on's field, so the grass answers the same gusts as the rest of the scene. On WebGPU a compute pass builds the blade list each frame, culls it to the view and thins the far tufts; WebGL2 draws the same rows as an instance batch. The grass casts and receives the sun's shadows. A blade shape, a width along the blade and the fold of its keel, takes the place of a hand-made blade geometry.",
+      "docs": "api/grass",
+      "detect": "\\bGrass(Geometry|Material|Mesh|Shader|Field|Blades?)\\b"
     },
     {
       "id": "xr",

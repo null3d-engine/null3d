@@ -66,3 +66,20 @@ describe('the byte and text hashes', () => {
 		expect(hashText('oak')).not.toBe(hashText('oaks'));
 	});
 });
+
+describe('the copy in the grass package', () => {
+	// The grass package keeps its own copy of the integer hash, because the plant generator runs on
+	// the job workers and reads no other package. The two copies must give the same bits, so a
+	// tuft and a plant that share a seed share their choices.
+	test('gives the same bits as this module', async () => {
+		const grass = await import('@null3d/grass/hash');
+		for (let i = 0; i < 4096; i++) {
+			const value = Math.imul(i, 2654435761) >>> 0;
+			expect(grass.pcg(value)).toBe(pcg(value));
+			expect(grass.hashAt(value, i, i * 3, i * 7, i * 11)).toBe(
+				hashAt(value, i, i * 3, i * 7, i * 11),
+			);
+			expect(grass.unitAt(value, i)).toBe(unitAt(value, i));
+		}
+	});
+});

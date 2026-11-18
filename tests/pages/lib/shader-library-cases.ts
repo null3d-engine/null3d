@@ -17,7 +17,7 @@ import {
 } from '../../../packages/engine/src/generated/core.ts';
 import { linearToSrgb, srgbToLinear } from '../../../packages/engine/src/math/color.ts';
 import { inverseLerp, mapLinear, smoothstep } from '../../../packages/engine/src/math/math.ts';
-import { setAxisAngle } from '../../../packages/engine/src/math/quat.ts';
+import { setAxisAngle } from '../../../packages/engine/src/math/namespaces/quat.ts';
 import { transformQuat } from '../../../packages/engine/src/math/vec3.ts';
 import { dfgLut } from './dfg-table.ts';
 

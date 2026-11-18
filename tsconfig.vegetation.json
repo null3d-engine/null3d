@@ -1,0 +1,19 @@
+{
+	// The vegetation add-on's own tools and tests, which the main project leaves out: the add-on is a
+	// work in progress that no CI job checks (D-378). `bun run test:vegetation` checks this project.
+	"extends": "./tsconfig.json",
+	"include": [
+		"tests/image/plant-*.spec.ts",
+		"tests/lib/plant-species.test.ts",
+		"tests/lib/leaf-card-rule.test.ts",
+		"tests/lib/species-walk.ts",
+		"tools/plant-*",
+		"tools/plant-*/**/*.ts",
+		"tools/vegetation-registry.ts",
+		"tools/lib/plant-*",
+		"tools/lib/plant-*/**/*.ts",
+		"tools/lib/vegetation-registry.ts",
+		"tools/lib/vegetation-registry.test.ts"
+	],
+	"exclude": ["**/node_modules"]
+}

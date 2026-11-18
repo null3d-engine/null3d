@@ -63,6 +63,7 @@ import {
 } from '../../packages/engine/src/quality/chooser.ts';
 import type { Tier as EngineTier } from '../../packages/engine/src/shared/tier.ts';
 import { sampleUrl } from '../../tools/lib/sample-url.ts';
+import { vegetationOn } from '../../tools/lib/vegetation-switch.ts';
 import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
 import { type AnimationResult, animationProblems } from '../pages/lib/animation.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
@@ -823,14 +824,19 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 			),
 		),
 		// Creek's valley placed by the vegetation add-on, which must reach the reference that its
-		// devices recorded. The placement starts no engine, so one page covers both GPU paths, and
-		// running it here puts the reference in front of every browser engine that CI has.
-		pageItem(
-			'vegetation-scatter',
-			'vegetation-scatter',
-			{ kind: 'probe', tier: 'webgl2' },
-			{ switches: ['runs=1'], timeoutSeconds: 120 },
-		),
+		// devices recorded. The placement starts no engine, so one page covers both GPU paths. It
+		// joins only with the add-on's switch on, since the add-on is a work in progress that no CI
+		// job runs (D-378).
+		...(vegetationOn()
+			? [
+					pageItem(
+						'vegetation-scatter',
+						'vegetation-scatter',
+						{ kind: 'probe', tier: 'webgl2' },
+						{ switches: ['runs=1'], timeoutSeconds: 120 },
+					),
+				]
+			: []),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
 			kind: 'capabilities-reload',
 			first: CAPABILITIES,

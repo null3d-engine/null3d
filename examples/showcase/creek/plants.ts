@@ -1,80 +1,35 @@
-// The creek's plants, grown by the vegetation add-on's plant core rather than loaded from files. The
-// valley's plants stand where the add-on's ecological rules place them (see `valley.ts`), each
-// species grown in the engine's job workers at the variants that Creek draws, with every level of
-// detail kept for the engine to switch by distance. The canal's four trees hand over to far cards
-// past the distance where a tree spans a few pixels; the hillsides carry ground cover and no trees.
-// Fallen lengths of dead wood lie where the rules leave them. Each species draws as the plant
-// core's stand-in, at its size and in its colours, until the species lands in the add-on.
-import { type MeshArrays, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
-import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
-import type { WindField } from '@null3d/wind';
-import { type PlantSpot, plantSpecies } from '../../lib/plants';
-import { random } from '../../lib/procedural';
-import { creekStandIn } from '../../lib/stand-ins';
-import { placeValley, SEED, SPECIES, VARIANTS } from './valley';
+// The creek's trees and plants: the Blender models of `models.ts`, standing where `valley.ts` places
+// them, each kind one instance batch per part, so every copy picks its own level of detail. The
+// trees and the bank plants sway in the scene's one wind field through the shared wind material,
+// which reads each vertex's bend weight from the models' second texture coordinates and draws the
+// file's own textures. Fallen lengths of dead wood, made in code, lie on the woods' floor.
+import { type Material, type MeshArrays, quat, type SketchContext } from '@null3d/engine';
+import type { Wind } from '@null3d/wind';
+import { type Part, standPart, swayingPart } from '../../lib/blender-models';
+import { createSway } from '../../lib/sway';
+import { type Models, PLANT_KINDS, TREE_KINDS } from './models';
+import type { Spot, Valley } from './valley';
 
-/**
- * The most triangles one tree may draw at each preset. The add-on shares a tree's ceiling across
- * its parts by their share of the visible outline, so a tree keeps its silhouette as it grows
- * cheaper. Ground cover grows without a ceiling.
- */
-const TREE_TRIANGLES: Record<QualityPreset, number> = {
-	low: 400,
-	medium: 700,
-	high: 1100,
-	ultra: 1500,
-};
-
-/** The fallen lengths of dead wood: their longest and shortest length, and their girth, in meters. */
-const LOG_LONG = 4.5;
-const LOG_SHORT = 1.8;
+/** The fallen lengths of dead wood: their length and girth at size 1, in meters. */
+const LOG_LENGTH = 6.3;
 const LOG_GIRTH = 0.22;
 
-/** What the plants need of the scene. */
-export interface PlantOptions {
-	/** True where a stone covers the ground, which nothing grows through. */
-	readonly rocks?: (x: number, z: number) => boolean;
-}
-
-/** The drawn plants, and what a frame changes on them. */
-export interface Plants {
-	/** Gives the plant materials the field's newest state, which a frame calls before it draws. */
-	setWindLayer(field: WindField): void;
-}
-
-/** Groups the placed plants by species, each with its variant, size and turn. */
-function groupBySpecies(points: ReturnType<typeof placeValley>): Map<string, PlantSpot[]> {
-	const grouped = new Map<string, PlantSpot[]>();
-	for (let index = 0; index < points.count; index++) {
-		const at = index * points.stride;
-		const rule = points.rules[points.data[at + 3] as number];
-		if (!rule || rule.species === 'deadwood') continue;
-		let spots = grouped.get(rule.species);
-		if (!spots) {
-			spots = [];
-			grouped.set(rule.species, spots);
-		}
-		const x = points.data[at] as number;
-		const z = points.data[at + 2] as number;
-		spots.push({
-			x,
-			y: points.data[at + 1] as number,
-			z,
-			scale: points.data[at + 5] as number,
-			turn: (points.data[at + 6] as number) * Math.PI * 2,
-			// Every copy keeps its own variant: the trees stand beside the water, where the camera
-			// passes close enough to read one from another.
-			variant: Math.min(VARIANTS - 1, Math.floor(points.data[at + 4] as number)),
-		});
-	}
-	return grouped;
-}
+/**
+ * How far each part's freest tips move in a wind of one meter a second, in meters, how stiff it is
+ * near its root, and how far its leaves flutter. A tree bends as a cantilever, and its wood and its
+ * cards share the bend so the cards stay on their twigs; the cards flutter on top. The bank plants
+ * bend from their foot.
+ */
+const SWAY = {
+	wood: { sway: 0.012, stiffness: 2, rustle: 0, roughness: 1 },
+	leaves: { sway: 0.012, stiffness: 2, rustle: 0.025, roughness: 0.65 },
+	plant: { sway: 0.018, stiffness: 1.4, rustle: 0.01, roughness: 0.7 },
+} as const;
 
 /** A fallen length of dead wood: a tapered log, its ends rounded, lying along x. */
 function logMesh(): MeshArrays {
 	const sides = 7;
 	const rings = 5;
-	const length = LOG_LONG + LOG_SHORT;
 	const positions: number[] = [];
 	const normals: number[] = [];
 	const uvs: number[] = [];
@@ -86,7 +41,7 @@ function logMesh(): MeshArrays {
 		for (let side = 0; side < sides; side++) {
 			const angle = (side / sides) * Math.PI * 2;
 			const [ny, nz] = [Math.cos(angle), Math.sin(angle)];
-			positions.push((t - 0.5) * length, ny * radius, nz * radius);
+			positions.push((t - 0.5) * LOG_LENGTH, ny * radius, nz * radius);
 			normals.push(0, ny, nz);
 			uvs.push(t, side / sides);
 		}
@@ -100,80 +55,61 @@ function logMesh(): MeshArrays {
 	return { positions, normals, uvs, indices };
 }
 
-/** Lays the valley's dead wood: fallen lengths on the floor of the wood. */
-function layDeadWood(ctx: SketchContext, points: ReturnType<typeof placeValley>): void {
-	const { scene, geometry } = ctx;
-	const logs: { x: number; y: number; z: number; scale: number; rotation: number }[] = [];
-	const next = random(SEED);
-	for (let index = 0; index < points.count; index++) {
-		const at = index * points.stride;
-		const rule = points.rules[points.data[at + 3] as number];
-		if (rule?.species !== 'deadwood') continue;
-		logs.push({
-			x: points.data[at] as number,
-			y: points.data[at + 1] as number,
-			z: points.data[at + 2] as number,
-			scale: 0.6 + 0.6 * next(),
-			rotation: next(),
-		});
-	}
+/** Lays the dead wood: fallen lengths on the woods' floor, each along its own turn. */
+function layDeadWood(ctx: SketchContext, logs: readonly Spot[]): void {
 	if (logs.length === 0) return;
-	const batch = scene.createInstances(geometry.fromArrays(logMesh()), logs.length, {
+	const batch = ctx.scene.createInstances(ctx.geometry.fromArrays(logMesh()), logs.length, {
 		material: ctx.materials.standard({ color: '#4a3a2a', roughness: 0.95 }),
 		castShadows: true,
 		receiveShadows: true,
 	});
 	const lying = quat.fromEuler(quat.create(), 0, 0, Math.PI / 2);
+	const turn = quat.create();
 	logs.forEach((log, row) => {
-		batch.positions.set([log.x, log.y + LOG_GIRTH * 0.8 * log.scale, log.z], row * 3);
-		batch.rotations.set(
-			quat.multiply(
-				quat.create(),
-				quat.fromEuler(quat.create(), 0, log.rotation * Math.PI * 2, 0),
-				lying,
-			),
-			row * 4,
-		);
-		batch.scales.fill(log.scale, row * 3, row * 3 + 3);
+		batch.positions.set([log.x, log.y + LOG_GIRTH * 0.8 * log.size, log.z], row * 3);
+		quat.fromEuler(turn, 0, log.yaw, 0);
+		batch.rotations.set(quat.multiply(turn, turn, lying), row * 4);
+		batch.scales.fill(log.size, row * 3, row * 3 + 3);
 	});
 	batch.markDirty();
 }
 
+/** The drawn plants, and what a frame changes on them. */
+export interface Plants {
+	/** Gives the wind material the field's newest state, which a frame calls after the field steps. */
+	update(): void;
+}
+
 /**
- * Grows and draws the creek's plants: every species that the thinned valley placed, at every
- * variant, in the scene's one wind field, with the canal's far cards and the dead wood on the floor.
+ * Draws the valley's trees, bank plants and dead wood from the loaded models. Each part takes the
+ * wind material with its file's textures: the bark's color, normal and occlusion maps, and the
+ * cards' cutout.
  */
-export async function createPlants(
+export function createPlants(
 	ctx: SketchContext,
-	wind: WindField,
-	options: PlantOptions = {},
-): Promise<Plants> {
-	const points = placeValley(options);
-	const grouped = groupBySpecies(points);
-	const treeTriangles = TREE_TRIANGLES[ctx.quality.preset];
-	layDeadWood(ctx, points);
-	const planted = await Promise.all(
-		SPECIES.map((species) => {
-			const spots = grouped.get(species.id) ?? [];
-			if (spots.length === 0) return undefined;
-			return plantSpecies(ctx, {
-				id: species.id,
-				// The stand-in's crown fills the room that the rules keep for the species.
-				standIn: creekStandIn(species),
-				seed: SEED,
-				spots,
-				variants: VARIANTS,
-				wind,
-				far: species.canopy,
-				castShadows: true,
-				...(species.canopy && { maxTriangles: treeTriangles }),
-			});
-		}),
-	);
-	const materials: PlantMaterial[] = planted.flatMap((species) => species?.materials ?? []);
-	return {
-		setWindLayer(field) {
-			setWindLayer(materials, field);
-		},
+	wind: Wind,
+	valley: Valley,
+	models: Models,
+): Plants {
+	const sway = createSway(ctx, { wind });
+	/** One batch of a part over the spots that stand it. */
+	const stand = (part: Part, spots: readonly Spot[], material: Material) => {
+		if (spots.length > 0) standPart(ctx, part, spots, material);
 	};
+	for (const kind of TREE_KINDS) {
+		const { wood, leaves } = models.trees[kind];
+		const spots = valley.trees.filter((spot) => spot.kind === kind);
+		stand(wood, spots, swayingPart(sway, wood, SWAY.wood, false));
+		stand(leaves, spots, swayingPart(sway, leaves, SWAY.leaves, true));
+	}
+	for (const kind of PLANT_KINDS) {
+		const part = models.plants[kind];
+		// Each plant's foot sinks a little, so no copy stands proud of a slope.
+		const spots = valley.plants
+			.filter((spot) => spot.kind === kind)
+			.map((spot) => ({ ...spot, y: spot.y - 0.03 }));
+		stand(part, spots, swayingPart(sway, part, SWAY.plant, true));
+	}
+	layDeadWood(ctx, valley.deadwood);
+	return { update: () => sway.update() };
 }

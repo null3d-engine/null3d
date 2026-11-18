@@ -93,8 +93,12 @@ describe('package imports in the add-ons', () => {
 		expect(entries['@null3d/engine']).toBe('lib/index.js');
 		expect(entries['@null3d/engine/stats']).toBe('lib/stats.js');
 		expect(entries['@null3d/impostors']).toBe('addons/impostors/lib/index.js');
-		expect(entries['@null3d/vegetation']).toBe('addons/vegetation/lib/index.js');
+		expect(entries['@null3d/wind']).toBe('addons/wind/lib/index.js');
 		expect(entries['@null3d/engine/levels-planner']).toBe('levels/planner.js');
+	});
+
+	it('leaves out a private package, which ships nowhere', () => {
+		expect(entries['@null3d/vegetation']).toBeUndefined();
 	});
 
 	it('makes the engine and other add-ons relative, and leaves other text alone', () => {

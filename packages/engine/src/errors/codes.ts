@@ -492,6 +492,14 @@ const DOCS = {
 		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
 		since: '0.2',
 	},
+	E1426: {
+		title: 'Pointer lock with input off',
+		cause:
+			"engine.requestPointerLock() asked for the pointer lock on an engine started with input: false. The lock is part of the engine's input: the sketch reads the mouse's movement through the engine's listeners, which that option turns off. So the engine takes no lock, and leaves the lock to the code that records the page's input.",
+		example:
+			'E1426: engine.requestPointerLock() was called on an engine started with input: false, which reads no pointer movement.',
+		since: '0.3',
+	},
 	E1430: {
 		title: 'Too many reflection probes',
 		cause:

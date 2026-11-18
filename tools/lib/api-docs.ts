@@ -22,13 +22,15 @@ export interface ApiPackage {
 export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/engine/src/index.ts', source: 'packages/engine/src' },
 	{ entry: 'packages/engine/src/stats.ts', source: 'packages/engine/src' },
+	{ entry: 'packages/engine/src/math/index.ts', source: 'packages/engine/src' },
 	{ entry: 'packages/controls/src/index.ts', source: 'packages/controls/src' },
 	{ entry: 'packages/particles/src/index.ts', source: 'packages/particles/src' },
 	{ entry: 'packages/splats/src/index.ts', source: 'packages/splats/src' },
 	{ entry: 'packages/impostors/src/index.ts', source: 'packages/impostors/src' },
 	{ entry: 'packages/terrain/src/index.ts', source: 'packages/terrain/src' },
-	{ entry: 'packages/vegetation/src/index.ts', source: 'packages/vegetation/src' },
 	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },
+	{ entry: 'packages/grass/src/index.ts', source: 'packages/grass/src' },
+	{ entry: 'packages/grass/src/hash.ts', source: 'packages/grass/src' },
 	{ entry: 'packages/three-compat/src/index.ts', source: 'packages/three-compat/src' },
 	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src' },
 	{ entry: 'packages/wind/src/index.ts', source: 'packages/wind/src' },
@@ -106,13 +108,20 @@ function isHidden(declaration: ts.Declaration): boolean {
 	return name !== undefined && ts.isPrivateIdentifier(name);
 }
 
-type Callable = ts.FunctionDeclaration | ts.MethodDeclaration | ts.MethodSignature;
+type Callable =
+	| ts.FunctionDeclaration
+	| ts.MethodDeclaration
+	| ts.MethodSignature
+	| ts.FunctionTypeNode;
 
 /** The declarations a caller sees: the overloads when there are some, else the one declaration. */
 function callables(declarations: readonly ts.Declaration[]): Callable[] {
 	const all = declarations.filter(
 		(d): d is Callable =>
-			ts.isFunctionDeclaration(d) || ts.isMethodDeclaration(d) || ts.isMethodSignature(d),
+			ts.isFunctionDeclaration(d) ||
+			ts.isMethodDeclaration(d) ||
+			ts.isMethodSignature(d) ||
+			ts.isFunctionTypeNode(d),
 	);
 	const overloads = all.filter((d) => !('body' in d && d.body));
 	return overloads.length > 0 && overloads.length < all.length ? overloads : all;
@@ -287,8 +296,23 @@ function namespaceDocs(alias: ts.Symbol): { summary: string; page: string | unde
 }
 
 /**
+ * The call signatures of a constant whose value is a function, such as a namespace's helper that a
+ * maker builds, as the declarations that its type's signatures come from: the function type that
+ * annotates it. A constant of any other type has none.
+ */
+function constantCalls(symbol: ts.Symbol, checker: ts.TypeChecker): ts.Declaration[] {
+	const declaration = symbol.declarations?.[0];
+	if (!declaration || !ts.isVariableDeclaration(declaration)) return [];
+	return checker
+		.getTypeOfSymbolAtLocation(symbol, declaration)
+		.getCallSignatures()
+		.flatMap((signature) => (signature.declaration ? [signature.declaration] : []));
+}
+
+/**
  * The functions of a namespace export, in the order its module declares them, and the names of its
- * exports that are not functions, which the reference cannot show.
+ * exports that are not functions, which the reference cannot show. A constant whose value is a
+ * function counts as one, with the signature of its type and the summary of its own comment.
  */
 function namespaceMembers(
 	module: ts.Symbol,
@@ -300,7 +324,10 @@ function namespaceMembers(
 	for (const exported of checker.getExportsOfModule(module)) {
 		const member =
 			exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported;
-		const functions = callables(member.declarations ?? []);
+		const functions = callables([
+			...(member.declarations ?? []),
+			...constantCalls(member, checker),
+		]);
 		if (functions.length === 0) others.push(exported.name);
 		const summary = flat(ts.displayPartsToString(member.getDocumentationComment(checker)));
 		for (const declaration of functions)

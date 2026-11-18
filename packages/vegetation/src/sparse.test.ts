@@ -146,7 +146,7 @@ function rowKeys(asset: PlantAsset): Map<number, string> {
 /**
  * Each row's place, scale and prototype, by its index in the plant as grown. A sparser planned
  * plant keeps every row it draws at the denser plant's place, scale and piece; its facing is the
- * state's own, because the fill grows each state's twigs (D-369).
+ * state's own, because the fill grows each state's twigs (D-381).
  */
 function rowPlaces(asset: PlantAsset): Map<number, string> {
 	const rows = asset.shoots;
@@ -286,7 +286,7 @@ for (const id of SPECIES) {
 						const at = `${id} seed ${seed} sparse ${LEVELS[k]}`;
 						// A cut of the full tree: each row the state keeps is the full plant's, at its place,
 						// its scale and its piece (D-371). The states are not nested in each other, and a
-						// sparser state's facing is the state's own (D-369).
+						// sparser state's facing is the state's own (D-381).
 						const denserRows = rowPlaces(full);
 						const rows = rowPlaces(plant);
 						for (const [row, key] of rows)
@@ -313,7 +313,7 @@ for (const id of SPECIES) {
 							}
 						// The extras that stay stand at the sockets the plant keeps. Their vertices turn
 						// with the socket's own twig, as a kept row does, so an exact vertex is not
-						// compared here (D-369).
+						// compared here (D-381).
 						// One body: every axis leaves an axis the plant holds, every row stands on a node
 						// it holds, and each level counts the roots the plant as grown counts.
 						const skeleton = plant.skeleton;
@@ -362,7 +362,7 @@ for (const id of SPECIES) {
 						// The tree stands as tall: the skeleton's height and bounds are the densest plant's.
 						// The highest leaf tip may move within a quarter metre or a fiftieth of the height,
 						// whichever is more, since a state grows its own rows and the topmost may thin away
-						// (D-369, D-371). Measured: the oak stands 0.214 m down at sparseness 0.75, the birch
+						// (D-381, D-371). Measured: the oak stands 0.214 m down at sparseness 0.75, the birch
 						// within 0.011 m at every state, the hawthorn 0.124 m down at sparsest.
 						const tip = Math.abs(drawnTop(kit, plant) - drawnTop(kit, full));
 						expect([at, tip <= Math.max(0.25, full.skeleton.height / 50)]).toEqual([at, true]);

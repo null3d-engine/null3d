@@ -131,9 +131,9 @@ describe('the gate steps', () => {
 			figure: 'CI: no run, Benchmarks: success',
 			verdict: 'fail',
 		});
-		// A push to a milestone branch runs only the quick checks, which pass with no browser job.
-		const quick = { ...ci, headBranch: 'm3-start' };
-		expect(workflowResult(runs([quick, bench])).figure).toBe('CI: no run, Benchmarks: success');
+		// A run of a push to another branch is no run of this commit on main.
+		const other = { ...ci, headBranch: 'feat/work' };
+		expect(workflowResult(runs([other, bench])).figure).toBe('CI: no run, Benchmarks: success');
 		// A full run started by hand counts as main's own run does, and the newer of them decides.
 		const byHand = { ...ci, event: 'workflow_dispatch' };
 		expect(workflowResult(runs([byHand, { ...ci, conclusion: 'failure' }, bench])).verdict).toBe(
@@ -245,10 +245,10 @@ describe('the gate steps', () => {
 		const ci = GATE_WORKFLOWS.find(({ name }) => name === 'CI');
 		if (!ci) throw new Error('the gate lists no CI workflow');
 		expect(countedRun([{ ...run, event: 'pull_request' }], ci)).toBeNull();
-		expect(countedRun([{ ...run, headBranch: 'm3-start' }], ci)).toBeNull();
-		const byHand = { ...run, event: 'workflow_dispatch', headBranch: 'm3-start', databaseId: 43 };
+		expect(countedRun([{ ...run, headBranch: 'feat/work' }], ci)).toBeNull();
+		const byHand = { ...run, event: 'workflow_dispatch', headBranch: 'feat/work', databaseId: 43 };
 		expect(countedRun([byHand, run], ci)).toEqual(byHand);
-		expect(countedRun([{ ...run, headBranch: 'm3-start', databaseId: 41 }, run], ci)).toEqual(run);
+		expect(countedRun([{ ...run, headBranch: 'feat/work', databaseId: 41 }, run], ci)).toEqual(run);
 	});
 
 	test('make a whole hash of a short commit, and refuse a commit the repository lacks', () => {

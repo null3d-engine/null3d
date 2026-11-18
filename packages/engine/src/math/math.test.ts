@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { MathUtils } from 'three';
-import * as math from './math';
+import * as math from './namespaces/math';
 
 /** The published mulberry32 (github.com/bryc/code, jshash/PRNGs.md), kept as an outside reference. */
 function referenceMulberry32(seed: number): () => number {
@@ -17,12 +17,12 @@ function referenceMulberry32(seed: number): () => number {
 const draws = (random: () => number, count: number) => Array.from({ length: count }, random);
 
 /**
- * A second copy of the math module in this thread, as a production build gives the sketch worker:
+ * A second copy of the random module in this thread, as a production build gives the sketch worker:
  * one copy in the engine's worker code, and one in the sketch's bundle. Bun loads a path with a
  * query as a module of its own.
  */
-async function secondCopy(): Promise<typeof import('./math')> {
-	return await import(`${import.meta.dirname}/math.ts?second-copy`);
+async function secondCopy(): Promise<typeof import('./random')> {
+	return await import(`${import.meta.dirname}/random.ts?second-copy`);
 }
 
 const own = Math.random;

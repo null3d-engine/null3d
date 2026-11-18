@@ -14,12 +14,11 @@
 // inside the switch distance. So a copy that straddles the switch shows real leaves on its near
 // side and cards on its far side, and no pixel drops out of both.
 import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
-import type { ImpostorBatch } from '@null3d/impostors';
+import { EDGE_BAND, handOverToCards, type ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
 import { DETAILS, type Detail, type Season } from '../core/types';
 import { SHOOT_REACH, switchScale } from '../lod/drawn';
 import { firstCardStart, REFERENCE_VIEW } from '../lod/levels';
-import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
 	type PlantMaterials,
 	plantBoundingRadius,

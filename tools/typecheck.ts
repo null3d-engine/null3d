@@ -4,6 +4,8 @@
 // checks again only the files that the change reaches. A project's output prints whole when it ends,
 // and the command fails when any project fails.
 //   bun tools/typecheck.ts
+// `--vegetation` checks the vegetation add-on's projects alone, which `bun run test:vegetation` asks for:
+//   bun tools/typecheck.ts --vegetation
 // `--shaders` first brings the shader modules up to date, which the engine's projects import. When
 // that needs a build while another checkout's shader build holds the machine's lock, it checks
 // against the modules in place instead of waiting, and builds them and checks again only when a
@@ -16,8 +18,21 @@ import { join } from 'node:path';
 import { acquireLock, cacheRoot, HOLDER_WATCH } from './lib/build-cache';
 import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, shaderModulesUnlessBusy } from './lib/shader-modules';
+import { vegetationOn } from './lib/vegetation-switch';
 
 const ROOT = join(import.meta.dirname, '..');
+
+/**
+ * The vegetation add-on's projects: its package, and its tools, tests and pages outside it. The check
+ * takes them only with the add-on's switch on, since the add-on is a work in progress that no CI job
+ * checks (D-378).
+ */
+export const VEGETATION_PROJECTS = [
+	'packages/vegetation',
+	'packages/vegetation/tsconfig.test.json',
+	'tsconfig.vegetation.json',
+	'tests/pages/tsconfig.vegetation.json',
+];
 
 /** Every project that the check covers, by its folder or its config file. */
 export const PROJECTS = [
@@ -28,6 +43,8 @@ export const PROJECTS = [
 	'packages/controls/tsconfig.test.json',
 	'packages/geometry',
 	'packages/geometry/tsconfig.test.json',
+	'packages/grass',
+	'packages/grass/tsconfig.test.json',
 	'packages/impostors',
 	'packages/impostors/tsconfig.test.json',
 	'packages/particles',
@@ -36,8 +53,6 @@ export const PROJECTS = [
 	'packages/splats/tsconfig.test.json',
 	'packages/terrain',
 	'packages/terrain/tsconfig.test.json',
-	'packages/vegetation',
-	'packages/vegetation/tsconfig.test.json',
 	'packages/three-compat',
 	'packages/three-compat/tsconfig.test.json',
 	'packages/water',
@@ -49,12 +64,14 @@ export const PROJECTS = [
 	'packages/cli',
 	'tests/pages',
 	'tests/fixtures/project',
+	'tests/fixtures/rules-code',
 	'tests/fixtures/typed-uniforms',
 	'examples',
 	'examples/tsconfig.test.json',
 	'bench',
 	'bench/tsconfig.node.json',
-] as const;
+	...(vegetationOn() ? VEGETATION_PROJECTS : []),
+];
 
 /**
  * The most projects that run at once. Each holds the engine's program, a few hundred megabytes, and
@@ -144,19 +161,19 @@ function acquireTypecheckLock(): () => void {
 }
 
 /**
- * Checks every project and prints each result. With `shaders`, it first brings the shader modules up
+ * Checks each of `projects` and prints each result. With `shaders`, it first brings the shader modules up
  * to date, or keeps the ones in place while another checkout's build holds the machine's lock;
  * against those, a failure may be theirs, so it prints nothing until it has built them and checked
  * again. Returns the results that it printed.
  */
-async function main(shaders: boolean): Promise<Checked[]> {
+async function main(shaders: boolean, projects: readonly string[]): Promise<Checked[]> {
 	refuseInQuietWindow('The type check');
 	const shadersMatch = !shaders || shaderModulesUnlessBusy(ROOT);
 	if (shaders && shadersMatch) console.log('The shader modules match their sources.');
 	const release = acquireTypecheckLock();
 	let results: Checked[];
 	try {
-		results = await checkAll(PROJECTS, undefined, shadersMatch ? report : undefined);
+		results = await checkAll(projects, undefined, shadersMatch ? report : undefined);
 	} finally {
 		release();
 	}
@@ -171,7 +188,7 @@ async function main(shaders: boolean): Promise<Checked[]> {
 	ensureShaderModules(ROOT);
 	const again = acquireTypecheckLock();
 	try {
-		return await checkAll(PROJECTS, undefined, report);
+		return await checkAll(projects, undefined, report);
 	} finally {
 		again();
 	}
@@ -181,7 +198,10 @@ if (import.meta.main) {
 	const started = performance.now();
 	let results: Checked[];
 	try {
-		results = await main(process.argv.includes('--shaders'));
+		results = await main(
+			process.argv.includes('--shaders'),
+			process.argv.includes('--vegetation') ? VEGETATION_PROJECTS : PROJECTS,
+		);
 	} catch (e) {
 		console.error(`error: ${(e as Error).message}`);
 		process.exit(1);

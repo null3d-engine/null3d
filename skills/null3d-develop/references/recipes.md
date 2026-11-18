@@ -27,7 +27,8 @@ Each recipe states the goal, gives the code, explains why it is written that way
 21. Fire, smoke and sparks with particles
 22. Terrain from a height field
 23. Outdoor land with an edge the camera never sees
-24. Trees, shrubs and grass from a species record
+24. Trees that sway in the wind
+25. A game whose simulation a server replays (0.3)
 
 ## 1. Start a new project
 
@@ -436,7 +437,7 @@ return {
 };
 ```
 
-WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`.
+WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`. Physics in the sketch only moves what the player sees. A game whose server replays its simulation keeps the physics that decides a result in that simulation (recipe 25).
 
 ## 12. Minimap with a second camera (0.2)
 
@@ -824,63 +825,148 @@ const controls = createOrbitControls(ctx, camera, {
 
 Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haze sheets in code, `api/controls`, `concepts/shadows`.
 
-## 24. Trees, shrubs and grass from a species record
+## 24. Trees that sway in the wind
+
+null3D has no plant generator. Draw trees from a glTF model, such as one exported from Blender, or from a mesh that you build in code. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling.
+
+To make the trees sway, give them one custom material whose vertex offset reads the wind add-on's field:
 
 ```ts
-import { defineSketch } from '@null3d/engine';
-import {
-  bakeFarPlant,
-  growPlant,
-  loadSpeciesOrStandIn,
-  placePlants,
-  plantMaterials,
-  prepareSpecies,
-} from '@null3d/vegetation';
+import type { Camera, SketchContext } from '@null3d/engine';
+import { createWind } from '@null3d/wind';
 
-/** Each species by its id, with the size and colors of the stand-in that draws until it ships. */
-const SPECIES = [
-  { id: 'pedunculate-oak', height: 13, leaf: [0.09, 0.19, 0.045], bark: [0.18, 0.15, 0.12] },
-  { id: 'silver-birch', height: 12, leaf: [0.2, 0.34, 0.1], bark: [0.62, 0.6, 0.55] },
-  { id: 'hawthorn-shrub', height: 2.4, leaf: [0.15, 0.3, 0.1], bark: [0.22, 0.18, 0.13] },
-] as const;
+/** The distance from the camera out to which the trees move, in meters. */
+const SWAY_DISTANCE = 120;
 
-export default defineSketch(async (ctx) => {
-  const { scene } = ctx;
-  const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 500, position: [18, 8, 26] });
-  camera.lookAt(0, 5, 0);
-  scene.setActiveCamera(camera);
-  scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
-  scene.createAmbientLight({ intensity: 0.45 });
-
-  let x = -12;
-  for (const { id, ...standIn } of SPECIES) {
-    const module = await loadSpeciesOrStandIn(id, standIn);
-    // The kit and the variants grow in the job workers, and stages not built yet grow stand-ins.
-    const kit = await prepareSpecies(ctx, module, { placeholders: true });
-    const assets = await Promise.all(
-      [0, 1, 2].map((variant) => growPlant(kit, { seed: 7, variant, near: true })),
-    );
-    const far = await Promise.all(assets.map((asset) => bakeFarPlant(kit, asset)));
-    placePlants(
-      ctx,
-      kit,
-      assets,
-      {
-        count: 3,
-        position: new Float32Array([x, 0, -6, x, 0, 0, x, 0, 6]),
-        turn: new Float32Array([0, 2, 4]),
-        scale: new Float32Array([1, 0.9, 1.1]),
-        variant: new Uint8Array([0, 1, 2]),
-      },
-      { materials: plantMaterials(ctx, kit), far, view: { height: 1080, fov: 50 }, castShadows: true },
-    );
-    x += 12;
-  }
-});
+/** Copies of one tree from a glTF file, swaying in the wind. Call `update` in each frame. */
+export async function swayingTrees(
+  ctx: SketchContext,
+  camera: Camera,
+  wgsl: string, // the wind page's sampling blocks, then a vertexOffset that reads the uniforms
+  url: string,
+  count: number,
+) {
+  const wind = createWind(ctx, { camera, box: 256 });
+  const { field } = wind;
+  const sway = ctx.materials.shader({
+    wgsl,
+    // Past this distance the offset is zero, so far trees and their cached shadows stand still.
+    swayDistance: SWAY_DISTANCE,
+    textures: { wind: field.texture },
+    uniforms: {
+      origin: field.origin,
+      size: field.size,
+      layer: field.texture.layer,
+      base: field.air.base,
+      gust: field.air.gust,
+      swirl: field.air.swirl,
+      sent: field.air.sent,
+      swayDistance: SWAY_DISTANCE,
+    },
+  });
+  const model = await ctx.assets.loadGltf(url);
+  const mesh = model.find('Tree')?.mesh;
+  if (!mesh) throw new Error(`${url} has no node named Tree with a mesh`);
+  // One batch for the species: write each copy's place, turn and size into its rows.
+  const trees = ctx.scene.createInstances(mesh, count, { material: sway });
+  return {
+    trees,
+    update() {
+      // The field steps first, then the material takes its newest layer and the box's place.
+      wind.update();
+      sway.setUniform('layer', field.texture.layer);
+      sway.setUniform('origin', field.origin);
+      sway.setUniform('sent', field.air.sent);
+    },
+  };
+}
 ```
 
-Twelve species ship, each grown from its own record. For any other id, `loadSpeciesOrStandIn` makes a stand-in of the size and colors that you give, and the same calls draw a real species once it ships. So write the scene against species ids now. `placePlants` draws each copy with its levels by distance, and with far cards from the far bakes. Docs: `api/vegetation`.
+- Copy the two sampling blocks from the wind page into the material's WGSL, ahead of its `vertexOffset`.
+- In `vertexOffset`, read the air at the tree's root, `object.position`, with `wind_reading` and `wind_sample`. Bend each vertex by its height share squared, so the foot stays put.
+- Fade the offset to nothing by `swayDistance`, and declare the same distance on the material. A far tree then stands still, and the far shadow cascades stay cached.
+- Past the last level, draw the far trees as cards from `@null3d/impostors`.
+- `handOverToCards(meshes, cards.batch, switchDistance)` sets the distance bands of the meshes and the cards. A tree then moves from its mesh to its card with one dither.
 
-To place the plants rather than set them out by hand, read the ground once with `groundMaps`, write a rule for each species, and call `scatterVegetation`. A record's own `ecology` gives a rule through `speciesRule(record)`. The scatter returns flat point arrays, one record for each plant, so a page reads the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths. `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
+To cover a hill with grass, use `@null3d/grass`. Await `createGrass(ctx, { height, area, count, seed, mask, wind, camera })` in the sketch's setup. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. Give the drawing `camera` to cull the tiles outside its view and thin the far tufts, whose blades widen so the cover stays the same, and each view, a shadow cascade included, then culls the kept list to its own box. On WebGPU a compute pass builds the blade list and writes its count; WebGL2 fills one instance batch for each tuft shape. The grass casts and receives the sun's shadows, and `swayDistance` stops the blades past that distance so a far cascade that only the grass reaches stays cached. Take it from `swayDistanceFor(quality.preset)` in the same package, and give `grass.setSwayDistance` the new one when the preset changes.
 
-To cover a hill with grass, await `createGrass(ctx, { height, area, count, seed, mask, wind, camera })` in the sketch's setup. It places tufts of bent blades on the ground by integer hash, so one seed gives the same grass on every device, and `grass.fit(preset)` draws a preset's share. Give `mask` the ground where grass may grow, so no tuft stands in the water or on a stone. Give `wind` the wind add-on's field, the one the leaf material reads, and call `grass.setWindLayer(field)` in each frame, so the grass bends with the trees and answers the same gusts. A page that gives no field grows grass that stands still. Give the drawing `camera` to cull the tiles outside its view and thin the far tufts, whose blades widen so the cover stays the same, and each view, a shadow cascade included, then culls the kept list to its own box. On WebGPU a compute pass builds the blade list and writes its count; WebGL2 fills one instance batch for each tuft shape. The grass casts and receives the sun's shadows, and `swayDistance` stops the blades past that distance so a far cascade that only the grass reaches stays cached. Take it from `swayDistanceFor(quality.preset)`, and give `grass.setSwayDistance` the new one when the preset changes. Docs: `api/vegetation` (Grass on the ground).
+Docs: `api/wind` (the sampling blocks and the vertex offset), `api/impostors`, `concepts/instances`, `api/grass`.
+
+## 25. A game whose simulation a server replays (0.3)
+
+The rules run in a simulation that steps by ticks from a seed and an input log, which a server replays to check a score. The simulation takes its math from the maths entry, and builds the helpers that need a sine or an exponential on an exact math library:
+
+```ts
+// sim.ts: no null3D import but the maths entry, and no page API
+import { createMath } from '@null3d/engine/math';
+import * as quat from '@null3d/engine/math/quat';
+import * as vec3 from '@null3d/engine/math/vec3';
+import { acos, cos, exp, sin } from '@clockwork2/engine/dmath'; // named, so the bundle keeps four functions
+
+const exact = createMath({ sin, cos, acos, exp }); // once: it allocates the helpers
+const turn = quat.create();
+const forward = vec3.create();
+export const state = { position: vec3.create(), heading: quat.create(), speed: 0 };
+
+export function tick(input: { turn: number; thrust: number }): void {
+  exact.quat.setAxisAngle(turn, [0, 1, 0], input.turn * 0.05);
+  quat.multiply(state.heading, state.heading, turn);
+  state.speed = exact.math.damp(state.speed, input.thrust * 12, 4, 1 / 60);
+  vec3.transformQuat(forward, [0, 0, -1], state.heading);
+  vec3.scaleAndAdd(state.position, state.position, forward, state.speed / 60);
+}
+```
+
+The page starts the engine with its listening off, because another library records the input, and sends the state to the sketch after each tick:
+
+```ts
+// page.ts
+const engine = await createEngine({ canvas, sketch: new URL('./sketch.ts', import.meta.url), input: false });
+// After each tick of the simulation:
+engine.postToSketch('state', { position: [...state.position], heading: [...state.heading] });
+```
+
+```ts
+// sketch.ts, in the setup: draw the latest state; decide nothing here
+const position = vec3.create();
+const heading = quat.create();
+page.onMessage((name, data) => {
+  if (name !== 'state') return;
+  const next = data as { position: number[]; heading: number[] };
+  vec3.copy(position, next.position);
+  quat.copy(heading, next.heading);
+});
+// In onUpdate: ship.setPosition(position[0], position[1], position[2]); ship.setRotation(heading[0], heading[1], heading[2], heading[3]);
+```
+
+- Never import `@null3d/engine` in the simulation. Its bundle holds engine code with a top-level `FinalizationRegistry`, so a replaying engine's scan refuses it. A bundler that keeps namespaces whole also brings `Math.sin` and `Math.random` (`references/testing-and-debugging.md`, section 8).
+- The sub-paths `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math` hold the exact helpers. `createMath` builds `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The random helpers and `color` are drawing only.
+- Input, pointer events on objects, raycasts, controls and physics in the sketch are not in the input log. Anything that decides a result runs in the simulation: hit-test the recorded pointer against the simulation's own shapes, with its own camera.
+- The sketch draws the state it gets, with the main entry's helpers. It never computes the state again: an exact library and `Math` can differ in the last bit.
+- The state goes to the sketch once per tick, where rule 7 of the skill keeps other messages rare. Send only the numbers that the sketch draws, in a small typed array, and a new one each time. A display can draw more frames than there are ticks. Send the last two ticks' poses and how far the frame is between them, and blend them in the sketch with `vec3.lerp` and `quat.slerp`.
+- `engine.requestPointerLock()` fails with E1426 on an engine with `input: false`. A development build warns once for each kind when the sketch reads `ctx.input`, gives an object a pointer event handler or imports `@null3d/controls`.
+
+When the result depends on where the player looks, the look is input and the camera is the simulation's. The page locks the pointer itself and records the mouse's movement each tick, as whole counts. The simulation turns the counts into a yaw and a pitch, and the sketch sets its camera to the pose in the state. The examples' deterministic simulation demo (`examples/replay/`) plays and replays a run this way:
+
+```ts
+// page.ts: the page's own lock, and whole counts in the log
+canvas.addEventListener('click', () => canvas.requestPointerLock());
+let turn = 0;
+canvas.addEventListener('pointermove', (event) => {
+  if (document.pointerLockElement === canvas) turn += event.movementX;
+});
+// In each tick: a browser can report a fraction of a pixel, so the fraction waits for the next tick
+const counts = Math.trunc(turn);
+turn -= counts;
+log.push(counts);
+step(state, counts);
+```
+
+```ts
+// sim.ts: the camera's rotation, with createMath's exact helper
+state.yaw = math.euclideanModulo(state.yaw - counts * 0.0024, 2 * Math.PI);
+exact.quat.fromEuler(state.look, state.pitch, state.yaw, 0, 'YXZ');
+```
+
+To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A small scene drew with 5 words, and its folder held 297 files, 4.7 MB after Brotli. The 172 words of null3D's examples make a folder of 226 MB. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
+

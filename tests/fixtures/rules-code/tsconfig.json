@@ -1,0 +1,10 @@
+{
+	"extends": "../../../tsconfig.web.base.json",
+	"compilerOptions": {
+		// A simulation sees no page, so the check gives it no DOM: a maths helper that named a DOM
+		// type would fail here.
+		"lib": ["ES2024"],
+		"types": []
+	},
+	"include": ["*.ts"]
+}

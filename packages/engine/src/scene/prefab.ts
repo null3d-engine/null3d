@@ -126,6 +126,25 @@ export interface PrefabBounds {
 }
 
 /**
+ * The textures of a material that a model's file gives, by the standard material's option that each
+ * fills. A slot that the file leaves empty is undefined.
+ *
+ * @category api/assets
+ */
+export interface PrefabMaps {
+	/** The base color texture, with the alpha that a masked or blended material reads. */
+	readonly map?: Texture | undefined;
+	/** The metalness in blue and the roughness in green. */
+	readonly metalnessRoughnessMap?: Texture | undefined;
+	/** The tangent-space normal map. */
+	readonly normalMap?: Texture | undefined;
+	/** The ambient occlusion in red, often the same texture as the metalness and roughness. */
+	readonly aoMap?: Texture | undefined;
+	/** The emitted light's color. */
+	readonly emissiveMap?: Texture | undefined;
+}
+
+/**
  * A node of a prefab: its name, its place relative to its parent, and the mesh and material it
  * draws, if any. `prefab.find` gives it. A mesh with several materials comes as one node per
  * material under its node.
@@ -146,6 +165,11 @@ export interface PrefabNode {
 	/** The node's material. */
 	readonly material: Material | undefined;
 	/**
+	 * The textures of the node's material, by the standard material's options, such as `map` and
+	 * `normalMap`. A material of your own, such as a custom shader, can sample the same textures.
+	 */
+	readonly maps: PrefabMaps;
+	/**
 	 * True when the asset tool gave the node's mesh a blocker, so its copies block the view. Pass
 	 * it as `createMesh`'s `occluder` option to keep the tool's choice for a mesh made from the node.
 	 */
@@ -163,6 +187,8 @@ export interface PrefabOwned {
 	materials: readonly Material[];
 	geometry: Geometry | undefined;
 	error: SceneChecks['error'];
+	/** The textures of each material that the load made, variants included. */
+	maps?: ReadonlyMap<Material, PrefabMaps>;
 }
 
 /**
@@ -191,7 +217,12 @@ export class Prefab {
 		readonly bounds: PrefabBounds,
 		/** The model's materials, in the file's order. */
 		readonly materials: readonly Material[],
-		/** The model's textures, in the order the file names their images. */
+		/**
+		 * The model's textures, in the order that its materials first sample them: each material's
+		 * base color, then its metalness and roughness, its normals, its occlusion and its emission.
+		 * A texture that an earlier material or slot already samples comes once. `find` gives a node's
+		 * own textures by slot.
+		 */
 		readonly textures: readonly Texture[],
 		/** @internal The skeleton and clips that every copy animates with, if the model has any. */
 		readonly rig: AnimationRig | undefined,
@@ -293,6 +324,7 @@ export class Prefab {
 				scale: [t[7] as number, t[8] as number, t[9] as number],
 				mesh: node.mesh,
 				material: node.material,
+				maps: (node.material && this.owned.maps?.get(node.material)) ?? {},
 				occluder: (node.flags & FLAG_OCCLUDER) !== 0,
 			};
 		}

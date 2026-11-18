@@ -1,8 +1,8 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
 // pages, the tables of the quality presets page, the shader library's page, the three.js mapping
-// page with the porting skill's copies of the mapping, the tables of the record of tested devices,
-// and the vegetation add-on's species page. Git keeps none of this output (tools/lib/generated.ts). Generation is computed in memory
+// page with the porting skill's copies of the mapping, and the tables of the record of tested
+// devices. Git keeps none of this output (tools/lib/generated.ts). Generation is computed in memory
 // first, so the check reads the same content that the generator writes.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -41,7 +41,6 @@ import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
 import { releaseOf, STEPS_NOTE, shipsSentence } from './steps';
 import { RECORD_TABLES_PAGE, readRecord, recordFiles, recordTablesPage } from './tested-devices';
-import { SPECIES_PAGE, speciesFolders, speciesPage } from './vegetation-registry';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
@@ -127,7 +126,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/feature-instances', title: 'Add-on instance draws', since: '0.3', summary: 'scene.addFeatureInstances: a draw of a capacity of instances whose live count the GPU writes, and the batch that the CPU fills on WebGL2.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events.' },
 	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
-	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },
+	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds; the maths entry and createMath for a deterministic simulation.' },
 	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
 	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
 	{ id: 'api/points', title: 'Points', since: '0.2', summary: 'createPoints; size attenuation; textures.' },
@@ -135,7 +134,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/particles', title: 'Particles (@null3d/particles)', since: '0.2', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
 	{ id: 'api/impostors', title: 'Impostors (@null3d/impostors)', since: '0.2', summary: 'createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell.' },
 	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', since: '0.2', summary: 'createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
-	{ id: 'api/vegetation', title: 'Vegetation (@null3d/vegetation)', since: '0.3', summary: 'Trees, conifers, shrubs, ferns, hostas and grass grown from a species record and a seed, with detail levels and wind data.' },
+	{ id: 'api/grass', title: 'Grass (@null3d/grass)', since: '0.3', summary: "createGrass: tufts of bent blades over a ground, placed by integer hashes, built in a compute pass on WebGPU with near shadows, swaying in the wind add-on's field, with a share for each quality preset." },
 	{ id: 'api/splats', title: 'Gaussian splats (@null3d/splats)', since: '0.3', summary: 'createSplats: SPZ files and KHR_gaussian_splatting models drawn as Gaussian splats, with detail levels, a budget that follows the preset and the GPU path, and a soft mix with meshes.' },
 	{ id: 'api/water', title: 'Water (@null3d/water)', since: '0.3', summary: 'createWater: a river and a lake from one shape, with waves, ripples, caustics, foam, soft shores that read the scene depth, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface.' },
 	{ id: 'api/wind', title: 'Wind (@null3d/wind)', since: '0.3', summary: 'createWind: one field of air that plants, flags, smoke and water read, from an analytic wind of place and time with traveling gusts and pushes, held in a grid that follows the camera.' },
@@ -157,6 +156,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/video-textures', title: 'Video textures', since: '0.3', summary: 'engine.registerVideo on the page and textures.fromVideo in the sketch; frame sizes and the upload budget; browser limits.' },
 	{ id: 'guides/audio', title: 'Audio with Web Audio', since: '0.1', summary: 'Why audio stays on the page; sending positions from the sketch.' },
 	{ id: 'guides/physics', title: 'Using a physics library', since: '0.1', summary: 'Running Rapier or cannon-es in the sketch worker; copying transforms.' },
+	{ id: 'guides/deterministic-simulation', title: 'Using null3D with a deterministic simulation', since: '0.3', summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a camera that the player aims from recorded input; a production build of a game's engine files." },
 	{ id: 'guides/multiple-views', title: 'Multiple views', since: '0.3', summary: 'Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera\'s view in the same frame; per-view culling; the cost of each view.' },
 	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (the `assets` command)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
 	{ id: 'guides/baked-light-data', title: 'Baked light data', since: '0.3', summary: 'One JSON format for probe grids and light maps baked outside the engine: the members, the base64 payloads, the loading calls, the faults that the loader names, and the engine\'s own writer.' },
@@ -306,8 +306,15 @@ export function referenceLink(id: string): string {
 	return `(reference/${id.slice('api/'.length)}.md)`;
 }
 
-/** The generated reference page of a written API page: its exports, from their doc comments. */
-export function referencePage(page: PageEntry, reference: string): string {
+/** The note on a planned page's reference: it lists APIs that no release has. */
+export const PLANNED_REFERENCE_NOTE =
+	'These APIs are planned: no release has them yet, so coding agents must not use them.';
+
+/**
+ * The generated reference page of a written API page: its exports, from their doc comments. The
+ * reference of a planned page says that no release has its APIs.
+ */
+export function referencePage(page: PageEntry, reference: string, planned = false): string {
 	return `${renderFrontMatter([
 		['id', referencePageId(page.id)],
 		['title', `${page.title}: API reference`],
@@ -317,7 +324,7 @@ export function referencePage(page: PageEntry, reference: string): string {
 	])}
 # ${page.title}: API reference
 
-> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.
+> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.${planned ? ` ${PLANNED_REFERENCE_NOTE}` : ''}
 
 ${reference}
 `;
@@ -590,7 +597,11 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 		else if (symbols)
 			out.set(
 				pagePath(referencePageId(page.id)),
-				referencePage(page, renderReference(symbols, '##')),
+				referencePage(
+					page,
+					renderReference(symbols, '##'),
+					parseFrontMatter(current)?.data.status === 'planned',
+				),
 			);
 	}
 
@@ -616,8 +627,6 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 
 	const record = recordFiles(root);
 	if (record.size > 0) out.set(RECORD_TABLES_PAGE, recordTablesPage(readRecord(record).rows));
-
-	out.set(SPECIES_PAGE, speciesPage(root, speciesFolders(root)));
 
 	out.set(pagePath(PAGE_LIST_ID), pageListPage(collectPages(root, out)));
 	return out;

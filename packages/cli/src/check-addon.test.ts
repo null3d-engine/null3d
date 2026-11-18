@@ -150,6 +150,8 @@ describe('publicApiProblems', () => {
 			'src/index.ts': [
 				"import { defineSketch } from '@null3d/engine';",
 				"import type { FrameStats } from '@null3d/engine/stats';",
+				"import { createMath } from '@null3d/engine/math';",
+				"import * as quat from '@null3d/engine/math/quat';",
 				"import * as three from 'three';",
 				"export * from './shapes.js';",
 				'',

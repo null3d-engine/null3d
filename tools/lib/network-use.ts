@@ -8,6 +8,7 @@
 // shader modules are not read: the shader library that the build writes them from is.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { packagesInUse } from './vegetation-switch';
 import { filesBelow } from './walk';
 
 /** What a shipped file may do that reaches the network, and why it contacts no server. */
@@ -197,7 +198,7 @@ function shippedFolderNames(packageDir: string): string[] {
 /** The folders whose shipped files the check reads, relative to the repository root. */
 export function checkedFolders(root: string): string[] {
 	const packageRoot = join(root, 'packages');
-	const names = existsSync(packageRoot) ? readdirSync(packageRoot) : [];
+	const names = existsSync(packageRoot) ? packagesInUse(readdirSync(packageRoot)) : [];
 	const folders = names.flatMap((name) => {
 		const dir = join(packageRoot, name);
 		return shippedFolderNames(dir)
@@ -289,7 +290,7 @@ export function staleUseProblems(root: string): string[] {
 export function unreachedVendorProblems(root: string): string[] {
 	const problems: string[] = [];
 	const packageRoot = join(root, 'packages');
-	const names = existsSync(packageRoot) ? readdirSync(packageRoot) : [];
+	const names = existsSync(packageRoot) ? packagesInUse(readdirSync(packageRoot)) : [];
 	const importers = names
 		.flatMap((name) => {
 			const dir = join(packageRoot, name);

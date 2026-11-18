@@ -9,7 +9,8 @@
 // controls. Manual turns around the whole island, and zooms and pans down to any place on it. The
 // controls pick a time of day (a summer morning at its start) and turn the effects on and off, among them a
 // "DSLR" lens with depth of field. For held frames, the sketch's address takes the mood:
-// `?mood=Midday&dslr`.
+// `?mood=Midday&dslr`. `?grown` grows the trees before the first frame, as a held frame does, so a
+// test that compares live frames sees the whole scene from its first frame on.
 import { defineSketch } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
@@ -201,11 +202,14 @@ export default defineSketch(async (ctx) => {
 	const land = createLand(ctx);
 	const sea = createSea(ctx);
 	createTown(ctx);
-	// The cypresses need no species assets, so a live page places them before the first frame.
-	if (!ctx.engine.held) createCypressSpires(ctx);
 	page.post('loading', 'Growing the trees');
 	// The species and the lawns take seconds to grow. A live page draws the island without them and
-	// lets them appear as they land; a held picture waits, so its frame shows the finished scene.
+	// lets them appear as they land; a held picture, or a page that asks with `?grown`, waits, so its
+	// first frame shows the finished scene.
+	const grownFirst = ctx.engine.held || params.has('grown');
+	// The cypresses need no species assets, so a page that grows the rest later places them before
+	// the first frame.
+	if (!grownFirst) createCypressSpires(ctx);
 	let trees: { update(): void } | undefined;
 	let growing = false;
 	const grow = (): void => {
@@ -218,7 +222,7 @@ export default defineSketch(async (ctx) => {
 			(error: unknown) => console.error(error),
 		);
 	};
-	if (ctx.engine.held) {
+	if (grownFirst) {
 		trees = await createTrees(ctx, camera);
 		// The stage writes the light its maps give before the first frame draws.
 		await Promise.all([sky, room]);
@@ -229,7 +233,7 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			// The forest grows once the first frame has drawn, so its species and lawns cost nothing
 			// before it and appear as they land.
-			if (!ctx.engine.held && time.frame >= 2) grow();
+			if (!grownFirst && time.frame >= 2) grow();
 			const t = time.now;
 			stage.update(dt);
 			controls.update(t);

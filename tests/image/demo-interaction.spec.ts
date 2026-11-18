@@ -1,11 +1,18 @@
-// The demos take the user's input at any moment. Playwright drives the mouse and the keys over three
+// The demos take the user's input at any moment. Playwright drives the mouse and the keys over the
 // live demos, and the probe sketch reports where each demo's camera and moving objects are, with the
 // sketch time of the frame that answered. A hover leads the math demo's lamp and leaves its camera
 // alone. In the instances demo, a drag hands the scripted camera over to the user with no jump, the
 // script then stops moving it, and the wheel zooms. In the walk and fly demo, a key hands the
 // scripted walk over to first-person controls, and Space switches to fly controls. In the weighted
 // transparency demo, a key and the controls HUD swap the two blends and the picture follows, while
-// the pointer leaves the blend alone.
+// the pointer leaves the blend alone. In the deterministic simulation demo, the page's own listeners
+// take a key and a drag, which walk and turn the camera that the simulation computes, and its replay
+// ends with the camera where the run left it. Its page part stops with the demo, by its signal, its
+// engine's destroy or its engine's failure, and its room fill ends quietly when the stop cuts it
+// short. A page part that does not load fails the demo's start, also after the first frame. A demo
+// that the page leaves while its part loads starts no part and leaves the next demo's choices,
+// HUD and overlay alone. A finger whose capture the browser refuses is not counted among the
+// fingers down.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -31,8 +38,8 @@ const FIRST_FRAME_MS = 300_000;
  */
 const CHANGE_MS = 180_000;
 
-/** Opens a demo on the probe page, and collects the page's errors. */
-async function open(page: Page, demo: string): Promise<string[]> {
+/** Opens a demo on the probe page, with any more switches, and collects the page's errors. */
+async function open(page: Page, demo: string, switches = ''): Promise<string[]> {
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	page.on('console', (message) => {
@@ -42,7 +49,7 @@ async function open(page: Page, demo: string): Promise<string[]> {
 	});
 	// The interaction does not depend on the look. The Low preset draws the light version of each
 	// demo, as on a phone, which CI's software GPU draws several times faster than the full look.
-	await page.goto(`demo-probe.html?demo=${demo}&preset=low`);
+	await page.goto(`demo-probe.html?demo=${demo}&preset=low${switches && `&${switches}`}`);
 	// A software GPU on a busy machine can take half a minute to start a demo, so the wait is the
 	// same one that the probes below give a frame. A page that never publishes still fails.
 	const result = await pageResult<{ error?: string }>(page, PATIENCE);
@@ -272,4 +279,298 @@ test('a key swaps the weighted demo between its two blends, as the HUD does, and
 	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
 	await expect(weighted).toHaveAttribute('aria-pressed', 'true');
 	expect(errors).toEqual([]);
+});
+
+test('the deterministic simulation demo takes its own input, and its replay ends where the run did', async ({
+	page,
+}) => {
+	const errors = await open(page, 'replay');
+	const run = page.getByRole('group', { name: 'Run' });
+	const status = run.locator('[aria-live="polite"]');
+	await expect(status).toHaveText('0 of 12 orbs', { timeout: PATIENCE });
+	const start = await probe(page);
+	// The page's own listeners take a held key and a drag, as the engine runs with input off. The
+	// simulation walks the camera forward and turns it.
+	await page.keyboard.down('KeyW');
+	await expect
+		.poll(async () => apart((await probe(page)).camera, start.camera), { timeout: PATIENCE })
+		.toBeGreaterThan(1);
+	await page.mouse.move(300, 180);
+	await page.mouse.down();
+	await page.mouse.move(420, 150, { steps: 8 });
+	await page.mouse.up();
+	await page.keyboard.up('KeyW');
+	// The walk eases to a stop, so the camera keeps creeping after it rests to the eye. The replay is
+	// judged from where it stopped.
+	let played = await rest(page, await probe(page));
+	await expect
+		.poll(
+			async () => {
+				const next = await probeAt(page, played.time + 0.2);
+				const moved = apart(next.camera, played.camera);
+				played = next;
+				return moved;
+			},
+			{ timeout: PATIENCE },
+		)
+		.toBeLessThan(1e-5);
+	expect(apart(played.cameraTurn, start.cameraTurn)).toBeGreaterThan(0.05);
+	// The replay starts again from the seed: the camera goes back to the run's start, then follows
+	// the logged ticks to the run's own state.
+	await run.getByRole('button', { name: 'Replay' }).click();
+	await expect(status).toHaveText(/^Replaying/, { timeout: PATIENCE });
+	// A frame steps at most a quarter second of ticks, and a frame on CI's software GPU takes far
+	// longer, so the replay plays slower than the run did: about 6.5 of its 7 seconds in a minute.
+	// Its end gets the time of three such waits, inside the file's own limit.
+	await expect(status).toHaveText('Replay ended on the same state', { timeout: 3 * PATIENCE });
+	const replayed = await rest(page, await probe(page));
+	expect(apart(replayed.camera, played.camera)).toBeLessThan(1e-3);
+	expect(apart(replayed.cameraTurn, played.cameraTurn)).toBeLessThan(1e-3);
+	expect(errors).toEqual([]);
+});
+
+test("the deterministic simulation demo's page part stops with the demo, by its signal or its engine's destroy", async ({
+	page,
+}) => {
+	// A sketch on the page's thread reports its errors on the page, where a stray one would show.
+	for (const [how, switches] of [
+		['signal', ''],
+		['destroy', ''],
+		['destroy', 'sketch-thread=main'],
+	] as const) {
+		const errors = await open(page, 'replay', switches);
+		const run = page.getByRole('group', { name: 'Run' });
+		await expect(run).toHaveCount(1, { timeout: PATIENCE });
+		await page.evaluate(
+			(stop) => (globalThis as { stopDemo?: (how: string) => Promise<void> }).stopDemo?.(stop),
+			how,
+		);
+		// The part takes its buttons away with its listeners and its frame loop. The destroy comes
+		// right after the start, before the room's fill arrives, which then ends quietly.
+		await expect(run).toHaveCount(0);
+		expect(errors).toEqual([]);
+	}
+});
+
+test("the deterministic simulation demo's room fill ends quietly when the stop cuts it short", async ({
+	page,
+}) => {
+	// The fill's code answers only once the engine has stopped. The sketch runs on the page's
+	// thread, which outlives the engine, so the fill then reaches the stopped engine.
+	let stopped = () => {};
+	const stop = new Promise<void>((resolve) => {
+		stopped = resolve;
+	});
+	let answered = () => {};
+	const answer = new Promise<void>((resolve) => {
+		answered = resolve;
+	});
+	await page.route('**/scene/builtin-environments*', async (route) => {
+		await stop;
+		await route.continue();
+		answered();
+	});
+	const errors = await open(page, 'replay', 'sketch-thread=main');
+	await expect(page.getByRole('group', { name: 'Run' })).toHaveCount(1, { timeout: PATIENCE });
+	await page.evaluate(() =>
+		(globalThis as { stopDemo?: (how: string) => Promise<void> }).stopDemo?.('destroy'),
+	);
+	stopped();
+	await answer;
+	// A few turns of the page's own clock, for the fill to reach the engine and settle.
+	await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+	expect(errors).toEqual([]);
+});
+
+test("the deterministic simulation demo's page part stops when its engine fails", async ({
+	page,
+}) => {
+	await open(page, 'replay');
+	const run = page.getByRole('group', { name: 'Run' });
+	await expect(run).toHaveCount(1, { timeout: PATIENCE });
+	// The engine's next frame step throws, and E1404 ends its frames.
+	await page.evaluate(() =>
+		(globalThis as { stopDemo?: (how: string) => Promise<void> }).stopDemo?.('fail'),
+	);
+	await expect(run).toHaveCount(0, { timeout: PATIENCE });
+});
+
+test('a press whose capture the browser refuses leaves the next drag free to turn the view', async ({
+	page,
+}) => {
+	const errors = await open(page, 'replay');
+	const start = await probe(page);
+	// A press of a pointer that is not down: the browser refuses its capture.
+	await page.evaluate(() => {
+		const scope = globalThis as unknown as {
+			document: { querySelector(selector: string): { dispatchEvent(event: unknown): boolean } };
+			PointerEvent: new (type: string, init: Record<string, unknown>) => unknown;
+		};
+		const press = { pointerId: 77, pointerType: 'mouse', isPrimary: false, bubbles: true };
+		scope.document
+			.querySelector('canvas')
+			.dispatchEvent(new scope.PointerEvent('pointerdown', press));
+	});
+	await page.mouse.move(300, 180);
+	await page.mouse.down();
+	await page.mouse.move(420, 150, { steps: 8 });
+	await page.mouse.up();
+	await expect
+		.poll(async () => apart((await probe(page)).cameraTurn, start.cameraTurn), {
+			timeout: PATIENCE,
+		})
+		.toBeGreaterThan(0.05);
+	expect(errors).toEqual([]);
+});
+
+test.describe('on a touch screen', () => {
+	test.use({ hasTouch: true });
+
+	test('a finger whose capture the browser refuses does not count as a second finger later', async ({
+		page,
+	}) => {
+		const errors = await open(page, 'replay');
+		// A touch of a finger that is not down: the browser refuses its capture.
+		await page.evaluate(() => {
+			const scope = globalThis as unknown as {
+				document: { querySelector(selector: string): { dispatchEvent(event: unknown): boolean } };
+				PointerEvent: new (type: string, init: Record<string, unknown>) => unknown;
+			};
+			const press = { pointerId: 78, pointerType: 'touch', isPrimary: false, bubbles: true };
+			scope.document
+				.querySelector('canvas')
+				.dispatchEvent(new scope.PointerEvent('pointerdown', press));
+		});
+		const start = await rest(page, await probe(page));
+		// One real finger drags across the view and stays down for a second of sketch time. Two
+		// fingers down would walk forward.
+		const touch = await page.context().newCDPSession(page);
+		const at = (x: number, y: number) => [{ x, y, id: 1 }];
+		await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(300, 180) });
+		for (let step = 1; step <= 8; step++)
+			await touch.send('Input.dispatchTouchEvent', {
+				type: 'touchMove',
+				touchPoints: at(300 + step * 15, 180 - step * 4),
+			});
+		await expect
+			.poll(async () => apart((await probe(page)).cameraTurn, start.cameraTurn), {
+				timeout: PATIENCE,
+			})
+			.toBeGreaterThan(0.05);
+		const held = await probeAt(page, (await probe(page)).time + 1);
+		await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: at(420, 148) });
+		expect(apart(held.camera, start.camera)).toBeLessThan(0.02);
+		expect(errors).toEqual([]);
+	});
+});
+
+test('a page part that does not load fails the demo start, says why, and takes the controls away', async ({
+	page,
+}) => {
+	// The gizmos demo has choices and no page part, so the part that the page asks for does not load.
+	await page.goto('demo-probe.html?demo=gizmos&preset=low&pagePart&hud');
+	const result = await pageResult<{ error?: string }>(page, PATIENCE);
+	expect(result.error).toMatch(/^The demo's page part did not start: /);
+	await expect(page.locator('.loader')).toContainText("The demo's page part did not start");
+	await expect(page.locator('.choice button')).toHaveCount(0);
+	await expect(page.locator('.hud')).toBeHidden();
+});
+
+test('a page part that fails after the first frame brings the overlay back with the reason', async ({
+	page,
+}) => {
+	// The page part's module answers only once the overlay has gone, and then with a failure.
+	await page.route('**/examples/replay/page.ts*', async (route) => {
+		await page.waitForFunction(
+			() =>
+				(
+					globalThis as unknown as { document: { querySelector(selector: string): unknown } }
+				).document.querySelector('.loader') === null,
+			undefined,
+			{ timeout: PATIENCE },
+		);
+		await route.fulfill({ status: 500, body: 'the page part failed on purpose' });
+	});
+	await page.goto('demo-probe.html?demo=replay&preset=low');
+	const result = await pageResult<{ error?: string }>(page, PATIENCE);
+	expect(result.error).toMatch(/^The demo's page part did not start: /);
+	await expect(page.locator('.loader')).toBeVisible();
+	await expect(page.locator('.loader')).toContainText("The demo's page part did not start");
+});
+
+/**
+ * Holds the replay demo's page part until the returned function answers it: with the module, or
+ * with a failure. `asked` resolves once the page has asked for it.
+ */
+async function holdPagePart(
+	page: Page,
+): Promise<{ asked: Promise<void>; answer: (ok: boolean) => void }> {
+	let asked = () => {};
+	const seen = new Promise<void>((resolve) => {
+		asked = resolve;
+	});
+	let answer: (ok: boolean) => void = () => {};
+	const answered = new Promise<boolean>((resolve) => {
+		answer = resolve;
+	});
+	await page.route('**/examples/replay/page.ts*', async (route) => {
+		asked();
+		if (await answered) await route.continue();
+		else await route.fulfill({ status: 500, body: 'the page part failed on purpose' });
+	});
+	return { asked: seen, answer };
+}
+
+/** What the page shows of the second demo: its choices, its HUD and any overlay that failed. */
+const secondDemo = (page: Page) =>
+	page.evaluate(() => {
+		const { document } = globalThis as unknown as {
+			document: {
+				querySelectorAll(selector: string): { length: number };
+				querySelector(selector: string): { hidden: boolean } | null;
+			};
+		};
+		return {
+			choiceButtons: document.querySelectorAll('.choice button').length,
+			runGroups: document.querySelectorAll('[aria-label="Run"]').length,
+			hudHidden: document.querySelector('.hud')?.hidden,
+			failedOverlays: document.querySelectorAll('.loader--error').length,
+		};
+	});
+
+for (const ok of [false, true]) {
+	test(`a demo the page left while its part loaded leaves the next demo's page alone, when the part ${ok ? 'loads' : 'fails'}`, async ({
+		page,
+	}) => {
+		const held = await holdPagePart(page);
+		await page.goto('demo-probe.html?demo=replay&preset=low&hud&switchTo=gizmos');
+		const result = await pageResult<{ error?: string }>(page, PATIENCE);
+		expect(result.error).toBeUndefined();
+		await held.asked;
+		// The page moves to the next demo while the first one's part is still loading.
+		await page.evaluate(() =>
+			(globalThis as unknown as { switchDemo: () => Promise<void> }).switchDemo(),
+		);
+		const before = await secondDemo(page);
+		expect(before.choiceButtons).toBeGreaterThan(0);
+		expect(before.hudHidden).toBe(false);
+		held.answer(ok);
+		const first = await page.evaluate(
+			() => (globalThis as unknown as { firstDemo: Promise<string> }).firstDemo,
+		);
+		// A failed part still fails the start of its demo, which says so to the page that started it.
+		if (ok) expect(first).toBe('started');
+		else expect(first).toMatch(/^failed: The demo's page part did not start: /);
+		// The first demo's part never started, and its failure changed nothing that the second shows.
+		expect(await secondDemo(page)).toEqual({ ...before, runGroups: 0, failedOverlays: 0 });
+		await expect(page.getByText("The demo's page part did not start")).toHaveCount(0);
+	});
+}
+
+test('a page part started on an aborted signal adds nothing to the page', async ({ page }) => {
+	await open(page, 'replay');
+	const left = await page.evaluate(() =>
+		(globalThis as unknown as { startAbortedPart: () => Promise<number> }).startAbortedPart(),
+	);
+	expect(left).toBe(0);
 });

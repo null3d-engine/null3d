@@ -40,6 +40,7 @@ import { secondsSince } from './build-cache.ts';
 import { walkFiles } from './files.ts';
 import { ensureShaderModules, isShaderModule, MODULE_DIR } from './shader-modules.ts';
 import { SOURCE_CONDITION } from './source-condition.ts';
+import { packagesInUse } from './vegetation-switch';
 
 /** The folder of a package's built JavaScript and type declarations. */
 export const LIB_DIR = 'lib';
@@ -176,11 +177,15 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		repositoryOnly: ['species/_template/record.ts', 'species/_template/index.ts'],
 	},
 	// Data only: each species folder's textures, manifest and module, which the textures tool writes.
+	// The list is read when a build asks for it, so a command that builds other packages never reads
+	// the add-on's folders.
 	'vegetation-textures': {
 		compile: false,
 		shaders: false,
 		docs: false,
-		required: speciesTextureFiles(),
+		get required() {
+			return speciesTextureFiles();
+		},
 	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
 	'three-compat': {
@@ -196,6 +201,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		shaders: false,
 		docs: false,
 		required: ['dist/splats.wasm'],
+	},
+	// Its blade material and its blade-list pass compile from .wgsl files into modules of their own.
+	grass: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		required: [],
 	},
 	// Its surface and underwater WGSL compile into modules of their own.
 	water: {
@@ -792,7 +804,7 @@ export interface PackedPackage {
 
 /** The folder names of the packages that are not private, in a fixed order. */
 export function publicPackages(root: string): string[] {
-	return readdirSync(join(root, 'packages'))
+	return packagesInUse(readdirSync(join(root, 'packages')))
 		.filter((folder) => existsSync(join(root, 'packages', folder, 'package.json')))
 		.filter((folder) => {
 			const manifest = JSON.parse(

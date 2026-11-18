@@ -155,6 +155,12 @@ export const HeldFrame = 60;
  */
 export const OcclusionRead = 61;
 /**
+ * 1 in a development build when the page started the engine with `input: false`, so the sketch's
+ * thread can say, once for each kind, that the sketch relies on input that nothing writes. A
+ * production build neither writes nor reads it.
+ */
+export const InputOff = 62;
+/**
  * The programs that may still be compiling in the background on WebGL2, as the thread that draws
  * found them at its last frame, for the development probe of the two-step pass.
  */

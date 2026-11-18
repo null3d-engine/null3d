@@ -3,7 +3,13 @@
 // one instance batch, the middle band as one merged mesh per grid cell, and the farthest as cards
 // of the octahedral atlas. The atlases are baked here from the pine's own mesh, so the cards show
 // the tree's colour and normals and a moving sun lights them as it lights the mesh.
-import { type DirectionalLight, math, type PerspectiveCamera } from '@null3d/engine';
+import {
+	type DirectionalLight,
+	math,
+	type PerspectiveCamera,
+	type Texture,
+	type Textures,
+} from '@null3d/engine';
 import { bakeImpostorAtlas, type OctahedralAtlas, octahedralAtlas } from '@null3d/impostors';
 import { ground, pineArrays } from './pine';
 
@@ -138,6 +144,18 @@ export function impostorAtlases(): {
 		room: bake.room,
 		depth: bake.depth,
 	};
+}
+
+/** An atlas's color and surface pictures as textures that the cards sample, clamped at the edges. */
+export function atlasTextures(
+	textures: Textures,
+	picture: ReturnType<typeof impostorAtlases>,
+): { color: Texture; surface: Texture } {
+	const texture = (
+		image: { width: number; height: number; data: Uint8Array },
+		colorSpace: 'srgb' | 'linear',
+	) => textures.fromData({ ...image, colorSpace, wrap: 'clamp', mipmaps: false });
+	return { color: texture(picture.color, 'srgb'), surface: texture(picture.surface, 'linear') };
 }
 
 /** The smallest and largest corner of a list of positions. */

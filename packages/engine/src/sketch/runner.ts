@@ -112,6 +112,7 @@ import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
+import { InputOffNotes, noteInputReads } from './input-off';
 import { type QualityStart, type QualityUpdate, RESTART_CHANGE, SketchQuality } from './quality';
 import { HOLD_SEED, RECORDING_SEED, seedMathRandom } from './random';
 import { type LabelSlotSender, Ui } from './ui';
@@ -212,6 +213,15 @@ export interface SketchCore {
 	 * frames whose update failed.
 	 */
 	reportSketchError?(message: string): void;
+	/**
+	 * Calls `heard` with each add-on that checks its version for the sketch, and returns a function
+	 * that stops it. A development build's runner names the controls with it when the page writes no
+	 * input. The thread's own code gives it: a worker hears from before the sketch's module loads,
+	 * and the page from before it loads the module beside the runner's code. The runner imports no
+	 * hearing of its own, since code that the page's files and the runner's share stays in a
+	 * production build.
+	 */
+	hearAddons?(heard: (name: string) => void): () => void;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -431,6 +441,11 @@ export class SketchRunner {
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
+	/**
+	 * Stops a development build's watch for add-ons that rely on input that the page does not
+	 * write, which the runner keeps while it runs.
+	 */
+	declare private stopAddonNotes: (() => void) | undefined;
 	private readonly quality: SketchQuality;
 	/** The sketch's textures, whose memory budget each frame looks at. */
 	private readonly textures: Textures;
@@ -789,6 +804,18 @@ export class SketchRunner {
 			},
 			debug,
 		};
+		// A page that started the engine with `input: false` writes no input. A development build
+		// says so, once for each kind, when the sketch relies on it.
+		if (DEV && Atomics.load(slots, Slot.InputOff) !== 0) {
+			const notes = new InputOffNotes();
+			this.input.inputOffNotes = notes;
+			noteInputReads(this.context, notes);
+			// The controls read the input, whenever the sketch loads them: in its module, in its
+			// setup, or later.
+			this.stopAddonNotes = sketch.hearAddons?.((name) => {
+				if (name === '@null3d/controls') notes.note('controls');
+			});
+		}
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		const seed =
 			holdSeconds !== undefined
@@ -803,27 +830,34 @@ export class SketchRunner {
 	 * `hold`). Options out of range fail with E1214 before the setup function runs.
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
-		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
-		// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
-		this.record.markSetupStart();
-		const growing = performance.now();
-		this.callbacks = (await sketch.setup(this.context)) ?? {};
-		this.record.markSetupDone(performance.now() - growing);
-		const { check } = this.sketch.quality;
-		if (check && !this.holdsFrames) await this.checkPreset();
-		// Warm-ups that the setup started without waiting for them publish their frames first, so
-		// the frame loop never records while a setup frame does.
-		await this.setupFrames;
-		if (this.records) {
-			// The format's code loads only for a session that records one, so a page that records
-			// nothing downloads none of it.
-			const { Recorder: Recording } = await import('../shared/recording');
-			this.recorder = new Recording(RECORDING_SEED, this.sketch.keyCodes);
-			this.input.recorder = this.recorder;
+		try {
+			this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+			// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
+			this.record.markSetupStart();
+			const growing = performance.now();
+			this.callbacks = (await sketch.setup(this.context)) ?? {};
+			this.record.markSetupDone(performance.now() - growing);
+			const { check } = this.sketch.quality;
+			if (check && !this.holdsFrames) await this.checkPreset();
+			// Warm-ups that the setup started without waiting for them publish their frames first, so
+			// the frame loop never records while a setup frame does.
+			await this.setupFrames;
+			if (this.records) {
+				// The format's code loads only for a session that records one, so a page that records
+				// nothing downloads none of it.
+				const { Recorder: Recording } = await import('../shared/recording');
+				this.recorder = new Recording(RECORDING_SEED, this.sketch.keyCodes);
+				this.input.recorder = this.recorder;
+			}
+			this.setUp = true;
+			if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
+			else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
+		} catch (error) {
+			// A setup that fails, at any step, leaves no runner to dispose, so the runner stops hearing
+			// add-ons now.
+			if (DEV) this.stopAddonNotes?.();
+			throw error;
 		}
-		this.setUp = true;
-		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
-		else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
 	}
 
 	/**
@@ -935,6 +969,8 @@ export class SketchRunner {
 	 * It also gives the thread its own Math.random back, where hold mode seeded it.
 	 */
 	dispose(): void {
+		// Before the check below: a runner whose core stopped first still stops hearing add-ons.
+		if (DEV) this.stopAddonNotes?.();
 		if (this.core.stopped) return;
 		try {
 			this.callbacks.onDestroy?.();
@@ -1189,7 +1225,7 @@ export class SketchRunner {
 		const values = this.core.callValues();
 		values[0] = this.lodThreshold * this.governor.detailFactor;
 		values[1] = this.lodShadowThreshold * this.governor.detailFactor;
-		return this.sketch.glue.setLevelQuality(this.lodFade);
+		return this.sketch.glue.setLevelQuality(this.lodFade, this.governor.detailFactor > 1);
 	}
 
 	/** Gives the core the share of the render size that reflection targets take by default. */

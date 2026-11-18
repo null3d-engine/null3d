@@ -163,7 +163,7 @@ The same factor moves the distance at which the object hides. A detailed hero ob
 
 A level that switches in at once can pop. The engine fades only where a switch would show:
 
-- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at a small threshold. It switches at once there, so it pays for no second draw. A governed threshold above about one and a half pixels makes the switch show, and the level fades then. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
+- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at a small threshold. It switches at once there, so it pays for no second draw. When the governor raises the threshold above about one and a half pixels, the switch shows, and the level fades then. A preset's own threshold, Low's two pixels among them, never makes it fade. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
 - A level given by a distance, by a coverage or by a hand-set error changes the picture more. It fades at every threshold.
 
 A fading level hands over in a short band past its switch distance. The band is 8% of the distance long, and the old level and the new one both draw in it. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
@@ -175,13 +175,13 @@ mesh.setLevels(levels, { fade: false });
 mesh.setLevels([{ mesh: low, distance: 80, fade: false }]);
 ```
 
-Above about one and a half pixels the engine fades a level whose switch is an error that would otherwise switch at once, whatever the level says, because the switch shows at that size. The band costs a second draw there, and nothing at a smaller threshold.
+Once the governor raises the threshold above about one and a half pixels, the engine fades a level whose switch is an error that would otherwise switch at once, whatever the level says, because the switch shows at that size. The band costs a second draw there. It costs nothing at a smaller threshold, or at a preset's own threshold, so Low's phones pay for no fade until their frames run late.
 
 The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade. These builds follow the level, whatever the `lodFade` quality setting, because a hand-set level pops without them.
 
 [Custom materials](../shaders/surface-functions.md) fade too, through their own builds, which download with the material's first use. Three kinds switch at once: a material that tests its mask by the [alpha hash](../api/materials.md#alpha-modes), a skinned material, and a material whose displacement moves its vertices.
 
-One add-on morphs a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach. The block then matches its parent when the selection hands over. It writes the target in the mesh's four-number vertex record, which its own custom material's `vertexOffset` reads. The morph adds no draw and writes no vertex in a frame. The vegetation add-on fades its card levels with the dither instead. Each level draws on until the next stands at full coverage, then thins out, so no pixel drops out of both. File meshes keep the dither too: the asset tool's simplifier records no mapping between one level's vertices and the next.
+One add-on morphs a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach. The block then matches its parent when the selection hands over. It writes the target in the mesh's four-number vertex record, which its own custom material's `vertexOffset` reads. The morph adds no draw and writes no vertex in a frame. The impostors add-on's hand-over from meshes to cards fades with the dither instead. The cards stand at full coverage before the meshes thin out, so no pixel drops out of both. File meshes keep the dither too: the asset tool's simplifier records no mapping between one level's vertices and the next.
 
 ## A switch that keeps the object's shape
 
@@ -248,7 +248,7 @@ A level of detail keeps one draw and one mesh per object. Far past the last leve
 
 A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it. A camera that moves around the tree does not turn its light: the card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
 
-`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The vegetation add-on's `handOverToCards` sets the two bands for a row of plants. It starts the cards early enough that their own dithered edge finishes first. The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
+`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The impostors add-on's `handOverToCards` sets the two bands for a batch of meshes and its cards. It starts the cards early enough that their own dithered edge finishes first. The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md#hand-the-near-meshes-over-to-the-cards) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
 
 ## From three.js
 

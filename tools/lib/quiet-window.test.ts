@@ -264,7 +264,11 @@ describe('each guarded entry point', () => {
 		['tests/lib/server.ts', 'export async function startPreview(', 'await refuseTaken('],
 		['tools/lib/shader-modules.ts', 'export function ensureShaderModules(', null],
 		['tools/lib/shader-modules.ts', 'export function shaderModulesUnlessBusy(', null],
-		['tools/typecheck.ts', 'async function main(shaders: boolean)', null],
+		[
+			'tools/typecheck.ts',
+			'async function main(shaders: boolean, projects: readonly string[])',
+			null,
+		],
 		['tools/build-cdn.ts', 'async function main()', null],
 		['tools/build-basis-transcoder.ts', 'async function main()', null],
 		['tools/build-ufbx.ts', 'async function main()', null],

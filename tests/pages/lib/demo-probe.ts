@@ -6,6 +6,8 @@ export interface DemoProbe {
 	time: number;
 	/** The active camera's place. */
 	camera: number[];
+	/** The active camera's rotation in the world, as x, y, z and w. */
+	cameraTurn: number[];
 	/** The places of the demo's dynamic meshes and point lights, in the order the demo made them. */
 	objects: number[][];
 }

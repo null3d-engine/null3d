@@ -1,23 +1,24 @@
 // Finds imports that break the add-on rules of D-173: add-ons reach the engine only through its
 // public entry points, and the example add-ons are not packages that a package may depend on. The
 // shipped code of every package beside the engine, and every file of the examples, may import
-// `@null3d/engine` and its public sub-paths, never another engine entry point or the engine's
-// source files. An import from any package into `examples/` is refused, because a shipped package
-// cannot carry an example with it. Tests may read engine source, and the build tools are not
-// add-ons, so neither takes the public-entry rule. One add-on reaches another by its package name
-// or an exported sub-path, never by a relative path into its folder, so each feature stays in one
-// place and a packed add-on still resolves. `tools/check-addon-imports.ts` runs the check over the
-// repository.
+// `@null3d/engine` and its public sub-paths, the stats panel and the maths entry, never another
+// engine entry point or the engine's source files. An import from any package into `examples/` is
+// refused, because a shipped package cannot carry an example with it. Tests may read engine source,
+// and the build tools are not add-ons, so neither takes the public-entry rule. One add-on reaches
+// another by its package name or an exported sub-path, never by a relative path into its folder, so
+// each feature stays in one place and a packed add-on still resolves. `tools/check-addon-imports.ts`
+// runs the check over the repository.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
+import { PUBLIC_ENTRIES } from '../../packages/cli/src/public-entries.js';
+import { packagesInUse } from './vegetation-switch';
 import { filesBelow } from './walk';
 
-/** The engine's entry points that an add-on may import. */
-export const PUBLIC_ENTRIES: ReadonlySet<string> = new Set([
-	'@null3d/engine',
-	'@null3d/engine/stats',
-]);
+// The engine's entry points that an add-on may import: one list, which the command-line tool's
+// add-on check reads too.
+export { PUBLIC_ENTRIES };
+
 /** Packages that are the engine, or that build or serve projects rather than run beside it. */
 const NOT_ADDONS = new Set(['engine', 'cli', 'vite-plugin']);
 /** The engine's package name, whose entry points the public-entry rule owns. */
@@ -83,7 +84,7 @@ export function packageFolders(root: string): Map<string, PackageFolder> {
 	const result = new Map<string, PackageFolder>();
 	let folders: string[];
 	try {
-		folders = readdirSync(join(root, 'packages'));
+		folders = packagesInUse(readdirSync(join(root, 'packages')));
 	} catch {
 		return result;
 	}
@@ -178,7 +179,7 @@ interface Rules {
 export function addonImportProblems(root: string): { problems: string[]; files: number } {
 	const engineDir = join(root, 'packages/engine');
 	const examplesDir = join(root, 'examples');
-	const packages = readdirSync(join(root, 'packages')).sort();
+	const packages = packagesInUse(readdirSync(join(root, 'packages'))).sort();
 	const folders = packageFolders(root);
 	const rules = new Map<string, Rules>();
 	const add = (file: string, rule: keyof Rules) => {

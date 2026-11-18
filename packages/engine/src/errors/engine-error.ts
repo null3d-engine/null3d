@@ -8,15 +8,14 @@
 // engine's worker code, and the sketch's bundle imports the engine again from the page's file. So
 // the table of fixes and the mark on each error live under registered symbols, which every copy in
 // the thread shares. Each copy then reads the same table, and instanceof accepts the errors of both.
+// The docs address, the message's form and the mark live in engine-error-core.ts, which code that
+// may not load the fixes, such as a simulation's math, throws its errors from.
 
+import { DOCS_BASE, ENGINE_ERROR, messageFor } from './engine-error-core';
 import type { ErrorCode, ErrorFixes } from './fixes';
-
-const DOCS_BASE = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
 /** The key of the thread's table of fixes on its global object. */
 const FIXES = Symbol.for('null3d.errorFixes');
-/** The mark that every copy of EngineError puts on its errors. */
-const ENGINE_ERROR = Symbol.for('null3d.engineError');
 
 /** The thread's global object, which holds the table of fixes for every copy of this module. */
 const thread = globalThis as { [FIXES]?: ErrorFixes };
@@ -26,7 +25,7 @@ const thread = globalThis as { [FIXES]?: ErrorFixes };
  * equal to the keys of the table.
  */
 const CODES =
-	'E1101E1102E1103E1104E1105E1106E1107E1108E1109E1110E1111E1112E1203E1204E1205E1206E1207E1208E1209E1213E1214E1215E1216E1217E1218E1219E1220E1221E1222E1223E1224E1225E1301E1302E1303E1304E1305E1306E1401E1402E1403E1404E1405E1406E1407E1408E1409E1410E1411E1412E1413E1414E1415E1416E1417E1418E1419E1420E1421E1422E1423E1424E1425E1430E1431E1432E1433E1434E1435E1436E1437E1501E1502E1503E1504E1505E1506';
+	'E1101E1102E1103E1104E1105E1106E1107E1108E1109E1110E1111E1112E1203E1204E1205E1206E1207E1208E1209E1213E1214E1215E1216E1217E1218E1219E1220E1221E1222E1223E1224E1225E1301E1302E1303E1304E1305E1306E1401E1402E1403E1404E1405E1406E1407E1408E1409E1410E1411E1412E1413E1414E1415E1416E1417E1418E1419E1420E1421E1422E1423E1424E1425E1426E1430E1431E1432E1433E1434E1435E1436E1437E1501E1502E1503E1504E1505E1506';
 
 /** An error whose message waits for the file of fixes, and the detail that the message holds. */
 interface Waiting {
@@ -40,13 +39,6 @@ interface Waiting {
 const waiting: Waiting[] = [];
 /** The load of the fixes, which one thread starts once. */
 let loading: Promise<void> | undefined;
-
-/** Texts an error's message: its code and detail, the code's fix once loaded, and its docs page. */
-function messageFor(code: ErrorCode, detail: string, fix: string | undefined): string {
-	// A message that came from another thread may hold its fix already.
-	const text = fix !== undefined && !detail.endsWith(` ${fix}`) ? `${detail} ${fix}` : detail;
-	return `${code}: ${text} See ${DOCS_BASE}${code}.md`;
-}
 
 /** Tells each waiting error the fix, unless its message holds other text by now. */
 function settle(fixes: ErrorFixes): void {

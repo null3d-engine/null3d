@@ -1,8 +1,9 @@
 // The water's light-from-behind lookup divides a screen place by the size a shader reads for the
 // render target, so a value that reports the canvas sends the sample past the drawn image: at a
 // render scale of three quarters the river goes dark from three quarters of the width, with a hard
-// vertical edge there. The opening view looks along the stream from above it, and the band of rows
-// across the river states it: the mean brightness right of that edge over the mean left of it. The
+// vertical edge there. The opening view looks along the stream from above it, and a band of rows
+// near the foot of the frame states it: the mean brightness right of that edge over the mean left
+// of it. The
 // picture tests of the same view judge its look on the machine that drew their references; this
 // measure reads the frame itself, so a value that reported the canvas fails here on any machine.
 import { expect, type Page, test } from '@playwright/test';
@@ -10,18 +11,21 @@ import { environmentNamed, runIn } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
 import { manifestRun } from './manifest.ts';
 
-/** The rows of the 320 x 279 opening picture that hold the river across the frame. */
-const ROWS = [160, 180] as const;
+/**
+ * The rows of the 320 x 279 opening picture that the band reads: the near bank, below the plants
+ * that stand right of the edge higher up, which darken a band through them whatever the water does.
+ */
+const ROWS = [200, 260] as const;
 /** The column where the drawn image stops at a render scale of three quarters: 75% of 320. */
 const EDGE = 240;
 /**
- * The least that the river's right side may read against its left. The picture that recorded the
- * fault, which the value that reported the canvas drew, reads 0.462 on this Mac's WebGL2 and 0.389
- * on the software GPU; the opening view's references read 0.86 to 0.93 on both GPU sets. A hard
- * edge at three quarters of the width is that fault, so a river lit across its width is far from
- * it.
+ * The least that the band's right side may read against its left. The pictures that recorded the
+ * fault, which the value that reported the canvas drew, read 0.45 to 0.55 in these rows on every
+ * tier of both GPU sets; the opening view's references read 1.48 to 1.56. The floor lies midway
+ * between them, so a frame lit across its width passes and a hard edge at three quarters of the
+ * width fails.
  */
-const LEAST_EVENNESS = 0.7;
+const LEAST_EVENNESS = 0.9;
 
 interface PublishedFrame {
 	error?: string;
@@ -81,9 +85,9 @@ for (const { tier, name } of TIERS)
 		);
 		const left = brightness(image, 0, EDGE, ROWS[0], ROWS[1]);
 		const right = brightness(image, EDGE, image.width, ROWS[0], ROWS[1]);
-		expect(left, `the river reads ${left.toFixed(1)} left of column ${EDGE}`).toBeGreaterThan(0);
+		expect(left, `the band reads ${left.toFixed(1)} left of column ${EDGE}`).toBeGreaterThan(0);
 		expect(
 			right / left,
-			`the river reads ${right.toFixed(1)} right of column ${EDGE} against ${left.toFixed(1)} left of it`,
+			`the band reads ${right.toFixed(1)} right of column ${EDGE} against ${left.toFixed(1)} left of it`,
 		).toBeGreaterThan(LEAST_EVENNESS);
 	});
