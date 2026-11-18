@@ -93,20 +93,20 @@ Each model draws with few triangles, so a scene can place many copies. The trees
 
 | Part | Triangles at each level |
 | --- | --- |
-| Creek oak: wood, leaves | 5,048, 1,688, 562; 9,100, 3,036, 1,140 |
-| Creek beech: wood, leaves | 5,276, 1,756, 588; 10,400, 3,468, 1,300 |
-| Creek birch: wood, leaves | 3,882, 1,380, 510; 5,760, 1,920, 720 |
-| Creek fern, hosta, shrub, wildflowers | 416, 560, 252, 244 |
+| Creek oak: wood, leaves | 5,072, 1,704, 568; 31,036, 10,348, 3,880 |
+| Creek beech: wood, leaves | 5,284, 1,762, 588; 34,340, 11,448, 4,296 |
+| Creek birch: wood, leaves | 3,872, 1,374, 504; 13,968, 4,656, 1,748 |
+| Creek fern, hosta, shrub, wildflowers | 416, 560, 504, 564 |
 | Creek cave mouth | 9,863 |
-| Island stone pine: wood, leaves | 766, 150, 84; 2,692, 900, 272 |
-| Island olive: wood, leaves | 960, 228, 126; 2,008, 672, 204 |
-| Island holm oak: wood, leaves | 740, 128, 84; 3,208, 1,072, 324 |
-| Island oleander: stems, leaves and flowers | 336, 168, 84; 504, 308, 192 |
+| Island stone pine: wood, leaves | 766, 150, 84; 2,804, 936, 284 |
+| Island olive: wood, leaves | 960, 228, 126; 2,080, 696, 208 |
+| Island holm oak: wood, leaves | 612, 148, 72; 5,272, 1,320, 332 |
+| Island oleander: stems, leaves and flowers | 192, 96, 96; 1,280, 768, 288 |
 | Each island plant's far card | 20 |
 
-The Creek's trees file takes 1,882 KB, its plants file 447 KB and its cave file 778 KB. The island's trees file takes 1,166 KB and its shrubs file 231 KB. The Creek's tree levels switch about 25 m and 50 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away.
+The Creek's trees file takes 4,198 KB, its plants file 470 KB and its cave file 784 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away.
 
-An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
+An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film, with each surface's own color and no light, so the engine lights the card once. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 
 ## The sample check
 
@@ -116,7 +116,7 @@ An island plant's card is two upright quads crossed through its trunk and a leve
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 270 MB now.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 272 MB now.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -134,7 +134,7 @@ Well-known sample models that may not go into the sample-assets repository, and 
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 270 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 272 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.
