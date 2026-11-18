@@ -1,166 +1,92 @@
-// The creek's own hand-made life: fallen leaves that float down the stream on its current, each
-// one an instance batch row that turns slowly as it drifts, and fireflies that hover over the banks
-// at night. The trees, the plants and the ground cover come from the vegetation add-on (see
-// `plants.ts`); these two keep their own code, since the add-on grows neither.
-import {
-	type InstanceBatch,
-	type MeshArrays,
-	quat,
-	type SketchContext,
-	type SpriteBatch,
-} from '@null3d/engine';
-import type { Wind } from '@null3d/wind';
-import { markEffect } from '../../lib/layers';
-import { random } from '../../lib/procedural';
-import { groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
+// The creek's own small life: fallen leaves that float down the stream on its current, and fireflies
+// that hover over the banks at night. Each is a particle system of the particles add-on, whose
+// particles the GPU moves from their birth and age, so a held frame shows what the live scene shows
+// at that time and the sketch runs no loop over them.
+import type { SketchContext } from '@null3d/engine';
+import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
+import { EFFECT_LAYER } from '../../lib/layers';
+import { FLOW, streamHalf, streamSlope, streamZ, WATER } from './land';
 
-/** Floating leaves in each of the three colors. */
-const FLOATING = 24;
-/** The length of stream that the leaves float along, before they start again upstream. */
-const RUN = 56;
-/** Fireflies at night. */
-const FIREFLIES = 90;
+/** The lengths of stream that each carry their own floating leaves, and the leaves on each. */
+const REACHES = 7;
+const REACH = 8;
+const FLOATING = 10;
+/** Fireflies over each bank at night, and how long each glows. */
+const FIREFLIES = 45;
+const FIREFLY_LIFE: readonly [number, number] = [6, 12];
 
-/**
- * A leaf about a meter long, along +z, with its stem at the origin: a fold along the midrib, and
- * edges that curl up a little. Its colors run from a lighter midrib to darker edges.
- */
-function leaf(): MeshArrays {
-	const steps = 8;
-	const positions: number[] = [];
-	const colors: number[] = [];
-	const uvs: number[] = [];
-	const indices: number[] = [];
-	for (let i = 0; i <= steps; i++) {
-		const t = i / steps;
-		const half = 0.32 * Math.sin(Math.PI * t) ** 0.8 * (1 - 0.25 * t);
-		const z = t;
-		const droop = -0.12 * t * t;
-		for (const side of [-1, 0, 1]) {
-			const edge = Math.abs(side);
-			positions.push(side * half, droop + 0.05 * (1 - edge) + 0.04 * edge * half * 3, z);
-			const shade = edge ? 0.8 : 1.1;
-			colors.push(shade, shade, shade);
-			uvs.push((side + 1) / 2, t);
-		}
-	}
-	for (let i = 0; i < steps; i++) {
-		const a = i * 3;
-		indices.push(a, a + 3, a + 1, a + 1, a + 3, a + 4, a + 1, a + 4, a + 2, a + 2, a + 4, a + 5);
-	}
-	return { positions, colors, uvs, indices, computeNormals: true };
-}
-
-/** A turn about y, then a tilt about x, written into a batch's rotations at a row's place. */
-const turn = quat.create();
-function yawTilt(yaw: number, tilt: number, out: Float32Array, at: number): void {
-	out.set(quat.fromEuler(turn, tilt, yaw, 0, 'YXZ'), at);
-}
-
-/** The floating leaves and fireflies, with what moves them in each frame. */
-export async function createFlora(
-	{ scene, geometry, materials, textures }: SketchContext,
-	wind: Wind,
-): Promise<{
-	update(t: number): void;
+/** The floating leaves and the fireflies, with what each frame steps. */
+export async function createFlora(ctx: SketchContext): Promise<{
+	/** Steps the systems, which a frame calls in its late update. */
+	update(): void;
 	/** Lights the share, from 0 to 1, of the fireflies that the hour's look calls for. */
 	nightLights(share: number): void;
 }> {
-	const next = random(61);
-	const leafMesh = geometry.fromArrays(leaf());
-	const leafLook = (color: string) =>
-		materials.standard({ color, vertexColors: true, roughness: 0.6, doubleSided: true });
-
-	// Floating leaves: each has a start along the run, a speed, a lane across the stream and a spin.
-	const floating = ['#c8782a', '#a8461f', '#d6a63a'].map((color) =>
-		scene.createInstances(leafMesh, FLOATING, {
-			material: leafLook(color),
-			dynamic: true,
-			castShadows: true,
-			receiveShadows: true,
-			layers: UNREFLECTED_LAYER,
+	const { textures } = ctx;
+	const effect = { layers: EFFECT_LAYER, prewarm: true } as const;
+	// Floating leaves: each reach of the stream sets leaves down at its head, which drift along it
+	// with the current, flat on the water, and fade as they pass into the next reach.
+	const leafLook = particleTextures.leaves(textures);
+	const floating = await Promise.all(
+		Array.from({ length: REACHES }, (_, k) => {
+			const x = (k - REACHES / 2) * REACH;
+			const along = Math.hypot(1, streamSlope(x + REACH / 2));
+			const speed = FLOW / along;
+			return createParticles(ctx, {
+				...effect,
+				...leafLook,
+				seed: 61 + k,
+				position: [x, WATER + 0.02, streamZ(x)],
+				shape: { type: 'box', size: [0.5, 0.01, 1.4 * streamHalf(x)] },
+				rate: FLOATING / (REACH / FLOW),
+				lifetime: [REACH / FLOW, (REACH / FLOW) * 1.15],
+				speed: [0, 0],
+				velocity: [speed, 0, speed * streamSlope(x + REACH / 2)],
+				turbulence: 0.15,
+				turbulenceScale: 3,
+				facing: 'ground',
+				spin: [-0.25, 0.25],
+				rotation: [0, Math.PI * 2],
+				size: [0.15, 0.22],
+				colors: ['#c8782a', '#a8461f'],
+				alphaOverLife: [0, 1, 1, 1, 1, 1, 0],
+				blending: 'normal',
+			});
 		}),
 	);
-	const drift = Float32Array.from({ length: FLOATING * 3 * 4 }, () => next());
-
-	/** A scratch place for the air under a floating leaf, in meters a second. */
-	const air: [number, number, number] = [0, 0, 0];
-
-	// Fireflies: soft dots of light, made in code, which glow through bloom.
-	const dot = new Uint8Array(32 * 32 * 4);
-	for (let i = 0; i < 32 * 32; i++) {
-		const r = Math.hypot((i % 32) - 15.5, Math.floor(i / 32) - 15.5) / 16;
-		dot.set([255, 255, 255, Math.round(255 * Math.max(0, 1 - r) ** 2)], i * 4);
-	}
-	const fireflies: SpriteBatch = await scene.createSprites({
-		count: FIREFLIES,
-		map: textures.fromData({ width: 32, height: 32, data: dot }),
-		blending: 'additive',
-		depthWrite: false,
-		dynamic: true,
-	});
-	markEffect(fireflies);
-	const hover = Float32Array.from({ length: FIREFLIES * 4 }, () => next());
-	for (let f = 0; f < FIREFLIES; f++) {
-		fireflies.sizes.set([0.06, 0.06], f * 2);
-		fireflies.colors.set([6, 5, 1.2, 1], f * 4);
-	}
-	fireflies.setActiveCount(0);
-	let lit = false;
-
+	// Fireflies: soft dots of light over each bank, which drift and wander and glow through bloom.
+	const glow = particleTextures.glow(textures, { size: 32 });
+	const fireflies = await Promise.all(
+		[-1, 1].map((side, k) =>
+			createParticles(ctx, {
+				...effect,
+				...glow,
+				seed: 62 + k,
+				position: [0, 1, streamZ(0) + side * 5],
+				shape: { type: 'box', size: [28, 0.8, 5] },
+				rate: FIREFLIES / FIREFLY_LIFE[1],
+				lifetime: FIREFLY_LIFE,
+				speed: [0, 0.1],
+				turbulence: 0.6,
+				turbulenceScale: 1.5,
+				turbulenceSpeed: 0.3,
+				size: [0.05, 0.07],
+				colors: [1, 0.83, 0.2],
+				intensity: 6,
+				alphaOverLife: [0, 1, 1, 0],
+				blending: 'additive',
+				opacity: 0,
+			}),
+		),
+	);
+	const systems: readonly ParticleSystem[] = [...floating, ...fireflies];
 	return {
 		nightLights(share) {
-			const count = Math.round(FIREFLIES * Math.min(1, Math.max(0, share)));
-			lit = count > 0;
-			fireflies.setActiveCount(count);
+			const shown = Math.min(1, Math.max(0, share));
+			for (const swarm of fireflies) swarm.set({ opacity: shown });
 		},
-		update(t) {
-			// Read the arrays in each frame: they are views of engine memory, which moves when it grows.
-			for (let b = 0; b < floating.length; b++) {
-				const { positions, rotations, scales } = floating[b] as InstanceBatch;
-				for (let k = 0; k < FLOATING; k++) {
-					const d = (b * FLOATING + k) * 4;
-					const speed = drift[d + 1] as number;
-					const spin = drift[d + 3] as number;
-					const along = ((drift[d] as number) * RUN + t * (0.25 + 0.2 * speed)) % RUN;
-					const alongX = -RUN / 2 + along;
-					const alongZ =
-						streamZ(alongX) + ((drift[d + 2] as number) * 2 - 1) * 0.7 * streamHalf(alongX);
-					// The air over the stream nudges a leaf across the current's own line.
-					wind.sample(alongX, WATER + 0.1, alongZ, air);
-					const x = alongX + air[0] * 0.08;
-					const z = alongZ + air[2] * 0.08;
-					positions[k * 3] = x;
-					positions[k * 3 + 1] = WATER + 0.02 + 0.012 * Math.sin(t * 2.1 + spin * 20 + x * 2.3);
-					positions[k * 3 + 2] = z;
-					yawTilt(
-						spin * 6.3 + t * (spin - 0.5) * 0.6,
-						0.05 * Math.sin(t * 1.7 + x),
-						rotations,
-						k * 4,
-					);
-					const size = 0.15 + 0.07 * speed;
-					scales[k * 3] = size;
-					scales[k * 3 + 1] = size;
-					scales[k * 3 + 2] = size;
-				}
-			}
-			if (!lit) return;
-			const { positions } = fireflies;
-			for (let f = 0; f < FIREFLIES; f++) {
-				const a = hover[f * 4] as number;
-				const b = hover[f * 4 + 1] as number;
-				const c = hover[f * 4 + 2] as number;
-				const d = hover[f * 4 + 3] as number;
-				const x = -14 + 28 * a + 0.6 * Math.sin(t * 0.4 + d * 9);
-				const side = b < 0.5 ? -1 : 1;
-				const z =
-					streamZ(x) + side * (streamHalf(x) * 1.1 + 5 * c) + 0.5 * Math.cos(t * 0.33 + a * 7);
-				positions[f * 3] = x;
-				positions[f * 3 + 1] =
-					groundHeight(x, z) + 0.4 + 0.6 * d + 0.15 * Math.sin(t * 0.9 + b * 13);
-				positions[f * 3 + 2] = z;
-			}
+		update() {
+			for (const system of systems) system.update();
 		},
 	};
 }

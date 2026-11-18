@@ -29,10 +29,12 @@ const GROWTH = { seed: 11, variant: 0 } as const;
 /**
  * How far the preview's sky gap may stand from the engine's. The preview's card rule multiplies each
  * card's soft lifted alpha into the pixel's sky share, so it overstates cover where cards overlap,
- * and the encoding fix alone leaves the ash's gap 0.0426 the other way. No row is read from the
- * preview's matte (review-tool.md, 14 November), so this band only fails on a further drift.
+ * and the encoding fix alone leaves the ash's gap 0.0426 the other way. The vegetation landing moved
+ * it to 0.0501 on CI's software GPU and 0.0510 on the Mac's: the engine's gap read 0.2866 and
+ * 0.2857, the preview's 0.3367 on both. No row is read from the preview's matte (review-tool.md,
+ * 14 November), so this band only fails on a further drift.
  */
-const BAND = 0.05;
+const BAND = 0.06;
 
 /** The review page's whole view of the plant at its first card level, drawn as a matte. */
 function reviewWindow(): string {

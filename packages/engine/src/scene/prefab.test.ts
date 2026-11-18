@@ -567,6 +567,8 @@ describe('prefab.find and bounds', () => {
 		expect(link?.mesh?.radius).toBe(0.5);
 		expect(prefab.find('nothing')).toBeUndefined();
 		expect(link?.occluder).toBe(false);
+		// A material that no file made samples no file's textures.
+		expect(link?.maps).toEqual({});
 		expect(prefab.bounds.center).toEqual([0, 1, 0]);
 		expect(prefab.bounds.radius).toBeCloseTo(Math.hypot(0.5, 1, 0.5));
 	});

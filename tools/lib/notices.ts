@@ -4,6 +4,7 @@
 // tarball, and exports its package.json, which the Vite plugin resolves to find the text.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { packagesInUse } from './vegetation-switch';
 
 /** The page that lists every package's third-party code. */
 export const NOTICES_PAGE = 'docs/getting-started/third-party-notices.md';
@@ -118,7 +119,11 @@ function entriesOf(page: string): Map<string, Entry> {
 }
 
 /** A package's manifest, or nothing that the checks can use when it does not parse. */
-function manifestOf(dir: string): { files?: string[]; exports?: Record<string, unknown> } {
+function manifestOf(dir: string): {
+	files?: string[];
+	exports?: Record<string, unknown>;
+	private?: boolean;
+} {
 	try {
 		return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
 	} catch {
@@ -157,7 +162,7 @@ function upstreamProblems(root: string): string[] {
 	const problems: string[] = [];
 	const packageRoot = join(root, 'packages');
 	if (!existsSync(packageRoot)) return problems;
-	for (const name of readdirSync(packageRoot).sort()) {
+	for (const name of packagesInUse(readdirSync(packageRoot)).sort()) {
 		const dir = join(packageRoot, name);
 		const trees = SHIPPED_TREES[name] ?? [`packages/${name}/src`];
 		const text = folded(
@@ -212,9 +217,10 @@ function upstreamProblems(root: string): string[] {
 
 /**
  * Every way that the packages under `root` and the notices page disagree, as `path: problem`:
- * a package with no entry, an entry with no package, a package whose notices the page leaves out,
- * a notices file that its tarball would not carry, an example add-on that the page leaves out, or
- * shipped code and a decision record that claim an upstream that the notices leave out.
+ * a published package with no entry, an entry with no package or for a private package, a package
+ * whose notices the page leaves out, a notices file that its tarball would not carry, an example
+ * add-on that the page leaves out, or shipped code and a decision record that claim an upstream
+ * that the notices leave out.
  */
 export function noticesProblems(root: string): string[] {
 	const problems: string[] = [];
@@ -223,10 +229,16 @@ export function noticesProblems(root: string): string[] {
 	const page = readFileSync(pagePath, 'utf8');
 	const entries = entriesOf(page);
 	const packageRoot = join(root, 'packages');
-	const packages = existsSync(packageRoot) ? readdirSync(packageRoot).sort() : [];
+	const packages = existsSync(packageRoot) ? packagesInUse(readdirSync(packageRoot)).sort() : [];
 	for (const name of packages) {
 		const dir = join(packageRoot, name);
 		const entry = entries.get(name);
+		// A private package ships nowhere, so the page that lists what ships gives it no row.
+		if (manifestOf(dir).private === true) {
+			if (entry)
+				problems.push(`${NOTICES_PAGE}: has a row for ${name}, which is private and ships nowhere`);
+			continue;
+		}
 		const hasNotices = existsSync(join(dir, NOTICES_FILE));
 		if (!entry) {
 			problems.push(

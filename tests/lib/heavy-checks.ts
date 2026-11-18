@@ -5,6 +5,8 @@
 // One list, because the two halves of it must agree: a file that the unit run leaves out and no
 // runner names runs nowhere, and a file that a runner names without the unit run leaving it out
 // runs twice.
+import { isVegetationFile, vegetationOn } from '../../tools/lib/vegetation-switch.ts';
+
 export interface HeavyCheck {
 	/** The test file, relative to the repository. */
 	readonly file: string;
@@ -25,6 +27,10 @@ export interface HeavyCheck {
  */
 export const PART_ENV = 'NULL3D_CHECK_PART';
 
+/**
+ * The checks. The vegetation add-on's join only with its switch on: the add-on is a work in progress
+ * that no CI job checks (D-378).
+ */
 export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// The whole generated set beside the text the tests read their counts from. The set grows with
 	// each feature that adds builds, and shares of it are held while the check runs: CI measured
@@ -90,9 +96,9 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	{ file: 'packages/vegetation/src/lod/budget.test.ts', ceilingMiB: 4608 },
 	// The owner's byte caps over eleven seeds: every variant of each, at every tier, which builds a kit
 	// for each tier and grows a tree for each variant. The unit run sweeps one seed and this one the
-	// rest, and the whole measures 247 MiB and 55 s.
+	// rest, and the whole measures 247 MiB and 55 s on the Mac.
 	{ file: 'packages/vegetation/src/core/caps-heavy.test.ts', ceilingMiB: 512 },
-];
+].filter(({ file }) => vegetationOn() || !isVegetationFile(file));
 
 /**
  * The pattern that `bun test --path-ignore-patterns` takes to leave one check's file out of a run.

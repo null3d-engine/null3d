@@ -292,14 +292,15 @@ that darkens itself.
   masked caster through it and keeps a still caster out of the moving list.
 - Docs: `docs/api/impostors.md` states the local frame, the turn, the bake, the depth's use and the
   two shadow flags. `docs/api/materials.md` and `docs/shaders/surface-functions.md` state the
-  `coverage` function, `Surface.shadowOffset` and `castsStill`. `docs/api/vegetation.md` states the
+  `coverage` function, `Surface.shadowOffset` and `castsStill`. `packages/vegetation/docs/api.md` states the
   far tree and the hand-over. `docs/concepts/lod.md` states that the card is lit by the scene's sun
   and casts its crown. The three.js mapping gains nothing, because three.js has no impostor
   counterpart.
 - Skills: the develop skill's impostor, vegetation and shader notes.
-- Two things to keep the split honest as it grows. A second add-on that wants the same distance
-  hand-over moves the band into the impostors add-on then, rather than copying it. And the bake
-  helper's public shape stays plant-neutral. The four `impostorSource` fields are the guard that
+- Two things keep the split honest as it grows. The distance hand-over, `handOverToCards`, lives
+  in the impostors add-on, so the impostors demo and any other caller use it without the vegetation
+  add-on, which re-exports it under the same name ([D-378](D-378-vegetation-add-on-unpublished.md)).
+  And the bake helper's public shape stays plant-neutral. The four `impostorSource` fields are the guard that
   keeps a caller from passing a plant's own nouns through it.
 - Tests: `impostor-turn` and `impostor-turn-sun-back` draw a turned tree beside its card,
   `impostor-plant` draws a grown plant beside its card, and `impostor-shadow` draws a row of cards

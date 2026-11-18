@@ -48,7 +48,7 @@ import {
 import { shaderCacheFolder } from '../packages/vite-plugin/src/shader-cache.ts';
 import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib/build-cache.ts';
 import { DEFAULT_PACK_DIR, packPackages } from '../tools/lib/pack.ts';
-import { PACKAGES, type PackedPackage } from '../tools/lib/packages.ts';
+import { type PackedPackage, publicPackages } from '../tools/lib/packages.ts';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { MODULE_DIR } from '../tools/lib/shader-modules.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
@@ -62,9 +62,9 @@ const TEMPLATE = join(ROOT, 'tests/fixtures/fresh-project');
 const DEV_DEPENDENCIES = ['@null3d/vite-plugin', '@null3d/cli'];
 /**
  * Every other package that the repository publishes, the engine and each add-on, so that a new
- * add-on is installed into the project without an edit here.
+ * add-on is installed into the project without an edit here. A private package ships nowhere.
  */
-const DEPENDENCIES = Object.keys(PACKAGES)
+const DEPENDENCIES = publicPackages(ROOT)
 	.map((name) => `@null3d/${name}`)
 	.filter((name) => !DEV_DEPENDENCIES.includes(name));
 /** Tools from npm, at the versions that the repository pins. */

@@ -319,7 +319,10 @@ test('the deterministic simulation demo takes its own input, and its replay ends
 	// the logged ticks to the run's own state.
 	await run.getByRole('button', { name: 'Replay' }).click();
 	await expect(status).toHaveText(/^Replaying/, { timeout: PATIENCE });
-	await expect(status).toHaveText('Replay ended on the same state', { timeout: PATIENCE });
+	// A frame steps at most a quarter second of ticks, and a frame on CI's software GPU takes far
+	// longer, so the replay plays slower than the run did: about 6.5 of its 7 seconds in a minute.
+	// Its end gets the time of three such waits, inside the file's own limit.
+	await expect(status).toHaveText('Replay ended on the same state', { timeout: 3 * PATIENCE });
 	const replayed = await rest(page, await probe(page));
 	expect(apart(replayed.camera, played.camera)).toBeLessThan(1e-3);
 	expect(apart(replayed.cameraTurn, played.cameraTurn)).toBeLessThan(1e-3);

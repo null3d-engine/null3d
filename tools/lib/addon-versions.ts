@@ -5,6 +5,7 @@
 // repository.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { packagesInUse } from './vegetation-switch';
 
 /**
  * Packages that are not add-ons: the engine, the tools that build or serve projects, and the
@@ -21,7 +22,7 @@ const CHECK = /checkAddonVersion\(\s*'([^']+)'\s*,\s*VERSION\s*\)/;
 /** Every problem with the add-ons of the repository at `root`, as `path: problem`, and the count of packages read. */
 export function addonVersionProblems(root: string): { problems: string[]; packages: number } {
 	const problems: string[] = [];
-	const folders = readdirSync(join(root, 'packages'))
+	const folders = packagesInUse(readdirSync(join(root, 'packages')))
 		.filter(
 			(name) => !NOT_ADDONS.has(name) && existsSync(join(root, 'packages', name, 'package.json')),
 		)

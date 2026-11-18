@@ -1,9 +1,9 @@
 // The forest's own build: one batch for each kind of tree and one for the understory, the far rows
 // as cut-out cards, a hero fir, and the counts that each preset draws.
 import type { InstanceBatch, Material, SketchContext } from '@null3d/engine';
+import { BUSH, meshOf } from '../lib/trees';
 import {
 	addHero,
-	BUSH,
 	bushRows,
 	cardArrays,
 	countRows,
@@ -11,7 +11,6 @@ import {
 	fitCounts,
 	ground,
 	KINDS,
-	meshOf,
 	plantRows,
 } from './woods';
 

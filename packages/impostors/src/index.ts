@@ -18,6 +18,7 @@ export type {
 export { bakeImpostorAtlas } from './bake';
 export type { ImpostorContext, ImpostorOptions } from './batch';
 export { createImpostors, ImpostorBatch } from './batch';
+export { EDGE_BAND, handOverToCards } from './hand-over';
 export type { FarPart } from './merge';
 export { farCellGroups, mergeFarGeometry } from './merge';
 export type { Direction, OctahedralAtlas, OctahedralUv } from './octahedral';

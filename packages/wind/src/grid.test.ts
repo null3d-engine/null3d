@@ -23,10 +23,12 @@ const fieldFile = new URL('../shaders/field.wgsl', import.meta.url);
 const pageFile = new URL('../page/sketch.ts', import.meta.url);
 /** The page that shows a person what to copy into their own shader. */
 const docsFile = new URL('../../../docs/api/wind.md', import.meta.url);
-/** The vegetation add-on's grass, which reads the field in its vertex offset. */
-const grassFile = new URL('../../vegetation/src/grass/grass.wgsl', import.meta.url);
+/** The grass add-on's blades, which read the field in their vertex offset. */
+const grassFile = new URL('../../grass/src/grass.wgsl', import.meta.url);
 /** The engine's particle shader, which reads the field once for each particle. */
 const particleFile = new URL('../../../crates/null3d-shaders/wgsl/particle.wgsl', import.meta.url);
+/** The demos' plant material, which bends each plant in the field. */
+const swayFile = new URL('../../../examples/lib/sway.ts', import.meta.url);
 describe('the shaders of the grid', () => {
 	test('the compute form, the WebGL2 form and the sampling file hold one steady field', () => {
 		// The shader build resolves only the engine's library, so a shader cannot import another
@@ -147,13 +149,16 @@ describe('the sampling function', () => {
 		// The docs page holds the copy that a person pastes, so it is kept equal too.
 		expect(marked(docsFile, 'wind-steady')).toBe(steady);
 		expect(marked(docsFile, 'wind-sample')).toBe(sample);
-		// The vegetation add-on reads this field for its grass, whose shader carries the same
-		// blocks; the add-on's own test holds its other readers to the grass's copy.
+		// The grass add-on reads this field for its blades, whose shader carries the same blocks;
+		// the vegetation add-on's own test holds its readers to the same copies.
 		expect(marked(grassFile, 'wind-steady')).toBe(steady);
 		expect(marked(grassFile, 'wind-sample')).toBe(sample);
 		// The engine's particle shader reads the same field, once for each particle.
 		expect(marked(particleFile, 'wind-steady')).toBe(steady);
 		expect(marked(particleFile, 'wind-sample')).toBe(sample);
+		// The demos' plants read it in the vertex offset of their one material.
+		expect(marked(swayFile, 'wind-steady')).toBe(steady);
+		expect(marked(swayFile, 'wind-sample')).toBe(sample);
 	});
 
 	test('the copy reads the texture inside the box and the steady field outside it', () => {

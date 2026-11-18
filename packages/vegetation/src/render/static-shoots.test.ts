@@ -1,6 +1,7 @@
 // The bands of distance that a fixed plant's levels draw in: each level hands over to the next
 // with the next at full coverage before its own edge thins, so no pixel drops out of both.
 import { describe, expect, it } from 'bun:test';
+import { EDGE_BAND } from '@null3d/impostors';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { loadSpecies } from '../core/registry';
@@ -8,7 +9,6 @@ import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { SHOOT_REACH, switchScale } from '../lod/drawn';
 import { firstCardStart } from '../lod/levels';
 import { dequantisePosition } from '../lod/quantise';
-import { EDGE_BAND } from './hand-over';
 import { plantBoundingRadius } from './material';
 import { levelBands, placeStaticPlants } from './static-shoots';
 import { kitTextures } from './textures';

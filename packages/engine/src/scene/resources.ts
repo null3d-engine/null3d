@@ -212,8 +212,8 @@ const LEVEL_FRAME_POLL_MS = 2;
  * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
  * `error`, the `distance` at which it switches in, or the screen `coverage` under which it draws.
  * A level with a measured error, which the asset tool writes, changes the picture by under a pixel
- * at a small threshold and switches at once. A governed threshold above about one and a half
- * pixels makes that switch show, and such a level then fades too. A level given by a distance, by
+ * at a small threshold and switches at once. When the governor raises the threshold above about
+ * one and a half pixels, that switch shows, and such a level then fades too. A level given by a distance, by
  * a coverage or by a hand-set error fades over a short band, so its switch does not pop.
  *
  * @category api/geometry
@@ -247,7 +247,8 @@ export interface MeshLevel {
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
 	 * once. The default is `fade` in the options. A level with a measured error changes the
 	 * picture by under a pixel while the governed threshold stays small, so its band only costs
-	 * then; the engine fades such a level above about one and a half pixels. The glTF reader
+	 * then; the engine fades such a level once the governor raises the threshold above about one
+	 * and a half pixels. The glTF reader
 	 * switches a file's measured error at once and fades an error that comes alone, which its
 	 * author set by hand.
 	 */
@@ -277,8 +278,8 @@ export interface MeshLevelOptions {
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
 	 * once. The default is true. A level's own `fade` overrides it. A level with a measured error
-	 * fades too once the governed threshold rises above about one and a half pixels, where its
-	 * switch shows.
+	 * fades too once the governor raises the threshold above about one and a half pixels, where
+	 * its switch shows.
 	 */
 	fade?: boolean;
 	/**

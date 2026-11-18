@@ -1,8 +1,9 @@
 // The vegetation add-on's species registry and species page, both generated from the species folders
 // in packages/vegetation/src/species/. A species adds a folder and nothing else: the registry gives it
 // a lazy loader, so a page fetches only the species it places, and the species page lists it. Git
-// keeps neither file (D-105): the install step, the git hooks and `bun run docs` write them through
-// tools/lib/generated.ts, and `bun tools/vegetation-registry.ts` writes them alone.
+// keeps neither file (D-105). The add-on is a work in progress that no CI job reads (D-378), so the
+// install step and `bun run docs` leave both alone: `bun tools/vegetation-registry.ts`, which
+// `bun run test:vegetation` runs first, writes them.
 //
 // A folder whose name starts with an underscore is not a species: `_template` holds the files to
 // copy.
@@ -16,8 +17,8 @@ export { SPECIES_DIR, type SpeciesFolder, speciesFolders };
 /** The generated registry. */
 export const REGISTRY_FILE = `${SPECIES_DIR}/registry.generated.ts`;
 /** The generated species page's ID and path. */
-export const SPECIES_PAGE_ID = 'api/vegetation-species';
-export const SPECIES_PAGE = `docs/${SPECIES_PAGE_ID}.md`;
+export const SPECIES_PAGE_ID = 'vegetation/species';
+export const SPECIES_PAGE = 'packages/vegetation/docs/species.md';
 
 /** The registry's source: one lazy loader per species folder, and one per hooks file. */
 export function registrySource(folders: readonly SpeciesFolder[]): string {
@@ -115,7 +116,7 @@ export function speciesPage(root: string, folders: readonly SpeciesFolder[]): st
 	])}
 # Vegetation species
 
-> [Vegetation](vegetation.md) explains the species records. The species folders make this page.
+> [Vegetation](api.md) explains the species records. The species folders make this page. The vegetation add-on is not published yet, so no release has these species, and coding agents must not use them.
 
 ${table}
 `;

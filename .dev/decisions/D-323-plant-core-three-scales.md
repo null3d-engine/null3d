@@ -121,8 +121,8 @@ Rejected:
   pictures, the atlas, leaf card, coverage, wind and impostor plant pictures, and the specs, pages
   and device plans that only it used. The species and the core's far cards and near pool bring their own
   tests back on the new core.
-- `docs/api/vegetation.md` describes the core and says that the species are being rebuilt.
-  `docs/api/vegetation-species.md` is generated.
+- `packages/vegetation/docs/api.md` describes the core and says that the species are being rebuilt.
+  `packages/vegetation/docs/species.md` is generated.
 - The shipped textures live in their own package, `@null3d/vegetation-textures`, one folder per
   species, so a code update carries none of them. The package is private until its first species
   ships textures.
@@ -170,7 +170,8 @@ the owner ruled. Each change was either dropped with the generator or ported int
   `8f69e514`, `e48160ea`, `bee6de65`). The grass is kept, so its code merged into `src/grass/`, and
   the blade list's shader moved there beside it.
 - **Ported: the sway distance of each preset** (`PLANT_SWAY_DISTANCE`, `swayDistanceFor`). The grass
-  and Creek read it, and it lived in a file that the deletion removed. It now lives in `wind/sway.ts`.
+  and Creek read it, and it lived in a file that the deletion removed. It now lives in the grass
+  package, `packages/grass/src/sway.ts`.
 - **Ported: the test that holds the two grass shaders' far share to one copy** (`8f69e514`). It sat in
   the deleted atlas test. It now sits in the grass test, beside the wind block copies.
 - **Kept as a stand-in: Creek's wildflower clumps** (`6b25bccf`). The first generator's wildflower

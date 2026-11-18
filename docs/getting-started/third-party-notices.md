@@ -22,12 +22,11 @@ Some null3D packages ship code from other projects, as the original file or as a
 | `@null3d/controls` | three.js 0.186.1, the math and the option names of its controls | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/geometry` | three.js 0.186.1, its generators, curves, paths and shapes; earcut 3.0.2 | MIT and ISC | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/three-compat` | three.js 0.186.1, its tone curves and its outline pass | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/grass` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/impostors` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/particles` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/splats` | None, its own code, which reads Niantic's published SPZ format | None | `lib/index.js` | None |
 | `@null3d/terrain` | None, its own code | None | `lib/index.js` | None |
-| `@null3d/vegetation` | three.js 0.186.1, the tangent frame of its plant shader | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
-| `@null3d/vegetation-textures` | None, its own leaf and bark textures | None | `textures/` | None |
 | `@null3d/water` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/wind` | None, its own code | None | `lib/index.js` | None |
 

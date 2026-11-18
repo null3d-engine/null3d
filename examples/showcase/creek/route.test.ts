@@ -1,29 +1,34 @@
-// Creek's route must stay clear of the plants that dress its valley ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)).
-// The valley's plants come from the vegetation add-on's rules, so the route is measured against
-// them: the test places the valley as the scene does, samples the whole route through the player's
-// own interpolation, and fails when a sample comes within a plant's room or the dip reaches the bed
-// or a stone. A route edit or a rule change therefore cannot reintroduce a clip.
+// Creek's route must stay clear of the trees and plants that dress its valley and of its cave
+// ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)). The test places the valley as the
+// scene does, samples the whole route through the player's own interpolation, and fails when a
+// sample comes within a model's room or the dip reaches the bed or a stone. A route edit or a rule
+// change therefore cannot reintroduce a clip.
 import { expect, test } from 'bun:test';
 import { waveHeight } from '@null3d/water';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { groundHeight, streamCurrent, WATER } from './land';
 import { SHOTS } from './route';
-import { rockPlaces } from './stones';
-import { placeValley, plantSolids } from './valley';
+import { CAVE, rockPlaces, stoneFootprints } from './stones';
+import { placeValley, valleySolids } from './valley';
 
 /** The height of the creek's surface at a point and time, as the water's shape gives its current. */
 const surfaceHeight = (x: number, z: number, t: number) =>
 	waveHeight(x, z, t, WATER, streamCurrent(x), 1);
 
+/** The cave's rock, as a cylinder that the route must keep clear of, with the camera's clearance. */
+const CAVE_SOLID = { kind: 'cave', x: CAVE.x, z: CAVE.z, radius: CAVE.reach + 0.6, top: 6.6 };
+
 /** How many points of the loop the check samples. A spline bends between the shots, so the
  * checks sample finely enough to catch a bulge that a shot's own pose does not show. */
 const SAMPLES = 2000;
 
-test('the creek route stays clear of the plants that dress its valley', () => {
+test('the creek route stays clear of the trees, the plants and the cave', () => {
 	const route = routeTimeline(SHOTS);
 	const pose = new Float32Array(6);
-	const solids = plantSolids(placeValley());
-	expect(solids.length).toBeGreaterThan(0);
+	const valley = placeValley({ rocks: stoneFootprints() });
+	// The groves on both banks stand: the route runs behind them.
+	expect(valley.trees.length).toBeGreaterThanOrEqual(12);
+	const solids = [...valleySolids(valley), CAVE_SOLID];
 	for (let step = 0; step <= SAMPLES; step++) {
 		// The sample through the player's own interpolation: what it plays is what is checked.
 		routePosition(route, (step / SAMPLES) * route.total, pose);
@@ -33,7 +38,7 @@ test('the creek route stays clear of the plants that dress its valley', () => {
 				at[1] <= solid.top && Math.hypot(at[0] - solid.x, at[2] - solid.z) < solid.radius;
 			expect(
 				inside,
-				`the route passes through the ${solid.species} at ${solid.x.toFixed(1)}, ${solid.z.toFixed(1)} (r ${solid.radius.toFixed(2)}) at ${at.map((v) => v.toFixed(2)).join(', ')}`,
+				`the route passes through the ${solid.kind} at ${solid.x.toFixed(1)}, ${solid.z.toFixed(1)} (r ${solid.radius.toFixed(2)}) at ${at.map((v) => v.toFixed(2)).join(', ')}`,
 			).toBe(false);
 		}
 	}

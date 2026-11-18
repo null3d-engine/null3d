@@ -19,9 +19,10 @@ const params = new URL(import.meta.url).searchParams;
 const STILL_ROUTE = params.has('still-route');
 
 import { interact } from '../lib/interact';
+import { createSway } from '../lib/sway';
+import { woodTexture } from '../lib/trees';
 import { plantForest, RADIUS } from './planting';
-import { createSway } from './sway';
-import { cardTexture, ground, KINDS, landArrays, litterTexture, woodTexture } from './woods';
+import { cardTexture, ground, KINDS, landArrays, litterTexture } from './woods';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
@@ -54,8 +55,10 @@ export default defineSketch(async (ctx) => {
 	// The forest's one wind field. The trees bend in it, read at each tree's root, and the offset
 	// fades out by the sway distance so the far trees and their cached shadow cascades stand still.
 	const wind = createWind(ctx, { camera, box: 256 });
-	const sway = createSway(ctx, { wood, wind });
-	const bark = sway.material;
+	const sway = createSway(ctx, { wind });
+	// Each tree is 1 unit high, so its bend grows over its whole height and scales with its size:
+	// a stiff trunk, and a top that leans by about a meter in a brisk wind.
+	const bark = sway.material({ map: wood, sway: 0.008, rustle: 0.001, perSize: true });
 	const card = materials.standard({
 		map: pictures,
 		roughness: 0.9,

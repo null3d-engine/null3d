@@ -1,6 +1,6 @@
 # D-99: Full CI on pull requests and on main, with no merge queue
 
-Status: superseded by [D-157](D-157-direct-pushes-to-main.md): work lands on main by direct push, and no branch opens a pull request. It replaced [D-86](D-86-ci-runs-per-event.md). The parts below still hold, as the owner decided them: no merge queue, every job on each push to main, and main's daily benchmark run.
+Status: superseded by [D-157](D-157-direct-pushes-to-main.md), which [D-379](D-379-one-pull-request-per-piece-of-work.md) supersedes in turn. Each piece of work lands through a pull request of its own, whose CI run runs every job. It replaced [D-86](D-86-ci-runs-per-event.md). The parts below still hold, as the owner decided them: no merge queue, every job on each push to main, and main's daily benchmark run.
 
 Summary: Main has no merge queue, because in one day the queue ran 53 times for 32 pull requests and only 2 of its failures were real faults. Every push to main runs every CI job, and a newer push cancels main's older run. Main's speed comparison runs once a day at 19:07 UTC, with S5 and S6, in 8 shards of 2 pages.
 

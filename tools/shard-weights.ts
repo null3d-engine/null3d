@@ -32,6 +32,7 @@ import {
 	splitByWeights,
 	timedGroups,
 } from './lib/shard-weights.ts';
+import { playwrightNodeOptions } from './lib/source-condition.ts';
 
 /** The workflow whose browser job the weights are for. */
 const WORKFLOW = '.github/workflows/ci.yml';
@@ -208,7 +209,11 @@ console.log(
 // The tests that each job's shards run, in the groups and the order in which Playwright splits them,
 // as CI selects them: without the production build, which a job of its own runs. The browser job's
 // shards leave out the tests that run alone, the heavy tests and S6's, which have jobs of their own.
-const listEnv = { CI: '1', [PRODUCTION_PAGES_SWITCH]: 'skip' };
+const listEnv = {
+	CI: '1',
+	[PRODUCTION_PAGES_SWITCH]: 'skip',
+	NODE_OPTIONS: playwrightNodeOptions(),
+};
 const listGroups = (filter: string[], shardTotal: number) =>
 	parseTestGroups(
 		run(

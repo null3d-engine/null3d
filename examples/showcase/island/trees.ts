@@ -1,9 +1,9 @@
 // The island's trees: tall cypresses on the upper slopes and along the lanes, wide umbrella pines by
 // the coast, low olives in groves and holm oaks in the forest, each where the town plan puts it, with
-// oleanders along the lanes. The vegetation add-on's plant core grows the pines, olives, oaks and
-// oleanders by species id in the job workers. They draw as its stand-ins until their species land:
-// near copies as meshes whose levels thin with distance, far ones as the core's far cards, so the
-// whole forest fits one view. The cypresses are the island's own solid spires.
+// oleanders along the lanes. The pines, olives, oaks and oleanders are models built by script in
+// Blender (`models.ts`): near copies draw as meshes whose levels thin with distance and sway in the
+// wind, and far ones hand over to the models' own cards, baked from the plant, so the whole forest
+// fits one view. The cypresses are the island's own solid spires.
 import {
 	type Camera,
 	type InstanceBatch,
@@ -11,17 +11,14 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
-import { createGrass, type PlantMaterial, setWindLayer } from '@null3d/vegetation';
+import { createGrass } from '@null3d/grass';
+import { handOverToCards } from '@null3d/impostors';
 import { createWind } from '@null3d/wind';
-import { type PlantSpot, plantSpecies } from '../../lib/plants';
+import { type Stand, type SwayLook, standPart, swayingPart } from '../../lib/blender-models';
 import { Noise } from '../../lib/procedural';
-import {
-	ISLAND_HOLM_OAK,
-	ISLAND_OLEANDER,
-	ISLAND_OLIVE,
-	ISLAND_STONE_PINE,
-} from '../../lib/stand-ins';
+import { createSway } from '../../lib/sway';
 import { cypress, finish } from './kit';
+import { loadPlants, type Species } from './models';
 import {
 	CYPRESS,
 	FILL_SPOTS,
@@ -63,40 +60,35 @@ export const CASTER_LAYER = 1 << 2;
 /** How far the far canopy draws, in meters: past the whole island from any view. */
 const FILL_REACH = 6000;
 
-/** The seeds that grow the trees and the shrubs. */
-const TREE_SEED = 17;
-const SHRUB_SEED = 23;
+/** Each planted kind's number in the plan, and the model that stands it. */
+const KINDS: readonly { readonly kind: number; readonly species: Species }[] = [
+	// A tall bare red trunk under a wide flat dark crown of needles.
+	{ kind: UMBRELLA, species: 'stone-pine' },
+	// A short gnarled trunk under fine silver-green leaves.
+	{ kind: OLIVE, species: 'olive' },
+	// A round dark crown, full to the ground, for the forest and the square's shade.
+	{ kind: OAK, species: 'holm-oak' },
+];
 
 /**
- * Each planted kind's number in the plan, its species id, and the size and colors of its stand-in.
- * A copy's scale multiplies the stand-in's height.
+ * The distance at which a tree and a shrub hand over from their meshes to their cards, in meters
+ * at each preset. A tree's coarsest level switches in at about 90 m, so the cards take over once a
+ * crown is a few dozen pixels across.
  */
-const KINDS = [
-	{
-		kind: UMBRELLA,
-		// A tall bare red trunk under a wide flat dark crown of needles.
-		id: ISLAND_STONE_PINE.id,
-		standIn: ISLAND_STONE_PINE.standIn,
-	},
-	{
-		kind: OLIVE,
-		// A short gnarled trunk under fine silver-green leaves.
-		id: ISLAND_OLIVE.id,
-		standIn: ISLAND_OLIVE.standIn,
-	},
-	{
-		kind: OAK,
-		// A round dark crown, full to the ground, for the forest and the square's shade.
-		id: ISLAND_HOLM_OAK.id,
-		standIn: ISLAND_HOLM_OAK.standIn,
-	},
-] as const;
+const TREE_CARDS: Record<QualityPreset, number> = { low: 150, medium: 200, high: 260, ultra: 340 };
+const SHRUB_CARDS: Record<QualityPreset, number> = { low: 40, medium: 55, high: 70, ultra: 90 };
 
-/** The lanes' shrubs: low rounded oleanders. */
-const SHRUB = {
-	id: ISLAND_OLEANDER.id,
-	standIn: ISLAND_OLEANDER.standIn,
-} as const;
+/**
+ * How far each part's freest tips move in a wind of one meter a second, in meters, how stiff it is
+ * near its root, and how far its leaves flutter. The wood and the leaves share the bend, so the
+ * leaves stay on their twigs, and the leaves flutter on top.
+ */
+const SWAY: Record<Species, SwayLook> = {
+	'stone-pine': { sway: 0.025, stiffness: 2, rustle: 0.03 },
+	olive: { sway: 0.02, stiffness: 2, rustle: 0.03 },
+	'holm-oak': { sway: 0.016, stiffness: 2, rustle: 0.02 },
+	oleander: { sway: 0.015, stiffness: 1.5, rustle: 0.02 },
+};
 
 /** A cypress's foliage: upward sprays of darker and paler green, near white, which its colors tint. */
 function spireMap({ textures }: SketchContext) {
@@ -133,16 +125,6 @@ function fill(batch: InstanceBatch, spots: readonly TreeSpot[]): void {
 	});
 	batch.markDirty();
 }
-
-/** A plan spot as a copy of variant 0 of its species. */
-const copyOf = (spot: TreeSpot): PlantSpot => ({
-	x: spot.x,
-	y: spot.y,
-	z: spot.z,
-	turn: spot.turn,
-	scale: spot.scale,
-	variant: 0,
-});
 
 /**
  * Places the cypresses, which need no species assets: solid spires that look the same from every
@@ -205,35 +187,53 @@ export async function createTrees(
 	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]).filter((spot) => !onWall(spot.x, spot.z));
 	const fills = standing(FILL_SPOTS, TREE_SHARE[preset]);
 	const wind = createWind(ctx, { camera, box: WIND_BOX, grid: WIND_GRID });
-	// Each kind's kept trees and its far canopy are copies of one species: the core draws the near
-	// ones as meshes and hands every copy over to its far card with distance.
-	const kinds = KINDS.map(({ kind, id, standIn }) =>
-		plantSpecies(ctx, {
-			id,
-			standIn,
-			seed: TREE_SEED,
-			spots: [...kept, ...fills].filter((spot) => spot.kind === kind).map(copyOf),
-			wind: wind.field,
-			far: true,
-		}),
-	);
+	const sway = createSway(ctx, { wind });
+	const plants = await loadPlants(ctx);
+	/**
+	 * Stands one species: its wood and leaves as near meshes that sway, and its card for every copy
+	 * past the hand-over distance.
+	 */
+	const plant = (species: Species, stands: readonly Stand[], handOver: number) => {
+		if (stands.length === 0) return;
+		const { wood, leaves, card } = plants[species];
+		// The wood bends with its leaves but has none to flutter, and its bark's own map gives its
+		// roughness.
+		const bark = { ...SWAY[species], rustle: 0, roughness: 1 };
+		const cards = standPart(ctx, card, stands, card.material);
+		// A card stands in its plant's own bound, so the hand-over's reach for the card's corners,
+		// which the batch's small file scale makes nearly zero, adds nothing.
+		handOverToCards(
+			standPart(ctx, wood, stands, swayingPart(sway, wood, bark, false)),
+			cards,
+			handOver,
+		);
+		handOverToCards(
+			standPart(ctx, leaves, stands, swayingPart(sway, leaves, SWAY[species], true)),
+			cards,
+			handOver,
+		);
+	};
+	// Each kind's kept trees and its far canopy are copies of one model, which hands every copy over
+	// to its card with distance.
+	for (const { kind, species } of KINDS)
+		plant(
+			species,
+			[...kept, ...fills]
+				.filter((spot) => spot.kind === kind)
+				.map((spot) => ({ ...spot, yaw: spot.turn, size: spot.scale })),
+			TREE_CARDS[preset],
+		);
 	// A shrub's turn comes from its place in the plan, since the plan gives it none.
-	const shrubs = plantSpecies(ctx, {
-		id: SHRUB.id,
-		standIn: SHRUB.standIn,
-		seed: SHRUB_SEED,
-		spots: standing(SHRUBS, TREE_SHARE[preset]).map((spot, k) => ({
+	plant(
+		'oleander',
+		standing(SHRUBS, TREE_SHARE[preset]).map((spot, k) => ({
 			x: spot.x,
 			y: spot.y,
 			z: spot.z,
-			turn: Math.imul(k + 1, 2654435761) / 683565275,
-			scale: spot.scale,
-			variant: 0,
+			yaw: Math.imul(k + 1, 2654435761) / 683565275,
+			size: spot.scale,
 		})),
-		wind: wind.field,
-	});
-	const swaying: PlantMaterial[] = (await Promise.all([...kinds, shrubs])).flatMap(
-		(planted) => planted.materials,
+		SHRUB_CARDS[preset],
 	);
 	const lawns = await Promise.all(
 		parkLawns().map((lawn, k) =>
@@ -262,7 +262,7 @@ export async function createTrees(
 		update() {
 			// The field's box follows the camera, and a gust fades, so it steps every frame.
 			wind.update();
-			setWindLayer(swaying, wind.field);
+			sway.update();
 			for (const lawn of lawns) lawn.setWindLayer(wind.field);
 		},
 	};

@@ -12,6 +12,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
 import { PUBLIC_ENTRIES } from '../../packages/cli/src/public-entries.js';
+import { packagesInUse } from './vegetation-switch';
 import { filesBelow } from './walk';
 
 // The engine's entry points that an add-on may import: one list, which the command-line tool's
@@ -83,7 +84,7 @@ export function packageFolders(root: string): Map<string, PackageFolder> {
 	const result = new Map<string, PackageFolder>();
 	let folders: string[];
 	try {
-		folders = readdirSync(join(root, 'packages'));
+		folders = packagesInUse(readdirSync(join(root, 'packages')));
 	} catch {
 		return result;
 	}
@@ -178,7 +179,7 @@ interface Rules {
 export function addonImportProblems(root: string): { problems: string[]; files: number } {
 	const engineDir = join(root, 'packages/engine');
 	const examplesDir = join(root, 'examples');
-	const packages = readdirSync(join(root, 'packages')).sort();
+	const packages = packagesInUse(readdirSync(join(root, 'packages'))).sort();
 	const folders = packageFolders(root);
 	const rules = new Map<string, Rules>();
 	const add = (file: string, rule: keyof Rules) => {

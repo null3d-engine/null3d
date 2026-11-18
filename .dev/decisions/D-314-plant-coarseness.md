@@ -154,5 +154,5 @@ Rejected:
   the meshers.
 - `PlaceOptions.view` is a **`PlantView`** with `switchBias`.
 - `grow/envelope.ts` gains `plantSilhouette`, the outline of a dressed plant from its shoot rows.
-- `docs/api/vegetation.md` ("Simpler plants") and `skills/null3d-develop/references/api-quickref.md`
+- `packages/vegetation/docs/api.md` ("Simpler plants") and `skills/null3d-develop/references/api-quickref.md`
   describe the options.

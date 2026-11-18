@@ -1224,9 +1224,10 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * How objects and batches pick their meshes' levels of detail, from the next frame on. The call
 	 * values give the error in pixels under which a coarser level draws, 0 for none, and what the
-	 * shadow maps' views multiply it by. `fades` says whether two levels hand over in a fading band.
+	 * shadow maps' views multiply it by. `fades` says whether two levels hand over in a fading band,
+	 * and `governed` whether the frame-time governor raised the thresholds above the settings' own.
 	 */
-	setLevelQuality(fades: boolean): number;
+	setLevelQuality(fades: boolean, governed: boolean): number;
 	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights

@@ -7,19 +7,19 @@
 //        bun tools/plant-mesh-hash.ts --standins
 //
 // The species must be one of the registry's, and the season one of summer, autumn, winter or
-// blossom; the record's default when it is not given. `--standins` builds every demo page's stand-ins
-// with the page's own size, colours, seed and sparseness, so a change to the plant core can be proved
-// inert for the pages that draw stand-ins. Each build prints its hash with the commit and the dirty
+// blossom; the record's default when it is not given. `--standins` builds the plant core's fixed
+// guard set of stand-ins (tools/lib/plant-stand-ins.ts), each with its own size, colours, seed and
+// sparseness, so a change to the plant core can be proved inert for every stand-in it grows. Each build prints its hash with the commit and the dirty
 // flag, as every figure in the repository does, and the two builds' hashes must match.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { DEMO_SPARSENESS, PAGE_STAND_INS } from '../examples/lib/stand-ins.ts';
 import type { PlantAsset, ShootRows, SpeciesKitData } from '../packages/vegetation/src/asset.ts';
 import { isSpeciesId, loadSpecies, speciesIds } from '../packages/vegetation/src/core/registry.ts';
 import { standInSpecies } from '../packages/vegetation/src/core/stand-in.ts';
 import type { Season } from '../packages/vegetation/src/core/types.ts';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
+import { GUARD_SPARSENESS, GUARD_STAND_INS } from './lib/plant-stand-ins.ts';
 
 /** The repository's root, which the tool reads its provenance from. */
 const ROOT = join(import.meta.dirname, '..');
@@ -135,7 +135,7 @@ if (named === '--standins') {
 	}
 	const { commit, dirty } = provenance();
 	let deterministic = true;
-	for (const page of PAGE_STAND_INS) {
+	for (const page of GUARD_STAND_INS) {
 		for (const plant of page.plants) {
 			const module = standInSpecies(plant.id, {
 				variants: Math.max(1, page.variants ?? 1),
@@ -148,7 +148,7 @@ if (named === '--standins') {
 					seed: page.seed,
 					variant: 0,
 					near: true,
-					sparse: DEMO_SPARSENESS,
+					sparse: GUARD_SPARSENESS,
 					season: module.record.seasons.default,
 				});
 				return meshHash(kit, asset);
@@ -156,10 +156,10 @@ if (named === '--standins') {
 			const first = build();
 			const second = build();
 			console.log(
-				`${page.page} ${plant.id} seed ${page.seed} commit ${commit} dirty ${dirty} sha256 ${first.hash} vertices ${first.vertices} indices ${first.indices}`,
+				`${page.scene} ${plant.id} seed ${page.seed} commit ${commit} dirty ${dirty} sha256 ${first.hash} vertices ${first.vertices} indices ${first.indices}`,
 			);
 			if (first.hash !== second.hash) {
-				console.error(`${page.page} ${plant.id}: the two builds hashed differently`);
+				console.error(`${page.scene} ${plant.id}: the two builds hashed differently`);
 				deterministic = false;
 			}
 		}

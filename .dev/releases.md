@@ -7,9 +7,9 @@ This guide covers how a release is made. Every commit that reaches main, other t
 The first release is 0.1.0, as [Versions](#versions) says. Until then, no step below runs. To release, run the Release workflow from the Actions tab and pick a release type. The `commit` input is for a commit other than main's newest. One workflow makes the whole release, with no pull request and no GitHub App. It:
 
 1. Starts from main's newest commit, or from the main commit that its `commit` input names.
-2. Checks that the newest full CI run of that commit passed. That is main's own run after the push, or a run started by hand. A cancelled run proves nothing either way, so it does not count. A push to main cancels main's own run ([D-157](decisions/D-157-direct-pushes-to-main.md)), so main's newest commit seldom has a finished run. To release, start a run by hand with `gh workflow run ci.yml --ref main`, which no push cancels. When it passes, run the Release workflow with the commit it ran on.
+2. Checks that the newest full CI run of that commit passed. That is main's own run after the merge, or a run started by hand. A cancelled run proves nothing either way, so it does not count. A newer merge into main cancels main's own run ([D-379](decisions/D-379-one-pull-request-per-piece-of-work.md)), so main's newest commit may have no finished run. A pull request's run does not count: it tested GitHub's merge of the pull request into an older main. To release, start a run by hand with `gh workflow run ci.yml --ref main`, which no push cancels. When it passes, run the Release workflow with the commit it ran on.
 3. Runs `bun run release --apply`. This sets the version in every package manifest, the engine's `VERSION` export and each add-on's version constant, the Rust workspace and `Cargo.lock`. It adds the release's notes to `CHANGELOG.md`. The notes list every commit since the last release, up to that commit.
-4. Commits that as `chore(release): <version>` and pushes it to main. So main shows the version it last released, and its `CHANGELOG.md` holds every release. Landings may carry on while a release runs. The version numbers and the changelog section then land on the commit main holds at the end, which keeps main a straight line. The release itself still holds the commit it started from.
+4. Commits that as `chore(release): <version>` and pushes it to main. So main shows the version it last released, and its `CHANGELOG.md` holds every release. Pull requests may merge while a release runs. The version numbers and the changelog section then land on the commit main holds at the end, which keeps main a straight line. The release itself still holds the commit it started from.
 5. Builds the shader modules and writes every generated file, which git on main does not keep ([D-105](decisions/D-105-generated-files-out-of-git.md)). It commits them in full on top of the release commit, and tags that commit with the plain version, such as `0.1.0`. Only the tag points to that commit. A commit that reached main after the release started is not in the release, so the next release's notes list it. The Claude Code plugin, `bunx skills add` and the docs on GitHub read a release from its tag, so they get the skills copy and the generated pages.
 6. Publishes a GitHub Release from the tag. Its text is the changelog section for that version, and it stops at GitHub's limit of 125,000 characters with a link to the release's `CHANGELOG.md`. Each skill's zip file is attached to it.
 7. Builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
@@ -54,7 +54,7 @@ The note under a page's title opens with its page's step and release, such as "R
 
 ## The npm packages
 
-Thirteen packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/pack.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+Thirteen packages are public. The vegetation add-on and its textures package are private: they stay in the repository for work on the add-on, and no release packs, builds or publishes them ([D-378](decisions/D-378-vegetation-add-on-unpublished.md)). Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/pack.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
 
 | Package | What its tarball holds | What its pack step makes |
 | --- | --- | --- |
@@ -64,11 +64,10 @@ Thirteen packages are public. Each one's `prepack` script runs `bun tools/build-
 | `@null3d/geometry` | `lib/`, and `THIRD-PARTY-NOTICES.txt` with the three.js and earcut licences, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/impostors` | `lib/`, with its card shader compiled into a module and the sets of its builds beside it, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/particles` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/grass` | `lib/`, with its blade material and its blade-list pass compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file. `lib/hash.js` is the entry of `@null3d/grass/hash` | The engine's, the Vite plugin's and the wind add-on's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/terrain` | `lib/`, with its surface shader compiled into `terrain.wgsl.js` and the sets of its builds beside it, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/splats` | `lib/`, with its two shaders compiled into modules and their build sets beside them, the task module that the job workers import, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
-| `@null3d/vegetation` | `lib/`, with its plant shader compiled into a module and the sets of its builds beside it, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/water` | `lib/`, with its surface and underwater shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
-| `@null3d/vegetation-textures` | `textures/<species>/` for each species: its KTX2 files of both sets, its manifest and the module that names the files, and no `source.json`. No code: the plant texture tool writes the files, and git keeps them | Nothing |
 | `@null3d/wind` | `lib/`, with its field, grid and projection shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/three-compat` | `lib/`, with its two tone curves and three outline passes compiled into modules and the sets of their builds beside them, no raw `.wgsl` file, and `THIRD-PARTY-NOTICES.txt` with the three.js licence, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
@@ -77,7 +76,7 @@ Thirteen packages are public. Each one's `prepack` script runs `bun tools/build-
 
 Each package's `exports` give its TypeScript source under the `null3d-source` condition, and its built files under `types` and `default`. Inside the repository, the tsconfig files set the condition in `customConditions`. The Vite configs set it with `sourceResolve` from `tools/lib/source-condition.ts`. `bun run test` passes `--conditions=null3d-source` to Bun's test runner. The test pages, the benchmark pages, the unit tests and the type checks therefore read the source, with no build step and no stale copy. A project that installs a package from npm sets no such condition, so it gets `lib/`.
 
-Vite loads its configs with Node, and Playwright runs in Node, so they cannot take the condition. The Vite configs and the Playwright tests therefore import the Vite plugin's source by its path. The root `package.json` sets `"type": "module"`, so Vite loads the root config, and the plugin source that it bundles, as an ES module. As CommonJS, the plugin's import of `magic-string` fails.
+Playwright runs in Node, and the browser tests start it with `--conditions=null3d-source` in `NODE_OPTIONS` (`playwrightNodeOptions` in `tools/lib/source-condition.ts`). A test that imports one package's source, which imports another package by name, then reads that package's source too. Vite loads its configs with Node and no condition, so the Vite configs import the Vite plugin's source by its path. The root `package.json` sets `"type": "module"`, so Vite loads the root config, and the plugin source that it bundles, as an ES module. As CommonJS, the plugin's import of `magic-string` fails.
 
 The pack tool deletes each `lib/` after it packs. So no local check can pass on built files that CI does not have.
 
@@ -136,7 +135,7 @@ In the dev server, Vite keeps the engine out of its prebundled copy of the contr
 
 ### The first version of a new package
 
-This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/vegetation`, `@null3d/vegetation-textures`, `@null3d/water` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
+This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/grass`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/water` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
@@ -148,12 +147,11 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
    npm publish target/packages/null3d-vite-plugin-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-controls-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-geometry-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-grass-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-impostors-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-particles-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-terrain-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-splats-0.0.0.tgz --access public --provenance=false
-   npm publish target/packages/null3d-vegetation-0.0.0.tgz --access public --provenance=false
-   npm publish target/packages/null3d-vegetation-textures-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-three-compat-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-water-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-wind-0.0.0.tgz --access public --provenance=false

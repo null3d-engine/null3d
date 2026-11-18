@@ -146,11 +146,13 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Creek',
 		scene: 'A stream in a grassy valley',
 		summary:
-			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with a valley dressed by the vegetation add-on that bends in the wind: trees, ferns, shrubs and grass on the banks and the slopes, mossy rocks and leaves that ride the air, under the sky of the time of day.',
+			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, in a valley of oaks, beeches and birches with ferns, hostas, shrubs and wildflowers below them and a cave in the far bank. Trees, plants and grass sway in one wind, leaves fall and float down the stream, under the sky of the time of day.',
+		assets:
+			'Shows how a scene loads its trees, plants and cave as optimized glTF models with levels of detail, built by script in Blender.',
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,
-		// A software GPU draws the scene with its bloom and the whole valley of grown plants, which
+		// A software GPU draws the scene with its bloom and the whole valley of plants, which
 		// takes it well past a minute on a loaded runner, past three on an emulated Firefox GPU, and
 		// past five while the machine runs other work.
 		timeoutSeconds: 600,
@@ -163,7 +165,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Island',
 		scene: 'A Mediterranean town on a hilly island in the open sea',
 		summary:
-			'A hilly island alone in the sea on a summer morning, with cypress, umbrella pine and olive forest grown in code, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
+			'A hilly island alone in the sea on a summer morning, with forests of cypress, umbrella pine, olive and holm oak, oleanders along its lanes, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
+		assets:
+			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards.',
 		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
@@ -478,7 +482,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Atmosphere',
 		scene: 'Valley of ridges',
 		summary:
-			"A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out. The groves on the valley floor are the vegetation add-on's conifers, grown at three levels and swaying in the wind add-on's field.",
+			"A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out. Pines made in code at four levels of detail stand in groves on the valley floor, and sway in the wind add-on's field.",
 		hold: 2,
 		// The held frame builds 40 pipelines, and the physical sky's clouds draw through them, so a
 		// software GPU's capture of the frame runs past a minute on a runner with few cores. The
@@ -493,7 +497,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Contact shadows',
 		scene: 'Stone garden',
 		summary:
-			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of meadow grass and pines from the vegetation add-on, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass and pines that sway in the wind, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
 		controls: [{ keys: ['Move', 'Tap'], does: 'Swing the sun around the garden' }],
 		hold: 1,
 		// The garden draws 640 pebbles' contact shadows in one batch, and a software GPU needs past a
@@ -598,10 +602,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Light shafts and lit fog',
 		scene: 'Pine wood at sunset',
 		summary:
-			"A path through a pine wood in haze, its conifers grown by the vegetation add-on and swaying in the wind add-on's field. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+			"A path through a pine wood in haze. Its pines are made in code and sway in the wind add-on's field. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
 		hold: 2,
-		// The wood and its cards come from the vegetation add-on, and the software GPU compiles their
-		// builds and draws the fog slowly.
+		// The software GPU compiles the wood's swaying materials and draws the fog slowly.
 		timeoutSeconds: 300,
 	},
 	{
@@ -885,35 +888,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 180,
 	},
 	{
-		name: 'vegetation',
-		group: 'Building scenes',
-		sketch: new URL('./vegetation/sketch.ts', import.meta.url),
-		code: 'vegetation/',
-		title: 'Vegetation',
-		scene: 'A meadow of every species',
-		summary:
-			"The vegetation add-on's meadow: every species the catalogue registers, each grown from its own record through the add-on's public functions and planted across a field. The pedunculate oak stands there today with the species that follow it, so the page fills as records land. Drag to turn round the meadow and use the wheel to step in, and press R to grow it all again from another seed.",
-		controls: [{ keys: ['R'], does: 'Grow the meadow again from another seed' }],
-		hold: 2,
-		// The meadow grows every registered species at medium detail with shadows, and its held
-		// capture needs more than 240 s on CI's software GPU. The wait takes the 600 s ceiling that
-		// the island and the timed script use.
-		timeoutSeconds: 600,
-	},
-	{
 		name: 'vegetation-wind',
 		group: 'Building scenes',
 		sketch: new URL('./vegetation-wind/sketch.ts', import.meta.url),
 		code: 'vegetation-wind/',
 		title: 'Plants in wind',
-		scene: 'A meadow in a breeze',
+		scene: 'A grove in a breeze',
 		summary:
-			"The same plants under the wind add-on's field: set the wind's strength and its bearing on the sliders, and the crowns lift and settle as it passes. The Hold button stops the air, so a still frame can be compared with a moving one.",
+			"A grove of oaks, birches and firs, with bushes, ferns and grass at its feet, all made in code and swaying in the wind add-on's field. Each plant's material reads the air at its root, so trunks stay firm while crowns, fronds and blades bend and flutter. Set the wind's strength and its bearing on the sliders. The Hold button stops the air, so a still frame can be compared with a moving one.",
 		controls: [],
 		hold: 2,
-		// The same meadow under the wind's field costs at least as much as the still meadow, and its
-		// held capture needs more than 240 s on CI's software GPU.
-		timeoutSeconds: 600,
+		// The grove's crowns and grass take CI's software GPU close to a minute to draw on WebGPU and
+		// WebGL2, so the held capture waits longer than the default.
+		timeoutSeconds: 300,
 	},
 	{
 		name: 'forest',
