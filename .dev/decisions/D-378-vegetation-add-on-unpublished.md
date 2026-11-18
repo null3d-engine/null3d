@@ -62,19 +62,18 @@ draw as stand-ins for most species, which look worse than either.
   ([D-363](D-363-owner-rebuilds-creek.md)).
 - The GPU grass moves to `@null3d/grass`, a published foundation add-on. Keeping it in the add-on
   was rejected: the demos draw it, and a reader could not install what the demo shows. The
-  package takes no code from the add-on, so the split runs along three seams:
-  - A blade's shape reaches the grass as a width function and a fold (`GrassBladeShape`), not as
-    the species record's blade. The record's width (`bladeWidth`) closes a pointed tip with the
-    plant core's exact power function, which an exponential and a logarithm of its own make. Moving
-    it would take the plant core's maths into the grass, or make plants differ between script
-    engines. `grassCover` stays in the add-on, since it reads a species record, and wraps
-    `bladeWidth` in the shape, so the cover's blades keep the same widths to the bit.
+  package takes no code from the add-on. These are the three seams of the split.
+  - The grass takes a blade's shape as a width function and a fold (`GrassBladeShape`). The
+    species record's blade stays in the add-on. The record's width (`bladeWidth`) closes a
+    pointed tip with the plant core's exact power function. Moving it would take the plant core's maths into the grass,
+    or make plants differ between script engines. `grassCover` reads a species record, so it
+    stays in the add-on. It wraps `bladeWidth` in the shape, so the cover's widths keep their bits.
   - The integer hash (`pcg`, `hashAt`, `unitAt`) moves to the grass, and the add-on's own hash
-    module re-exports it. It lives on its own entry, `@null3d/grass/hash`, which imports nothing:
-    the plant generator's job-worker task holds no engine import, and the grass's main entry
+    module re-exports it. It lives on its own entry, `@null3d/grass/hash`, which imports nothing.
+    The plant generator's job-worker task holds no engine import, and the grass's main entry
     imports the engine.
   - The sway distance of each preset (`PLANT_SWAY_DISTANCE`, `swayDistanceFor`) moves to the grass,
-    which a page without plants needs, and the add-on re-exports it. `setWindLayer` for plant
+    since a page without plants needs it. The add-on re-exports it. `setWindLayer` for plant
     materials stays in the add-on.
 
 ## Consequences
