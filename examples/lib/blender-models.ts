@@ -1,6 +1,6 @@
 // The parts of the showcase scenes' Blender models (tools/samples/blender/), as a scene draws them.
 // A part is a node of a loaded file with its mesh, its material, its place in the file and the
-// textures that its material samples, which the wind material takes in the file's material's place.
+// textures that its material samples, which the wind material draws in the file's material's place.
 // A scene stands each part as one instance batch over its copies.
 import {
 	type InstanceBatch,
@@ -10,60 +10,19 @@ import {
 	type PrefabNode,
 	quat,
 	type SketchContext,
-	type Texture,
 	vec3,
 } from '@null3d/engine';
-import type { ModelFile } from './model-files';
 import type { Sway } from './sway';
 
-/** The textures that a material of the scripts samples, by the slot each fills. */
-export interface Maps {
-	/** The base color, with the cutout's alpha for a card. */
-	readonly map?: Texture;
-	/** Occlusion, roughness and metalness in red, green and blue. */
-	readonly orm?: Texture;
-	readonly normal?: Texture;
-}
-
 /** A part of a model: its mesh, its material, its place within its file and its textures. */
-export type Part = PrefabNode & {
-	readonly mesh: MeshGeometry;
-	readonly material: Material;
-	readonly maps: Maps;
-};
+export type Part = PrefabNode & { readonly mesh: MeshGeometry; readonly material: Material };
 
-/**
- * The textures of each part of a loaded file, by the part's name. The loader makes a file's
- * textures in the order that its materials first sample them: each material's base color, then its
- * metal and roughness texture, then its normal map, and an occlusion texture that is the metal and
- * roughness texture's own image makes none. `file` lists each material's slots and parts in the
- * file's order. A part's material is a variant of the file's own, made for its mesh, so the parts'
- * names, not the materials, find each part's textures.
- */
-function mapsOf(prefab: Prefab, file: ModelFile): Map<string, Maps> {
-	const out = new Map<string, Maps>();
-	let next = 0;
-	for (const material of file.materials) {
-		const maps: Record<string, Texture | undefined> = {};
-		for (const slot of material.slots) maps[slot] = prefab.textures[next++];
-		for (const part of material.parts) out.set(part, maps);
-	}
-	if (next !== prefab.textures.length)
-		throw new Error(
-			`${prefab.url} has ${prefab.textures.length} textures, and its materials name ${next}`,
-		);
-	return out;
-}
-
-/** The named parts of a loaded file, with the textures that `file` gives their materials. */
-export function partsOf(prefab: Prefab, file: ModelFile): (name: string) => Part {
-	const maps = mapsOf(prefab, file);
+/** The named parts of a loaded file. */
+export function partsOf(prefab: Prefab): (name: string) => Part {
 	return (name) => {
 		const node = prefab.find(name);
-		const textures = maps.get(name);
-		if (!node?.mesh || !node.material || !textures)
-			throw new Error(`${prefab.url} has no part named ${name}`);
-		return { ...node, mesh: node.mesh, material: node.material, maps: textures };
+		if (!node?.mesh || !node.material) throw new Error(`${prefab.url} has no part named ${name}`);
+		return { ...node, mesh: node.mesh, material: node.material };
 	};
 }
 
@@ -148,8 +107,9 @@ export interface SwayLook {
 export function swayingPart(sway: Sway, part: Part, look: SwayLook, cutout: boolean): Material {
 	return sway.material({
 		...(part.maps.map && { map: part.maps.map }),
-		...(part.maps.normal && { normalMap: part.maps.normal }),
-		...(part.maps.orm && { ormMap: part.maps.orm }),
+		...(part.maps.normalMap && { normalMap: part.maps.normalMap }),
+		// The scripts pack the occlusion with the metalness and roughness, in one texture.
+		...(part.maps.metalnessRoughnessMap && { ormMap: part.maps.metalnessRoughnessMap }),
 		...(cutout && { cutout: true }),
 		weight: 'uv1',
 		...look,

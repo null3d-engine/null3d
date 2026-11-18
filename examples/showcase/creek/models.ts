@@ -7,7 +7,6 @@
 // the wind material reads.
 import type { SketchContext } from '@null3d/engine';
 import { type Part, partsOf } from '../../lib/blender-models';
-import { CREEK_FILES as FILES } from '../../lib/model-files';
 import { sampleUrl } from '../../lib/samples';
 
 export const TREE_KINDS = ['oak', 'beech', 'birch'] as const;
@@ -28,8 +27,8 @@ export async function loadModels({ assets }: SketchContext): Promise<Models> {
 		assets.loadGltf(sampleUrl('sources/showcase/creek/plants.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek/cave.glb')),
 	]);
-	const tree = partsOf(trees, FILES.trees);
-	const plant = partsOf(plants, FILES.plants);
+	const tree = partsOf(trees);
+	const plant = partsOf(plants);
 	return {
 		trees: Object.fromEntries(
 			TREE_KINDS.map((kind) => [
@@ -38,6 +37,6 @@ export async function loadModels({ assets }: SketchContext): Promise<Models> {
 			]),
 		) as Models['trees'],
 		plants: Object.fromEntries(PLANT_KINDS.map((kind) => [kind, plant(kind)])) as Models['plants'],
-		cave: partsOf(cave, FILES.cave)('cave'),
+		cave: partsOf(cave)('cave'),
 	};
 }
