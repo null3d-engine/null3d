@@ -28,7 +28,6 @@ export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/splats/src/index.ts', source: 'packages/splats/src' },
 	{ entry: 'packages/impostors/src/index.ts', source: 'packages/impostors/src' },
 	{ entry: 'packages/terrain/src/index.ts', source: 'packages/terrain/src' },
-	{ entry: 'packages/vegetation/src/index.ts', source: 'packages/vegetation/src' },
 	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },
 	{ entry: 'packages/grass/src/index.ts', source: 'packages/grass/src' },
 	{ entry: 'packages/grass/src/hash.ts', source: 'packages/grass/src' },

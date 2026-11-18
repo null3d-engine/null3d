@@ -70,16 +70,11 @@ jobs:
     # The type check and the unit tests read the shader modules, which the build job makes.
     needs: build
     runs-on: ubuntu-latest
-    # The unit suite is this job's longest step and it has grown: eight minutes or more on the
-    # milestone branch, where the same job took 4.4 minutes on 4fb343293. Ten minutes cut the
-    # suite off mid-run and cancelled the job. The plant suite's own group then reached fifteen to
-    # sixteen minutes on the runner, which with this job's four minutes of doc checks passed twenty
-    # and cancelled a push. The plant package's heaviest folder takes a group of its own now, but
-    # the run's floor is its total time over its two lanes, not its longest group, so the split
-    # alone leaves the step at the limit's edge. The slowest runner measured then took 22m20s of
-    # test time beside four minutes of doc checks, a minute inside twenty-five. The limit gives
-    # that runner room for a slower day, and a suite whose work grows again is a cut to make in the
-    # work rather than a ceiling to keep raising: a red or hanging job still ends.
+    # The unit suite is this job's longest step. The slowest runner measured took 22m20s of test
+    # time beside four minutes of doc checks, a minute inside twenty-five, when the suite held the
+    # vegetation add-on's groups; those run by hand now, with `bun run test:vegetation` (D-378).
+    # The limit gives a slow runner room for a slower day, and a suite whose work grows again is a
+    # cut to make in the work rather than a ceiling to keep raising: a red or hanging job still ends.
     timeout-minutes: 30
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"

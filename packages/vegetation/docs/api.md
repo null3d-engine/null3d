@@ -8,7 +8,7 @@ summary: "The plant core that grows each species from its own record and a seed,
 
 # Vegetation (@null3d/vegetation)
 
-> Not published yet. No release has the vegetation add-on, so a project cannot install it, and coding agents must not use it. The page describes the add-on as it stands. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the wind records that sway each branch and leaf, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), the crown rosette that palms and tree ferns use (one stem crowned by a spiral of pinnate fronds, drawn as separate leaflets along each rachis), the directed crown of fronds (one trunk to a single growing point, with each frond a piece of the record placed whole at a ranked socket), the directed culm clump (jointed culms from one foot, each branching joint a ranked socket that carries a branch pair from the record's pieces), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the level distances and the near pool; the far cards are built, and the page documents them below. This page covers the plant core's records and stages, the stand-ins, the scatter, and the floating leaves that ride the wind. The GPU grass is its own package, [`@null3d/grass`](grass.md).
+> Not published yet. No release has the vegetation add-on, so a project cannot install it, and coding agents must not use it. The page describes the add-on as it stands. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the wind records that sway each branch and leaf, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), the crown rosette that palms and tree ferns use (one stem crowned by a spiral of pinnate fronds, drawn as separate leaflets along each rachis), the directed crown of fronds (one trunk to a single growing point, with each frond a piece of the record placed whole at a ranked socket), the directed culm clump (jointed culms from one foot, each branching joint a ranked socket that carries a branch pair from the record's pieces), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the level distances and the near pool; the far cards are built, and the page documents them below. This page covers the plant core's records and stages, the stand-ins, the scatter, and the floating leaves that ride the wind. The GPU grass is its own package, [`@null3d/grass`](../../../docs/api/grass.md).
 
 ```mermaid
 flowchart LR
@@ -76,7 +76,7 @@ export default defineSketch(async (ctx) => {
 
 ## The plant core
 
-A species is a folder of its own with a record and an entry. The record is a `Species`. It names a growth model and that model's numbers. It also gives the outline that the plant fills, its shoots, leaves, bark, seasons, wind and detail levels, and its own budget. The registry lists the folders, and [Vegetation species](vegetation-species.md) lists every species from its record.
+A species is a folder of its own with a record and an entry. The record is a `Species`. It names a growth model and that model's numbers. It also gives the outline that the plant fills, its shoots, leaves, bark, seasons, wind and detail levels, and its own budget. The registry lists the folders, and [Vegetation species](species.md) lists every species from its record.
 
 ```ts
 import { checkSpecies, isSpeciesId, loadSpecies, speciesIds } from '@null3d/vegetation';
@@ -112,7 +112,7 @@ To keep results across visits, give `prepareSpecies` a store of bytes as its `ca
 `plantMaterials(ctx, kit, options)` makes one material for each part of a species: `wood`, `shoots`, `cards`, `foliage` (merged fronds, blades and rosette leaves) and `extras` (cones, fruit, flowers, catkins, thorns). They are five roles of one shader, which reads the species' textures and a small data texture of its constants and wind records.
 
 - **Leaves show their record's colors.** A leaf lit from the front shows its record's `reflectance`, its lower face its `reflectanceBack`, and a leaf with the sun behind it shows its `transmittance`. Each face draws its own texture layer, divided by that layer's mean and scaled by the record's color, so the picture keeps its veins and spots and the record sets its average. A card bakes its leaf texels in the same texture's color, so it shows the same reflectance. A species with no leaf texture samples a white texel, so its cards bake white too and the record alone gives their color. Change a species' color in its record, not in its textures.
-- **The sky's light reaches a leaf through its crown.** A shoot's sky visibility and bent normal from its crown light the sky's light alone, and its visibility joins screen-space ambient occlusion by the smaller of the two, so a crown darkens once ([Surface functions](../shaders/surface-functions.md#occlusion-counted-once)).
+- **The sky's light reaches a leaf through its crown.** A shoot's sky visibility and bent normal from its crown light the sky's light alone, and its visibility joins screen-space ambient occlusion by the smaller of the two, so a crown darkens once ([Surface functions](../../../docs/shaders/surface-functions.md#occlusion-counted-once)).
 - **Edges cut solid.** A leaf's or card's coverage is sharpened to a one-pixel edge at the cutoff, so a blade draws whole to its cut edge. A card drawn smaller than its texels cuts lower. The card bake measures how fast each card's cover thins as the texture's mip levels average it, so a far card keeps the cover of its leaves. A card seen at a slant reads no coarser mip level than the one at which its species' smallest leaf cell still holds four texels a side, so it never averages in the cells beside its own.
 - **Bark relief follows the branch.** The bark's tangent frame comes from its own texture coordinates, so its ridges run along every limb, whichever way the limb points.
 - **Wind.** Give `options.wind` the wind add-on's field, and call `setWindLayer(materials, field)` in each frame. Every part sways, and leaves and cards flutter. `options.swayDistance` stops the sway past that distance, so far shadows stay cached.
@@ -266,7 +266,7 @@ A large scene need not place every plant at once. `EcoScatter` takes tiles with 
 
 ## Grass on the ground
 
-The GPU grass is a package of its own, [`@null3d/grass`](grass.md): `createGrass` draws tufts of bent blades over a ground, on both GPU paths, with near shadows. This add-on re-exports it, and `swayDistanceFor` and `PLANT_SWAY_DISTANCE` with it. `grassCover(record)` gives a grass species' blade shape and color, which `createGrass` takes, so the cover meets a plant of that species with the same blade and the same green.
+The GPU grass is a package of its own, [`@null3d/grass`](../../../docs/api/grass.md): `createGrass` draws tufts of bent blades over a ground, on both GPU paths, with near shadows. This add-on re-exports it, and `swayDistanceFor` and `PLANT_SWAY_DISTANCE` with it. `grassCover(record)` gives a grass species' blade shape and color, which `createGrass` takes, so the cover meets a plant of that species with the same blade and the same green.
 
 ## Floating and falling leaves
 
@@ -307,9 +307,9 @@ Reading Creek's 160 m valley into the ground maps and placing its species takes 
 
 ## Far cards and the hand-over
 
-`placePlants` draws a species' far cards past the distance where a plant spans a few pixels, when the page passes the variants' far bakes as its `far` option. `bakeFarPlant(kit, asset)` bakes a variant's two impostor atlases in a job worker, for the cards of the [impostors add-on](impostors.md).
+`placePlants` draws a species' far cards past the distance where a plant spans a few pixels, when the page passes the variants' far bakes as its `far` option. `bakeFarPlant(kit, asset)` bakes a variant's two impostor atlases in a job worker, for the cards of the [impostors add-on](../../../docs/api/impostors.md).
 
-The impostors add-on's `handOverToCards(meshes, cards, switchDistance, start)` hands a batch of near meshes over to its cards, and this add-on exports it under the same name ([Impostors](impostors.md#hand-the-near-meshes-over-to-the-cards)). Within one plant, `placePlants` hands the levels over in the same way. Each level draws on past the next level's start until the next stands at full coverage, and only then thins out. The mesh and the card, like two levels, are different sources, so their dither phases differ, and no pixel may drop out of both.
+The impostors add-on's `handOverToCards(meshes, cards, switchDistance, start)` hands a batch of near meshes over to its cards, and this add-on exports it under the same name ([Impostors](../../../docs/api/impostors.md#hand-the-near-meshes-over-to-the-cards)). Within one plant, `placePlants` hands the levels over in the same way. Each level draws on past the next level's start until the next stands at full coverage, and only then thins out. The mesh and the card, like two levels, are different sources, so their dither phases differ, and no pixel may drop out of both.
 
 ## Compared with three.js
 
@@ -323,12 +323,12 @@ The impostors add-on's `handOverToCards(meshes, cards, switchDistance, start)` h
 
 ## Related pages
 
-- [Levels of detail](../concepts/lod.md) for the error and distance rule that picks a level.
-- [Instances](../concepts/instances.md) for the copies of one plant.
-- [Terrain](terrain.md) for the height field that the ground maps read.
-- [Tasks](tasks.md) for work that runs in a job worker.
-- [Impostors](impostors.md) for the far cards.
+- [Levels of detail](../../../docs/concepts/lod.md) for the error and distance rule that picks a level.
+- [Instances](../../../docs/concepts/instances.md) for the copies of one plant.
+- [Terrain](../../../docs/api/terrain.md) for the height field that the ground maps read.
+- [Tasks](../../../docs/api/tasks.md) for work that runs in a job worker.
+- [Impostors](../../../docs/api/impostors.md) for the far cards.
 
 ## API reference
 
-[The API reference](reference/vegetation.md) lists every export, with its signature and its doc comment.
+Each export carries its doc comment in the add-on's source. No reference page is generated from them while the add-on is a work in progress.
