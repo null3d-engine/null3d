@@ -145,7 +145,7 @@ const OAKS = [
 	[-44, -2],
 ] as const;
 const BIRCHES = [
-	[9, 7],
+	[11, -1],
 	[-11, -12],
 	[22, -24],
 	[-24, -38],
@@ -182,7 +182,7 @@ export function plantStand(
 		...cluster(OAKS, 8, 2, [10, 14], leafy(0.82, 0.9, 0.62)),
 		...ring(260, 80, 330, [12, 20]),
 	];
-	const birches = cluster(BIRCHES, 18, 6, [11, 16], leafy(1.05, 0.98, 0.8));
+	const birches = cluster(BIRCHES, 18, 6, [9, 14], leafy(1.05, 0.98, 0.8));
 	const firs = [
 		...cluster(FIRS, 28, 9, [11, 23], leafy(0.85, 1, 0.85)),
 		...ring(900, 85, 340, [14, 24]),
