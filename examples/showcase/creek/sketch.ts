@@ -18,7 +18,7 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
-import { createGrass, swayDistanceFor } from '@null3d/vegetation';
+import { createGrass, swayDistanceFor } from '@null3d/grass';
 import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';

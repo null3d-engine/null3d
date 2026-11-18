@@ -61,10 +61,23 @@ draw as stand-ins for most species, which look worse than either.
   oleanders from a Blender script of its own. A new Creek replaces the present scene later
   ([D-363](D-363-owner-rebuilds-creek.md)).
 - The GPU grass moves to `@null3d/grass`, a published foundation add-on. Keeping it in the add-on
-  was rejected: the demos draw it, and a reader could not install what the demo shows.
+  was rejected: the demos draw it, and a reader could not install what the demo shows. The
+  package takes no code from the add-on. These are the three seams of the split.
+  - The grass takes a blade's shape as a width function and a fold (`GrassBladeShape`). The
+    species record's blade stays in the add-on. The record's width (`bladeWidth`) closes a
+    pointed tip with the plant core's exact power function. Moving it would take the plant core's maths into the grass,
+    or make plants differ between script engines. `grassCover` reads a species record, so it
+    stays in the add-on. It wraps `bladeWidth` in the shape, so the cover's widths keep their bits.
+  - The integer hash (`pcg`, `hashAt`, `unitAt`) moves to the grass, and the add-on's own hash
+    module re-exports it. It lives on its own entry, `@null3d/grass/hash`, which imports nothing.
+    The plant generator's job-worker task holds no engine import, and the grass's main entry
+    imports the engine.
+  - The sway distance of each preset (`PLANT_SWAY_DISTANCE`, `swayDistanceFor`) moves to the grass,
+    since a page without plants needs it. The add-on re-exports it. `setWindLayer` for plant
+    materials stays in the add-on.
 
 ## Consequences
 
 - The docs pages of the add-on carry the `planned` status, and the skills no longer offer it.
-- The release guide lists twelve public packages, and the grass package joins them.
+- The release guide lists thirteen public packages, the grass package among them.
 - `tools/samples/blender/` holds the scripts that build the showcase scenes' plant models.

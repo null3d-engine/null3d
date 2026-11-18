@@ -1,9 +1,9 @@
 // The grass's blades and their bend: a tuft's blades are strips that lean out and curve over, lit
 // by the ground's light, and the air of the wind add-on's one field bends them. The field's steady
-// settings come from a small data texture, as the leaf material reads them, and the picture that a
-// still field draws stands still.
+// settings come from a small data texture, as the field's other readers take them, and the picture
+// that a still field draws stands still.
 
-// The wind's swirl reads the engine's value noise, as the leaf material's copy of the block does.
+// The wind's swirl reads the engine's value noise, as every reader's copy of the block does.
 #import null3d::noise::{pcg, value3}
 
 struct Uniforms {

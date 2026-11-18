@@ -1994,6 +1994,17 @@
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
     },
     {
+      "id": "grass",
+      "category": "Geometry",
+      "three": "A field of grass blades as an InstancedMesh or a custom shader that bends them in a time-based wind",
+      "status": "changed",
+      "since": "0.3",
+      "target": "await createGrass(ctx, { height, area, count, seed, mask, wind, camera, swayDistance }) from @null3d/grass, with grass.setWindLayer(field) in each frame to bend the blades in the wind add-on's field, grass.fit(preset) for a preset's share and grass.setSwayDistance(swayDistanceFor(preset)) when the preset changes",
+      "notes": "three.js has no grass. A port replaces the hand-made blades and their wind shader with one call: the add-on places the tufts on the ground's height by integer hash, so one seed places the same grass on every device, and bends the blades in the wind add-on's field, so the grass answers the same gusts as the rest of the scene. On WebGPU a compute pass builds the blade list each frame, culls it to the view and thins the far tufts; WebGL2 draws the same rows as an instance batch. The grass casts and receives the sun's shadows. A blade shape, a width along the blade and the fold of its keel, takes the place of a hand-made blade geometry.",
+      "docs": "api/grass",
+      "detect": "\\bGrass(Geometry|Material|Mesh|Shader|Field|Blades?)\\b"
+    },
+    {
       "id": "xr",
       "category": "Other",
       "three": "WebXR (renderer.xr, VRButton, ARButton)",

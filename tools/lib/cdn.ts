@@ -84,6 +84,7 @@ const CONSTANT_MARK = Buffer.from('__NULL3D_');
 export const CDN_ADDONS: readonly string[] = [
 	'controls',
 	'geometry',
+	'grass',
 	'impostors',
 	'particles',
 	'splats',

@@ -59,6 +59,7 @@ Settle its state before you design the scene.
 | Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | built |
 | Gaussian splats from a scan or a training run | `@null3d/splats` | built |
 | Ground from a height field | `@null3d/terrain` | built |
+| Grass over a ground, swaying in the wind | `@null3d/grass` | built; see the docs page api/grass |
 | Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
 | A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |

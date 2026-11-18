@@ -2,7 +2,7 @@
 // follows the count that the blade list writes. The page draws the same hill as the still picture,
 // with the sun low and the air still, so two runs draw the same frame.
 import { defineSketch } from '@null3d/engine';
-import { createGrass } from '@null3d/vegetation';
+import { createGrass } from '@null3d/grass';
 import { createWind } from '@null3d/wind';
 import { GRASS, ground, SIZE } from './vegetation-grass-sketch';
 
