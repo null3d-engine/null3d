@@ -3,30 +3,27 @@
 // on their tops, stepping stones, pebbles, tufts of grass and a stone lantern stand on it, inside a
 // granite curb on a moss lawn. A plaster wall closes the back and the left side, with bamboo and
 // pines beyond it. Each object in the garden casts and receives shadows, so contact shadows show
-// wherever things touch. The pines and the grass come from the vegetation add-on, and draw as the
-// plant core's stand-ins until their species land.
-import { type Camera, math, quat, type SketchContext } from '@null3d/engine';
+// wherever things touch. The pines and the GPU grass sway in the wind add-on's field.
+import { math, type PerspectiveCamera, quat, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
-import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
+import { createGrass, swayDistanceFor } from '@null3d/grass';
 import { createWind } from '@null3d/wind';
-import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { random } from '../lib/procedural';
-import { CONTACT_SHADOWS_GRASS, CONTACT_SHADOWS_PINE } from '../lib/stand-ins';
+import { createSway } from '../lib/sway';
+import { type Fir, meshOf, woodTexture } from '../lib/trees';
 
 /**
- * The garden's pines: Scots pines, whose crowns show above the wall as a dark skyline. Their
- * needles stay dark, as a backlit conifer's do.
+ * The garden's pines, 1 high: spruces whose tiers widen to the foot and taper to a point, so their
+ * crowns show above the wall as a dark skyline.
  */
-const PINE = {
-	id: CONTACT_SHADOWS_PINE.id,
-	height: 15,
-	standIn: CONTACT_SHADOWS_PINE.standIn,
-} as const;
-/** The tufts of grass at the rocks and the lantern: meadow grass, about a hand high at scale 1. */
-const GRASS = {
-	id: CONTACT_SHADOWS_GRASS.id,
-	standIn: CONTACT_SHADOWS_GRASS.standIn,
-} as const;
+const PINE: Fir = { tiers: 6, low: 0.12, width: 0.36, branches: 10, droop: 0.5 };
+/**
+ * The pines' tint over the needle texture's green: it takes some red out and keeps the blue,
+ * since a green with more red turns khaki in the low sun's orange light.
+ */
+const NEEDLES = [0.6, 1, 0.8] as const;
+/** The radius of each clump of grass at the rocks and the lantern, in meters. */
+const CLUMP = 0.2;
 
 /** A full turn of the circle, in radians, which the scene's own scattering works in. */
 const TURN = Math.PI * 2;
@@ -66,7 +63,7 @@ const WALLS = [
 ] as const;
 /** Bamboo stalks in the grove beyond the left wall, and the leaves on each. */
 const STALKS = 72;
-const LEAVES = 30;
+const LEAVES = 70;
 /** Where the lantern stands. */
 const LANTERN = [1.2, -3.8] as const;
 /** A bright, quiet rise and fall in 0..1 along a coordinate. */
@@ -96,8 +93,11 @@ function noise(size: number, cells: number): Float32Array {
 }
 
 /** Builds the garden in the scene of `ctx`, with its plants swaying in the field of `camera`. */
-export async function garden(ctx: SketchContext, camera: Camera): Promise<{ update(): void }> {
-	const { scene, geometry, materials, textures } = ctx;
+export async function garden(
+	ctx: SketchContext,
+	camera: PerspectiveCamera,
+): Promise<{ update(): void }> {
+	const { scene, geometry, materials, textures, quality } = ctx;
 	const solid = { castShadows: true, receiveShadows: true } as const;
 	const flat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 
@@ -196,31 +196,33 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 			...solid,
 		});
 	}
-	// The pines beyond the wall grow in the job workers, in the scene's one wind field: one
-	// variant, each copy its own height and turn.
+	// The pines beyond the wall and the tufts of grass sway in the scene's one wind field. Each pine
+	// is its own height and turn, and bends from its foot as a share of its height.
 	const wind = createWind(ctx, { camera, box: 32, grid: 64 });
-	const plantMaterials: PlantMaterial[] = [];
-	const pines = await plantSpecies(ctx, {
-		id: PINE.id,
-		standIn: PINE.standIn,
-		seed: 5,
-		// The garden's approved picture shows the pine's stand-in above the wall, so this page keeps
-		// the stand-in even after the species lands. This is the page's own hold on the picture, not
-		// a wait for the species.
-		keepStandIn: true,
-		spots: PINES.map(([x, z, height], i) => ({
-			x,
-			y: 0,
-			z,
-			turn: 2 * i,
-			scale: height / PINE.height,
-			variant: 0,
-		})),
-		wind: wind.field,
+	const sway = createSway(ctx, { wind });
+	const look = { colorSpace: 'srgb', mipmaps: true, anisotropy: 8 } as const;
+	const wood = textures.fromData({ ...woodTexture(), ...look, wrap: ['repeat', 'clamp'] });
+	const pines = scene.createInstances(meshOf(geometry, PINE), PINES.length, {
+		material: sway.material({
+			map: wood,
+			sway: 0.004,
+			rustle: 0.0006,
+			perSize: true,
+			roughness: 1,
+		}),
+		colors: true,
+		...solid,
 	});
-	plantMaterials.push(...pines.materials);
+	PINES.forEach(([x, z, height], i) => {
+		pines.positions.set([x, 0, z], i * 3);
+		pines.scales.set([height, height, height], i * 3);
+		pines.rotations.set([0, Math.sin(i), 0, Math.cos(i)], i * 4);
+		const shade = 0.85 + 0.25 * ((i * 0.37) % 1);
+		pines.colors?.set([...NEEDLES.map((c) => c * shade), 1], i * 4);
+	});
+	pines.markDirty();
 	// Bamboo: tall jointless stalks that lean a little, with narrow leaves that hang from their
-	// upper halves.
+	// upper two thirds, thick enough that the grove reads as foliage above the wall.
 	const next = random(3);
 	const stalks = scene.createInstances(
 		geometry.cylinder({ radiusTop: 1, radiusBottom: 1, height: 1, radialSegments: 6 }),
@@ -253,8 +255,8 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 		stalks.colors?.set([0.16 * green, 0.36 * green, 0.06 * green, 1], i * 4);
 		for (let k = 0; k < LEAVES; k++) {
 			const j = i * LEAVES + k;
-			const up = h * (0.55 + 0.45 * next());
-			const [spin, droop, length] = [next() * TURN, 1.9 + 0.8 * next(), 0.3 + 0.2 * next()];
+			const up = h * (0.3 + 0.7 * next());
+			const [spin, droop, length] = [next() * TURN, 1.5 + 1 * next(), 0.25 + 0.2 * next()];
 			// A leaf points out from the stalk and hangs down, twisted about its length.
 			quat.fromEuler(turn, 0, spin, -droop, 'YXZ');
 			quat.multiply(turn, turn, quat.setAxisAngle(twist, [0, 1, 0], next() * Math.PI));
@@ -272,7 +274,7 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 				j * 3,
 			);
 			leaves.rotations.set(turn, j * 4);
-			leaves.scales.set([0.006, length, 0.045], j * 3);
+			leaves.scales.set([0.006, length, 0.06], j * 3);
 			const shade = 0.7 + 0.4 * next();
 			leaves.colors?.set([0.08 * shade, 0.3 * shade, 0.04 * shade, 1], j * 4);
 		}
@@ -359,26 +361,29 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 		);
 	}
 	pebbles.markDirty();
-	// Tufts of grass at the rocks and the lantern, one to a root, each its own size and turn, in
-	// the same wind field.
+	// Clumps of grass at the rocks and the lantern. The GPU grass places its tufts by hash over the
+	// bed, and the mask keeps the few that fall inside a clump, so each clump holds a handful of
+	// tufts at its own place. The blades sway in the scene's wind field.
 	const roots: (readonly [number, number])[] = [
 		...ROCKS.map(([x, z, r]) => [x + r * 0.9, z + r * 0.5] as const),
 		[LANTERN[0] - 0.3, LANTERN[1] + 0.3] as const,
 	];
-	const tufts: PlantSpot[] = roots.map(([x, z]) => {
-		// A tuft stands about a hand high at the rocks: tall enough to read against the sand at the
-		// camera's distance, and low enough to stay under the pines beyond the wall.
-		const scale = math.randFloat(1.1, 1.9);
-		return { x, y: 0, z, turn: math.randFloat(0, Math.PI * 2), scale, variant: 0 };
-	});
-	const grass = await plantSpecies(ctx, {
-		id: GRASS.id,
-		standIn: GRASS.standIn,
-		seed: 5,
-		spots: tufts,
+	const grass = await createGrass(ctx, {
+		height: () => 0,
+		area: { x: 0, z: -1, size: 8 },
+		count: 1500,
+		blades: 22,
+		color: '#86b83a',
+		seed: 9,
+		mask: (x, z) => roots.some(([rx, rz]) => Math.hypot(x - rx, z - rz) < CLUMP),
 		wind: wind.field,
+		camera,
+		swayDistance: swayDistanceFor(quality.preset),
 	});
-	plantMaterials.push(...grass.materials);
+	quality.onChange(() => {
+		grass.fit(quality.preset);
+		grass.setSwayDistance(swayDistanceFor(quality.preset));
+	});
 	// A stone lantern with a warm light in its fire box.
 	const [lx, lz] = LANTERN;
 	const parts = [
@@ -411,8 +416,8 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 		update() {
 			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
 			wind.update();
-			// The field keeps two states, so the plants read the one that this frame's run wrote.
-			setWindLayer(plantMaterials, wind.field);
+			sway.update();
+			grass.setWindLayer(wind.field);
 		},
 	};
 }

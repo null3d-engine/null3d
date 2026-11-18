@@ -4,14 +4,12 @@
 // close. A dirt path winds from the camera down to the lake, boulders lie beside it and on the
 // shore, and the lake mirrors the sky's environment. Pines with drooping tiers stand in clumps of
 // many sizes with open meadow between, more of them toward the valley's slopes, and a few alone.
-// The pines are Norway spruces from the vegetation add-on, which draw as the plant core's
-// stand-ins until the species lands.
+// The pines are made in code at four levels of detail, and sway in the wind add-on's field.
 import { type Camera, type MeshArrays, math, type SketchContext } from '@null3d/engine';
-import { type PlacedPlants, type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
-import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { Noise, rock, type TexelSample, textureSet } from '../lib/procedural';
-import { ATMOSPHERE_SPRUCE } from '../lib/stand-ins';
+import { createSway } from '../lib/sway';
+import { type Fir, meshOf, woodTexture } from '../lib/trees';
 
 /** Quads along each side of the land, its width in metres, and the lake's height. */
 const QUADS = 320;
@@ -28,18 +26,14 @@ const DIRT = [0.36, 0.25, 0.13];
 /** Pines and boulders at each preset. */
 const TREES = { low: 3000, medium: 9000, high: 9000, ultra: 9000 } as const;
 const BOULDERS = 260;
+/** The pines, 1 high: spruces with a crown a little under half as wide as they are tall. */
+const PINE: Fir = { tiers: 8, low: 0.1, width: 0.23, branches: 8, droop: 0.4 };
 /**
- * The pines: Norway spruce at the height and in the colours of a mature valley conifer, its crown
- * a little under half as wide as it is tall. The seed and the variants place the same pines on
- * every device.
+ * The distance out to which the pines sway, in meters: just past the two clumps beside the path,
+ * whose far edges stand about 1,100 m from the camera. The pines past them stand still, so the far
+ * shadow cascades keep their cached layers.
  */
-const PINE = {
-	id: ATMOSPHERE_SPRUCE.id,
-	height: 15,
-	standIn: ATMOSPHERE_SPRUCE.standIn,
-} as const;
-const SEED = 11;
-const VARIANTS = 3;
+const SWAY_DISTANCE = 1100;
 /** Clumps of pines, and the share of pines that stand alone in the meadow. */
 const CLUMPS = 220;
 const LONE = 0.05;
@@ -270,11 +264,21 @@ export async function valley(ctx: SketchContext, camera: Camera): Promise<{ upda
 	});
 	boulders.markDirty(0, BOULDERS);
 
-	// The pines grow in the job workers, three variants sharing the clumps' places, in the scene's
-	// one wind field. Each copy stands 14 to 26 m tall, turned its own way. Most stand in the clumps,
-	// more of them in the larger ones and toward each clump's middle, and a few stand alone.
+	// Each pine is 14 to 26 m tall, turned its own way, a little lighter, darker, bluer or more
+	// yellow than the next, and picks its level of detail in every frame. Most stand in the clumps,
+	// more of them in the larger ones and toward each clump's middle, and a few stand alone. They
+	// sway in the scene's one wind field.
 	const wind = createWind(ctx, { camera, box: 128, grid: 64 });
-	const byVariant: PlantSpot[][] = Array.from({ length: VARIANTS }, () => []);
+	const sway = createSway(ctx, { wind, swayDistance: SWAY_DISTANCE });
+	const look = { colorSpace: 'srgb', mipmaps: true, anisotropy: 8 } as const;
+	const wood = textures.fromData({ ...woodTexture(), ...look, wrap: ['repeat', 'clamp'] });
+	const pines = scene.createInstances(meshOf(geometry, PINE), TREES.high, {
+		material: sway.material({ map: wood, sway: 0.004, rustle: 0.0006, perSize: true }),
+		colors: true,
+		castShadows: true,
+		receiveShadows: true,
+	});
+	const { positions, rotations, scales, colors } = pines;
 	const areas = groves.map(([, , r]) => r * r);
 	const total = areas.reduce((sum, area) => sum + area, 0);
 	for (let k = 0; k < TREES.high; ) {
@@ -289,40 +293,26 @@ export async function valley(ctx: SketchContext, camera: Camera): Promise<{ upda
 		}
 		const y = groundAt(x, z);
 		if (!treeGround(x, z, y) || (Math.abs(x - pathX(z)) < PATH * 2 && z > 3300)) continue;
-		const variant = k % VARIANTS;
+		positions.set([x, y - 0.3, z], k * 3);
 		const turn = math.randFloat(0, Math.PI);
-		const scale = math.randFloat(14, 26) / PINE.height;
-		byVariant[variant]?.push({ x, y: y - 0.3, z, turn: turn * 2, scale, variant });
+		rotations.set([0, Math.sin(turn), 0, Math.cos(turn)], k * 4);
+		scales.fill(math.randFloat(14, 26), k * 3, k * 3 + 3);
+		const [shade, hue] = [math.randFloat(0.8, 1.2), math.randFloat(-1, 1)];
+		colors?.set(
+			[0.8 * shade * (1 + 0.15 * hue), 0.8 * shade, 0.8 * shade * (1 - 0.1 * hue), 1],
+			k * 4,
+		);
 		k++;
 	}
-	// A preset stands a share of each variant's copies, the first ones placed.
-	const plantMaterials: PlantMaterial[] = [];
-	let placed: PlacedPlants | undefined;
-	const plant = async (): Promise<void> => {
-		const share = TREES[quality.preset] / TREES.high;
-		const spots = byVariant.flatMap((list) => list.slice(0, Math.round(share * list.length)));
-		const pines = await plantSpecies(ctx, {
-			id: PINE.id,
-			standIn: PINE.standIn,
-			seed: SEED,
-			spots,
-			variants: VARIANTS,
-			wind: wind.field,
-		});
-		placed?.destroy();
-		placed = pines.placed;
-		plantMaterials.splice(0, plantMaterials.length, ...pines.materials);
-	};
-	await plant();
-	quality.onChange(() => {
-		void plant();
-	});
+	pines.markDirty(0, TREES.high);
+	const fit = () => pines.setActiveCount(TREES[quality.preset]);
+	fit();
+	quality.onChange(fit);
 	return {
 		update() {
 			// The field's box follows the camera, and a gust and a push fade, so it steps every frame.
 			wind.update();
-			// The field keeps two states, so the plants read the one that this frame's run wrote.
-			setWindLayer(plantMaterials, wind.field);
+			sway.update();
 		},
 	};
 }
