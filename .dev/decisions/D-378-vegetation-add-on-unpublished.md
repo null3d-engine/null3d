@@ -1,6 +1,6 @@
 # D-378: The vegetation add-on stays in the repository and ships nowhere
 
-Status: decided by the owner. The packages are private and the plant demo is hidden; the demos'
+Status: decided by the owner. The packages are private and the plant demo is removed; the demos'
 own plants, the grass package and the Blender models are built in the same branch. Task: none.
 
 Summary: The vegetation add-on and its textures package are private: no release builds, packs or
@@ -18,8 +18,9 @@ does the add-on ship?
 
 The owner's rulings, in their words: "Everything else should stop using the vegetation add-on.
 Don't build the add-on anymore or publish it but leave it in the codebase", "we still want to be
-able to work on the add-on, so don't remove any of its code", "Vegetation demo no longer will be
-visible but don't remove it" and "Wind demo should use non-addon plants and trees". The grass is
+able to work on the add-on, so don't remove any of its code", "Wind demo should use non-addon
+plants and trees" and "Remove the hidden plant meadow for now if it's not meant to be visible as a
+demo". The grass is
 the one part of the add-on that the demos keep, from a package of its own.
 
 ## Data
@@ -45,13 +46,10 @@ draw as stand-ins for most species, which look worse than either.
   tests, its picture tests and its tools keep running, so work on it goes on.
 - The add-on's code stays whole. Code that moves to a published package for the demos, the grass
   and the far-card hand-over, is re-exported from the add-on under its old name.
-- The vegetation demo keeps its folder, and its entry moves to `examples/hidden-demos.ts`: no
-  page lists it, its own address still starts it, and its image test still draws it. A website
-  imports only `examples/demos.ts`, so its build never takes in the meadow, whose add-on a website
-  cannot install. A flag on the entry was rejected for that reason: the website's build would
-  still bundle the sketch that the list names.
-- The shader permutation list records the listed demos only, so the engine's shipped shader set
-  keeps no variant that only the hidden meadow uses.
+- The vegetation demo, the meadow of every species, is removed while no page shows it. Git keeps
+  it, so it returns when the add-on ships. Keeping it hidden was rejected: no page listed it, yet
+  its picture test cost CI a heavy job's whole time, since CI's software GPU took over 540 s for
+  one of its frames. The add-on's own tests, its picture tests among them, still run.
 - Feature demos make their content in code ([Examples](../examples.md#procedural-first)), so
   the stone garden, the light shafts wood, the atmosphere valley and the wind demo grow their own
   plants in code. Loading Blender models in them was rejected: it breaks that rule for no gain in

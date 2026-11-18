@@ -15,7 +15,6 @@ import type { QualityPreset } from '@null3d/engine';
 import { COMPARE_GROUP, COMPARISONS } from './compare/comparisons';
 import { runComparison } from './compare-page';
 import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
-import { ALL_DEMOS } from './hidden-demos';
 import { startDemo } from './lib/run';
 import { sourceUrl } from './lib/source';
 
@@ -25,7 +24,7 @@ const PRESETS: readonly QualityPreset[] = ['low', 'medium', 'high', 'ultra'];
 
 const params = new URLSearchParams(location.search);
 const name = params.get('demo');
-const current = ALL_DEMOS.find((demo) => demo.name === name);
+const current = DEMOS.find((demo) => demo.name === name);
 const compareName = params.get('compare');
 const comparison = COMPARISONS.find((entry) => entry.name === compareName);
 const wanted = params.get('preset');

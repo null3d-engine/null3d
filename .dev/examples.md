@@ -7,7 +7,6 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | Path | Contents |
 | --- | --- |
 | `examples/demos.ts` | The list of demos and their groups, in `DEMO_GROUPS` order. Each entry names its group and its sketch, with a literal `new URL('./<name>/sketch.ts', import.meta.url)`, and says why the demo loads files, when it does |
-| `examples/hidden-demos.ts` | The demos that no page lists, because each needs a package that ships nowhere, such as the vegetation add-on's meadow. A website imports only `examples/demos.ts`, so its build never takes in a hidden sketch. `ALL_DEMOS` joins both lists for the examples page of a clone and for the tests, so a hidden demo still starts at its own address and its image test still draws it |
 | `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, shows its labels in a layer that the page gives it, puts a page backdrop under a demo that asks for one, and shows the stats overlay |
 | `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
@@ -35,7 +34,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/three-worker.ts`, `stats-three.ts` | The three.js half's worker, and its stats meter in the engine's panel |
 | `examples/compare-page.ts` | The comparison panel of the clone's examples page |
 
-The image tests, the device plans and the page tests read every demo through `ALL_DEMOS` in `examples/hidden-demos.ts`, and find each demo's sketch with `sketchPath` from `examples/demos.ts` ([Image tests](image-tests.md)). A folder under `examples/` or `examples/showcase/` that holds a `sketch.ts` must be a demo in one of the two lists.
+The image tests, the device plans and the page tests read `examples/demos.ts`, and find each demo's sketch with `sketchPath` from it ([Image tests](image-tests.md)). A folder under `examples/` or `examples/showcase/` that holds a `sketch.ts` must be a demo in the list.
 
 ## Two builds from one folder
 

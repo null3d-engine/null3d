@@ -54,8 +54,7 @@ import {
 } from '../../bench/pages/lib/device-soak.ts';
 import { summarizeTrace } from '../../bench/pages/lib/trace.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
-import { sketchPath } from '../../examples/demos.ts';
-import { ALL_DEMOS } from '../../examples/hidden-demos.ts';
+import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import { STOP_TIMEOUT_MS } from '../../packages/engine/src/page/stop-jobs.ts';
 import {
 	choosePreset,
@@ -3198,7 +3197,7 @@ export function warmUpSketches(): { scene: string; sketch: string }[] {
 			scene,
 			sketch: `/bench/pages/null3d/${scene}-sketch.ts?n=${SCENE_COUNTS[scene]}`,
 		})),
-		...ALL_DEMOS.map((demo) => ({
+		...DEMOS.map((demo) => ({
 			scene: `demo-${demo.name}`,
 			sketch: `/examples/${sketchPath(demo)}`,
 		})),

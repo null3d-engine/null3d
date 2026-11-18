@@ -12,7 +12,6 @@
 		"@null3d/particles": "workspace:*",
 		"@null3d/splats": "workspace:*",
 		"@null3d/terrain": "workspace:*",
-		"@null3d/vegetation": "workspace:*",
 		"@null3d/water": "workspace:*",
 		"@null3d/wind": "workspace:*",
 		"@types/three": "0.186.0",

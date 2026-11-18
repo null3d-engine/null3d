@@ -44,8 +44,7 @@ import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { TRANSMISSION_IMAGE } from '../../bench/scenes/transmission.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { COMPARISONS } from '../../examples/compare/comparisons.ts';
-import { sketchPath } from '../../examples/demos.ts';
-import { ALL_DEMOS } from '../../examples/hidden-demos.ts';
+import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import {
@@ -1083,24 +1082,6 @@ const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'
 
 /** The sketch of the room scene's tests. */
 const ROOM_SKETCH = 'tests/pages/sketches/room-sketch.ts';
-
-// The species the held vegetation picture draws, one per growth model present on the milestone:
-// great-limb broadleaf (oak), fine-twig broadleaf (silver birch), pinnate broadleaf (ash), weeping
-// broadleaf (willow), shrub (hawthorn), fern (bracken), ground grass (meadow grass) and herb
-// (hosta). The fixed list bounds the pictures' cost as the catalogue grows, and every other species
-// keeps its own four-panel picture. The plan's eight models included six species that exist only
-// on unmerged branches; those cannot be drawn at the milestone, so these eight stand in and the
-// substitution is recorded in the batch plan.
-const HELD_VEGETATION_SPECIES = [
-	'pedunculate-oak',
-	'silver-birch',
-	'common-ash',
-	'weeping-willow',
-	'hawthorn-shrub',
-	'bracken',
-	'meadow-grass',
-	'hosta',
-] as const;
 
 /** The tests of every feature, before the depth prepass and half precision draw some again. */
 const FEATURE_TESTS: readonly ImageTest[] = [
@@ -3783,13 +3764,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
 	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
-	...ALL_DEMOS.map((demo): ImageTest => {
-		// The held vegetation picture draws the fixed documented subset, so its cost does not grow
-		// with the catalogue; the live page draws every registered species. The subset rides on the
-		// sketch's own address, which the image page passes to the scene, not on a page switch,
-		// which stops at the page.
-		const heldSpecies =
-			demo.name === 'vegetation' ? `?species=${HELD_VEGETATION_SPECIES.join(',')}` : '';
+	...DEMOS.map((demo): ImageTest => {
 		const switches = [
 			...(demo.largeWorld ? ['largeWorld'] : []),
 			// A demo with a backdrop draws over a page, so the image page starts the engine on the
@@ -3802,23 +3777,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		];
 		return {
 			name: `demo-${demo.name}`,
-			sketch: `examples/${sketchPath(demo)}${heldSpecies}`,
+			sketch: `examples/${sketchPath(demo)}`,
 			hold: demo.hold,
 			...(switches.length > 0 && { switches }),
 			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
-			// The held picture's eight-species subset fills more of the frame than the whole
-			// catalogue did, and Firefox on CI's software GPU rounds its grass and card edges a
-			// little further apart: it drew 0.535 per cent of the pixels differently from the Mac's
-			// picture, against the device's 0.5. The limit sits above that figure, and it applies
-			// only where a browser or a device compares with the Mac's pictures.
-			...(demo.name === 'vegetation' && {
-				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.006 },
-				// The meadow's held subset took CI's software GPU past 540 s for one frame on WebGPU,
-				// so its three tiers outran the heavy job's 25 minutes. On SwiftShader it draws the Low
-				// preset, as the showcase scenes do; every other place draws it in full.
-				swiftShaderSwitches: ['preset=low'],
-			}),
 			// The screens draw their readings into a 2D canvas, and each browser rasterises that
 			// text its own way. The readings, the bars, the chart and the layout match
 			// everywhere, while the glyphs of the digits differ. Firefox drew 2.615 per cent of

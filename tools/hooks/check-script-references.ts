@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ALL_DEMOS } from '../../examples/hidden-demos.ts';
+import { DEMOS } from '../../examples/demos.ts';
 import { SCRIPT_RUNS } from '../../tests/image/script-runs.ts';
 import type { CommitWithFiles } from './check-gpu-ack';
 import { effectiveMessage, findAckValues, isBareAck } from './commit-ack';
@@ -23,7 +23,7 @@ const DEMO_REFERENCE = /^tests\/image\/references\/([^/]+)\/([^/]+)\/demo-([a-z0
 /** Each demo's script tests, by the tier that they draw and keep references on. */
 const SCRIPTS = (() => {
 	const sketchOfDemo = new Map<string, string>();
-	for (const demo of ALL_DEMOS) {
+	for (const demo of DEMOS) {
 		const path = relative(ROOT, fileURLToPath(demo.sketch)).split(sep).join('/');
 		sketchOfDemo.set(path, demo.name);
 	}
