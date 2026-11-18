@@ -11,10 +11,12 @@ describe('the source condition for Playwright', () => {
 		);
 	});
 
-	it('is what the browser tests start Playwright with', () => {
-		const manifest = JSON.parse(
-			readFileSync(join(import.meta.dirname, '../../tests/package.json'), 'utf8'),
-		) as { scripts: Record<string, string> };
-		expect(manifest.scripts.test).toContain(`--conditions=${SOURCE_CONDITION}`);
+	it('is what the browser tests and the benchmark pages start Playwright with', () => {
+		for (const folder of ['tests', 'bench']) {
+			const manifest = JSON.parse(
+				readFileSync(join(import.meta.dirname, '../..', folder, 'package.json'), 'utf8'),
+			) as { scripts: Record<string, string> };
+			expect(manifest.scripts.test, folder).toContain(`--conditions=${SOURCE_CONDITION}`);
+		}
 	});
 });
