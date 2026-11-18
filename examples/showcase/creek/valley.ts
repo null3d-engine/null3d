@@ -52,6 +52,20 @@ const TREES: readonly (readonly [number, number, TreeKind, number])[] = [
 	[-14, 7.5, 'birch', 0.7],
 ];
 
+/**
+ * The trees that frame the far end of the stream: each one's place along it, its distance from the
+ * stream's middle, its kind, its size and its turn. The view along the water from upstream looks
+ * down the valley into the gorge, and these crowns stand either side of the stream there, so the
+ * gorge's far walls show between trees. Their turns are fixed, so the seeded draws that place the
+ * rest of the valley stay as they were.
+ */
+const FRAME_TREES: readonly (readonly [number, number, TreeKind, number, number])[] = [
+	[33, -4.8, 'oak', 1.05, 1.1],
+	[36, 5, 'beech', 1, 4.2],
+	[41, -6, 'birch', 0.9, 2.6],
+	[43, 7.5, 'oak', 0.95, 5.3],
+];
+
 /** One placed model: its kind, its foot on the ground, its turn about y and its size. */
 export interface Spot<Kind extends string = string> {
 	readonly kind: Kind;
@@ -283,7 +297,14 @@ export function placeValley(options: ValleyOptions = {}): Valley {
 			yaw: next() * Math.PI * 2,
 			size: size * (0.92 + 0.16 * next()),
 		};
-	}).filter(clearOfRoute);
+	})
+		.concat(
+			FRAME_TREES.map(([x, dz, kind, size, yaw]) => {
+				const z = streamZ(x) + dz;
+				return { kind, x, y: groundHeight(x, z) - 0.1, z, yaw, size };
+			}),
+		)
+		.filter(clearOfRoute);
 	/** The rooms that the placed ground cover keeps, and the trunks, which nothing grows through. */
 	const taken: { x: number; z: number; r: number }[] = trees.map(({ x, z }) => ({ x, z, r: 0.8 }));
 	const plants: Spot<PlantKind>[] = [];
