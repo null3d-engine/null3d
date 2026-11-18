@@ -17,13 +17,14 @@ import { touchesRust } from './check-rust';
 import { scriptReferencesProblem } from './check-script-references';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
-import { keptCommits } from './check-trailers';
+import { keptCommits, squashedMessage } from './check-trailers';
 import {
 	checkAck,
 	findAckValue,
 	findAckValues,
 	readsTrailerBlock,
 	TRAILER_BLOCK_SINCE,
+	trailers,
 } from './commit-ack';
 
 describe('docBearingFiles', () => {
@@ -589,5 +590,100 @@ describe('scriptReferencesProblem', () => {
 				),
 			]),
 		).toContain('Script-References value "yes" gives no reason');
+	});
+});
+
+describe('squashedMessage', () => {
+	// The shape of GitHub's squash merge: the title with the pull request's number, each squashed
+	// commit's message under a `* ` line with its trailers inside the body, then the co-authors.
+	const squash = [
+		'feat(engine): grow the page and the worker (#612)',
+		'',
+		'* feat(engine): grow the page',
+		'',
+		'The key table of the input ring moves into the page.',
+		'',
+		'Docs-Checked: updated docs/api/input.md',
+		'Size-Growth: js/page.js +3.1%, the key table of the input ring',
+		'',
+		'* fix(engine): grow the worker',
+		'',
+		'Size-Growth: js/render-worker.js +2.4%, the second',
+		'  shadow pass',
+		'Task: none',
+		'',
+		'* docs: say why',
+		'',
+		'A list in a body stays in the body:',
+		'',
+		'* the first point',
+		'',
+		'Co-authored-by: Claude <noreply@anthropic.com>',
+		'',
+	].join('\n');
+	const files = ['js/page.js', 'js/render-worker.js', 'js/core.js'];
+
+	it("finds every squashed commit's Size-Growth trailer, as main's size check reads it", () => {
+		// Read as written, git's last block holds only the co-author, and no growth reads explained.
+		expect([...explainedFiles([{ sha: 'sq', message: squash }], files).keys()]).toEqual([]);
+		const message = squashedMessage(squash);
+		expect(message.split('\n')[0]).toBe('feat(engine): grow the page and the worker (#612)');
+		expect(trailers(message)).toEqual([
+			{ key: 'Docs-Checked', value: 'updated docs/api/input.md' },
+			{ key: 'Size-Growth', value: 'js/page.js +3.1%, the key table of the input ring' },
+			{ key: 'Size-Growth', value: 'js/render-worker.js +2.4%, the second shadow pass' },
+			{ key: 'Task', value: 'none' },
+		]);
+		const explained = explainedFiles([{ sha: 'sq', message }], files);
+		expect([...explained.keys()].sort()).toEqual(['js/page.js', 'js/render-worker.js']);
+	});
+
+	it('reads a squash of one commit, whose body is that commit with the co-authors after it', () => {
+		const one = [
+			'docs: show the Electron host (#556)',
+			'',
+			'The guide gets a section.',
+			'',
+			'Docs-Checked: updated docs/getting-started/hosting.md',
+			'Task: none',
+			'',
+			'Co-authored-by: Claude <noreply@anthropic.com>',
+			'',
+		].join('\n');
+		expect(findAckValue(one, 'Docs-Checked')).toBeNull();
+		expect(findAckValue(squashedMessage(one), 'Docs-Checked')).toBe(
+			'updated docs/getting-started/hosting.md',
+		);
+	});
+
+	it("leaves a pull request's own commits as their authors wrote them", () => {
+		const plain =
+			'feat(engine): grow the page\n\n* a list item\n\nSize-Growth: js/page.js +3.1%, the key table';
+		expect(squashedMessage(plain)).toBe(plain);
+		const numbered = 'fix(engine): mend the cull (#12)';
+		expect(squashedMessage(numbered)).toBe(numbered);
+	});
+
+	it('reads a squash commit that git holds, through keptCommits', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-squash-'));
+		const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+		const git = (...args: string[]) =>
+			execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+				cwd: dir,
+				env,
+				encoding: 'utf8',
+			}).trim();
+		try {
+			git('init', '--quiet', '--initial-branch=main');
+			git('commit', '--quiet', '--allow-empty', '-m', 'chore: base');
+			git('commit', '--quiet', '--allow-empty', '--cleanup=verbatim', '-m', squash);
+			const kept = keptCommits('HEAD~1..HEAD', dir);
+			expect([...explainedFiles(kept, files).keys()].sort()).toEqual([
+				'js/page.js',
+				'js/render-worker.js',
+			]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

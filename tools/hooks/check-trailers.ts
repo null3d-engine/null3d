@@ -15,7 +15,7 @@ import { macReferencesProblem } from './check-mac-references';
 import { scriptReferencesProblem } from './check-script-references';
 import { sizeGrowthProblems } from './check-size-growth';
 import { SKILLS_ACK_RULE } from './check-skills-ack';
-import { checkAck } from './commit-ack';
+import { checkAck, trailers } from './commit-ack';
 
 const RULES = [DOCS_ACK_RULE, SKILLS_ACK_RULE, LIMITS_ACK_RULE];
 
@@ -53,7 +53,45 @@ export function keptCommits(range: string, cwd?: string): KeptCommit[] {
 		.split('\x1e')
 		.map((entry) => entry.trim().split('\x1f'))
 		.filter(([sha]) => sha)
-		.map(([sha = '', authoredAt = '', message = '']) => ({ sha, authoredAt, message }));
+		.map(([sha = '', authoredAt = '', message = '']) => ({
+			sha,
+			authoredAt,
+			message: squashedMessage(message),
+		}));
+}
+
+/** The subject that GitHub gives a squash merge: the title, then the pull request's number. */
+const SQUASH_SUBJECT = /\s\(#\d+\)$/;
+/** The paragraph of co-authors that GitHub adds at the end of a squash merge's message. */
+const CO_AUTHORS = /\n\n(?:Co-authored-by:[^\n]*(?:\n|$))+$/i;
+/** A line of a squash merge's body that starts one squashed commit's message: `* <subject>`. */
+const SQUASHED_SUBJECT = /^\* (?:[a-z]+(?:\([^)\n]*\))?!?: |Merge |Revert )/;
+
+/**
+ * A squash merge's message with the trailers of every commit it squashed in one final block. GitHub
+ * writes the pull request's title with its number, then each commit's message under a `* ` line, then
+ * a paragraph of co-authors. Git reads only the last block of a message as its trailers, so each
+ * commit's trailers sit in the body, where no check would find them. Any other message comes back as
+ * it is, so a pull request's own commits are read as their authors wrote them.
+ */
+export function squashedMessage(message: string): string {
+	const text = message.trimEnd();
+	const [subject = '', ...body] = text.split('\n');
+	if (!SQUASH_SUBJECT.test(subject)) return message;
+	const lines = text.replace(CO_AUTHORS, '').split('\n').slice(1);
+	const starts = lines.flatMap((line, at) =>
+		SQUASHED_SUBJECT.test(line) && (at === 0 || (lines[at - 1] ?? '').trim() === '') ? [at] : [],
+	);
+	// A pull request of one commit squashes into that commit's own message, under the new subject.
+	const parts =
+		starts.length === 0
+			? [[subject, ...lines].join('\n')]
+			: starts.map((start, n) =>
+					[(lines[start] ?? '').slice(2), ...lines.slice(start + 1, starts[n + 1])].join('\n'),
+				);
+	const found = parts.flatMap((part) => trailers(part).map(({ key, value }) => `${key}: ${value}`));
+	if (body.length === 0 || found.length === 0) return message;
+	return `${subject}\n\n${found.join('\n')}\n`;
 }
 
 function main(): void {
