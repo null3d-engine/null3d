@@ -132,7 +132,7 @@ const tip = (pad: number) => ({
 const spray = (band: readonly [number, number], pad: number) => ({
 	name: 'spray',
 	role: 'branch' as const,
-	count: 5,
+	count: 8,
 	along: band,
 	stagger: 0.5,
 	around: 'spiral' as const,
