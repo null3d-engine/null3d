@@ -827,34 +827,63 @@ Docs: `concepts/lighting` (Where the land ends) has the ground clamp and the haz
 
 ## 24. Trees that sway in the wind
 
-null3D has no plant generator. Draw trees from a glTF model, such as one exported from Blender, or from a mesh that you build in code. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling. The demo `examples/forest` draws a forest this way.
+null3D has no plant generator. Draw trees from a glTF model, such as one exported from Blender, or from a mesh that you build in code. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling.
 
 To make the trees sway, give them one custom material whose vertex offset reads the wind add-on's field:
 
 ```ts
+import type { Camera, SketchContext } from '@null3d/engine';
 import { createWind } from '@null3d/wind';
 
-// Setup: one field for the scene, and one material for every tree.
-const wind = createWind(ctx, { camera, box: 256 });
-const SWAY = 120; // the distance from the camera out to which the trees move, in meters
-const bark = ctx.materials.shader({
-  wgsl: treeShader, // the wind page's two sampling blocks, then vertexOffset and surface
-  swayDistance: SWAY,
-  textures: { wood, wind: wind.field.texture, airSettings },
-  uniforms: { windBox: wind.field.size, windLayer: 0, height: 18, swayDistance: SWAY, sway: 0.06 },
-});
-const oak = await ctx.assets.loadGltf('oak.glb');
-const trees = ctx.scene.createInstances(oak.find('Oak').mesh, 400, { material: bark });
+/** The distance from the camera out to which the trees move, in meters. */
+const SWAY_DISTANCE = 120;
 
-// onUpdate: step the field before the trees read it, then give the material its newest layer.
-wind.update();
-bark.setUniform('windLayer', wind.field.texture.layer);
+/** Copies of one tree from a glTF file, swaying in the wind. Call `update` in each frame. */
+export async function swayingTrees(
+  ctx: SketchContext,
+  camera: Camera,
+  wgsl: string, // the wind page's sampling blocks, then a vertexOffset that reads the uniforms
+  url: string,
+  count: number,
+) {
+  const wind = createWind(ctx, { camera, box: 256 });
+  const { field } = wind;
+  const sway = ctx.materials.shader({
+    wgsl,
+    // Past this distance the offset is zero, so far trees and their cached shadows stand still.
+    swayDistance: SWAY_DISTANCE,
+    textures: { wind: field.texture },
+    uniforms: {
+      origin: field.origin,
+      size: field.size,
+      layer: field.texture.layer,
+      base: field.air.base,
+      gust: field.air.gust,
+      swirl: field.air.swirl,
+      sent: field.air.sent,
+      swayDistance: SWAY_DISTANCE,
+    },
+  });
+  const model = await ctx.assets.loadGltf(url);
+  const mesh = model.find('Tree')?.mesh;
+  if (!mesh) throw new Error(`${url} has no node named Tree with a mesh`);
+  // One batch for the species: write each copy's place, turn and size into its rows.
+  const trees = ctx.scene.createInstances(mesh, count, { material: sway });
+  return {
+    trees,
+    update() {
+      // The field steps first, then the material takes its newest layer and the box's place.
+      wind.update();
+      sway.setUniform('layer', field.texture.layer);
+      sway.setUniform('origin', field.origin);
+      sway.setUniform('sent', field.air.sent);
+    },
+  };
+}
 ```
 
-- Copy the two sampling blocks from the wind page into the material's WGSL.
-- `airSettings` is a small texture that holds the field's steady settings from `wind.field.air`.
-- The forest demo's `sway.ts` has the whole material: the WGSL, the settings texture and the frame update.
-- Read the air at each tree's root, `object.position`, and bend the trunk by its height share squared, so the foot stays put.
+- Copy the two sampling blocks from the wind page into the material's WGSL, ahead of its `vertexOffset`.
+- In `vertexOffset`, read the air at the tree's root, `object.position`, with `wind_reading` and `wind_sample`. Bend each vertex by its height share squared, so the foot stays put.
 - Fade the offset to nothing by `swayDistance`, and declare the same distance on the material. A far tree then stands still, and the far shadow cascades stay cached.
 - Past the last level, draw the far trees as cards from `@null3d/impostors`.
 - `handOverToCards(meshes, cards.batch, switchDistance)` sets the distance bands of the meshes and the cards. A tree then moves from its mesh to its card with one dither.

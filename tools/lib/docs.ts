@@ -307,7 +307,7 @@ export function referenceLink(id: string): string {
 	return `(reference/${id.slice('api/'.length)}.md)`;
 }
 
-/** The note on a planned page's reference page, since the reference lists APIs that no release has. */
+/** The note on a planned page's reference: it lists APIs that no release has. */
 export const PLANNED_REFERENCE_NOTE =
 	'These APIs are planned: no release has them yet, so coding agents must not use them.';
 

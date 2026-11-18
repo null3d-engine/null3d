@@ -216,9 +216,10 @@ function upstreamProblems(root: string): string[] {
 
 /**
  * Every way that the packages under `root` and the notices page disagree, as `path: problem`:
- * a published package with no entry, an entry with no package or for a private package, a package whose notices the page leaves out,
- * a notices file that its tarball would not carry, an example add-on that the page leaves out, or
- * shipped code and a decision record that claim an upstream that the notices leave out.
+ * a published package with no entry, an entry with no package or for a private package, a package
+ * whose notices the page leaves out, a notices file that its tarball would not carry, an example
+ * add-on that the page leaves out, or shipped code and a decision record that claim an upstream
+ * that the notices leave out.
  */
 export function noticesProblems(root: string): string[] {
 	const problems: string[] = [];
