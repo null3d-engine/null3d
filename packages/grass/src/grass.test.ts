@@ -4,11 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { QualityPreset, SketchContext } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
-import type { Species } from '../core/record';
-import { curveAt } from '../core/types';
-import { record as meadowRecord } from '../species/meadow-grass/record';
-import { grassCover } from './cover';
-import { createGrass, placeTufts, tuftMesh } from './grass';
+import { createGrass, type GrassBladeShape, placeTufts, tuftMesh } from './grass';
 
 /** A place that accepts every tuft: a flat ground. */
 const flat = () => 1;
@@ -82,29 +78,22 @@ describe('the tuft mesh', () => {
 	});
 });
 
-describe('the cover that meets a species', () => {
-	if (meadowRecord.foliage.kind !== 'grass-blade') throw new Error('meadow grass lost its blade');
-	const blade = meadowRecord.foliage.blade;
+describe('the blade shape', () => {
+	/** A keeled blade that narrows to a closed tip, as a plant's own blade gives it. */
+	const shape: GrassBladeShape = { widthAt: (t) => 0.012 * (1 - t * t), fold: 20 };
 
-	test('the cover takes the meadow grass blade and the colour of its upper face', () => {
-		const cover = grassCover(meadowRecord);
-		expect(cover.blade).toBe(blade);
-		expect(cover.color).toMatch(/^#[0-9a-f]{6}$/);
-		expect(cover.color).toBe('#648e29');
-	});
-
-	test('a species blade gives the cover its width, its keel and its tip', () => {
+	test('a shape gives the blades its width and its keel', () => {
 		const blades = 2;
 		const segments = 3;
-		const shaped = tuftMesh(7, blades, segments, blade);
+		const shaped = tuftMesh(7, blades, segments, shape);
 		// Three vertices across each row, one at the midrib, and one at the tip.
 		expect(shaped.positions.length).toBe(blades * (segments * 3 + 1) * 3);
 		expect(shaped.indices.length).toBe(blades * (2 * 2 * 6 + 2 * 3));
 		const at = (index: number) => shaped.positions[index] ?? Number.NaN;
-		// The collar's two sides span the record's profile of its own width.
+		// The collar's two sides span the shape's width at the root.
 		const span = Math.hypot(at(0) - at(6), at(1) - at(7), at(2) - at(8));
-		expect(span).toBeCloseTo(blade.width * curveAt(blade.profile, 0), 5);
-		// The midrib sits between them and below, as the record's fold makes it.
+		expect(span).toBeCloseTo(shape.widthAt(0), 5);
+		// The midrib sits between them and below, as the fold makes it.
 		expect(at(3)).toBeCloseTo((at(0) + at(6)) / 2, 5);
 		expect(at(4)).toBeLessThan(at(1));
 		expect(at(4)).toBeLessThan(at(7));
@@ -113,27 +102,21 @@ describe('the cover that meets a species', () => {
 		expect(Math.abs(normal(0) - normal(6))).toBeGreaterThan(0.01);
 	});
 
-	test('a blade with no fold keeps the flat two-sided strip', () => {
-		const flat = { ...blade, fold: 0 };
-		const mesh = tuftMesh(7, 1, 3, flat);
+	test('a shape with no fold keeps the flat two-sided strip', () => {
+		const mesh = tuftMesh(7, 1, 3, { ...shape, fold: 0 });
 		expect(mesh.positions.length).toBe((3 * 2 + 1) * 3);
 		expect(mesh.indices.length).toBe(2 * 6 + 3);
-		// The collar still spans the record's profile of its own width, and its two sides stand level.
+		// The collar still spans the shape's width at the root, and its two sides stand level.
 		const at = (index: number) => mesh.positions[index] ?? Number.NaN;
 		const span = Math.hypot(at(0) - at(3), at(2) - at(5));
-		expect(span).toBeCloseTo(blade.width * curveAt(blade.profile, 0), 5);
+		expect(span).toBeCloseTo(shape.widthAt(0), 5);
 		expect(at(1)).toBeCloseTo(at(4), 6);
 	});
 
-	test('a cover with no species blade draws the strip it draws today', () => {
+	test('grass with no shape draws the narrowing strip', () => {
 		const mesh = tuftMesh(7, 2, 3);
 		expect(mesh.positions.length).toBe(2 * (3 * 2 + 1) * 3);
 		expect(mesh.indices.length).toBe(2 * (2 * 6 + 3));
-	});
-
-	test('a species without a grass blade is refused', () => {
-		const oak = { ...meadowRecord, id: 'oak', foliage: { kind: 'none' } } as Species;
-		expect(() => grassCover(oak)).toThrow('no grass blade');
 	});
 });
 
@@ -379,43 +362,22 @@ describe('the grass batches', () => {
 });
 
 describe('the wind blocks of the grass shader', () => {
-	test('read the wind field with one copy in every reader of the add-on and its test pages', () => {
-		// A shader cannot import another shader of the add-on, so each reader copies the field's
-		// steady settings and its sampling function. The grass holds the add-on's source copy, which
-		// the wind add-on's own test holds to the field's. The plant shader, the floating leaves and
-		// two test pages read the field too: the cost page carries both blocks, and the gust page carries the steady
-		// block twice and keeps only the reading function of the other, so it is held to the steady
-		// block alone.
+	test("hold the wind add-on's own copy of the field, and one tuft share in both shaders", () => {
+		// A shader cannot import another package's shader, so the grass copies the field's steady
+		// settings and its sampling function. The wind add-on's own test holds its readers' copies to
+		// its canonical file, and this one holds the grass's copy to it as well.
 		const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
 		const block = (source: string, name: string) => {
 			const from = `// <${name}>`;
 			const to = `// </${name}>`;
 			return source.slice(source.indexOf(from), source.indexOf(to));
 		};
-		const COST_PAGE = '../../../../tests/pages/sketches/wind-reader-cost-sketch.ts';
-		const GUST_PAGE = '../../../../tests/pages/sketches/gust-crossing-sketch.ts';
+		const field = read('../../wind/shaders/field.wgsl');
 		for (const name of ['wind-steady', 'wind-sample']) {
 			const grass = block(read('./grass.wgsl'), name);
 			expect(grass.length).toBeGreaterThan(0);
-			for (const file of [
-				'../render/plant.wgsl',
-				'../floating-leaves/floating-leaves.wgsl',
-				'../floating-leaves/floating-leaves-state.wgsl',
-				'../floating-leaves/floating-leaves-state.fallback.wgsl',
-				COST_PAGE,
-				...(name === 'wind-steady' ? [GUST_PAGE] : []),
-			])
-				expect(block(read(file), name)).toBe(grass);
+			expect(grass).toBe(block(field, name));
 		}
-		// The gust page draws the steady block twice, once for each path's form.
-		const gust = read(GUST_PAGE);
-		const steady = block(read('./grass.wgsl'), 'wind-steady');
-		const copies = gust.split('// <wind-steady>').length - 1;
-		expect(copies).toBe(2);
-		for (const piece of gust.split('// <wind-steady>').slice(1))
-			expect(`// <wind-steady>${piece.slice(0, steady.length - '// <wind-steady>'.length)}`).toBe(
-				steady,
-			);
 		// The blade list and the draw both thin the far tufts by the same hash and share, so a
 		// change to one copy must reach the other.
 		const density = block(read('./grass.wgsl'), 'tuft-density');
