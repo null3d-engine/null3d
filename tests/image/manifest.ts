@@ -3814,6 +3814,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// only where a browser or a device compares with the Mac's pictures.
 			...(demo.name === 'vegetation' && {
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.006 },
+				// The meadow's held subset took CI's software GPU past 540 s for one frame on WebGPU,
+				// so its three tiers outran the heavy job's 25 minutes. On SwiftShader it draws the Low
+				// preset, as the showcase scenes do; every other place draws it in full.
+				swiftShaderSwitches: ['preset=low'],
 			}),
 			// The screens draw their readings into a 2D canvas, and each browser rasterises that
 			// text its own way. The readings, the bars, the chart and the layout match
