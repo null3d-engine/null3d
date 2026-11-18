@@ -29,10 +29,11 @@ const BOULDERS = 260;
 /** The pines, 1 high: spruces with a crown a little under half as wide as they are tall. */
 const PINE: Fir = { tiers: 8, low: 0.1, width: 0.23, branches: 8, droop: 0.4 };
 /**
- * The distance out to which the pines sway, in meters. The nearest clumps stand a few hundred
- * meters from the camera, so the sway reaches past them, and the farther pines stand still.
+ * The distance out to which the pines sway, in meters: just past the two clumps beside the path,
+ * whose far edges stand about 1,100 m from the camera. The pines past them stand still, so the far
+ * shadow cascades keep their cached layers.
  */
-const SWAY_DISTANCE = 1500;
+const SWAY_DISTANCE = 1100;
 /** Clumps of pines, and the share of pines that stand alone in the meadow. */
 const CLUMPS = 220;
 const LONE = 0.05;
