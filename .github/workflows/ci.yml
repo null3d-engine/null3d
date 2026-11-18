@@ -1,18 +1,22 @@
 name: CI
 
-# Work lands on main by direct push (D-157 in .dev/decisions), and each push to main runs every
-# job, as .dev/pull-requests.md lists them. A run started by hand runs every job too:
-# gh workflow run ci.yml --ref main
+# Each piece of work lands on main through a pull request of its own (D-379 in .dev/decisions). A
+# pull request's run is the full run, with every job that .dev/pull-requests.md lists, because that
+# run judges the work before it merges. Each merge into main runs every job again on main's new
+# commit, and those runs keep the caches that every run restores. A run started by hand runs every
+# job too: gh workflow run ci.yml --ref main
+# A pull request's run checks out GitHub's merge of the pull request into main. A pull request from
+# a fork runs the fork's code with a read-only token: no job reads a secret, and the one job that
+# writes to the repository runs only on a push to main.
 # A checkout can stall: four of them ran 86 to 328 seconds where the same jobs normally take 17
 # to 19, and two jobs were cancelled with their work part-run. Every checkout step carries a
 # two-minute limit, so a stall fails under its own name in two minutes rather than spending the
 # job's budget and taking every step after it down.
-# A push to a milestone branch, such as m3-start, runs only the quick checks. Its runs and the full
-# runs started by hand on the branch share the branch's caches, so neither does again the work that
-# the other saved: a pull request's runs kept caches of their own (D-249).
 on:
   push:
-    branches: [main, 'm[0-9]+-start']
+    branches: [main]
+  pull_request:
+    branches: [main]
   # A run started by hand can ask its picture shards to keep every image that they draw, including
   # the images of shards that pass, so a picture reference comes from CI's own drawing without
   # waiting for a failure to save it. An ordinary run saves nothing extra.
@@ -26,17 +30,13 @@ on:
 permissions:
   contents: read
 
-# A newer push to main cancels main's run still in progress, so CI's machines test only the newest
-# code (the owner's choice, D-157). A cancelled job then reads "cancelled", as a job that hits its
-# time limit does; ci-passed says which of the two stopped it. A later push to a milestone branch
-# waits for the branch's run in progress instead of cancelling it, so every such run that starts
-# ends with a result, and GitHub keeps only the newest one waiting: an older waiting run goes before
-# it starts any job. The branch's landings come in bursts, and cancelling started runs threw away
-# most of their work (D-244). A run started by hand has a group of its own, so pushes never cancel
-# or replace it. Only a cancel by hand, as when a full run is started, ends a branch's run early.
+# A newer push to a pull request cancels that pull request's run in progress, and a newer merge into
+# main cancels main's, so CI's machines test only the newest code of each (D-379). A cancelled job
+# then reads "cancelled", as a job that hits its time limit does; ci-passed says which of the two
+# stopped it. A run started by hand has a group of its own, so no push cancels or replaces it.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && github.ref_name || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && 'main' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
   # Bun before 1.4.3 closes Playwright's pipe to Chrome at random, which hangs browser steps
@@ -56,16 +56,14 @@ env:
   HEAVY_TESTS: '\bdemo-[a-z0-9-]+ on |\benvironment-[a-z0-9-]+ on |shadow follows it at [a-z]+ with its own setting|coat-sheen: turned off they draw as none|\bvegetation-(wind|poses)(-later|-motion|-still)? on '
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
-  # Every run saves its caches, and every run restores its own branch's first, then main's. A
-  # milestone branch's caches serve its pushes and the full runs started on it, so each run reuses
-  # what the one before built. The repository's cache limit leaves room for those beside main's,
-  # which an older, smaller limit did not ([CI's jobs](.dev/pull-requests.md#cis-jobs)).
+  # Every run saves its caches, and every run restores its own first, then main's. A pull request's
+  # caches serve its later pushes, so each of its runs reuses what the one before built, such as the
+  # shader entries of a shader change. Main's caches serve every pull request. The repository's
+  # cache limit leaves room for both ([CI's jobs](.dev/pull-requests.md#cis-jobs)).
   SAVE_CACHES: true
-  # The commit that main pointed to before this push, empty on other branches and events. The size
-  # check compares a push to main with it, and the commit check reads the commits after it: after a
-  # merge and a push, the commit before (HEAD^) is the branch's own, not main's. Every other run
-  # compares with its merge base with main, as the milestone's pull request did.
-  PUSH_BEFORE: ${{ github.ref == 'refs/heads/main' && github.event.before || '' }}
+  # The commit that main pointed to before this push, empty on other events. The size check compares
+  # a push to main with it. Every other run compares with its merge base with main.
+  PUSH_BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
 
 jobs:
   docs-and-tools:
@@ -223,11 +221,14 @@ jobs:
       - run: bun run test:heavy
 
   commits:
-    # The commit messages and their trailers, which the commit hooks check locally: on a push to
-    # main, every commit after main's commit before the push; on any other run, every commit after
-    # the merge base with main. A newer push can drop a milestone branch's waiting run, so each run
-    # checks the whole branch rather than only its own push. A push that starts main, or replaces its
-    # history, has no commit before, and checks nothing.
+    # The commits of a pull request, which the commit hooks check locally: every commit after the
+    # merge base with main, up to the pull request's head. Their messages and trailers, with
+    # commitlint and the trailer check, and their merges, which hold only resolutions and mechanical
+    # fixes. A run started by hand checks its branch the same way. A merge into main squashes the
+    # pull request into one commit whose message holds the others' messages, so main's run has no
+    # commit of its own to check: the pull request's run checked each one, and ci-passed lets this
+    # job skip on a push to main alone.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -252,20 +253,21 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
-      - name: Commit messages and trailers
+      # A pull request's run checks out GitHub's merge of the pull request into main, so the commits
+      # end at the pull request's own head, which that merge holds.
+      - name: Commit messages, trailers and merges
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          from=${PUSH_BEFORE:-$(git merge-base origin/main HEAD)}
-          if [ "$from" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$from^{commit}"; then
-            echo "No commit before this push to compare with, so no commit is checked."
-            exit 0
-          fi
-          if [ -z "$(git rev-list -n 1 --no-merges "$from..HEAD")" ]; then
+          from=$(git merge-base origin/main "$HEAD_SHA")
+          if [ -z "$(git rev-list -n 1 --no-merges "$from..$HEAD_SHA")" ]; then
             echo "No commit after $from, so no commit is checked."
             exit 0
           fi
-          git log --oneline --no-merges "$from..HEAD"
-          bunx commitlint --from "$from" --to HEAD
-          bun tools/hooks/check-trailers.ts "$from..HEAD"
+          git log --oneline --no-merges "$from..$HEAD_SHA"
+          bunx commitlint --from "$from" --to "$HEAD_SHA"
+          bun tools/hooks/check-trailers.ts "$from..$HEAD_SHA"
+          bun tools/hooks/check-merges.ts "$from..$HEAD_SHA"
 
   rust-lint:
     # Formatting and Clippy. Clippy only checks the code and the tests compile it in full, so the
@@ -738,8 +740,6 @@ jobs:
     # modules that changed, and the tool keeps only the current entries.
     name: sketch-shaders (${{ matrix.share }})
     needs: build
-    # The browser jobs' full-run condition, which they set later in the file.
-    if: "github.event_name != 'push' || github.ref == 'refs/heads/main'"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -989,12 +989,12 @@ jobs:
           key: size-memo-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
       # The check writes the sizes before it judges them, so main keeps them also after a failure.
       - name: Keep the sizes of this commit of main
-        if: "!cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('target/size-report.json') != ''"
+        if: "!cancelled() && github.event_name == 'push' && hashFiles('target/size-report.json') != ''"
         run: |
           mkdir -p target/.size-base
           cp target/size-report.json "target/.size-base/$GITHUB_SHA.json"
       - uses: actions/cache/save@v4
-        if: "!cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('target/size-report.json') != ''"
+        if: "!cancelled() && github.event_name == 'push' && hashFiles('target/size-report.json') != ''"
         with:
           path: target/.size-base/${{ github.sha }}.json
           key: size-base-${{ github.sha }}
@@ -1261,9 +1261,6 @@ jobs:
     # that run alone, the heavy tests and S6's image tests have jobs of their own below.
     name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [build, sketch-shaders]
-    # Every run but a push to a milestone branch, which runs only the quick checks. The other jobs
-    # of the full run take the same condition.
-    if: &full-run "github.event_name != 'push' || github.ref == 'refs/heads/main'"
     runs-on: ubuntu-latest
     # The weights give each shard about the same time, and each shard runs one worker: two workers
     # on two cores made pages wait, and a page that waits out its own limit fails where its work
@@ -1375,7 +1372,6 @@ jobs:
     # the shards split them by count. The showcase HUD test has a job of its own below.
     name: browser (tests that run alone, ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -1438,7 +1434,6 @@ jobs:
     # keeps add; an ordinary run keeps the tighter limit.
     name: browser (heavy tests, ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs['drawn-images'] && 35 || 25 }}
     strategy:
@@ -1521,7 +1516,6 @@ jobs:
     # come before --project, which takes every name that follows it.
     name: browser (the production build, ${{ matrix.part }})
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -1614,7 +1608,6 @@ jobs:
     # leave out, so that only this job waits for the load pages job, which builds those files.
     name: browser (the city)
     needs: [build, sketch-shaders, load-pages]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -1689,7 +1682,6 @@ jobs:
     # more and the fog 535 s, so they became two tests.
     name: browser (the showcase HUD, ${{ matrix.part }})
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -1771,7 +1763,6 @@ jobs:
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so every shard needs the city's files.
     needs: [build, sketch-shaders, load-pages]
-    if: *full-run
     runs-on: ubuntu-latest
     # The shards run close to their measured times, and a slow software-renderer runner stretches
     # them further, so the limit stays above the measurement by more than that variation.
@@ -1891,7 +1882,6 @@ jobs:
     # and four and a half minutes of setup follow it, so the limit allows for the whole wind run.
     name: allocation (${{ matrix.gpu }})
     needs: [build, sketch-shaders, load-pages]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -1965,7 +1955,6 @@ jobs:
     # prebuilt real-browser shards serve them.
     name: load pages
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -2013,7 +2002,6 @@ jobs:
     # waits only for its own.
     name: load startup pages
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -2069,13 +2057,11 @@ jobs:
     # fault, --allow-image-faults has Safari skip the pages that draw and say why in the summary
     # and on the run's page; its shader pages still run. .dev/devices.md, "Safari on CI's machines",
     # has the evidence.
-    # A push to a milestone branch skips them, as every job of the full run.
     # The few pages that load what the load pages job makes, a production build or S6's city
     # files, run in the real-browsers-prebuilt job below, so these shards wait only for the build
     # job, about 3 minutes sooner.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
     # runner page went quiet for 90 to 235 s on some shards, and a new runner page then ran the rest,
@@ -2174,7 +2160,6 @@ jobs:
     # are the job above's, anchored and shared, so the two cannot drift.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: [build, sketch-shaders]
-    if: *full-run
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
@@ -2195,7 +2180,6 @@ jobs:
     # take about a minute of each browser's plan, so one shard in each browser runs them.
     name: real-browsers (${{ matrix.browser }}, the prebuilt pages)
     needs: [build, sketch-shaders, load-pages, load-startup-pages]
-    if: *full-run
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
@@ -2273,7 +2257,7 @@ jobs:
     # GitHub's default condition needs every job before ci-passed to have passed, and a pass-keyed
     # job that passed in an earlier run is skipped, so this job reads ci-passed's own result.
     needs: ci-passed
-    if: ${{ !cancelled() && needs.ci-passed.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() && needs.ci-passed.result == 'success' && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -2303,12 +2287,11 @@ jobs:
           git push --force origin HEAD:refs/heads/generated
 
   ci-passed:
-    # The one check of this workflow that main's rules require, so that the jobs above can split into
-    # shards and change their names with no change to the rules. It runs after every other job, also
-    # after a failure or a cancel, and fails unless each job passed. Only a push to a milestone
-    # branch may skip jobs, and only the full run's jobs, which take the full-run condition. The
-    # one other job that may skip is a pass-keyed job whose every part passed in an earlier run,
-    # which the passes job names.
+    # The one check of this workflow that main's rules require of a pull request, so that the jobs
+    # above can split into shards and change their names with no change to the rules. It runs after
+    # every other job, also after a failure or a cancel, and fails unless each job passed. Two jobs
+    # may skip: the commit check on a push to main, whose pull request's run checked its commits, and
+    # a pass-keyed job whose every part passed in an earlier run, which the passes job names.
     if: always()
     needs:
       - commits
@@ -2359,25 +2342,22 @@ jobs:
             if gh api "repos/$GITHUB_REPOSITORY/check-runs/$id/annotations" --jq '.[].message' | grep -q 'maximum execution time'; then
               echo "::error title=Timed out::$name hit its time limit, which is a failure"
             else
-              echo "::warning title=Cancelled::$name was cancelled, by a newer push to main or by hand"
+              echo "::warning title=Cancelled::$name was cancelled, by a newer push or by hand"
             fi
           done
-      # The full run's jobs, which may skip in a quick run alone, as their condition says, and the
-      # jobs that passed with the same inputs before.
+      # The commit check, which skips on a push to main alone, as its condition says, and the jobs
+      # that passed with the same inputs before.
       - name: Every job passed
         env:
           NEEDS: ${{ toJSON(needs) }}
-          QUICK: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+          PUSH: ${{ github.event_name == 'push' }}
           # The pass-keyed jobs whose every part passed in an earlier run, which start no runner.
           PASSED: ${{ needs.passes.outputs.passed || '[]' }}
         run: |
-          echo "quick checks only: $QUICK"
+          echo "push to main: $PUSH"
           echo "jobs that passed in an earlier run: $PASSED"
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
-          jq -e --argjson quick "$QUICK" --argjson passed "$PASSED" '[
-              "sketch-shaders", "load-pages", "load-startup-pages", "browser", "browser-alone", "browser-heavy",
-              "browser-production", "browser-city", "showcase", "bench", "allocation",
-              "real-browsers", "real-browsers-firefox", "real-browsers-prebuilt"
-            ] as $full | length > 0 and all(to_entries[]; .value.result == "success"
-              or (.value.result == "skipped" and ($quick and (.key | IN($full[])) or (.key | IN($passed[])))))' \
+          jq -e --argjson push "$PUSH" --argjson passed "$PASSED" 'length > 0 and all(to_entries[];
+              .value.result == "success"
+              or (.value.result == "skipped" and ($push and .key == "commits" or (.key | IN($passed[])))))' \
             <<< "$NEEDS" > /dev/null

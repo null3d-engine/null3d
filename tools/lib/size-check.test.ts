@@ -184,12 +184,13 @@ describe('chooseBase', () => {
 			).toEqual({ ref: 'HEAD^', why });
 	});
 
-	it('compares a push to a milestone branch with its merge base with main, not its last push', () => {
-		// A newer push can drop the branch's waiting run, whose push a check of each push would miss.
+	it("compares a pull request's run with its merge base with main, not its last push", () => {
+		// A newer push cancels the pull request's run, so a check of each push alone would miss the
+		// cancelled push's growth.
 		const env = {
-			GITHUB_EVENT_NAME: 'push',
-			GITHUB_REF: 'refs/heads/m3-start',
-			PUSH_BEFORE: '3c8d23afb0',
+			GITHUB_EVENT_NAME: 'pull_request',
+			GITHUB_REF: 'refs/pull/558/merge',
+			PUSH_BEFORE: '',
 		};
 		expect(chooseBase(undefined, env)).toEqual({
 			branch: 'main',
