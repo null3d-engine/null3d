@@ -342,8 +342,6 @@ The browser can still delete the origin's storage. Under storage pressure, it de
 
 The `?derived-cache=off` switch turns the cache off, so every load makes its data again, as on a first visit ([Testing](../guides/testing.md#switches-for-tests)).
 
-The vegetation add-on keeps its grown plants in a namespace that the page gives it: `prepareSpecies(ctx, module, { cache: ctx.assets.cache('@null3d/vegetation', 1) })` ([Vegetation](vegetation.md)).
-
 ## Errors
 
 Each call rejects with an engine error that says how to fix the problem:

@@ -47,7 +47,10 @@ function fakeBatch(count: number, tag: string): FakeBatch {
 	return batch;
 }
 
+// The impostors add-on with its card batch faked: the hand-over and the rest stay real.
+const impostors = await import('@null3d/impostors');
 mock.module('@null3d/impostors', () => ({
+	...impostors,
 	createImpostors(
 		_owner: unknown,
 		options: {
