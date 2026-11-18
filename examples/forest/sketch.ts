@@ -56,9 +56,9 @@ export default defineSketch(async (ctx) => {
 	// fades out by the sway distance so the far trees and their cached shadow cascades stand still.
 	const wind = createWind(ctx, { camera, box: 256 });
 	const sway = createSway(ctx, { wind });
-	// Each tree is 1 unit high and its bend grows over 18 units, so the trunks lean by a few
-	// centimeters at most: the forest shows the levels, and its wind only stirs it.
-	const bark = sway.material({ map: wood, height: 18, sway: 0.06, perSize: true });
+	// Each tree is 1 unit high, so its bend grows over its whole height and scales with its size:
+	// a stiff trunk, and a top that leans by about a meter in a brisk wind.
+	const bark = sway.material({ map: wood, sway: 0.008, rustle: 0.001, perSize: true });
 	const card = materials.standard({
 		map: pictures,
 		roughness: 0.9,

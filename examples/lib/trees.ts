@@ -80,7 +80,7 @@ function firParts({ tiers, low, width, branches, droop }: Fir): Part[] {
 				[branches * 4, 6],
 				[branches * 2, 3],
 				[branches, 2],
-				[branches / 2, 1],
+				[Math.max(1, Math.floor(branches / 2)), 1],
 			],
 		};
 	});
@@ -191,7 +191,14 @@ export const treeLevels = (kind: Kind) => partLevels(partsOf(kind));
  * the parts' own grids give each level's exact error.
  */
 export function meshOf(geometry: Geometry, kind: Kind | Part[]) {
-	const levels = partLevels(Array.isArray(kind) ? kind : partsOf(kind));
+	return meshOfLevels(geometry, partLevels(Array.isArray(kind) ? kind : partsOf(kind)));
+}
+
+/** A plant's costliest mesh from its levels' arrays, which names the coarser ones with their errors. */
+export function meshOfLevels(
+	geometry: Geometry,
+	levels: readonly { arrays: Parameters<Geometry['fromArrays']>[0]; error: number }[],
+) {
 	const [base, ...coarser] = levels.map(({ arrays, error }) => ({
 		mesh: geometry.fromArrays(arrays),
 		error,
@@ -238,11 +245,13 @@ export function woodTexture(size = 256, bark: 'furrowed' | 'birch' = 'furrowed')
 			let rgb: number[];
 			if (v < NEEDLES[0]) {
 				if (bark === 'birch') {
-					const lenticel = frac(v * 70 + 0.2 * Math.sin(u * TURN * 3)) < 0.09;
-					const dash = lenticel && Math.sin(u * TURN * 5 + v * 90) > -0.2;
-					const patch = Math.sin(u * TURN * 2 + v * 17) * Math.sin(v * 37 + u * TURN) > 0.72;
-					const dark = dash || patch ? 0.28 : 1;
-					rgb = [222, 216, 200].map((c) => c * dark * (0.9 + 0.1 * g));
+					const lenticel = frac(v * 45 + 0.3 * Math.sin(u * TURN * 3)) < 0.14;
+					const dash = lenticel && Math.sin(u * TURN * 3 + v * 50) > -0.2;
+					const patch = Math.sin(u * TURN * 2 + v * 19) * Math.sin(v * 41 + u * TURN) > 0.62;
+					const foot = smooth(0.1, 0.02, v);
+					const dark = dash || patch ? 0.16 : 1 - 0.7 * foot;
+					const warm = 0.9 + 0.1 * Math.sin(u * TURN + v * 23);
+					rgb = [226 * warm, 208, 182 / warm].map((c) => c * dark * (0.82 + 0.18 * g));
 				} else {
 					const furrow = 0.5 + 0.5 * Math.sin(u * TURN * 7 + 1.8 * Math.sin(v * 40 + u * TURN * 2));
 					rgb = [96, 78, 62].map((c) => c * (0.35 + 0.65 * furrow ** 1.5) * g);

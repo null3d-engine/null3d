@@ -19,6 +19,7 @@ import {
 	math,
 	type Scene,
 } from '@null3d/engine';
+import { ringLandArrays } from '../lib/land';
 import { type Kind, lean, outline, reach, smooth, TURN } from '../lib/trees';
 
 /** The cut-out pictures of the trees for the far cards: one column each, 64 by 128 texels. */
@@ -75,33 +76,27 @@ export function ground(x: number, z: number) {
 }
 
 /**
- * The land out to `far` meters, as rings that widen with distance, with texture coordinates every
- * 8 m. Its colors run from the needle litter of the forest floor to the dark canopy of the ridges.
+ * The land out to `far` meters, with texture coordinates every 8 m. Its colors run from the needle
+ * litter of the forest floor to the dark canopy of the ridges.
  */
 export function landArrays(far: number, edge: number) {
-	const positions: number[] = [];
-	const colors: number[] = [];
-	const uvs: number[] = [];
-	const indices: number[] = [];
-	const [around, out] = [160, 120];
-	for (let r = 0; r <= out; r++)
-		for (let c = 0; c <= around; c++) {
-			const [a, d] = [(c / around) * TURN, far * (r / out) ** 2];
-			const [x, z] = [Math.cos(a) * d, Math.sin(a) * d];
-			positions.push(x, ground(x, z), z);
-			uvs.push(x / 8, z / 8);
+	return ringLandArrays({
+		far,
+		rings: 120,
+		around: 160,
+		spacing: 2,
+		tile: 8,
+		height: ground,
+		color: (x, z, d) => {
 			const wood = smooth(edge * 0.85, edge * 1.35, d);
 			const patch = 0.82 + 0.18 * Math.sin(x * 0.03) * Math.sin(z * 0.025);
-			// Needle litter under the trees, in the shade the canopy keeps over it, then a dark canopy
-			// with tree-top bumps on the ridges.
+			// Needle litter under the trees, in the shade the canopy keeps over it, then a dark
+			// canopy with tree-top bumps on the ridges.
 			const tops = wood > 0 && d > edge ? 0.78 + 0.42 * Math.sin(x * 0.16) * Math.sin(z * 0.19) : 1;
 			const shade = (near: number, far: number) => (near * (1 - wood) + far * wood) * patch * tops;
-			colors.push(shade(0.19, 0.03), shade(0.155, 0.05), shade(0.085, 0.024));
-			const i = r * (around + 1) + c;
-			if (r < out && c < around)
-				indices.push(i, i + around + 1, i + 1, i + 1, i + around + 1, i + around + 2);
-		}
-	return { positions, colors, uvs, indices, computeNormals: true };
+			return [shade(0.19, 0.03), shade(0.155, 0.05), shade(0.085, 0.024)];
+		},
+	});
 }
 
 /** A mottled texture that repeats, for the land: litter and moss, made brighter to tint. */

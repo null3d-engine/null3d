@@ -889,14 +889,11 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./vegetation-wind/sketch.ts', import.meta.url),
 		code: 'vegetation-wind/',
 		title: 'Plants in wind',
-		scene: 'A meadow in a breeze',
+		scene: 'A grove in a breeze',
 		summary:
-			"The same plants under the wind add-on's field: set the wind's strength and its bearing on the sliders, and the crowns lift and settle as it passes. The Hold button stops the air, so a still frame can be compared with a moving one.",
+			"A grove of oaks, birches and firs, with bushes, ferns and grass at its feet, all made in code and swaying in the wind add-on's field. Each plant's material reads the air at its root, so trunks stay firm while crowns, fronds and blades bend and flutter. Set the wind's strength and its bearing on the sliders. The Hold button stops the air, so a still frame can be compared with a moving one.",
 		controls: [],
 		hold: 2,
-		// The same meadow under the wind's field costs at least as much as the still meadow, and its
-		// held capture needs more than 240 s on CI's software GPU.
-		timeoutSeconds: 600,
 	},
 	{
 		name: 'forest',

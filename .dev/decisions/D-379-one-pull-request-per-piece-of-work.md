@@ -67,5 +67,6 @@ Options rejected:
 - The `Task:` footer rule is gone, with `tools/hooks/check-task.ts` and `tools/hooks/task-ids.txt`. Only the status tool read the footers. A pull request names its work itself. A `Task:` footer that a message still carries is harmless.
 - The copy check, `tools/hooks/check-copies.ts`, is gone. It kept a second copy of a commit off main. A squash merge writes one new commit, so no copy reaches main.
 - The merge check, `tools/hooks/check-merges.ts`, runs in CI's commit check on each pull request. Its list of known merges stays: a branch that still holds the 0.2 release work's history reaches them.
+- A squash merge writes each squashed commit's message into the body of main's commit, and GitHub adds its co-authors after them. Git reads only the last block as trailers, so main's size check would miss a `Size-Growth:` line. `keptCommits` in `tools/hooks/check-trailers.ts` gathers every squashed commit's trailers into one block, and the size check and the trailer check read that.
 - `bun run limits` runs before a pull request opens or takes a push.
 - `AGENTS.md` and `.dev/pull-requests.md` describe the new flow. [Releases](../releases.md) describes how a release counts main's runs.
