@@ -87,12 +87,11 @@ export type BaseChoice =
 
 /**
  * The base of the size check. `--base <ref>` names it. A push to main compares with the commit that
- * main pointed to before the push, which CI passes as `PUSH_BEFORE`: work lands by a merge of main
- * into a branch and a push (D-157), so the commit before (HEAD^) is the branch's own, and the push's
- * growth and trailers are those of every commit after main's old tip. A push to main with no such
- * commit compares with the commit before. Every other run compares with HEAD's merge base with
- * main: a push to a milestone branch judges the whole milestone, as its pull request did, since a
- * newer push can drop a waiting run, and a check of each push alone would then miss that one.
+ * main pointed to before the push, which CI passes as `PUSH_BEFORE`, so the push's growth and
+ * trailers are those of every commit after main's old tip. A push to main with no such commit
+ * compares with the commit before. Every other run compares with HEAD's merge base with main: a
+ * pull request's run judges the whole pull request, since a newer push cancels its run in progress,
+ * and a check of each push alone would then miss the cancelled one.
  */
 export function chooseBase(
 	ref: string | undefined,

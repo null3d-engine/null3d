@@ -1,7 +1,7 @@
 // Checks the CI workflow's job graph, its shard lists and the reuse of its work. A typo in the
 // graph or the lists breaks CI without failing any job: a job missing from ci-passed's needs never
-// gates main, a job that skips where ci-passed does not expect it fails every quick run, and a
-// shard missing from a matrix never runs its tests. A fault in the reuse costs time on every
+// gates a pull request, a job that skips where ci-passed does not expect it fails every run that
+// skips it, and a shard missing from a matrix never runs its tests. A fault in the reuse costs time on every
 // run, or reuses a pass that no longer holds, and fails nothing: a job that builds what the build
 // job made, a test of the whole shader set in two jobs, and a pass key that misses a script that
 // its part starts ([Efficient jobs](../../.dev/pull-requests.md#efficient-jobs)).
@@ -45,6 +45,7 @@ const ROOT = join(import.meta.dirname, '../..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as {
 	on: {
 		push?: { branches?: string[] };
+		pull_request?: { branches?: string[]; types?: string[] };
 		workflow_dispatch?: { inputs?: Record<string, DispatchInput> };
 	};
 	concurrency: { group: string; 'cancel-in-progress': string };
@@ -57,8 +58,6 @@ const scripts = (
 	}
 ).scripts;
 
-/** The condition of the full run's jobs, which a push to a milestone branch skips. */
-const FULL_RUN = "github.event_name != 'push' || github.ref == 'refs/heads/main'";
 /** A value as the workflow writes it: an expression that GitHub works out when the run starts. */
 const expression = (text: string) => `\${{ ${text} }}`;
 const needsOf = (job: Job | undefined): string[] =>
@@ -196,18 +195,13 @@ describe("CI's workflow", () => {
 			);
 	});
 
-	it("lets only the full run's jobs skip, and only in a quick run", () => {
+	it('lets only the commit check skip on a push to main, and a job that passed before', () => {
 		const step = jobNamed('ci-passed').steps?.find(({ name }) => name === 'Every job passed');
-		const list = /\[([^\]]*)\] as \$full/.exec(step?.run ?? '')?.[1] ?? '';
-		const skippable = [...list.matchAll(/"([\w-]+)"/g)].map(([, job]) => job).sort();
-		// A job may narrow the full run's condition for itself — the device job skips the shard axis
-		// values that Firefox does not use — so the test reads the condition as a part of the job's
-		// own rather than as the whole of it.
-		const full = needsOf(jobs['ci-passed'])
-			.filter((name) => String(jobNamed(name).if ?? '').includes(FULL_RUN))
-			.sort();
-		expect(skippable).toEqual(full);
-		expect(full.length).toBeGreaterThan(0);
+		// A merge into main squashes a pull request whose run checked each of its commits, so the
+		// commit check runs on every other event, and ci-passed accepts its skip on a push alone.
+		expect(jobNamed('commits').if).toBe("github.event_name != 'push'");
+		expect(step?.env?.PUSH).toBe(expression("github.event_name == 'push'"));
+		expect(step?.run).toContain('$push and .key == "commits"');
 		// A pass-keyed job skips when the passes job found every part passed, and ci-passed knows it.
 		for (const name of Object.keys(PASS_KEYED)) {
 			expect(jobNamed(name).if, name).toBe(
@@ -217,14 +211,10 @@ describe("CI's workflow", () => {
 		}
 		expect(step?.env?.PASSED).toBe(expression("needs.passes.outputs.passed || '[]'"));
 		expect(step?.run).toContain('(.key | IN($passed[]))');
-		// Every other job that ci-passed waits for runs in every run.
+		// Every other job that ci-passed waits for runs in every run, a pull request's run included.
 		for (const name of needsOf(jobs['ci-passed']))
-			if (!full.includes(name) && !(name in PASS_KEYED))
+			if (name !== 'commits' && !(name in PASS_KEYED))
 				expect(jobNamed(name).if, name).toBeUndefined();
-		// The quick run that ci-passed reads is a run that the full-run condition leaves out.
-		expect(step?.env?.QUICK).toBe(
-			expression("github.event_name == 'push' && github.ref != 'refs/heads/main'"),
-		);
 	});
 
 	it('runs every shard of each numbered matrix once', () => {
@@ -661,16 +651,31 @@ describe("CI's workflow", () => {
 		expect(trim?.if).toBe(save?.if);
 	});
 
-	it("runs a milestone branch's pushes in the branch's caches, and no pull request event", () => {
-		// A pull request's runs keep caches that the full runs started by hand on its branch cannot
-		// read, so each kind did again the work that the other had saved.
-		expect(Object.keys(workflow.on).sort()).toEqual(['push', 'workflow_dispatch']);
-		expect(workflow.on.push?.branches).toEqual(['main', 'm[0-9]+-start']);
-		// Each pushed branch has one group, and a run started by hand a group of its own, so a push
-		// never cancels or replaces a full run.
+	it('runs every job on each pull request to main and each push to main', () => {
+		// A pull request's run judges the work before it merges, so it takes GitHub's default events:
+		// opened, every new push, and reopened. No path filter, since ci-passed must answer each one.
+		expect(Object.keys(workflow.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch']);
+		expect(workflow.on.push?.branches).toEqual(['main']);
+		expect(workflow.on.pull_request).toEqual({ branches: ['main'] });
+		// Each pull request has one group and main has one, and a run started by hand a group of its
+		// own, so no push cancels or replaces it.
 		expect(workflow.concurrency.group).toBe(
-			`ci-${expression("github.event_name == 'push' && github.ref_name || github.run_id")}`,
+			`ci-${expression("github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && 'main' || github.run_id")}`,
 		);
+	});
+
+	it("gives a fork's pull request no secret and no write access", () => {
+		// A pull request from a fork runs the fork's code. GitHub gives its run a read-only token, and
+		// a job that read a secret or wrote to the repository would hand either to that code.
+		const text = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+		expect(text).not.toMatch(/\bsecrets\./);
+		for (const [name, job] of Object.entries(jobs)) {
+			const granted = Object.values(
+				(job as { permissions?: Record<string, string> }).permissions ?? {},
+			);
+			if (granted.includes('write'))
+				expect(String(job.if), name).toContain("github.event_name == 'push'");
+		}
 	});
 
 	/** The step of a job that uploads the pictures an image test drew. */
@@ -728,11 +733,11 @@ describe("CI's workflow", () => {
 		}
 	});
 
-	it('cancels a run in progress only on a push to main, so every other run that starts ends', () => {
-		// Cancelling a milestone branch's started run threw its work away: its landings come in
-		// bursts, and a later run waits instead, while GitHub drops an older waiting run before it starts.
+	it('cancels a run in progress on a newer push, and never a run started by hand', () => {
+		// A newer push to a pull request, or to main, holds every change of the older one, so only the
+		// newest run's result counts. A run started by hand asks for that run's own result.
 		expect(workflow.concurrency['cancel-in-progress']).toBe(
-			expression("github.event_name == 'push' && github.ref == 'refs/heads/main'"),
+			expression("github.event_name != 'workflow_dispatch'"),
 		);
 	});
 
