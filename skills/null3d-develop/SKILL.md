@@ -136,6 +136,7 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | `api/particles` | built |
 | Gaussian splats from a scan or a training run, as SPZ or `KHR_gaussian_splatting` files | `@null3d/splats` | `api/splats` | built |
 | Hills, valleys and other ground from a height field | `@null3d/terrain` | `api/terrain` | built |
+| Grass over a ground, swaying in the wind, with near shadows | `@null3d/grass` | `api/grass` | built |
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |

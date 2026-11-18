@@ -9,7 +9,7 @@ import type { QualityPreset } from '@null3d/engine';
  * page reads it from the engine's preset, so a governor step that lowers the preset shortens the
  * distance with it.
  *
- * @category api/vegetation
+ * @category api/grass
  */
 export const PLANT_SWAY_DISTANCE: Readonly<Record<QualityPreset, number>> = {
 	low: 8,
@@ -20,12 +20,12 @@ export const PLANT_SWAY_DISTANCE: Readonly<Record<QualityPreset, number>> = {
 
 /**
  * The distance from the camera out to which plants and grass sway at a preset, in meters. Pass it
- * as `swayDistance` to `plantMaterials` and `createGrass`, and again to `grass.setSwayDistance`
- * when the preset changes.
+ * as `swayDistance` to `createGrass` and to a swaying plant's material, and again to
+ * `grass.setSwayDistance` when the preset changes.
  *
  * @param preset The engine's quality preset.
  * @returns The distance that {@link PLANT_SWAY_DISTANCE} gives the preset.
- * @category api/vegetation
+ * @category api/grass
  */
 export function swayDistanceFor(preset: QualityPreset): number {
 	return PLANT_SWAY_DISTANCE[preset];
