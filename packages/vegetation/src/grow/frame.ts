@@ -7,36 +7,14 @@
 //
 // `planFrame` gives the frame as plain data with the foliage patches beside it; `frameSockets` gives
 // the wood ends that carry foliage, ranked once across the plant; `frameSkeleton` writes the frame
-// into a skeleton, and `growFrame` writes it with its sockets as bud sites, for a record that
-// states its frame as its growth.
+// into a skeleton.
 import { archPath } from '../core/arch';
-import {
-	AXIS_LIMB,
-	AXIS_STEM,
-	BUD_TERMINAL,
-	type MacroSkeleton,
-	SkeletonBuilder,
-} from '../core/graph';
+import { AXIS_LIMB, AXIS_STEM, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
-import {
-	acos,
-	asin,
-	atan2,
-	cos,
-	PI,
-	quatAxisAngle,
-	quatFromFrame,
-	quatMultiply,
-	radians,
-	sin,
-	tan,
-	type Vector3,
-} from '../core/math';
+import { acos, asin, atan2, cos, PI, radians, sin, tan, type Vector3 } from '../core/math';
 import { thinningRanks } from '../core/rank';
-import type { Framed, Species } from '../core/record';
-import { type Curve, curveAt, spreadAt, spreadMean } from '../core/types';
+import { type Curve, curveAt, spreadAt } from '../core/types';
 import type { GrowInput } from '../stages';
-import type { Grower } from './models';
 
 /** The golden angle in degrees, which turns each axis of a spiral on from the last. */
 const GOLDEN = 137.50776405;
@@ -145,13 +123,6 @@ const Purpose = {
 	Fill: 14,
 	Turn: 15,
 } as const;
-/**
- * The steps of the plastic number's sequence, which spreads pairs of shares evenly over a run of
- * any length: a piece's roll takes the first and its tilt the second.
- */
-const SPREAD_ROLL = 0.7548776662466927;
-const SPREAD_TILT = 0.5698402909980532;
-
 /**
  * What an axis of a frame is.
  *
@@ -475,6 +446,11 @@ export interface FramePatch {
 	 * whip's does. Absent, the patch stands at the axis's end.
 	 */
 	readonly clothes?: number;
+	/**
+	 * The fine wood the patch asks for, in metres: the spacing between the sockets that clothe it
+	 * and the length of the piece at each. Absent, the patch states dense sockets instead.
+	 */
+	readonly fill?: { readonly pitch: number; readonly reach: number };
 }
 
 /** A patch while its plan is built, with the fine wood it asks for, in metres. */
@@ -848,10 +824,13 @@ export function outlineSpan(spec: FrameSpec): { readonly foot: number; readonly 
  *
  * @param spec The species' frame.
  * @param input The record, the seed, the variant and the season.
+ * @param fill Whether to clothe each patch with its fine wood and report the sockets' own patches;
+ *   left out, the frame fills as it always has. A plan that reads only the stated axes asks for the
+ *   patches themselves, which the fill replaces.
  * @returns The frame.
  * @category api/vegetation
  */
-export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
+export function planFrame(spec: FrameSpec, input: GrowInput, fill = true): FramePlan {
 	const { record, variant } = input;
 	const seed = input.seed >>> 0;
 	const salt = record.seedSalt >>> 0;
@@ -2087,7 +2066,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		return out;
 	};
 
-	const clothed = fillMasses();
+	const clothed: FramePatch[] = fill ? fillMasses() : (patches as FramePatch[]);
 
 	let top = 0;
 	let crownBase = Number.POSITIVE_INFINITY;
@@ -2279,115 +2258,3 @@ export function frameSockets(plan: FramePlan): FrameSocket[] {
 	const ranks = thinningRanks(found.map((socket) => socket.at));
 	return found.map((socket, k) => ({ ...socket, rank: ranks[k] as number }));
 }
-
-/**
- * Grows one plant whose record states its frame as its growth: the frame's axes as a skeleton, and
- * each socket as a bud site with the socket record. A socket's frame has +Y along the wood's end
- * and +Z toward the sky; its scale is the plant's own height over the species' middle height, so a
- * taller plant carries larger pieces; its mass is its patch.
- *
- * @param input The record, the seed, the variant and the season.
- * @returns The skeleton.
- */
-export function growFrame(input: GrowInput): MacroSkeleton {
-	const growth = input.record.growth;
-	if (growth.model !== 'frame')
-		throw new Error(`@null3d/vegetation: ${input.record.id} does not grow by the frame model`);
-	const plan = planFrame(growth.frame, input);
-	const builder = new SkeletonBuilder();
-	const written = writeAxes(plan, builder);
-	// Shoot rows grow with the plant; a branch piece is the size its leaves make it, or the size the
-	// record asks where a crown and a cut draw one piece at two scales.
-	const scale =
-		growth.sockets.piece === undefined
-			? plan.scale / Math.max(1e-6, spreadMean(input.record.size.height))
-			: (growth.sockets.scale ?? 1);
-	const frame = new Float32Array(4);
-	const spin = new Float32Array(4);
-	// Each piece's roll and tilt are its socket's place in two evenly spread runs of shares, each
-	// started at the plant's own draw.
-	const turn = growth.sockets.turn;
-	const seed = input.seed >>> 0;
-	const salt = input.record.seedSalt >>> 0;
-	const rollFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 0);
-	const tiltFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 1);
-	frameSockets(plan).forEach((socket, k) => {
-		const wood = written[socket.axis] as Written;
-		socketFrame(socket, turn?.out, frame);
-		if (turn) {
-			const share = (from: number, step: number): number => ((from + k * step) % 1) * 2 - 1;
-			quatAxisAngle([0, 1, 0], radians(share(rollFrom, SPREAD_ROLL) * turn.roll), spin);
-			quatMultiply(frame, 0, spin, 0, frame);
-			quatAxisAngle([1, 0, 0], radians(share(tiltFrom, SPREAD_TILT) * turn.tilt), spin);
-			quatMultiply(frame, 0, spin, 0, frame);
-		}
-		builder.addBud({
-			node: wood.nodes[socket.node] as number,
-			x: socket.at[0],
-			y: socket.at[1],
-			z: socket.at[2],
-			frame,
-			kind: BUD_TERMINAL,
-			vigor: 1,
-			light: 1,
-			axis: wood.axis,
-			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[socket.node] as FrameNode).radius,
-			socket: { scale, rank: socket.rank, lobe: socket.patch },
-		});
-	});
-	return builder.finish(plan.crownBase);
-}
-
-/**
- * Writes the frame a socket's piece stands in before its turn: its line along the socket's heading
- * and its upper face toward the sky. With `out`, the line tips that many degrees down from the
- * heading, which runs out of the patch, so the piece's upper face leans out of the patch and up, as a
- * crown's outer leaves turn their upper faces to the light.
- */
-function socketFrame(socket: FrameSocket, out: number | undefined, frame: Float32Array): void {
-	const [hx, hy, hz] = socket.heading;
-	const sky: Vector3 = Math.abs(hy) > 0.99 ? [1, 0, 0] : [0, 1, 0];
-	// The way down square to the heading; a plumb heading has none, and keeps its face to the sky.
-	const dx = hx * hy;
-	const dy = hy * hy - 1;
-	const dz = hz * hy;
-	const down = Math.sqrt(dx * dx + dy * dy + dz * dz);
-	if (out === undefined || down < 1e-3) {
-		quatFromFrame(socket.heading, sky, frame);
-		return;
-	}
-	const a = radians(out);
-	const c = cos(a);
-	const s = sin(a);
-	const line = unit(c * hx + (s * dx) / down, c * hy + (s * dy) / down, c * hz + (s * dz) / down);
-	const toward: Vector3 = [
-		s * hx - (c * dx) / down,
-		s * hy - (c * dy) / down,
-		s * hz - (c * dz) / down,
-	];
-	quatFromFrame(line, toward, frame);
-}
-
-/**
- * A species' record with a frame as its growth, in place of the growth it is registered with. Its
- * forms state the registered growth's figures, so they are left out.
- *
- * @param record The species' registered record.
- * @param frame The species' frame.
- * @param sockets What each socket holds.
- * @returns The record that grows by the frame.
- * @category api/vegetation
- */
-export function framedRecord(
-	record: Species,
-	frame: FrameSpec,
-	sockets: Framed['sockets'],
-): Species {
-	const { forms: _forms, ...own } = record;
-	return { ...own, growth: { model: 'frame', frame, sockets } };
-}
-
-/** The frame grower. */
-export const grower: Grower = {
-	grow: growFrame,
-};

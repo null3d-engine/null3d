@@ -2,9 +2,6 @@
 // prototypes, built as the piece builder builds them, each socket carries every part of one variant
 // at one place with one turn, wind record and phase, and the same seed places the same rows.
 import { beforeAll, describe, expect, it } from 'bun:test';
-import { files as holmTextures } from '@null3d/vegetation-textures/holm-oak';
-import { files as oakTextures } from '@null3d/vegetation-textures/pedunculate-oak';
-import { files as willowTextures } from '@null3d/vegetation-textures/weeping-willow';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { hashBytes } from '../core/hash';
@@ -14,10 +11,6 @@ import { DETAILS } from '../core/types';
 import { buildKitNow, buildPiecesNow, growPlantNow, loadPlantCode } from '../generate';
 import { foliageBox } from '../lod/card-size.test-support';
 import { drawnAtOnce, TALLEST_VIEWS } from '../lod/drawn';
-import { directed as holmDirected } from '../species/holm-oak/directed';
-import { directed as oakDirected } from '../species/pedunculate-oak/directed';
-import { directed as willowDirected } from '../species/weeping-willow/directed';
-import { PIECES as WILLOW_PIECES } from '../species/weeping-willow/pieces';
 import { carriesPieces, PROTOTYPES_MOST } from './piece-rows';
 
 const LONG = scaledBudget(120_000);
@@ -38,24 +31,6 @@ const DRESSED: readonly Dressed[] = [
 		module: () => loadSpecies('scots-pine'),
 		piece: 'bough',
 		flat: true,
-	},
-	{
-		title: 'the pedunculate oak, framed, with its branch ends at sockets',
-		module: async () => ({ record: oakDirected, textures: oakTextures }),
-		piece: 'branch-end',
-		flat: false,
-	},
-	{
-		title: 'the holm oak, framed, with its branch ends at sockets',
-		module: async () => ({ record: holmDirected, textures: holmTextures }),
-		piece: 'branch-end',
-		flat: false,
-	},
-	{
-		title: 'the weeping willow, framed, with its long strands at sockets',
-		module: async () => ({ record: willowDirected, textures: willowTextures }),
-		piece: 'strand-long',
-		flat: false,
 	},
 	{
 		title: 'the silver birch, framed, with its sprays at sockets',
@@ -183,14 +158,10 @@ for (const dressed of DRESSED)
 	});
 
 /** A plant that carries pieces, with the rules its kit builds. */
-const KITS: readonly { readonly title: string; readonly module: SpeciesModule }[] = [
+const KITS: readonly { readonly title: string; readonly load: () => Promise<SpeciesModule> }[] = [
 	{
-		title: "the pedunculate oak's branch ends",
-		module: { record: oakDirected, textures: oakTextures },
-	},
-	{
-		title: "the weeping willow's strands, whose blades bend in their own plane",
-		module: { record: { ...willowDirected, pieces: WILLOW_PIECES }, textures: willowTextures },
+		title: "the planned pedunculate oak's branch ends",
+		load: () => loadSpecies('pedunculate-oak'),
 	},
 ];
 
@@ -199,10 +170,11 @@ const positionsDigest = (positions: Float32Array | undefined): number =>
 	hashBytes(new Uint8Array(positions?.buffer ?? new ArrayBuffer(0)), 1);
 
 describe('a kit that carries pieces', () => {
-	for (const { title, module } of KITS)
+	for (const { title, load } of KITS)
 		it(
 			`builds ${title} as the piece builder does, in the leaves cut for pieces`,
 			async () => {
+				const module = await load();
 				await loadPlantCode(module.record);
 				const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
 				const built = buildPiecesNow(module, module.record.pieces ?? []);

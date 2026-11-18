@@ -206,7 +206,6 @@ export interface PlantSize {
 export type Growth =
 	| SelfOrganizing
 	| Scaffold
-	| Framed
 	| Architectural
 	| Conifer
 	| CrownRosette
@@ -216,7 +215,8 @@ export type Growth =
 	| Rosette
 	| FrondColony
 	| Tuft
-	| Column;
+	| Column
+	| Planned;
 
 /**
  * The name of a growth model.
@@ -712,50 +712,6 @@ export interface ArchitecturalOrder {
 	readonly upturn: number;
 	/** Degrees it bends over its length. */
 	readonly curve: number;
-}
-
-/**
- * A plant built in a set order from a tree of axis rules: its stems and, under each, the axes that
- * leave it, with their counts, places, angles, bends, lengths and widths as the species measured
- * them, and a foliage patch on each axis whose rule states one. Every wood end that carries a patch
- * is a socket, in the scaffold model's own socket record.
- *
- * @category api/vegetation
- */
-export interface Framed {
-	/** The model's name. */
-	readonly model: 'frame';
-	/** The stems, the axes under them and the crown outline. */
-	readonly frame: FrameSpec;
-	/** What each socket holds: shoot rows as the scaffold model states them, or one branch piece. */
-	readonly sockets: {
-		/** Shoot rows that one socket holds. */
-		readonly rows: Spread;
-		/** Degrees the rows of one socket fan from its line. */
-		readonly fan: number;
-		/**
-		 * The branch piece each socket carries, by its name among the record's pieces. Absent, a
-		 * socket holds shoot rows.
-		 */
-		readonly piece?: string;
-		/**
-		 * The size of each socket's piece over its rule's own. A crown's sprays and the cutting a close
-		 * view draws may stand at different sizes of one measured piece: the crown's at the species'
-		 * leaf, the cut's at the size its photograph's frame asks. Absent, 1. It reads only where a
-		 * piece is named, so a plant of shoot rows is unaffected.
-		 */
-		readonly scale?: number;
-		/**
-		 * The most degrees each piece turns at its socket: its roll about its own line, from the
-		 * side its upper face starts toward, and its tilt off the wood's line. Each is a share spread
-		 * evenly over the sockets in their order, so no two neighbours turn alike and the crown's
-		 * leaf faces every way. With `out`, each piece's line first tips that many degrees down from
-		 * its socket's heading, which runs out of its patch, so its upper face starts out of the
-		 * patch and up, as a crown's outer leaves turn their upper faces to the light; else its upper
-		 * face starts toward the sky. Absent, every piece's flat side faces the sky.
-		 */
-		readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
-	};
 }
 
 /**
@@ -1423,6 +1379,20 @@ export interface Tuft {
 }
 
 /**
+ * The tuft numbers a record grows by, from its own tuft model or from the tuft adult of the planned
+ * model. The tuft family reads its pieces and its stool from them wherever they stand.
+ *
+ * @param record The species record.
+ * @returns Its tuft numbers, or undefined for a record that is not a tuft.
+ * @category api/vegetation
+ */
+export function tuftGrowth(record: Species): Tuft | undefined {
+	const growth = record.growth;
+	if (growth.model === 'tuft') return growth;
+	return growth.model === 'planned' && growth.adult === 'tuft' ? growth.tuft : undefined;
+}
+
+/**
  * What a tuft draws under its shoots: a rhizome lying at the soil's surface and the roots that leave
  * it. A tufted grass leaves the rhizome absent and draws fibrous roots; a sedge shows both.
  *
@@ -1617,6 +1587,185 @@ export interface Column {
 	};
 	/** Metres between areoles on a rib crest; each carries a spine-cluster prototype. */
 	readonly areoles: number;
+}
+
+/**
+ * A crown of fronds from one growing point: a rosette. Each frond is one socket at the trunk's top,
+ * carrying a whole piece. The ranks spread the living fronds by their leaving angle and their
+ * piece, and the dead skirt hangs below them on its own piece. A rosette grows no woody axis above
+ * the trunk, so its plan takes its crown's box from the pieces' own reach.
+ *
+ * @category api/vegetation
+ */
+export interface PlannedRosette {
+	/**
+	 * The living fronds: how many, how they stand round the trunk and how far their bases stand
+	 * from its axis.
+	 */
+	readonly fronds: {
+		/** Fronds on a full-grown plant. */
+		readonly count: Spread;
+		/** Degrees from one frond to the next round the trunk, where they stand on a spiral. */
+		readonly divergence: number;
+		/**
+		 * How the fronds stand round the trunk: each rank spread evenly round it, or each turned on
+		 * from the last by the divergence.
+		 */
+		readonly layout: 'rings' | 'spiral';
+		/**
+		 * How far down the trunk's top the oldest frond's base stands, in metres: the youngest stand
+		 * at the growing point, and the bases of the older ones stand lower in order.
+		 */
+		readonly clasp: number;
+		/** The size of a frond piece against its rule's own; absent, 1. */
+		readonly scale?: number;
+	};
+	/**
+	 * The ranks of the living fronds, from the youngest and steepest: its share of the fronds, its
+	 * piece and its leaving angle above level.
+	 */
+	readonly ranks: readonly {
+		/** Its share of the living fronds. The ranks' shares add to 1. */
+		readonly share: number;
+		/** The piece these fronds carry, by its name among the record's pieces. */
+		readonly piece: string;
+		/** Degrees above level the fronds leave at. */
+		readonly leave: number;
+		/** Degrees a frond strays from its rank's leaving angle, either way. Absent, a few degrees. */
+		readonly spread?: number;
+		/** The rank's fronds' length as a share of the piece's own. Absent, 1. */
+		readonly length?: number;
+	}[];
+	/** The dead fronds that hang under the living crown, where the species carries them. */
+	readonly dead?: {
+		/** Dead fronds on a full-grown plant. */
+		readonly count: Spread;
+		/** The piece they carry, brown as its rule states. */
+		readonly piece: string;
+		/** Degrees below level a dead frond hangs. */
+		readonly hang: Spread;
+		/** The share of the height below the growing point where the lowest attaches. */
+		readonly from: number;
+		/** The share of the height below the growing point where the highest attaches. */
+		readonly to: number;
+		/** The length of a dead frond as a share of a living one. */
+		readonly length: number;
+	};
+	/** The young fronds still rolled, drawn as the trunk's own hairy wood. */
+	readonly croziers?: {
+		/** Croziers at the centre of the crown. */
+		readonly count: Spread;
+		/** A crozier's length as a share of the height. */
+		readonly length: Spread;
+		/** Degrees the crozier's head coils through. */
+		readonly coil: number;
+		/** The head's radius, in metres at its first turn. */
+		readonly radius: number;
+		/** Degrees a crozier leans out from plumb. */
+		readonly lean: number;
+	};
+}
+
+/**
+ * One order of a planned plant's wood, the orders below the boughs: the measured piece its sockets
+ * carry, and how many of them a square metre of the crown's clump width holds.
+ *
+ * @category api/vegetation
+ */
+export interface OrderSpec {
+	/**
+	 * The measured piece the order's sockets carry, by its name among the record's pieces. The
+	 * order reads that piece's length and radius; it states no figures of its own.
+	 */
+	readonly piece: string;
+	/**
+	 * Sockets per square metre of a clump's own width at full sparseness: the plan's look figure,
+	 * not a measured piece figure, so a species may tune it without touching its pieces.
+	 */
+	readonly density: Curve;
+}
+
+/**
+ * A plant that plans its grown state as numbers first and then builds only what that plan allows:
+ * its maturity, its sparseness and its triangle maximum are all met as it grows, never by cutting a
+ * full plant afterwards.
+ *
+ * @category api/vegetation
+ */
+export interface Planned {
+	/** The model's name. */
+	readonly model: 'planned';
+	/** The age in model years of the full-grown plant. */
+	readonly fullAge: number;
+	/**
+	 * The plant's height in metres by age. A rosette states its trunk's height: its frame is the
+	 * trunk, and the crown's fronds stand above that.
+	 */
+	readonly height: Curve;
+	/** The crown's spread as a share of the height, by age. */
+	readonly spread: Curve;
+	/**
+	 * Where the adult plan comes from: the species' frame, planned to order two, stated directly in
+	 * its record, or a tuft of shoots on one stool, which the tuft family plans from its own numbers.
+	 */
+	readonly adult: 'frame' | 'stated' | 'tuft';
+	/**
+	 * The frame the adult plan comes from, where the record says it comes from a frame. It never
+	 * grows as it stands: the plan reads only its stems, its limbs and its boughs.
+	 */
+	readonly frame?: FrameSpec;
+	/**
+	 * The tuft's own numbers, where the adult is a tuft: the stool, its shoots and their blades, and
+	 * the flowering stems. The tuft family plans and meshes the adult from them.
+	 */
+	readonly tuft?: Tuft;
+	/**
+	 * The branch piece each socket carries, by its name among the record's pieces. Absent, a socket
+	 * holds shoot rows.
+	 */
+	readonly piece?: string;
+	/**
+	 * How far each socket's piece turns from the sky, in degrees: its roll about its own line and its
+	 * tilt off the wood's, as the frame's sockets state them.
+	 */
+	readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
+	/** The orders below the boughs, from the shallowest. */
+	readonly orders: readonly OrderSpec[];
+	/** The share of each order kept at full sparseness; 0 for the trunk and the limbs. */
+	readonly thin: readonly number[];
+	/** The leaf area left, as a share of the full crown's, by sparseness. */
+	readonly leavesAt: Curve;
+	/** The maturity at which acorns start. */
+	readonly fruitFrom: number;
+	/** The band of maturity the acorns ramp over, from nothing to their full count. */
+	readonly fruitBand: number;
+	/** The flowering season and the ramp the catkins come in over, where the species carries them. */
+	readonly flowers?: { readonly season: Season; readonly from: number; readonly band: number };
+	/**
+	 * The plant is a rosette: one growing point, one socket a frond, and no woody axis above the
+	 * trunk. The fill lays the fronds and the dead skirt, and the crown's box is the pieces' reach.
+	 */
+	readonly rosette?: PlannedRosette;
+	/**
+	 * Where a capped crown's cards stand: at the middle of the wood that draws them, so a sparse cap
+	 * still hangs together, or at each clump's own stated place and size, so a maximum never reshapes
+	 * the plant. Absent, the wood.
+	 */
+	readonly capCards?: 'wood' | 'stated';
+	/**
+	 * The clump class's cap rule, where the plant is a clump of stems rather than one stem: a
+	 * triangle maximum lowers the culm count and the branch pairs before it touches the blades. The
+	 * culm cost is the coarsest step's two triangles a segment, never the fine tube's price. Absent
+	 * on a tree, whose caps are proved without it.
+	 */
+	readonly clump?: {
+		/** The fewest culms a capped clump keeps, below which it stops reading as a clump. */
+		readonly leastCulms: number;
+		/** The fewest pairs a capped clump keeps. */
+		readonly leastPairs: number;
+	};
+	/** The triangles one drawn piece of each kind costs, which the plan prices its shares from. */
+	readonly prices: Readonly<Record<'piece' | 'card' | 'clumpCard' | 'tubeSegment', number>>;
 }
 
 /**
@@ -2605,6 +2754,13 @@ export interface ExtraSpec {
 		| 'culm-joint';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
+	/**
+	 * The fruit per tree, as a whole count, where the species' references state it: the placement
+	 * seats this many sites at every variant, whatever number of tips the grown crown happens to
+	 * have, so a denser crown does not multiply the crop. `share` is then unread. Absent, `share`
+	 * of the matching sites carries one.
+	 */
+	readonly perTree?: number;
 	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
 	readonly count?: Spread;
 	/**
@@ -2899,6 +3055,68 @@ export interface LodSpec {
 	 */
 	readonly cardShare?: readonly [lod1: number, lod2: number];
 	/**
+	 * How far the card bake lifts each texel's coverage, from 0 to 1, so a crown keeps its cover as
+	 * its cards draw smaller on screen. 0.05 by default; 0 bakes every texel at its leaf area's own
+	 * coverage.
+	 */
+	readonly cardMipLift?: number;
+	/**
+	 * Extra crossed planes a card draws at each card level, from 0 to 2: each is the card's first
+	 * plane turned a quarter about the vertical, closing the crown's gaps without enlarging a
+	 * picture. Absent draws the planes the prototype holds, as every species does today.
+	 */
+	readonly cardPlanes?: readonly [lod1: number, lod2: number];
+	/**
+	 * A multiplier on each card level's coverage, 1 drawing it as the cards are: above 1 closes the
+	 * crown's gaps and below 1 opens them. One number sets the first card level alone, which is what
+	 * a species that names one number has always asked for; a pair sets each level. Absent draws the
+	 * level as 1.
+	 */
+	readonly cardCover?: number | readonly [lod1: number, lod2: number];
+	/**
+	 * How far the sun's light thins inside the crown, from 0 to 1: each shoot row dims by its own
+	 * share of the sky, so a row under other rows reads dark and a row on the crown's top reads lit.
+	 * Absent or 0 lights every row alike.
+	 */
+	readonly crownDim?: number;
+	/**
+	 * How far a card texel's normal leans from its own toward its shoot's rounded normal, from 0 to
+	 * 1: a crown of flat cards otherwise lights in speckled patches where a card's face catches the
+	 * sun. Absent or 0 bakes each texel's own normal.
+	 */
+	readonly cardNormalRound?: number;
+	/**
+	 * How far the crown's shade darkens the wood inside it, from 0 to 1, where the wood's own bark
+	 * tint cannot go dark enough under the light. 0.35 by default; 0 lights the wood as it stands.
+	 */
+	readonly woodShade?: number;
+	/**
+	 * How far the bark's own relief deepens, from 0 to 1: the furrow's cavity darkens and the bark's
+	 * normal tilts further from the trunk's round, so the grain reads at a distance. Absent or 0 draws
+	 * the relief as the wood's shared terms state it.
+	 */
+	readonly barkRelief?: number;
+	/**
+	 * The share of its rosettes' even tint that a far lichen keeps, where a patch falls under a
+	 * pixel and its pattern would shimmer, from 0 to 1. 0 by default, which fades the lichen out at
+	 * a distance; 1 reads the far limb as the tint its rosettes make together.
+	 */
+	readonly lichenFarTint?: number;
+	/**
+	 * The share of each card level's clumps drawn as one card each, for the first and the second
+	 * level, each from 0 to 1: a clump card stands for the foliage mass its clump holds, so a far
+	 * crown keeps its mass with fewer cards. Absent, every clump draws its own rows.
+	 */
+	readonly clumpCard?: readonly [lod1: number, lod2: number];
+	/**
+	 * The vertical planes a clump card draws at each card level, an even whole number from 2 to 16:
+	 * a clump card stands for a mass of foliage, and more faces at its own middle close the gaps
+	 * between clumps without enlarging a picture. The prototype's own two vertical planes are among
+	 * them, each plane takes its picture from those two in turn, and the prototype's horizontal
+	 * plane stands as it is. Absent or 2 draws the prototype's set as it stands.
+	 */
+	readonly clumpPlanes?: readonly [lod1: number, lod2: number];
+	/**
 	 * The first card level that draws no extras: 1 for both card levels, 2 for the second alone. A
 	 * cone or a fruit that the nearest level draws whole may still cost many triangles at a card
 	 * level where it spans a few pixels. Absent, a card level leaves out only the extras too small to
@@ -2972,6 +3190,13 @@ export interface LodSpec {
 	readonly cardStalkToFoliage?: boolean;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
+	/**
+	 * The covered share the leaf form draws at each far view, from 0 to 1, in the atlas's frame
+	 * order: along each row, then down. The far bake corrects each view's card to its own share, so
+	 * a far picture keeps the cover its leaves draw at that angle rather than the bake's one share.
+	 * Absent, every view keeps the bake's own share.
+	 */
+	readonly farCover?: readonly number[];
 	/** The level that casts shadows. */
 	readonly shadowLevel: number;
 	/** This species' own limits. */

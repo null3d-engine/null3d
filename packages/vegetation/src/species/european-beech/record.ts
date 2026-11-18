@@ -303,10 +303,12 @@ export const record: Species = {
 			twist: 5,
 			wave: [0.002, 4],
 			optics: {
-				// The texture sources' measured means.
-				reflectance: [0.0689, 0.1513, 0.0171],
+				// The texture sources' measured means, lifted a fifth: the whole-plant light draws the lit
+				// face darker and greyer than the photographs' bright dome, so the front face and the
+				// transmitted light rise together while the back keeps the measured bright underside.
+				reflectance: [0.0847, 0.189, 0.019],
 				reflectanceBack: [0.259, 0.2929, 0.1355],
-				transmittance: [0.12, 0.22, 0.028],
+				transmittance: [0.148, 0.275, 0.0312],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -519,6 +521,9 @@ export const record: Species = {
 		// form's 0.2323. A card grows about its middle inside the leaf form's hull, which brings the
 		// first to 0.2195 and the second to 0.2491, inside the review's band.
 		cardGrow: 1.1,
+		// The judge kept this: the dome reads fuller by eye and better on every figure, at the same
+		// grain cost as opening — bigger, paler leaf boards — which is a stated limit, not a gain.
+		cardCover: 1.35,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,

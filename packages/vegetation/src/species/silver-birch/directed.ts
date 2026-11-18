@@ -4,7 +4,7 @@
 // each picture. Still 01 and the whole-tree turning video are the one tree the frame follows.
 
 import type { ExtraSpec } from '../../core/record';
-import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -291,11 +291,12 @@ const catkins = (extra: ExtraSpec): ExtraSpec =>
 	extra.kind === 'fruit' && extra.at === 'shoot-tip' ? { ...extra, share: CATKIN_SHARE } : extra;
 
 /**
- * The silver birch's record with the frame as its growth and a spray at each socket. The shoot
- * rows are working figures, not measured ones: a kit with no pieces draws them.
+ * The silver birch's record with the measured overrides the planned form grows from, and a spray
+ * at each socket. The shoot rows are working figures, not measured ones: a kit with no pieces
+ * draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'spray' }),
+	...record,
 	// The frame's trunk already flares to still 01's foot, so the stem base adds no flare of its own
 	// and keeps still 14's low lobes and roots.
 	base: { ...record.base, flare: { amount: 0, height: 0.4 } },

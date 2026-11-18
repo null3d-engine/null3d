@@ -428,7 +428,7 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
  * Lays one crozier: a stout stalk that rises from the growing point, leaning out a little, and ends
  * in a flat coil that tightens toward its tip, curling out over the crown's centre.
  */
-function layCrozier(
+export function layCrozier(
 	builder: SkeletonBuilder,
 	croziers: NonNullable<FrondCrown['croziers']>,
 	trunk: number,

@@ -4,7 +4,7 @@
 // bunches stand. Each figure names the reference picture it was read on. Shares are of the tree's
 // height, measured from the true foot. Still 01 and the whole-tree turning video are the one tree
 // the frame follows.
-import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -90,22 +90,29 @@ const branches: FrameBranchRule = {
 			angle: 48,
 			from: 'parent',
 			angleSpread: 6,
-			// A twig ends inside the crown's edge, and no twig is longer than a branch end's
-			// two metres across.
+			// Still 22 measures a twig at 35 cm; stills 09 and 22 show its leaves in opposite pairs
+			// at about three nodes. On this 23 m tree a twig runs 0.28 to 0.46 m, not the metres a
+			// branch of a limb spans.
 			length: { outline: 0.95 },
 			vary: 0.1,
-			least: 0.03,
+			least: 0.008,
 			most: [
-				[0, 0.12],
-				[1, 0.07],
+				[0, 0.02],
+				[1, 0.012],
 			],
-			radius: 0.5,
+			radius: 0.2,
 			taper: 0.35,
-			// Stills 04 and 09: every shoot tip turns up, and the leaves stand only there.
+			// Still 09: every shoot tip turns up above its last pair of leaves.
 			bends: [{ from: 0.5, to: 1, by: -30 }],
 			sway: 10,
 			elbows: 3,
-			patch: bunch(0.11),
+			// Stills 09, 22 and 23: the leaves stand in opposite pairs along the twig at about three
+			// nodes, each pair turned from the last, with the tip's own bunch above them.
+			patch: {
+				...bunch(0.11),
+				along: 0.2,
+				sockets: { every: 0.006, angle: 70 },
+			},
 		},
 	],
 };
@@ -137,34 +144,36 @@ const spurs: FrameBranchRule = {
 	patch: bunch(0.1),
 };
 
+/**
+ * The crown's outline half width in bands from the top down, each at its own height, as still 01
+ * measures it. The planned form takes it out to the turning video's widest reach; the directed
+ * frame keeps the still's own bands.
+ */
+export const crownOutline: readonly (readonly [number, number])[] = [
+	[0.265, 0.21],
+	[0.305, 0.4],
+	[0.345, 0.438],
+	[0.385, 0.457],
+	[0.464, 0.448],
+	[0.543, 0.395],
+	[0.583, 0.41],
+	[0.623, 0.457],
+	[0.662, 0.467],
+	[0.702, 0.429],
+	[0.742, 0.424],
+	[0.782, 0.4],
+	[0.821, 0.334],
+	[0.861, 0.319],
+	[0.901, 0.272],
+	[0.94, 0.148],
+	[0.98, 0.119],
+	[1, 0],
+];
+
 /** The common ash's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in bands from the top down, each at its own height.
-	outline: evenOutline(
-		[
-			[0.265, 0.21],
-			[0.305, 0.4],
-			[0.345, 0.438],
-			[0.385, 0.457],
-			[0.464, 0.448],
-			[0.543, 0.395],
-			[0.583, 0.41],
-			[0.623, 0.457],
-			[0.662, 0.467],
-			[0.702, 0.429],
-			[0.742, 0.424],
-			[0.782, 0.4],
-			[0.821, 0.334],
-			[0.861, 0.319],
-			[0.901, 0.272],
-			[0.94, 0.148],
-			[0.98, 0.119],
-			[1, 0],
-		],
-		// Still 01 looks across the wide side. The turning video: the crown is about 0.95 as wide
-		// as tall at still 01's turn and about 0.72 a quarter turn on.
-		0.78,
-	),
+	outline: evenOutline(crownOutline, 0.78),
 	stems: {
 		name: 'trunk',
 		count: 1,
@@ -245,19 +254,12 @@ export const frame: FrameSpec = {
 const KEYS_SHARE = 0.0203;
 
 /**
- * The common ash's record with the frame as its growth and the branch end of still 21 at each
- * socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
+ * The common ash's record with the measured overrides the planned form grows from, and the branch
+ * end of still 21 at each socket. The shoot rows are working figures, not measured ones: a kit
+ * with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, {
-		rows: { mean: 4, spread: 1 },
-		fan: 45,
-		piece: 'branch-end',
-		// With every branch end's flat side to the sky, a crown seen from the side shows most of its
-		// leaves slanted or edge on. Still 04: an ash's tip bunches face every way, so each piece
-		// rolls up to a quarter turn either way about its own line and tilts a little off the wood's.
-		turn: { roll: 90, tilt: 25 },
-	}),
+	...record,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// The second card level keeps one of each four of the frame's cards, each grown inside the leaf
 	// form's outline: a socket's branch end is a card of its own, so the smaller kept cards leave no

@@ -728,6 +728,130 @@ export function readReferenceSet(folder: string, forms: readonly string[] = []):
 	return { folder, slug: basename(folder), files, stills, turns, winds, unknown };
 }
 
+/** What a reference folder's INDEX heading declares about its species. */
+interface DeclaredSpecies {
+	/** The heading's own name, such as "Common ash". */
+	readonly name?: string;
+	/** The heading's Latin name, or its genus alone, such as "Hosta". */
+	readonly latin?: string;
+}
+
+/**
+ * What a reference folder's INDEX declares its species to be, or undefined when it declares nothing
+ * usable. The heading carries the name, then the Latin name in parentheses, as in
+ * "# Common ash (*Fraxinus excelsior*), mature open-grown — reference set".
+ */
+function declaredSpeciesOf(folder: string): DeclaredSpecies | undefined {
+	const indexPath = join(folder, 'INDEX.md');
+	if (!existsSync(indexPath)) return undefined;
+	const heading = readFileSync(indexPath, 'utf8')
+		.split('\n')
+		.find((line) => line.startsWith('# '))
+		?.slice(2)
+		.trim();
+	if (heading === undefined) return undefined;
+	const latin = /\(\*([^*]+)\*/.exec(heading)?.[1]?.trim();
+	// The name is the heading's words before its Latin name, a dash or a comma.
+	const ends = [heading.indexOf(' ('), heading.indexOf(' — '), heading.indexOf(',')].filter(
+		(at) => at > 0,
+	);
+	const name = heading.slice(0, ends.length > 0 ? Math.min(...ends) : heading.length).trim();
+	const declared: { name?: string; latin?: string } = {};
+	// A heading that only labels the folder, such as "# Reference set", names no species.
+	if (name !== '' && !/^reference\b/i.test(name)) declared.name = name;
+	if (latin !== undefined && latin !== '') declared.latin = latin;
+	return declared.name === undefined && declared.latin === undefined ? undefined : declared;
+}
+
+/** The words of a name or Latin phrase, lowercased, for comparison. */
+function words(text: string): string[] {
+	return text
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, ' ')
+		.trim()
+		.split(/\s+/)
+		.filter((word) => word !== '');
+}
+
+/**
+ * Whether two name phrases name the same species. Every word of one must appear in the other, so a
+ * heading may add a growth form or a qualifier, and a genus alone names its species; a phrase that
+ * names another species, or two species, still differs.
+ */
+function namesAgree(one: string, two: string): boolean {
+	const first = new Set(words(one));
+	const second = new Set(words(two));
+	const [smaller, larger] = first.size <= second.size ? [first, second] : [second, first];
+	if (smaller.size === 0) return false;
+	for (const word of smaller) if (!larger.has(word)) return false;
+	return true;
+}
+
+/** Whether a heading's name names one species: a conjunction or a separator joins two. */
+function namesOneSpecies(name: string): boolean {
+	return !/\b(and|with)\b|&|\/|;/.test(name.toLowerCase());
+}
+
+/** Whether a declared Latin name is the species' own: the same name, or the same genus alone. */
+function latinsAgree(declared: string, actual: string): boolean {
+	const one = declared.toLowerCase();
+	const two = actual.toLowerCase();
+	if (one === two) return true;
+	return !one.includes(' ') && two.startsWith(`${one} `);
+}
+
+/** The refusal: what the folder declares, or its name where it declares nothing, and what it must be. */
+function refusal(
+	folder: string,
+	declared: DeclaredSpecies | undefined,
+	species: string,
+	name: string | undefined,
+): string {
+	const whose = name === undefined ? species : `${name} (${species})`;
+	const says =
+		declared === undefined
+			? basename(folder)
+			: [declared.name, declared.latin === undefined ? undefined : `(${declared.latin})`]
+					.filter((part) => part !== undefined)
+					.join(' ');
+	const kind = declared === undefined ? `are ${says}'s,` : `name ${says},`;
+	return `the references at ${folder} ${kind} not ${whose}: a run must draw a species against its own reference folder`;
+}
+
+/**
+ * Why a reference folder cannot stand for a species, or null when it can. The folder's INDEX heading
+ * declares the set's species, and that declaration decides: a heading that names another species
+ * refuses even when the folder's own name matches. Only a folder whose heading declares nothing
+ * usable falls back to its name, which must then be the species' id. A run therefore never measures
+ * a species against another species' photographs.
+ */
+export function referenceSpeciesProblem(
+	folder: string,
+	species: string,
+	name?: string,
+	latin?: string,
+): string | null {
+	const declared = declaredSpeciesOf(folder);
+	// A heading that names two species declares no single set, whatever its Latin name says.
+	if (declared !== undefined && declared.name !== undefined && !namesOneSpecies(declared.name))
+		return refusal(folder, declared, species, name);
+	if (declared !== undefined) {
+		const nameAgrees =
+			declared.name !== undefined && name !== undefined && namesAgree(declared.name, name);
+		if (declared.latin !== undefined && latin !== undefined) {
+			const agrees = latinsAgree(declared.latin, latin);
+			// A full Latin name decides alone; a genus alone also needs the common name to agree.
+			if (agrees && (declared.latin.includes(' ') || nameAgrees)) return null;
+			return refusal(folder, declared, species, name);
+		}
+		if (nameAgrees) return null;
+		if (declared.name !== undefined && name !== undefined)
+			return refusal(folder, declared, species, name);
+	}
+	if (basename(folder) === species) return null;
+	return refusal(folder, undefined, species, name);
+}
+
 /** The widest picture the masks and the measures work on, in pixels. */
 export const WORK_WIDTH = 640;
 

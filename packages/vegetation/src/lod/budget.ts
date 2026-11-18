@@ -25,9 +25,10 @@ import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE } from '../core/graph';
 import { NotBuiltError } from '../core/not-built';
 import { DETAILS, type Detail } from '../core/types';
 import { type SilhouetteFrame, shootSilhouette, woodPartSilhouettes } from '../grow/envelope';
-import { grower } from '../grow/models';
+import { plantGrower } from '../grow/models';
 import { extrasMesh } from '../leaf/extras';
 import { writesPieces } from '../leaf/piece-rows';
+import { MeshWriter } from '../leaf/writer';
 import type { MeshInput, MeshLevel } from '../stages';
 import { woodLadderTriangles, woodPartTriangles } from '../wood/estimate';
 import { type TubeDetail, tubeDetail } from '../wood/tube';
@@ -39,6 +40,7 @@ import {
 	clusterCardMesh,
 	clusterTriangles,
 	type DrawnWood,
+	plannedClumpCards,
 	woodSurface,
 } from './cards';
 
@@ -78,6 +80,23 @@ const HAND_ROUNDS = 4;
 /** The steps in which a level thins its extras' sites, and the least share of the sites it draws. */
 const EXTRAS_STEPS = 20;
 const LEAST_EXTRAS_SHARE = 0.25;
+
+/**
+ * The share of a maximum that the crown takes before any part: a crown is what makes the plant read
+ * as a tree, so it is bought first and the wood, the branches and the extras share what is left. The
+ * clump cards that draw it are priced at the record's own clump-card price.
+ */
+const CROWN_SHARE = 0.6;
+
+/**
+ * The least share of a maximum the trunk and the great limbs take before the leaves, and the part
+ * of it the trunk takes: a capped tree keeps a read of wood at any distance.
+ */
+const SKELETON_SHARE = 0.3;
+const SKELETON_TRUNK = 0.55;
+
+/** The least sides a capped trunk's or great limb's tube may draw: below it a tube reads as a pinch. */
+const SIDES_LEAST = 5;
 
 /** No triangles in any part. */
 export const NO_TRIANGLES: PartTriangles = {
@@ -233,7 +252,7 @@ const isMerged = (mesh: MeshInput) => mesh.record.lod.nearFoliage === 'merged';
 export function mergedFoliage(mesh: MeshInput, level: MeshLevel): MeshArrays | undefined {
 	const merged = isMerged(mesh);
 	if (!merged && !writesPieces(mesh.record)) return undefined;
-	const build = grower(mesh.record.growth.model).foliage;
+	const build = plantGrower(mesh.record).foliage;
 	if (!build && merged) throw new NotBuiltError(`merged ${mesh.record.growth.model} foliage`);
 	return build?.(mesh, level);
 }
@@ -415,7 +434,20 @@ export function allocateLevel(
 			weights[k] = Math.max(0, reference[ALLOCATED[k] as keyof PartTriangles]);
 	whole = 0;
 	for (const weight of weights) whole += weight;
-	const exact = weights.map((weight) => (whole > 0 ? (room * weight) / whole : 0));
+	// The crown's share comes off the top; the other parts share what is left by their own weights.
+	const crown = Math.min(room, Math.floor(room * CROWN_SHARE));
+	const rest = room - crown;
+	const wholeRest = ALLOCATED.reduce(
+		(sum, part) => (part === 'leaves' ? sum : sum + Math.max(0, shares[part])),
+		0,
+	);
+	const exact = weights.map((weight, k) =>
+		ALLOCATED[k] === 'leaves'
+			? crown
+			: wholeRest > 0
+				? (rest * Math.max(0, weight)) / wholeRest
+				: 0,
+	);
 	const allocated = exact.map((value) => Math.floor(value));
 	let spent = 0;
 	for (const value of allocated) spent += value;
@@ -466,6 +498,8 @@ interface WoodChoice {
 interface LeafChoice {
 	/** `rows` for the shoot rows at a tier, `clusters` for card clusters, `none` for nothing. */
 	readonly kind: 'rows' | 'clusters' | 'none';
+	/** The level's own foliage triangles the allowance paid, such as a tuft's stool. */
+	readonly stool?: number;
 	/** The tier of the shoot rows. */
 	readonly tier?: Detail;
 	/** The clusters. */
@@ -490,8 +524,9 @@ function planesFor(budget: number): number {
  * @param max The most triangles the level may draw.
  * @param reference What each part holds at the plant's best look, which sets the shares.
  * @returns The level.
+ * @category api/vegetation
  */
-function rowLevel(
+export function rowLevel(
 	input: BudgetInput,
 	level: MeshLevel,
 	max: number,
@@ -501,6 +536,11 @@ function rowLevel(
 	const { skeleton, rows } = mesh;
 	const axes = skeleton.axes;
 	const walk = input.walk ?? new Uint32Array(0);
+	// A plant of written pieces may draw a foliage mesh of its own beside its cards, such as a tuft's
+	// stool: it is the level's base, it counts in the leaves as it does uncapped, and the leaves'
+	// allowance pays it before the crown.
+	const foliage = mergedFoliage(mesh, level);
+	const stool = trianglesOf(foliage);
 	// The shares: each part's share of the plant's visible outline, with the shoots' twigs beside
 	// their leaves, since one choice draws both.
 	const allowance = allocateLevel(max, reference, visibleShares(input, reference));
@@ -517,11 +557,21 @@ function rowLevel(
 	const measured: (number | undefined)[][] = [[], [], []];
 	const priced = (part: number, rung: number): number =>
 		measured[part]?.[rung] ?? ((quick[rung] as number[])[part] as number);
+	const last = WOOD_RUNGS.length - 1;
+	// The coarsest rung that still reads as wood: no capped trunk or great limb draws below it,
+	// whichever branch of the ladder reaches it.
+	let coarsest = -1;
+	for (let rung = last; rung >= 0; rung--)
+		if ((tubes[rung] as TubeDetail).maxSides >= SIDES_LEAST) {
+			coarsest = rung;
+			break;
+		}
 	// The trunk and the great limbs are few axes, and the quick count misses a stem's foot and a
-	// leader's first ring, so each step that could fit is meshed and counted before any choice.
+	// leader's first ring, so each step that could fit is meshed and counted before any choice. The
+	// coarsest legal step is always counted, since the floor prices it whatever the quick count says.
 	for (let rung = 0; rung < tubes.length; rung++) {
 		const count = quick[rung] as number[];
-		if ((count[0] as number) + (count[1] as number) > 4 * max) continue;
+		if (rung !== coarsest && (count[0] as number) + (count[1] as number) > 4 * max) continue;
 		const tube = tubes[rung] as TubeDetail;
 		const counted = meshWoodParts(mesh, level, parts, { tubes: [tube, tube, null] }).triangles;
 		(measured[0] as (number | undefined)[])[rung] = counted[0];
@@ -543,20 +593,43 @@ function rowLevel(
 						(skeleton.radius[axes.first[a] as number] as number) || a - b,
 			),
 	);
-	const last = WOOD_RUNGS.length - 1;
+	// The fork's own price: the two thickest great limbs at the coarsest legal step cost more than
+	// the part's mean, so the floor and the fallback take the pair measured, not averaged.
+	let forkLimb = 0;
+	if (level <= 1 && coarsest >= 0 && (byGirth[0] as number[]).length > 0) {
+		const keep = new Uint8Array(axes.count);
+		for (const a of (byGirth[0] as number[]).slice(0, 2)) keep[a] = 1;
+		const tube = tubes[coarsest] as TubeDetail;
+		forkLimb = meshWoodParts(mesh, level, parts, {
+			tubes: [tubes[coarsest] as TubeDetail, tube, null],
+			keep,
+		}).triangles[1] as number;
+	}
 	// What one straight run costs where only the thickest limbs or branches are drawn: the thickest
 	// cost more than the part's mean, so their price is measured apart.
 	const eachKept: (number | undefined)[] = [];
 	const fitWood = (part: number, budget: number): WoodChoice => {
-		for (let rung = 0; rung <= last; rung++) {
+		for (let rung = 0; rung < tubes.length; rung++) {
+			if ((tubes[rung] as TubeDetail).maxSides < SIDES_LEAST) continue;
 			const cost = priced(part, rung);
 			if (cost <= budget) return { rung, cost };
 		}
-		// Not even one straight run for each axis fits: the thickest limbs or branches that do.
+		// Not even one straight run for each axis fits: the thickest limbs or branches that do, at
+		// the coarsest rung that still reads as wood — the fallback may not draw a pinch either.
+		if (coarsest < 0) return { rung: -1, cost: 0 };
 		if (part === 0) return { rung: -1, cost: 0 };
-		const each = eachKept[part] ?? priced(part, last) / Math.max(1, axesOf[part] as number);
+		const each = eachKept[part] ?? priced(part, coarsest) / Math.max(1, axesOf[part] as number);
 		const kept = each > 0 ? Math.floor(budget / each) : 0;
-		return kept > 0 ? { rung: last, kept, cost: Math.ceil(kept * each) } : { rung: -1, cost: 0 };
+		if (kept > 0) return { rung: coarsest, kept, cost: Math.ceil(kept * each) };
+		// The fork's pair costs more than the part's mean, so it is priced measured: a budget that
+		// buys no mean limb may still buy the pair that keeps the tree's fork.
+		if (part === 1 && forkLimb > 0 && budget >= forkLimb)
+			return {
+				rung: coarsest,
+				kept: Math.min(2, (byGirth[0] as number[]).length),
+				cost: forkLimb,
+			};
+		return { rung: -1, cost: 0 };
 	};
 	// The shoots' ladder: the rows at each tier the kit holds, then cards.
 	const tiers: { tier: Detail; leaves: number; twigs: number }[] = [];
@@ -566,15 +639,29 @@ function rowLevel(
 			const [leaves, twigs] = shootPartTriangles(mesh, rows, tier);
 			if (leaves + twigs > 0) tiers.push({ tier, leaves, twigs });
 		}
-	const mostClusters = level === 2 ? Math.ceil(rows.count / 2) : rows.count;
+	const clumpsOfPlant = input.mesh.skeleton.clumps?.length ?? 0;
+	// A plant cut to no rows still has its clumps, and its cards count a clump each: a rowless
+	// crown must be able to choose the card tier, or its whole allowance buys nothing.
+	const mostClusters =
+		clumpsOfPlant > 0 && rows.count === 0
+			? clumpsOfPlant
+			: level === 2
+				? Math.ceil(rows.count / 2)
+				: rows.count;
 	const fitLeaves = (budget: number): LeafChoice => {
+		// The level's own foliage, where the allowance pays it: a tuft's stool is its base, and the
+		// crown draws from what the stool leaves.
+		const stoolHere = budget >= stool ? stool : 0;
+		const room = Math.max(0, budget - stoolHere);
+		const paid = stoolHere > 0 ? { stool: stoolHere } : {};
 		for (const { tier, leaves, twigs } of tiers)
-			if (leaves + twigs <= budget) return { kind: 'rows', tier, cost: leaves + twigs };
-		const planes = planesFor(budget);
-		const clusters = planes > 0 ? Math.min(mostClusters, Math.floor(budget / (2 * planes))) : 0;
+			if (leaves + twigs <= room)
+				return { kind: 'rows', tier, cost: leaves + twigs + stoolHere, ...paid };
+		const planes = planesFor(room);
+		const clusters = planes > 0 ? Math.min(mostClusters, Math.floor(room / (2 * planes))) : 0;
 		return clusters > 0
-			? { kind: 'clusters', clusters, planes, cost: clusters * 2 * planes }
-			: { kind: 'none', cost: 0 };
+			? { kind: 'clusters', clusters, planes, cost: clusters * 2 * planes + stoolHere, ...paid }
+			: { kind: 'none', cost: stoolHere, ...paid };
 	};
 	// The extras' ladder: this level's form on every site, then on a share of the sites, then each
 	// farther level's form, then none.
@@ -600,13 +687,32 @@ function rowLevel(
 	};
 	// The least each part asks for before any share: the trunk and the great limbs as one straight
 	// run each, and one card set of two planes.
+	// A crown whose every twig stands above the cap's cut is carried by its clump cards alone, so its
+	// share of the maximum is reserved before the wood, one card a clump or the share where that is
+	// less: a small maximum still buys a crown rather than a bare frame.
+	const cheapestRows =
+		tiers.length === 0
+			? Number.POSITIVE_INFINITY
+			: Math.min(...tiers.map((tier) => tier.leaves + tier.twigs));
+	const crownedNoRows = clumpsOfPlant > 0 && cheapestRows > Math.floor(max * CROWN_SHARE);
+	// A low maximum buys the tree's shape first: the trunk and the great limbs take a share of the
+	// cap before the leaves, because a crown standing on one three-sided run is not a tree at any
+	// distance. The share is paid even where the crown would take the whole maximum.
+	const skeletonFloor = Math.floor(max * SKELETON_SHARE);
+	// The floor prices the coarsest rung the sides rule allows, not the ladder's last step: a
+	// maximum that cannot pay for a legal trunk pays for none rather than for a pinch.
+	const cheapest = coarsest >= 0 ? coarsest : last;
 	const floor = (part: Part): number =>
 		part === 'trunk'
-			? priced(0, last)
+			? Math.max(priced(0, cheapest), Math.floor(skeletonFloor * SKELETON_TRUNK))
 			: part === 'limbs'
-				? priced(1, last)
-				: part === 'leaves' && rows.count > 0
-					? 4
+				? Math.max(priced(1, cheapest), forkLimb, Math.floor(skeletonFloor * (1 - SKELETON_TRUNK)))
+				: part === 'leaves'
+					? rows.count > 0
+						? 4
+						: crownedNoRows
+							? Math.min(clumpsOfPlant * 6, Math.floor(max * 0.6))
+							: 0
 					: 0;
 	let wood: WoodChoice[] = [];
 	let leaf: LeafChoice = { kind: 'none', cost: 0 };
@@ -640,11 +746,19 @@ function rowLevel(
 		// shared out in proportion to what each part holds at the plant's best look.
 		const least: Record<Part, number> = { trunk: 0, leaves: 0, limbs: 0, branches: 0, extras: 0 };
 		let reserved = 0;
-		for (const part of PARTS)
-			if (reserved + floor(part) <= max) {
-				least[part] = floor(part);
+		// A rowless crown's share is paid first, so the wood's own floor cannot spend it.
+		const payOrder: readonly Part[] = crownedNoRows
+			? ['leaves', 'trunk', 'limbs', 'branches', 'extras']
+			: PARTS;
+		for (const part of payOrder) {
+			// The whole limb set is the floor where the cap can hold it; where it cannot, the fork's
+			// pair is, so a low cap keeps a legible fork rather than no limbs at all.
+			const amount = part === 'limbs' && reserved + floor(part) > max ? forkLimb : floor(part);
+			if (reserved + amount <= max) {
+				least[part] = amount;
 				reserved += least[part];
 			}
+		}
 		let left = max;
 		for (const part of PARTS) {
 			fit(part, Math.min(left, least[part] + share(part) * (1 - reserved / max)));
@@ -776,52 +890,128 @@ function rowLevel(
 		leaves = tier?.leaves ?? 0;
 		twigs = tier?.twigs ?? 0;
 	} else if (rows.count > 0) {
-		const budget = max - woodTotal - extras.cost;
-		allowed.leaves = budget;
-		const planes = planesFor(budget);
-		let clusters: CardCluster[] = [];
-		if (planes > 0) {
-			// The most clusters whose cards and stalks fit: the most the planes alone allow, or else
-			// a count found by halving between none and that.
-			const price = (count: number) => {
-				const made = cardClusters(mesh, walk, count, drawn, planes, surface);
-				return { made, cost: clusterTriangles(made, planes) };
-			};
-			let high = Math.min(mostClusters, Math.floor(budget / (2 * planes)));
-			const most = price(high);
-			if (most.cost <= budget) clusters = most.made;
-			else {
-				let low = 0;
-				while (high - low > 1) {
-					const middle = (low + high) >> 1;
-					const tried = price(middle);
-					if (tried.cost <= budget) {
-						low = middle;
-						clusters = tried.made;
-					} else high = middle;
+		const budget = Math.max(0, max - woodTotal - extras.cost - (chosen.stool ?? 0));
+		allowed.leaves = budget + (chosen.stool ?? 0);
+		const clumps = input.mesh.skeleton.clumps?.length ?? 0;
+		// A plant with clumps draws one clump card a clump: the crown's mass comes from the clumps the
+		// plant holds, not from one small card a row, and the share of them kept follows the leaves'
+		// allowance. A plant without clumps keeps the row clusters.
+		if (clumps > 0) {
+			const planes = budget >= 6 * clumps ? 3 : 2;
+			const each = 2 * planes;
+			// The count comes from what the budget pays, and the mesh itself is the check: a clump that
+			// stands clear of the wood takes a stalk, which costs more than a bare card, so the count
+			// drops by the overrun's price until the level's own triangles fit.
+			let count = Math.min(clumps, Math.max(0, Math.floor(budget / each)));
+			for (let pass = 0; pass < 8 && count > 0; pass++) {
+				// One picture a side under a maximum: a tiled card costs the square of its tiles and a
+				// small cap cannot afford one, so the capped crown keeps the bare card.
+				const made = plannedClumpCards(
+					input.mesh,
+					planes,
+					count / clumps,
+					1,
+					level === 1 ? 0.5 : 0,
+				);
+				if (!made) break;
+				const cost = trianglesOf(made);
+				if (cost <= budget) {
+					cards = made;
+					leaves = cost;
+					break;
+				}
+				count = Math.max(0, count - Math.max(1, Math.ceil((cost - budget) / each)));
+			}
+			// The crown-card coverage rule: where the clump cards leave allowance, a card stands at
+			// each row place, in the crown's draw order, until every row has one or the allowance is
+			// spent; what is left after every place stays unspent, as a maximum is a ceiling.
+			const left = budget - leaves;
+			if (cards && left > 2 * planes) {
+				const place = (count: number) => {
+					const made = cardClusters(mesh, walk, count, drawn, planes, surface);
+					return { made, cost: clusterTriangles(made, planes) };
+				};
+				let high = Math.min(rows.count, Math.floor(left / (2 * planes)));
+				let places: CardCluster[] = [];
+				const most = place(high);
+				if (most.cost <= left) places = most.made;
+				else {
+					let low = 0;
+					while (high - low > 1) {
+						const middle = (low + high) >> 1;
+						const tried = place(middle);
+						if (tried.cost <= left) {
+							low = middle;
+							places = tried.made;
+						} else high = middle;
+					}
+				}
+				if (places.length > 0) {
+					const both = new MeshWriter();
+					both.append(cards, () => {});
+					clusterCardMesh(
+						input.mesh,
+						places,
+						planes,
+						undefined,
+						undefined,
+						both,
+						level === 1 ? 0.5 : 0,
+					);
+					cards = both.finishMesh();
+					leaves = trianglesOf(cards);
 				}
 			}
+		} else {
+			const planes = planesFor(budget);
+			let clusters: CardCluster[] = [];
+			if (planes > 0) {
+				// The most clusters whose cards and stalks fit: the most the planes alone allow, or else
+				// a count found by halving between none and that.
+				const price = (count: number) => {
+					const made = cardClusters(mesh, walk, count, drawn, planes, surface);
+					return { made, cost: clusterTriangles(made, planes) };
+				};
+				let high = Math.min(mostClusters, Math.floor(budget / (2 * planes)));
+				const most = price(high);
+				if (most.cost <= budget) clusters = most.made;
+				else {
+					let low = 0;
+					while (high - low > 1) {
+						const middle = (low + high) >> 1;
+						const tried = price(middle);
+						if (tried.cost <= budget) {
+							low = middle;
+							clusters = tried.made;
+						} else high = middle;
+					}
+				}
+			}
+			if (clusters.length > 0) {
+				cards = clusterCardMesh(mesh, clusters, planes);
+				leaves = trianglesOf(cards);
+			}
+			joins = {
+				clusters: clusters.length,
+				stalks: clusters.filter((cluster) => cluster.stalk).length,
+				free: clusters.filter((cluster) => !cluster.anchor).length,
+			};
 		}
-		if (clusters.length > 0) {
-			cards = clusterCardMesh(mesh, clusters, planes);
-			leaves = trianglesOf(cards);
-		}
-		joins = {
-			clusters: clusters.length,
-			stalks: clusters.filter((cluster) => cluster.stalk).length,
-			free: clusters.filter((cluster) => !cluster.anchor).length,
-		};
 	}
+	// The stool draws only where the leaves' allowance paid it, so a maximum too small for it loses it
+	// rather than pass the cap.
+	const drawnStool = stool > 0 && chosen.stool === stool ? foliage : undefined;
 	return {
 		...(level > 0 || input.wood ? { wood: built.mesh } : {}),
 		...(cards ? { cards } : {}),
+		...(drawnStool ? { foliage: drawnStool } : {}),
 		...(extras.mesh ? { extras: extras.mesh } : {}),
 		triangles: {
 			trunk: built.triangles[0],
 			limbs: built.triangles[1],
 			branches: built.triangles[2],
 			twigs,
-			leaves,
+			leaves: leaves + (drawnStool ? stool : 0),
 			extras: extras.cost,
 		},
 		allowed: {

@@ -56,6 +56,52 @@ Each helper works on its own branch, its line, and never in another's copy.
 A species switches to its new structure once the reviewer passes it under the gate. A ready branch then
 switches that species alone, as judged.
 
+## The gate's checks and their automated tests
+
+The gate is stated in [Plant review](plant-review.md#the-gate-a-species-must-pass). Every check must
+name a test in the repository or a coverage rule in the review tool; a check with neither is not a
+gate. This is the mapping at the gate's first head. The numbers are the gate's own items, so its
+distance ladder and zoom (items 3 and 4) are the sweep's covered rounds, folded here into the
+reference views and the switch. **Covered means a test that fails when the check fails**: a measure
+that prints a figure, or a tool that exists, is not coverage.
+
+| # | Check | Test or coverage rule | Covered today: what fails |
+| --- | --- | --- | --- |
+| 1 | Every reference view compared beside its same-named crop | `tools/lib/plant-review/coverage.test.ts`, "the coverage list": "is complete only when every file in use has a full comparison" and "blocks a pass for a missing render, an unmatched frame or a short wind clip"; `references.test.ts` holds the same-named crop rules | Yes: the two coverage cases fail on a missing or partial comparison, and the reference cases fail on a crop whose species or heading disagrees |
+| 2 | Three close views: inside the crown, at the trunk, at a leaf's scale, each beside its crop | The cameras are tested (`close.test.ts`, "the framing a close view reports"; `subject-shots.test.ts`, "the view from inside the crown") | No: nothing fails when a round lacks one of the three views; the camera cases fail only on the camera logic. The run's coverage entry must fail on a missing view — the sweep's owner |
+| 5 | Every drawn cluster's base within a cell of drawn wood, no row off a drawn carrier, at every sparseness and maximum | `packages/vegetation/src/lod/budget.test.ts`, "keeps one body at each maximum, at sparseness X" (the 0.4 m body fill, free wood and free leaves 0); `sparse.test.ts` holds each carrier and every sparser state's rows at their places; `leaf/piece-rows.test.ts` and `lod/clump-card.test.ts` hold the row and socket joins | Yes on the generator: the body case fails when a piece lies outside the 0.4 m cells or a row loses its carrier, and `sparse.test.ts` fails when a sparser state's carrier is missing. The sweep's body rail prints a figure but no test fails on it: B's coverage rule |
+| 6 | A crown at 400, 1,000 and 10,000 with the leaves first | `lod/budget.test.ts`, "keeps every level within the maximum and each part within its allowance, at sparseness X" (every maximum, the floors and the sharing); the contract's X3 in `grow/planned-contract.test.ts` reads the cap's leaf triangles and the floors | Yes: the case fails when a level overruns its maximum or a part exceeds its allowance, and X3 fails when a cap's leaf share falls under its floor |
+| 7 | The switch's grain and open sky either side of the first card level, inside the record's bars, at the from-below camera | The sky side has `lod/card-size.test.ts`, "keeps the sky inside the crown outline of the species within the review band" | No: the sky case fails only on the atlas proxy; no test fails on the drawn switch's grain or crossing. The level builder's case must read a drawn frame |
+| 8 | The bake's mask follows the leaf kind, and a needle species' atlases differ from the broadleaves' | `compare.test.ts`, "the mask check gate", checks the review's mask against the reference crop, not the bake's | No: no test fails on the bake's mask by leaf kind. The level builder |
+| 9 | The crown's tone against its crop, found by isolating one cause at a time | The measures are tested (`compare.test.ts`, "the measures"; the CIELAB clusters in `references.test.ts`) | No: the measures print figures, and no test fails on the tone bar below. Its case must be built |
+
+The partial checks (2, and the review side of 5) take their coverage rules from the sweep's owner; the
+missing ones (7, 8 and 9) are with the level builder, and the bar below is check 9's specification. A
+species is not counted landed while one of them is red. **The mapping is open:** every entry that says
+no failing test is unclosed, and the mapping must not be read as complete until the sweep's owner and
+the level builder close them.
+
+### Check 9's tone bar
+
+One figure per species: the crown's foliage colour distance, CIEDE2000, between the render's crown
+patch and the same-named reference crop's crown patch, read from the review tool's stills pair at the
+whole view, on the plant alone, under the photograph's own light from the slot file. It passes at
+**3 or less**, the review's working band, where about 2 is one visible step.
+
+The isolating draws, all at the same camera and slot light, one cause each:
+
+- the same view under the page's soft daylight, to price the light's share (the oak reads 8.9 steps
+  under it and 1.9 under the photograph's own light);
+- the parts picture, to name the material the figure reads;
+- the leaf close view against its own texture crop, to separate the leaf's albedo from the crown's
+  assembly;
+- the three card draws on a close view: the colour term alone, the card plane's normal in place of
+  the baked normal, and the transmitted term at zero.
+
+The cause is the term whose change moves the figure inside the bar. The record's colour is never
+fitted to close the figure, and a figure taken under the page's daylight, or one fitted to a single
+picture, is not the bar.
+
 ## Rules every helper follows
 
 1. **Every bun process goes through the machine's job queue**, the script the git setting

@@ -303,8 +303,7 @@ describe('cuttings', () => {
 			// dresses it from the shoot class the hint names.
 			if (carriesPieces(oak.record)) {
 				const growth = oak.record.growth;
-				const sockets = 'sockets' in growth ? growth.sockets : undefined;
-				const socketPiece = sockets && 'piece' in sockets ? sockets.piece : undefined;
+				const socketPiece = growth.model === 'planned' ? growth.piece : undefined;
 				if (!socketPiece) throw new Error('the piece-carrying record names no socket piece');
 				expect(prototype?.piece?.name).toBe(socketPiece);
 			} else {

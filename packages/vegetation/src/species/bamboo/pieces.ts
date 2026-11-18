@@ -23,7 +23,7 @@ const LEAF = 0.16 / 0.17;
  * little below the one before it in size toward the fan's tip, drooping a little (pictures 01 and
  * 22).
  */
-const FAN: PieceLeaves = {
+export const FAN: PieceLeaves = {
 	gap: 0.008,
 	from: 0.7,
 	hang: 0.25,

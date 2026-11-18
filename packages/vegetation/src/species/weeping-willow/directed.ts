@@ -4,13 +4,7 @@
 // the arching wood to the hem. Each figure names the
 // reference picture it was read on. Shares are of the tree's height. Still 01 and the whole-tree
 // turning video are the one tree the frame follows; still 18 shows the limbs' course best.
-import {
-	type FrameBranchRule,
-	type FrameLength,
-	type FrameSide,
-	type FrameSpec,
-	framedRecord,
-} from '../../grow/frame';
+import type { FrameBranchRule, FrameLength, FrameSide, FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -79,7 +73,7 @@ function whips(along: readonly [number, number], every: number, most: number): F
  * @param along The shares of the limb's length they leave between.
  * @param length How long each runs.
  * @param shape The longest any runs, as a share of the height, and the degrees of the limb's
- *   ground side none leaves toward, where a limb's branches differ from the rest.
+ *  ground side none leaves toward, where a limb's branches differ from the rest.
  */
 function branches(
 	along: readonly [number, number],
@@ -343,12 +337,12 @@ const base = {
 } as const;
 
 /**
- * The weeping willow's record with the frame as its growth and the long hanging strand of still 19
- * at each socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws
- * them.
+ * The weeping willow's record with the measured overrides the planned form grows from, and the
+ * long hanging strand of still 19 at each socket. The shoot rows are working figures, not measured
+ * ones: a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'strand-long' }),
+	...record,
 	base,
 	pieces: PIECES.filter((piece) => piece.name === 'strand-long'),
 };

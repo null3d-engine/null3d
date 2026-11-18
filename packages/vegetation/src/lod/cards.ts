@@ -16,6 +16,8 @@ import { MeshWriter } from '../leaf/writer';
 import type { MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
+import type { CardPlane } from './card-bake';
+import { type Clump, clumpSky, clumpsOf, clumpWalk } from './clump-card';
 
 /** A card's corners: signs of its right and up half-extents. */
 export const CARD_CORNERS = [
@@ -224,6 +226,8 @@ function turned(
  * planes, in plant space, for a card moved by a shift and grown about each plane's middle. A plane
  * is turned once, and each point is its middle and its extents in proportion.
  *
+ * @param ends Where to record each picture's last point, in points, when the caller needs a polygon
+ *   a plane.
  * @returns The number of points.
  */
 function rowEdge(
@@ -235,6 +239,7 @@ function rowEdge(
 	shiftX: number,
 	shiftY: number,
 	shiftZ: number,
+	ends?: number[],
 ): number {
 	const prototype = kit.prototypes[rows.prototype[r] as number];
 	if (!prototype) return 0;
@@ -267,8 +272,32 @@ function rowEdge(
 			edgePoints[at + 2] = mz + u * RIGHT[2] + v * UP[2];
 			count++;
 		}
+		ends?.push(count);
 	}
 	return count;
+}
+
+/**
+ * The edge of each picture a row draws, each at its own size, in plant space: the leaf form's own
+ * footprint at that shoot. The points are a plane's picture, a polygon each, and the buffer is
+ * shared by every call, so a caller reads it before the next row.
+ *
+ * @param kit The species' kit.
+ * @param rows The plant's shoot rows.
+ * @param r The row.
+ * @param ends The last point of each picture's polygon, in points.
+ * @returns The points, three numbers a point.
+ * @category api/vegetation
+ */
+export function rowPictureEdges(
+	kit: SpeciesKitData,
+	rows: ShootRows,
+	r: number,
+	ends: number[],
+): { readonly points: Float64Array; readonly count: number } {
+	ends.length = 0;
+	const count = rowEdge(kit, rows, r, Number.POSITIVE_INFINITY, 1, 0, 0, 0, ends);
+	return { points: edgePoints, count };
 }
 
 /** No move of a card from its row's own place. */
@@ -986,6 +1015,165 @@ export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
 }
 
 /**
+ * The clump card a record asks for, as the share of a card level's clumps that it draws, 1 for
+ * every clump; 0, the default, draws a card for each shoot. A level between the two thins its
+ * clumps by the space-filling order until the share is spent, and grows their cards to hold the
+ * crown.
+ */
+function clumpShare(record: SpeciesKitData['record'], level: 1 | 2): number {
+	const share = record.lod.clumpCard?.[level - 1] ?? 0;
+	return Math.max(0, Math.min(1, share));
+}
+
+/** Every so many of a list, an even share of it through the list's own order. */
+function evenShare<T>(list: readonly T[], share: number): T[] {
+	const wanted = Math.max(1, Math.min(list.length, Math.round(list.length * share)));
+	return list.filter(
+		(_, at) =>
+			Math.floor(((at + 1) * wanted) / list.length) > Math.floor((at * wanted) / list.length),
+	);
+}
+
+/**
+ * The pictures a side that one clump card shows of its own rows, at each card level: a finer grid
+ * at the first, so a plate there reads at a leaf's scale rather than a clump's, and the second
+ * level keeps its count so the far band does not move.
+ */
+const CLUMP_TILES: readonly [first: number, second: number] = [3, 3];
+
+/** The tiles a side at a card level. */
+export const tilesAt = (level: 1 | 2): number => CLUMP_TILES[level - 1] as number;
+
+/**
+ * The pictures a side that a grown clump card shows: one picture for each of the row's own picture
+ * widths the plate covers, so every picture is one shoot at its own scale. A card grown k times its
+ * row's picture holds k pictures a side.
+ */
+function clumpTiles(grow: number): number {
+	return Math.max(1, Math.round(grow));
+}
+
+/**
+ * A card level's clump cards: one card set for each clump of sockets, at the clump's middle and
+ * grown to cover its rows, so the clump reads with the shade its card bakes rather than as many
+ * shoot cards lit one by one. The rows of each clump stand together in the walk, so `cardClusters`
+ * cuts them into one run per clump.
+ */
+/**
+ * A kit whose card sets repeat their vertical planes evenly over half a turn. A clump card stands
+ * for a mass of foliage, and the gaps between clumps close when each clump shows more faces: the
+ * record names how many vertical planes a clump card draws, the prototype's own two among them, and
+ * each plane takes its picture from those two in turn, so one face does not repeat round the set.
+ * The prototype's horizontal plane, which covers the clump from above, stands as it is. A count that
+ * is not an even whole number, or a prototype without exactly two vertical planes, leaves the kit
+ * as it stands.
+ */
+export function turnedClumpCards(kit: SpeciesKitData, count: number): SpeciesKitData {
+	if (!Number.isInteger(count) || count < 4 || count > 16 || count % 2 !== 0) return kit;
+	const turned = kit.prototypes.map((prototype) => {
+		const base = prototype.card.planes;
+		/** A plane's normal, and the azimuth its face points along, in half a turn. */
+		const normalOf = (plane: (typeof base)[number]): Vector3 => {
+			const [right, up] = [plane.right, plane.up];
+			const normal: Vector3 = [
+				((right[1] as number) * (up[2] as number) -
+					(right[2] as number) * (up[1] as number)) as number,
+				((right[2] as number) * (up[0] as number) -
+					(right[0] as number) * (up[2] as number)) as number,
+				((right[0] as number) * (up[1] as number) -
+					(right[1] as number) * (up[0] as number)) as number,
+			];
+			const length = Math.hypot(...normal) || 1;
+			return [normal[0] / length, normal[1] / length, normal[2] / length];
+		};
+		const azimuth = (plane: (typeof base)[number]): number => {
+			const normal = normalOf(plane);
+			const angle = Math.atan2(normal[0], normal[2]);
+			return (angle + Math.PI * 2) % Math.PI;
+		};
+		// A face is a plane whose normal lies in the ground: the prototypes tilt some of theirs, so
+		// the plane's up vector is not the test.
+		const facesOf = base.filter((plane) => Math.abs(normalOf(plane)[1]) < 0.5);
+		if (facesOf.length !== 2) return prototype;
+		const turn = (v: readonly number[], angle: number): Vector3 => {
+			const cos = Math.cos(angle);
+			const sin = Math.sin(angle);
+			return [
+				(v[0] as number) * cos + (v[2] as number) * sin,
+				v[1] as number,
+				-(v[0] as number) * sin + (v[2] as number) * cos,
+			];
+		};
+		const faces: (typeof base)[number][] = [];
+		for (let k = 0; k < count; k++) {
+			const angle = (k * Math.PI) / count;
+			const source = facesOf[k % 2] as (typeof base)[number];
+			// The face stands at its own even azimuth, turned about the clump's vertical, and keeps
+			// the picture and the tilt of the face it cycles.
+			const delta = angle - azimuth(source);
+			const right = turn(source.right, delta);
+			const up = turn(source.up, delta);
+			const existing = facesOf.find((plane) => Math.abs(azimuth(plane) - angle) < 1e-6);
+			faces.push(existing ?? { ...source, right, up });
+		}
+		const others = base.filter((plane) => Math.abs(normalOf(plane)[1]) >= 0.5);
+		return {
+			...prototype,
+			card: { ...prototype.card, planes: [...faces, ...others] },
+		};
+	});
+	return { ...kit, prototypes: turned };
+}
+
+function clumpCardMesh(input: MeshInput, clumps: readonly Clump[], level: 1 | 2): MeshArrays {
+	const share = clumpShare(input.record, level);
+	// A share below every clump keeps a spread share of them in the walk's order, so a thinned level
+	// holds the plant's outline rather than one side of it.
+	const kept = evenShare(clumps, share);
+	const walk = clumpWalk(kept);
+	// The level draws the wood that its own wood orders keep, so a clump joins the plant where that
+	// wood reaches it.
+	const orders = input.skeleton.axes.order;
+	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
+	const drawn = (axis: number): DrawnWood => ((orders[axis] as number) <= keep ? 2 : 0);
+	const planes = 3;
+	// A clump's card covers the rows it stands for, grown by the record's own card growth as a
+	// shoot's card is, so the level recovers the cover the record asks it to.
+	const more = input.record.lod.cardGrow ?? 1;
+	const clusters = cardClusters(input, walk, kept.length, drawn, planes, undefined, more);
+	// A clump card stands for many shoots, so each plane shows a grid of its rows' pictures at their
+	// own scale rather than one shoot's picture grown over the clump. The first card level fits the
+	// grid to each clump's grown extent, so one picture is one shoot at its own size: the swap from
+	// real leaves to pictures then reads as the same crown losing detail. The second level keeps a
+	// fixed count, so the far band does not move.
+	const tiles = tilesAt(level);
+	const tiled = {
+		tiles,
+		fitted: level === 1,
+		row: (index: number, tile: number, count: number): number => {
+			const list = kept[index]?.rows ?? [];
+			return list.length > 0
+				? (list[Math.floor((tile * list.length) / (count * count))] as number)
+				: 0;
+		},
+	};
+	const asked = input.record.lod.clumpPlanes?.[level - 1] ?? 0;
+	const setInput = asked > 2 ? { ...input, kit: turnedClumpCards(input.kit, asked) } : input;
+	return clusterCardMesh(
+		setInput,
+		clusters,
+		planes,
+		(index, height) => {
+			const clump = kept[index];
+			return clump ? clumpSky(clump, height) : 1;
+		},
+		tiled,
+		undefined,
+		level === 1 ? 0.5 : 0.95,
+	);
+}
+
+/**
  * The shoot cards of one variant at a card level.
  *
  * @param input The dressed variant.
@@ -994,6 +1182,10 @@ export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
  */
 export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { rows, kit } = input;
+	// A record that asks for the clump card draws one card set for each clump of sockets in place
+	// of a card for each shoot.
+	const clumps = clumpShare(input.record, level) > 0 ? clumpsOf(input) : undefined;
+	if (clumps) return clumpCardMesh(input, clumps, level);
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
 	const base = input.variant * VARIANT_RECORDS;
@@ -1053,12 +1245,57 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
+					[
+						plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]),
+						level === 1 ? 0.5 : 0.95,
+					],
 					colour,
 				);
 			}
 			mesh.quad(first, first + 1, first + 2, first + 3);
 		});
+		// A record may ask for crossed planes at a card level: each extra plane is the card's first,
+		// turned a quarter about the vertical, so it closes the crown's gaps without enlarging a
+		// picture.
+		const extra = input.record.lod.cardPlanes?.[level - 1] ?? 0;
+		const lead = prototype.card.planes[0];
+		const quarter = (v: readonly number[], turns: number): Vector3 => {
+			let out: Vector3 = [v[0] as number, v[1] as number, v[2] as number];
+			for (let t = 0; t < turns % 4; t++)
+				out = [-out[2] as number, out[1] as number, out[0] as number];
+			return out;
+		};
+		for (let e = 1; lead && e <= extra; e++) {
+			const right = quarter(lead.right, e);
+			const up = quarter(lead.up, e);
+			const n = normalize3([
+				right[1] * up[2] - right[2] * up[1],
+				right[2] * up[0] - right[0] * up[2],
+				right[0] * up[1] - right[1] * up[0],
+			]);
+			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
+			const first = mesh.vertices;
+			const [rx, ry, rw, rh] = lead.front;
+			for (const [sx, sy] of CARD_CORNERS) {
+				for (let c = 0; c < 3; c++)
+					local[c] =
+						((lead.centre[c] as number) +
+							grow * (sx * (right[c] as number) + sy * (up[c] as number))) *
+						scale;
+				quatRotate(rows.rotation, r * 4, local, world);
+				mesh.vertex(
+					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
+					normal,
+					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
+					[
+						lead.along[0] + ((sy + 1) / 2) * (lead.along[1] - lead.along[0]),
+						level === 1 ? 0.5 : 0.95,
+					],
+					colour,
+				);
+			}
+			mesh.quad(first, first + 1, first + 2, first + 3);
+		}
 		// A twig join's line runs from the card to the nearest branch the level draws, so the card
 		// stands on the plant even where its own twig is not drawn.
 		if (twigs?.has(r)) {
@@ -1483,6 +1720,8 @@ function nearestOnTriangle(
  * @param planes The card planes each cluster draws, from 1 to 3.
  * @param surface The nearest point of the drawn wood's surface to a point, so a cluster hangs on
  *   wood that is drawn and not on an axis inside it; the axis's own place when absent.
+ * @param more How much further a cluster's cards grow to make up the cover of the wood that the
+ *   level does not draw; 1 grows them to cover their own rows.
  * @returns The clusters.
  * @category api/vegetation
  */
@@ -1493,6 +1732,7 @@ export function cardClusters(
 	drawn: (axis: number) => DrawnWood,
 	planes = 3,
 	surface?: (point: Vector3) => Vector3,
+	more = 1,
 ): CardCluster[] {
 	const { rows, kit } = input;
 	const total = walk.length;
@@ -1627,11 +1867,13 @@ export function cardClusters(
 		// The cluster's cards stand at the middle of its rows and grow to make up their cover, as far
 		// as the leaf form's hull lets them.
 		cardCentre(row, centre);
-		const grow = growthInHull(input, row, Math.max(1, Math.min(Math.sqrt(members), fit)), planes, [
-			middle[0] - centre[0],
-			middle[1] - centre[1],
-			middle[2] - centre[2],
-		]);
+		const grow = growthInHull(
+			input,
+			row,
+			Math.max(1, Math.min(Math.sqrt(members) * more, fit * more)),
+			planes,
+			[middle[0] - centre[0], middle[1] - centre[1], middle[2] - centre[2]],
+		);
 		const onAxis = anchorOf(input, row, drawn);
 		const anchor = onAxis && surface ? surface(onAxis) : onAxis;
 		const joined =
@@ -1714,39 +1956,419 @@ export function clusterTriangles(clusters: readonly CardCluster[], planes: numbe
 }
 
 /**
+ * A card level's cards for a plant whose rows are cut far below its clumps: one card set at each
+ * planned clump's centre, its half-size the clump's radius, so the crown draws the clumps the plant's
+ * plan holds rather than the few shoots a small triangle maximum leaves. A clump takes the picture
+ * and the bytes of the nearest row it has; a plant with no rows at all draws its first leaf
+ * prototype's picture, unshaded.
+ *
+ * @param input The dressed variant.
+ * @param planes The card planes each clump draws, from 1 to 3: the two upright ones first.
+ * @param share The share of the plant's clumps to draw, from 0 to 1, spread through the crown.
+ * @returns The cards' mesh, or undefined on a plant that names no clumps.
+ * @category api/vegetation
+ */
+export function plannedClumpCards(
+	input: MeshInput,
+	planes = 3,
+	share = 1,
+	tiles = CLUMP_TILES[1],
+	gate = 0,
+): MeshArrays | undefined {
+	const clumps = input.skeleton.clumps;
+	if (!clumps || clumps.length === 0) return undefined;
+	const { kit } = input;
+	// A plant the maximum cut to no shoots still draws its clumps; each then takes the kit's first
+	// leaf prototype's picture and no row's own bytes.
+	const rows: MeshInput['rows'] =
+		input.rows.count > 0
+			? input.rows
+			: {
+					count: 1,
+					prototype: Uint8Array.of(0),
+					position: Float32Array.of(0, 0, 0),
+					rotation: Float32Array.of(0, 0, 0, 1),
+					scale: Float32Array.of(1),
+					record: Uint16Array.of(0),
+					phase: Uint8Array.of(0),
+					sky: Uint8Array.of(128),
+					bent: Uint8Array.of(0),
+					order: Uint32Array.of(0),
+				};
+	const kept = evenShare(clumps, Math.max(0, Math.min(1, share)));
+	/** The row whose picture and bytes a clump takes: the nearest one it has. */
+	const nearest = (centre: readonly number[]): number => {
+		let best = 0;
+		let least = Number.POSITIVE_INFINITY;
+		for (let r = 0; r < rows.count; r++) {
+			const dx = (rows.position[r * 3] as number) - (centre[0] as number);
+			const dy = (rows.position[r * 3 + 1] as number) - (centre[1] as number);
+			const dz = (rows.position[r * 3 + 2] as number) - (centre[2] as number);
+			const d = dx * dx + dy * dy + dz * dz;
+			if (d < least) {
+				least = d;
+				best = r;
+			}
+		}
+		return best;
+	};
+	// A kept clump's card grows over the clumps it stands for, so a small share still covers the
+	// crown: the root of the count it replaces, as a card level grows a kept card. It stops at two,
+	// where the picture it shows is still about a clump's own scale; past that a card reads as one
+	// oversized leaf.
+	const cover = Math.min(2, Math.sqrt(clumps.length / Math.max(1, kept.length)));
+	// A small maximum draws coarse wood, so a clump's place may stand clear of it: the card then
+	// takes a stalk to the nearest wood it has, and never hangs in the air.
+	const nodes = input.skeleton.nodeCount;
+	const nearestWood = (centre: readonly number[]): Vector3 | undefined => {
+		let best: Vector3 | undefined;
+		let least = Number.POSITIVE_INFINITY;
+		for (let n = 0; n < nodes; n++) {
+			const x = input.skeleton.position[n * 3] as number;
+			const y = input.skeleton.position[n * 3 + 1] as number;
+			const z = input.skeleton.position[n * 3 + 2] as number;
+			const d =
+				(x - (centre[0] as number)) ** 2 +
+				(y - (centre[1] as number)) ** 2 +
+				(z - (centre[2] as number)) ** 2;
+			if (d < least) {
+				least = d;
+				best = [x, y, z];
+			}
+		}
+		return best;
+	};
+	const clusters: CardCluster[] = kept.map((clump) => {
+		const row = nearest(clump.centre);
+		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
+		const scale = rows.count > 0 ? (rows.scale[row] as number) : 1;
+		const half = plane
+			? scale *
+				Math.max(
+					Math.sqrt(plane.right[0] ** 2 + plane.right[1] ** 2 + plane.right[2] ** 2),
+					Math.sqrt(plane.up[0] ** 2 + plane.up[1] ** 2 + plane.up[2] ** 2),
+				)
+			: 0;
+		const anchor = nearestWood(clump.centre);
+		const clear =
+			anchor !== undefined
+				? Math.hypot(
+						(anchor[0] as number) - (clump.centre[0] as number),
+						(anchor[1] as number) - (clump.centre[1] as number),
+						(anchor[2] as number) - (clump.centre[2] as number),
+					)
+				: 0;
+		return {
+			row,
+			rows: 0,
+			centre: [clump.centre[0], clump.centre[1], clump.centre[2]] as Vector3,
+			grow: half > 1e-9 ? Math.max(1, (clump.radius / half) * cover) : cover,
+			reach: clump.radius,
+			...(anchor !== undefined && clear > clump.radius ? { anchor } : {}),
+			stalk: anchor !== undefined && clear > clump.radius,
+		};
+	});
+	const tiled = {
+		tiles,
+		row: (index: number, tile: number, count: number): number => {
+			const clump = kept[index];
+			if (!clump) return 0;
+			// The rows nearest the clump, spread across its picture's tiles.
+			const near: number[] = [];
+			for (let r = 0; r < rows.count; r++) {
+				const dx = (rows.position[r * 3] as number) - (clump.centre[0] as number);
+				const dy = (rows.position[r * 3 + 1] as number) - (clump.centre[1] as number);
+				const dz = (rows.position[r * 3 + 2] as number) - (clump.centre[2] as number);
+				if (dx * dx + dy * dy + dz * dz <= clump.radius * clump.radius) near.push(r);
+			}
+			const list = near.length > 0 ? near : [0];
+			return list[Math.floor((tile * list.length) / (count * count))] as number;
+		},
+	};
+	return clusterCardMesh(
+		{ ...input, rows },
+		clusters,
+		planes,
+		(index, height) => {
+			const clump = kept[index];
+			if (!clump) return 1;
+			const row = clusters[index]?.row ?? 0;
+			const sky = input.rows.count > 0 ? (rows.sky[row] as number) / 255 : 0.5;
+			return clumpSky(
+				{ lobe: clump.id, rows: [], middle: clump.centre[1], spread: clump.radius, sky },
+				height,
+			);
+		},
+		tiled,
+		undefined,
+		gate,
+	);
+}
+
+/**
+ * The far crown as a few large plates: a plant's clumps gathered into regions, one card set at each
+ * region's centre and reach, and each plane tiled so one picture is one shoot. The reach is the
+ * union of the region's clumps, so the plates keep the leaf form's outline and mass without a
+ * per-variant bake. A far picture reads the plate set from any side.
+ *
+ * @param input The dressed variant.
+ * @param regions The regions to gather the clumps into, at least one.
+ * @param planes The card planes each plate draws, from 1 to 3.
+ * @returns The plates' mesh, or undefined on a plant that names no clumps or holds no rows.
+ * @category api/vegetation
+ */
+export function regionalClumpCards(
+	input: MeshInput,
+	regions = 8,
+	planes = 3,
+): MeshArrays | undefined {
+	const clumps = clumpsOf(input);
+	if (!clumps || clumps.length === 0 || input.rows.count === 0) return undefined;
+	const centreOf = (lobe: number): readonly number[] | undefined =>
+		input.skeleton.clumps?.find((clump) => clump.id === lobe)?.centre;
+	const centres = new Map<number, readonly number[]>();
+	const lo = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+	const hi = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	for (const clump of clumps) {
+		const centre = centreOf(clump.lobe);
+		if (!centre) continue;
+		centres.set(clump.lobe, centre);
+		for (let k = 0; k < 3; k++) {
+			lo[k] = Math.min(lo[k] as number, centre[k] as number);
+			hi[k] = Math.max(hi[k] as number, centre[k] as number);
+		}
+	}
+	if (centres.size === 0) return undefined;
+	const size = [0, 1, 2].map((k) => Math.max(0.001, (hi[k] as number) - (lo[k] as number)));
+	const side = Math.max(1, Math.round(Math.cbrt(Math.max(1, regions))));
+	const dims = [side, side, Math.max(1, Math.round(regions / (side * side)))];
+	const groups = new Map<string, { clumps: Clump[]; rows: number[] }>();
+	for (const clump of clumps) {
+		const centre = centres.get(clump.lobe);
+		if (!centre) continue;
+		const key = [0, 1, 2]
+			.map((k) =>
+				Math.min(
+					(dims[k] as number) - 1,
+					Math.floor(
+						(((centre[k] as number) - (lo[k] as number)) / (size[k] as number)) *
+							(dims[k] as number),
+					),
+				),
+			)
+			.join(',');
+		const group = groups.get(key) ?? { clumps: [], rows: [] };
+		group.clumps.push(clump);
+		group.rows.push(...clump.rows);
+		groups.set(key, group);
+	}
+	const { kit, rows } = input;
+	const clusters: CardCluster[] = [];
+	const regionRows: number[][] = [];
+	for (const group of groups.values()) {
+		const own = group.clumps.map((clump) => centres.get(clump.lobe) as readonly number[]);
+		const centre = [0, 1, 2].map(
+			(k) => own.reduce((sum, c) => sum + (c[k] as number), 0) / own.length,
+		) as Vector3;
+		let reach = 0;
+		for (const c of own)
+			reach = Math.max(
+				reach,
+				Math.hypot(
+					(c[0] as number) - centre[0],
+					(c[1] as number) - centre[1],
+					(c[2] as number) - centre[2],
+				),
+			);
+		reach += Math.max(...group.clumps.map((clump) => clump.spread));
+		// The row nearest the region's centre gives the plate its bytes and its picture's own size.
+		let row = group.rows[0] as number;
+		let least = Number.POSITIVE_INFINITY;
+		for (const r of group.rows) {
+			const d = Math.hypot(
+				(rows.position[r * 3] as number) - centre[0],
+				(rows.position[r * 3 + 1] as number) - centre[1],
+				(rows.position[r * 3 + 2] as number) - centre[2],
+			);
+			if (d < least) {
+				least = d;
+				row = r;
+			}
+		}
+		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
+		const scale = rows.scale[row] as number;
+		const half = plane
+			? scale *
+				Math.max(
+					Math.sqrt(plane.right[0] ** 2 + plane.right[1] ** 2 + plane.right[2] ** 2),
+					Math.sqrt(plane.up[0] ** 2 + plane.up[1] ** 2 + plane.up[2] ** 2),
+				)
+			: 0;
+		clusters.push({
+			row,
+			rows: group.rows.length,
+			centre,
+			grow: half > 1e-9 ? Math.max(1, reach / half) : 1,
+			reach,
+			stalk: false,
+			faces: planes,
+		});
+		regionRows.push(group.rows);
+	}
+	const tiled = {
+		tiles: 1,
+		fitted: true,
+		row: (index: number, tile: number, count: number): number => {
+			const list = regionRows[index] ?? [];
+			return list.length > 0
+				? (list[Math.floor((tile * list.length) / (count * count))] as number)
+				: 0;
+		},
+	};
+	return clusterCardMesh(input, clusters, planes, undefined, tiled, undefined, 0, true);
+}
+
+/**
  * The cards of some clusters, as one mesh: each cluster's planes about its centre, and a stalk to
  * its anchor where it takes one.
  *
  * @param input The dressed variant.
  * @param clusters The clusters.
  * @param planes The card planes each cluster draws, from 1 to 3: the two upright ones first.
+ * @param shade The sky share a cluster's card carries at a height, for a baked clump shade.
+ * @param tiled How a cluster's plane is cut into pictures of its own rows, which keeps a card that
+ *   stands for many shoots at their own leaf scale: the tiles a side, and the row whose picture each
+ *   tile shows.
  * @returns The cards' mesh.
  * @category api/vegetation
  */
+/** The four corners of a card plane, as the signs of its own right and up. */
+const PLATE_CORNERS = [
+	[-1, -1],
+	[1, -1],
+	[1, 1],
+	[-1, 1],
+] as const;
+
+/**
+ * How far a clump's plate may grow about its centre and keep inside the leaf form's hull, the same
+ * bound the row cards take: the growth asked for where it fits, the most that does otherwise, and
+ * never under one. A plate whose own size already stands outside the hull keeps its size, since a
+ * smaller plate would lose the shoot it pictures.
+ */
+function clumpGrowthInHull(
+	input: MeshInput,
+	centre: readonly number[],
+	row: number,
+	plane: Pick<CardPlane, 'centre' | 'right' | 'up'>,
+	scale: number,
+	first0: readonly number[],
+	wanted: number,
+): number {
+	if (!(wanted > 1)) return 1;
+	const hull = foliageHull(input);
+	const tall = (hull.high - hull.low) * HULL_SLACK;
+	const local: Vector3 = [0, 0, 0];
+	const world: Vector3 = [0, 0, 0];
+	const fits = (grow: number): boolean => {
+		for (const [sx, sy] of PLATE_CORNERS) {
+			for (let c = 0; c < 3; c++)
+				local[c] =
+					((plane.centre[c] as number) +
+						grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+					scale;
+			quatRotate(input.rows.rotation, row * 4, local, world);
+			const x = (centre[0] as number) + world[0] - (first0[0] as number);
+			const y = (centre[1] as number) + world[1] - (first0[1] as number);
+			const z = (centre[2] as number) + world[2] - (first0[2] as number);
+			if (y < hull.low - tall || y > hull.high + tall) return false;
+			if (x < hull.across[0] || x > hull.across[1] || z < hull.depth[0] || z > hull.depth[1])
+				return false;
+			if (
+				(x - hull.x) ** 2 + (z - hull.z) ** 2 >
+				(hull.reach[hullCell(hull, x, y, z)] as number) * (1 + HULL_SLACK)
+			)
+				return false;
+		}
+		return true;
+	};
+	if (fits(wanted)) return wanted;
+	if (!fits(1)) return 1;
+	let low = 1;
+	let high = wanted;
+	for (let step = 0; step < GROW_STEPS; step++) {
+		const middle = (low + high) / 2;
+		if (fits(middle)) low = middle;
+		else high = middle;
+	}
+	return low;
+}
+
 export function clusterCardMesh(
 	input: MeshInput,
 	clusters: readonly CardCluster[],
 	planes: number,
+	shade?: (cluster: number, height: number) => number,
+	tiled?: {
+		readonly tiles: number;
+		/**
+		 * Whether each cluster's tile count follows its grown extent against its own row's picture,
+		 * so one picture is one shoot at its own scale, or every cluster keeps `tiles`.
+		 */
+		readonly fitted?: boolean;
+		readonly row: (cluster: number, tile: number, tiles: number) => number;
+	},
+	into?: MeshWriter,
+	/**
+	 * The mark a card writes in its second coordinate's y, which the shader reads as the band that
+	 * gives one card level its own cover factor. 0 stands the card outside every band.
+	 */
+	gate = 0,
+	/**
+	 * Whether a cluster's growth is its own extent, as a region plate's is, rather than the most the
+	 * leaf form's hull allows about the cluster's own centre.
+	 */
+	unbounded = false,
 ): MeshArrays {
 	const { rows, kit } = input;
-	const mesh = new MeshWriter();
+	const mesh = into ?? new MeshWriter();
 	const size = kit.cards.size || 1;
 	const base = input.variant * VARIANT_RECORDS;
+	// A record that asks for the clump card shades a cluster by its own row's sky and its own
+	// height, which is the shade a clump card bakes, for the clusters a maximum draws.
+	const own =
+		shade === undefined && (clumpShare(input.record, 1) > 0 || clumpShare(input.record, 2) > 0);
+	const lighting =
+		shade ??
+		(own
+			? (index: number, height: number) => {
+					const cluster = clusters[index] as CardCluster;
+					const sky = (rows.sky[cluster.row] as number) / 255;
+					return clumpSky(
+						{ lobe: 0, rows: [cluster.row], middle: cluster.centre[1], spread: cluster.reach, sky },
+						height,
+					);
+				}
+			: undefined);
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
 	const first0: Vector3 = [0, 0, 0];
-	for (const cluster of clusters) {
+	for (let index = 0; index < clusters.length; index++) {
+		const cluster = clusters[index] as CardCluster;
 		const r = cluster.row;
 		const prototype = kit.prototypes[rows.prototype[r] as number];
 		if (!prototype) continue;
 		const scale = rows.scale[r] as number;
 		const record = base + (rows.record[r] as number);
-		const colour = [
+		const sky = rows.sky[r] as number;
+		/** The vertex colour at a height: the card's own bytes, with the clump's baked shade. */
+		const colourAt = (height: number): number[] => [
 			(record >>> 8) & 255,
 			record & 255,
 			rows.phase[r] as number,
-			rows.sky[r] as number,
+			lighting ? Math.round(255 * lighting(index, height)) : sky,
 		];
+		const colour = colourAt(cluster.centre[1]);
 		const lead = prototype.card.planes[0];
 		// The card set keeps its own shape and turn, and moves so its first plane's middle stands on
 		// the cluster's centre.
@@ -1754,6 +2376,13 @@ export function clusterCardMesh(
 		local[1] = (lead?.centre[1] ?? 0) * scale;
 		local[2] = (lead?.centre[2] ?? 0) * scale;
 		quatRotate(rows.rotation, r * 4, local, first0);
+		const grow =
+			lead && !unbounded
+				? clumpGrowthInHull(input, cluster.centre, r, lead, scale, first0, cluster.grow)
+				: cluster.grow;
+		// A picture covers the row's own picture's share of the grown plate: the plate's half extent
+		// over the row's own half extent is the count of pictures that brings the grain back.
+		const tiles = tiled ? (tiled.fitted ? clumpTiles(grow) : tiled.tiles) : 1;
 		prototype.card.planes.forEach((plane) => {
 			if (plane.role >= planes) return;
 			const n = normalize3([
@@ -1762,28 +2391,51 @@ export function clusterCardMesh(
 				plane.right[0] * plane.up[1] - plane.right[1] * plane.up[0],
 			]);
 			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
-			const first = mesh.vertices;
-			const [rx, ry, rw, rh] = plane.front;
-			for (const [sx, sy] of CARD_CORNERS) {
-				for (let c = 0; c < 3; c++)
-					local[c] =
-						((plane.centre[c] as number) +
-							cluster.grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
-						scale;
-				quatRotate(rows.rotation, r * 4, local, world);
-				mesh.vertex(
-					[
+			for (let tile = 0; tile < tiles * tiles; tile++) {
+				// A tile shows one of the cluster's rows' pictures at its own scale, so a card that
+				// stands for many shoots reads as their clump rather than as one shoot grown large.
+				const shown = tiles > 1 ? (tiled as NonNullable<typeof tiled>).row(index, tile, tiles) : r;
+				const shownPrototype = kit.prototypes[rows.prototype[shown] as number];
+				const cell =
+					shownPrototype?.card.planes.find((other) => other.role === plane.role) ??
+					shownPrototype?.card.planes[0] ??
+					plane;
+				const [rx, ry, rw, rh] = cell.front;
+				const across = tile % tiles;
+				const up = Math.floor(tile / tiles);
+				const x0 = (across / tiles) * 2 - 1;
+				const x1 = ((across + 1) / tiles) * 2 - 1;
+				const y0 = (up / tiles) * 2 - 1;
+				const y1 = ((up + 1) / tiles) * 2 - 1;
+				const first = mesh.vertices;
+				const corners = [
+					[x0, y0, -1, -1],
+					[x1, y0, 1, -1],
+					[x1, y1, 1, 1],
+					[x0, y1, -1, 1],
+				] as const;
+				for (const [sx, sy, us, vt] of corners) {
+					for (let c = 0; c < 3; c++)
+						local[c] =
+							((plane.centre[c] as number) +
+								grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+							scale;
+					quatRotate(rows.rotation, r * 4, local, world);
+					const at: Vector3 = [
 						cluster.centre[0] + world[0] - first0[0],
 						cluster.centre[1] + world[1] - first0[1],
 						cluster.centre[2] + world[2] - first0[2],
-					],
-					normal,
-					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
-					colour,
-				);
+					];
+					mesh.vertex(
+						at,
+						normal,
+						[(rx + ((us + 1) / 2) * rw) / size, (ry + ((vt + 1) / 2) * rh) / size],
+						[plane.along[0] + ((vt + 1) / 2) * (plane.along[1] - plane.along[0]), gate],
+						colourAt(at[1]),
+					);
+				}
+				mesh.quad(first, first + 1, first + 2, first + 3);
 			}
-			mesh.quad(first, first + 1, first + 2, first + 3);
 		});
 		if (!cluster.stalk || !cluster.anchor) continue;
 		const from = cluster.centre;

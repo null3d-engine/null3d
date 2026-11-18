@@ -4,7 +4,7 @@
 // of the mass. Each figure
 // names the reference picture it was read on. Shares are of the plant's height. Still 01 and the
 // whole-plant turning video are the one plant the frame follows.
-import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec } from '../../grow/frame';
 import { pieceRecord } from '../../leaf/piece';
 import { PIECE_LEAF, PIECES } from './pieces';
 import { record } from './record';
@@ -164,24 +164,12 @@ export const frame: FrameSpec = {
 const TIP_SHARE = 1.55;
 
 /**
- * The hawthorn's record with the frame as its growth and the branch end of still 21 at each socket,
- * wearing the leaf on the stalk the pieces were measured with. The shoot rows are working figures,
- * not measured ones: a kit with no pieces draws them.
+ * The hawthorn's record with the measured overrides the planned form grows from, and the branch
+ * end of still 21 at each socket, wearing the leaf on the stalk the pieces were measured with. The
+ * shoot rows are working figures, not measured ones: a kit with no pieces draws them.
  */
 export const directed = {
-	...pieceRecord(
-		framedRecord(record, frame, {
-			rows: { mean: 4, spread: 1 },
-			fan: 45,
-			piece: 'branch-end',
-			// With every branch end's flat side to the sky, a mound seen from the side shows most of
-			// its leaves slanted or edge on. Stills 03 and 06: the tufts face every way, so each piece
-			// rolls up to a quarter turn either way about its own line and tilts a little off the
-			// wood's.
-			turn: { roll: 90, tilt: 35 },
-		}),
-		PIECE_LEAF,
-	),
+	...pieceRecord(record, PIECE_LEAF),
 	// At a card level a haw or a blossom spans a few pixels, where its mesh costs thousands of
 	// triangles the leaf form alone can afford; the card levels leave the extras out. The mound of
 	// pieces also leaves its card levels more sky than its leaf form shows: read over the crown's

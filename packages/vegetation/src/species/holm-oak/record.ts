@@ -223,7 +223,10 @@ export const record: Species = {
 			twist: 6,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.0271, 0.0546, 0.009],
+				// Stills 01, 02 and 18: the crown's foliage averages a grey-olive, and the drawn
+				// crown reads darker than it. The leaf form shows its average as the record's
+				// reflectance, so the reflectance carries that tone.
+				reflectance: [0.045, 0.086, 0.0145],
 				reflectanceBack: [0.365, 0.368, 0.3],
 				transmittance: [0.04, 0.08, 0.012],
 				roughness: [0.32, 0.72],

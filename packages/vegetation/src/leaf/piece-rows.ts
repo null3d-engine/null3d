@@ -21,7 +21,7 @@ import type { UncardedPrototype } from './shoot';
 export const PROTOTYPES_MOST = 255;
 
 /** The growth models that end their wood in sockets. */
-const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame', 'frond-crown', 'culm-clump'];
+const DIRECTED: readonly GrowthModel[] = ['conifer', 'frond-crown', 'culm-clump', 'planned'];
 /** The growth models whose growers write the pieces their sockets carry. */
 const WRITTEN: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 
@@ -36,9 +36,13 @@ const Purpose = { Variant: 0x31, Phase: 0x32 } as const;
  * @returns Whether its kit holds pieces and its rows stand at sockets.
  */
 export function carriesPieces(record: Species): boolean {
+	const growth = record.growth;
+	// A planned tuft's sockets carry the tuft family's pieces, as the tuft model's do.
+	const tuft = growth.model === 'planned' && growth.adult === 'tuft';
 	return (
-		(DIRECTED.includes(record.growth.model) && (record.pieces?.length ?? 0) > 0) ||
-		WRITTEN.includes(record.growth.model)
+		(DIRECTED.includes(growth.model) && (record.pieces?.length ?? 0) > 0) ||
+		WRITTEN.includes(growth.model) ||
+		tuft
 	);
 }
 
@@ -50,7 +54,8 @@ export function carriesPieces(record: Species): boolean {
  * @returns Whether its grower writes the pieces.
  */
 export function writesPieces(record: Species): boolean {
-	return WRITTEN.includes(record.growth.model);
+	const growth = record.growth;
+	return WRITTEN.includes(growth.model) || (growth.model === 'planned' && growth.adult === 'tuft');
 }
 
 /**
@@ -86,7 +91,8 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 function socketPiece(record: Species): string | undefined {
 	const growth = record.growth;
 	if (growth.model === 'conifer') return growth.patch.sockets?.piece;
-	return growth.model === 'frame' ? growth.sockets.piece : undefined;
+	if (growth.model === 'planned') return growth.piece;
+	return undefined;
 }
 
 /**
@@ -103,6 +109,9 @@ export function pieceRows(input: DressInput): Row[] {
 	if (!sockets || kit.prototypes.length === 0) return rows;
 	const salt = record.seedSalt;
 	const pick = (purpose: number, a: number) => hashAt(seed, salt, variant * 64 + purpose, a);
+	// A socket's piece is chosen by the socket's own address, which the planned grower keeps for one
+	// element across requests, so a plant thinned to fewer sockets keeps each kept socket's piece.
+	const address = (b: number): number => buds.origin?.[b] ?? b;
 	// Each piece's variants, each variant its parts in order.
 	const byName = new Map<string, ShootPrototype[][]>();
 	for (const prototype of kit.prototypes) {
@@ -133,10 +142,6 @@ export function pieceRows(input: DressInput): Row[] {
 	const own = sockets.piece;
 	const byPlace = own ? [...byName.values()].map(offered) : [];
 	const heading: Vector3 = [0, 0, 0];
-	// A frame that states a turn for its pieces has turned each socket's frame by it, so a piece
-	// that lies along its socket takes the socket's own frame.
-	const growth = record.growth;
-	const turned = growth.model === 'frame' && growth.sockets.turn !== undefined;
 	for (let b = 0; b < buds.count; b++) {
 		// A flower site carries the record's extras, a dormant bud its sheath and a joint bud its
 		// node ring, never a piece.
@@ -147,7 +152,7 @@ export function pieceRows(input: DressInput): Row[] {
 			throw new Error(
 				`@null3d/vegetation: '${record.id}' has no piece for a socket that names piece ${own?.[b]}`,
 			);
-		const parts = choices[pick(Purpose.Variant, b) % choices.length] as ShootPrototype[];
+		const parts = choices[pick(Purpose.Variant, address(b)) % choices.length] as ShootPrototype[];
 		const first = parts[0] as ShootPrototype;
 		quatRotate(buds.frame, b * 4, [0, 1, 0], heading);
 		const node = buds.node[b] as number;
@@ -166,15 +171,14 @@ export function pieceRows(input: DressInput): Row[] {
 						(position[parentNode * 3 + 2] as number) - at[2],
 					]
 				: [0, 0, 0];
-		const held =
-			first.piece && !(turned && first.piece.attitude === 'along')
-				? pieceTurn(first.piece.attitude, heading)
-				: [
-						buds.frame[b * 4] as number,
-						buds.frame[b * 4 + 1] as number,
-						buds.frame[b * 4 + 2] as number,
-						buds.frame[b * 4 + 3] as number,
-					];
+		const held = first.piece
+			? pieceTurn(first.piece.attitude, heading)
+			: [
+					buds.frame[b * 4] as number,
+					buds.frame[b * 4 + 1] as number,
+					buds.frame[b * 4 + 2] as number,
+					buds.frame[b * 4 + 3] as number,
+				];
 		// A piece whose rule states a roll turns about its own line, its +Y.
 		const roll = first.piece?.roll;
 		let rotation = held;
@@ -184,7 +188,7 @@ export function pieceRows(input: DressInput): Row[] {
 			rotation = [0, 0, 0, 1];
 			quatMultiply(held, 0, turn, 0, rotation);
 		}
-		const phase = pick(Purpose.Phase, b) & 255;
+		const phase = pick(Purpose.Phase, address(b)) & 255;
 		for (const part of parts)
 			rows.push({
 				prototype: part.index,

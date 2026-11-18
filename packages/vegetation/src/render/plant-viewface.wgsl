@@ -134,6 +134,18 @@ const HEADER_EXTRA_SCALES: i32 = 47;
 const HEADER_EXTRA_STALKS: i32 = 51;
 // A card's stalk line: its least width in pixels, and 1 where the line draws at its twig's width.
 const HEADER_CARD_STALK: i32 = 55;
+// How much a row's own share of the open sky dims its foliage, 0 dimming none.
+const HEADER_CROWN_DIM: i32 = 72;
+// How much more the bark's relief tilts its normal and deepens its furrows than its map gives.
+const HEADER_BARK_RELIEF: i32 = 75;
+// How much a card's alpha rises for each mip level its sample reads, 0 raising none.
+const HEADER_CARD_MIP_LIFT: i32 = 73;
+const HEADER_CARD_SHADE: i32 = 77;
+// The second card level's cover multiplier, beside the first level's at its own texel.
+const HEADER_CARD_COVER_SECOND: i32 = 78;
+// The darkest and lightest a card's shade takes a patch of its own colour, at full strength.
+const CARD_SHADE_DARK: f32 = 0.5;
+const CARD_SHADE_LIT: f32 = 1.4;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
@@ -156,10 +168,14 @@ const WOOD_RADIUS_SPAN: f32 = 4.0;
 const WOOD_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
-// How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
-// the share of the texel that the leaves cover, so a small rise keeps a far card's thinnest leaves
-// from falling under the cutoff without inventing coverage that the mip does not hold.
-const CARD_MIP_LIFT: f32 = 0.05;
+// The share of the bark that a lichen's rosettes cover, which its pattern gives way to where a
+// patch falls under a pixel and the pattern would shimmer.
+const LICHEN_COVER: f32 = 0.12;
+// The share of its rosettes' even tint that a far lichen keeps, 0 fading it out at a distance.
+const HEADER_LICHEN_FAR_TINT: i32 = 76;
+// The open-sky shares between which a clump's shade grades, from its dark core to its sunlit rim.
+const CROWN_SHADE_LOW: f32 = 0.15;
+const CROWN_SHADE_HIGH: f32 = 0.75;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
 // The wind speed at which a species' sway is measured: its record gives the metres at the top for
@@ -647,6 +663,22 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The share of its drawn width that a stalk the vertex stage widened truly covers. The stalk is
+/// widened to the least drawn width, so the fragment takes the extra back: it keeps its twig's true
+/// width at a distance instead of drawing as a spoke.
+fn widened_cover(radius: f32, distance: f32) -> f32 {
+    let half =
+        radius * camera.projection[1][1] * frame.resolution.y * 0.5 / max(distance, 0.0001);
+    return clamp(half / (WOOD_LEAST_PIXELS * 0.5), 0.0, 1.0);
+}
+
+/// Whether a fragment of a widened stalk draws at its true width: a stable hash of its point in the
+/// plant's space drops it by the share the widening invented, so the stalk thins evenly and nothing
+/// crawls as the camera moves.
+fn widened_drawn(cover: f32, point: vec3f) -> bool {
+    return cover >= 0.999 || value3(point * 5.0) <= cover;
+}
+
 /// Metres a loose byte of the packed blade keel stands for: the attribute's fraction times the
 /// signed range the writer packed.
 const KEEL_SCALE: f32 = 127.0 / 8192.0;
@@ -893,6 +925,14 @@ fn uv_scale(mode: i32) -> f32 {
     return 1.0 / TEXTURE_UV_STEPS;
 }
 
+/// How much a clump's own shade dims a leaf or a card there: the row's open-sky share, from none at
+/// the clump's dark core to all at its sunlit rim, times the record's dim. At 0 the record dims
+/// nothing, so a species that names none draws its leaves as before.
+fn crown_shade(sky: f32) -> f32 {
+    let dim = header(HEADER_CROWN_DIM).x;
+    return mix(1.0, smoothstep(CROWN_SHADE_LOW, CROWN_SHADE_HIGH, sky), dim);
+}
+
 /// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
 /// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
 /// leaves would vanish; raising it by a quarter for each level keeps the share of the card that
@@ -901,7 +941,16 @@ fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
     let texels = vec2f(textureDimensions(colour).xy);
     let footprint = max(length(gx * texels), length(gy * texels));
     let level = max(log2(max(footprint, 1.0)), 0.0);
-    return saturate(alpha * (1.0 + level * CARD_MIP_LIFT));
+    return saturate(alpha * (1.0 + level * header(HEADER_CARD_MIP_LIFT).x));
+}
+
+/// Where the second cut of a card is read: one texel of the texture's height up the same picture,
+/// so the second look falls on another part of the shoot and the two cuts together carry more leaf
+/// than either alone. The two are combined by their larger coverage, so the second cut can only add
+/// leaf, never remove it.
+fn card_mask_uv(uv: vec2f) -> vec2f {
+    let size = max(f32(textureDimensions(colour).y), 1.0);
+    return uv + vec2f(0.0, 1.0 / size);
 }
 
 /// The coverage a point casts: a leaf's or a card's texel, and wood and stems whole.
@@ -916,7 +965,9 @@ fn coverage(input: SurfaceInput) -> f32 {
         // A card's stalk is a solid line that the vertex stage widens, so it casts its whole width.
         if (abs(input.uv1.y - STALK_PLANE) >= 0.1) {
             let layer = select(1, 0, input.frontFacing);
-            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+            let held = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a;
+            let mask = textureSampleGrad(colour, colourSampler, card_mask_uv(uv), layer, gx, gy).a;
+            alpha = card_alpha(max(held, mask), gx, gy);
         }
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
@@ -1030,8 +1081,9 @@ fn surface(input: SurfaceInput) -> Surface {
         let a_coarse =
             textureSampleGrad(colour, colourSampler, a_uv, a_layer, a_gx * 8.0, a_gy * 8.0).rgb;
         var bark = a_colour * a_tint.rgb;
+        let bark_relief = header(HEADER_BARK_RELIEF).x;
         var bark_normal = tangent_normal(a_relief);
-        var cavity = saturate((luminance_of(a_coarse) - luminance_of(a_colour)) * 4.0);
+        var cavity = saturate((luminance_of(a_coarse) - luminance_of(a_colour)) * 4.0 * (1.0 + bark_relief));
         if (second_weight > 0.001) {
             let b_at = HEADER_BARK_ZONES + second_zone * BARK_ZONE_TEXELS;
             let b_tint = header(b_at);
@@ -1093,8 +1145,10 @@ fn surface(input: SurfaceInput) -> Surface {
         let footprint = max(length(dpx), length(dpy));
         let resolved = 1.0 - smoothstep(0.004, 0.012, footprint);
         let rosette = min(1.0, smoothstep(0.7, 0.73, grain) * 4.0);
-        let lichen_mask =
-            rosette * crest * upward * in_zone * lichen.w * (1.0 - youth) * resolved;
+        // Where a patch falls under a pixel the pattern gives way to the share of the bark the
+        // rosettes cover, so a far limb carries the lichen's even tint and never shimmers.
+        let pattern = mix(header(HEADER_LICHEN_FAR_TINT).x * LICHEN_COVER, rosette, resolved);
+        let lichen_mask = pattern * crest * upward * in_zone * lichen.w * (1.0 - youth);
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
@@ -1110,6 +1164,10 @@ fn surface(input: SurfaceInput) -> Surface {
         }
         base = bark * season_bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
+        // A deeper relief tilts the normal more, so each furrow's wall takes the light and reads.
+        if (bark_relief > 0.0) {
+            bark_normal = normalize(vec3f(bark_normal.xy * (1.0 + bark_relief), max(bark_normal.z, 0.05)));
+        }
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
         occlusion = input.vertexColor.a;
@@ -1136,9 +1194,24 @@ fn surface(input: SurfaceInput) -> Surface {
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
+            // A stalk widened to its twig's true width on the screen takes that width back in the
+            // colour picture, over the share of it the twig itself covers.
+            if (material.matte < 0.5 && stalk.x > 0.0 && stalk.y > 0.5) {
+                let linear = object.worldMatrix[0].xyz;
+                let scale = sqrt(max(dot(linear, linear), 0.000001));
+                let cover = widened_cover(
+                    input.uv.y * WOOD_RADIUS_SPAN * scale,
+                    length(input.relativePosition),
+                );
+                if (!widened_drawn(cover, input.relativePosition)) {
+                    alpha = 0.0;
+                }
+            }
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
+            let mask = textureSampleGrad(colour, colourSampler, card_mask_uv(uv), layer, gx, gy);
+            let plate = max(texel.a, mask.a);
             let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
             let kind = surface_texel.a * 255.0;
             let leaf = kind >= 127.5;
@@ -1152,7 +1225,21 @@ fn surface(input: SurfaceInput) -> Surface {
             } else {
                 base = texel.rgb;
             }
-            alpha = card_alpha(texel.a, gx, gy);
+            // The leaves deep in a clump take less of the sun and of the light through them than its
+            // rim does, so the card draws the clump's own dark underside rather than an even face.
+            let crown = crown_shade(input.vertexColor.a);
+            base *= crown;
+            through *= crown;
+            // Each card level's own coverage: a factor on its alpha, at that level alone. The stalk
+            // strips carry their own uv1.y and stand outside both gate bands.
+            let card_gate = header(HEADER_CARD_SHADE);
+            let card_gate_second = header(HEADER_CARD_COVER_SECOND);
+            let gated = step(0.25, input.uv1.y) * step(input.uv1.y, 0.6);
+            let gated_second = step(0.9, input.uv1.y);
+
+            var card_fill = mix(1.0, card_gate.x, gated);
+            card_fill = mix(card_fill, card_gate_second.x, gated_second);
+            alpha = card_alpha(plate * card_fill, gx, gy);
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
@@ -1289,6 +1376,11 @@ fn surface(input: SurfaceInput) -> Surface {
             let row = shoot_row(object.values);
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
+            // A leaf deep in a clump takes less of the sun and of the light through it, as the card
+            // levels draw it, so the nearest level carries the same shaded clumps.
+            let crown = crown_shade(saturate(row.sky / 250.0));
+            base *= crown;
+            through *= crown;
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;

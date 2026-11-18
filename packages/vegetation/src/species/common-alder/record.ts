@@ -151,7 +151,7 @@ export const record: Species = {
 	// Stills 01, 02 and 18 stand the bole about 0.036 of the tree's height across at breast height.
 	// The whole views' crowns are 0.590 and 0.626 of the height wide, so the tree is taller than it is
 	// broad and the crown is a narrow cone rather than the fitting tool's wider hull.
-	size: { height: { mean: 20, spread: 2 }, dbh: 0.72, aspect: 0.61 },
+	size: { height: { mean: 25, spread: 2 }, dbh: 0.72, aspect: 0.61 },
 	growth: {
 		model: 'self-organizing',
 		years: 36,
@@ -518,6 +518,9 @@ export const record: Species = {
 			kind: 'cone',
 			at: 'shoot-tip',
 			share: 0.16,
+			// Still 19: the crop the references show on a tree of this size, seated as a count so a
+			// denser crown does not multiply it.
+			perTree: 450,
 			count: { mean: 3, spread: 1 },
 			tipShare: 0.8,
 			seasons: ['summer', 'autumn', 'winter'],
@@ -556,10 +559,13 @@ export const record: Species = {
 			kind: 'catkin',
 			at: 'shoot-tip',
 			share: 0.18,
+			perTree: 450,
 			count: { mean: 3, spread: 0 },
 			tipShare: 0.9,
-			seasons: ['summer', 'autumn', 'winter'],
-			shape: { catkin: { length: 0.055, radius: 0.0028 } },
+			seasons: ['summer', 'autumn', 'winter', 'blossom'],
+			// Still 19: a group of four catkins covered in red-brown scales rather than two smooth
+			// ribbons, so each body is a row of swellings and the group hangs as the picture's does.
+			shape: { catkin: { length: 0.055, radius: 0.0028, spikelets: { count: 6, bulge: 0.2 } } },
 			// Still 19: a yellow-green string of pollen sacs, lighter than the cones beside it.
 			colour: [0.14, 0.13, 0.045],
 			roughness: [0.75, 0.8],
@@ -570,6 +576,9 @@ export const record: Species = {
 		default: 'summer',
 		deciduous: true,
 		winter: 'bare',
+		// Still 19: the catkins hang before the leaves are out, so blossom draws the catkins and a
+		// third of the leaves.
+		blossom: { extra: 1, leaves: 0.35 },
 		// The species turns yellow-green late and drops its leaves without colour.
 		autumn: { reflectance: [0.09, 0.11, 0.025], transmittance: [0.12, 0.16, 0.03] },
 	},

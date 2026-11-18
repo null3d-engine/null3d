@@ -9,7 +9,59 @@ import type { Detail, Season, Vec3 } from './core/types';
 import type { CuttingOptions } from './cutting';
 
 /**
- * What a grower takes: the record, the seed, the variant and the season.
+ * What a growth is asked for, apart from its seed, its variant and its season: the three options a
+ * page sets on every species, each at its default when the page leaves it out.
+ *
+ * @category api/vegetation
+ */
+export interface GrowRequest {
+	/** How far the plant has grown, from 0 to 1: 0 grows nothing, 1 the full-grown plant. */
+	readonly maturity: number;
+	/** How much foliage and how many branches the plant gives up, from 0 to 1. */
+	readonly sparse: number;
+	/** The most triangles one copy of the plant may draw, or absent for the record's own levels. */
+	readonly maxTriangles?: number;
+}
+
+/**
+ * The form a plan draws the foliage of one level in.
+ *
+ * @category api/vegetation
+ */
+export type FoliageForm = 'piece' | 'cards' | 'clump-card';
+
+/**
+ * What one growth's requested state costs, worked out as numbers before any geometry: the plan a
+ * grower builds only what the plan allows, so nothing is grown and then cut.
+ *
+ * @category api/vegetation
+ */
+export interface DetailPlan {
+	/** The plant's age in model years: maturity × the record's full age. */
+	readonly age: number;
+	/** The deepest wood order the plant grows. */
+	readonly finestOrder: number;
+	/** The expected elements of each order at this age and sparseness. */
+	readonly expected: readonly number[];
+	/** The sides each order's wood tube draws, the floors stepping down with the maximum. */
+	readonly tubeSides: readonly number[];
+	/** The foliage form of each level, and the share of it this plan draws, blended over a band. */
+	readonly foliage: readonly { readonly form: FoliageForm; readonly blend: number }[];
+	/** The triangles priced to each part. */
+	readonly triangles: Readonly<
+		Record<'trunk' | 'limbs' | 'branches' | 'twigs' | 'foliage' | 'fruit', number>
+	>;
+	/** How far the acorns have come, 0 to 1, from the record's fruiting maturity. */
+	readonly fruit: number;
+	/** How far the catkins have come, 0 to 1, in the flowering season. */
+	readonly flowers: number;
+	/** The rank cut of each order: an element whose keyed rank is under it is kept. */
+	readonly rankCut: readonly number[];
+}
+
+/**
+ * What a grower takes: the record, the seed, the variant and the season, and the request and plan a
+ * species that grows straight to the asked state reads.
  *
  * @category api/vegetation
  */
@@ -22,6 +74,13 @@ export interface GrowInput {
 	readonly variant: number;
 	/** The season the plant grows for. */
 	readonly season: Season;
+	/**
+	 * What the growth is asked for. The generator passes it to every grower; a model that grows to
+	 * its record alone ignores it.
+	 */
+	readonly request?: GrowRequest;
+	/** The plan the growth builds to. A model that plans as it builds leaves it out. */
+	readonly plan?: DetailPlan;
 }
 
 /**
@@ -94,6 +153,13 @@ export interface DressInput extends GrowInput {
 	 * extras. A site that draws at a share draws at every larger one. Every site when absent.
 	 */
 	readonly extrasShare?: number;
+	/**
+	 * The planned model's fruiting ramp, from 0 to 1: the share of the fruit's own sites that draws a
+	 * fruit or a cone, from a plan read below the maturity it fruits at to none, and all of it at the
+	 * ramp's end. A site that draws at a share draws at every larger one. Absent on a record that does
+	 * not plan its growth, which draws its extras by season and site alone.
+	 */
+	readonly fruitShare?: number;
 }
 
 /**

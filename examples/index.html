@@ -684,6 +684,27 @@
 			@keyframes loader-task-in {
 				from { opacity: 0; transform: translateY(3px); }
 			}
+			/* The spinner beside the growth bar's percentage, turning while its work runs and gone
+			   once the bar is whole. */
+			.growth-spin {
+				flex: none;
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+				border: 2px solid rgb(255 255 255 / 0.22);
+				border-top-color: #8fbf8e;
+				animation: growth-spin 0.9s linear infinite;
+			}
+			.growth--done .growth-spin { display: none; }
+			/* The bar carries its own display style, which would outrank the browser's rule for a
+			   hidden element, so hiding it needs the stronger rule. */
+			#demo-growth[hidden] { display: none !important; }
+			@keyframes growth-spin {
+				to { transform: rotate(360deg); }
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.growth-spin { animation-duration: 2.4s; }
+			}
 			/* The comparison panel: title, engines, count and the ramp, with the scene's details
 			   behind one small button beside the title. */
 			.compare {

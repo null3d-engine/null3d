@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { meadowGrassRecord } from '../grow/ground.fixture';
 import { record as template } from '../species/_template/record';
+import { species as meadowSpecies } from '../species/meadow-grass';
 import { record as meadow } from '../species/meadow-grass/record';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
 import { checkSpecies, speciesProblems } from './check';
@@ -211,6 +212,73 @@ describe('the record check', () => {
 			expect(speciesProblems(withStalk(cardStalk)).some((p) => p.startsWith('lod.cardStalk'))).toBe(
 				true,
 			);
+		const withCover = (cardCover: number): Species => ({
+			...template,
+			lod: { ...template.lod, cardCover },
+		});
+		for (const cover of [0.5, 0.65, 1, 1.35, 2])
+			expect(speciesProblems(withCover(cover))).toEqual([]);
+		for (const cover of [0, 0.49, 2.01, -1, Number.NaN])
+			expect(speciesProblems(withCover(cover)).some((p) => p.startsWith('lod.cardCover'))).toBe(
+				true,
+			);
+		// A pair sets each card level's cover, and either level outside the band is named.
+		const withCoverPair = (cardCover: NonNullable<Species['lod']['cardCover']>): Species => ({
+			...template,
+			lod: { ...template.lod, cardCover },
+		});
+		for (const cover of [
+			[0.5, 2],
+			[1, 1],
+			[1.1, 1.05],
+		] as const)
+			expect(speciesProblems(withCoverPair(cover))).toEqual([]);
+		for (const cover of [
+			[0.4, 1],
+			[1, 2.5],
+		] as const)
+			expect(speciesProblems(withCoverPair(cover)).some((p) => p.startsWith('lod.cardCover'))).toBe(
+				true,
+			);
+		const withPlanes = (cardPlanes: NonNullable<Species['lod']['cardPlanes']>): Species => ({
+			...template,
+			lod: { ...template.lod, cardPlanes },
+		});
+		for (const planes of [
+			[0, 0],
+			[1, 0],
+			[2, 2],
+		] as const)
+			expect(speciesProblems(withPlanes(planes))).toEqual([]);
+		for (const planes of [
+			[3, 0],
+			[0, 3],
+			[0.5, 0],
+			[-1, 0],
+		] as unknown as readonly [number, number][])
+			expect(speciesProblems(withPlanes(planes)).some((p) => p.startsWith('lod.cardPlanes'))).toBe(
+				true,
+			);
+		// A clump card's face count is an even pair, from two to sixteen, so one picture a face
+		// stands on the prototype's own two and every face turns by an even share of the half turn.
+		const withClumpPlanes = (clumpPlanes: NonNullable<Species['lod']['clumpPlanes']>): Species => ({
+			...template,
+			lod: { ...template.lod, clumpPlanes },
+		});
+		for (const planes of [
+			[2, 2],
+			[16, 12],
+		] as const)
+			expect(speciesProblems(withClumpPlanes(planes))).toEqual([]);
+		for (const planes of [
+			[0, 2],
+			[1, 2],
+			[2, 17],
+			[2, 3],
+		] as const)
+			expect(
+				speciesProblems(withClumpPlanes(planes)).some((p) => p.startsWith('lod.clumpPlanes')),
+			).toBe(true);
 		const withCuts = (cardCuts: NonNullable<Species['lod']['cardCuts']>): Species => ({
 			...template,
 			lod: { ...template.lod, cardCuts },
@@ -642,6 +710,18 @@ describe('a tuft sheath colour', () => {
 		};
 		expect(speciesProblems(overReach).some((p) => p.startsWith('growth.sheathColour.reach'))).toBe(
 			true,
+		);
+	});
+});
+
+describe('a planned tuft', () => {
+	it('checks its tuft numbers and refuses a record that states none', () => {
+		expect(speciesProblems(meadowSpecies.record)).toEqual([]);
+		const growth = meadowSpecies.record.growth;
+		if (growth.model !== 'planned') throw new Error('the meadow grass grows by the planned model');
+		const { tuft: _tuft, ...without } = growth;
+		expect(speciesProblems({ ...meadowSpecies.record, growth: without })).toContain(
+			'growth.tuft is missing; a planned tuft states the tuft numbers it grows by',
 		);
 	});
 });

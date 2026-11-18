@@ -4,13 +4,7 @@
 // the reference picture it was read on. Shares are of the plant's height. Still 01 and the
 // whole-plant turning video are the one plant the frame follows.
 import type { Curve } from '../../core/types';
-import {
-	type FrameBranchRule,
-	type FrameLength,
-	type FrameSide,
-	type FrameSpec,
-	framedRecord,
-} from '../../grow/frame';
+import type { FrameBranchRule, FrameLength, FrameSide, FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -25,9 +19,11 @@ const ENDS = { pitch: 1.25 / 8, reach: 1.05 / 8 } as const;
 
 /**
  * A rounded clump of foliage that fine wood clothes. Still 01: the dome's surface is rounded masses
- * a fifth to a quarter of the height across.
+ * about a fifth of the height across. The clump's plan radius, which places its cards, is half its
+ * width, so the width sets how broad the crown's highest caps stand; at a quarter of the height they
+ * meet as one plate, where the pictures' dome rounds over at its top.
  */
-const CLUMP = { kind: 'clump', width: 0.24, depth: 0.18, fill: ENDS } as const;
+const CLUMP = { kind: 'clump', width: 0.2, depth: 0.18, fill: ENDS } as const;
 
 /**
  * The branches that end a stem's stated wood: three from each second fork, each to the dome's
@@ -169,13 +165,13 @@ const STILL_01_LEFT: Reading = {
 	],
 };
 /**
- * The crown's narrow way over its wide way. The turning video is the primary plant: 1.26 wide over
- * tall at still 01's turn and 0.92 a quarter turn on, a share of 0.73, which the owner's plan ruling
- * holds at 0.75 or more; at 0.78 the sockets' spread round the turn stays inside the video's own
- * all-round band. Still 02, filed at that quarter turn, is 1.60 wide with foliage down to a quarter
- * of the height: another tree, which the frame does not follow.
+ * The quarter turn's reach as a share of still 01's. Pictures 01 and 02 are the same clump seen
+ * across and a quarter turn on: the crown's box is 379 pixels wide at 01 and 604 at 02, against
+ * the plant's height, so the quarter turn reaches past still 01's side by 604 over 379, less the
+ * first side's own overhang. The clump is broad and low in both, and a wider quarter turn lets its
+ * stems arc out to the picture's width instead of rising side by side.
  */
-const NARROW = 0.78;
+const NARROW = 1.3;
 
 /**
  * A quarter turn's side, from a still 01 side: the video gives the width there and no reading of
@@ -235,19 +231,19 @@ export const frame: FrameSpec = {
 		],
 		// Each stem's lean from plumb where it leaves the stool. Still 01: the inner stems lean 5 to
 		// 15 degrees, and the outer ones toward its two sides, the crown's wide way, 30 to 35. Still
-		// 18, at still 01's turn: the outer ones lean 25 to 35. The turning video: the crown is
-		// narrower a quarter turn on, so the stems toward those sides lean about 18, and those
-		// between 26. The record's single lean is the old grower's mean over every stem. The eight
-		// outer stems stand at places 2 to 9 of 9, from a quarter-turn side round past still 01's
-		// right.
+		// 18, at still 01's turn: the outer ones lean 25 to 35. Pictures 01 and 02: the clump arches
+		// out low on every side, so the stems toward the quarter turn lean 30, almost the wide way's
+		// 34, rather than rising side by side. The record's single lean is the old grower's mean over
+		// every stem. The eight outer stems stand at places 2 to 9 of 9, from a quarter-turn side
+		// round past still 01's right.
 		lean: [
 			[0, 7],
 			[1 / 9, 12],
-			[2 / 9, 18],
+			[2 / 9, 30],
 			[3 / 9, 26],
 			[4 / 9, 34],
 			[5 / 9, 26],
-			[6 / 9, 18],
+			[6 / 9, 30],
 			[7 / 9, 26],
 			[8 / 9, 34],
 			[1, 26],
@@ -281,11 +277,12 @@ export const frame: FrameSpec = {
 };
 
 /**
- * The holm oak's record with the frame as its growth and the branch end of still 21 at each socket.
- * The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
+ * The holm oak's record with the measured overrides the planned form grows from, and the branch
+ * end of still 21 at each socket. The shoot rows are working figures, not measured ones: a kit
+ * with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...record,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// Each of the frame's ten stems takes the foot's flare, so the record's flare for one stem of the
 	// clump spreads into a disc. Still 07: each stem swells a little where it joins the stool, and

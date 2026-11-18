@@ -155,6 +155,85 @@ export interface MacroSkeleton {
 	readonly crownBase: number;
 	/** Height of the top in metres. */
 	readonly height: number;
+	/**
+	 * The foliage masses the crown was planned in, each with its centre, its radius and the depth
+	 * its sockets fill it through. Absent on a skeleton grown without clumps.
+	 */
+	readonly clumps?: readonly ClumpData[];
+	/**
+	 * The measured piece figures the planned fill read, one per fill order, so a level and a case
+	 * read the figures the fill drew rather than a copy. Absent on another growth model.
+	 */
+	readonly fillFigures?: readonly FillFigures[];
+	/**
+	 * The elements the grower made for this plant: everything it built, the part it drew at the
+	 * requested state among them. Absent on a grower that does not count them.
+	 */
+	readonly made?: number;
+	/** The elements the growth shed on the way to the requested state. Absent with `made`. */
+	readonly shed?: number;
+}
+
+/**
+ * What one socket carries beside its bud site's place and wood: the size of its piece, its rank for
+ * thinning and the foliage mass it belongs to.
+ *
+ * @category api/vegetation
+ */
+export interface SocketData {
+	/** The size of the socket's piece against the species' own, 1 for the record's. */
+	readonly scale: number;
+	/** A rank from 0 that orders the sockets for thinning. */
+	readonly rank: number;
+	/** The foliage mass the socket belongs to. */
+	readonly lobe: number;
+	/**
+	 * The axis the socket stands on, the wood that has to draw for its piece to hang on wood:
+	 * its carrier. Absent, the bud site's own axis.
+	 */
+	readonly carrierAxis?: number;
+	/** The botanical order of the carrier, so a level may price it. Absent, unknown. */
+	readonly carrierOrder?: number;
+	/**
+	 * The share along the carrier where the piece stands, from 0 at its base to 1 at its tip.
+	 * Absent, the piece hangs at the carrier's tip.
+	 */
+	readonly carrierAlong?: number;
+}
+
+/**
+ * The measured figures of the piece a planned fill order's sockets carry, read from the species
+ * record rather than restated beside it.
+ *
+ * @category api/vegetation
+ */
+export interface FillFigures {
+	/** The piece's name among the record's pieces. */
+	readonly piece: string;
+	/** Its stem's length in metres, where the record measures one. */
+	readonly length?: number;
+	/** Its stem's radius at its foot, in metres, where the record measures one. */
+	readonly radius?: number;
+	/** The closest spacing in metres that the record states between two sockets. */
+	readonly pitch?: number;
+}
+
+/**
+ * One foliage mass of a planned crown: the clump a limb's boughs end in, which its sockets fill.
+ *
+ * @category api/vegetation
+ */
+export interface ClumpData {
+	/** The clump's index, which its sockets name by `lobe`. */
+	readonly id: number;
+	/** Its centre in plant space, in metres. */
+	readonly centre: Vec3;
+	/** Its radius in metres. */
+	readonly radius: number;
+	/** How many layers of sockets fill it, from its outside inward. */
+	readonly depth: number;
+	/** The model age at which it appears. */
+	readonly birth: number;
 }
 
 /**
@@ -269,6 +348,15 @@ export interface SocketSites {
 	 * stems. Absent where every socket carries the one piece its record names.
 	 */
 	readonly piece?: Uint16Array;
+	/**
+	 * The axis each socket stands on, its carrier: the wood a level must raise into its drawn wood
+	 * for the socket's piece to hang on wood. Absent on a plant whose sockets state no carrier.
+	 */
+	readonly carrierAxis?: Uint32Array;
+	/** The botanical order of each socket's carrier. Absent, the array is absent with the carrier. */
+	readonly carrierOrder?: Uint8Array;
+	/** The share along each socket's carrier where its piece stands, 0 at the base and 1 at the tip. */
+	readonly carrierAlong?: Float32Array;
 }
 
 /** A typed array type that the builder can grow. */
@@ -387,6 +475,12 @@ export interface BudInput {
 		readonly rank: number;
 		readonly lobe: number;
 		readonly piece?: number;
+		/** The axis the socket's piece hangs on: the wood that must draw for it to hang on wood. */
+		readonly carrierAxis?: number;
+		/** The botanical order of that carrier. */
+		readonly carrierOrder?: number;
+		/** The share along that carrier where the piece stands, 0 at its base and 1 at its tip. */
+		readonly carrierAlong?: number;
 	};
 }
 
@@ -443,6 +537,21 @@ export class SkeletonBuilder {
 	private socketRank: Uint32Array | undefined;
 	private socketLobe: Uint16Array | undefined;
 	private socketPiece: Uint16Array | undefined;
+	private socketCarrierAxis: Uint32Array | undefined;
+	private socketCarrierOrder: Uint8Array | undefined;
+	private socketCarrierAlong: Float32Array | undefined;
+
+	/**
+	 * The first and last node of an axis, or -1 for each where the axis carries no node.
+	 *
+	 * @param axis The axis.
+	 * @returns Its first and last node.
+	 */
+	axisEnds(axis: number): readonly [first: number, last: number] {
+		const first = this.axisFirst[axis] as number;
+		const last = this.axisLast[axis] as number;
+		return first === 0xffffffff || last === 0xffffffff ? [-1, -1] : [first, last];
+	}
 
 	/**
 	 * Adds an axis and returns its index. Its first and last nodes follow from the nodes added to it.
@@ -542,6 +651,9 @@ export class SkeletonBuilder {
 			if (this.socketRank) this.socketRank = grown(this.socketRank, size);
 			if (this.socketLobe) this.socketLobe = grown(this.socketLobe, size);
 			if (this.socketPiece) this.socketPiece = grown(this.socketPiece, size);
+			if (this.socketCarrierAxis) this.socketCarrierAxis = grown(this.socketCarrierAxis, size);
+			if (this.socketCarrierOrder) this.socketCarrierOrder = grown(this.socketCarrierOrder, size);
+			if (this.socketCarrierAlong) this.socketCarrierAlong = grown(this.socketCarrierAlong, size);
 		}
 		this.budNode[index] = bud.node;
 		this.budPosition[index * 3] = bud.x;
@@ -566,7 +678,30 @@ export class SkeletonBuilder {
 				this.socketPiece ??= new Uint16Array(room);
 				this.socketPiece[index] = bud.socket.piece;
 			}
-		} else if (this.socketScale) this.socketScale[index] = 1;
+			// A socket's carrier is the wood its piece hangs on. A grower that states one makes the
+			// record; a grower that does not leaves the piece on its own bud site's axis.
+			if (bud.socket.carrierAxis !== undefined && !this.socketCarrierAxis) {
+				this.socketCarrierAxis = new Uint32Array(room);
+				this.socketCarrierOrder = new Uint8Array(room);
+				this.socketCarrierAlong = new Float32Array(room).fill(1);
+				// The buds before the first socket stand on their own axis, at its tip.
+				for (let k = 0; k < index; k++) this.socketCarrierAxis[k] = this.budAxis[k] as number;
+			}
+			if (this.socketCarrierAxis && this.socketCarrierOrder && this.socketCarrierAlong) {
+				this.socketCarrierAxis[index] = bud.socket.carrierAxis ?? bud.axis;
+				this.socketCarrierOrder[index] = bud.socket.carrierOrder ?? 0;
+				this.socketCarrierAlong[index] = bud.socket.carrierAlong ?? 1;
+			}
+		} else if (this.socketScale) {
+			this.socketScale[index] = 1;
+			// A bud site that is no socket names no piece: it hangs on its own axis at its tip, so a
+			// reader of the carriers beside the sockets reads a whole carrier for every bud.
+			if (this.socketCarrierAxis && this.socketCarrierOrder && this.socketCarrierAlong) {
+				this.socketCarrierAxis[index] = bud.axis;
+				this.socketCarrierOrder[index] = 0;
+				this.socketCarrierAlong[index] = 1;
+			}
+		}
 		this.budCount++;
 		return index;
 	}
@@ -648,6 +783,13 @@ export class SkeletonBuilder {
 								rank: trimmed(this.socketRank, buds),
 								lobe: trimmed(this.socketLobe, buds),
 								...(this.socketPiece ? { piece: trimmed(this.socketPiece, buds) } : {}),
+								...(this.socketCarrierAxis && this.socketCarrierOrder && this.socketCarrierAlong
+									? {
+											carrierAxis: trimmed(this.socketCarrierAxis, buds),
+											carrierOrder: trimmed(this.socketCarrierOrder, buds),
+											carrierAlong: trimmed(this.socketCarrierAlong, buds),
+										}
+									: {}),
 							},
 						}
 					: {}),
@@ -718,6 +860,15 @@ export function skeletonCopy(skeleton: MacroSkeleton): MacroSkeleton {
 							rank: buds.sockets.rank.slice(),
 							lobe: buds.sockets.lobe.slice(),
 							...(buds.sockets.piece ? { piece: buds.sockets.piece.slice() } : {}),
+							...(buds.sockets.carrierAxis
+								? { carrierAxis: buds.sockets.carrierAxis.slice() }
+								: {}),
+							...(buds.sockets.carrierOrder
+								? { carrierOrder: buds.sockets.carrierOrder.slice() }
+								: {}),
+							...(buds.sockets.carrierAlong
+								? { carrierAlong: buds.sockets.carrierAlong.slice() }
+								: {}),
 						},
 					}
 				: {}),

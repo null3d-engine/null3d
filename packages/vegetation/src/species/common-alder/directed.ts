@@ -2,7 +2,7 @@
 // leave it one at a time, the lowest the longest, so the crown is a broad cone. Each figure names
 // the reference picture it was read on. Shares are of the tree's height. Still 30 and the whole-tree
 // turning video are the one tree the frame follows; still 01 is the same tree on a river bank.
-import { evenOutline, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameSpec } from '../../grow/frame';
 import { pieceRecord } from '../../leaf/piece';
 import { PIECE_LEAF, PIECES } from './pieces';
 import { record } from './record';
@@ -66,17 +66,19 @@ export const frame: FrameSpec = {
 		// Stills 01 and 17: no lean and no bend.
 		sway: 0.6,
 		elbows: 4,
-		patch: { kind: 'clump', width: 0.1, depth: 0.09, fill: ENDS },
+		patch: { kind: 'clump', width: 0.115, depth: 0.1035, fill: ENDS },
 		children: [
 			{
 				name: 'limb',
 				role: 'limb',
-				// Still 30: 7 to 8 branches show on each side in outline, leaving from 0.23 of the height
-				// to the tip. A branch that points at the camera or away does not show in an outline,
+				// Still 30: 7 to 8 branches show on each side in outline, leaving from 0.12 of the
+				// leader's length to the tip, which puts the lowest foliage at the tenth of the height
+				// the record states for stills 02, 18 and 30. A branch that points at the camera or
+				// away does not show in an outline,
 				// so the tree carries about half as many again as the 16 seen. The shares here are of
 				// the leader's own length.
 				count: 24,
-				along: [0.238, 0.975],
+				along: [0.12, 0.975],
 				stagger: 0.25,
 				// Stills 07, 17 and 03: single, at clearly different heights, on every side.
 				// Still 30: the photograph's lowest sixth carries more of its mass right of the trunk, and
@@ -133,7 +135,7 @@ export const frame: FrameSpec = {
 				sway: 10,
 				elbows: 5,
 				// Still 30: a clump is 0.10 to 0.15 of the height across.
-				patch: { kind: 'clump', width: 0.18, depth: 0.135, fill: ENDS },
+				patch: { kind: 'clump', width: 0.207, depth: 0.155, fill: ENDS },
 				children: [
 					{
 						name: 'side',
@@ -168,7 +170,7 @@ export const frame: FrameSpec = {
 						sway: 10,
 						elbows: 3,
 						// Still 30: the smaller clumps on a branch's side twigs.
-						patch: { kind: 'clump', width: 0.14, depth: 0.105, fill: ENDS },
+						patch: { kind: 'clump', width: 0.161, depth: 0.121, fill: ENDS },
 					},
 				],
 			},
@@ -177,27 +179,11 @@ export const frame: FrameSpec = {
 };
 
 /**
- * The common alder's record with the frame as its growth and the branch end of still 21 at each
- * socket, wearing the leaf on the stalk the pieces were measured with. The shoot rows are working
- * figures, not measured ones: a kit with no pieces draws them.
+ * The common alder's record with the measured overrides the planned form grows from, and the
+ * branch end of still 21 at each socket, wearing the leaf on the stalk the pieces were measured
+ * with. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
  */
 export const directed = {
-	...pieceRecord(
-		framedRecord(record, frame, {
-			rows: { mean: 4, spread: 1 },
-			fan: 45,
-			piece: 'branch-end',
-			// The crown's clumps stand a little larger than the cut branch's measured piece, so
-			// neighbouring clumps meet into the one leafy mass the whole views show; the cutting still
-			// draws the piece its studio photograph measured.
-			scale: 1.05,
-			// With every branch end's flat side to the sky, a crown seen from the side shows most of
-			// its leaves slanted or edge on. Stills 07 and 17: the alder's leafy shoots face every way,
-			// so each piece rolls up to a quarter turn either way about its own line and tilts a
-			// little off the wood's.
-			turn: { roll: 90, tilt: 25 },
-		}),
-		PIECE_LEAF,
-	),
+	...pieceRecord(record, PIECE_LEAF),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };

@@ -79,7 +79,8 @@ import {
 	targetHeight,
 } from './grow/height';
 import { leadOnThickest } from './grow/leaders';
-import { grower, loadGrower } from './grow/models';
+import { loadPlantGrowers, plantGrower } from './grow/models';
+import { ramp as growthRamp } from './grow/planned';
 import {
 	FOLIAGE_FLOOR,
 	GREAT_LIMB_SHARE,
@@ -114,6 +115,7 @@ import {
 	NO_TRIANGLES,
 	partTotal,
 	referenceTriangles,
+	rowLevel,
 	shootPartTriangles,
 } from './lod/budget';
 import { cardLevelMost } from './lod/card-bake';
@@ -122,7 +124,15 @@ import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
 import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import { speciesHeader } from './render/records';
-import type { DressInput, FarBake, GrowInput, MeshInput, MeshLevel } from './stages';
+import type {
+	DetailPlan,
+	DressInput,
+	FarBake,
+	GrowInput,
+	GrowRequest,
+	MeshInput,
+	MeshLevel,
+} from './stages';
 import { VARIANT_RECORDS, windRecords } from './wind/records';
 import { meshWood } from './wood/wood-mesh';
 
@@ -199,6 +209,13 @@ export interface GrowOptions extends CoarsenessOptions {
 	readonly near?: boolean;
 	/** Grow or cut one piece for close review instead of the whole plant. */
 	readonly cutting?: CuttingOptions;
+	/**
+	 * How far the plant has grown, from 0 to 1: 0 grows nothing, 0.5 a half-grown plant and 1, or
+	 * absent, the full-grown plant the record names. It is continuous, so no part appears in a step.
+	 * A model that plans its grown state builds only what this state holds; a stand-in species and a
+	 * cut piece grow as they are.
+	 */
+	readonly maturity?: number;
 	/**
 	 * How much of its foliage, and of the branches that carried it, the plant gives up, from 0 to 1:
 	 * 0 is the plant as grown, at its full density, and 1 is the sparsest, the trunk and the great
@@ -364,8 +381,10 @@ function cuttingRecord(record: Species, part?: CuttingPart): Species {
  * @category api/vegetation
  */
 export async function loadPlantCode(record: Species): Promise<void> {
+	// A form may hand its plant to another growth model, which its own code walks, so every model a
+	// record or one of its forms names is loaded here; a planned adult loads its family's grower.
 	await Promise.all([
-		loadGrower(record.growth.model),
+		loadPlantGrowers(record),
 		loadFoliage(record.foliage.kind),
 		loadSpeciesHooks(record.id),
 	]);
@@ -456,7 +475,9 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
 	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
 	const join = options.cardJoin === undefined ? '' : `:join=${options.cardJoin}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${max}${sections}${cards}${join}`;
+	const maturity =
+		options.maturity === undefined || options.maturity === 1 ? '' : `:maturity=${options.maturity}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${max}${maturity}${sections}${cards}${join}`;
 }
 
 /**
@@ -499,7 +520,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	// them; any other keeps its shoot prototypes.
 	const written =
 		writesPieces(record) && placeholders !== true
-			? grower(record.growth.model).pieces?.(record, manifest)
+			? plantGrower(record).pieces?.(record, manifest)
 			: undefined;
 	if (record.shoots || written) {
 		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
@@ -641,6 +662,9 @@ function checkGrowOptions(options: GrowOptions): void {
 		throw new Error(`cards is ${cards}; a share of the card rows lies from 0.05 to 1`);
 	if (sparse !== undefined && !(sparse >= 0 && sparse <= 1))
 		throw new Error(`sparse is ${sparse}; a sparseness lies from 0 to 1`);
+	const maturity = options.maturity;
+	if (maturity !== undefined && !(maturity >= 0 && maturity <= 1))
+		throw new Error(`maturity is ${maturity}; a maturity lies from 0 to 1`);
 	const max = options.maxTriangles;
 	if (max !== undefined && !(Number.isFinite(max) && max > 0))
 		throw new Error(`maxTriangles is ${max}; a maximum is a positive number of triangles`);
@@ -657,6 +681,22 @@ function checkGrowOptions(options: GrowOptions): void {
 function maxOf(kit: SpeciesKitData, options: GrowOptions): number | undefined {
 	if (options.cutting || kit.placeholders === true) return undefined;
 	return options.maxTriangles;
+}
+
+/**
+ * The maximum a plant's own levels take from its plan's price. A maximum above what the plan's parts
+ * cost never bites, so the levels take none and the plant draws exactly as it would with no maximum
+ * at all. A model without a plan cannot be priced here: its name returns nothing, and the caller
+ * measures the drawn levels instead, which is the only honest test for a plant with no plan.
+ *
+ * @param plan The grown plan, where the model plans its state.
+ * @param max The maximum the growth was asked for.
+ * @returns The maximum the levels draw under, or undefined for none, or for a model without a plan.
+ */
+function bitingMax(plan: DetailPlan | undefined, max: number | undefined): number | undefined {
+	if (max === undefined || plan === undefined) return undefined;
+	const t = plan.triangles;
+	return t.trunk + t.limbs + t.branches + t.twigs + t.foliage + t.fruit > max ? max : undefined;
 }
 
 /**
@@ -706,6 +746,8 @@ interface GrownPlant {
 	readonly detail: Detail;
 	/** The order its foliage goes in as it thins, found when a sparseness first asks for it. */
 	order?: SparseOrder;
+	/** The shoot rows the dressing dropped, being over the record's rows for each axis. */
+	readonly dropped: number;
 }
 
 /** The plants as grown that this thread keeps, by key, the one read last at the end. */
@@ -735,11 +777,16 @@ export function forgetGrownPlants(): void {
 /**
  * The plant as grown for a kit and a growth's options: kept from the growth before, or grown now.
  * Its key holds everything that moves the grown plant and leaves out the sparseness, which only
- * cuts it.
+ * cuts it, except on a model that grows straight to the asked state: its plant holds the sparseness
+ * and the maximum as grown.
  */
 function grownPlant(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	const stand = kit.placeholders === 'missing' ? ':missing' : kit.placeholders ? ':stand-ins' : '';
-	const key = `${variantKey(kit, { ...options, sparse: 0, maxTriangles: undefined })}${stand}`;
+	const planned = kit.record.growth.model === 'planned';
+	const key = `${variantKey(
+		kit,
+		planned ? options : { ...options, sparse: 0, maxTriangles: undefined },
+	)}${stand}`;
 	const kept = GROWN.get(key);
 	if (kept) {
 		GROWN.delete(key);
@@ -757,17 +804,28 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	grownFromSeed++;
 	const record = cuttingLeaves(kit.record, options.cutting);
 	const placeholders = kit.placeholders;
+	const most = maxOf(kit, options);
+	const request: GrowRequest = {
+		maturity: options.maturity ?? 1,
+		sparse: sparseLevel(kit, options),
+		...(most === undefined ? {} : { maxTriangles: most }),
+	};
+	// A model that plans its grown state states the plan's numbers before any geometry is built. A kit
+	// that asks for the missing stages' stand-ins is still a real plant, so it plans.
+	const plan = placeholders === true ? undefined : plantGrower(record).plan?.(record, request);
 	const growInput: GrowInput = {
 		record,
 		seed: options.seed >>> 0,
 		variant: options.variant,
 		season: options.season ?? record.seasons.default,
+		request,
+		...(plan === undefined ? {} : { plan }),
 	};
 	const detail = options.detail ?? kit.detail;
 	const grown = stage(
 		placeholders,
 		() => {
-			const skeleton = grower(record.growth.model).grow(growInput);
+			const skeleton = plantGrower(record).grow(growInput);
 			// A self-organizing plant's wood runs on into the larger limb where its leader collapsed.
 			return record.growth.model === 'self-organizing' ? leadOnThickest(skeleton) : skeleton;
 		},
@@ -786,8 +844,10 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		!options.cutting &&
 		placeholders !== true &&
 		record.growth.model !== 'frond-crown' &&
+		// A planned plant grows its own height from its age, so no drawn height rescales it.
+		record.growth.model !== 'planned' &&
 		(merged
-			? grower(record.growth.model).foliage !== undefined
+			? plantGrower(record).foliage !== undefined
 			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
 			? targetHeight(record, options.seed, options.variant)
 			: 0;
@@ -819,9 +879,19 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		placeholders === true
 			? 0
 			: coarsenessFor(kit, { ...calibratedInput, skeleton: calibrated, ...lit }, detail, options);
+	// A planned record's fruit draws by the plan's ramp, read here from the same request the grower
+	// takes, so a plant below its fruiting maturity draws no fruit and one at the ramp's end draws
+	// its record's full share.
+	const plannedGrowth = calibratedRecord.growth;
+	const maturity = calibratedInput.request?.maturity ?? 1;
+	const fruitShare =
+		plannedGrowth?.model === 'planned'
+			? growthRamp(maturity, plannedGrowth.fruitFrom, plannedGrowth.fruitBand)
+			: undefined;
 	const dressInput: DressInput = {
 		...calibratedInput,
 		kit,
+		...(fruitShare !== undefined ? { fruitShare } : {}),
 		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
 		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,
@@ -841,10 +911,10 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 					() =>
 						record.shoots || carriesPieces(record)
 							? dressShoots(dressInput)
-							: { rows: emptyRows(), skeleton: dressInput.skeleton },
-					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
+							: { rows: emptyRows(), skeleton: dressInput.skeleton, dropped: 0 },
+					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton, dropped: 0 }),
 				)
-			: { rows: emptyRows(), skeleton: dressInput.skeleton };
+			: { rows: emptyRows(), skeleton: dressInput.skeleton, dropped: 0 };
 	let rows = dressed.rows;
 	let skeleton = dressed.skeleton;
 	// The reach is an estimate from the kit, so the drawn top is measured once the shoots stand. A
@@ -871,7 +941,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 			rows = scaledRows(rows, corrective);
 		}
 	}
-	return { input: { ...dressInput, skeleton }, rows, detail };
+	return { input: { ...dressInput, skeleton }, rows, detail, dropped: dressed.dropped };
 }
 
 /** A copy of shoot rows, which a growth may light and renumber without touching the rows it read. */
@@ -899,6 +969,8 @@ interface Dressed {
 	readonly mesh: MeshInput;
 	/** What a level is built from: the variant, its wood's parts and the walk of its shoot rows. */
 	readonly budget: (wood: boolean) => BudgetInput;
+	/** The shoot rows the dressing dropped, which a growth's balance counts. */
+	readonly dropped: number;
 }
 
 /** The order a grown plant's foliage goes in, found once and kept beside the plant. */
@@ -926,8 +998,11 @@ function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
 function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 	const grown = grownPlant(kit, options);
 	const sparse = sparseLevel(kit, options);
-	// Rows that name no node stand on no skeleton, so no wood can follow them out.
-	const thins = grown.rows.count === 0 || grown.rows.node !== undefined;
+	// Rows that name no node stand on no skeleton, so no wood can follow them out. A planned plant
+	// grew its own sparseness, so it is never cut after growing.
+	const thins =
+		kit.record.growth.model !== 'planned' &&
+		(grown.rows.count === 0 || grown.rows.node !== undefined);
 	const full = { skeleton: grown.input.skeleton, rows: grown.rows };
 	let thinned: ReturnType<typeof sparsePlant>;
 	if (thins && sparse > 0) {
@@ -958,6 +1033,9 @@ function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 			for (const row of order.list) if ((held[row] as number) >= 0) kept.push(held[row] as number);
 			walk = Uint32Array.from(kept);
 		}
+		// A plant that never cuts a grown plant carries no order, but the row-place cards still need a
+		// walk: its own rows in array order, which is the order its own fill carries them in.
+		walk ??= Uint32Array.from({ length: of.rows.count }, (_, i) => i);
 		let carriers = 0;
 		if (order && !order.byRows) {
 			const origin = of.skeleton.axes.origin;
@@ -989,7 +1067,7 @@ function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 				: {}),
 		};
 	};
-	return { mesh, budget: (wood) => budgetOf(mesh, wood) };
+	return { mesh, budget: (wood) => budgetOf(mesh, wood), dropped: grown.dropped };
 }
 
 /** The dressed variant alone, for the stages that read no more. */
@@ -1004,7 +1082,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
  */
 function mergedTop(input: MeshInput, level: MeshLevel): number {
 	let top = input.skeleton.height;
-	const build = grower(input.record.growth.model).foliage;
+	const build = plantGrower(input.record).foliage;
 	for (const mesh of [build?.(input, level), extrasMesh(input, level)]) {
 		if (!mesh) continue;
 		const positions = mesh.positions;
@@ -1074,9 +1152,11 @@ function growCutting(
 	let rows: ShootRows = emptyRows();
 	let single: ReturnType<typeof clusterRow> | undefined;
 	let coarseness = 0;
+	let plan: DetailPlan | undefined;
 	if (cutsSkeleton(kit, cutting)) {
 		const mesh = dress(kit, options);
 		coarseness = mesh.coarseness ?? 0;
+		plan = mesh.plan;
 		wind = stage(
 			kit.placeholders,
 			() => windRecords(mesh),
@@ -1118,6 +1198,7 @@ function growCutting(
 		season,
 		coarseness,
 		cutting,
+		...(plan === undefined ? {} : { plan }),
 		skeleton,
 		shoots: rows,
 		levels: [near, emptyLevel(1), emptyLevel(2)],
@@ -1216,8 +1297,7 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 		}
 		// A plant whose pieces stand at sockets may draw a part of its own beside them, such as
 		// what lies in the soil under a stool.
-		const own =
-			!record.shoots && placeholders !== true ? grower(record.growth.model).foliage : undefined;
+		const own = !record.shoots && placeholders !== true ? plantGrower(record).foliage : undefined;
 		if (own) parts.push(...partOf(kit, 'foliage', own(mesh, level), TEXTURE_UV_STEPS));
 	}
 	const extras = stage(
@@ -1267,40 +1347,64 @@ function builtLevels(
 	kit: SpeciesKitData,
 	plant: Dressed,
 	options: GrowOptions,
-): readonly [BuiltLevel, BuiltLevel, BuiltLevel] {
+): {
+	readonly levels: readonly [BuiltLevel, BuiltLevel, BuiltLevel];
+	readonly cap: number | undefined;
+} {
 	const { mesh } = plant;
-	const most = maxOf(kit, options);
+	const asked = maxOf(kit, options);
 	const input = plant.budget(options.near === true);
-	const reference = most === undefined ? undefined : referenceOf(kit, input);
-	const level = (at: MeshLevel): BuiltLevel => {
-		const standIn = (): BuiltLevel => {
-			const parts = [...(at === 0 && options.near ? nearWood(mesh) : []), ...levelParts(mesh, at)];
-			const rows = at === 0 && mesh.record.lod.nearFoliage === 'instanced';
-			const shoots = rows ? shootPartTriangles(mesh, mesh.rows, mesh.detail) : ([0, 0] as const);
-			return { parts, triangles: countedParts(parts, shoots), clusters: NO_CLUSTERS };
-		};
-		const real = (): BuiltLevel => {
-			const build =
-				most === undefined || !reference
-					? levelBuild(input, at)
-					: levelWithin(input, at, most, reference);
-			return {
-				parts: [
-					...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
-					...partOf(kit, 'foliage', build.foliage, TEXTURE_UV_STEPS),
-					...partOf(kit, 'cards', build.cards, TEXTURE_UV_STEPS),
-					// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
-					...partOf(kit, 'extras', build.extras, TEXTURE_UV_STEPS, true),
-				],
-				triangles: build.triangles,
-				...(build.allowed ? { allowed: build.allowed } : {}),
-				...(build.shoots !== undefined ? { shoots: build.shoots } : {}),
-				clusters: build.clusters ?? NO_CLUSTERS,
+	/** The three levels under one maximum, each as its best look draws it or within that maximum. */
+	const levels = (most: number | undefined): readonly [BuiltLevel, BuiltLevel, BuiltLevel] => {
+		const reference = most === undefined ? undefined : referenceOf(kit, input);
+		const level = (at: MeshLevel): BuiltLevel => {
+			const standIn = (): BuiltLevel => {
+				const parts = [
+					...(at === 0 && options.near ? nearWood(mesh) : []),
+					...levelParts(mesh, at),
+				];
+				const rows = at === 0 && mesh.record.lod.nearFoliage === 'instanced';
+				const shoots = rows ? shootPartTriangles(mesh, mesh.rows, mesh.detail) : ([0, 0] as const);
+				return { parts, triangles: countedParts(parts, shoots), clusters: NO_CLUSTERS };
 			};
+			// A planned plant grows straight to the asked state, so its capped level asks the allocator for
+			// what it may draw rather than stepping a ladder down from the full plant.
+			const planned = mesh.record.growth.model === 'planned';
+			const real = (): BuiltLevel => {
+				const build =
+					most === undefined || !reference
+						? levelBuild(input, at)
+						: planned
+							? rowLevel(input, at, most, reference)
+							: levelWithin(input, at, most, reference);
+				return {
+					parts: [
+						...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
+						...partOf(kit, 'foliage', build.foliage, TEXTURE_UV_STEPS),
+						...partOf(kit, 'cards', build.cards, TEXTURE_UV_STEPS),
+						// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
+						...partOf(kit, 'extras', build.extras, TEXTURE_UV_STEPS, true),
+					],
+					triangles: build.triangles,
+					...(build.allowed ? { allowed: build.allowed } : {}),
+					...(build.shoots !== undefined ? { shoots: build.shoots } : {}),
+					clusters: build.clusters ?? NO_CLUSTERS,
+				};
+			};
+			return stage(kit.placeholders, real, standIn);
 		};
-		return stage(kit.placeholders, real, standIn);
+		return [level(0), level(1), level(2)];
 	};
-	return [level(0), level(1), level(2)];
+	const biting = bitingMax(mesh.plan, asked);
+	const first = levels(biting);
+	// The plan prices the plant's finest orders as tubes, while the level draws them as the shoot rows
+	// and the extras, so a level may draw more than the price counted. A maximum the price said never
+	// bit then bites after all: measure the drawn totals, and where one passes the asked maximum,
+	// build all three levels again under it, so the levels, the far bake's capped figure and the
+	// allowance all agree on one maximum.
+	if (asked === undefined || biting !== undefined) return { levels: first, cap: biting };
+	const over = first.some((level) => partTotal(level.triangles) > asked);
+	return over ? { levels: levels(asked), cap: asked } : { levels: first, cap: undefined };
 }
 
 /** What each part holds at a plant's best look, or undefined where a stage of it is not built. */
@@ -1332,6 +1436,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	const record = kit.record;
 	const plant = dressed(kit, options);
 	const mesh = plant.mesh;
+	const sparse = sparseLevel(kit, options);
 	const placeholders = kit.placeholders;
 	const wind = stage(
 		placeholders,
@@ -1343,7 +1448,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		() => levelStarts(mesh),
 		() => placeholderStarts(mesh),
 	);
-	const built = builtLevels(kit, plant, options);
+	const { levels: built, cap } = builtLevels(kit, plant, options);
 	const levels = [
 		levelOf(0, built[0].parts, 0),
 		levelOf(1, built[1].parts, starts[0]),
@@ -1363,7 +1468,10 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	);
 	let bytes = wind.records.byteLength;
 	for (const level of levels) bytes += level.bytes;
-	const most = maxOf(kit, options);
+	// The maximum the growth was asked for is what the asset records, whether or not it bit: a plan
+	// whose own parts sit under it draws as it planned, and a caller that asks for a maximum must see
+	// its figure back. The levels draw under the maximum the build settled on.
+	const asked = maxOf(kit, options);
 	const shoots = built[0].shoots;
 	const asset: PlantAsset = {
 		species: record.id,
@@ -1372,6 +1480,9 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		variant: options.variant,
 		season: mesh.season,
 		coarseness: mesh.coarseness ?? 0,
+		...(mesh.plan === undefined ? {} : { plan: mesh.plan }),
+		...(plant.dropped === 0 ? {} : { dropped: plant.dropped }),
+		...(sparse > 0 ? { sparse } : {}),
 		skeleton,
 		shoots: mesh.rows,
 		levels,
@@ -1383,7 +1494,10 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 			texels: record.lod.impostor.texels,
 			from: starts[2],
 		},
-		...(most !== undefined ? { maxTriangles: most } : {}),
+		...(asked !== undefined ? { maxTriangles: asked } : {}),
+		// The far bake reads the maximum the levels actually drew under, since a maximum the plant's
+		// own levels fit changes no level and must change no far picture.
+		...(cap === undefined ? {} : { capTriangles: cap }),
 		...(shoots !== undefined && shoots !== mesh.detail ? { shootDetail: shoots } : {}),
 		stats: {
 			milliseconds: now() - started,
@@ -1394,12 +1508,18 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 				partTotal(built[2].triangles),
 			],
 			parts: [built[0].triangles, built[1].triangles, built[2].triangles],
-			...(built[0].allowed && built[1].allowed && built[2].allowed
-				? {
-						allowed: [built[0].allowed, built[1].allowed, built[2].allowed] as const,
+			// A cap that did not bite allowed exactly what the level drew, so its allowance is the
+			// drawn part counts; a cap that bit carries the allocator's own allowance.
+			...(asked === undefined
+				? {}
+				: {
+						allowed: [
+							built[0].allowed ?? built[0].triangles,
+							built[1].allowed ?? built[1].triangles,
+							built[2].allowed ?? built[2].triangles,
+						] as const,
 						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
-					}
-				: {}),
+					}),
 			shoots:
 				record.lod.nearFoliage === 'instanced' ? shootTriangles(kit, mesh.rows, kit.detail) : 0,
 		},
@@ -1423,9 +1543,14 @@ export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): read
 	const plant = dressed(kit, options);
 	const most = maxOf(kit, options);
 	if (most === undefined) return nearWood(plant.mesh);
-	// Under a maximum the nearest wood is the wood its level's shares leave it.
+	// Under a maximum the nearest wood is the wood its level's shares leave it. A planned plant grows
+	// straight to the asked state, so it asks the allocator rather than stepping a ladder.
 	const input = plant.budget(true);
-	const level = levelWithin(input, 0, most, referenceTriangles(input));
+	const reference = referenceTriangles(input);
+	const level =
+		kit.record.growth.model === 'planned'
+			? rowLevel(input, 0, most, reference)
+			: levelWithin(input, 0, most, reference);
 	return partOf(kit, 'wood', level.wood, WOOD_UV_STEPS);
 }
 

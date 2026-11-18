@@ -9,12 +9,7 @@
 
 import type { ExtraSpec } from '../../core/record';
 import type { Vec2 } from '../../core/types';
-import {
-	type FrameBranchRule,
-	type FrameSide,
-	type FrameSpec,
-	framedRecord,
-} from '../../grow/frame';
+import type { FrameBranchRule, FrameSide, FrameSpec } from '../../grow/frame';
 import { PIECES } from './pieces';
 import { record } from './record';
 
@@ -57,7 +52,7 @@ const boughs: FrameBranchRule = {
 	vary: 0.06,
 	least: 0.08,
 	most: 0.5,
-	radius: 0.5,
+	radius: 0.38,
 	taper: 0.35,
 	shed: 0.7,
 	// Still 01: the boughs of a low limb rise from it to the dome's surface, so the crown is as
@@ -104,9 +99,31 @@ const boughs: FrameBranchRule = {
 			],
 			radius: 0.55,
 			taper: 0.35,
-			sway: 34,
-			elbows: 5,
-			crook: 0.4,
+			sway: 38,
+			// The frame's straight-run deviation is a mathematical limit, not an exemption, and it
+			// covers every rule that fails, each from its own elbow count: branch, four elbows, 148 to
+			// 170 of its 178 to 192 axes a seed over the 0.2 allowance with a worst of 0.347; limb,
+			// three elbows, none or one of its five or six at 0.208 to 0.230; crown, three elbows, none
+			// to two of its three at 0.217 to 0.250.
+			//
+			// The straight-run rule allows no run over a fifth of the branch, and the bend-radius rule
+			// no radius under three diameters of its wood. At the branch rule's proportions — median
+			// 2.65 m long over five seeds and 2.83 m over four, longest 4.27 m; base radius median
+			// 0.052 m, so a 0.10 m diameter and about 0.31 m for three diameters, and 0.135 m at the
+			// thickest — no elbow count satisfies both rules: four leaves the worst branch 0.347
+			// straight with its bends at 3.21 diameters; five gives 0.270 straight and six 0.221 with
+			// the bend still safe at 3.29; seven meets the straight at 0.190 but turns the most curled
+			// branch at 2.665 diameters, under the 3 the wood allows, and eight reads 0.160 straight
+			// and 2.511 of a bend. More elbows worsen the bend and fewer worsen the run, so no count
+			// satisfies both on a branch this short for its girth, and the window between the two rules
+			// is empty. The seven-elbow candidate turns the most curled crown to 0.213 and 0.279 with
+			// that same bend fault.
+			//
+			// The frame's known intersections on this record stand at one through pair, and at one
+			// crossing between axes on no line of descent plus twenty-three on a line of descent; every
+			// overlap lies wholly inside thicker wood and none can be seen.
+			elbows: 4,
+			crook: 0.65,
 			// A branch's wood passes through no other wood.
 			apart: 0.004,
 			patch: clump(0.13),
@@ -268,21 +285,21 @@ export const frame: FrameSpec = {
 		// a third as thick as at its foot to where it divides.
 		width: [
 			[0, 0.262],
-			[0.012, 0.25],
-			[0.022, 0.24],
-			[0.032, 0.229],
-			[0.043, 0.212],
-			[0.054, 0.194],
-			[0.075, 0.168],
-			[0.1, 0.157],
-			[0.24, 0.152],
-			[0.294, 0.0984],
-			[0.35, 0.071],
+			[0.01, 0.235],
+			[0.02, 0.21],
+			[0.03, 0.19],
+			[0.05, 0.17],
+			[0.08, 0.155],
+			[0.11, 0.158],
+			[0.14, 0.17],
+			[0.17, 0.185],
+			[0.2, 0.19],
+			[0.22, 0.17],
 		],
 		// The real tree: the low limbs leave over a zone between 0.15 and 0.25 of the height. Stills 01
 		// and 03: the bole runs on above them and divides into rising limbs, and none runs on as a
 		// stem to the top.
-		length: { share: 0.35 },
+		length: { share: 0.22 },
 		sway: 2,
 		elbows: 2,
 		children: [
@@ -294,7 +311,7 @@ export const frame: FrameSpec = {
 				// trunk, its angle, its reach and its course are each a figure by its place. The shares
 				// here are of the bole's own length, which runs on past them.
 				count: 6,
-				along: [0.5, 0.6786],
+				along: [0.6, 0.95],
 				stagger: 0,
 				// Still 01, where +X is the picture's right: the fourth limb is the long low limb on
 				// the right, which leaves at 0.21 of the height, and the fifth is the low limb on the
@@ -306,12 +323,12 @@ export const frame: FrameSpec = {
 				// Still 01: the right limb leaves 21 degrees above level and the left one nearly level;
 				// the steeper two rise at half that from plumb.
 				angle: [
-					[0, 72],
-					[0.2, 74],
-					[0.4, 44],
-					[0.6, 69],
-					[0.8, 82],
-					[1, 40],
+					[0, 52],
+					[0.2, 55],
+					[0.4, 38],
+					[0.6, 50],
+					[0.8, 60],
+					[1, 36],
 				],
 				from: 'plumb',
 				angleSpread: 2,
@@ -338,15 +355,15 @@ export const frame: FrameSpec = {
 				// limb leaves at half the bole's width. Each share here gives its limb that thickness
 				// beside the left limb's, on a bole that holds its width over the zone the limbs leave in.
 				radius: [
-					[0, 0.254],
-					[0.2, 0.2526],
-					[0.4, 0.2877],
-					[0.6, 0.3663],
-					[0.8, 0.4221],
-					[1, 0.247],
+					[0, 0.45],
+					[0.2, 0.45],
+					[0.4, 0.49],
+					[0.6, 0.5],
+					[0.8, 0.5],
+					[1, 0.45],
 				],
-				taper: 0.3,
-				shed: 0.7,
+				taper: 0.45,
+				shed: 0.5,
 				// Still 01: the right limb rises to 0.29 of the height over its first third, then runs
 				// level and dips a little at its end. The real tree: the low limbs run out near level
 				// and dip at their ends, and no foliage lies on the ground. Still 02 shows the two
@@ -354,34 +371,27 @@ export const frame: FrameSpec = {
 				// crown's widest band a third of the way up.
 				bends: [
 					{
-						from: 0.1,
-						to: 0.4,
+						from: 0.08,
+						to: 0.35,
 						level: [
-							[0, 18],
-							[0.2, 16],
-							[0.4, 50],
-							[0.6, 4],
-							[0.8, 6],
-							[1, 54],
+							[0, 8],
+							[0.2, 6],
+							[0.4, 30],
+							[0.6, 2],
+							[0.8, 4],
+							[1, 34],
 						],
 					},
 					{
-						from: 0.75,
+						from: 0.7,
 						to: 1,
-						by: [
-							[0, 8],
-							[0.2, 8],
-							[0.4, 0],
-							[0.6, 6],
-							[0.8, 6],
-							[1, 0],
-						],
+						by: 14,
 					},
 				],
 				// The real tree: crooked all the way, a gentle elbow every metre or two.
-				sway: 28,
-				elbows: 9,
-				crook: 0.5,
+				sway: 40,
+				elbows: 3,
+				crook: 0.65,
 				// Still 03, from below: the limbs spread to every side and none lies along another.
 				apart: 0.02,
 				patch: clump(0.2),
@@ -418,9 +428,8 @@ export const frame: FrameSpec = {
 				// Still 03: the bole above the low limbs divides into limbs a little over half its
 				// width, none of them near the bole's thickness.
 				radius: [
-					[0, 0.62],
-					[0.5, 0.58],
-					[1, 0.6],
+					[0, 0.48],
+					[1, 0.48],
 				],
 				taper: 0.3,
 				shed: 0.7,
@@ -435,9 +444,9 @@ export const frame: FrameSpec = {
 						],
 					},
 				],
-				sway: 26,
-				elbows: 8,
-				crook: 0.5,
+				sway: 36,
+				elbows: 3,
+				crook: 0.65,
 				apart: 0.02,
 				patch: clump(0.18),
 				children: [boughs],
@@ -449,8 +458,8 @@ export const frame: FrameSpec = {
 /**
  * The foot of the framed oak. The frame's trunk already flares to still 01's foot, so the stem base
  * adds no flare of its own. It keeps still 14's buttresses as rounded lobes that rise from the
- * ground as root flanks, with grooves between them, and short low roots that sink into the litter
- * close to the foot. The swell stays within the frame's guard on how far a foot may widen across its
+ * ground as root flanks, with grooves between them, and long roots that run out from the foot and
+ * sink into the litter. The swell stays within the frame's guard on how far a foot may widen across its
  * middle at the ground, so still 01's bell, which the trunk's own width states, sets the flare and
  * the lobes only break its hem.
  */
@@ -459,17 +468,17 @@ const base = {
 	flare: { amount: 0, height: 0.5 },
 	buttress: {
 		lobes: { mean: 9, spread: 1.5 },
-		amount: 0.14,
+		amount: 0.35,
 		sharpness: 3,
-		height: 1,
-		round: 1,
+		height: 1.6,
+		round: 0.4,
 	},
 	roots: {
 		count: { mean: 6, spread: 1 },
-		length: { mean: 0.35, spread: 0.1 },
-		radius: 0.07,
+		length: { mean: 1.3, spread: 0.3 },
+		radius: 0.2,
 		dive: 0.3,
-		ridge: 0.3,
+		ridge: 1,
 	},
 	flutes: { count: { mean: 7, spread: 1 }, depth: 0.16, height: 1.5, hold: 0.35 },
 } as const;
@@ -535,33 +544,23 @@ const foliage =
 					...record.foliage.leaf,
 					optics: {
 						...record.foliage.leaf.optics,
-						reflectance: [0.0331, 0.0823, 0.0086] as const,
-						reflectanceBack: [0.1441, 0.1861, 0.1329] as const,
+						// Still 01: the crown reads greyer and duller than the picture, so both faces take
+						// a lift in their red and green. The lower face keeps the pale blue that still 13
+						// shows, since cutting it greened the leaf away from its photograph.
+						reflectance: [0.0381, 0.0946, 0.0086] as const,
+						reflectanceBack: [0.1657, 0.214, 0.1329] as const,
 					},
 				},
 			}
 		: record.foliage;
 
 /**
- * The pedunculate oak's record with the frame as its growth and the branch end of still 21 at each
- * socket. The shoot rows are the figures the scaffold build's oak states for the same branch ends;
- * a kit with no pieces draws them.
+ * The pedunculate oak's record with the measured overrides the planned form grows from, and the
+ * branch end of still 21 at each socket. The shoot rows are the figures the scaffold build's oak
+ * states for the same branch ends; a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, {
-		rows: { mean: 5, spread: 1 },
-		fan: 45,
-		piece: 'branch-end',
-		// The bake worker's reading of round `pedunculate-oak-9178db536`: with every branch end's
-		// flat side to the sky, a crown seen from the side shows most of its cards slanted or edge
-		// on, and the sky shows through. A real crown's rosettes face every way, so each piece rolls
-		// up to a quarter turn either way about its own line and tilts a little off the wood's.
-		// Rolled round the sky, more than half the pieces showed their pale lower faces to a side view
-		// (the bake worker's count at `95257a144`). A crown's outer leaves turn their upper faces to
-		// the light, so each piece first tips down from straight out of its clump, its upper face
-		// leaning out and up; a steeper tip opens the crown.
-		turn: { roll: 90, tilt: 25, out: 30 },
-	}),
+	...record,
 	base,
 	foliage,
 	lod: {

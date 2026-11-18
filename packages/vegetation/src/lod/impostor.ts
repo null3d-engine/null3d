@@ -2,6 +2,10 @@
 // octahedral impostor atlases that the impostors add-on's cards read. The first card level holds the
 // same outline as the nearest one at a hundredth of its triangles, so it is the source.
 //
+// The bake draws the plant that was asked for, its own first card level, and it draws that level
+// finer than the atlas stores: its grid of texels and its supersampling follow the plant's triangles,
+// down and never up, so a capped plant bakes faster and a full one keeps the record's grid.
+//
 // The CPU cannot read the shipped KTX2 textures, so the colours come from what the kit holds: the
 // cards sample the card atlas's front layer, which the kit baked on the CPU from the leaves' means
 // and profiles; the wood takes its bark zone's mean colour; an extra takes its record colour. Each
@@ -9,13 +13,10 @@
 // inside reads darker from afar. The bake is arithmetic on the arrays, so every device gets the
 // same pixels.
 import type { ImpostorBakePart } from '@null3d/impostors/bake';
-import type { MeshArrays, PlantAsset, PlantPart, SpeciesKitData } from '../asset';
+import type { PlantAsset, PlantPart, SpeciesKitData } from '../asset';
 import type { Rgb } from '../core/types';
-import { lightCrown } from '../crown/visibility';
-import { GREAT_LIMB_SHARE, woodParts } from '../grow/sparse';
-import type { DressInput, FarBake, MeshInput } from '../stages';
-import { levelBuild } from './budget';
-import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './quantise';
+import type { FarBake } from '../stages';
+import { TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './quantise';
 
 /**
  * A variant's far cards on a page: its impostor bake, which the impostors add-on's cards draw.
@@ -45,8 +46,63 @@ export async function loadFarBaker(): Promise<void> {
 	baker ??= (await import('@null3d/impostors/bake')).bakeImpostorAtlas;
 }
 
-/** The share of its colour that a vertex keeps where the crown hides all of its sky. */
-const SHADED = 0.4;
+/**
+ * The share of its colour that a vertex keeps where the crown hides all of its sky: the crown's
+ * dark underside, which the far card must keep because the impostor's card is lit again without the
+ * near form's shadows.
+ */
+const SHADED = 0.15;
+
+/**
+ * The share of its baked colour that a far texel keeps: the card the impostors add-on draws is lit
+ * again by the scene's lights, so the bake carries the crown's own shade on top of its albedo. The
+ * near form's cards are lit once, and this is the share that leaves the far card at the same own
+ * shade the card levels show.
+ */
+const FAR_LIT = 0.7;
+
+/**
+ * How far a capped plant's card planes grow in the far bake, about their middles. A maximum keeps
+ * only the clumps on the trunk and the great limbs, and a far picture built from those alone would
+ * read as wood; the far picture shows the crown, where the approximation is allowed.
+ */
+const CAPPED_CARD_LIFT = 2.2;
+
+/**
+ * How far a card grows about its middle in the far bake, from one for no growth. A plant whose
+ * maximum changed its levels draws a bare frame under a few large clumps, so its far picture needs
+ * the cards enlarged until the crown bakes as leaves; a maximum that changed nothing bakes as one
+ * with no maximum does.
+ *
+ * @param asset The grown variant.
+ * @returns The factor a card grows by about its middle.
+ * @category api/vegetation
+ */
+export function farCardLift(asset: PlantAsset): number {
+	return asset.capTriangles === undefined ? 1 : CAPPED_CARD_LIFT;
+}
+
+/**
+ * The open-sky shares between which a clump's dim runs, from its dark core to its sunlit rim, as the
+ * plant shader's own bounds: the far card reads the same record value that draws the card levels.
+ */
+const CROWN_SHADE_LOW = 0.15;
+const CROWN_SHADE_HIGH = 0.75;
+
+/**
+ * How much of its colour a vertex keeps under the record's crown dim: a leaf or a card deep in a
+ * clump takes less of the sun and of the light through it than the clump's rim does, as the plant
+ * shader darkens the card and shoot roles by the row's open-sky share. At 0 the record dims nothing.
+ *
+ * @param kit The species' kit.
+ * @param sky The vertex's open-sky share, 0 to 1.
+ * @returns The share of its colour the vertex keeps.
+ */
+function crownShade(kit: SpeciesKitData, sky: number): number {
+	const dim = kit.record.lod.crownDim ?? 0;
+	if (!(dim > 0)) return 1;
+	return 1 - dim * (1 - smoothstep(CROWN_SHADE_LOW, CROWN_SHADE_HIGH, sky));
+}
 
 /** The bark colour where neither the manifest nor the record names one. */
 const BARK: Rgb = [0.2, 0.16, 0.12];
@@ -82,40 +138,19 @@ function unpack(part: PlantPart, kit: SpeciesKitData): LevelPart {
 	return { name: part.name, positions, normals, uvs, colors: a.colors, indices: a.indices };
 }
 
-/**
- * The first card level as the plant's best look draws it, rebuilt from a grown asset: its wood, its
- * cards, its merged foliage and its extras, with the crown lit again on a copy of the rows, so the
- * sky visibility each vertex carries is the drawn level's, and each part quantised as the asset's
- * own parts are. A triangle maximum thins the level the asset draws, but the far card is two
- * triangles whatever it shows, so it pictures the best look.
- */
-function bestFirstLevel(kit: SpeciesKitData, asset: PlantAsset): LevelPart[] {
-	const dress: DressInput = {
-		record: kit.record,
-		seed: asset.seed,
-		variant: asset.variant,
-		season: asset.season,
-		kit,
-		skeleton: asset.skeleton,
-		coarseness: asset.coarseness,
-	};
-	const rows = { ...asset.shoots, sky: asset.shoots.sky.slice(), bent: asset.shoots.bent.slice() };
-	const mesh: MeshInput = { ...dress, rows, crown: lightCrown(dress, rows), detail: kit.detail };
-	const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
-	const build = levelBuild({ mesh, parts: woodParts(asset.skeleton, limbs), wood: false }, 1);
-	const parts: LevelPart[] = [];
-	const add = (name: PlantPart['name'], arrays: MeshArrays | undefined, rest = false): void => {
-		if (!arrays || arrays.indices.length === 0) return;
-		const steps = name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS;
-		for (const quantised of quantiseParts(arrays, kit.box, steps, rest))
-			parts.push(unpack({ name, arrays: quantised }, kit));
-	};
-	add('wood', build.wood);
-	add('foliage', build.foliage);
-	add('cards', build.cards);
-	// Fruit and cones are quantised in finer steps, as the asset's own extras are.
-	add('extras', build.extras, true);
-	return parts;
+/** Grows each four-vertex card plane about its middle, which leaves its picture and turn alone. */
+function growPlanes(positions: Float32Array, scale: number): void {
+	for (let at = 0; at + 11 < positions.length; at += 12) {
+		const middle = [0, 0, 0];
+		for (let v = 0; v < 4; v++)
+			for (let k = 0; k < 3; k++)
+				middle[k] = (middle[k] as number) + (positions[at + v * 3 + k] as number) / 4;
+		for (let v = 0; v < 4; v++)
+			for (let k = 0; k < 3; k++)
+				positions[at + v * 3 + k] =
+					(middle[k] as number) +
+					((positions[at + v * 3 + k] as number) - (middle[k] as number)) * scale;
+	}
 }
 
 /** Widens a box to hold a part's positions. */
@@ -129,12 +164,16 @@ function widen(positions: Float32Array, min: number[], max: number[]): void {
 }
 
 /** Linear colours per vertex: a part's colour, darkened by the vertex's sky visibility byte. */
-function shadedColours(bytes: Uint8Array, colour: (vertex: number) => Rgb): Float32Array {
+function shadedColours(
+	kit: SpeciesKitData,
+	bytes: Uint8Array,
+	colour: (vertex: number) => Rgb,
+): Float32Array {
 	const count = bytes.length / 4;
 	const out = new Float32Array(count * 3);
 	for (let v = 0; v < count; v++) {
 		const sky = (bytes[v * 4 + 3] as number) / 255;
-		const keep = SHADED + (1 - SHADED) * sky;
+		const keep = (SHADED + (1 - SHADED) * sky) * crownShade(kit, sky) * FAR_LIT;
 		const c = colour(v);
 		out[v * 3] = (c[0] as number) * keep;
 		out[v * 3 + 1] = (c[1] as number) * keep;
@@ -152,6 +191,62 @@ function barkMean(kit: SpeciesKitData): Rgb {
 	return [mean[0] * tint[0], mean[1] * tint[1], mean[2] * tint[2]];
 }
 
+/** A smooth step from 0 to 1 between two edges, flat outside them. */
+function smoothstep(edge0: number, edge1: number, at: number): number {
+	const t = Math.max(0, Math.min(1, (at - edge0) / (edge1 - edge0 || 1e-9)));
+	return t * t * (3 - 2 * t);
+}
+
+/**
+ * The bark tone that a vertex at a height wears: the record's zones judged at that height and
+ * blended over each band's ends as the plant shader blends them, and the nearest zone's tone where
+ * no band holds the height. A crown's wood stands well above the foot, so one zone's tone for the
+ * whole tree would paint the limbs in the foot's shade.
+ *
+ * @param kit The species' kit.
+ * @returns The linear tone at a height in metres.
+ */
+function barkTone(kit: SpeciesKitData): (height: number) => Rgb {
+	const zones = (kit.record.bark?.zones ?? []).filter((zone) => zone.by === 'height');
+	if (zones.length === 0) {
+		const mean = barkMean(kit);
+		return () => mean;
+	}
+	const tones = zones.map((zone): Rgb => {
+		const layer = kit.manifest.bark?.layers[zone.layer];
+		const mean = layer?.mean ?? kit.manifest.bark?.young.mean ?? BARK;
+		const tint = zone.tint ?? [1, 1, 1];
+		return [mean[0] * tint[0], mean[1] * tint[1], mean[2] * tint[2]];
+	});
+	const first = zones[0] as (typeof zones)[number];
+	const last = zones[zones.length - 1] as (typeof zones)[number];
+	const firstTone = tones[0] as Rgb;
+	const lastTone = tones[tones.length - 1] as Rgb;
+	return (height: number): Rgb => {
+		if (height < first.from) return firstTone;
+		if (height > last.to) return lastTone;
+		const sum = [0, 0, 0];
+		let total = 0;
+		zones.forEach((zone, at) => {
+			const half = Math.max((zone.blend ?? 0) * 0.5, 0.0001);
+			const weight =
+				smoothstep(zone.from - half, zone.from + half, height) *
+				(1 - smoothstep(zone.to - half, zone.to + half, height));
+			total += weight;
+			const tone = tones[at] as Rgb;
+			sum[0] = (sum[0] as number) + (tone[0] as number) * weight;
+			sum[1] = (sum[1] as number) + (tone[1] as number) * weight;
+			sum[2] = (sum[2] as number) + (tone[2] as number) * weight;
+		});
+		if (total <= 1e-6) return height < first.from ? firstTone : lastTone;
+		return [
+			(sum[0] as number) / total,
+			(sum[1] as number) / total,
+			(sum[2] as number) / total,
+		] as Rgb;
+	};
+}
+
 /**
  * The share of a far texel's area that leaves must cover for it to draw. Cards seen from far draw
  * with alpha to coverage, so a crown's texel where a third of the area is leaf reads as crown.
@@ -164,6 +259,59 @@ const FAR_SHARE = 0.3;
  * eye's ray does. A far texel then holds the share of its fine texels that hit a leaf.
  */
 const SUPERSAMPLE = 4;
+
+/**
+ * The least the bake draws a far view at, and the least rays it casts a texel: the floor. A far view
+ * still meets the plant at the switch, where its height is the record's pixels, so the cell keeps
+ * half the record's texels: the crown's clumps stay apart there and the bake stays cheap.
+ */
+export /** The largest power of two not above a value, by doubling: no engine-rounded call. */
+function powerOfTwoAtMost(value: number): number {
+	let side = 1;
+	while (side * 2 <= value) side *= 2;
+	return side;
+}
+
+const FAR_TEXELS_LEAST = 32;
+export const FAR_SUPERSAMPLE_LEAST = 1;
+
+/**
+ * The grid a plant's far atlas is baked at: the record's texels a view and the bake's supersampling,
+ * scaled down with the plant's own first card level against the level's budget, and never up. A
+ * plant with no maximum keeps the record's grid; a capped plant's crown holds less detail than a
+ * full one's, so a smaller cell and fewer rays a texel lose nothing it shows, and the bake's time
+ * follows the plant's triangles rather than the record's grid.
+ *
+ * @param kit The species' kit.
+ * @param asset The grown variant.
+ * @returns The texels a far view, and how many times finer the bake draws.
+ * @category api/vegetation
+ */
+export function farGrid(
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+): { readonly texels: number; readonly supersample: number } {
+	const texels = asset.impostor.texels;
+	const sparse = Math.min(1, Math.max(0, asset.sparse ?? 0));
+	if (asset.capTriangles === undefined && sparse === 0) return { texels, supersample: SUPERSAMPLE };
+	const budget = kit.record.lod.budget.lod1Triangles;
+	const own = asset.stats.triangles[1];
+	// A capped level draws fewer triangles than the record's full level, so its cells shrink with
+	// the level's own count.
+	const capped =
+		asset.capTriangles !== undefined && budget > 0 && own > 0
+			? Math.sqrt(Math.min(1, own / budget))
+			: 1;
+	// A crown grown sparse keeps its clumps but carries far fewer leaves, so its far cells resolve
+	// fewer leaf clusters: half the side at full sparseness.
+	const detail = Math.min(capped, 1 - 0.5 * sparse);
+	// A cell stays a power of two, as the atlas's mip levels expect.
+	const cells = Math.max(FAR_TEXELS_LEAST, powerOfTwoAtMost(Math.max(1, texels * detail)));
+	return {
+		texels: Math.min(texels, cells),
+		supersample: Math.max(FAR_SUPERSAMPLE_LEAST, Math.round(SUPERSAMPLE * detail)),
+	};
+}
 
 /** The card atlas's front layer as a coverage map whose blue holds the coverage, as the bake reads it. */
 const COVERAGE = new WeakMap<Uint8Array, Uint8Array>();
@@ -179,17 +327,29 @@ function coverageOf(color: Uint8Array, texels: number): Uint8Array {
 
 /**
  * The far atlases at their own size from the finer bake: each far texel's coverage is the share of
- * its fine texels that drew, raised so that `FAR_SHARE` meets the cards' cutoff of one half; its
- * colour and surface are the means of the fine texels that drew.
+ * its fine texels that drew; its colour and surface are the means of the fine texels that drew.
+ * A view with a target draws covered texels until its covered share meets the target, so a far
+ * picture keeps the cover its leaf form draws at that view; a view with none keeps the bake's own
+ * share.
+ *
+ * @param fine The bake's colour and surface layers at the finer size.
+ * @param side The far atlas's texels a side.
+ * @param s The bake's supersampling: fine texels a far texel a side.
+ * @param views The atlas's views across and down.
+ * @param targets The leaf form's covered share per view, in the atlas's frame order, or undefined.
+ * @returns The far colour and surface layers.
  */
 function filtered(
 	fine: { readonly color: Uint8Array; readonly surface: Uint8Array },
 	side: number,
+	s: number,
+	views: number,
+	targets?: readonly number[],
 ): { readonly color: Uint8Array; readonly surface: Uint8Array } {
-	const s = SUPERSAMPLE;
 	const wide = side * s;
 	const color = new Uint8Array(side * side * 4);
 	const surface = new Uint8Array(side * side * 4);
+	const shares = new Float32Array(side * side);
 	const sum = new Float64Array(6);
 	for (let y = 0; y < side; y++)
 		for (let x = 0; x < side; x++) {
@@ -205,18 +365,72 @@ function filtered(
 						sum[3 + k] = (sum[3 + k] as number) + (fine.surface[at + k] as number);
 					}
 				}
-			const at = (y * side + x) * 4;
 			if (drawn === 0) continue;
 			const share = drawn / (s * s);
-			const alpha = Math.round(255 * Math.min(1, share / (2 * FAR_SHARE)));
+			shares[y * side + x] = share;
+			const at = (y * side + x) * 4;
 			for (let k = 0; k < 3; k++) {
 				color[at + k] = Math.round((sum[k] as number) / drawn);
 				surface[at + k] = Math.round((sum[3 + k] as number) / drawn);
 			}
-			color[at + 3] = alpha;
-			surface[at + 3] = alpha;
+		}
+	const cell = side / views;
+	for (let row = 0; row < views; row++)
+		for (let column = 0; column < views; column++) {
+			const target = targets?.[row * views + column];
+			const cut =
+				target === undefined
+					? FAR_SHARE
+					: cutFor(shares, side, column * cell, row * cell, cell, target);
+			for (let y = row * cell; y < (row + 1) * cell; y++)
+				for (let x = column * cell; x < (column + 1) * cell; x++) {
+					const share = shares[y * side + x] as number;
+					if (share === 0) continue;
+					const at = (y * side + x) * 4;
+					const alpha = Math.round(255 * Math.min(1, share / (2 * cut)));
+					color[at + 3] = alpha;
+					surface[at + 3] = alpha;
+				}
 		}
 	return { color, surface };
+}
+
+/** Covered shares a cell's cut is searched over, which span the whole range of coverage. */
+const CUT_STEPS = 20;
+
+/**
+ * The share a far texel must reach to draw so that a view draws its target covered share: the cut
+ * its texels would need, found by halving the range while the cover stays above the target. A cut
+ * above what the view can draw leaves the view at its most open, and one below leaves it at its
+ * most closed.
+ *
+ * @param shares Each far texel's share of fine texels that drew, a side square.
+ * @param side The far atlas's texels a side.
+ * @param x0 The cell's first column.
+ * @param y0 The cell's first row.
+ * @param cell The cell's texels a side.
+ * @param target The covered share the view must draw.
+ * @returns The cut, from 0 to 1.
+ */
+function cutFor(
+	shares: Float32Array,
+	side: number,
+	x0: number,
+	y0: number,
+	cell: number,
+	target: number,
+): number {
+	let lo = 0;
+	let hi = 1;
+	for (let step = 0; step < CUT_STEPS; step++) {
+		const cut = (lo + hi) / 2;
+		let drawn = 0;
+		for (let y = y0; y < y0 + cell; y++)
+			for (let x = x0; x < x0 + cell; x++) if ((shares[y * side + x] as number) >= cut) drawn++;
+		if (drawn / (cell * cell) > target) lo = cut;
+		else hi = cut;
+	}
+	return (lo + hi) / 2;
 }
 
 /**
@@ -233,17 +447,15 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			'@null3d/vegetation: the far baker is not loaded on this thread; await loadFarBaker() first',
 		);
 	const views = asset.impostor.views;
-	const texels = asset.impostor.texels;
+	const { texels, supersample } = farGrid(kit, asset);
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];
 	const parts: ImpostorBakePart[] = [];
-	const bark = barkMean(kit);
+	const bark = barkTone(kit);
 	const size = kit.cards.size;
 	const cards: ImpostorBakePart[] = [];
-	const level =
-		asset.maxTriangles === undefined
-			? asset.levels[1].parts.map((part) => unpack(part, kit))
-			: bestFirstLevel(kit, asset);
+	// The plant that was asked for draws its own first card level into the atlas.
+	const level = asset.levels[1].parts.map((part) => unpack(part, kit));
 	for (const part of level) {
 		if (part.indices.length === 0) continue;
 		const { positions, normals, uvs } = part;
@@ -252,16 +464,19 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			parts.push({
 				positions,
 				normals,
-				colors: shadedColours(part.colors, () => bark),
+				colors: shadedColours(kit, part.colors, (v) => bark(positions[v * 3 + 1] as number)),
 				indices: part.indices,
 			});
 		} else if (part.name === 'cards' && size > 0) {
+			// A plant whose maximum changed its levels draws a bare frame under a few large clumps,
+			// so its far picture needs the cards enlarged until the crown bakes as leaves.
+			growPlanes(positions, farCardLift(asset));
 			widen(positions, min, max);
 			cards.push({
 				positions,
 				normals,
 				uvs,
-				colors: shadedColours(part.colors, () => [1, 1, 1]),
+				colors: shadedColours(kit, part.colors, () => [1, 1, 1]),
 				indices: part.indices,
 				doubleSided: true,
 			});
@@ -273,7 +488,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			parts.push({
 				positions,
 				normals,
-				colors: shadedColours(bytes, (v) =>
+				colors: shadedColours(kit, bytes, (v) =>
 					part.name === 'extras'
 						? (extras[bytes[v * 4 + 2] as number]?.colour ?? leaf)
 						: (leaf as Rgb),
@@ -308,12 +523,18 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 	}
 	const bake = baker({
 		atlas: { columns: views, rows: views },
-		texels: texels * SUPERSAMPLE,
+		texels: texels * supersample,
 		parts,
 		min: [min[0] as number, min[1] as number, min[2] as number],
 		max: [max[0] as number, max[1] as number, max[2] as number],
 	});
-	const far = filtered({ color: bake.color.data, surface: bake.surface.data }, views * texels);
+	const far = filtered(
+		{ color: bake.color.data, surface: bake.surface.data },
+		views * texels,
+		supersample,
+		views,
+		kit.record.lod.farCover,
+	);
 	return {
 		views,
 		texels,

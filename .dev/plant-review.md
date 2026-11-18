@@ -51,6 +51,44 @@ reaches its root, whatever its density. The reading counts the pieces as the row
 picture shows a piece standing free, the shader and the generator are at fault whichever row is being
 read; the picture fails, and the fault is a generator fault, not a row to judge.
 
+## The piece a thinning isolates
+
+The commonest free piece on the card levels is not an unjoined card but an isolated island: a card
+whose supporting axis the level's wood orders do not draw, joined to the plant through other cards
+rather than to wood, and left standing when the thinning removes the card that carried the chain. It
+shows at default density on the olive, the birch and the alder, and on the hawthorn only from
+sparseness 0.5, where the connecting branch goes first. The join's reach is what hides it: a card up
+to 0.4 metres from the plant at the first card level and 2.5 at the second counts as joined, so a
+chain can hop across air the eye sees. Tightening the reach frees some strays and makes more new
+islands, so the fix has to draw the hop or move the link into the wood; until then the fault is a
+stated limit and the stray is read at every sparseness setting, not only at the default.
+
+## A card level's cover closes a crown, never opens one
+
+A species may name a factor on its first card level's cut alpha. Above one it closes a crown, and that
+is kept where the eye accepts the coarser leaf: the beech's 1.35 closes its sky from 0.187 to 0.142
+against its photograph's 0.073. Below one it opens a crown by coarsening the leaf, and the eye rejects
+it at the same sky gain, so no species names a value below one. A crown that needs more cover takes it
+from the fill, not from the cut ([D-365](decisions/D-365-card-level-cover-and-planes.md)).
+
+## Larger plates gather, finer plates speckle
+
+A clump card tiles its clump's pictures a side. Three a side gathers into crown mass; four, at a fifth
+more card triangles, scatters the same crown into speckle with the sky showing through as many small
+holes. A candidate that subdivides a plate is therefore judged for its grain as well as its sky, and
+the deciding camera is the one the level is seen at.
+
+## A capped tree is drawn for distance
+
+A low triangle maximum promises a tree that reads from a distance, and it keeps its skeleton before its
+leaves: a trunk, a fork and the first limb orders come first, and the leaves take what remains as a few
+large approximations rather than many small ones. The crown's plates then set the outline: **no wood is
+drawn outside the crown's foliage at any cap**, and a clump's plate grows to its own extent so a few
+large plates surface whole sections of the crown. A capped tree whose limbs reach past its leaves reads
+as a starfish, and that picture fails however few triangles it draws. Its evidence carries a picture at the distance the cap
+is for, beside the close one, and the trade is stated: at a low cap the leaf is coarser than the
+uncapped tree's and the structure is not ([D-366](decisions/D-366-a-capped-tree-keeps-its-skeleton.md)).
+
 ## Sparseness and polygon count are different dials
 
 Sparseness is about how much foliage and how many limbs the plant carries: a sparse plant has fewer
@@ -108,7 +146,7 @@ The rows carry the points:
 | Point | Judged on |
 | --- | --- |
 | even sky through the crown | row 6, with row 12's plausibility |
-| no bare termination | row 12, subdivision and no strays |
+| no bare termination, and no stump ends | row 12, subdivision and no strays, and the stump check |
 | gentle upward bends | row 7, with row 1's limb angles |
 | branch count | row 2 |
 | lateral spacing along the parent | row 2, with row 12's neatness |
@@ -131,7 +169,7 @@ A species that fails a point fails the row that carries it.
 | 9 | Proportions | Height against width, the crown's share of the height, and the trunk's diameter against its height | The whole view, measured rather than eyeballed |
 | 10 | Color and season | Whether the foliage's color is the species' own, and whether a season variant is a variant of that color rather than a different hue pretending to be one | The whole view |
 | 11 | Distinctness | Whether the species can be told from its nearest neighbor in the catalogue by silhouette alone | The two whole views side by side |
-| 12 | Plausibility, neatness and pattern | Whether what is drawn is a plant that could exist: every part joined to the wood it grows from, every order dividing into the next, no stray twigs, no parts crossing where no plant crosses, no scatter of loose shapes, and a branch pattern the eye can follow through the crown | Every view, and the whole view at close range |
+| 12 | Plausibility, neatness and pattern | Whether what is drawn is a plant that could exist: every part joined to the wood it grows from, every order dividing into the next, no stray twigs, no parts crossing where no plant crosses, no scatter of loose shapes, no drawn branch or sub-branch ending as a stump — every tip carries a piece, a terminal bud or a continuation — and a branch pattern the eye can follow through the crown | Every view, and the whole view at close range, plus the stump check on every drawn level |
 
 Row 11 is judged against a built neighbor, named in the verdict. A species with no built neighbor
 states that instead of passing.
@@ -292,6 +330,11 @@ rules that set them.
   [`slots/pedunculate-oak.json`](../tools/lib/plant-review/slots/pedunculate-oak.json), so its
   review runs as
   `bun run plants:review pedunculate-oak --refs <the oak's reference folder> --slot-query tools/lib/plant-review/slots/pedunculate-oak.json`.
+- A run draws a species against its own photographs. The INDEX heading declares the set's species.
+  The tool compares that declaration with the species being drawn. A heading that names another
+  species refuses, even where the folder's own name matches. Only a heading that declares nothing
+  usable leaves the decision to the folder's name. A run or a replay that points at another tree's
+  set measures the wrong plant, so its figures mean nothing.
 
 The light moves the color figures, not the outlines, which come from a matte. Under the page's soft
 daylight the oak's distant leaves read 8.9 color steps from their photograph. Under the photograph's
@@ -397,7 +440,7 @@ standard picture map:
 | 5 Leaf cluster density | The photograph's leaf count, the cluster's spread and tightness, the terminal bud where the species has one, and one joined piece | `11`, `23`, and `04` for the crown close-up | The count differs beyond the photograph's own spread, the gap leaves its band, or the cluster breaks into pieces |
 | 7 Bark curviness | The stem plumb or bending as the species does; the surface's own figure, such as plates, strips, lenticels, a sheath or fibres; the collar and the fork | `03`, `05`, `07`, `08`, `14`, `15`, `16`, `17`, as the species has them | The stem is kinked where the reference is straight, the limb angle is wrong, the surface reads as generic bark, or the join is hard |
 | 11 Distinctness | A silhouette that differs from the named built neighbour in aspect, fork height, crown form or branching | The species' `01`, `02`, `18` beside the neighbour's whole view | The two share the neighbour's aspect, fork or crown, and only the leaf differs; or the row is passed with no neighbour named |
-| 12 Plausibility, neatness and pattern | Every part joined to its wood; each order dividing into the next; no crossing; a readable species pattern; no bare strays; no scatter | Every view; the species' own review names the pictures where its fault shows | Any one entry of the checklist fails |
+| 12 Plausibility, neatness and pattern | Every part joined to its wood; each order dividing into the next; no crossing; a readable species pattern; no bare strays; no scatter; no stump ends — a drawn axis's tip outside every piece's reach fails the row | Every view; the species' own review names the pictures where its fault shows | Any one entry of the checklist fails |
 
 **A picture that cannot show the subject decides nothing.** A bark view with no bark, a cut turn
 whose crown box is void, a silhouette with no recorded angle, or a piece at the wrong subject is
@@ -872,6 +915,118 @@ read as foliage on wood.
 Every merge into the shared line also compares all twenty species' digests before and after, as
 [the vegetation process guide](vegetation-process.md#merges-into-the-shared-line) says. A switched
 species whose look moves stops the merge until the change is made opt-in or the reviewer judges it.
+
+## A species is judged close up
+
+A species' verdict comes from its full form — sparseness 0, no triangle maximum, the preset's high tier — and from
+close views of that form. The distant views show a crown's outline and the sky inside it. They do not show a plate
+where a leaf belongs, bark that tiles into blocks, or a spray that hangs off its wood. One evening's close views found
+a card baked as a broad pale plate, twigs that read as poles, and a needle pad standing a metre from its bough, while
+every distant view showed the same faults as small shapes.
+
+Every round draws these views: inside the crown, at the trunk, and at a leaf's own scale. Each stands at the distance
+the reference states where it states one, and each is compared beside the reference's own close crop. A row passes
+only when its close views are drawn and compared; a verdict without them is a verdict on the outline alone.
+
+The close views hold the page's default setting. A close view at another sparseness, maximum or tier measures that
+setting, and it is labelled with it.
+
+## The gate a species must pass
+
+The oak set the standard, and every species is held to it. A species is done when one head passes every check below,
+not when a reviewer believes it. A species that fails any check fails, however good its distant pictures look.
+
+1. The full form — sparseness 0, no triangle maximum, the high tier — drawn and compared at every view its reference
+   store carries, each beside the same-named reference crop. A round that leaves a view uncompared fails coverage.
+2. Three close views of that form: inside the crown, at the trunk, and at a leaf's own scale, each beside its
+   reference crop.
+3. The distance ladder: the same full form drawn at every rung the reference store supports — the far card where the
+   page draws it, the first card level, the near form's own switch distance, and inside the crown — each rung beside
+   the reference's own view at that scale and labelled with its distance. A species passes only when every rung
+   passes, and a rung left uncompared fails. This is the look at all distances, and it is a hard requirement.
+4. The zoom: one continuous approach through the first card level, at the speed a page moves, with the grain and the
+   open sky inside their bars at every step. A crossing that jumps fails even where both of its ends pass.
+5. The body: every drawn cluster's base within a cell of wood the level draws, and no row off a drawn carrier, at
+   every sparseness and every maximum. Rows whose carrier order the level drops are reported apart from these.
+6. The caps: at 400, 1,000 and 10,000 triangles the crown draws at every sparseness, the leaves hold the first share
+   of the allowance, and every level stays inside its maximum.
+7. The switch: the grain and the open sky either side of the first card level, inside the record's bars, at the
+   from-below camera.
+8. The bake: each card's mask follows the shape the card stands for — a leaf for a broadleaf, a needle tuft for a
+   needle species — and the needle species' card atlases differ from the broadleaves'.
+9. The colour: the crown's tone against its reference crop, found by isolating one cause at a time, never fitted to
+   one picture's light.
+
+Every check names a test in the repository or a coverage rule in the review tool. A check with neither is not a gate.
+A species is not counted landed, and a shared change is not merged, while one of its checks is red.
+
+## Card baselines retire with the bake's fixes
+
+A fix to the fitted picture or to the card's mask changes every card species' coverage, so every shell,
+density or card-level figure measured before it is retired. A shell or density comparison pairs the same
+level on both sides and names both heads; a ratio against an old card level is not evidence. The directed
+bamboo's own card level moved from 48,523 triangles to 25,991 under one rule: that pair is the example, and
+the 48,523 is retired, not adjusted.
+
+## The sweep draws every species at every distance
+
+A reviewer who opens a page and looks around finds faults the stills never draw. So the faults are found by a sweep,
+not by a person: every species is rendered at its distance ladder and around it — the far card, the first card level,
+the near form's switch distance, inside the crown, and at the trunk and a leaf's scale — at four turns and two heights
+each, and every picture is compared beside the reference's own view at that scale. The sweep writes one table: a row a
+species and a view, the row's figures, and a pass, a fail or an open fault with its reason. A species without a row per
+view is not judged, and a view the sweep cannot compare fails.
+
+The sweep runs on every build of the branch that draws plants, and its table is the reviewer's evidence. A round of
+hand-picked stills no longer counts as a species review. The sweep is the first place a fault like a pod standing off
+its bough, a plate where a needle belongs or a twig drawn at branch scale must appear, and its cost is what catches
+them before a person does.
+
+## The orbit is watched, not sampled
+
+A still shows what a camera was pointed at. A tree is judged by turning round it. Every species is therefore orbited at
+each rung of its distance ladder — a full turn at an even step — and it is orbited again at close range, because a fault
+that faces one way is invisible from the other. The reviewer records every fault with the frame number and the angle it
+stands at, and the orbit's frames are the evidence behind the verdict. A verdict signed from stills alone is not a
+verdict.
+
+The orbit also feeds a check that does not tire: per frame, the body rail's free-cluster count and the crown's covered
+share are read, and a frame whose figures jump beyond the round's band from its neighbours' fails, naming the frame and
+the step. A cluster that leaves its wood on one side, a card that faces away, or a crown that closes on one side and
+opens on the other then appears as a number before it appears to a person.
+
+## A plant never thins as the camera pulls back
+
+A focused plant is pulled back in one continuous series, from inside its crown to the far distance, at the page's own
+camera and light. Its foliage's covered share is read in every frame inside the plant's own outline, by the same colour
+rule on both sides of each switch. The share must not fall from one frame to the next: every step back may hold it or
+close it, and a step that opens the crown fails, whether it falls inside a level or at a switch. The bar is one point
+of a share; a step that opens more is named by its frame, its distance and its two figures.
+
+The series belongs to the sweep. The rungs are joined by intermediate distances, so a crossing cannot hide between two
+of them, and the table carries the share at each step beside the rung it sits in. The reviewer reads the series with
+the orbits, and a step that opens is a fault of whichever level, card or bake the step draws — never of the measure.
+The owner set this rule on 18 November: an eye pulling back must see the same tree, and a crown that opens as it recedes
+reads as its foliage draining away.
+
+The rule outranks the other far-picture bars. Where a route can hold the share but costs the silhouette's outline match,
+the colour difference, the grain, or the price, the share is held and the other bar is recorded as compromised, with
+its figure, beside the route. The owner's ruling of 18 November, restated at 09.00: a plant that never thins with a
+poorer outline is preferred to a plant that matches its outline and drains away as it recedes. The same precedence
+applies to the meadow's own zoom: the page's camera steps are read as a series, and a step that opens fails the species
+however well it matches a still.
+
+## No branch ends as a stump
+
+Every branch and sub-branch that is drawn ends in something: a piece, a terminal bud the species has, or an axis that
+continues. A drawn axis whose tip carries nothing within its own piece's reach is a stump, and a stump fails the row
+however well the rest of the plant reads. This is the piece rule read backwards: the closure raises a kept piece onto
+its wood, and this rule refuses wood that ends in the air. The owner set it on 18 November, after bare stubs stood in
+the pine's and the sequoia's trunk views.
+
+The instrument reads it on every drawn level. Each axis's tip is compared with the nearest piece's own reach: a tip
+inside that reach is clothed, and a tip outside it is a stump, named by its axis, its level and the gap. A level that
+draws an axis but not the piece must raise the piece, shorten the axis to its last piece, or not draw the axis.
 
 ## Closing a figure without fitting it
 

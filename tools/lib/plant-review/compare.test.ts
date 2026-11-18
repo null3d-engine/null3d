@@ -6,6 +6,7 @@ import {
 	projectRow,
 	standCamera,
 } from '../../../tests/pages/lib/plant-review/framing.ts';
+import { LEVEL_WORDS } from '../../../tests/pages/lib/plant-review/levels.ts';
 import {
 	alignTurn,
 	anchorColumn,
@@ -49,6 +50,7 @@ import {
 	sameDrawing,
 	setAsideOf,
 	sheathDifference,
+	sparseOutline,
 	spread,
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
@@ -1030,6 +1032,43 @@ describe('a picture that answers nothing', () => {
 		);
 		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
 		expect(levelName({})).toBe(undefined);
+	});
+
+	test('refuses an enclosed-sky figure over an outline that collapsed', () => {
+		// A far card at a fifth of its coverage draws a sparse speckle; the sky its own outline
+		// encloses is nearly none, which reads as a solid crown. The figure is left out instead.
+		const speckle = { mask: new Uint8Array(100 * 100), width: 100, height: 100 };
+		speckle.mask.fill(0);
+		for (let at = 0; at < 50; at++) speckle.mask[at] = 1;
+		expect(sparseOutline(speckle)).toBe(
+			'the drawn plant covers 0.5 per cent of the frame, under the subject floor, so its outline is a speckle and no enclosed sky is read',
+		);
+		const solid = { mask: new Uint8Array(100 * 100).fill(1), width: 100, height: 100 };
+		expect(sparseOutline(solid)).toBe(undefined);
+		const empty = { mask: new Uint8Array(100 * 100), width: 100, height: 100 };
+		expect(sparseOutline(empty)).toBe(undefined);
+	});
+
+	test('names a forced level the distance would not draw as out of range', () => {
+		// A forced leaf form at a whole view's distance draws one-pixel leaves; the label says what
+		// the engine draws there, so the picture is not read as that level's look.
+		const starts = [0, 3.7, 156.6, 1e9];
+		const cell = (distance: number, forced?: number) => ({
+			level: {
+				name: LEVEL_WORDS[forced ?? 0],
+				distance,
+				starts,
+				forced: forced !== undefined,
+				...(forced !== undefined && { level: forced }),
+			},
+		});
+		expect(levelName(cell(86, 0))).toBe(
+			'leaf form, forced, out of range: its distance draws the first card level',
+		);
+		expect(levelName(cell(2, 0))).toBe('leaf form, forced');
+		// An unforced picture, and one without starts, read as before.
+		expect(levelName(cell(86))).toBe('leaf form');
+		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
 	});
 
 	test("reads the level the engine draws at a cell's distance, not the level the query forced", () => {

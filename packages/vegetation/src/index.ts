@@ -76,7 +76,7 @@ export * from './leaf/public';
 export * from './lod/public';
 export * from './render/public';
 export * from './scatter/public';
-export type { FarBake } from './stages';
+export type { DetailPlan, FarBake, FoliageForm } from './stages';
 export { bakeFarPlant, buildKit, growNearWood, growPlant, type PageKitOptions } from './tasks';
 export * from './variance/public';
 export * from './wind/public';

@@ -24,7 +24,15 @@ import {
 	type Palette,
 	paletteOf,
 } from './card-bake';
-import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull } from './cards';
+import {
+	cardKeep,
+	cardMesh,
+	cardRows,
+	connectedCards,
+	foliageHull,
+	tilesAt,
+	turnedClumpCards,
+} from './cards';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -758,6 +766,30 @@ describe('the card levels', () => {
 		return count;
 	};
 
+	it('marks each card quad with the cover gate’s band for its level, and leaves the stalks alone', () => {
+		// Each card level carries its own cover band mark, so a level's cover factor can move without
+		// the level beside it; a stalk keeps the plane value the stalk tests use.
+		const marks = (arrays: { uvs1: ArrayLike<number> }): number[] => {
+			const seen = new Set<number>();
+			for (let v = 0; v < arrays.uvs1.length / 2; v++) seen.add(arrays.uvs1[v * 2 + 1] as number);
+			return [...seen].sort((a, b) => a - b);
+		};
+		const first = marks(cardMesh(mesh, 1));
+		const second = marks(cardMesh(mesh, 2));
+		expect(first).toContain(0.5);
+		// The array keeps a half-float, so the mark is compared to the value it came from.
+		expect(second.some((mark) => Math.abs(mark - 0.95) < 1e-6)).toBe(true);
+		expect(second).not.toContain(0.5);
+		for (const mark of [...first, ...second])
+			expect([0, 0.5, 0.75, 0.95].some((allowed) => Math.abs(mark - allowed) < 1e-6)).toBe(true);
+	});
+
+	it('keeps three pictures a side at the second card level', () => {
+		// The far band keeps the judged count: a plate there is a few pixels across, and the first
+		// card level fits its own count to each clump rather than reading this one.
+		expect(tilesAt(2)).toBe(3);
+	});
+
 	it("draws each row's three planes at the first level", () => {
 		const first = cardMesh(mesh, 1);
 		expect(planeTriangles(first)).toBe(drawnRows(1).length * 6);
@@ -1021,4 +1053,88 @@ describe('a record that asks for a finer card cell', () => {
 		expect(fine.cells[0]?.planes[0]?.front).toEqual([2, 2, 124, 124]);
 		expect(base.cells[0]?.planes[0]?.front).toEqual([2, 2, 60, 60]);
 	});
+});
+
+describe('the first card level of a clump-card plant', () => {
+	it(
+		'brings one shoot’s picture to each tile and leaves the second level fixed',
+		async () => {
+			// The oak's planned form draws clump cards at both card levels. Its first level fits each
+			// plate's picture count to the clump it stands for, so the swap from real leaves to the
+			// plates keeps the grain; its second level keeps the judged count, so the far band cannot
+			// move and its mesh stays the bytes measured before the fitting.
+			const { buildKitNow, growPlantNow, loadPlantCode } = await import('../generate');
+			const { species } = await import('../species/pedunculate-oak');
+			await loadPlantCode(species.record);
+			const kit = buildKitNow(species, { placeholders: 'missing', detail: 'high' });
+			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+			const cards = (level: 1 | 2) =>
+				asset.levels[level].parts.filter((part) => part.name === 'cards');
+			const triangles = (level: 1 | 2) =>
+				cards(level).reduce((sum, part) => sum + part.arrays.indices.length / 3, 0);
+			expect(triangles(1)).toBe(47076);
+			expect(asset.levels[1].triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod1Triangles);
+			const second = cards(2)
+				.map((part) => {
+					const { positions, normals, uvs, uvs1, colors, indices } = part.arrays;
+					const bytes = [positions, normals, uvs, uvs1, colors, indices].map((array) =>
+						Buffer.from(array.buffer, array.byteOffset, array.byteLength),
+					);
+					return Bun.hash(Buffer.concat(bytes)).toString(16);
+				})
+				.join(',');
+			// The second level keeps its three pictures a side (the tile count's own test holds
+			// that) and draws the prototype's two faces; its mesh is pinned with the cover gate's own
+			// mark in its second coordinate, which the level's cover factor reads.
+			expect(second).toBe('69e208a6a67a5086');
+		},
+		scaledBudget(120_000),
+	);
+
+	it(
+		'turns a clump card set evenly over half a turn, the prototype’s planes among them',
+		async () => {
+			// A crown whose clumps leave gaps closes them with more faces at each clump's own middle.
+			// The set is evenly spaced over half a turn, the prototype's two vertical planes are
+			// among the faces, and each face takes its picture from those two in turn; the top plane
+			// stands as it is.
+			const { buildKitNow, loadPlantCode } = await import('../generate');
+			const { species } = await import('../species/olive');
+			await loadPlantCode(species.record);
+			const kit = buildKitNow(species, { placeholders: 'missing', detail: 'medium' });
+			/** A plane's normal, and the azimuth its face points along, in degrees over half a turn. */
+			const normalOf = (plane: { right: readonly number[]; up: readonly number[] }) => {
+				const [right, up] = [plane.right, plane.up];
+				const normal = [
+					(right[1] as number) * (up[2] as number) - (right[2] as number) * (up[1] as number),
+					(right[2] as number) * (up[0] as number) - (right[0] as number) * (up[2] as number),
+					(right[0] as number) * (up[1] as number) - (right[1] as number) * (up[0] as number),
+				];
+				const length =
+					Math.hypot(normal[0] as number, normal[1] as number, normal[2] as number) || 1;
+				return normal.map((v) => (v as number) / length);
+			};
+			const azimuth = (plane: { right: readonly number[]; up: readonly number[] }) => {
+				const normal = normalOf(plane);
+				const angle = (Math.atan2(normal[0] as number, normal[2] as number) * 180) / Math.PI;
+				return (angle + 360) % 180;
+			};
+			// Every prototype's faces turn, including the one whose faces are tilted.
+			for (const index of [0, 1, 2, 3]) {
+				const base = kit.prototypes[index]?.card.planes ?? [];
+				const turned = turnedClumpCards(kit, 6).prototypes[index]?.card.planes ?? [];
+				expect(turned.length).toBe(base.length + 4);
+				const faces = turned.filter((plane) => Math.abs(normalOf(plane)[1] as number) < 0.5);
+				const tops = turned.filter((plane) => Math.abs(normalOf(plane)[1] as number) >= 0.5);
+				expect(faces.length).toBe(6);
+				expect(tops.length).toBe(base.length - 2);
+				const angles = faces.map(azimuth).sort((a, b) => a - b);
+				angles.forEach((angle, i) => {
+					expect(Math.abs(angle - i * 30)).toBeLessThan(1e-6);
+				});
+				expect(faces.map((plane) => plane.role)).toEqual([0, 1, 0, 1, 0, 1]);
+			}
+		},
+		scaledBudget(120_000),
+	);
 });

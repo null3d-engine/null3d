@@ -50,8 +50,23 @@ Look at the sheets first. In an outline overlay, the reference is magenta and th
 | `--no-matte` | Skip the mattes; outlines then come from colour. |
 | `--draw-only` | Draw the frames and write the manifest, then stop: the run's comparison is left for `--compare`. A round whose drawing and comparison would not fit one process's time limit runs as these two steps. |
 | `--compare <run folder>` | Compare an existing run again, without drawing. |
+| `--sweep` | Draw the sweep of one species: the six rungs at four turns and two heights each, and write its table. |
+| `--series-only` | Draw the sweep's pull-back series alone, with the probe that names the ladder's distances: the rungs' orbits are left out. It measures a level's switch at every distance, and its run answers `--redraw-series`. |
+| `--sweep-switch`, `--lod 0..3` | Draw the sweep's switch rung alone, at the near form's own switch, as a sweep of one row: the same plan entry, reference views, distance and comparison the full sweep draws, so `--sweep-compare` and `--sweep-round` replay it. A forced level is one of the ladder's levels; a value outside it is refused by name, never clamped. |
+| `--sweep-compare <run folder>` | Compare an existing sweep run again, without drawing. |
+| `--sweep-all`, `--species a,b` | Run `--sweep` for every species that has a reference folder, or for the named ones, and write the round's one table. `bun run plants:sweep` is this command. |
 
 The command's status says whether the run did what it was asked. A run asked for a part of the references, with `--only`, `--stills` or `--views`, ends with status 0 when every picture it asked for drew and was compared, or was drawn for the eye. It ends with status 1 when a frame failed, or when a picture it drew gave no figure where its view has one. A run of every reference ends with status 1 when a frame failed or the coverage is not complete. Whether the species is complete is the ledger's count, never a part-run's status.
+
+## The sweep
+
+`sweep.ts` draws a species at six rungs: the far card, the first card level, the near form at its switch, inside the crown, the trunk and a leaf's scale. Every rung is drawn at four turns and two heights, eight pictures a rung, each beside the reference view the folder carries at that scale. A probe frame of the whole view names the plant's own level distances, so the three ladder rungs stand at the switches the page itself draws at.
+
+The rungs' pictures are read for what holds at every turn: the matte's components, any piece that meets nothing inside the frame, and, at the ladder's rungs, the open sky inside the crown box against the reference's own figure within the species' band. A rung's row is a pass, a fail or an open fault with its reason. A row fails when its folder carries no reference view, when a picture did not draw or holds no matte, when a piece meets nothing, when a ladder rung drew another level than the ladder asked, or when the crown's open sky stands past the band. A row is open when its reference's outline does not separate, so the crown's open sky cannot be compared.
+
+The run writes `sweep.md` and `sweep.json`: one table row a species and a view, and a coverage line for each species. `--sweep-all` writes the round's single table at the round folder, and its status is 1 when a species has a missing row, an uncompared view, a missing picture, a failing row or an open fault. A species without a reference folder is named as unjudged rather than dropped.
+
+`--sweep-switch` draws one rung, the switch: the same plan entry the full sweep builds, at the near form's own switch, with the same reference views, camera offset and level comparison. It is written like a sweep, so its folder replays with `--sweep-compare` and merges with `--sweep-round` with no special case, and its row reads beside the same row of a full sweep. A run may force a level with `--lod`, which the full sweep refuses: at one switch distance a forced card level is a fair picture of that level's look, and the summary names a forced level the distance would not draw.
 
 ## The references
 

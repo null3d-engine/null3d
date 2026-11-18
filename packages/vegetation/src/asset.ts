@@ -12,6 +12,7 @@ import type { TextureManifest } from './core/textures';
 import type { Detail, Season, Vec3 } from './core/types';
 import type { CuttingOptions } from './cutting';
 import type { PieceAttitude } from './leaf/piece';
+import type { DetailPlan } from './stages';
 
 /**
  * One mesh before quantisation, in floats: what the meshers and the leaf builders write.
@@ -330,6 +331,21 @@ export interface PlantAsset {
 	readonly coarseness: number;
 	/** The piece it was cut to, for a close review. */
 	readonly cutting?: CuttingOptions;
+	/**
+	 * The plan the plant grew to, on a model that plans its state before it builds: what the request
+	 * was expected to cost by order and by part. Absent on a model that plans as it grows.
+	 */
+	readonly plan?: DetailPlan;
+	/**
+	 * The shoot rows the dressing dropped, being over the record's rows for each axis, so a growth's
+	 * balance reads made = the rows delivered + the growth's shed + these. Absent when none dropped.
+	 */
+	readonly dropped?: number;
+	/**
+	 * The sparseness the growth took, from 0 to 1, so the far bake sizes its cells to the leaf
+	 * clusters the crown keeps. Absent when the growth took none.
+	 */
+	readonly sparse?: number;
 	/** Its grown structure. */
 	readonly skeleton: MacroSkeleton;
 	/** The nearest level's foliage of an 'instanced' species; empty for a 'merged' one. */
@@ -353,10 +369,16 @@ export interface PlantAsset {
 		readonly from: number;
 	};
 	/**
-	 * The most triangles each of its levels may draw, where its growth named a maximum. The nearest
-	 * level counts its shoot rows at the tier they draw at.
+	 * The maximum triangles the growth was asked for, whether or not its own plan reached it. A
+	 * caller that names a maximum reads its own figure back here.
 	 */
 	readonly maxTriangles?: number;
+	/**
+	 * The maximum the levels drew under, where that maximum bit and changed them. Absent where the
+	 * maximum covered the plan's own cost, which draws as no maximum does. The far bake reads this
+	 * rather than the asked figure, since a maximum that changed nothing must bake as nothing did.
+	 */
+	readonly capTriangles?: number;
 	/**
 	 * How its shoot rows draw near the camera, where a triangle maximum moved them: at a tier below
 	 * the kit's, or `none` where the nearest level draws leaf cards in their place. The rows are
