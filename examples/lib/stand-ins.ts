@@ -58,35 +58,9 @@ export const ATMOSPHERE_SPRUCE: PagePlantStandIn = {
 	id: 'norway-spruce',
 	standIn: { height: 15, aspect: 0.45, leaf: [0.08, 0.2, 0.09], bark: [0.26, 0.18, 0.13] },
 };
-/** The island's umbrella pine: a tall bare red trunk under a wide flat dark crown. */
-export const ISLAND_STONE_PINE: PagePlantStandIn = {
-	id: 'stone-pine',
-	standIn: { height: 13, aspect: 1, leaf: [0.035, 0.085, 0.03], bark: [0.3, 0.14, 0.08] },
-};
-/** The island's olive: a short gnarled trunk under fine silver-green leaves. */
-export const ISLAND_OLIVE: PagePlantStandIn = {
-	id: 'olive',
-	standIn: { height: 6, aspect: 1, leaf: [0.13, 0.17, 0.1], bark: [0.22, 0.18, 0.14] },
-};
-/** The island's holm oak: a round dark crown, full to the ground. */
-export const ISLAND_HOLM_OAK: PagePlantStandIn = {
-	id: 'holm-oak',
-	standIn: { height: 11, aspect: 0.8, leaf: [0.04, 0.085, 0.028], bark: [0.14, 0.11, 0.08] },
-};
-/** The island's oleander: a low rounded lane shrub. */
-export const ISLAND_OLEANDER: PagePlantStandIn = {
-	id: 'oleander',
-	standIn: { height: 1.5, aspect: 1, leaf: [0.15, 0.3, 0.1], bark: [0.22, 0.18, 0.13] },
-};
 /** Every page's stand-ins, one entry per seed the page grows them with. */
 export const PAGE_STAND_INS: readonly PageStandIns[] = [
 	{ page: 'contact-shadows', seed: 5, plants: [CONTACT_SHADOWS_PINE, CONTACT_SHADOWS_GRASS] },
 	{ page: 'light-shafts', seed: 11, plants: [LIGHT_SHAFTS_SPRUCE] },
 	{ page: 'atmosphere', seed: 11, variants: 3, plants: [ATMOSPHERE_SPRUCE] },
-	{
-		page: 'island',
-		seed: 17,
-		plants: [ISLAND_STONE_PINE, ISLAND_OLIVE, ISLAND_HOLM_OAK],
-	},
-	{ page: 'island', seed: 23, plants: [ISLAND_OLEANDER] },
 ];

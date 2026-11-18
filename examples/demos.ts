@@ -165,7 +165,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Island',
 		scene: 'A Mediterranean town on a hilly island in the open sea',
 		summary:
-			'A hilly island alone in the sea on a summer morning, with cypress, umbrella pine and olive forest grown in code, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
+			'A hilly island alone in the sea on a summer morning, with forests of cypress, umbrella pine, olive and holm oak, oleanders along its lanes, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
+		assets:
+			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards.',
 		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		hold: 0.5,
