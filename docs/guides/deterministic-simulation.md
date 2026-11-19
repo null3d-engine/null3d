@@ -215,6 +215,10 @@ The shader modules decide most of the folder's size. Build only the shader permu
 2. In a checkout of null3D, build the shader modules from the list: `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. The checkout's `packages/engine/src/generated` then holds them.
 3. Build the game with `NULL3D_ENGINE_SHADERS` set to that folder, such as `NULL3D_ENGINE_SHADERS=<checkout>/packages/engine/src/generated bunx vite build`. The plugin then takes the narrowed modules in place of the full set.
 
+A game whose page module another build makes records differently from a sketch page. Its engine starts on a click, so name its page with `--live` and give the recorder the start control: `--click "#play"`. Its files folder is a production build, and a production build ignores `?permutations`, `?gpu` and `?preset`. Record against a development build of that folder (`vite build --mode development`). Then build the narrowed set, and rebuild the folder in production. A real game recorded this way drew with 5 words, and its folder held 300 files and 26 MB. The same folder built with the 172-word example list held 762 files and 226 MB.
+
+The shader modules in a release asset are the full set. A game that builds against that asset and names no list copies every module into its files folder. That can exceed the folder's file and byte limits. Narrow the set first.
+
 A small game scene with three lanes and a ship drew with 5 words. Its folder held 297 files and 26,057,130 bytes, 4,737,421 after Brotli. The same folder built with the 172 words of null3D's examples held 759 files and 225,683,678 bytes. The full set of shader modules is 4,117,799,356 bytes. Record again after the game gains a feature that turns on a new word. The engine names a word that the set lacks the first time a pipeline needs it.
 
 ## API reference

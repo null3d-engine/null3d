@@ -48,6 +48,8 @@ export default defineConfig({ plugins: [null3d()] });
 
 Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. It caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build is fast. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
+A game starts in either build. Do not gate Play on `crossOriginIsolated`. The engine falls back to the single-threaded build by itself. Read `engine.capabilities.threaded` to record the build a run used.
+
 ## 2. Orbit camera around a model
 
 ```ts
@@ -968,5 +970,5 @@ state.yaw = math.euclideanModulo(state.yaw - counts * 0.0024, 2 * Math.PI);
 exact.quat.fromEuler(state.look, state.pitch, state.yaw, 0, 'YXZ');
 ```
 
-To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A small scene drew with 5 words, and its folder held 297 files, 4.7 MB after Brotli. The 172 words of null3D's examples make a folder of 226 MB. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
+To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words on both GPU paths and at the low and high presets. Use `--live` pages and `--click <selector>` when the page starts its engine on a click. Record against a development build of the folder (`vite build --mode development`), because a production build ignores `?permutations`, `?gpu` and `?preset`. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A game that drew with 5 words held 300 files and 26 MB. The 172 words of null3D's examples make 762 files and 226 MB. A release asset holds the full set, so narrow first. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
 

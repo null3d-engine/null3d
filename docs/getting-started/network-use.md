@@ -56,6 +56,8 @@ The Vite plugin needs the engine's compiled shader modules to build a page. It l
 
 So a build contacts GitHub only when `NULL3D_ENGINE_SHADERS` is unset and the cache holds no copy. The build machine makes that request, and a page never makes it.
 
+The release asset holds the full set of shader modules. A game that builds against it and names no permutation list copies every module into its files folder. That can exceed the folder's limits. Narrow the set first, as [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md#a-production-build-of-a-games-engine-files) shows.
+
 In development, Vite keeps its own connection to the local dev server, for hot reload. That connection belongs to Vite, and it goes to the dev server, not to another server.
 
 ## Turn off the build's download
