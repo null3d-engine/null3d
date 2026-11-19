@@ -110,6 +110,8 @@ A WebAssembly module built for shared memory cannot load on a page without it, s
 
 The single-threaded build is fully supported. Use it where you cannot set headers, such as some game portals and embeds.
 
+A game starts in either build. Do not gate its Play button on `crossOriginIsolated`, and do not offer a single-threaded mode of its own: the engine falls back by itself. Read `engine.capabilities.threaded` to record which build a run used.
+
 ## Headers on common hosts
 
 Netlify and Cloudflare Pages read a `_headers` file at the root of the site:

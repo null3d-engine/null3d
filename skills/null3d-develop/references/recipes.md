@@ -48,6 +48,8 @@ export default defineConfig({ plugins: [null3d()] });
 
 Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. It caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build is fast. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
+A game starts in either build. Do not gate Play on `crossOriginIsolated`. The engine falls back to the single-threaded build by itself. Read `engine.capabilities.threaded` to record the build a run used.
+
 ## 2. Orbit camera around a model
 
 ```ts
