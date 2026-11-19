@@ -483,6 +483,8 @@ The empty variable makes a full set, because the recording reads every word that
 
 The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
 
+A game page that starts its engine on a click needs `--live` pages and `--click <selector>`, such as `--click "#play"`. A production build of the engine folder ignores the URL switches. Record against a development build of that folder (`vite build --mode development`). The [deterministic simulation guide](deterministic-simulation.md#a-production-build-of-a-games-engine-files) gives the full sequence.
+
 Build with the list:
 
 ```sh

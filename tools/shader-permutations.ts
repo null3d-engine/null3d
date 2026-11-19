@@ -10,7 +10,7 @@
 // Usage, from the repository root, with the pages served by `bun run examples:preview`, which
 // serves HTTPS by default:
 //   bun tools/shader-permutations.ts --base https://localhost:5173 --out examples/shader-permutations.txt
-//     [--pages demos] [--workers 4] [--extra a,b]
+//     [--pages demos] [--workers 4] [--extra a,b] [--click <selector>]
 // `--pages` names a page list: `demos` runs every demo of `examples/demos.ts` in hold mode at each
 // quality preset on both GPU paths, and then live, where it advances the scene and presses every
 // button of a showcase scene's controls HUD, so the words those states turn on reach the list. A
@@ -18,6 +18,9 @@
 // that it drives through its own states with `--live <path>`. The run sweeps a live page's controls
 // HUD when it has one.
 // `--extra` adds words by hand, as hexadecimal numbers, for a path that the recording cannot reach.
+// `--click` presses a selector after each page loads, for a page whose engine starts on a click,
+// such as a game page with a Play button. The page must be served with a development build of the
+// engine: a production build ignores `?gpu`, `?preset` and `?permutations`, so it records nothing.
 import { writeFileSync } from 'node:fs';
 import { DEMOS } from '../examples/demos.ts';
 import { defaultEnvironment } from '../packages/cli/src/browser.js';
@@ -65,6 +68,7 @@ function options(): {
 	pages: Target[];
 	extra: number[];
 	workers: number;
+	click: string | undefined;
 } {
 	const args = process.argv.slice(2);
 	const value = (name: string): string | undefined => {
@@ -101,7 +105,7 @@ function options(): {
 		.map((word) => word.trim())
 		.filter((word) => word !== '')
 		.map((word) => Number.parseInt(word, 16));
-	return { base, out, pages, extra, workers };
+	return { base, out, pages, extra, workers, click: value('--click') };
 }
 
 /**
@@ -137,7 +141,7 @@ async function sweepHud(page: HudPage): Promise<number> {
 	return picks;
 }
 
-const { base, out, pages, extra, workers } = options();
+const { base, out, pages, extra, workers, click } = options();
 if (pages.length === 0)
 	throw new Error('name the pages to record: --pages demos, or one --page <path> for each');
 // The real GPU where the machine has one, so both paths draw as a device draws them; the software
@@ -156,6 +160,11 @@ async function recordPage(entry: Target): Promise<void> {
 	const tab = await browser.newPage({ ignoreHTTPSErrors: true });
 	try {
 		await tab.goto(url, { waitUntil: 'load', timeout: 120_000 });
+		if (click !== undefined) {
+			// A page whose engine starts on a click draws nothing until the page is asked to
+			// start, so the recording would wait for a stop that never comes.
+			await tab.locator(click).first().click({ timeout: 30_000 });
+		}
 		if (entry.live) {
 			// The engine puts the stop on the page once it starts, so the words are read after the
 			// page has offered its controls.
