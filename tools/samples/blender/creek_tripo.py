@@ -112,11 +112,11 @@ STATUE = dict(
 # and `warm` the tint that turns the bare chest to a warm near-neutral, as sun bleaches it. The
 # hairline stands `hairline` meters above the eyes; above it the lift on ridges and tops falls
 # away, so the curls stay dark. The lower body and the statue's right arm take the `green` tint,
-# from the face's cyan to the concept's gray-green. Lightness above `pale` is halved, so pale
-# patches such as the left knee's stay muted, and warm rust takes the `brown` tint, darker and less
-# pink.
+# from the face's cyan to the concept's gray-green. Lightness above `pale` keeps 40% of its rise,
+# so pale patches such as the left knee's stay muted, and warm rust takes the `brown` tint, darker
+# and less pink.
 PATINA = dict(
-    middle=0.16,
+    middle=0.18,
     contrast=1.4,
     strength=0.3,
     fold=0.32,
@@ -133,9 +133,9 @@ PATINA = dict(
     eye=(0.62, 0.64, 0.60),
     warm=(1.07, 1.0, 0.88),
     hairline=0.55,
-    green=(1.03, 1.0, 0.86),
-    pale=0.42,
-    brown=(0.86, 0.84, 0.74),
+    green=(1.02, 1.0, 0.9),
+    pale=0.38,
+    brown=(0.74, 0.72, 0.62),
 )
 
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
@@ -153,8 +153,8 @@ SLAB = dict(
     speck=0.12,
     moss_shade=(0.27, 0.25, 0.09),
     moss_light=(0.53, 0.47, 0.17),
-    moss_band=0.45,
-    moss_cover=0.75,
+    moss_band=0.4,
+    moss_cover=0.62,
     moss_foot=0.12,
     rough=0.07,
     rim=0.015,
@@ -583,12 +583,14 @@ def sample(grid, u, v):
 def noise3(position, cell, rng, octaves=3):
     """
     Smooth value noise in space, from 0 to 1, whose first octave's cells are `cell` meters across
-    and each further octave's half as wide. Each octave's lattice repeats every 64 cells.
+    and each further octave's half as wide. Each octave's lattice repeats every 64 cells and is
+    turned to an angle of its own, so a sharp cut through the noise shows no square blocks.
     """
     total, norm, weight = np.zeros(position.shape[:-1], np.float32), 0.0, 1.0
     for octave in range(octaves):
         grid = lattice((64, 64, 64), rng)
-        p = position / (cell / 2 ** octave)
+        turn, _ = np.linalg.qr(rng.normal(size=(3, 3)))
+        p = (position @ turn.astype(np.float32)) / (cell / 2 ** octave)
         i = np.floor(p).astype(int)
         f = p - i
         f = f * f * (3 - 2 * f)
@@ -692,7 +694,7 @@ def repaint(maps, height, eyes, eye, chest, rng):
     for k, width in enumerate(PATINA['streak_width']):
         streaks = rain_streaks(position + np.array([0.37 * k, -0.21 * k, 0], np.float32), width, rng)
         tone += PATINA['streak'] * (1 if k == 0 else -1) * streaks * below
-    tone = np.where(tone > PATINA['pale'], PATINA['pale'] + 0.5 * (tone - PATINA['pale']), tone)
+    tone = np.where(tone > PATINA['pale'], PATINA['pale'] + 0.4 * (tone - PATINA['pale']), tone)
     tone = np.clip(tone, 0.05, 0.8)
     color = raw * (tone / np.maximum(luma, 0.02))[..., None]
     # Warm rust darkens toward brown, so it reads less pale and less pink.
@@ -897,7 +899,8 @@ def slab_material(rx, ry, height, bevel, size, rng):
     The slab's own texture, painted once over its surface as `slab_layout` lays it out: each texel
     takes its place on the slab, then dark speckled stone with pale lichen spots, darker toward the
     foot, and moss in a broken band along the rim, coarse and fine at once, down the side's top and
-    in over the top's edge. Its normals and roughness follow the stone's grain and the moss's tufts.
+    in over the top's edge, and in patches along the foot. Its normals and roughness, at half the
+    color's size, follow the stone's grain and the moss's tufts.
     """
     lean = 0.03 * min(rx, ry)
     rings = slab_profile(height, bevel, lean)
@@ -944,9 +947,9 @@ def slab_material(rx, ry, height, bevel, size, rng):
     # Moss: a band along the rim that thins in, broken into patches, with tufts at two scales.
     band = smoothstep(SLAB['moss_band'], 0.4 * SLAB['moss_band'], rim_distance)
     band = np.maximum(band, side * smoothstep(SLAB['moss_foot'], 0.3 * SLAB['moss_foot'], position[..., 2]) * 0.8)
-    patches = smoothstep(1 - SLAB['moss_cover'] - 0.1, 1 - SLAB['moss_cover'] + 0.1, noise3(position, 0.35, rng, 3))
+    patches = smoothstep(1 - SLAB['moss_cover'] - 0.08, 1 - SLAB['moss_cover'] + 0.08, noise3(position, 0.5, rng, 3))
     tufts = noise3(position, 0.02, rng, 2)
-    moss = np.clip(band * patches * smoothstep(0.15, 0.4, tufts + 0.3 * patches), 0, 1)
+    moss = np.clip(band * patches * smoothstep(0.3, 0.6, tufts + 0.25 * patches), 0, 1)
     moss_color = mix(np.broadcast_to(np.array(SLAB['moss_shade'], np.float32), position.shape).copy(), SLAB['moss_light'], tufts)
     color = mix(color, moss_color, moss)
 
@@ -956,8 +959,8 @@ def slab_material(rx, ry, height, bevel, size, rng):
     return material(
         'slab',
         image('slab-color', np.clip(color, 0, 1)),
-        image('slab-normal', normal_map(height_field, 3), 'Non-Color'),
-        image('slab-orm', orm(occlusion, rough), 'Non-Color'),
+        image('slab-normal', half(normal_map(height_field, 3)), 'Non-Color'),
+        image('slab-orm', half(orm(occlusion, rough)), 'Non-Color'),
         roughness=0.9,
         tint=False,
     )
