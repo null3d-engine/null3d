@@ -133,17 +133,32 @@ export function checkFallSheet(sheet: FallSheet): void {
 }
 
 /**
- * The veils that give the fall its depth, from the back one to the front one. Each takes a share of
- * the lip's speed, so it falls on its own path, a share of the lip's width, and a share of the
- * fall's spread. The back veil starts at the lip and lies behind the sheet. The sheet carries the
- * apron over the lip. The mist veil is thrown furthest and fans three times as fast: the cloud of
- * mist that the fall bursts into lower down, which the material draws soft.
+ * The veils that give the fall its body, from the back one to the front one. Each takes a share of
+ * the lip's speed, so it falls on its own path, a share of the lip's width, and a depth: how far its
+ * middle bows out from the wall, as a share of the water's half width, once the water has fallen a
+ * little. The back veil bows a little toward the wall, the sheet out, and the front veil further
+ * out, so the fall reads as a round column of ropes from the side as well as from the front. The
+ * sheet carries the apron over the lip.
  */
 export const VEILS = [
-	{ speed: 0.7, width: 0.88, fan: 1, apron: false },
-	{ speed: 1, width: 1, fan: 1, apron: true },
-	{ speed: 1.3, width: 1.15, fan: 3, apron: false },
+	{ speed: 0.75, width: 0.88, depth: -0.15, apron: false },
+	{ speed: 1, width: 1, depth: 0.35, apron: true },
+	{ speed: 1.15, width: 0.92, depth: 1, apron: false },
 ] as const;
+
+/** The meters that the water falls before its veils bow out to their full depth, as a scale. */
+const BODY_GROWTH = 1.5;
+
+/**
+ * How far a veil bows out from the wall at a point, in meters: its depth times the water's half
+ * width there, shaped across the water as an arch that is deepest in the middle, and growing from
+ * nothing at the lip as the water falls. `across` is the place across the water, from -1 to 1 at
+ * its edges; past the edges the veil curls back a little.
+ */
+export function veilBow(depth: number, waterHalf: number, across: number, fallen: number): number {
+	const arch = Math.max(1 - across * across, -0.3);
+	return depth * waterHalf * arch * (1 - Math.exp(-Math.max(fallen, 0) / BODY_GROWTH));
+}
 
 /**
  * How much wider than the water each veil's mesh reaches, as a factor of the water's half width, so
@@ -215,19 +230,35 @@ export function fallSheet(sheet: FallSheet): MeshArrays {
 				fallPlace(t, own, place);
 				const forward = place[0];
 				const fallen = place[1];
-				const half = (halfWidth + spread * veil.fan * fallen) * veil.width * EDGE_ROOM;
-				positions[v * 3] = sheet.lip[0] + dx * forward + rx * u * half;
+				const water = (halfWidth + spread * fallen) * veil.width;
+				const half = water * EDGE_ROOM;
+				// The place across the water, from -1 to 1 at its edges, and the veil's bow there.
+				const a = u * EDGE_ROOM;
+				const bowed = veilBow(veil.depth, water, a, fallen);
+				positions[v * 3] = sheet.lip[0] + dx * (forward + bowed) + rx * u * half;
 				positions[v * 3 + 1] = level + APRON_LIFT - fallen;
-				positions[v * 3 + 2] = sheet.lip[1] + dz * forward + rz * u * half;
+				positions[v * 3 + 2] = sheet.lip[1] + dz * (forward + bowed) + rz * u * half;
 				// The tangent down the sheet, along the water's motion, and the tangent across it.
 				// Their cross product is the normal that looks out.
-				const out = own * decay;
-				const widen = spread * veil.fan * veil.width * EDGE_ROOM * fallSpeed;
-				const ax = dx * out + rx * u * widen;
+				const grown = 1 - Math.exp(-Math.max(fallen, 0) / BODY_GROWTH);
+				const arch = Math.max(1 - a * a, -0.3);
+				const archSlope = 1 - a * a > -0.3 ? -2 * a * EDGE_ROOM : 0;
+				const widen = spread * veil.width * fallSpeed;
+				const deepen =
+					veil.depth *
+					(widen * arch * grown +
+						water *
+							arch *
+							(Math.exp(-Math.max(fallen, 0) / BODY_GROWTH) / BODY_GROWTH) *
+							fallSpeed);
+				const out = own * decay + deepen;
+				const ax = dx * out + rx * u * widen * EDGE_ROOM;
 				const ay = -fallSpeed;
-				const az = dz * out + rz * u * widen;
-				// Across the lip the middle runs further out than the ends, which bows the sheet.
-				const bow = own > 0 ? (forward / own) * (-2 * SIDE_SLOWING * speed * u) : 0;
+				const az = dz * out + rz * u * widen * EDGE_ROOM;
+				// Across the lip the middle runs further out than the ends, and the veil's arch bows
+				// it further: both turn the tangent across.
+				const lag = own > 0 ? (forward / own) * (-2 * SIDE_SLOWING * speed * u) : 0;
+				const bow = lag + veil.depth * water * archSlope * grown;
 				const bx = rx * half + dx * bow;
 				const bz = rz * half + dz * bow;
 				const nx = -bz * ay;
@@ -262,10 +293,10 @@ export function fallSheet(sheet: FallSheet): MeshArrays {
 }
 
 /**
- * The kinds of a fall's particle emitters: the froth over the brink, the mist that the fall bursts
- * into, and the plume at its foot.
+ * The kinds of a fall's particle emitters: the froth over the brink, the spray that falls inside the
+ * column with the water, the mist that the fall bursts into, and the plume at its foot.
  */
-export type FallEmitterKind = 'froth' | 'mist' | 'plume';
+export type FallEmitterKind = 'froth' | 'body' | 'mist' | 'plume';
 
 /**
  * One of a fall's particle emitters: where it stands, how it turns, the box that it emits in, and
@@ -292,13 +323,16 @@ export interface FallEmitter {
 export const MIST_DEPTH = 0.68;
 /** How many times the fall's width the mist's cloud spreads over. */
 export const MIST_WIDTH = 3;
+/** How far out from the sheet's path the mist's middle stands, as a share of the water's half width. */
+export const MIST_OUT = 0.4;
 
 /**
- * The fall's three particle emitters. The froth stands just past the brink, across the lip's
- * width. The mist gathers about two thirds of the way down, on the fall's path, over three times
- * the fall's width there and over the lower half of the drop. The plume stands at the foot, past the
- * end of the path. Each turns with the lip, and each makes puffs in step with the water's width and
- * its drop.
+ * The fall's four particle emitters. The froth stands just past the brink, across the lip's width.
+ * The body's spray falls inside the column that the veils make, over the upper two thirds of the
+ * drop, so the fall has a body from the side. The mist gathers about two thirds of the way down, on
+ * the fall's path, over three times the fall's width there and over the lower half of the drop. The
+ * plume stands at the foot, past the end of the path. Each turns with the lip, and each makes puffs
+ * in step with the water's width and its drop.
  */
 export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 	checkFallSheet(sheet);
@@ -320,6 +354,12 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 	fallPlace(fallTime(sheet.drop), sheet.speed, place);
 	const footOut = place[0];
 	const footHalf = halfAt(sheet.drop);
+	// The spray inside the column: across the water's width and through the veils' depth, over the
+	// upper two thirds of the drop.
+	const upper = sheet.drop * 0.35;
+	fallPlace(fallTime(upper), sheet.speed, place);
+	const bodyOut = place[0];
+	const bodyHalf = halfAt(upper);
 	return [
 		{
 			kind: 'froth',
@@ -330,10 +370,19 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 			halfWidth: sheet.halfWidth,
 		},
 		{
-			kind: 'mist',
-			position: at(mistOut, -middle),
+			kind: 'body',
+			position: at(bodyOut + bodyHalf * 0.4, -upper),
 			turn,
-			box: [mistHalf * 2 * MIST_WIDTH, sheet.drop * 0.55, 2.5],
+			box: [bodyHalf * 1.6, sheet.drop * 0.6, 0.5 + bodyHalf * 1.1],
+			rate: 5 * sheet.halfWidth * Math.max(1, sheet.drop / 6),
+			halfWidth: sheet.halfWidth,
+		},
+		{
+			kind: 'mist',
+			// In the middle of the column that the veils make, and as deep as it.
+			position: at(mistOut + mistHalf * MIST_OUT, -middle),
+			turn,
+			box: [mistHalf * 2 * MIST_WIDTH, sheet.drop * 0.55, 2.5 + mistHalf],
 			rate: 1.4 * mistHalf * Math.max(1, sheet.drop / 6),
 			halfWidth: mistHalf,
 		},
