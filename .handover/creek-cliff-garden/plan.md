@@ -99,7 +99,7 @@ Foliage, ferns, hostas, azaleas and cushion plants stay as the Blender script's 
 
 **Credits:** a dry run of an image with detailed PBR textures on H3.1 estimates 40 credits; the same picture on P2 estimates 110. About a dozen models (the statue, the gate, a lantern, 6 to 8 boulders and two trunks) cost about 500 credits on H3.1, so the 970 credits cover one pass and some retries.
 
-**Rights:** Tripo3D's terms, read on 2026-11-20, give a paid account the rights to its outputs, publishing and selling included (section 5.2.2). The outputs are not exclusive, and they may not be used to build a competing 3D-generation service (section 3.2). A free account would not hold these rights (section 5.2.1). The account bought its credits, so the models may go into the public sample-assets repository.
+**Rights:** Tripo3D's terms, read on 2026-11-20, give a paid account the rights to its outputs, publishing and selling included (section 5.2.2). The outputs are not exclusive, and they may not be used to build a competing 3D-generation service (section 3.2). A free account would not hold these rights (section 5.2.1). The account bought its credits, so the models may go into the public sample-assets repository. They go in under CC BY-NC 4.0 (owner, 2026-11-20): CC0 and CC BY would allow the competing use that Tripo3D's terms bar. Every model finished from a Tripo3D model carries the same licence, while models made only by script or in code stay CC0. The sample-assets branch `creek-garden` adds CC BY-NC to that repository's accepted licences, and each raw model is committed there the moment it is downloaded.
 
 ## Design
 
