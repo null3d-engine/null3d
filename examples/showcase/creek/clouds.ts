@@ -26,7 +26,7 @@ export const CLOUD = {
 	top: CLOUD_TOP,
 	depth: 8,
 	heap: 8,
-	tower: 44,
+	tower: 50,
 	reach: 1500,
 	dome: 1600,
 } as const;
@@ -55,8 +55,14 @@ const DOMES = [
 	{ radius: [1.3, 2.6], count: 2600, sink: 0.65 },
 ] as const;
 
+/**
+ * The seconds that the page's `cloud-time` switch moves the cloud's own clock on by, so a held view
+ * can show the cloud's drift at other moments while the camera holds still. A sketch's worker
+ * sees the page's address.
+ */
+const CLOUD_SHIFT = Number(new URLSearchParams(globalThis.location?.search).get('cloud-time')) || 0;
 /** The faint lilac cast of the concept's cloud, never pure white. */
-const TINT = [1.0, 0.975, 1.02] as const;
+const TINT = [0.955, 0.945, 1.08] as const;
 
 /**
  * The cloud itself, drawn on the inside of a sphere round the camera with no depth test, so every
@@ -76,6 +82,7 @@ struct Uniforms {
     steps: f32,
     reach: f32,
     texels: f32,
+    shift: f32,
 }
 
 var billows: texture_2d<f32>;
@@ -93,7 +100,7 @@ fn cloud_air() -> vec3f {
 /// at form 1, with the main light's own color where it falls on the cloud, so the low sun warms
 /// the tops and leaves the hollows lilac.
 fn cloud_color(form: f32, lit: f32) -> vec3f {
-    let shade = mix(2.0, 6.4, form * form);
+    let shade = mix(1.6, 4.9, form * form);
     let warm = material.sun * material.tint * 0.5 * lit;
     return cloud_air() * shade + warm;
 }
@@ -108,6 +115,8 @@ fn aerial(color: vec3f, distance: f32) -> vec3f {
 const TILE: f32 = 160.0;
 /// The radius of the disc round the cliff where the sea's tops stand; the towers rise past it.
 const NEAR: f32 = 180.0;
+/// The radius inside which mist can drift at the walls' foot: past the widest rim and the mist's reach.
+const MISTY: f32 = 52.0;
 
 /// The rim's radius, the heap's share and the mist's share at a point's bearing round the cliff.
 fn wall_at(p: vec2f) -> vec3f {
@@ -122,7 +131,7 @@ fn wall_at(p: vec2f) -> vec3f {
 /// and the small billows' own height, low in the clefts between domes. The map's mip level follows
 /// the ray's footprint, so no grain shimmers.
 fn cloud_at(p: vec3f, lod: f32) -> vec3f {
-    let q = p.xz + material.drift * frame.time;
+    let q = p.xz + material.drift * (frame.time + material.shift);
     let a = textureSampleLevel(billows, billowsSampler, q / TILE, lod).r;
     // The larger copy turns and drifts its own way, so the two layers never line up.
     let s = vec2f(q.x * 0.8 - q.y * 0.6, q.x * 0.6 + q.y * 0.8) * 0.92 + vec2f(37.0, 11.0);
@@ -133,22 +142,25 @@ fn cloud_at(p: vec3f, lod: f32) -> vec3f {
     if r < NEAR {
         // The tops heap up toward the walls, lumpy with the billows, where the walls' map lets them.
         let wall = wall_at(p.xz);
+        // Against the walls, domes of their own heap up over the sea where the walls' map lets them.
         let close = 1.0 - smoothstep(0.0, 17.0, r - wall.x);
-        h += material.heap * wall.y * close * close * (0.45 + 0.55 * a);
-        let foot = 1.0 - smoothstep(1.0, 11.0, r - wall.x);
+        let dome = textureSampleLevel(billows, billowsSampler, (q + vec2f(53.0, 29.0)) / (TILE * 0.75), lod + 0.4).r;
+        let heaped = material.top - material.depth + (material.depth + material.heap * wall.y) * dome * close;
+        h = max(h, heaped);
+        let foot = 1.0 - smoothstep(2.0, 15.0, r - wall.x);
         let above = p.y - h;
-        let band = smoothstep(-0.5, 0.8, above) * (1.0 - smoothstep(1.0, 5.0, above));
+        let band = smoothstep(-0.5, 0.8, above) * (1.0 - smoothstep(0.0, 8.0, above));
         if foot * band * wall.z > 0.001 {
-            let m = q + material.drift * frame.time * 1.4;
+            let m = q + material.drift * (frame.time + material.shift) * 1.4;
             let along = vec2f(m.x * 0.6 + m.y * 0.8, m.y * 0.25 - m.x * 0.2) / 96.0;
             let streak = textureSampleLevel(billows, billowsSampler, along, 0.0).b;
-            mist = foot * band * wall.z * smoothstep(0.42, 0.82, streak);
+            mist = foot * band * wall.z * (0.35 + 0.65 * smoothstep(0.3, 0.75, streak));
         }
     } else {
         // Far out, the billows of a much larger copy rise into towers past the horizon.
         let far = textureSampleLevel(billows, billowsSampler, (q * 0.97 + vec2f(13.0, 71.0)) / (TILE * 5.5), max(lod - 2.5, 0.0)).g;
-        let rise = smoothstep(NEAR, 620.0, r) * smoothstep(0.3, 0.95, far);
-        h += material.tower * rise * rise;
+        let rise = smoothstep(NEAR, 450.0, r) * smoothstep(0.25, 0.9, far);
+        h += material.tower * rise * sqrt(rise);
     }
     return vec3f(h, mist, a);
 }
@@ -198,7 +210,11 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // The size of a pixel on the cloud per meter of distance, for the map's mip level.
     let pixel = 2.0 / (camera.projection[1][1] * frame.resolution.y);
     let texel = TILE / material.texels;
-    var t = start;
+    // Each pixel starts its steps a different share of a step in, so the steps leave no rings where
+    // a ray grazes a billow or meets a wall. The share turns with the sketch time, which a held
+    // frame holds, so a held picture draws the same each time.
+    let jitter = fract(52.9829189 * fract(dot(input.fragCoord.xy, vec2f(0.06711056, 0.00583715)) + fract(frame.time * 7.31)));
+    var t = start + jitter * (0.6 + start * 0.01);
     var clear = 1.0;
     var color = vec3f(0.0);
     var form = 0.0;
@@ -217,7 +233,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
         // The cloud's edge softens with distance, so a far billow fades rather than cuts.
         let skin = 0.7 + t * 0.006;
         let solid = clamp(0.5 - above / skin, 0.0, 1.0);
-        let density = solid * 1.6 + here.y * 0.22;
+        let density = solid * 1.6 + here.y * 1.1;
         if density > 0.002 {
             if !lit {
                 // Where the ray first meets the billow: its slope, from its heights a step to each
@@ -244,20 +260,30 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 sunlit = max(dot(normal, sun), 0.0) * shadow * (0.4 + 0.6 * cleft);
                 lit = true;
             }
-            let stride = 0.35 + t * 0.008;
+            // The last step ends at the scene's surface, so the cloud before a wall thins smoothly.
+            let stride = min(0.35 + t * 0.008, end - t);
             // Deeper in the billow the cloud darkens a little.
             let deep = exp(-max(-above, 0.0) / 3.0);
-            let tone = cloud_color(form, sunlit) * mix(0.72, 1.0, deep);
+            // Mist is a mid grey that the sun barely reaches; the billow takes its own light.
+            let misty = here.y * 1.1 / density;
+            let tone = cloud_color(mix(form, 0.5, misty), sunlit * (1.0 - misty)) * mix(0.72, 1.0, deep);
             let alpha = 1.0 - exp(-density * stride);
             color += clear * alpha * aerial(tone, t);
             clear *= 1.0 - alpha;
             t += stride;
         } else {
             // Clear air: step a share of the height over the tops, never so far that a billow's
-            // side slips between two steps.
-            let longest = select(4.0 + t * 0.09, 0.8, length(p.xz) < NEAR && above < 6.0);
+            // side slips between two steps, and in short steps through the mist by the walls.
+            let longest = select(4.0 + t * 0.09, 0.45, length(p.xz) < MISTY && above < 8.5);
             t += clamp(above * 0.5, 0.3 + t * 0.006, longest);
         }
+    }
+    // A ray that runs out of steps over open sea would show the dome through a hole: it meets the
+    // sea's tops where they lie on average, at that distance's tone.
+    if clear > 0.02 && t < end && end >= material.reach && dir.y < -0.002 {
+        let meet = max((eye.y - (material.top - material.depth * 0.4)) / -dir.y, t);
+        color += clear * aerial(cloud_color(0.7, 0.0), meet);
+        clear = 0.0;
     }
     let alpha = 1.0 - clear;
     if alpha < 0.001 {
@@ -293,7 +319,7 @@ fn cloud_air() -> vec3f {
 /// at form 1, with the main light's own color where it falls on the cloud, so the low sun warms
 /// the tops and leaves the hollows lilac.
 fn cloud_color(form: f32, lit: f32) -> vec3f {
-    let shade = mix(2.0, 6.4, form * form);
+    let shade = mix(1.6, 4.9, form * form);
     let warm = material.sun * material.tint * 0.5 * lit;
     return cloud_air() * shade + warm;
 }
@@ -312,8 +338,9 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // The far sea, where the cloud's rays end: its tops at their brightest, faded by the air.
     let color = cloud_color(0.8, 0.25 * max(material.toward.y, 0.0));
     let distance = select(material.reach * 3.0, material.reach, dir.y < 0.0);
-    // Overhead the overcast is a little darker than at the horizon, where the light comes through.
-    let overhead = mix(1.05, 0.88, smoothstep(0.05, 1.0, dir.y));
+    // Above the horizon the overcast is a step darker than the far cloud's lit tops, so the towers
+    // stand out against it, and darker again overhead.
+    let overhead = select(1.0, mix(0.95, 0.85, smoothstep(0.02, 1.0, dir.y)), dir.y > 0.0);
     return vec4f(aerial(color, distance) * overhead, max(cover, haze));
 }
 `;
@@ -510,11 +537,12 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 			steps: STEPS[preset],
 			reach: CLOUD.reach,
 			texels: size,
+			shift: CLOUD_SHIFT,
 		},
 	});
 	// The cloud draws on the effect layer: the water's reflection leaves it out, and the camera's
 	// clearance never takes the sphere round it for a wall. The page's `clouds=off` leaves it out,
-	// so a timing can read its share of the frame; a sketch's worker sees the page's address.
+	// so a timing can read its share of the frame.
 	if (new URLSearchParams(globalThis.location?.search).get('clouds') !== 'off')
 		scene
 			.createMesh({
