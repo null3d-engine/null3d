@@ -4,10 +4,14 @@
 # models, kept in the sample-assets repository, which this script finishes. Nothing is downloaded.
 #
 #   blender --background --factory-startup \
-#     --python tools/samples/blender/creek.py -- <output folder> --raw <folder> [--preview <folder>]
+#     --python tools/samples/blender/creek.py -- <output folder> [--models <a,b>] [--raw <folder>] \
+#     [--preview <folder>]
 #
-# `--raw` names the folder of raw models. `bun tools/samples/blender/creek.ts <folder> --raw <folder>`
-# runs it and optimizes the files for the scene.
+# `--raw` names the folder of raw models, which the pines need, and the script checks each one's
+# hash. `--models` names the files to build, of trees, plants, cave and pines; the first three are
+# always built, as one random stream runs through them. `bun tools/samples/blender/creek.ts
+# <folder>` runs it, with the raw models from the pinned sample content, and optimizes the files for
+# the scene.
 #
 # It writes four binary glTF files into the output folder, and prints each model's triangles:
 #   trees.glb   oak, beech and birch, each a wood node and a leaves node, with lower levels of
@@ -25,6 +29,7 @@
 #
 # Blender's axes: z is up, and a model's front faces -y, which glTF's export turns into +z.
 
+import hashlib
 import heapq
 import math
 import os
@@ -821,7 +826,8 @@ def build_cave(mat, rng):
 # a layer of pads of needles for each tier of limbs, along the limbs to their ends: each pad is a
 # body of dense needles with needle cards on it, as `pad_bodies`, `crown_cards` and `leaf_part`
 # lay them. The bare twig ends outside the layers are cut away.
-#   raw      the raw model's file, under the folder of raw models
+#   raw      the raw model's file, under the folder of raw models, and sha256 its hash, which the
+#            build checks, so a rebuild reads the very file the pine was made from
 #   turn     degrees about the vertical axis that turn the model's front toward -y
 #   height   the wood's height in meters; sink is how far its foot sits under the ground
 #   wood     the wood's triangles at the full level, then at each lower one
@@ -849,14 +855,16 @@ def build_cave(mat, rng):
 #   switches the distances, in meters, at which the previews show the levels side by side
 PINES = {
     'pine-tall': dict(
-        raw='pine-tall/model.glb', turn=-90, height=7.5, sink=0.08, wood=(14000, 5000, 1600), errors=(0.03, 0.07),
+        raw='pine-tall/model.glb', sha256='907b52ee4e6bed5b47760243d8f4e917b194c23a962bda28531d47cbc7884cd6',
+        turn=-90, height=7.5, sink=0.08, wood=(14000, 5000, 1600), errors=(0.03, 0.07),
         bark=(0.25, 0.22, 0.18), bare=0.32, stub=0.12, twig=0.12, gap=0.13, pad=(1.1, 0.8), taper=0.6, spacing=0.9,
         slope=0.8, flatten=0.9, level=50, front=0.4, flat=2.2, rise=0.15, body=0.75, bodies=((8, 4), (6, 3), (5, 2)),
         cards=3000, up=0.85, depth=0.25, card=0.45, lift=0.8, scatter=0.25, centered=0.5, cells=(0, 1, 2),
         fold=0.06, bend=0.55, tint=(1.0, 1.0, 1.0), shade=0.65, levels=((2, 1.3), (5, 1.7)), switches=(40, 90),
     ),
     'pine-low': dict(
-        raw='pine-low/model.glb', turn=-90, height=3.4, sink=0.05, wood=(8000, 3000, 1000), errors=(0.02, 0.045),
+        raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
+        turn=-90, height=3.4, sink=0.05, wood=(8000, 3000, 1000), errors=(0.02, 0.045),
         bark=(0.13, 0.1, 0.068), bare=0.33, stub=0.12, twig=0.2, gap=0.15, pad=(0.65, 0.5), taper=0.6, spacing=0.8,
         slope=2.0, flatten=0.3, level=70, floor=0.42, flat=2.0, rise=0.1, body=0.75, bodies=((8, 4), (6, 3), (5, 2)),
         cards=3200, up=0.8, depth=0.3, card=0.35, lift=0.7, scatter=0.25, centered=0.5, cells=(0, 1, 2),
@@ -1369,7 +1377,12 @@ def build_pine(name, spec, raw, leaf_mat, rng):
     The pine's wood and needles objects at each level, its pads, its number of limb ends and of
     tiers, and how many vertices of bare twig it cut.
     """
-    wood, maps = import_raw(os.path.join(raw, spec['raw']), f'{name}-raw', spec['height'], spec['turn'], spec['sink'])
+    path = os.path.join(raw, spec['raw'])
+    with open(path, 'rb') as f:
+        found = hashlib.sha256(f.read()).hexdigest()
+    if found != spec['sha256']:
+        raise SystemExit(f"{path} is not the raw trunk that {name} is built from: its SHA-256 is {found}, not {spec['sha256']}")
+    wood, maps = import_raw(path, f'{name}-raw', spec['height'], spec['turn'], spec['sink'])
     wood.data.materials.append(raw_bark(maps, name, 512))
     # The vertex colors bring the bark's mean color to the concept's.
     shade = linear(spec['bark']) / np.maximum(linear(maps['Base Color'][..., :3].reshape(-1, 3).mean(axis=0)), 1e-3)
@@ -1453,26 +1466,31 @@ def main():
     report.update(export(os.path.join(out, 'cave.glb'), [cave], set()))
 
     # The pines draw from random streams of their own, after the other models, so they leave every
-    # other file as it was.
-    raw = raw_folder()
-    needles = material(
-        'needles', image('needles', needle_atlas(1024, np.random.default_rng((SEED, 50)), NEEDLE_TONES, NEEDLE_TWIG, mat=True)),
-        cutout=True, roughness=0.7,
-    )
-    pines, crowns = [], {}
-    for name, spec in PINES.items():
-        objects, plant, ends, tiers, cut = build_pine(name, spec, raw, needles, np.random.default_rng((SEED, 51, sum(map(ord, name)))))
-        pines += objects
-        crowns[name] = (plant, ends, tiers, cut)
-    errors = {f'{name}-{part}': spec['errors'] for name, spec in PINES.items() for part in ('wood', 'leaves')}
-    report.update(export(os.path.join(out, 'pines.glb'), pines, {'needles'}, errors))
+    # other file as it was, and a build that does not want them skips them and their raw trunks.
+    wanted = PINES if 'pines' in chosen_models() else {}
+    files = ['trees.glb', 'plants.glb', 'cave.glb']
+    crowns = {}
+    if wanted:
+        raw = raw_folder()
+        needles = material(
+            'needles', image('needles', needle_atlas(1024, np.random.default_rng((SEED, 50)), NEEDLE_TONES, NEEDLE_TWIG, mat=True)),
+            cutout=True, roughness=0.7,
+        )
+        pines = []
+        for name, spec in wanted.items():
+            objects, plant, ends, tiers, cut = build_pine(name, spec, raw, needles, np.random.default_rng((SEED, 51, sum(map(ord, name)))))
+            pines += objects
+            crowns[name] = (plant, ends, tiers, cut)
+        errors = {f'{name}-{part}': spec['errors'] for name, spec in wanted.items() for part in ('wood', 'leaves')}
+        report.update(export(os.path.join(out, 'pines.glb'), pines, {'needles'}, errors))
+        files.append('pines.glb')
 
     for name, triangles in report.items():
         print(f'CREEK {name}: {triangles} triangles')
     for name, (plant, ends, tiers, cut) in crowns.items():
         print(f'CREEK {name}: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, '
               f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads, {cut} vertices of bare twig cut')
-    for file in ('trees.glb', 'plants.glb', 'cave.glb', 'pines.glb'):
+    for file in files:
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
     if shots:
         for name in TREES:
@@ -1487,7 +1505,7 @@ def main():
             preview([plant], os.path.join(shots, f'{plant.name}.png'))
             close_up([plant], os.path.join(shots, f'{plant.name}-close.png'), box=(0.25, 0.75, 0.2, 0.7))
         preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
-        preview_pines(shots, PINES)
+        preview_pines(shots, wanted)
 
 
 def preview_pines(shots, pines):
@@ -1506,6 +1524,14 @@ def preview_pines(shots, pines):
         for distance in spec['switches']:
             for view, down in (('concept', 27), ('below', -15)):
                 overcast_levels(levels, os.path.join(shots, f'{name}-levels-{distance}m-{view}.png'), distance, down)
+
+
+def chosen_models():
+    """The models that `--models <a,b>` after `--` names, or every model the script writes."""
+    args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+    if '--models' not in args:
+        return ('trees', 'plants', 'cave', 'pines')
+    return tuple(args[args.index('--models') + 1].split(','))
 
 
 def raw_folder():

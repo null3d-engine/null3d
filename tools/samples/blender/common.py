@@ -771,6 +771,8 @@ def export(path, objects, masked, levels=(), one_sided=()):
         lower = set()
         for k, node in enumerate(doc['nodes']):
             errors = levels.get(node['name'], ()) if isinstance(levels, dict) else levels
+            if not errors and f"{node['name']}-1" in index:
+                raise SystemExit(f"{node['name']} has lower levels but no level errors to give them")
             ids = [index[f"{node['name']}-{n}"] for n in range(1, len(errors) + 1) if f"{node['name']}-{n}" in index]
             if not ids:
                 continue
