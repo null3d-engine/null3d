@@ -21,6 +21,7 @@ import tempfile
 import bpy
 import numpy as np
 from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 
 # ---------------------------------------------------------------------------------------------
 # Textures
@@ -706,6 +707,50 @@ def leaf_part(spec, plant, places, rng, grow):
         else:
             card(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
     return leaves
+
+
+# ---------------------------------------------------------------------------------------------
+# Levels of detail
+# ---------------------------------------------------------------------------------------------
+
+# A pixel's size, in meters for each meter away, on a screen 1,080 pixels high at a 45 degree view:
+# a level's error over this is the distance past which it changes the picture by under a pixel.
+PIXEL_PER_METER = 0.00077
+
+
+def surface_points(obj, count, rng):
+    """`count` points spread over an object's surface by area, in its own frame."""
+    mesh = obj.data
+    mesh.calc_loop_triangles()
+    co = np.empty(len(mesh.vertices) * 3, np.float32)
+    mesh.vertices.foreach_get('co', co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    tris = np.empty(len(mesh.loop_triangles) * 3, np.int32)
+    mesh.loop_triangles.foreach_get('vertices', tris)
+    a, b, c = (co[tris.reshape(-1, 3)[:, k]] for k in range(3))
+    area = np.linalg.norm(np.cross(b - a, c - a), axis=1) / 2
+    pick = rng.choice(len(area), count, p=area / area.sum())
+    u, v = rng.random(count), rng.random(count)
+    flip = u + v > 1
+    u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+    return a[pick] + (b[pick] - a[pick]) * u[:, None] + (c[pick] - a[pick]) * v[:, None]
+
+
+def level_error(level, full, share=0.95, count=20000, seed=1):
+    """
+    A lower level's surface error, in meters: the distance below which `share` of the points spread
+    over both surfaces lie from the other surface. A level that drops leaf cards moves a few points
+    far, so the largest distance would keep the finest level on screen for no gain, while the
+    share counts the change that the eye sees.
+    """
+    def tree(obj):
+        return BVHTree.FromPolygons([v.co for v in obj.data.vertices], [p.vertices for p in obj.data.polygons])
+
+    rng = np.random.default_rng(seed)
+    gaps = []
+    for points, onto in ((surface_points(level, count, rng), tree(full)), (surface_points(full, count, rng), tree(level))):
+        gaps += [onto.find_nearest(Vector(p))[3] or 0.0 for p in points]
+    return float(np.quantile(gaps, share))
 
 
 # ---------------------------------------------------------------------------------------------

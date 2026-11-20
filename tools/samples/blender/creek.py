@@ -46,10 +46,10 @@ from mathutils.kdtree import KDTree
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    Builder, Plant, arguments, at_distance, blend_up, branch_phase, close_up, crown_cards, dilate, export, fbm,
-    frame_of, half, image, inside, leaf_color, leaf_mask, leaf_part, link, material, needle_atlas, normal_map,
-    occlusion_of, orm, over, plant_reach, plant_top, preview, rock_texture, smoothstep, sprig_atlas, stage, strip,
-    tent, tube, value_noise,
+    PIXEL_PER_METER, Builder, Plant, arguments, at_distance, blend_up, branch_phase, close_up, crown_cards,
+    dilate, export, fbm, frame_of, half, image, inside, leaf_color, leaf_mask, leaf_part, level_error, link,
+    material, needle_atlas, normal_map, occlusion_of, orm, over, plant_reach, plant_top, preview, rock_texture,
+    smoothstep, sprig_atlas, stage, strip, tent, tube, value_noise,
 )
 
 SEED = 20261011
@@ -835,7 +835,8 @@ def build_cave(mat, rng):
 #            reach to the sides it keeps past that; climb, when given, trains the limbs under the
 #            crown up into it, as `train_flat` says
 #   wood     the wood's triangles at the full level, then at each lower one
-#   errors   each lower level's surface error in meters, as TREE_LEVELS says
+#   limit    the largest surface error a lower level may have, as a share of the height, which
+#            `level_error` measures for each level of each part
 #   bark     the bark's mean color in the concept, which the wood's vertex colors bring it to
 #   bare     the share of the wood's height that carries no pad
 #   stub     the shortest limb, as a share of the wood's height, that carries a pad; twig is the
@@ -858,25 +859,24 @@ def build_cave(mat, rng):
 #   body     the size of each pad's body against the pad; bodies gives its sides around and its
 #            rows up at each level, and underside how much darker its underside is
 #   levels   each lower level's (every, grow): it keeps one card in every, each grow times larger
-#   switches the distances, in meters, at which the previews show the levels side by side
 PINES = {
     'pine-tall': dict(
         raw='pine-tall/model.glb', sha256='907b52ee4e6bed5b47760243d8f4e917b194c23a962bda28531d47cbc7884cd6',
-        turn=-90, height=7.5, sink=0.08, wood=(14000, 5000, 1600), errors=(0.03, 0.07), bark=(0.25, 0.22, 0.18),
+        turn=-90, height=7.5, sink=0.08, wood=(14000, 5000, 1600), limit=0.03, bark=(0.25, 0.22, 0.18),
         fan=(0.3, 0.15, 0.75), bare=0.36, stub=0.12, twig=0.12, gap=0.13, pad=(0.8, 0.6), taper=0.55, spacing=1.0,
         slope=0.8, flatten=0.9, hold=1.2, level=50, deep=0.25, flat=5.0, rise=0.1, inner=0.3,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.45,
         cards=3000, up=0.65, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.95, 0.95, 0.95), shade=0.6, levels=((2, 1.3), (5, 1.7)), switches=(40, 90),
+        fold=0.06, bend=0.55, tint=(0.95, 0.95, 0.95), shade=0.6, levels=((2, 1.3), (5, 1.7)),
     ),
     'pine-low': dict(
         raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
-        turn=-90, height=3.4, sink=0.1, wood=(8000, 3000, 1000), errors=(0.02, 0.045), bark=(0.15, 0.1, 0.055),
+        turn=-90, height=3.4, sink=0.1, wood=(8000, 3000, 1000), limit=0.03, bark=(0.15, 0.1, 0.055),
         fan=(0.3, 0.8, 1.0), climb=(0.3, 0.6, 0.35), bare=0.45, stub=0.12, twig=0.2, gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8,
         slope=2.0, flatten=0.3, hold=1.0, level=70, floor=0.6, deep=0.5, flat=2.2, rise=0.1, inner=0.0,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.45,
         cards=3400, up=0.6, depth=0.3, card=0.35, lift=0.7, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.08, bend=0.55, tint=(1.0, 0.93, 0.74), shade=0.6, levels=((2, 1.3), (5, 1.7)), switches=(25, 60),
+        fold=0.08, bend=0.55, tint=(1.0, 0.93, 0.74), shade=0.6, levels=((2, 1.3), (5, 1.7)),
     ),
 }
 
@@ -1444,7 +1444,7 @@ def train_flat(mesh, spec):
 def build_pine(name, spec, raw, leaf_mat, rng):
     """
     The pine's wood and needles objects at each level, its pads, its number of limb ends and of
-    tiers, and how many vertices of bare twig it cut.
+    tiers, how many vertices of bare twig it cut, and each part's measured level errors.
     """
     path = os.path.join(raw, spec['raw'])
     with open(path, 'rb') as f:
@@ -1472,20 +1472,29 @@ def build_pine(name, spec, raw, leaf_mat, rng):
         pad_bodies(leaves, plant, spec, *body)
         return leaves
 
-    objects = [
-        decimated(wood, spec['wood'][0], f'{name}-wood'),
-        needles(places, rng, 1.0, spec['bodies'][0]).build(f'{name}-leaves', leaf_mat),
-    ]
+    full = {
+        'wood': decimated(wood, spec['wood'][0], f'{name}-wood'),
+        'leaves': needles(places, rng, 1.0, spec['bodies'][0]).build(f'{name}-leaves', leaf_mat),
+    }
+    objects, errors = list(full.values()), {f'{name}-{part}': [] for part in full}
     for k, (every, grow) in enumerate(spec['levels'], start=1):
         own = np.random.default_rng((SEED, 60 + k, sum(map(ord, name))))
-        objects += [
-            decimated(wood, spec['wood'][k], f'{name}-wood-{k}'),
-            needles(places[::every], own, grow, spec['bodies'][k]).build(f'{name}-leaves-{k}', leaf_mat),
-        ]
+        level = {
+            'wood': decimated(wood, spec['wood'][k], f'{name}-wood-{k}'),
+            'leaves': needles(places[::every], own, grow, spec['bodies'][k]).build(f'{name}-leaves-{k}', leaf_mat),
+        }
+        for part, obj in level.items():
+            # Each level's error is measured, and one past the limit stops the build: the engine
+            # would keep the finest level far too long, or switch to a level that looks wrong.
+            error = round(level_error(obj, full[part]), 4)
+            if error > spec['limit'] * spec['height']:
+                raise SystemExit(f"{name}-{part}-{k}: its surface error is {error} m, over the limit of {spec['limit'] * spec['height']:.3f} m")
+            errors[f'{name}-{part}'].append(error)
+        objects += list(level.values())
     raw_mesh = wood.data
     bpy.data.objects.remove(wood)
     bpy.data.meshes.remove(raw_mesh)
-    return objects, plant, len(ends), tiers, cut
+    return objects, plant, len(ends), tiers, cut, errors
 
 
 def main():
@@ -1547,11 +1556,12 @@ def main():
             cutout=True, roughness=0.7,
         )
         pines = []
+        errors = {}
         for name, spec in wanted.items():
-            objects, plant, ends, tiers, cut = build_pine(name, spec, raw, needles, np.random.default_rng((SEED, 51, sum(map(ord, name)))))
+            objects, plant, ends, tiers, cut, measured = build_pine(name, spec, raw, needles, np.random.default_rng((SEED, 51, sum(map(ord, name)))))
             pines += objects
             crowns[name] = (plant, ends, tiers, cut)
-        errors = {f'{name}-{part}': spec['errors'] for name, spec in wanted.items() for part in ('wood', 'leaves')}
+            errors.update(measured)
         report.update(export(os.path.join(out, 'pines.glb'), pines, {'needles'}, errors))
         files.append('pines.glb')
 
@@ -1560,6 +1570,8 @@ def main():
     for name, (plant, ends, tiers, cut) in crowns.items():
         print(f'CREEK {name}: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, '
               f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads, {cut} vertices of bare twig cut')
+    for part, measured in sorted(errors.items()) if wanted else ():
+        print(f"CREEK {part} level errors: {', '.join(f'{e} m (switch at {e / PIXEL_PER_METER:.0f} m)' for e in measured)}")
     for file in files:
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
     if shots:
@@ -1575,11 +1587,14 @@ def main():
             preview([plant], os.path.join(shots, f'{plant.name}.png'))
             close_up([plant], os.path.join(shots, f'{plant.name}-close.png'), box=(0.25, 0.75, 0.2, 0.7))
         preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
-        preview_pines(shots, wanted)
+        preview_pines(shots, wanted, errors if wanted else {})
 
 
-def preview_pines(shots, pines):
-    """Renders each pine's views, close views and levels under the overcast sky into `shots`."""
+def preview_pines(shots, pines, errors):
+    """
+    Renders each pine's views, close views and levels under the overcast sky into `shots`. The
+    levels show side by side at each switch of the needles, from their measured `errors`.
+    """
     for name, spec in pines.items():
         parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
         # The concept's camera looks down about 27 degrees under an overcast sky, at the pine's flat
@@ -1594,7 +1609,7 @@ def preview_pines(shots, pines):
         overcast(parts, os.path.join(shots, f'{name}-close-below.png'), 0, -25, (1440, 960), 2.2, 0.6)
         # Each level beside the others, from the concept's camera and from below, at each switch.
         levels = [parts] + [[bpy.data.objects[f'{name}-wood-{k}'], bpy.data.objects[f'{name}-leaves-{k}']] for k in (1, 2)]
-        for distance in spec['switches']:
+        for distance in (round(e / PIXEL_PER_METER) for e in errors[f'{name}-leaves']):
             for view, down in (('concept', 27), ('below', -15)):
                 overcast_levels(levels, os.path.join(shots, f'{name}-levels-{distance}m-{view}.png'), distance, down)
 
