@@ -3,11 +3,11 @@
 // everything, so no view sees the cliff's foot or the sky's own ground, and the billows' height and
 // slope light it, bright on the heaps and grey in the hollows. The shells above are veils where the
 // billows rise through them, which give the sea its depth beside the cliff. Each shell fades where
-// it meets the rock, so the walls sink into the cloud with no line. Past the
-// shells, a dome far round the camera carries the cloud on to the horizon and lifts it into banks
-// that merge with the overcast sky, so no view finds an edge. Banks of mist drift round the walls
-// and rise past the rim in places. Every part takes the air's color and the main light from the
-// stage each frame, so the clouds match every hour.
+// it meets the rock, so the walls sink into the cloud with no line. Soft heaps of cloud drift on the
+// sea round the cliff, banks of mist rise against the walls, and far out great towers of cloud stand
+// past the horizon. A dome far round the camera carries the cloud on to the horizon and up into the
+// overcast, so no view finds an edge. Every part takes the air's color and the main light from the
+// stage each frame, greyed and cast lilac, so the clouds match every hour.
 import type { QualityPreset, SketchContext } from '@null3d/engine';
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { EFFECT_LAYER } from '../../lib/layers';
@@ -29,6 +29,18 @@ const DRIFT = [0.45, 0.2] as const;
  */
 const HEAPS = { reach: 150, life: [70, 110] as const, size: [8, 20] as const };
 const HEAP_COUNT: Record<QualityPreset, number> = { low: 90, medium: 160, high: 240, ultra: 320 };
+/**
+ * The towers: great heaps of cloud that stand far round the cliff and rise past the horizon, so no
+ * view finds a level line where the sea meets the sky: how many groups, how far out, the puffs in
+ * each, their lives and their sizes, in meters.
+ */
+const TOWERS = {
+	groups: 10,
+	reach: [190, 420] as const,
+	puffs: 9,
+	life: [240, 320] as const,
+	size: [55, 120] as const,
+} as const;
 /** The banks of mist round the walls: how many, how many puffs each holds, and their lives. */
 const BANKS = 16;
 const BANK_PUFFS = 12;
@@ -56,18 +68,24 @@ struct Uniforms {
 }
 
 // light {
+/// The cloud's own tone of the air: the air's color, greyed toward its brightness and cast a faint
+/// lilac, since a cloud is never as blue as the sky at the horizon.
+fn cloud_air() -> vec3f {
+    let grey = dot(material.air, vec3f(0.2126, 0.7152, 0.0722));
+    return mix(vec3f(grey), material.air, 0.3) * material.tint;
+}
+
 /// The cloud's color: the air's, darker in the hollows, with the main light on the tops that face it.
 fn cloud_color(lift: f32, facing: f32) -> vec3f {
     // The sky lights the tops and leaves the hollows grey; the side toward the main light is a
     // step brighter even under cloud, and the light itself adds where it breaks through.
-    let shade = mix(1.4, 2.8, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
-    return material.air * material.tint * shade
-        + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
+    let shade = mix(1.75, 3.3, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
+    return cloud_air() * shade + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
 }
 
 /// The air between the camera and a point: the cloud fades into the air's own color with distance.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, material.air * material.tint * 2.5, 1.0 - exp(-distance / 380.0));
+    return mix(color, cloud_air() * 3.0, 1.0 - exp(-distance / 380.0));
 }
 // } light
 
@@ -146,18 +164,24 @@ struct Uniforms {
 }
 
 // light {
+/// The cloud's own tone of the air: the air's color, greyed toward its brightness and cast a faint
+/// lilac, since a cloud is never as blue as the sky at the horizon.
+fn cloud_air() -> vec3f {
+    let grey = dot(material.air, vec3f(0.2126, 0.7152, 0.0722));
+    return mix(vec3f(grey), material.air, 0.3) * material.tint;
+}
+
 /// The cloud's color: the air's, darker in the hollows, with the main light on the tops that face it.
 fn cloud_color(lift: f32, facing: f32) -> vec3f {
     // The sky lights the tops and leaves the hollows grey; the side toward the main light is a
     // step brighter even under cloud, and the light itself adds where it breaks through.
-    let shade = mix(1.4, 2.8, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
-    return material.air * material.tint * shade
-        + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
+    let shade = mix(1.75, 3.3, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
+    return cloud_air() * shade + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
 }
 
 /// The air between the camera and a point: the cloud fades into the air's own color with distance.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, material.air * material.tint * 2.5, 1.0 - exp(-distance / 380.0));
+    return mix(color, cloud_air() * 3.0, 1.0 - exp(-distance / 380.0));
 }
 // } light
 
@@ -191,7 +215,7 @@ export interface Clouds {
 	update(air: readonly [number, number, number], light: Stage['light']): void;
 	/** Shows the shells of a preset: fewer on weaker devices. */
 	fit(preset: QualityPreset): void;
-	/** Steps the heaps' and the banks' particles, which a frame calls in its late update. */
+	/** Steps the heaps', the banks' and the towers' particles, which a frame calls in its late update. */
 	step(): void;
 }
 
@@ -299,22 +323,46 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 				layers: EFFECT_LAYER,
 				prewarm: true,
 				seed: 91 + k,
-				position: [Math.cos(bearing) * out, rising ? -9 : -12.5, Math.sin(bearing) * out],
+				position: [Math.cos(bearing) * out, rising ? -6 : -9.5, Math.sin(bearing) * out],
 				shape: { type: 'sphere', radius: 5 },
 				rate: BANK_PUFFS / BANK_LIFE[1],
 				lifetime: BANK_LIFE,
 				speed: [0, 0.05],
 				velocity: [DRIFT[0] * 0.5, rising ? 0.22 : 0.06, DRIFT[1] * 0.5],
-				size: rising ? [7, 12] : [6, 10],
+				size: rising ? [8, 14] : [7, 12],
 				colorOverLife: [color, color],
-				alphaOverLife: [0, 0.45, 0.45, 0],
-				softness: 2.5,
+				alphaOverLife: [0, 0.5, 0.5, 0],
+				softness: 4,
 				blending: 'normal',
 			});
 		}),
 	);
-	const systems: readonly ParticleSystem[] = [heaps, ...banked];
-	/** The heaps' and banks' color last written, which a frame changes only past a visible step. */
+	const towers: ParticleSystem[] = await Promise.all(
+		Array.from({ length: TOWERS.groups }, (_, k) => {
+			const bearing = (k / TOWERS.groups) * Math.PI * 2 + 0.4 * Math.sin(k * 3.1);
+			const out =
+				TOWERS.reach[0] + (TOWERS.reach[1] - TOWERS.reach[0]) * (0.5 + 0.5 * Math.sin(k * 2.3));
+			return createParticles(ctx, {
+				...smoke,
+				layers: EFFECT_LAYER,
+				prewarm: true,
+				seed: 131 + k,
+				position: [Math.cos(bearing) * out, CLOUD.top + 14, Math.sin(bearing) * out],
+				shape: { type: 'box', size: [110, 26, 110] },
+				rate: TOWERS.puffs / TOWERS.life[1],
+				lifetime: TOWERS.life,
+				speed: [0, 0],
+				velocity: [DRIFT[0], 0, DRIFT[1]],
+				size: TOWERS.size,
+				colorOverLife: [color, color],
+				alphaOverLife: [0, 0.85, 0.85, 0.85, 0],
+				softness: 8,
+				blending: 'normal',
+			});
+		}),
+	);
+	const systems: readonly ParticleSystem[] = [heaps, ...banked, ...towers];
+	/** The particles' color last written, which a frame changes only past a visible step. */
 	const shown: [number, number, number] = [-1, -1, -1];
 	const fit = (next: QualityPreset) => {
 		const count = SHELLS[next];
@@ -347,9 +395,11 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 				Math.abs(air[0] - shown[0]) + Math.abs(air[1] - shown[1]) + Math.abs(air[2] - shown[2]) >
 				0.01
 			) {
+				// The cloud's own tone, as the shaders' `cloud_air` gives it: the air greyed and cast lilac.
+				const grey = 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2];
 				for (let c = 0; c < 3; c++) {
 					shown[c] = air[c] as number;
-					color[c] = (air[c] as number) * (TINT[c] as number) * 2.3;
+					color[c] = (grey + ((air[c] as number) - grey) * 0.3) * (TINT[c] as number) * 2.9;
 				}
 				for (const system of systems) system.set({ colorOverLife: [color, color] });
 			}

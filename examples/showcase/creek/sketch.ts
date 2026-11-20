@@ -160,7 +160,7 @@ const CLOSE_SHOT: Shot = {
 	move: 'hold',
 };
 /** The rows across the water's sheet. */
-const WATER_ROWS = 32;
+const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
@@ -211,7 +211,7 @@ function createCreekWater(
 		bed: 'shape',
 		// The stream's own bed gives the water all its depth, so the surface draws opaque. The water is
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
-		material: { alphaMode: 'opaque', attenuationColor: '#9cc2b6', attenuationDistance: 1.6 },
+		material: { alphaMode: 'opaque', attenuationColor: '#a6d0c4', attenuationDistance: 2.2 },
 		foam: foamMap(ctx, obstacles, {
 			origin: FOAM_BOX.origin,
 			size: FOAM_BOX.size,

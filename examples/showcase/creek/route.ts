@@ -40,7 +40,8 @@ export const SHOTS: readonly Shot[] = [
 	{ position: WIDE, target: WIDE_LOOK, seconds: 7 },
 	{ position: [-15.7, 18, 43.2], target: MIDDLE, seconds: 7 },
 	{ position: [-43.2, 18, 15.7], target: MIDDLE, seconds: 7 },
-	{ position: [-39.8, 19, -23], target: MIDDLE, seconds: 7 },
+	// Low past the walls on the far side, where the cloud banks rise against the rock.
+	{ position: [-37, 3, -22], target: [0, 2, 0], seconds: 7 },
 	{ position: [-8, 19, -45.3], target: MIDDLE, seconds: 7 },
 	{ position: [29.6, 18, -35.2], target: MIDDLE, seconds: 7 },
 	{ position: [45.3, 15, -8], target: MIDDLE, seconds: 7 },

@@ -8,7 +8,7 @@ import { waveHeight } from '@null3d/water';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { bearingOf, CLOUD_TOP, groundHeight, rimRadius, streamCurrent, WATER } from './land';
 import { SHOTS } from './route';
-import { rockPlaces } from './stones';
+import { ROCK_REACH, rockPlaces } from './stones';
 
 /** The height of the creek's surface at a point and time, as the water's shape gives its current. */
 const surfaceHeight = (x: number, z: number, t: number) =>
@@ -53,7 +53,7 @@ test('the creek route keeps clear of the ground and the walls, and above the clo
 
 /** How far above the stream's bed the dip keeps, in meters. */
 const BED_CLEARANCE = 0.12;
-/** How far past a stone's edge the dip keeps, in meters. A stone reaches about 1.6 times its size. */
+/** How far past a stone's edge the dip keeps, in meters. */
 const STONE_CLEARANCE = 0.25;
 
 test('the creek route dips under the water for five to seven seconds, clear of the bed and the stones', () => {
@@ -75,7 +75,7 @@ test('the creek route dips under the water for five to seven seconds, clear of t
 			const top = groundHeight(rock.x, rock.z) + rock.size;
 			const reach = Math.hypot(x - rock.x, z - rock.z);
 			expect(
-				reach > 1.6 * rock.size + STONE_CLEARANCE || y > top + STONE_CLEARANCE,
+				reach > ROCK_REACH * rock.size + STONE_CLEARANCE || y > top + STONE_CLEARANCE,
 				`the dip runs into the stone at ${rock.x.toFixed(1)}, ${rock.z.toFixed(1)} at ${where}`,
 			).toBe(true);
 		}

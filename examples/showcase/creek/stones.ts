@@ -11,9 +11,11 @@ import {
 } from '@null3d/engine';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import {
+	bearingOf,
 	fromStream,
 	groundHeight,
 	LIPS,
+	rimRadius,
 	streamHalf,
 	streamZ,
 	UNREFLECTED_LAYER,
@@ -83,14 +85,33 @@ const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 const LIP_CLEAR = 1.5;
 /** The rocks along the creek: in the stream, in a row along each edge, and on the banks. */
 const ROCKS = 150;
+/** How far a rock's foot reaches about its middle, as a share of its size. */
+export const ROCK_REACH = 1.6;
+/**
+ * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
+ * along the creek its rocks spread, and how many stand in it. One lies on the west sill and one
+ * before each lip, where the water quickens; the east sill lies on the camera's dip and stays clear.
+ */
+const RIFFLES: readonly (readonly [number, number, number])[] = [
+	[-11.5, 1.6, 7],
+	[LIPS.west + 2.6, 1.4, 6],
+	[LIPS.east - 2.2, 1.2, 6],
+];
 
-/** Where rocks stand: a few in the stream, a line along each edge, and some on the banks. */
+/** True for a point that lies inside the rim by at least `margin` meters. */
+export const insideRim = (x: number, z: number, margin: number) =>
+	Math.hypot(x, z) < rimRadius(bearingOf(x, z)) - margin;
+
+/**
+ * Where rocks stand: a few in the stream, a line along each edge, some on the banks, and rows across
+ * the riffles. Every rock stands wholly inside the rim.
+ */
 export function rockPlaces(): { x: number; z: number; size: number }[] {
 	const next = random(41);
 	const places: { x: number; z: number; size: number }[] = [];
 	const from = LIPS.west + LIP_CLEAR;
 	const to = LIPS.east - LIP_CLEAR;
-	for (let k = 0; k < ROCKS; k++) {
+	while (places.length < ROCKS) {
 		const x = from + (to - from) * next();
 		const kind = next();
 		const side = next() < 0.5 ? -1 : 1;
@@ -98,7 +119,32 @@ export function rockPlaces(): { x: number; z: number; size: number }[] {
 			kind < 0.15 ? next() * 0.5 : kind < 0.75 ? 0.82 + 0.3 * next() : 1.3 + 0.9 * next();
 		const size =
 			kind < 0.15 ? 0.22 + 0.2 * next() : kind < 0.75 ? 0.28 + 0.38 * next() : 0.2 + 0.5 * next();
-		places.push({ x, z: streamZ(x) + side * across * streamHalf(x), size });
+		const z = streamZ(x) + side * across * streamHalf(x);
+		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size });
+	}
+	for (const [middle, spread, count] of RIFFLES)
+		for (let k = 0; k < count; k++) {
+			const x = middle + (next() * 2 - 1) * spread;
+			const across = ((k + 0.5) / count) * 1.6 - 0.8 + (next() - 0.5) * 0.15;
+			const size = 0.24 + 0.2 * next();
+			const z = streamZ(x) + across * streamHalf(x);
+			if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size });
+		}
+	return places;
+}
+
+/** The pebbles on the bed and the shore: each one's place, size and turn, all inside the rim. */
+export function pebblePlaces(
+	count: number,
+): { x: number; z: number; size: number; turn: number }[] {
+	const next = random(47);
+	const places: { x: number; z: number; size: number; turn: number }[] = [];
+	while (places.length < count) {
+		const x = LIPS.west + 1 + (LIPS.east - LIPS.west - 2) * next();
+		const z = streamZ(x) + (next() * 2 - 1) * 1.3 * streamHalf(x);
+		const size = 0.04 + 0.11 * next() ** 2;
+		const turn = next() * Math.PI * 2;
+		if (fromStream(x, z) <= 1.25 && insideRim(x, z, size + 0.1)) places.push({ x, z, size, turn });
 	}
 	return places;
 }
@@ -162,25 +208,22 @@ export function createStones(
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
 	const tints = ['#6a645b', '#776753', '#53524f'];
 	const pebbleShapes = [0, 1].map((s) => geometry.fromArrays(rock(500 + s, 1, [1, 0.5, 0.8])));
-	const pebbleBatches = pebbleShapes.flatMap((mesh) =>
-		tints.map((color) => {
-			const capacity = Math.ceil(PEBBLES.ultra / 6);
+	const capacity = Math.ceil(PEBBLES.ultra / 6);
+	const pebbles = pebblePlaces(capacity * 6);
+	const pebbleBatches = pebbleShapes.flatMap((mesh, shape) =>
+		tints.map((color, tint) => {
 			const batch = scene.createInstances(mesh, capacity, {
 				// Wet pebbles: glossy, at the water's edge and under it.
 				material: materials.standard({ color, roughness: 0.35, ...maps }),
 				receiveShadows: true,
 				layers: UNREFLECTED_LAYER,
 			});
-			for (let row = 0; row < capacity; ) {
-				const x = LIPS.west + 1 + (LIPS.east - LIPS.west - 2) * next();
-				const z = streamZ(x) + (next() * 2 - 1) * 1.3 * streamHalf(x);
-				if (fromStream(x, z) > 1.25) continue;
-				const size = 0.04 + 0.11 * next() ** 2;
+			const first = (shape * tints.length + tint) * capacity;
+			pebbles.slice(first, first + capacity).forEach(({ x, z, size, turn }, row) => {
 				batch.positions.set([x, groundHeight(x, z) - size * 0.15, z], row * 3);
-				batch.rotations.set(yaw(next() * Math.PI * 2), row * 4);
+				batch.rotations.set(yaw(turn), row * 4);
 				batch.scales.set([size, size, size], row * 3);
-				row++;
-			}
+			});
 			batch.markDirty();
 			return batch;
 		}),

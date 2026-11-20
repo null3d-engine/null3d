@@ -1,9 +1,10 @@
-// The cliff's walls: dark volcanic rock that hangs from the rim of the land and runs down into the
-// sea of cloud. The rock breaks into upright pillars and buttresses of uneven width, split by deep
-// cracks and chimneys, and each pillar steps in and out down its height in blocks, which leaves
-// small ledges and overhangs. Pits and crags roughen every face. The wall is one mesh in code: its
-// top row is the land's own rim, vertex for vertex, so the two meet with no seam, and its rows
-// spread out with depth, fine where the camera sees the rock and coarse down in the cloud.
+// The cliff's walls: warm near-black volcanic rock that hangs from the rim of the land and runs down
+// into the sea of cloud. The rock breaks into upright pillars and buttresses of uneven width, cut by
+// black cracks and chimneys. Each pillar steps in and out down its height in blocks, each block's
+// face tilted its own way, which leaves ledges, overhangs and an angular, craggy face. The wall is
+// one mesh in code: its top row is the land's own rim, vertex for vertex, so the two meet with no
+// seam, and every noise along the rim reads round a circle, so the ring of columns closes on itself.
+// Its rows spread out with depth, fine where the camera sees the rock and coarse down in the cloud.
 import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
 import { Noise, random, type TexelSample, textureSet } from '../../lib/procedural';
 
@@ -14,44 +15,59 @@ const ROWS = 64;
 /** How the rows spread: a power above 1 packs them toward the rim. */
 const ROW_SPREAD = 1.5;
 /** The narrowest and widest pillar, in meters along the rim. */
-const PILLAR = [2.2, 4.2] as const;
+const PILLAR = [1.3, 4.6] as const;
 /** How deep the cracks between the pillars cut into the rock, in meters. */
-const CRACK = [0.7, 1.5] as const;
+const CRACK = [0.6, 1.8] as const;
+/** The share of the crack's side of a pillar that its cut spans: a narrow notch. */
+const CRACK_SPAN = 0.22;
+/** The share of pillars that stand out as buttresses, and how far, in meters. */
+const BUTTRESS = { share: 0.22, out: [0.7, 1.5] as const } as const;
 /** The shortest and tallest block that a pillar steps by, in meters. */
-const BLOCK = [2, 5.5] as const;
-/** How far a block stands out from or back into its pillar, in meters. */
-const STEP = 0.75;
+const BLOCK = [1.6, 5] as const;
+/** How far a block stands out from or back into its pillar, and how far its face tilts across it. */
+const STEP = 0.7;
+const TILT = 0.45;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
-/** The meters that one repeat of the rock's detail covers. */
+/** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
 const TILE = 2.2;
 
 const noise = new Noise(53);
 const { smoothstep } = math;
 
-/** The rock's texel: pitted dark stone with grains, in a near-white tone that the colors tint. */
+/**
+ * The rock's texel: dark stone mottled in broad patches with fine grain, in a near-white tone that
+ * the colors tint. No small marks repeat, so no print shows on the face.
+ */
 function rockTexel(u: number, v: number, out: TexelSample): void {
-	const broad = noise.fbm2(u * 6, v * 6, 5, 6);
-	const pits = smoothstep(noise.fbm2(u * 28, v * 28, 3, 28), 0.22, 0.42);
-	const grain = noise.value2(u * 96, v * 96, 96);
-	out.height = broad * 7 - pits * 3 + grain;
-	const tone = 0.82 + 0.18 * broad - 0.12 * pits + 0.06 * grain;
+	const broad = noise.fbm2(u * 4, v * 4, 5, 4);
+	const grain = noise.fbm2(u * 48, v * 48, 2, 48);
+	out.height = broad * 6 + grain * 1.5;
+	const tone = 0.86 + 0.14 * broad + 0.05 * grain;
 	out.r = tone;
 	out.g = tone * 0.97;
-	out.b = tone * 0.93;
-	out.roughness = 0.82 + 0.15 * broad;
-	out.occlusion = 1 - 0.55 * pits;
+	out.b = tone * 0.94;
+	out.roughness = 0.84 + 0.12 * broad;
+	out.occlusion = 0.9 + 0.1 * smoothstep(broad, -0.3, 0.3);
 }
 
-/** One pillar: where it starts along the rim, its width, how far it stands out, and its blocks. */
+/** One block of a pillar: its foot below the rim, how far it stands out, and its face's tilt. */
+interface Block {
+	foot: number;
+	step: number;
+	tilt: number;
+	/** How light its face reads, from 0 for charcoal to 1 for the lightest grey-brown. */
+	tone: number;
+}
+
+/** One pillar: where it starts along the rim, its width, its crack's depth and its blocks. */
 interface Pillar {
 	start: number;
 	width: number;
 	crack: number;
-	/** Where each block's foot lies below the rim, in meters, from the top down. */
-	blocks: number[];
-	/** How far each block stands out from the pillar's face, in meters. */
-	steps: number[];
+	/** How far the whole pillar stands out, in meters: a buttress stands well out. */
+	out: number;
+	blocks: Block[];
 }
 
 /** Splits the rim's length into pillars of uneven width, each with its own run of blocks. */
@@ -60,22 +76,21 @@ function pillars(length: number): Pillar[] {
 	const list: Pillar[] = [];
 	let at = 0;
 	while (at < length) {
-		const width = PILLAR[0] + (PILLAR[1] - PILLAR[0]) * next();
-		const blocks: number[] = [];
-		const steps: number[] = [];
+		const buttress = next() < BUTTRESS.share;
+		const width = (PILLAR[0] + (PILLAR[1] - PILLAR[0]) * next() ** 1.3) * (buttress ? 1.3 : 1);
+		const blocks: Block[] = [];
 		let foot = 0;
 		while (foot < -WALL_FOOT + 10) {
 			foot += BLOCK[0] + (BLOCK[1] - BLOCK[0]) * next();
-			blocks.push(foot);
-			steps.push((next() * 2 - 1) * STEP);
+			blocks.push({
+				foot,
+				step: (next() * 2 - 1) * STEP,
+				tilt: (next() * 2 - 1) * TILT,
+				tone: next(),
+			});
 		}
-		list.push({
-			start: at,
-			width,
-			crack: CRACK[0] + (CRACK[1] - CRACK[0]) * next(),
-			blocks,
-			steps,
-		});
+		const out = buttress ? BUTTRESS.out[0] + (BUTTRESS.out[1] - BUTTRESS.out[0]) * next() : 0;
+		list.push({ start: at, width, crack: CRACK[0] + (CRACK[1] - CRACK[0]) * next(), out, blocks });
 		at += width;
 	}
 	// The last pillar closes the ring: it stretches to meet the first.
@@ -85,17 +100,34 @@ function pillars(length: number): Pillar[] {
 }
 
 /**
- * How far the rock stands in from the rim's line at a place along the rim and a depth below it, in
- * meters, and how deep in a crack the place lies, from 0 on a face to 1 in a crack's back.
+ * Noise at a place along the rim, read round a circle whose length is the rim's, so the ring closes
+ * on itself: `scale` sets the noise's cells per meter along the rim, and `y` the place down it.
+ */
+function aroundNoise(
+	along: number,
+	length: number,
+	scale: number,
+	y: number,
+	octaves: number,
+): number {
+	const angle = (along / length) * Math.PI * 2;
+	const radius = (length * scale) / (Math.PI * 2);
+	return noise.fbm3(Math.cos(angle) * radius, y, Math.sin(angle) * radius, octaves);
+}
+
+/**
+ * How far the rock stands out from the rim's line at a place along the rim and a depth below it, in
+ * meters; how deep in a crack the place lies, from 0 on a face to 1 in a crack's back; and how light
+ * the block there reads.
  */
 function relief(
 	list: readonly Pillar[],
 	length: number,
 	along: number,
 	depth: number,
-): { offset: number; crack: number } {
+): { offset: number; crack: number; tone: number } {
 	// The cracks wander a little down the wall, so no pillar is ruled straight.
-	const wander = 0.9 * noise.fbm2(along * 0.05, depth * 0.06 + 3, 3);
+	const wander = 0.9 * aroundNoise(along, length, 0.05, depth * 0.06 + 3, 3);
 	const at = (((along + wander) % length) + length) % length;
 	let low = 0;
 	let high = list.length - 1;
@@ -106,28 +138,32 @@ function relief(
 	}
 	const pillar = list[low] as Pillar;
 	const t = (at - pillar.start) / pillar.width;
-	// A rough face with steep sides: the crack is a narrow cut between two faces, and a lesser crack
-	// splits some pillars down the middle.
-	const side = Math.abs(t * 2 - 1);
-	const split = pillar.width > 3.2 ? 0.55 * (1 - Math.abs(t * 2 - 1 + 0.15)) ** 14 : 0;
-	const crack = Math.max(side ** 3.5, split);
-	let block = 0;
-	while (block < pillar.blocks.length - 1 && (pillar.blocks[block] as number) < depth) block++;
+	// A narrow notch at each side of the pillar: black cracks between angular faces.
+	const crack = smoothstep(Math.abs(t * 2 - 1), 1 - CRACK_SPAN, 1);
+	let index = 0;
+	while (index < pillar.blocks.length - 1 && (pillar.blocks[index] as Block).foot < depth) index++;
+	const block = pillar.blocks[index] as Block;
+	const above = index === 0 ? undefined : (pillar.blocks[index - 1] as Block);
 	// A block's foot steps sharply into the next one, which leaves a ledge or an overhang there.
-	const top = block === 0 ? 0 : (pillar.blocks[block - 1] as number);
-	const into = smoothstep(depth - top, 0, 0.35);
-	const before = block === 0 ? 0 : (pillar.steps[block - 1] as number);
-	const step = before + ((pillar.steps[block] as number) - before) * into;
+	const into = smoothstep(depth - (above?.foot ?? 0), 0, 0.3);
+	const face = (b: Block | undefined) => (b ? b.step + b.tilt * (t - 0.5) * pillar.width * 0.5 : 0);
+	const step = face(above) + (face(block) - face(above)) * into;
 	const crags =
-		0.45 * noise.fbm2(along * 0.45, depth * 0.3, 4) +
-		0.18 * noise.fbm2(along * 2.2, depth * 1.4 + 7, 3);
-	const bulge = 1.4 * noise.fbm2(along * 0.025 + 11, depth * 0.035, 3);
-	return { offset: step + crags + bulge - pillar.crack * crack, crack };
+		0.5 * aroundNoise(along, length, 0.35, depth * 0.3, 4) +
+		0.3 * Math.abs(aroundNoise(along, length, 1.4, depth * 1.2 + 7, 3)) +
+		0.12 * aroundNoise(along, length, 4.5, depth * 4 + 2, 2);
+	const bulge = 1.4 * aroundNoise(along, length, 0.025, depth * 0.035 + 11, 3);
+	const tone = (above ? above.tone + (block.tone - above.tone) * into : block.tone) * (1 - crack);
+	return {
+		offset: pillar.out + step + crags + bulge - pillar.crack * crack,
+		crack,
+		tone,
+	};
 }
 
-/** Linear colors of the rock: charcoal faces, grey-brown lighter faces, and black in the cracks. */
-const CHARCOAL = [0.028, 0.027, 0.026];
-const GREY_BROWN = [0.085, 0.078, 0.07];
+/** Linear colors of the rock: warm near-black faces, a dark grey-brown on the lighter ones. */
+const CHARCOAL = [0.022, 0.018, 0.015];
+const GREY_BROWN = [0.05, 0.042, 0.034];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
@@ -145,11 +181,14 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			);
 	}
 	const length = along[count] as number;
+	const tile = length / Math.max(1, Math.round(length / TILE));
 	const list = pillars(length);
+	// The last column repeats the first, with the texture's next repeat, so the ring closes.
 	const columns = count + 1;
-	const positions = new Float32Array(columns * (ROWS + 1) * 3);
-	const colors = new Float32Array(columns * (ROWS + 1) * 3);
-	const uvs = new Float32Array(columns * (ROWS + 1) * 2);
+	const vertices = columns * (ROWS + 1);
+	const positions = new Float32Array(vertices * 3);
+	const colors = new Float32Array(vertices * 3);
+	const uvs = new Float32Array(vertices * 2);
 	for (let row = 0; row <= ROWS; row++) {
 		const share = (row / ROWS) ** ROW_SPREAD;
 		for (let column = 0; column < columns; column++) {
@@ -157,8 +196,8 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			const [x, top, z] = [rim[k] as number, rim[k + 1] as number, rim[k + 2] as number];
 			const y = top + (WALL_FOOT - top) * share;
 			const depth = top - y;
-			const run = along[column] as number;
-			const { offset, crack } = relief(list, length, run, depth);
+			const run = along[column % count] as number;
+			const { offset, crack, tone } = relief(list, length, run, depth);
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
 			const grow = smoothstep(depth, 0, 1.2);
 			const out = (offset + FLARE * depth) * grow;
@@ -167,16 +206,18 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			positions[v] = x * (1 + out / reach);
 			positions[v + 1] = y;
 			positions[v + 2] = z * (1 + out / reach);
-			const lighter = smoothstep(noise.fbm2(run * 0.08, depth * 0.05 + 5, 3), -0.05, 0.3);
-			const dark = 1 - 0.93 * crack * grow;
+			const lighter = smoothstep(aroundNoise(run, length, 0.08, depth * 0.05 + 5, 3), -0.1, 0.3);
+			const light = 0.55 * tone + 0.45 * lighter;
+			const dark = 1 - 0.95 * crack * grow;
 			for (let c = 0; c < 3; c++) {
-				const tone =
-					(CHARCOAL[c] as number) + ((GREY_BROWN[c] as number) - (CHARCOAL[c] as number)) * lighter;
-				colors[v + c] = tone * dark;
+				const shade =
+					(CHARCOAL[c] as number) + ((GREY_BROWN[c] as number) - (CHARCOAL[c] as number)) * light;
+				colors[v + c] = shade * dark;
 			}
-			uvs.set([run / TILE, -y / TILE], (row * columns + column) * 2);
+			uvs.set([(along[column] as number) / tile, -y / tile], (row * columns + column) * 2);
 		}
 	}
+	const normals = ringNormals(positions, columns, ROWS + 1);
 	const indices = new Uint32Array(count * ROWS * 6);
 	for (let row = 0; row < ROWS; row++)
 		for (let column = 0; column < count; column++) {
@@ -184,7 +225,34 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			const b = a + columns;
 			indices.set([a, a + 1, b, a + 1, b + 1, b], (row * count + column) * 6);
 		}
-	return { positions, colors, uvs, indices, computeNormals: true };
+	return { positions, normals, colors, uvs, indices };
+}
+
+/**
+ * The normals of a grid of rows round a ring, whose last column repeats its first: each from its
+ * neighbours along the ring, which wrap round, and down it, so the joining columns shade alike.
+ */
+function ringNormals(positions: Float32Array, columns: number, rows: number): Float32Array {
+	const normals = new Float32Array(positions.length);
+	const ring = columns - 1;
+	const at = (row: number, column: number, axis: number) =>
+		positions[(row * columns + (((column % ring) + ring) % ring)) * 3 + axis] as number;
+	for (let row = 0; row < rows; row++) {
+		const up = Math.max(0, row - 1);
+		const below = Math.min(rows - 1, row + 1);
+		for (let column = 0; column < columns; column++) {
+			const along = [0, 1, 2].map((a) => at(row, column + 1, a) - at(row, column - 1, a));
+			const down = [0, 1, 2].map((a) => at(below, column, a) - at(up, column, a));
+			const [ax, ay, az] = along as [number, number, number];
+			const [dx, dy, dz] = down as [number, number, number];
+			const nx = ay * dz - az * dy;
+			const ny = az * dx - ax * dz;
+			const nz = ax * dy - ay * dx;
+			const size = Math.hypot(nx, ny, nz) || 1;
+			normals.set([nx / size, ny / size, nz / size], (row * columns + column) * 3);
+		}
+	}
+	return normals;
 }
 
 /**
@@ -236,7 +304,7 @@ export function createCliff(
 			wgsl: wallWgsl,
 			vertexColors: true,
 			roughness: 0.9,
-			uniforms: { moss: [0.09, 0.075, 0.025], lichen: [0.13, 0.13, 0.115] },
+			uniforms: { moss: [0.07, 0.058, 0.02], lichen: [0.075, 0.072, 0.064] },
 			textures: {
 				detail: maps.map,
 				detailNormal: maps.normalMap,

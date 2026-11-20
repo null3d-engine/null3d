@@ -4,7 +4,7 @@
 // it, and behind that a hill rises to the terrace that the statue stands on. Moss covers the rest.
 // Everything that stands on the ground asks this module for its height, so the stones, the water
 // and the walls meet the ground where it is.
-import { math, type SketchContext } from '@null3d/engine';
+import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
 import { Noise, type TexelSample, terrain, terrainEdge, textureSet } from '../../lib/procedural';
 
 /** The height of the water's surface. */
@@ -28,7 +28,7 @@ const OVER_CLOUD = 2;
  */
 export const LIPS = { west: -20.3, east: 20 } as const;
 /** How far the rim's straight edge at a lip reaches past the creek's banks, in meters. */
-const LIP_MARGIN = 0.5;
+const LIP_MARGIN = 1.4;
 /** The spring pool near the middle that feeds the creek: its x and how far along it widens. */
 export const POOL = { x: -2, length: 2.8, widening: 1.2, depth: 0.45 } as const;
 /**
@@ -326,7 +326,7 @@ export function cameraFloor(x: number, z: number): number {
 const MOSS = [0.17, 0.135, 0.035];
 const MOSS_DARK = [0.075, 0.075, 0.03];
 const MOSS_BROWN = [0.12, 0.085, 0.035];
-const BED = [0.3, 0.27, 0.215];
+const BED = [0.36, 0.325, 0.26];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
 
@@ -456,10 +456,29 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-/** The cliff's top: the ground's mesh and its material, and the vertices of its rim in order. */
+/** The cliff's top: the vertices of its rim in order, which the walls hang from. */
 export interface Land {
 	/** The rim's vertices, x, y and z, in order up the bearings: where the walls hang from. */
 	readonly rim: Float32Array;
+}
+
+/** The ground's arrays at a detail of `quads`, and its rim's vertices in order up the bearings. */
+export function landArrays(quads: number): { arrays: MeshArrays; rim: Float32Array } {
+	const arrays = terrain({
+		size: RIM * 2,
+		quads,
+		tile: TILE,
+		height: groundHeight,
+		color: groundColor,
+		outline: rimRadius,
+	});
+	const positions = arrays.positions as Float32Array;
+	const edge = terrainEdge(quads);
+	const rim = new Float32Array(edge.length * 3);
+	edge.forEach((v, k) => {
+		rim.set(positions.subarray(v * 3, v * 3 + 3), k * 3);
+	});
+	return { arrays, rim };
 }
 
 /** Makes the ground's mesh, whose detail grows with the preset, and its material. */
@@ -469,14 +488,7 @@ export function createLand(
 	textureSize: number,
 ): Land {
 	const maps = textureSet(textures, textureSize, groundTexel);
-	const arrays = terrain({
-		size: RIM * 2,
-		quads,
-		tile: TILE,
-		height: groundHeight,
-		color: groundColor,
-		outline: rimRadius,
-	});
+	const { arrays, rim } = landArrays(quads);
 	scene.createMesh({
 		mesh: geometry.fromArrays(arrays),
 		material: materials.shader({
@@ -498,12 +510,6 @@ export function createLand(
 		}),
 		receiveShadows: true,
 		castShadows: true,
-	});
-	const positions = arrays.positions as Float32Array;
-	const edge = terrainEdge(quads);
-	const rim = new Float32Array(edge.length * 3);
-	edge.forEach((v, k) => {
-		rim.set(positions.subarray(v * 3, v * 3 + 3), k * 3);
 	});
 	return { rim };
 }
