@@ -136,8 +136,8 @@ fn surface(input: SurfaceInput) -> Surface {
     // Uneven white streak lines ride over the brink into the glassy tongue.
     let streaks = streak_layer(lip + warp * 2.0, crossed, vec2f(3.7, 0.6), 1.9);
     let patches = streak_layer(lip, crossed, vec2f(1.1, 0.3), 2.3);
-    let lines = smoothstep(0.62, 0.85, streaks) * smoothstep(0.25, 0.7, patches);
-    let foam = max(white, lines * 0.8 * (1.0 - white));
+    let lines = smoothstep(0.5, 0.8, streaks) * smoothstep(0.15, 0.6, patches);
+    let foam = max(white, lines * 0.9 * (1.0 - white));
     let body = clamp(rope * mix(0.8, 1.15, froth) * mix(0.9, 1.08, fine), 0.0, 1.0);
     s.baseColor = mix(material.glass, white_color * mix(0.22, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);

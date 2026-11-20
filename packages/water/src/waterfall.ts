@@ -32,7 +32,7 @@ const MOST_SPRAY = 3;
 /** The glassy water's color at the lip: a grey green, as linear red, green and blue. */
 const GLASS = [0.05, 0.075, 0.068] as const;
 /** The meters below the lip over which the water turns from glassy to white. */
-const CLEAR = 1.2;
+const CLEAR = 0.7;
 /** The gap to a wall behind the sheet over which the sheet fades as it nears it, in meters. */
 const SOFTNESS = 0.6;
 /** The light on the spray and the mist when the scene sets none, as a linear color. */
@@ -188,6 +188,9 @@ export async function createWaterfall(
 		color: '#f2f3f2',
 		roughness: 0.95,
 		metalness: 0,
+		// Foam scatters light more than it mirrors it, so its edges catch little of the sky's glare,
+		// which would draw a thin bluish line down a column seen from the side.
+		specularIntensity: 0.35,
 		// Both faces draw, so the column's far side shows through the gaps in its near side.
 		doubleSided: true,
 		alphaMode: 'blend',
