@@ -16,7 +16,8 @@
 #   2. cuts away the generated base and caps the cut, lowers the hair's dome, enlarges the head,
 #      widens the body, turns the front to -y, scales the figure to its height in meters and
 #      stands it in its slab;
-#   3. builds the low round stone slab it sits on: dark, rough, with a sloped edge and moss on top;
+#   3. builds the low oval stone slab it sits on: dark speckled stone, a rough side under a crisp
+#      rim, and moss along the rim, painted once over its own texture;
 #   4. decimates the figure to its triangle budget, keeping the raw texture layout;
 #   5. takes the raw color and normal maps, which the decimated mesh's texture layout shares, and
 #      bakes the occlusion, the curvature, the position and the facing of the raw mesh onto that
@@ -46,8 +47,7 @@ from mathutils.bvhtree import BVHTree
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    arguments, export, fbm, half, image, link, material, normal_map, occlusion_of, orm, smoothstep,
-    stage, value_noise,
+    arguments, export, half, image, link, material, normal_map, orm, smoothstep, stage,
 )
 
 SEED = 20261120
@@ -71,8 +71,9 @@ SEED = 20261120
 # bare chest in the same shares, and `chest_size` the half sizes of the warm area round it, across,
 # deep and up, in meters.
 #
-# `slab` is the stone slab: its height as a share of the figure's, its width as a share of the
-# width across the knees, the slope of its top edge in meters, and the sides of each level.
+# `slab` is the stone slab, an oval: its height as a share of the figure's, its width as a share of
+# the width across the knees, how far its front and back reach past the figure's in meters, the
+# depth of the bevel on its rim in meters, the sides of each level, and its texture's side.
 #
 # `triangles` is the figure's budget at its finest level, `levels` each lower level's share of
 # it, and `texture` the side of every map of the figure in texels.
@@ -90,7 +91,7 @@ STATUE = dict(
     eye=(0.14, 0.05),
     chest=(0.55, 0.5, 0.57),
     chest_size=(0.8, 0.5, 0.8),
-    slab=dict(height=0.1, width=1.25, slope=0.3, sides=(128, 64, 24)),
+    slab=dict(height=0.1, width=1.25, front=0.25, bevel=0.04, sides=(96, 48, 24), texture=1024),
     triangles=30000,
     levels=(0.34, 0.1),
     texture=1024,
@@ -110,7 +111,10 @@ STATUE = dict(
 # the robe's pleats among them, into the normals. `eye` is the color of the pale marks on the eyes,
 # and `warm` the tint that turns the bare chest to a warm near-neutral, as sun bleaches it. The
 # hairline stands `hairline` meters above the eyes; above it the lift on ridges and tops falls
-# away, so the curls stay dark.
+# away, so the curls stay dark. The lower body and the statue's right arm take the `green` tint,
+# from the face's cyan to the concept's gray-green. Lightness above `pale` is halved, so pale
+# patches such as the left knee's stay muted, and warm rust takes the `brown` tint, darker and less
+# pink.
 PATINA = dict(
     middle=0.16,
     contrast=1.4,
@@ -129,15 +133,32 @@ PATINA = dict(
     eye=(0.62, 0.64, 0.60),
     warm=(1.07, 1.0, 0.88),
     hairline=0.55,
+    green=(1.03, 1.0, 0.86),
+    pale=0.42,
+    brown=(0.86, 0.84, 0.74),
 )
 
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
 SKY = (0.58, 0.58, 0.6)
 
-# The slab's stone: the shares of its texture's color that the vertex colors keep on bare stone
-# and on moss, which glTF multiplies into the texture, the roughness of its surface in meters, and
-# the size of the texture's tile in meters.
-SLAB = dict(stone=(0.40, 0.38, 0.35), moss=(0.85, 0.70, 0.05), rough=0.08, tile=3.0)
+# The slab's stone, as display colors: the stone's dark warm gray and the pale and dark specks in
+# it, which `speck` of its texels carry; the moss's colors from its shade to its light, the depth
+# of the band along the rim that it grows in, in meters, the share of that band it covers, and the
+# height of the band at the foot where it grows in patches too; and
+# how far, in meters, the side wanders from its oval, against the rim's own wander.
+SLAB = dict(
+    stone=(0.35, 0.33, 0.29),
+    pale=(0.56, 0.54, 0.49),
+    dark=(0.16, 0.15, 0.13),
+    speck=0.12,
+    moss_shade=(0.27, 0.25, 0.09),
+    moss_light=(0.53, 0.47, 0.17),
+    moss_band=0.45,
+    moss_cover=0.75,
+    moss_foot=0.12,
+    rough=0.07,
+    rim=0.015,
+)
 
 # The largest surface error a lower level may have, as a share of the model's height. A larger one
 # means that the measure counted a hidden surface, such as the cap in the slab, or that the
@@ -624,10 +645,10 @@ def repaint(maps, height, eyes, eye, chest, rng):
     # A small round dip in the occlusion marks a dent that the raw mesh still holds, which would
     # darken into a black pit: there the occlusion, the curvature and the facing take the values
     # round them. A fold's valley runs long, so it stays.
-    dent = np.clip(box_blur(smoothstep(0.05, 0.15, dip(occlusion)), 1) * 2, 0, 1)
-    occlusion = occlusion + dent * (box_blur(occlusion, 8) - occlusion)
-    curvature = curvature + dent * (box_blur(curvature, 8) - curvature)
-    facing = maps['facing'] + dent[..., None] * (np.dstack([box_blur(maps['facing'][..., k], 8) for k in range(3)]) - maps['facing'])
+    dent = np.clip(box_blur(smoothstep(0.05, 0.15, dip(occlusion)), 3) * 3, 0, 1)
+    occlusion = heal(occlusion, dent)
+    curvature = heal(curvature, dent)
+    facing = np.dstack([heal(maps['facing'][..., k], dent) for k in range(3)])
     facing /= np.maximum(np.linalg.norm(facing, axis=2, keepdims=True), 1e-6)
     position = maps['position']
     used = occlusion > 0.02
@@ -645,9 +666,8 @@ def repaint(maps, height, eyes, eye, chest, rng):
     # they take the lightness round them. A painted pleat is dark across but not along itself, so
     # it stays.
     luma = raw @ LUMA
-    around = box_blur(luma, 8)
-    speck = np.clip(box_blur(smoothstep(0.03, 0.08, dip(luma)), 1) * 2, 0, 1) * used
-    luma_filled = luma + speck * (around - luma)
+    speck = np.clip(box_blur(smoothstep(0.03, 0.08, dip(luma)), 3) * 3, 0, 1) * used
+    luma_filled = heal(luma, speck)
     raw = raw * (luma_filled / np.maximum(luma, 0.02))[..., None]
     luma = luma_filled
     # The relief reads the filled color too, and the raw normals go flat where a speck was, so
@@ -672,8 +692,12 @@ def repaint(maps, height, eyes, eye, chest, rng):
     for k, width in enumerate(PATINA['streak_width']):
         streaks = rain_streaks(position + np.array([0.37 * k, -0.21 * k, 0], np.float32), width, rng)
         tone += PATINA['streak'] * (1 if k == 0 else -1) * streaks * below
+    tone = np.where(tone > PATINA['pale'], PATINA['pale'] + 0.5 * (tone - PATINA['pale']), tone)
     tone = np.clip(tone, 0.05, 0.8)
     color = raw * (tone / np.maximum(luma, 0.02))[..., None]
+    # Warm rust darkens toward brown, so it reads less pale and less pink.
+    rusty = smoothstep(0.0, 0.06, color[..., 0] - color[..., 1])
+    color *= 1 + (np.array(PATINA['brown'], np.float32) - 1) * rusty[..., None]
     # Color strength, as the share of the brightest channel that the dullest lacks, held down by
     # moving the channels toward the texel's lightness.
     top_channel = color.max(axis=2)
@@ -687,6 +711,12 @@ def repaint(maps, height, eyes, eye, chest, rng):
     color *= 1 + (np.array(PATINA['rust'], np.float32) - 1) * rust[..., None]
     lichen = smoothstep(0.7, 0.85, noise3(position, 0.03, rng, 2)) * (0.3 + 0.7 * up) * occlusion
     color = mix(color, PATINA['lichen'], 0.55 * lichen)
+
+    # Below the chest and down the statue's right arm the cyan turns gray-green.
+    z, x = position[..., 2], position[..., 0]
+    waist = float(chest[0][2]) - 1.0
+    lower = np.maximum(smoothstep(waist + 0.4, waist - 0.4, z), smoothstep(-1.4, -1.9, x) * smoothstep(waist + 3.0, waist + 2.4, z))
+    color *= 1 + (np.array(PATINA['green'], np.float32) - 1) * lower[..., None]
 
     # The bare chest turns a warm near-neutral, fading out to its edges.
     d = (position - np.array(chest[0], np.float32)) / np.array(chest[1], np.float32)
@@ -702,6 +732,16 @@ def repaint(maps, height, eyes, eye, chest, rng):
         mark = smoothstep(1.0, 0.4, np.sqrt((d * d).sum(axis=2))) * smoothstep(0.2, 0.6, -facing[..., 1])
         color = mix(color, PATINA['eye'], 0.85 * mark)
     return np.clip(color, 0, 1), roughness, metal, occlusion
+
+
+def heal(values, mask, radius=10):
+    """
+    A map with each masked texel moved, by its mask's share, to the mean of the unmasked texels
+    round it, so a filled spot takes its surroundings' value and none of its own.
+    """
+    keep = 1 - mask
+    mean = box_blur(values * keep, radius) / np.maximum(box_blur(keep, radius), 1e-4)
+    return values + mask * (mean - values)
 
 
 def dip(luma):
@@ -768,106 +808,159 @@ def finished_material(name, maps, painted, roughness, metal, occlusion):
 # ---------------------------------------------------------------------------------------------
 
 
-def slab_texture(size, rng):
+def slab_profile(height, bevel, lean):
     """
-    Weathered stone with no cracks, so it repeats unseen: broad tones, a fine grain and small pits,
-    with its height and roughness. Its warm gray is lighter than the slab's, which the vertex colors
-    darken and turn to moss.
+    The slab's outline from its foot up its side, over the bevel to the rim on its top, as each
+    ring's height and its inset from the foot's oval, the last ring being the top's edge.
     """
-    broad = fbm(size, size, 3, 3, rng, 5)
-    grain = value_noise(size, size, 160, 160, rng)
-    pits = smoothstep(0.78, 0.92, value_noise(size, size, 64, 64, rng))
-    height = broad * 0.8 + grain * 0.2 - pits * 0.3
-    tone = 0.5 + 0.22 * (broad - 0.5) + 0.08 * (grain - 0.5) - 0.12 * pits
-    color = np.dstack([tone * 1.03, tone, tone * 0.9])
-    return color, height, 0.85 + 0.1 * (1 - broad)
+    side = [(-0.05, 0.0), (0.2 * height, 0.2 * lean), (0.45 * height, 0.45 * lean), (0.7 * height, 0.7 * lean),
+            (height - bevel, lean)]
+    return side + [(height, lean + bevel)]
 
 
-def slab_material(rng):
-    """The slab's stone, with its normals and its ORM, which the vertex colors multiply."""
-    color, height, rough = slab_texture(512, rng)
-    return material(
-        'slab',
-        image('slab-color', color),
-        image('slab-normal', half(normal_map(height, 4)), 'Non-Color'),
-        image('slab-orm', half(orm(occlusion_of(height, 16), rough)), 'Non-Color'),
-        roughness=0.9,
-    )
+def slab_layout(t, quarter, along, top, rx, ry):
+    """
+    Where a point of the slab lies in its texture: the top as an oval in the lower half, the side as
+    four strips in the upper half, one for each quarter of the way round, from the foot at each
+    strip's bottom to the rim at its top. `t` is the share of its quarter's turn, `along` its share
+    of the way up the side, and `top` its place on the top.
+    """
+    if top is not None:
+        x, y = top
+        return (0.01 + 0.98 * (x + rx) / (2 * rx), 0.01 + 0.48 * (y + ry) / (2 * ry))
+    return (0.01 + 0.98 * t, 0.5 + 0.125 * quarter + 0.004 + 0.117 * along)
 
 
-def stone_slab(name, radius, height, slope, sides, mat):
+def stone_slab(name, rx, ry, height, bevel, sides, mat):
     """
-    A low round stone slab from just below the ground to `height`. Its side leans in a little as it
-    rises, and its top edge slopes in by `slope` meters over a rounded, rough edge. Noise in space
-    roughens the whole surface, most at the edge, the same at every level of detail. The texture
-    tiles round the side and over the top. The vertex colors darken the stone toward its foot, vary
-    it broadly, and lay moss over the top and down the edge in patches.
+    A low oval stone slab from just below the ground to `height`, with semi-axes `rx` and `ry`. Its
+    side leans in a little as it rises and wanders a few centimeters, rough as split stone, up to a
+    crisp bevel `bevel` deep round its top, whose rim wanders far less. The same noise in space
+    shapes every level of detail. The faces of the bevel and the top shade flat, so the rim stays
+    sharp; the side shades smooth. The texture covers the slab once, as `slab_layout` lays it out.
     """
-    # Each ring's height and its inset from the foot's radius: the side, the sloped edge, then
-    # rings on the top that carry the moss's patches.
-    rings = [(-0.05, 0.0), (0.3 * height, 0.01 * radius), (0.6 * height, 0.02 * radius), (height - slope, 0.03 * radius)]
-    rings += [(height - (1 - t) * slope, 0.03 * radius + slope * math.sin(t * math.pi / 2)) for t in (0.35, 0.7, 1.0)]
-    edge = rings[-1][1]
-    rings += [(height, edge + share * radius) for share in (0.06, 0.16, 0.32, 0.55)]
-    tile = SLAB['tile']
-    bm = bmesh.new()
-    uv = bm.loops.layers.uv.new('UVMap')
-    grid = [[bm.verts.new(((radius - inset) * math.cos(a), (radius - inset) * math.sin(a), z))
-             for a in (2 * math.pi * i / sides for i in range(sides))] for z, inset in rings]
-    middle = bm.verts.new((0.0, 0.0, height))
+    lean = 0.03 * min(rx, ry)
+    rings = slab_profile(height, bevel, lean)
     lengths = [0.0]
     for (z0, i0), (z1, i1) in zip(rings, rings[1:]):
         lengths.append(lengths[-1] + math.hypot(z1 - z0, i1 - i0))
+    # One stream of noise for every level, so the levels keep one shape.
+    rng = np.random.default_rng(SEED + 1)
+    angles = [2 * math.pi * i / sides for i in range(sides)]
+    points = []
+    for z, inset in rings:
+        ring = np.array([((rx - inset) * math.cos(a), (ry - inset) * math.sin(a), z) for a in angles], np.float32)
+        points.append(ring)
+    points = np.array(points)
+    flat = points.reshape(-1, 3)
+    wander = (noise3(flat, 0.3, rng) - 0.5) * 2
+    rim = np.repeat([z >= height - bevel - 1e-4 for z, _ in rings], sides)
+    amount = np.where(rim, SLAB['rim'], SLAB['rough'])
+    outward = flat[:, :2] / np.maximum(np.linalg.norm(flat[:, :2], axis=1), 1e-6)[:, None]
+    flat[:, :2] += outward * (wander * amount)[:, None]
+    points = flat.reshape(len(rings), sides, 3)
+
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new('UVMap')
+    grid = [[bm.verts.new(tuple(p)) for p in ring] for ring in points]
+    quarter_sides = sides // 4
     for r in range(len(rings) - 1):
-        top = rings[r][0] == rings[r + 1][0] == height
+        crisp = rings[r][0] >= height - bevel - 1e-4
         for i in range(sides):
             j = (i + 1) % sides
             face = bm.faces.new((grid[r][i], grid[r][j], grid[r + 1][j], grid[r + 1][i]))
+            face.smooth = not crisp
+            quarter = i // quarter_sides
             for loop, (k, row) in zip(face.loops, ((i, r), (i + 1, r), (i + 1, r + 1), (i, r + 1))):
-                if top:
-                    loop[uv].uv = (loop.vert.co.x / tile, loop.vert.co.y / tile)
-                else:
-                    loop[uv].uv = (2 * math.pi * radius * k / sides / tile, lengths[row] / tile)
+                t = (k - quarter * quarter_sides) / quarter_sides
+                loop[uv].uv = slab_layout(t, quarter, lengths[row] / lengths[-1], None, rx, ry)
+    # The top: an inner ring, then a fan to the middle, all flat.
+    edge = rings[-1][1]
+    inner = [bm.verts.new(((rx - edge) * 0.55 * math.cos(a), (ry - edge) * 0.55 * math.sin(a), height)) for a in angles]
+    middle = bm.verts.new((0.0, 0.0, height))
     for i in range(sides):
-        face = bm.faces.new((grid[-1][i], grid[-1][(i + 1) % sides], middle))
-        for loop in face.loops:
-            loop[uv].uv = (loop.vert.co.x / tile, loop.vert.co.y / tile)
-    # The foot is closed too, so a camera below the terrace's level never looks into the slab.
-    foot = bm.faces.new(list(reversed(grid[0])))
-    for loop in foot.loops:
-        loop[uv].uv = (loop.vert.co.x / tile, loop.vert.co.y / tile)
+        j = (i + 1) % sides
+        for corners in ((grid[-1][i], grid[-1][j], inner[j], inner[i]), (inner[i], inner[j], middle)):
+            face = bm.faces.new(corners)
+            face.smooth = False
+            for loop in face.loops:
+                loop[uv].uv = slab_layout(0, 0, 0, (loop.vert.co.x, loop.vert.co.y), rx, ry)
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     bm.free()
-    obj = link(bpy.data.objects.new(name, mesh))
-
-    # One stream of noise for every level, so the levels keep one shape and one moss.
-    rng = np.random.default_rng(SEED + 1)
-    co = vertices_of(obj)
-    reach = np.hypot(co[:, 0], co[:, 1])
-    outward = co[:, :2] / np.maximum(reach, 1e-6)[:, None]
-    near_edge = smoothstep(height - 2 * slope, height - 0.5 * slope, co[:, 2]) * smoothstep(radius - 3 * slope, radius - slope, reach)
-    rough = (noise3(co, 0.35, rng) - 0.5) * 2 * SLAB['rough'] * (0.5 + near_edge)
-    side = (reach > 1e-6) & (co[:, 2] < height - 1e-4)
-    co[:, :2] += np.where(side[:, None], outward * rough[:, None], 0)
-    co[:, 2] += np.where(co[:, 2] >= height - 1e-4, 0.4 * rough, 0)
-    set_vertices(obj, co)
-
-    broad = noise3(co, 1.5, rng, 2)
-    patches = smoothstep(0.38, 0.62, noise3(co, 0.6, rng))
-    on_top = smoothstep(height - slope, height - 0.2 * slope, co[:, 2])
-    down_edge = smoothstep(height - 2.2 * slope, height - slope, co[:, 2]) * smoothstep(0.6, 0.85, noise3(co + 7.0, 0.3, rng))
-    moss = np.clip(on_top * (0.6 + 0.4 * patches) + down_edge, 0, 1)[:, None]
-    foot = smoothstep(-0.05, height * 0.7, co[:, 2])[:, None]
-    stone = np.array(SLAB['stone']) * (0.8 + 0.4 * broad)[:, None] * (0.7 + 0.3 * foot)
-    colors = np.ones((len(co), 4), np.float32)
-    colors[:, :3] = stone * (1 - moss) + np.array(SLAB['moss']) * (0.85 + 0.3 * broad)[:, None] * moss
-    attr = mesh.color_attributes.new('Color', 'FLOAT_COLOR', 'POINT')
-    attr.data.foreach_set('color', np.clip(colors, 0, 1).ravel())
-    mesh.color_attributes.active_color = attr
-    mesh.shade_smooth()
     mesh.materials.append(mat)
-    return obj
+    return link(bpy.data.objects.new(name, mesh))
+
+
+def slab_material(rx, ry, height, bevel, size, rng):
+    """
+    The slab's own texture, painted once over its surface as `slab_layout` lays it out: each texel
+    takes its place on the slab, then dark speckled stone with pale lichen spots, darker toward the
+    foot, and moss in a broken band along the rim, coarse and fine at once, down the side's top and
+    in over the top's edge. Its normals and roughness follow the stone's grain and the moss's tufts.
+    """
+    lean = 0.03 * min(rx, ry)
+    rings = slab_profile(height, bevel, lean)
+    lengths = [0.0]
+    for (z0, i0), (z1, i1) in zip(rings, rings[1:]):
+        lengths.append(lengths[-1] + math.hypot(z1 - z0, i1 - i0))
+    profile = np.array(lengths) / lengths[-1]
+    v, u = np.mgrid[0:size, 0:size].astype(np.float32)
+    u, v = (u + 0.5) / size, (v + 0.5) / size
+    position = np.zeros((size, size, 3), np.float32)
+    rim_distance = np.zeros((size, size), np.float32)
+
+    # The top: the oval, and how far each point stands in from the rim along its ray.
+    top = v < 0.5
+    x = ((u - 0.01) / 0.98 * 2 - 1) * rx
+    y = ((v - 0.01) / 0.48 * 2 - 1) * ry
+    e = np.sqrt((x / rx) ** 2 + (y / ry) ** 2)
+    position[top] = np.dstack([x, y, np.full_like(x, height)])[top]
+    rim_distance[top] = (np.hypot(x, y) * np.maximum(1 / np.maximum(e, 1e-3) - 1, 0))[top]
+
+    # The side: each strip's quarter, the share of its turn, and the way up the outline.
+    quarter = np.clip(((v - 0.5) / 0.125).astype(int), 0, 3)
+    along = np.clip((v - 0.5 - 0.125 * quarter - 0.004) / 0.117, 0, 1)
+    angle = (quarter + np.clip((u - 0.01) / 0.98, 0, 1)) * (math.pi / 2)
+    z = np.interp(along, profile, [r[0] for r in rings])
+    inset = np.interp(along, profile, [r[1] for r in rings])
+    side = ~top
+    position[side] = np.dstack([(rx - inset) * np.cos(angle), (ry - inset) * np.sin(angle), z])[side]
+    rim_distance[side] = ((1 - along) * lengths[-1])[side]
+
+    grain = noise3(position, 0.015, rng, 2)
+    specks = noise3(position + 3.1, 0.012, rng, 2)
+    broad = noise3(position, 1.2, rng, 2)
+    lichen = smoothstep(0.72, 0.8, noise3(position, 0.08, rng, 2))
+    stone = np.broadcast_to(np.array(SLAB['stone'], np.float32), position.shape) * (0.85 + 0.3 * broad + 0.1 * (grain - 0.5))[..., None]
+    pale = smoothstep(1 - SLAB['speck'], 1 - SLAB['speck'] * 0.6, specks)
+    dark = smoothstep(SLAB['speck'], SLAB['speck'] * 0.6, specks)
+    color = mix(stone, SLAB['pale'], pale)
+    color = mix(color, SLAB['dark'], dark)
+    color = mix(color, SLAB['pale'], 0.5 * lichen)
+    foot = smoothstep(0.0, 0.5 * height, position[..., 2])
+    color *= (0.7 + 0.3 * foot)[..., None]
+
+    # Moss: a band along the rim that thins in, broken into patches, with tufts at two scales.
+    band = smoothstep(SLAB['moss_band'], 0.4 * SLAB['moss_band'], rim_distance)
+    band = np.maximum(band, side * smoothstep(SLAB['moss_foot'], 0.3 * SLAB['moss_foot'], position[..., 2]) * 0.8)
+    patches = smoothstep(1 - SLAB['moss_cover'] - 0.1, 1 - SLAB['moss_cover'] + 0.1, noise3(position, 0.35, rng, 3))
+    tufts = noise3(position, 0.02, rng, 2)
+    moss = np.clip(band * patches * smoothstep(0.15, 0.4, tufts + 0.3 * patches), 0, 1)
+    moss_color = mix(np.broadcast_to(np.array(SLAB['moss_shade'], np.float32), position.shape).copy(), SLAB['moss_light'], tufts)
+    color = mix(color, moss_color, moss)
+
+    height_field = 0.6 * grain - 0.4 * dark + 0.8 * moss * tufts
+    rough = 0.86 + 0.1 * moss - 0.05 * pale
+    occlusion = 0.75 + 0.25 * foot
+    return material(
+        'slab',
+        image('slab-color', np.clip(color, 0, 1)),
+        image('slab-normal', normal_map(height_field, 3), 'Non-Color'),
+        image('slab-orm', orm(occlusion, rough), 'Non-Color'),
+        roughness=0.9,
+        tint=False,
+    )
 
 
 # ---------------------------------------------------------------------------------------------
@@ -888,11 +981,30 @@ def toward(azimuth, elevation):
     return Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e)))
 
 
-def overcast(objects, size, samples):
+def preview_ground(radius=6.0):
+    """
+    A stand-in for the terrace the slab sits on, for the previews only: a flat disc of dark mossy
+    ground at the slab's foot, until the scene holds the statue.
+    """
+    bm = bmesh.new()
+    bmesh.ops.create_circle(bm, cap_ends=True, segments=64, radius=radius)
+    mesh = bpy.data.meshes.new('preview-ground')
+    bm.to_mesh(mesh)
+    bm.free()
+    mat = bpy.data.materials.new('preview-ground')
+    bsdf = mat.node_tree.nodes['Principled BSDF']
+    bsdf.inputs['Base Color'].default_value = (0.045, 0.045, 0.02, 1)
+    bsdf.inputs['Roughness'].default_value = 1.0
+    mesh.materials.append(mat)
+    return link(bpy.data.objects.new('preview-ground', mesh))
+
+
+def overcast(objects, size, samples, extra=()):
     """
     The preview's stage under an overcast sky of even light, with a soft sun from the upper left
     of the concept picture's camera, shown with the standard display curve, so a matte surface
-    shows about its own color. The backdrop is the concept picture's pale cloud gray.
+    shows about its own color. The backdrop is the concept picture's pale cloud gray. The `extra`
+    objects show too, without changing the frame.
     """
     cam, low, high = stage(objects, (1.0, 1.0, 1.0), size, samples)
     scene = bpy.context.scene
@@ -919,12 +1031,14 @@ def overcast(objects, size, samples):
     links.new(pick.outputs['Shader'], nodes['World Output'].inputs['Surface'])
     scene.view_settings.view_transform = 'Standard'
     scene.render.film_transparent = False
+    for o in extra:
+        o.hide_render = False
     return cam, low, high
 
 
-def shot(objects, path, location, target, lens, size=(800, 800), samples=48):
+def shot(objects, path, location, target, lens, size=(800, 800), samples=48, extra=()):
     """One perspective picture of the objects from a place toward a point, with a lens in mm."""
-    cam, _, _ = overcast(objects, size, samples)
+    cam, _, _ = overcast(objects, size, samples, extra)
     cam.data.type = 'PERSP'
     cam.data.sensor_fit = 'HORIZONTAL'
     cam.data.lens = lens
@@ -935,9 +1049,9 @@ def shot(objects, path, location, target, lens, size=(800, 800), samples=48):
     bpy.ops.render.render(write_still=True)
 
 
-def ortho_views(objects, folder, name, size=800):
+def ortho_views(objects, folder, name, size=800, extra=()):
     """Front, back, both sides and top, with orthographic cameras that frame the model."""
-    cam, low, high = overcast(objects, (size, size), 32)
+    cam, low, high = overcast(objects, (size, size), 32, extra)
     middle = (low + high) / 2
     extent = high - low
     cam.data.type = 'ORTHO'
@@ -958,7 +1072,7 @@ def ortho_views(objects, folder, name, size=800):
         bpy.ops.render.render(write_still=True)
 
 
-def concept_view(objects, path, size=800):
+def concept_view(objects, path, size=800, extra=()):
     """
     The model as the concept picture's camera sees it, the whole model in the frame with room
     round it.
@@ -969,20 +1083,20 @@ def concept_view(objects, path, size=800):
     middle, radius = (low + high) / 2, (high - low).length / 2
     distance = CONCEPT_VIEW[2]
     lens = 36 * distance / (2.0 * radius)
-    shot(objects, path, middle + toward(*CONCEPT_VIEW[:2]) * distance, middle, lens, (size, size), 64)
+    shot(objects, path, middle + toward(*CONCEPT_VIEW[:2]) * distance, middle, lens, (size, size), 64, extra)
 
 
-def route_views(objects, folder, name):
+def route_views(objects, folder, name, extra=()):
     """
     The model where the route meets it: from the gate, about 17 m away and some 3 m below the
     terrace, looking up the steps; and from the top of the steps, about 7 m from its front, at a
     walker's eye, the whole figure, its face, its hands and its upturned foot.
     """
-    shot(objects, os.path.join(folder, f'{name}-from-gate.png'), (0, -17, -2.9), (0, 0, 3.6), 35)
+    shot(objects, os.path.join(folder, f'{name}-from-gate.png'), (0, -17, -2.9), (0, 0, 3.6), 35, extra=extra)
     near = (0, -7.2, 1.6)
     for view, target, lens in (('whole', (0, 0, 4.0), 20), ('face', (0, -0.3, 6.3), 110),
                                ('hands', (0, -1.3, 2.2), 60), ('foot', (2.2, -1.6, 1.7), 80)):
-        shot(objects, os.path.join(folder, f'{name}-near-{view}.png'), near, target, lens)
+        shot(objects, os.path.join(folder, f'{name}-near-{view}.png'), near, target, lens, extra=extra)
 
 
 def level_views(groups, errors, folder, name):
@@ -1077,10 +1191,12 @@ def finish_statue(spec, raw, rng):
     size = co.max(axis=0) - co.min(axis=0)
     knees = float(size[0])
 
-    mat = slab_material(rng)
-    radius = knees * slab_spec['width'] / 2
+    rx = knees * slab_spec['width'] / 2
+    ry = float(size[1]) / 2 + slab_spec['front']
+    mat = slab_material(rx, ry, slab_height, slab_spec['bevel'], slab_spec['texture'], rng)
+
     def slab_level(k):
-        return stone_slab(f'slab-{k}' if k else 'slab', radius, slab_height, slab_spec['slope'], slab_spec['sides'][k], mat)
+        return stone_slab(f'slab-{k}' if k else 'slab', rx, ry, slab_height, slab_spec['bevel'], slab_spec['sides'][k], mat)
 
     slab = slab_level(0)
     slab_levels, slab_errors = levels_of('slab', slab, slab_level, spec['height'])
@@ -1093,7 +1209,7 @@ def finish_statue(spec, raw, rng):
     statue_levels, statue_errors = levels_of('statue', statue, lambda k: decimated(
         statue, round(spec['triangles'] * spec['levels'][k - 1]), f'statue-{k}'), spec['height'], slab_height)
     bpy.data.objects.remove(high)
-    figures = dict(raw_triangles=raw_triangles, pits_filled=pits, figure=figure, slab=slab_height, knees=knees, depth=float(size[1]), slab_width=2 * radius)
+    figures = dict(raw_triangles=raw_triangles, pits_filled=pits, figure=figure, slab=slab_height, knees=knees, depth=float(size[1]), slab_width=2 * rx, slab_depth=2 * ry)
     parts = [statue, *statue_levels, slab, *slab_levels]
     return parts, {'statue': statue_errors, 'slab': slab_errors}, figures
 
@@ -1112,9 +1228,10 @@ def main():
     if shots:
         finest = [o for o in parts if o.name in ('statue', 'slab')]
         groups = [finest] + [[bpy.data.objects[f'statue-{k}'], bpy.data.objects[f'slab-{k}']] for k in (1, 2)]
-        ortho_views(finest, shots, 'statue')
-        concept_view(finest, os.path.join(shots, 'statue-concept-view.png'))
-        route_views(finest, shots, 'statue')
+        ground = [preview_ground()]
+        ortho_views(finest, shots, 'statue', extra=ground)
+        concept_view(finest, os.path.join(shots, 'statue-concept-view.png'), extra=ground)
+        route_views(finest, shots, 'statue', extra=ground)
         level_views(groups, errors['statue'], shots, 'statue')
 
 main()
