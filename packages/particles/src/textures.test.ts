@@ -1,10 +1,10 @@
-// The particle textures made in code: the soft ones fade to nothing at every frame's edge, so a
-// particle's square never shows its straight sides.
+// The particle textures made in code: each fades to nothing at every frame's edge, so a particle's
+// square never shows its straight sides.
 import { describe, expect, it } from 'bun:test';
 import { particleTextures } from './textures';
 
 /** The texels that a texture's maker writes, and its frames across and down. */
-function texelsOf(name: 'glow' | 'smoke' | 'flame' | 'spark' | 'rain') {
+function texelsOf(name: 'glow' | 'smoke' | 'flame' | 'spark' | 'rain' | 'leaves') {
 	let made: { width: number; height: number; data: Uint8Array } | undefined;
 	const textures = {
 		fromData(data: { width: number; height: number; data: Uint8Array }) {
@@ -17,7 +17,7 @@ function texelsOf(name: 'glow' | 'smoke' | 'flame' | 'spark' | 'rain') {
 }
 
 /** The largest alpha, from 0 to 255, on the texels round the edge of any of a texture's frames. */
-function borderAlpha(name: 'glow' | 'smoke' | 'flame' | 'spark' | 'rain'): number {
+function borderAlpha(name: 'glow' | 'smoke' | 'flame' | 'spark' | 'rain' | 'leaves'): number {
 	const { width, height, data, columns, rows } = texelsOf(name);
 	const across = width / columns;
 	const down = height / rows;
@@ -34,8 +34,8 @@ function borderAlpha(name: 'glow' | 'smoke' | 'flame' | 'spark' | 'rain'): numbe
 }
 
 describe('the particle textures', () => {
-	it('fade to nothing at the edge of every frame of the soft ones', () => {
-		for (const name of ['glow', 'smoke', 'flame', 'spark', 'rain'] as const)
+	it('fade to nothing at the edge of every frame', () => {
+		for (const name of ['glow', 'smoke', 'flame', 'spark', 'rain', 'leaves'] as const)
 			expect(borderAlpha(name)).toBeLessThanOrEqual(5);
 	});
 });
