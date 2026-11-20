@@ -624,7 +624,7 @@ def repaint(maps, height, eyes, eye, chest, rng):
     # A small round dip in the occlusion marks a dent that the raw mesh still holds, which would
     # darken into a black pit: there the occlusion, the curvature and the facing take the values
     # round them. A fold's valley runs long, so it stays.
-    dent = np.clip(box_blur(smoothstep(0.08, 0.2, dip(occlusion)), 1) * 2, 0, 1)
+    dent = np.clip(box_blur(smoothstep(0.05, 0.15, dip(occlusion)), 1) * 2, 0, 1)
     occlusion = occlusion + dent * (box_blur(occlusion, 8) - occlusion)
     curvature = curvature + dent * (box_blur(curvature, 8) - curvature)
     facing = maps['facing'] + dent[..., None] * (np.dstack([box_blur(maps['facing'][..., k], 8) for k in range(3)]) - maps['facing'])
