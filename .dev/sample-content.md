@@ -70,10 +70,10 @@ The showcase scenes' trees and plants, and Creek's cave, are organic shapes that
 
 | Script | Builds |
 | --- | --- |
-| `common.py` | The parts that both scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the export with levels of detail, and the Cycles preview |
+| `common.py` | The parts that both scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the crown of leaf cards on pads at the branches' ends, the export with levels of detail, and the Cycles preview |
 | `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers and a cave mouth with boulders. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss |
 | `island.py` | The island's models: a stone pine, an olive, a holm oak and an oleander, each with a card of the whole plant for the far copies. numpy paints every leaf, needle, flower and bark texture, and Blender bakes the cards from the plants themselves |
-| `build.ts` | Runs a script in Blender, optimizes each model with the asset tool, packs each model's KTX2 textures into its own file, and checks that every part that sways kept its sway |
+| `build.ts` | Runs a script in Blender, optimizes each model with the asset tool, packs each model's KTX2 textures into its own file, and checks that every part that sways kept its sway. The options after the output folder go to the script |
 | `creek.ts`, `island.ts` | Each scene's models for `build.ts` |
 
 Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bun tools/samples/blender/island.ts <folder>`. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
@@ -116,7 +116,7 @@ An island plant's card is two upright quads crossed through its trunk and a leve
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 272 MB now.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 400 MB in all. They are 272 MB at the pinned commit, and the Creek garden's models add about 100 MB.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 

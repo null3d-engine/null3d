@@ -35,9 +35,9 @@ from mathutils.kdtree import KDTree
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    Builder, arguments, at_distance, blend_up, close_up, dilate, export, fbm, frame_of, half, image, leaf_color,
-    leaf_mask, link, material, normal_map, occlusion_of, orm, over, preview, smoothstep, sprig_atlas, strip,
-    tent, tube, value_noise,
+    Builder, arguments, at_distance, blend_up, branch_phase, close_up, dilate, export, fbm, frame_of, half, image,
+    leaf_color, leaf_mask, link, material, normal_map, occlusion_of, orm, over, preview, rock_texture, smoothstep,
+    sprig_atlas, strip, tent, tube, value_noise,
 )
 
 SEED = 20261011
@@ -85,19 +85,6 @@ def bark(kind, w, h, rng):
         white = np.array([0.86, 0.85, 0.80])[None, None] * (0.85 + 0.2 * mottle[..., None])
         color = white * (1 - dark[..., None]) + np.array([0.14, 0.13, 0.12]) * dark[..., None]
         rough = 0.55 + 0.35 * dark
-    return color, height, rough
-
-
-def rock_texture(size, rng):
-    """Weathered stone: broad tones, cracks and grains, with its height and roughness."""
-    broad = fbm(size, size, 4, 4, rng, 6)
-    cracks = 1 - smoothstep(0.0, 0.035, np.abs(fbm(size, size, 6, 6, rng, 4) - 0.5))
-    grain = value_noise(size, size, 256, 256, rng)
-    height = broad * 1.4 - cracks * 0.5 + grain * 0.12
-    tone = 0.5 + 0.35 * broad - 0.12 * cracks + 0.08 * grain
-    warm = fbm(size, size, 3, 3, rng, 3)
-    color = np.dstack([tone * (0.62 + 0.08 * warm), tone * (0.60 + 0.05 * warm), tone * 0.56])
-    rough = 0.8 + 0.15 * (1 - broad)
     return color, height, rough
 
 
@@ -231,11 +218,6 @@ TREE_LEVELS = (
 # tree: a twig swings more than the bough it grows from. A leaf card at the crown's rim adds its own.
 BRANCH_FREEDOM = 0.25
 LEAF_FREEDOM = 0.2
-
-
-def branch_phase(index):
-    """A branch's phase of flutter, from its place in the tree, spread by the golden ratio."""
-    return (index * 0.6180339887) % 1.0
 
 
 def tree_top(branches):

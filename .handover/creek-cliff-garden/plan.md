@@ -99,13 +99,13 @@ Foliage, ferns, hostas, azaleas and cushion plants stay as the Blender script's 
 
 **Credits:** a dry run of an image with detailed PBR textures on H3.1 estimates 40 credits; the same picture on P2 estimates 110. About a dozen models (the statue, the gate, a lantern, 6 to 8 boulders and two trunks) cost about 500 credits on H3.1, so the 970 credits cover one pass and some retries.
 
-**Rights:** Tripo3D's terms, read on 2026-11-20, give a paid account the rights to its outputs, publishing and selling included (section 5.2.2). The outputs are not exclusive, and they may not be used to build a competing 3D-generation service (section 3.2). A free account would not hold these rights (section 5.2.1). The account bought its credits, so the models may go into the public sample-assets repository.
+**Rights:** Tripo3D's terms, read on 2026-11-20, give a paid account the rights to its outputs, publishing and selling included (section 5.2.2). The outputs are not exclusive, and they may not be used to build a competing 3D-generation service (section 3.2). A free account would not hold these rights (section 5.2.1). The account bought its credits, so the models may go into the public sample-assets repository. They go in under CC BY-NC 4.0 (owner, 2026-11-20): CC0 and CC BY would allow the competing use that Tripo3D's terms bar. Every model finished from a Tripo3D model carries the same licence, while models made only by script or in code stay CC0. The sample-assets branch `creek-garden` adds CC BY-NC to that repository's accepted licences, and each raw model is committed there the moment it is downloaded.
 
 ## Design
 
 ### 1. Land and cliff (`creek/land.ts`)
 
-- **Shape:** the height function becomes a raised disc with a noisy rim, about 60 to 70 m in radius. A terrace rises about 8 to 10 m above the water for the statue, with a channel across the middle. The water stays at height zero, so the placement rules that read height above water keep their meaning, and the camera and route tests that read the water level hold.
+- **Shape:** the height function becomes a raised disc with a noisy rim, 44 to 60 m across (about 26 m in radius). A terrace rises 4.5 to 5 m above the water for the statue, about 29 steps, with a channel across the middle. These sizes follow the concept picture's proportions with the statue at 8 m (the lead's scale ruling of 2026-11-20, from the fidelity reviewer's measurements); the cloud tops lie 10 to 13 m below the rim and the creek is 5 to 6.4 m wide. The water stays at height zero, so the placement rules that read height above water keep their meaning, and the camera and route tests that read the water level hold.
 - **The ground stays Creek's own mesh** (`terrain()` in `examples/lib/procedural.ts`), with its painted colors and detail maps, not the terrain add-on. There are three reasons:
   - The land shrinks from a 160 m square to a disc, so the same quads give finer detail.
   - The terrain's layers repeat at a fixed spacing, so they cannot curve raked lines around stones.
@@ -179,14 +179,14 @@ What changes:
 - **Remove:** the fallen logs, which do not suit a tended garden.
 - **No hand-over:** on a disc this small, every tree can stay a mesh with dithered levels. That avoids the owner's main tree complaint. Check the cost from the wide orbit. Add far cards through `@null3d/impostors` only if the figures require them, as the island does.
 
-| Starting targets at Medium, to tune | Today (160 m square) | Garden (about 15,000 m²) |
+| Starting targets at Medium, to tune | Today (160 m square) | Garden (about 2,100 m², as the concept shows) |
 | --- | --- | --- |
-| Trees and saplings | 21, placed by hand | about 800 |
-| Shrubs, ferns, hostas, azaleas | placed by rule | about 6,000 |
-| Boulders and stones | Creek's rocks, and 3,000 pebbles | about 1,500, and pebbles |
-| Grass tufts at High | 52,000 | up to 52,000, in patches |
+| Trees and saplings | 21, placed by hand | 20 to 25, placed by hand, as in the concept |
+| Shrubs, ferns, hostas, azaleas | placed by rule | as dense as the concept: almost no bare soil |
+| Boulders and stones | Creek's rocks, and 3,000 pebbles | the concept's boulders by hand, stones by rule, and pebbles |
+| Grass tufts at High | 52,000 | the banks and patches only, density to match the concept |
 
-**Grass:** the chosen ground is moss and gravel, so grass only needs the banks and some patches. Today's tufts, packed into about 40% of the disc, give about 9 a square meter with no new triangles. So the garden does not need GPU-built grass, and the old zone design goes. Moss close up needs the low cushion plants, or it reads flat. Measure the grass's cost at High.
+**Grass:** the chosen ground is moss and gravel, so grass only needs the banks and some patches. The disc is small, so today's tufts more than cover it with no new triangles, and the garden does not need GPU-built grass; the old zone design goes. Moss close up needs the low cushion plants, or it reads flat. Measure the grass's cost at High.
 
 **Wind reach:** the grass sways within 8 to 32 m by preset, so far grass stands still in the wide view. Trees and plants sway out to 120 m, and leaves fall through the whole view, which may be enough. Show the owner this view. A longer grass reach needs a ruling.
 
