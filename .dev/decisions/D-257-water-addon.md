@@ -378,6 +378,22 @@ Where a pixel covers 6 to 15 cm, the caustics give way to that mean. With the ch
 keeps the sharp ridges. Both copies of the caustics take the power as an argument, so the test
 that holds them equal still holds.
 
+## The foam's pattern
+
+The foam's flecks were noise that slid by the current times the sketch's time. Where the current
+changes from point to point, that offset changes too, and it grows with every second. So after a
+while the pattern was stretched into slanted strokes, like a printed hatch. Its cells were also
+longer one way than the other, and nothing faded them where a pixel covered several. Far off they
+broke into a regular grid of dots.
+
+The flecks now use two copies of the pattern. Each copy rides the current for 1.6 s and then
+starts afresh at a new place. The two take turns half a cycle apart, and each is weighted to
+nothing at the moment it starts again. So the pattern moves with the water and never stretches.
+Two noises blended lose some of their spread, and the blend gives it back. The clumps are round,
+six to a meter, with a finer octave, and each octave gives way to its mean where a pixel covers
+one of its clumps. The foam map still places the foam, so its coverage did not change. In the
+Creek's close view the lower water's middle brightness moved by one level.
+
 ## Rain on the surface
 
 A storm rains on the water, so the surface takes a `rain` amount from 0 to 1, and `setRain` changes
