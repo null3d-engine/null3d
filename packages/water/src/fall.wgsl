@@ -26,8 +26,9 @@ struct Uniforms {
 
 /// The ropes that the white water parts into, for each meter round the column.
 const ROPES_PER_METER: f32 = 0.9;
-/// The length of the froth's clumps, in meters.
+/// The width of the froth's clumps across the fall, and their length down it, in meters.
 const CLUMP: f32 = 0.35;
+const CLUMP_LENGTH: f32 = 0.9;
 /// The steady speed that falling water nears, and the time that the air takes to slow it, as the
 /// path of falling water gives them.
 const FALL_SPEED: f32 = 15.0;
@@ -67,13 +68,14 @@ fn distance_of(depth: f32) -> f32 {
     return far - depth * (far - near);
 }
 
-/// The froth's clumps, from 0 to 1, about a third of a meter long wherever they are on the fall.
+/// The froth's clumps, from 0 to 1, about a third of a meter wide and a meter long wherever they
+/// are on the fall.
 /// Each layer rides with the water, so its clumps stretch as the water speeds up; the clumps fade
 /// from a layer whose cells grow too long into one with more cells for each second.
 fn clumps(lip: f32, crossed: f32, t: f32, seed: f32) -> f32 {
     // How fast the water falls after `t` seconds, near enough for the clumps' length.
     let speed = max(1.2, FALL_SPEED * tanh(t / DRAG_TIME));
-    let k = clamp(log(speed / (CLUMP * 3.0)) / log(3.0), 0.0, 2.0);
+    let k = clamp(log(speed / (CLUMP_LENGTH * 3.0)) / log(3.0), 0.0, 2.0);
     let wa = clamp(1.0 - k, 0.0, 1.0);
     let wc = clamp(k - 1.0, 0.0, 1.0);
     let wb = 1.0 - wa - wc;
@@ -102,10 +104,12 @@ fn surface(input: SurfaceInput) -> Surface {
     let lip = around * 5.7 * material.halfWidth;
 
     // Froth: clumps a third of a meter across that ride down with the water, and a finer grain.
-    // They break the ropes' outlines and give the white water its rough, broken look.
+    // They break the ropes' outlines and give the white water its rough, broken look. A grain finer
+    // still roughens the froth and the outline seen close up, and gives way to its mean further off.
     let tuft = clumps(lip, crossed, t, 1.71);
     let grain = clumps(lip * 2.3, crossed * 2.3, t, 1.83);
     let froth = smoothstep(0.15, 0.85, 0.65 * tuft + 0.35 * grain);
+    let fine = clumps(lip * 6.0, crossed * 6.0, t, 2.41);
 
     // Ropes: two sets of round bundles at different spacings, bent and widened by slow noise, so
     // they wander as the water falls and no two gaps are alike. Each rope is bright at its core
@@ -118,7 +122,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let more = lip * ROPES_PER_METER * 1.7 + warp * 2.6 + 0.31;
     let beside = (2.0 * (fract(more) - 0.5)) / mix(0.7, 1.2, 1.0 - ropes);
     let core = max(clamp(1.0 - inside * inside, 0.0, 1.0), 0.8 * clamp(1.0 - beside * beside, 0.0, 1.0));
-    let lumpy = smoothstep(0.0, 0.75, core + (froth - 0.5) * 0.9);
+    let lumpy = smoothstep(0.0, 0.8, core + (froth - 0.5) * 0.5);
     let banded = 1.0 - smoothstep(0.3, 0.6, fwidth(more));
     // The glassy tongue over the lip is one smooth body; the ropes part out of it as it turns white.
     let white = smoothstep(0.0, material.clear, fallen);
@@ -129,7 +133,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let patches = streak_layer(lip, crossed, vec2f(1.1, 0.3), 2.3);
     let lines = smoothstep(0.62, 0.85, streaks) * smoothstep(0.25, 0.7, patches);
     let foam = max(white, lines * 0.8 * (1.0 - white));
-    let body = clamp(rope * mix(0.6, 1.2, froth), 0.0, 1.0);
+    let body = clamp(rope * mix(0.78, 1.15, froth) * mix(0.85, 1.08, fine), 0.0, 1.0);
     s.baseColor = mix(material.glass, white_color * mix(0.42, 1.08, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
@@ -137,7 +141,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
     // The froth gives the surface a fine relief. White water scatters the light that reaches it
     // from all round, so it takes the sky's light as a surface facing up does, and reads white.
-    let relief = (0.08 * lumpy + 0.05 * froth) * white;
+    let relief = (0.08 * lumpy + 0.05 * froth + 0.02 * fine) * white;
     s.normal = bent_normal(input.normal, input.relativePosition, relief);
     s.ambientNormal = normalize(mix(s.normal, vec3f(0.0, 1.0, 0.0), 0.7 * white));
 
@@ -154,7 +158,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // and by lobes that ride with the water, so no edge is clean, whichever way the column is seen.
     let grazing = abs(dot(input.normal, input.viewDirection));
     let lobes = value2(vec2f(around * 9.0 + 11.0, crossed * 2.2));
-    alpha *= smoothstep(0.1, 0.5, grazing + (froth - 0.5) * 1.1 + (lobes - 0.5) * 0.5);
+    alpha *= smoothstep(0.1, 0.5, grazing + (froth - 0.5) * 1.1 + (lobes - 0.5) * 0.5 + (fine - 0.5) * 0.5);
     // The water gives way to the mist over the lower half of the drop, so it never lands. Each
     // clump ends at its own height, so no line runs across the fall.
     let ending = share + (froth - 0.5) * 0.3 + (core - 0.5) * 0.12;
