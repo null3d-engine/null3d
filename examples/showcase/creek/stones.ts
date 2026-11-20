@@ -171,30 +171,18 @@ export function rockPlaces(): StonePlace[] {
 			const across = ((k + 0.5) / count) * 1.6 - 0.8 + (next() - 0.5) * 0.15;
 			add(x, across, 0.42 + 0.25 * next(), 'broken');
 		}
-	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge.
+	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge. Each
+	// stands back from the lip by its own foot's reach, so it stays wholly on the cliff.
 	for (const lip of [LIPS.west, LIPS.east]) {
 		const inward = -Math.sign(lip);
+		const atLip = (back: number, across: number, size: number) =>
+			add(lip + inward * (size * ROCK_REACH + 0.25 + back), across, size, 'broken');
 		for (const side of [-1, 1]) {
-			add(
-				lip + inward * (0.7 + 0.4 * next()),
-				side * (1.05 + 0.1 * next()),
-				0.6 + 0.2 * next(),
-				'broken',
-			);
-			add(
-				lip + inward * (1.8 + 0.5 * next()),
-				side * (1.0 + 0.1 * next()),
-				0.45 + 0.15 * next(),
-				'broken',
-			);
+			atLip(0.3 * next(), side * (1.0 + 0.1 * next()), 0.6 + 0.2 * next());
+			atLip(1.0 + 0.5 * next(), side * (1.0 + 0.1 * next()), 0.45 + 0.15 * next());
 		}
 		for (const across of [-0.45, 0.1, 0.55])
-			add(
-				lip + inward * (1.1 + 1.2 * next()),
-				across + (next() - 0.5) * 0.15,
-				0.4 + 0.15 * next(),
-				'broken',
-			);
+			atLip(1.0 * next(), across + (next() - 0.5) * 0.15, 0.4 + 0.15 * next());
 	}
 	return places;
 }

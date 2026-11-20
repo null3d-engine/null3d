@@ -44,9 +44,9 @@ const LIP_RECESS = {
 	back: 0.9,
 	water: 0.7,
 	sheet: 1.05,
-	clear: 3,
-	proud: 0.15,
-	press: 0.35,
+	clear: 2,
+	proud: 0.3,
+	press: 0.5,
 } as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
@@ -57,20 +57,24 @@ const noise = new Noise(53);
 const { smoothstep } = math;
 
 /**
- * The rock's texel: dark stone mottled in broad patches with fine grain, in a near-white tone that
- * the colors tint. No small marks repeat, so no print shows on the face.
+ * The rock's texel: dark stone mottled in broad patches with fine grain, pitted, and crossed by a
+ * wandering net of thin black cracks, in a near-white tone that the colors tint. No small marks
+ * repeat, so no print shows on the face.
  */
 function rockTexel(u: number, v: number, out: TexelSample): void {
 	const broad = noise.fbm2(u * 4, v * 4, 5, 4);
 	const grain = noise.fbm2(u * 48, v * 48, 2, 48);
-	const pits = noise.fbm2(u * 14, v * 14, 3, 14);
-	out.height = broad * 10 + grain * 3 - Math.max(0, pits) * 6;
-	const tone = 0.86 + 0.14 * broad + 0.05 * grain;
+	const pits = Math.max(0, noise.fbm2(u * 14, v * 14, 3, 14));
+	// The broad mottling bends the cracks' lines, so they wander and still tile.
+	const lines = noise.value2(u * 4 + broad * 0.6, v * 4 + broad * 0.6, 4);
+	const crack = 1 - smoothstep(Math.abs(lines), 0, 0.045);
+	out.height = broad * 10 + grain * 3 - pits * 8 - crack * 5;
+	const tone = (0.86 + 0.14 * broad + 0.05 * grain) * (1 - 0.35 * pits) * (1 - 0.75 * crack);
 	out.r = tone;
 	out.g = tone * 0.97;
 	out.b = tone * 0.94;
 	out.roughness = 0.84 + 0.12 * broad;
-	out.occlusion = 0.9 + 0.1 * smoothstep(broad, -0.3, 0.3);
+	out.occlusion = (0.9 + 0.1 * smoothstep(broad, -0.3, 0.3)) * (1 - 0.5 * crack);
 }
 
 /** One block of a pillar: its foot below the rim, how far it stands out, and its face's tilt. */
@@ -93,7 +97,7 @@ interface Pillar {
 }
 
 /** Splits the rim's length into pillars of uneven width, each with its own run of blocks. */
-function pillars(length: number): Pillar[] {
+export function pillars(length: number): Pillar[] {
 	const next = random(57);
 	const list: Pillar[] = [];
 	let at = 0;
@@ -142,7 +146,7 @@ export function aroundNoise(
  * meters; how deep in a crack the place lies, from 0 on a face to 1 in a crack's back; and how light
  * the block there reads.
  */
-function relief(
+export function relief(
 	list: readonly Pillar[],
 	length: number,
 	along: number,
@@ -286,7 +290,7 @@ function lipShares(x: number, z: number): { water: number; sheet: number; clear:
 		const share = (from: number, over: number) => 1 - smoothstep(reach, from, from + over);
 		water = Math.max(water, share(half * LIP_RECESS.water, 0.25));
 		sheet = Math.max(sheet, share(half * LIP_RECESS.sheet, 0.8));
-		clear = Math.max(clear, share(half * LIP_RECESS.clear, 3));
+		clear = Math.max(clear, share(half * LIP_RECESS.clear, 2));
 	}
 	return { water, sheet, clear };
 }

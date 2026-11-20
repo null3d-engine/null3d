@@ -55,8 +55,8 @@ export const SHOTS: readonly Shot[] = [
 	{ position: over(-2.5, 1.5), target: over(-14.5, 0.5), seconds: 6 },
 	// On past the pool toward the west lip, then out over the near bank, looking back at the lip
 	// where the creek leaves over the edge into the cloud.
-	{ position: over(-12, 1.8), target: over(-19.5, 0.4), seconds: 6 },
-	{ position: [-17, 4.5, 24], target: [-19, 0.5, 14], seconds: 7 },
+	{ position: over(-12, 1.8), target: over(-19.5, 0.9), seconds: 6 },
+	{ position: [-17, 4.5, 24], target: over(-19, 0.9), seconds: 7 },
 	// Up and round to the opening view, which closes the loop.
 	{ position: [-14, 12, 40], target: [-4, 1.5, 12], seconds: 8 },
 ];
