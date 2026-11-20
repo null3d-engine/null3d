@@ -21,6 +21,7 @@ import tempfile
 import bpy
 import numpy as np
 from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 
 # ---------------------------------------------------------------------------------------------
 # Textures
@@ -545,17 +546,29 @@ def sprig_atlas(size, rng, leaves, length, width, tones, underside, twig, taper=
     return dilate(out)
 
 
-def needle_atlas(size, rng):
+def needle_atlas(size, rng, tones=((0.2, 0.33, 0.15), (0.21, 0.34, 0.16)), twig=(0.32, 0.2, 0.12), mat=False):
     """
     A pine's needles: three tufts seen from above, each a burst of long fine needles from a
     hidden twig, and a cell of a twig end seen from the side with its needles brushing upward.
-    Every needle stays inside its cell, and its edge fades over a texel.
+    `tones` gives the needles' color in the tufts and on the twig, and `twig` the twig's. Every
+    needle stays inside its cell, and its edge fades over a texel. With `mat`, the last cell is
+    instead a dense, opaque mat of short needles every way, for the body of a crown's pads.
     """
     cell, offsets = cells(size)
     out = np.zeros((size, size, 4), np.float32)
     for k, (oy, ox) in enumerate(offsets):
         tile = np.zeros((cell, cell, 4), np.float32)
-        if k < 3:
+        if k == 3 and mat:
+            tile[..., :3] = np.array(tones[1]) * 0.55
+            tile[..., 3] = 1.0
+            for _ in range(2600):
+                a = rng.random() * 2 * math.pi
+                start = (0.02 + 0.96 * rng.random(), 0.02 + 0.96 * rng.random())
+                reach = 0.03 + 0.05 * rng.random()
+                end = (min(0.99, max(0.01, start[0] + math.cos(a) * reach)), min(0.99, max(0.01, start[1] + math.sin(a) * reach)))
+                tone = np.array(tones[1]) * (0.6 + 0.6 * rng.random())
+                paint_line(tile, start, end, 0.003, tone)
+        elif k < 3:
             # Several twig ends crowd into one tuft, so its outline is lumpy, not a round brush.
             for _ in range(5):
                 cx, cy = 0.5 + rng.normal(0, 0.1), 0.5 + rng.normal(0, 0.1)
@@ -564,11 +577,11 @@ def needle_atlas(size, rng):
                     reach = 0.12 + 0.2 * rng.random()
                     end = (cx + math.cos(a) * reach, cy + math.sin(a) * reach)
                     end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                    tone = np.array([0.2, 0.33, 0.15]) * (0.75 + 0.5 * rng.random())
+                    tone = np.array(tones[0]) * (0.75 + 0.5 * rng.random())
                     paint_line(tile, (cx, cy), end, 0.0045, tone)
         else:
             # A twig from the middle of the bottom edge, with needles in pairs along it.
-            paint_line(tile, (0.5, 0.0), (0.5, 0.75), 0.012, [0.32, 0.2, 0.12])
+            paint_line(tile, (0.5, 0.0), (0.5, 0.75), 0.012, twig)
             for j in range(90):
                 v = 0.05 + 0.75 * rng.random()
                 side = 1 if j % 2 else -1
@@ -576,7 +589,7 @@ def needle_atlas(size, rng):
                 reach = 0.15 + 0.12 * rng.random()
                 end = (0.5 + math.cos(a) * reach, v + math.sin(a) * reach)
                 end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                tone = np.array([0.21, 0.34, 0.16]) * (0.75 + 0.5 * rng.random())
+                tone = np.array(tones[1]) * (0.75 + 0.5 * rng.random())
                 paint_line(tile, (0.5, v), end, 0.0045, tone)
         out[oy:oy + cell, ox:ox + cell] = tile
     return dilate(out)
@@ -662,12 +675,14 @@ def leaf_part(spec, plant, places, rng, grow):
       cells    the atlas cells the cards draw from; fold and bend shape them as `card` says
       tent     true draws each card as a `tent`, bent across and along, whose rise is `fold`
       tint     the color that multiplies every card's
+      shade    the darkest a card grows under the crown and inside it, which defaults to 0.35
     """
     leaves = Builder()
     top = plant_top(plant)
     reach = plant_reach(plant)
     center = Vector(np.array([tuple(c) for c, _, _ in plant.pads]).mean(axis=0))
     tint = Vector(spec['tint'])
+    shade = spec.get('shade', 0.35)
     for p, n, branch in places:
         facing = (n * (1 - spec['lift']) + Vector((0, 0, spec['lift']))).normalized()
         facing = (facing + Vector(rng.normal(0, spec['scatter'], 3))).normalized()
@@ -683,7 +698,7 @@ def leaf_part(spec, plant, places, rng, grow):
         base = p - along * size * spec['centered']
         # Darker under the crown and inside it, lighter on top and at the rim.
         rim = min(1.0, (p - center).length / max(reach, 1e-3))
-        ao = 0.35 + 0.65 * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
+        ao = shade + (1 - shade) * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
         hue = 0.9 + 0.2 * rng.random()
         color = tuple(ao * hue * c for c in tint)
         sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
@@ -692,6 +707,50 @@ def leaf_part(spec, plant, places, rng, grow):
         else:
             card(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
     return leaves
+
+
+# ---------------------------------------------------------------------------------------------
+# Levels of detail
+# ---------------------------------------------------------------------------------------------
+
+# A pixel's size, in meters for each meter away, on a screen 1,080 pixels high at a 45 degree view:
+# a level's error over this is the distance past which it changes the picture by under a pixel.
+PIXEL_PER_METER = 0.00077
+
+
+def surface_points(obj, count, rng):
+    """`count` points spread over an object's surface by area, in its own frame."""
+    mesh = obj.data
+    mesh.calc_loop_triangles()
+    co = np.empty(len(mesh.vertices) * 3, np.float32)
+    mesh.vertices.foreach_get('co', co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    tris = np.empty(len(mesh.loop_triangles) * 3, np.int32)
+    mesh.loop_triangles.foreach_get('vertices', tris)
+    a, b, c = (co[tris.reshape(-1, 3)[:, k]] for k in range(3))
+    area = np.linalg.norm(np.cross(b - a, c - a), axis=1) / 2
+    pick = rng.choice(len(area), count, p=area / area.sum())
+    u, v = rng.random(count), rng.random(count)
+    flip = u + v > 1
+    u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+    return a[pick] + (b[pick] - a[pick]) * u[:, None] + (c[pick] - a[pick]) * v[:, None]
+
+
+def level_error(level, full, share=0.95, count=20000, seed=1):
+    """
+    A lower level's surface error, in meters: the distance below which `share` of the points spread
+    over both surfaces lie from the other surface. A level that drops leaf cards moves a few points
+    far, so the largest distance would keep the finest level on screen for no gain, while the
+    share counts the change that the eye sees.
+    """
+    def tree(obj):
+        return BVHTree.FromPolygons([v.co for v in obj.data.vertices], [p.vertices for p in obj.data.polygons])
+
+    rng = np.random.default_rng(seed)
+    gaps = []
+    for points, onto in ((surface_points(level, count, rng), tree(full)), (surface_points(full, count, rng), tree(level))):
+        gaps += [onto.find_nearest(Vector(p))[3] or 0.0 for p in points]
+    return float(np.quantile(gaps, share))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -757,6 +816,8 @@ def export(path, objects, masked, levels=(), one_sided=()):
         lower = set()
         for k, node in enumerate(doc['nodes']):
             errors = levels.get(node['name'], ()) if isinstance(levels, dict) else levels
+            if not errors and f"{node['name']}-1" in index:
+                raise SystemExit(f"{node['name']} has lower levels but no level errors to give them")
             ids = [index[f"{node['name']}-{n}"] for n in range(1, len(errors) + 1) if f"{node['name']}-{n}" in index]
             if not ids:
                 continue
