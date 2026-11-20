@@ -36,8 +36,9 @@ const CLEAR = 1.2;
 const SOFTNESS = 0.6;
 /** The light on the spray and the mist when the scene sets none, as a linear color. */
 const MIST_LIGHT = [0.92, 0.93, 0.95] as const;
-/** The longest life of a puff of the froth, of the mist and of the plume, in seconds. */
+/** The longest life of a puff of the froth, the body's spray, the mist and the plume, in seconds. */
 const FROTH_LIFE = 1.8;
+const BODY_LIFE = 1.6;
 const MIST_LIFE = 4.5;
 const PLUME_LIFE = 9;
 
@@ -258,6 +259,23 @@ export async function createWaterfall(
 					alphaOverLife: [0, 0.85, 0.5, 0],
 					opacity: 0.55,
 				};
+			if (place.kind === 'body')
+				// White spray that falls with the water inside the column, between its veils.
+				return {
+					...base,
+					capacity: room(place.rate, BODY_LIFE),
+					speed: [0, 0.6],
+					velocity: [0, -6, 0.4],
+					gravity: [0, -4, 0],
+					drag: 0.3,
+					turbulence: 0.3,
+					turbulenceScale: 0.8,
+					lifetime: [0.8, BODY_LIFE],
+					size: [0.25 * half, 0.5 * half],
+					sizeOverLife: [0.7, 1.1, 1.4],
+					alphaOverLife: [0, 0.8, 0.6, 0],
+					opacity: 0.55,
+				};
 			const wind = options.wind && { windField: options.wind };
 			if (place.kind === 'mist')
 				// Broad puffs that sink slower than the water and drift out from it.
@@ -271,10 +289,12 @@ export async function createWaterfall(
 					turbulence: 0.8,
 					turbulenceScale: 0.3,
 					lifetime: [2.5, MIST_LIFE],
-					size: [0.7 * half, 1.4 * half],
-					sizeOverLife: [0.7, 1.4, 2.1],
-					alphaOverLife: [0, 0.75, 0.6, 0],
-					opacity: 0.6,
+					// Billows sized by the creek, not by the fall's fan, so a wide fall makes more of
+					// them rather than a wall of haze.
+					size: [0.6 * sheet.halfWidth, 1.3 * sheet.halfWidth],
+					sizeOverLife: [0.6, 1.2, 1.7],
+					alphaOverLife: [0, 0.9, 0.75, 0],
+					opacity: 0.65,
 				};
 			// The plume: broad puffs that rise and spread where the fall thins into cloud.
 			return {
@@ -287,10 +307,10 @@ export async function createWaterfall(
 				turbulenceScale: 0.2,
 				turbulenceSpeed: 0.3,
 				lifetime: [5, PLUME_LIFE],
-				size: [0.9 * half, 1.8 * half],
+				size: [0.9 * sheet.halfWidth, 1.8 * sheet.halfWidth],
 				sizeOverLife: [0.5, 1.4, 2.2],
-				alphaOverLife: [0, 0.6, 0.55, 0],
-				opacity: 0.5,
+				alphaOverLife: [0, 0.8, 0.7, 0],
+				opacity: 0.7,
 			};
 		};
 		const places = fallEmitters(sheet);

@@ -1,21 +1,28 @@
-// The rain of Skyway: two crossed strips for each drop, drawn as one mesh that follows the camera.
-// A vertex offset drops every streak through the air from the clock, each at its own pace and with a
+// The falling rain: two crossed strips for each drop, drawn as one mesh that follows the camera. A
+// vertex offset drops every streak through the air from the clock, each at its own pace and with a
 // little wind, so the sketch never moves a vertex. The box of air is wider than the view, so the
-// streets stay full of rain whichever way the camera turns.
+// ground stays full of rain whichever way the camera turns. Skyway's streets and the Creek garden's
+// storm share it.
 import { math, type PerspectiveCamera, type SketchContext, vec3 } from '@null3d/engine';
-import { EFFECT_LAYER } from '../../lib/layers';
 
-/** The streaks in the air around the camera. */
+/** The streaks in the air around the camera, when the scene names no count. */
 const STREAKS = 4800;
-/** The box of air: how far it reaches either side, and how tall it is, in meters. */
-const [REACH, HEIGHT] = [62, 58];
-/** The length of one streak, in meters. */
-const LENGTH = 0.62;
+/** How far the box of air reaches either side of the camera, in meters, when the scene names none. */
+const REACH = 62;
+/** How tall the box of air is, in meters. The shader's span holds the same figure. */
+export const HEIGHT = 58;
+/** The length of one streak, in meters. The shader's streak length holds the same figure. */
+export const LENGTH = 0.62;
 /** How far round the camera the air stays clear of drops, in meters. */
 const CLEAR = 0.8;
+/** The light that the streaks give off when the scene names none: a cool gray blue, as linear color. */
+const COLOR = [0.34, 0.42, 0.55] as const;
+/** The seed of the streaks' places and paces when the scene names none. */
+const SEED = 19;
 
-const falling = /* wgsl */ `
-struct Uniforms { strength: f32, clear: f32, shelter: vec4f, reach: vec3f }
+/** The streaks' material: they fall from the clock, and keep out of the lens and a shelter. */
+export const falling = /* wgsl */ `
+struct Uniforms { strength: f32, clear: f32, shelter: vec4f, reach: vec3f, tint: vec3f }
 
 fn vertexOffset(input: VertexInput) -> vec3f {
     let span = 58.0; // the box's height, as HEIGHT above
@@ -31,7 +38,7 @@ fn surface(input: SurfaceInput) -> Surface {
     s.baseColor = vec3f(0.0);
     s.roughness = 0.2;
     s.metalness = 0.0;
-    s.emissive = vec3f(0.34, 0.42, 0.55) * (0.5 + 0.7 * input.uv.x) * material.strength;
+    s.emissive = material.tint * (0.5 + 0.7 * input.uv.x) * material.strength;
     // A drop that falls past the lens would draw as a bright bar across the view, so the rain
     // fades out near the camera. It also keeps out of the hover car's glass bubble: an ellipsoid at
     // the shelter's place, turned by its heading, with the reach of its half axes.
@@ -47,6 +54,23 @@ fn surface(input: SurfaceInput) -> Surface {
     return s;
 }
 `;
+
+/** Options of `createRain`. A value that a scene leaves out keeps Skyway's. */
+export interface RainOptions {
+	/** The layers that the rain draws on, as a 32-bit mask. The default is layer 0. */
+	layers?: number;
+	/** The light that the streaks give off, as a linear color. The default is a cool gray blue. */
+	color?: readonly [red: number, green: number, blue: number];
+	/** The streaks in the box of air around the camera. The default is 4,800. */
+	streaks?: number;
+	/** How far the box of air reaches either side of the camera, in meters. The default is 62. */
+	reach?: number;
+	/**
+	 * The seed of the streaks' places and paces. It seeds the engine's shared random numbers, as the
+	 * rain's first call has always done. The default is 19.
+	 */
+	seed?: number;
+}
 
 /** The rain of the scene. */
 export interface Rain {
@@ -64,13 +88,21 @@ export interface Rain {
 	shelter(at: Float32Array, reach: readonly [number, number, number]): void;
 }
 
-/** Builds the rain. */
-export function createRain(ctx: SketchContext): Rain {
+/**
+ * Builds the falling rain: streaks that fall through a box of air around the camera, from the clock
+ * alone. Call the rain's `follow` once a frame, so the box stays with the camera.
+ */
+export function createRain(ctx: SketchContext, options: RainOptions = {}): Rain {
 	const { scene, geometry, materials } = ctx;
-	const [positions, uvs, indices] = [[], [], []] as number[][];
-	math.seed(19);
-	for (let k = 0; k < STREAKS; k++) {
-		const [x, z] = [math.randFloat(-REACH, REACH), math.randFloat(-REACH, REACH)];
+	const streaks = options.streaks ?? STREAKS;
+	const reach = options.reach ?? REACH;
+	const color = options.color ?? COLOR;
+	const positions: number[] = [];
+	const uvs: number[] = [];
+	const indices: number[] = [];
+	math.seed(options.seed ?? SEED);
+	for (let k = 0; k < streaks; k++) {
+		const [x, z] = [math.randFloat(-reach, reach), math.randFloat(-reach, reach)];
 		const [y, pace, w] = [math.randFloat(0, HEIGHT), math.random(), 0.028];
 		for (const [dx, dz] of [
 			[w, 0],
@@ -102,6 +134,7 @@ export function createRain(ctx: SketchContext): Rain {
 			clear: CLEAR,
 			shelter: [0, -1000, 0, 0],
 			reach: [1, 1, 1],
+			tint: [color[0], color[1], color[2]],
 		},
 		doubleSided: true,
 		alphaMode: 'blend',
@@ -119,9 +152,9 @@ export function createRain(ctx: SketchContext): Rain {
 			computeNormals: true,
 		}),
 		material,
-		layers: EFFECT_LAYER,
+		...(options.layers !== undefined && { layers: options.layers }),
 	});
-	// The rain fills the air, so it casts no shadows and the camera's clearance guard ignores it.
+	// The rain fills the air, so it casts no shadows.
 	mesh.setCastShadows(false);
 	const eye = vec3.create();
 	/** The shelter's values, kept in one object so a frame's update makes none. */
