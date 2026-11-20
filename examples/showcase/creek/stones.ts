@@ -39,7 +39,7 @@ const IN_STREAM = 1.0;
 /** How far under the surface a stone's top may lie and still break the water white, in meters. */
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
-const TRAIL = { links: 16, step: 0.45, width: 1.5 } as const;
+const TRAIL = { links: 18, step: 0.4, width: 2.2 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -176,7 +176,7 @@ export function rockPlaces(): StonePlace[] {
 	for (const lip of [LIPS.west, LIPS.east]) {
 		const inward = -Math.sign(lip);
 		const atLip = (back: number, across: number, size: number) =>
-			add(lip + inward * (size * ROCK_REACH + 0.25 + back), across, size, 'broken');
+			add(lip + inward * (size * ROCK_REACH + 0.08 + back), across, size, 'broken');
 		for (const side of [-1, 1]) {
 			atLip(0.3 * next(), side * (1.0 + 0.1 * next()), 0.6 + 0.2 * next());
 			atLip(1.0 + 0.5 * next(), side * (1.0 + 0.1 * next()), 0.45 + 0.15 * next());
@@ -269,18 +269,17 @@ export function createStones(
 						Math.abs(below) < 0.9
 							? size * Math.sqrt(1 - below * below)
 							: size * 0.75 * (1 - Math.max(0, WATER - top) / SHALLOW);
-					obstacles.push({ x, z, r });
-					// The trail: the foam that the current carries away behind the stone, whichever way it
-					// runs, as a chain of shrinking rings downstream.
+					// The foam trails behind the stone, whichever way the current runs, as a chain of marks
+					// that starts at its downstream side and shrinks away from it; none rings it upstream.
 					const [vx, vz] = streamCurrent(x, z);
 					const speed = Math.hypot(vx, vz);
-					if (speed > 0.05)
-						for (let k = 1; k <= TRAIL.links; k++)
-							obstacles.push({
-								x: x + (vx / speed) * k * TRAIL.step,
-								z: z + (vz / speed) * k * TRAIL.step,
-								r: r * (1 - k / (TRAIL.links + 1)) * TRAIL.width,
-							});
+					const [ux, uz] = speed > 0.05 ? [vx / speed, vz / speed] : [0, 0];
+					for (let k = 0; k <= TRAIL.links; k++)
+						obstacles.push({
+							x: x + ux * (r + k * TRAIL.step),
+							z: z + uz * (r + k * TRAIL.step),
+							r: r * (1 - k / (TRAIL.links + 1)) * (k === 0 ? 0.6 : TRAIL.width),
+						});
 				}
 			});
 			batch.markDirty();
