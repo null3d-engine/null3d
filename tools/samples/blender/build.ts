@@ -13,6 +13,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { run as optimize } from '../../../packages/cli/src/assets/optimize.js';
 
+/** The threads that Blender runs with in every build. */
+const BLENDER_THREADS = 4;
 const JSON_CHUNK = 0x4e4f534a;
 const BIN_CHUNK = 0x004e4942;
 
@@ -150,6 +152,10 @@ export async function buildScene({
 		const built = Bun.spawnSync(
 			[
 				process.env.BLENDER ?? 'blender',
+				// Some meshes come out in an order that depends on Blender's thread count, so every
+				// build runs with the same count and gives the same files on any machine.
+				'--threads',
+				String(BLENDER_THREADS),
 				'--background',
 				'--factory-startup',
 				'--python',

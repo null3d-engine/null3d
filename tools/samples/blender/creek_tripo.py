@@ -3,7 +3,7 @@
 # command and the task record that made it, so the build never calls the network and gives the same
 # files from the same download.
 #
-#   blender --background --factory-startup \
+#   blender --threads 4 --background --factory-startup \
 #     --python tools/samples/blender/creek_tripo.py -- <output folder> --raw <folder> [--preview <folder>]
 #     [--only <model>,<model>]
 #
@@ -54,6 +54,10 @@ from common import (  # noqa: E402
 
 SEED = 20261120
 
+# The threads Blender must run on. Its meshes and bakes change with the count, so the same files
+# come only from the same count: build.ts passes it, and the script refuses any other.
+THREADS = 4
+
 # The statue's raw file inside its folder, and how the script finishes it. `turn` is the turn about
 # the vertical axis, in degrees anticlockwise from above, that brings the raw model's front to -y.
 # `cut` is the top of the raw model's own base, as a share of its height: the script cuts the base
@@ -93,7 +97,7 @@ STATUE = dict(
     eye=(0.14, 0.05),
     chest=(0.55, 0.5, 0.57),
     chest_size=(0.8, 0.5, 0.8),
-    slab=dict(height=0.1, width=1.25, front=0.25, bevel=0.04, sides=(96, 48, 24), texture=1024),
+    slab=dict(height=0.1, width=1.25, front=0.12, bevel=0.04, sides=(112, 56, 24), texture=1024),
     triangles=30000,
     levels=(0.34, 0.1),
     texture=1024,
@@ -113,23 +117,24 @@ STATUE = dict(
 # meters per meter. A rear post `post` times as wide as a front post, `rear` meters behind it,
 # stands behind the left one, the roof grows across by `widen`, and the timber under the roof,
 # above the stone blocks at `blocks` of its height, keeps `darken` of its lightness and grows
-# `vivid` times in color strength. A boulder's stone keeps `darken` of its lightness and grows
-# `vivid` times in color strength, its moss keeps `moss_darken` of its lightness, white specks fade
+# `vivid` times in color strength. A boulder's stone keeps `darken` of its lightness, grows
+# `vivid` times in color strength, and its light and dark round their local mean grow `contrast`
+# times, so the pits read; its moss keeps `moss_darken` of its lightness, white specks fade
 # to pale gray-green, and its foot darkens below `foot` of its height. `flatten` lowers moss that
 # Tripo3D built as spikes to that share of its height above its rim, after smoothing it, and
 # `wide` keeps the boulder's width within that many times its height.
 MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
-                    texture=512, darken=0.6, moss=(1.08, 1.0, 0.85), vivid=1.2, smooth=6),
+                    texture=512, darken=0.6, moss=(1.08, 1.0, 0.85), vivid=1.45, smooth=6),
     'gate': dict(file='model.glb', turn=-90.0, height=4.4, sink=0.03, triangles=6000, levels=(0.4, 0.15),
                  texture=1024, roof=0.64, cut=(-0.36, -0.25), lean=0.09, post=0.58, rear=1.2, widen=1.09, blocks=0.08,
                  darken=0.65, vivid=2.0),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
-                      texture=512, darken=0.85, vivid=1.3, moss_darken=1.0, foot=0.08, specks=True),
+                      texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
-                      texture=512, darken=0.85, vivid=1.3, moss_darken=0.72, foot=0.08, specks=True),
+                      texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.72, foot=0.08, specks=True),
     'boulder-3': dict(file='model.glb', turn=0.0, height=0.9, sink=0.04, triangles=1500, levels=(0.6, 0.4),
-                      texture=512, darken=0.85, vivid=1.3, moss_darken=0.7, foot=0.08, specks=False,
+                      texture=512, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.7, foot=0.08, specks=False,
                       flatten=0.35, wide=(1.6, 2.0)),
 }
 
@@ -150,7 +155,9 @@ MODELS = {
 # away, so the curls stay dark. The lower body and the statue's right arm take the `green` tint,
 # from the face's cyan to the concept's gray-green. Lightness above `pale` keeps 40% of its rise,
 # so pale patches such as the left knee's stay muted, and warm rust takes the `brown` tint, darker
-# and less pink.
+# and less pink. Last, on the upper arms and lapels, the raw color's light and dark at the pleats'
+# scale is laid back over the finished color `pleats` strong, so the darkening does not squeeze
+# them.
 PATINA = dict(
     middle=0.18,
     contrast=1.4,
@@ -170,8 +177,9 @@ PATINA = dict(
     warm=(1.07, 1.0, 0.88),
     hairline=0.55,
     green=(1.02, 1.0, 0.9),
+    pleats=2.0,
     pale=0.38,
-    brown=(0.74, 0.72, 0.62),
+    brown=(0.86, 0.80, 0.72),
 )
 
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
@@ -187,13 +195,13 @@ SLAB = dict(
     pale=(0.56, 0.54, 0.49),
     dark=(0.16, 0.15, 0.13),
     speck=0.12,
-    moss_shade=(0.27, 0.25, 0.09),
-    moss_light=(0.53, 0.47, 0.17),
+    moss_shade=(0.28, 0.25, 0.06),
+    moss_light=(0.56, 0.49, 0.12),
     moss_band=0.4,
     moss_cover=0.62,
     moss_foot=0.12,
     rough=0.07,
-    rim=0.015,
+    rim=0.03,
 )
 
 # The largest surface error each lower level may have, as a share of the model's height. A larger
@@ -438,6 +446,19 @@ def decimated(obj, triangles, name):
     return copy
 
 
+def unwrap(obj):
+    """
+    Lays the mesh's texture out afresh, at an even density, with no two faces on the same texels.
+    A mesh decimated to a few thousand triangles folds the raw layout over itself, and a bake into
+    folded texels paints one part's color onto another.
+    """
+    select_only([obj], obj)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.004)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+
 def surface_error(level, full, floor=-math.inf):
     """
     The largest distance between two meshes' surfaces, in meters, from each one's vertices above
@@ -543,6 +564,37 @@ def bake(high, low, img, kind, samples, high_material=None):
     return pixels_of(img)
 
 
+def bake_own(low, img, build):
+    """Bakes what `build(nodes)` emits from the decimated mesh's own surface into an image."""
+    scene = bpy.context.scene
+    scene.cycles.samples = 1
+    mat = emission_material(f'{img.name}-own', build)
+    node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+    node.image = img
+    mat.node_tree.nodes.active = node
+    low.data.materials.clear()
+    low.data.materials.append(mat)
+    select_only([low], low)
+    bpy.ops.object.bake(type='EMIT', use_selected_to_active=False, margin=16, use_clear=True)
+    return pixels_of(img)
+
+
+def lost_relief(maps, low_position, low_facing):
+    """
+    The relief that the decimation lost, as normals in the texture's own directions: the raw
+    surface's height above the decimated one along its normal, at each texel, turned into slopes
+    by the texel's size on the surface. Every value comes from bakes that repeat exactly.
+    """
+    height = ((maps['position'] - low_position) * low_facing).sum(axis=2)
+    across = np.linalg.norm(np.gradient(low_position, axis=1), axis=2)
+    rise = np.linalg.norm(np.gradient(low_position, axis=0), axis=2)
+    slope_u = np.clip(np.gradient(height, axis=1) / np.maximum(across, 1e-4), -2, 2)
+    slope_v = np.clip(np.gradient(height, axis=0) / np.maximum(rise, 1e-4), -2, 2)
+    n = np.dstack([-slope_u, -slope_v, np.ones_like(height)])
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    return n * 0.5 + 0.5
+
+
 def pixels_of(img):
     """An image's texels as a float array, rows from the bottom."""
     w, h = img.size
@@ -567,8 +619,9 @@ def bake_maps(high, low, color, normal, size, bake_color=False):
     layout shares. Cycles' normal bake differs between runs in the last bit of a few texels, which
     would change the file at each build, so the raw normal map serves instead. With `bake_color`
     the color is baked from the raw mesh too: a mesh cut to a few thousand triangles moves its
-    texture places far enough to smear fine detail such as roof tiles, and the bake, which repeats
-    exactly, puts each texel's color back where it belongs.
+    texture places far enough to smear fine detail such as roof tiles, so such a mesh is laid out
+    afresh and the bake, which repeats exactly, puts each texel's color back where it belongs. The normals then come from the relief
+    that the cut lost, which `lost_relief` finds from the bakes, in place of the smeared raw map.
     """
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
@@ -600,6 +653,8 @@ def bake_maps(high, low, color, normal, size, bake_color=False):
         maps[name] = bake(high, low, target(name), 'EMIT', 1, emission_material(f'emit-{name}', build))
     if bake_color:
         maps['color'] = to_display(maps['color'])
+        maps['own-position'] = bake_own(low, target('own-position'), lambda n: vector_socket(n, geometry_socket(n, 'Position'), low_corner, extent))
+        maps['own-facing'] = bake_own(low, target('own-facing'), lambda n: vector_socket(n, geometry_socket(n, 'Normal'), (-1, -1, -1), (2, 2, 2)))
     # Occlusion: the low mesh would shadow the raw one that it nearly covers, so rays pass it by.
     for flag in ('visible_camera', 'visible_diffuse', 'visible_glossy', 'visible_shadow', 'visible_transmission'):
         setattr(low, flag, False)
@@ -607,9 +662,15 @@ def bake_maps(high, low, color, normal, size, bake_color=False):
     for flag in ('visible_camera', 'visible_diffuse', 'visible_glossy', 'visible_shadow', 'visible_transmission'):
         setattr(low, flag, True)
     out = {name: half(texels[..., :3]) for name, texels in maps.items()}
-    out['position'] = out['position'] * extent + low_corner
-    out['facing'] = out['facing'] * 2 - 1
-    out['facing'] /= np.maximum(np.linalg.norm(out['facing'], axis=2, keepdims=True), 1e-6)
+    for name in ('position', 'own-position'):
+        if name in out:
+            out[name] = out[name] * extent + low_corner
+    for name in ('facing', 'own-facing'):
+        if name in out:
+            out[name] = out[name] * 2 - 1
+            out[name] /= np.maximum(np.linalg.norm(out[name], axis=2, keepdims=True), 1e-6)
+    if bake_color:
+        out['normal'] = lost_relief(out, out.pop('own-position'), out.pop('own-facing'))
     return out
 
 
@@ -785,6 +846,14 @@ def repaint(maps, height, eyes, eye, chest, rng):
     roughness = np.clip(0.82 + 0.08 * (rust + lichen) - 0.06 * ridge, 0, 1)
     metal = np.clip(0.06 + 0.06 * ridge - 0.06 * (rust + lichen), 0, 1)
 
+    # The pleats, after every darkening: the raw light and dark at their scale, on the upper arms
+    # and the lapels, between the chin and the waist and off the bare chest. Pale specks rise less
+    # than the ribs, so they do not glint.
+    band = np.clip((box_blur(luma, 2) - box_blur(luma, 10)) / max(middle, 1e-4), -0.3, 0.12)
+    chin = float(np.mean([p[2] for p in eyes]))
+    robe = smoothstep(chin - 0.4, chin - 0.8, z) * smoothstep(waist - 0.2, waist + 0.3, z) * (1 - warmth)
+    color *= (1 + PATINA['pleats'] * band * robe)[..., None]
+
     for middle_point in eyes:
         d = (position - np.array(middle_point, np.float32)) / np.array((eye[0], eye[0], eye[1]), np.float32)
         mark = smoothstep(1.0, 0.4, np.sqrt((d * d).sum(axis=2))) * smoothstep(0.2, 0.6, -facing[..., 1])
@@ -830,12 +899,12 @@ def box_blur(texels, radius):
     return texels
 
 
-def relief(normal, color, speck):
+def relief(normal, color, speck, keep=None):
     """
-    The raw normal map with its small bumps softened, flattened where `speck` filled a dark speck
-    and where it dents inward, and the color's light and dark at the scale of the robe's pleats raised into it as
-    relief, pale above dark, so the painted pleats stand out. The finest speckle stays flat, so the
-    bronze does not crinkle.
+    A normal map with its small bumps kept at `keep` of their strength (the patina's `bumps` unless
+    given), flattened where `speck` filled a dark speck and where it dents inward, and the color's
+    light and dark at the scale of the robe's pleats raised into it as relief, pale above dark, so
+    the painted pleats stand out. The finest speckle stays flat, so the bronze does not crinkle.
     """
     n = normal * 2 - 1
     # A dent in the normal map tilts inward from every side, so the tilt's spread runs strongly
@@ -843,7 +912,7 @@ def relief(normal, color, speck):
     # each.
     spread = np.gradient(n[..., 0], axis=1) + np.gradient(n[..., 1], axis=0)
     dent = np.clip(box_blur(smoothstep(0.08, 0.2, -box_blur(spread, 1)), 2) * 3, 0, 1)
-    n[..., :2] *= PATINA['bumps'] * ((1 - speck) * (1 - dent))[..., None]
+    n[..., :2] *= (PATINA['bumps'] if keep is None else keep) * ((1 - speck) * (1 - dent))[..., None]
     luma = color @ LUMA
     height = box_blur(luma, 2) - box_blur(luma, 10)
     rise, across = np.gradient(height)
@@ -893,9 +962,9 @@ def stone_slab(name, rx, ry, height, bevel, sides, mat):
     """
     A low oval stone slab from just below the ground to `height`, with semi-axes `rx` and `ry`. Its
     side leans in a little as it rises and wanders a few centimeters, rough as split stone, up to a
-    crisp bevel `bevel` deep round its top, whose rim wanders far less. The same noise in space
-    shapes every level of detail. The faces of the bevel and the top shade flat, so the rim stays
-    sharp; the side shades smooth. The texture covers the slab once, as `slab_layout` lays it out.
+    crisp bevel `bevel` deep round its top, whose rim wanders less. The same noise in space shapes
+    every level of detail. The top shades flat, so the rim between it and the smooth bevel stays a
+    sharp line. The texture covers the slab once, as `slab_layout` lays it out.
     """
     lean = 0.03 * min(rx, ry)
     rings = slab_profile(height, bevel, lean)
@@ -923,11 +992,10 @@ def stone_slab(name, rx, ry, height, bevel, sides, mat):
     grid = [[bm.verts.new(tuple(p)) for p in ring] for ring in points]
     quarter_sides = sides // 4
     for r in range(len(rings) - 1):
-        crisp = rings[r][0] >= height - bevel - 1e-4
         for i in range(sides):
             j = (i + 1) % sides
             face = bm.faces.new((grid[r][i], grid[r][j], grid[r + 1][j], grid[r + 1][i]))
-            face.smooth = not crisp
+            face.smooth = True
             quarter = i // quarter_sides
             for loop, (k, row) in zip(face.loops, ((i, r), (i + 1, r), (i + 1, r + 1), (i, r + 1))):
                 t = (k - quarter * quarter_sides) / quarter_sides
@@ -999,11 +1067,18 @@ def slab_material(rx, ry, height, bevel, size, rng):
     color = mix(color, SLAB['pale'], 0.5 * lichen)
     foot = smoothstep(0.0, 0.5 * height, position[..., 2])
     color *= (0.7 + 0.3 * foot)[..., None]
+    # The side mottles at a hand's breadth, and the rim wears pale in places.
+    color *= (0.82 + 0.36 * noise3(position + 2.2, 0.25, rng, 2))[..., None]
+    worn = smoothstep(0.08, 0.0, rim_distance) * smoothstep(0.55, 0.7, noise3(position + 9.1, 0.3, rng, 2))
+    color = mix(color, SLAB['pale'], 0.6 * worn)
 
     # Moss: a band along the rim that thins in, broken into patches, with tufts at two scales.
-    band = smoothstep(SLAB['moss_band'], 0.4 * SLAB['moss_band'], rim_distance)
+    # The band's depth wanders, so clumps creep over the edge and down the side unevenly.
+    reach = SLAB['moss_band'] * (0.5 + noise3(position * np.array([1, 1, 0], np.float32), 0.4, rng, 2))
+    band = smoothstep(reach, 0.4 * reach, rim_distance)
     band = np.maximum(band, side * smoothstep(SLAB['moss_foot'], 0.3 * SLAB['moss_foot'], position[..., 2]) * 0.8)
-    patches = smoothstep(1 - SLAB['moss_cover'] - 0.08, 1 - SLAB['moss_cover'] + 0.08, noise3(position, 0.5, rng, 3))
+    clumps = np.maximum(noise3(position, 0.6, rng, 2), noise3(position + 5.3, 0.18, rng, 2) - 0.08)
+    patches = smoothstep(1 - SLAB['moss_cover'] - 0.08, 1 - SLAB['moss_cover'] + 0.08, clumps)
     tufts = noise3(position, 0.02, rng, 2)
     moss = np.clip(band * patches * smoothstep(0.3, 0.6, tufts + 0.25 * patches), 0, 1)
     moss_color = mix(np.broadcast_to(np.array(SLAB['moss_shade'], np.float32), position.shape).copy(), SLAB['moss_light'], tufts)
@@ -1089,9 +1164,9 @@ def flatten_moss(obj, color, spec):
 
 def gate_surgery(obj, spec):
     """
-    Takes away the rear frame that Tripo3D added to the gate from a front view alone: every face
-    under the roof whose middle lies behind the cut, which takes the rear posts, their blocks, the
-    rails and the rear beam. The cuts close, each new face painted from the timber round it. The
+    Takes away the rear frame that Tripo3D added to the gate from a front view alone: all under the
+    roof behind one flat cut along the front posts' backs, which takes the rear posts, their
+    blocks, the rails and the rear beam. The cuts close, each new face painted from the timber round it. The
     front posts then stand upright, one thinner post stands behind the left one, painted from it,
     and the roof grows across.
     """
@@ -1101,13 +1176,14 @@ def gate_surgery(obj, spec):
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     uv = bm.loops.layers.uv.active
-    doomed = []
-    for f in bm.faces:
-        middle_of = f.calc_center_median()
-        share = (middle_of.z - low) / (roof - low)
-        if middle_of.z < roof and middle_of.y > spec['cut'][0] + (spec['cut'][1] - spec['cut'][0]) * share:
-            doomed.append(f)
-    bmesh.ops.delete(bm, geom=doomed, context='FACES')
+    # One flat cut along the front posts' backs, which lean: everything under the roof behind it
+    # goes, so the rails end flush with the posts.
+    foot, top = spec['cut']
+    under = [f for f in bm.faces if max(v.co.z for v in f.verts) < roof]
+    geom = list({v for f in under for v in f.verts}) + list({e for f in under for e in f.edges}) + under
+    faces_before = len(bm.faces)
+    bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, foot, low), plane_no=Vector((0, 1, -(top - foot) / (roof - low))).normalized(), clear_outer=True)
+    doomed = faces_before - len(bm.faces)
     loose = [v for v in bm.verts if not v.link_faces]
     bmesh.ops.delete(bm, geom=loose, context='VERTS')
     known = {}
@@ -1153,7 +1229,7 @@ def gate_surgery(obj, spec):
             v.co.x *= 1 + (spec['widen'] - 1) * float(smoothstep(roof - 0.1, roof + 0.1, v.co.z))
     bm.to_mesh(obj.data)
     bm.free()
-    return len(doomed)
+    return doomed
 
 
 def repaint_model(name, spec, maps):
@@ -1191,6 +1267,8 @@ def repaint_model(name, spec, maps):
         stone = 1 - moss
         color = vivid(color, spec['vivid'], stone)
         color = darken(color, spec['darken'], stone)
+        luma = color @ LUMA
+        color *= (1 + (spec['contrast'] - 1) * stone * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
         color = darken(color, spec['moss_darken'], moss)
         if spec['specks']:
             white = smoothstep(0.5, 0.65, raw @ LUMA) * (1 - smoothstep(0.1, 0.2, strength_of(raw)))
@@ -1215,16 +1293,15 @@ def finish_model(name, spec, raw, rng):
         smooth_where(high, mossy(vertex_colors_of(high, color)) > 0.5, spec['smooth'])
     figures['pits_filled'] = fill_pits(high)
     model = decimated(high, spec['triangles'], name)
+    unwrap(model)
     maps = bake_maps(high, model, color, normal, spec['texture'], bake_color=True)
     painted, roughness, metal, occlusion = repaint_model(name, spec, maps)
     flat = np.zeros(painted.shape[:2], np.float32)
-    # The raw normal map smears as the color did, so the normals come from the baked color's relief.
-    maps['normal'] = np.dstack([np.full_like(flat, 0.5), np.full_like(flat, 0.5), np.ones_like(flat)])
     model.data.materials.clear()
     model.data.materials.append(material(
         name,
         image(f'{name}-color', painted),
-        image(f'{name}-normal', relief(maps['normal'], maps['color'], flat), 'Non-Color'),
+        image(f'{name}-normal', relief(maps['normal'], maps['color'], flat, keep=1.0), 'Non-Color'),
         image(f'{name}-orm', np.dstack([occlusion, roughness, metal]), 'Non-Color'),
         roughness=0.9,
         tint=False,
@@ -1513,6 +1590,8 @@ def clear():
 
 
 def main():
+    if bpy.context.scene.render.threads != THREADS:
+        raise SystemExit(f'creek_tripo.py builds the same files only on {THREADS} threads: run Blender with --threads {THREADS}, as build.ts does')
     out, shots = arguments('creek_tripo.py')
     raw = raw_folder()
     chosen = only()
