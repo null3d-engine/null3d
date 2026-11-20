@@ -214,9 +214,9 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // The size of a pixel on the cloud per meter of distance, for the map's mip level.
     let pixel = 2.0 / (camera.projection[1][1] * frame.resolution.y);
     let texel = TILE / material.texels;
-    // Each pixel starts its steps a different share of half a step in, so the steps leave no rings
-    // where a ray grazes a billow or meets a wall, only a fine grain. The share changes with the
-    // sketch time, which a held frame holds, so a held picture draws the same each time.
+    // Each pixel starts its steps a different share of half a step in, so the steps through thin
+    // mist leave no rings. The share changes with the sketch time, which a held frame holds, so a
+    // held picture draws the same each time.
     let cell = vec3u(vec2u(input.fragCoord.xy), u32(frame.time * 60.0));
     let jitter = f32(pcg3d(cell).x) / 4294967295.0;
     var t = start + jitter * 0.5 * (0.6 + start * 0.01);
@@ -226,23 +226,45 @@ fn unlit(input: SurfaceInput) -> vec4f {
     var sunlit = 0.0;
     var lit = false;
     let steps = i32(material.steps);
+    // The last point in clear air, where the search for the cloud's edge starts.
+    var last = t;
     for (var i = 0; i < steps; i++) {
         if t >= end || clear < 0.02 {
             break;
         }
-        let p = eye + dir * t;
+        var p = eye + dir * t;
         // A ray that climbs past the highest towers meets no more cloud.
         if p.y > high && dir.y >= 0.0 {
             break;
         }
         let lod = log2(max(t * pixel / texel, 1.0));
-        let here = cloud_at(p, lod);
-        let h = here.x;
-        let above = p.y - h;
         // The cloud's edge softens with distance, so a far billow fades rather than cuts.
         let skin = 0.7 + t * 0.006;
-        let solid = clamp(0.5 - above / skin, 0.0, 1.0);
-        let density = solid * 1.6 + here.y * 1.1;
+        var here = cloud_at(p, lod);
+        var density = clamp(0.5 - (p.y - here.x) / skin, 0.0, 1.0) * 1.6 + here.y * 1.1;
+        if density > 0.002 && !lit && t > last {
+            // The step from clear air went past the cloud's edge: halve the gap a few times to
+            // find it, so the edge neither rings nor grains with the steps.
+            var lo = last;
+            var hi = t;
+            for (var k = 0; k < 4; k++) {
+                let mid = 0.5 * (lo + hi);
+                let q = eye + dir * mid;
+                let c = cloud_at(q, lod);
+                let d = clamp(0.5 - (q.y - c.x) / skin, 0.0, 1.0) * 1.6 + c.y * 1.1;
+                if d > 0.002 {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            t = hi;
+            p = eye + dir * t;
+            here = cloud_at(p, lod);
+            density = clamp(0.5 - (p.y - here.x) / skin, 0.0, 1.0) * 1.6 + here.y * 1.1;
+        }
+        let h = here.x;
+        let above = p.y - h;
         if density > 0.002 {
             if !lit {
                 // Where the ray first meets the billow: its slope, from its heights a step to each
@@ -284,9 +306,8 @@ fn unlit(input: SurfaceInput) -> vec4f {
             // Clear air: step a share of the height over the tops, never so far that a billow's
             // side slips between two steps, and in short steps through the mist by the walls.
             let longest = select(4.0 + t * 0.09, 0.5 + t * 0.01, length(p.xz) < MISTY && above < 8.5);
-            // Each pixel's steps run a little longer or shorter than its neighbours', so far steps
-            // leave grain rather than bands on the towers.
-            t += clamp(above * 0.5, 0.3 + t * 0.05, longest) * (0.75 + 0.5 * jitter);
+            last = t;
+            t += clamp(above * 0.5, 0.3 + t * 0.05, longest);
         }
     }
     // A ray that runs out of steps over open sea would show the dome through a hole: it meets the
