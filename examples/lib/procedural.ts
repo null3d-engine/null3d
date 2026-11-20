@@ -277,12 +277,14 @@ export function terrain({
 
 /**
  * A rough rock: a sphere of `detail` subdivisions of an icosahedron, pushed in and out by noise,
- * squashed to `[x, y, z]`, with a flatter base. Its texture coordinates wrap around it.
+ * squashed to `[x, y, z]`, with a flatter base. `facets` sets how far broad planes push in and out,
+ * as a broken stone has: near 0 gives a rounded stone. Its texture coordinates wrap around it.
  */
 export function rock(
 	seed: number,
 	detail: number,
 	squash: readonly [number, number, number],
+	facets = 0.12,
 ): MeshArrays {
 	const t = (1 + Math.sqrt(5)) / 2;
 	const points: number[][] = [
@@ -335,8 +337,8 @@ export function rock(
 		const [px, py, pz] = [x as number, y as number, z as number];
 		const bumps = 1 + 0.35 * noise.fbm3(px * 1.6, py * 1.6, pz * 1.6, 4);
 		// Facets: the larger noise pushes broad planes, as a broken stone has.
-		const facets = 1 + 0.12 * Math.sign(noise.value3(px * 3, py * 3, pz * 3));
-		const r = bumps * facets;
+		const planes = 1 + facets * Math.sign(noise.value3(px * 3, py * 3, pz * 3));
+		const r = bumps * planes;
 		const base = py < -0.3 ? 0.55 + 0.45 * ((py + 1) / 0.7) : 1;
 		positions.set([px * r * squash[0], py * r * squash[1] * base, pz * r * squash[2]], i * 3);
 		uvs.set([Math.atan2(pz, px) / Math.PI + 1, py + 1], i * 2);

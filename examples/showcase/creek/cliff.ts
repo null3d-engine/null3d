@@ -37,9 +37,17 @@ const UNDERCUT = 0.55;
  * How far the rock stands back under each lip, in meters at the least, so a fall leaving the lip
  * drops clear of the wall; the shares of the creek's half width where the water shows at the lip,
  * where the water's sheet runs on under the banks and the rock stands flush, and where no buttress
- * may stand proud enough to hide the fall; and how far the rock may stand proud there, in meters.
+ * may stand proud enough to hide the fall; how far the rock stands proud there before it is
+ * pressed back, in meters, and the share of the rest that it keeps.
  */
-const LIP_RECESS = { back: 0.9, water: 0.8, sheet: 1.05, clear: 3, proud: 0.15 } as const;
+const LIP_RECESS = {
+	back: 0.9,
+	water: 0.7,
+	sheet: 1.05,
+	clear: 3,
+	proud: 0.15,
+	press: 0.35,
+} as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
@@ -55,7 +63,8 @@ const { smoothstep } = math;
 function rockTexel(u: number, v: number, out: TexelSample): void {
 	const broad = noise.fbm2(u * 4, v * 4, 5, 4);
 	const grain = noise.fbm2(u * 48, v * 48, 2, 48);
-	out.height = broad * 6 + grain * 1.5;
+	const pits = noise.fbm2(u * 14, v * 14, 3, 14);
+	out.height = broad * 10 + grain * 3 - Math.max(0, pits) * 6;
 	const tone = 0.86 + 0.14 * broad + 0.05 * grain;
 	out.r = tone;
 	out.g = tone * 0.97;
@@ -116,7 +125,7 @@ function pillars(length: number): Pillar[] {
  * Noise at a place along the rim, read round a circle whose length is the rim's, so the ring closes
  * on itself: `scale` sets the noise's cells per meter along the rim, and `y` the place down it.
  */
-function aroundNoise(
+export function aroundNoise(
 	along: number,
 	length: number,
 	scale: number,
@@ -166,10 +175,17 @@ function relief(
 		0.4 * Math.abs(aroundNoise(along, length, 1.2, depth * 1.2 + 7, 3)) +
 		0.18 * aroundNoise(along, length, 4, depth * 4 + 2, 2);
 	const bulge = 1.4 * aroundNoise(along, length, 0.025, depth * 0.035 + 11, 3);
+	// Sharp crests and thin black fissures across the faces, which make the rock craggy close up.
+	const crest =
+		0.22 *
+		Math.max(0, 1 - 2.2 * Math.abs(aroundNoise(along, length, 2.4, depth * 2.4 + 17, 2))) ** 4;
+	const fissure =
+		1 - smoothstep(Math.abs(aroundNoise(along, length, 1.6, depth * 1.1 + 23, 2)), 0, 0.035);
 	const tone = (above ? above.tone + (block.tone - above.tone) * into : block.tone) * (1 - crack);
 	return {
-		offset: pillar.out + step + crags + bulge - pillar.crack * crack - UNDERCUT,
-		crack,
+		offset:
+			pillar.out + step + crags + bulge + crest - pillar.crack * crack - 0.12 * fissure - UNDERCUT,
+		crack: Math.max(crack, 0.85 * fissure),
 		tone,
 	};
 }
@@ -217,8 +233,13 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// hide the fall.
 			const { water, sheet, clear } = lipShares(x, z);
 			const raw = offset + UNDERCUT;
-			const capped = offset + (Math.min(raw, LIP_RECESS.proud) - offset) * clear;
-			const flush = capped + (Math.min(Math.max(raw, 0), LIP_RECESS.proud) - capped) * sheet;
+			// Rock that would stand proud is pressed back, not cut flat, so the face keeps its crags.
+			const pressed =
+				raw > LIP_RECESS.proud
+					? LIP_RECESS.proud + LIP_RECESS.press * (raw - LIP_RECESS.proud)
+					: raw;
+			const capped = offset + (pressed - offset) * clear;
+			const flush = capped + (Math.max(pressed, 0) - capped) * sheet;
 			const shaped = flush + (Math.min(flush, -LIP_RECESS.back) - flush) * water;
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
 			const grow = smoothstep(depth, 0, 1.2);
@@ -263,7 +284,7 @@ function lipShares(x: number, z: number): { water: number; sheet: number; clear:
 		const half = streamHalf(lip);
 		const reach = Math.hypot(x - lip, z - streamZ(lip));
 		const share = (from: number, over: number) => 1 - smoothstep(reach, from, from + over);
-		water = Math.max(water, share(half * LIP_RECESS.water, 0.4));
+		water = Math.max(water, share(half * LIP_RECESS.water, 0.25));
 		sheet = Math.max(sheet, share(half * LIP_RECESS.sheet, 0.8));
 		clear = Math.max(clear, share(half * LIP_RECESS.clear, 3));
 	}

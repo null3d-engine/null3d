@@ -83,10 +83,12 @@ export async function createFlora(ctx: SketchContext): Promise<{
 		),
 	);
 	const systems: readonly ParticleSystem[] = [...floating, ...fireflies];
+	/** The fireflies' opacity, written in place, so a change of hour allocates nothing. */
+	const lit = { opacity: 0 };
 	return {
 		nightLights(share) {
-			const shown = Math.min(1, Math.max(0, share));
-			for (const swarm of fireflies) swarm.set({ opacity: shown });
+			lit.opacity = Math.min(1, Math.max(0, share));
+			for (const swarm of fireflies) swarm.set(lit);
 		},
 		update() {
 			for (const system of systems) system.update();
