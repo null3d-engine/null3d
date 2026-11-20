@@ -123,6 +123,8 @@ export interface SceneModels {
 	readonly blockers?: readonly string[];
 	/** The models whose every part sways, which the build checks after the asset tool. */
 	readonly swaying: readonly string[];
+	/** Options for the script after the command line's own, such as the inputs it reads. */
+	readonly options?: readonly string[];
 }
 
 /**
@@ -135,6 +137,7 @@ export async function buildScene({
 	models,
 	blockers = [],
 	swaying,
+	options = [],
 }: SceneModels): Promise<void> {
 	const args = process.argv.slice(2);
 	const out = args[0];
@@ -154,6 +157,7 @@ export async function buildScene({
 				'--',
 				join(scratch, 'blender'),
 				...args.slice(1),
+				...options,
 			],
 			{ stdout: 'pipe', stderr: 'pipe' },
 		);

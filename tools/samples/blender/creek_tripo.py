@@ -5,6 +5,7 @@
 #
 #   blender --background --factory-startup \
 #     --python tools/samples/blender/creek_tripo.py -- <output folder> --raw <folder> [--preview <folder>]
+#     [--only <model>,<model>]
 #
 # `--raw` names the folder that holds one folder per model, as the sample-assets repository keeps
 # them in `sources/showcase/creek-raw/`. `bun tools/samples/blender/creek_tripo.ts <folder>` runs it
@@ -42,6 +43,7 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
+from mathutils.interpolate import poly_3d_calc
 
 # The shared module loads from beside this script, and leaves no bytecode cache in the repository.
 sys.dont_write_bytecode = True
@@ -96,6 +98,40 @@ STATUE = dict(
     levels=(0.34, 0.1),
     texture=1024,
 )
+
+# The garden's other models from Tripo3D, each finished alone into a file of its own, from its raw
+# file in its folder. `turn` brings the raw model's front to -y, `height` is its height in meters
+# and `sink` how far its foot sits below the ground. `triangles` is its budget at its finest
+# level, `levels` each lower level's share of it, and `texture` the side of each of its maps. The
+# rest are each kind's finish, which `finish_model` reads.
+#
+# The lantern's stone keeps `darken` of its lightness, its moss takes the `moss` tint and grows in
+# color strength by `vivid`, and the moss on its cap is smoothed `smooth` times. The gate loses the
+# rear frame that Tripo3D added: everything under the roof, which starts at `roof` of its height,
+# and behind the front posts' backs, which `cut` gives in meters at the foot and at the roof, then
+# its front posts stand upright again, losing their lean of `lean`
+# meters per meter. A rear post `post` times as wide as a front post, `rear` meters behind it,
+# stands behind the left one, the roof grows across by `widen`, and the timber under the roof,
+# above the stone blocks at `blocks` of its height, keeps `darken` of its lightness and grows
+# `vivid` times in color strength. A boulder's stone keeps `darken` of its lightness and grows
+# `vivid` times in color strength, its moss keeps `moss_darken` of its lightness, white specks fade
+# to pale gray-green, and its foot darkens below `foot` of its height. `flatten` lowers moss that
+# Tripo3D built as spikes to that share of its height above its rim, after smoothing it, and
+# `wide` keeps the boulder's width within that many times its height.
+MODELS = {
+    'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
+                    texture=512, darken=0.6, moss=(1.08, 1.0, 0.85), vivid=1.2, smooth=6),
+    'gate': dict(file='model.glb', turn=-90.0, height=4.4, sink=0.03, triangles=6000, levels=(0.4, 0.15),
+                 texture=1024, roof=0.64, cut=(-0.36, -0.25), lean=0.09, post=0.58, rear=1.2, widen=1.09, blocks=0.08,
+                 darken=0.65, vivid=2.0),
+    'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
+                      texture=512, darken=0.85, vivid=1.3, moss_darken=1.0, foot=0.08, specks=True),
+    'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
+                      texture=512, darken=0.85, vivid=1.3, moss_darken=0.72, foot=0.08, specks=True),
+    'boulder-3': dict(file='model.glb', turn=0.0, height=0.9, sink=0.04, triangles=1500, levels=(0.6, 0.4),
+                      texture=512, darken=0.85, vivid=1.3, moss_darken=0.7, foot=0.08, specks=False,
+                      flatten=0.35, wide=(1.6, 2.0)),
+}
 
 # The weathered bronze. The raw color is the base: its hue and color strength stay, cyan on the
 # face and hair, pale on the collar band, rusty on the knees, and its lightness is set again from
@@ -160,11 +196,11 @@ SLAB = dict(
     rim=0.015,
 )
 
-# The largest surface error a lower level may have, as a share of the model's height. A larger one
-# means that the measure counted a hidden surface, such as the cap in the slab, or that the
+# The largest surface error each lower level may have, as a share of the model's height. A larger
+# one means that the measure counted a hidden surface, such as the cap in the slab, or that the
 # decimation broke the shape; the engine would then keep the finest level far too long, so the
-# build stops.
-LEVEL_ERROR_LIMIT = 0.015
+# build stops. The coarser level may stray further.
+LEVEL_ERROR_LIMIT = (0.05, 0.12)
 
 
 def raw_folder():
@@ -464,6 +500,19 @@ def vector_socket(nodes, socket, low, size):
     return div.outputs['Vector']
 
 
+def image_socket(nodes, img):
+    """An image's color as a socket."""
+    tex = nodes.new('ShaderNodeTexImage')
+    tex.image = img
+    return tex.outputs['Color']
+
+
+def to_display(linear):
+    """Linear values as the display values that an sRGB texture stores."""
+    linear = np.clip(linear, 0, 1)
+    return np.where(linear <= 0.0031308, linear * 12.92, 1.055 * np.power(linear, 1 / 2.4) - 0.055)
+
+
 def geometry_socket(nodes, output):
     return nodes.new('ShaderNodeNewGeometry').outputs[output]
 
@@ -510,13 +559,16 @@ def raw_texels(img, side):
     return pixels_of(img)
 
 
-def bake_maps(high, low, color, normal, size):
+def bake_maps(high, low, color, normal, size, bake_color=False):
     """
     Every map that the finished model and its repaint read, at twice the final size and averaged
-    down, so edges stay smooth: the raw color and normal maps, which the decimated mesh's texture
-    layout shares, and the occlusion, curvature, position and facing baked from the raw mesh onto
-    that layout. Cycles' normal bake differs between runs in the last bit of a few texels, which
-    would change the file at each build, so the raw normal map serves instead.
+    down, so edges stay smooth: the occlusion, curvature, position and facing baked from the raw
+    mesh onto the decimated mesh's texture layout, and the raw color and normal maps, which that
+    layout shares. Cycles' normal bake differs between runs in the last bit of a few texels, which
+    would change the file at each build, so the raw normal map serves instead. With `bake_color`
+    the color is baked from the raw mesh too: a mesh cut to a few thousand triangles moves its
+    texture places far enough to smear fine detail such as roof tiles, and the bake, which repeats
+    exactly, puts each texel's color back where it belongs.
     """
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
@@ -542,8 +594,12 @@ def bake_maps(high, low, color, normal, size):
         'position': lambda n: vector_socket(n, geometry_socket(n, 'Position'), low_corner, extent),
         'facing': lambda n: vector_socket(n, geometry_socket(n, 'Normal'), (-1, -1, -1), (2, 2, 2)),
     }
+    if bake_color:
+        emitted['color'] = lambda n: image_socket(n, color)
     for name, build in emitted.items():
         maps[name] = bake(high, low, target(name), 'EMIT', 1, emission_material(f'emit-{name}', build))
+    if bake_color:
+        maps['color'] = to_display(maps['color'])
     # Occlusion: the low mesh would shadow the raw one that it nearly covers, so rays pass it by.
     for flag in ('visible_camera', 'visible_diffuse', 'visible_glossy', 'visible_shadow', 'visible_transmission'):
         setattr(low, flag, False)
@@ -967,6 +1023,221 @@ def slab_material(rx, ry, height, bevel, size, rng):
 
 
 # ---------------------------------------------------------------------------------------------
+# The garden's other models
+# ---------------------------------------------------------------------------------------------
+
+
+def vertex_colors_of(obj, img):
+    """Each vertex's color in a raw image, as stored: the mean over its corners' texture places."""
+    mesh = obj.data
+    texels = pixels_of(img)[..., :3]
+    h, w = texels.shape[:2]
+    uv = np.empty(len(mesh.loops) * 2, np.float32)
+    mesh.uv_layers.active.data.foreach_get('uv', uv)
+    uv = uv.reshape(-1, 2)
+    owner = np.empty(len(mesh.loops), np.int32)
+    mesh.loops.foreach_get('vertex_index', owner)
+    picked = texels[np.clip((uv[:, 1] % 1) * h, 0, h - 1).astype(int), np.clip((uv[:, 0] % 1) * w, 0, w - 1).astype(int)]
+    total = np.zeros((len(mesh.vertices), 3), np.float32)
+    count = np.zeros(len(mesh.vertices), np.float32)
+    np.add.at(total, owner, picked)
+    np.add.at(count, owner, 1)
+    return total / np.maximum(count, 1)[:, None]
+
+
+def strength_of(color):
+    """Each color's strength, as the share of its brightest channel that its dullest lacks."""
+    top = color.max(axis=-1)
+    return (top - color.min(axis=-1)) / np.maximum(top, 1e-4)
+
+
+def mossy(color):
+    """How surely each color is moss: yellow-olive, its red and green well above its blue."""
+    r, g, b = color[..., 0], color[..., 1], color[..., 2]
+    return smoothstep(0.25, 0.4, strength_of(color)) * smoothstep(0.02, 0.08, g - b) * smoothstep(-0.05, 0.02, r - b)
+
+
+def smooth_where(obj, chosen, times, factor=0.5):
+    """Smooths the chosen vertices of a mesh toward their neighbors, `times` over."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    verts = [bm.verts[i] for i in np.nonzero(chosen)[0]]
+    for _ in range(times):
+        bmesh.ops.smooth_vert(bm, verts=verts, factor=factor, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
+def flatten_moss(obj, color, spec):
+    """
+    Lowers moss that Tripo3D built as a mat of spikes to a thin cover: the mossy vertices, found by
+    the raw color under them, are smoothed hard, then keep `flatten` of their height above the
+    moss's rim. The model then keeps a width within `wide` times its height, and its height.
+    """
+    moss = mossy(vertex_colors_of(obj, color)) > 0.5
+    smooth_where(obj, moss, 30)
+    co = vertices_of(obj)
+    rim = float(np.percentile(co[moss, 2], 10))
+    co[moss, 2] = np.where(co[moss, 2] > rim, rim + (co[moss, 2] - rim) * spec['flatten'], co[moss, 2])
+    extent = co.max(axis=0) - co.min(axis=0)
+    wide = max(extent[0], extent[1]) / extent[2]
+    co[:, 2] *= wide / float(np.clip(wide, *spec['wide']))
+    set_vertices(obj, standing(co, spec['height'], 0.0, -spec['sink'])(co))
+    return int(moss.sum())
+
+
+def gate_surgery(obj, spec):
+    """
+    Takes away the rear frame that Tripo3D added to the gate from a front view alone: every face
+    under the roof whose middle lies behind the cut, which takes the rear posts, their blocks, the
+    rails and the rear beam. The cuts close, each new face painted from the timber round it. The
+    front posts then stand upright, one thinner post stands behind the left one, painted from it,
+    and the roof grows across.
+    """
+    co = vertices_of(obj)
+    low, high = co[:, 2].min(), co[:, 2].max()
+    roof = low + spec['roof'] * (high - low)
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    uv = bm.loops.layers.uv.active
+    doomed = []
+    for f in bm.faces:
+        middle_of = f.calc_center_median()
+        share = (middle_of.z - low) / (roof - low)
+        if middle_of.z < roof and middle_of.y > spec['cut'][0] + (spec['cut'][1] - spec['cut'][0]) * share:
+            doomed.append(f)
+    bmesh.ops.delete(bm, geom=doomed, context='FACES')
+    loose = [v for v in bm.verts if not v.link_faces]
+    bmesh.ops.delete(bm, geom=loose, context='VERTS')
+    known = {}
+    for f in bm.faces:
+        for corner in f.loops:
+            known.setdefault(corner.vert, corner[uv].uv.copy())
+    rims = [e for e in bm.edges if e.is_boundary]
+    closed = bmesh.ops.holes_fill(bm, edges=rims, sides=0)['faces']
+    closed = bmesh.ops.triangulate(bm, faces=closed)['faces']
+    for f in closed:
+        for corner in f.loops:
+            corner[uv].uv = known.get(corner.vert, corner[uv].uv)
+
+    # The front posts lean forward toward their feet: they stand upright again below the beam.
+    beam = low + 0.55 * (high - low)
+    for v in bm.verts:
+        if v.co.z < beam and v.co.y < spec['cut'][1]:
+            v.co.y += spec['lean'] * (beam - v.co.z)
+
+    # The left front post, from the front: the part of the model left of the middle between the
+    # blocks and the beam.
+    body = [v.co.copy() for v in bm.verts if v.co.x < 0 and low + 0.2 * (high - low) < v.co.z < beam]
+    xs = np.array([p.x for p in body])
+    ys = np.array([p.y for p in body])
+    middle = Vector((float(np.median(xs)), float(np.median(ys)), 0))
+    width = float(np.percentile(xs, 95) - np.percentile(xs, 5)) * spec['post']
+    bm.faces.ensure_lookup_table()
+    tree = BVHTree.FromBMesh(bm)
+    faces = list(bm.faces)
+    made = bmesh.ops.create_cube(bm, size=1.0)['verts']
+    for v in made:
+        v.co = Vector((middle.x + v.co.x * width, middle.y + spec['rear'] + v.co.y * width,
+                       low + (v.co.z + 0.5) * (roof - low + 0.1)))
+    for f in {f for v in made for f in v.link_faces}:
+        for corner in f.loops:
+            # Painted from the front post: the same place on it, a post's length forward.
+            found, _, index, _ = tree.find_nearest(corner.vert.co - Vector((0, spec['rear'], 0)))
+            source = faces[index]
+            weights = poly_3d_calc([c.vert.co for c in source.loops], found)
+            corner[uv].uv = sum((c[uv].uv * w for c, w in zip(source.loops, weights)), Vector((0, 0)))
+    for v in bm.verts:
+        if v.co.z > roof - 0.1:
+            v.co.x *= 1 + (spec['widen'] - 1) * float(smoothstep(roof - 0.1, roof + 0.1, v.co.z))
+    bm.to_mesh(obj.data)
+    bm.free()
+    return len(doomed)
+
+
+def repaint_model(name, spec, maps):
+    """
+    A model's finished color, as display values, and its roughness, metalness and occlusion, from
+    its raw color and its bakes, as its settings in `MODELS` say.
+    """
+    raw = maps['color']
+    occlusion = maps['occlusion'][..., 0]
+    dent = np.clip(box_blur(smoothstep(0.05, 0.15, dip(occlusion)), 3) * 3, 0, 1)
+    occlusion = heal(occlusion, dent)
+    z = maps['position'][..., 2]
+    moss = mossy(raw)
+    color = raw.copy()
+
+    def vivid(c, by, where):
+        gray = (c @ LUMA)[..., None]
+        return c + (gray + (c - gray) * by - c) * where[..., None]
+
+    def darken(c, by, where):
+        return c * (1 + (by - 1) * where)[..., None]
+
+    if name == 'lantern':
+        stone = 1 - moss
+        color = darken(color, spec['darken'], stone)
+        color *= 1 + (np.array(spec['moss'], np.float32) - 1) * moss[..., None]
+        color = vivid(color, spec['vivid'], moss)
+    elif name == 'gate':
+        roof = spec['roof'] * spec['height'] - spec['sink']
+        blocks = spec['blocks'] * spec['height'] - spec['sink']
+        timber = smoothstep(blocks, blocks + 0.08, z) * smoothstep(roof + 0.05, roof - 0.05, z)
+        color = vivid(color, spec['vivid'], timber)
+        color = darken(color, spec['darken'], timber)
+    else:
+        stone = 1 - moss
+        color = vivid(color, spec['vivid'], stone)
+        color = darken(color, spec['darken'], stone)
+        color = darken(color, spec['moss_darken'], moss)
+        if spec['specks']:
+            white = smoothstep(0.5, 0.65, raw @ LUMA) * (1 - smoothstep(0.1, 0.2, strength_of(raw)))
+            color = mix(color, (0.50, 0.53, 0.47), 0.8 * white)
+        foot = smoothstep(spec['foot'] * spec['height'], 0.0, z) * stone
+        color = darken(color, 0.72, foot)
+    roughness = np.clip(0.88 + 0.06 * moss, 0, 1)
+    return np.clip(color, 0, 1), roughness, np.zeros_like(roughness), occlusion
+
+
+def finish_model(name, spec, raw, rng):
+    """One of the garden's other models, with two lower levels, their errors, and its figures."""
+    high, color, normal = import_raw(os.path.join(raw, name, spec['file']), name)
+    figures = dict(raw_triangles=triangles_of(high))
+    co = vertices_of(high)
+    set_vertices(high, standing(co, spec['height'], spec['turn'], -spec['sink'])(co))
+    if name == 'gate':
+        figures['faces_cut'] = gate_surgery(high, spec)
+    if 'flatten' in spec:
+        figures['moss_flattened'] = flatten_moss(high, color, spec)
+    if name == 'lantern':
+        smooth_where(high, mossy(vertex_colors_of(high, color)) > 0.5, spec['smooth'])
+    figures['pits_filled'] = fill_pits(high)
+    model = decimated(high, spec['triangles'], name)
+    maps = bake_maps(high, model, color, normal, spec['texture'], bake_color=True)
+    painted, roughness, metal, occlusion = repaint_model(name, spec, maps)
+    flat = np.zeros(painted.shape[:2], np.float32)
+    # The raw normal map smears as the color did, so the normals come from the baked color's relief.
+    maps['normal'] = np.dstack([np.full_like(flat, 0.5), np.full_like(flat, 0.5), np.ones_like(flat)])
+    model.data.materials.clear()
+    model.data.materials.append(material(
+        name,
+        image(f'{name}-color', painted),
+        image(f'{name}-normal', relief(maps['normal'], maps['color'], flat), 'Non-Color'),
+        image(f'{name}-orm', np.dstack([occlusion, roughness, metal]), 'Non-Color'),
+        roughness=0.9,
+        tint=False,
+    ))
+    levels, errors = levels_of(name, model, lambda k: decimated(
+        model, round(spec['triangles'] * spec['levels'][k - 1]), f'{name}-{k}'), spec['height'], 0.0)
+    bpy.data.objects.remove(high)
+    extent = vertices_of(model).max(axis=0) - vertices_of(model).min(axis=0)
+    figures['size'] = ' x '.join(f'{v:.2f}' for v in extent)
+    return [model, *levels], {name: errors}, figures
+
+
+# ---------------------------------------------------------------------------------------------
 # Previews
 # ---------------------------------------------------------------------------------------------
 
@@ -1148,7 +1419,8 @@ def level_views(groups, errors, folder, name):
 def levels_of(name, finest, make, height, floor=-math.inf):
     """
     The lower levels that `make(k)` builds for each k from 1, and each one's surface error above
-    the height `floor`, which must stay within `LEVEL_ERROR_LIMIT` of the model's `height`.
+    the height `floor`, which must stay within its share in `LEVEL_ERROR_LIMIT` of the model's
+    `height`.
     """
     levels, errors = [], []
     for k in (1, 2):
@@ -1156,8 +1428,9 @@ def levels_of(name, finest, make, height, floor=-math.inf):
         level.name = level.data.name = f'{name}-{k}'
         levels.append(level)
         error = round(surface_error(level, finest, floor), 4)
-        if error > LEVEL_ERROR_LIMIT * height:
-            raise SystemExit(f'{name}-{k}: its surface error is {error} m, over the limit of {LEVEL_ERROR_LIMIT * height:.3f} m')
+        limit = LEVEL_ERROR_LIMIT[k - 1] * height
+        if error > limit:
+            raise SystemExit(f'{name}-{k}: its surface error is {error} m, over the limit of {limit:.3f} m')
         errors.append(error)
     return levels, errors
 
@@ -1217,24 +1490,52 @@ def finish_statue(spec, raw, rng):
     return parts, {'statue': statue_errors, 'slab': slab_errors}, figures
 
 
+def only():
+    """The models that `--only` names, separated by commas, or None for every model."""
+    args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+    return set(args[args.index('--only') + 1].split(',')) if '--only' in args else None
+
+
+def write(out, name, parts, errors, figures):
+    """Writes a model's file and prints its figures, its triangles and its levels' errors."""
+    report = export(os.path.join(out, f'{name}.glb'), parts, set(), errors)
+    print(f'CREEK {name}: ' + ', '.join(f'{k} {v:.3f}' if isinstance(v, float) else f'{k} {v}' for k, v in figures.items()))
+    for part, triangles in report.items():
+        print(f'CREEK {part}: {triangles} triangles')
+    print(f'CREEK {name} level errors: {errors} m')
+    print(f'CREEK {name}.glb: {os.path.getsize(os.path.join(out, f"{name}.glb")) / 1e6:.2f} MB')
+
+
+def clear():
+    """Removes every object, so the next model bakes and draws alone."""
+    for o in list(bpy.data.objects):
+        bpy.data.objects.remove(o)
+
+
 def main():
     out, shots = arguments('creek_tripo.py')
     raw = raw_folder()
-    rng = np.random.default_rng(SEED)
-    parts, errors, figures = finish_statue(STATUE, raw, rng)
-    report = export(os.path.join(out, 'statue.glb'), parts, set(), errors)
-    print('CREEK statue: ' + ', '.join(f'{k} {v:.3f}' if isinstance(v, float) else f'{k} {v}' for k, v in figures.items()))
-    for part, triangles in report.items():
-        print(f'CREEK {part}: {triangles} triangles')
-    print(f'CREEK level errors: {errors} m')
-    print(f'CREEK statue.glb: {os.path.getsize(os.path.join(out, "statue.glb")) / 1e6:.2f} MB')
-    if shots:
-        finest = [o for o in parts if o.name in ('statue', 'slab')]
-        groups = [finest] + [[bpy.data.objects[f'statue-{k}'], bpy.data.objects[f'slab-{k}']] for k in (1, 2)]
-        ground = [preview_ground()]
-        ortho_views(finest, shots, 'statue', extra=ground)
-        concept_view(finest, os.path.join(shots, 'statue-concept-view.png'), extra=ground)
-        route_views(finest, shots, 'statue', extra=ground)
-        level_views(groups, errors['statue'], shots, 'statue')
+    chosen = only()
+    if chosen is None or 'statue' in chosen:
+        parts, errors, figures = finish_statue(STATUE, raw, np.random.default_rng(SEED))
+        write(out, 'statue', parts, errors, figures)
+        if shots:
+            finest = [o for o in parts if o.name in ('statue', 'slab')]
+            groups = [finest] + [[bpy.data.objects[f'statue-{k}'], bpy.data.objects[f'slab-{k}']] for k in (1, 2)]
+            ground = [preview_ground()]
+            ortho_views(finest, shots, 'statue', extra=ground)
+            concept_view(finest, os.path.join(shots, 'statue-concept-view.png'), extra=ground)
+            route_views(finest, shots, 'statue', extra=ground)
+            level_views(groups, errors['statue'], shots, 'statue')
+    for name, spec in MODELS.items():
+        if chosen is not None and name not in chosen:
+            continue
+        clear()
+        parts, errors, figures = finish_model(name, spec, raw, np.random.default_rng(SEED))
+        write(out, name, parts, errors, figures)
+        if shots:
+            ground = [preview_ground(max(6.0, 1.5 * spec['height']))]
+            ortho_views(parts[:1], shots, name, extra=ground)
+            concept_view(parts[:1], os.path.join(shots, f'{name}-concept-view.png'), extra=ground)
 
 main()
