@@ -6,7 +6,16 @@
 import { expect, test } from 'bun:test';
 import { waveHeight } from '@null3d/water';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
-import { bearingOf, CLOUD_TOP, groundHeight, rimRadius, streamCurrent, WATER } from './land';
+import {
+	bearingOf,
+	CLOUD_TOP,
+	cameraFloor,
+	groundHeight,
+	rimRadius,
+	streamCurrent,
+	streamZ,
+	WATER,
+} from './land';
 import { SHOTS } from './route';
 import { ROCK_REACH, rockPlaces } from './stones';
 
@@ -84,4 +93,22 @@ test('the creek route dips under the water for five to seven seconds, clear of t
 	expect(under).toBeLessThanOrEqual(7);
 	// The water level the dip measures against is the stream's own.
 	expect(WATER).toBe(0);
+});
+
+test("past the rim the Manual camera keeps above the water's level, and over the creek it may dip", () => {
+	// The water's view from under its surface turns on from the camera's height alone, so the floor
+	// past the rim, with the camera's clearance, keeps the camera clear of the water's level there.
+	for (let degrees = 0; degrees < 360; degrees += 3) {
+		const bearing = (degrees * Math.PI) / 180;
+		for (const out of [0.05, 1, 3, 8, 20, 45]) {
+			const r = rimRadius(bearing) + out;
+			const [x, z] = [Math.cos(bearing) * r, Math.sin(bearing) * r];
+			expect(cameraFloor(x, z), `the floor at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBeGreaterThan(
+				WATER + 0.3,
+			);
+		}
+	}
+	// Over the creek's middle the floor is its bed, under the water, so the dip stays possible.
+	for (const x of [-15, -2, 6, 12])
+		expect(cameraFloor(x, streamZ(x))).toBeLessThan(WATER - BED_CLEARANCE - 0.2);
 });

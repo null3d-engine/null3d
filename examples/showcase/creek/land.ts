@@ -20,8 +20,12 @@ export const RIM = 26;
 export const CLOUD_TOP = -10.5;
 /** How far past the rim the walls' crags and ledges can stand, in meters. */
 const WALL_REACH = 3;
-/** How far above the cloud's tops the camera keeps past the rim, in meters. */
-const OVER_CLOUD = 2;
+/**
+ * How far above the water's level the camera keeps past the rim, in meters. The water's view from
+ * under its surface turns on from the camera's height alone, so past the rim, where no water lies,
+ * the camera never sinks to the water's level; this also keeps it well above the cloud's tops.
+ */
+export const OVER_WATER = 0.5;
 /**
  * Where the creek leaves the rim: the x of each lip, west and east. The rim runs straight across
  * the creek there, square to its line, so the water ends on one clean edge.
@@ -314,12 +318,16 @@ export const bearingOf = (x: number, z: number) => Math.atan2(z, x);
 export const onTop = (x: number, z: number) => Math.hypot(x, z) < rimRadius(bearingOf(x, z));
 
 /**
- * The lowest that the camera may stand at a point, before its clearance: the ground over the cliff
- * and close round its walls, so it never enters the rock, and above the cloud's tops past them.
+ * The lowest that the camera may stand at a point, before its clearance: the ground over the cliff,
+ * which lets it dip under the creek down to the bed; and past the rim, above the water's level and
+ * the ground close round the walls, so it never enters the rock and never sees the water's view
+ * from under its surface where there is no water, high over the cloud's tops.
  */
 export function cameraFloor(x: number, z: number): number {
-	const near = Math.hypot(x, z) < rimRadius(bearingOf(x, z)) + WALL_REACH;
-	return near ? groundHeight(x, z) : CLOUD_TOP + OVER_CLOUD;
+	const reach = Math.hypot(x, z) - rimRadius(bearingOf(x, z));
+	if (reach < 0) return groundHeight(x, z);
+	const past = WATER + OVER_WATER;
+	return reach < WALL_REACH ? Math.max(groundHeight(x, z), past) : past;
 }
 
 /** Linear colors of the ground: yellow-olive moss, its darker green and brown patches, soil and rock. */
