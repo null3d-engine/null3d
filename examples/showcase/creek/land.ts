@@ -38,7 +38,7 @@ export const LIPS = { west: -20.3, east: 20 } as const;
  */
 const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 3.4, width: 0.26 } as const;
 /** How far the rim's straight edge at a lip reaches past the creek's banks, in meters. */
-const LIP_MARGIN = 1.4;
+const LIP_MARGIN = 0.3;
 /** The spring pool near the middle that feeds the creek: its x and how far along it widens. */
 export const POOL = { x: -2, length: 2.8, widening: 1.2, depth: 0.45 } as const;
 /**

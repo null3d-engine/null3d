@@ -117,6 +117,7 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 	clearance: 0.15,
 };
 
+const { smoothstep } = math;
 const params = new URL(import.meta.url).searchParams;
 /** True draws the water's reflection in every frame, for the bisect of the Apple WebGPU stall. */
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
@@ -172,6 +173,8 @@ const CLOSE_SHOT: Shot = {
 const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
+/** How far the sheet reaches at each lip, in half widths: just past the water that shows there. */
+const WATER_AT_LIP = 0.95;
 /**
  * Each lip's fall: how far it drops, into the cloud, where it thins away; how far each side widens
  * per meter fallen, so it fans out down the drop; and the share of the creek's half width that
@@ -206,7 +209,11 @@ function createCreekWater(
 	const sheet: WaterShape = {
 		kind: 'river',
 		middle: xs.map((x) => [x, streamZ(x)] as const),
-		halfWidth: xs.map((x) => streamHalf(x) * WATER_REACH),
+		// Near each lip the sheet narrows to the water that shows, so it never runs on past the rim.
+		halfWidth: xs.map((x) => {
+			const lip = 1 - smoothstep(Math.min(x - LIPS.west, LIPS.east - x), 0.5, 2.5);
+			return streamHalf(x) * (WATER_REACH + (WATER_AT_LIP - WATER_REACH) * lip);
+		}),
 		depth: STREAM_DEPTH,
 		current: streamCurrent,
 		bed: streamDepth,
