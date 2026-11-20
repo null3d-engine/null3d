@@ -136,9 +136,9 @@ fn surface(input: SurfaceInput) -> Surface {
     // Uneven white streak lines ride over the brink into the glassy tongue.
     let streaks = streak_layer(lip + warp * 2.0, crossed, vec2f(3.7, 0.6), 1.9);
     let patches = streak_layer(lip, crossed, vec2f(1.1, 0.3), 2.3);
-    let lines = smoothstep(0.62, 0.85, streaks) * smoothstep(0.25, 0.7, patches);
-    let foam = max(white, lines * 0.8 * (1.0 - white));
-    let body = clamp(rope * mix(0.78, 1.15, froth) * mix(0.85, 1.08, fine), 0.0, 1.0);
+    let lines = smoothstep(0.5, 0.8, streaks) * smoothstep(0.15, 0.6, patches);
+    let foam = max(white, lines * 0.9 * (1.0 - white));
+    let body = clamp(rope * mix(0.8, 1.15, froth) * mix(0.9, 1.08, fine), 0.0, 1.0);
     s.baseColor = mix(material.glass, white_color * mix(0.22, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
@@ -146,19 +146,19 @@ fn surface(input: SurfaceInput) -> Surface {
 
     // The froth gives the surface a fine relief. White water scatters the light that reaches it
     // from all round, so it takes the sky's light as a surface facing up does, and reads white.
-    let relief = (0.08 * lumpy + 0.05 * froth + 0.02 * fine) * white;
+    let relief = (0.08 * lumpy + 0.05 * froth + 0.035 * fine) * white;
     s.normal = bent_normal(input.normal, input.relativePosition, relief);
     s.ambientNormal = normalize(mix(s.normal, vec3f(0.0, 1.0, 0.0), 0.7 * white));
 
     // How much water there is. The glassy tongue and the white column are solid bodies; the ropes
-    // show as shade, not as gaps. Lower down the column breaks up: holes open in the shade
-    // between the ropes first, shaped by the froth's clumps, until only clumps of the ropes' cores
-    // are left.
+    // show as shade, not as gaps. Lower down the column breaks up: long upright gaps open in the
+    // shade between the ropes first, until only the ropes' cores are left, torn into clumps.
     var alpha = mix(0.9, 0.97, white);
     let breakup = smoothstep(0.25, 0.85, share);
-    let solid = froth + 0.6 * core;
-    let threshold = mix(-0.3, 1.15, breakup);
-    alpha *= smoothstep(threshold - 0.2, threshold + 0.2, solid);
+    let long = streak_layer(lip, crossed, vec2f(2.5, 1.2), 3.7);
+    let solid = core + (long - 0.5) * 0.5 + (froth - 0.5) * 0.25;
+    let threshold = mix(-0.4, 0.95, breakup);
+    alpha *= smoothstep(threshold - 0.15, threshold + 0.15, solid);
     // The outline: where the view grazes the column, the water thins to nothing, torn by the froth
     // and by lobes that ride with the water, so no edge is clean, whichever way the column is seen.
     let grazing = abs(dot(input.normal, input.viewDirection));
