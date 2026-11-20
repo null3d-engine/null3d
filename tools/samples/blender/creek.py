@@ -1658,7 +1658,8 @@ def overcast_light(objects, size):
 
 def overcast(objects, path, azimuth, down, size=(960, 960), zoom=1.0, aim=0.5, matte=False):
     """
-    Renders the objects under the overcast sky, standing on a mossy ground. The camera looks from
+    Renders the objects under the overcast sky, standing on a mossy ground when seen from above. The
+    camera looks from
     `azimuth` degrees around the vertical, measured from the front, and `down` degrees above level,
     at the point `aim` of the way up the objects, from close enough that `zoom` times their size
     fills the frame. A `matte` picture leaves out the ground and the sky, so a measure can tell the
@@ -1671,7 +1672,8 @@ def overcast(objects, path, azimuth, down, size=(960, 960), zoom=1.0, aim=0.5, m
         plane.face(*(plane.vertex((x * 30, y * 30, 0), (0, 0), (1, 1, 1)) for x, y in ((-1, -1), (1, -1), (1, 1), (-1, 1))))
         moss = material('preview-moss', image('preview-moss', np.full((4, 4, 3), (0.36, 0.33, 0.17), np.float32)))
         ground = plane.build('preview-ground', moss)
-    ground.hide_render = matte
+    # The ground shows only from above it, as a camera under it would see nothing else.
+    ground.hide_render = matte or down < 0
     bpy.context.scene.render.film_transparent = matte
     middle, radius = (low + high) / 2, (high - low).length / 2
     middle.z = low.z + aim * (high.z - low.z)
