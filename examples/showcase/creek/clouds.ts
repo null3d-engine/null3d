@@ -24,7 +24,7 @@ import { CLOUD_TOP, rimRadius } from './land';
  */
 export const CLOUD = {
 	top: CLOUD_TOP,
-	depth: 8,
+	depth: 12,
 	heap: 8,
 	tower: 50,
 	reach: 1500,
@@ -103,14 +103,15 @@ fn cloud_air() -> vec3f {
 /// at form 1, with the main light's own color where it falls on the cloud, so the low sun warms
 /// the tops and leaves the hollows lilac.
 fn cloud_color(form: f32, lit: f32) -> vec3f {
-    let shade = mix(1.6, 4.9, form * form);
+    let shade = mix(0.9, 5.6, pow(form, 1.5));
     let warm = material.sun * material.tint * 0.5 * lit;
     return cloud_air() * shade + warm;
 }
 
-/// The air between the camera and a point: the cloud fades into the air's own color with distance.
+/// The air between the camera and a point: the cloud fades toward the air's own color with
+/// distance, never wholly, so the far billows keep some of their light and shade.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, cloud_air() * 5.6, 1.0 - exp(-distance / 420.0));
+    return mix(color, cloud_air() * 5.4, 0.65 * (1.0 - exp(-distance / 900.0)));
 }
 // } light
 
@@ -129,44 +130,51 @@ fn wall_at(p: vec2f) -> vec3f {
 }
 
 /// The cloud at a point: its height there, in meters, from the sea's two layers of billows, the
-/// heaps against the walls and the far towers; the mist that drifts across the walls' foot,
-/// streaks that slide along the wind, thickest just over the tops and gone a few meters above them;
-/// and the small billows' own height, low in the clefts between domes. The map's mip level follows
-/// the ray's footprint, so no grain shimmers.
-fn cloud_at(p: vec3f, lod: f32) -> vec3f {
+/// heaps against the walls and the far towers; the mist at the walls' foot; the small billows' own
+/// height, low in the clefts between domes; and a fray that eats into the billows' edges. The map's
+/// mip level follows the ray's footprint, so no grain shimmers.
+fn cloud_at(p: vec3f, lod: f32) -> vec4f {
     let q = p.xz + material.drift * frame.time;
     let a = textureSampleLevel(billows, billowsSampler, q / TILE, lod).r;
     // The larger copy turns and drifts its own way, so the two layers never line up.
     let s = vec2f(q.x * 0.8 - q.y * 0.6, q.x * 0.6 + q.y * 0.8) * 0.92 + vec2f(37.0, 11.0);
     let b = textureSampleLevel(billows, billowsSampler, s / (TILE * 2.6), max(lod - 1.4, 0.0)).g;
-    var h = material.top - material.depth + material.depth * clamp((0.62 * b + 0.5 * a) / 1.02, 0.0, 1.0);
+    // A much larger copy sets how high the billows stand: great heaps in places, a calmer sea
+    // between them, so the sea is never one even pattern.
+    let big = textureSampleLevel(billows, billowsSampler, (q * 0.97 + vec2f(13.0, 71.0)) / (TILE * 5.5), max(lod - 2.5, 0.0)).g;
+    let relief = material.depth * mix(0.5, 1.6, smoothstep(0.2, 0.8, big));
+    var h = material.top - relief + relief * clamp((0.8 * b + 0.3 * a) / 1.02, 0.0, 1.0);
     var mist = 0.0;
+    var fray = 0.0;
     let r = length(p.xz);
     if r < NEAR {
-        // The tops heap up toward the walls, lumpy with the billows, where the walls' map lets them.
         let wall = wall_at(p.xz);
         // Against the walls, domes of their own heap up over the sea where the walls' map lets them.
         let close = 1.0 - smoothstep(0.0, 17.0, r - wall.x);
         let dome = textureSampleLevel(billows, billowsSampler, (q + vec2f(53.0, 29.0)) / (TILE * 0.75), lod + 0.4).r;
         let heaped = material.top - material.depth + (material.depth + material.heap * wall.y) * dome * close;
         h = max(h, heaped);
+        // The billows' edges fray, so a top never ends on one clean line.
+        fray = textureSampleLevel(billows, billowsSampler, (q + vec2f(7.0, 19.0)) / 21.0, lod).b;
+        // The mist at the walls' foot rises in wisps of uneven height: tall where the wall's own
+        // stretch of mist runs high, short elsewhere, each wisp a column that climbs and thins.
         let foot = 1.0 - smoothstep(2.0, 15.0, r - wall.x);
         let above = p.y - h;
-        let band = smoothstep(-0.5, 0.8, above) * (1.0 - smoothstep(0.0, 8.0, above));
-        if foot * band * wall.z > 0.001 {
-            let m = q + material.drift * frame.time * 1.4;
-            let along = vec2f(m.x * 0.6 + m.y * 0.8, m.y * 0.25 - m.x * 0.2) / 96.0;
-            let streak = textureSampleLevel(billows, billowsSampler, along, 0.0).b;
-            mist = foot * band * wall.z * (0.35 + 0.65 * smoothstep(0.3, 0.75, streak));
+        if foot * wall.z > 0.001 && above > -0.5 && above < 8.0 {
+            let along = atan2(p.z, p.x) * wall.x;
+            let reach = 1.5 + 6.5 * textureSampleLevel(billows, billowsSampler, vec2f(along / 70.0 + 0.37, 0.61), 0.0).b;
+            // No wisp climbs past a few meters under the rim, so the walls' upper part stays clear.
+            let band = smoothstep(-0.5, 0.8, above) * (1.0 - smoothstep(reach * 0.35, reach, above)) * (1.0 - smoothstep(-4.5, -1.5, p.y));
+            let wisp = textureSampleLevel(billows, billowsSampler, vec2f(along / 7.0, (p.y - frame.time * 0.4) / 19.0), 0.0).b;
+            mist = foot * band * wall.z * smoothstep(0.32, 0.78, wisp);
         }
     } else {
-        // Far out, the billows of a much larger copy rise into towers past the horizon, and sink
+        // Far out, the billows of the largest copy rise into towers past the horizon, and sink
         // back into the sea before the rays' reach, so no tower is cut where the rays end.
-        let far = textureSampleLevel(billows, billowsSampler, (q * 0.97 + vec2f(13.0, 71.0)) / (TILE * 5.5), max(lod - 2.5, 0.0)).g;
-        let rise = smoothstep(NEAR, 450.0, r) * (1.0 - smoothstep(900.0, 1350.0, r)) * smoothstep(0.25, 0.9, far);
+        let rise = smoothstep(NEAR, 450.0, r) * (1.0 - smoothstep(900.0, 1350.0, r)) * smoothstep(0.25, 0.9, big);
         h += material.tower * rise * sqrt(rise);
     }
-    return vec3f(h, mist, a);
+    return vec4f(h, mist, a, fray);
 }
 
 /// The distance along the ray at which it leaves a disc round the cliff of radius r, in xz.
@@ -178,6 +186,28 @@ fn leave_disc(eye: vec2f, dir: vec2f, r: f32) -> f32 {
     let b = dot(eye, dir);
     let c = dot(eye, eye) - r * r;
     return (-b + sqrt(max(b * b - a * c, 0.0))) / a;
+}
+
+/// How thick the cloud is at a point: the billows' body thickens over its top meters, softer far
+/// off, and frays where its edge is eaten; the mist adds its own.
+fn density_of(p: vec3f, here: vec4f, t: f32) -> f32 {
+    let soft = 2.2 + t * 0.012;
+    let inside = here.x - p.y - here.w * 1.8;
+    return smoothstep(-0.3, soft, inside) * 1.4 + here.y * 0.9;
+}
+
+/// The faint mountain far past the cliff that shows through the cloud, as in the concept's upper
+/// right: how much of it a ray meets, by where the ray crosses a ring 1,300 meters round the
+/// cliff. Its peak stands at a bearing of -1.416 radians, 54 meters under the water's level, with
+/// a steep side toward the cliff's west and a long one to the east.
+fn mountain(eye: vec3f, dir: vec3f) -> f32 {
+    let t = leave_disc(eye.xz, dir.xz, 1300.0);
+    let at = eye + dir * t;
+    let bearing = atan2(at.z, at.x);
+    let off = (bearing + 1.4157) * 1300.0;
+    let fall = select(1.03, 2.7, off < 0.0);
+    let ridge = -53.7 - fall * (sqrt(off * off + 400.0) - 20.0) + 5.0 * sin(off * 0.07) + 2.5 * sin(off * 0.23 + 1.3);
+    return 1.0 - smoothstep(-6.0, 6.0, at.y - ridge);
 }
 
 fn unlit(input: SurfaceInput) -> vec4f {
@@ -219,7 +249,9 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // held picture draws the same each time.
     let cell = vec3u(vec2u(input.fragCoord.xy), u32(frame.time * 60.0));
     let jitter = f32(pcg3d(cell).x) / 4294967295.0;
-    var t = start + jitter * 0.5 * (0.6 + start * 0.01);
+    var t = min(start + jitter * 0.25 * (0.6 + start * 0.01), mix(start, end, 0.5));
+    // Where the ray first met the cloud, for the far mountain.
+    var met = 0.0;
     var clear = 1.0;
     var color = vec3f(0.0);
     var form = 0.0;
@@ -238,10 +270,11 @@ fn unlit(input: SurfaceInput) -> vec4f {
             break;
         }
         let lod = log2(max(t * pixel / texel, 1.0));
-        // The cloud's edge softens with distance, so a far billow fades rather than cuts.
-        let skin = 0.7 + t * 0.006;
+        // Over its last meters before the scene's surface the cloud thins away, so a wall fades into
+        // the cloud with no cut line along its blocks.
+        let contact = select(1.0, smoothstep(0.0, 3.0, end - t), behind > 0.0);
         var here = cloud_at(p, lod);
-        var density = clamp(0.5 - (p.y - here.x) / skin, 0.0, 1.0) * 1.6 + here.y * 1.1;
+        var density = density_of(p, here, t) * contact;
         if density > 0.002 && !lit && t > last {
             // The step from clear air went past the cloud's edge: halve the gap a few times to
             // find it, so the edge neither rings nor grains with the steps.
@@ -250,8 +283,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
             for (var k = 0; k < 4; k++) {
                 let mid = 0.5 * (lo + hi);
                 let q = eye + dir * mid;
-                let c = cloud_at(q, lod);
-                let d = clamp(0.5 - (q.y - c.x) / skin, 0.0, 1.0) * 1.6 + c.y * 1.1;
+                let d = density_of(q, cloud_at(q, lod), mid);
                 if d > 0.002 {
                     hi = mid;
                 } else {
@@ -261,7 +293,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
             t = hi;
             p = eye + dir * t;
             here = cloud_at(p, lod);
-            density = clamp(0.5 - (p.y - here.x) / skin, 0.0, 1.0) * 1.6 + here.y * 1.1;
+            density = density_of(p, here, t) * contact;
         }
         let h = here.x;
         let above = p.y - h;
@@ -271,24 +303,28 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 // side; the sky's light on the sides that face up; the main light on the sides that
                 // face it, unless a billow toward it stands higher; the clefts between domes; and how
                 // high this top stands in the sea.
-                let e = 1.2 + t * 0.012;
-                let hx = cloud_at(p + vec3f(e, 0.0, 0.0), lod).x;
-                let hz = cloud_at(p + vec3f(0.0, 0.0, e), lod).x;
-                let normal = normalize(vec3f(h - hx, e, h - hz));
+                // The slope is read over a few meters, so the light follows the great billows'
+                // form rather than every small dome on them.
+                let e = 2.5 + t * 0.02;
+                let hx = cloud_at(p + vec3f(e, 0.0, 0.0), lod + 1.0).x;
+                let hz = cloud_at(p + vec3f(0.0, 0.0, e), lod + 1.0).x;
+                let hc = cloud_at(p, lod + 1.0).x;
+                let normal = normalize(vec3f(hc - hx, e, hc - hz));
                 let sun = material.toward;
                 let across = max(length(sun.xz), 0.05);
                 var shadow = 1.0;
-                for (var k = 1; k <= 2; k++) {
-                    let d = 3.5 * f32(k * k);
+                for (var k = 1; k <= 3; k++) {
+                    let d = (4.0 + t * 0.02) * f32(k * k);
                     let toward = p.xz + sun.xz / across * d;
-                    let rise = cloud_at(vec3f(toward.x, p.y, toward.y), lod).x - (p.y + sun.y / across * d);
-                    shadow = min(shadow, 1.0 - 0.8 * smoothstep(0.0, 2.5, rise));
+                    let rise = cloud_at(vec3f(toward.x, p.y, toward.y), lod + 1.0).x - (p.y + sun.y / across * d);
+                    shadow = min(shadow, 1.0 - 0.75 * smoothstep(0.0, 3.0, rise));
                 }
                 let lambert = clamp(dot(normal, sun) * 0.5 + 0.5, 0.0, 1.0) * shadow;
                 let cleft = smoothstep(0.12, 0.75, here.z);
-                let lift = clamp((h - (material.top - material.depth)) / (material.depth + 5.0), 0.0, 1.0);
-                form = clamp(0.05 + 0.28 * max(normal.y, 0.0) + 0.27 * lambert + 0.4 * cleft + 0.12 * lift, 0.0, 1.0);
-                sunlit = max(dot(normal, sun), 0.0) * shadow * (0.4 + 0.6 * cleft);
+                let lift = clamp((h - (material.top - material.depth * 1.6)) / (material.depth * 1.6 + 5.0), 0.0, 1.0);
+                form = clamp(0.02 + 0.25 * max(normal.y, 0.0) + 0.4 * lambert + 0.15 * cleft + 0.22 * lift, 0.0, 1.0);
+                sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft);
+                met = t;
                 lit = true;
             }
             // The last step ends at the scene's surface, so the cloud before a wall thins smoothly.
@@ -296,8 +332,8 @@ fn unlit(input: SurfaceInput) -> vec4f {
             // Deeper in the billow the cloud darkens a little.
             let deep = exp(-max(-above, 0.0) / 3.0);
             // Mist is a mid grey that the sun barely reaches; the billow takes its own light.
-            let misty = here.y * 1.1 / density;
-            let tone = cloud_color(mix(form, 0.5, misty), sunlit * (1.0 - misty)) * mix(0.72, 1.0, deep);
+            let misty = clamp(here.y * 0.9 * contact / density, 0.0, 1.0);
+            let tone = cloud_color(mix(form, 0.55, misty), sunlit * (1.0 - misty)) * mix(0.72, 1.0, deep);
             let alpha = 1.0 - exp(-density * stride);
             color += clear * alpha * aerial(tone, t);
             clear *= 1.0 - alpha;
@@ -321,7 +357,10 @@ fn unlit(input: SurfaceInput) -> vec4f {
     if alpha < 0.001 {
         return vec4f(0.0);
     }
-    return vec4f(color / alpha, alpha);
+    // The far mountain shows through the far sea as a faint grey-blue shape; a near billow hides it.
+    let ghost = mountain(eye, dir) * smoothstep(120.0, 300.0, select(t, met, met > 0.0));
+    let blue = cloud_air() * 3.0 * vec3f(0.86, 0.93, 1.12);
+    return vec4f(mix(color / alpha, blue, ghost * 0.85), alpha);
 }
 `;
 
@@ -359,14 +398,15 @@ fn cloud_air() -> vec3f {
 /// at form 1, with the main light's own color where it falls on the cloud, so the low sun warms
 /// the tops and leaves the hollows lilac.
 fn cloud_color(form: f32, lit: f32) -> vec3f {
-    let shade = mix(1.6, 4.9, form * form);
+    let shade = mix(0.9, 5.6, pow(form, 1.5));
     let warm = material.sun * material.tint * 0.5 * lit;
     return cloud_air() * shade + warm;
 }
 
-/// The air between the camera and a point: the cloud fades into the air's own color with distance.
+/// The air between the camera and a point: the cloud fades toward the air's own color with
+/// distance, never wholly, so the far billows keep some of their light and shade.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, cloud_air() * 5.6, 1.0 - exp(-distance / 420.0));
+    return mix(color, cloud_air() * 5.4, 0.65 * (1.0 - exp(-distance / 900.0)));
 }
 // } light
 
