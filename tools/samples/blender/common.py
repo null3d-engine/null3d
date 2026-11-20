@@ -114,6 +114,19 @@ def image(name, pixels, colorspace='sRGB'):
     return loaded
 
 
+def rock_texture(size, rng):
+    """Weathered stone: broad tones, cracks and grains, with its height and roughness."""
+    broad = fbm(size, size, 4, 4, rng, 6)
+    cracks = 1 - smoothstep(0.0, 0.035, np.abs(fbm(size, size, 6, 6, rng, 4) - 0.5))
+    grain = value_noise(size, size, 256, 256, rng)
+    height = broad * 1.4 - cracks * 0.5 + grain * 0.12
+    tone = 0.5 + 0.35 * broad - 0.12 * cracks + 0.08 * grain
+    warm = fbm(size, size, 3, 3, rng, 3)
+    color = np.dstack([tone * (0.62 + 0.08 * warm), tone * (0.60 + 0.05 * warm), tone * 0.56])
+    rough = 0.8 + 0.15 * (1 - broad)
+    return color, height, rough
+
+
 def half(texels):
     """Texels at half the width and height, each the mean of four."""
     h, w = texels.shape[:2]
@@ -184,10 +197,11 @@ def occlusion_output():
     return group
 
 
-def material(name, color, normal=None, packed=None, cutout=False, roughness=0.8, normal_strength=1.0):
+def material(name, color, normal=None, packed=None, cutout=False, roughness=0.8, normal_strength=1.0, tint=True):
     """
-    A metal-rough material from images: base color (with alpha for a cutout), normal and ORM. The
-    vertex colors multiply the base color, as glTF draws them, so the preview shows their occlusion.
+    A metal-rough material from images: base color (with alpha for a cutout), normal and ORM. With
+    `tint`, the vertex colors multiply the base color, as glTF draws them, so the preview shows their
+    occlusion; without it, the base color is the texture's alone, for a mesh that has no colors.
     """
     mat = bpy.data.materials.new(name)
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
@@ -197,15 +211,18 @@ def material(name, color, normal=None, packed=None, cutout=False, roughness=0.8,
     tex = nodes.new('ShaderNodeTexImage')
     tex.image = color
     tex.interpolation = 'Cubic' if cutout else 'Linear'
-    tint = nodes.new('ShaderNodeVertexColor')
-    tint.layer_name = 'Color'
-    mix = nodes.new('ShaderNodeMix')
-    mix.data_type = 'RGBA'
-    mix.blend_type = 'MULTIPLY'
-    mix.inputs['Factor'].default_value = 1.0
-    links.new(tex.outputs['Color'], mix.inputs['A'])
-    links.new(tint.outputs['Color'], mix.inputs['B'])
-    links.new(mix.outputs['Result'], bsdf.inputs['Base Color'])
+    if tint:
+        colors = nodes.new('ShaderNodeVertexColor')
+        colors.layer_name = 'Color'
+        mix = nodes.new('ShaderNodeMix')
+        mix.data_type = 'RGBA'
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 1.0
+        links.new(tex.outputs['Color'], mix.inputs['A'])
+        links.new(colors.outputs['Color'], mix.inputs['B'])
+        links.new(mix.outputs['Result'], bsdf.inputs['Base Color'])
+    else:
+        links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
     if cutout:
         links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
         mat.surface_render_method = 'DITHERED'
@@ -692,9 +709,9 @@ def export(path, objects, masked, levels=(), one_sided=()):
     back faces, each with the normals it needs, draws its cutout with its back faces culled.
 
     An object named `<part>-<k>` is level k of the part named `<part>`, and `levels` gives each
-    level's error: one list for every part, or a dict of each part's own list. The part's node
-    lists its levels in the MSFT_lod extension, from the finest down, with their errors in its
-    extras, and the levels' nodes leave the scene. Each mesh keeps its two sets of texture
+    level's error, the same for every part, or maps each part's name to its own levels' errors. The
+    part's node lists its levels in the MSFT_lod extension, from the finest down, with their errors
+    in its extras, and the levels' nodes leave the scene. Each mesh keeps its two sets of texture
     coordinates: the texture's, and the sway's.
     """
     bpy.ops.object.select_all(action='DESELECT')
@@ -739,11 +756,10 @@ def export(path, objects, masked, levels=(), one_sided=()):
         if mesh['name'] in swaying and any('TEXCOORD_1' not in p['attributes'] for p in mesh['primitives']):
             raise SystemExit(f"{mesh['name']} lost its sway coordinates in the export")
     if levels:
-        errors_of = levels.get if isinstance(levels, dict) else lambda name: levels
         index = {node['name']: k for k, node in enumerate(doc['nodes'])}
         lower = set()
         for k, node in enumerate(doc['nodes']):
-            errors = errors_of(node['name']) or ()
+            errors = levels.get(node['name'], ()) if isinstance(levels, dict) else levels
             ids = [index[f"{node['name']}-{n}"] for n in range(1, len(errors) + 1) if f"{node['name']}-{n}" in index]
             if not ids:
                 continue
