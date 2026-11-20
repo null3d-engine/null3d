@@ -131,7 +131,7 @@ PATINA = dict(
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
 SKY = (0.58, 0.58, 0.6)
 
-SLAB = dict(stone=(0.46, 0.44, 0.40), moss=(0.80, 0.68, 0.13), rough=0.05, tile=3.0)
+SLAB = dict(stone=(0.40, 0.38, 0.35), moss=(0.85, 0.70, 0.05), rough=0.08, tile=3.0)
 
 
 def raw_folder():
@@ -773,8 +773,8 @@ def stone_slab(name, radius, height, slope, sides, mat):
     broad = noise3(co, 1.5, rng, 2)
     patches = smoothstep(0.38, 0.62, noise3(co, 0.6, rng))
     on_top = smoothstep(height - slope, height - 0.2 * slope, co[:, 2])
-    down_edge = smoothstep(height - 2.2 * slope, height - slope, co[:, 2]) * smoothstep(0.45, 0.75, noise3(co + 7.0, 0.3, rng))
-    moss = np.clip(on_top * (0.35 + 0.65 * patches) + down_edge, 0, 1)[:, None]
+    down_edge = smoothstep(height - 2.2 * slope, height - slope, co[:, 2]) * smoothstep(0.6, 0.85, noise3(co + 7.0, 0.3, rng))
+    moss = np.clip(on_top * (0.6 + 0.4 * patches) + down_edge, 0, 1)[:, None]
     foot = smoothstep(-0.05, height * 0.7, co[:, 2])[:, None]
     stone = np.array(SLAB['stone']) * (0.8 + 0.4 * broad)[:, None] * (0.7 + 0.3 * foot)
     colors = np.ones((len(co), 4), np.float32)
