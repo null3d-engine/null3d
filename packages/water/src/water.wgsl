@@ -233,15 +233,16 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 }
 // </wind-sample>
 
-/// Caustics: bright, thin ridges where the ripples focus the light, which drift with the current.
-fn caustics(p: vec2f, t: f32, current: vec2f) -> f32 {
+/// Caustics: bright ridges where the ripples focus the light, which drift with the current. `ridge`
+/// sets how thin they are: 14 draws ridges about 7 mm wide, and a lower power broadens them.
+fn caustics(p: vec2f, t: f32, current: vec2f, ridge: f32) -> f32 {
     let q = p * 4.6 - current * (t * 4.0);
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
     let v = (a + b + c) / 3.0;
     // Patches of brighter and fainter light keep the net from looking even.
-    return pow(1.0 - abs(v), 14.0) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
+    return pow(1.0 - abs(v), ridge) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
 }
 
 /// The width of one cell of the rain's rings in meters, the rings that one cell shows a second, and
@@ -274,6 +275,10 @@ fn rain_rings(p: vec2f, t: f32, flow: vec2f, rain: f32, footprint: f32) -> vec2f
     let resolved = 1.0 - smoothstep(0.05, 0.16, footprint);
     return tilt * RING_TILT * resolved;
 }
+
+/// The mean brightness of the caustics over a wide area, at any ridge once it is evened: the ridges'
+/// mean, 0.114 at a power of 14, times the mean of the patches that brighten and dim them.
+const CAUSTIC_MEAN: f32 = 0.077;
 
 /// The flecks that break the foam around the stones, which the current carries downstream.
 fn foam_flecks(p: vec2f, flow: vec2f, t: f32) -> f32 {
@@ -481,10 +486,17 @@ fn surface(input: SurfaceInput) -> Surface {
     // The caustics show on the bed, under clear water that is not too deep, and not under foam.
     let bed = p + w.yz * depth * 0.6;
     let reach = smoothstep(0.02, 0.15, depth) * exp(-depth * 1.4) * (1.0 - foam);
-    var light = caustics(bed, frame.time, current.xy * current.z);
+    // The ridges are about 7 mm wide close up. Where a pixel covers more than a ridge, as a low view
+    // along the water does a little way off, they would alias into even lines across the view.
+    // So they broaden with the pixel, at nearly the same mean brightness, and where a pixel covers a
+    // good share of the pattern they give way to that mean.
+    let ridge = clamp(0.1 / max(footprint, 1e-4), 2.0, 14.0);
+    let even = (ridge + 1.0) / 15.0;
+    var light = caustics(bed, frame.time, current.xy * current.z, ridge) * even;
     if share < 1.0 {
-        light = mix(caustics(bed, frame.time, vec2f(0.0)), light, share);
+        light = mix(caustics(bed, frame.time, vec2f(0.0), ridge) * even, light, share);
     }
+    light = mix(CAUSTIC_MEAN, light, 1.0 - smoothstep(0.06, 0.15, footprint));
     s.emissive += material.caustics * light * reach;
     s.transmission = 1.0 - 0.7 * foam;
     // The soft shore: the water fades to nothing as its gap to the bed closes, so its edge lies in a

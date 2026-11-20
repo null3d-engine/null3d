@@ -137,7 +137,7 @@ authored directions and each wave's own speed.
   The pass follows the preset as it changes.
 - The surface lets light through with transmission. The engine therefore copies the scene's colors
   in the frame that the water draws. The surface draws both faces, so it shows from under the water.
-- A waterfall draws one blended mesh of three veils and four particle systems. Its streaks move
+- A waterfall draws one blended mesh, a closed column, and four particle systems. Its streaks move
   from the time alone, so a frame only steps the particles' emitters. The particles add-on and the
   engine's particle code load with the first fall that makes spray.
 - The water costs no memory until a scene creates it. The add-on's code and its shaders load only
