@@ -300,15 +300,15 @@ export function createStones(
 	}
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
-	const tints = ['#6a645b', '#776753', '#53524f'];
+	const tints = ['#6e6455', '#7a6a52', '#5c564c'];
 	const pebbleShapes = [0, 1].map((s) => geometry.fromArrays(rock(500 + s, 1, [1, 0.5, 0.8])));
 	const capacity = Math.ceil(PEBBLES.ultra / 6);
 	const pebbles = pebblePlaces(capacity * 6);
 	const pebbleBatches = pebbleShapes.flatMap((mesh, shape) =>
 		tints.map((color, tint) => {
 			const batch = scene.createInstances(mesh, capacity, {
-				// Wet pebbles: glossy, at the water's edge and under it.
-				material: materials.standard({ color, roughness: 0.35, ...maps }),
+				// Pebbles at the water's edge and under it: warm and matte, as the bank's stones are.
+				material: materials.standard({ color, roughness: 0.85, ...maps }),
 				receiveShadows: true,
 				layers: UNREFLECTED_LAYER,
 			});
