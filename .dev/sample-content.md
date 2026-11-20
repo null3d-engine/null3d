@@ -70,11 +70,12 @@ The showcase scenes' trees and plants, and Creek's cave, are organic shapes that
 
 | Script | Builds |
 | --- | --- |
-| `common.py` | The parts that both scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the crown of leaf cards on pads at the branches' ends, the export with levels of detail, and the Cycles preview |
+| `common.py` | The parts that the scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the crown of leaf cards on pads at the branches' ends, the export with levels of detail, and the Cycles preview |
 | `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers and a cave mouth with boulders. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss |
 | `island.py` | The island's models: a stone pine, an olive, a holm oak and an oleander, each with a card of the whole plant for the far copies. numpy paints every leaf, needle, flower and bark texture, and Blender bakes the cards from the plants themselves |
+| `creek_tripo.py` | The Creek garden's models that start as Tripo3D meshes: the bronze statue. It reads each raw download, cuts away its base, enlarges the head and widens the body, and scales and stands the figure. It decimates the mesh, bakes the raw surface onto it with Cycles, and repaints the bronze's weathering. It builds the stone slab, and cuts two lower levels of each part with their measured errors |
 | `build.ts` | Runs a script in Blender, optimizes each model with the asset tool, packs each model's KTX2 textures into its own file, and checks that every part that sways kept its sway. The options after the output folder go to the script |
-| `creek.ts`, `island.ts` | Each scene's models for `build.ts` |
+| `creek.ts`, `island.ts`, `creek_tripo.ts` | Each scene's models for `build.ts` |
 
 Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bun tools/samples/blender/island.ts <folder>`. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
 
@@ -82,6 +83,8 @@ Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bu
 2. Commit, push, and pin the commit here, as "Add or change an asset" says.
 
 The sample-assets repository records these models with the origin kind `blender`, which links to the script. Its import script has nothing to download for them, and its check does not build them again, because the check would need Blender.
+
+The Creek garden's statue starts as a Tripo3D mesh instead. Tripo3D cannot repeat a request exactly, and its download links expire within minutes. So each raw download goes into the sample-assets repository unchanged, in `sources/showcase/creek-raw/<model>/`. The run's record (`task.json`), its preview and the exact `tripo make` command go beside it. `bun tools/samples/blender/creek_tripo.ts <folder> --raw <folder>` finishes the models from that folder and never calls the service. The raw downloads, and every model finished from them, are under CC BY-NC 4.0.
 
 The models are optimized before they go into the sample-assets repository, unlike the other sources there. A sketch loads them with `sampleUrl`, so a website's build copies one file for each model. The asset tool writes its KTX2 textures as separate files, and the build would not copy those. So `build.ts` moves each texture into the model's binary chunk, as an image with a buffer view.
 
