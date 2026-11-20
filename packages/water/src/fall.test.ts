@@ -17,11 +17,13 @@ import {
 	fallTime,
 	GRAVITY,
 	MIST_DEPTH,
+	MIST_OUT,
 	MIST_WIDTH,
 	SHEET_VEIL,
 	SIDE_SLOWING,
 	VEIL_ROOM,
 	VEILS,
+	veilBow,
 } from './fall';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
@@ -171,8 +173,10 @@ describe('a waterfall’s sheet', () => {
 			// The apron runs at the lip's middle speed, and each veil's water at its own after the lip.
 			fallPlace(t, t <= 0 ? SHEET.speed * (1 - SIDE_SLOWING * across * across) : own, at);
 			const shape = VEILS[veil] as (typeof VEILS)[number];
-			const half = (SHEET.halfWidth + SHEET.spread * shape.fan * at[1]) * shape.width * EDGE_ROOM;
-			expect(positions[v * 3] as number).toBeCloseTo(10 + at[0], 3);
+			const water = (SHEET.halfWidth + SHEET.spread * at[1]) * shape.width;
+			const half = water * EDGE_ROOM;
+			const bow = veilBow(shape.depth, water, across * EDGE_ROOM, at[1]);
+			expect(positions[v * 3] as number).toBeCloseTo(10 + at[0] + bow, 3);
 			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT - at[1], 3);
 			expect(positions[v * 3 + 2] as number).toBeCloseTo(-4 + across * half, 3);
 			expect(uvs1[v * 2 + 1] as number).toBeCloseTo(at[1], 3);
@@ -209,7 +213,28 @@ describe('a waterfall’s sheet', () => {
 		expect(last).toBeCloseTo(2 * (SHEET.halfWidth + SHEET.spread * SHEET.drop) * EDGE_ROOM, 3);
 	});
 
-	it('hangs its back veil behind the sheet, toward the cliff, and its spray in front', () => {
+	it('stands as a column as deep as the creek is wide, seen from the side', () => {
+		const { positions } = meshOf(SHEET);
+		const middle = (SHEET.mesh?.across as number) / 2;
+		const foot = (veil: number) => {
+			const rows = rowsOf(SHEET, veil);
+			return rows[rows.length - 1] as number[];
+		};
+		const out = (veil: number, column: number) =>
+			(positions[(foot(veil)[column] as number) * 3] as number) - 10;
+		const water = SHEET.halfWidth + SHEET.spread * SHEET.drop;
+		// From the side the column runs from the back veil's middle to the front veil's.
+		expect(out(VEILS.length - 1, middle) - out(0, middle)).toBeGreaterThan(2 * SHEET.halfWidth);
+		// Each veil bows: its middle stands further out than the water's edges, and the arch grows
+		// from nothing at the lip.
+		const edge = Math.round(middle * (1 - 1 / EDGE_ROOM));
+		for (let veil = SHEET_VEIL; veil < VEILS.length; veil++)
+			expect(out(veil, middle)).toBeGreaterThan(out(veil, edge) + water * 0.3);
+		expect(veilBow(1, 2, 0, 0)).toBe(0);
+		expect(veilBow(1, 2, 0, 30)).toBeCloseTo(2, 6);
+	});
+
+	it('hangs its back veil behind the sheet, toward the cliff, and its front veil in front', () => {
 		const { positions } = meshOf(SHEET);
 		const back = rowsOf(SHEET, 0);
 		const front = rowsOf(SHEET, SHEET_VEIL);
@@ -288,6 +313,22 @@ describe('a waterfall’s spray and mist', () => {
 	const byKind = (sheet: FallSheet) =>
 		Object.fromEntries(fallEmitters(sheet).map((place) => [place.kind, place]));
 
+	it('sprays inside the column that the veils make, over the upper drop', () => {
+		const { body } = byKind(SHEET);
+		const upper = SHEET.drop * 0.35;
+		const at: [number, number] = [0, 0];
+		fallPlace(fallTime(upper), SHEET.speed, at);
+		const water = SHEET.halfWidth + SHEET.spread * upper;
+		// Its box runs from behind the sheet's path to past the front veil's bow.
+		const out = (body?.position[0] as number) - 10;
+		const depth = body?.box[2] as number;
+		expect(out - depth / 2).toBeLessThan(at[0]);
+		expect(out + depth / 2).toBeGreaterThan(at[0] + water);
+		expect(body?.box[0] as number).toBeGreaterThan(water);
+		const top = (body?.position[1] as number) + (body?.box[1] as number) / 2;
+		expect(top).toBeLessThanOrEqual(SHEET.level);
+	});
+
 	it('froths at the brink, gathers its mist on the fall’s path, and plumes at its foot', () => {
 		const { froth, mist, plume } = byKind(SHEET);
 		const at: [number, number] = [0, 0];
@@ -296,7 +337,8 @@ describe('a waterfall’s spray and mist', () => {
 		// The mist stands on the path, two thirds of the way down.
 		const middle = SHEET.drop * MIST_DEPTH;
 		fallPlace(fallTime(middle), SHEET.speed, at);
-		expect(mist?.position[0] as number).toBeCloseTo(10 + at[0], 6);
+		const half = SHEET.halfWidth + SHEET.spread * middle;
+		expect(mist?.position[0] as number).toBeCloseTo(10 + at[0] + half * MIST_OUT, 6);
 		expect(mist?.position[1] as number).toBeCloseTo(SHEET.level - middle, 6);
 		expect(mist?.position[2]).toBe(-4);
 		// The plume stands at the foot, past the end of the path.

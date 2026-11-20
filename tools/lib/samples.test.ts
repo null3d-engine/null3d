@@ -100,14 +100,49 @@ describe('sampleProblems', () => {
 	});
 
 	it('reports a non-commercial licence, missing attribution and a missing checksum', () => {
-		const manifest = manifestOf(bytes, { license: ['CC-BY-NC-4.0'], fetched: '', authors: [] });
+		const manifest = manifestOf(bytes, { license: ['CC-BY-NC-SA-4.0'], fetched: '', authors: [] });
 		const file = manifest.assets[0]?.files[0];
 		if (file) file.sha256 = '';
 		const problems = sampleProblems(manifest, [{ ...at, path: 'sources/khronos/Box/Box.glb' }]);
-		expect(problems.join('\n')).toContain('licence CC-BY-NC-4.0 is not accepted');
+		expect(problems.join('\n')).toContain('licence CC-BY-NC-SA-4.0 is not accepted');
 		expect(problems.join('\n')).toContain('no author');
 		expect(problems.join('\n')).toContain('no fetch date');
 		expect(problems.join('\n')).toContain('no SHA-256');
+	});
+
+	/** A manifest of one CC BY-NC model that lists the licence, with the generator given. */
+	const generated = (generator?: string) => {
+		const manifest = manifestOf(bytes, {
+			license: ['CC-BY-NC-4.0'],
+			...(generator !== undefined && { generator }),
+		});
+		manifest.licenses['CC-BY-NC-4.0'] = {
+			name: 'CC BY-NC 4.0',
+			url: 'https://creativecommons.org/licenses/by-nc/4.0/',
+			file: 'LICENSES/CC-BY-NC-4.0.txt',
+		};
+		return manifest;
+	};
+
+	it('accepts CC BY-NC on a generative service’s model that names its generator', () => {
+		const named = [{ ...at, path: 'sources/khronos/Box/Box.glb' }];
+		expect(sampleProblems(generated('Tripo3D'), named)).toEqual([]);
+		expect(manifestProblems(generated('Tripo3D'))).toEqual([]);
+	});
+
+	it('refuses CC BY-NC on an asset that names no generator, or an empty one', () => {
+		const named = [{ ...at, path: 'sources/khronos/Box/Box.glb' }];
+		for (const manifest of [generated(), generated('  ')]) {
+			const problems = sampleProblems(manifest, named).join('\n');
+			expect(problems).toContain('licence CC-BY-NC-4.0 is accepted only for a generative service');
+			expect(problems).toContain('names no generator');
+		}
+	});
+
+	it('refuses CC BY-NC that the manifest’s licence list does not name, generator or not', () => {
+		const manifest = manifestOf(bytes, { license: ['CC-BY-NC-4.0'], generator: 'Tripo3D' });
+		const problems = sampleProblems(manifest, [{ ...at, path: 'sources/khronos/Box/Box.glb' }]);
+		expect(problems.join('\n')).toContain('licence CC-BY-NC-4.0 is not accepted');
 	});
 });
 

@@ -232,11 +232,13 @@ fans out as it falls. From about halfway down it bursts into a cloud of mist sev
 width, so it never lands and never ends in a line. Spray froths at the lip, and a plume of mist
 rises at its foot.
 
-The sheet's material moves each streak with the water from the sketch's time alone, so the fall
+The sheet's material moves each streak with the water from the sketch's time alone. So the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
-the water speeds up. Three veils give the fall depth from the side: one behind the sheet, and the
-mist in front of it. The scene's
-light lights the sheet, and the sheet fades where it nears a wall or a ledge behind it. The spray and
+the water speeds up. Three veils bow out from the wall in arches. Together they make a column as
+deep as the creek is wide. So the fall has a body from the side as well as from the front. Spray
+falls inside the column. White water scatters the light that reaches it from all round. So the
+sheet takes the sky's light as a surface facing up does, and it reads white. The scene's light lights the sheet,
+and the sheet fades where it nears a wall or a ledge behind it. The spray and
 the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
 
 ```ts
@@ -393,8 +395,8 @@ near the eye and spends its vertices far away.
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
 - **A waterfall.** It draws one blended mesh of three veils, just under 4,000 triangles at the
-  default detail. It adds three particle systems: a froth at the lip, the mist that the fall
-  bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The sheet reads the copy
+  default detail. It adds four particle systems. They are a froth at the lip, the spray inside the
+  column, the mist that the fall bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The sheet reads the copy
   of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
   phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a

@@ -398,8 +398,10 @@ the lip and then drops almost straight, as a real fall does. A fall of any heigh
 the eye can follow. `fall.ts` holds the path and the mesh. Its tests hold the sheet to the lip's
 height and width, to the path, and to a sheet that never rises.
 
-**The sheet.** Three veils give the fall depth from the side. The back one is thrown less far and is
-a little narrower. The mist veil is thrown furthest and fans three times as fast. Each veil's mesh
+**The sheet.** Three veils give the fall a body. Each bows out from the wall in an arch. The arch is
+deepest in the middle, and it grows over the first meters of the drop. The back veil bows a little
+toward the wall, the sheet out, and the front veil out by the water's half width. Seen from the
+side, as the concept's camera sees its left fall, they make a column as deep as the creek is wide. Each veil's mesh
 reaches half again past the water's edges, so the material can tear the edges outward. An apron runs
 a meter up the river's surface before the lip, and fades in there. So the river's own mesh ends at
 the lip with no seam. The mesh's texture coordinates carry each point's place across the lip and
@@ -407,24 +409,29 @@ the time since its water crossed it. The material's noise reads those two. So ev
 down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
 
 **The look.** The concept's falls set it. A smooth glassy tongue rolls over the lip. Then four to
-six thick round ropes fall, with bright cores and gray shade between them, and torn, lobed edges.
-From about halfway down a cloud of mist three or four times the fall's width hides the fall's end. The ropes are
-bands about a meter apart that slow noise bends, each with a round profile and fine streaks inside.
-The edges move in and out with noise that rides with the water, further as the fall widens. The mist
-veil's noise runs in meters both ways, so it billows rather than streaks. The sheet takes the
-scene's light. It fades where the copy of the scene's depth shows a wall close behind it.
+six thick round ropes fall. They have bright cores, gray shade between them, and torn, lobed edges.
+From about halfway down, a cloud of mist hides the fall's end. It is three or four times as wide as
+the fall.
+The ropes are bands about a meter apart that slow noise bends. Each has a round profile, and froth
+breaks its outline into clumps. The edges move in and out with noise that rides with the water,
+further as the fall widens. Each rope ends at its own height. White water scatters the light that
+reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and it
+reads white beside the cloud. It fades where the copy of the scene's depth shows a wall close behind
+it. The mist is particles, in round billows sized by the creek rather than by the fan.
 
-**The spray.** The water add-on depends on `@null3d/particles` at the exact version. The grass
-add-on depends on the wind add-on the same way ([D-173](D-173-addon-hooks.md)). A fall makes three
-systems: a froth over the brink, the mist that it bursts into and a plume at its foot. `fallEmitters`
-in `fall.ts` places them along the fall's path and turns them across it. Its tests hold the places,
-the turn and the rates. `createWaterfall` imports the particles add-on on first use. So a page that
-draws only water loads none of it, and neither does a fall with `spray: 0`. Two other
-ways were weighed. The add-on could return the emitters' places and leave the systems to each scene.
-Every scene would then repeat the same three systems and their tuning, which is a second copy of the
-feature. A scene could pass the particles add-on's function in. That is a second way to make a fall,
-and the water add-on would copy the particle options' types. Particles are not lit, so the scene
-sets their light with `setLight` in each mood.
+**The spray.** The water add-on depends on `@null3d/particles` at the exact version. As
+[D-173](D-173-addon-hooks.md) allows, the grass add-on depends on the wind add-on the same way. A
+fall makes four systems. A froth stands over the brink, and spray falls inside the column. The mist
+gathers where the fall bursts, and a plume rises at its foot. The function `fallEmitters` places
+them along the fall's path and turns them across it. Its tests hold the places, the turn and the
+rates. `createWaterfall` imports the particles add-on on first use. So a page that draws only water
+loads none of it, and neither does a fall with `spray: 0`.
+
+Two other ways were weighed. The add-on could return the emitters' places and leave the systems to
+each scene. Every scene would then repeat the same four systems and their tuning, which is a second
+copy of the feature. A scene could pass the particles add-on's function in. That is a second way to
+make a fall, and the water add-on would copy the particle options' types. Particles are not lit, so
+the scene sets their light with `setLight` in each mood.
 
 **The mesh.** The sheet has no vertex offset, so it is a plain mesh. At the default detail it holds
 just under 4,000 triangles, below the count at which the engine plans levels for a mesh made in code.

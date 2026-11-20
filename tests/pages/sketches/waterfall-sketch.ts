@@ -3,8 +3,9 @@
 // a glassy tongue over the lip, then round white ropes with torn edges that fan out and burst into
 // mist, with a froth at the lip and a plume at the foot. The sheet's streaks move with the time
 // alone and the spray's systems start full, so the held frame shows the running fall. The `view`
-// switch moves the camera: `near` stands 10 m from the fall, and `side` looks square across its
-// path, past the gap between the water and the wall. `spray=0` leaves the spray and mist out.
+// switch moves the camera: `near` stands 10 m from the fall, `side` looks square across its path,
+// past the gap between the water and the wall, and `profile` sees it side-on from above, as the
+// concept's camera sees its left fall. `spray=0` leaves the spray and mist out.
 import { defineSketch } from '@null3d/engine';
 import { createWater, createWaterfall } from '@null3d/water';
 
@@ -21,7 +22,7 @@ const CLOUD = -12;
 type Place = [x: number, y: number, z: number];
 
 /** Each view's camera place and the point that it looks at. */
-const VIEWS: Record<'high' | 'near' | 'side', readonly [Place, Place]> = {
+const VIEWS: Record<'high' | 'near' | 'side' | 'profile', readonly [Place, Place]> = {
 	high: [
 		[16, 10, 14],
 		[0, -7, 0],
@@ -33,6 +34,12 @@ const VIEWS: Record<'high' | 'near' | 'side', readonly [Place, Place]> = {
 	side: [
 		[2, -5, 32],
 		[2, -5, 0],
+	],
+	// In profile from above, as the concept's camera sees its left fall: along the cliff's face,
+	// looking down at about 25 degrees.
+	profile: [
+		[1, 9, 34],
+		[1, -5, 4],
 	],
 };
 const SWITCHES = new URL(import.meta.url).searchParams;
