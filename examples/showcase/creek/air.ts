@@ -8,7 +8,7 @@ import { createParticles, type ParticleSystem, particleTextures } from '@null3d/
 import type { WindField } from '@null3d/wind';
 import { EFFECT_LAYER } from '../../lib/layers';
 import type { Mood, MoodMix } from '../../lib/stage';
-import { LIPS, streamCurrent, streamZ, WATER } from './land';
+import { LIPS, POOL, streamCurrent, streamZ, WATER } from './land';
 
 /** Leaves that fall from each crown each second, and how long a leaf takes to fall. */
 const LEAF_RATE = 0.5;
@@ -16,10 +16,16 @@ const LEAF_LIFE: readonly [number, number] = [9, 15];
 /** Dust motes over the near bank, and how long each glows. */
 const MOTES = 220;
 const MOTE_LIFE: readonly [number, number] = [6, 10];
-/** The lengths of stream that each carry a bank of mist, and the puffs over each. */
-const MIST_REACHES = 6;
-const MIST_REACH = (LIPS.east - LIPS.west) / MIST_REACHES;
-const MIST_PUFFS = 10;
+/**
+ * The creek's two arms out of the spring pool, which each carry one bank of mist that drifts with
+ * the arm's current: where each starts and ends along x.
+ */
+const MIST_ARMS = [
+	{ from: LIPS.west, to: POOL.x },
+	{ from: POOL.x, to: LIPS.east },
+] as const;
+/** The mist's puffs over each meter of creek, and how long each lives. */
+const MIST_PER_METER = 1.5;
 const MIST_LIFE: readonly [number, number] = [14, 22];
 
 /** A crown that leaves fall from: its middle on the ground, its height and its reach. */
@@ -168,20 +174,37 @@ export async function createAir(
 			}),
 		),
 	);
-	// Mist: broad puffs that lie low over each reach of the water and drift downstream with the
-	// current, in each mood's own color.
+	// Mist: broad puffs that lie low over each arm of the water and drift downstream with its
+	// current, in each mood's own color. The creek runs nearly straight along x between the pool
+	// and each lip, so one bank covers an arm: a box over the arm's course, moving at the arm's
+	// mean current.
 	const smoke = particleTextures.smoke(textures);
 	const mist = await Promise.all(
-		Array.from({ length: MIST_REACHES }, (_, k) => {
-			const x = LIPS.west + (k + 0.5) * MIST_REACH;
-			const [vx, vz] = streamCurrent(x);
+		MIST_ARMS.map(({ from, to }, k) => {
+			const samples = 8;
+			let z = 0;
+			let low = Infinity;
+			let high = -Infinity;
+			let vx = 0;
+			let vz = 0;
+			for (let i = 0; i < samples; i++) {
+				const x = from + ((to - from) * (i + 0.5)) / samples;
+				const at = streamZ(x);
+				const [cx, cz] = streamCurrent(x);
+				z += at / samples;
+				low = Math.min(low, at);
+				high = Math.max(high, at);
+				vx += cx / samples;
+				vz += cz / samples;
+			}
+			const length = to - from;
 			return createParticles(ctx, {
 				...air,
 				...smoke,
 				seed: 73 + k,
-				position: [x, WATER + 0.5, streamZ(x)],
-				shape: { type: 'box', size: [MIST_REACH, 0.5, 4] },
-				rate: MIST_PUFFS / MIST_LIFE[1],
+				position: [(from + to) / 2, WATER + 0.5, z],
+				shape: { type: 'box', size: [length, 0.5, 4 + high - low] },
+				rate: (MIST_PER_METER * length) / MIST_LIFE[1],
 				lifetime: MIST_LIFE,
 				speed: [0, 0],
 				velocity: [vx * 0.4, 0, vz * 0.4],
@@ -212,8 +235,11 @@ export async function createAir(
 			(motes[k] as ParticleSystem).set(values);
 		}
 	};
+	// The mist's color and opacity, kept and written in place like the motes' values.
+	const mistValues = { colorOverLife: [haze, haze] as const, opacity: mistOpacity };
 	const showMist = () => {
-		for (const bank of mist) bank.set({ opacity: mistShown ? mistOpacity : 0 });
+		mistValues.opacity = mistShown ? mistOpacity : 0;
+		for (const bank of mist) bank.set(mistValues);
 	};
 	const systems: readonly ParticleSystem[] = [...leaves, ...motes, ...mist];
 	return {
@@ -234,7 +260,6 @@ export async function createAir(
 			(moteValues[1] as { intensity: number }).intensity = gold;
 			glowing = day + gold > 0;
 			showMotes();
-			for (const bank of mist) bank.set({ colorOverLife: [haze, haze] });
 			showMist();
 		},
 		setFireflies(on) {

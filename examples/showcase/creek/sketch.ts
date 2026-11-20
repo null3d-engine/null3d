@@ -173,14 +173,17 @@ const CLOSE_SHOT: Shot = {
 const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
-/** How far the sheet reaches at each lip, in half widths: just past the water that shows there. */
-const WATER_AT_LIP = 0.95;
 /**
  * Each lip's fall: how far it drops, into the cloud, where it thins away; how far each side widens
  * per meter fallen, so it fans out down the drop; and the share of the creek's half width that
- * leaves over the lip, narrower than the creek, between the lip's shoulders.
+ * leaves over the lip: the water that shows there, between the lip's shoulders.
  */
-const FALL = { drop: 22, spread: 0.12, width: 0.75 } as const;
+const FALL = { drop: 22, spread: 0.12, width: 0.9 } as const;
+/**
+ * How far the sheet reaches at each lip, in half widths: as far as the fall, so no edge of the sheet
+ * runs on past it over the rim.
+ */
+const WATER_AT_LIP = FALL.width;
 /**
  * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
  * cast, its strength over the air's, and the least change of the air that it follows.
