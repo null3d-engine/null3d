@@ -55,12 +55,6 @@ const DOMES = [
 	{ radius: [1.3, 2.6], count: 2600, sink: 0.65 },
 ] as const;
 
-/**
- * The seconds that the page's `cloud-time` switch moves the cloud's own clock on by, so a held view
- * can show the cloud's drift at other moments while the camera holds still. A sketch's worker
- * sees the page's address.
- */
-const CLOUD_SHIFT = Number(new URLSearchParams(globalThis.location?.search).get('cloud-time')) || 0;
 /** The faint lilac cast of the concept's cloud, never pure white. */
 const TINT = [0.955, 0.945, 1.08] as const;
 
@@ -82,7 +76,6 @@ struct Uniforms {
     steps: f32,
     reach: f32,
     texels: f32,
-    shift: f32,
 }
 
 var billows: texture_2d<f32>;
@@ -131,7 +124,7 @@ fn wall_at(p: vec2f) -> vec3f {
 /// and the small billows' own height, low in the clefts between domes. The map's mip level follows
 /// the ray's footprint, so no grain shimmers.
 fn cloud_at(p: vec3f, lod: f32) -> vec3f {
-    let q = p.xz + material.drift * (frame.time + material.shift);
+    let q = p.xz + material.drift * frame.time;
     let a = textureSampleLevel(billows, billowsSampler, q / TILE, lod).r;
     // The larger copy turns and drifts its own way, so the two layers never line up.
     let s = vec2f(q.x * 0.8 - q.y * 0.6, q.x * 0.6 + q.y * 0.8) * 0.92 + vec2f(37.0, 11.0);
@@ -151,7 +144,7 @@ fn cloud_at(p: vec3f, lod: f32) -> vec3f {
         let above = p.y - h;
         let band = smoothstep(-0.5, 0.8, above) * (1.0 - smoothstep(0.0, 8.0, above));
         if foot * band * wall.z > 0.001 {
-            let m = q + material.drift * (frame.time + material.shift) * 1.4;
+            let m = q + material.drift * frame.time * 1.4;
             let along = vec2f(m.x * 0.6 + m.y * 0.8, m.y * 0.25 - m.x * 0.2) / 96.0;
             let streak = textureSampleLevel(billows, billowsSampler, along, 0.0).b;
             mist = foot * band * wall.z * (0.35 + 0.65 * smoothstep(0.3, 0.75, streak));
@@ -537,22 +530,19 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 			steps: STEPS[preset],
 			reach: CLOUD.reach,
 			texels: size,
-			shift: CLOUD_SHIFT,
 		},
 	});
 	// The cloud draws on the effect layer: the water's reflection leaves it out, and the camera's
-	// clearance never takes the sphere round it for a wall. The page's `clouds=off` leaves it out,
-	// so a timing can read its share of the frame.
-	if (new URLSearchParams(globalThis.location?.search).get('clouds') !== 'off')
-		scene
-			.createMesh({
-				mesh: geometry.sphere({ radius: CLOUD.reach, widthSegments: 32, heightSegments: 16 }),
-				material: cloud,
-				layers: EFFECT_LAYER,
-				castShadows: false,
-				receiveShadows: false,
-			})
-			.setRenderOrder(-19);
+	// clearance never takes the sphere round it for a wall.
+	scene
+		.createMesh({
+			mesh: geometry.sphere({ radius: CLOUD.reach, widthSegments: 32, heightSegments: 16 }),
+			material: cloud,
+			layers: EFFECT_LAYER,
+			castShadows: false,
+			receiveShadows: false,
+		})
+		.setRenderOrder(-19);
 	const dome = materials.shader({
 		wgsl: domeWgsl,
 		fog: false,
