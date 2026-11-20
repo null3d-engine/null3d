@@ -1,9 +1,10 @@
 // The add-on's own page, which the listing check opens. A river runs into a lake, both from one
 // material, over a bed that rises through the water at the banks, so the soft shore, the foam, the
-// caustics and the reflection all draw. The camera circles slowly, because the engine rests a still
-// view and the check's cost gate measures the frames that a running page draws.
+// caustics and the reflection all draw. A waterfall drops off a ledge beside the lake with its
+// spray and mist, so the check's gates measure the fall too. The camera circles slowly, because the
+// engine rests a still view and the check's cost gate measures the frames that a running page draws.
 import { defineSketch, math, type SketchContext } from '@null3d/engine';
-import { createWater, foamMap } from '../src/index.ts';
+import { createWater, createWaterfall, foamMap } from '../src/index.ts';
 
 /** The lake's middle and its two radii, in meters. */
 const LAKE = { x: 18, z: 0, rx: 16, rz: 12 } as const;
@@ -43,7 +44,7 @@ function shapes() {
 	];
 }
 
-export default defineSketch((ctx: SketchContext) => {
+export default defineSketch(async (ctx: SketchContext) => {
 	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground({ sky: { sunPosition: [0.3, 0.2, -0.9], cloudCoverage: 0.3 } });
 	const camera = scene.createPerspectiveCamera({
@@ -100,6 +101,20 @@ export default defineSketch((ctx: SketchContext) => {
 	});
 	const caustics: [number, number, number] = [0.5, 0.45, 0.35];
 	water.setCaustics(caustics);
+	// A fall off the far side of a ledge north of the lake: a short stream's lip, 8 m above the bed.
+	scene.createMesh({
+		mesh: geometry.box({ width: 6, height: 8, depth: 6 }),
+		material: materials.standard({ color: '#4a463f', roughness: 0.95 }),
+		position: [18, 4 - 1.3, -19],
+	});
+	const fall = await createWaterfall(ctx, {
+		lip: [18, -16],
+		direction: [0, 1],
+		halfWidth: 1.5,
+		level: 6.7,
+		speed: 2,
+		drop: 9,
+	});
 	return {
 		onUpdate() {
 			// A slow circle over the river's mouth, so every frame submits a draw.
@@ -107,6 +122,9 @@ export default defineSketch((ctx: SketchContext) => {
 			camera.setPosition(Math.sin(angle) * 34, 7, Math.cos(angle) * 34);
 			camera.lookAt(4, 0, 0);
 			water.update();
+		},
+		onLateUpdate() {
+			fall.update();
 		},
 	};
 });
