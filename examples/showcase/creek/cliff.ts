@@ -37,16 +37,16 @@ const UNDERCUT = 0.55;
  * How far the rock stands back under each lip, in meters at the least, so a fall leaving the lip
  * drops clear of the wall; the shares of the creek's half width where the water shows at the lip,
  * where the water's sheet runs on under the banks and the rock stands flush, and where no buttress
- * may stand proud enough to hide the fall; how far the rock stands proud there before it is
- * pressed back, in meters, and the share of the rest that it keeps.
+ * may stand proud enough to hide the fall; how far the rock stands proud there, in meters, and
+ * the share of any crag past that which folds back into the wall as a hollow instead.
  */
 const LIP_RECESS = {
 	back: 0.9,
 	water: 0.7,
 	sheet: 1.05,
-	clear: 2,
-	proud: 0.3,
-	press: 0.5,
+	clear: 3,
+	proud: 0.15,
+	fold: 0.6,
 } as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
@@ -237,10 +237,11 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// hide the fall.
 			const { water, sheet, clear } = lipShares(x, z);
 			const raw = offset + UNDERCUT;
-			// Rock that would stand proud is pressed back, not cut flat, so the face keeps its crags.
+			// A crag that would stand proud folds back into the wall as a hollow, so the face beside the
+			// fall stays broken and still never stands out far enough to hide it.
 			const pressed =
 				raw > LIP_RECESS.proud
-					? LIP_RECESS.proud + LIP_RECESS.press * (raw - LIP_RECESS.proud)
+					? LIP_RECESS.proud - LIP_RECESS.fold * (raw - LIP_RECESS.proud)
 					: raw;
 			const capped = offset + (pressed - offset) * clear;
 			const flush = capped + (Math.max(pressed, 0) - capped) * sheet;
@@ -290,7 +291,7 @@ function lipShares(x: number, z: number): { water: number; sheet: number; clear:
 		const share = (from: number, over: number) => 1 - smoothstep(reach, from, from + over);
 		water = Math.max(water, share(half * LIP_RECESS.water, 0.25));
 		sheet = Math.max(sheet, share(half * LIP_RECESS.sheet, 0.8));
-		clear = Math.max(clear, share(half * LIP_RECESS.clear, 2));
+		clear = Math.max(clear, share(half * LIP_RECESS.clear, 3));
 	}
 	return { water, sheet, clear };
 }
