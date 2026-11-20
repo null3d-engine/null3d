@@ -1,15 +1,17 @@
 // The waterfall: a sheet of water that falls from a river's lip, with a froth of spray at the lip,
-// mist down the fall and a plume of mist at its foot. The sheet follows the path that falling water
-// takes, and its material moves every streak with the water from the time alone, so the CPU does no
-// work for it in a frame. The spray and the mist are particle systems of the particles add-on,
-// whose particles the GPU moves from their birth and age, so a frame only steps their emitters.
-import type { ParticleWindField, ShaderOptions, SketchContext, Vec3Like } from '@null3d/engine';
-import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
+// a cloud of mist that it bursts into lower down and a plume of mist at its foot. The sheet follows
+// the path that falling water takes, and its material moves every streak with the water from the
+// time alone, so the CPU does no work for it in a frame. The spray and the mist are particle
+// systems of the particles add-on, whose particles the GPU moves from their birth and age, so a
+// frame only steps their emitters. `fall.ts` places the emitters along the fall's path.
+import type { ParticleWindField, ShaderOptions, SketchContext } from '@null3d/engine';
+import type { ParticleSystem, ParticleSystemOptions } from '@null3d/particles';
 import {
 	APRON,
 	checkFallSheet,
+	type FallEmitter,
 	type FallSheet,
-	fallPlace,
+	fallEmitters,
 	fallSheet,
 	fallTime,
 	type WaterfallMesh,
@@ -19,8 +21,11 @@ import type { WaterPoint } from './shape';
 
 /** The current at the lip that a fall takes when the caller gives none, in meters a second. */
 const SPEED = 1.2;
-/** How far each side of the sheet widens for each meter that the water falls, by default. */
-const SPREAD = 0.12;
+/**
+ * How far each side of the sheet widens for each meter that the water falls, by default: a creek
+ * 5 m wide that falls 13 m is about twice as wide halfway down.
+ */
+const SPREAD = 0.3;
 /** The most spray and mist that `setSpray` gives, as a factor of the fall's own. */
 const MOST_SPRAY = 3;
 /** The glassy water's color at the lip: a grey green, as linear red, green and blue. */
@@ -31,6 +36,10 @@ const CLEAR = 1.2;
 const SOFTNESS = 0.6;
 /** The light on the spray and the mist when the scene sets none, as a linear color. */
 const MIST_LIGHT = [0.92, 0.93, 0.95] as const;
+/** The longest life of a puff of the froth, of the mist and of the plume, in seconds. */
+const FROTH_LIFE = 1.8;
+const MIST_LIFE = 4.5;
+const PLUME_LIFE = 9;
 
 /**
  * The standard material values that a waterfall's sheet takes, such as the color of its white
@@ -70,13 +79,14 @@ export interface WaterfallOptions {
 	 */
 	readonly drop: number;
 	/**
-	 * How far each side of the sheet widens for each meter that the water falls. It is 0.12 by
+	 * How far each side of the sheet widens for each meter that the water falls. It is 0.3 by
 	 * default.
 	 */
 	readonly spread?: number;
 	/**
 	 * The spray and the mist, as a factor of the fall's own, from 0 to 3. It is 1 by default. At 0
-	 * the fall makes no particles and loads no particle code, and `setSpray` has nothing to raise.
+	 * the fall makes no particles, neither the particles add-on nor the engine's particle code loads,
+	 * and `setSpray` has nothing to raise.
 	 */
 	readonly spray?: number;
 	/**
@@ -145,8 +155,8 @@ function room(rate: number, life: number): number {
 
 /**
  * Makes a waterfall that falls from a river's lip: a sheet of water that curves over the lip and
- * drops almost straight, glassy at the lip and white lower down, with spray at the lip, mist down
- * the fall and a plume of mist at its foot. Give it the lip, the way the water runs, the river's
+ * drops almost straight, glassy at the lip and white lower down, with spray at the lip, a cloud of
+ * mist that it bursts into lower down and a plume of mist at its foot. Give it the lip, the way the water runs, the river's
  * half width, its surface height and its current there, and the drop. End the river's own surface
  * at the lip: the sheet starts a short way upstream, on the river's surface, and fades in over it.
  *
@@ -173,7 +183,7 @@ export async function createWaterfall(
 	let spray = sprayAmount(options.spray ?? 1);
 	const material = materials.shader({
 		color: '#f2f3f2',
-		roughness: 0.85,
+		roughness: 0.95,
 		metalness: 0,
 		// Both faces draw, so the fall shows from behind as well, and its veils cross without
 		// hiding each other.
@@ -192,6 +202,8 @@ export async function createWaterfall(
 			clear: CLEAR,
 			softness: SOFTNESS,
 			apron: APRON / speed,
+			halfWidth: sheet.halfWidth,
+			spread: sheet.spread,
 		},
 	});
 	const mesh = scene.createMesh({
@@ -201,28 +213,17 @@ export async function createWaterfall(
 		...(options.layers !== undefined && { layers: options.layers }),
 	});
 
-	// The places along the fall that the particles start from, in the frame of the lip: x across the
-	// lip, y up and z out from it, which a turn about the vertical axis gives each system.
-	const length = Math.hypot(sheet.direction[0], sheet.direction[1]);
-	const dx = sheet.direction[0] / length;
-	const dz = sheet.direction[1] / length;
-	const turn = Math.atan2(dx, dz) / 2;
 	const end = fallTime(sheet.drop);
-	const place: [number, number] = [0, 0];
-	const world = (forward: number, height: number): Vec3Like => [
-		sheet.lip[0] + dx * forward,
-		level + height,
-		sheet.lip[1] + dz * forward,
-	];
-	const halfAt = (fallen: number) => sheet.halfWidth + sheet.spread * fallen;
 	const emitters: Emitter[] = [];
 	const light: [number, number, number] = [MIST_LIGHT[0], MIST_LIGHT[1], MIST_LIGHT[2]];
 	// The tint over each particle's life, one light throughout, which `setLight` changes in place.
 	const tint = { colorOverLife: [light, light] };
 	if (spray > 0) {
-		const smoke = particleTextures.smoke(textures);
+		// The particles add-on loads with the first fall that makes spray, so a page that draws only
+		// water loads none of it.
+		const { createParticles, particleTextures } = await import('@null3d/particles');
 		const common = {
-			...smoke,
+			...particleTextures.smoke(textures),
 			blending: 'normal' as const,
 			prewarm: true,
 			colorOverLife: tint.colorOverLife,
@@ -232,106 +233,100 @@ export async function createWaterfall(
 			nearFade: 2,
 			...(options.layers !== undefined && { layers: options.layers }),
 		};
-		const half = sheet.halfWidth;
-		// The froth over the brink: small puffs thrown out and down with the water.
-		const frothRate = 6 * half;
-		const frothLife = 1.8;
-		// The mist down the fall: puffs that sink slower than the water and drift out from it.
-		const middle = sheet.drop * 0.55;
-		fallPlace(end * 0.55, speed, place);
-		const mistOut = place[0];
-		const mistRate = half * Math.max(1, sheet.drop / 6);
-		const mistLife = 4.5;
-		// The plume at the foot: broad puffs that rise and spread, where the fall thins into cloud.
-		fallPlace(end, speed, place);
-		const footOut = place[0];
-		const foot = halfAt(sheet.drop);
-		const plumeRate = 1.1 * foot;
-		const plumeLife = 9;
-		const made = await Promise.all([
-			createParticles(ctx, {
+		const look = (place: FallEmitter, seed: number): ParticleSystemOptions => {
+			const half = place.halfWidth;
+			const base = {
 				...common,
-				seed: 61,
-				capacity: room(frothRate, frothLife),
-				position: world(0.25, -0.1),
-				shape: { type: 'box', size: [half * 1.9, 0.25, 0.5] },
-				direction: [0, -0.35, 1],
-				spread: 0.5,
-				speed: [speed * 0.6, speed * 1.4 + 0.3],
-				gravity: [0, -2.5, 0],
-				drag: 1.4,
-				lifetime: [0.9, frothLife],
-				rate: frothRate * spray,
-				size: [0.25 * half, 0.45 * half],
-				sizeOverLife: [0.6, 1.3, 1.9],
-				alphaOverLife: [0, 0.85, 0.5, 0],
-				opacity: 0.55,
-			}),
-			createParticles(ctx, {
-				...common,
-				seed: 62,
-				capacity: room(mistRate, mistLife),
-				position: world(mistOut, -middle),
-				shape: { type: 'box', size: [halfAt(middle) * 2, sheet.drop * 0.75, 1.2] },
-				speed: [0, 0.4],
-				velocity: [0, -2.5, 0.6],
-				drag: 0.8,
-				turbulence: 0.6,
-				turbulenceScale: 0.4,
-				lifetime: [2.5, mistLife],
-				rate: mistRate * spray,
-				size: [0.5 * half, 1.1 * half],
-				sizeOverLife: [0.7, 1.4, 2.1],
-				alphaOverLife: [0, 0.7, 0.5, 0],
-				opacity: 0.45,
-				...(options.wind && { windField: options.wind }),
-			}),
-			createParticles(ctx, {
-				...common,
-				seed: 63,
-				capacity: room(plumeRate, plumeLife),
-				position: world(footOut + 0.5, -sheet.drop * 0.92),
-				shape: { type: 'box', size: [foot * 2.8, sheet.drop * 0.2, 3] },
+				seed,
+				position: place.position,
+				shape: { type: 'box' as const, size: place.box },
+				rate: place.rate * spray,
+			};
+			if (place.kind === 'froth')
+				// Small puffs thrown out and down with the water over the brink.
+				return {
+					...base,
+					capacity: room(place.rate, FROTH_LIFE),
+					direction: [0, -0.35, 1],
+					spread: 0.5,
+					speed: [speed * 0.6, speed * 1.4 + 0.3],
+					gravity: [0, -2.5, 0],
+					drag: 1.4,
+					lifetime: [0.9, FROTH_LIFE],
+					size: [0.25 * half, 0.45 * half],
+					sizeOverLife: [0.6, 1.3, 1.9],
+					alphaOverLife: [0, 0.85, 0.5, 0],
+					opacity: 0.55,
+				};
+			const wind = options.wind && { windField: options.wind };
+			if (place.kind === 'mist')
+				// Broad puffs that sink slower than the water and drift out from it.
+				return {
+					...base,
+					...wind,
+					capacity: room(place.rate, MIST_LIFE),
+					speed: [0, 0.4],
+					velocity: [0, -2, 0.6],
+					drag: 0.8,
+					turbulence: 0.8,
+					turbulenceScale: 0.3,
+					lifetime: [2.5, MIST_LIFE],
+					size: [0.7 * half, 1.4 * half],
+					sizeOverLife: [0.7, 1.4, 2.1],
+					alphaOverLife: [0, 0.75, 0.6, 0],
+					opacity: 0.6,
+				};
+			// The plume: broad puffs that rise and spread where the fall thins into cloud.
+			return {
+				...base,
+				...wind,
+				capacity: room(place.rate, PLUME_LIFE),
 				speed: [0, 0.6],
 				velocity: [0, 0.5, 0.4],
 				turbulence: 1.2,
 				turbulenceScale: 0.2,
 				turbulenceSpeed: 0.3,
-				lifetime: [5, plumeLife],
-				rate: plumeRate * spray,
-				size: [0.9 * foot, 1.8 * foot],
+				lifetime: [5, PLUME_LIFE],
+				size: [0.9 * half, 1.8 * half],
 				sizeOverLife: [0.5, 1.4, 2.2],
 				alphaOverLife: [0, 0.6, 0.55, 0],
 				opacity: 0.5,
-				...(options.wind && { windField: options.wind }),
-			}),
-		]);
-		const rates = [frothRate, mistRate, plumeRate];
+			};
+		};
+		const places = fallEmitters(sheet);
+		const made = await Promise.all(
+			places.map((place, k) => createParticles(ctx, look(place, 61 + k))),
+		);
 		for (let k = 0; k < made.length; k++) {
 			const system = made[k] as ParticleSystem;
+			const place = places[k] as FallEmitter;
 			// Each system's frame turns with the lip, so its box lies across the fall.
-			system.object.setRotation(0, Math.sin(turn), 0, Math.cos(turn));
-			emitters.push({ system, rate: rates[k] as number });
+			system.object.setRotation(0, Math.sin(place.turn / 2), 0, Math.cos(place.turn / 2));
+			emitters.push({ system, rate: place.rate });
 		}
 	}
 	return {
 		fallTime: end,
+		// The frame's calls loop with an index, which makes no iterator.
 		update() {
-			for (const emitter of emitters) emitter.system.update();
+			for (let k = 0; k < emitters.length; k++) (emitters[k] as Emitter).system.update();
 		},
 		setLight(color) {
 			light[0] = color[0];
 			light[1] = color[1];
 			light[2] = color[2];
-			for (const emitter of emitters) emitter.system.set(tint);
+			for (let k = 0; k < emitters.length; k++) (emitters[k] as Emitter).system.set(tint);
 		},
 		setSpray(amount) {
 			if (amount === spray) return;
 			spray = sprayAmount(amount);
-			for (const emitter of emitters) emitter.system.rate = emitter.rate * spray;
+			for (let k = 0; k < emitters.length; k++) {
+				const emitter = emitters[k] as Emitter;
+				emitter.system.rate = emitter.rate * spray;
+			}
 		},
 		destroy() {
-			for (const emitter of emitters) emitter.system.destroy();
+			for (let k = 0; k < emitters.length; k++) (emitters[k] as Emitter).system.destroy();
 			emitters.length = 0;
 			mesh.destroy();
 			material.destroy();

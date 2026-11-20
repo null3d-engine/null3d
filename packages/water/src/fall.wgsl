@@ -1,9 +1,10 @@
-// The waterfall's sheet: glassy water at the lip that turns white as it falls, in ropes and veils of
-// fine upright streaks, with ragged, feathered edges, thinning into mist toward its foot. Every
-// pattern moves with the water: a point's noise reads the place across the lip where its water
-// crossed it and the time it crossed, so each streak rides down at the water's own speed and
-// stretches as the water speeds up. The animation needs the time alone, so the CPU does nothing in
-// a frame. The scene's light lights the sheet, and its depth softens the sheet where it nears a wall.
+// The waterfall's sheet: glassy water that rolls over the lip as a smooth tongue, then turns white
+// and falls as four to six round ropes with grey shade between them, its edges torn into lobes and
+// wisps. From about halfway down it bursts into a cloud of mist several times its width, which hides
+// its end. Every pattern moves with the water: a point's noise reads the place across the lip where
+// its water crossed it and the time it crossed, so each streak rides down at the water's own speed
+// and stretches as the water speeds up. The animation needs the time alone, so the CPU does nothing
+// in a frame. The scene's light lights the sheet, and its depth softens the sheet near a wall.
 #import null3d::noise::{value2}
 
 struct Uniforms {
@@ -17,13 +18,21 @@ struct Uniforms {
     softness: f32,
     // The seconds that the apron's water takes to reach the lip, over which the apron fades in.
     apron: f32,
+    // Half the water's width at the lip, in meters, and how far each side widens for each meter that
+    // the water falls.
+    halfWidth: f32,
+    spread: f32,
 }
 
 /// The ropes that the white water parts into, for each meter across the lip.
-const ROPES_PER_METER: f32 = 1.1;
+const ROPES_PER_METER: f32 = 0.9;
 
 /// The second texture coordinate's room for each veil, as the mesh writes it.
 const VEIL_ROOM: f32 = 2.0;
+
+/// How far each veil's mesh reaches past the water's edges, as a factor of its half width, as the
+/// mesh writes it.
+const EDGE_ROOM: f32 = 1.5;
 
 /// The veil that a point belongs to, counted from 0 at the back.
 fn veil_of(uv1: vec2f) -> f32 {
@@ -66,75 +75,98 @@ fn distance_of(depth: f32) -> f32 {
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
+    let white_color = s.baseColor;
     let veil = veil_of(input.uv1);
-    let across = (input.uv1.x - VEIL_ROOM * veil) * 2.0 - 1.0;
+    // The place across the veil's mesh, from -1 to 1, and across the water, where -1 and 1 are its
+    // edges and the mesh's room lies past them.
+    let mesh_across = (input.uv1.x - VEIL_ROOM * veil) * 2.0 - 1.0;
+    let across = mesh_across * EDGE_ROOM;
     let lip = input.uv.x;
     let t = input.uv.y;
     let fallen = max(input.uv1.y, 0.0);
     let share = clamp(fallen / material.drop, 0.0, 1.0);
     let seed = veil * 3.0 + 1.0;
     let now = frame.time;
+    let crossed = now - t;
 
-    // Ropes: bundles about a meter across that keep their places and waver slowly. Streaks: two
-    // finer layers that ride down with the water, the finest a little faster than the rest.
-    let ropes = streak_layer(lip, now - t, vec2f(0.9, 0.2), seed);
-    let coarse = streak_layer(lip, now - t, vec2f(5.0, 1.4), seed + 0.37);
-    let fine = streak_layer(lip, now * 1.25 - t, vec2f(13.0, 3.5), seed + 0.71);
-    // The ropes are bands about a meter apart that slow noise bends and shifts, so they part with
-    // gaps between them and wander as the water falls. Where a pixel covers more than half a band,
-    // they give way to their mean.
-    let warp = streak_layer(lip, now - t, vec2f(0.35, 0.12), seed + 0.2);
-    let bands = lip * ROPES_PER_METER + warp * 2.5 + seed;
-    let band = 0.5 + 0.5 * cos(bands * 6.2831853);
+    // Ropes: thick bundles about a meter apart, each round, with a bright core and grey shade at its
+    // sides. Slow noise bends them and changes their widths, so they wander as the water falls, and
+    // they fan out with the sheet, since they follow the place across the lip. Where a pixel covers
+    // more than half a rope, the ropes give way to their mean.
+    let ropes = streak_layer(lip, crossed, vec2f(0.9, 0.2), seed);
+    let warp = streak_layer(lip, crossed, vec2f(0.3, 0.1), seed + 0.2);
+    let bands = lip * ROPES_PER_METER + warp * 1.4 + seed;
+    let inside = (2.0 * (fract(bands) - 0.5)) / mix(0.55, 1.0, ropes);
+    let core = sqrt(clamp(1.0 - inside * inside, 0.0, 1.0));
     let banded = 1.0 - smoothstep(0.3, 0.6, fwidth(bands));
-    let rope = mix(0.5, smoothstep(0.25, 0.85, band) * mix(0.55, 1.0, ropes), banded);
-    let streak = smoothstep(0.3, 0.75, 0.5 * coarse + 0.5 * fine);
-    // The sheet falls whole for a few meters, then parts into its ropes.
-    let parting = smoothstep(0.0, 0.3, share);
-    let body = clamp(mix(0.75, 0.7 * rope + 0.55 * streak - 0.05, parting * 0.4 + 0.6), 0.0, 1.0);
-
-    // Glassy for a short way below the lip, then white. Over the brink, flecks of white already ride
-    // on the glassy water.
+    // The glassy tongue over the lip is one smooth body; the ropes part out of it as it turns white.
     let white = smoothstep(0.0, material.clear, fallen);
-    let flecks = smoothstep(0.6, 0.85, fine) * 0.7;
-    let foam = max(white, flecks * (1.0 - white));
-    // Between the strands, the shade of the water behind them shows grey.
-    s.baseColor = mix(material.glass, s.baseColor * min(mix(0.3, 1.1, body), 1.0), foam);
+    let rope = mix(0.6, mix(0.75, core, white), banded);
+    // Froth: fine upright streaks inside each rope, which ride down with the water, so a rope reads
+    // as white water rather than a smooth tube.
+    let grain = streak_layer(lip, crossed * 1.2, vec2f(4.0, 2.2), seed + 0.71);
+    let fine = streak_layer(lip, crossed * 1.4, vec2f(9.0, 3.6), seed + 0.83);
+    // Thin bright threads among the streaks, which a near view resolves and a far one averages away.
+    let threads = smoothstep(0.62, 0.82, streak_layer(lip, crossed * 1.6, vec2f(18.0, 5.0), seed + 0.29));
+    let froth = clamp(0.4 * grain + 0.45 * fine + 0.35 * threads, 0.0, 1.0);
+
+    // Glassy over the lip, then white. Thin white streak lines ride over the brink into the glassy
+    // tongue.
+    let lines = smoothstep(0.7, 0.9, streak_layer(lip, crossed, vec2f(5.0, 0.5), seed + 0.9));
+    let foam = max(white, lines * 0.7 * (1.0 - white));
+    let body = clamp(rope * mix(0.6, 1.2, froth), 0.0, 1.0);
+    s.baseColor = mix(material.glass, white_color * mix(0.35, 1.0, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
     s.diffuseTransmissionColor = s.baseColor;
 
-    // The streaks give the surface its relief: sharp glints on the glassy water, soft on the foam.
-    // The ropes are rounded bundles, so the light falls across each one; the streaks add a fine grain.
-    let relief = mix(0.05 * streak, 0.14 * rope + 0.03 * streak, white);
+    // The bundle is round, so its sides turn a little from the light; the froth gives a fine grain.
+    let width_here = material.halfWidth + material.spread * fallen;
+    let side = clamp(abs(across), 0.0, 1.0);
+    let bundle = sqrt(max(1.0 - side * side, 0.0)) * width_here * 0.3;
+    let relief = bundle + 0.04 * froth * white;
     s.normal = bent_normal(input.normal, input.relativePosition, relief);
 
-    // How much of the sheet there is. The glassy water is a body; the white water lets the light
-    // behind it through between its strands, and lower down it breaks into ropes with gaps.
-    var alpha = mix(0.85, mix(0.35, 1.0, body), white);
-    let breakup = smoothstep(0.2, 0.8, share);
-    alpha *= mix(1.0, smoothstep(0.15, 0.55, 0.75 * rope + 0.45 * streak), breakup);
-    // Ragged, feathered edges that grow as the sheet fans out, torn by the streaks that ride them.
-    let feather = mix(0.12, 0.4, smoothstep(0.0, 0.5, share));
-    let tufts = streak_layer(lip, now - t, vec2f(2.2, 0.7), seed + 0.53);
-    let edge = abs(across) + ((tufts - 0.5) * 1.8 + (coarse - 0.5) * 0.9 + (fine - 0.5) * 0.6) * feather;
-    alpha *= 1.0 - smoothstep(1.0 - feather, 1.0, edge);
-    // The fall never lands: it thins into the mist over the lower half of its drop.
-    alpha *= 1.0 - smoothstep(0.45, 1.0, share);
+    // How much water there is. The glassy tongue is a body. The white water is dense in its ropes,
+    // soft at their sides and thin between them, and lower down the gaps open further.
+    let dense = smoothstep(0.05, 0.6, rope) * mix(0.55, 1.0, froth);
+    var alpha = mix(0.9, mix(0.2, 1.0, dense), white);
+    alpha *= mix(1.0, smoothstep(0.25, 0.8, dense), smoothstep(0.25, 0.7, share));
+    // Torn edges: each side's edge moves in and out with noise that rides with the water, further
+    // as the fall widens, and wisps tear off it.
+    let edge_seed = select(11.0, 23.0, across > 0.0) + seed;
+    let lobes = value2(vec2f(edge_seed, crossed * 2.2));
+    let wisps = value2(vec2f(edge_seed + 5.0, crossed * 6.0));
+    let reach = mix(0.12, 0.5, smoothstep(0.0, 0.5, share));
+    let rim = abs(across) - (lobes - 0.45) * reach * 1.6 - (wisps - 0.5) * reach * 0.8;
+    alpha *= 1.0 - smoothstep(0.82, 1.0, rim);
+    // The water gives way to the mist over the lower half of the drop, so it never lands.
+    alpha *= 1.0 - smoothstep(0.45, 0.9, share);
     // The apron fades in from its upstream end, over the river's own surface.
     alpha *= smoothstep(-material.apron, -0.4 * material.apron, t);
     // The back veil starts behind the sheet at the lip, and lies in its shade.
     let back = 1.0 - min(veil, 1.0);
     alpha *= mix(1.0, 0.7 * smoothstep(0.0, 1.5, fallen), back);
     s.baseColor *= mix(1.0, 0.6, back);
-    // The spray veil is a thin, soft halo around the sheet: it gathers a few meters below the lip,
-    // keeps only the broad streaks, and feathers out at its sides.
-    let spray = step(1.5, veil);
-    let halo = smoothstep(0.5, 3.0, fallen) * (0.25 + 0.4 * coarse + 0.35 * rope)
-        * (1.0 - smoothstep(0.25, 1.0, abs(across) + (tufts - 0.5) * 0.6))
-        * (1.0 - smoothstep(0.55, 1.0, share));
-    alpha = mix(alpha, 0.22 * halo, spray);
-    s.roughness = mix(s.roughness, 1.0, spray);
+
+    // The mist veil: spray along both edges of the upper fall, then from about halfway down a soft
+    // cloud several times the fall's width, which billows with the water and hides the fall's end.
+    let mist = step(1.5, veil);
+    // The mist's noise runs in meters both across and down, so it billows in round clouds rather
+    // than streaks, and it sinks slowly.
+    let drift = fallen * 0.3 - now * 0.35;
+    let puff = 0.65 * value2(vec2f(lip * 0.3 + seed * 7.0, drift))
+        + 0.35 * value2(vec2f(lip * 0.75 + seed * 3.0, drift * 2.5 + 11.0));
+    let billow = smoothstep(0.25, 0.75, puff);
+    let spread_out = 1.0 - smoothstep(0.15, 0.8, abs(mesh_across) + (puff - 0.5) * 0.9);
+    let burst = smoothstep(0.25, 0.6, share) * (1.0 - smoothstep(0.8, 1.0, share)) * spread_out;
+    let spray = smoothstep(0.3, 0.55, abs(mesh_across)) * (1.0 - smoothstep(0.6, 0.85, abs(mesh_across)))
+        * smoothstep(0.02, 0.2, share) * (1.0 - smoothstep(0.4, 0.7, share));
+    let cloud = billow * max(0.4 * burst, 0.3 * spray);
+    alpha = mix(alpha, cloud, mist);
+    s.baseColor = mix(s.baseColor, white_color * mix(0.72, 1.0, billow), mist);
+    s.roughness = mix(s.roughness, 1.0, mist);
+
     // Where the sheet nears a wall or a ledge behind it, it fades rather than cutting a line.
     let place = input.fragCoord.xy / frame.resolution;
     let gap = max(sceneDistance(place) - distance_of(input.fragCoord.z), 0.0);

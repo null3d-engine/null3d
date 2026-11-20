@@ -37,10 +37,10 @@ flowchart LR
 
 `createOcean` draws an open sea instead. Its waves come from wave spectra, and the GPU transforms them into heights in every frame. The bands of swell and chop then move on their own, and the surface reads the slopes that the transform writes.
 
-The package is built on the engine's public API. Its surface and underwater shaders ship compiled, so your build does not compile them, and the package needs no extra setup for them.
+The package is built on the engine's public API. Its surface and underwater shaders ship compiled, so your build does not compile them, and the package needs no extra setup for them. A waterfall's spray comes from `@null3d/particles`, which the package lists as a peer dependency. It loads with the first fall that makes spray.
 
 ```sh
-bun add @null3d/water
+bun add @null3d/water @null3d/particles
 ```
 
 ```ts
@@ -224,17 +224,18 @@ window overhead, and turns the light back past that window's edge.
 
 ## Waterfalls
 
-`createWaterfall(ctx, options)` makes a waterfall that falls from a river's lip. The sheet curves over
-the lip and drops almost straight, as falling water does while the air slows it. It is glassy for a
-short way below the lip, then white. The white water falls in ropes of fine upright streaks, with
-ragged, feathered edges, and it fans out as it falls. Toward its foot it thins into mist, so it never
-ends in a line. Spray froths at the lip, mist drifts down the fall, and a plume of mist rises at its
-foot.
+`createWaterfall(ctx, options)` makes a waterfall that falls from a river's lip. The water rolls
+over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water
+does while the air slows it. Below the tongue it turns white and parts into four to six round ropes. Gray
+shade lies between them and fine streaks run inside them. Its edges tear into lobes and wisps, and it
+fans out as it falls. From about halfway down it bursts into a cloud of mist several times its
+width, so it never lands and never ends in a line. Spray froths at the lip, and a plume of mist
+rises at its foot.
 
 The sheet's material moves each streak with the water from the sketch's time alone, so the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
-the water speeds up. Three veils give the fall depth from the side: one behind the sheet, and a
-halo of spray in front of it. The scene's
+the water speeds up. Three veils give the fall depth from the side: one behind the sheet, and the
+mist in front of it. The scene's
 light lights the sheet, and the sheet fades where it nears a wall or a ledge behind it. The spray and
 the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
 
@@ -284,8 +285,8 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `level` | A number, in meters | 0 | The height of the water's surface at the lip |
 | `speed` | A number above 0, in meters a second | 1.2 | The current at the middle of the lip. It sets how far the water leaps clear of the lip. A river runs faster as it nears a brink, so give the speed at the lip itself: 1 to 2 m/s throws a creek's fall clear of the wall below it |
 | `drop` | A number above 0, in meters | Required | How far the fall drops below the lip. The sheet thins into mist over the lower half of the drop |
-| `spread` | A number from 0 | 0.12 | How far each side of the sheet widens for each meter that the water falls |
-| `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles and loads no particle code |
+| `spread` | A number from 0 | 0.3 | How far each side of the sheet widens for each meter that the water falls. At 0.3 a creek 5 m wide that falls 13 m is about twice as wide halfway down |
+| `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles, and neither `@null3d/particles` nor the engine's particle code loads |
 | `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
 | `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |
 | `material` | The standard material values | None | The sheet's material, such as the color of its white water |
@@ -392,7 +393,8 @@ near the eye and spends its vertices far away.
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
 - **A waterfall.** It draws one blended mesh of three veils, just under 4,000 triangles at the
-  default detail. It adds three particle systems of a few hundred large puffs at most. The sheet reads the copy
+  default detail. It adds three particle systems: a froth at the lip, the mist that the fall
+  bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The sheet reads the copy
   of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
   phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a

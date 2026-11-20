@@ -1,9 +1,9 @@
 # D-257: The water add-on
 
-Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
-feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, the
-ocean, which draws on every GPU path, the waterfall, and rain on the surface. Owed: a quiet run of the add-on's cost per preset, whose
-gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
+Status: decided. Built: the `@null3d/water` add-on, its demo, and the reflection's cadence through
+the feature host. Built too: one owner for each point where bodies meet, and the Creek's migration.
+Built too: the ocean on every GPU path, the waterfall, and rain on the surface. Owed: a quiet run
+of the add-on's cost per preset, whose gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
 with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
@@ -377,8 +377,10 @@ pixel covers more than 5 to 16 cm, so far water does not shimmer.
 
 The `water-rain` picture draws a lake in rain, low across the water, on every tier. Against the
 same lake with no rain, the rings move 1.9 to 2.4 per cent of its pixels. Each of those pixels moves
-by more than a tenth of full scale, on each of the three paths. Under a cloudy sky, the WebGPU path draws the lake's mirror of the
-clouds differently from the other two, rain or not. So the picture takes a clear sky.
+by more than a tenth of full scale, on each of the three paths. Under a cloudy sky the WebGPU path draws the lake's mirror of the
+clouds differently from the other two, rain or not: core WebGPU draws the sky's volumetric clouds on
+High and Ultra, and the other paths draw the flat layer ([D-297](D-297-volumetric-clouds.md)). So
+the picture takes a clear sky.
 
 ## The waterfall
 
@@ -397,22 +399,32 @@ the eye can follow. `fall.ts` holds the path and the mesh. Its tests hold the sh
 height and width, to the path, and to a sheet that never rises.
 
 **The sheet.** Three veils give the fall depth from the side. The back one is thrown less far and is
-a little narrower. The spray veil is thrown furthest and spreads widest, as a thin, feathered halo. An apron runs a meter up the river's surface before the lip, and fades in there. So
-the river's own mesh ends at the lip with no seam. The mesh's texture coordinates carry each point's
-place across the lip and the time since its water crossed it. The material's noise reads those two.
-So every streak rides down at the water's own speed, and stretches as the water speeds up, from the
-sketch time alone. The water is glassy for about a meter and white below. Ropes part out of the
-sheet as it falls, its edges tear, and it thins into mist over the lower half of its drop. The sheet
-takes the scene's light. It fades where the copy of the scene's depth shows a wall close behind it.
+a little narrower. The mist veil is thrown furthest and fans three times as fast. Each veil's mesh
+reaches half again past the water's edges, so the material can tear the edges outward. An apron runs
+a meter up the river's surface before the lip, and fades in there. So the river's own mesh ends at
+the lip with no seam. The mesh's texture coordinates carry each point's place across the lip and
+the time since its water crossed it. The material's noise reads those two. So every streak rides
+down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
 
-**The spray.** The water add-on depends on `@null3d/particles` at the exact version, as the grass
-add-on depends on the wind add-on ([D-173](D-173-addon-hooks.md)). A fall makes three systems: a
-froth over the brink, mist down the fall and a plume at its foot. Two other ways were weighed. The
-add-on could return the emitters' places and leave the systems to each scene. Every scene would then
-repeat the same three systems and their tuning, which is a second copy of the feature. A scene could
-pass the particles add-on's function in. That is a second way to make a fall, and the water add-on
-would copy the particle options' types. A fall with `spray: 0` makes no systems and loads no particle
-code. Particles are not lit, so the scene sets their light with `setLight` in each mood.
+**The look.** The concept's falls set it. A smooth glassy tongue rolls over the lip. Then four to
+six thick round ropes fall, with bright cores and gray shade between them, and torn, lobed edges.
+From about halfway down a cloud of mist three or four times the fall's width hides the fall's end. The ropes are
+bands about a meter apart that slow noise bends, each with a round profile and fine streaks inside.
+The edges move in and out with noise that rides with the water, further as the fall widens. The mist
+veil's noise runs in meters both ways, so it billows rather than streaks. The sheet takes the
+scene's light. It fades where the copy of the scene's depth shows a wall close behind it.
+
+**The spray.** The water add-on depends on `@null3d/particles` at the exact version. The grass
+add-on depends on the wind add-on the same way ([D-173](D-173-addon-hooks.md)). A fall makes three
+systems: a froth over the brink, the mist that it bursts into and a plume at its foot. `fallEmitters`
+in `fall.ts` places them along the fall's path and turns them across it. Its tests hold the places,
+the turn and the rates. `createWaterfall` imports the particles add-on on first use. So a page that
+draws only water loads none of it, and neither does a fall with `spray: 0`. Two other
+ways were weighed. The add-on could return the emitters' places and leave the systems to each scene.
+Every scene would then repeat the same three systems and their tuning, which is a second copy of the
+feature. A scene could pass the particles add-on's function in. That is a second way to make a fall,
+and the water add-on would copy the particle options' types. Particles are not lit, so the scene
+sets their light with `setLight` in each mood.
 
 **The mesh.** The sheet has no vertex offset, so it is a plain mesh. At the default detail it holds
 just under 4,000 triangles, below the count at which the engine plans levels for a mesh made in code.

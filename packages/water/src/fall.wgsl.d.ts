@@ -9,6 +9,8 @@ declare const shader: CompiledMaterial<
 		readonly clear: 'f32';
 		readonly softness: 'f32';
 		readonly apron: 'f32';
+		readonly halfWidth: 'f32';
+		readonly spread: 'f32';
 	},
 	never
 >;

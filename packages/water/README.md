@@ -11,10 +11,10 @@ that a middle line and a width do not describe.
 Rain, when a page turns it on with `rain` or `setRain`, rings the surface where its drops land,
 and the rings drift with the current.
 
-`createWaterfall` draws a fall from a river's lip. The sheet curves over the lip and drops almost
-straight. It is glassy at the lip and white lower down, in streaks that ride with the water, and it
-thins into mist toward its foot. Spray froths at the lip, mist drifts down the fall and a plume rises
-at its foot, from `@null3d/particles`.
+`createWaterfall` draws a fall from a river's lip. The water rolls over the lip as a glassy tongue
+and drops almost straight. It turns white, parts into round ropes with torn edges, and from about
+halfway down bursts into a cloud of mist, so it never lands. Its spray, mist and plume come from
+`@null3d/particles`, which loads with the first fall that makes spray.
 
 `createOcean` draws an open sea instead. Its waves come from two or three bands of wave spectra.
 Compute passes transform each band into the height of the sea in every frame. One material sums the
@@ -138,8 +138,8 @@ authored directions and each wave's own speed.
 - The surface lets light through with transmission. The engine therefore copies the scene's colors
   in the frame that the water draws. The surface draws both faces, so it shows from under the water.
 - A waterfall draws one blended mesh of three veils and three particle systems. Its streaks move
-  from the time alone, so a frame only steps the particles' emitters. Its particle code loads on
-  the first fall that makes spray.
+  from the time alone, so a frame only steps the particles' emitters. The particles add-on and the
+  engine's particle code load with the first fall that makes spray.
 - The water costs no memory until a scene creates it. The add-on's code and its shaders load only
   when a sketch imports it.
 - The ocean's transform takes 15 of the 31 passes that a sketch may add. Seven butterfly stages run
