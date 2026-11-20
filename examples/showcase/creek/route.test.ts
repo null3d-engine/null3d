@@ -1,52 +1,68 @@
-// Creek's route must stay clear of the trees and plants that dress its valley and of its cave
-// ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)). The test places the valley as the
-// scene does, samples the whole route through the player's own interpolation, and fails when a
-// sample comes within a model's room or the dip reaches the bed or a stone. A route edit or a rule
-// change therefore cannot reintroduce a clip.
+// Creek's route must stay clear of the cliff's ground and walls, above the cloud's tops past the
+// rim, and dip under the water only along the creek ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)).
+// The test samples the whole route through the player's own interpolation, and fails when a sample
+// comes too near the ground, the rock or the cloud, or when the dip reaches the bed or a stone. A
+// route edit therefore cannot reintroduce a clip.
 import { expect, test } from 'bun:test';
 import { waveHeight } from '@null3d/water';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
-import { groundHeight, streamCurrent, WATER } from './land';
+import {
+	bearingOf,
+	CLOUD_TOP,
+	cameraFloor,
+	groundHeight,
+	rimRadius,
+	streamCurrent,
+	streamZ,
+	WATER,
+} from './land';
 import { SHOTS } from './route';
-import { CAVE, rockPlaces, stoneFootprints } from './stones';
-import { placeValley, valleySolids } from './valley';
+import { ROCK_REACH, rockPlaces } from './stones';
 
 /** The height of the creek's surface at a point and time, as the water's shape gives its current. */
 const surfaceHeight = (x: number, z: number, t: number) =>
-	waveHeight(x, z, t, WATER, streamCurrent(x), 1);
-
-/** The cave's rock, as a cylinder that the route must keep clear of, with the camera's clearance. */
-const CAVE_SOLID = { kind: 'cave', x: CAVE.x, z: CAVE.z, radius: CAVE.reach + 0.6, top: 6.6 };
+	waveHeight(x, z, t, WATER, streamCurrent(x, z), 1);
 
 /** How many points of the loop the check samples. A spline bends between the shots, so the
  * checks sample finely enough to catch a bulge that a shot's own pose does not show. */
 const SAMPLES = 2000;
+/** How far above the ground the route keeps out of the water, in meters. */
+const GROUND_CLEARANCE = 0.8;
+/** How far past the rim the walls' rock can reach, in meters, which the route keeps beyond. */
+const WALL_REACH = 3;
+/** How far above the cloud's tops the route keeps past the rim, in meters. */
+const CLOUD_CLEARANCE = 4;
 
-test('the creek route stays clear of the trees, the plants and the cave', () => {
+test('the creek route keeps clear of the ground and the walls, and above the cloud past the rim', () => {
 	const route = routeTimeline(SHOTS);
 	const pose = new Float32Array(6);
-	const valley = placeValley({ rocks: stoneFootprints() });
-	// The groves on both banks stand: the route runs behind them.
-	expect(valley.trees.length).toBeGreaterThanOrEqual(12);
-	const solids = [...valleySolids(valley), CAVE_SOLID];
 	for (let step = 0; step <= SAMPLES; step++) {
+		const t = (step / SAMPLES) * route.total;
 		// The sample through the player's own interpolation: what it plays is what is checked.
-		routePosition(route, (step / SAMPLES) * route.total, pose);
-		const at = [pose[0] as number, pose[1] as number, pose[2] as number] as const;
-		for (const solid of solids) {
-			const inside =
-				at[1] <= solid.top && Math.hypot(at[0] - solid.x, at[2] - solid.z) < solid.radius;
-			expect(
-				inside,
-				`the route passes through the ${solid.kind} at ${solid.x.toFixed(1)}, ${solid.z.toFixed(1)} (r ${solid.radius.toFixed(2)}) at ${at.map((v) => v.toFixed(2)).join(', ')}`,
-			).toBe(false);
+		routePosition(route, t, pose);
+		const [x, y, z] = [pose[0] as number, pose[1] as number, pose[2] as number];
+		const where = `${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`;
+		const reach = Math.hypot(x, z) - rimRadius(bearingOf(x, z));
+		if (reach > WALL_REACH) {
+			expect(y, `the route sinks toward the cloud at ${where}`).toBeGreaterThan(
+				CLOUD_TOP + CLOUD_CLEARANCE,
+			);
+			continue;
 		}
+		// Within the walls' reach the route stays over the ground, so it never passes beside the
+		// rock below the rim. Over the creek it may run low, and the dip under the water has its own
+		// test below.
+		const ground = groundHeight(x, z);
+		if (ground < WATER) continue;
+		expect(y, `the route nears the ground or the wall at ${where}`).toBeGreaterThan(
+			ground + GROUND_CLEARANCE,
+		);
 	}
 });
 
 /** How far above the stream's bed the dip keeps, in meters. */
 const BED_CLEARANCE = 0.12;
-/** How far past a stone's edge the dip keeps, in meters. A stone reaches about 1.6 times its size. */
+/** How far past a stone's edge the dip keeps, in meters. */
 const STONE_CLEARANCE = 0.25;
 
 test('the creek route dips under the water for five to seven seconds, clear of the bed and the stones', () => {
@@ -68,7 +84,7 @@ test('the creek route dips under the water for five to seven seconds, clear of t
 			const top = groundHeight(rock.x, rock.z) + rock.size;
 			const reach = Math.hypot(x - rock.x, z - rock.z);
 			expect(
-				reach > 1.6 * rock.size + STONE_CLEARANCE || y > top + STONE_CLEARANCE,
+				reach > ROCK_REACH * rock.size + STONE_CLEARANCE || y > top + STONE_CLEARANCE,
 				`the dip runs into the stone at ${rock.x.toFixed(1)}, ${rock.z.toFixed(1)} at ${where}`,
 			).toBe(true);
 		}
@@ -77,4 +93,22 @@ test('the creek route dips under the water for five to seven seconds, clear of t
 	expect(under).toBeLessThanOrEqual(7);
 	// The water level the dip measures against is the stream's own.
 	expect(WATER).toBe(0);
+});
+
+test("past the rim the Manual camera keeps above the water's level, and over the creek it may dip", () => {
+	// The water's view from under its surface turns on from the camera's height alone, so the floor
+	// past the rim, with the camera's clearance, keeps the camera clear of the water's level there.
+	for (let degrees = 0; degrees < 360; degrees += 3) {
+		const bearing = (degrees * Math.PI) / 180;
+		for (const out of [0.05, 1, 3, 8, 20, 45]) {
+			const r = rimRadius(bearing) + out;
+			const [x, z] = [Math.cos(bearing) * r, Math.sin(bearing) * r];
+			expect(cameraFloor(x, z), `the floor at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBeGreaterThan(
+				WATER + 0.3,
+			);
+		}
+	}
+	// Over the creek's middle the floor is its bed, under the water, so the dip stays possible.
+	for (const x of [-15, -2, 6, 12])
+		expect(cameraFloor(x, streamZ(x))).toBeLessThan(WATER - BED_CLEARANCE - 0.2);
 });
