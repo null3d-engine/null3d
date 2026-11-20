@@ -342,7 +342,35 @@ export function groundHeight(x: number, z: number): number {
 	const cobbles = 0.07 * noise.fbm2(x * 0.9, z * 0.9, 3);
 	const bed = -channelDepth(x) + cobbles;
 	const top = landHeight(x, z);
-	return bed + (top - bed) * smoothstep(d, 0.72, 1.32);
+	const ground = bed + (top - bed) * smoothstep(d, 0.72, 1.32);
+	return ground + Math.max(0, lipSill(x, z) - ground);
+}
+
+/**
+ * The broken rock along each lip's very edge: a sill whose height wanders across the water, so in
+ * places it stands out of the water and in others the water runs over it. The water's end at the
+ * lip then shows only in short pieces between rocks, as the concept picture's uneven rims do. The
+ * sill's band in meters back from the edge, its height at the water's level and how far it wanders,
+ * and how many rocks it has to the meter across.
+ */
+const LIP_SILL = { band: [0.3, 0.75], level: -0.06, wander: 0.3, rocks: 2.2 } as const;
+
+/** The sill's height at a point, or far below the ground away from the lips. */
+function lipSill(x: number, z: number): number {
+	let height = -Infinity;
+	for (const lip of [LIPS.west, LIPS.east]) {
+		const along = Math.hypot(1, streamSlope(lip));
+		const [nx, nz] = [Math.sign(lip) / along, (Math.sign(lip) * streamSlope(lip)) / along];
+		const [dx, dz] = [x - lip, z - streamZ(lip)];
+		// How far back from the lip's line the point lies, and how far across the creek.
+		const back = -(dx * nx + dz * nz);
+		const across = dx * nz - dz * nx;
+		if (back < 0 || back > LIP_SILL.band[1] || Math.abs(across) > streamHalf(lip) * 1.1) continue;
+		const share = 1 - smoothstep(back, LIP_SILL.band[0], LIP_SILL.band[1]);
+		const jag = noise.fbm2(across * LIP_SILL.rocks + lip, back * 3 + lip * 0.37, 2);
+		height = Math.max(height, LIP_SILL.level + LIP_SILL.wander * jag - (1 - share) * 0.6);
+	}
+	return height;
 }
 
 /** The bearing of a point about the cliff's middle, from +x toward +z. */

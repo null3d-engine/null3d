@@ -107,12 +107,14 @@ const DIP_REACH = [2.5, 19] as const;
 const BANK = { size: [0.45, 0.8], spacing: 1.7 } as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
- * along the creek its rocks spread, and how many stand in it. One lies on the west sill and one
- * upstream of it; the east sill lies on the camera's dip and stays clear.
+ * along the creek its rocks spread, and how many stand in it. One lies on the west sill and two
+ * upstream of it, so the west arm runs white along its length; the east sill lies on the camera's
+ * dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number])[] = [
 	[-11.5, 1.8, 10],
-	[-6.5, 1.4, 6],
+	[-8.8, 1.2, 8],
+	[-6.5, 1.4, 10],
 ];
 
 /** True for a point that lies inside the rim by at least `margin` meters. */
