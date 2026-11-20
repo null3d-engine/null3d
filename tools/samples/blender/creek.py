@@ -35,9 +35,9 @@ from mathutils.kdtree import KDTree
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    Builder, arguments, at_distance, blend_up, close_up, dilate, export, fbm, frame_of, half, image, leaf_color,
-    leaf_mask, link, material, normal_map, occlusion_of, orm, over, preview, smoothstep, sprig_atlas, strip,
-    tent, tube, value_noise,
+    Builder, arguments, at_distance, blend_up, branch_phase, close_up, dilate, export, fbm, frame_of, half, image,
+    leaf_color, leaf_mask, link, material, normal_map, occlusion_of, orm, over, preview, smoothstep, sprig_atlas,
+    strip, tent, tube, value_noise,
 )
 
 SEED = 20261011
@@ -231,11 +231,6 @@ TREE_LEVELS = (
 # tree: a twig swings more than the bough it grows from. A leaf card at the crown's rim adds its own.
 BRANCH_FREEDOM = 0.25
 LEAF_FREEDOM = 0.2
-
-
-def branch_phase(index):
-    """A branch's phase of flutter, from its place in the tree, spread by the golden ratio."""
-    return (index * 0.6180339887) % 1.0
 
 
 def tree_top(branches):
