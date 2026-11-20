@@ -360,6 +360,24 @@ vertex's world place is the origin with its place in the mesh.
   the read keep the rows that the shader names. The demo draws on every path: its WebGL2 tier runs
   at Medium, whose cadence is two, and the reflection keeps its last image there.
 
+## Caustics seen low across the water
+
+The caustics' ridges are about 7 mm wide at their sharpest, a power of 14 over the ridge noise. A
+low view along a creek covers more than that with one pixel a few meters off. The ridges then
+alias into fine, even lines across the view, like scan lines. A probe drew a shallow creek under an
+overcast sky, seen from 1.1 m up. It measured the rows' alternation as the mean second difference
+down the rows, beside the same figure across the columns. With the caustics, it read 10.95 levels far off and 3.44
+mid-way. With them off, it read 0.66 and 0.51, beside 0.45 to 0.58 across the columns.
+
+So the surface broadens the ridges as a pixel grows. The power falls from 14 to 2 as a pixel grows
+from 7 mm to 5 cm. The surface scales the ridges by the power plus one, over 15. A sampling of the
+pattern showed that this keeps their mean brightness within 4 per cent from a power of 4 up. At a
+power of 2 it is 12 per cent darker.
+Where a pixel covers 6 to 15 cm, the caustics give way to that mean. With the change, the probe read
+0.64 far off and 0.98 mid-way, and the near ridges still drew sharp. The view from under the water
+keeps the sharp ridges. Both copies of the caustics take the power as an argument, so the test
+that holds them equal still holds.
+
 ## Rain on the surface
 
 A storm rains on the water, so the surface takes a `rain` amount from 0 to 1, and `setRain` changes
