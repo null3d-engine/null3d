@@ -36,10 +36,17 @@ export const OVER_WATER = 0.5;
 export const LIPS = { west: -20.3, east: 20 } as const;
 /**
  * A bay in the rim beside the west lip, on the side toward the opening view: its bearing, its depth
- * and its half width in radians. It makes the west lip the cliff's outermost point from the concept's
- * camera, so its fall drops clear of the rim and shows in profile, as in the concept picture.
+ * and its half width in radians. It keeps the near wall from hiding the west fall from the concept's
+ * camera, so the fall shows in profile, as in the concept picture.
  */
-const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 1.3, width: 0.22 } as const;
+const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 2.5, width: 0.22 } as const;
+/**
+ * A headland of rock just past the west lip, as the concept picture has at its left fall's back: from
+ * the opening view it stands behind the upper half of that fall, so the white water shows against
+ * dark rock instead of mist. Its bearing, how far it reaches past the rim, and its half width in
+ * radians.
+ */
+const HEADLAND = { bearing: (152 * Math.PI) / 180, reach: 3.5, width: 0.1 } as const;
 /** How far the rim's straight edge at a lip reaches past the creek's banks, in meters. */
 const LIP_MARGIN = 0.3;
 /** The spring pool near the middle that feeds the creek: its x and how far along it widens. */
@@ -212,7 +219,8 @@ export function rimRadius(bearing: number): number {
 		RIM * (1 + 0.05 * rimNoise.fbm2(c * 1.2 + 4, s * 1.2 + 4, 2)) +
 		0.9 * rimNoise.value2(c * 4 + 9, s * 4 + 9) +
 		0.35 * rimNoise.value2(c * 11 + 2, s * 11 + 2) -
-		WEST_BAY.depth * Math.exp(-((turn(WEST_BAY.bearing, bearing) / WEST_BAY.width) ** 2));
+		WEST_BAY.depth * Math.exp(-((turn(WEST_BAY.bearing, bearing) / WEST_BAY.width) ** 2)) +
+		HEADLAND.reach * Math.exp(-((turn(HEADLAND.bearing, bearing) / HEADLAND.width) ** 2));
 	for (const x of [LIPS.west, LIPS.east]) {
 		// The lip's edge: the line through the creek's middle at the lip, square to its course.
 		const z = streamZ(x);
