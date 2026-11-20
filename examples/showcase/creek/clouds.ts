@@ -211,8 +211,14 @@ fn unlit(input: SurfaceInput) -> vec4f {
 
 /** The cloud sea round the cliff, and what each frame and preset change on it. */
 export interface Clouds {
-	/** Gives the clouds the air's linear color at the horizon and the main light, from the stage. */
-	update(air: readonly [number, number, number], light: Stage['light']): void;
+	/**
+	 * Gives the clouds the air's linear color at the horizon and the main light, from the stage.
+	 * Returns true when the mist's color changed, which other unlit mist, such as a fall's spray,
+	 * then takes from `mist`.
+	 */
+	update(air: readonly [number, number, number], light: Stage['light']): boolean;
+	/** The linear color of the cloud's particles now: its heaps, its banks and its towers. */
+	readonly mist: readonly [number, number, number];
 	/** Shows the shells of a preset: fewer on weaker devices. */
 	fit(preset: QualityPreset): void;
 	/** Steps the heaps', the banks' and the towers' particles, which a frame calls in its late update. */
@@ -402,8 +408,11 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 					color[c] = (grey + ((air[c] as number) - grey) * 0.15) * (TINT[c] as number) * 5.6;
 				}
 				for (const system of systems) system.set({ colorOverLife: [color, color] });
+				return true;
 			}
+			return false;
 		},
+		mist: color,
 		fit,
 		step() {
 			for (const system of systems) system.update();

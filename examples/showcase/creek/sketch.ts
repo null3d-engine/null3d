@@ -18,7 +18,15 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
-import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
+import {
+	createUnderwater,
+	createWater,
+	createWaterfall,
+	foamMap,
+	type Water,
+	type Waterfall,
+	type WaterShape,
+} from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
@@ -37,6 +45,7 @@ import {
 	streamCurrent,
 	streamDepth,
 	streamHalf,
+	streamSlope,
 	streamZ,
 	UNREFLECTED_LAYER,
 	WATER,
@@ -163,6 +172,12 @@ const CLOSE_SHOT: Shot = {
 const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
+/**
+ * Each lip's fall: how far it drops, into the cloud, where it thins away; how far each side widens
+ * per meter fallen, so it fans out down the drop; and the share of the creek's half width that
+ * leaves over the lip, narrower than the creek, between the lip's shoulders.
+ */
+const FALL = { drop: 22, spread: 0.16, width: 0.85 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** The foam map's box on the ground, over the whole creek, and its texels. */
@@ -307,6 +322,28 @@ export default defineSketch(async (ctx) => {
 				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
+	// A fall at each lip, where the creek's sheet ends: it leaves with the creek's own width and
+	// speed, and drops into the cloud. It lies past the water's edge, so the reflection leaves it out.
+	page.post('loading', 'Pouring the falls');
+	const falls: Waterfall[] = water
+		? await Promise.all(
+				[LIPS.west, LIPS.east].map((x) => {
+					const away = Math.sign(x);
+					const [vx, vz] = streamCurrent(x - away * 0.3);
+					return createWaterfall(ctx, {
+						lip: [x, streamZ(x)],
+						direction: [away, away * streamSlope(x)],
+						halfWidth: streamHalf(x) * FALL.width,
+						level: WATER,
+						speed: Math.hypot(vx, vz),
+						drop: FALL.drop,
+						spread: FALL.spread,
+						layers: UNREFLECTED_LAYER,
+						wind: wind.field,
+					});
+				}),
+			)
+		: [];
 	const flora = await createFlora(ctx);
 	// The bare garden has no crowns yet, so no leaves fall; the mist and the motes still drift.
 	const air = await createAir(ctx, [], wind.field);
@@ -438,8 +475,10 @@ export default defineSketch(async (ctx) => {
 	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Morning');
-	// The clouds take the air's color now too, since a held frame runs no update.
+	// The clouds take the air's color now too, since a held frame runs no update, and the falls'
+	// spray takes the cloud's mist.
 	clouds.update(stage.airColor, stage.light);
+	for (const fall of falls) fall.setLight(clouds.mist);
 
 	const film = createCinematic(ctx, camera, {
 		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
@@ -481,7 +520,8 @@ export default defineSketch(async (ctx) => {
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
 			stage.update(dt);
-			clouds.update(stage.airColor, stage.light);
+			if (clouds.update(stage.airColor, stage.light))
+				for (const fall of falls) fall.setLight(clouds.mist);
 			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics move to the
 			// next time of day as the light does. A change too small to see is not written.
@@ -507,6 +547,7 @@ export default defineSketch(async (ctx) => {
 			flora.update();
 			air.update();
 			clouds.step();
+			for (const fall of falls) fall.update();
 			shafts.update();
 		},
 	};

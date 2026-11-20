@@ -31,6 +31,12 @@ export const OVER_WATER = 0.5;
  * the creek there, square to its line, so the water ends on one clean edge.
  */
 export const LIPS = { west: -20.3, east: 20 } as const;
+/**
+ * A bay in the rim beside the west lip, on the side toward the opening view: its bearing, its depth
+ * and its half width in radians. It makes the west lip the cliff's outermost point from the concept's
+ * camera, so its fall drops clear of the rim and shows in profile, as in the concept picture.
+ */
+const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 3.4, width: 0.26 } as const;
 /** How far the rim's straight edge at a lip reaches past the creek's banks, in meters. */
 const LIP_MARGIN = 1.4;
 /** The spring pool near the middle that feeds the creek: its x and how far along it widens. */
@@ -108,18 +114,18 @@ function smoothLine(points: readonly (readonly [number, number])[]): {
 
 /**
  * The creek's middle line: a gentle S from the west lip to the east lip, which passes in front of
- * the garden's middle, as the concept picture lays it. Near each lip it turns out toward the rim, so
- * the water leaves square to the edge.
+ * the garden's middle, as the concept picture lays it. Near each lip it turns out along the rim's
+ * radius, so the water leaves square to the edge and the lip's straight edge follows the rim.
  */
 const creekLine = smoothLine([
 	[-20.3, 16],
-	[-18.5, 15],
+	[-18.5, 14.6],
 	[-15, 13.9],
 	[-7, 13.4],
 	[1, 13.8],
 	[8, 14.4],
 	[14, 14.6],
-	[18.2, 15.4],
+	[18.2, 15],
 	[20, 16.4],
 ]);
 
@@ -188,7 +194,8 @@ export function rimRadius(bearing: number): number {
 	let r =
 		RIM * (1 + 0.05 * rimNoise.fbm2(c * 1.2 + 4, s * 1.2 + 4, 2)) +
 		0.9 * rimNoise.value2(c * 4 + 9, s * 4 + 9) +
-		0.35 * rimNoise.value2(c * 11 + 2, s * 11 + 2);
+		0.35 * rimNoise.value2(c * 11 + 2, s * 11 + 2) -
+		WEST_BAY.depth * Math.exp(-((turn(WEST_BAY.bearing, bearing) / WEST_BAY.width) ** 2));
 	for (const x of [LIPS.west, LIPS.east]) {
 		// The lip's edge: the line through the creek's middle at the lip, square to its course.
 		const z = streamZ(x);
