@@ -545,18 +545,29 @@ def sprig_atlas(size, rng, leaves, length, width, tones, underside, twig, taper=
     return dilate(out)
 
 
-def needle_atlas(size, rng, tones=((0.2, 0.33, 0.15), (0.21, 0.34, 0.16)), twig=(0.32, 0.2, 0.12)):
+def needle_atlas(size, rng, tones=((0.2, 0.33, 0.15), (0.21, 0.34, 0.16)), twig=(0.32, 0.2, 0.12), mat=False):
     """
     A pine's needles: three tufts seen from above, each a burst of long fine needles from a
     hidden twig, and a cell of a twig end seen from the side with its needles brushing upward.
     `tones` gives the needles' color in the tufts and on the twig, and `twig` the twig's. Every
-    needle stays inside its cell, and its edge fades over a texel.
+    needle stays inside its cell, and its edge fades over a texel. With `mat`, the last cell is
+    instead a dense, opaque mat of short needles every way, for the body of a crown's pads.
     """
     cell, offsets = cells(size)
     out = np.zeros((size, size, 4), np.float32)
     for k, (oy, ox) in enumerate(offsets):
         tile = np.zeros((cell, cell, 4), np.float32)
-        if k < 3:
+        if k == 3 and mat:
+            tile[..., :3] = np.array(tones[1]) * 0.55
+            tile[..., 3] = 1.0
+            for _ in range(2600):
+                a = rng.random() * 2 * math.pi
+                start = (0.02 + 0.96 * rng.random(), 0.02 + 0.96 * rng.random())
+                reach = 0.03 + 0.05 * rng.random()
+                end = (min(0.99, max(0.01, start[0] + math.cos(a) * reach)), min(0.99, max(0.01, start[1] + math.sin(a) * reach)))
+                tone = np.array(tones[1]) * (0.6 + 0.6 * rng.random())
+                paint_line(tile, start, end, 0.003, tone)
+        elif k < 3:
             # Several twig ends crowd into one tuft, so its outline is lumpy, not a round brush.
             for _ in range(5):
                 cx, cy = 0.5 + rng.normal(0, 0.1), 0.5 + rng.normal(0, 0.1)

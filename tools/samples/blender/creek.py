@@ -42,7 +42,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
     Builder, Plant, arguments, at_distance, blend_up, branch_phase, close_up, crown_cards, dilate, export, fbm,
-    frame_of, half, image, leaf_color, leaf_mask, leaf_part, link, material, needle_atlas, normal_map,
+    frame_of, half, image, inside, leaf_color, leaf_mask, leaf_part, link, material, needle_atlas, normal_map,
     occlusion_of, orm, over, plant_reach, plant_top, preview, rock_texture, smoothstep, sprig_atlas, stage, strip,
     tent, tube, value_noise,
 )
@@ -816,18 +816,20 @@ def build_cave(mat, rng):
 # ---------------------------------------------------------------------------------------------
 
 # The garden's cloud-pruned pines. Each one's trunk and limbs are a raw Tripo3D model, which this
-# script finishes: it stands the model at its height with its foot at the middle, gives it bark
-# from the model's own maps, and finds its limbs and their ends. The crown is a layer of flat pads
-# of needles for each tier of limbs, along the limbs to their ends, with needle cards on the pads,
-# as `crown_cards` and `leaf_part` lay them.
+# script finishes: it stands the model at its height with its foot at the middle, drops its loose
+# pieces, gives it bark from the model's own maps, and finds its limbs and their ends. The crown is
+# a layer of pads of needles for each tier of limbs, along the limbs to their ends: each pad is a
+# body of dense needles with needle cards on it, as `pad_bodies`, `crown_cards` and `leaf_part`
+# lay them. The bare twig ends outside the layers are cut away.
 #   raw      the raw model's file, under the folder of raw models
 #   turn     degrees about the vertical axis that turn the model's front toward -y
-#   height   the wood's height in meters
+#   height   the wood's height in meters; sink is how far its foot sits under the ground
 #   wood     the wood's triangles at the full level, then at each lower one
 #   errors   each lower level's surface error in meters, as TREE_LEVELS says
 #   bark     the bark's mean color in the concept, which the wood's vertex colors bring it to
 #   bare     the share of the wood's height that carries no pad
-#   stub     the shortest limb, as a share of the wood's height, that carries a pad
+#   stub     the shortest limb, as a share of the wood's height, that carries a pad; twig is the
+#            length of bare wood at a limb's end, as such a share, that `trim_twigs` cuts
 #   gap      the height, as a share of the wood's height, over which the limbs of one tier leave
 #   pad      a pad's radius across, in meters, at the lowest tier and at the top; taper is how
 #            much narrower the pad at a limb's end is, and spacing the gap between pads along a
@@ -835,27 +837,30 @@ def build_cave(mat, rng):
 #   slope    the steepest rise over run of the wood that carries pads along it; flatten is how
 #            far each pad moves toward its tier's layer, at the level percentile of the heights of
 #            the tier's limb ends
-#   flat     a pad's width over its thickness
+#   flat     a pad's width over its thickness; floor, when given, keeps every pad's underside
+#            above that share of the height, and front shrinks the pads toward the front and back
 #   rise     how far a pad's middle sits above its layer, in meters
 #   cards    needle cards at the full level; up and depth place them as `crown_cards` says, and
 #            card, lift, scatter, centered, cells, fold, bend, tint and shade shape them as
 #            `leaf_part` says
+#   body     the size of each pad's body against the pad; bodies gives its sides around and its
+#            rows up at each level
 #   levels   each lower level's (every, grow): it keeps one card in every, each grow times larger
-#   switches the distances, in meters, of the previews of the levels side by side
+#   switches the distances, in meters, at which the previews show the levels side by side
 PINES = {
     'pine-tall': dict(
-        raw='pine-tall/model.glb', turn=-90, height=7.5, wood=(9000, 3600, 1200), errors=(0.03, 0.07),
-        bark=(0.25, 0.22, 0.18), bare=0.36, stub=0.12, gap=0.08, pad=(1.3, 0.9), taper=0.4, spacing=1.0,
-        slope=0.8, flatten=0.9, level=70, flat=6.0, rise=0.08,
-        cards=4400, up=0.85, depth=0.2, card=0.45, lift=0.8, scatter=0.25, centered=0.5, cells=(0, 1, 2, 3),
-        fold=0.06, bend=0.55, tint=(1.0, 1.0, 1.0), shade=0.55, levels=((3, 1.6), (10, 2.9)), switches=(40, 90),
+        raw='pine-tall/model.glb', turn=-90, height=7.5, sink=0.08, wood=(14000, 5000, 1600), errors=(0.03, 0.07),
+        bark=(0.25, 0.22, 0.18), bare=0.32, stub=0.12, twig=0.12, gap=0.13, pad=(1.1, 0.8), taper=0.6, spacing=0.9,
+        slope=0.8, flatten=0.9, level=50, front=0.4, flat=2.2, rise=0.15, body=0.75, bodies=((8, 4), (6, 3), (5, 2)),
+        cards=3000, up=0.85, depth=0.25, card=0.45, lift=0.8, scatter=0.25, centered=0.5, cells=(0, 1, 2),
+        fold=0.06, bend=0.55, tint=(1.0, 1.0, 1.0), shade=0.65, levels=((2, 1.3), (5, 1.7)), switches=(40, 90),
     ),
     'pine-low': dict(
-        raw='pine-low/model.glb', turn=-90, height=3.4, wood=(6000, 2400, 800), errors=(0.012, 0.03),
-        bark=(0.13, 0.1, 0.068), bare=0.33, stub=0.12, gap=0.15, pad=(0.6, 0.45), taper=0.6, spacing=0.9,
-        slope=1.0, flatten=0.2, level=70, flat=3.5, rise=0.08,
-        cards=1800, up=0.8, depth=0.3, card=0.35, lift=0.7, scatter=0.25, centered=0.5, cells=(0, 1, 2, 3),
-        fold=0.08, bend=0.55, tint=(1.08, 1.0, 0.8), shade=0.55, levels=((3, 1.6), (10, 2.9)), switches=(15, 35),
+        raw='pine-low/model.glb', turn=-90, height=3.4, sink=0.05, wood=(8000, 3000, 1000), errors=(0.02, 0.045),
+        bark=(0.13, 0.1, 0.068), bare=0.33, stub=0.12, twig=0.2, gap=0.15, pad=(0.65, 0.5), taper=0.6, spacing=0.8,
+        slope=2.0, flatten=0.3, level=70, floor=0.42, flat=2.0, rise=0.1, body=0.75, bodies=((8, 4), (6, 3), (5, 2)),
+        cards=3200, up=0.8, depth=0.3, card=0.35, lift=0.7, scatter=0.25, centered=0.5, cells=(0, 1, 2),
+        fold=0.08, bend=0.55, tint=(1.0, 0.93, 0.74), shade=0.65, levels=((2, 1.3), (5, 1.7)), switches=(25, 60),
     ),
 }
 
@@ -865,12 +870,14 @@ NEEDLE_TONES = ((0.53, 0.54, 0.27), (0.55, 0.56, 0.29))
 NEEDLE_TWIG = (0.25, 0.2, 0.15)
 
 
-def import_raw(path, name, height, turn):
+def import_raw(path, name, height, turn, sink=0.0, gap=0.03):
     """
     Imports a raw model as one object: every part's transform baked into its vertices, the parts
-    joined, doubled vertices merged, turned by `turn` degrees about the vertical axis, scaled to
-    `height` meters and moved so its foot stands at the origin. It returns the object, with no
-    material, and the texels of its material's color, normal and roughness maps.
+    joined, doubled vertices merged, and each loose part that stands more than `gap` meters clear
+    of the rest dropped. The object is turned by `turn` degrees about the vertical axis, scaled to
+    `height` meters and moved so its foot stands at the origin, `sink` meters into the ground. It
+    returns the object, with no material, and the texels of its material's color, normal and
+    roughness maps.
 
     The importer reuses a node group of the name that `occlusion_output` gives, and needs sockets
     that group lacks, so the group steps aside while the import runs. The imported materials and
@@ -909,6 +916,7 @@ def import_raw(path, name, height, turn):
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    drop_loose(bm, gap)
     bm.to_mesh(obj.data)
     bm.free()
     mesh = obj.data
@@ -917,7 +925,7 @@ def import_raw(path, name, height, turn):
     low, high = co.min(axis=0), co.max(axis=0)
     # The foot is the middle of the lowest few centimeters of the trunk.
     foot = co[co[:, 2] < low[2] + 0.02 * (high[2] - low[2])].mean(axis=0)
-    mesh.transform(Matrix.Scale(height / float(high[2] - low[2]), 4) @ Matrix.Translation((-foot[0], -foot[1], -low[2])))
+    mesh.transform(Matrix.Translation((0, 0, -sink)) @ Matrix.Scale(height / float(high[2] - low[2]), 4) @ Matrix.Translation((-foot[0], -foot[1], -low[2])))
     mesh.update()
     bsdf = next(n for n in obj.material_slots[0].material.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
     maps = {key: texels_behind(bsdf.inputs[key]) for key in ('Base Color', 'Normal', 'Roughness')}
@@ -929,6 +937,37 @@ def import_raw(path, name, height, turn):
     if own is not None:
         own.name = group_name
     return obj, maps
+
+
+def drop_loose(bm, gap):
+    """
+    Deletes each loose part of a mesh that stands more than `gap` clear of its largest part, as a
+    generated model can leave a piece of wood floating beside the trunk. A part that touches the
+    rest stays.
+    """
+    bm.verts.ensure_lookup_table()
+    seen, parts = set(), []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        seen.add(v.index)
+        part, stack = [], [v]
+        while stack:
+            x = stack.pop()
+            part.append(x)
+            for e in x.link_edges:
+                o = e.other_vert(x)
+                if o.index not in seen:
+                    seen.add(o.index)
+                    stack.append(o)
+        parts.append(part)
+    parts.sort(key=len, reverse=True)
+    tree = KDTree(len(parts[0]))
+    for v in parts[0]:
+        tree.insert(v.co, v.index)
+    tree.balance()
+    loose = [v for part in parts[1:] if min(tree.find(v.co)[2] for v in part) > gap for v in part]
+    bmesh.ops.delete(bm, geom=loose, context='VERTS')
 
 
 def positions(mesh):
@@ -955,12 +994,18 @@ def raw_bark(maps, name, size):
     normal map, and its roughness packed with full occlusion and no metal, as `orm` packs them.
     """
 
+    color, normal, rough = maps['Base Color'], maps['Normal'], maps['Roughness']
+    # The texels outside the model's UV islands are black; each map spreads its islands' texels
+    # into them, so a seam that the cut to fewer triangles moves never samples black.
+    used = (color[..., :3].sum(axis=2) > 0.03).astype(np.float32)[..., None]
+
     def shrink(texels):
+        if texels.shape[:2] == used.shape[:2]:
+            texels = dilate(np.concatenate([texels[..., :3], used], axis=2))
         while max(texels.shape[:2]) > size:
             texels = half(texels)
         return texels
 
-    color, normal, rough = maps['Base Color'], maps['Normal'], maps['Roughness']
     if rough is not None:
         rough = shrink(rough)[..., 1]
     return material(
@@ -1110,7 +1155,9 @@ def pine_pads(spec, ends, starts, middles, distance, parent):
     wood runs no steeper than `slope`, every `spacing` of a pad's width, and one at the end.
     `flatten` moves each pad toward its tier's layer, at the `level` percentile of the heights of
     the tier's limb ends, so a tier reads as one plate across the trunk, and the limbs show bare
-    in the gaps between the plates. Pads are wider at the lowest tier than at the top, and narrow
+    in the gaps between the plates. A `floor`, as a share of the height, keeps every pad's
+    underside above it, and `front` shrinks the pads on limbs that point toward the front or the
+    back by up to that share at their ends. Pads are wider at the lowest tier than at the top, and narrow
     by `taper` toward the limb's end, so a layer thins to a tip. A limb shorter than `stub` is a
     stub or a twig and carries none. It returns the crown and its number of tiers.
     """
@@ -1149,7 +1196,9 @@ def pine_pads(spec, ends, starts, middles, distance, parent):
         across = spec['pad'][0] + (spec['pad'][1] - spec['pad'][0]) * share
         for _, k, cells in tier:
             points = middles[cells]
+            # How far out along its limb each point lies, from 0 where the limb leaves to 1 at its farthest.
             out = np.hypot(points[:, 0] - points[0, 0], points[:, 1] - points[0, 1])
+            out = out / max(out.max(), 1e-3)
             along = distance[cells] - distance[cells[0]]
             mark = along[-1]
             first = True
@@ -1158,8 +1207,16 @@ def pine_pads(spec, ends, starts, middles, distance, parent):
                 p = points[j]
                 q = points[int(np.searchsorted(along, max(mark - spec['spacing'] * across, 0)))]
                 level = runs_level(p, q, spec['slope'])
-                size = across * (1 - spec['taper'] * out[j] / max(out[-1], 1e-3))
+                size = across * (1 - spec['taper'] * out[j])
+                # A pruned pine has a front: its layers reach out to the sides more than toward the
+                # front and the back, so the slits between them stay open from the front.
+                side = abs(p[0]) / max(math.hypot(p[0], p[1]), 1e-3)
+                size *= 1 - spec.get('front', 0.0) * (1 - side) * out[j]
+                thick = size / spec['flat']
                 z = p[2] + (level_z - p[2]) * spec['flatten'] + spec['rise']
+                # A crown with a floor keeps every pad's underside above it, so its lower edge is level.
+                if 'floor' in spec:
+                    z = max(z, spec['floor'] * height + thick)
                 # Limbs that share a stretch of wood share its pads.
                 taken = any(
                     math.hypot(c.x - p[0], c.y - p[1]) < spec['spacing'] * size and abs(c.z - z) < r.z
@@ -1170,6 +1227,85 @@ def pine_pads(spec, ends, starts, middles, distance, parent):
                 first = False
                 mark -= spec['spacing'] * across
     return plant, len(tiers)
+
+
+def trim_twigs(obj, plant, spec, ends, inverse, middles, distance, parent, cell):
+    """
+    Cuts the bare twigs out of the crown. A twig is the last `twig` of the wood's height before a
+    limb's end, along the wood, and every vertex within a cell and a half of it that stands above
+    the bare trunk, and neither inside a pad nor under one, goes. The trunk, and the limbs that
+    bear the layers from below, stay, so only clean limbs show between the layers. A pad left with
+    no wood in it or under it goes as well.
+    """
+    tips = KDTree(len(middles))
+    count = 0
+    for e in ends:
+        for c in root_path(e, parent):
+            if distance[e] - distance[c] < spec['twig'] * spec['height']:
+                tips.insert(middles[c], c)
+                count += 1
+    tips.balance()
+    near = np.array([count > 0 and tips.find(m)[2] < 1.5 * cell for m in middles])
+    mesh = obj.data
+    co = positions(mesh)
+    covered = np.zeros(len(co), bool)
+    for c, r, _ in plant.pads:
+        covered |= (((co[:, 0] - c.x) / r.x) ** 2 + ((co[:, 1] - c.y) / r.y) ** 2 < 1.1) & (co[:, 2] < c.z + r.z)
+    cut = (~covered) & (co[:, 2] > spec['bare'] * spec['height']) & near[inverse]
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[bm.verts[i] for i in np.where(cut)[0]], context='VERTS')
+    # The cuts can leave scraps of twig on their own, which go too.
+    drop_loose(bm, 0.03)
+    bm.to_mesh(mesh)
+    bm.free()
+    # A pad whose wood was all cut would float, so it goes too.
+    co = positions(mesh)
+    plant.pads = [
+        (c, r, b) for c, r, b in plant.pads
+        if ((((co[:, 0] - c.x) / r.x) ** 2 + ((co[:, 1] - c.y) / r.y) ** 2 < 1.1) & (co[:, 2] < c.z + r.z)).any()
+    ]
+    return int(cut.sum())
+
+
+def pad_bodies(builder, plant, spec, around, rings):
+    """
+    The body of each pad: a closed ellipsoid of the needle mat, `body` times the pad's size, under
+    its cards, so the gaps between the cards read as dense needles and the crown never shows black
+    or sky through a pad. It shades and sways as the cards on it do, and a face hidden inside an
+    earlier pad's body is left out, so the bodies' union stays closed.
+    """
+    top, reach = plant_top(plant), plant_reach(plant)
+    center = Vector(np.array([tuple(c) for c, _, _ in plant.pads]).mean(axis=0))
+    shade = spec.get('shade', 0.35)
+    bodies = [(c, Vector((r.x * spec['body'], r.y * spec['body'], r.z * spec['body']))) for c, r, _ in plant.pads]
+    for index, ((c, r), (_, _, branch)) in enumerate(zip(bodies, plant.pads)):
+        rows = []
+        for i in range(rings + 1):
+            t = i / rings
+            lift, spread = -math.cos(math.pi * t), math.sin(math.pi * t)
+            row = []
+            for j in range(around + 1):
+                a = 2 * math.pi * j / around
+                n = Vector((spread * math.cos(a), spread * math.sin(a), lift))
+                p = c + Vector((n.x * r.x, n.y * r.y, n.z * r.z))
+                normal = Vector((n.x / r.x, n.y / r.y, n.z / r.z)).normalized()
+                out = p - center
+                out = out.normalized() if out.length > 1e-4 else normal
+                rim = min(1.0, (p - center).length / max(reach, 1e-3))
+                ao = shade + (1 - shade) * float(smoothstep(-0.7, 0.7, 0.8 * normal.z + 0.5 * rim - 0.1))
+                color = tuple(ao * 0.85 * k for k in spec['tint'])
+                sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
+                uv = (0.52 + 0.46 * j / around, 0.52 + 0.46 * t)
+                row.append((builder.vertex(p, uv, color, (normal + out * spec['bend']).normalized(), sway), p))
+            rows.append(row)
+        hidden = lambda p, index=index: any(inside(p - o, s) < 0.95 for o, s in bodies[:index])
+        for lower, upper in zip(rows, rows[1:]):
+            for j in range(around):
+                quad = (lower[j], lower[j + 1], upper[j + 1], upper[j])
+                if not all(hidden(p) for _, p in quad):
+                    builder.face(*(k for k, _ in quad))
 
 
 def linear(srgb):
@@ -1229,33 +1365,44 @@ def decimated(obj, triangles, name):
 
 
 def build_pine(name, spec, raw, leaf_mat, rng):
-    """The pine's wood and needles objects at each level, and its pads."""
-    wood, maps = import_raw(os.path.join(raw, spec['raw']), f'{name}-raw', spec['height'], spec['turn'])
+    """
+    The pine's wood and needles objects at each level, its pads, its number of limb ends and of
+    tiers, and how many vertices of bare twig it cut.
+    """
+    wood, maps = import_raw(os.path.join(raw, spec['raw']), f'{name}-raw', spec['height'], spec['turn'], spec['sink'])
     wood.data.materials.append(raw_bark(maps, name, 512))
     # The vertex colors bring the bark's mean color to the concept's.
     shade = linear(spec['bark']) / np.maximum(linear(maps['Base Color'][..., :3].reshape(-1, 3).mean(axis=0)), 1e-3)
     co = positions(wood.data)
     edges = np.empty(len(wood.data.edges) * 2, np.int32)
     wood.data.edges.foreach_get('vertices', edges)
-    ends, inverse, middles, distance, parent, limb = limb_ends(co, edges.reshape(-1, 2), spec['height'] / 120, spec['height'] / 25)
+    cell = spec['height'] / 120
+    ends, inverse, middles, distance, parent, limb = limb_ends(co, edges.reshape(-1, 2), cell, spec['height'] / 25)
     starts = limb_starts(ends, distance, limb)
     plant, tiers = pine_pads(spec, ends, starts, middles, distance, parent)
     pine_wood(wood, plant, inverse, limb_phases(ends, starts, distance, parent, limb), shade)
+    cut = trim_twigs(wood, plant, spec, ends, inverse, middles, distance, parent, cell)
     places = crown_cards(plant, rng, spec['cards'], spec['up'], spec['depth'])
+
+    def needles(chosen, stream, grow, body):
+        leaves = leaf_part(spec, plant, chosen, stream, grow)
+        pad_bodies(leaves, plant, spec, *body)
+        return leaves
+
     objects = [
         decimated(wood, spec['wood'][0], f'{name}-wood'),
-        leaf_part(spec, plant, places, rng, 1.0).build(f'{name}-leaves', leaf_mat),
+        needles(places, rng, 1.0, spec['bodies'][0]).build(f'{name}-leaves', leaf_mat),
     ]
     for k, (every, grow) in enumerate(spec['levels'], start=1):
         own = np.random.default_rng((SEED, 60 + k, sum(map(ord, name))))
         objects += [
             decimated(wood, spec['wood'][k], f'{name}-wood-{k}'),
-            leaf_part(spec, plant, places[::every], own, grow).build(f'{name}-leaves-{k}', leaf_mat),
+            needles(places[::every], own, grow, spec['bodies'][k]).build(f'{name}-leaves-{k}', leaf_mat),
         ]
     raw_mesh = wood.data
     bpy.data.objects.remove(wood)
     bpy.data.meshes.remove(raw_mesh)
-    return objects, plant, len(ends), tiers
+    return objects, plant, len(ends), tiers, cut
 
 
 def main():
@@ -1309,22 +1456,22 @@ def main():
     # other file as it was.
     raw = raw_folder()
     needles = material(
-        'needles', image('needles', needle_atlas(1024, np.random.default_rng((SEED, 50)), NEEDLE_TONES, NEEDLE_TWIG)),
+        'needles', image('needles', needle_atlas(1024, np.random.default_rng((SEED, 50)), NEEDLE_TONES, NEEDLE_TWIG, mat=True)),
         cutout=True, roughness=0.7,
     )
     pines, crowns = [], {}
     for name, spec in PINES.items():
-        objects, plant, ends, tiers = build_pine(name, spec, raw, needles, np.random.default_rng((SEED, 51, sum(map(ord, name)))))
+        objects, plant, ends, tiers, cut = build_pine(name, spec, raw, needles, np.random.default_rng((SEED, 51, sum(map(ord, name)))))
         pines += objects
-        crowns[name] = (plant, ends, tiers)
+        crowns[name] = (plant, ends, tiers, cut)
     errors = {f'{name}-{part}': spec['errors'] for name, spec in PINES.items() for part in ('wood', 'leaves')}
     report.update(export(os.path.join(out, 'pines.glb'), pines, {'needles'}, errors))
 
     for name, triangles in report.items():
         print(f'CREEK {name}: {triangles} triangles')
-    for name, (plant, ends, tiers) in crowns.items():
+    for name, (plant, ends, tiers, cut) in crowns.items():
         print(f'CREEK {name}: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, '
-              f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads')
+              f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads, {cut} vertices of bare twig cut')
     for file in ('trees.glb', 'plants.glb', 'cave.glb', 'pines.glb'):
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
     if shots:
@@ -1340,16 +1487,25 @@ def main():
             preview([plant], os.path.join(shots, f'{plant.name}.png'))
             close_up([plant], os.path.join(shots, f'{plant.name}-close.png'), box=(0.25, 0.75, 0.2, 0.7))
         preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
-        for name, spec in PINES.items():
-            parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
-            # The concept's camera looks down about 27 degrees under an overcast sky; the other
-            # views show the sides it hides: the back, the top and the crown from below.
-            for view, azimuth, down in (('concept', 0, 27), ('side', 90, 10), ('back', 180, 10), ('top', 30, 70), ('below', 0, -25)):
-                overcast(parts, os.path.join(shots, f'{name}-{view}.png'), azimuth, down)
-            close_up(parts, os.path.join(shots, f'{name}-close.png'))
-            levels = [parts] + [[bpy.data.objects[f'{name}-wood-{k}'], bpy.data.objects[f'{name}-leaves-{k}']] for k in (1, 2)]
-            for distance in spec['switches']:
-                at_distance(levels, os.path.join(shots, f'{name}-levels-{distance}m.png'), distance)
+        preview_pines(shots, PINES)
+
+
+def preview_pines(shots, pines):
+    """Renders each pine's views, close views and levels under the overcast sky into `shots`."""
+    for name, spec in pines.items():
+        parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
+        # The concept's camera looks down about 27 degrees under an overcast sky; the other
+        # views show the sides it hides: the back, the top and the crown from below.
+        for view, azimuth, down in (('concept', 0, 27), ('side', 90, 10), ('back', 180, 10), ('top', 30, 70), ('below', 0, -25)):
+            overcast(parts, os.path.join(shots, f'{name}-{view}.png'), azimuth, down)
+        # Close views of the crown's middle, from the concept's camera and from below.
+        overcast(parts, os.path.join(shots, f'{name}-close.png'), 0, 27, (1440, 960), 2.2, 0.7)
+        overcast(parts, os.path.join(shots, f'{name}-close-below.png'), 0, -25, (1440, 960), 2.2, 0.6)
+        # Each level beside the others, from the concept's camera and from below, at each switch.
+        levels = [parts] + [[bpy.data.objects[f'{name}-wood-{k}'], bpy.data.objects[f'{name}-leaves-{k}']] for k in (1, 2)]
+        for distance in spec['switches']:
+            for view, down in (('concept', 27), ('below', -15)):
+                overcast_levels(levels, os.path.join(shots, f'{name}-levels-{distance}m-{view}.png'), distance, down)
 
 
 def raw_folder():
@@ -1360,34 +1516,101 @@ def raw_folder():
     return os.path.abspath(args[args.index('--raw') + 1])
 
 
-def overcast(objects, path, azimuth, down, size=(960, 960)):
+def overcast_light(objects, size):
     """
-    Renders the objects under an overcast sky: a pale grey dome as bright as the concept's sky,
-    and a faint, wide sun from the upper left and front, so nothing casts a hard shadow. The camera looks at their middle from `azimuth`
-    degrees around the vertical, measured from the front, and `down` degrees above level.
+    Stages the objects under an overcast sky: a pale grey dome as bright as the concept's sky, and
+    a faint, wide sun from the upper left and front, so nothing casts a hard shadow. The plain view
+    transform shows each color as the sky lights it, with no tone curve, so a picture's tones
+    compare with the concept's. It returns the camera, the objects' bounds and the call that puts
+    the light and the view back.
     """
     cam, low, high = stage(objects, (0.64, 0.64, 0.68), size, 64)
-    world = bpy.context.scene.world.node_tree.nodes['Background']
-    world.inputs['Strength'].default_value = 1.0
+    scene = bpy.context.scene
+    # Rays pass through many cutout cards in a crown, and run out of bounces into black otherwise.
+    scene.cycles.transparent_max_bounces = 64
+    scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value = 1.0
     sun = bpy.data.objects['preview-sun']
     sun.data.energy, sun.data.angle = 1.5, math.radians(50)
     sun.rotation_euler = (math.radians(40), 0, math.radians(-35))
+    view = scene.view_settings.view_transform
+    scene.view_settings.view_transform = 'Standard'
+
+    def restore():
+        scene.view_settings.view_transform = view
+        sun.data.angle = math.radians(0.526)
+
+    return cam, low, high, restore
+
+
+def overcast(objects, path, azimuth, down, size=(960, 960), zoom=1.0, aim=0.5):
+    """
+    Renders the objects under the overcast sky. The camera looks from `azimuth` degrees around the
+    vertical, measured from the front, and `down` degrees above level, at the point `aim` of the
+    way up the objects, from close enough that `zoom` times their size fills the frame.
+    """
+    cam, low, high, restore = overcast_light(objects, size)
     middle, radius = (low + high) / 2, (high - low).length / 2
+    middle.z = low.z + aim * (high.z - low.z)
     a, d = math.radians(azimuth), math.radians(down)
     direction = Vector((math.sin(a) * math.cos(d), -math.cos(a) * math.cos(d), math.sin(d)))
     cam.data.type = 'PERSP'
     cam.data.sensor_fit = 'AUTO'
     cam.data.lens = 50
-    cam.location = middle + direction * radius * 2.3
+    cam.location = middle + direction * radius * 2.3 / zoom
     cam.rotation_euler = (middle - cam.location).to_track_quat('-Z', 'Y').to_euler()
-    # The plain view transform shows each color as the sky lights it, with no tone curve, so the
-    # picture's tones compare with the concept's.
-    view = bpy.context.scene.view_settings.view_transform
-    bpy.context.scene.view_settings.view_transform = 'Standard'
     bpy.context.scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
-    bpy.context.scene.view_settings.view_transform = view
-    sun.data.angle = math.radians(0.526)
+    restore()
 
+
+def overcast_levels(groups, path, distance, down):
+    """
+    The levels of a plant side by side under the overcast sky, each as a page's camera sees it
+    from `distance` meters, `down` degrees above level: a 45 degree view on a screen 1,080 pixels
+    high, so each level draws at the size in pixels that the page gives it there. Each level is
+    drawn on its own and cut to its outline, so none is cut by the frame.
+    """
+    width, height = 1920, 1080
+    pictures = []
+    for group in groups:
+        cam, low, high, restore = overcast_light(group, (width, height))
+        middle = (low + high) / 2
+        d = math.radians(down)
+        cam.data.type = 'PERSP'
+        cam.data.sensor_fit = 'VERTICAL'
+        cam.data.angle_y = math.radians(45)
+        cam.location = middle + Vector((0, -math.cos(d), math.sin(d))) * distance
+        cam.rotation_euler = (middle - cam.location).to_track_quat('-Z', 'Y').to_euler()
+        scene = bpy.context.scene
+        scene.render.film_transparent = True
+        whole = f'{path[:-4]}-part.png'
+        scene.render.filepath = whole
+        bpy.ops.render.render(write_still=True)
+        scene.render.film_transparent = False
+        restore()
+        shot = bpy.data.images.load(whole)
+        texels = np.array(shot.pixels[:], np.float32).reshape(height, width, 4)
+        bpy.data.images.remove(shot)
+        os.remove(whole)
+        rows = np.where(texels[..., 3].max(axis=1) > 0)[0]
+        cols = np.where(texels[..., 3].max(axis=0) > 0)[0]
+        pictures.append(texels[max(0, rows[0] - 8):rows[-1] + 9, max(0, cols[0] - 8):cols[-1] + 9])
+    tall = max(p.shape[0] for p in pictures)
+    sky = np.array([0.64, 0.64, 0.68], np.float32) ** (1 / 2.2)
+    sheet = []
+    for p in pictures:
+        # The levels stand on one line, each over the sky's color.
+        padded = np.zeros((tall, p.shape[1] + 16, 4), np.float32)
+        padded[:p.shape[0], 8:8 + p.shape[1]] = p
+        flat = np.ones_like(padded)
+        flat[..., :3] = padded[..., :3] * padded[..., 3:4] + sky * (1 - padded[..., 3:4])
+        sheet.append(flat)
+    both = np.ascontiguousarray(np.concatenate(sheet, axis=1))
+    img = bpy.data.images.new(os.path.basename(path), both.shape[1], both.shape[0], alpha=False)
+    img.pixels.foreach_set(both.ravel())
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
 
 main()
