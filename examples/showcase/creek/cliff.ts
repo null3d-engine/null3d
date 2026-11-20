@@ -7,6 +7,7 @@
 // Its rows spread out with depth, fine where the camera sees the rock and coarse down in the cloud.
 import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
 import { Noise, random, type TexelSample, textureSet } from '../../lib/procedural';
+import { LIPS, streamHalf, streamZ } from './land';
 
 /** How far the walls run down below the water's height, in meters: well into the cloud. */
 export const WALL_FOOT = -44;
@@ -23,10 +24,21 @@ const CRACK_SPAN = 0.22;
 /** The share of pillars that stand out as buttresses, and how far, in meters. */
 const BUTTRESS = { share: 0.22, out: [0.7, 1.5] as const } as const;
 /** The shortest and tallest block that a pillar steps by, in meters. */
-const BLOCK = [1.6, 5] as const;
+const BLOCK = [1.1, 3.6] as const;
 /** How far a block stands out from or back into its pillar, and how far its face tilts across it. */
-const STEP = 0.7;
+const STEP = 1.05;
 const TILT = 0.45;
+/**
+ * How far the rock's face stands back under the rim's line, in meters, so the land's edge overhangs
+ * the rock a little, as soil and roots do on the concept's rim.
+ */
+const UNDERCUT = 0.55;
+/**
+ * How far the rock stands back under each lip, in meters at the least, so a fall leaving the lip
+ * drops clear of the wall; the share of the creek's half width where the water shows at the lip;
+ * and the share of it, past the banks, under which the water's sheet runs on.
+ */
+const LIP_RECESS = { back: 0.9, water: 0.8, bank: 1.6 } as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
@@ -149,21 +161,21 @@ function relief(
 	const face = (b: Block | undefined) => (b ? b.step + b.tilt * (t - 0.5) * pillar.width * 0.5 : 0);
 	const step = face(above) + (face(block) - face(above)) * into;
 	const crags =
-		0.5 * aroundNoise(along, length, 0.35, depth * 0.3, 4) +
-		0.3 * Math.abs(aroundNoise(along, length, 1.4, depth * 1.2 + 7, 3)) +
-		0.12 * aroundNoise(along, length, 4.5, depth * 4 + 2, 2);
+		0.65 * aroundNoise(along, length, 0.35, depth * 0.35, 4) +
+		0.4 * Math.abs(aroundNoise(along, length, 1.2, depth * 1.2 + 7, 3)) +
+		0.18 * aroundNoise(along, length, 4, depth * 4 + 2, 2);
 	const bulge = 1.4 * aroundNoise(along, length, 0.025, depth * 0.035 + 11, 3);
 	const tone = (above ? above.tone + (block.tone - above.tone) * into : block.tone) * (1 - crack);
 	return {
-		offset: pillar.out + step + crags + bulge - pillar.crack * crack,
+		offset: pillar.out + step + crags + bulge - pillar.crack * crack - UNDERCUT,
 		crack,
 		tone,
 	};
 }
 
 /** Linear colors of the rock: warm near-black faces, a dark grey-brown on the lighter ones. */
-const CHARCOAL = [0.022, 0.018, 0.015];
-const GREY_BROWN = [0.05, 0.042, 0.034];
+const CHARCOAL = [0.016, 0.011, 0.007];
+const GREY_BROWN = [0.04, 0.028, 0.018];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
@@ -198,9 +210,16 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			const depth = top - y;
 			const run = along[column % count] as number;
 			const { offset, crack, tone } = relief(list, length, run, depth);
+			// Under each lip the rock stands back below the water, so the fall leaves it clear, and
+			// beside it, under the banks, the rock stands flush or proud, so the water's sheet that
+			// runs on under the banks stays inside the rock.
+			const { water, bank } = lipShares(x, z);
+			const flush = Math.max(offset + UNDERCUT, 0);
+			const beside = offset + (flush - offset) * bank;
+			const shaped = beside + (Math.min(beside, -LIP_RECESS.back) - beside) * water;
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
 			const grow = smoothstep(depth, 0, 1.2);
-			const out = (offset + FLARE * depth) * grow;
+			const out = (shaped + FLARE * depth * (1 - water)) * grow;
 			const reach = Math.hypot(x, z);
 			const v = (row * columns + column) * 3;
 			positions[v] = x * (1 + out / reach);
@@ -226,6 +245,29 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			indices.set([a, a + 1, b, a + 1, b + 1, b], (row * count + column) * 6);
 		}
 	return { positions, normals, colors, uvs, indices };
+}
+
+/**
+ * How near a point of the rim lies to a lip: `water`, from 0 to 1 across the width where the water
+ * shows at the lip, and `bank`, from 0 to 1 over the banks either side, where the water's sheet runs
+ * on under the ground.
+ */
+function lipShares(x: number, z: number): { water: number; bank: number } {
+	let water = 0;
+	let bank = 0;
+	for (const lip of [LIPS.west, LIPS.east]) {
+		const half = streamHalf(lip);
+		const reach = Math.hypot(x - lip, z - streamZ(lip));
+		water = Math.max(
+			water,
+			1 - smoothstep(reach, half * LIP_RECESS.water, half * LIP_RECESS.water + 0.4),
+		);
+		bank = Math.max(
+			bank,
+			1 - smoothstep(reach, half * LIP_RECESS.bank, half * LIP_RECESS.bank + 1.5),
+		);
+	}
+	return { water, bank };
 }
 
 /**
@@ -304,7 +346,7 @@ export function createCliff(
 			wgsl: wallWgsl,
 			vertexColors: true,
 			roughness: 0.9,
-			uniforms: { moss: [0.07, 0.058, 0.02], lichen: [0.075, 0.072, 0.064] },
+			uniforms: { moss: [0.055, 0.046, 0.016], lichen: [0.05, 0.048, 0.043] },
 			textures: {
 				detail: maps.map,
 				detailNormal: maps.normalMap,

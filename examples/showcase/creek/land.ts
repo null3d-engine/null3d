@@ -326,7 +326,7 @@ export function cameraFloor(x: number, z: number): number {
 const MOSS = [0.17, 0.135, 0.035];
 const MOSS_DARK = [0.075, 0.075, 0.03];
 const MOSS_BROWN = [0.12, 0.085, 0.035];
-const BED = [0.36, 0.325, 0.26];
+const BED = [0.42, 0.385, 0.315];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
 

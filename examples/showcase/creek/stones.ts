@@ -16,6 +16,7 @@ import {
 	groundHeight,
 	LIPS,
 	rimRadius,
+	streamCurrent,
 	streamHalf,
 	streamZ,
 	UNREFLECTED_LAYER,
@@ -35,6 +36,10 @@ const PEBBLES: Record<QualityPreset, number> = { low: 1200, medium: 3000, high: 
 const WET = 1.25;
 /** Rocks nearer the stream's middle than this many half widths stand in the current and foam it. */
 const IN_STREAM = 0.75;
+/** How far under the surface a stone's top may lie and still break the water white, in meters. */
+const SHALLOW = 0.32;
+/** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
+const TRAIL = { links: 6, step: 0.38, width: 0.9 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -117,8 +122,9 @@ export function rockPlaces(): { x: number; z: number; size: number }[] {
 		const side = next() < 0.5 ? -1 : 1;
 		const across =
 			kind < 0.15 ? next() * 0.5 : kind < 0.75 ? 0.82 + 0.3 * next() : 1.3 + 0.9 * next();
+		// A stone in the stream stands tall enough to break the surface, so the current foams round it.
 		const size =
-			kind < 0.15 ? 0.22 + 0.2 * next() : kind < 0.75 ? 0.28 + 0.38 * next() : 0.2 + 0.5 * next();
+			kind < 0.15 ? 0.5 + 0.3 * next() : kind < 0.75 ? 0.28 + 0.38 * next() : 0.2 + 0.5 * next();
 		const z = streamZ(x) + side * across * streamHalf(x);
 		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size });
 	}
@@ -126,7 +132,7 @@ export function rockPlaces(): { x: number; z: number; size: number }[] {
 		for (let k = 0; k < count; k++) {
 			const x = middle + (next() * 2 - 1) * spread;
 			const across = ((k + 0.5) / count) * 1.6 - 0.8 + (next() - 0.5) * 0.15;
-			const size = 0.24 + 0.2 * next();
+			const size = 0.42 + 0.25 * next();
 			const z = streamZ(x) + across * streamHalf(x);
 			if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size });
 		}
@@ -191,15 +197,35 @@ export function createStones(
 				receiveShadows: true,
 			});
 			group.forEach(({ x, z, size, yaw: turn }, row) => {
-				const y = groundHeight(x, z) - size * 0.2;
+				// A stone in the current sits up on the bed; one on the bank sinks into the ground.
+				const inStream = fromStream(x, z) < IN_STREAM;
+				const y = groundHeight(x, z) - size * (inStream ? 0.05 : 0.2);
 				batch.positions.set([x, y, z], row * 3);
 				batch.rotations.set(yaw(turn), row * 4);
 				batch.scales.set([size, size, size], row * 3);
-				// Where a stone in the stream meets the water's plane, the water foams around it and in a
-				// trail behind it. The stones that line the banks leave the calm edges clear.
+				// Where a stone in the stream meets the water's plane, or lies just under it, the water
+				// breaks white around it and in a trail behind it. The stones that line the banks leave the
+				// calm edges clear.
+				const top = y + size * squash[1];
 				const below = (WATER - y) / (size * squash[1]);
-				if (Math.abs(below) < 0.9 && fromStream(x, z) < IN_STREAM)
-					obstacles.push({ x, z, r: size * Math.sqrt(1 - below * below) });
+				if (inStream && top > WATER - SHALLOW) {
+					const r =
+						Math.abs(below) < 0.9
+							? size * Math.sqrt(1 - below * below)
+							: size * 0.75 * (1 - Math.max(0, WATER - top) / SHALLOW);
+					obstacles.push({ x, z, r });
+					// The trail: the foam that the current carries away behind the stone, whichever way it
+					// runs, as a chain of shrinking rings downstream.
+					const [vx, vz] = streamCurrent(x, z);
+					const speed = Math.hypot(vx, vz);
+					if (speed > 0.05)
+						for (let k = 1; k <= TRAIL.links; k++)
+							obstacles.push({
+								x: x + (vx / speed) * k * TRAIL.step,
+								z: z + (vz / speed) * k * TRAIL.step,
+								r: r * (1 - k / (TRAIL.links + 1)) * TRAIL.width,
+							});
+				}
 			});
 			batch.markDirty();
 		}

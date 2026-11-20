@@ -202,21 +202,26 @@ function createCreekWater(
 		shapes: [sheet],
 		level: WATER,
 		layers: 1,
-		// The stream runs slowly, so its surface stays nearly flat: the swell is a tenth of a lake's,
-		// and the fine ripples keep their full strength.
+		// The creek runs smooth between its foam: the swell is a tenth of a lake's, and the fine
+		// ripples are faint, so a low view along the water shows no even lines of them.
 		waveAmplitude: 0.1,
+		ripple: 0.35,
 		wind,
 		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
 		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
 		bed: 'shape',
 		// The stream's own bed gives the water all its depth, so the surface draws opaque. The water is
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
-		material: { alphaMode: 'opaque', attenuationColor: '#a6d0c4', attenuationDistance: 2.2 },
+		material: { alphaMode: 'opaque', attenuationColor: '#b2dcd2', attenuationDistance: 3 },
+		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
+		// rings, a little wider than the add-on's own.
 		foam: foamMap(ctx, obstacles, {
 			origin: FOAM_BOX.origin,
 			size: FOAM_BOX.size,
 			width: 1024,
 			height: 288,
+			reach: 0.45,
+			trail: 0,
 		}),
 	});
 }

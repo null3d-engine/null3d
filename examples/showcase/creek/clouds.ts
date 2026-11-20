@@ -72,20 +72,20 @@ struct Uniforms {
 /// lilac, since a cloud is never as blue as the sky at the horizon.
 fn cloud_air() -> vec3f {
     let grey = dot(material.air, vec3f(0.2126, 0.7152, 0.0722));
-    return mix(vec3f(grey), material.air, 0.3) * material.tint;
+    return mix(vec3f(grey), material.air, 0.15) * material.tint;
 }
 
 /// The cloud's color: the air's, darker in the hollows, with the main light on the tops that face it.
 fn cloud_color(lift: f32, facing: f32) -> vec3f {
     // The sky lights the tops and leaves the hollows grey; the side toward the main light is a
     // step brighter even under cloud, and the light itself adds where it breaks through.
-    let shade = mix(1.75, 3.3, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
+    let shade = mix(3.4, 6.2, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
     return cloud_air() * shade + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
 }
 
 /// The air between the camera and a point: the cloud fades into the air's own color with distance.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, cloud_air() * 3.0, 1.0 - exp(-distance / 380.0));
+    return mix(color, cloud_air() * 5.9, 1.0 - exp(-distance / 380.0));
 }
 // } light
 
@@ -168,20 +168,20 @@ struct Uniforms {
 /// lilac, since a cloud is never as blue as the sky at the horizon.
 fn cloud_air() -> vec3f {
     let grey = dot(material.air, vec3f(0.2126, 0.7152, 0.0722));
-    return mix(vec3f(grey), material.air, 0.3) * material.tint;
+    return mix(vec3f(grey), material.air, 0.15) * material.tint;
 }
 
 /// The cloud's color: the air's, darker in the hollows, with the main light on the tops that face it.
 fn cloud_color(lift: f32, facing: f32) -> vec3f {
     // The sky lights the tops and leaves the hollows grey; the side toward the main light is a
     // step brighter even under cloud, and the light itself adds where it breaks through.
-    let shade = mix(1.75, 3.3, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
+    let shade = mix(3.4, 6.2, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
     return cloud_air() * shade + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
 }
 
 /// The air between the camera and a point: the cloud fades into the air's own color with distance.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, cloud_air() * 3.0, 1.0 - exp(-distance / 380.0));
+    return mix(color, cloud_air() * 5.9, 1.0 - exp(-distance / 380.0));
 }
 // } light
 
@@ -220,7 +220,7 @@ export interface Clouds {
 }
 
 /** The faint lilac cast of the concept's cloud, never pure white. */
-const TINT = [0.985, 0.97, 1.0] as const;
+const TINT = [1.0, 0.975, 1.02] as const;
 
 /** Makes the cloud sea, its far dome and the banks round the walls. */
 export async function createClouds(ctx: SketchContext, preset: QualityPreset): Promise<Clouds> {
@@ -323,15 +323,15 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 				layers: EFFECT_LAYER,
 				prewarm: true,
 				seed: 91 + k,
-				position: [Math.cos(bearing) * out, rising ? -6 : -9.5, Math.sin(bearing) * out],
+				position: [Math.cos(bearing) * out, rising ? -8 : -11, Math.sin(bearing) * out],
 				shape: { type: 'sphere', radius: 5 },
 				rate: BANK_PUFFS / BANK_LIFE[1],
 				lifetime: BANK_LIFE,
 				speed: [0, 0.05],
 				velocity: [DRIFT[0] * 0.5, rising ? 0.22 : 0.06, DRIFT[1] * 0.5],
-				size: rising ? [8, 14] : [7, 12],
+				size: rising ? [7, 11] : [6, 10],
 				colorOverLife: [color, color],
-				alphaOverLife: [0, 0.5, 0.5, 0],
+				alphaOverLife: [0, 0.42, 0.42, 0],
 				softness: 4,
 				blending: 'normal',
 			});
@@ -399,7 +399,7 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 				const grey = 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2];
 				for (let c = 0; c < 3; c++) {
 					shown[c] = air[c] as number;
-					color[c] = (grey + ((air[c] as number) - grey) * 0.3) * (TINT[c] as number) * 2.9;
+					color[c] = (grey + ((air[c] as number) - grey) * 0.15) * (TINT[c] as number) * 5.6;
 				}
 				for (const system of systems) system.set({ colorOverLife: [color, color] });
 			}

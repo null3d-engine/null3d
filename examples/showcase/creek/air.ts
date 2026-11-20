@@ -50,7 +50,7 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 		leaves: [0.95, 1, 0.9],
 		motes: [0.45, 0.5, 0.42],
 		mist: [0.85, 0.9, 0.95],
-		mistOpacity: 0.07,
+		mistOpacity: 0.025,
 	},
 	Midday: {
 		leaves: [1, 1, 0.95],
