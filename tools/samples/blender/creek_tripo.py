@@ -125,16 +125,16 @@ STATUE = dict(
 # `wide` keeps the boulder's width within that many times its height.
 MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
-                    texture=512, darken=0.6, moss=(1.08, 1.0, 0.85), vivid=1.45, smooth=6),
+                    texture=512, darken=0.6, moss=(1.08, 1.0, 0.85), vivid=1.6, smooth=6),
     'gate': dict(file='model.glb', turn=-90.0, height=4.4, sink=0.03, triangles=6000, levels=(0.4, 0.15),
                  texture=1024, roof=0.64, cut=(-0.36, -0.25), lean=0.09, post=0.58, rear=1.2, widen=1.09, blocks=0.08,
-                 darken=0.65, vivid=2.0),
+                 darken=0.65, vivid=2.3),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.72, foot=0.08, specks=True),
     'boulder-3': dict(file='model.glb', turn=0.0, height=0.9, sink=0.04, triangles=1500, levels=(0.6, 0.4),
-                      texture=512, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.7, foot=0.08, specks=False,
+                      texture=512, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.62, foot=0.08, specks=False,
                       flatten=0.35, wide=(1.6, 2.0)),
 }
 
@@ -155,7 +155,8 @@ MODELS = {
 # away, so the curls stay dark. The lower body and the statue's right arm take the `green` tint,
 # from the face's cyan to the concept's gray-green. Lightness above `pale` keeps 40% of its rise,
 # so pale patches such as the left knee's stay muted, and warm rust takes the `brown` tint, darker
-# and less pink. Last, on the upper arms and lapels, the raw color's light and dark at the pleats'
+# and less pink. The bronze on the knees keeps `knee` of its lightness, and their rust all of it.
+# Last, on the upper arms and lapels, the raw color's light and dark at the pleats'
 # scale is laid back over the finished color `pleats` strong, so the darkening does not squeeze
 # them.
 PATINA = dict(
@@ -178,6 +179,7 @@ PATINA = dict(
     hairline=0.55,
     green=(1.02, 1.0, 0.9),
     pleats=2.0,
+    knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
 )
@@ -652,6 +654,11 @@ def bake_maps(high, low, color, normal, size, bake_color=False):
     for name, build in emitted.items():
         maps[name] = bake(high, low, target(name), 'EMIT', 1, emission_material(f'emit-{name}', build))
     if bake_color:
+        # A texel whose rays met no raw surface, where the decimation cut a corner deeper than the
+        # bake looks, bakes black, with no position: it takes its neighbors' values.
+        missing = (maps['position'][..., :3].sum(axis=2) == 0).astype(np.float32)
+        for name in ('color', 'curvature', 'position', 'facing'):
+            maps[name] = filled(maps[name][..., :3], missing)
         maps['color'] = to_display(maps['color'])
         maps['own-position'] = bake_own(low, target('own-position'), lambda n: vector_socket(n, geometry_socket(n, 'Position'), low_corner, extent))
         maps['own-facing'] = bake_own(low, target('own-facing'), lambda n: vector_socket(n, geometry_socket(n, 'Normal'), (-1, -1, -1), (2, 2, 2)))
@@ -659,6 +666,8 @@ def bake_maps(high, low, color, normal, size, bake_color=False):
     for flag in ('visible_camera', 'visible_diffuse', 'visible_glossy', 'visible_shadow', 'visible_transmission'):
         setattr(low, flag, False)
     maps['occlusion'] = bake(high, low, target('occlusion'), 'AO', 48)
+    if bake_color:
+        maps['occlusion'] = filled(maps['occlusion'][..., :3], missing)
     for flag in ('visible_camera', 'visible_diffuse', 'visible_glossy', 'visible_shadow', 'visible_transmission'):
         setattr(low, flag, True)
     out = {name: half(texels[..., :3]) for name, texels in maps.items()}
@@ -836,6 +845,9 @@ def repaint(maps, height, eyes, eye, chest, rng):
     waist = float(chest[0][2]) - 1.0
     lower = np.maximum(smoothstep(waist + 0.4, waist - 0.4, z), smoothstep(-1.4, -1.9, x) * smoothstep(waist + 3.0, waist + 2.4, z))
     color *= 1 + (np.array(PATINA['green'], np.float32) - 1) * lower[..., None]
+    # The knees' bronze darkens, and their rust keeps its warmth and lightness.
+    knee = smoothstep(1.6, 2.4, np.abs(x)) * smoothstep(waist - 0.8, waist - 1.4, z) * (1 - rusty)
+    color *= (1 - (1 - PATINA['knee']) * knee)[..., None]
 
     # The bare chest turns a warm near-neutral, fading out to its edges.
     d = (position - np.array(chest[0], np.float32)) / np.array(chest[1], np.float32)
@@ -869,6 +881,23 @@ def heal(values, mask, radius=10):
     keep = 1 - mask
     mean = box_blur(values * keep, radius) / np.maximum(box_blur(keep, radius), 1e-4)
     return values + mask * (mean - values)
+
+
+def filled(texels, missing):
+    """
+    A map whose `missing` texels take the mean of the found texels round them, from the nearest
+    outward, so a hole of any size closes with its edges' values.
+    """
+    found = 1 - missing
+    channels = [texels[..., c] for c in range(texels.shape[2])]
+    for radius in (4, 16, 64):
+        weight = box_blur(found, radius)
+        take = (weight > 1e-3) & (found < 0.5)
+        for c, values in enumerate(channels):
+            mean = box_blur(values * found, radius) / np.maximum(weight, 1e-6)
+            channels[c] = np.where(take, mean, values)
+        found = np.where(take, 1.0, found)
+    return np.dstack(channels)
 
 
 def dip(luma):
@@ -1180,7 +1209,11 @@ def gate_surgery(obj, spec):
     # goes, so the rails end flush with the posts.
     foot, top = spec['cut']
     under = [f for f in bm.faces if max(v.co.z for v in f.verts) < roof]
-    geom = list({v for f in under for v in f.verts}) + list({e for f in under for e in f.edges}) + under
+    # Each element once, in the mesh's own order: a set's order changes from run to run, and the
+    # cut makes its new vertices in the order it gets them.
+    verts = list(dict.fromkeys(v for f in under for v in f.verts))
+    edges = list(dict.fromkeys(e for f in under for e in f.edges))
+    geom = verts + edges + under
     faces_before = len(bm.faces)
     bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, foot, low), plane_no=Vector((0, 1, -(top - foot) / (roof - low))).normalized(), clear_outer=True)
     doomed = faces_before - len(bm.faces)
