@@ -68,10 +68,11 @@ export interface WaterfallOptions {
 	/** The height of the water's surface at the lip, in meters. It is 0 by default. */
 	readonly level?: number;
 	/**
-	 * The current's speed at the middle of the lip, in meters a second. It sets how far the water
-	 * leaps clear of the lip before it drops. A river runs faster as it nears a brink, so give the
-	 * speed at the lip itself: 1 to 2 m/s throws a creek's fall clear of the wall below it. It is
-	 * 1.2 by default.
+	 * The current's speed at the lip, in meters a second. It sets how far the water leaps out from
+	 * the lip's line: at 1.2 m/s the back of the column is 0.6 m out 2 m down and 1.3 m out
+	 * 13 m down. A wall below the lip that leans out further than that meets the water, and the
+	 * column fades where it nears the rock. A river runs faster as it nears a brink, so give the
+	 * speed at the lip itself. It is 1.2 by default.
 	 */
 	readonly speed?: number;
 	/**
@@ -186,8 +187,7 @@ export async function createWaterfall(
 		color: '#f2f3f2',
 		roughness: 0.95,
 		metalness: 0,
-		// Both faces draw, so the fall shows from behind as well, and its veils cross without
-		// hiding each other.
+		// Both faces draw, so the column's far side shows through the gaps in its near side.
 		doubleSided: true,
 		alphaMode: 'blend',
 		depthWrite: false,
@@ -204,7 +204,6 @@ export async function createWaterfall(
 			softness: SOFTNESS,
 			apron: APRON / speed,
 			halfWidth: sheet.halfWidth,
-			spread: sheet.spread,
 		},
 	});
 	const mesh = scene.createMesh({
@@ -260,7 +259,7 @@ export async function createWaterfall(
 					opacity: 0.55,
 				};
 			if (place.kind === 'body')
-				// White spray that falls with the water inside the column, between its veils.
+				// White spray that falls with the water inside the column.
 				return {
 					...base,
 					capacity: room(place.rate, BODY_LIFE),
@@ -294,7 +293,7 @@ export async function createWaterfall(
 					size: [0.6 * sheet.halfWidth, 1.3 * sheet.halfWidth],
 					sizeOverLife: [0.6, 1.2, 1.7],
 					alphaOverLife: [0, 0.9, 0.75, 0],
-					opacity: 0.65,
+					opacity: 0.5,
 				};
 			// The plume: broad puffs that rise and spread where the fall thins into cloud.
 			return {

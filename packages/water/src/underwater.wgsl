@@ -30,15 +30,18 @@ struct Uniforms {
     right: vec3f,
 }
 
+/// How sharp the caustics' ridges are seen from under the water, as the surface draws them close up.
+const CAUSTIC_RIDGE: f32 = 14.0;
+
 /// The caustics of the water's surface shader, the same ridges drifting with the current. Each WGSL
 /// string compiles on its own, so this one holds its own copy.
-fn caustics(p: vec2f, t: f32, current: vec2f) -> f32 {
+fn caustics(p: vec2f, t: f32, current: vec2f, ridge: f32) -> f32 {
     let q = p * 4.6 - current * (t * 4.0);
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
     let v = (a + b + c) / 3.0;
-    return pow(1.0 - abs(v), 14.0) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
+    return pow(1.0 - abs(v), ridge) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
 }
 
 /// The height of the water's surface at a point and time, from the long waves that move its
@@ -100,7 +103,7 @@ fn effect(input: EffectInput) -> vec4f {
         let world = uniforms.eye + ray * reach;
         let below = uniforms.level - world.y;
         if below > 0.0 {
-            let light = caustics(world.xz, t, uniforms.current) * exp(-below * 0.8);
+            let light = caustics(world.xz, t, uniforms.current, CAUSTIC_RIDGE) * exp(-below * 0.8);
             color = vec4f(color.rgb * (vec3f(1.0) + uniforms.caustics * light * 6.0), color.a);
         }
     }

@@ -261,7 +261,7 @@
 		"test": "water-fall",
 		"tier": "compat",
 		"date": "2026-11-20",
-		"reason": "a new test on a helper branch with no pull request yet: CI's drawing replaces these once the branch's pull request runs"
+		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's solid column; CI's own drawing replaces it after the merge"
 	},
 	"chromium-swiftshader/compat/water-rain.png": {
 		"test": "water-rain",
@@ -555,7 +555,7 @@
 		"test": "water-fall",
 		"tier": "webgl2",
 		"date": "2026-11-20",
-		"reason": "a new test on a helper branch with no pull request yet: CI's drawing replaces these once the branch's pull request runs"
+		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's solid column; CI's own drawing replaces it after the merge"
 	},
 	"chromium-swiftshader/webgl2/water-rain.png": {
 		"test": "water-rain",
@@ -867,7 +867,7 @@
 		"test": "water-fall",
 		"tier": "webgpu",
 		"date": "2026-11-20",
-		"reason": "a new test on a helper branch with no pull request yet: CI's drawing replaces these once the branch's pull request runs"
+		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's solid column; CI's own drawing replaces it after the merge"
 	},
 	"chromium-swiftshader/webgpu/water-rain.png": {
 		"test": "water-rain",

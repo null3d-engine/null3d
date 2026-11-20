@@ -1,14 +1,15 @@
-// The waterfall's sheet: it starts at the lip's height and width, follows the path of falling
-// water, never rises, widens as it falls and looks out from the cliff. The shader reads the veil
-// from the mesh's second texture coordinate, so the two keep one layout. The spray's emitters stand
-// at the brink, on the path and at the foot, turned across the fall.
+// The waterfall's column: it starts at the lip's height and width, follows the path of falling
+// water, never rises, widens as it falls, stands as deep as the creek is wide with nearly parallel
+// sides, and looks out from its middle. The spray's emitters stand at the brink, in the column, about
+// it lower down and at the foot, turned across the fall.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	APRON,
 	APRON_LIFT,
-	EDGE_ROOM,
+	COLUMN_DEPTH,
+	columnDepth,
 	FALL_SPEED,
 	type FallSheet,
 	fallEmitters,
@@ -17,13 +18,8 @@ import {
 	fallTime,
 	GRAVITY,
 	MIST_DEPTH,
-	MIST_OUT,
 	MIST_WIDTH,
-	SHEET_VEIL,
-	SIDE_SLOWING,
-	VEIL_ROOM,
-	VEILS,
-	veilBow,
+	TONGUE,
 } from './fall';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
@@ -52,25 +48,22 @@ function meshOf(sheet: FallSheet) {
 	};
 }
 
-/** The veil of each vertex, and its place across from -1 to 1, as the shader reads them. */
-function veilOf(uvs1: Float32Array, vertex: number): { veil: number; across: number } {
-	const x = uvs1[vertex * 2] as number;
-	const veil = Math.floor(x / VEIL_ROOM);
-	return { veil, across: (x - VEIL_ROOM * veil) * 2 - 1 };
-}
-
-/** The vertices of one veil, as rows from the top, each row from one end of the lip to the other. */
-function rowsOf(sheet: FallSheet, veil: number): number[][] {
-	const { uvs, uvs1 } = meshOf(sheet);
+/** The column's vertices, as rows from the apron's top to the foot, each row round the section. */
+function rowsOf(sheet: FallSheet): number[][] {
 	const columns = (sheet.mesh?.across as number) + 1;
+	const { positions } = meshOf(sheet);
 	const rows: number[][] = [];
-	for (let v = 0; v < uvs.length / 2; v++) {
-		if (veilOf(uvs1, v).veil !== veil) continue;
-		const last = rows[rows.length - 1];
-		if (!last || last.length === columns) rows.push([v]);
-		else last.push(v);
+	for (let v = 0; v < positions.length / 3; v++) {
+		if (v % columns === 0) rows.push([]);
+		(rows[rows.length - 1] as number[]).push(v);
 	}
 	return rows;
+}
+
+/** How far out from the lip, along the flow, a row reaches at its back and its front, in meters. */
+function outOf(positions: Float32Array, row: number[]): [back: number, front: number] {
+	const xs = row.map((v) => (positions[v * 3] as number) - 10);
+	return [Math.min(...xs), Math.max(...xs)];
 }
 
 describe('the path of falling water', () => {
@@ -128,130 +121,123 @@ describe('the path of falling water', () => {
 	});
 });
 
-describe('a waterfall’s sheet', () => {
-	it('starts at the lip’s height, across the lip’s width', () => {
-		const { positions, uvs } = meshOf(SHEET);
-		const front = rowsOf(SHEET, SHEET_VEIL);
-		// The row where the water crosses the lip: the first whose time is not negative.
-		const lipRow = front.find(
+describe('a waterfall’s column', () => {
+	/** The row where the water crosses the lip: the first whose time is not negative. */
+	const lipRow = () => {
+		const { uvs } = meshOf(SHEET);
+		return rowsOf(SHEET).find(
 			(row) => (uvs[(row[0] as number) * 2 + 1] as number) >= 0,
 		) as number[];
-		expect(uvs[(lipRow[0] as number) * 2 + 1]).toBe(0);
-		for (const v of lipRow) {
+	};
+
+	it('starts at the lip’s height, across the lip’s width, as thin as the tongue', () => {
+		const { positions, uvs } = meshOf(SHEET);
+		const row = lipRow();
+		expect(uvs[(row[0] as number) * 2 + 1]).toBe(0);
+		for (const v of row) {
 			expect(positions[v * 3] as number).toBeCloseTo(10, 5);
 			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT, 5);
 		}
-		// The mesh reaches past the water's edges, where the material tears them; the water's own
-		// edges lie at the lip's half width, which the first texture coordinate names.
-		const zs = lipRow.map((v) => positions[v * 3 + 2] as number);
-		expect(Math.min(...zs)).toBeCloseTo(-4 - SHEET.halfWidth * EDGE_ROOM, 5);
-		expect(Math.max(...zs)).toBeCloseTo(-4 + SHEET.halfWidth * EDGE_ROOM, 5);
-		const lips = lipRow.map((v) => uvs[v * 2] as number);
-		expect(Math.min(...lips) / EDGE_ROOM).toBeCloseTo(-SHEET.halfWidth, 5);
-		expect(Math.max(...lips) / EDGE_ROOM).toBeCloseTo(SHEET.halfWidth, 5);
+		const zs = row.map((v) => positions[v * 3 + 2] as number);
+		expect(Math.min(...zs)).toBeCloseTo(-4 - SHEET.halfWidth, 3);
+		expect(Math.max(...zs)).toBeCloseTo(-4 + SHEET.halfWidth, 3);
+		expect(columnDepth(SHEET.halfWidth, 1e-6)).toBeCloseTo(TONGUE, 4);
 	});
 
 	it('lies on the river’s surface upstream of the lip, over the apron', () => {
-		const { positions, uvs } = meshOf(SHEET);
-		const front = rowsOf(SHEET, SHEET_VEIL);
-		const top = front[0] as number[];
+		const { positions, uvs, normals } = meshOf(SHEET);
+		const top = rowsOf(SHEET)[0] as number[];
 		expect(uvs[(top[0] as number) * 2 + 1] as number).toBeCloseTo(-APRON / SHEET.speed, 5);
 		for (const v of top) {
-			expect(positions[v * 3] as number).toBeLessThan(10 - APRON * (1 - SIDE_SLOWING) + 1e-4);
+			expect(positions[v * 3] as number).toBeCloseTo(10 - APRON, 4);
 			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT, 5);
+			expect(normals[v * 3 + 1]).toBe(1);
 		}
 	});
 
-	it('follows the path of falling water in every veil', () => {
+	it('follows the path of falling water: its back on the path, its front a full depth out', () => {
 		const { positions, uvs, uvs1 } = meshOf(SHEET);
 		const at: [number, number] = [0, 0];
 		for (let v = 0; v < positions.length / 3; v++) {
-			const { veil, across } = veilOf(uvs1, v);
-			const own =
-				SHEET.speed * (VEILS[veil]?.speed as number) * (1 - SIDE_SLOWING * across * across);
 			const t = uvs[v * 2 + 1] as number;
-			// The apron runs at the lip's middle speed, and each veil's water at its own after the lip.
-			fallPlace(t, t <= 0 ? SHEET.speed * (1 - SIDE_SLOWING * across * across) : own, at);
-			const shape = VEILS[veil] as (typeof VEILS)[number];
-			const water = (SHEET.halfWidth + SHEET.spread * at[1]) * shape.width;
-			const half = water * EDGE_ROOM;
-			const bow = veilBow(shape.depth, water, across * EDGE_ROOM, at[1]);
-			expect(positions[v * 3] as number).toBeCloseTo(10 + at[0] + bow, 3);
+			const angle = (uvs1[v * 2] as number) * Math.PI * 2;
+			fallPlace(t, SHEET.speed, at);
+			const depth = columnDepth(SHEET.halfWidth, at[1]);
+			const half = SHEET.halfWidth + SHEET.spread * at[1];
+			expect(positions[v * 3] as number).toBeCloseTo(10 + at[0] + depth * (1 + Math.cos(angle)), 3);
 			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT - at[1], 3);
-			expect(positions[v * 3 + 2] as number).toBeCloseTo(-4 + across * half, 3);
+			expect(positions[v * 3 + 2] as number).toBeCloseTo(-4 + half * Math.sin(angle), 3);
 			expect(uvs1[v * 2 + 1] as number).toBeCloseTo(at[1], 3);
 		}
 	});
 
-	it('never rises, and reaches the drop at its foot', () => {
+	it('never rises, stays clear of the lip’s line, and reaches the drop at its foot', () => {
 		const { positions } = meshOf(SHEET);
-		for (let veil = 0; veil < VEILS.length; veil++) {
-			const rows = rowsOf(SHEET, veil);
-			for (let column = 0; column < (rows[0] as number[]).length; column++) {
-				let last = Number.POSITIVE_INFINITY;
-				for (const row of rows) {
-					const y = positions[(row[column] as number) * 3 + 1] as number;
-					expect(y).toBeLessThanOrEqual(last);
-					last = y;
-				}
-				expect(last).toBeCloseTo(SHEET.level + APRON_LIFT - SHEET.drop, 3);
+		const rows = rowsOf(SHEET);
+		for (let column = 0; column < (rows[0] as number[]).length; column++) {
+			let last = Number.POSITIVE_INFINITY;
+			for (const row of rows) {
+				const y = positions[(row[column] as number) * 3 + 1] as number;
+				expect(y).toBeLessThanOrEqual(last);
+				last = y;
+				// No part of the falling water lies behind the lip's line, toward the wall.
+				if (y < SHEET.level)
+					expect(positions[(row[column] as number) * 3] as number).toBeGreaterThan(10);
 			}
+			expect(last).toBeCloseTo(SHEET.level + APRON_LIFT - SHEET.drop, 3);
 		}
 	});
 
 	it('widens as it falls', () => {
 		const { positions } = meshOf(SHEET);
-		const front = rowsOf(SHEET, SHEET_VEIL);
-		const width = (row: number[]) =>
-			(positions[(row[row.length - 1] as number) * 3 + 2] as number) -
-			(positions[(row[0] as number) * 3 + 2] as number);
+		const width = (row: number[]) => {
+			const zs = row.map((v) => positions[v * 3 + 2] as number);
+			return Math.max(...zs) - Math.min(...zs);
+		};
+		const rows = rowsOf(SHEET);
 		let last = 0;
-		for (const row of front) {
-			expect(width(row)).toBeGreaterThanOrEqual(last - 1e-5);
+		for (const row of rows) {
+			expect(width(row)).toBeGreaterThanOrEqual(last - 1e-4);
 			last = width(row);
 		}
-		expect(last).toBeCloseTo(2 * (SHEET.halfWidth + SHEET.spread * SHEET.drop) * EDGE_ROOM, 3);
+		expect(last).toBeCloseTo(2 * (SHEET.halfWidth + SHEET.spread * SHEET.drop), 2);
 	});
 
-	it('stands as a column as deep as the creek is wide, seen from the side', () => {
-		const { positions } = meshOf(SHEET);
-		const middle = (SHEET.mesh?.across as number) / 2;
-		const foot = (veil: number) => {
-			const rows = rowsOf(SHEET, veil);
-			return rows[rows.length - 1] as number[];
-		};
-		const out = (veil: number, column: number) =>
-			(positions[(foot(veil)[column] as number) * 3] as number) - 10;
-		const water = SHEET.halfWidth + SHEET.spread * SHEET.drop;
-		// From the side the column runs from the back veil's middle to the front veil's.
-		expect(out(VEILS.length - 1, middle) - out(0, middle)).toBeGreaterThan(2 * SHEET.halfWidth);
-		// Each veil bows: its middle stands further out than the water's edges, and the arch grows
-		// from nothing at the lip.
-		const edge = Math.round(middle * (1 - 1 / EDGE_ROOM));
-		for (let veil = SHEET_VEIL; veil < VEILS.length; veil++)
-			expect(out(veil, middle)).toBeGreaterThan(out(veil, edge) + water * 0.3);
-		expect(veilBow(1, 2, 0, 0)).toBe(0);
-		expect(veilBow(1, 2, 0, 30)).toBeCloseTo(2, 6);
+	it('stands as a solid column with nearly parallel sides, as deep as the creek is wide', () => {
+		const { positions, uvs1 } = meshOf(SHEET);
+		const rows = rowsOf(SHEET);
+		const at = (fallen: number) =>
+			rows.find((row) => (uvs1[(row[0] as number) * 2 + 1] as number) >= fallen) as number[];
+		// Below the first few meters the column's depth holds within a tenth, so from the side its
+		// front and back run nearly parallel, and the depth is the creek's width times the column's
+		// share.
+		const depths = [6, 10, 14, 19].map((fallen) => {
+			const [back, front] = outOf(positions, at(fallen));
+			return front - back;
+		});
+		for (const depth of depths) {
+			expect(depth).toBeGreaterThan(2 * COLUMN_DEPTH * SHEET.halfWidth * 0.9);
+			expect(depth).toBeLessThan(2 * COLUMN_DEPTH * SHEET.halfWidth * 1.01);
+		}
+		// The front arcs out over the first meters and then falls nearly straight: below 6 m it moves
+		// out by less than a tenth of the drop.
+		const [, front6] = outOf(positions, at(6));
+		const [, front19] = outOf(positions, at(19));
+		expect(front19 - front6).toBeLessThan(SHEET.drop * 0.1);
 	});
 
-	it('hangs its back veil behind the sheet, toward the cliff, and its front veil in front', () => {
-		const { positions } = meshOf(SHEET);
-		const back = rowsOf(SHEET, 0);
-		const front = rowsOf(SHEET, SHEET_VEIL);
-		const middle = (SHEET.mesh?.across as number) / 2;
-		const out = (row: number[]) => (positions[(row[middle] as number) * 3] as number) - 10;
-		const foot = (rows: number[][]) => rows[rows.length - 1] as number[];
-		const spray = rowsOf(SHEET, VEILS.length - 1);
-		expect(out(foot(back))).toBeLessThan(out(foot(front)));
-		expect(out(foot(back))).toBeGreaterThan(0);
-		expect(out(foot(spray))).toBeGreaterThan(out(foot(front)));
-	});
-
-	it('looks out from the cliff, on every triangle and every vertex', () => {
-		const { positions, normals, indices } = meshOf(SHEET);
+	it('looks out from its middle, on every triangle and every vertex', () => {
+		const { positions, normals, indices, uvs } = meshOf(SHEET);
 		const corner = (index: number) =>
 			[0, 1, 2].map((axis) => positions[(indices[index] as number) * 3 + axis] as number);
+		const at: [number, number] = [0, 0];
 		for (let k = 0; k < indices.length; k += 3) {
+			const vertex = indices[k] as number;
+			const t = uvs[vertex * 2 + 1] as number;
+			// The rows at the lip itself are a thin tongue that folds over the brink, where out from
+			// the middle is no direction; the column's checks start half a meter down.
+			fallPlace(t, SHEET.speed, at);
+			if (at[1] < 0.5) continue;
 			const [a, b, c] = [corner(k), corner(k + 1), corner(k + 2)] as number[][];
 			const u = (a as number[]).map((value, axis) => ((b as number[])[axis] as number) - value);
 			const w = (a as number[]).map((value, axis) => ((c as number[])[axis] as number) - value);
@@ -260,14 +246,20 @@ describe('a waterfall’s sheet', () => {
 				(u[2] as number) * (w[0] as number) - (u[0] as number) * (w[2] as number),
 				(u[0] as number) * (w[1] as number) - (u[1] as number) * (w[0] as number),
 			];
-			// Out along the flow, which runs along +x, or up on the apron.
-			expect((n[0] as number) + (n[1] as number)).toBeGreaterThan(0);
-			const vertex = indices[k] as number;
+			// Out from the column's middle at this height.
+			const middle = [10 + at[0] + columnDepth(SHEET.halfWidth, at[1]), -4];
+			const outward = [
+				((a as number[])[0] as number) - (middle[0] as number),
+				((a as number[])[2] as number) - (middle[1] as number),
+			];
 			const dot =
+				(n[0] as number) * (outward[0] as number) + (n[2] as number) * (outward[1] as number);
+			expect(dot).toBeGreaterThan(0);
+			const own =
 				(n[0] as number) * (normals[vertex * 3] as number) +
 				(n[1] as number) * (normals[vertex * 3 + 1] as number) +
 				(n[2] as number) * (normals[vertex * 3 + 2] as number);
-			expect(dot).toBeGreaterThan(0);
+			expect(own).toBeGreaterThan(0);
 		}
 		for (let v = 0; v < normals.length / 3; v++)
 			expect(
@@ -313,32 +305,35 @@ describe('a waterfall’s spray and mist', () => {
 	const byKind = (sheet: FallSheet) =>
 		Object.fromEntries(fallEmitters(sheet).map((place) => [place.kind, place]));
 
-	it('sprays inside the column that the veils make, over the upper drop', () => {
+	it('sprays inside the column, over the upper two thirds of the drop', () => {
 		const { body } = byKind(SHEET);
 		const upper = SHEET.drop * 0.35;
 		const at: [number, number] = [0, 0];
 		fallPlace(fallTime(upper), SHEET.speed, at);
-		const water = SHEET.halfWidth + SHEET.spread * upper;
-		// Its box runs from behind the sheet's path to past the front veil's bow.
+		const depth = columnDepth(SHEET.halfWidth, upper);
+		// Its box runs from the column's back to its front, across the water's width.
 		const out = (body?.position[0] as number) - 10;
-		const depth = body?.box[2] as number;
-		expect(out - depth / 2).toBeLessThan(at[0]);
-		expect(out + depth / 2).toBeGreaterThan(at[0] + water);
-		expect(body?.box[0] as number).toBeGreaterThan(water);
+		const thick = body?.box[2] as number;
+		expect(out - thick / 2).toBeLessThan(at[0]);
+		expect(out + thick / 2).toBeGreaterThan(at[0] + 2 * depth);
+		expect(body?.box[0] as number).toBeGreaterThan(SHEET.halfWidth + SHEET.spread * upper);
+		// It stays in the upper drop: its top below the lip, its foot above the fall's lower quarter.
 		const top = (body?.position[1] as number) + (body?.box[1] as number) / 2;
+		const foot = (body?.position[1] as number) - (body?.box[1] as number) / 2;
 		expect(top).toBeLessThanOrEqual(SHEET.level);
+		expect(foot).toBeGreaterThan(SHEET.level - SHEET.drop * 0.75);
 	});
 
-	it('froths at the brink, gathers its mist on the fall’s path, and plumes at its foot', () => {
+	it('froths at the brink, gathers its mist about the column, and plumes at its foot', () => {
 		const { froth, mist, plume } = byKind(SHEET);
 		const at: [number, number] = [0, 0];
 		// The froth stands just past the lip, a little below the river's surface.
 		expect(froth?.position).toEqual([10.25, SHEET.level - 0.1, -4]);
-		// The mist stands on the path, two thirds of the way down.
+		// The mist stands about the column's middle, nearly three quarters of the way down.
 		const middle = SHEET.drop * MIST_DEPTH;
 		fallPlace(fallTime(middle), SHEET.speed, at);
-		const half = SHEET.halfWidth + SHEET.spread * middle;
-		expect(mist?.position[0] as number).toBeCloseTo(10 + at[0] + half * MIST_OUT, 6);
+		const depth = columnDepth(SHEET.halfWidth, middle);
+		expect(mist?.position[0] as number).toBeCloseTo(10 + at[0] + depth, 6);
 		expect(mist?.position[1] as number).toBeCloseTo(SHEET.level - middle, 6);
 		expect(mist?.position[2]).toBe(-4);
 		// The plume stands at the foot, past the end of the path.
@@ -347,13 +342,13 @@ describe('a waterfall’s spray and mist', () => {
 		expect(plume?.position[1] as number).toBeLessThan(SHEET.level - SHEET.drop * 0.9);
 	});
 
-	it('spreads its mist over three times the fall’s width, and covers the lower half', () => {
+	it('gathers its mist a little wider than the fall, over the lower half of the drop', () => {
 		const { mist } = byKind(SHEET);
 		const half = SHEET.halfWidth + SHEET.spread * SHEET.drop * MIST_DEPTH;
 		expect(mist?.halfWidth).toBeCloseTo(half, 6);
 		expect(mist?.box[0]).toBeCloseTo(2 * half * MIST_WIDTH, 6);
 		const top = (mist?.position[1] as number) + (mist?.box[1] as number) / 2;
-		expect(top).toBeLessThan(SHEET.level - SHEET.drop * 0.35);
+		expect(top).toBeLessThan(SHEET.level - SHEET.drop * 0.4);
 	});
 
 	it('turns every emitter so its box lies across the fall', () => {
@@ -392,17 +387,19 @@ describe('a waterfall’s spray and mist', () => {
 	});
 });
 
-describe('the sheet’s shader', () => {
-	it('reads the veil and the room past the edges as the mesh writes them', () => {
-		expect(read('fall.wgsl')).toContain(`const VEIL_ROOM: f32 = ${VEIL_ROOM.toFixed(1)};`);
-		expect(read('fall.wgsl')).toContain(`const EDGE_ROOM: f32 = ${EDGE_ROOM.toFixed(1)};`);
-	});
-
+describe('the column’s shader', () => {
 	it('measures the gap to a wall as the surface does', () => {
 		const body = (source: string) => {
 			const start = source.indexOf('fn distance_of(');
 			return source.slice(start, source.indexOf('\n}', start));
 		};
 		expect(body(read('fall.wgsl'))).toBe(body(read('water.wgsl')));
+	});
+
+	it('sizes the froth’s clumps by the speed of the path’s water', () => {
+		const constant = (name: string) =>
+			Number(new RegExp(`const ${name}: f32 = ([0-9.]+);`).exec(read('fall.wgsl'))?.[1]);
+		expect(constant('FALL_SPEED')).toBe(FALL_SPEED);
+		expect(constant('DRAG_TIME')).toBeCloseTo(FALL_SPEED / GRAVITY, 6);
 	});
 });

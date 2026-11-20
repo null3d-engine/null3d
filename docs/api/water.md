@@ -25,7 +25,7 @@ flowchart LR
     preset["The quality preset"] --> mirror
     camera["A camera under the surface"] --> under["createUnderwater"]
     lip["A river's lip,<br/>its current and a drop"] --> path["The path of<br/>falling water"]
-    path --> sheet["A sheet of veils:<br/>streaks that ride the water"]
+    path --> sheet["A column of water:<br/>streaks that ride the water"]
     path --> spray["Spray, mist<br/>and a plume"]
     sheet --> fall["The waterfall"]
     spray --> fall
@@ -226,19 +226,22 @@ window overhead, and turns the light back past that window's edge.
 
 `createWaterfall(ctx, options)` makes a waterfall that falls from a river's lip. The water rolls
 over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water
-does while the air slows it. Below the tongue it turns white and parts into four to six round ropes. Gray
-shade lies between them and fine streaks run inside them. Its edges tear into lobes and wisps, and it
-fans out as it falls. From about halfway down it bursts into a cloud of mist several times its
-width, so it never lands and never ends in a line. Spray froths at the lip, and a plume of mist
+does while the air slows it. Below the tongue it turns white: a solid column of rough round ropes,
+with soft gray shade between them and clumps of froth that ride down with the water. Its outline
+tears into lobes and wisps, and it widens a little as it falls. Over its lower half it breaks up
+into clumps and bursts into billows of mist gathered round its foot, so it never lands and never
+ends in a line. Spray froths at the lip, and a plume of mist
 rises at its foot.
 
 The sheet's material moves each streak with the water from the sketch's time alone. So the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
-the water speeds up. Three veils bow out from the wall in arches. Together they make a column as
-deep as the creek is wide. So the fall has a body from the side as well as from the front. Spray
-falls inside the column. White water scatters the light that reaches it from all round. So the
-sheet takes the sky's light as a surface facing up does, and it reads white. The scene's light lights the sheet,
-and the sheet fades where it nears a wall or a ledge behind it. The spray and
+the water speeds up. The fall is one closed column with an oval section. It is thin at the lip, and
+a few meters down it is nearly as deep as the creek is wide. Below that its front and back run
+nearly parallel. So the fall has a solid body from the side as well as from the front. Its outline
+thins and tears wherever the view grazes it, so no side shows a clean edge. Spray falls inside the
+column. White water scatters the light that reaches it from all round. So the column takes the
+sky's light as a surface facing up does, and it reads white. The scene's light lights the column,
+and the column fades where it nears a wall or a ledge behind it. The spray and
 the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
 
 ```ts
@@ -285,7 +288,7 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `direction` | `[x, z]` | Required | The way the water runs over the lip. Its length does not matter |
 | `halfWidth` | A number above 0, in meters | Required | Half the river's width at the lip |
 | `level` | A number, in meters | 0 | The height of the water's surface at the lip |
-| `speed` | A number above 0, in meters a second | 1.2 | The current at the middle of the lip. It sets how far the water leaps clear of the lip. A river runs faster as it nears a brink, so give the speed at the lip itself: 1 to 2 m/s throws a creek's fall clear of the wall below it |
+| `speed` | A number above 0, in meters a second | 1.2 | The current at the lip. It sets how far the water leaps out from the lip's line: at 1.2 m/s the back of the column is 0.6 m out 2 m down and 1.3 m out 13 m down. A wall that leans out further meets the water, and the column fades near the rock. Give the speed at the lip itself |
 | `drop` | A number above 0, in meters | Required | How far the fall drops below the lip. The sheet thins into mist over the lower half of the drop |
 | `spread` | A number from 0 | 0.3 | How far each side of the sheet widens for each meter that the water falls. At 0.3 a creek 5 m wide that falls 13 m is about twice as wide halfway down |
 | `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles, and neither `@null3d/particles` nor the engine's particle code loads |
@@ -394,9 +397,9 @@ near the eye and spends its vertices far away.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
-- **A waterfall.** It draws one blended mesh of three veils, just under 4,000 triangles at the
+- **A waterfall.** It draws one blended mesh, a closed column of just over 2,000 triangles at the
   default detail. It adds four particle systems. They are a froth at the lip, the spray inside the
-  column, the mist that the fall bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The sheet reads the copy
+  column, the mist that the fall bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The column reads the copy
   of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
   phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a

@@ -125,21 +125,42 @@ export interface SceneModels {
 	readonly blockers?: readonly string[];
 	/** The models whose every part sways, which the build checks after the asset tool. */
 	readonly swaying: readonly string[];
-	/** Options for the script after the command line's own, such as the inputs it reads. */
-	readonly options?: readonly string[];
+	/**
+	 * Options that the script gets when the command line does not give them, such as the folder of
+	 * a scene's inputs.
+	 */
+	readonly options?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The models that `--models <a,b>` on the command line picks from a scene's, in the scene's order,
+ * or all of them. The script gets the option too, and may skip what it does not need.
+ */
+export function chosenModels(
+	models: readonly string[],
+	options = process.argv.slice(3),
+): readonly string[] {
+	const at = options.indexOf('--models');
+	if (at < 0) return models;
+	const picked = (options[at + 1] ?? '').split(',').filter((name) => name.length > 0);
+	const unknown = picked.filter((name) => !models.includes(name));
+	if (picked.length === 0 || unknown.length > 0)
+		throw new Error(`--models takes a comma-separated list of ${models.join(', ')}`);
+	return models.filter((model) => picked.includes(model));
 }
 
 /**
  * Runs a scene's Blender script and writes its optimized, packed models into the folder that the
  * command line names. The options after the folder go to the script: `--preview <folder>` renders
- * each model with Cycles there, and a script that reads inputs names its own, such as `--raw`.
+ * each model with Cycles there, `--models <a,b>` builds only those models, and a script that reads
+ * inputs names its own, such as `--raw`.
  */
 export async function buildScene({
 	script,
 	models,
 	blockers = [],
 	swaying,
-	options = [],
+	options = {},
 }: SceneModels): Promise<void> {
 	const args = process.argv.slice(2);
 	const out = args[0];
@@ -147,6 +168,9 @@ export async function buildScene({
 		throw new Error(
 			`Give the output folder: bun tools/samples/blender/${script.replace('.py', '.ts')} <folder> [options]`,
 		);
+	const given = args.slice(1);
+	const defaults = Object.entries(options).filter(([flag]) => !given.includes(flag));
+	const chosen = chosenModels(models, given);
 	const scratch = mkdtempSync(join(tmpdir(), `${script.replace('.py', '')}-models-`));
 	try {
 		const built = Bun.spawnSync(
@@ -162,14 +186,14 @@ export async function buildScene({
 				join(import.meta.dir, script),
 				'--',
 				join(scratch, 'blender'),
-				...args.slice(1),
-				...options,
+				...given,
+				...defaults.flat(),
 			],
 			{ stdout: 'pipe', stderr: 'pipe' },
 		);
 		if (built.exitCode !== 0) throw new Error(`Blender failed:\n${built.stdout}\n${built.stderr}`);
 		mkdirSync(resolve(out), { recursive: true });
-		for (const model of models) {
+		for (const model of chosen) {
 			const optimized = join(scratch, 'optimized', model);
 			const code = await optimize([
 				join(scratch, 'blender', `${model}.glb`),

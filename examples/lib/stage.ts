@@ -204,6 +204,12 @@ export interface StageOptions {
 	 */
 	environmentScale?: number;
 	/**
+	 * A factor on the main light that the sun or the moon casts on the scene, for a scene under
+	 * heavy cloud whose light comes mostly from the sky, so its shadows stay soft. The sky itself
+	 * keeps the sun's full light. The default is 1. The studio keeps its own light.
+	 */
+	sunScale?: number;
+	/**
 	 * A factor on the brightness of the sky itself, for a scene whose lights read against a brighter
 	 * sky than the hour gives. The default is 1.
 	 */
@@ -305,6 +311,7 @@ export function createMoods(
 		haze = {},
 		exposureScale = 1,
 		environmentScale = 1,
+		sunScale = 1,
 		skyScale = 1,
 		starScale = 1,
 	} = options;
@@ -401,7 +408,7 @@ export function createMoods(
 			target.sunPosition[k] = day.atmosphere.sunPosition[k] as number;
 			target.moonPosition[k] = day.atmosphere.moonPosition[k] as number;
 		}
-		target.intensity = day.light.intensity * weather.light;
+		target.intensity = day.light.intensity * weather.light * sunScale;
 		target.skyIntensity = day.skyIntensity * weather.light;
 		// The fog's factor follows the look of the hour, so it moves between moods with the light.
 		moodMix(hours, mix);

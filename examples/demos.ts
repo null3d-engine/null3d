@@ -144,11 +144,9 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./showcase/creek/sketch.ts', import.meta.url),
 		code: 'showcase/creek/',
 		title: 'Creek',
-		scene: 'A stream in a grassy valley',
+		scene: 'A garden on a cliff above a sea of cloud',
 		summary:
-			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, in a valley of oaks, beeches and birches with ferns, hostas, shrubs and wildflowers below them and a cave in the far bank. Trees, plants and grass sway in one wind, leaves fall and float down the stream, under the sky of the time of day.',
-		assets:
-			'Shows how a scene loads its trees, plants and cave as optimized glTF models with levels of detail, built by script in Blender.',
+			'A clear creek crosses the top of a round cliff from rim to rim, fed by a spring pool, over a stony bed that shows through the water. Raked gravel curves between moss islands below a hill and its terrace, dark walls of pillars and ledges run down into the cloud, and the cloud billows and drifts in the light of the time of day.',
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,

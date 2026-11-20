@@ -360,6 +360,24 @@ vertex's world place is the origin with its place in the mesh.
   the read keep the rows that the shader names. The demo draws on every path: its WebGL2 tier runs
   at Medium, whose cadence is two, and the reflection keeps its last image there.
 
+## Caustics seen low across the water
+
+The caustics' ridges are about 7 mm wide at their sharpest, a power of 14 over the ridge noise. A
+low view along a creek covers more than that with one pixel a few meters off. The ridges then
+alias into fine, even lines across the view, like scan lines. A probe drew a shallow creek under an
+overcast sky, seen from 1.1 m up. It measured the rows' alternation as the mean second difference
+down the rows, beside the same figure across the columns. With the caustics, it read 10.95 levels far off and 3.44
+mid-way. With them off, it read 0.66 and 0.51, beside 0.45 to 0.58 across the columns.
+
+So the surface broadens the ridges as a pixel grows. The power falls from 14 to 2 as a pixel grows
+from 7 mm to 5 cm. The surface scales the ridges by the power plus one, over 15. A sampling of the
+pattern showed that this keeps their mean brightness within 4 per cent from a power of 4 up. At a
+power of 2 it is 12 per cent darker.
+Where a pixel covers 6 to 15 cm, the caustics give way to that mean. With the change, the probe read
+0.64 far off and 0.98 mid-way, and the near ridges still drew sharp. The view from under the water
+keeps the sharp ridges. Both copies of the caustics take the power as an argument, so the test
+that holds them equal still holds.
+
 ## Rain on the surface
 
 A storm rains on the water, so the surface takes a `rain` amount from 0 to 1, and `setRain` changes
@@ -393,31 +411,40 @@ join a river's end, move without work on the CPU, and get its spray and mist?
 
 **The path.** The water leaves the lip level with the river, at the current's speed there. It falls
 while the air slows it toward a steady 15 m/s. The distance fallen is the integral of a hyperbolic
-tangent, and the motion away from the lip decays with the same drag time. So the sheet curves over
+tangent, and the motion away from the lip decays with the same drag time. So the column curves over
 the lip and then drops almost straight, as a real fall does. A fall of any height keeps streaks that
-the eye can follow. `fall.ts` holds the path and the mesh. Its tests hold the sheet to the lip's
-height and width, to the path, and to a sheet that never rises.
+the eye can follow. `fall.ts` holds the path and the mesh. Its tests hold the column to the lip's
+height and width, to the path, to nearly parallel sides, and to a column that never rises.
 
-**The sheet.** Three veils give the fall a body. Each bows out from the wall in an arch. The arch is
-deepest in the middle, and it grows over the first meters of the drop. The back veil bows a little
-toward the wall, the sheet out, and the front veil out by the water's half width. Seen from the
-side, as the concept's camera sees its left fall, they make a column as deep as the creek is wide. Each veil's mesh
-reaches half again past the water's edges, so the material can tear the edges outward. An apron runs
+**The column.** One closed tube gives the fall its body. Its section is an oval as wide as the
+water. The back of the oval follows the path, so no water lies behind the lip's line. The front
+stands out from it by the column's depth. That depth is the tongue's thickness at the lip, and it
+grows over the first meters of the drop to most of the creek's width. Below that the front and back
+run nearly parallel. Seen from the side, as the concept's camera sees its left fall, the fall is a
+solid column, and its depth comes from the water's own thickness and the spray inside it. An
+earlier build used three sheets at different angles. From the side they fanned out from one point
+at the lip into thin ribs, and the backdrop showed between them. The material thins the column
+wherever the view grazes it, torn by froth and by lobes that ride with the water. So the outline is
+soft from every side, and no sheet edge or cut end shows. An apron runs
 a meter up the river's surface before the lip, and fades in there. So the river's own mesh ends at
 the lip with no seam. The mesh's texture coordinates carry each point's place across the lip and
 the time since its water crossed it. The material's noise reads those two. So every streak rides
 down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
 
-**The look.** The concept's falls set it. A smooth glassy tongue rolls over the lip. Then four to
-six thick round ropes fall. They have bright cores, gray shade between them, and torn, lobed edges.
-From about halfway down, a cloud of mist hides the fall's end. It is three or four times as wide as
-the fall.
-The ropes are bands about a meter apart that slow noise bends. Each has a round profile, and froth
-breaks its outline into clumps. The edges move in and out with noise that rides with the water,
-further as the fall widens. Each rope ends at its own height. White water scatters the light that
+**The look.** The concept's falls set it. A smooth glassy tongue rolls over the lip. Then a solid
+white column of rough ropes falls. The ropes have bright cores, gray shade between them, and torn,
+lobed edges. Over the lower half, the column breaks into clumps, and billows of mist gather round
+its foot and hide its end.
+The ropes are two sets of bands at different spacings that slow noise bends, so no two gaps are
+alike. Each has a round profile, and froth breaks its outline into clumps. The froth's clumps keep
+about one size down the whole drop: a set of noise layers that ride with the water, each with more
+cells for each second, takes over as the water speeds up. The ropes show as shade, so the column
+stays solid. Lower down, holes open in the shade first, shaped by the clumps. Each clump ends at
+its own height. White water scatters the light that
 reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and it
 reads white beside the cloud. It fades where the copy of the scene's depth shows a wall close behind
-it. The mist is particles, in round billows sized by the creek rather than by the fan.
+it. The mist is particles, in billows sized by the creek and gathered a little wider than the
+column.
 
 **The spray.** The water add-on depends on `@null3d/particles` at the exact version. As
 [D-173](D-173-addon-hooks.md) allows, the grass add-on depends on the wind add-on the same way. A

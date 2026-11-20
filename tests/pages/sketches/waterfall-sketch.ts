@@ -1,7 +1,8 @@
 // A waterfall drawn by @null3d/water under an overcast sky. A creek 5.6 m wide runs between two banks
-// to the edge of a dark cliff and falls 18 m from its lip, past a grey sea of cloud 12 m below it:
-// a glassy tongue over the lip, then round white ropes with torn edges that fan out and burst into
-// mist, with a froth at the lip and a plume at the foot. The sheet's streaks move with the time
+// to the edge of a dark cliff and falls from its lip into a grey sea of cloud 12 m below it, with
+// the Creek garden's settings for its falls: a glassy tongue over the lip, then a solid white
+// column of rough ropes that breaks up and bursts into mist above the cloud, with a froth at the
+// lip and a plume at the foot. The sheet's streaks move with the time
 // alone and the spray's systems start full, so the held frame shows the running fall. The `view`
 // switch moves the camera: `near` stands 10 m from the fall, `side` looks square across its path,
 // past the gap between the water and the wall, and `profile` sees it side-on from above, as the
@@ -11,8 +12,8 @@ import { createWater, createWaterfall } from '@null3d/water';
 
 /** The creek's half width at the lip, its current there, and how far the fall drops, in meters. */
 const HALF = 2.8;
-const SPEED = 3;
-const DROP = 18;
+const SPEED = 1.2;
+const DROP = 14;
 /** The height of the rock under the creek's bed, of the banks beside it, and of the cloud's top. */
 const BED = -0.7;
 const BANK = 0.45;
@@ -100,10 +101,11 @@ export default defineSketch(async (ctx) => {
 	const fall = await createWaterfall(ctx, {
 		lip: [0, 0],
 		direction: [1, 0],
-		halfWidth: HALF,
+		// The garden's falls are a little narrower than the creek, and widen a little as they fall.
+		halfWidth: HALF * 0.85,
 		speed: SPEED,
 		drop: DROP,
-		spread: 0.6,
+		spread: 0.16,
 		spray: SPRAY,
 	});
 	fall.setLight([0.8, 0.8, 0.84]);
