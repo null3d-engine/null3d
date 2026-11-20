@@ -118,15 +118,20 @@ fn surface(input: SurfaceInput) -> Surface {
     let ropes = streak_layer(lip, crossed, vec2f(0.9, 0.2), 1.0);
     let warp = streak_layer(lip, crossed, vec2f(0.3, 0.1), 1.2);
     let bands = lip * ROPES_PER_METER + warp * 1.8;
-    let inside = (2.0 * (fract(bands) - 0.5)) / mix(0.6, 1.3, ropes);
+    let inside = (2.0 * (fract(bands) - 0.5)) / mix(0.45, 0.9, ropes);
     let more = lip * ROPES_PER_METER * 1.7 + warp * 2.6 + 0.31;
-    let beside = (2.0 * (fract(more) - 0.5)) / mix(0.7, 1.2, 1.0 - ropes);
-    let core = max(clamp(1.0 - inside * inside, 0.0, 1.0), 0.55 * clamp(1.0 - beside * beside, 0.0, 1.0));
-    let lumpy = smoothstep(0.0, 0.8, core + (froth - 0.5) * 0.5);
+    let beside = (2.0 * (fract(more) - 0.5)) / mix(0.4, 0.8, 1.0 - ropes);
+    let core = max(clamp(1.0 - inside * inside, 0.0, 1.0), 0.5 * clamp(1.0 - beside * beside, 0.0, 1.0));
+    let lumpy = smoothstep(0.05, 0.75, core + (froth - 0.5) * 0.4);
     let banded = 1.0 - smoothstep(0.3, 0.6, fwidth(more));
-    // The glassy tongue over the lip is one smooth body; the ropes part out of it as it turns white.
-    let white = smoothstep(0.0, material.clear, fallen);
-    let rope = mix(0.65, mix(0.8, lumpy, white), banded);
+    // The glassy tongue over the lip is one smooth body; the ropes part out of it as it turns white,
+    // some sooner than others, so no line crosses the fall where it turns.
+    let soon = streak_layer(lip, crossed, vec2f(1.6, 0.8), 2.9);
+    let white = smoothstep(0.0, material.clear, fallen * mix(0.4, 1.8, soon));
+    // Seen from the side, the ropes stand one behind another with no gap between them, so the
+    // column's sides show white froth rather than the shade between the ropes.
+    let frontal = smoothstep(0.1, 0.7, abs(facing));
+    let rope = mix(0.65, mix(0.8, mix(0.9, lumpy, frontal), white), banded);
 
     // Uneven white streak lines ride over the brink into the glassy tongue.
     let streaks = streak_layer(lip + warp * 2.0, crossed, vec2f(3.7, 0.6), 1.9);
@@ -134,7 +139,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let lines = smoothstep(0.62, 0.85, streaks) * smoothstep(0.25, 0.7, patches);
     let foam = max(white, lines * 0.8 * (1.0 - white));
     let body = clamp(rope * mix(0.78, 1.15, froth) * mix(0.85, 1.08, fine), 0.0, 1.0);
-    s.baseColor = mix(material.glass, white_color * mix(0.3, 1.1, body), foam);
+    s.baseColor = mix(material.glass, white_color * mix(0.22, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
     s.diffuseTransmissionColor = s.baseColor;
