@@ -528,11 +528,12 @@ def sprig_atlas(size, rng, leaves, length, width, tones, underside, twig, taper=
     return dilate(out)
 
 
-def needle_atlas(size, rng):
+def needle_atlas(size, rng, tones=((0.2, 0.33, 0.15), (0.21, 0.34, 0.16)), twig=(0.32, 0.2, 0.12)):
     """
     A pine's needles: three tufts seen from above, each a burst of long fine needles from a
     hidden twig, and a cell of a twig end seen from the side with its needles brushing upward.
-    Every needle stays inside its cell, and its edge fades over a texel.
+    `tones` gives the needles' color in the tufts and on the twig, and `twig` the twig's. Every
+    needle stays inside its cell, and its edge fades over a texel.
     """
     cell, offsets = cells(size)
     out = np.zeros((size, size, 4), np.float32)
@@ -547,11 +548,11 @@ def needle_atlas(size, rng):
                     reach = 0.12 + 0.2 * rng.random()
                     end = (cx + math.cos(a) * reach, cy + math.sin(a) * reach)
                     end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                    tone = np.array([0.2, 0.33, 0.15]) * (0.75 + 0.5 * rng.random())
+                    tone = np.array(tones[0]) * (0.75 + 0.5 * rng.random())
                     paint_line(tile, (cx, cy), end, 0.0045, tone)
         else:
             # A twig from the middle of the bottom edge, with needles in pairs along it.
-            paint_line(tile, (0.5, 0.0), (0.5, 0.75), 0.012, [0.32, 0.2, 0.12])
+            paint_line(tile, (0.5, 0.0), (0.5, 0.75), 0.012, twig)
             for j in range(90):
                 v = 0.05 + 0.75 * rng.random()
                 side = 1 if j % 2 else -1
@@ -559,7 +560,7 @@ def needle_atlas(size, rng):
                 reach = 0.15 + 0.12 * rng.random()
                 end = (0.5 + math.cos(a) * reach, v + math.sin(a) * reach)
                 end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                tone = np.array([0.21, 0.34, 0.16]) * (0.75 + 0.5 * rng.random())
+                tone = np.array(tones[1]) * (0.75 + 0.5 * rng.random())
                 paint_line(tile, (0.5, v), end, 0.0045, tone)
         out[oy:oy + cell, ox:ox + cell] = tile
     return dilate(out)
@@ -645,12 +646,14 @@ def leaf_part(spec, plant, places, rng, grow):
       cells    the atlas cells the cards draw from; fold and bend shape them as `card` says
       tent     true draws each card as a `tent`, bent across and along, whose rise is `fold`
       tint     the color that multiplies every card's
+      shade    the darkest a card grows under the crown and inside it, which defaults to 0.35
     """
     leaves = Builder()
     top = plant_top(plant)
     reach = plant_reach(plant)
     center = Vector(np.array([tuple(c) for c, _, _ in plant.pads]).mean(axis=0))
     tint = Vector(spec['tint'])
+    shade = spec.get('shade', 0.35)
     for p, n, branch in places:
         facing = (n * (1 - spec['lift']) + Vector((0, 0, spec['lift']))).normalized()
         facing = (facing + Vector(rng.normal(0, spec['scatter'], 3))).normalized()
@@ -666,7 +669,7 @@ def leaf_part(spec, plant, places, rng, grow):
         base = p - along * size * spec['centered']
         # Darker under the crown and inside it, lighter on top and at the rim.
         rim = min(1.0, (p - center).length / max(reach, 1e-3))
-        ao = 0.35 + 0.65 * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
+        ao = shade + (1 - shade) * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
         hue = 0.9 + 0.2 * rng.random()
         color = tuple(ao * hue * c for c in tint)
         sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
@@ -689,9 +692,10 @@ def export(path, objects, masked, levels=(), one_sided=()):
     back faces, each with the normals it needs, draws its cutout with its back faces culled.
 
     An object named `<part>-<k>` is level k of the part named `<part>`, and `levels` gives each
-    level's error. The part's node lists its levels in the MSFT_lod extension, from the finest
-    down, with their errors in its extras, and the levels' nodes leave the scene. Each mesh keeps
-    its two sets of texture coordinates: the texture's, and the sway's.
+    level's error: one list for every part, or a dict of each part's own list. The part's node
+    lists its levels in the MSFT_lod extension, from the finest down, with their errors in its
+    extras, and the levels' nodes leave the scene. Each mesh keeps its two sets of texture
+    coordinates: the texture's, and the sway's.
     """
     bpy.ops.object.select_all(action='DESELECT')
     for o in objects:
@@ -735,14 +739,16 @@ def export(path, objects, masked, levels=(), one_sided=()):
         if mesh['name'] in swaying and any('TEXCOORD_1' not in p['attributes'] for p in mesh['primitives']):
             raise SystemExit(f"{mesh['name']} lost its sway coordinates in the export")
     if levels:
+        errors_of = levels.get if isinstance(levels, dict) else lambda name: levels
         index = {node['name']: k for k, node in enumerate(doc['nodes'])}
         lower = set()
         for k, node in enumerate(doc['nodes']):
-            ids = [index[f"{node['name']}-{n}"] for n in range(1, len(levels) + 1) if f"{node['name']}-{n}" in index]
+            errors = errors_of(node['name']) or ()
+            ids = [index[f"{node['name']}-{n}"] for n in range(1, len(errors) + 1) if f"{node['name']}-{n}" in index]
             if not ids:
                 continue
             node.setdefault('extensions', {})['MSFT_lod'] = {'ids': ids}
-            node.setdefault('extras', {})['NULL3D_lod_error'] = [levels[n] for n in range(len(ids))]
+            node.setdefault('extras', {})['NULL3D_lod_error'] = [errors[n] for n in range(len(ids))]
             lower.update(ids)
         for scene in doc['scenes']:
             scene['nodes'] = [n for n in scene['nodes'] if n not in lower]

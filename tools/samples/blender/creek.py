@@ -1,25 +1,31 @@
 # Builds the organic models of the Creek showcase scene in Blender: three broadleaf trees, four
-# plants for the banks and a rocky cave mouth. Everything comes from this script and a fixed seed:
-# the shapes, and every texture, which numpy paints. Nothing is downloaded.
+# plants for the banks, a rocky cave mouth and two sculpted pines. A fixed seed gives the shapes and
+# every texture, which numpy paints, except the pines' trunks and limbs: those are raw Tripo3D
+# models, kept in the sample-assets repository, which this script finishes. Nothing is downloaded.
 #
 #   blender --background --factory-startup \
-#     --python tools/samples/blender/creek.py -- <output folder> [--preview <folder>]
+#     --python tools/samples/blender/creek.py -- <output folder> --raw <folder> [--preview <folder>]
 #
-# `bun tools/samples/blender/creek.ts <folder>` runs it and optimizes the files for the scene.
+# `--raw` names the folder of raw models. `bun tools/samples/blender/creek.ts <folder> --raw <folder>`
+# runs it and optimizes the files for the scene.
 #
-# It writes three binary glTF files into the output folder, and prints each model's triangles:
+# It writes four binary glTF files into the output folder, and prints each model's triangles:
 #   trees.glb   oak, beech and birch, each a wood node and a leaves node, with lower levels of
 #               detail (MSFT_lod): fewer, larger leaf cards and fewer, plainer branches
 #   plants.glb  fern, hosta, shrub and flowers, one node each
 #   cave.glb    cave, one node
-# Leaves, fronds and plant leaves are cards whose texture's alpha cuts their outline, so their
-# materials are masked and double sided. The wood, the plants and the rock carry ambient occlusion
-# and tints in their vertex colors, which glTF multiplies into the base color. The trees and plants
-# carry their sway in their second texture coordinates, as `common.py` says; the cave stands still.
-# --preview also renders each model with Cycles, for a quick look without the engine.
+#   pines.glb   the tall and the low pine, each a wood node and a leaves node, with lower levels:
+#               fewer, larger needle cards and the wood cut to fewer triangles
+# Leaves, fronds, needles and plant leaves are cards whose texture's alpha cuts their outline, so
+# their materials are masked and double sided. The wood, the plants and the rock carry ambient
+# occlusion and tints in their vertex colors, which glTF multiplies into the base color. The trees,
+# pines and plants carry their sway in their second texture coordinates, as `common.py` says; the
+# cave stands still. --preview also renders each model with Cycles, for a quick look without the
+# engine.
 #
 # Blender's axes: z is up, and a model's front faces -y, which glTF's export turns into +z.
 
+import heapq
 import math
 import os
 import sys
@@ -27,7 +33,7 @@ import sys
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Vector, noise
+from mathutils import Matrix, Vector, noise
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
@@ -35,9 +41,10 @@ from mathutils.kdtree import KDTree
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    Builder, arguments, at_distance, blend_up, branch_phase, close_up, dilate, export, fbm, frame_of, half, image,
-    leaf_color, leaf_mask, link, material, normal_map, occlusion_of, orm, over, preview, smoothstep, sprig_atlas,
-    strip, tent, tube, value_noise,
+    Builder, Plant, arguments, at_distance, blend_up, branch_phase, close_up, crown_cards, dilate, export, fbm,
+    frame_of, half, image, leaf_color, leaf_mask, leaf_part, link, material, needle_atlas, normal_map,
+    occlusion_of, orm, over, plant_reach, plant_top, preview, smoothstep, sprig_atlas, stage, strip, tent, tube,
+    value_noise,
 )
 
 SEED = 20261011
@@ -817,6 +824,453 @@ def build_cave(mat, rng):
     return obj, sum(len(p.vertices) - 2 for p in mesh.polygons)
 
 
+# ---------------------------------------------------------------------------------------------
+# Sculpted pines
+# ---------------------------------------------------------------------------------------------
+
+# The garden's cloud-pruned pines. Each one's trunk and limbs are a raw Tripo3D model, which this
+# script finishes: it stands the model at its height with its foot at the middle, gives it bark
+# from the model's own maps, and finds its limbs and their ends. The crown is a layer of flat pads
+# of needles for each tier of limbs, along the limbs to their ends, with needle cards on the pads,
+# as `crown_cards` and `leaf_part` lay them.
+#   raw      the raw model's file, under the folder of raw models
+#   turn     degrees about the vertical axis that turn the model's front toward -y
+#   height   the wood's height in meters
+#   wood     the wood's triangles at the full level, then at each lower one
+#   errors   each lower level's surface error in meters, as TREE_LEVELS says
+#   bark     the bark's mean color in the concept, which the wood's vertex colors bring it to
+#   bare     the share of the wood's height that carries no pad
+#   stub     the shortest limb, as a share of the wood's height, that carries a pad
+#   gap      the height, as a share of the wood's height, over which the limbs of one tier leave
+#   pad      a pad's radius across, in meters, at the lowest tier and at the top; taper is how
+#            much narrower the pad at a limb's end is, and spacing the gap between pads along a
+#            limb as a share of a pad's radius
+#   slope    the steepest rise over run of the wood that carries pads along it; flatten is how
+#            far each pad moves toward its tier's layer, at the level percentile of the heights of
+#            the tier's limb ends
+#   flat     a pad's width over its thickness
+#   rise     how far a pad's middle sits above its layer, in meters
+#   cards    needle cards at the full level; up and depth place them as `crown_cards` says, and
+#            card, lift, scatter, centered, cells, fold, bend, tint and shade shape them as
+#            `leaf_part` says
+#   levels   each lower level's (every, grow): it keeps one card in every, each grow times larger
+#   switches the distances, in meters, of the previews of the levels side by side
+PINES = {
+    'pine-tall': dict(
+        raw='pine-tall/model.glb', turn=-90, height=7.5, wood=(9000, 3600, 1200), errors=(0.03, 0.07),
+        bark=(0.25, 0.22, 0.18), bare=0.36, stub=0.12, gap=0.08, pad=(1.3, 0.9), taper=0.4, spacing=1.0,
+        slope=0.8, flatten=0.9, level=70, flat=6.0, rise=0.08,
+        cards=4400, up=0.85, depth=0.2, card=0.45, lift=0.8, scatter=0.25, centered=0.5, cells=(0, 1, 2, 3),
+        fold=0.06, bend=0.55, tint=(1.0, 1.0, 1.0), shade=0.55, levels=((3, 1.6), (10, 2.9)), switches=(40, 90),
+    ),
+    'pine-low': dict(
+        raw='pine-low/model.glb', turn=-90, height=3.4, wood=(6000, 2400, 800), errors=(0.012, 0.03),
+        bark=(0.13, 0.1, 0.068), bare=0.33, stub=0.12, gap=0.15, pad=(0.6, 0.45), taper=0.6, spacing=0.9,
+        slope=1.0, flatten=0.2, level=70, flat=3.5, rise=0.08,
+        cards=1800, up=0.8, depth=0.3, card=0.35, lift=0.7, scatter=0.25, centered=0.5, cells=(0, 1, 2, 3),
+        fold=0.08, bend=0.55, tint=(1.08, 1.0, 0.8), shade=0.55, levels=((3, 1.6), (10, 2.9)), switches=(15, 35),
+    ),
+}
+
+# The needles' colors: the olive of the concept's tall pines; the low pine's tint makes it a little
+# yellower, as the concept's low pines are.
+NEEDLE_TONES = ((0.53, 0.54, 0.27), (0.55, 0.56, 0.29))
+NEEDLE_TWIG = (0.25, 0.2, 0.15)
+
+
+def import_raw(path, name, height, turn):
+    """
+    Imports a raw model as one object: every part's transform baked into its vertices, the parts
+    joined, doubled vertices merged, turned by `turn` degrees about the vertical axis, scaled to
+    `height` meters and moved so its foot stands at the origin. It returns the object, with no
+    material, and the texels of its material's color, normal and roughness maps.
+
+    The importer reuses a node group of the name that `occlusion_output` gives, and needs sockets
+    that group lacks, so the group steps aside while the import runs. The imported materials and
+    their group then go, so the export meets only this script's own.
+    """
+    group_name = 'glTF Material Output'
+    own = bpy.data.node_groups.get(group_name)
+    if own is not None:
+        own.name = f'{group_name} (own)'
+    materials, groups = set(bpy.data.materials), set(bpy.data.node_groups)
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=path)
+    added = [o for o in bpy.data.objects if o not in before]
+    meshes = [o for o in added if o.type == 'MESH']
+    if not meshes:
+        raise SystemExit(f'{path} holds no mesh')
+    worlds = [(o, o.matrix_world.copy()) for o in meshes]
+    for o, world in worlds:
+        if o.data.users > 1:
+            o.data = o.data.copy()
+        o.data.transform(world)
+    for o, _ in worlds:
+        o.parent = None
+        o.matrix_world = Matrix.Identity(4)
+    for o in added:
+        if o.type != 'MESH':
+            bpy.data.objects.remove(o)
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in meshes:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    if len(meshes) > 1:
+        bpy.ops.object.join()
+    obj = bpy.context.view_layer.objects.active
+    obj.name = obj.data.name = name
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    bm.to_mesh(obj.data)
+    bm.free()
+    mesh = obj.data
+    mesh.transform(Matrix.Rotation(math.radians(turn), 4, 'Z'))
+    co = positions(mesh)
+    low, high = co.min(axis=0), co.max(axis=0)
+    # The foot is the middle of the lowest few centimeters of the trunk.
+    foot = co[co[:, 2] < low[2] + 0.02 * (high[2] - low[2])].mean(axis=0)
+    mesh.transform(Matrix.Scale(height / float(high[2] - low[2]), 4) @ Matrix.Translation((-foot[0], -foot[1], -low[2])))
+    mesh.update()
+    bsdf = next(n for n in obj.material_slots[0].material.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+    maps = {key: texels_behind(bsdf.inputs[key]) for key in ('Base Color', 'Normal', 'Roughness')}
+    mesh.materials.clear()
+    for mat in set(bpy.data.materials) - materials:
+        bpy.data.materials.remove(mat)
+    for group in set(bpy.data.node_groups) - groups:
+        bpy.data.node_groups.remove(group)
+    if own is not None:
+        own.name = group_name
+    return obj, maps
+
+
+def positions(mesh):
+    co = np.empty(len(mesh.vertices) * 3, np.float32)
+    mesh.vertices.foreach_get('co', co)
+    return co.reshape(-1, 3).astype(np.float64)
+
+
+def texels_behind(socket):
+    """The texels of the image that feeds a material's socket, through any nodes between them."""
+    node = socket.links[0].from_node if socket.links else None
+    while node is not None and node.type != 'TEX_IMAGE':
+        linked = [i for i in node.inputs if i.links]
+        node = linked[0].links[0].from_node if linked else None
+    if node is None:
+        return None
+    w, h = node.image.size
+    return np.array(node.image.pixels[:], np.float32).reshape(h, w, -1)
+
+
+def raw_bark(maps, name, size):
+    """
+    The bark of a raw model, from its own maps, each shrunk to `size` texels: its color, its
+    normal map, and its roughness packed with full occlusion and no metal, as `orm` packs them.
+    """
+
+    def shrink(texels):
+        while max(texels.shape[:2]) > size:
+            texels = half(texels)
+        return texels
+
+    color, normal, rough = maps['Base Color'], maps['Normal'], maps['Roughness']
+    if rough is not None:
+        rough = shrink(rough)[..., 1]
+    return material(
+        f'bark-{name}',
+        image(f'bark-{name}-color', shrink(color)[..., :3]),
+        image(f'bark-{name}-normal', shrink(normal)[..., :3], 'Non-Color') if normal is not None else None,
+        image(f'bark-{name}-orm', orm(np.ones(rough.shape), rough), 'Non-Color') if rough is not None else None,
+    )
+
+
+def limb_ends(co, edges, cell, radius):
+    """
+    The ends of a tree's limbs, and each vertex's limb, from the distance along the wood from its
+    foot: the wood's vertices fall into cells of `cell` meters, each cell links to the 26 around
+    it and to the cells that the mesh's edges join it to, and the distance runs through the links
+    from the cells at the foot. A part of the wood that no link reaches links to the nearest cell
+    that one does, the nearest part first. A limb's end is a cell farther along the wood than every
+    cell within `radius` of it.
+
+    It returns the ends' cells, each vertex's cell, the cells' middles, their distances, the cell
+    that each cell's shortest path comes from, and the end each cell leads to.
+    """
+    keys = np.floor(co / cell).astype(np.int64)
+    cells_of, inverse = np.unique(keys, axis=0, return_inverse=True)
+    inverse = inverse.ravel()
+    count = len(cells_of)
+    middles = np.zeros((count, 3))
+    np.add.at(middles, inverse, co)
+    middles /= np.bincount(inverse, minlength=count)[:, None]
+    index = {tuple(k): i for i, k in enumerate(cells_of.tolist())}
+    steps = [(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1) if (dx, dy, dz) != (0, 0, 0)]
+    around = []
+    for k in cells_of.tolist():
+        near = [index.get((k[0] + dx, k[1] + dy, k[2] + dz)) for dx, dy, dz in steps]
+        around.append({n for n in near if n is not None})
+    for a, b in inverse[edges]:
+        if a != b:
+            around[a].add(int(b))
+            around[b].add(int(a))
+    distance = np.full(count, np.inf)
+    parent = np.full(count, -1)
+    heap = []
+    floor = middles[:, 2].min()
+    for i in np.where(middles[:, 2] < floor + 2 * cell)[0]:
+        distance[i] = 0.0
+        heap.append((0.0, int(i)))
+    heapq.heapify(heap)
+
+    def run():
+        while heap:
+            d, i = heapq.heappop(heap)
+            if d > distance[i]:
+                continue
+            for n in around[i]:
+                step = d + float(np.linalg.norm(middles[n] - middles[i]))
+                if step < distance[n]:
+                    distance[n] = step
+                    parent[n] = i
+                    heapq.heappush(heap, (step, n))
+
+    run()
+    while not np.isfinite(distance).all():
+        reached = np.where(np.isfinite(distance))[0]
+        tree = KDTree(len(reached))
+        for i in reached:
+            tree.insert(middles[i], int(i))
+        tree.balance()
+        gap, i, near = min((d, int(i), n) for i in np.where(~np.isfinite(distance))[0] for _, n, d in [tree.find(middles[i])])
+        distance[i] = distance[near] + gap
+        parent[i] = near
+        heapq.heappush(heap, (distance[i], i))
+        run()
+    # Ends: first the cells farther than every cell they link to, then those that are farthest
+    # within the radius, the farthest first, each the only end within the radius.
+    tree = KDTree(count)
+    for i in range(count):
+        tree.insert(middles[i], i)
+    tree.balance()
+    ends = []
+    for i in np.argsort(-distance):
+        if any(distance[n] > distance[i] for n in around[i]):
+            continue
+        if any(distance[n] > distance[i] for _, n, _ in tree.find_range(middles[i], radius)):
+            continue
+        if all((middles[i] - middles[e]) @ (middles[i] - middles[e]) > radius * radius for e in ends):
+            ends.append(int(i))
+    # The end each cell leads to: the farthest cell past it on the paths that run through it.
+    farthest = np.arange(count)
+    for i in np.argsort(-distance):
+        p = parent[i]
+        if p >= 0 and distance[farthest[i]] > distance[farthest[p]]:
+            farthest[p] = farthest[i]
+    tree = KDTree(len(ends))
+    for k, e in enumerate(ends):
+        tree.insert(middles[e], k)
+    tree.balance()
+    limb = np.array([tree.find(middles[farthest[i]])[1] for i in range(count)])
+    return ends, inverse, middles, distance, parent, limb
+
+
+def limb_starts(ends, distance, limb):
+    """The cell where each limb leaves its parent: its cell nearest the foot along the wood."""
+    starts = []
+    for k in range(len(ends)):
+        cells_k = np.where(limb == k)[0]
+        starts.append(int(cells_k[np.argmin(distance[cells_k])]) if len(cells_k) else ends[k])
+    return starts
+
+
+def limb_phases(ends, starts, distance, parent, limb):
+    """
+    Each cell's phase: 0 at the foot, and along each limb from its parent's phase where it leaves
+    its parent to its own at its end, so neighboring vertices never flutter apart. Limb k's own
+    phase is that of branch k + 1, which its pad carries too.
+    """
+    phase = np.zeros(len(distance))
+    for k in sorted(range(len(ends)), key=lambda k: distance[starts[k]]):
+        cells_k = np.where(limb == k)[0]
+        start = starts[k]
+        before = phase[parent[start]] if parent[start] >= 0 else 0.0
+        span = max(distance[ends[k]] - distance[start], 1e-3)
+        ramp = np.clip((distance[cells_k] - distance[start]) / span, 0, 1)
+        phase[cells_k] = before + (branch_phase(k + 1) - before) * ramp
+    return phase
+
+
+def root_path(cell, parent):
+    """The cells from the foot to a cell, along the wood."""
+    path = []
+    while cell >= 0:
+        path.append(int(cell))
+        cell = parent[cell]
+    return path[::-1]
+
+
+def runs_level(p, q, slope):
+    """True where the wood from `p` to `q` rises no steeper than `slope`, as rise over run."""
+    return abs(p[2] - q[2]) < slope * math.hypot(p[0] - q[0], p[1] - q[1])
+
+
+def pine_pads(spec, ends, starts, middles, distance, parent):
+    """
+    The pine's crown: a layer of flat pads for each tier of limbs. A limb leaves the trunk where
+    the wood from the foot to its end first runs no steeper than `slope`, above the bare trunk,
+    and its tier is the height where it leaves: the limbs that leave within `gap` above the lowest
+    of a tier share it. Along the wood from the trunk to each limb's end, a pad sits wherever the
+    wood runs no steeper than `slope`, every `spacing` of a pad's width, and one at the end.
+    `flatten` moves each pad toward its tier's layer, at the `level` percentile of the heights of
+    the tier's limb ends, so a tier reads as one plate across the trunk, and the limbs show bare
+    in the gaps between the plates. Pads are wider at the lowest tier than at the top, and narrow
+    by `taper` toward the limb's end, so a layer thins to a tip. A limb shorter than `stub` is a
+    stub or a twig and carries none. It returns the crown and its number of tiers.
+    """
+    height = spec['height']
+    low = spec['bare'] * height
+    kept = [
+        k for k, e in enumerate(ends)
+        if middles[e][2] > low and distance[e] - distance[starts[k]] > spec['stub'] * height
+    ]
+    limbs = []
+    for k in kept:
+        path = root_path(ends[k], parent)
+        points = middles[path]
+        along = distance[path]
+        leave = len(path) - 2
+        for j in range(len(path) - 1):
+            if points[j][2] < 0.9 * low:
+                continue
+            q = points[min(int(np.searchsorted(along, along[j] + spec['spacing'] * spec['pad'][1])), len(path) - 1)]
+            if runs_level(points[j], q, spec['slope']):
+                leave = j
+                break
+        limbs.append((points[leave][2], k, path[leave:]))
+    limbs.sort()
+    tiers = []
+    for limb_entry in limbs:
+        if tiers and limb_entry[0] - tiers[-1][0][0] < spec['gap'] * height:
+            tiers[-1].append(limb_entry)
+        else:
+            tiers.append([limb_entry])
+    plant = Plant()
+    high = max(middles[ends[k]][2] for k in kept)
+    for tier in tiers:
+        level_z = float(np.percentile([middles[ends[k]][2] for _, k, _ in tier], spec['level']))
+        share = (level_z - low) / max(high - low, 1e-3)
+        across = spec['pad'][0] + (spec['pad'][1] - spec['pad'][0]) * share
+        for _, k, cells in tier:
+            points = middles[cells]
+            out = np.hypot(points[:, 0] - points[0, 0], points[:, 1] - points[0, 1])
+            along = distance[cells] - distance[cells[0]]
+            mark = along[-1]
+            first = True
+            while mark >= 0:
+                j = min(int(np.searchsorted(along, mark)), len(points) - 1)
+                p = points[j]
+                q = points[int(np.searchsorted(along, max(mark - spec['spacing'] * across, 0)))]
+                level = runs_level(p, q, spec['slope'])
+                size = across * (1 - spec['taper'] * out[j] / max(out[-1], 1e-3))
+                z = p[2] + (level_z - p[2]) * spec['flatten'] + spec['rise']
+                # Limbs that share a stretch of wood share its pads.
+                taken = any(
+                    math.hypot(c.x - p[0], c.y - p[1]) < spec['spacing'] * size and abs(c.z - z) < r.z
+                    for c, r, _ in plant.pads
+                )
+                if (first or (level and p[2] > low)) and not taken:
+                    plant.pad((p[0], p[1], z), (size, size, size / spec['flat']), k + 1)
+                first = False
+                mark -= spec['spacing'] * across
+    return plant, len(tiers)
+
+
+def linear(srgb):
+    """Colors as a texture stores them, in sRGB, made linear."""
+    srgb = np.asarray(srgb, np.float64)
+    return np.where(srgb <= 0.04045, srgb / 12.92, ((srgb + 0.055) / 1.055) ** 2.4)
+
+
+def pine_wood(obj, plant, inverse, phase, shade):
+    """
+    The wood's vertex colors and sway: darker at the foot and under the pads, times `shade`, and
+    the sway as the island's wood carries it, with each vertex's phase from its limb.
+    """
+    mesh = obj.data
+    co = positions(mesh)
+    top, reach = plant_top(plant), plant_reach(plant)
+    ground = smoothstep(0.0, 1.0, co[:, 2])
+    under = np.zeros(len(co))
+    for c, r, _ in plant.pads:
+        inside_across = ((co[:, 0] - c.x) / r.x) ** 2 + ((co[:, 1] - c.y) / r.y) ** 2
+        under = np.maximum(under, (inside_across < 1) * (co[:, 2] < c.z) * smoothstep(1.0, 0.3, inside_across))
+    light = (0.55 + 0.45 * ground) * (1 - 0.35 * under)
+    colors = np.ones((len(co), 4), np.float32)
+    colors[:, :3] = light[:, None] * shade[None]
+    attr = mesh.color_attributes.new('Color', 'FLOAT_COLOR', 'POINT')
+    attr.data.foreach_set('color', colors.ravel())
+    mesh.color_attributes.active_color = attr
+    weight = np.clip(0.75 * np.maximum(co[:, 2], 0) / top + 0.25 * np.hypot(co[:, 0], co[:, 1]) / reach, 0, 1)
+    vertex_sway = np.stack([weight, phase[inverse] % 1.0], axis=1).astype(np.float32)
+    loops = np.empty(len(mesh.loops), np.int32)
+    mesh.loops.foreach_get('vertex_index', loops)
+    uv = mesh.uv_layers[0]
+    uv.name = 'UVMap'
+    for extra in list(mesh.uv_layers)[1:]:
+        mesh.uv_layers.remove(extra)
+    sway = mesh.uv_layers.new(name='Sway')
+    sway.data.foreach_set('uv', vertex_sway[loops].ravel())
+    mesh.uv_layers.active = mesh.uv_layers['UVMap']
+
+
+def decimated(obj, triangles, name):
+    """A copy of the object cut to about `triangles` triangles, which keeps its UVs and colors."""
+    copy = link(bpy.data.objects.new(name, obj.data.copy()))
+    have = sum(len(p.vertices) - 2 for p in copy.data.polygons)
+    if have > triangles:
+        cut = copy.modifiers.new('decimate', 'DECIMATE')
+        cut.ratio = triangles / have
+        cut.use_collapse_triangulate = True
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        mesh = bpy.data.meshes.new_from_object(copy.evaluated_get(depsgraph))
+        copy.modifiers.clear()
+        old = copy.data
+        copy.data = mesh
+        bpy.data.meshes.remove(old)
+    copy.data.name = name
+    return copy
+
+
+def build_pine(name, spec, raw, leaf_mat, rng):
+    """The pine's wood and needles objects at each level, and its pads."""
+    wood, maps = import_raw(os.path.join(raw, spec['raw']), f'{name}-raw', spec['height'], spec['turn'])
+    wood.data.materials.append(raw_bark(maps, name, 512))
+    # The vertex colors bring the bark's mean color to the concept's.
+    shade = linear(spec['bark']) / np.maximum(linear(maps['Base Color'][..., :3].reshape(-1, 3).mean(axis=0)), 1e-3)
+    co = positions(wood.data)
+    edges = np.empty(len(wood.data.edges) * 2, np.int32)
+    wood.data.edges.foreach_get('vertices', edges)
+    ends, inverse, middles, distance, parent, limb = limb_ends(co, edges.reshape(-1, 2), spec['height'] / 120, spec['height'] / 25)
+    starts = limb_starts(ends, distance, limb)
+    plant, tiers = pine_pads(spec, ends, starts, middles, distance, parent)
+    pine_wood(wood, plant, inverse, limb_phases(ends, starts, distance, parent, limb), shade)
+    places = crown_cards(plant, rng, spec['cards'], spec['up'], spec['depth'])
+    objects = [
+        decimated(wood, spec['wood'][0], f'{name}-wood'),
+        leaf_part(spec, plant, places, rng, 1.0).build(f'{name}-leaves', leaf_mat),
+    ]
+    for k, (every, grow) in enumerate(spec['levels'], start=1):
+        own = np.random.default_rng((SEED, 60 + k, sum(map(ord, name))))
+        objects += [
+            decimated(wood, spec['wood'][k], f'{name}-wood-{k}'),
+            leaf_part(spec, plant, places[::every], own, grow).build(f'{name}-leaves-{k}', leaf_mat),
+        ]
+    raw_mesh = wood.data
+    bpy.data.objects.remove(wood)
+    bpy.data.meshes.remove(raw_mesh)
+    return objects, plant, len(ends), tiers
+
+
 def main():
     out, shots = arguments('creek.py')
     rng = np.random.default_rng(SEED)
@@ -863,9 +1317,28 @@ def main():
     report.update(export(os.path.join(out, 'trees.glb'), tree_objects, {'leaves'}, errors))
     report.update(export(os.path.join(out, 'plants.glb'), plants, {'fern', 'hosta', 'shrub', 'flowers'}))
     report.update(export(os.path.join(out, 'cave.glb'), [cave], set()))
+
+    # The pines draw from random streams of their own, after the other models, so they leave every
+    # other file as it was.
+    raw = raw_folder()
+    needles = material(
+        'needles', image('needles', needle_atlas(1024, np.random.default_rng((SEED, 50)), NEEDLE_TONES, NEEDLE_TWIG)),
+        cutout=True, roughness=0.7,
+    )
+    pines, crowns = [], {}
+    for name, spec in PINES.items():
+        objects, plant, ends, tiers = build_pine(name, spec, raw, needles, np.random.default_rng((SEED, 51, sum(map(ord, name)))))
+        pines += objects
+        crowns[name] = (plant, ends, tiers)
+    errors = {f'{name}-{part}': spec['errors'] for name, spec in PINES.items() for part in ('wood', 'leaves')}
+    report.update(export(os.path.join(out, 'pines.glb'), pines, {'needles'}, errors))
+
     for name, triangles in report.items():
         print(f'CREEK {name}: {triangles} triangles')
-    for file in ('trees.glb', 'plants.glb', 'cave.glb'):
+    for name, (plant, ends, tiers) in crowns.items():
+        print(f'CREEK {name}: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, '
+              f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads')
+    for file in ('trees.glb', 'plants.glb', 'cave.glb', 'pines.glb'):
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
     if shots:
         for name in TREES:
@@ -880,6 +1353,54 @@ def main():
             preview([plant], os.path.join(shots, f'{plant.name}.png'))
             close_up([plant], os.path.join(shots, f'{plant.name}-close.png'), box=(0.25, 0.75, 0.2, 0.7))
         preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
+        for name, spec in PINES.items():
+            parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
+            # The concept's camera looks down about 27 degrees under an overcast sky; the other
+            # views show the sides it hides: the back, the top and the crown from below.
+            for view, azimuth, down in (('concept', 0, 27), ('side', 90, 10), ('back', 180, 10), ('top', 30, 70), ('below', 0, -25)):
+                overcast(parts, os.path.join(shots, f'{name}-{view}.png'), azimuth, down)
+            close_up(parts, os.path.join(shots, f'{name}-close.png'))
+            levels = [parts] + [[bpy.data.objects[f'{name}-wood-{k}'], bpy.data.objects[f'{name}-leaves-{k}']] for k in (1, 2)]
+            for distance in spec['switches']:
+                at_distance(levels, os.path.join(shots, f'{name}-levels-{distance}m.png'), distance)
+
+
+def raw_folder():
+    """The folder of raw Tripo3D models that `--raw` names after `--`."""
+    args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+    if '--raw' not in args:
+        raise SystemExit('Give the folder of raw models: blender --background --python creek.py -- <folder> --raw <folder>')
+    return os.path.abspath(args[args.index('--raw') + 1])
+
+
+def overcast(objects, path, azimuth, down, size=(960, 960)):
+    """
+    Renders the objects under an overcast sky: a pale grey dome as bright as the concept's sky,
+    and a faint, wide sun from the upper left and front, so nothing casts a hard shadow. The camera looks at their middle from `azimuth`
+    degrees around the vertical, measured from the front, and `down` degrees above level.
+    """
+    cam, low, high = stage(objects, (0.64, 0.64, 0.68), size, 64)
+    world = bpy.context.scene.world.node_tree.nodes['Background']
+    world.inputs['Strength'].default_value = 1.0
+    sun = bpy.data.objects['preview-sun']
+    sun.data.energy, sun.data.angle = 1.5, math.radians(50)
+    sun.rotation_euler = (math.radians(40), 0, math.radians(-35))
+    middle, radius = (low + high) / 2, (high - low).length / 2
+    a, d = math.radians(azimuth), math.radians(down)
+    direction = Vector((math.sin(a) * math.cos(d), -math.cos(a) * math.cos(d), math.sin(d)))
+    cam.data.type = 'PERSP'
+    cam.data.sensor_fit = 'AUTO'
+    cam.data.lens = 50
+    cam.location = middle + direction * radius * 2.3
+    cam.rotation_euler = (middle - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    # The plain view transform shows each color as the sky lights it, with no tone curve, so the
+    # picture's tones compare with the concept's.
+    view = bpy.context.scene.view_settings.view_transform
+    bpy.context.scene.view_settings.view_transform = 'Standard'
+    bpy.context.scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    bpy.context.scene.view_settings.view_transform = view
+    sun.data.angle = math.radians(0.526)
 
 
 main()

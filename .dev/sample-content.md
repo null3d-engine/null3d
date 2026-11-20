@@ -66,17 +66,17 @@ SuperSplat lets only a signed-in account download a scan, so the published file'
 
 ## Models built in Blender
 
-The showcase scenes' trees and plants, and Creek's cave, are organic shapes that code in a sketch would make poorly. A Python script builds them in Blender, with no hand work and no downloads, and the sample-assets repository keeps its output. The scripts live in this repository, in `tools/samples/blender/`, so a change to a model is a reviewed change to code.
+The showcase scenes' trees and plants, and Creek's cave, are organic shapes that code in a sketch would make poorly. A Python script builds them in Blender, with no hand work and no downloads, and the sample-assets repository keeps its output. Creek's two sculpted pines start from trunks that Tripo3D generated. The sample-assets repository keeps each raw download with its task record and command, and `creek.py` finishes it. The scripts live in this repository, in `tools/samples/blender/`, so a change to a model is a reviewed change to code.
 
 | Script | Builds |
 | --- | --- |
 | `common.py` | The parts that both scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the crown of leaf cards on pads at the branches' ends, the export with levels of detail, and the Cycles preview |
-| `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers and a cave mouth with boulders. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss |
+| `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers, a cave mouth with boulders, and a tall and a low cloud-pruned pine. numpy paints every texture but the pines' bark: leaf clusters, needles, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss. Each pine's trunk is a raw Tripo3D model: the script sizes it, keeps its own bark maps, finds its limbs and lays a flat layer of needle pads on each tier of them |
 | `island.py` | The island's models: a stone pine, an olive, a holm oak and an oleander, each with a card of the whole plant for the far copies. numpy paints every leaf, needle, flower and bark texture, and Blender bakes the cards from the plants themselves |
 | `build.ts` | Runs a script in Blender, optimizes each model with the asset tool, packs each model's KTX2 textures into its own file, and checks that every part that sways kept its sway |
 | `creek.ts`, `island.ts` | Each scene's models for `build.ts` |
 
-Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bun tools/samples/blender/island.ts <folder>`. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
+Build a scene's models with `bun tools/samples/blender/creek.ts <folder> --raw <folder>` or `bun tools/samples/blender/island.ts <folder>`. `--raw` names the folder that holds the raw pine trunks, `sources/showcase/creek-raw` of a sample-assets checkout. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
 
 1. Copy the files into `sources/showcase/<scene>/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
 2. Commit, push, and pin the commit here, as "Add or change an asset" says.
@@ -103,8 +103,10 @@ Each model draws with few triangles, so a scene can place many copies. The trees
 | Island holm oak: wood, leaves | 612, 148, 72; 5,272, 1,320, 332 |
 | Island oleander: stems, leaves and flowers | 192, 96, 96; 1,280, 768, 288 |
 | Each island plant's far card | 20 |
+| Creek tall pine: wood, needles | 9,000, 3,600, 1,198; 17,312, 5,772, 1,732 |
+| Creek low pine: wood, needles | 6,000, 2,400, 796; 7,200, 2,400, 720 |
 
-The Creek's trees file takes 4,198 KB, its plants file 470 KB and its cave file 784 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away.
+The Creek's trees file takes 4,198 KB, its plants file 470 KB, its cave file 784 KB and its pines file 1,967 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away. The tall pine's levels switch about 40 m and 90 m away, and the low pine's about 15 m and 40 m away. A pine's lower levels keep one needle card in three and one in ten, each larger. They cut the trunk to two fifths and to an eighth of its triangles.
 
 An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film, with each surface's own color and no light, so the engine lights the card once. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 
