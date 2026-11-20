@@ -131,7 +131,16 @@ PATINA = dict(
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
 SKY = (0.58, 0.58, 0.6)
 
+# The slab's stone: the shares of its texture's color that the vertex colors keep on bare stone
+# and on moss, which glTF multiplies into the texture, the roughness of its surface in meters, and
+# the size of the texture's tile in meters.
 SLAB = dict(stone=(0.40, 0.38, 0.35), moss=(0.85, 0.70, 0.05), rough=0.08, tile=3.0)
+
+# The largest surface error a lower level may have, as a share of the model's height. A larger one
+# means that the measure counted a hidden surface, such as the cap in the slab, or that the
+# decimation broke the shape; the engine would then keep the finest level far too long, so the
+# build stops.
+LEVEL_ERROR_LIMIT = 0.015
 
 
 def raw_folder():
@@ -945,17 +954,20 @@ def level_views(groups, errors, folder, name):
 # ---------------------------------------------------------------------------------------------
 
 
-def levels_of(name, finest, make, floor=-math.inf):
+def levels_of(name, finest, make, height, floor=-math.inf):
     """
     The lower levels that `make(k)` builds for each k from 1, and each one's surface error above
-    the height `floor`.
+    the height `floor`, which must stay within `LEVEL_ERROR_LIMIT` of the model's `height`.
     """
     levels, errors = [], []
     for k in (1, 2):
         level = make(k)
         level.name = level.data.name = f'{name}-{k}'
         levels.append(level)
-        errors.append(round(surface_error(level, finest, floor), 4))
+        error = round(surface_error(level, finest, floor), 4)
+        if error > LEVEL_ERROR_LIMIT * height:
+            raise SystemExit(f'{name}-{k}: its surface error is {error} m, over the limit of {LEVEL_ERROR_LIMIT * height:.3f} m')
+        errors.append(error)
     return levels, errors
 
 
@@ -996,7 +1008,7 @@ def finish_statue(spec, raw, rng):
         return stone_slab(f'slab-{k}' if k else 'slab', radius, slab_height, slab_spec['slope'], slab_spec['sides'][k], mat)
 
     slab = slab_level(0)
-    slab_levels, slab_errors = levels_of('slab', slab, slab_level)
+    slab_levels, slab_errors = levels_of('slab', slab, slab_level, spec['height'])
 
     statue = decimated(high, spec['triangles'], 'statue')
     maps = bake_maps(high, statue, color, normal, spec['texture'])
@@ -1004,7 +1016,7 @@ def finish_statue(spec, raw, rng):
     statue.data.materials.clear()
     statue.data.materials.append(finished_material('statue', maps, painted, roughness, metal, occlusion))
     statue_levels, statue_errors = levels_of('statue', statue, lambda k: decimated(
-        statue, round(spec['triangles'] * spec['levels'][k - 1]), f'statue-{k}'), slab_height)
+        statue, round(spec['triangles'] * spec['levels'][k - 1]), f'statue-{k}'), spec['height'], slab_height)
     bpy.data.objects.remove(high)
     figures = dict(raw_triangles=raw_triangles, figure=figure, slab=slab_height, knees=knees, depth=float(size[1]), slab_width=2 * radius)
     parts = [statue, *statue_levels, slab, *slab_levels]
