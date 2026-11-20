@@ -108,14 +108,16 @@ STATUE = dict(
 # up to `streak`. `bumps` is the share of the raw normal map's small bumps that the model keeps,
 # since at full strength they read as pits, and `relief` raises the color's fine light and dark,
 # the robe's pleats among them, into the normals. `eye` is the color of the pale marks on the eyes,
-# and `warm` the tint that turns the bare chest to a warm near-neutral, as sun bleaches it.
+# and `warm` the tint that turns the bare chest to a warm near-neutral, as sun bleaches it. The
+# hairline stands `hairline` meters above the eyes; above it the lift on ridges and tops falls
+# away, so the curls stay dark.
 PATINA = dict(
-    middle=0.21,
+    middle=0.16,
     contrast=1.4,
     strength=0.3,
     fold=0.32,
     ridge=0.12,
-    top=0.16,
+    top=0.24,
     mottle=0.07,
     rust=(1.18, 0.96, 0.80),
     lichen=(0.60, 0.62, 0.57),
@@ -126,6 +128,7 @@ PATINA = dict(
     relief=12.0,
     eye=(0.62, 0.64, 0.60),
     warm=(1.07, 1.0, 0.88),
+    hairline=0.55,
 )
 
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
@@ -611,6 +614,12 @@ def repaint(maps, height, eyes, eye, chest, rng):
     maps['color'] = raw
     middle = float(np.median(luma[used]))
     shade = (1 - occlusion) + 0.5 * hollow
+    # The hair's curls face up and stand out, but the hair stays nearly as dark as the face: above
+    # the hairline the lift on ridges and tops falls away.
+    hairline = float(np.mean([p[2] for p in eyes])) + PATINA['hairline']
+    hair = smoothstep(hairline - 0.1, hairline + 0.1, position[..., 2])
+    ridge = ridge * (1 - 0.6 * hair)
+    up = up * (1 - 0.7 * hair)
     mottle = noise3(position, 0.04, rng, 3) - 0.5
     tone = (
         PATINA['middle'] + PATINA['contrast'] * (luma - middle) - PATINA['fold'] * (shade - float(np.median(shade[used])))
