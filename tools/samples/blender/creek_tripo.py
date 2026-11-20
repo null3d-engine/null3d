@@ -1195,9 +1195,9 @@ def gate_surgery(obj, spec):
     """
     Takes away the rear frame that Tripo3D added to the gate from a front view alone: all under the
     roof behind one flat cut along the front posts' backs, which takes the rear posts, their
-    blocks, the rails and the rear beam. The cuts close, each new face painted from the timber round it. The
-    front posts then stand upright, one thinner post stands behind the left one, painted from it,
-    and the roof grows across.
+    blocks, the rails and the rear beam. The cuts close, each new face painted from the timber
+    round it. The front posts then stand upright, one thinner post stands behind the left one,
+    painted from it, and the roof grows across.
     """
     co = vertices_of(obj)
     low, high = co[:, 2].min(), co[:, 2].max()
