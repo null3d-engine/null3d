@@ -122,7 +122,8 @@ STATUE = dict(
 # per meter. A copy of the left one, `post` times as wide and deep and `rear` meters behind it,
 # stands behind it, the roof grows across by `widen`, and the timber under the roof,
 # above the stone blocks at `blocks` of its height, keeps `darken` of its lightness and grows
-# `vivid` times in color strength. A boulder's stone keeps `darken` of its lightness, grows
+# `vivid` times in color strength. The rear post, deeper in the roof's shade, then takes the front
+# posts' tone by the two shares of `rear_tone`, for lightness and color strength. A boulder's stone keeps `darken` of its lightness, grows
 # `vivid` times in color strength, and its light and dark round their local mean grow `contrast`
 # times, so the pits read; its moss keeps `moss_darken` of its lightness, white specks fade
 # to pale gray-green, and its foot darkens below `foot` of its height. `flatten` lowers moss that
@@ -134,7 +135,7 @@ MODELS = {
                     vivid=1.6, moss_darken=0.7, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1),
     'gate': dict(file='model.glb', turn=-90.0, height=4.4, sink=0.03, triangles=6000, levels=(0.4, 0.15),
                  texture=1024, roof=0.64, cut=(-0.505, -0.296), tie=2.92, eaves=2.2, lean=0.09, post=0.58, rear=1.2,
-                 widen=1.09, blocks=0.08,
+                 widen=1.09, blocks=0.08, rear_tone=(1.2, 0.8),
                  darken=0.65, vivid=2.3),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
@@ -1362,6 +1363,13 @@ def repaint_model(name, spec, maps, rng):
         timber = smoothstep(blocks, blocks + 0.08, z) * smoothstep(roof + 0.05, roof - 0.05, z)
         color = vivid(color, spec['vivid'], timber)
         color = darken(color, spec['darken'], timber)
+        # Behind the front posts and below the ties only the rear post stands. It stands deeper in
+        # the roof's shade, so it takes the front posts' tone: lighter by the first share of
+        # `rear_tone`, its color strength by the second.
+        tie = spec['tie'] - spec['sink']
+        rear = smoothstep(0.15, 0.3, maps['position'][..., 1]) * smoothstep(tie + 0.02, tie - 0.05, z)
+        color = darken(color, spec['rear_tone'][0], rear)
+        color = vivid(color, spec['rear_tone'][1], rear)
     else:
         stone = 1 - moss
         color = vivid(color, spec['vivid'], stone)
