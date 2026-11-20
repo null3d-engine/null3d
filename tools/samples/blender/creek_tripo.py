@@ -253,6 +253,37 @@ def cut_below(obj, share):
     bm.free()
 
 
+def fill_pits(obj, depth=0.4, passes=3):
+    """
+    Lifts the small dents in the raw mesh that read as holes in the metal: a vertex that sinks
+    below every one of its neighbors, by more than `depth` of its edges' mean length, moves to its
+    neighbors' middle. A fold's valley keeps its shape, since along the valley its neighbors sink as
+    deep. Returns the number of vertices moved.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    moved = 0
+    for _ in range(passes):
+        bm.normal_update()
+        lifted = []
+        for v in bm.verts:
+            ring = [e.other_vert(v) for e in v.link_edges]
+            if len(ring) < 3:
+                continue
+            rise = [(w.co - v.co).dot(v.normal) for w in ring]
+            reach = sum((w.co - v.co).length for w in ring) / len(ring)
+            if min(rise) > 0 and sum(rise) / len(rise) > depth * reach:
+                lifted.append((v, sum((w.co for w in ring), Vector()) / len(ring)))
+        for v, middle in lifted:
+            v.co = middle
+        moved += len(lifted)
+        if not lifted:
+            break
+    bm.to_mesh(obj.data)
+    bm.free()
+    return moved
+
+
 def dome_reshape(co, start, squash, widen):
     """
     The map that lowers and widens the hair's dome: all of the mesh whose vertices are `co` above
@@ -590,7 +621,15 @@ def repaint(maps, height, eyes, eye, chest, rng):
     raw = maps['color']
     occlusion = maps['occlusion'][..., 0]
     curvature = maps['curvature'][..., 0]
-    facing, position = maps['facing'], maps['position']
+    # A small round dip in the occlusion marks a dent that the raw mesh still holds, which would
+    # darken into a black pit: there the occlusion, the curvature and the facing take the values
+    # round them. A fold's valley runs long, so it stays.
+    dent = np.clip(box_blur(smoothstep(0.08, 0.2, dip(occlusion)), 1) * 2, 0, 1)
+    occlusion = occlusion + dent * (box_blur(occlusion, 8) - occlusion)
+    curvature = curvature + dent * (box_blur(curvature, 8) - curvature)
+    facing = maps['facing'] + dent[..., None] * (np.dstack([box_blur(maps['facing'][..., k], 8) for k in range(3)]) - maps['facing'])
+    facing /= np.maximum(np.linalg.norm(facing, axis=2, keepdims=True), 1e-6)
+    position = maps['position']
     used = occlusion > 0.02
 
     # Curvature from Cycles' pointiness, centered on the flat surface's value and spread to its
@@ -602,16 +641,19 @@ def repaint(maps, height, eyes, eye, chest, rng):
     up = smoothstep(0.2, 0.9, facing[..., 2])
     upright = 1 - np.abs(facing[..., 2])
 
-    # Small specks far darker than their surroundings read as pits in the metal: they take the
-    # lightness round them.
+    # Small specks darker than their surroundings in every direction read as pits in the metal:
+    # they take the lightness round them. A painted pleat is dark across but not along itself, so
+    # it stays.
     luma = raw @ LUMA
-    around = box_blur(luma, 4)
-    speck = smoothstep(0.06, 0.16, around - luma) * used
+    around = box_blur(luma, 8)
+    speck = np.clip(box_blur(smoothstep(0.03, 0.08, dip(luma)), 1) * 2, 0, 1) * used
     luma_filled = luma + speck * (around - luma)
     raw = raw * (luma_filled / np.maximum(luma, 0.02))[..., None]
     luma = luma_filled
-    # The relief reads the filled color too, so the specks leave no pits in the normals.
+    # The relief reads the filled color too, and the raw normals go flat where a speck was, so
+    # the specks leave no pits in the normals.
     maps['color'] = raw
+    maps['speck'] = speck
     middle = float(np.median(luma[used]))
     shade = (1 - occlusion) + 0.5 * hollow
     # The hair's curls face up and stand out, but the hair stays nearly as dark as the face: above
@@ -662,6 +704,23 @@ def repaint(maps, height, eyes, eye, chest, rng):
     return np.clip(color, 0, 1), roughness, metal, occlusion
 
 
+def dip(luma):
+    """
+    How much darker each texel is than its neighbors a few texels away on both sides, in the
+    direction where it is least dark, across four directions and two distances: high only for a
+    small spot that is dark all round.
+    """
+    deepest = np.zeros_like(luma)
+    for reach in (3, 5):
+        sides = []
+        for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
+            ahead = np.roll(luma, (dy * reach, dx * reach), (0, 1))
+            behind = np.roll(luma, (-dy * reach, -dx * reach), (0, 1))
+            sides.append((ahead + behind) / 2 - luma)
+        deepest = np.maximum(deepest, np.minimum.reduce(sides))
+    return deepest
+
+
 def box_blur(texels, radius):
     """A box blur of a 2D array over 2 radius + 1 texels each way, the edges held."""
     for axis in (0, 1):
@@ -673,14 +732,20 @@ def box_blur(texels, radius):
     return texels
 
 
-def relief(normal, color):
+def relief(normal, color, speck):
     """
-    The raw normal map with its small bumps softened, and the color's light and dark at the scale
-    of the robe's pleats raised into it as relief, pale above dark, so the painted pleats stand
-    out. The finest speckle stays flat, so the bronze does not crinkle.
+    The raw normal map with its small bumps softened, flattened where `speck` filled a dark speck
+    and where it dents inward, and the color's light and dark at the scale of the robe's pleats raised into it as
+    relief, pale above dark, so the painted pleats stand out. The finest speckle stays flat, so the
+    bronze does not crinkle.
     """
     n = normal * 2 - 1
-    n[..., :2] *= PATINA['bumps']
+    # A dent in the normal map tilts inward from every side, so the tilt's spread runs strongly
+    # negative there; bumps such as lichen run positive. The dents go flat, with a margin round
+    # each.
+    spread = np.gradient(n[..., 0], axis=1) + np.gradient(n[..., 1], axis=0)
+    dent = np.clip(box_blur(smoothstep(0.08, 0.2, -box_blur(spread, 1)), 2) * 3, 0, 1)
+    n[..., :2] *= PATINA['bumps'] * ((1 - speck) * (1 - dent))[..., None]
     luma = color @ LUMA
     height = box_blur(luma, 2) - box_blur(luma, 10)
     rise, across = np.gradient(height)
@@ -693,7 +758,7 @@ def relief(normal, color):
 def finished_material(name, maps, painted, roughness, metal, occlusion):
     """The model's metal-rough material: the repainted color, the relief normals and the packed ORM."""
     color = image(f'{name}-color', painted)
-    normal = image(f'{name}-normal', relief(maps['normal'], maps['color']), 'Non-Color')
+    normal = image(f'{name}-normal', relief(maps['normal'], maps['color'], maps['speck']), 'Non-Color')
     packed = image(f'{name}-orm', np.dstack([occlusion, roughness, metal]), 'Non-Color')
     return material(name, color, normal, packed, roughness=0.8, tint=False)
 
@@ -992,6 +1057,7 @@ def finish_statue(spec, raw, rng):
     marks = low + np.array([*spec['eyes'], spec['chest']], np.float32) * (high_corner - low)
     if spec['cut'] > 0:
         cut_below(high, spec['cut'])
+    pits = fill_pits(high)
     slab_spec = spec['slab']
     figure = spec['height'] / (1 + slab_spec['height'])
     slab_height = figure * slab_spec['height']
@@ -1027,7 +1093,7 @@ def finish_statue(spec, raw, rng):
     statue_levels, statue_errors = levels_of('statue', statue, lambda k: decimated(
         statue, round(spec['triangles'] * spec['levels'][k - 1]), f'statue-{k}'), spec['height'], slab_height)
     bpy.data.objects.remove(high)
-    figures = dict(raw_triangles=raw_triangles, figure=figure, slab=slab_height, knees=knees, depth=float(size[1]), slab_width=2 * radius)
+    figures = dict(raw_triangles=raw_triangles, pits_filled=pits, figure=figure, slab=slab_height, knees=knees, depth=float(size[1]), slab_width=2 * radius)
     parts = [statue, *statue_levels, slab, *slab_levels]
     return parts, {'statue': statue_errors, 'slab': slab_errors}, figures
 
