@@ -5,7 +5,7 @@
 #
 #   blender --threads 4 --background --factory-startup \
 #     --python tools/samples/blender/creek_tripo.py -- <output folder> --raw <folder> [--preview <folder>]
-#     [--only <model>,<model>]
+#     [--models <model>,<model>]
 #
 # `--raw` names the folder that holds one folder per model, as the sample-assets repository keeps
 # them in `sources/showcase/creek-raw/`. `bun tools/samples/blender/creek_tripo.ts <folder>` runs it
@@ -1600,10 +1600,10 @@ def finish_statue(spec, raw, rng):
     return parts, {'statue': statue_errors, 'slab': slab_errors}, figures
 
 
-def only():
-    """The models that `--only` names, separated by commas, or None for every model."""
+def chosen_models():
+    """The models that `--models <a,b>` after `--` names, or None for every model."""
     args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
-    return set(args[args.index('--only') + 1].split(',')) if '--only' in args else None
+    return set(args[args.index('--models') + 1].split(',')) if '--models' in args else None
 
 
 def write(out, name, parts, errors, figures):
@@ -1627,7 +1627,7 @@ def main():
         raise SystemExit(f'creek_tripo.py builds the same files only on {THREADS} threads: run Blender with --threads {THREADS}, as build.ts does')
     out, shots = arguments('creek_tripo.py')
     raw = raw_folder()
-    chosen = only()
+    chosen = chosen_models()
     if chosen is None or 'statue' in chosen:
         parts, errors, figures = finish_statue(STATUE, raw, np.random.default_rng(SEED))
         write(out, 'statue', parts, errors, figures)

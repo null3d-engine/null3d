@@ -4,13 +4,10 @@
 // repository keeps them in `sources/showcase/creek-raw/`; `--raw <folder>` names another folder.
 //
 //   bun tools/samples/blender/creek_tripo.ts <output folder> [--raw <folder>] [--preview <folder>]
+//     [--models <a,b>]
 import { dirname } from 'node:path';
 import { samplePath } from '../../lib/samples';
 import { buildScene } from './build';
-
-const raw = process.argv.includes('--raw')
-	? []
-	: ['--raw', dirname(dirname(samplePath('sources/showcase/creek-raw/statue/model.glb')))];
 
 await buildScene({
 	script: 'creek_tripo.py',
@@ -19,5 +16,5 @@ await buildScene({
 	// encloses too little to block.
 	blockers: ['statue', 'lantern', 'gate', 'boulder-1', 'boulder-2', 'boulder-3'],
 	swaying: [],
-	options: raw,
+	options: { '--raw': dirname(dirname(samplePath('sources/showcase/creek-raw/statue/model.glb'))) },
 });

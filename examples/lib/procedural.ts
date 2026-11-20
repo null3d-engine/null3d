@@ -203,6 +203,29 @@ export interface TerrainOptions {
 	height: (x: number, z: number) => number;
 	/** The linear color of the ground at a point, written into `out` as r, g and b. */
 	color: (x: number, z: number, y: number, slope: number, out: number[]) => void;
+	/**
+	 * The radius of the land's edge at each bearing, in meters, for land that is a disc rather than
+	 * a square. The bearing turns from +x toward +z. The grid's square maps onto the disc, so the
+	 * grid's outer vertices lie on the edge, in the order that `terrainEdge` lists. `size` then only
+	 * sets the step that measures the slope.
+	 */
+	outline?: (bearing: number) => number;
+}
+
+/**
+ * The indices of a terrain grid's outer vertices, once each, in order around the grid: up the
+ * bearings from +x toward +z for a grid that `outline` maps onto a disc.
+ */
+export function terrainEdge(quads: number): Uint32Array {
+	const row = quads + 1;
+	const edge = new Uint32Array(quads * 4);
+	for (let k = 0; k < quads; k++) {
+		edge[k] = k;
+		edge[quads + k] = k * row + quads;
+		edge[2 * quads + k] = quads * row + quads - k;
+		edge[3 * quads + k] = (quads - k) * row;
+	}
+	return edge;
 }
 
 /** A square grid of quads that follows a height function, with a color at each vertex. */
@@ -213,18 +236,29 @@ export function terrain({
 	height,
 	color,
 	middle = 1,
+	outline,
 }: TerrainOptions): MeshArrays {
 	const row = quads + 1;
-	// A place from -1 to 1 across the grid, to meters: even for a middle of 1, denser in the middle below.
-	const place = (s: number) => (size / 2) * (middle * s + (1 - middle) * s * s * s);
+	// A place from -1 to 1 across the grid: even for a middle of 1, denser in the middle below.
+	const pack = (s: number) => middle * s + (1 - middle) * s * s * s;
 	const positions = new Float32Array(row * row * 3);
 	const colors = new Float32Array(row * row * 3);
 	const uvs = new Float32Array(row * row * 2);
 	const step = (size / quads) * middle;
 	const rgb = [0, 0, 0];
 	for (let v = 0; v < row * row; v++) {
-		const x = place(((v % row) / quads) * 2 - 1);
-		const z = place((Math.floor(v / row) / quads) * 2 - 1);
+		const s = pack(((v % row) / quads) * 2 - 1);
+		const t = pack((Math.floor(v / row) / quads) * 2 - 1);
+		let x = (size / 2) * s;
+		let z = (size / 2) * t;
+		if (outline) {
+			// The square onto the unit disc, its sides onto the circle, then out to the edge's radius.
+			const u = s * Math.sqrt(1 - (t * t) / 2);
+			const w = t * Math.sqrt(1 - (s * s) / 2);
+			const reach = outline(Math.atan2(w, u));
+			x = u * reach;
+			z = w * reach;
+		}
 		const y = height(x, z);
 		const slope = Math.hypot(height(x + step, z) - y, height(x, z + step) - y) / step;
 		color(x, z, y, slope, rgb);
@@ -243,12 +277,14 @@ export function terrain({
 
 /**
  * A rough rock: a sphere of `detail` subdivisions of an icosahedron, pushed in and out by noise,
- * squashed to `[x, y, z]`, with a flatter base. Its texture coordinates wrap around it.
+ * squashed to `[x, y, z]`, with a flatter base. `facets` sets how far broad planes push in and out,
+ * as a broken stone has: near 0 gives a rounded stone. Its texture coordinates wrap around it.
  */
 export function rock(
 	seed: number,
 	detail: number,
 	squash: readonly [number, number, number],
+	facets = 0.12,
 ): MeshArrays {
 	const t = (1 + Math.sqrt(5)) / 2;
 	const points: number[][] = [
@@ -301,8 +337,8 @@ export function rock(
 		const [px, py, pz] = [x as number, y as number, z as number];
 		const bumps = 1 + 0.35 * noise.fbm3(px * 1.6, py * 1.6, pz * 1.6, 4);
 		// Facets: the larger noise pushes broad planes, as a broken stone has.
-		const facets = 1 + 0.12 * Math.sign(noise.value3(px * 3, py * 3, pz * 3));
-		const r = bumps * facets;
+		const planes = 1 + facets * Math.sign(noise.value3(px * 3, py * 3, pz * 3));
+		const r = bumps * planes;
 		const base = py < -0.3 ? 0.55 + 0.45 * ((py + 1) / 0.7) : 1;
 		positions.set([px * r * squash[0], py * r * squash[1] * base, pz * r * squash[2]], i * 3);
 		uvs.set([Math.atan2(pz, px) / Math.PI + 1, py + 1], i * 2);
