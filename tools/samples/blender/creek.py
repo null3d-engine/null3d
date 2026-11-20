@@ -830,17 +830,20 @@ def build_cave(mat, rng):
 #            build checks, so a rebuild reads the very file the pine was made from
 #   turn     degrees about the vertical axis that turn the model's front toward -y
 #   height   the wood's height in meters; sink is how far its foot sits under the ground
-#   fan      how `train_flat` trains the crown flat: the distance from the trunk it leaves alone,
-#            the most it lets a limb reach to the front or back past that, and the share of the
-#            reach to the sides it keeps past that; climb, when given, trains the limbs under the
-#            crown up into it, as `train_flat` says
+#   fan      how `trained` trains the crown flat: the distance from the trunk it leaves alone, the
+#            most it lets a limb reach to the front or back past that at the lowest tier and at the
+#            top, and the share of the reach to the sides it keeps past that; climb, when given,
+#            trains the limbs under the crown up into it; rigid is the reach over which the wood
+#            moves as one, so a limb keeps its round section
 #   wood     the wood's triangles at the full level, then at each lower one
 #   limit    the largest surface error a lower level may have, as a share of the height, which
 #            `level_error` measures for each level of each part
 #   bark     the bark's mean color in the concept, which the wood's vertex colors bring it to
 #   bare     the share of the wood's height that carries no pad
 #   stub     the shortest limb, as a share of the wood's height, that carries a pad; twig is the
-#            length of bare wood at a limb's end, as such a share, that `trim_twigs` cuts
+#            length of bare wood at a limb's end, as such a share, that `trim_twigs` cuts, and keep
+#            the distance from the trunk's axis within which it cuts nothing; prune cuts any wood
+#            past the pads, as a crown is pruned to its outline
 #   gap      the height, as a share of the wood's height, over which the limbs of one tier leave
 #   pad      a pad's radius across, in meters, at the lowest tier and at the top; taper is how
 #            much narrower the pad at a limb's end is, and spacing the gap between pads along a
@@ -863,20 +866,23 @@ PINES = {
     'pine-tall': dict(
         raw='pine-tall/model.glb', sha256='907b52ee4e6bed5b47760243d8f4e917b194c23a962bda28531d47cbc7884cd6',
         turn=-90, height=7.5, sink=0.08, wood=(14000, 5000, 1600), limit=0.03, bark=(0.25, 0.22, 0.18),
-        fan=(0.3, 0.15, 0.75), bare=0.36, stub=0.12, twig=0.12, gap=0.13, pad=(0.8, 0.6), taper=0.55, spacing=1.0,
-        slope=0.8, flatten=0.9, hold=1.2, level=50, deep=0.25, flat=5.0, rise=0.1, inner=0.3,
-        body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.45,
-        cards=3000, up=0.65, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.95, 0.95, 0.95), shade=0.6, levels=((2, 1.3), (5, 1.7)),
+        fan=(0.3, 0.35, 0.15, 1.3), rigid=0.3, climb=(0.25, 0.6, 0.4), bare=0.38, stub=0.12, twig=0.12, keep=0.45, prune=True, gap=0.12,
+        pad=(0.95, 0.7),
+        taper=0.5, spacing=0.9, slope=0.8, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=0.35, flat=5.0, rise=0.1,
+        inner=0.0,
+        body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.1,
+        cards=3600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
+        fold=0.06, bend=0.55, tint=(1.0, 1.0, 1.0), shade=0.7, levels=((2, 1.3), (5, 1.7)),
     ),
     'pine-low': dict(
         raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
-        turn=-90, height=3.4, sink=0.1, wood=(8000, 3000, 1000), limit=0.03, bark=(0.15, 0.1, 0.055),
-        fan=(0.3, 0.8, 1.0), climb=(0.3, 0.6, 0.35), bare=0.45, stub=0.12, twig=0.2, gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8,
-        slope=2.0, flatten=0.3, hold=1.0, level=70, floor=0.6, deep=0.5, flat=2.2, rise=0.1, inner=0.0,
-        body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.45,
+        turn=-90, height=3.4, sink=0.15, wood=(8000, 3000, 1000), limit=0.03, bark=(0.17, 0.11, 0.055),
+        fan=(0.3, 0.8, 0.8, 0.9), rigid=0.25, climb=(0.3, 0.6, 0.35), bare=0.45, stub=0.12, twig=0.2, keep=0.3, prune=True,
+        gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8, slope=2.0, flatten=0.3, hold=1.0, level=70,
+        floor=0.6, deep=0.5, flat=2.2, rise=0.1, inner=0.0,
+        body=0.5, bodies=((10, 5), (6, 3), (5, 2)), underside=0.1,
         cards=3400, up=0.6, depth=0.3, card=0.35, lift=0.7, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.08, bend=0.55, tint=(1.0, 0.93, 0.74), shade=0.6, levels=((2, 1.3), (5, 1.7)),
+        fold=0.08, bend=0.55, tint=(1.0, 0.93, 0.74), shade=0.7, levels=((2, 1.3), (5, 1.7)),
     ),
 }
 
@@ -1245,12 +1251,13 @@ def pine_pads(spec, ends, starts, middles, distance, parent):
     return plant, len(tiers)
 
 
-def trim_twigs(obj, plant, spec, ends, inverse, middles, distance, parent, cell):
+def trim_twigs(obj, plant, spec, ends, inverse, middles, distance, parent, cell, axis):
     """
     Cuts the bare twigs out of the crown. A twig is the last `twig` of the wood's height before a
     limb's end, along the wood, and every vertex within a cell and a half of it that stands above
     the bare trunk, outside every pad grown by half again, goes, and so does any wood above the top
-    layer. The trunk and the limbs stay, so only clean limbs show
+    layer, but nothing within `keep` of the trunk's axis. With `prune`, any wood that reaches out
+    past the pads goes too, so the crown keeps its outline. The trunk and the limbs stay, so only clean limbs show
     between and under the layers. Each cut end is closed, the scraps that the cuts leave go, and so
     does a pad left with no wood in or near it.
     """
@@ -1268,16 +1275,25 @@ def trim_twigs(obj, plant, spec, ends, inverse, middles, distance, parent, cell)
     covered = np.zeros(len(co), bool)
     for c, r, _ in plant.pads:
         covered |= ((co[:, 0] - c.x) / r.x) ** 2 + ((co[:, 1] - c.y) / r.y) ** 2 + ((co[:, 2] - c.z) / r.z) ** 2 < 2.0
-    # Wood that stands above the top layer is cut too, as a pruned pine's top is.
+    # Wood that stands above the top layer is cut too, as a pruned pine's top is. Nothing is cut
+    # from the trunk itself, so it never shows a hole.
     top = max(c.z + r.z for c, r, _ in plant.pads)
-    cut = ((~covered) & (co[:, 2] > spec['bare'] * spec['height']) & near[inverse]) | (co[:, 2] > top + 0.05)
+    slope, foot = axis
+    clear = np.hypot(*(co[:, :2] - (co[:, 2:3] * slope + foot)).T) > spec['keep']
+    cut = (((~covered) & (co[:, 2] > spec['bare'] * spec['height']) & near[inverse]) | (co[:, 2] > top + 0.05)) & clear
+    if spec.get('prune'):
+        # The crown is pruned to its outline: no wood reaches out past its pads.
+        under = np.zeros(len(co), bool)
+        for c, r, _ in plant.pads:
+            under |= ((co[:, 0] - c.x) / r.x) ** 2 + ((co[:, 1] - c.y) / r.y) ** 2 < 1.3
+        cut |= ~under & clear & (co[:, 2] > spec['climb'][0] * spec['height'])
     bm = bmesh.new()
     bm.from_mesh(mesh)
     bm.verts.ensure_lookup_table()
     open_before = {e.index for e in bm.edges if e.is_boundary}
     bmesh.ops.delete(bm, geom=[bm.verts[i] for i in np.where(cut)[0]], context='VERTS')
     # The cuts can leave scraps of twig on their own, which go too.
-    drop_loose(bm, 0.03, 200)
+    drop_loose(bm, 0.03, 400)
     close_cuts(bm, open_before)
     bm.to_mesh(mesh)
     bm.free()
@@ -1405,40 +1421,66 @@ def decimated(obj, triangles, name):
     return copy
 
 
-def train_flat(mesh, spec):
+def trunk_axis(co, spec):
     """
-    Trains the crown flat, as a gardener trains a pruned pine's tiers into fans. Above the bare
-    trunk, each point's distance from the trunk's axis past `fan[0]` eases toward at most `fan[1]`
-    more meters to the front or the back, and shrinks by `fan[2]` to the sides. The trunk, the
-    limbs' feet and the wood under the crown keep their shape, but for the limbs that `climb` trains
-    up into the crown. The flat face looks to the front,
-    -y here and +z in the exported file, which the scene turns toward its main view.
+    The trunk's axis: a line through the middles of the trunk's slices under the crown, as the
+    slope and the foot of x and y against the height.
     """
-    co = positions(mesh)
     low = spec['bare'] * spec['height']
-    # The trunk's axis: a line through the middles of the trunk's slices under the crown.
     heights = np.linspace(0.3, 0.9 * low, 8)
     middles = np.array([co[np.abs(co[:, 2] - z) < 0.1][:, :2].mean(axis=0) for z in heights])
-    slope, foot = np.polyfit(heights, middles, 1)
-    axis = co[:, 2:3] * slope + foot
-    start, reach, side = spec['fan']
-    offset = co[:, :2] - axis
+    return np.polyfit(heights, middles, 1)
+
+
+def trained(points, spec, axis):
+    """
+    Where `train_flat` moves points, as a gardener trains a pruned pine's tiers into fans. Above
+    the bare trunk, a point's distance from the trunk's axis past `fan[0]` eases toward at most a
+    reach to the front or the back that runs from `fan[1]` meters at the lowest tier to `fan[2]` at
+    the top, and keeps `fan[3]` of its reach to the sides. Limbs that spread under a crown's
+    `floor` are trained up into it: past `climb[1]` meters from the trunk, above `climb[0]` of the
+    height, a point rises by `climb[2]` for each meter farther out, up to the floor. The flat face
+    looks to the front, -y here and +z in the exported file, which the scene turns toward its main
+    view.
+    """
+    slope, foot = axis
+    out = points.copy()
+    height, low = spec['height'], spec['bare'] * spec['height']
+    centre = points[:, 2:3] * slope + foot
+    start, reach_low, reach_top, side = spec['fan']
+    share = np.clip((points[:, 2] - low) / max(height - low, 1e-3), 0, 1)
+    reach = reach_low + (reach_top - reach_low) * share
+    offset = points[:, :2] - centre
     far = np.abs(offset) > start
     eased = offset.copy()
     eased[:, 0] = np.where(far[:, 0], np.sign(offset[:, 0]) * (start + (np.abs(offset[:, 0]) - start) * side), offset[:, 0])
     eased[:, 1] = np.where(far[:, 1], np.sign(offset[:, 1]) * (start + reach * np.tanh((np.abs(offset[:, 1]) - start) / reach)), offset[:, 1])
-    blend = smoothstep(0.85 * low, low, co[:, 2])[:, None]
-    co[:, :2] = axis + offset + (eased - offset) * blend
-    # Limbs that spread under the crown are trained up into it: past `climb[1]` meters from the
-    # trunk, above `climb[0]` of the height, a point under the crown's floor rises by `climb[2]` for
-    # each meter farther out, up to the floor.
+    blend = smoothstep(0.85 * low, low, points[:, 2])[:, None]
+    out[:, :2] = centre + offset + (eased - offset) * blend
     if 'climb' in spec:
-        above, out, rate = spec['climb']
-        far_out = np.maximum(np.hypot(*(co[:, :2] - axis).T) - out, 0)
-        rise = rate * far_out * smoothstep(above * spec['height'], (above + 0.05) * spec['height'], co[:, 2])
-        co[:, 2] = np.minimum(co[:, 2] + rise, np.maximum(co[:, 2], spec['floor'] * spec['height']))
+        above, beyond, rate = spec['climb']
+        far_out = np.maximum(np.hypot(*(out[:, :2] - centre).T) - beyond, 0)
+        rise = rate * far_out * smoothstep(above * height, (above + 0.05) * height, points[:, 2])
+        out[:, 2] = np.minimum(points[:, 2] + rise, np.maximum(points[:, 2], spec['floor'] * height))
+    return out
+
+
+def train_flat(mesh, middles, inverse, spec, axis):
+    """
+    Trains the crown as `trained` says, without crushing a limb: each cell of the wood moves by the
+    mean of the moves of the cells within `rigid` meters of it, more than a limb's width, so a limb
+    moves as a whole and keeps its round section. It returns the cells' new middles.
+    """
+    move = trained(middles, spec, axis) - middles
+    tree = KDTree(len(middles))
+    for i, m in enumerate(middles):
+        tree.insert(m, i)
+    tree.balance()
+    smooth = np.array([move[[n for _, n, _ in tree.find_range(m, spec['rigid'])]].mean(axis=0) for m in middles])
+    co = positions(mesh) + smooth[inverse]
     mesh.vertices.foreach_set('co', co.astype(np.float32).ravel())
     mesh.update()
+    return middles + smooth
 
 
 def build_pine(name, spec, raw, leaf_mat, rng):
@@ -1452,7 +1494,6 @@ def build_pine(name, spec, raw, leaf_mat, rng):
     if found != spec['sha256']:
         raise SystemExit(f"{path} is not the raw trunk that {name} is built from: its SHA-256 is {found}, not {spec['sha256']}")
     wood, maps = import_raw(path, f'{name}-raw', spec['height'], spec['turn'], spec['sink'])
-    train_flat(wood.data, spec)
     wood.data.materials.append(raw_bark(maps, name, 512))
     # The vertex colors bring the bark's mean color to the concept's.
     shade = linear(spec['bark']) / np.maximum(linear(maps['Base Color'][..., :3].reshape(-1, 3).mean(axis=0)), 1e-3)
@@ -1460,11 +1501,14 @@ def build_pine(name, spec, raw, leaf_mat, rng):
     edges = np.empty(len(wood.data.edges) * 2, np.int32)
     wood.data.edges.foreach_get('vertices', edges)
     cell = spec['height'] / 120
+    # The limbs are found on the wood as it grew, then the crown is trained.
     ends, inverse, middles, distance, parent, limb = limb_ends(co, edges.reshape(-1, 2), cell, spec['height'] / 25)
+    axis = trunk_axis(co, spec)
+    middles = train_flat(wood.data, middles, inverse, spec, axis)
     starts = limb_starts(ends, distance, limb)
     plant, tiers = pine_pads(spec, ends, starts, middles, distance, parent)
     pine_wood(wood, plant, inverse, limb_phases(ends, starts, distance, parent, limb), shade)
-    cut = trim_twigs(wood, plant, spec, ends, inverse, middles, distance, parent, cell)
+    cut = trim_twigs(wood, plant, spec, ends, inverse, middles, distance, parent, cell, axis)
     places = crown_cards(plant, rng, spec['cards'], spec['up'], spec['depth'])
 
     def needles(chosen, stream, grow, body):
