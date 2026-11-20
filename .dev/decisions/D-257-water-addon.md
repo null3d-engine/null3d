@@ -421,7 +421,7 @@ water. The back of the oval follows the path, so no water lies behind the lip's 
 stands out from it by the column's depth. That depth is the tongue's thickness at the lip, and it
 grows over the first meters of the drop to most of the creek's width. Below that the front and back
 run nearly parallel. Seen from the side, as the concept's camera sees its left fall, the fall is a
-solid column, and its depth comes from the water's own thickness and the spray inside it. An
+solid column, and its depth comes from the water's own thickness and the spray round it. An
 earlier build used three sheets at different angles. From the side they fanned out from one point
 at the lip into thin ribs, and the backdrop showed between them. The material thins the column
 wherever the view grazes it, torn by froth and by lobes that ride with the water. So the outline is
@@ -448,7 +448,7 @@ column.
 
 **The spray.** The water add-on depends on `@null3d/particles` at the exact version. As
 [D-173](D-173-addon-hooks.md) allows, the grass add-on depends on the wind add-on the same way. A
-fall makes four systems. A froth stands over the brink, and spray falls inside the column. The mist
+fall makes four systems. A froth stands over the brink, and small drops fly off the column. The mist
 gathers where the fall bursts, and a plume rises at its foot. The function `fallEmitters` places
 them along the fall's path and turns them across it. Its tests hold the places, the turn and the
 rates. `createWaterfall` imports the particles add-on on first use. So a page that draws only water

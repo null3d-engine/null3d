@@ -14,6 +14,7 @@ import {
 	fallEmitters,
 	fallSheet,
 	fallTime,
+	GRAVITY,
 	type WaterfallMesh,
 } from './fall';
 import fallShader from './fall.wgsl';
@@ -36,9 +37,9 @@ const CLEAR = 1.2;
 const SOFTNESS = 0.6;
 /** The light on the spray and the mist when the scene sets none, as a linear color. */
 const MIST_LIGHT = [0.92, 0.93, 0.95] as const;
-/** The longest life of a puff of the froth, the body's spray, the mist and the plume, in seconds. */
+/** The longest life of a puff of the froth, a drop, a puff of the mist and the plume, in seconds. */
 const FROTH_LIFE = 1.8;
-const BODY_LIFE = 1.6;
+const DROP_LIFE = 1.4;
 const MIST_LIFE = 4.5;
 const PLUME_LIFE = 9;
 
@@ -258,22 +259,24 @@ export async function createWaterfall(
 					alphaOverLife: [0, 0.85, 0.5, 0],
 					opacity: 0.55,
 				};
-			if (place.kind === 'body')
-				// White spray that falls with the water inside the column.
+			if (place.kind === 'drops')
+				// Small round drops flung off the column's surface, out and down with the water. Those
+				// born inside the column hide in it; those outside show close up as spray.
 				return {
 					...base,
-					capacity: room(place.rate, BODY_LIFE),
-					speed: [0, 0.6],
-					velocity: [0, -6, 0.4],
-					gravity: [0, -4, 0],
-					drag: 0.3,
-					turbulence: 0.3,
-					turbulenceScale: 0.8,
-					lifetime: [0.8, BODY_LIFE],
-					size: [0.25 * half, 0.5 * half],
-					sizeOverLife: [0.7, 1.1, 1.4],
-					alphaOverLife: [0, 0.8, 0.6, 0],
-					opacity: 0.55,
+					...particleTextures.glow(textures),
+					capacity: room(place.rate, DROP_LIFE),
+					direction: [0, -0.2, 1],
+					spread: 1.4,
+					speed: [0.5, 2.5],
+					velocity: [0, -6, 0],
+					gravity: [0, -GRAVITY, 0],
+					drag: 0.2,
+					lifetime: [0.5, DROP_LIFE],
+					size: [0.07, 0.18],
+					sizeOverLife: [1, 1, 0.7],
+					alphaOverLife: [0, 1, 0.8, 0],
+					opacity: 0.85,
 				};
 			const wind = options.wind && { windField: options.wind };
 			if (place.kind === 'mist')
