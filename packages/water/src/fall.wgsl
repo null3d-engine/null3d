@@ -121,7 +121,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let inside = (2.0 * (fract(bands) - 0.5)) / mix(0.6, 1.3, ropes);
     let more = lip * ROPES_PER_METER * 1.7 + warp * 2.6 + 0.31;
     let beside = (2.0 * (fract(more) - 0.5)) / mix(0.7, 1.2, 1.0 - ropes);
-    let core = max(clamp(1.0 - inside * inside, 0.0, 1.0), 0.8 * clamp(1.0 - beside * beside, 0.0, 1.0));
+    let core = max(clamp(1.0 - inside * inside, 0.0, 1.0), 0.55 * clamp(1.0 - beside * beside, 0.0, 1.0));
     let lumpy = smoothstep(0.0, 0.8, core + (froth - 0.5) * 0.5);
     let banded = 1.0 - smoothstep(0.3, 0.6, fwidth(more));
     // The glassy tongue over the lip is one smooth body; the ropes part out of it as it turns white.
@@ -134,7 +134,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let lines = smoothstep(0.62, 0.85, streaks) * smoothstep(0.25, 0.7, patches);
     let foam = max(white, lines * 0.8 * (1.0 - white));
     let body = clamp(rope * mix(0.78, 1.15, froth) * mix(0.85, 1.08, fine), 0.0, 1.0);
-    s.baseColor = mix(material.glass, white_color * mix(0.42, 1.08, body), foam);
+    s.baseColor = mix(material.glass, white_color * mix(0.3, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
     s.diffuseTransmissionColor = s.baseColor;
