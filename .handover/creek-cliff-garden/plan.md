@@ -1,6 +1,6 @@
 # Creek: a garden on a cliff above the clouds
 
-**Status: a plan. Do not implement yet.** First written on 2026-11-02 against the old milestone branch. Re-checked against `main` at `bb882f565` on 2026-11-20, and every finding below holds on that commit. The owner's rulings of 2026-11-20 are in "Owner's rulings" below. Nothing in this plan has been built.
+**Status: a plan. Do not implement yet.** First written on 2026-11-02 against the old milestone branch. Re-checked against `main` at `bb882f565` on 2026-11-20, and every finding below holds on that commit. The owner's rulings and answers of 2026-11-20 are in "Owner's rulings" and "Owner's answers" below. Nothing in this plan has been built.
 
 ## Context
 
@@ -37,14 +37,14 @@ These rulings widen the model rule of `.dev/examples.md` and D-378, which today 
 | Creek becomes the vegetation add-on's full demo, with rocks and species added to the add-on | D-378: the add-on is private, ships nowhere and is off CI, and no demo draws its plants. Creek loads trees, bank plants and a cave that `creek.py` builds | Models come from Tripo3D and the Blender script. Small stones stay in code |
 | Close M3 on today's valley first, and correct the status text in `tools/pr-status.ts` | M3 is complete: every task closed before the 0.2 release work (#549) merged. D-363 keeps today's Creek figures as a stated limit, with no further cost work. D-364 closes the vegetation cost tasks | Step dropped |
 | Add a task in `tools/hooks/task-ids.txt` | D-379: the task list, the `Task:` footer and the status tool are gone. Each piece of work lands as its own pull request against main | Order of work and branch rewritten |
-| The cave went with Blender | The cave is back, built in Blender from metaballs (`cave.glb`) | Question 4 asks whether to drop it |
+| The cave went with Blender | The cave is back, built in Blender from metaballs (`cave.glb`) | The garden leaves it out (owner's answer) |
 | Levels of detail start off, so set `lod: true` | Since #549 the shared showcase code turns levels on unless a scene says `lod: false`. Mesh levels switch or fade with a dither. Only the terrain add-on morphs | Step dropped. "Morphing levels" now reads "dithered levels" |
 | Falling leaves come from `createFloatingLeaves` | That call is in the private add-on only. Creek's falling and floating leaves are `@null3d/particles` systems with a tint for each mood (`air.ts`, `flora.ts`) | Autumn colors are new tints |
 | Grass from the add-on, with `where` and `color` | `@null3d/grass`: `createGrass` with a mask function, and `swayDistanceFor`. Creek draws 34,000 bank tufts and 18,000 land tufts at High | Keep |
 | Plants sway only within 8 to 32 m | That is the grass alone. Trees and plants sway through `examples/lib/sway.ts` out to 120 m at every preset | The wind-reach question is about grass only |
 | Memory: the add-on's set takes 29.75 MiB of a 30 MB ceiling | Gone: that ceiling budgets the add-on's generated plants. Today's three Creek model files total about 5.45 MB. D-12's memory budgets and the sample-file limits apply | Measure the model files and the page's memory |
 | Placement checksum 3358570449 | No test binds Creek. The add-on's scatter page runs by hand only | Dropped |
-| Baseline: iPad Low 30.98 ms, iPad Medium 78.82 ms, S25 33.3 ms | Measured on 1 November, on an older Creek. No frame time exists for today's Creek on any device. The only figure is the first frame, in 2.9 to 4.5 s on the Mac | Question 6 |
+| Baseline: iPad Low 30.98 ms, iPad Medium 78.82 ms, S25 33.3 ms | Measured on 1 November, on an older Creek. No frame time exists for today's Creek on any device. The only figure is the first frame, in 2.9 to 4.5 s on the Mac | Today's Creek is timed once before the build, and the garden is held to D-241's ceilings (owner's answer) |
 | "Creek Medium takes 166 ms on the S25, now fixed" | The WebGL2 row was the reflection stall that D-286 fixed, and it reads 33.3 ms now. The WebGPU Medium row of 166.6 ms in D-241 is the old scene's own cost, and it is still the Medium ceiling for S24-class phones | Corrected |
 | The terrain gains a `wet` option and a new `wet.test.ts` | The weather add-on (`examples/addons/weather`) holds the wet block (`wet.wgsl`), its values (`createWetSurface`) and `wet.test.ts`, which holds the Skyway ground's and the night town street's copies to it. The terrain's material has no free texture slot | The garden's ground copies the block. The terrain does not change |
 | The statue is a distance field, meshed by new code | No such helper exists in code. `creek.py` meshes metaballs for the cave | The statue comes from Tripo3D, with metaballs in Blender as the fallback |
@@ -61,11 +61,11 @@ These rulings widen the model rule of `.dev/examples.md` and D-378, which today 
 
 ## Order of work
 
-Each step lands through its own pull request against main (D-379), and a fresh agent tries to disprove it before it merges. Question 7 asks how to split the work.
+All of the work lands in one pull request against main, from one branch (owner's answer; D-379). A fresh agent tries to disprove it before it merges.
 
-1. **Record the brief.** A decision record holds this brief, the rulings above, Tripo3D's terms for paid accounts and the owner's answers below. It cites D-363 and D-378, and it widens the model rule. The next free number today is D-382; check it again when you claim it.
-2. **Measure today's Creek once** on the Mac and the iPad Pro 13 at each preset, as the "before" figure (question 6). Do no cost work on it.
-3. **Three early tests, each shown to the owner** before anything depends on them. They stay on a branch and do not merge:
+1. **Record the brief.** A decision record holds this brief, the rulings above, Tripo3D's terms for paid accounts and the owner's answers below. It cites D-363 and D-378, widens the model rule and retires the ring rule of D-170. The next free number today is D-382; check it again when you claim it.
+2. **Measure today's Creek once** on the Mac and the iPad Pro 13 at each preset, as the "before" figure. Do no cost work on it.
+3. **Three early tests, each shown to the owner** before anything depends on them. They are review points on the work's branch: build each, show it, and wait for the owner before building on it:
    - the statue, from Tripo3D and finished in Blender;
    - the sculpted pine;
    - bare land, cliff walls, the cloud sea and one waterfall, with no planting.
@@ -76,7 +76,7 @@ Each step lands through its own pull request against main (D-379), and a fresh a
 
 **Route.** The official Tripo3D command-line tool, `tripo-cli` (0.11.2 on 2026-11-20), signed in from the key in the Mac's keychain (service `tripo3d-api-key`). `tripo make` waits for each job, downloads the model and writes the run's record (`task.json`), and `--dry-run` checks a request and its cost for free. The same tool runs as the `tripo` MCP server. On 2026-11-20 the account held 970 credits. The global skill `tripo3d-blender` holds the setup, the commands, the costs and the Blender finishing steps. Blender 5.3 is installed. Blender's official connection (the Blender Lab add-on, on port 9876) lets an agent look at and adjust a model in the open Blender while it works. It starts only when Blender's "Allow Online Access" preference is on. The committed Blender script stays the one source of each finished model.
 
-**What Tripo3D makes,** subject to question 1:
+**What Tripo3D makes** (owner's answer):
 
 | Model | Tripo3D input | What Blender adds |
 | --- | --- | --- |
@@ -116,14 +116,14 @@ Foliage, ferns, hostas, azaleas and cushion plants stay as the Blender script's 
 
 ### 2. Clouds and the world's edge (new `creek/clouds.ts`)
 
-- **Removed:** Creek's mountain ring (`createMountains`, `MOUNTAINS`, `mountainSettings`), the gorges (`GORGE`) and their haze. No other scene uses the shared ring (`examples/lib/mountains.ts`) or the haze (`examples/lib/haze.ts`). Question 5 asks whether to remove them.
+- **Removed:** Creek's mountain ring (`createMountains`, `MOUNTAINS`, `mountainSettings`), the gorges (`GORGE`) and their haze. No other scene uses the shared ring (`examples/lib/mountains.ts`) or the haze (`examples/lib/haze.ts`), so both go too, with the ring rule itself (owner's answer).
 - **A sea of cloud below the rim, out to the horizon:** a few stacked layers whose shader draws billowing cloud tops from noise. They are bright where the sun lights them and grey in their hollows, and they drift slowly with the wind. The lowest layer is opaque, so no view sees the ground or the sky's ground below the horizon.
 - **Cloud around the cliff:** soft banks that wrap the walls and rise past the rim in places, drawn as large particles from `@null3d/particles` or as sheets, as Creek's mist is today.
 - **The sky's own clouds above:** the flat layer on Low and Medium, and the volumetric clouds (D-297) on High and Ultra.
 - **Light and color:** every cloud layer takes the air's color and the light from the stage each frame, as the haze does today, so the clouds match every mood.
 - **Check:** whether the sky's volumetric layer can sit below the camera. If it can, it may deepen the cloud sea on High and Ultra. It cannot be the sea on every device, since it draws only on High and Ultra.
 - **The fog switch:** today Creek starts with fog off, and the switch also hides the mist. The cloud sea and the banks stay at all times, because without them the world's edge shows. The switch turns only the engine's distance fog and the mist on and off. The fog starts on.
-- **Manual camera:** it stays above the cloud tops, and its bounds change to suit. Record Creek's exemption from the ring rule in D-170 and `.dev/examples.md`, as Skyway and the island have. Creek joins the no-ring list in `examples/lib/mountains.test.ts`, and `examples/lib/showcase-routes.test.ts` stops reading Creek's ring as ground.
+- **Manual camera:** it stays above the cloud tops, and its bounds change to suit. The ring rule retires (owner's answer): no showcase scene uses a ring once Creek's goes, since the island's sea and Skyway's fog already hide their edges. D-170 and `.dev/examples.md` record the retirement, and the camera-bounds rule, which today keeps the Manual camera "inside the ring, below its lowest crest", becomes: each scene's bounds keep every view off the world's edge, by the sea, the fog or the clouds. `examples/lib/showcase-routes.test.ts` stops reading Creek's ring as ground.
 
 ### 3. Water and waterfalls (`packages/water`, `creek/sketch.ts`)
 
@@ -142,8 +142,8 @@ What changes:
 
 - **The sheets end at the rim's lip** at both ends, instead of running on down the gorges.
 - **The stream's line, width and depth functions** take the new channel across the disc.
-- **The current runs out from the pool both ways,** if the owner agrees to the spring-fed pool (question 2). The shape takes a current function, so this needs no new water code. Check close up that the flow shows no seam where it turns.
-- **Livelier water,** if the owner agrees (question 3): steps in the bed, larger boulders and more foam.
+- **A spring-fed pool near the middle** feeds the creek, and the current runs out from it both ways to the two waterfalls (owner's answer). The shape takes a current function, so this needs no new water code. Check close up that the flow shows no seam where it turns.
+- **Livelier water,** as in the white-granite concept (owner's answer): steps in the bed, larger boulders and more foam.
 
 **Waterfalls, new in the water add-on so other scenes can use them.** An animated fall is possible with what the engine has today. There is one at each end, where the creek leaves the rim:
 
@@ -156,7 +156,7 @@ What changes:
 
 ### 4. Rocks
 
-- **Boulders** come from Tripo3D (question 1), a set of 6 to 8 that the placement repeats with turns and sizes.
+- **Boulders** come from Tripo3D, a set of 6 to 8 that the placement repeats with turns and sizes.
 - **Stones and pebbles** stay in code, from the shared rock maker (`rock()` in `examples/lib/procedural.ts`) that `creek/stones.ts` uses today. Add hard faces: cuts by random planes, ridged noise, a squash and a flat underside.
 - **Material:** today's moss on upward faces and its lichen tint stay, and the boulders' repaint matches them. Add a wetness value that darkens and glosses, for the storm.
 - **Placement:** hand-placed composition boulders go first, then rocks by rule, then plants. Plants avoid rocks, as the stones' footprint test (`stones.clear`) does today. Stones gather around boulders through the placement's clumps.
@@ -165,7 +165,7 @@ What changes:
 ### 5. Plants
 
 - **`creek.py` grows the garden's plants** in place of the oak, beech, birch, wildflowers and cave: maple, sculpted pine, azalea and clipped shrubs, with today's ferns and hostas, and low cushion plants so the moss reads close up. Each keeps its levels (`MSFT_lod`) and its sway in the second texture coordinates, as today's plants do.
-- **Trunks and limbs** of the sculpted pine and the maples come from Tripo3D (question 1). The script gives them the sway weights and adds the foliage.
+- **Trunks and limbs** of the sculpted pine and the maples come from Tripo3D. The script gives them the sway weights and adds the foliage.
 - **Maple color:** the shared sway material multiplies a color for each copy over the leaf texture. Paint the maple's leaves in a pale tone, and tint the copies red, orange and yellow. If the range is too narrow, make two leaf textures.
 - **Sculpted pine:** the island's stone pine (`island.py`) builds its crown from flat pads at its limbs' ends, with leaf cards on the pads. A garden pine's cloud layers are pads in tiers. Move the pad crown into `common.py` so both scripts share it. This is early test 2.
 - **Wildflowers:** dropped, since the look does not call for them.
@@ -218,13 +218,13 @@ What changes:
 
 ### 10. Remove and document
 
-- **Remove from Creek:** the mountain ring, the gorges and their haze, the logs, and the oak, beech, birch and wildflower models. Remove the cave too if question 4 says so.
-- **Remove from the shared code if question 5 says so:** `examples/lib/mountains.ts`, its test and `examples/lib/haze.ts`, after the clouds take what they need, and the ring rule's bullet in `.dev/examples.md`.
+- **Remove from Creek:** the mountain ring, the gorges and their haze, the logs, the cave, and the oak, beech, birch and wildflower models.
+- **Remove from the shared code:** `examples/lib/mountains.ts`, its test (`examples/lib/mountains.test.ts`) and `examples/lib/haze.ts`, after the clouds take what they need.
 - **Update:**
   - `examples/demos.ts`: Creek's title and summary.
-  - `.dev/examples.md`: the Creek section, the ring bullet, and the model rule, which gains Tripo3D.
+  - `.dev/examples.md`: the Creek section; the ring bullet, which goes; the camera-bounds bullet, reworded as in section 2; the island's and Skyway's ring exemptions, which lose their reason to exist; and the model rule, which gains Tripo3D.
   - `.dev/sample-content.md`: Creek's model files, and the Tripo3D raw results with their `task.json` records.
-  - D-170, D-378's model rule, and D-241's summary, which still says that Creek drops its Blender plants for the add-on.
+  - D-170 (the ring rule retires), D-378's model rule, and D-241's summary, which still says that Creek drops its Blender plants for the add-on.
   - `docs/api/water.md`: the waterfall and the rain rings.
   - `examples/addons/weather/README.md`: the rain.
   - `tests/lib/plans.ts`: Creek joins the live showcase device plan.
@@ -237,6 +237,9 @@ What changes:
 - **The old `tripo-mcp` server** (`Tripo-Developer/tripo-mcp`). It was installed and removed on 2026-11-19: it crashes on start unless an older MCP library is pinned, and it talks to an old Tripo Blender add-on, not the current Tripo Bridge. The official `tripo-cli` replaces it, as a command and as an MCP server.
 - **A homemade tool that calls Tripo3D's web service.** `tripo make` already uploads, waits, retries, checks parameters, downloads before the links expire and records each run.
 - **Tripo3D through fal.ai.** The owner chose the direct connection.
+- **Three pull requests** (the water add-on, the models, then the scene). The owner chose one.
+- **Keeping the cave.** The concept picture shows none.
+- **Exempting Creek from the ring rule and keeping the rule.** No scene would then follow it.
 - **Generated foliage.** A generated crown is a solid shell that cannot sway or show sky through it.
 - **The engine's volumetric clouds as the cloud sea.** They draw only on High and Ultra.
 - **The terrain add-on for the top.** See section 1.
@@ -244,15 +247,9 @@ What changes:
 - **Keeping far cards for trees:** see "No hand-over".
 - **Waiting for GPU-built grass:** the look removes the need.
 
-## Branch and pull requests
+## Branch and pull request
 
-This plan stays on `plan/creek-cliff-garden` (pull request #561) until the owner answers. After that, each piece of work branches from `origin/main` and lands as its own pull request (D-379). Before each pull request opens, run the touched unit tests, `bun run check` and `bun run limits`.
-
-The proposed split is question 7:
-
-1. The water add-on: the waterfall and the rain rings, with `docs/api/water.md`.
-2. The garden's models: each model's `tripo make` command, `creek.py` and `common.py`, then the sample-assets change with the raw results and their `task.json` records.
-3. The garden scene, with the decision record, the clouds, the shared rock and rain moves, and the docs.
+This plan stays on `plan/creek-cliff-garden` (pull request #561). The work itself branches from `origin/main` and lands as one pull request (owner's answer; D-379). It holds the water add-on's waterfalls and rain rings, the garden's models with their `tripo make` commands, `creek.py` and `common.py`, the garden scene, the decision record, the shared rock and rain moves, the ring's removal and the docs. The sample-assets change, with the raw results and their `task.json` records, goes first, so the scene can pin it. Before the pull request opens, and before each push to it, run the touched unit tests, `bun run check` and `bun run limits`.
 
 ## Risks
 
@@ -280,16 +277,18 @@ The proposed split is question 7:
 - **D-288's audit methods on the final scene:** held frames, live manual camera, route sampling, frame-by-frame recording and whole-route speed repeated. Run them on `?gpu=webgpu` with direct draws on and off, `compat` and `webgl2`, at Low to Ultra.
 - **Look for:** the cloud edge at every mood, the waterfalls from the route and the orbit, the camera's dip under the water, popping, the first and last frames, and memory on each path.
 - **Ground and water:** a page without rain draws the same picture at the same cost, and wet ground draws on all GPU paths.
-- **Device runs:** run the cloud iPhone 17, iPad Pro 13, Galaxy S25 and Tab A9 Plus against the ceilings that question 6 settles and D-283's wind budgets. Results go in `.dev/tested-devices/`.
+- **Device runs:** run the cloud iPhone 17, iPad Pro 13, Galaxy S25 and Tab A9 Plus against D-241's showcase ceilings and D-283's wind budgets. Results go in `.dev/tested-devices/`.
 - **`bun run limits`, `bun run build:check-size`, `bun run bench:gpu-check`,** with written reasons for any growth.
 - **Owner look review** against job 2b3da0a9-dbff-44af-b766-4f0113f73ad2.
 
-## Open questions for the owner
+## Owner's answers, 2026-11-20
 
-1. **Which models come from Tripo3D?** Recommended: the statue, the gate, the lanterns, a set of boulders, and the trunks and limbs of the pine and maples. The foliage and ground plants stay as the Blender script's cards, and the small stones, steps, land, water, grass and clouds stay in code.
-2. **Water source:** a spring-fed pool near the middle, flowing both ways? Recommended.
-3. **Livelier creek from concept 4?** Recommended.
-4. **Cave:** today's Creek has its Blender cave again. Leave it out of the garden? Recommended, since the look does not show one.
-5. **Mountain ring:** exempt Creek, as Skyway is, because the clouds hide the edge? Then no scene uses the ring, so retire the ring rule in D-170 and remove the shared ring and haze helpers. Recommended.
-6. **Frame ceilings:** D-241's showcase ceilings were set for the old scene, and today's Creek has no frame figure. Hold the garden to D-241's ceilings, and measure today's Creek once on the Mac and the iPad Pro 13 as the "before" figure? Recommended.
-7. **Pull requests:** three, in this order: the water add-on's waterfall and rain rings, then the garden's models, then the garden scene. The early tests stay on a branch for your review. Recommended.
+1. **Models from Tripo3D:** the statue, the roofed gate, the stone lanterns, a set of 6 to 8 boulders, and the trunks and limbs of the sculpted pine and the maples. The foliage and ground plants stay as the Blender script's cards, and the small stones, steps, land, water, grass and clouds stay in code.
+2. **Water source:** a spring-fed pool near the middle, flowing both ways.
+3. **Livelier creek** from concept 4: yes.
+4. **Cave:** left out of the garden.
+5. **Mountain ring:** Creek drops it, the ring rule retires, and the shared ring and haze helpers are removed.
+6. **Frame ceilings:** the garden is held to D-241's ceilings, and today's Creek is timed once on the Mac and the iPad Pro 13 as the "before" figure.
+7. **Pull requests:** all of the work in one pull request. The early tests are review points on its branch.
+
+No questions are open.
