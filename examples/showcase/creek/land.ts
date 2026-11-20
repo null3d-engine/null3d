@@ -48,7 +48,7 @@ const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 2.5, width: 0.22 } as 
  */
 const HEADLAND = { bearing: (152 * Math.PI) / 180, reach: 3.5, width: 0.1 } as const;
 /** How far the rim's straight edge at a lip reaches past the creek's banks, in meters. */
-const LIP_MARGIN = 0.3;
+const LIP_MARGIN = 0.1;
 /** The spring pool near the middle that feeds the creek: its x and how far along it widens. */
 export const POOL = { x: -2, length: 2.8, widening: 1.2, depth: 0.45 } as const;
 /**
@@ -155,18 +155,20 @@ export const streamHalf = (x: number) =>
 		0.22 * Math.sin(x * 0.27 + 1.3) +
 		0.3 * smoothstep(x, -4, 16) +
 		POOL.widening * poolShare(x)) *
-	(1 - LIP_NARROW.share * lipNear(x));
+	(1 - lipNarrowing(x));
 
 /**
  * How the creek narrows before each lip, between rock shoulders, as the concept's does where it
- * piles up white and drops: the share of its width it loses at the lip, and over how many meters.
+ * piles up white and drops: the share of its width it loses at the west lip and at the east, and
+ * over how many meters. The west fall, seen in profile from the opening view, keeps more of its
+ * width than the east one, which faces the camera.
  */
-const LIP_NARROW = { share: 0.58, from: 0.6, to: 4.5 } as const;
+const LIP_NARROW = { west: 0.5, east: 0.58, from: 0.6, to: 4.5 } as const;
 
-/** How near x lies to either lip along the creek, from 0 away from both to 1 at a lip. */
-function lipNear(x: number): number {
-	const reach = Math.min(x - LIPS.west, LIPS.east - x);
-	return 1 - smoothstep(reach, LIP_NARROW.from, LIP_NARROW.to);
+/** The share of the creek's width that it has lost at x, by its nearness to either lip. */
+function lipNarrowing(x: number): number {
+	const near = (reach: number) => 1 - smoothstep(reach, LIP_NARROW.from, LIP_NARROW.to);
+	return LIP_NARROW.west * near(x - LIPS.west) + LIP_NARROW.east * near(LIPS.east - x);
 }
 
 /** How far a point lies from the creek's middle, in half widths: 1 at the water's edge. */
@@ -340,7 +342,35 @@ export function groundHeight(x: number, z: number): number {
 	const cobbles = 0.07 * noise.fbm2(x * 0.9, z * 0.9, 3);
 	const bed = -channelDepth(x) + cobbles;
 	const top = landHeight(x, z);
-	return bed + (top - bed) * smoothstep(d, 0.72, 1.32);
+	const ground = bed + (top - bed) * smoothstep(d, 0.72, 1.32);
+	return ground + Math.max(0, lipSill(x, z) - ground);
+}
+
+/**
+ * The broken rock along each lip's very edge: a sill whose height wanders across the water, so in
+ * places it stands out of the water and in others the water runs over it. The water's end at the
+ * lip then shows only in short pieces between rocks, as the concept picture's uneven rims do. The
+ * sill's band in meters back from the edge, its height at the water's level and how far it wanders,
+ * and how many rocks it has to the meter across.
+ */
+const LIP_SILL = { band: [0.3, 0.75], level: -0.06, wander: 0.3, rocks: 2.2 } as const;
+
+/** The sill's height at a point, or far below the ground away from the lips. */
+function lipSill(x: number, z: number): number {
+	let height = -Infinity;
+	for (const lip of [LIPS.west, LIPS.east]) {
+		const along = Math.hypot(1, streamSlope(lip));
+		const [nx, nz] = [Math.sign(lip) / along, (Math.sign(lip) * streamSlope(lip)) / along];
+		const [dx, dz] = [x - lip, z - streamZ(lip)];
+		// How far back from the lip's line the point lies, and how far across the creek.
+		const back = -(dx * nx + dz * nz);
+		const across = dx * nz - dz * nx;
+		if (back < 0 || back > LIP_SILL.band[1] || Math.abs(across) > streamHalf(lip) * 1.1) continue;
+		const share = 1 - smoothstep(back, LIP_SILL.band[0], LIP_SILL.band[1]);
+		const jag = noise.fbm2(across * LIP_SILL.rocks + lip, back * 3 + lip * 0.37, 2);
+		height = Math.max(height, LIP_SILL.level + LIP_SILL.wander * jag - (1 - share) * 0.6);
+	}
+	return height;
 }
 
 /** The bearing of a point about the cliff's middle, from +x toward +z. */
