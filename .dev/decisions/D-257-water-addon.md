@@ -1,8 +1,8 @@
 # D-257: The water add-on
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
-feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, and
-the ocean, which draws on every GPU path. Owed: a quiet run of the add-on's cost per preset, whose
+feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, the
+ocean, which draws on every GPU path, and the waterfall. Owed: a quiet run of the add-on's cost per preset, whose
 gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
@@ -10,8 +10,10 @@ with waves, ripples, caustics, foam, soft shores, a reflection and an underwater
 reads the copy of the scene's depth, or the bed that the shape describes, so a shore fades against
 the bed. The reflection's cadence is a feature setting of the preset and the governor. The current
 carries the whole wave set downstream, so every crest moves with the river. A page sets the surface's
-height, so a slow stream draws nearly flat and keeps its fine ripples. The Creek draws its water and
-its underwater view through the add-on, and keeps no water code of its own.
+height, so a slow stream draws nearly flat and keeps its fine ripples. A waterfall falls from a
+river's lip along the path of falling water, with streaks that ride the water from the time alone.
+Its spray and mist come from the particles add-on, which the water add-on depends on. The Creek
+draws its water and its underwater view through the add-on, and keeps no water code of its own.
 
 ## Question
 
@@ -357,6 +359,43 @@ vertex's world place is the origin with its place in the mesh.
   compatibility mode and on WebGL2, after [D-271](D-271-a-fallback-pass-writes-the-image.md) made
   the read keep the rows that the shader names. The demo draws on every path: its WebGL2 tier runs
   at Medium, whose cadence is two, and the reflection keeps its last image there.
+
+## The waterfall
+
+### Question
+
+The Creek's creek falls off both ends of its cliff, and other scenes need falls too. How does a fall
+join a river's end, move without work on the CPU, and get its spray and mist?
+
+### Decision
+
+**The path.** The water leaves the lip level with the river, at the current's speed there. It falls
+while the air slows it toward a steady 15 m/s. The distance fallen is the integral of a hyperbolic
+tangent, and the motion away from the lip decays with the same drag time. So the sheet curves over
+the lip and then drops almost straight, as a real fall does. A fall of any height keeps streaks that
+the eye can follow. `fall.ts` holds the path and the mesh. Its tests hold the sheet to the lip's
+height and width, to the path, and to a sheet that never rises.
+
+**The sheet.** Two veils give the fall depth from the side: the back one is thrown less far and is a
+little narrower. An apron runs a meter up the river's surface before the lip, and fades in there. So
+the river's own mesh ends at the lip with no seam. The mesh's texture coordinates carry each point's
+place across the lip and the time since its water crossed it. The material's noise reads those two.
+So every streak rides down at the water's own speed, and stretches as the water speeds up, from the
+sketch time alone. The water is glassy for about a meter and white below. Ropes part out of the
+sheet as it falls, its edges tear, and it thins into mist over the lower half of its drop. The sheet
+takes the scene's light. It fades where the copy of the scene's depth shows a wall close behind it.
+
+**The spray.** The water add-on depends on `@null3d/particles` at the exact version, as the grass
+add-on depends on the wind add-on ([D-173](D-173-addon-hooks.md)). A fall makes three systems: a
+froth over the brink, mist down the fall and a plume at its foot. Two other ways were weighed. The
+add-on could return the emitters' places and leave the systems to each scene. Every scene would then
+repeat the same three systems and their tuning, which is a second copy of the feature. A scene could
+pass the particles add-on's function in. That is a second way to make a fall, and the water add-on
+would copy the particle options' types. A fall with `spray: 0` makes no systems and loads no particle
+code. Particles are not lit, so the scene sets their light with `setLight` in each mood.
+
+**The mesh.** The sheet has no vertex offset, so it is a plain mesh. At the default detail it holds
+about 3,200 triangles, under the count at which the engine plans levels for a mesh made in code.
 
 ## Consequences
 

@@ -3,7 +3,7 @@ id: api/water
 title: "Water (@null3d/water)"
 status: experimental
 since: "0.3"
-summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createOcean: an open sea of spectra transformed on the GPU."
+summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createWaterfall: a fall from a river's lip, with spray and mist. createOcean: an open sea of spectra transformed on the GPU."
 ---
 
 # Water (@null3d/water)
@@ -24,9 +24,16 @@ flowchart LR
     sea --> ocean["The sea"]
     preset["The quality preset"] --> mirror
     camera["A camera under the surface"] --> under["createUnderwater"]
+    lip["A river's lip,<br/>its current and a drop"] --> path["The path of<br/>falling water"]
+    path --> sheet["A sheet of veils:<br/>streaks that ride the water"]
+    path --> spray["Spray, mist<br/>and a plume"]
+    sheet --> fall["The waterfall"]
+    spray --> fall
 ```
 
 `@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
+
+`createWaterfall` draws a fall from a river's lip, with spray at the lip, mist down the fall and a plume of mist at its foot.
 
 `createOcean` draws an open sea instead. Its waves come from wave spectra, and the GPU transforms them into heights in every frame. The bands of swell and chop then move on their own, and the surface reads the slopes that the transform writes.
 
@@ -194,6 +201,88 @@ Call `update(t, air, caustics)` in each frame with the sketch's time, the light 
 horizon, and the light of the caustics. The surface seen from below shows the world above through a
 window overhead, and turns the light back past that window's edge.
 
+## Waterfalls
+
+`createWaterfall(ctx, options)` makes a waterfall that falls from a river's lip. The sheet curves over
+the lip and drops almost straight, as falling water does while the air slows it. It is glassy for a
+short way below the lip, then white. The white water falls in ropes of fine upright streaks, with
+ragged, feathered edges, and it fans out as it falls. Toward its foot it thins into mist, so it never
+ends in a line. Spray froths at the lip, mist drifts down the fall, and a plume of mist rises at its
+foot.
+
+The sheet's material moves each streak with the water from the sketch's time alone, so the fall
+costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
+the water speeds up. Two veils, one behind the other, give the fall depth from the side. The scene's
+light lights the sheet, and the sheet fades where it nears a wall or a ledge behind it. The spray and
+the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+import { createWater, createWaterfall } from '@null3d/water';
+
+export default defineSketch(async (ctx) => {
+  const { scene } = ctx;
+  const camera = scene.createPerspectiveCamera({ position: [17, 5, 18], target: [0, -6, 0] });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [0.35, -0.8, 0.5], intensity: 1.6 });
+  scene.setEnvironment(await ctx.assets.skyEnvironment());
+
+  // The creek runs along +x and ends at the lip.
+  const water = createWater(ctx, {
+    shapes: { kind: 'river', middle: [[-40, 0], [0, 0]], halfWidth: 2.8, depth: 0.7, speed: 1.4 },
+  });
+  const fall = await createWaterfall(ctx, {
+    lip: [0, 0],
+    direction: [1, 0],
+    halfWidth: 2.8,
+    speed: 1.4,
+    drop: 18,
+  });
+
+  return {
+    onUpdate() {
+      water.update();
+    },
+    onLateUpdate() {
+      fall.update();
+    },
+  };
+});
+```
+
+End the river's own surface at the lip. The sheet starts a meter upstream of it, on the river's
+surface, and fades in there. So the river and the fall meet without a seam.
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `lip` | `[x, z]` in meters | Required | The middle of the lip, where the river's surface ends and the water falls |
+| `direction` | `[x, z]` | Required | The way the water runs over the lip. Its length does not matter |
+| `halfWidth` | A number above 0, in meters | Required | Half the river's width at the lip |
+| `level` | A number, in meters | 0 | The height of the water's surface at the lip |
+| `speed` | A number above 0, in meters a second | 1.2 | The current at the middle of the lip. It sets how far the water leaps clear of the lip. A river runs faster as it nears a brink, so give the speed at the lip itself: 1 to 2 m/s throws a creek's fall clear of the wall below it |
+| `drop` | A number above 0, in meters | Required | How far the fall drops below the lip. The sheet thins into mist over the lower half of the drop |
+| `spread` | A number from 0 | 0.12 | How far each side of the sheet widens for each meter that the water falls |
+| `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles and loads no particle code |
+| `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
+| `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |
+| `material` | The standard material values | None | The sheet's material, such as the color of its white water |
+| `mesh` | `{ across, down }` | 16 and 48 | The sections across the sheet, and its rows from the lip to the foot |
+
+`createWaterfall` returns a promise of a waterfall object, since the particle code downloads on
+first use:
+
+| Member | What it does |
+| --- | --- |
+| `update()` | Steps the spray and the mist. Call it once in each frame, in `onLateUpdate`, after the wind steps |
+| `setLight(color)` | Sets the light on the spray and the mist, as a linear color. Particles are not lit, so give them the scene's light in each mood |
+| `setSpray(amount)` | Sets the spray and the mist, from 0 to 3. A storm raises it |
+| `fallTime` | The seconds that the water takes from the lip to the foot |
+| `destroy()` | Removes the sheet, its material and its particles |
+
+A fall that lies past the edge of a water's surface does not show in that water's mirror. Put it on
+a layer that the water's `layers` option leaves out, so the reflection pass skips it.
+
 ## The ocean
 
 `createOcean(ctx, { camera })` makes an open sea. Its waves come from two or three bands of wave
@@ -280,6 +369,10 @@ near the eye and spends its vertices far away.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
+- **A waterfall.** It draws one blended mesh of two veils, about 3,200 triangles at the default
+  detail. It adds three particle systems of a few hundred large puffs at most. The sheet reads the copy
+  of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
+  phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a
   scene's water has one owner.
 - **One water a page.** The add-on registers one water feature, so a page makes its water with one
