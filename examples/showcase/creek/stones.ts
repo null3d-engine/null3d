@@ -39,7 +39,7 @@ const IN_STREAM = 1.0;
 /** How far under the surface a stone's top may lie and still break the water white, in meters. */
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
-const TRAIL = { links: 18, step: 0.4, width: 2.2 } as const;
+const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -99,7 +99,7 @@ const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
 /** The stones in the current, and the stones scattered on the banks away from the water. */
-const IN_CURRENT = 36;
+const IN_CURRENT = 44;
 const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
@@ -269,17 +269,19 @@ export function createStones(
 						Math.abs(below) < 0.9
 							? size * Math.sqrt(1 - below * below)
 							: size * 0.75 * (1 - Math.max(0, WATER - top) / SHALLOW);
-					// The foam trails behind the stone, whichever way the current runs, as a chain of marks
-					// that starts at its downstream side and shrinks away from it; none rings it upstream.
+					// The foam trails behind the stone, whichever way the current runs: a wake that starts
+					// narrow at its downstream side, widens away from it and then fades, so none rings it.
 					const [vx, vz] = streamCurrent(x, z);
 					const speed = Math.hypot(vx, vz);
 					const [ux, uz] = speed > 0.05 ? [vx / speed, vz / speed] : [0, 0];
-					for (let k = 0; k <= TRAIL.links; k++)
+					for (let k = 0; k <= TRAIL.links; k++) {
+						const spread = Math.min(1, 0.4 + 0.15 * k) * (1 - k / (TRAIL.links + 1));
 						obstacles.push({
-							x: x + ux * (r + k * TRAIL.step),
-							z: z + uz * (r + k * TRAIL.step),
-							r: r * (1 - k / (TRAIL.links + 1)) * (k === 0 ? 0.6 : TRAIL.width),
+							x: x + ux * (r + 0.2 + k * TRAIL.step),
+							z: z + uz * (r + 0.2 + k * TRAIL.step),
+							r: r * TRAIL.width * spread,
 						});
+					}
 				}
 			});
 			batch.markDirty();
