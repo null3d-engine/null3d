@@ -92,7 +92,7 @@ Every vertex of a tree or a plant carries its sway in the second texture coordin
 
 A scene reads each part's textures from its node's `maps`, which `prefab.find` gives, and the wind material draws them in the file's material's place.
 
-Each model draws with few triangles, so a scene can place many copies. The trees' leaves are cards. Each card holds a cluster of small leaves from an atlas, and its alpha cuts their outline. The alpha fades over two texels at each leaf's edge, which softens the outline where alpha to coverage runs. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided. Each tree part also has two lower levels of detail, in the MSFT_lod extension, with each level's error in `NULL3D_lod_error`. The asset tool keeps each level in its base mesh's frame.
+Each model draws with few triangles, so a scene can place many copies. The trees' leaves are cards. Each card holds a cluster of small leaves from an atlas, and its alpha cuts their outline. The alpha fades over two texels at each leaf's edge, which softens the outline where alpha to coverage runs. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided. Each tree part also has two lower levels of detail, in the MSFT_lod extension, with each level's error in `NULL3D_lod_error`. The error is the largest distance between the level's surface and the full one. For a part that drops cards, such as the pines' needles, it is the distance that 95% of points spread over both surfaces stay within, measured in the build: a dropped card moves a few points far, which the eye does not see as a change of the whole crown. The asset tool keeps each level in its base mesh's frame.
 
 | Part | Triangles at each level |
 | --- | --- |
@@ -106,15 +106,15 @@ Each model draws with few triangles, so a scene can place many copies. The trees
 | Island holm oak: wood, leaves | 612, 148, 72; 5,272, 1,320, 332 |
 | Island oleander: stems, leaves and flowers | 192, 96, 96; 1,280, 768, 288 |
 | Each island plant's far card | 20 |
-| Creek tall pine: wood, needles | 14,000, 4,999, 1,599; 20,694, 10,908, 5,136 |
-| Creek low pine: wood, needles | 7,999, 2,999, 999; 22,336, 11,800, 5,572 |
+| Creek tall pine: wood, needles | 13,981, 4,992, 1,594; 23,718, 10,566, 4,746 |
+| Creek low pine: wood, needles | 7,993, 2,997, 997; 20,458, 9,280, 4,092 |
 | Creek garden statue: figure, slab | 29,999, 10,199, 2,999; 1,456, 728, 312 |
 | Creek garden lantern | 1,500, 900, 450 |
 | Creek garden gate | 5,967, 2,369, 869 |
 | Creek garden boulders 1 and 2, each | 1,500, 900, 450 |
 | Creek garden boulder 3 | 1,499, 899, 599 |
 
-The Creek's trees file takes 4,198 KB, its plants file 470 KB, its cave file 784 KB and its pines file 3,348 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. The Creek garden's statue file takes 3,079 KB, its lantern 571 KB, its gate 2,184 KB, and its boulders 2,029 KB, 2,075 KB and 514 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away. The tall pine's levels switch about 40 m and 90 m away, and the low pine's about 25 m and 60 m away. A pine's lower levels keep one needle card in two and one in five, each a little larger, and coarser pad bodies. They cut the wood to about a third and an eighth of its triangles.
+The Creek's trees file takes 4,198 KB, its plants file 470 KB, its cave file 784 KB and its pines file 3,262 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. The Creek garden's statue file takes 3,079 KB, its lantern 571 KB, its gate 2,184 KB, and its boulders 2,029 KB, 2,075 KB and 514 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away. The tall pine's levels switch about 40 m and 90 m away, and the low pine's about 25 m and 60 m away. A pine's lower levels keep one needle card in two and one in five, each a little larger, and coarser pad bodies. They cut the wood to about a third and an eighth of its triangles.
 
 An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film, with each surface's own color and no light, so the engine lights the card once. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 

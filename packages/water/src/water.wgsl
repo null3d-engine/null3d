@@ -280,10 +280,41 @@ fn rain_rings(p: vec2f, t: f32, flow: vec2f, rain: f32, footprint: f32) -> vec2f
 /// mean, 0.114 at a power of 14, times the mean of the patches that brighten and dim them.
 const CAUSTIC_MEAN: f32 = 0.077;
 
-/// The flecks that break the foam around the stones, which the current carries downstream.
-fn foam_flecks(p: vec2f, flow: vec2f, t: f32) -> f32 {
-    let drift = p * vec2f(5.0, 9.0) - flow * (t * 6.0);
-    return 0.6 * value2(drift) + 0.4 * value2(drift * 2.3 + 7.0);
+/// The seconds over which the foam's pattern rides the current before it fades into a fresh one.
+const FOAM_CYCLE: f32 = 1.6;
+/// The foam's clumps for each meter, the same along the current and across it.
+const FOAM_CELLS: f32 = 6.0;
+
+/// Two octaves of the foam's clumps at a point, from 0 to 1. `footprint` is the meters that one pixel
+/// covers there. Where a pixel covers more than a clump, an octave gives way to its mean, so the
+/// foam never breaks into a grid of dots far off.
+fn foam_clumps(q: vec2f, footprint: f32) -> f32 {
+    let a = q * FOAM_CELLS;
+    let b = a * 2.3 + vec2f(7.0, 3.1);
+    let near = 1.0 - smoothstep(0.5, 1.1, footprint * FOAM_CELLS);
+    let fine = 1.0 - smoothstep(0.5, 1.1, footprint * FOAM_CELLS * 2.3);
+    return 0.6 * mix(0.5, value2(a), near) + 0.4 * mix(0.5, value2(b), fine);
+}
+
+/// The flecks that break the foam around the stones, which the current carries downstream. Each of
+/// two copies of the pattern rides the current for one cycle and then starts afresh, and the two
+/// take turns, half a cycle apart, so the pattern moves with the water without ever stretching
+/// where the current changes.
+fn foam_flecks(p: vec2f, flow: vec2f, t: f32, footprint: f32) -> f32 {
+    let first = fract(t / FOAM_CYCLE);
+    let second = fract(t / FOAM_CYCLE + 0.5);
+    let a = foam_clumps(
+        p - flow * (first * FOAM_CYCLE) + vec2f(floor(t / FOAM_CYCLE) * 3.7, 0.0),
+        footprint,
+    );
+    let b = foam_clumps(
+        p - flow * (second * FOAM_CYCLE) + vec2f(0.0, floor(t / FOAM_CYCLE + 0.5) * 5.3 + 11.0),
+        footprint,
+    );
+    let wa = 1.0 - abs(2.0 * first - 1.0);
+    let wb = 1.0 - wa;
+    // Two noises blended halve the spread; this gives it back.
+    return clamp(0.5 + (a * wa + b * wb - 0.5) / sqrt(wa * wa + wb * wb), 0.0, 1.0);
 }
 
 /// The cosine of the angle from straight up, under the water, inside which the world above shows:
@@ -460,9 +491,9 @@ fn surface(input: SurfaceInput) -> Surface {
     // downstream, and moving noise breaks it into flecks that the current carries away.
     let foamUv = (p - material.foamOrigin) / material.foamSize;
     let near = textureSampleLevel(foamMap, foamMapSampler, foamUv, 0.0).r;
-    var flecks = foam_flecks(p, current.xy * current.z, frame.time);
+    var flecks = foam_flecks(p, current.xy * current.z, frame.time, footprint);
     if share < 1.0 {
-        flecks = mix(foam_flecks(p, vec2f(0.0), frame.time), flecks, share);
+        flecks = mix(foam_flecks(p, vec2f(0.0), frame.time, footprint), flecks, share);
     }
     let stoneFoam = 0.85 * smoothstep(0.45, 0.95, near * (0.3 + 1.0 * flecks));
     let foam = max(edgeFoam, stoneFoam);
