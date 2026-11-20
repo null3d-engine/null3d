@@ -4,8 +4,7 @@
 // where the two meet, so they never overlap, and it lies past the farthest the camera can reach.
 import { describe, expect, it } from 'bun:test';
 import { readdirSync } from 'node:fs';
-import * as creekLand from '../showcase/creek/land';
-import * as creek from '../showcase/creek/sketch';
+import type { CameraBounds } from './cinematic';
 import { type MountainRingOptions, mountainRing } from './mountains';
 
 /** How far the lowest crest must stand above the camera's highest reach, in meters. */
@@ -13,13 +12,19 @@ const CREST_MARGIN = 10;
 /** How far under the land's edge the ring must lie where it passes under it, in meters. */
 const UNDER = 0.1;
 
-const SCENES = [{ name: 'creek', settings: creekLand.mountainSettings, bounds: creek.BOUNDS }];
+/** The showcase scenes that stand in a ring, with the ring's settings and the camera's bounds. */
+const SCENES: readonly {
+	name: string;
+	settings: (segments: number, rows: number) => MountainRingOptions;
+	bounds: Omit<CameraBounds, 'ground'>;
+}[] = [];
 /**
  * The showcase scenes that stand with no ring, by the owner's ruling, each with its reason: every
  * other scene is one of the scenes above. The Island is an isolated island in open sea. Skyway's fog
- * and ground plane keep the plain background out of view.
+ * and ground plane keep the plain background out of view. Creek's cliff stands in a sea of cloud
+ * that reaches the horizon.
  */
-const NO_RING = ['island', 'skyway'];
+const NO_RING = ['creek', 'island', 'skyway'];
 /** The bearings and rows of the ring at each quality preset, the fewest and the most. */
 const DETAILS = [
 	[160, 32],

@@ -8,7 +8,7 @@ import { createParticles, type ParticleSystem, particleTextures } from '@null3d/
 import type { WindField } from '@null3d/wind';
 import { EFFECT_LAYER } from '../../lib/layers';
 import type { Mood, MoodMix } from '../../lib/stage';
-import { FLOW, streamSlope, streamZ, WATER } from './land';
+import { LIPS, streamCurrent, streamZ, WATER } from './land';
 
 /** Leaves that fall from each crown each second, and how long a leaf takes to fall. */
 const LEAF_RATE = 0.5;
@@ -18,8 +18,8 @@ const MOTES = 220;
 const MOTE_LIFE: readonly [number, number] = [6, 10];
 /** The lengths of stream that each carry a bank of mist, and the puffs over each. */
 const MIST_REACHES = 6;
-const MIST_REACH = 10;
-const MIST_PUFFS = 7;
+const MIST_REACH = (LIPS.east - LIPS.west) / MIST_REACHES;
+const MIST_PUFFS = 10;
 const MIST_LIFE: readonly [number, number] = [14, 22];
 
 /** A crown that leaves fall from: its middle on the ground, its height and its reach. */
@@ -50,7 +50,7 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 		leaves: [0.95, 1, 0.9],
 		motes: [0.45, 0.5, 0.42],
 		mist: [0.85, 0.9, 0.95],
-		mistOpacity: 0.2,
+		mistOpacity: 0.07,
 	},
 	Midday: {
 		leaves: [1, 1, 0.95],
@@ -68,7 +68,7 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 		leaves: [1, 0.78, 0.55],
 		motes: [1.6, 1.0, 0.45],
 		mist: [1, 0.82, 0.62],
-		mistOpacity: 0.4,
+		mistOpacity: 0.14,
 	},
 	Dusk: {
 		leaves: [0.28, 0.32, 0.45],
@@ -133,14 +133,14 @@ export async function createAir(
 			}),
 		),
 	);
-	// Motes: a box of dust over the near bank and the water, where the camera looks, that drifts and
+	// Motes: a box of dust over the creek and its banks, where the camera looks, that drifts and
 	// swirls and glows through bloom.
 	const motes = await createParticles(ctx, {
 		...air,
 		...particleTextures.glow(textures, { size: 16 }),
 		seed: 72,
-		position: [1, 1.8, 0],
-		shape: { type: 'box', size: [16, 3, 8] },
+		position: [0, 1.8, streamZ(0)],
+		shape: { type: 'box', size: [30, 3, 12] },
 		rate: MOTES / MOTE_LIFE[1],
 		lifetime: MOTE_LIFE,
 		speed: [0, 0.05],
@@ -156,8 +156,8 @@ export async function createAir(
 	const smoke = particleTextures.smoke(textures);
 	const mist = await Promise.all(
 		Array.from({ length: MIST_REACHES }, (_, k) => {
-			const x = (k - (MIST_REACHES - 1) / 2) * MIST_REACH;
-			const along = Math.hypot(1, streamSlope(x));
+			const x = LIPS.west + (k + 0.5) * MIST_REACH;
+			const [vx, vz] = streamCurrent(x);
 			return createParticles(ctx, {
 				...air,
 				...smoke,
@@ -167,8 +167,8 @@ export async function createAir(
 				rate: MIST_PUFFS / MIST_LIFE[1],
 				lifetime: MIST_LIFE,
 				speed: [0, 0],
-				velocity: [(FLOW * 0.4) / along, 0, (FLOW * 0.4 * streamSlope(x)) / along],
-				size: [2.5, 5],
+				velocity: [vx * 0.4, 0, vz * 0.4],
+				size: [1.5, 3],
 				alphaOverLife: [0, 1, 1, 0],
 				blending: 'normal',
 			});

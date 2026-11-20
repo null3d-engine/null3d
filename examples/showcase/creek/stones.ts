@@ -1,8 +1,7 @@
-// The creek's stones: mossy rocks along the water's edge, in the stream and on the banks, pebbles on
-// the bed, and the cave mouth, a model built in Blender. Each kind of rock is an instance batch whose
-// rows cast and receive the sun's shadows. The rocks are noise-shaped spheres with a texture made in
-// code, and moss on the parts that face up. The pebbles are small and lie under the water, so they
-// cast none.
+// The creek's stones: mossy rocks along the water's edge, in the stream and on the banks, and pebbles
+// on the bed. Each kind of rock is an instance batch whose rows cast and receive the sun's shadows.
+// The rocks are noise-shaped spheres with a texture made in code, and moss on the parts that face
+// up. The pebbles are small and lie under the water, so they cast none.
 import {
 	type MeshArrays,
 	math,
@@ -10,10 +9,16 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
-import { type Part, placed } from '../../lib/blender-models';
-import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
-import { fromStream, groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
+import {
+	fromStream,
+	groundHeight,
+	LIPS,
+	streamHalf,
+	streamZ,
+	UNREFLECTED_LAYER,
+	WATER,
+} from './land';
 
 /** A stone where it breaks the water: its middle and its radius at the water's height. */
 export interface Obstacle {
@@ -22,16 +27,12 @@ export interface Obstacle {
 	r: number;
 }
 
-/**
- * The cave mouth: the middle of its foot, the reach of its rock around it, and its turn about y.
- * The model opens toward +z; the turn faces it down the valley, toward the camera's usual view.
- */
-export const CAVE = { x: 11, z: streamZ(11) - 6.2, reach: 3.8, yaw: -0.9 };
-
 /** Pebbles at each preset, over all their batches. */
 const PEBBLES: Record<QualityPreset, number> = { low: 1200, medium: 3000, high: 4800, ultra: 6000 };
 /** Rocks nearer the stream's middle than this many half widths are wet. */
 const WET = 1.25;
+/** Rocks nearer the stream's middle than this many half widths stand in the current and foam it. */
+const IN_STREAM = 0.75;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -77,57 +78,40 @@ function mossy(arrays: MeshArrays, seed: number): MeshArrays {
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 
+/** How far from each lip the rocks stop, in meters, so the lips stay clear for the falls. */
+const LIP_CLEAR = 1.5;
+/** The rocks along the creek: in the stream, in a row along each edge, and on the banks. */
+const ROCKS = 150;
+
 /** Where rocks stand: a few in the stream, a line along each edge, and some on the banks. */
 export function rockPlaces(): { x: number; z: number; size: number }[] {
 	const next = random(41);
 	const places: { x: number; z: number; size: number }[] = [];
-	for (let k = 0; k < 70; k++) {
-		const x = -24 + 48 * next();
+	const from = LIPS.west + LIP_CLEAR;
+	const to = LIPS.east - LIP_CLEAR;
+	for (let k = 0; k < ROCKS; k++) {
+		const x = from + (to - from) * next();
 		const kind = next();
 		const side = next() < 0.5 ? -1 : 1;
 		const across =
-			kind < 0.15 ? next() * 0.5 : kind < 0.75 ? 0.82 + 0.3 * next() : 1.4 + 5 * next();
+			kind < 0.15 ? next() * 0.5 : kind < 0.75 ? 0.82 + 0.3 * next() : 1.3 + 0.9 * next();
 		const size =
-			kind < 0.15 ? 0.22 + 0.2 * next() : kind < 0.75 ? 0.18 + 0.38 * next() : 0.2 + 0.5 * next();
+			kind < 0.15 ? 0.22 + 0.2 * next() : kind < 0.75 ? 0.28 + 0.38 * next() : 0.2 + 0.5 * next();
 		places.push({ x, z: streamZ(x) + side * across * streamHalf(x), size });
 	}
 	return places;
 }
 
 /**
- * A test of whether a stone or the cave's rock covers a point of the ground, where nothing grows.
+ * A test of whether a stone covers a point of the ground, where nothing grows.
  *
  * @param places The rocks' places, which `rockPlaces` gives.
  */
 export function stoneFootprints(places = rockPlaces()): (x: number, z: number) => boolean {
-	return within([
-		...places.map(({ x, z, size }) => ({ x, z, r: size * 1.1 })),
-		{ x: CAVE.x, z: CAVE.z, r: CAVE.reach },
-	]);
+	return within(places.map(({ x, z, size }) => ({ x, z, r: size * 1.1 })));
 }
 
-/**
- * Stands the cave mouth on the far bank. The floor of its tunnel meets the ground at the opening,
- * and the back of the rock sinks into the rising bank. A visitor may enter it, so its rock takes the
- * interior layer, which the sun's shadows see.
- */
-export function placeCave({ scene }: SketchContext, cave: Part): void {
-	const mouth = groundHeight(CAVE.x + 2.4 * Math.sin(CAVE.yaw), CAVE.z + 2.4 * Math.cos(CAVE.yaw));
-	scene.createMesh({
-		mesh: cave.mesh,
-		material: cave.material,
-		...placed(cave, [CAVE.x, mouth - 0.15, CAVE.z], CAVE.yaw, 1),
-		occluder: cave.occluder,
-		layers: INTERIOR_LAYER,
-		castShadows: true,
-		receiveShadows: true,
-	});
-}
-
-/**
- * The stones, the pebbles and the cave's footprint, and a test of whether anything may stand at a
- * point.
- */
+/** The stones and the pebbles, and a test of whether anything may stand at a point. */
 export function createStones(
 	{ scene, geometry, materials, textures }: SketchContext,
 	detail: number,
@@ -164,9 +148,11 @@ export function createStones(
 				batch.positions.set([x, y, z], row * 3);
 				batch.rotations.set(yaw(turn), row * 4);
 				batch.scales.set([size, size, size], row * 3);
-				// Where the stone meets the water's plane, the water foams around it.
+				// Where a stone in the stream meets the water's plane, the water foams around it and in a
+				// trail behind it. The stones that line the banks leave the calm edges clear.
 				const below = (WATER - y) / (size * squash[1]);
-				if (Math.abs(below) < 0.9) obstacles.push({ x, z, r: size * Math.sqrt(1 - below * below) });
+				if (Math.abs(below) < 0.9 && fromStream(x, z) < IN_STREAM)
+					obstacles.push({ x, z, r: size * Math.sqrt(1 - below * below) });
 			});
 			batch.markDirty();
 		}
@@ -185,7 +171,7 @@ export function createStones(
 				layers: UNREFLECTED_LAYER,
 			});
 			for (let row = 0; row < capacity; ) {
-				const x = -20 + 40 * next();
+				const x = LIPS.west + 1 + (LIPS.east - LIPS.west - 2) * next();
 				const z = streamZ(x) + (next() * 2 - 1) * 1.3 * streamHalf(x);
 				if (fromStream(x, z) > 1.25) continue;
 				const size = 0.04 + 0.11 * next() ** 2;
