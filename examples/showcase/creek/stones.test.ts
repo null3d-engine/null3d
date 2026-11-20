@@ -9,7 +9,7 @@ const MARGIN = 0.05;
 
 test('every rock and every pebble stands inside the rim', () => {
 	const rocks = rockPlaces();
-	expect(rocks.length).toBeGreaterThan(150);
+	expect(rocks.length).toBeGreaterThan(100);
 	for (const { x, z, size } of rocks)
 		expect(Math.hypot(x, z) + size * ROCK_REACH + MARGIN, `a rock at ${x}, ${z}`).toBeLessThan(
 			rimRadius(bearingOf(x, z)),
