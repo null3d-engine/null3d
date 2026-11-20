@@ -35,7 +35,7 @@ const TILE = 160;
 /** The billow map's texels along each side at each preset. */
 const MAP_SIZE: Record<QualityPreset, number> = { low: 256, medium: 256, high: 512, ultra: 512 };
 /** The most steps that a view ray takes through the cloud at each preset. */
-const STEPS: Record<QualityPreset, number> = { low: 36, medium: 48, high: 64, ultra: 80 };
+const STEPS: Record<QualityPreset, number> = { low: 48, medium: 56, high: 64, ultra: 80 };
 /** How fast the billows drift, in meters a second along x and z. */
 const DRIFT = [0.45, 0.2] as const;
 /** The texels round the cliff's rim in the walls' map, one per bearing. */
@@ -119,7 +119,7 @@ const TILE: f32 = 160.0;
 /// The radius of the disc round the cliff where the sea's tops stand; the towers rise past it.
 const NEAR: f32 = 180.0;
 /// The radius inside which mist can drift at the walls' foot: past the widest rim and the mist's reach.
-const MISTY: f32 = 52.0;
+const MISTY: f32 = 46.0;
 
 /// The rim's radius, the heap's share and the mist's share at a point's bearing round the cliff.
 fn wall_at(p: vec2f) -> vec3f {
@@ -160,9 +160,10 @@ fn cloud_at(p: vec3f, lod: f32) -> vec3f {
             mist = foot * band * wall.z * (0.35 + 0.65 * smoothstep(0.3, 0.75, streak));
         }
     } else {
-        // Far out, the billows of a much larger copy rise into towers past the horizon.
+        // Far out, the billows of a much larger copy rise into towers past the horizon, and sink
+        // back into the sea before the rays' reach, so no tower is cut where the rays end.
         let far = textureSampleLevel(billows, billowsSampler, (q * 0.97 + vec2f(13.0, 71.0)) / (TILE * 5.5), max(lod - 2.5, 0.0)).g;
-        let rise = smoothstep(NEAR, 450.0, r) * smoothstep(0.25, 0.9, far);
+        let rise = smoothstep(NEAR, 450.0, r) * (1.0 - smoothstep(900.0, 1350.0, r)) * smoothstep(0.25, 0.9, far);
         h += material.tower * rise * sqrt(rise);
     }
     return vec3f(h, mist, a);
@@ -230,6 +231,10 @@ fn unlit(input: SurfaceInput) -> vec4f {
             break;
         }
         let p = eye + dir * t;
+        // A ray that climbs past the highest towers meets no more cloud.
+        if p.y > high && dir.y >= 0.0 {
+            break;
+        }
         let lod = log2(max(t * pixel / texel, 1.0));
         let here = cloud_at(p, lod);
         let h = here.x;
@@ -278,8 +283,10 @@ fn unlit(input: SurfaceInput) -> vec4f {
         } else {
             // Clear air: step a share of the height over the tops, never so far that a billow's
             // side slips between two steps, and in short steps through the mist by the walls.
-            let longest = select(4.0 + t * 0.09, 0.35, length(p.xz) < MISTY && above < 8.5);
-            t += clamp(above * 0.5, 0.3 + t * 0.006, longest);
+            let longest = select(4.0 + t * 0.09, 0.5 + t * 0.01, length(p.xz) < MISTY && above < 8.5);
+            // Each pixel's steps run a little longer or shorter than its neighbours', so far steps
+            // leave grain rather than bands on the towers.
+            t += clamp(above * 0.5, 0.3 + t * 0.05, longest) * (0.75 + 0.5 * jitter);
         }
     }
     // A ray that runs out of steps over open sea would show the dome through a hole: it meets the
