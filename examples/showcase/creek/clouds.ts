@@ -165,11 +165,11 @@ fn unlit(input: SurfaceInput) -> vec4f {
     let dir = normalize(input.relativePosition);
     let around = vec2f(dir.x, dir.z) / max(length(vec2f(dir.x, dir.z)), 1e-4);
     // The banks round the horizon: taller in places, with billowing tops.
-    let bank = 0.035 + 0.05 * (fbm2(around * 1.7 + vec2f(3.1, 0.4), 3u) * 0.5 + 0.5)
-        + 0.012 * (1.0 - worley2(around * 9.0));
-    let cover = 1.0 - smoothstep(bank - 0.025, bank + 0.02, dir.y);
+    let bank = 0.05 + 0.17 * (fbm2(around * 1.7 + vec2f(3.1, 0.4), 3u) * 0.5 + 0.5)
+        + 0.03 * (1.0 - worley2(around * 9.0));
+    let cover = 1.0 - smoothstep(bank - 0.06, bank + 0.03, dir.y);
     // Above the banks the air stays thick, and the overcast thins up to the sky's own cloud overhead.
-    let haze = mix(0.95, 0.6, smoothstep(bank, 0.9, dir.y));
+    let haze = mix(0.95, 0.7, smoothstep(bank, 0.9, dir.y));
     // Below the horizon, the far sea: where the view meets the cloud's top, its broad swells.
     let down = max(-dir.y, 1e-3);
     let reach = (camera.position.y - material.top) / down;

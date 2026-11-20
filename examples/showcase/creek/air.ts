@@ -67,8 +67,8 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 	Golden: {
 		leaves: [1, 0.78, 0.55],
 		motes: [1.6, 1.0, 0.45],
-		mist: [1, 0.82, 0.62],
-		mistOpacity: 0.08,
+		mist: [0.55, 0.45, 0.35],
+		mistOpacity: 0.06,
 	},
 	Dusk: {
 		leaves: [0.28, 0.32, 0.45],

@@ -110,7 +110,7 @@ function relief(
 	// splits some pillars down the middle.
 	const side = Math.abs(t * 2 - 1);
 	const split = pillar.width > 3.2 ? 0.55 * (1 - Math.abs(t * 2 - 1 + 0.15)) ** 14 : 0;
-	const crack = Math.max(side ** 5, split);
+	const crack = Math.max(side ** 3.5, split);
 	let block = 0;
 	while (block < pillar.blocks.length - 1 && (pillar.blocks[block] as number) < depth) block++;
 	// A block's foot steps sharply into the next one, which leaves a ledge or an overhang there.
@@ -126,8 +126,8 @@ function relief(
 }
 
 /** Linear colors of the rock: charcoal faces, grey-brown lighter faces, and black in the cracks. */
-const CHARCOAL = [0.034, 0.032, 0.03];
-const GREY_BROWN = [0.085, 0.077, 0.068];
+const CHARCOAL = [0.028, 0.027, 0.026];
+const GREY_BROWN = [0.085, 0.078, 0.07];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
@@ -168,7 +168,7 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			positions[v + 1] = y;
 			positions[v + 2] = z * (1 + out / reach);
 			const lighter = smoothstep(noise.fbm2(run * 0.08, depth * 0.05 + 5, 3), -0.05, 0.3);
-			const dark = 1 - 0.9 * crack * grow;
+			const dark = 1 - 0.93 * crack * grow;
 			for (let c = 0; c < 3; c++) {
 				const tone =
 					(CHARCOAL[c] as number) + ((GREY_BROWN[c] as number) - (CHARCOAL[c] as number)) * lighter;

@@ -53,7 +53,7 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	out.occlusion = 1 - 0.5 * crack;
 }
 
-/** Gives a rock's vertices colors: lichen-flecked gray, and moss where the rock faces up. */
+/** Gives a rock's vertices colors: dark flecked stone, and moss where the rock faces up. */
 function mossy(arrays: MeshArrays, seed: number): MeshArrays {
 	const positions = arrays.positions as Float32Array;
 	const colors = new Float32Array(positions.length);
@@ -67,8 +67,9 @@ function mossy(arrays: MeshArrays, seed: number): MeshArrays {
 		const up = y / Math.hypot(x, y, z);
 		const moss = smoothstep(up + 0.35 * local.value3(x * 4, y * 4, z * 4), 0.35, 0.75);
 		const shade = 0.75 + 0.25 * local.value3(x * 9, y * 9, z * 9);
+		// Dark grey-brown stone, with yellow-olive moss where it faces up.
 		colors.set(
-			[shade * (0.32 - 0.24 * moss), shade * (0.31 - 0.13 * moss), shade * (0.29 - 0.25 * moss)],
+			[shade * (0.2 - 0.06 * moss), shade * (0.185 - 0.055 * moss), shade * (0.16 - 0.125 * moss)],
 			v * 3,
 		);
 	}
@@ -159,7 +160,7 @@ export function createStones(
 	}
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
-	const tints = ['#7c766c', '#8d7a62', '#5f5f5c'];
+	const tints = ['#6a645b', '#776753', '#53524f'];
 	const pebbleShapes = [0, 1].map((s) => geometry.fromArrays(rock(500 + s, 1, [1, 0.5, 0.8])));
 	const pebbleBatches = pebbleShapes.flatMap((mesh) =>
 		tints.map((color) => {
