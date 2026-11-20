@@ -18,17 +18,37 @@ export const UNREFLECTED_LAYER = 2;
 export const RIM = 26;
 /** The height of the cloud sea's highest tops, in meters: about twelve meters under the rim. */
 export const CLOUD_TOP = -10.5;
-/** How far past the rim the walls' crags and ledges can stand, in meters. */
-const WALL_REACH = 3;
-/** How far above the cloud's tops the camera keeps past the rim, in meters. */
-const OVER_CLOUD = 2;
+/**
+ * How far past the rim the walls' crags and ledges can stand at the heights the camera reaches past
+ * the rim, in meters, with a margin.
+ */
+export const WALL_REACH = 3;
+/**
+ * How far above the water's level the camera keeps past the rim, in meters. The water's view from
+ * under its surface turns on from the camera's height alone, so past the rim, where no water lies,
+ * the camera never sinks to the water's level; this also keeps it well above the cloud's tops.
+ */
+export const OVER_WATER = 0.5;
 /**
  * Where the creek leaves the rim: the x of each lip, west and east. The rim runs straight across
  * the creek there, square to its line, so the water ends on one clean edge.
  */
 export const LIPS = { west: -20.3, east: 20 } as const;
+/**
+ * A bay in the rim beside the west lip, on the side toward the opening view: its bearing, its depth
+ * and its half width in radians. It keeps the near wall from hiding the west fall from the concept's
+ * camera, so the fall shows in profile, as in the concept picture.
+ */
+const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 2.5, width: 0.22 } as const;
+/**
+ * A headland of rock just past the west lip, as the concept picture has at its left fall's back: from
+ * the opening view it stands behind the upper half of that fall, so the white water shows against
+ * dark rock instead of mist. Its bearing, how far it reaches past the rim, and its half width in
+ * radians.
+ */
+const HEADLAND = { bearing: (152 * Math.PI) / 180, reach: 3.5, width: 0.1 } as const;
 /** How far the rim's straight edge at a lip reaches past the creek's banks, in meters. */
-const LIP_MARGIN = 1.4;
+const LIP_MARGIN = 0.3;
 /** The spring pool near the middle that feeds the creek: its x and how far along it widens. */
 export const POOL = { x: -2, length: 2.8, widening: 1.2, depth: 0.45 } as const;
 /**
@@ -104,18 +124,19 @@ function smoothLine(points: readonly (readonly [number, number])[]): {
 
 /**
  * The creek's middle line: a gentle S from the west lip to the east lip, which passes in front of
- * the garden's middle, as the concept picture lays it. Near each lip it turns out toward the rim, so
- * the water leaves square to the edge.
+ * the garden's middle, as the concept picture lays it. Near each lip it turns out toward the rim:
+ * at the east lip along the rim's radius, and at the west lip a little toward the opening view, so
+ * its fall drops past the cliff's edge as the concept picture's left fall does.
  */
 const creekLine = smoothLine([
 	[-20.3, 16],
-	[-18.5, 15],
+	[-19.2, 14.45],
 	[-15, 13.9],
 	[-7, 13.4],
 	[1, 13.8],
 	[8, 14.4],
 	[14, 14.6],
-	[18.2, 15.4],
+	[18.2, 15],
 	[20, 16.4],
 ]);
 
@@ -130,10 +151,23 @@ const poolShare = (x: number) => Math.exp(-(((x - POOL.x) / POOL.length) ** 2));
 
 /** The half width of the water at x, at its surface: wider in the pool, and toward the east. */
 export const streamHalf = (x: number) =>
-	2.72 +
-	0.22 * Math.sin(x * 0.27 + 1.3) +
-	0.3 * smoothstep(x, -4, 16) +
-	POOL.widening * poolShare(x);
+	(2.72 +
+		0.22 * Math.sin(x * 0.27 + 1.3) +
+		0.3 * smoothstep(x, -4, 16) +
+		POOL.widening * poolShare(x)) *
+	(1 - LIP_NARROW.share * lipNear(x));
+
+/**
+ * How the creek narrows before each lip, between rock shoulders, as the concept's does where it
+ * piles up white and drops: the share of its width it loses at the lip, and over how many meters.
+ */
+const LIP_NARROW = { share: 0.48, from: 0.6, to: 4.5 } as const;
+
+/** How near x lies to either lip along the creek, from 0 away from both to 1 at a lip. */
+function lipNear(x: number): number {
+	const reach = Math.min(x - LIPS.west, LIPS.east - x);
+	return 1 - smoothstep(reach, LIP_NARROW.from, LIP_NARROW.to);
+}
 
 /** How far a point lies from the creek's middle, in half widths: 1 at the water's edge. */
 export const fromStream = (x: number, z: number) => Math.abs(z - streamZ(x)) / streamHalf(x);
@@ -184,7 +218,9 @@ export function rimRadius(bearing: number): number {
 	let r =
 		RIM * (1 + 0.05 * rimNoise.fbm2(c * 1.2 + 4, s * 1.2 + 4, 2)) +
 		0.9 * rimNoise.value2(c * 4 + 9, s * 4 + 9) +
-		0.35 * rimNoise.value2(c * 11 + 2, s * 11 + 2);
+		0.35 * rimNoise.value2(c * 11 + 2, s * 11 + 2) -
+		WEST_BAY.depth * Math.exp(-((turn(WEST_BAY.bearing, bearing) / WEST_BAY.width) ** 2)) +
+		HEADLAND.reach * Math.exp(-((turn(HEADLAND.bearing, bearing) / HEADLAND.width) ** 2));
 	for (const x of [LIPS.west, LIPS.east]) {
 		// The lip's edge: the line through the creek's middle at the lip, square to its course.
 		const z = streamZ(x);
@@ -314,12 +350,16 @@ export const bearingOf = (x: number, z: number) => Math.atan2(z, x);
 export const onTop = (x: number, z: number) => Math.hypot(x, z) < rimRadius(bearingOf(x, z));
 
 /**
- * The lowest that the camera may stand at a point, before its clearance: the ground over the cliff
- * and close round its walls, so it never enters the rock, and above the cloud's tops past them.
+ * The lowest that the camera may stand at a point, before its clearance: the ground over the cliff,
+ * which lets it dip under the creek down to the bed; and past the rim, above the water's level and
+ * the ground close round the walls, so it never enters the rock and never sees the water's view
+ * from under its surface where there is no water, high over the cloud's tops.
  */
 export function cameraFloor(x: number, z: number): number {
-	const near = Math.hypot(x, z) < rimRadius(bearingOf(x, z)) + WALL_REACH;
-	return near ? groundHeight(x, z) : CLOUD_TOP + OVER_CLOUD;
+	const reach = Math.hypot(x, z) - rimRadius(bearingOf(x, z));
+	if (reach < 0) return groundHeight(x, z);
+	const past = WATER + OVER_WATER;
+	return reach < WALL_REACH ? Math.max(groundHeight(x, z), past) : past;
 }
 
 /** Linear colors of the ground: yellow-olive moss, its darker green and brown patches, soil and rock. */
@@ -336,7 +376,10 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const under = 1 - smoothstep(y, WATER - 0.25, WATER - 0.06);
 	const dark = smoothstep(noise.fbm2(x * 0.11 + 9, z * 0.11, 3), 0.02, 0.32);
 	const brown = smoothstep(noise.fbm2(x * 0.19, z * 0.19 + 9, 3), 0.12, 0.38);
-	const rocky = smoothstep(slope, 0.85, 1.4);
+	// The rim's very edge is wet dark rock, the lip's shoulders among it, so no pale band of bed or
+	// mud runs along the cliff's edge.
+	const edge = 1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.15, 0.8);
+	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
 	const shade = 0.88 + 0.24 * noise.value2(x * 1.7, z * 1.7);
 	for (let c = 0; c < 3; c++) {
 		const moss = (MOSS[c] as number) + ((MOSS_DARK[c] as number) - (MOSS[c] as number)) * dark;

@@ -18,7 +18,15 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
-import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
+import {
+	createUnderwater,
+	createWater,
+	createWaterfall,
+	foamMap,
+	type Water,
+	type Waterfall,
+	type WaterShape,
+} from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
@@ -37,6 +45,7 @@ import {
 	streamCurrent,
 	streamDepth,
 	streamHalf,
+	streamSlope,
 	streamZ,
 	UNREFLECTED_LAYER,
 	WATER,
@@ -108,6 +117,7 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 	clearance: 0.15,
 };
 
+const { smoothstep } = math;
 const params = new URL(import.meta.url).searchParams;
 /** True draws the water's reflection in every frame, for the bisect of the Apple WebGPU stall. */
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
@@ -163,6 +173,19 @@ const CLOSE_SHOT: Shot = {
 const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
+/** How far the sheet reaches at each lip, in half widths: just past the water that shows there. */
+const WATER_AT_LIP = 0.95;
+/**
+ * Each lip's fall: how far it drops, into the cloud, where it thins away; how far each side widens
+ * per meter fallen, so it fans out down the drop; and the share of the creek's half width that
+ * leaves over the lip, narrower than the creek, between the lip's shoulders.
+ */
+const FALL = { drop: 22, spread: 0.12, width: 0.75 } as const;
+/**
+ * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
+ * cast, its strength over the air's, and the least change of the air that it follows.
+ */
+const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.01 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** The foam map's box on the ground, over the whole creek, and its texels. */
@@ -191,7 +214,11 @@ function createCreekWater(
 	const sheet: WaterShape = {
 		kind: 'river',
 		middle: xs.map((x) => [x, streamZ(x)] as const),
-		halfWidth: xs.map((x) => streamHalf(x) * WATER_REACH),
+		// Near each lip the sheet narrows to the water that shows, so it never runs on past the rim.
+		halfWidth: xs.map((x) => {
+			const lip = 1 - smoothstep(Math.min(x - LIPS.west, LIPS.east - x), 0.5, 2.5);
+			return streamHalf(x) * (WATER_REACH + (WATER_AT_LIP - WATER_REACH) * lip);
+		}),
 		depth: STREAM_DEPTH,
 		current: streamCurrent,
 		bed: streamDepth,
@@ -212,7 +239,14 @@ function createCreekWater(
 		bed: 'shape',
 		// The stream's own bed gives the water all its depth, so the surface draws opaque. The water is
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
-		material: { alphaMode: 'opaque', attenuationColor: '#b2dcd2', attenuationDistance: 3 },
+		material: {
+			alphaMode: 'opaque',
+			attenuationColor: '#3e9e92',
+			attenuationDistance: 0.6,
+			// A thin volume bends the bed's picture little, so the view along the water close up
+			// never reaches past the frame's edge for it.
+			thickness: 0.15,
+		},
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
 		// rings, a little wider than the add-on's own.
 		foam: foamMap(ctx, obstacles, {
@@ -220,7 +254,7 @@ function createCreekWater(
 			size: FOAM_BOX.size,
 			width: 1024,
 			height: 288,
-			reach: 0.45,
+			reach: 1,
 			trail: 0,
 		}),
 	});
@@ -307,6 +341,28 @@ export default defineSketch(async (ctx) => {
 				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
+	// A fall at each lip, where the creek's sheet ends: it leaves with the creek's own width and
+	// speed, and drops into the cloud. It lies past the water's edge, so the reflection leaves it out.
+	page.post('loading', 'Pouring the falls');
+	const falls: Waterfall[] = water
+		? await Promise.all(
+				[LIPS.west, LIPS.east].map((x) => {
+					const away = Math.sign(x);
+					const [vx, vz] = streamCurrent(x - away * 0.3);
+					return createWaterfall(ctx, {
+						lip: [x, streamZ(x)],
+						direction: [away, away * streamSlope(x)],
+						halfWidth: streamHalf(x) * FALL.width,
+						level: WATER,
+						speed: Math.hypot(vx, vz),
+						drop: FALL.drop,
+						spread: FALL.spread,
+						layers: UNREFLECTED_LAYER,
+						wind: wind.field,
+					});
+				}),
+			)
+		: [];
 	const flora = await createFlora(ctx);
 	// The bare garden has no crowns yet, so no leaves fall; the mist and the motes still drift.
 	const air = await createAir(ctx, [], wind.field);
@@ -438,8 +494,28 @@ export default defineSketch(async (ctx) => {
 	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Morning');
-	// The clouds take the air's color now too, since a held frame runs no update.
+	// The falls' spray and mist are unlit, so they take the cloud's own tone of the air: its color
+	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
+	const sprayLight: [number, number, number] = [0, 0, 0];
+	const sprayAir: [number, number, number] = [-1, -1, -1];
+	const lightFalls = () => {
+		const air = stage.airColor;
+		const moved =
+			Math.abs(air[0] - sprayAir[0]) +
+			Math.abs(air[1] - sprayAir[1]) +
+			Math.abs(air[2] - sprayAir[2]);
+		if (moved <= SPRAY.step) return;
+		const grey = 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2];
+		for (let c = 0; c < 3; c++) {
+			sprayAir[c] = air[c];
+			sprayLight[c] =
+				(grey + (air[c] - grey) * SPRAY.color) * (SPRAY.tint[c] as number) * SPRAY.gain;
+		}
+		for (const fall of falls) fall.setLight(sprayLight);
+	};
+	// The clouds and the falls take the air's color now too, since a held frame runs no update.
 	clouds.update(stage.airColor, stage.light);
+	lightFalls();
 
 	const film = createCinematic(ctx, camera, {
 		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
@@ -482,6 +558,7 @@ export default defineSketch(async (ctx) => {
 			wind.update();
 			stage.update(dt);
 			clouds.update(stage.airColor, stage.light);
+			lightFalls();
 			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics move to the
 			// next time of day as the light does. A change too small to see is not written.
@@ -507,6 +584,7 @@ export default defineSketch(async (ctx) => {
 			flora.update();
 			air.update();
 			clouds.step();
+			for (const fall of falls) fall.update();
 			shafts.update();
 		},
 	};
