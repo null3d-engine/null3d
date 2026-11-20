@@ -1579,6 +1579,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['view=water-bounds'],
 		modes: ALL_MODES,
 	},
+	// Rain on a lake, seen low across the water: each drop rings the surface where it lands, and the
+	// rings bend the mirror of the sky, a pale post and a dark stone. The add-on's surface draws the
+	// rings only while rain falls, so this is the one picture that draws its rain, on every tier.
+	{
+		name: 'water-rain',
+		sketch: 'tests/pages/sketches/water-rain-sketch.ts?rain',
+		hold: 1,
+		size: [480, 270],
+	},
 	// A creek that falls 18 m off the edge of a cliff, drawn by the water add-on's waterfall: glassy
 	// at the lip, then white ropes of streaks with ragged edges that thin into mist, with spray at the
 	// lip, mist down the fall and a plume at its foot. The sheet's material moves its streaks from
