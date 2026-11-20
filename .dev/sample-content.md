@@ -70,11 +70,12 @@ The showcase scenes' trees and plants, and Creek's cave, are organic shapes that
 
 | Script | Builds |
 | --- | --- |
-| `common.py` | The parts that both scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the crown of leaf cards on pads at the branches' ends, the export with levels of detail, and the Cycles preview |
+| `common.py` | The parts that the scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the crown of leaf cards on pads at the branches' ends, the export with levels of detail, and the Cycles preview |
 | `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers, a cave mouth with boulders, and a tall and a low cloud-pruned pine. numpy paints every texture but the pines' bark: leaf clusters, needles, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss. Each pine's trunk is a raw Tripo3D model: the script sizes it, drops its loose pieces, keeps its own bark maps, finds its limbs and lays a layer of needle pads on each tier of them. Each pad is a body of dense needles with needle cards on it, and the bare twig ends outside the layers are cut away |
 | `island.py` | The island's models: a stone pine, an olive, a holm oak and an oleander, each with a card of the whole plant for the far copies. numpy paints every leaf, needle, flower and bark texture, and Blender bakes the cards from the plants themselves |
+| `creek_tripo.py` | The Creek garden's models that start as Tripo3D meshes: the bronze statue. It reads each raw download, cuts away its base, enlarges the head and widens the body, and scales and stands the figure. It decimates the mesh, bakes the raw surface onto it with Cycles, and repaints the bronze's weathering. It builds the stone slab, and cuts two lower levels of each part with their measured errors |
 | `build.ts` | Runs a script in Blender, optimizes each model with the asset tool, packs each model's KTX2 textures into its own file, and checks that every part that sways kept its sway. The options after the output folder go to the script, and `--models` picks the models to build |
-| `creek.ts`, `island.ts` | Each scene's models for `build.ts` |
+| `creek.ts`, `island.ts`, `creek_tripo.ts` | Each scene's models for `build.ts` |
 
 Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bun tools/samples/blender/island.ts <folder>`. `--models <a,b>` builds only those models. The Creek's pines read their raw trunks from the pinned sample content, and `creek.py` checks each file's hash. `--raw <folder>` names another copy of the same files, such as the `sources/showcase/creek-raw` folder of a sample-assets checkout whose commit is not pinned yet. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
 
@@ -82,6 +83,8 @@ Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bu
 2. Commit, push, and pin the commit here, as "Add or change an asset" says.
 
 The sample-assets repository records these models with the origin kind `blender`, which links to the script. Its import script has nothing to download for them, and its check does not build them again, because the check would need Blender.
+
+The Creek garden's statue starts as a Tripo3D mesh instead. Tripo3D cannot repeat a request exactly, and its download links expire within minutes. So each raw download goes into the sample-assets repository unchanged, in `sources/showcase/creek-raw/<model>/`. The run's record (`task.json`), its preview and the exact `tripo make` command go beside it. `bun tools/samples/blender/creek_tripo.ts <folder> --raw <folder>` finishes the models from that folder and never calls the service. The raw downloads, and every model finished from them, are under CC BY-NC 4.0.
 
 The models are optimized before they go into the sample-assets repository, unlike the other sources there. A sketch loads them with `sampleUrl`, so a website's build copies one file for each model. The asset tool writes its KTX2 textures as separate files, and the build would not copy those. So `build.ts` moves each texture into the model's binary chunk, as an image with a buffer view.
 
@@ -112,12 +115,13 @@ An island plant's card is two upright quads crossed through its trunk and a leve
 
 ## The sample check
 
-`bun run test` runs `tools/lib/samples.test.ts`. It finds every `samplePath` and `sampleUrl` call in `tests/`, `bench/`, `examples/`, `tools/` and `packages/`. For each named file, it checks that the pinned manifest lists the file with a SHA-256. It also checks that the file's asset is under CC0 or CC BY, with its authors, title, source link, fetch date and changes. The sample-assets repository's own check makes its README tables match its manifest, so each pinned asset also has its row in that README.
+`bun run test` runs `tools/lib/samples.test.ts`. It finds every `samplePath` and `sampleUrl` call in `tests/`, `bench/`, `examples/`, `tools/` and `packages/`. For each named file, it checks that the pinned manifest lists the file with a SHA-256. It also checks that the file's asset is under CC0 or CC BY, with its authors, title, source link, fetch date and changes. The one exception is CC BY-NC, which the check accepts only on an asset that names its `generator`. The sample-assets repository's own check makes its README tables match its manifest, so each pinned asset also has its row in that README.
 
 ## Add or change an asset
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
-2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
+2. Accept CC0 and CC BY. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
+   The one exception is a model that a generative service made, such as Tripo3D, or a model finished from one. The service's terms bar some commercial uses of its outputs, so the model is under CC BY-NC 4.0. Its manifest entry names the service in `generator`. The check refuses CC BY-NC on an entry without one, here and in the sample-assets repository. So the licence never spreads to an asset that it was not meant for.
 3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 400 MB in all. They are 272 MB at the pinned commit, and the Creek garden's models add about 100 MB.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
