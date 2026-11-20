@@ -1,8 +1,9 @@
 // The sea of cloud that the cliff stands in. Below the rim, a stack of thin shells draws the cloud's
-// billowing tops: each shell shows the cloud where the billows rise past its height, so together
-// they read as a volume, bright on the tops and grey in the hollows, and they drift on the wind. The
-// lowest shell covers everything, so no view sees the cliff's foot or the sky's own ground. Each
-// shell fades where it meets the rock, so the walls sink into the cloud with no line. Past the
+// billowing tops, which drift on the wind. The lowest shell is the cloud's top itself: it covers
+// everything, so no view sees the cliff's foot or the sky's own ground, and the billows' height and
+// slope light it, bright on the heaps and grey in the hollows. The shells above are veils where the
+// billows rise through them, which give the sea its depth beside the cliff. Each shell fades where
+// it meets the rock, so the walls sink into the cloud with no line. Past the
 // shells, a dome far round the camera carries the cloud on to the horizon and lifts it into banks
 // that merge with the overcast sky, so no view finds an edge. Banks of mist drift round the walls
 // and rise past the rim in places. Every part takes the air's color and the main light from the
@@ -18,10 +19,16 @@ import { CLOUD_TOP, RIM } from './land';
  * shells reach from the cliff, and the dome's radius, all in meters.
  */
 export const CLOUD = { top: CLOUD_TOP, depth: 6.5, reach: 700, dome: 1600 } as const;
-/** The shells at each preset, the lowest, which covers everything, among them. */
-const SHELLS: Record<QualityPreset, number> = { low: 3, medium: 4, high: 5, ultra: 6 };
+/** The shells at each preset: the cloud's top, and the veils over it. */
+const SHELLS: Record<QualityPreset, number> = { low: 2, medium: 3, high: 4, ultra: 5 };
 /** How fast the billows drift, in meters a second along x and z. */
 const DRIFT = [0.45, 0.2] as const;
+/**
+ * The heaps of cloud on the sea round the cliff: how far out they lie, how many stand at each
+ * preset, how long each lives, and their sizes, in meters.
+ */
+const HEAPS = { reach: 150, life: [70, 110] as const, size: [8, 20] as const };
+const HEAP_COUNT: Record<QualityPreset, number> = { low: 90, medium: 160, high: 240, ultra: 320 };
 /** The banks of mist round the walls: how many, how many puffs each holds, and their lives. */
 const BANKS = 16;
 const BANK_PUFFS = 12;
@@ -51,8 +58,11 @@ struct Uniforms {
 // light {
 /// The cloud's color: the air's, darker in the hollows, with the main light on the tops that face it.
 fn cloud_color(lift: f32, facing: f32) -> vec3f {
-    let body = material.air * material.tint * mix(2.1, 2.75, lift);
-    return body + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
+    // The sky lights the tops and leaves the hollows grey; the side toward the main light is a
+    // step brighter even under cloud, and the light itself adds where it breaks through.
+    let shade = mix(1.4, 2.8, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
+    return material.air * material.tint * shade
+        + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
 }
 
 /// The air between the camera and a point: the cloud fades into the air's own color with distance.
@@ -66,10 +76,16 @@ fn billows(p: vec2f) -> f32 {
     let q = p + material.drift * frame.time;
     // Fine billows fade with distance, so the far sea never shows a repeating grain.
     let far = smoothstep(80.0, 420.0, length(p - camera.position.xz));
-    let puffs = 1.0 - worley2(q / 24.0);
-    let small = (1.0 - worley2(q / 8.5 + vec2f(7.3, 1.9))) * (1.0 - far);
-    let swell = fbm2(q / 95.0, 3u) * 0.5 + 0.5;
-    return clamp(mix(0.55 * puffs * puffs, 0.25, far) + 0.18 * small + 0.55 * swell - 0.1, 0.0, 1.0);
+    // Smooth heaps of cloud, warped by a broad noise so no two share a size or a shape: big soft
+    // masses, smaller lumps on them, and broad swells over the whole sea.
+    let warp = vec2f(fbm2(q / 60.0, 2u), fbm2(q / 60.0 + vec2f(5.2, 1.3), 2u)) * 6.0;
+    let r = q + warp;
+    let masses = fbm2(r / 30.0, 3u) * 0.5 + 0.5;
+    let lumps = (fbm2(r / 9.0 + vec2f(7.3, 1.9), 2u) * 0.5 + 0.5) * (1.0 - far);
+    let swell = fbm2(q / 140.0, 2u) * 0.5 + 0.5;
+    let raw = 0.62 * masses + 0.16 * lumps + 0.3 * swell + 0.08 * far;
+    // Spread over the whole depth, so the heaps stand clear of the grey gaps between them.
+    return smoothstep(0.38, 0.74, raw);
 }
 
 /// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
@@ -92,7 +108,13 @@ fn unlit(input: SurfaceInput) -> vec4f {
     let det = dwx.x * dwy.y - dwx.y * dwy.x;
     let slope = select(vec2f(0.0), vec2f(dh.x * dwy.y - dh.y * dwx.y, dh.y * dwx.x - dh.x * dwy.x) / det, abs(det) > 1e-10);
     let normal = normalize(vec3f(-slope.x, 1.0, -slope.y) + vec3f(0.0, 0.5, 0.0));
-    var alpha = max(material.solid, smoothstep(material.height - material.soft, material.height + material.soft, surface));
+    // The lowest shell is the cloud's lit top itself: it covers everything, and the billows' height
+    // and slope shade it. The shells above are veils where the billows rise through them, which give
+    // the sea its depth by the cliff; a broad noise frays each veil into wisps.
+    let fray = fbm2(p / 4.5 + material.drift * frame.time * 0.4, 2u) * material.soft;
+    let veil = 0.4 * smoothstep(material.height - material.soft, material.height + material.soft, surface + fray);
+    // The veils give depth beside the cliff and thin away from it, where the heaps carry the form.
+    var alpha = mix(veil * (1.0 - smoothstep(45.0, 110.0, length(p))), 1.0, material.solid);
     // The shell thins toward its far edge, where the dome carries the cloud on.
     alpha *= 1.0 - smoothstep(material.reach * 0.6, material.reach, length(p));
     // The shell fades where it meets the rock, so the walls sink into the cloud with no line.
@@ -100,7 +122,8 @@ fn unlit(input: SurfaceInput) -> vec4f {
     let own = distance_of(input.fragCoord.z);
     let behind = sceneDistance(uv);
     alpha *= select(1.0, smoothstep(0.0, 3.0, behind - own), behind > 0.0);
-    let lift = clamp((material.height - (material.top - material.depth)) / material.depth, 0.0, 1.0);
+    let level = clamp((material.height - (material.top - material.depth)) / material.depth, 0.0, 1.0);
+    let lift = mix(level, (surface - (material.top - material.depth)) / material.depth, material.solid);
     let color = cloud_color(lift, dot(normal, material.toward));
     return vec4f(aerial(color, length(input.relativePosition)), alpha);
 }
@@ -125,8 +148,11 @@ struct Uniforms {
 // light {
 /// The cloud's color: the air's, darker in the hollows, with the main light on the tops that face it.
 fn cloud_color(lift: f32, facing: f32) -> vec3f {
-    let body = material.air * material.tint * mix(2.1, 2.75, lift);
-    return body + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
+    // The sky lights the tops and leaves the hollows grey; the side toward the main light is a
+    // step brighter even under cloud, and the light itself adds where it breaks through.
+    let shade = mix(1.4, 2.8, lift * lift * (3.0 - 2.0 * lift)) * (0.95 + 0.07 * facing);
+    return material.air * material.tint * shade
+        + material.sun * material.tint * 0.3 * max(facing, 0.0) * (0.4 + 0.6 * lift);
 }
 
 /// The air between the camera and a point: the cloud fades into the air's own color with distance.
@@ -165,7 +191,7 @@ export interface Clouds {
 	update(air: readonly [number, number, number], light: Stage['light']): void;
 	/** Shows the shells of a preset: fewer on weaker devices. */
 	fit(preset: QualityPreset): void;
-	/** Steps the banks' particles, which a frame calls in its late update. */
+	/** Steps the heaps' and the banks' particles, which a frame calls in its late update. */
 	step(): void;
 }
 
@@ -191,9 +217,14 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 		drift: [...DRIFT] as [number, number],
 		reach: CLOUD.reach,
 	};
-	/** Each shell's height, from the lowest up, for a stack of `count`. */
+	/**
+	 * Each shell's height, from the lowest up, for a stack of `count`: the lit top at the billows'
+	 * middle height, and the veils spread over the upper half, where the tops rise through them.
+	 */
 	const heightOf = (k: number, count: number) =>
-		CLOUD.top - CLOUD.depth + (CLOUD.depth * (k + (k === 0 ? 0 : 0.35))) / count;
+		k === 0
+			? CLOUD.top - CLOUD.depth * 0.6
+			: CLOUD.top - CLOUD.depth * 0.5 + (CLOUD.depth * 0.45 * k) / Math.max(1, count - 1);
 	const shells = Array.from({ length: most }, (_, k) => {
 		const material = materials.shader({
 			wgsl: shellWgsl,
@@ -205,7 +236,7 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 				...uniforms,
 				height: heightOf(k, most),
 				solid: k === 0 ? 1 : 0,
-				soft: 0.5 + 0.7 * (k / most),
+				soft: 0.8 + 0.5 * (k / most),
 			},
 		});
 		const mesh = scene.createMesh({
@@ -237,9 +268,28 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 		.setRenderOrder(-20);
 
 	// The banks: puffs of mist that rise slowly against the walls, below the rim and past it.
-	const smoke = particleTextures.smoke(textures);
+	const smoke = particleTextures.smoke(textures, { size: 128 });
 	const color: [number, number, number] = [...air];
-	const banks: ParticleSystem[] = await Promise.all(
+	// The heaps: soft masses of cloud that sit on the sea's top round the cliff and drift with it,
+	// so the sea reads as billows rather than a sheet. Each is a large puff seen from above.
+	const heaps = await createParticles(ctx, {
+		...smoke,
+		layers: EFFECT_LAYER,
+		prewarm: true,
+		seed: 89,
+		position: [0, CLOUD.top - CLOUD.depth * 0.35, 0],
+		shape: { type: 'box', size: [HEAPS.reach * 2, CLOUD.depth * 0.4, HEAPS.reach * 2] },
+		rate: HEAP_COUNT[preset] / HEAPS.life[1],
+		lifetime: HEAPS.life,
+		speed: [0, 0],
+		velocity: [DRIFT[0], 0, DRIFT[1]],
+		size: HEAPS.size,
+		colorOverLife: [color, color],
+		alphaOverLife: [0, 0.8, 0.8, 0.8, 0],
+		softness: 3,
+		blending: 'normal',
+	});
+	const banked: ParticleSystem[] = await Promise.all(
 		Array.from({ length: BANKS }, (_, k) => {
 			const bearing = (k / BANKS) * Math.PI * 2 + 0.31 * Math.sin(k * 2.7);
 			const out = RIM + 2.5 + 2 * Math.sin(k * 1.9);
@@ -249,21 +299,22 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 				layers: EFFECT_LAYER,
 				prewarm: true,
 				seed: 91 + k,
-				position: [Math.cos(bearing) * out, rising ? -5 : -9, Math.sin(bearing) * out],
+				position: [Math.cos(bearing) * out, rising ? -9 : -12.5, Math.sin(bearing) * out],
 				shape: { type: 'sphere', radius: 5 },
 				rate: BANK_PUFFS / BANK_LIFE[1],
 				lifetime: BANK_LIFE,
 				speed: [0, 0.05],
 				velocity: [DRIFT[0] * 0.5, rising ? 0.22 : 0.06, DRIFT[1] * 0.5],
-				size: rising ? [8, 14] : [7, 12],
+				size: rising ? [7, 12] : [6, 10],
 				colorOverLife: [color, color],
-				alphaOverLife: [0, 0.5, 0.5, 0],
+				alphaOverLife: [0, 0.45, 0.45, 0],
 				softness: 2.5,
 				blending: 'normal',
 			});
 		}),
 	);
-	/** The banks' color last written, which a frame changes only past a visible step. */
+	const systems: readonly ParticleSystem[] = [heaps, ...banked];
+	/** The heaps' and banks' color last written, which a frame changes only past a visible step. */
 	const shown: [number, number, number] = [-1, -1, -1];
 	const fit = (next: QualityPreset) => {
 		const count = SHELLS[next];
@@ -273,7 +324,7 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 			const height = heightOf(k, count);
 			mesh.setPosition(0, height, 0);
 			material.setUniform('height', height);
-			material.setUniform('soft', 0.5 + 0.7 * (k / count));
+			material.setUniform('soft', 0.8 + 0.5 * (k / count));
 		});
 	};
 	fit(preset);
@@ -300,12 +351,12 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 					shown[c] = air[c] as number;
 					color[c] = (air[c] as number) * (TINT[c] as number) * 2.3;
 				}
-				for (const bank of banks) bank.set({ colorOverLife: [color, color] });
+				for (const system of systems) system.set({ colorOverLife: [color, color] });
 			}
 		},
 		fit,
 		step() {
-			for (const bank of banks) bank.update();
+			for (const system of systems) system.update();
 		},
 	};
 }

@@ -126,8 +126,8 @@ function relief(
 }
 
 /** Linear colors of the rock: charcoal faces, grey-brown lighter faces, and black in the cracks. */
-const CHARCOAL = [0.04, 0.036, 0.032];
-const GREY_BROWN = [0.095, 0.084, 0.072];
+const CHARCOAL = [0.034, 0.032, 0.03];
+const GREY_BROWN = [0.085, 0.077, 0.068];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
@@ -212,10 +212,10 @@ fn surface(input: SurfaceInput) -> Surface {
     s.normal = normalize(around * bump.x + down * bump.y + n * bump.z);
     let p = input.worldPosition;
     let patches = value3(p * 0.7) * 0.5 + value3(p * 2.3) * 0.25;
-    let mossy = smoothstep(0.35, 0.75, n.y + patches * 0.5);
+    let mossy = smoothstep(0.6, 0.9, n.y + patches * 0.4);
     let streaks = smoothstep(0.25, 0.6, value3(vec3f(p.x * 1.5, p.y * 0.12, p.z * 1.5)) + patches * 0.3);
     var color = s.baseColor * tint;
-    color = mix(color, material.lichen * tint, streaks * 0.35 * (1.0 - mossy));
+    color = mix(color, material.lichen * tint, streaks * 0.22 * (1.0 - mossy));
     s.baseColor = mix(color, material.moss * tint, mossy);
     s.roughness = mix(orm.g, 0.95, mossy);
     s.occlusion = orm.r;
@@ -236,7 +236,7 @@ export function createCliff(
 			wgsl: wallWgsl,
 			vertexColors: true,
 			roughness: 0.9,
-			uniforms: { moss: [0.11, 0.09, 0.025], lichen: [0.16, 0.16, 0.13] },
+			uniforms: { moss: [0.09, 0.075, 0.025], lichen: [0.13, 0.13, 0.115] },
 			textures: {
 				detail: maps.map,
 				detailNormal: maps.normalMap,

@@ -38,7 +38,7 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 		leaves: [1, 1, 0.95],
 		motes: [0.5, 0.48, 0.4],
 		mist: [0.85, 0.9, 0.95],
-		mistOpacity: 0.15,
+		mistOpacity: 0.06,
 	},
 	Dawn: {
 		leaves: [0.8, 0.82, 0.9],
@@ -56,19 +56,19 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 		leaves: [1, 1, 0.95],
 		motes: [0.5, 0.5, 0.45],
 		mist: [0.9, 0.94, 0.98],
-		mistOpacity: 0.12,
+		mistOpacity: 0.05,
 	},
 	Afternoon: {
 		leaves: [1, 1, 0.95],
 		motes: [0.5, 0.48, 0.4],
 		mist: [0.85, 0.9, 0.95],
-		mistOpacity: 0.15,
+		mistOpacity: 0.06,
 	},
 	Golden: {
 		leaves: [1, 0.78, 0.55],
 		motes: [1.6, 1.0, 0.45],
 		mist: [1, 0.82, 0.62],
-		mistOpacity: 0.14,
+		mistOpacity: 0.08,
 	},
 	Dusk: {
 		leaves: [0.28, 0.32, 0.45],

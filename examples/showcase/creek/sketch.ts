@@ -317,7 +317,7 @@ export default defineSketch(async (ctx) => {
 	// The garden opens on a soft morning under heavy cloud, with the air thick over the cloud sea.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
-		fogDensity: 0.004,
+		fogDensity: 0.0025,
 		cloudCoverage: 0.75,
 		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
 		// The cloud above and the cloud below both fill the garden with soft light: the sun's own

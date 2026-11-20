@@ -130,7 +130,7 @@ const poolShare = (x: number) => Math.exp(-(((x - POOL.x) / POOL.length) ** 2));
 
 /** The half width of the water at x, at its surface: wider in the pool, and toward the east. */
 export const streamHalf = (x: number) =>
-	2.65 +
+	2.72 +
 	0.22 * Math.sin(x * 0.27 + 1.3) +
 	0.3 * smoothstep(x, -4, 16) +
 	POOL.widening * poolShare(x);
