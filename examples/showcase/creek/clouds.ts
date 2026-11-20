@@ -646,6 +646,7 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 			receiveShadows: false,
 		})
 		.setRenderOrder(-20);
+	const shaded = [cloud, dome];
 	return {
 		update(nextAir, light) {
 			for (let c = 0; c < 3; c++) {
@@ -653,7 +654,8 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 				toward[c] = light.toward[c] as number;
 				sun[c] = light.color[c] as number;
 			}
-			for (const material of [cloud, dome]) {
+			for (let m = 0; m < shaded.length; m++) {
+				const material = shaded[m] as typeof cloud;
 				material.setUniform('air', air);
 				material.setUniform('toward', toward);
 				material.setUniform('sun', sun);
