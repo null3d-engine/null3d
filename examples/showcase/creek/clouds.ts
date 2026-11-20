@@ -63,6 +63,8 @@ const TINT = [0.955, 0.945, 1.08] as const;
  * pixel runs once. A ray starts where it can first meet cloud and ends at the scene's surface.
  */
 const cloudWgsl = /* wgsl */ `
+#import null3d::noise::{pcg3d}
+
 struct Uniforms {
     air: vec3f,
     top: f32,
@@ -83,10 +85,18 @@ var walls: texture_2d<f32>;
 
 // light {
 /// The cloud's own tone of the air: the air's color, greyed toward its brightness and cast a faint
-/// lilac, since a cloud is never as blue as the sky at the horizon.
+/// lilac, since a cloud is never as blue as the sky at the horizon. A colored main light, as the low
+/// sun's is, turns the whole cloud toward its own hue, so golden hour keeps its warmth; the soft
+/// white light of the day leaves it lilac.
 fn cloud_air() -> vec3f {
-    let grey = dot(material.air, vec3f(0.2126, 0.7152, 0.0722));
-    return mix(vec3f(grey), material.air, 0.15) * material.tint;
+    let weights = vec3f(0.2126, 0.7152, 0.0722);
+    let grey = dot(material.air, weights);
+    let base = mix(vec3f(grey), material.air, 0.15) * material.tint;
+    let peak = max(max(material.sun.r, material.sun.g), material.sun.b);
+    let hue = material.sun / max(peak, 1e-4);
+    // No main light, as in the studio, leaves the tone as it is.
+    let colored = (1.0 - min(min(hue.r, hue.g), hue.b)) * smoothstep(0.0, 0.05, peak);
+    return base * mix(vec3f(1.0), hue / max(dot(hue, weights), 1e-3), 0.3 * colored);
 }
 
 /// The cloud's color, from the lilac grey of a billow's shaded hollow at form 0 to its sky-lit top
@@ -203,11 +213,12 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // The size of a pixel on the cloud per meter of distance, for the map's mip level.
     let pixel = 2.0 / (camera.projection[1][1] * frame.resolution.y);
     let texel = TILE / material.texels;
-    // Each pixel starts its steps a different share of a step in, so the steps leave no rings where
-    // a ray grazes a billow or meets a wall. The share turns with the sketch time, which a held
-    // frame holds, so a held picture draws the same each time.
-    let jitter = fract(52.9829189 * fract(dot(input.fragCoord.xy, vec2f(0.06711056, 0.00583715)) + fract(frame.time * 7.31)));
-    var t = start + jitter * (0.6 + start * 0.01);
+    // Each pixel starts its steps a different share of half a step in, so the steps leave no rings
+    // where a ray grazes a billow or meets a wall, only a fine grain. The share changes with the
+    // sketch time, which a held frame holds, so a held picture draws the same each time.
+    let cell = vec3u(vec2u(input.fragCoord.xy), u32(frame.time * 60.0));
+    let jitter = f32(pcg3d(cell).x) / 4294967295.0;
+    var t = start + jitter * 0.5 * (0.6 + start * 0.01);
     var clear = 1.0;
     var color = vec3f(0.0);
     var form = 0.0;
@@ -267,7 +278,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
         } else {
             // Clear air: step a share of the height over the tops, never so far that a billow's
             // side slips between two steps, and in short steps through the mist by the walls.
-            let longest = select(4.0 + t * 0.09, 0.45, length(p.xz) < MISTY && above < 8.5);
+            let longest = select(4.0 + t * 0.09, 0.35, length(p.xz) < MISTY && above < 8.5);
             t += clamp(above * 0.5, 0.3 + t * 0.006, longest);
         }
     }
@@ -302,10 +313,18 @@ struct Uniforms {
 
 // light {
 /// The cloud's own tone of the air: the air's color, greyed toward its brightness and cast a faint
-/// lilac, since a cloud is never as blue as the sky at the horizon.
+/// lilac, since a cloud is never as blue as the sky at the horizon. A colored main light, as the low
+/// sun's is, turns the whole cloud toward its own hue, so golden hour keeps its warmth; the soft
+/// white light of the day leaves it lilac.
 fn cloud_air() -> vec3f {
-    let grey = dot(material.air, vec3f(0.2126, 0.7152, 0.0722));
-    return mix(vec3f(grey), material.air, 0.15) * material.tint;
+    let weights = vec3f(0.2126, 0.7152, 0.0722);
+    let grey = dot(material.air, weights);
+    let base = mix(vec3f(grey), material.air, 0.15) * material.tint;
+    let peak = max(max(material.sun.r, material.sun.g), material.sun.b);
+    let hue = material.sun / max(peak, 1e-4);
+    // No main light, as in the studio, leaves the tone as it is.
+    let colored = (1.0 - min(min(hue.r, hue.g), hue.b)) * smoothstep(0.0, 0.05, peak);
+    return base * mix(vec3f(1.0), hue / max(dot(hue, weights), 1e-3), 0.3 * colored);
 }
 
 /// The cloud's color, from the lilac grey of a billow's shaded hollow at form 0 to its sky-lit top
