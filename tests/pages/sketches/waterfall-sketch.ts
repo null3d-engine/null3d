@@ -43,7 +43,7 @@ export default defineSketch(async (ctx) => {
 		scene.createMesh({
 			mesh: geometry.box({ width: 40, height: BANK - BED, depth: 17 }),
 			material: moss,
-			position: [-20.4, (BANK + BED) / 2, side * (HALF + 8.5)],
+			position: [-20, (BANK + BED) / 2, side * (HALF + 8.5)],
 		});
 	// The creek runs along +x and ends at the lip, where the fall takes over.
 	const water = createWater(ctx, {

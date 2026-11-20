@@ -19,6 +19,9 @@ struct Uniforms {
     apron: f32,
 }
 
+/// The ropes that the white water parts into, for each meter across the lip.
+const ROPES_PER_METER: f32 = 1.1;
+
 /// The second texture coordinate's room for each veil, as the mesh writes it.
 const VEIL_ROOM: f32 = 2.0;
 
@@ -77,13 +80,18 @@ fn surface(input: SurfaceInput) -> Surface {
     let ropes = streak_layer(lip, now - t, vec2f(0.9, 0.2), seed);
     let coarse = streak_layer(lip, now - t, vec2f(5.0, 1.4), seed + 0.37);
     let fine = streak_layer(lip, now * 1.25 - t, vec2f(13.0, 3.5), seed + 0.71);
-    // A rope is a ridge of the noise, where it crosses its middle: a long, narrow bright band.
-    let ridge = 1.0 - abs(ropes * 2.0 - 1.0);
-    let rope = smoothstep(0.45, 0.9, ridge);
+    // The ropes are bands about a meter apart that slow noise bends and shifts, so they part with
+    // gaps between them and wander as the water falls. Where a pixel covers more than half a band,
+    // they give way to their mean.
+    let warp = streak_layer(lip, now - t, vec2f(0.35, 0.12), seed + 0.2);
+    let bands = lip * ROPES_PER_METER + warp * 2.5 + seed;
+    let band = 0.5 + 0.5 * cos(bands * 6.2831853);
+    let banded = 1.0 - smoothstep(0.3, 0.6, fwidth(bands));
+    let rope = mix(0.5, smoothstep(0.25, 0.85, band) * mix(0.55, 1.0, ropes), banded);
     let streak = smoothstep(0.3, 0.75, 0.5 * coarse + 0.5 * fine);
     // The sheet falls whole for a few meters, then parts into its ropes.
     let parting = smoothstep(0.0, 0.3, share);
-    let body = clamp(mix(0.75, 0.65 * rope + 0.55 * streak, parting * 0.6 + 0.4), 0.0, 1.0);
+    let body = clamp(mix(0.75, 0.7 * rope + 0.55 * streak - 0.05, parting * 0.4 + 0.6), 0.0, 1.0);
 
     // Glassy for a short way below the lip, then white. Over the brink, flecks of white already ride
     // on the glassy water.
@@ -91,7 +99,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let flecks = smoothstep(0.6, 0.85, fine) * 0.7;
     let foam = max(white, flecks * (1.0 - white));
     // Between the strands, the shade of the water behind them shows grey.
-    s.baseColor = mix(material.glass, s.baseColor * min(mix(0.5, 1.08, body), 1.0), foam);
+    s.baseColor = mix(material.glass, s.baseColor * min(mix(0.3, 1.1, body), 1.0), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
     s.diffuseTransmissionColor = s.baseColor;
@@ -103,7 +111,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
     // How much of the sheet there is. The glassy water is a body; the white water lets the light
     // behind it through between its strands, and lower down it breaks into ropes with gaps.
-    var alpha = mix(0.85, mix(0.55, 1.0, body), white);
+    var alpha = mix(0.85, mix(0.35, 1.0, body), white);
     let breakup = smoothstep(0.2, 0.8, share);
     alpha *= mix(1.0, smoothstep(0.15, 0.55, 0.75 * rope + 0.45 * streak), breakup);
     // Ragged, feathered edges that grow as the sheet fans out, torn by the streaks that ride them.
@@ -117,15 +125,15 @@ fn surface(input: SurfaceInput) -> Surface {
     alpha *= smoothstep(-material.apron, -0.4 * material.apron, t);
     // The back veil starts behind the sheet at the lip, and lies in its shade.
     let back = 1.0 - min(veil, 1.0);
-    alpha *= mix(1.0, smoothstep(0.0, 1.5, fallen), back);
-    s.baseColor *= mix(1.0, 0.8, back);
+    alpha *= mix(1.0, 0.7 * smoothstep(0.0, 1.5, fallen), back);
+    s.baseColor *= mix(1.0, 0.6, back);
     // The spray veil is a thin, soft halo around the sheet: it gathers a few meters below the lip,
     // keeps only the broad streaks, and feathers out at its sides.
     let spray = step(1.5, veil);
     let halo = smoothstep(0.5, 3.0, fallen) * (0.25 + 0.4 * coarse + 0.35 * rope)
         * (1.0 - smoothstep(0.25, 1.0, abs(across) + (tufts - 0.5) * 0.6))
         * (1.0 - smoothstep(0.55, 1.0, share));
-    alpha = mix(alpha, 0.45 * halo, spray);
+    alpha = mix(alpha, 0.22 * halo, spray);
     s.roughness = mix(s.roughness, 1.0, spray);
     // Where the sheet nears a wall or a ledge behind it, it fades rather than cutting a line.
     let place = input.fragCoord.xy / frame.resolution;
