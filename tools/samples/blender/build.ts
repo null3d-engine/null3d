@@ -13,6 +13,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { run as optimize } from '../../../packages/cli/src/assets/optimize.js';
 
+/** The threads that Blender runs with in every build. */
+const BLENDER_THREADS = 4;
 const JSON_CHUNK = 0x4e4f534a;
 const BIN_CHUNK = 0x004e4942;
 
@@ -123,18 +125,42 @@ export interface SceneModels {
 	readonly blockers?: readonly string[];
 	/** The models whose every part sways, which the build checks after the asset tool. */
 	readonly swaying: readonly string[];
+	/**
+	 * Options that the script gets when the command line does not give them, such as the folder of
+	 * a scene's inputs.
+	 */
+	readonly options?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The models that `--models <a,b>` on the command line picks from a scene's, in the scene's order,
+ * or all of them. The script gets the option too, and may skip what it does not need.
+ */
+export function chosenModels(
+	models: readonly string[],
+	options = process.argv.slice(3),
+): readonly string[] {
+	const at = options.indexOf('--models');
+	if (at < 0) return models;
+	const picked = (options[at + 1] ?? '').split(',').filter((name) => name.length > 0);
+	const unknown = picked.filter((name) => !models.includes(name));
+	if (picked.length === 0 || unknown.length > 0)
+		throw new Error(`--models takes a comma-separated list of ${models.join(', ')}`);
+	return models.filter((model) => picked.includes(model));
 }
 
 /**
  * Runs a scene's Blender script and writes its optimized, packed models into the folder that the
  * command line names. The options after the folder go to the script: `--preview <folder>` renders
- * each model with Cycles there, and a script that reads inputs names its own, such as `--raw`.
+ * each model with Cycles there, `--models <a,b>` builds only those models, and a script that reads
+ * inputs names its own, such as `--raw`.
  */
 export async function buildScene({
 	script,
 	models,
 	blockers = [],
 	swaying,
+	options = {},
 }: SceneModels): Promise<void> {
 	const args = process.argv.slice(2);
 	const out = args[0];
@@ -142,24 +168,32 @@ export async function buildScene({
 		throw new Error(
 			`Give the output folder: bun tools/samples/blender/${script.replace('.py', '.ts')} <folder> [options]`,
 		);
+	const given = args.slice(1);
+	const defaults = Object.entries(options).filter(([flag]) => !given.includes(flag));
+	const chosen = chosenModels(models, given);
 	const scratch = mkdtempSync(join(tmpdir(), `${script.replace('.py', '')}-models-`));
 	try {
 		const built = Bun.spawnSync(
 			[
 				process.env.BLENDER ?? 'blender',
+				// Some meshes come out in an order that depends on Blender's thread count, so every
+				// build runs with the same count and gives the same files on any machine.
+				'--threads',
+				String(BLENDER_THREADS),
 				'--background',
 				'--factory-startup',
 				'--python',
 				join(import.meta.dir, script),
 				'--',
 				join(scratch, 'blender'),
-				...args.slice(1),
+				...given,
+				...defaults.flat(),
 			],
 			{ stdout: 'pipe', stderr: 'pipe' },
 		);
 		if (built.exitCode !== 0) throw new Error(`Blender failed:\n${built.stdout}\n${built.stderr}`);
 		mkdirSync(resolve(out), { recursive: true });
-		for (const model of models) {
+		for (const model of chosen) {
 			const optimized = join(scratch, 'optimized', model);
 			const code = await optimize([
 				join(scratch, 'blender', `${model}.glb`),

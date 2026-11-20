@@ -37,8 +37,8 @@ const UNDERCUT = 0.55;
  * How far the rock stands back under each lip, in meters at the least, so a fall leaving the lip
  * drops clear of the wall; the shares of the creek's half width where the water shows at the lip,
  * where the water's sheet runs on under the banks and the rock stands flush, and where no buttress
- * may stand proud enough to hide the fall; how far the rock stands proud there before it is
- * pressed back, in meters, and the share of the rest that it keeps.
+ * may stand proud enough to hide the fall; how far the rock stands proud there, in meters, and
+ * the share of any crag past that which folds back into the wall as a hollow instead.
  */
 const LIP_RECESS = {
 	back: 0.9,
@@ -46,8 +46,10 @@ const LIP_RECESS = {
 	sheet: 1.05,
 	clear: 3,
 	proud: 0.15,
-	press: 0.35,
+	fold: 0.6,
 } as const;
+/** How deep the upright fissures cut into the face beside each lip, and how far its ledges step. */
+const LIP_BREAK = { fissure: 0.7, ledge: 0.45 } as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
@@ -57,20 +59,23 @@ const noise = new Noise(53);
 const { smoothstep } = math;
 
 /**
- * The rock's texel: dark stone mottled in broad patches with fine grain, in a near-white tone that
- * the colors tint. No small marks repeat, so no print shows on the face.
+ * The rock's texel: dark stone mottled in broad and middle patches, with fine grain and deep pits,
+ * in a near-white tone that the colors tint. The pits are hollows in its height, which the light
+ * shades, and darken the stone only a little; no line is drawn on it. No small marks repeat, so no
+ * print shows on the face.
  */
 function rockTexel(u: number, v: number, out: TexelSample): void {
 	const broad = noise.fbm2(u * 4, v * 4, 5, 4);
+	const middle = noise.fbm2(u * 10, v * 10, 4, 10);
 	const grain = noise.fbm2(u * 48, v * 48, 2, 48);
-	const pits = noise.fbm2(u * 14, v * 14, 3, 14);
-	out.height = broad * 10 + grain * 3 - Math.max(0, pits) * 6;
-	const tone = 0.86 + 0.14 * broad + 0.05 * grain;
+	const pits = Math.max(0, noise.fbm2(u * 14, v * 14, 3, 14));
+	out.height = broad * 12 + middle * 6 + grain * 3 - pits * 16;
+	const tone = (0.7 + 0.24 * broad + 0.12 * middle + 0.05 * grain) * (1 - 0.3 * pits);
 	out.r = tone;
 	out.g = tone * 0.97;
 	out.b = tone * 0.94;
 	out.roughness = 0.84 + 0.12 * broad;
-	out.occlusion = 0.9 + 0.1 * smoothstep(broad, -0.3, 0.3);
+	out.occlusion = (0.9 + 0.1 * smoothstep(broad, -0.3, 0.3)) * (1 - 0.45 * pits);
 }
 
 /** One block of a pillar: its foot below the rim, how far it stands out, and its face's tilt. */
@@ -93,7 +98,7 @@ interface Pillar {
 }
 
 /** Splits the rim's length into pillars of uneven width, each with its own run of blocks. */
-function pillars(length: number): Pillar[] {
+export function pillars(length: number): Pillar[] {
 	const next = random(57);
 	const list: Pillar[] = [];
 	let at = 0;
@@ -142,7 +147,7 @@ export function aroundNoise(
  * meters; how deep in a crack the place lies, from 0 on a face to 1 in a crack's back; and how light
  * the block there reads.
  */
-function relief(
+export function relief(
 	list: readonly Pillar[],
 	length: number,
 	along: number,
@@ -233,12 +238,19 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// hide the fall.
 			const { water, sheet, clear } = lipShares(x, z);
 			const raw = offset + UNDERCUT;
-			// Rock that would stand proud is pressed back, not cut flat, so the face keeps its crags.
+			// A crag that would stand proud folds back into the wall as a hollow, so the face beside the
+			// fall stays broken and still never stands out far enough to hide it.
 			const pressed =
 				raw > LIP_RECESS.proud
-					? LIP_RECESS.proud + LIP_RECESS.press * (raw - LIP_RECESS.proud)
+					? LIP_RECESS.proud - LIP_RECESS.fold * (raw - LIP_RECESS.proud)
 					: raw;
-			const capped = offset + (pressed - offset) * clear;
+			// Beside the lip the face breaks into blocks: deep upright fissures and stepped ledges,
+			// all cut into the wall, so it reads as broken rock and still stands back from the fall.
+			const fissure =
+				1 - smoothstep(Math.abs(aroundNoise(run, length, 0.7, depth * 0.3 + 41, 2)), 0, 0.12);
+			const ledge = Math.round(aroundNoise(run, length, 0.45, depth * 0.5 + 47, 2) * 4) / 4;
+			const broken = pressed - LIP_BREAK.fissure * fissure - LIP_BREAK.ledge * (ledge + 0.5);
+			const capped = offset + (Math.min(broken, pressed) - offset) * clear;
 			const flush = capped + (Math.max(pressed, 0) - capped) * sheet;
 			const shaped = flush + (Math.min(flush, -LIP_RECESS.back) - flush) * water;
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
@@ -345,7 +357,9 @@ fn surface(input: SurfaceInput) -> Surface {
     let patches = value3(p * 0.7) * 0.5 + value3(p * 2.3) * 0.25;
     let mossy = smoothstep(0.6, 0.9, n.y + patches * 0.4);
     let streaks = smoothstep(0.25, 0.6, value3(vec3f(p.x * 1.5, p.y * 0.12, p.z * 1.5)) + patches * 0.3);
-    var color = s.baseColor * tint;
+    // Mottling in the world's own space, which the texture's repeats cannot line up with.
+    let mottle = 0.8 + 0.3 * (value3(p * 1.1) * 0.6 + value3(p * 3.7) * 0.4);
+    var color = s.baseColor * tint * mottle;
     color = mix(color, material.lichen * tint, streaks * 0.22 * (1.0 - mossy));
     s.baseColor = mix(color, material.moss * tint, mossy);
     s.roughness = mix(orm.g, 0.95, mossy);

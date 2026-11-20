@@ -4,7 +4,7 @@
 // rock would step where the ring joins. Where the camera may stand past the rim, the rock must stay
 // within the reach that the camera's floor keeps clear of.
 import { expect, test } from 'bun:test';
-import { aroundNoise, wallArrays } from './cliff';
+import { aroundNoise, pillars, relief, wallArrays } from './cliff';
 import { bearingOf, landArrays, OVER_WATER, rimRadius, WALL_REACH, WATER } from './land';
 
 /** The land's detail for the test: coarse, since the seam does not depend on it. */
@@ -59,6 +59,26 @@ test('the noise along the rim wraps round, so the rock runs on across the ring w
 			);
 			expect(across, `the step across the join at scale ${scale}`).toBeLessThan(0.02);
 		}
+});
+
+test('the rock repeats after a whole turn of the ring, so every noise along the rim wraps', () => {
+	// A noise read straight along the rim, rather than round the ring, gives a different rock a turn
+	// later, and so a step where the ring joins.
+	const length = 163.4;
+	const list = pillars(length);
+	for (let k = 0; k < 240; k++) {
+		const along = (k / 240) * length;
+		for (const depth of [0.4, 3.7, 11.2, 19]) {
+			const here = relief(list, length, along, depth);
+			const turned = relief(list, length, along + length, depth);
+			expect(turned.offset, `the rock a turn later at ${along.toFixed(1)} m`).toBeCloseTo(
+				here.offset,
+				6,
+			);
+			expect(turned.crack).toBeCloseTo(here.crack, 6);
+			expect(turned.tone).toBeCloseTo(here.tone, 6);
+		}
+	}
 });
 
 test('at the heights the camera reaches past the rim, the rock stands within the walls’ reach', () => {
