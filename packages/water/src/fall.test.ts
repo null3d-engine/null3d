@@ -13,6 +13,7 @@ import {
 	fallSheet,
 	fallTime,
 	GRAVITY,
+	SHEET_VEIL,
 	SIDE_SLOWING,
 	VEIL_ROOM,
 	VEILS,
@@ -123,7 +124,7 @@ describe('the path of falling water', () => {
 describe('a waterfall’s sheet', () => {
 	it('starts at the lip’s height, across the lip’s width', () => {
 		const { positions, uvs } = meshOf(SHEET);
-		const front = rowsOf(SHEET, VEILS.length - 1);
+		const front = rowsOf(SHEET, SHEET_VEIL);
 		// The row where the water crosses the lip: the first whose time is not negative.
 		const lipRow = front.find(
 			(row) => (uvs[(row[0] as number) * 2 + 1] as number) >= 0,
@@ -140,7 +141,7 @@ describe('a waterfall’s sheet', () => {
 
 	it('lies on the river’s surface upstream of the lip, over the apron', () => {
 		const { positions, uvs } = meshOf(SHEET);
-		const front = rowsOf(SHEET, VEILS.length - 1);
+		const front = rowsOf(SHEET, SHEET_VEIL);
 		const top = front[0] as number[];
 		expect(uvs[(top[0] as number) * 2 + 1] as number).toBeCloseTo(-APRON / SHEET.speed, 5);
 		for (const v of top) {
@@ -185,7 +186,7 @@ describe('a waterfall’s sheet', () => {
 
 	it('widens as it falls', () => {
 		const { positions } = meshOf(SHEET);
-		const front = rowsOf(SHEET, VEILS.length - 1);
+		const front = rowsOf(SHEET, SHEET_VEIL);
 		const width = (row: number[]) =>
 			(positions[(row[row.length - 1] as number) * 3 + 2] as number) -
 			(positions[(row[0] as number) * 3 + 2] as number);
@@ -197,15 +198,17 @@ describe('a waterfall’s sheet', () => {
 		expect(last).toBeCloseTo(2 * (SHEET.halfWidth + SHEET.spread * SHEET.drop), 3);
 	});
 
-	it('hangs its back veil behind the front one, toward the cliff', () => {
+	it('hangs its back veil behind the sheet, toward the cliff, and its spray in front', () => {
 		const { positions } = meshOf(SHEET);
 		const back = rowsOf(SHEET, 0);
-		const front = rowsOf(SHEET, 1);
+		const front = rowsOf(SHEET, SHEET_VEIL);
 		const middle = (SHEET.mesh?.across as number) / 2;
 		const out = (row: number[]) => (positions[(row[middle] as number) * 3] as number) - 10;
 		const foot = (rows: number[][]) => rows[rows.length - 1] as number[];
+		const spray = rowsOf(SHEET, VEILS.length - 1);
 		expect(out(foot(back))).toBeLessThan(out(foot(front)));
 		expect(out(foot(back))).toBeGreaterThan(0);
+		expect(out(foot(spray))).toBeGreaterThan(out(foot(front)));
 	});
 
 	it('looks out from the cliff, on every triangle and every vertex', () => {

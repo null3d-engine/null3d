@@ -23,7 +23,7 @@ export const APRON_LIFT = 0.02;
 const APRON_ROWS = 4;
 /** The sections across the sheet, and its rows from the lip to the foot, when a fall gives none. */
 const ACROSS = 16;
-const DOWN = 48;
+const DOWN = 40;
 /**
  * How the rows bunch toward the lip: the time at a row is the fall's time times the row's share to
  * this power. Above 1 puts more rows where the sheet curves over.
@@ -38,7 +38,7 @@ const ROW_BUNCHING = 1.5;
 export interface WaterfallMesh {
 	/** The sections across the sheet. It is 16 by default. */
 	across?: number;
-	/** The rows from the lip to the foot of the fall. It is 48 by default. */
+	/** The rows from the lip to the foot of the fall. It is 40 by default. */
 	down?: number;
 }
 
@@ -133,13 +133,19 @@ export function checkFallSheet(sheet: FallSheet): void {
 
 /**
  * The veils that give the fall its depth, from the back one to the front one. Each takes a share of
- * the lip's speed, so it falls on its own path, and a share of the lip's width. The front veil
- * carries the apron over the lip; the back veil starts at the lip and lies behind the front one.
+ * the lip's speed, so it falls on its own path, and a share of the lip's width. The back veil starts
+ * at the lip and lies behind the sheet. The sheet carries the apron over the lip. The spray veil is
+ * thrown furthest and spreads widest: a soft halo of spray around the sheet, which the material
+ * draws thin and feathered.
  */
 export const VEILS = [
 	{ speed: 0.7, width: 0.88, apron: false },
 	{ speed: 1, width: 1, apron: true },
+	{ speed: 1.3, width: 1.3, apron: false },
 ] as const;
+
+/** The veil that carries the apron: the sheet itself. */
+export const SHEET_VEIL = 1;
 
 /**
  * The second texture coordinate's room for each veil: a veil's place across runs from twice its

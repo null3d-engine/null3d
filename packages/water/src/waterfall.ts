@@ -240,7 +240,7 @@ export async function createWaterfall(
 		const middle = sheet.drop * 0.55;
 		fallPlace(end * 0.55, speed, place);
 		const mistOut = place[0];
-		const mistRate = 0.5 * half * Math.max(1, sheet.drop / 6);
+		const mistRate = half * Math.max(1, sheet.drop / 6);
 		const mistLife = 4.5;
 		// The plume at the foot: broad puffs that rise and spread, where the fall thins into cloud.
 		fallPlace(end, speed, place);
@@ -280,10 +280,10 @@ export async function createWaterfall(
 				turbulenceScale: 0.4,
 				lifetime: [2.5, mistLife],
 				rate: mistRate * spray,
-				size: [0.4 * half, 0.9 * half],
-				sizeOverLife: [0.7, 1.3, 1.9],
+				size: [0.5 * half, 1.1 * half],
+				sizeOverLife: [0.7, 1.4, 2.1],
 				alphaOverLife: [0, 0.7, 0.5, 0],
-				opacity: 0.4,
+				opacity: 0.45,
 				...(options.wind && { windField: options.wind }),
 			}),
 			createParticles(ctx, {

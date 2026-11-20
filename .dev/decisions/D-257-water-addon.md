@@ -376,8 +376,8 @@ the lip and then drops almost straight, as a real fall does. A fall of any heigh
 the eye can follow. `fall.ts` holds the path and the mesh. Its tests hold the sheet to the lip's
 height and width, to the path, and to a sheet that never rises.
 
-**The sheet.** Two veils give the fall depth from the side: the back one is thrown less far and is a
-little narrower. An apron runs a meter up the river's surface before the lip, and fades in there. So
+**The sheet.** Three veils give the fall depth from the side. The back one is thrown less far and is
+a little narrower. The spray veil is thrown furthest and spreads widest, as a thin, feathered halo. An apron runs a meter up the river's surface before the lip, and fades in there. So
 the river's own mesh ends at the lip with no seam. The mesh's texture coordinates carry each point's
 place across the lip and the time since its water crossed it. The material's noise reads those two.
 So every streak rides down at the water's own speed, and stretches as the water speeds up, from the
@@ -395,7 +395,7 @@ would copy the particle options' types. A fall with `spray: 0` makes no systems 
 code. Particles are not lit, so the scene sets their light with `setLight` in each mood.
 
 **The mesh.** The sheet has no vertex offset, so it is a plain mesh. At the default detail it holds
-about 3,200 triangles, under the count at which the engine plans levels for a mesh made in code.
+just under 4,000 triangles, below the count at which the engine plans levels for a mesh made in code.
 
 ## Consequences
 

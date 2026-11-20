@@ -115,10 +115,18 @@ fn surface(input: SurfaceInput) -> Surface {
     alpha *= 1.0 - smoothstep(0.45, 1.0, share);
     // The apron fades in from its upstream end, over the river's own surface.
     alpha *= smoothstep(-material.apron, -0.4 * material.apron, t);
-    // The back veil starts behind the front one at the lip, and lies in its shade.
+    // The back veil starts behind the sheet at the lip, and lies in its shade.
     let back = 1.0 - min(veil, 1.0);
     alpha *= mix(1.0, smoothstep(0.0, 1.5, fallen), back);
     s.baseColor *= mix(1.0, 0.8, back);
+    // The spray veil is a thin, soft halo around the sheet: it gathers a few meters below the lip,
+    // keeps only the broad streaks, and feathers out at its sides.
+    let spray = step(1.5, veil);
+    let halo = smoothstep(0.5, 3.0, fallen) * (0.25 + 0.4 * coarse + 0.35 * rope)
+        * (1.0 - smoothstep(0.25, 1.0, abs(across) + (tufts - 0.5) * 0.6))
+        * (1.0 - smoothstep(0.55, 1.0, share));
+    alpha = mix(alpha, 0.45 * halo, spray);
+    s.roughness = mix(s.roughness, 1.0, spray);
     // Where the sheet nears a wall or a ledge behind it, it fades rather than cutting a line.
     let place = input.fragCoord.xy / frame.resolution;
     let gap = max(sceneDistance(place) - distance_of(input.fragCoord.z), 0.0);

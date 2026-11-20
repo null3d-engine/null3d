@@ -212,7 +212,8 @@ foot.
 
 The sheet's material moves each streak with the water from the sketch's time alone, so the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
-the water speeds up. Two veils, one behind the other, give the fall depth from the side. The scene's
+the water speeds up. Three veils give the fall depth from the side: one behind the sheet, and a
+halo of spray in front of it. The scene's
 light lights the sheet, and the sheet fades where it nears a wall or a ledge behind it. The spray and
 the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
 
@@ -267,7 +268,7 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
 | `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |
 | `material` | The standard material values | None | The sheet's material, such as the color of its white water |
-| `mesh` | `{ across, down }` | 16 and 48 | The sections across the sheet, and its rows from the lip to the foot |
+| `mesh` | `{ across, down }` | 16 and 40 | The sections across the sheet, and its rows from the lip to the foot |
 
 `createWaterfall` returns a promise of a waterfall object, since the particle code downloads on
 first use:
@@ -369,8 +370,8 @@ near the eye and spends its vertices far away.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
-- **A waterfall.** It draws one blended mesh of two veils, about 3,200 triangles at the default
-  detail. It adds three particle systems of a few hundred large puffs at most. The sheet reads the copy
+- **A waterfall.** It draws one blended mesh of three veils, just under 4,000 triangles at the
+  default detail. It adds three particle systems of a few hundred large puffs at most. The sheet reads the copy
   of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
   phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a
