@@ -161,7 +161,7 @@ export const streamHalf = (x: number) =>
  * How the creek narrows before each lip, between rock shoulders, as the concept's does where it
  * piles up white and drops: the share of its width it loses at the lip, and over how many meters.
  */
-const LIP_NARROW = { share: 0.48, from: 0.6, to: 4.5 } as const;
+const LIP_NARROW = { share: 0.58, from: 0.6, to: 4.5 } as const;
 
 /** How near x lies to either lip along the creek, from 0 away from both to 1 at a lip. */
 function lipNear(x: number): number {

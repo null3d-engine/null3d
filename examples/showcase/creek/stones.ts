@@ -39,7 +39,7 @@ const IN_STREAM = 1.0;
 /** How far under the surface a stone's top may lie and still break the water white, in meters. */
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
-const TRAIL = { links: 14, step: 0.45, width: 1.3 } as const;
+const TRAIL = { links: 16, step: 0.45, width: 1.5 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -88,8 +88,8 @@ function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
 }
 
 /** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
-const STONE_TONE = [0.3, 0.255, 0.19] as const;
-const MOSS_TONE = [0.16, 0.13, 0.035] as const;
+const STONE_TONE = [0.2, 0.17, 0.125] as const;
+const MOSS_TONE = [0.13, 0.115, 0.03] as const;
 
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
@@ -99,12 +99,12 @@ const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
 /** The stones in the current, and the stones scattered on the banks away from the water. */
-const IN_CURRENT = 24;
+const IN_CURRENT = 36;
 const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
 /** The bank stones' smallest and largest size, and how close they stand, as a share of their size. */
-const BANK = { size: [0.3, 0.5], spacing: 1.8 } as const;
+const BANK = { size: [0.45, 0.8], spacing: 1.7 } as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, and how many stand in it. One lies on the west sill and one
@@ -150,7 +150,7 @@ export function rockPlaces(): StonePlace[] {
 		let x = from + next() * 0.3;
 		while (x < to) {
 			const size = BANK.size[0] + (BANK.size[1] - BANK.size[0]) * next();
-			add(x, side * (0.97 + 0.1 * (next() - 0.5)), size, 'bank');
+			add(x, side * (1.06 + 0.12 * (next() - 0.5)), size, 'bank');
 			x += size * BANK.spacing;
 		}
 	}
@@ -171,30 +171,18 @@ export function rockPlaces(): StonePlace[] {
 			const across = ((k + 0.5) / count) * 1.6 - 0.8 + (next() - 0.5) * 0.15;
 			add(x, across, 0.42 + 0.25 * next(), 'broken');
 		}
-	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge.
+	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge. Each
+	// stands back from the lip by its own foot's reach, so it stays wholly on the cliff.
 	for (const lip of [LIPS.west, LIPS.east]) {
 		const inward = -Math.sign(lip);
+		const atLip = (back: number, across: number, size: number) =>
+			add(lip + inward * (size * ROCK_REACH + 0.25 + back), across, size, 'broken');
 		for (const side of [-1, 1]) {
-			add(
-				lip + inward * (0.7 + 0.4 * next()),
-				side * (1.05 + 0.1 * next()),
-				0.6 + 0.2 * next(),
-				'broken',
-			);
-			add(
-				lip + inward * (1.8 + 0.5 * next()),
-				side * (1.0 + 0.1 * next()),
-				0.45 + 0.15 * next(),
-				'broken',
-			);
+			atLip(0.3 * next(), side * (1.0 + 0.1 * next()), 0.6 + 0.2 * next());
+			atLip(1.0 + 0.5 * next(), side * (1.0 + 0.1 * next()), 0.45 + 0.15 * next());
 		}
 		for (const across of [-0.45, 0.1, 0.55])
-			add(
-				lip + inward * (1.1 + 1.2 * next()),
-				across + (next() - 0.5) * 0.15,
-				0.4 + 0.15 * next(),
-				'broken',
-			);
+			atLip(1.0 * next(), across + (next() - 0.5) * 0.15, 0.4 + 0.15 * next());
 	}
 	return places;
 }
@@ -250,7 +238,7 @@ export function createStones(
 				? ([1, 0.62 + 0.12 * next(), 0.85 + 0.15 * next()] as const)
 				: ([1, 0.55 + 0.25 * next(), 0.8 + 0.3 * next()] as const);
 		const arrays = rock(300 + shape, detail, squash, kind === 'bank' ? 0.03 : 0.12);
-		const mesh = geometry.fromArrays(mossy(arrays, 50 + shape, kind === 'bank' ? 0.45 : 0.1));
+		const mesh = geometry.fromArrays(mossy(arrays, 50 + shape, kind === 'bank' ? 0.62 : 0.1));
 		const mine = places
 			.filter(
 				(place, k) => place.kind === kind && k % (ROCK_SHAPES / 2) === shape % (ROCK_SHAPES / 2),
