@@ -6006,6 +6006,180 @@
 			]
 		},
 		{
+			"id": "showcase/creek-garden-statue",
+			"title": "Creek garden statue",
+			"purpose": "The seated green-bronze Buddha of the Creek garden on its stone slab, 8 m tall with the slab",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
+			"fetched": "2026-11-20",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-statue by tools/samples/blender/creek_tripo.py in the engine repository: the base cut away, the head enlarged and the body widened, decimated to 30,000 triangles, the raw surface baked onto it, and the bronze repainted with its weathering. The oval stone slab is built by the script with a texture it paints. Two lower levels of each part carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"dir": "sources/showcase/creek-garden/statue",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/creek-garden/statue/statue.glb",
+					"bytes": 3153284,
+					"sha256": "cd4e530d8cf355574b0031c689bf893b194f24a0f63f2feb2d478d098f9dd35c"
+				}
+			]
+		},
+		{
+			"id": "showcase/creek-garden-lantern",
+			"title": "Creek garden lantern",
+			"purpose": "A mossy stone lantern of the Creek garden, 2.8 m tall",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
+			"fetched": "2026-11-20",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-lantern by tools/samples/blender/creek_tripo.py in the engine repository: decimated to 1,500 triangles and laid out afresh, the raw color and relief baked onto it, the stone darkened and the moss on its cap smoothed and strengthened. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"dir": "sources/showcase/creek-garden/lantern",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/creek-garden/lantern/lantern.glb",
+					"bytes": 589644,
+					"sha256": "78a88a748574df51e856523ea03a656088fa8822eb7ccfbe56741a14080a1fc8"
+				}
+			]
+		},
+		{
+			"id": "showcase/creek-garden-gate",
+			"title": "Creek garden gate",
+			"purpose": "The tiled timber gate of the Creek garden, 4.4 m tall",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
+			"fetched": "2026-11-20",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-gate by tools/samples/blender/creek_tripo.py in the engine repository: the rear frame cut away and one thinner rear post added, the front posts stood upright and the roof widened, decimated to 6,000 triangles and laid out afresh, the raw color and relief baked onto it, and the timber darkened and warmed. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"dir": "sources/showcase/creek-garden/gate",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/creek-garden/gate/gate.glb",
+					"bytes": 2257280,
+					"sha256": "b450f126046f993589acb1ea674c82c1734f8cac67844bd038c9cf37a89d3707"
+				}
+			]
+		},
+		{
+			"id": "showcase/creek-garden-boulder-1",
+			"title": "Creek garden boulder 1",
+			"purpose": "The largest mossy boulder of the Creek garden, 4 m tall",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
+			"fetched": "2026-11-20",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-boulder-1 by tools/samples/blender/creek_tripo.py in the engine repository: decimated to 1,500 triangles and laid out afresh, the raw color and relief baked onto it, the stone darkened, mottled and warmed, the white specks dimmed and the foot darkened. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"dir": "sources/showcase/creek-garden/boulder-1",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/creek-garden/boulder-1/boulder-1.glb",
+					"bytes": 2077312,
+					"sha256": "9e5c85a62e66e460601b8a60c5daced3daf94ebae03c8a8ab8193a0817be2c07"
+				}
+			]
+		},
+		{
+			"id": "showcase/creek-garden-boulder-2",
+			"title": "Creek garden boulder 2",
+			"purpose": "A middle-sized mossy boulder of the Creek garden, 2.4 m tall",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
+			"fetched": "2026-11-20",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-boulder-2 by tools/samples/blender/creek_tripo.py in the engine repository: decimated to 1,500 triangles and laid out afresh, the raw color and relief baked onto it, the stone darkened, mottled and warmed, the moss darkened, the white specks dimmed and the foot darkened. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"dir": "sources/showcase/creek-garden/boulder-2",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/creek-garden/boulder-2/boulder-2.glb",
+					"bytes": 2124972,
+					"sha256": "e2a15acb321260df5d3e347da3c30f279fe21011c6f22405f5974868f9d9043e"
+				}
+			]
+		},
+		{
+			"id": "showcase/creek-garden-boulder-3",
+			"title": "Creek garden boulder 3",
+			"purpose": "A low mossy boulder of the Creek garden, 0.9 m tall",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
+			"fetched": "2026-11-20",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-boulder-3 by tools/samples/blender/creek_tripo.py in the engine repository: the moss that Tripo3D built as spikes smoothed and lowered to a thin cover, decimated to 1,500 triangles and laid out afresh, the raw color and relief baked onto it, the stone darkened, mottled and warmed, and the moss darkened. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"dir": "sources/showcase/creek-garden/boulder-3",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/creek-garden/boulder-3/boulder-3.glb",
+					"bytes": 526052,
+					"sha256": "1b2804a7004229b86320783b3dd3c13d647fe9c1ab2fd75837fc66f46cbde3b4"
+				}
+			]
+		},
+		{
 			"id": "khronos/AnimationPointerUVs",
 			"title": "Animation Pointer UVs",
 			"purpose": "KHR_animation_pointer on texture transforms: the offset, scale and rotation of each texture slot",
