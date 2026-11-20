@@ -127,7 +127,8 @@ export interface SceneModels {
 
 /**
  * Runs a scene's Blender script and writes its optimized, packed models into the folder that the
- * command line names. `--preview <folder>` also renders each model with Cycles there.
+ * command line names. The options after the folder go to the script: `--preview <folder>` renders
+ * each model with Cycles there, and a script that reads inputs names its own, such as `--raw`.
  */
 export async function buildScene({
 	script,
@@ -139,9 +140,8 @@ export async function buildScene({
 	const out = args[0];
 	if (!out || out.startsWith('--'))
 		throw new Error(
-			`Give the output folder: bun tools/samples/blender/${script.replace('.py', '.ts')} <folder> [--preview <folder>]`,
+			`Give the output folder: bun tools/samples/blender/${script.replace('.py', '.ts')} <folder> [options]`,
 		);
-	const shots = args.includes('--preview') ? args[args.indexOf('--preview') + 1] : undefined;
 	const scratch = mkdtempSync(join(tmpdir(), `${script.replace('.py', '')}-models-`));
 	try {
 		const built = Bun.spawnSync(
@@ -153,7 +153,7 @@ export async function buildScene({
 				join(import.meta.dir, script),
 				'--',
 				join(scratch, 'blender'),
-				...(shots ? ['--preview', resolve(shots)] : []),
+				...args.slice(1),
 			],
 			{ stdout: 'pipe', stderr: 'pipe' },
 		);
