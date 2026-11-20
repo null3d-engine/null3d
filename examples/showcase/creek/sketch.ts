@@ -241,8 +241,8 @@ function createCreekWater(
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#6db9ab',
-			attenuationDistance: 1.2,
+			attenuationColor: '#7fb8b0',
+			attenuationDistance: 1,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,
@@ -254,7 +254,7 @@ function createCreekWater(
 			size: FOAM_BOX.size,
 			width: 1024,
 			height: 288,
-			reach: 0.8,
+			reach: 1,
 			trail: 0,
 		}),
 	});

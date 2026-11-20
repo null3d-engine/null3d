@@ -39,7 +39,7 @@ const UNDERCUT = 0.55;
  * where the water's sheet runs on under the banks and the rock stands flush, and where no buttress
  * may stand proud enough to hide the fall; and how far the rock may stand proud there, in meters.
  */
-const LIP_RECESS = { back: 0.9, water: 0.8, sheet: 1.05, clear: 3, proud: 0.15 } as const;
+const LIP_RECESS = { back: 0.9, water: 0.7, sheet: 1.05, clear: 3, proud: 0.15 } as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
@@ -271,7 +271,7 @@ function lipShares(x: number, z: number): { water: number; sheet: number; clear:
 		const half = streamHalf(lip);
 		const reach = Math.hypot(x - lip, z - streamZ(lip));
 		const share = (from: number, over: number) => 1 - smoothstep(reach, from, from + over);
-		water = Math.max(water, share(half * LIP_RECESS.water, 0.4));
+		water = Math.max(water, share(half * LIP_RECESS.water, 0.25));
 		sheet = Math.max(sheet, share(half * LIP_RECESS.sheet, 0.8));
 		clear = Math.max(clear, share(half * LIP_RECESS.clear, 3));
 	}

@@ -39,7 +39,7 @@ const IN_STREAM = 1.0;
 /** How far under the surface a stone's top may lie and still break the water white, in meters. */
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
-const TRAIL = { links: 10, step: 0.45, width: 1.1 } as const;
+const TRAIL = { links: 14, step: 0.45, width: 1.3 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 

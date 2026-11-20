@@ -354,7 +354,10 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const under = 1 - smoothstep(y, WATER - 0.25, WATER - 0.06);
 	const dark = smoothstep(noise.fbm2(x * 0.11 + 9, z * 0.11, 3), 0.02, 0.32);
 	const brown = smoothstep(noise.fbm2(x * 0.19, z * 0.19 + 9, 3), 0.12, 0.38);
-	const rocky = smoothstep(slope, 0.85, 1.4);
+	// The rim's very edge is wet dark rock, the lip's shoulders among it, so no pale band of bed or
+	// mud runs along the cliff's edge.
+	const edge = 1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.15, 0.8);
+	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
 	const shade = 0.88 + 0.24 * noise.value2(x * 1.7, z * 1.7);
 	for (let c = 0; c < 3; c++) {
 		const moss = (MOSS[c] as number) + ((MOSS_DARK[c] as number) - (MOSS[c] as number)) * dark;
