@@ -37,9 +37,17 @@ const UNDERCUT = 0.55;
  * How far the rock stands back under each lip, in meters at the least, so a fall leaving the lip
  * drops clear of the wall; the shares of the creek's half width where the water shows at the lip,
  * where the water's sheet runs on under the banks and the rock stands flush, and where no buttress
- * may stand proud enough to hide the fall; and how far the rock may stand proud there, in meters.
+ * may stand proud enough to hide the fall; how far the rock stands proud there before it is
+ * pressed back, in meters, and the share of the rest that it keeps.
  */
-const LIP_RECESS = { back: 0.9, water: 0.7, sheet: 1.05, clear: 3, proud: 0.15 } as const;
+const LIP_RECESS = {
+	back: 0.9,
+	water: 0.7,
+	sheet: 1.05,
+	clear: 3,
+	proud: 0.15,
+	press: 0.35,
+} as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
 const FLARE = 0.05;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
@@ -225,8 +233,13 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// hide the fall.
 			const { water, sheet, clear } = lipShares(x, z);
 			const raw = offset + UNDERCUT;
-			const capped = offset + (Math.min(raw, LIP_RECESS.proud) - offset) * clear;
-			const flush = capped + (Math.min(Math.max(raw, 0), LIP_RECESS.proud) - capped) * sheet;
+			// Rock that would stand proud is pressed back, not cut flat, so the face keeps its crags.
+			const pressed =
+				raw > LIP_RECESS.proud
+					? LIP_RECESS.proud + LIP_RECESS.press * (raw - LIP_RECESS.proud)
+					: raw;
+			const capped = offset + (pressed - offset) * clear;
+			const flush = capped + (Math.max(pressed, 0) - capped) * sheet;
 			const shaped = flush + (Math.min(flush, -LIP_RECESS.back) - flush) * water;
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
 			const grow = smoothstep(depth, 0, 1.2);

@@ -180,7 +180,7 @@ const WATER_AT_LIP = 0.95;
  * per meter fallen, so it fans out down the drop; and the share of the creek's half width that
  * leaves over the lip, narrower than the creek, between the lip's shoulders.
  */
-const FALL = { drop: 22, spread: 0.16, width: 0.85 } as const;
+const FALL = { drop: 22, spread: 0.12, width: 0.75 } as const;
 /**
  * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
  * cast, its strength over the air's, and the least change of the air that it follows.
@@ -241,8 +241,8 @@ function createCreekWater(
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#7fb8b0',
-			attenuationDistance: 1,
+			attenuationColor: '#3e9e92',
+			attenuationDistance: 0.6,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,

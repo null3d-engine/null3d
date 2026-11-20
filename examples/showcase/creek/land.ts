@@ -39,7 +39,7 @@ export const LIPS = { west: -20.3, east: 20 } as const;
  * and its half width in radians. It makes the west lip the cliff's outermost point from the concept's
  * camera, so its fall drops clear of the rim and shows in profile, as in the concept picture.
  */
-const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 3.4, width: 0.26 } as const;
+const WEST_BAY = { bearing: (121 * Math.PI) / 180, depth: 1.3, width: 0.22 } as const;
 /** How far the rim's straight edge at a lip reaches past the creek's banks, in meters. */
 const LIP_MARGIN = 0.3;
 /** The spring pool near the middle that feeds the creek: its x and how far along it widens. */
@@ -117,12 +117,13 @@ function smoothLine(points: readonly (readonly [number, number])[]): {
 
 /**
  * The creek's middle line: a gentle S from the west lip to the east lip, which passes in front of
- * the garden's middle, as the concept picture lays it. Near each lip it turns out along the rim's
- * radius, so the water leaves square to the edge and the lip's straight edge follows the rim.
+ * the garden's middle, as the concept picture lays it. Near each lip it turns out toward the rim:
+ * at the east lip along the rim's radius, and at the west lip a little toward the opening view, so
+ * its fall drops past the cliff's edge as the concept picture's left fall does.
  */
 const creekLine = smoothLine([
 	[-20.3, 16],
-	[-18.5, 14.6],
+	[-19.2, 14.45],
 	[-15, 13.9],
 	[-7, 13.4],
 	[1, 13.8],
@@ -143,10 +144,23 @@ const poolShare = (x: number) => Math.exp(-(((x - POOL.x) / POOL.length) ** 2));
 
 /** The half width of the water at x, at its surface: wider in the pool, and toward the east. */
 export const streamHalf = (x: number) =>
-	2.72 +
-	0.22 * Math.sin(x * 0.27 + 1.3) +
-	0.3 * smoothstep(x, -4, 16) +
-	POOL.widening * poolShare(x);
+	(2.72 +
+		0.22 * Math.sin(x * 0.27 + 1.3) +
+		0.3 * smoothstep(x, -4, 16) +
+		POOL.widening * poolShare(x)) *
+	(1 - LIP_NARROW.share * lipNear(x));
+
+/**
+ * How the creek narrows before each lip, between rock shoulders, as the concept's does where it
+ * piles up white and drops: the share of its width it loses at the lip, and over how many meters.
+ */
+const LIP_NARROW = { share: 0.48, from: 0.6, to: 4.5 } as const;
+
+/** How near x lies to either lip along the creek, from 0 away from both to 1 at a lip. */
+function lipNear(x: number): number {
+	const reach = Math.min(x - LIPS.west, LIPS.east - x);
+	return 1 - smoothstep(reach, LIP_NARROW.from, LIP_NARROW.to);
+}
 
 /** How far a point lies from the creek's middle, in half widths: 1 at the water's edge. */
 export const fromStream = (x: number, z: number) => Math.abs(z - streamZ(x)) / streamHalf(x);

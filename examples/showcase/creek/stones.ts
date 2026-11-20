@@ -61,7 +61,7 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 }
 
 /** Gives a rock's vertices colors: dark flecked stone, and moss where the rock faces up. */
-function mossy(arrays: MeshArrays, seed: number): MeshArrays {
+function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
 	const positions = arrays.positions as Float32Array;
 	const colors = new Float32Array(positions.length);
 	const local = new Noise(seed);
@@ -72,71 +72,130 @@ function mossy(arrays: MeshArrays, seed: number): MeshArrays {
 			positions[v * 3 + 2] as number,
 		];
 		const up = y / Math.hypot(x, y, z);
-		const moss = smoothstep(up + 0.35 * local.value3(x * 4, y * 4, z * 4), 0.35, 0.75);
-		const shade = 0.75 + 0.25 * local.value3(x * 9, y * 9, z * 9);
-		// Grey-brown stone, with yellow-olive moss where it faces up.
-		colors.set(
-			[shade * (0.3 - 0.13 * moss), shade * (0.28 - 0.12 * moss), shade * (0.245 - 0.2 * moss)],
-			v * 3,
+		const moss = smoothstep(
+			up + 0.35 * local.value3(x * 4, y * 4, z * 4),
+			0.75 - cover,
+			1.15 - cover,
 		);
+		const shade = 0.75 + 0.25 * local.value3(x * 9, y * 9, z * 9);
+		// Warm grey-brown stone, with yellow-olive moss where it faces up.
+		for (let c = 0; c < 3; c++)
+			colors[v * 3 + c] =
+				shade *
+				((STONE_TONE[c] as number) + ((MOSS_TONE[c] as number) - (STONE_TONE[c] as number)) * moss);
 	}
 	return { ...arrays, colors };
 }
+
+/** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
+const STONE_TONE = [0.3, 0.255, 0.19] as const;
+const MOSS_TONE = [0.16, 0.13, 0.035] as const;
 
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 
 /** How far from each lip the rocks stop, in meters, so the lips stay clear for the falls. */
-const LIP_CLEAR = 1.5;
-/** The rocks along the creek: in the stream, in a row along each edge, and on the banks. */
-const ROCKS = 150;
+const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
+/** The stones in the current, and the stones scattered on the banks away from the water. */
+const IN_CURRENT = 24;
+const SCATTERED = 12;
+/** The stretch of the creek where the route's dip glides under the water, along its north half. */
+const DIP_REACH = [2.5, 19] as const;
+/** The bank stones' smallest and largest size, and how close they stand, as a share of their size. */
+const BANK = { size: [0.3, 0.5], spacing: 1.8 } as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, and how many stand in it. One lies on the west sill and one
- * before each lip, where the water quickens; the east sill lies on the camera's dip and stays clear.
+ * upstream of it; the east sill lies on the camera's dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number])[] = [
 	[-11.5, 1.8, 10],
 	[-6.5, 1.4, 6],
-	[LIPS.west + 2.6, 1.6, 8],
-	[LIPS.east - 2.2, 1.2, 8],
 ];
 
 /** True for a point that lies inside the rim by at least `margin` meters. */
 export const insideRim = (x: number, z: number, margin: number) =>
 	Math.hypot(x, z) < rimRadius(bearingOf(x, z)) - margin;
 
+/** What a stone is: one of the rounded row along a bank, or a broken one in or by the current. */
+export type StoneKind = 'bank' | 'broken';
+
+/** One stone: its place, its size and its kind. */
+export interface StonePlace {
+	x: number;
+	z: number;
+	size: number;
+	kind: StoneKind;
+}
+
 /**
- * Where rocks stand: a few in the stream, a line along each edge, some on the banks, and rows across
- * the riffles. Every rock stands wholly inside the rim.
+ * Where rocks stand: a continuous row of rounded stones along each bank, touching each other; broken
+ * stones in the current, across the riffles and on the banks; and at each lip, rock shoulders either
+ * side of the narrowed creek, with stones in it where the water piles up white before it drops.
+ * Every rock stands wholly inside the rim.
  */
-export function rockPlaces(): { x: number; z: number; size: number }[] {
+export function rockPlaces(): StonePlace[] {
 	const next = random(41);
-	const places: { x: number; z: number; size: number }[] = [];
+	const places: StonePlace[] = [];
+	const add = (x: number, across: number, size: number, kind: StoneKind) => {
+		const z = streamZ(x) + across * streamHalf(x);
+		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size, kind });
+	};
 	const from = LIPS.west + LIP_CLEAR;
 	const to = LIPS.east - LIP_CLEAR;
-	while (places.length < ROCKS) {
+	// The rows along both banks, at the water's edge, each stone beside the last.
+	for (const side of [-1, 1]) {
+		let x = from + next() * 0.3;
+		while (x < to) {
+			const size = BANK.size[0] + (BANK.size[1] - BANK.size[0]) * next();
+			add(x, side * (0.97 + 0.1 * (next() - 0.5)), size, 'bank');
+			x += size * BANK.spacing;
+		}
+	}
+	for (let k = 0; k < IN_CURRENT; k++) {
 		const x = from + (to - from) * next();
-		const kind = next();
-		const side = next() < 0.5 ? -1 : 1;
+		// Where the camera's dip glides along the creek's north half, the stones keep to the south.
 		const across =
-			kind < 0.15 ? next() * 0.5 : kind < 0.75 ? 0.82 + 0.3 * next() : 1.3 + 0.9 * next();
-		// A stone in the stream stands tall enough to break the surface, so the current foams round it.
-		const size =
-			kind < 0.15 ? 0.5 + 0.3 * next() : kind < 0.75 ? 0.28 + 0.38 * next() : 0.2 + 0.5 * next();
-		const z = streamZ(x) + side * across * streamHalf(x);
-		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size });
+			x > DIP_REACH[0] && x < DIP_REACH[1] ? 0.35 + 0.25 * next() : (next() * 2 - 1) * 0.5;
+		add(x, across, 0.5 + 0.3 * next(), 'broken');
+	}
+	for (let k = 0; k < SCATTERED; k++) {
+		const x = from + (to - from) * next();
+		add(x, (next() < 0.5 ? -1 : 1) * (1.4 + 0.8 * next()), 0.2 + 0.5 * next(), 'broken');
 	}
 	for (const [middle, spread, count] of RIFFLES)
 		for (let k = 0; k < count; k++) {
 			const x = middle + (next() * 2 - 1) * spread;
 			const across = ((k + 0.5) / count) * 1.6 - 0.8 + (next() - 0.5) * 0.15;
-			const size = 0.42 + 0.25 * next();
-			const z = streamZ(x) + across * streamHalf(x);
-			if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size });
+			add(x, across, 0.42 + 0.25 * next(), 'broken');
 		}
+	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge.
+	for (const lip of [LIPS.west, LIPS.east]) {
+		const inward = -Math.sign(lip);
+		for (const side of [-1, 1]) {
+			add(
+				lip + inward * (0.7 + 0.4 * next()),
+				side * (1.05 + 0.1 * next()),
+				0.6 + 0.2 * next(),
+				'broken',
+			);
+			add(
+				lip + inward * (1.8 + 0.5 * next()),
+				side * (1.0 + 0.1 * next()),
+				0.45 + 0.15 * next(),
+				'broken',
+			);
+		}
+		for (const across of [-0.45, 0.1, 0.55])
+			add(
+				lip + inward * (1.1 + 1.2 * next()),
+				across + (next() - 0.5) * 0.15,
+				0.4 + 0.15 * next(),
+				'broken',
+			);
+	}
 	return places;
 }
 
@@ -178,16 +237,24 @@ export function createStones(
 	const maps = textureSet(textures, textureSize, rockTexel);
 	const look = { vertexColors: true, ...maps, uvTransform: { repeat: [2, 1] } } as const;
 	const dry = materials.standard({ ...look, roughness: 1 });
-	// Stones in the stream and at its edge are wet: a little darker, and with a dull sheen.
-	const wet = materials.standard({ ...look, color: '#b4ad9f', roughness: 0.62 });
+	// Stones in the stream and at its edge are wet: a little darker, and with a faint sheen.
+	const wet = materials.standard({ ...look, color: '#c2baa8', roughness: 0.8 });
 	const next = random(43);
 	const places = rockPlaces();
 	const obstacles: Obstacle[] = [];
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
-		const squash = [1, 0.55 + 0.25 * next(), 0.8 + 0.3 * next()] as const;
-		const mesh = geometry.fromArrays(mossy(rock(300 + shape, detail, squash), 50 + shape));
+		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
+		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
+		const squash =
+			kind === 'bank'
+				? ([1, 0.62 + 0.12 * next(), 0.85 + 0.15 * next()] as const)
+				: ([1, 0.55 + 0.25 * next(), 0.8 + 0.3 * next()] as const);
+		const arrays = rock(300 + shape, detail, squash, kind === 'bank' ? 0.03 : 0.12);
+		const mesh = geometry.fromArrays(mossy(arrays, 50 + shape, kind === 'bank' ? 0.45 : 0.1));
 		const mine = places
-			.filter((_, k) => k % ROCK_SHAPES === shape)
+			.filter(
+				(place, k) => place.kind === kind && k % (ROCK_SHAPES / 2) === shape % (ROCK_SHAPES / 2),
+			)
 			.map((place) => ({ ...place, yaw: next() * Math.PI * 2 }));
 		for (const wetness of [true, false]) {
 			const group = mine.filter(({ x, z }) => fromStream(x, z) < WET === wetness);
