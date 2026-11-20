@@ -1579,6 +1579,17 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['view=water-bounds'],
 		modes: ALL_MODES,
 	},
+	// A creek that falls 18 m off the edge of a cliff, drawn by the water add-on's waterfall: glassy
+	// at the lip, then white ropes of streaks with ragged edges that thin into mist, with spray at the
+	// lip, mist down the fall and a plume at its foot. The sheet's material moves its streaks from
+	// the time alone, and the spray's systems start full, so the held frame shows the running fall.
+	// Every tier must draw the sheet's material, its fade against the cliff, and the particles.
+	{
+		name: 'water-fall',
+		sketch: 'tests/pages/sketches/waterfall-sketch.ts',
+		hold: 2,
+		size: [640, 360],
+	},
 	{
 		name: 'depth-textures',
 		sketch: 'tests/pages/sketches/depth-textures-sketch.ts',
