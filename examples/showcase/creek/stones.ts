@@ -35,11 +35,11 @@ const PEBBLES: Record<QualityPreset, number> = { low: 1200, medium: 3000, high: 
 /** Rocks nearer the stream's middle than this many half widths are wet. */
 const WET = 1.25;
 /** Rocks nearer the stream's middle than this many half widths stand in the current and foam it. */
-const IN_STREAM = 0.75;
+const IN_STREAM = 1.0;
 /** How far under the surface a stone's top may lie and still break the water white, in meters. */
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
-const TRAIL = { links: 6, step: 0.38, width: 0.9 } as const;
+const TRAIL = { links: 10, step: 0.45, width: 1.1 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -74,9 +74,9 @@ function mossy(arrays: MeshArrays, seed: number): MeshArrays {
 		const up = y / Math.hypot(x, y, z);
 		const moss = smoothstep(up + 0.35 * local.value3(x * 4, y * 4, z * 4), 0.35, 0.75);
 		const shade = 0.75 + 0.25 * local.value3(x * 9, y * 9, z * 9);
-		// Dark grey-brown stone, with yellow-olive moss where it faces up.
+		// Grey-brown stone, with yellow-olive moss where it faces up.
 		colors.set(
-			[shade * (0.2 - 0.06 * moss), shade * (0.185 - 0.055 * moss), shade * (0.16 - 0.125 * moss)],
+			[shade * (0.3 - 0.13 * moss), shade * (0.28 - 0.12 * moss), shade * (0.245 - 0.2 * moss)],
 			v * 3,
 		);
 	}
@@ -98,9 +98,10 @@ export const ROCK_REACH = 1.6;
  * before each lip, where the water quickens; the east sill lies on the camera's dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number])[] = [
-	[-11.5, 1.6, 7],
-	[LIPS.west + 2.6, 1.4, 6],
-	[LIPS.east - 2.2, 1.2, 6],
+	[-11.5, 1.8, 10],
+	[-6.5, 1.4, 6],
+	[LIPS.west + 2.6, 1.6, 8],
+	[LIPS.east - 2.2, 1.2, 8],
 ];
 
 /** True for a point that lies inside the rim by at least `margin` meters. */
@@ -177,8 +178,8 @@ export function createStones(
 	const maps = textureSet(textures, textureSize, rockTexel);
 	const look = { vertexColors: true, ...maps, uvTransform: { repeat: [2, 1] } } as const;
 	const dry = materials.standard({ ...look, roughness: 1 });
-	// Stones in the stream and at its edge are wet: darker, and glossy, so they catch the light.
-	const wet = materials.standard({ ...look, color: '#8f8a82', roughness: 0.32 });
+	// Stones in the stream and at its edge are wet: a little darker, and with a dull sheen.
+	const wet = materials.standard({ ...look, color: '#b4ad9f', roughness: 0.62 });
 	const next = random(43);
 	const places = rockPlaces();
 	const obstacles: Obstacle[] = [];

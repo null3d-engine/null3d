@@ -181,6 +181,11 @@ const WATER_AT_LIP = 0.95;
  * leaves over the lip, narrower than the creek, between the lip's shoulders.
  */
 const FALL = { drop: 22, spread: 0.16, width: 0.85 } as const;
+/**
+ * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
+ * cast, its strength over the air's, and the least change of the air that it follows.
+ */
+const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.01 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** The foam map's box on the ground, over the whole creek, and its texels. */
@@ -234,7 +239,14 @@ function createCreekWater(
 		bed: 'shape',
 		// The stream's own bed gives the water all its depth, so the surface draws opaque. The water is
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
-		material: { alphaMode: 'opaque', attenuationColor: '#b2dcd2', attenuationDistance: 3 },
+		material: {
+			alphaMode: 'opaque',
+			attenuationColor: '#6db9ab',
+			attenuationDistance: 1.2,
+			// A thin volume bends the bed's picture little, so the view along the water close up
+			// never reaches past the frame's edge for it.
+			thickness: 0.15,
+		},
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
 		// rings, a little wider than the add-on's own.
 		foam: foamMap(ctx, obstacles, {
@@ -242,7 +254,7 @@ function createCreekWater(
 			size: FOAM_BOX.size,
 			width: 1024,
 			height: 288,
-			reach: 0.45,
+			reach: 0.8,
 			trail: 0,
 		}),
 	});
@@ -482,10 +494,28 @@ export default defineSketch(async (ctx) => {
 	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Morning');
-	// The clouds take the air's color now too, since a held frame runs no update, and the falls'
-	// spray takes the cloud's mist.
+	// The falls' spray and mist are unlit, so they take the cloud's own tone of the air: its color
+	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
+	const sprayLight: [number, number, number] = [0, 0, 0];
+	const sprayAir: [number, number, number] = [-1, -1, -1];
+	const lightFalls = () => {
+		const air = stage.airColor;
+		const moved =
+			Math.abs(air[0] - sprayAir[0]) +
+			Math.abs(air[1] - sprayAir[1]) +
+			Math.abs(air[2] - sprayAir[2]);
+		if (moved <= SPRAY.step) return;
+		const grey = 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2];
+		for (let c = 0; c < 3; c++) {
+			sprayAir[c] = air[c];
+			sprayLight[c] =
+				(grey + (air[c] - grey) * SPRAY.color) * (SPRAY.tint[c] as number) * SPRAY.gain;
+		}
+		for (const fall of falls) fall.setLight(sprayLight);
+	};
+	// The clouds and the falls take the air's color now too, since a held frame runs no update.
 	clouds.update(stage.airColor, stage.light);
-	for (const fall of falls) fall.setLight(clouds.mist);
+	lightFalls();
 
 	const film = createCinematic(ctx, camera, {
 		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
@@ -527,8 +557,8 @@ export default defineSketch(async (ctx) => {
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
 			stage.update(dt);
-			if (clouds.update(stage.airColor, stage.light))
-				for (const fall of falls) fall.setLight(clouds.mist);
+			clouds.update(stage.airColor, stage.light);
+			lightFalls();
 			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics move to the
 			// next time of day as the light does. A change too small to see is not written.

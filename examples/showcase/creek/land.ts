@@ -18,8 +18,11 @@ export const UNREFLECTED_LAYER = 2;
 export const RIM = 26;
 /** The height of the cloud sea's highest tops, in meters: about twelve meters under the rim. */
 export const CLOUD_TOP = -10.5;
-/** How far past the rim the walls' crags and ledges can stand, in meters. */
-const WALL_REACH = 3;
+/**
+ * How far past the rim the walls' crags and ledges can stand at the heights the camera reaches past
+ * the rim, in meters, with a margin.
+ */
+export const WALL_REACH = 3;
 /**
  * How far above the water's level the camera keeps past the rim, in meters. The water's view from
  * under its surface turns on from the camera's height alone, so past the rim, where no water lies,
