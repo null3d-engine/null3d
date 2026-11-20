@@ -3,7 +3,7 @@ id: api/water
 title: "Water (@null3d/water)"
 status: experimental
 since: "0.3"
-summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createWaterfall: a fall from a river's lip, with spray and mist. createOcean: an open sea of spectra transformed on the GPU."
+summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, rain rings, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createWaterfall: a fall from a river's lip, with spray and mist. createOcean: an open sea of spectra transformed on the GPU."
 ---
 
 # Water (@null3d/water)
@@ -139,6 +139,7 @@ the bed at a point, and the current there.
 | `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
 | `material` | The standard material values | None | The surface's material, such as its volume's tint and its thickness |
 | `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
+| `rain` | A number from 0 to 1 | 0 | How hard rain falls on the surface. Each drop rings the surface where it lands. 0 draws no rings and costs nothing |
 
 ## Wind on the surface
 
@@ -162,6 +163,25 @@ return {
 
 `waveAmplitude` scales the lift that the wind gives the surface, along with the long waves. A slow stream can therefore keep a nearly flat surface, with fine ripples. Its wind field still moves the plants and the leaves around it.
 
+## Rain on the surface
+
+Give `createWater` a `rain` amount, or call `water.setRain(amount)` while the scene runs, and each
+raindrop rings the surface where it lands. A ring grows and fades in about a second, and the rings
+drift downstream with the current. They bend the surface's mirror and its highlights, as real rain
+does. A light rain rings a few of the surface's cells, and a downpour rings all of them.
+
+```ts
+const water = createWater(ctx, { shapes, rain: 0 });
+
+// When a storm starts:
+water.setRain(1);
+```
+
+The rings follow the wet surface of the weather example add-on. Each cell of a grid about a meter
+wide takes one drop at a time, with its place and its moment from the cell's hash. They give way where
+one pixel covers more than a ring's line, so far water does not shimmer. Rain is off by default.
+While it is off, the surface skips the rings' work.
+
 ## The water object
 
 `createWater` returns an object:
@@ -174,6 +194,7 @@ return {
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
 | `setCaustics(light)` | Sets the light that the ripples focus on the bed, as a linear color |
+| `setRain(amount)` | Sets how hard rain falls on the surface, from 0 to 1 |
 | `bodies` | The resolved bodies: their bounds, `depthAt`, `contains` and `currentAt` |
 | `destroy()` | Removes the surface, its reflection pass and its material |
 

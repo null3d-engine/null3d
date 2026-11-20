@@ -8,6 +8,9 @@ the surface keeps it, and a second effect tints, bends and lights the view from 
 give the bed and the current as functions of any point, and may give its own mesh detail, for water
 that a middle line and a width do not describe.
 
+Rain, when a page turns it on with `rain` or `setRain`, rings the surface where its drops land,
+and the rings drift with the current.
+
 `createWaterfall` draws a fall from a river's lip. The sheet curves over the lip and drops almost
 straight. It is glassy at the lip and white lower down, in streaks that ride with the water, and it
 thins into mist toward its foot. Spray froths at the lip, mist drifts down the fall and a plume rises

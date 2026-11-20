@@ -3,7 +3,8 @@
 // reads the scene's own depth, and a mirror of the banks and the sky that redraws as often as the
 // quality preset affords. The same material draws from below, so a camera that dips under the water
 // keeps its surface. Where two bodies meet, as at a river's mouth, the junction map gives each point
-// to one body and lets the river's waves give way to the lake's without a seam.
+// to one body and lets the river's waves give way to the lake's without a seam. Rain, which is off
+// until a page asks for it, rings the surface where its drops land.
 import {
 	declareAddonNamespace,
 	defineFeature,
@@ -166,6 +167,12 @@ export interface WaterOptions {
 	 * wind add-on's field here, and the surface reads it once for each vertex.
 	 */
 	readonly wind?: WaterWind;
+	/**
+	 * How hard rain falls on the surface, from 0 for none to 1 for a downpour. Each drop rings the
+	 * surface where it lands, and the rings drift with the current. It is 0 by default, and dry water
+	 * pays nothing for the rings.
+	 */
+	readonly rain?: number;
 }
 
 /**
@@ -201,8 +208,17 @@ export interface Water {
 	currentAt(x: number, z: number, out: [x: number, z: number]): void;
 	/** Sets the light that the ripples focus on the bed, as a linear color. */
 	setCaustics(light: readonly [x: number, y: number, z: number]): void;
+	/** Sets how hard rain falls on the surface, from 0 for none to 1 for a downpour. */
+	setRain(amount: number): void;
 	/** Removes the surface, its reflection pass and its material. */
 	destroy(): void;
+}
+
+/** A rain amount, or an error that says what it must be. */
+function rainAmount(amount: number): number {
+	if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 1)
+		throw new Error(`@null3d/water: the rain must be from 0 to 1, and it is ${amount}`);
+	return amount;
 }
 
 /** The passes that the add-on added, so that each one names a texture of its own. */
@@ -352,6 +368,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	const { scene, geometry, materials, textures, render, quality } = ctx;
 	const level = options.level ?? 0;
 	const waveAmplitude = options.waveAmplitude ?? WAVE_AMPLITUDE;
+	let rain = rainAmount(options.rain ?? 0);
 	const bodies = bodyList(options.shapes);
 	const foam = options.foam;
 	const foamOrigin = foam?.origin ?? [0, 0];
@@ -418,6 +435,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			windBox: wind?.size ?? 0,
 			windStrength: wind ? 1 : 0,
 			windLayer: 0,
+			rain,
 		},
 	});
 	let meshBytes = 0;
@@ -553,6 +571,12 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			causticLight[1] = light[1];
 			causticLight[2] = light[2];
 			material.set({ caustics: causticLight });
+		},
+		setRain(amount) {
+			// A storm may set the rain every frame, so an unchanged amount costs nothing.
+			if (amount === rain) return;
+			rain = rainAmount(amount);
+			material.set({ rain });
 		},
 		destroy() {
 			host.destroy();

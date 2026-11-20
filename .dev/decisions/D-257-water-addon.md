@@ -2,7 +2,7 @@
 
 Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
 feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, the
-ocean, which draws on every GPU path, and the waterfall. Owed: a quiet run of the add-on's cost per preset, whose
+ocean, which draws on every GPU path, the waterfall, and rain on the surface. Owed: a quiet run of the add-on's cost per preset, whose
 gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
@@ -359,6 +359,26 @@ vertex's world place is the origin with its place in the mesh.
   compatibility mode and on WebGL2, after [D-271](D-271-a-fallback-pass-writes-the-image.md) made
   the read keep the rows that the shader names. The demo draws on every path: its WebGL2 tier runs
   at Medium, whose cadence is two, and the reflection keeps its last image there.
+
+## Rain on the surface
+
+A storm rains on the water, so the surface takes a `rain` amount from 0 to 1, and `setRain` changes
+it. The rings follow the weather example add-on's wet surface (`wet.wgsl`). Each cell takes one drop
+at a time, with its place and its moment from the cell's hash. Its ring grows and fades over its
+cycle. The cell, the rate and the tilt take that block's defaults: 0.9 m, 0.8 rings a second and
+0.32. The water's rings differ in three ways. They drift with the current. Two grids half a cell
+apart keep them from lining up. The amount leaves a share of the cells dry in each cycle, so a
+light rain differs from a downpour.
+
+The surface does not copy the weather block itself. A published package cannot depend on an example
+add-on, and the wet block carries puddles, a mirror and asphalt that water does not have. The rings
+run behind a branch on the uniform, so dry water does none of their work. They give way where a
+pixel covers more than 5 to 16 cm, so far water does not shimmer.
+
+The `water-rain` picture draws a lake in rain, low across the water, on every tier. Against the
+same lake with no rain, the rings move 1.9 to 2.4 per cent of its pixels. Each of those pixels moves
+by more than a tenth of full scale, on each of the three paths. Under a cloudy sky, the WebGPU path draws the lake's mirror of the
+clouds differently from the other two, rain or not. So the picture takes a clear sky.
 
 ## The waterfall
 
