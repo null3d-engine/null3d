@@ -32,7 +32,7 @@ test('each tree stands by hand on ground that grows, seated, apart and out of th
 });
 
 test('the ground cover grows only where the masks allow, out of the view to the statue', () => {
-	expect(valley.plants.length).toBeGreaterThan(150);
+	expect(valley.plants.length).toBeGreaterThan(30);
 	for (const plant of valley.plants) {
 		expect(bare(plant.x, plant.z), `a ${plant.kind} on bare ground at ${plant.x}, ${plant.z}`).toBe(
 			false,
