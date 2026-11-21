@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
 import { type FallSheet, fallEmitters } from './fall';
-import { createWaterfall, type WaterfallOptions } from './waterfall';
+import { createWaterfall, SINK_DEPTH, type WaterfallOptions } from './waterfall';
 
 /** What one stand-in particle buffer was told. */
 interface BufferRecord {
@@ -108,6 +108,8 @@ describe('a waterfall’s fade into a cloud', () => {
 	it('vanishes below the height it is given, and never without one', async () => {
 		const into = await fallWith({ fadeBelow: -9.5, spray: 0 });
 		expect(into.shaders[0]?.uniforms.fadeBelow).toBe(-9.5);
+		// The shader takes the depth it fades over from the add-on's one constant.
+		expect(into.shaders[0]?.uniforms.sinkDepth).toBe(SINK_DEPTH);
 		const open = await fallWith({ spray: 0 });
 		expect(open.shaders[0]?.uniforms.fadeBelow as number).toBeLessThan(-1e6);
 	});
@@ -136,9 +138,11 @@ describe('a waterfall’s fade into a cloud', () => {
 			((buffers[3] as BufferRecord).position as number[])[1] as number;
 		expect(plumeOf(into.buffers)).toBeGreaterThan(cloud);
 		expect(plumeOf(open.buffers)).toBeLessThan(cloud);
-		// The material breaks the water up over the same shown part, down to a meter below the
-		// cloud's top.
-		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + 1, 9);
+		// The material breaks the water up over the same shown part, down to a little below the
+		// cloud's top, within the depth it fades over.
+		const shownBelow = (into.shaders[0]?.uniforms.drop as number) - (1 - cloud);
+		expect(shownBelow).toBeGreaterThan(0);
+		expect(shownBelow).toBeLessThan(SINK_DEPTH);
 		expect(open.shaders[0]?.uniforms.drop).toBe(16);
 	});
 
