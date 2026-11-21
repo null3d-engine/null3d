@@ -16,15 +16,19 @@ import { createGrass } from '@null3d/grass';
 import { handOverToCards } from '@null3d/impostors';
 import { createWind } from '@null3d/wind';
 import { type Stand, type SwayLook, standPart, swayingPart } from '../../lib/blender-models';
-import { Noise } from '../../lib/procedural';
+import { Noise, random } from '../../lib/procedural';
 import { createSway } from '../../lib/sway';
+import { edgeGrid, inCore, read } from './ground';
 import { beachShare, golfShare, inland, townShare } from './island';
-import { cypress, finish } from './kit';
+import { type Build, build, type Color, cypress, finish, quad, shrub } from './kit';
 import { loadPlants, type Plant, type PlantKind, type Species } from './models';
 import {
 	CYPRESS,
+	canopyAt,
 	FILL_SPOTS,
 	groundHeight,
+	LOTS,
+	type Lot,
 	OAK,
 	OLIVE,
 	ROADS,
@@ -155,6 +159,209 @@ export const EDGE_SCRUB: readonly TreeSpot[] = (() => {
  */
 const TREE_CARDS: Record<QualityPreset, number> = { low: 150, medium: 200, high: 260, ultra: 340 };
 const SHRUB_CARDS: Record<QualityPreset, number> = { low: 40, medium: 55, high: 70, ultra: 90 };
+
+/** The side of the grid that stands the forest floor's plants, in meters. */
+const FLOOR_CELL = 3.6;
+/** The share of that grid's spots that each preset stands. */
+const FLOOR_SHARE: Record<QualityPreset, number> = {
+	low: 0.22,
+	medium: 0.45,
+	high: 0.75,
+	ultra: 1,
+};
+/**
+ * How far the floor's plants draw, in meters, at each preset: a bush a few dozen pixels wide still
+ * reads at the far edge, and the band keeps a closed wood's floor to a bounded number of instances.
+ */
+const FLOOR_REACH: Record<QualityPreset, number> = { low: 24, medium: 34, high: 48, ultra: 66 };
+/** Under this share of canopy the floor takes only fallen leaves, with no undergrowth. */
+const FLOOR_SHADE = 0.35;
+
+/** The tints of the floor's undergrowth: olive, lentisk and heath greens with dry straw among them. */
+const FLOOR_TINTS = [
+	[0.19, 0.28, 0.11],
+	[0.24, 0.33, 0.14],
+	[0.16, 0.24, 0.1],
+	[0.3, 0.34, 0.17],
+	[0.28, 0.29, 0.13],
+] as const;
+/** The tints of the fallen leaves: chestnut, oak and olive browns, and grey litter. */
+const LITTER_TINTS = [
+	[0.34, 0.24, 0.12],
+	[0.3, 0.26, 0.14],
+	[0.26, 0.24, 0.17],
+	[0.38, 0.3, 0.17],
+	[0.22, 0.2, 0.14],
+] as const;
+
+/** A place on the floor that takes a plant, with its own turn, size and tint. */
+interface FloorSpot {
+	x: number;
+	y: number;
+	z: number;
+	turn: number;
+	scale: number;
+	tint: readonly [number, number, number];
+}
+
+/**
+ * Whether a point lies inside a house's footprint. Each plot's reach is a short radius, so a place
+ * looks for its own and its neighbours' plots, which are listed under a coarse grid.
+ */
+function onHouse(): (x: number, z: number) => boolean {
+	const side = 10;
+	const listed = new Map<string, Lot[]>();
+	for (const lot of LOTS) {
+		const reach = lot.reach + 2;
+		for (let i = Math.floor((lot.x - reach) / side); i <= Math.floor((lot.x + reach) / side); i++)
+			for (
+				let j = Math.floor((lot.z - reach) / side);
+				j <= Math.floor((lot.z + reach) / side);
+				j++
+			) {
+				const key = `${i},${j}`;
+				const list = listed.get(key);
+				if (list) list.push(lot);
+				else listed.set(key, [lot]);
+			}
+	}
+	return (x, z) => {
+		const key = `${Math.floor(x / side)},${Math.floor(z / side)}`;
+		for (const lot of listed.get(key) ?? [])
+			if (Math.hypot(x - lot.x, z - lot.z) < lot.reach + 2) return true;
+		return false;
+	};
+}
+
+/**
+ * The forest floor's plants: low scrub and fallen litter. The scrub holds the shade of a closed
+ * wood and thins out into the open, and the litter lies everywhere that is not worked ground,
+ * thicker under a crown. The spots come from one fixed seed, so every load stands the same ones,
+ * and the plan's own spots are not moved.
+ */
+const FLOOR: { undergrowth: readonly FloorSpot[]; litter: readonly FloorSpot[] } = (() => {
+	const next = random(4801);
+	const held = onHouse();
+	const undergrowth: FloorSpot[] = [];
+	const litter: FloorSpot[] = [];
+	const lawns = parkLawns();
+	for (let x = -430; x <= 430; x += FLOOR_CELL)
+		for (let z = -400; z <= 400; z += FLOOR_CELL) {
+			const px = x + (next() - 0.5) * FLOOR_CELL * 0.8;
+			const pz = z + (next() - 0.5) * FLOOR_CELL * 0.8;
+			const [bush, leaf, size, turn] = [next(), next(), next(), next()];
+			if (inland(px, pz) < 7 || beachShare(px, pz) > 0.12) continue;
+			if (read(edgeGrid, px, pz) < 1.6 || slopeAt(px, pz) > 1.6) continue;
+			if (inCore(px, pz) || held(px, pz) || lawns.some((lawn) => lawn.where(px, pz))) continue;
+			const shade = canopyAt(px, pz);
+			// The golf course's mown turf keeps clear, and its rough and its woods take the floor.
+			if (golfShare(px, pz) > 0.02 && shade < 0.25) continue;
+			const y = groundHeight(px, pz);
+			// Fallen leaves and twigs lie under every crown and across the open ground between them.
+			if (leaf < 0.24 + 0.66 * shade)
+				litter.push({
+					x: px,
+					y: y - 0.03,
+					z: pz,
+					turn: turn * 6.3,
+					scale: 0.7 + size * 0.7,
+					tint: LITTER_TINTS[Math.floor(turn * LITTER_TINTS.length)] as readonly [
+						number,
+						number,
+						number,
+					],
+				});
+			// Low scrub grows in the shade of a closed wood, and only a stray clump shows in the open.
+			if (shade > FLOOR_SHADE && bush < 0.12 + 0.85 * Math.min(1, (shade - FLOOR_SHADE) / 0.5))
+				undergrowth.push({
+					x: px,
+					y: y - 0.06,
+					z: pz,
+					turn: turn * 6.3,
+					scale: 0.45 + size * 0.5,
+					tint: FLOOR_TINTS[Math.floor(bush * FLOOR_TINTS.length)] as readonly [
+						number,
+						number,
+						number,
+					],
+				});
+		}
+	return { undergrowth, litter };
+})();
+
+/**
+ * A patch of fallen leaves and twigs, a few tens of centimeters across, lying a hair above the
+ * ground. Its color comes from its instance.
+ */
+function leafLitter(): Build {
+	const b = build();
+	const next = random(571);
+	for (let k = 0; k < 9; k++) {
+		const a = next() * Math.PI * 2;
+		const r = Math.sqrt(next()) * 0.34;
+		const [x, z] = [Math.cos(a) * r, Math.sin(a) * r];
+		const s = 0.05 + next() * 0.09;
+		const turn = next() * Math.PI * 2;
+		const [ux, uz] = [Math.cos(turn) * s, Math.sin(turn) * s];
+		const [vx, vz] = [-Math.sin(turn) * s * 0.55, Math.cos(turn) * s * 0.55];
+		const y = 0.012 + next() * 0.02;
+		const tone = 0.62 + next() * 0.55;
+		const color: Color = [tone, tone, tone];
+		quad(
+			b,
+			[x - ux, y, z - uz],
+			[x + vx, y + 0.012, z + vz],
+			[x + ux, y, z + uz],
+			[x - vx, y + 0.012, z - vz],
+			color,
+		);
+	}
+	// A twig lies among the leaves, paler than they are.
+	for (let k = 0; k < 2; k++) {
+		const [x, z] = [(next() - 0.5) * 0.5, (next() - 0.5) * 0.5];
+		const turn = next() * Math.PI * 2;
+		const length = 0.16 + next() * 0.2;
+		const [ux, uz] = [Math.cos(turn) * length, Math.sin(turn) * length];
+		const [vx, vz] = [-Math.sin(turn) * 0.015, Math.cos(turn) * 0.015];
+		quad(
+			b,
+			[x - ux - vx, 0.03, z - uz - vz],
+			[x + ux - vx, 0.03, z + uz - vz],
+			[x + ux + vx, 0.034, z + uz + vz],
+			[x - ux + vx, 0.034, z - uz + vz],
+			[0.9, 0.85, 0.75],
+		);
+	}
+	return b;
+}
+
+/** Stands a batch of the floor's spots, at the preset's share and draw reach. */
+function standFloor(
+	ctx: SketchContext,
+	mesh: Build,
+	spots: readonly FloorSpot[],
+	share: number,
+	reach: number,
+	castShadows: boolean,
+): void {
+	const kept = standing(spots, share);
+	if (kept.length === 0) return;
+	const batch = ctx.scene.createInstances(ctx.geometry.fromArrays(finish(mesh)), kept.length, {
+		material: ctx.materials.standard({ vertexColors: true, roughness: 1, doubleSided: true }),
+		colors: true,
+		castShadows,
+		receiveShadows: true,
+	});
+	kept.forEach((spot, k) => {
+		batch.positions.set([spot.x, spot.y, spot.z], k * 3);
+		batch.rotations.set(quat.fromEuler(quat.create(), 0, spot.turn, 0), k * 4);
+		// Scrub and litter spread wider than they rise, as low growth on a floor does.
+		batch.scales.set([spot.scale * 1.15, spot.scale, spot.scale * 1.15], k * 3);
+		batch.colors?.set([...spot.tint, 1], k * 4);
+	});
+	batch.markDirty();
+	batch.setDrawRange(0, reach);
+}
 
 /**
  * How far each part's freest tips move in a wind of one meter a second, in meters, how stiff it is
@@ -376,6 +583,9 @@ export async function createTrees(
 		),
 		SHRUB_CARDS[preset],
 	);
+	// The floor under the near woods: low scrub that holds the shade, and fallen litter beneath it.
+	standFloor(ctx, shrub(180), FLOOR.undergrowth, FLOOR_SHARE[preset], FLOOR_REACH[preset], true);
+	standFloor(ctx, leafLitter(), FLOOR.litter, FLOOR_SHARE[preset], FLOOR_REACH[preset], false);
 	const lawns = await Promise.all(
 		parkLawns().map((lawn, k) =>
 			createGrass(ctx, {

@@ -354,25 +354,30 @@ function strip(
 	});
 }
 
-/** A ribbon that lies on the ground across its width too, for turf, with a color along its length. */
+/**
+ * A ribbon that lies on the ground across its width too, for turf, with a color along its length
+ * and across it. `across` is the number of bands from one edge to the other, so mown stripes show.
+ * The color takes a station's place along the line and the point's offset across it, from -1 to 1.
+ */
 function ribbon(
 	b: Build,
 	line: readonly { x: number; z: number }[],
 	half: (k: number) => number,
-	color: (k: number) => Color,
+	color: (k: number, t: number) => Color,
 	lift: number,
+	across = 4,
 ): void {
-	const across = 4;
 	const first = b.positions.length / 3;
 	line.forEach((p, k) => {
 		const a = line[Math.max(0, k - 1)] ?? p;
 		const c = line[Math.min(line.length - 1, k + 1)] ?? p;
 		const length = hypot(c.x - a.x, c.z - a.z) || 1;
 		const [nx, nz] = [-(c.z - a.z) / length, (c.x - a.x) / length];
-		const tint = color(k);
 		for (let w = 0; w <= across; w++) {
-			const off = ((w / across) * 2 - 1) * half(k);
+			const t = (w / across) * 2 - 1;
+			const off = t * half(k);
 			const [x, z] = [p.x + nx * off, p.z + nz * off];
+			const tint = color(k, t);
 			b.positions.push(x, groundHeight(x, z) + lift, z);
 			b.colors.push(tint[0], tint[1], tint[2]);
 			b.uvs.push(0, 0);
@@ -385,13 +390,61 @@ function ribbon(
 	});
 }
 
-/** A filled disc over the ground, for a turning circle or a green, by its radius along each bearing. */
+/** How far a road's middle stands over its edges, in meters, so its surface catches the light. */
+const ROAD_CROWN = 0.06;
+
+/**
+ * Adds a road's asphalt as a row of three points at each station, with a shallow crown across it.
+ * The color may vary across the width too, so the worn edges show, and a camera at its closest
+ * range does not read the surface as one flat strip. The crown flattens where a road runs inside
+ * the road that it meets, so no lip stands over the other road's surface.
+ */
+function crownStrip(
+	b: Build,
+	line: readonly { x: number; y: number; z: number }[],
+	half: (k: number) => number,
+	color: (k: number, t: number) => Color,
+	lift: (k: number) => number,
+	cross: (k: number) => number,
+): void {
+	const crown = (k: number) => (lift(k) === ROAD_LIFT ? ROAD_CROWN : 0);
+	const first = b.positions.length / 3;
+	line.forEach((p, k) => {
+		const a = line[Math.max(0, k - 1)] ?? p;
+		const c = line[Math.min(line.length - 1, k + 1)] ?? p;
+		const length = hypot(c.x - a.x, c.z - a.z) || 1;
+		const [nx, nz] = [-(c.z - a.z) / length, (c.x - a.x) / length];
+		const width = half(k);
+		const raise = lift(k);
+		for (const t of [-1, 0, 1]) {
+			const off = t * width;
+			const tint = color(k, t);
+			b.positions.push(
+				p.x + nx * off,
+				p.y + raise + cross(k) * off + crown(k) * (1 - t * t),
+				p.z + nz * off,
+			);
+			b.colors.push(tint[0], tint[1], tint[2]);
+			b.uvs.push(0, 0);
+		}
+		if (k + 1 < line.length) {
+			const at = first + k * 3;
+			b.indices.push(at, at + 1, at + 3, at + 1, at + 4, at + 3);
+			b.indices.push(at + 1, at + 2, at + 4, at + 2, at + 5, at + 4);
+		}
+	});
+}
+
+/**
+ * A filled disc over the ground, for a turning circle or a green, by its radius along each bearing.
+ * Its color may vary by place, so a green takes its mown stripes.
+ */
 function patch(
 	b: Build,
 	cx: number,
 	cz: number,
 	radius: (bearing: number) => number,
-	color: Color,
+	color: Color | ((x: number, z: number) => Color),
 	lift: number,
 	height: (x: number, z: number) => number = groundHeight,
 	sides = 40,
@@ -404,8 +457,9 @@ function patch(
 			const r = (radius(a) * ring) / rings;
 			const x = cx + Math.cos(a) * r;
 			const z = cz + Math.sin(a) * r;
+			const tint = typeof color === 'function' ? color(x, z) : color;
 			b.positions.push(x, height(x, z) + lift, z);
-			b.colors.push(color[0], color[1], color[2]);
+			b.colors.push(tint[0], tint[1], tint[2]);
 			b.uvs.push(0, 0);
 		}
 	for (let ring = 0; ring < rings; ring++)
@@ -588,10 +642,17 @@ function roadMesh(): Build {
 		// The surface goes a little lighter and darker along the way, as patched roads do. The main
 		// road is the one strong line, and the lanes are paler and narrower.
 		const tar = half >= CLIMB ? 0.1 : half >= LANE + 0.1 ? 0.12 : 0.13;
-		const tone = (k: number): Color => {
+		// The asphalt carries a fine mottle of its own along the way, and its worn edges read paler
+		// than its middle, so a road at eye level is not one flat colored strip.
+		const tone = (k: number, t = 1): Color => {
 			const p = points[k] as RoadPoint;
-			const t = tar * (1 + 0.16 * noise.value2(p.x * 0.05, p.z * 0.05));
-			return [t * 1.08, t, t * 0.9];
+			const fine =
+				1 +
+				0.16 * noise.value2(p.x * 0.05, p.z * 0.05) +
+				0.09 * noise.value2(p.x * 0.75 + 17, p.z * 0.75) +
+				0.05 * noise.value2(p.x * 2.6 + 31, p.z * 2.6);
+			const value = tar * Math.max(0.7, fine) * (Math.abs(t) < 0.5 ? 0.94 : 1.06);
+			return [value * 1.08, value, value * 0.9];
 		};
 		strip(b, points, (k) => (half + 0.45) * flare(k), dust, ROAD_LIFT - 0.05, cross);
 		// The road's raised edge slopes down to the ground on each side.
@@ -618,7 +679,7 @@ function roadMesh(): Build {
 				b.indices.push(at + 2, at + 3, at + 6, at + 3, at + 7, at + 6);
 			}
 		});
-		strip(b, points, (k) => half * flare(k), tone, under, cross);
+		crownStrip(b, points, (k) => half * flare(k), tone, under, cross);
 		if (end === 'circle') {
 			const tail = points[last] as RoadPoint;
 			const flat = () => tail.y;
@@ -858,6 +919,9 @@ export function retainingRuns(retaining: readonly { run: number }[]): number[] {
 
 /** The steepest ground that holds the golf course's turf, as a rise over a run. */
 const GOLF_BANK = 0.3;
+/** The width of a mown stripe on the golf turf, in meters, and the bands across a fairway's width. */
+const MOW_STRIPE = 4.4;
+const MOW_BANDS = 10;
 /** How far from the sea the turf stays, where the shore's bare rock ends, and the reach of a green, in meters. */
 const GOLF_SHORE = 36;
 const GREEN_REACH = 17;
@@ -951,6 +1015,39 @@ function grainMap({ textures }: SketchContext, seed: number, darkest: number) {
 			const mix =
 				0.5 + 0.35 * noise.fbm2(u * 6, v * 6, 3, 6) + 0.4 * noise.fbm2(u * 48, v * 48, 2, 48);
 			const tone = darkest + (255 - darkest) * Math.min(1, Math.max(0, mix));
+			const at = (j * size + i) * 4;
+			data[at] = tone;
+			data[at + 1] = tone;
+			data[at + 2] = tone;
+			data[at + 3] = 255;
+		}
+	return textures.fromData({
+		width: size,
+		height: size,
+		data,
+		colorSpace: 'srgb',
+		wrap: 'repeat',
+		mipmaps: true,
+	});
+}
+
+/**
+ * Asphalt's grain: tar patches at a road's scale, and a fine aggregate that reads when a camera
+ * stands at its closest range, over a tile of a few meters.
+ */
+function roadGrainMap({ textures }: SketchContext) {
+	const size = 512;
+	const noise = new Noise(53);
+	const data = new Uint8Array(size * size * 4);
+	for (let j = 0; j < size; j++)
+		for (let i = 0; i < size; i++) {
+			const [u, v] = [i / size, j / size];
+			const mix =
+				0.8 +
+				0.2 * noise.fbm2(u * 4, v * 4, 3, 4) +
+				0.16 * noise.fbm2(u * 36, v * 36, 2, 36) +
+				0.12 * noise.fbm2(u * 170, v * 170, 1, 170);
+			const tone = Math.min(255, Math.max(60, 255 * mix));
 			const at = (j * size + i) * 4;
 			data[at] = tone;
 			data[at + 1] = tone;
@@ -1887,19 +1984,54 @@ function createGolf(ctx: SketchContext): void {
 			return width * Math.sqrt(Math.min(1, (toEnd + 0.3) / FAIRWAY_ROUND));
 		});
 		const onTop = (k: number) => rounded[k] as number;
+		// A mower runs a stripe the length of the hole, so its light alternates across the turf, a
+		// band's edge following the hole's own line. The collar's stripes are the same, softer.
+		const mown = (base: Color, off: number, swing: number): Color => {
+			const band = Math.floor(off / MOW_STRIPE) % 2 === 0 ? 1 + swing : 1 - swing;
+			return [base[0] * band, base[1] * band, base[2] * band];
+		};
+		const turf: Color = [0.2, 0.365, 0.115];
+		const collar: Color = [0.145, 0.28, 0.085];
 		ribbon(
 			b,
 			line,
 			(k) => onTop(k) + 3.2 * Math.min(1, onTop(k) / 4),
-			() => [0.14, 0.27, 0.08],
+			(k, t) => mown(collar, t * (onTop(k) + 3.2 * Math.min(1, onTop(k) / 4)), 0.08),
 			0.42,
+			MOW_BANDS,
 		);
-		ribbon(
+		ribbon(b, line, onTop, (k, t) => mown(turf, t * onTop(k), 0.13), 0.5, MOW_BANDS);
+		// The green's mowing runs along the fairway's last stretch, so its stripes cross the green
+		// the way the hole plays.
+		const [tail, before] = [
+			line[line.length - 1] as { x: number; z: number },
+			line[line.length - 2] as { x: number; z: number },
+		];
+		const run = hypot(tail.x - before.x, tail.z - before.z) || 1;
+		const [ux, uz] = [(tail.x - before.x) / run, (tail.z - before.z) / run];
+		const greenBand = (x: number, z: number, base: Color, swing: number): Color =>
+			mown(base, ((x - gx) * ux + (z - gz) * uz) * 0.5, swing);
+		patch(
 			b,
-			line,
-			onTop,
-			(k) => (Math.floor(k / 3) % 2 ? [0.19, 0.35, 0.11] : [0.21, 0.38, 0.12]),
-			0.5,
+			gx,
+			gz,
+			(a) => 15 + 2.4 * Math.sin(a * 3),
+			(x, z) => greenBand(x, z, [0.15, 0.3, 0.08], 0.06),
+			0.54,
+			groundHeight,
+			48,
+			12,
+		);
+		patch(
+			b,
+			gx,
+			gz,
+			(a) => 12 + 2.2 * Math.sin(a * 3),
+			(x, z) => greenBand(x, z, [0.26, 0.45, 0.15], 0.08),
+			0.58,
+			groundHeight,
+			48,
+			12,
 		);
 		patch(b, gx, gz, (a) => 15 + 2.4 * Math.sin(a * 3), [0.15, 0.3, 0.08], 0.54);
 		patch(b, gx, gz, (a) => 12 + 2.2 * Math.sin(a * 3), [0.26, 0.45, 0.15], 0.58);
@@ -2504,7 +2636,7 @@ export function createTown(ctx: SketchContext): Promise<void> {
 	scene.createMesh({
 		mesh: geometry.fromArrays(finish(onGroundUvs(roadMesh(), ROAD_GRAIN_TILE))),
 		material: materials.standard({
-			map: grainMap(ctx, 53, 170),
+			map: roadGrainMap(ctx),
 			vertexColors: true,
 			roughness: 1,
 			specularIntensity: 0.12,
