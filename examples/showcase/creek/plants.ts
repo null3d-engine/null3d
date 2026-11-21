@@ -49,14 +49,20 @@ const GROUND_TINTS: readonly (readonly [number, number, number])[] = [
 ];
 
 /**
- * The maples' leaf colors over their pale map, in linear shares, which read hue about 16, 24 and
- * 32 on the screen, the concept's red, orange and yellow maples, close together as its are.
+ * The maples' leaf colors over their pale map, in linear shares, which read hue about 15, 26 and
+ * 31 on the screen, the concept's red, orange and yellow maples, close together as its are.
  */
 const MAPLE_TINTS: Record<Exclude<MapleColor, 'bare'>, readonly [number, number, number]> = {
-	red: [0.9, 0.12, 0.03],
-	orange: [0.9, 0.23, 0.035],
-	yellow: [0.9, 0.35, 0.04],
+	red: [0.9, 0.17, 0.04],
+	orange: [0.9, 0.34, 0.05],
+	yellow: [0.9, 0.41, 0.05],
 };
+
+/**
+ * The moss cushions' tint over their own moss, in linear shares: warmer, with less blue, so they read
+ * stronger than the lawn they lie on, as the concept's cushions do.
+ */
+const CUSHION_TINT = [1.15, 1.05, 0.45] as const;
 
 /** The garden's ground plants that carry tufts over their body; the moss cushion is a body alone. */
 const TUFTED: readonly PlantKind[] = ['rim-conifer', 'clipped-shrub', 'azalea', 'autumn-clump'];
@@ -185,6 +191,15 @@ export function createPlants(
 	for (const kind of PLANT_KINDS) {
 		const spots = valley.plants.filter((spot) => spot.kind === kind);
 		const parts = models.plants[kind];
+		if (kind === 'moss-cushion') {
+			// The cushions take a warmer, stronger tint than the lawn's moss, so they stand out of it.
+			const [part] = parts as [Part];
+			tinted(part, spots, swayingPart(sway, part, SWAY.plant, false), () => {
+				const shade = 0.9 + 0.2 * next();
+				return CUSHION_TINT.map((share) => share * shade);
+			});
+			continue;
+		}
 		if (GARDEN_PLANTS.includes(kind)) {
 			// The garden's plants carry their own colors: a body, and tufts cut from their cards.
 			parts.forEach((part, k) => {
