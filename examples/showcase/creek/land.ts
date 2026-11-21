@@ -360,8 +360,8 @@ export const STATUE_TURN = (15 * Math.PI) / 180;
  * share; how many points its outline has; and how far into it the top flight's last steps cut.
  */
 export const LEDGE = {
-	long: 4.5,
-	wide: 3,
+	long: 4.8,
+	wide: 3.2,
 	rise: 0.4,
 	foot: 0.35,
 	rough: 0.06,
