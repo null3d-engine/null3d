@@ -15,6 +15,7 @@ import {
 	fallSheet,
 	fallTime,
 	GRAVITY,
+	mistBillow,
 	type WaterfallMesh,
 } from './fall';
 import fallShader from './fall.wgsl';
@@ -109,6 +110,13 @@ export interface WaterfallOptions {
 	 */
 	readonly spray?: number;
 	/**
+	 * The mist round the fall's foot and the plume that rises from it, as a factor of the fall's
+	 * own, from 0 to 3, which `spray` scales too. It is 1 by default. At 0 the fall makes neither,
+	 * for a scene whose own cloud draws the mist at the fall's foot: puffs lit apart from that cloud
+	 * would draw a gray patch over it.
+	 */
+	readonly mist?: number;
+	/**
 	 * The layers that the sheet and its spray draw on, as a 32-bit mask. It is layer 0 by default.
 	 * Leave out the layers that a water's reflection draws when the fall lies past the water's edge.
 	 */
@@ -160,11 +168,16 @@ function error(message: string): Error {
 	return error;
 }
 
-/** A spray amount, or an error that says what it must be. */
-function sprayAmount(amount: number): number {
+/** A spray or mist amount, or an error that says what it must be. */
+function sprayAmount(amount: number, what = 'spray'): number {
 	if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MOST_SPRAY)
-		throw error(`a waterfall's spray must be from 0 to ${MOST_SPRAY}, and it is ${amount}`);
+		throw error(`a waterfall's ${what} must be from 0 to ${MOST_SPRAY}, and it is ${amount}`);
 	return amount;
+}
+
+/** Whether an emitter makes the mist round the fall's foot, which the `mist` option scales. */
+function atFoot(place: FallEmitter): boolean {
+	return place.kind === 'mist' || place.kind === 'plume';
 }
 
 /** The lip's direction across the water, to its right, as a unit vector in the world. */
@@ -215,6 +228,7 @@ export async function createWaterfall(
 	};
 	checkFallSheet(sheet);
 	let spray = sprayAmount(options.spray ?? 1);
+	const mist = sprayAmount(options.mist ?? 1, 'mist');
 	const sink = sinkHeight(options.fadeBelow);
 	// The part of the drop that shows: down to a meter below the cloud that the fall sinks into, or
 	// the whole drop. The water breaks up and bursts into mist over this part, so the burst stands
@@ -225,10 +239,11 @@ export async function createWaterfall(
 	// part above the cloud, and the mist sinks slowly.
 	const intoCloud = options.fadeBelow !== undefined;
 	const sprayed: FallSheet = intoCloud
-		? { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink - 1.5, 1)) }
+		? { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink - 0.5, 1)) }
 		: sheet;
 	const material = materials.shader({
-		color: '#f2f3f2',
+		// White water under an overcast sky leans a little blue.
+		color: '#eef1f6',
 		roughness: 0.95,
 		metalness: 0,
 		// Foam scatters light more than it mirrors it, so its edges catch little of the sky's glare,
@@ -282,6 +297,9 @@ export async function createWaterfall(
 			nearFade: 2,
 			...(options.layers !== undefined && { layers: options.layers }),
 		};
+		const billow = mistBillow(sprayed);
+		// The births a second of an emitter at a spray of 1.
+		const own = (place: FallEmitter) => place.rate * (atFoot(place) ? mist : 1);
 		const look = (place: FallEmitter, seed: number): ParticleSystemOptions => {
 			const half = place.halfWidth;
 			const base = {
@@ -289,10 +307,11 @@ export async function createWaterfall(
 				seed,
 				position: place.position,
 				shape: { type: 'box' as const, size: place.box },
-				rate: place.rate * spray,
+				rate: own(place) * spray,
 			};
 			if (place.kind === 'froth')
-				// Small puffs thrown out and down with the water over the brink.
+				// A fine spray thrown out and down with the water over the brink: many small, faint
+				// puffs, so none reads as a ball of cotton beside the lip.
 				return {
 					...base,
 					capacity: room(place.rate, FROTH_LIFE),
@@ -301,11 +320,11 @@ export async function createWaterfall(
 					speed: [speed * 0.6, speed * 1.4 + 0.3],
 					gravity: [0, -2.5, 0],
 					drag: 1.4,
-					lifetime: [0.9, FROTH_LIFE],
-					size: [0.25 * half, 0.45 * half],
-					sizeOverLife: [0.6, 1.3, 1.9],
-					alphaOverLife: [0, 0.85, 0.5, 0],
-					opacity: 0.55,
+					lifetime: [0.6, FROTH_LIFE * 0.7],
+					size: [0.08 * half, 0.16 * half],
+					sizeOverLife: [0.7, 1.2, 1.5],
+					alphaOverLife: [0, 0.7, 0.35, 0],
+					opacity: 0.35,
 				};
 			if (place.kind === 'drops')
 				// Small round drops flung off the column's surface, out and down with the water. Those
@@ -330,7 +349,8 @@ export async function createWaterfall(
 				};
 			const wind = options.wind && { windField: options.wind };
 			if (place.kind === 'mist')
-				// Broad puffs that sink slower than the water and drift out from it.
+				// Large, faint puffs that sink slower than the water and drift out from it. Many overlap
+				// at any place, so they read as one even mist rather than as separate balls.
 				return {
 					...base,
 					...wind,
@@ -341,12 +361,10 @@ export async function createWaterfall(
 					turbulence: 0.8,
 					turbulenceScale: 0.3,
 					lifetime: [2.5, MIST_LIFE],
-					// Billows sized by the creek, not by the fall's fan, so a wide fall makes more of
-					// them rather than a wall of haze.
-					size: [0.6 * sheet.halfWidth, 1.3 * sheet.halfWidth],
+					size: [0.75 * billow, 1.25 * billow],
 					sizeOverLife: [0.6, 1.2, 1.7],
 					alphaOverLife: [0, 0.9, 0.75, 0],
-					opacity: 0.5,
+					opacity: 0.45,
 				};
 			// The plume: broad puffs that rise and spread where the fall thins into cloud.
 			return {
@@ -365,16 +383,21 @@ export async function createWaterfall(
 				opacity: 0.7,
 			};
 		};
-		const places = fallEmitters(sprayed);
+		// Each emitter keeps its seed whichever others the fall leaves out.
+		const seeded = fallEmitters(sprayed).map((place, k) => ({ place, seed: 61 + k }));
+		const kept = seeded.filter(({ place }) => own(place) > 0);
 		const made = await Promise.all(
-			places.map((place, k) => createParticles(ctx, look(place, 61 + k))),
+			kept.map(({ place, seed }) => createParticles(ctx, look(place, seed))),
 		);
 		for (let k = 0; k < made.length; k++) {
 			const system = made[k] as ParticleSystem;
-			const place = places[k] as FallEmitter;
+			const place = (kept[k] as (typeof kept)[number]).place;
 			// Each system's frame turns with the lip, so its box lies across the fall.
 			system.object.setRotation(0, Math.sin(place.turn / 2), 0, Math.cos(place.turn / 2));
-			emitters.push({ system, rate: place.rate });
+			// The mist and the plume wrap the column's lower part, so they draw over it wherever the
+			// two meet, and the water dissolves into them.
+			if (atFoot(place)) system.object.setRenderOrder(1);
+			emitters.push({ system, rate: own(place) });
 		}
 	}
 	return {

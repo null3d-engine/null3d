@@ -43,6 +43,7 @@ import {
 	CLOUD_TOP,
 	cameraFloor,
 	createLand,
+	FALL,
 	LIPS,
 	streamCurrent,
 	streamDepth,
@@ -52,10 +53,13 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
+import { DUSK_SKY, duskSkyStrength, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
 import { createSteps } from './steps';
 import { createStones, type Obstacle } from './stones';
+import { placeValley } from './valley';
 
 // The camera route, which this scene's frames and the shared route check both read.
 export { SHOTS };
@@ -127,7 +131,7 @@ const params = new URL(import.meta.url).searchParams;
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
-/** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
+/** The parts of the scene that the address leaves out, for a bisect or a measure by difference. */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 /**
  * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
@@ -193,29 +197,10 @@ const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
 /**
- * Each lip's fall: how far it drops, so its mist bursts just above the cloud's tops; how far each
- * side widens per meter fallen, so it fans out down the drop; the share of the creek's half width
- * that leaves over the lip: the water that shows there, between the lip's shoulders; and how far up
- * the creek its water starts, in meters, so it covers the river's square end and piles froth toward
- * the brink.
- */
-const FALL = { drop: 17, spread: 0.12, width: 0.9, apron: 2.5 } as const;
-/**
  * How far the sheet reaches at each lip, in half widths: as far as the fall, so no edge of the sheet
  * runs on past it over the rim.
  */
 const WATER_AT_LIP = FALL.width;
-/**
- * The warm fill light that the garden takes from the overcast, beside the sky map's own blue-grey
- * light, as the concept's warm light shows on the statue's chest and the rock: its colour from above
- * and from the ground, as linear shares, and its strength for each unit of the air's brightness.
- */
-const FILL = { sky: [1, 0.84, 0.62], ground: [0.5, 0.36, 0.2], gain: 8 } as const;
-/**
- * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
- * cast, its strength over the air's, and the least change of the air that it follows.
- */
-const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.01 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
@@ -278,7 +263,7 @@ function createCreekWater(
 			attenuationDistance: 1.2,
 			// From the opening view the calm pool would mirror the bright overcast and hide its bed:
 			// a weaker reflection lets the dark bed through, as the concept's pool shows it.
-			specularIntensity: 0.5,
+			specularIntensity: 0.4,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,
@@ -367,9 +352,13 @@ export default defineSketch(async (ctx) => {
 	const clouds = await createClouds(ctx, quality.preset);
 	page.post('loading', 'Setting the statue, the gate and the stones');
 	const models = await loadGarden(ctx);
-	createGarden(ctx, models, detail.texture);
+	createGarden(ctx, models, detail.rock, detail.texture);
 	createSteps(ctx, detail.rock, detail.texture);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders);
+	page.post('loading', 'Planting the garden');
+	const plants = WITHOUT.has('plants')
+		? undefined
+		: createPlants(ctx, wind, placeValley(), await loadPlants(ctx));
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
@@ -382,26 +371,29 @@ export default defineSketch(async (ctx) => {
 				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
-	// A fall at each lip, where the creek's sheet ends: it leaves with the creek's own width and
-	// speed, and drops into the cloud. It lies past the water's edge, so the reflection leaves it out.
+	// A fall at each lip, where the creek's sheet ends: it leaves with the creek's own width, drops
+	// close to the rock under the lip and into the cloud. It lies past the water's edge, so the
+	// reflection leaves it out.
 	page.post('loading', 'Pouring the falls');
 	const falls: Waterfall[] = water
 		? await Promise.all(
 				[LIPS.west, LIPS.east].map((x) => {
 					const away = Math.sign(x);
-					const [vx, vz] = streamCurrent(x - away * 0.3);
 					return createWaterfall(ctx, {
 						lip: [x, streamZ(x)],
 						direction: [away, away * streamSlope(x)],
 						halfWidth: streamHalf(x) * FALL.width,
 						level: WATER,
-						speed: Math.hypot(vx, vz),
+						speed: FALL.speed,
 						drop: FALL.drop,
 						spread: FALL.spread,
 						apron: FALL.apron,
 						// The cloud draws before the falls, so each fall fades out into it below the cloud's
 						// tops, and its water bursts into mist over the drop above them.
 						fadeBelow: CLOUD_TOP,
+						// The cloud draws the bright mist at each fall's foot, so the fall makes none of its
+						// own, which its spray light would draw greyer over the cloud's.
+						mist: 0,
 						layers: UNREFLECTED_LAYER,
 						wind: wind.field,
 					});
@@ -427,11 +419,12 @@ export default defineSketch(async (ctx) => {
 		cloudCoverage: 0.95,
 		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
 		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
-		// light is weak and the sky's share grows, so the shadows stay soft, and the picture opens up
-		// past the clear sky's exposure.
+		// light is weakened and the sky's share grows, so the shadows stay soft, and the picture opens
+		// up past the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as
+		// the statue's chest, as the concept's warm light does, with no fill to warm every face.
 		exposureScale: 3.2,
 		environmentScale: 1.4,
-		sunScale: 0.35,
+		sunScale: 0.6,
 		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
@@ -460,11 +453,18 @@ export default defineSketch(async (ctx) => {
 		fit();
 		light();
 	});
+	// The dusk's own sky light, which only Dusk turns up.
+	const duskSky = scene.createHemisphereLight({
+		skyColor: DUSK_SKY.sky,
+		groundColor: DUSK_SKY.ground,
+		intensity: 0,
+	});
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
+		duskSky.setIntensity(duskSkyStrength(look));
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
@@ -543,13 +543,6 @@ export default defineSketch(async (ctx) => {
 	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
 	const sprayLight: [number, number, number] = [0, 0, 0];
 	const sprayAir: [number, number, number] = [-1, -1, -1];
-	// The warm fill from the overcast above and the earth below, which the sky map's blue-grey light
-	// lacks: its strength follows the air's brightness, so it dims with the hour.
-	const fill = scene.createHemisphereLight({
-		skyColor: FILL.sky,
-		groundColor: FILL.ground,
-		intensity: 0,
-	});
 	const lightFalls = () => {
 		const air = stage.airColor;
 		const moved =
@@ -557,14 +550,9 @@ export default defineSketch(async (ctx) => {
 			Math.abs(air[1] - sprayAir[1]) +
 			Math.abs(air[2] - sprayAir[2]);
 		if (moved <= SPRAY.step) return;
-		const grey = 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2];
-		for (let c = 0; c < 3; c++) {
-			sprayAir[c] = air[c];
-			sprayLight[c] =
-				(grey + (air[c] - grey) * SPRAY.color) * (SPRAY.tint[c] as number) * SPRAY.gain;
-		}
+		for (let c = 0; c < 3; c++) sprayAir[c] = air[c];
+		sprayLightOf(air, sprayLight);
 		for (const fall of falls) fall.setLight(sprayLight);
-		fill.setIntensity(FILL.gain * grey);
 	};
 	// The clouds and the falls take the air's color now too, since a held frame runs no update.
 	clouds.update(stage.airColor, stage.light);
@@ -609,6 +597,7 @@ export default defineSketch(async (ctx) => {
 			}
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
+			plants?.update();
 			stage.update(dt);
 			clouds.update(stage.airColor, stage.light);
 			lightFalls();
