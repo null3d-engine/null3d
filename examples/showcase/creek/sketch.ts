@@ -53,7 +53,7 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { DUSK_SKY, duskSkyStrength, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createDuskSky, SPRAY, sprayLight as sprayLightOf } from './lights';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
@@ -462,17 +462,13 @@ export default defineSketch(async (ctx) => {
 		light();
 	});
 	// The dusk's own sky light, which only Dusk turns up.
-	const duskSky = scene.createHemisphereLight({
-		skyColor: DUSK_SKY.sky,
-		groundColor: DUSK_SKY.ground,
-		intensity: 0,
-	});
+	const duskSky = createDuskSky(scene);
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
-		duskSky.setIntensity(duskSkyStrength(look));
+		duskSky.setLook(look);
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];

@@ -1,6 +1,7 @@
 // The Creek's own lights beside the stage's sun and sky: the light on the falls' spray, which
 // follows the air's color, and the dusk's own sky light, which only Dusk turns up. Each is worked
 // out here from the hour's look, so a test can hold it.
+import type { SketchContext } from '@null3d/engine';
 import { type MoodMix, moodShare } from '../../lib/stage';
 
 /**
@@ -35,7 +36,20 @@ export function sprayLight(
 	return out;
 }
 
-/** The dusk sky light's strength in a look: its full strength in Dusk, eased in and out of it. */
-export function duskSkyStrength(look: MoodMix): number {
-	return DUSK_SKY.gain * moodShare(look, 'Dusk');
+/** The dusk's own sky light in a scene, which follows the look that the scene shows. */
+export interface DuskSky {
+	/** Sets the light for a look: its full strength in Dusk, eased in and out of it, else none. */
+	setLook(look: MoodMix): void;
+}
+
+/** Makes the dusk's own sky light in a scene, dark until a look turns it up. */
+export function createDuskSky(
+	scene: Pick<SketchContext['scene'], 'createHemisphereLight'>,
+): DuskSky {
+	const light = scene.createHemisphereLight({
+		skyColor: DUSK_SKY.sky,
+		groundColor: DUSK_SKY.ground,
+		intensity: 0,
+	});
+	return { setLook: (look) => light.setIntensity(DUSK_SKY.gain * moodShare(look, 'Dusk')) };
 }
