@@ -211,13 +211,13 @@ export const RING = {
 	gap: STAIRS.half + 0.35,
 } as const;
 
+/** A block of the ledge's ring, with how far its top stands over the ledge's top, in meters. */
+type RingRock = RockPlace & { crown: number };
+
 /**
  * The blocks of rock round the ledge's edge, with joints between them, so the ledge reads as the
  * hill's own rock rather than a disc set on it. The front stays open where the steps climb in.
  */
-/** A block of the ledge's ring, with how far its top stands over the ledge's top, in meters. */
-type RingRock = RockPlace & { crown: number };
-
 function ringRocks(ledge: Ledge): RingRock[] {
 	const next = random(99);
 	const blocks: RingRock[] = [];
