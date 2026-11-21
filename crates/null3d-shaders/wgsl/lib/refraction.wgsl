@@ -138,11 +138,15 @@ fn copied_light(clip: vec4f, surface_at: vec3f, roughness: f32, ior: f32) -> vec
     // Down from the drawn corner's top-left, in its pixels.
     let ndc = clip.xy / clip.w;
     let pixel = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5) * drawn;
-    var uv = clamp(pixel, vec2f(0.5), drawn - 0.5) / full;
+    // A ray bent past the drawn part's edge reads the mirror image across that edge. Clamped to the
+    // edge, every such pixel would read the edge's last row or column, which draws upright streaks
+    // along the frame's foot under water seen close by.
+    let mirrored = drawn - abs(drawn - abs(pixel));
+    var uv = clamp(mirrored, vec2f(0.5), drawn - 0.5) / full;
 #ifdef WEBGL2
     uv.y = 1.0 - uv.y;
 #endif
-    if nearest_code(pixel, drawn, full) < distance_code(surface_at.z) - IN_FRONT {
+    if nearest_code(mirrored, drawn, full) < distance_code(surface_at.z) - IN_FRONT {
         // A fragment's position counts rows as the copy keeps them on each GPU path.
         uv = surface_at.xy / full;
     }
