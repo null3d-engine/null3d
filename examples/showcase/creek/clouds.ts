@@ -223,30 +223,24 @@ fn unlit(input: SurfaceInput) -> vec4f {
     let forward = max(-(camera.view * vec4f(dir, 0.0)).z, 1e-3);
     let behind = sceneDistance(uv);
     let end = select(material.reach, min(behind / forward, material.reach), behind > 0.0);
-    // At an outline of the scene, as where one crag stands in front of another, the pixels round
-    // this one end at different depths, and the cloud before each is a different depth of cloud.
-    // There the ray runs on to the farthest of them and keeps what it gathered by the nearest; the
-    // two blend by the share of the five pixels that end near, so the cloud's edge there is as soft
-    // as the outline's coverage and never follows the pixel grid.
+    // The ray ends at the scene's surface by its depth averaged over a small ring of pixels round
+    // this one. Where one crag stands in front of another, the cloud before them then thickens
+    // smoothly across the crag's edge, so a face veiled by the cloud shows no cut outline. A pixel
+    // of the ring that sees past the rock into open cloud, much farther off, stays out of the
+    // average, so the rock's own outline against the cloud keeps its edge.
     let texel_uv = 1.0 / frame.resolution;
-    var near = end;
-    var far = end;
-    var ends = vec4f(0.0);
-    for (var k = 0; k < 4; k++) {
-        let o = select(vec2f(0.0, select(-1.0, 1.0, k == 3)), vec2f(select(-1.0, 1.0, k == 1), 0.0), k < 2);
-        let b = sceneDistance(uv + o * texel_uv);
+    var sum = end;
+    var count = 1.0;
+    for (var k = 0; k < 8; k++) {
+        let angle = f32(k) * 0.7853982;
+        let b = sceneDistance(uv + vec2f(cos(angle), sin(angle)) * 2.5 * texel_uv);
         let e = select(material.reach, min(b / forward, material.reach), b > 0.0);
-        ends[k] = e;
-        near = min(near, e);
-        far = max(far, e);
+        let close = abs(e - end) < 20.0;
+        sum += select(0.0, e, close);
+        count += select(0.0, 1.0, close);
     }
-    // Past a few meters the far side is open cloud, not another crag, and a ray run on through the
-    // rock's edge would find cloud that the rock hides, so such an outline keeps its own edge.
-    let outline = far - near > 0.3 && far - near < 20.0;
-    let middle = 0.5 * (near + far);
-    let nearShare = (select(0.0, 1.0, end < middle) + dot(select(vec4f(0.0), vec4f(1.0), ends < vec4f(middle)), vec4f(1.0))) / 5.0;
-    let limit = select(end, far, outline);
-    let limitHit = select(behind > 0.0, far < material.reach, outline);
+    let limit = select(end, sum / count, behind > 0.0);
+    let limitHit = behind > 0.0;
     // Where the ray can first meet cloud: under the heaps' highest tops inside the disc round the
     // cliff, and under the towers' highest tops past it.
     let low = material.top + material.heap + 1.0;
@@ -288,19 +282,10 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // Where along the ray its light was last read, and the shade of the billows toward the sun.
     var litAt = 0.0;
     var shadow = 1.0;
-    // What the ray gathered by the nearest end, at an outline.
-    var nearColor = vec3f(0.0);
-    var nearClear = 1.0;
-    var kept = !outline;
     let steps = i32(material.steps);
     // The last point in clear air, where the search for the cloud's edge starts.
     var last = t;
     for (var i = 0; i < steps; i++) {
-        if !kept && t >= near {
-            nearColor = color;
-            nearClear = clear;
-            kept = true;
-        }
         if t >= limit || clear < 0.02 {
             break;
         }
@@ -398,12 +383,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 litAt = t;
             }
             // The last step ends at the scene's surface, so the cloud before a wall thins smoothly.
-            // At an outline the ray stops exactly at the nearest end before it runs on, so what it
-            // keeps there holds nothing from behind the rock.
-            var stride = min(0.35 + t * 0.008, limit - t);
-            if !kept && near > t {
-                stride = min(stride, near - t + 1e-3);
-            }
+            let stride = min(0.35 + t * 0.008, limit - t);
             // Deeper in the billow the cloud darkens a little.
             let deep = exp(-max(-above, 0.0) / 3.0);
             // Mist is a grey that the sun barely reaches; the billow takes its own light. Mist met
@@ -423,11 +403,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
             let longest = select(4.0 + t * 0.09, 0.5 + t * 0.01, length(p.xz) < MISTY && above < 8.5);
             last = t;
             lit = lit && lights >= 3;
-            var advance = clamp(above * 0.5, 0.3 + t * 0.07, longest);
-            if !kept && near > t {
-                advance = min(advance, near - t + 1e-3);
-            }
-            t += advance;
+            t += clamp(above * 0.5, 0.3 + t * 0.07, longest);
         }
     }
     // A ray that runs out of steps over open sea would show the dome through a hole: it meets the
@@ -437,20 +413,16 @@ fn unlit(input: SurfaceInput) -> vec4f {
         color += clear * aerial(cloud_color(0.7, 0.0), meet);
         clear = 0.0;
     }
-    if outline {
-        if !kept {
-            nearColor = color;
-            nearClear = clear;
-        }
-        color = mix(color, nearColor, nearShare);
-        clear = mix(clear, nearClear, nearShare);
-    }
     // The rock just over the cloud fades into it by its height, whatever its depth, so crags that
     // stand at different depths show no bands where the cloud before them is deeper or shallower.
-    // The fade stays low and light, so every wall is dark rock for most of its height.
+    // The fade stays low and light, so every wall is dark rock for most of its height. At the side
+    // walls' foot the rock at and just over the cloud's top is lost in it, so the crags that stand
+    // in the mist there show no shape of their own.
     if behind > 0.0 {
-        let rock = eye.y + dir.y * end;
-        let veil = 0.25 * (1.0 - smoothstep(material.top - 0.5, material.top + 4.5, rock)) * clear;
+        let at = eye + dir * end;
+        let side = 1.0 - smoothstep(0.85, 1.0, wall_at(at.xz).w);
+        let lost = 0.82 * side * (1.0 - smoothstep(material.top - 1.0, material.top + 5.5, at.y));
+        let veil = (0.25 * (1.0 - smoothstep(material.top - 0.5, material.top + 4.5, at.y)) + lost) * clear;
         color += veil * aerial(cloud_color(0.65, 0.0), end);
         clear -= veil;
     }
