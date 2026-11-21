@@ -696,13 +696,26 @@ export function createGarden(
 		});
 		batch.markDirty();
 	}
-	const feet = [
-		places.statue,
-		places.gate,
-		...places.lanterns,
-		...places.rocks,
-		...places.ring,
-		...stones.map((stone) => ({ ...stone, reach: stone.size * TERRACE_WALLS.reach })),
-	];
-	return (x, z) => feet.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
+	return underGarden;
+}
+
+let feetList: readonly Placed[] | undefined;
+
+/**
+ * True for a point under the statue, the gate, a lantern, a boulder or a terrace wall's stone,
+ * where nothing grows.
+ */
+export function underGarden(x: number, z: number): boolean {
+	if (!feetList) {
+		const places = gardenPlaces();
+		feetList = [
+			places.statue,
+			places.gate,
+			...places.lanterns,
+			...places.rocks,
+			...places.ring,
+			...terraceStones().map((stone) => ({ ...stone, reach: stone.size * TERRACE_WALLS.reach })),
+		];
+	}
+	return feetList.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
 }
