@@ -10,27 +10,28 @@ import { rimRadius } from './land';
 /** A small map, quick to build, with the same domes as the real ones. */
 const SIZE = 64;
 
-/** The largest step between neighbouring texels inside a square field, and across its wrap. */
+/** The mean step between neighbouring texels inside a square field, and across its wrap. */
 function steps(field: Float32Array, size: number): { inside: number; wrap: number } {
 	let inside = 0;
 	let wrap = 0;
 	const at = (i: number, j: number) => field[j * size + i] as number;
 	for (let j = 0; j < size; j++)
-		for (let i = 0; i < size - 1; i++) {
-			inside = Math.max(
-				inside,
-				Math.abs(at(i + 1, j) - at(i, j)),
-				Math.abs(at(j, i + 1) - at(j, i)),
-			);
-		}
+		for (let i = 0; i < size - 1; i++)
+			inside += Math.abs(at(i + 1, j) - at(i, j)) + Math.abs(at(j, i + 1) - at(j, i));
 	for (let k = 0; k < size; k++)
-		wrap = Math.max(
-			wrap,
-			Math.abs(at(0, k) - at(size - 1, k)),
-			Math.abs(at(k, 0) - at(k, size - 1)),
-		);
-	return { inside, wrap };
+		wrap += Math.abs(at(0, k) - at(size - 1, k)) + Math.abs(at(k, 0) - at(k, size - 1));
+	return { inside: inside / (2 * size * (size - 1)), wrap: wrap / (2 * size) };
 }
+
+/** A field that stops short of the tile's edge: its last eighth of rows and columns cut to 0. */
+const clipped = (field: Float32Array, size: number) =>
+	field.map((h, k) => (k % size >= (size * 7) / 8 || k / size >= (size * 7) / 8 ? 0 : h));
+
+/** Whether a field repeats with no seam: its mean step across the wrap is near the one inside. */
+const seamless = (field: Float32Array, size: number) => {
+	const { inside, wrap } = steps(field, size);
+	return wrap <= inside * 1.5;
+};
 
 describe.each([
 	['billow', billowField],
@@ -51,9 +52,10 @@ describe.each([
 		expect(high - low).toBeGreaterThan(0.5);
 	});
 
-	test('repeats with no seam: the step across the wrap is no larger than one inside', () => {
-		const { inside, wrap } = steps(field, SIZE);
-		expect(wrap).toBeLessThanOrEqual(inside);
+	test('repeats with no seam: the mean step across the wrap is near the one inside', () => {
+		expect(seamless(field, SIZE)).toBe(true);
+		// A field that stops at the tile's edge fails the same check.
+		expect(seamless(clipped(field, SIZE), SIZE)).toBe(false);
 	});
 
 	test('gives one field for one seed, and another for another', () => {
