@@ -53,6 +53,7 @@ import {
 } from './land';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
+import { createSteps } from './steps';
 import { createStones, type Obstacle } from './stones';
 
 // The camera route, which this scene's frames and the shared route check both read.
@@ -60,16 +61,17 @@ export { SHOTS };
 
 /**
  * The detail that each preset builds at the start: the land's quads, which also set the walls'
- * columns, texture sizes, the rocks' subdivisions and the water's columns.
+ * columns, texture sizes, the rocks' subdivisions, the water's columns and the foam map's texels
+ * along the creek.
  */
 const DETAIL: Record<
 	QualityPreset,
-	{ land: number; texture: number; rock: number; water: number }
+	{ land: number; texture: number; rock: number; water: number; foam: number }
 > = {
-	low: { land: 160, texture: 256, rock: 2, water: 160 },
-	medium: { land: 224, texture: 512, rock: 3, water: 240 },
-	high: { land: 256, texture: 512, rock: 3, water: 300 },
-	ultra: { land: 320, texture: 1024, rock: 3, water: 360 },
+	low: { land: 160, texture: 256, rock: 2, water: 160, foam: 1024 },
+	medium: { land: 224, texture: 512, rock: 3, water: 240, foam: 1536 },
+	high: { land: 256, texture: 512, rock: 3, water: 300, foam: 2048 },
+	ultra: { land: 320, texture: 1024, rock: 3, water: 360, foam: 2048 },
 };
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -175,11 +177,11 @@ const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
 /**
- * Each lip's fall: how far it drops, into the cloud, where it thins away; how far each side widens
+ * Each lip's fall: how far it drops, so its mist bursts just above the cloud's tops; how far each side widens
  * per meter fallen, so it fans out down the drop; and the share of the creek's half width that
  * leaves over the lip: the water that shows there, between the lip's shoulders.
  */
-const FALL = { drop: 22, spread: 0.12, width: 0.9 } as const;
+const FALL = { drop: 17, spread: 0.12, width: 0.9 } as const;
 /**
  * How far the sheet reaches at each lip, in half widths: as far as the fall, so no edge of the sheet
  * runs on past it over the rim.
@@ -192,9 +194,9 @@ const WATER_AT_LIP = FALL.width;
 const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.01 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
-/** The foam map's box on the ground, over the whole creek, and its texels. */
 /** How far the foam reaches round each mark of the foam map, in meters. */
 const FOAM_REACH = 0.35;
+/** The foam map's box on the ground, over the whole creek. */
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
 /**
@@ -208,6 +210,7 @@ const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2,
 function createCreekWater(
 	ctx: SketchContext,
 	columns: number,
+	foamTexels: number,
 	obstacles: readonly Obstacle[],
 	alwaysReflect: boolean,
 	reflectScale: 0.25 | 0.5 | 1 | undefined,
@@ -247,20 +250,20 @@ function createCreekWater(
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#3e9e92',
-			attenuationDistance: 0.6,
+			attenuationColor: '#5a9a92',
+			attenuationDistance: 0.8,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,
 		},
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
-		// round marks with no stretch of its own: a trail as long as the reach adds none. Its texels
-		// are 2 cm, so no step shows in the foam's outline close up.
+		// round marks with no stretch of its own: a trail as long as the reach adds none. On High its
+		// texels are 2 cm, so no step shows in the foam's outline close up.
 		foam: foamMap(ctx, obstacles, {
 			origin: FOAM_BOX.origin,
 			size: FOAM_BOX.size,
-			width: 2048,
-			height: 576,
+			width: foamTexels,
+			height: Math.round((foamTexels * FOAM_BOX.size[1]) / FOAM_BOX.size[0]),
 			reach: FOAM_REACH,
 			trail: FOAM_REACH,
 		}),
@@ -338,12 +341,14 @@ export default defineSketch(async (ctx) => {
 	page.post('loading', 'Setting the statue, the gate and the stones');
 	const models = await loadGarden(ctx);
 	createGarden(ctx, models);
+	createSteps(ctx, detail.rock);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders[2]);
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
 				ctx,
 				detail.water,
+				detail.foam,
 				stones.obstacles,
 				ALWAYS_REFLECT,
 				REFLECT_SCALE as 0.25 | 0.5 | 1 | undefined,
