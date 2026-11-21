@@ -37,7 +37,7 @@ const STRIPS = 6;
  * tread is a warm stone, which the rock texture's own cast deepens, darker and stronger than the
  * ground's moss, as the concept's worn steps are.
  */
-const TREAD = [0.37, 0.3, 0.15] as const;
+const TREAD = [0.35, 0.28, 0.1] as const;
 const RISER = [0.09, 0.082, 0.07] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 /**

@@ -53,9 +53,9 @@ const GROUND_TINTS: readonly (readonly [number, number, number])[] = [
  * 31 on the screen, the concept's red, orange and yellow maples, close together as its are.
  */
 const MAPLE_TINTS: Record<Exclude<MapleColor, 'bare'>, readonly [number, number, number]> = {
-	red: [0.9, 0.17, 0.04],
-	orange: [0.9, 0.34, 0.05],
-	yellow: [0.9, 0.41, 0.05],
+	red: [0.9, 0.135, 0.04],
+	orange: [0.9, 0.305, 0.05],
+	yellow: [0.9, 0.375, 0.05],
 };
 
 /**
@@ -191,6 +191,19 @@ export function createPlants(
 			tinted(part, spots, swayingPart(sway, part, SWAY.plant, false), () => {
 				const shade = 0.9 + 0.2 * next();
 				return CUSHION_TINT.map((share) => share * shade);
+			});
+			continue;
+		}
+		if (kind === 'clipped-shrub') {
+			// The clipped shrubs take a cool grey tint over their own dark map: darker than the
+			// model draws and a little toward green, as the concept's clipped shrubs read.
+			parts.forEach((part, k) => {
+				tinted(
+					part,
+					spots.map((spot) => ({ ...spot, y: spot.y - 0.03 })),
+					swayingPart(sway, part, SWAY.plant, k > 0),
+					() => [0.7, 0.69, 0.74],
+				);
 			});
 			continue;
 		}

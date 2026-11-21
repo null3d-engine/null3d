@@ -376,9 +376,9 @@ interface Rule {
 const RULES: readonly Rule[] = [
 	{
 		kind: 'rim-conifer',
-		spacing: 3.7,
+		spacing: 4,
 		scale: [1.05, 1.45],
-		clump: [2, 1.5],
+		clump: [1, 1.4],
 		tolerances: [
 			['rim', 0.4, 0.8, 3, 4.5],
 			['patch', 0.4, 0.5, 1, 1.01],
@@ -386,9 +386,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'clipped-shrub',
-		spacing: 3.6,
+		spacing: 2.8,
 		scale: [0.9, 1.3],
-		clump: [2, 1.5],
+		clump: [1, 1.4],
 		tolerances: [
 			['water', 1, 2.5, 9, 13],
 			['patch', 0.44, 0.56, 1, 1.01],
@@ -406,9 +406,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'autumn-clump',
-		spacing: 4.3,
+		spacing: 4.55,
 		scale: [0.8, 1.1],
-		clump: [1, 1.8],
+		clump: [2, 1.8],
 		tolerances: [
 			['height', 0.4, 1, 8, 9],
 			['patch', 0.25, 0.4, 1, 1.01],
@@ -426,16 +426,16 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.2,
+		spacing: 1.7,
 		scale: [0.9, 1.4],
-		clump: [7, 1.3],
+		clump: [4, 1.3],
 		tolerances: [['shade', 0.1, 0.35, 1, 1.01]],
 	},
 	{
 		kind: 'fern',
-		spacing: 1.1,
+		spacing: 1.6,
 		scale: [0.9, 1.3],
-		clump: [6, 1.2],
+		clump: [4, 1.2],
 		tolerances: [
 			['water', 0.2, 0.8, 3.5, 6],
 			['patch', 0.4, 0.6, 1, 1.01],
@@ -443,9 +443,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.4,
+		spacing: 1.9,
 		scale: [1, 1.5],
-		clump: [5, 1.3],
+		clump: [3, 1.3],
 		tolerances: [
 			['height', 0.5, 1, 8, 9],
 			['patch', 0.3, 0.4, 0.75, 0.85],

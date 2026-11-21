@@ -266,7 +266,7 @@ export function relief(
 		(1 - 0.35 * chimney);
 	// The lowest wall's fine relief fades, so its columns meet the cloud as broad blocks, not as a
 	// fringe of narrow spikes. The pillars and their blocks still stand.
-	const deep = 1 - 0.75 * smoothstep(depth, 8, 14);
+	const deep = 1 - 0.5 * smoothstep(depth, 8, 14);
 	return {
 		offset:
 			pillar.out +
@@ -480,7 +480,7 @@ fn surface(input: SurfaceInput) -> Surface {
  * The rocks of the rim's fringe: how far apart they stand, their size, and how far inside the rim
  * their feet stand, so each one's outer side juts out over the wall and breaks the land's clean edge.
  */
-const RIM_FRINGE = { spacing: 1.4, size: [0.2, 0.6], inset: 0.35 } as const;
+const RIM_FRINGE = { spacing: 1.4, size: [0.18, 0.7], inset: 0.55 } as const;
 /** How far past the creek's half width the rim's fringe stays, as the planting's bank keep does. */
 export const STREAM_KEEP = 1.3;
 
@@ -513,7 +513,7 @@ export function rimFringePlaces(rim: Float32Array): RimRock[] {
 		if (run < RIM_FRINGE.spacing * (0.35 + 1.3 * next())) continue;
 		run = 0;
 		// Now and then a stretch of rim keeps no rock, so the row never reads as one line.
-		if (next() < 0.18) continue;
+		if (next() < 0.28) continue;
 		const [x, y, z] = [rim[a] as number, rim[a + 1] as number, rim[a + 2] as number];
 		if (Math.abs(z - streamZ(x)) < streamHalf(x) * STREAM_KEEP) continue;
 		const reach = Math.hypot(x, z) || 1;
@@ -521,7 +521,7 @@ export function rimFringePlaces(rim: Float32Array): RimRock[] {
 		const size = RIM_FRINGE.size[0] + (RIM_FRINGE.size[1] - RIM_FRINGE.size[0]) * next();
 		places.push({
 			x: x * (1 - inset / reach),
-			y: y + 0.05,
+			y: y + 0.05 + (next() - 0.5) * 0.16,
 			z: z * (1 - inset / reach),
 			turn: next() * Math.PI * 2,
 			size,
