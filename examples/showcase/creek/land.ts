@@ -323,9 +323,80 @@ export const LANDING = { x: 11.2, z: 2.5, radius: 3.6, blend: 1.8 } as const;
 /** The landing's height: the slope's own height at its middle, found once. */
 let landingHeight: number | undefined;
 
-/** The height of the land, apart from the creek's channel, with the landing laid level. */
+/**
+ * The flights of steps from the creek's far bank up to the terrace, about 29 steps in three flights as
+ * the concept picture has them: a lower flight on a diagonal from the bank to the front of the
+ * gate's landing, then from the landing's back two flights straight up the ridge toward the statue,
+ * with a short level rest between them. The lower flight's foot on the bank; the steps' half width;
+ * the steps in each flight, from the bottom; the rest's length; and how far the ground beside the
+ * steps keeps their level before it blends back into the slope, in meters.
+ */
+export const STAIRS = {
+	foot: [9.4, 10.6],
+	half: 1,
+	steps: [11, 9, 9],
+	rest: 1.2,
+	keep: 0.5,
+	blend: 1.4,
+} as const;
+
+/** One flight of steps: where it starts and ends on the ground, its height at each end and its steps. */
+export interface Flight {
+	readonly from: readonly [number, number];
+	readonly to: readonly [number, number];
+	readonly low: number;
+	readonly high: number;
+	readonly steps: number;
+}
+
+let flightList: readonly Flight[] | undefined;
+
+/** The three flights, found once: their ends from the landing and the terrace, their heights from the slope. */
+export function flights(): readonly Flight[] {
+	if (flightList) return flightList;
+	const length = Math.hypot(LANDING.x - TERRACE.x, LANDING.z - TERRACE.z);
+	// The gate's axis, from the landing's middle up the ridge to the statue; a point on it by its
+	// distance from the landing's middle.
+	const [ax, az] = [(TERRACE.x - LANDING.x) / length, (TERRACE.z - LANDING.z) / length];
+	const on = (d: number): [number, number] => [LANDING.x + ax * d, LANDING.z + az * d];
+	const reach = LANDING.radius * 0.9;
+	const head = length - (TERRACE.top - 0.6);
+	const middle = (reach + head) / 2;
+	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
+	const top = slopeHeight(TERRACE.x, TERRACE.z);
+	const [, first, second] = STAIRS.steps;
+	const rest = landingHeight + ((top - landingHeight) * first) / (first + second);
+	flightList = [
+		{
+			from: STAIRS.foot,
+			to: on(-reach),
+			low: slopeHeight(STAIRS.foot[0], STAIRS.foot[1]),
+			high: landingHeight,
+			steps: STAIRS.steps[0],
+		},
+		{
+			from: on(reach),
+			to: on(middle - STAIRS.rest / 2),
+			low: landingHeight,
+			high: rest,
+			steps: first,
+		},
+		{ from: on(middle + STAIRS.rest / 2), to: on(head), low: rest, high: top, steps: second },
+	];
+	return flightList;
+}
+
+/** How far along a flight a point lies, from 0 at its foot to 1 at its head, and how far to its side. */
+export function alongFlight(flight: Flight, x: number, z: number): { t: number; side: number } {
+	const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
+	const length = Math.hypot(dx, dz);
+	const [px, pz] = [x - flight.from[0], z - flight.from[1]];
+	return { t: (px * dx + pz * dz) / (length * length), side: Math.abs(px * dz - pz * dx) / length };
+}
+
+/** The height of the land, apart from the creek's channel, with the landing and the flights laid. */
 function landHeight(x: number, z: number): number {
-	const slope = slopeHeight(x, z);
+	let height = slopeHeight(x, z);
 	const level =
 		1 -
 		smoothstep(
@@ -333,9 +404,24 @@ function landHeight(x: number, z: number): number {
 			LANDING.radius,
 			LANDING.radius + LANDING.blend,
 		);
-	if (level <= 0) return slope;
-	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
-	return slope + (landingHeight - slope) * level;
+	if (level > 0) {
+		landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
+		height += (landingHeight - height) * level;
+	}
+	// Under each flight the ground runs as an even ramp from its foot to its head, which the steps
+	// sit on, and it blends back into the slope beside it and past its ends.
+	for (const flight of flights()) {
+		const { t, side } = alongFlight(flight, x, z);
+		const length = Math.hypot(flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]);
+		const past = Math.max(-t, t - 1, 0) * length;
+		const keep = STAIRS.half + STAIRS.keep;
+		const share =
+			(1 - smoothstep(side, keep, keep + STAIRS.blend)) * (1 - smoothstep(past, 0, STAIRS.blend));
+		if (share <= 0) continue;
+		const ramp = flight.low + (flight.high - flight.low) * Math.min(Math.max(t, 0), 1);
+		height += (ramp - height) * share;
+	}
+	return height;
 }
 
 /** The height of the land, apart from the creek's channel and the landing. */
@@ -377,7 +463,7 @@ export function groundHeight(x: number, z: number): number {
  * sill's band in meters back from the edge, its height at the water's level and how far it wanders,
  * and how many rocks it has to the meter across.
  */
-const LIP_SILL = { band: [0.3, 0.75], level: -0.06, wander: 0.3, rocks: 2.2 } as const;
+const LIP_SILL = { band: [0.3, 0.75], level: 0.02, wander: 0.5, rocks: 2.2 } as const;
 
 /** The sill's height at a point, or far below the ground away from the lips. */
 function lipSill(x: number, z: number): number {

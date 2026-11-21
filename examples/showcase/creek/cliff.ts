@@ -71,9 +71,10 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	const pits = Math.max(0, noise.fbm2(u * 14, v * 14, 3, 14));
 	out.height = broad * 12 + middle * 6 + grain * 3 - pits * 16;
 	const tone = (0.7 + 0.24 * broad + 0.12 * middle + 0.05 * grain) * (1 - 0.3 * pits);
+	// A warm cast, so the shaded faces under the cool sky still read brown-black, as the concept's.
 	out.r = tone;
-	out.g = tone * 0.97;
-	out.b = tone * 0.94;
+	out.g = tone * 0.9;
+	out.b = tone * 0.78;
 	out.roughness = 0.84 + 0.12 * broad;
 	out.occlusion = (0.9 + 0.1 * smoothstep(broad, -0.3, 0.3)) * (1 - 0.45 * pits);
 }
@@ -196,8 +197,8 @@ export function relief(
 }
 
 /** Linear colors of the rock: warm near-black faces, a dark grey-brown on the lighter ones. */
-const CHARCOAL = [0.016, 0.011, 0.007];
-const GREY_BROWN = [0.04, 0.028, 0.018];
+const CHARCOAL = [0.026, 0.017, 0.009];
+const GREY_BROWN = [0.06, 0.04, 0.022];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
