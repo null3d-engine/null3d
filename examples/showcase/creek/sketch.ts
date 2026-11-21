@@ -201,6 +201,13 @@ const WATER_REACH = 1.36;
  * runs on past it over the rim.
  */
 const WATER_AT_LIP = FALL.width;
+/**
+ * The air's haze: its density at the cloud's tops, and how fast it thins above them, by a factor of
+ * e every 1 / falloff meters. It lies thick over the cloud sea and the cliff's lower face, as it did
+ * as an even haze, and thin over the garden, so the garden's colors read about alike from 10 m and
+ * from the opening camera's 45 m: under one part in a hundred of each pixel is haze there.
+ */
+const AIR = { density: 0.0215, falloff: 0.35 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
@@ -415,7 +422,8 @@ export default defineSketch(async (ctx) => {
 	// The garden opens on a soft morning under heavy cloud, with the air thick over the cloud sea.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
-		fogDensity: 0.0025,
+		fogDensity: AIR.density,
+		fogHeight: { height: CLOUD_TOP, falloff: AIR.falloff },
 		cloudCoverage: 0.95,
 		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
 		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
