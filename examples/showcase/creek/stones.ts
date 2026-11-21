@@ -85,8 +85,25 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	out.occlusion = 1 - 0.5 * crack;
 }
 
-/** Gives a rock's vertices colors: dark flecked stone, and moss where the rock faces up. */
-export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
+/** The linear colors of a mossy stone: its bare stone, and the moss that caps it. */
+export interface MossTones {
+	readonly stone: readonly [number, number, number];
+	readonly moss: readonly [number, number, number];
+}
+
+/** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
+const STONE_TONES: MossTones = { stone: [0.2, 0.17, 0.125], moss: [0.13, 0.115, 0.03] };
+
+/**
+ * Gives a rock's vertices colors: flecked stone, and moss where the rock faces up, in the creek's
+ * stone tones unless others are given.
+ */
+export function mossy(
+	arrays: MeshArrays,
+	seed: number,
+	cover: number,
+	{ stone, moss: mossTone }: MossTones = STONE_TONES,
+): MeshArrays {
 	const positions = arrays.positions as Float32Array;
 	const colors = new Float32Array(positions.length);
 	const local = new Noise(seed);
@@ -106,17 +123,13 @@ export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArra
 		// Warm grey-brown stone, with yellow-olive moss where it faces up.
 		for (let c = 0; c < 3; c++)
 			colors[v * 3 + c] =
-				shade *
-				((STONE_TONE[c] as number) + ((MOSS_TONE[c] as number) - (STONE_TONE[c] as number)) * moss);
+				shade * ((stone[c] as number) + ((mossTone[c] as number) - (stone[c] as number)) * moss);
 	}
 	return { ...arrays, colors };
 }
 
 /** The warm tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
 export const MOSS_MUTE = '#bab6a2';
-/** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
-const STONE_TONE = [0.2, 0.17, 0.125] as const;
-const MOSS_TONE = [0.13, 0.115, 0.03] as const;
 
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);

@@ -6,7 +6,7 @@
 import type { MeshArrays, SketchContext } from '@null3d/engine';
 import { Noise, random, rock } from '../../lib/procedural';
 import { rockMaps } from './cliff';
-import { lowestGround } from './garden';
+import { gardenPlaces, lowestGround, nearLedge } from './garden';
 import { alongFlight, flights, STAIRS } from './land';
 import { mossy } from './stones';
 
@@ -40,12 +40,25 @@ const STRIPS = 6;
 const TREAD = [0.82, 0.84, 0.9] as const;
 const RISER = [0.1, 0.092, 0.08] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
+/**
+ * Linear colors of the wall stones: a grey stone, and moss as light as the ground's. The rock
+ * texture darkens and warms both, so they stand lighter and greener than they draw.
+ */
+const WALL_TONES = { stone: [0.3, 0.29, 0.28], moss: [0.2, 0.2, 0.06] } as const;
 
 /**
  * The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes, the
- * courses, and how far a stone's footprint reaches on the ground, as a share of its size.
+ * courses, how far a stone's footprint reaches on the ground, as a share of its size, and how far
+ * past the ledge's oval they stop, in meters, so the rock round the ledge flanks the cut steps.
  */
-const WALL = { out: 0.45, spacing: 0.5, size: [0.24, 0.36], rows: 2, reach: 1.2 } as const;
+const WALL = {
+	out: 0.45,
+	spacing: 0.5,
+	size: [0.24, 0.36],
+	rows: 2,
+	reach: 1.2,
+	ledge: 0.8,
+} as const;
 
 const noise = new Noise(71);
 
@@ -242,6 +255,7 @@ export interface WallStone {
  */
 export function wallPlaces(): WallStone[] {
 	const next = random(75);
+	const { ledge } = gardenPlaces();
 	const places: WallStone[] = [];
 	for (const flight of flights()) {
 		const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
@@ -257,6 +271,7 @@ export function wallPlaces(): WallStone[] {
 					if (along > length) continue;
 					const x = flight.from[0] + fx * along - fz * side * out;
 					const z = flight.from[1] + fz * along + fx * side * out;
+					if (nearLedge(ledge, x, z, WALL.ledge)) continue;
 					// The lower course sits down in the ground; the upper rests on it.
 					const y = lowestGround(x, z, size * WALL.reach) + (row === 1 ? size * 0.3 : -size * 0.15);
 					// Each stone lies along the flight, its long side with the wall.
@@ -301,18 +316,17 @@ export function createSteps(
 		castShadows: true,
 		receiveShadows: true,
 	});
-	// The walls: low courses of flat stones laid along each side, beyond a band of moss.
+	// The walls: low courses of rounded stones laid along each side, beyond a band of moss, with moss
+	// over their tops, so each side reads as a low mossy rock wall.
 	const stone = geometry.fromArrays(
-		mossy(rock(77, Math.max(1, detail - 2), [1.2, 0.55, 0.8], 0.3), 78, 0.15),
+		mossy(rock(77, Math.max(1, detail - 2), [1, 0.7, 0.9], 0.12), 78, 0.75, WALL_TONES),
 	);
 	const places = wallPlaces();
 	const walls = scene.createInstances(stone, places.length, {
-		// A pale grey tint over the stones' colours, broken in facets, with the rock's grain: stacked
-		// brown rock in the bank stones' tone, darker than the treads, not smooth rolls.
+		// The stones' own colors, with the rock's grain: grey rock under moss, darker than the treads.
 		material: materials.standard({
 			vertexColors: true,
 			...rockMaps(textures, textureSize),
-			color: '#c8c6c0',
 			roughness: 0.95,
 		}),
 		castShadows: true,
