@@ -15,7 +15,7 @@ export const SPRAY = {
 	tint: [1, 0.975, 1.02],
 	gain: 5.6,
 	step: 0.01,
-	east: 0.6,
+	east: 0.4,
 } as const;
 
 /**
