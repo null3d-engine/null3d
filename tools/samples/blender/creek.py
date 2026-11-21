@@ -881,36 +881,36 @@ TALL_TRUNK = dict(
 )
 PINES = {
     'pine-tall': dict(
-        TALL_TRUNK, height=7.9, wood=(14000, 5000, 1600),
-        fan=(0.3, (3.0, 2.5, 2.0), (0.45, 1.2, 1.9, 2.3, 2.3)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
-        keep=0.45, girth=0.2, prune=True, gap=0.2, pad=(1.0, 1.35, 1.1), vary=0.35, crest=(0.35, 0.05, 0.33),
+        TALL_TRUNK, wood=(14000, 5000, 1600),
+        fan=(0.3, (3.0, 2.5, 2.0), (0.5, 1.35, 2.0, 2.0, 1.85)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
+        keep=0.45, girth=0.2, prune=True, gap=0.2, pad=(1.0, 1.35, 1.1), vary=0.35, crest=(0.32, 0.05, 0.33),
         taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.3, deep=(1.2,), flat=3.0, rise=0.1, droop=0.1, stagger=0.15,
         inner=0.2,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=3600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.67, 0.76, 0.59), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.61, 0.72, 0.6), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
     'pine-low': dict(
         raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
         turn=-90, height=3.4, sink=0.15, wood=(8000, 3000, 1000), limit=0.03, bark=(0.17, 0.11, 0.055),
-        fan=(0.3, (0.8,), (1.25,)), rigid=0.25, climb=(0.3, 0.3, 1.5, 0.35), bare=0.45, stub=0.12, twig=0.2, keep=0.3, girth=0.2, prune=True,
-        gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8, slope=2.0, flatten=0.3, hold=1.0, level=70,
-        floor=0.48, spread=2.3, deep=(0.5,), flat=1.7, rise=0.1, inner=0.0,
+        fan=(0.3, (0.8,), (1.25,)), rigid=0.25, climb=(0.3, 0.3, 1.5, 0.35), bare=0.3, stub=0.12, twig=0.2, keep=0.3, girth=0.2, prune=True,
+        gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8, slope=2.0, flatten=0.8, hold=2.0, level=70,
+        floor=0.3, spread=2.3, deep=(0.5,), flat=1.7, rise=0.1, droop=0.35, stagger=0.15, inner=0.0,
         body=0.5, bodies=((10, 5), (6, 3), (5, 2)), underside=0.1,
         cards=3400, up=0.6, depth=0.3, card=0.35, lift=0.7, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.08, bend=0.55, tint=(0.52, 0.55, 0.41), shade=0.7, levels=((2, 1.3), (5, 1.7)),
+        fold=0.08, bend=0.55, tint=(0.46, 0.5, 0.43), shade=0.7, levels=((2, 1.3), (5, 1.7)),
     ),
     # The concept's top pine: the tall trunk with its limbs kept short, broad from its rounded top
     # down, about 0.7 times as wide as it is tall.
     'pine-narrow': dict(
         TALL_TRUNK, wood=(12000, 4500, 1500),
-        fan=(0.3, (1.4, 1.2, 1.0), (0.5, 0.6, 0.75, 0.85, 0.85)), wire=0.5, span=(0.4, 0.82), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
-        keep=0.45, girth=0.2, prune=True, gap=0.1, pad=(0.5, 0.6, 0.65), vary=0.35, crest=(0.45, 0.04, 0.45),
+        fan=(0.3, (1.4, 1.2, 1.0), (0.5, 0.65, 0.85, 1.35, 1.5)), wire=0.5, span=(0.4, 0.82), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
+        keep=0.45, girth=0.2, prune=True, gap=0.1, pad=(0.5, 0.65, 0.9), vary=0.35, crest=(0.6, 0.04, 0.45),
         taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.8,), flat=2.8, rise=0.1, droop=0.12, stagger=0.1,
         inner=0.1,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=2600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.64, 0.66, 0.61), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.55, 0.58, 0.58), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
 }
 
@@ -1865,6 +1865,11 @@ def main():
         preview_pines(shots, wanted, errors if wanted else {})
 
 
+# The angle, in degrees, at which the garden's opening camera looks down at each pine's crown, from
+# where the scene stands the pines.
+GARDEN_DOWN = {'pine-tall': 8, 'pine-narrow': 7, 'pine-low': 11}
+
+
 def preview_pines(shots, pines, errors):
     """
     Renders each pine's views, close views and levels under the overcast sky into `shots`. The
@@ -1873,12 +1878,16 @@ def preview_pines(shots, pines, errors):
     for name, spec in pines.items():
         parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
         # The concept's camera looks down about 27 degrees under an overcast sky, at the pine's flat
-        # face; the other views show the sides it hides: the side, where the pine shows end-on, the
-        # back, the top and the crown from below.
-        for view, azimuth, down in (('concept', 0, 27), ('side', 90, 10), ('back', 180, 10), ('top', 30, 70), ('below', 0, -25)):
+        # face, and the garden's opening camera at the pine's own angle; the other views show the
+        # sides they hide: the side, where the pine shows end-on, the back, the top and the crown
+        # from below.
+        views = (('concept', 0, 27), ('garden', 0, GARDEN_DOWN[name]), ('side', 90, 10), ('back', 180, 10), ('top', 30, 70), ('below', 0, -25))
+        for view, azimuth, down in views:
             overcast(parts, os.path.join(shots, f'{name}-{view}.png'), azimuth, down)
-        # The concept's view again with no ground or sky, for the measures of layers and bare trunk.
-        overcast(parts, os.path.join(shots, f'{name}-concept-matte.png'), 0, 27, matte=True)
+        # The concept's and the garden's views again with no ground or sky, for the measures of
+        # layers and bare trunk.
+        for view, azimuth, down in views[:2]:
+            overcast(parts, os.path.join(shots, f'{name}-{view}-matte.png'), azimuth, down, matte=True)
         # Close views of the crown's middle, from the concept's camera and from below.
         overcast(parts, os.path.join(shots, f'{name}-close.png'), 0, 27, (1440, 960), 2.2, 0.7)
         overcast(parts, os.path.join(shots, f'{name}-close-below.png'), 0, -25, (1440, 960), 2.2, 0.6)
