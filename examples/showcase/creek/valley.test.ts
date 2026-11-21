@@ -2,7 +2,7 @@
 // to ground where things grow, seated on it, apart from the others and out of the view to the
 // statue; and the ground cover keeps off the masks that the rules score zero.
 import { expect, test } from 'bun:test';
-import { groundHeight } from './land';
+import { alongFlight, flights, groundHeight, STAIRS } from './land';
 import { bare, blocksStatue, placeValley, SIZES, TREES, type TreeKind } from './valley';
 
 const valley = placeValley();
@@ -16,6 +16,14 @@ test('each tree stands by hand on ground that grows, seated, apart and out of th
 		// Its foot lies a little into the ground, so no root shows air under it.
 		expect(tree.y - groundHeight(tree.x, tree.z), `${at} over the ground`).toBeLessThan(0);
 		expect(blocksStatue(tree), `${at} in the view to the statue`).toBe(false);
+		// Its crown keeps clear of the steps, so no copy hangs over a tread.
+		for (const flight of flights()) {
+			const { t, side } = alongFlight(flight, tree.x, tree.z);
+			if (t > -0.1 && t < 1.1)
+				expect(side - STAIRS.half, `${at} over the steps`).toBeGreaterThan(
+					SIZES[tree.kind as TreeKind].reach * tree.size,
+				);
+		}
 		for (const other of valley.trees) {
 			if (other === tree) continue;
 			// Crowns may touch, as the concept's do, but no two trunks stand within each other's crown.
