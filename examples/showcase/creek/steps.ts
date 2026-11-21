@@ -33,7 +33,7 @@ const SLAB = {
 const STRIPS = 6;
 
 /** Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. */
-const TREAD = [0.19, 0.178, 0.155] as const;
+const TREAD = [0.3, 0.296, 0.282] as const;
 const RISER = [0.045, 0.04, 0.034] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 
@@ -183,7 +183,7 @@ function slab(built: Parameters<typeof face>[0], next: () => number, place: Slab
 			const a = c < 2 ? a0 : a1;
 			// Moss creeps in from the step's ends and lies in patches over its worn middle.
 			const ends = (Math.abs(a) - 0.45) / 0.4 + 0.35 * noise.value2(x * 2, z * 2);
-			const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.25) * 2.5;
+			const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.42) * 2.5;
 			const moss = Math.min(1, Math.max(0, ends, patches));
 			const base = tone(TREAD, x, z, 0.4);
 			return [0, 1, 2].map(
@@ -286,10 +286,12 @@ export function createSteps(
 	};
 	scene.createMesh({
 		mesh: geometry.fromArrays(arrays),
-		// The stones' own grain and cracks over the slabs' colours, so no slab reads as smooth.
+		// The rock's grain over the slabs' colours, so no slab reads as smooth, under a cool tint
+		// that takes out the rock texture's warmth: the steps are pale grey cut stone.
 		material: materials.standard({
 			vertexColors: true,
 			...rockMaps(textures, textureSize),
+			color: '#cdd2da',
 			roughness: 0.95,
 		}),
 		castShadows: true,
@@ -297,12 +299,18 @@ export function createSteps(
 	});
 	// The walls: low courses of flat dark stones laid along each side, beyond a band of moss.
 	const stone = geometry.fromArrays(
-		mossy(rock(77, Math.max(1, detail - 2), [1.3, 0.5, 0.75], 0.14), 78, 0.25),
+		mossy(rock(77, Math.max(1, detail - 2), [1.2, 0.55, 0.8], 0.3), 78, 0.15),
 	);
 	const places = wallPlaces();
 	const walls = scene.createInstances(stone, places.length, {
-		// A dark tint over the mossy stones' colours: the walls read as dark stacked rock.
-		material: materials.standard({ vertexColors: true, color: '#8c847a', roughness: 0.95 }),
+		// A grey tint over the stones' colours, broken in facets, with the rock's grain: dark stacked
+		// rock, not smooth rolls.
+		material: materials.standard({
+			vertexColors: true,
+			...rockMaps(textures, textureSize),
+			color: '#8e8d89',
+			roughness: 0.95,
+		}),
 		castShadows: true,
 		receiveShadows: true,
 	});

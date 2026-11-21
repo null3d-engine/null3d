@@ -325,10 +325,10 @@ export const LANDING = { x: 11.2, z: 2.5, radius: 5, blend: 1.8 } as const;
 let landingHeight: number | undefined;
 
 /**
- * The flights of steps from the creek's far bank up to the terrace, about 29 steps as the concept
+ * The flights of steps from the creek's far bank up to the statue, about 30 steps as the concept
  * picture has them: a lower flight on a diagonal from the bank to the gate's front; behind the gate a
- * few steps that turn the route; and two flights straight down from the statue, with a short level
- * rest between them, which leave the statue along its own facing, off the gate's line, so the route
+ * few steps that turn the route; and two flights straight down from the statue, the top one cut
+ * into the rock ledge under it, with a short level rest between them, which leave the statue along its own facing, off the gate's line, so the route
  * bends back to the gate. The lower flight's foot on the bank; the steps' half width; how far the
  * steps run from the landing's middle to the gate's front and to its back; how far the statue's
  * flights reach from its middle before the turn; the steps in each flight, from the bottom; the
@@ -340,7 +340,7 @@ export const STAIRS = {
 	half: 1,
 	gate: 3.24,
 	reach: 13.4,
-	steps: [11, 3, 8, 7],
+	steps: [11, 3, 7, 9],
 	rest: 1.2,
 	keep: 0.5,
 	blend: 1.4,
@@ -352,6 +352,30 @@ export const STAIRS = {
  * flights leave it along that facing.
  */
 export const STATUE_TURN = (15 * Math.PI) / 180;
+
+/**
+ * The ledge of rock under the statue's slab: its half length across the statue and half width along
+ * its facing, in meters, a little past the slab's own; how far its flat top stands over the terrace;
+ * how far its foot reaches below the lowest ground under it; how much its outline wanders, as a
+ * share; how many points its outline has; and how far into it the top flight's last steps cut.
+ */
+export const LEDGE = {
+	long: 4.5,
+	wide: 3,
+	rise: 0.4,
+	foot: 0.35,
+	rough: 0.06,
+	points: 48,
+	cut: 0.15,
+} as const;
+
+let ledgeLevel: number | undefined;
+
+/** The height of the ledge's flat top: the terrace's own height and the ledge's rise. */
+export function ledgeTop(): number {
+	ledgeLevel ??= slopeHeight(TERRACE.x, TERRACE.z) + LEDGE.rise;
+	return ledgeLevel;
+}
 
 /** The statue's facing, as a turn about y from +z: down its flights, off the gate's line. */
 export const statueYaw = () =>
@@ -383,10 +407,11 @@ export function flights(): readonly Flight[] {
 	const yaw = statueYaw();
 	const [fx, fz] = [Math.sin(yaw), Math.cos(yaw)];
 	const down = (d: number): [number, number] => [TERRACE.x + fx * d, TERRACE.z + fz * d];
-	const head = TERRACE.top - 0.6;
+	// The top flight climbs past the terrace's edge and cuts into the ledge's front, up to its top.
+	const head = LEDGE.wide - LEDGE.cut;
 	const middle = (STAIRS.reach + head) / 2;
 	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
-	const top = slopeHeight(TERRACE.x, TERRACE.z);
+	const top = ledgeTop();
 	const [lower, turn, first, second] = STAIRS.steps;
 	const rise = (top - landingHeight) / (turn + first + second);
 	const turned = landingHeight + rise * turn;
@@ -554,11 +579,13 @@ export function cameraFloor(x: number, z: number): number {
 }
 
 /** Linear colors of the ground: yellow-olive moss, its darker green and brown patches, soil and rock. */
-const MOSS = [0.17, 0.135, 0.035];
-const MOSS_DARK = [0.075, 0.075, 0.03];
-const MOSS_BROWN = [0.12, 0.085, 0.035];
+const MOSS = [0.15, 0.14, 0.035];
+const MOSS_DARK = [0.065, 0.075, 0.026];
+const MOSS_BROWN = [0.115, 0.09, 0.034];
+/** The light, yellow-green moss in the sunnier patches. */
+const MOSS_LIGHT = [0.2, 0.2, 0.055];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
-const MOSS_BRIGHT = [0.2, 0.175, 0.036];
+const MOSS_BRIGHT = [0.19, 0.19, 0.04];
 const BED = [0.42, 0.385, 0.315];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
@@ -573,17 +600,17 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	// mud runs along the cliff's edge.
 	const edge = 1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.15, 0.8);
 	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
-	const shade = 0.88 + 0.24 * noise.value2(x * 1.7, z * 1.7);
+	const shade = 0.8 + 0.4 * noise.value2(x * 1.7, z * 1.7);
+	const light = smoothstep(noise.fbm2(x * 0.15 + 21, z * 0.15 + 4, 3), 0.15, 0.45);
 	const band = stairBand(x, z);
-	// The bed's cobbles: pale stones with darker gaps and darker stones among them, which show
-	// through the clear water.
+	// The bed's cobbles: soft pale and dark shapes that show through the clear water, with no edge
+	// sharp enough to read as a line.
 	const cobble =
-		0.72 +
-		0.38 * smoothstep(noise.value2(x * 3.2 + 41, z * 3.2), -0.2, 0.25) -
-		0.25 * smoothstep(noise.value2(x * 1.4 + 13, z * 1.4 + 5), 0.35, 0.6);
+		0.78 + 0.3 * noise.fbm2(x * 2.1 + 41, z * 2.1, 2) - 0.15 * noise.fbm2(x * 0.7 + 13, z * 0.7, 2);
 	for (let c = 0; c < 3; c++) {
 		const moss = (MOSS[c] as number) + ((MOSS_DARK[c] as number) - (MOSS[c] as number)) * dark;
-		const patchy = moss + ((MOSS_BROWN[c] as number) - moss) * brown * 0.7;
+		const browned = moss + ((MOSS_BROWN[c] as number) - moss) * brown * 0.7;
+		const patchy = browned + ((MOSS_LIGHT[c] as number) - browned) * light * 0.8;
 		const bright = patchy + ((MOSS_BRIGHT[c] as number) - patchy) * band;
 		const shore = bright + ((MUD[c] as number) - bright) * wet;
 		const ground = shore + ((BED[c] as number) * cobble - shore) * under;
