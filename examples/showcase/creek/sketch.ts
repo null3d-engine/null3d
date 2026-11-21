@@ -40,7 +40,6 @@ import { createClouds } from './clouds';
 import { createFlora } from './flora';
 import { createGarden, loadGarden } from './garden';
 import {
-	CLOUD_TOP,
 	cameraFloor,
 	createLand,
 	LIPS,
@@ -193,13 +192,13 @@ const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
 /**
- * Each lip's fall: how far it drops, so its mist bursts just above the cloud's tops; how far each
- * side widens per meter fallen, so it fans out down the drop; the share of the creek's half width
- * that leaves over the lip: the water that shows there, between the lip's shoulders; and how far up
- * the creek its water starts, in meters, so it covers the river's square end and piles froth toward
- * the brink.
+ * Each lip's fall: how far it drops, so from the opening view it runs on down into the cloud as the
+ * concept's falls do; how far each side widens per meter fallen, so it fans out down the drop; the
+ * share of the creek's half width that leaves over the lip: the water that shows there, between the
+ * lip's shoulders; and how far up the creek its water starts, in meters, so it covers the river's
+ * square end and piles froth toward the brink.
  */
-const FALL = { drop: 17, spread: 0.12, width: 0.9, apron: 2.5 } as const;
+const FALL = { drop: 20, spread: 0.12, width: 0.9, apron: 2.5 } as const;
 /**
  * How far the sheet reaches at each lip, in half widths: as far as the fall, so no edge of the sheet
  * runs on past it over the rim.
@@ -396,9 +395,9 @@ export default defineSketch(async (ctx) => {
 						drop: FALL.drop,
 						spread: FALL.spread,
 						apron: FALL.apron,
-						// The cloud draws before the falls, so each fall fades out into it below the cloud's
-						// tops, and its water bursts into mist over the drop above them.
-						fadeBelow: CLOUD_TOP,
+						// The cloud draws before the falls, so each fall fades out at its foot, deep in the
+						// cloud, and its water bursts into mist over the drop above.
+						fadeBelow: WATER - FALL.drop,
 						layers: UNREFLECTED_LAYER,
 						wind: wind.field,
 					});
