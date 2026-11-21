@@ -38,6 +38,7 @@ import { createAir } from './air';
 import { createCliff } from './cliff';
 import { createClouds } from './clouds';
 import { createFlora } from './flora';
+import { createGarden, loadGarden } from './garden';
 import {
 	cameraFloor,
 	createLand,
@@ -192,6 +193,8 @@ const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.01 } as 
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** The foam map's box on the ground, over the whole creek, and its texels. */
+/** How far the foam reaches round each mark of the foam map, in meters. */
+const FOAM_REACH = 0.35;
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
 /**
@@ -251,14 +254,15 @@ function createCreekWater(
 			thickness: 0.15,
 		},
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
-		// rings, a little wider than the add-on's own.
+		// round marks with no stretch of its own: a trail as long as the reach adds none. Its texels
+		// are 2 cm, so no step shows in the foam's outline close up.
 		foam: foamMap(ctx, obstacles, {
 			origin: FOAM_BOX.origin,
 			size: FOAM_BOX.size,
-			width: 1024,
-			height: 288,
-			reach: 1,
-			trail: 0,
+			width: 2048,
+			height: 576,
+			reach: FOAM_REACH,
+			trail: FOAM_REACH,
 		}),
 	});
 }
@@ -331,8 +335,10 @@ export default defineSketch(async (ctx) => {
 	createCliff(ctx, land.rim, detail.texture);
 	page.post('loading', 'Gathering the cloud');
 	const clouds = await createClouds(ctx, quality.preset);
-	page.post('loading', 'Laying the stones');
-	const stones = createStones(ctx, detail.rock, detail.texture);
+	page.post('loading', 'Setting the statue, the gate and the stones');
+	const models = await loadGarden(ctx);
+	createGarden(ctx, models);
+	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders[2]);
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(

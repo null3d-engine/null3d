@@ -9,6 +9,7 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
+import { type Part, standPart } from '../../lib/blender-models';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import {
 	bearingOf,
@@ -39,7 +40,7 @@ const IN_STREAM = 1.0;
 /** How far under the surface a stone's top may lie and still break the water white, in meters. */
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
-const TRAIL = { links: 16, step: 0.45, width: 1.5 } as const;
+const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -99,20 +100,26 @@ const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
 /** The stones in the current, and the stones scattered on the banks away from the water. */
-const IN_CURRENT = 36;
+const IN_CURRENT = 44;
 const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
-/** The bank stones' smallest and largest size, and how close they stand, as a share of their size. */
-const BANK = { size: [0.45, 0.8], spacing: 1.7 } as const;
+/**
+ * The bank stones' smallest and largest size, and how close they stand, as a share of their size;
+ * how far each sinks into the bank, as a share of its size; and the half width of the finished
+ * bank-stone model at its own size, which sets the model's scale.
+ */
+const BANK = { size: [0.45, 0.8], spacing: 1.7, sink: 0.25, modelHalf: 0.9 } as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
- * along the creek its rocks spread, and how many stand in it. One lies on the west sill and one
- * upstream of it; the east sill lies on the camera's dip and stays clear.
+ * along the creek its rocks spread, and how many stand in it. One lies on the west sill and two
+ * upstream of it, so the west arm runs white along its length; the east sill lies on the camera's
+ * dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number])[] = [
 	[-11.5, 1.8, 10],
-	[-6.5, 1.4, 6],
+	[-8.8, 1.2, 8],
+	[-6.5, 1.4, 10],
 ];
 
 /** True for a point that lies inside the rim by at least `margin` meters. */
@@ -176,7 +183,7 @@ export function rockPlaces(): StonePlace[] {
 	for (const lip of [LIPS.west, LIPS.east]) {
 		const inward = -Math.sign(lip);
 		const atLip = (back: number, across: number, size: number) =>
-			add(lip + inward * (size * ROCK_REACH + 0.25 + back), across, size, 'broken');
+			add(lip + inward * (size * ROCK_REACH + 0.08 + back), across, size, 'broken');
 		for (const side of [-1, 1]) {
 			atLip(0.3 * next(), side * (1.0 + 0.1 * next()), 0.6 + 0.2 * next());
 			atLip(1.0 + 0.5 * next(), side * (1.0 + 0.1 * next()), 0.45 + 0.15 * next());
@@ -214,14 +221,16 @@ export function stoneFootprints(places = rockPlaces()): (x: number, z: number) =
 
 /** The stones and the pebbles, and a test of whether anything may stand at a point. */
 export function createStones(
-	{ scene, geometry, materials, textures }: SketchContext,
+	ctx: SketchContext,
 	detail: number,
 	textureSize: number,
+	bankStone?: Part,
 ): {
 	clear(x: number, z: number): boolean;
 	fit(preset: QualityPreset): void;
 	obstacles: Obstacle[];
 } {
+	const { scene, geometry, materials, textures } = ctx;
 	const maps = textureSet(textures, textureSize, rockTexel);
 	const look = { vertexColors: true, ...maps, uvTransform: { repeat: [2, 1] } } as const;
 	const dry = materials.standard({ ...look, roughness: 1 });
@@ -233,6 +242,7 @@ export function createStones(
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
 		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
 		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
+		if (kind === 'bank' && bankStone) continue;
 		const squash =
 			kind === 'bank'
 				? ([1, 0.62 + 0.12 * next(), 0.85 + 0.15 * next()] as const)
@@ -269,23 +279,42 @@ export function createStones(
 						Math.abs(below) < 0.9
 							? size * Math.sqrt(1 - below * below)
 							: size * 0.75 * (1 - Math.max(0, WATER - top) / SHALLOW);
-					obstacles.push({ x, z, r });
-					// The trail: the foam that the current carries away behind the stone, whichever way it
-					// runs, as a chain of shrinking rings downstream.
+					// The foam trails behind the stone, whichever way the current runs: a wake that starts
+					// narrow at its downstream side, widens away from it and then fades, so none rings it.
 					const [vx, vz] = streamCurrent(x, z);
 					const speed = Math.hypot(vx, vz);
-					if (speed > 0.05)
-						for (let k = 1; k <= TRAIL.links; k++)
-							obstacles.push({
-								x: x + (vx / speed) * k * TRAIL.step,
-								z: z + (vz / speed) * k * TRAIL.step,
-								r: r * (1 - k / (TRAIL.links + 1)) * TRAIL.width,
-							});
+					const [ux, uz] = speed > 0.05 ? [vx / speed, vz / speed] : [0, 0];
+					for (let k = 0; k <= TRAIL.links; k++) {
+						const spread = Math.min(1, 0.4 + 0.15 * k) * (1 - k / (TRAIL.links + 1));
+						obstacles.push({
+							x: x + ux * (r + 0.2 + k * TRAIL.step),
+							z: z + uz * (r + 0.2 + k * TRAIL.step),
+							r: r * TRAIL.width * spread,
+						});
+					}
 				}
 			});
 			batch.markDirty();
 		}
 	}
+
+	// The bank row from the finished bank-stone model, when the scene has it: each copy as wide as
+	// the stone it stands for, sunk a little into the bank.
+	if (bankStone)
+		standPart(
+			ctx,
+			bankStone,
+			places
+				.filter((place) => place.kind === 'bank')
+				.map(({ x, z, size }) => ({
+					x,
+					y: groundHeight(x, z) - size * BANK.sink,
+					z,
+					yaw: next() * Math.PI * 2,
+					size: size / BANK.modelHalf,
+				})),
+			bankStone.material,
+		);
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
 	const tints = ['#6e6455', '#7a6a52', '#5c564c'];

@@ -305,21 +305,21 @@ describe('a waterfall’s spray and mist', () => {
 	const byKind = (sheet: FallSheet) =>
 		Object.fromEntries(fallEmitters(sheet).map((place) => [place.kind, place]));
 
-	it('sprays inside the column, over the upper two thirds of the drop', () => {
-		const { body } = byKind(SHEET);
+	it('throws drops off the column, over the upper two thirds of the drop', () => {
+		const { drops } = byKind(SHEET);
 		const upper = SHEET.drop * 0.35;
 		const at: [number, number] = [0, 0];
 		fallPlace(fallTime(upper), SHEET.speed, at);
 		const depth = columnDepth(SHEET.halfWidth, upper);
-		// Its box runs from the column's back to its front, across the water's width.
-		const out = (body?.position[0] as number) - 10;
-		const thick = body?.box[2] as number;
+		// Its box runs from behind the column's back to past its front, across the water's width.
+		const out = (drops?.position[0] as number) - 10;
+		const thick = drops?.box[2] as number;
 		expect(out - thick / 2).toBeLessThan(at[0]);
 		expect(out + thick / 2).toBeGreaterThan(at[0] + 2 * depth);
-		expect(body?.box[0] as number).toBeGreaterThan(SHEET.halfWidth + SHEET.spread * upper);
+		expect(drops?.box[0] as number).toBeGreaterThan(SHEET.halfWidth + SHEET.spread * upper);
 		// It stays in the upper drop: its top below the lip, its foot above the fall's lower quarter.
-		const top = (body?.position[1] as number) + (body?.box[1] as number) / 2;
-		const foot = (body?.position[1] as number) - (body?.box[1] as number) / 2;
+		const top = (drops?.position[1] as number) + (drops?.box[1] as number) / 2;
+		const foot = (drops?.position[1] as number) - (drops?.box[1] as number) / 2;
 		expect(top).toBeLessThanOrEqual(SHEET.level);
 		expect(foot).toBeGreaterThan(SHEET.level - SHEET.drop * 0.75);
 	});
