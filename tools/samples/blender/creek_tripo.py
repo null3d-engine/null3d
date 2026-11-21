@@ -119,23 +119,23 @@ STATUE = dict(
 # meters out, half `ribs[0]` meters wide there and half `ribs[1]` at the corners, each wandering
 # up to `wobble` meters from its line, and over the last `eave` meters to its eaves. The moss's
 # lightness varies in patches about `moss_darken`, and the cap's last `rim` meters, chipped in the
-# raw mesh, are smoothed as its moss is. The gate loses the
-# rear frame that Tripo3D added: everything under the roof, which starts at `roof` of its height,
-# and behind the front posts' backs, which `cut` places at the foot and at the roof, and behind
-# the posts within `eaves` of the middle, everything below the side ties, `tie` above the foot;
-# these four are shares of its height. Its front posts stand upright again below the beam, at
-# `beam` of its height, losing their lean of `lean` meters per meter, and move in until the roof
-# is `spread` times their spacing; above the roof line only the posts' columns move, up to their
-# brackets' tops at `brackets` of the height. A copy of the left one, `post` times as wide and
-# deep and `rear` of the height behind it, its faces wandering by up to `weather` meters, stands
-# behind it. The timber under the roof, above the stone blocks at `blocks` of its height, keeps
-# `darken` of its lightness and grows `vivid` times in color strength. The rear post, deeper in
-# the roof's shade, then takes the front posts' tone by the two shares of `rear_tone`, for
-# lightness and color strength, the tiles keep the first share of `roof_tone` of their lightness,
-# their light and dark round the local mean growing by the second, and all the timber takes the
-# `timber_tint`, toward a weathered grey-brown. The stone blocks keep `feet[0]` of their
-# lightness, and the pale band at each post's foot, `feet[1]` meters tall, takes the posts' own
-# lightness, so the feet do not glare white in a bright scene.
+# raw mesh, are smoothed as its moss is. The gate loses the rear frame that Tripo3D added:
+# everything under the roof, which starts at `roof` of its height, and behind the front posts'
+# backs, which `cut` places at the foot and at the roof, and behind the posts within `eaves` of the
+# middle, everything below the side ties, `tie` above the foot; these four are shares of its height.
+# Its front posts stand upright again below the beam, at `beam` of its height, losing their lean of
+# `lean` meters per meter, and move in until the roof is `spread` times their spacing; above the
+# roof line only the posts' columns move, up to their brackets' tops at `brackets` of the height. A
+# copy of the left one, `post` times as wide and deep and `rear` of the height behind it, its faces
+# wandering by up to `weather` meters, stands behind it. The timber under the roof, above the stone
+# blocks at `blocks` of its height, keeps `darken` of its lightness and grows `vivid` times in color
+# strength. The rear post, deeper in the roof's shade, then takes the front posts' tone by the two
+# shares of `rear_tone`, for lightness and color strength, the tiles take the `roof_tint`, their
+# light and dark round the local mean growing `roof_contrast` times, and all the timber takes the
+# `timber_tint`, toward a pale weathered grey-brown. Both tints lean against the garden's light,
+# which warms the tiles to purple and darkens the wood, so the two read as the concept's there. The
+# stone blocks keep `feet[0]` of their lightness, and the pale band at each post's foot, `feet[1]`
+# meters tall, takes the posts' own lightness, so the feet do not glare white in a bright scene.
 #
 # The roof dragon keeps its raw glaze colours, but its body's green-grey scales, to the end of its
 # tail's curl, keep `darken` of their lightness, with its joints, the texels darker than the tiles
@@ -155,13 +155,13 @@ STATUE = dict(
 # `wide` keeps the boulder's width within that many times its height.
 MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
-                    texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(1.02, 1.0, 0.82),
-                    vivid=2.0, moss_darken=0.7, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1,
+                    texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(0.99, 1.0, 0.82),
+                    vivid=1.7, moss_darken=0.75, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1,
                     wobble=0.03, rim=0.08),
     'gate': dict(file='model.glb', turn=-90.0, height=3.9, sink=0.03, triangles=6000, levels=(0.4, 0.15),
                  texture=1024, roof=0.64, cut=(-0.1148, -0.0673), tie=0.6636, eaves=0.5, lean=0.09, post=0.58,
                  rear=0.273, blocks=0.08, beam=0.55, rear_tone=(1.2, 0.8), spread=1.96, brackets=0.69,
-                 weather=0.012, roof_tone=(0.82, 1.8), timber_tint=(0.96, 1.0, 0.98),
+                 weather=0.012, roof_tint=(1.01, 1.07, 1.05), roof_contrast=1.8, timber_tint=(1.28, 1.29, 1.25),
                  darken=0.65, vivid=1.7, feet=(0.72, 0.45)),
     'dragon': dict(file='model.glb', turn=180.0, height=0.9, sink=0.01, triangles=3000, levels=(0.55, 0.25),
                    texture=512, base_cut=0.02, base=(0.16, 0.16), darken=0.8, joints=1.5, glaze=0.4,
@@ -198,7 +198,8 @@ MODELS = {
 # them. Then each texel's light and dark against those round it, at the scale of the folds and the
 # curls, grows `detail[0]` times on the body and `detail[1]` times on the hair, so the fine texture
 # holds at a distance; the hair keeps `hair_tone` of its lightness, and the curls' gaps, deep in
-# the baked occlusion, darken by up to `curls`.
+# the baked occlusion, darken by up to `curls`. The verdigris, every green, cyan and blue, takes
+# the `verdigris` tint last, toward green, as the garden's light turns it blue.
 PATINA = dict(
     middle=0.18,
     contrast=1.4,
@@ -225,6 +226,7 @@ PATINA = dict(
     knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
+    verdigris=(0.93, 1.0, 0.92),
 )
 
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
@@ -905,6 +907,12 @@ def repaint(maps, height, eyes, eye, chest, rng):
     gaps = np.clip(1 - occlusion / max(float(np.median(occlusion[used & (hair > 0.5)])), 1e-3), 0, 1)
     color *= (1 - PATINA['curls'] * hair * np.clip(gaps * 3, 0, 1))[..., None]
 
+    # The verdigris, every green, cyan and blue texel with some color, takes the `verdigris` tint,
+    # so it reads green-teal in the garden's light, which turns it blue.
+    hue = hue_of(color)
+    teal = smoothstep(90, 110, hue) * smoothstep(260, 240, hue) * smoothstep(0.03, 0.08, strength_of(color))
+    color *= 1 + (np.array(PATINA['verdigris'], np.float32) - 1) * teal[..., None]
+
     for middle_point in eyes:
         d = (position - np.array(middle_point, np.float32)) / np.array((eye[0], eye[0], eye[1]), np.float32)
         mark = smoothstep(1.0, 0.4, np.sqrt((d * d).sum(axis=2))) * smoothstep(0.2, 0.6, -facing[..., 1])
@@ -1513,13 +1521,12 @@ def repaint_model(name, spec, maps, rng):
         color = seen_from_front(color, position, back, front)
         occlusion = seen_from_front(occlusion[..., None], position, back, front)[..., 0]
         maps['color'] = color
-        # The tiles, grey above the roof line, keep the first share of `roof_tone` of their
-        # lightness, and their light and dark round the local mean grow by the second, so the rows
-        # show dark gaps and pale tops.
+        # The tiles, grey above the roof line, take the `roof_tint`, and their light and dark round
+        # the local mean grow `roof_contrast` times, so the rows show dark gaps and pale tops.
         tiles = smoothstep(roof, roof + 0.1, z) * (1 - smoothstep(0.12, 0.2, strength_of(color)))
-        color = darken(color, spec['roof_tone'][0], tiles)
+        color *= 1 + (np.array(spec['roof_tint'], np.float32) - 1) * tiles[..., None]
         luma = color @ LUMA
-        color *= (1 + (spec['roof_tone'][1] - 1) * tiles * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
+        color *= (1 + (spec['roof_contrast'] - 1) * tiles * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
         timber = smoothstep(blocks, blocks + 0.08, z) * smoothstep(roof + 0.05, roof - 0.05, z)
         color = vivid(color, spec['vivid'], timber)
         color = darken(color, spec['darken'], timber)
