@@ -228,7 +228,8 @@ export async function createWaterfall(
 		? { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink - 1.5, 1)) }
 		: sheet;
 	const material = materials.shader({
-		color: '#f2f3f2',
+		// White water under an overcast sky leans a little blue.
+		color: '#eef1f6',
 		roughness: 0.95,
 		metalness: 0,
 		// Foam scatters light more than it mirrors it, so its edges catch little of the sky's glare,
@@ -292,7 +293,8 @@ export async function createWaterfall(
 				rate: place.rate * spray,
 			};
 			if (place.kind === 'froth')
-				// Small puffs thrown out and down with the water over the brink.
+				// A fine spray thrown out and down with the water over the brink: many small, faint
+				// puffs, so none reads as a ball of cotton beside the lip.
 				return {
 					...base,
 					capacity: room(place.rate, FROTH_LIFE),
@@ -301,11 +303,11 @@ export async function createWaterfall(
 					speed: [speed * 0.6, speed * 1.4 + 0.3],
 					gravity: [0, -2.5, 0],
 					drag: 1.4,
-					lifetime: [0.9, FROTH_LIFE],
-					size: [0.25 * half, 0.45 * half],
-					sizeOverLife: [0.6, 1.3, 1.9],
-					alphaOverLife: [0, 0.85, 0.5, 0],
-					opacity: 0.55,
+					lifetime: [0.6, FROTH_LIFE * 0.7],
+					size: [0.08 * half, 0.16 * half],
+					sizeOverLife: [0.7, 1.2, 1.5],
+					alphaOverLife: [0, 0.7, 0.35, 0],
+					opacity: 0.35,
 				};
 			if (place.kind === 'drops')
 				// Small round drops flung off the column's surface, out and down with the water. Those

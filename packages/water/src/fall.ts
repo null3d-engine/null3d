@@ -390,7 +390,7 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 			position: at(0.25, -0.1),
 			turn,
 			box: [sheet.halfWidth * 1.9, 0.25, 0.5],
-			rate: 6 * sheet.halfWidth,
+			rate: 15 * sheet.halfWidth,
 			halfWidth: sheet.halfWidth,
 		},
 		{
