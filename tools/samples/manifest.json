@@ -6164,7 +6164,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
 			"fetched": "2026-11-20",
-			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-statue by tools/samples/blender/creek_tripo.py in the engine repository: the base cut away, the head enlarged and the body widened, decimated to 30,000 triangles, the raw surface baked onto it, and the bronze repainted with its weathering and with fine texture on its folds and curls, its verdigris lightened in the shade and kept green-teal, the warm ochre and rust of the concept painted back on the bare chest, the forearms and the knees, the pale lichen made finer, and the verdigris taken from the scene's cool tint to the concept's green-grey with its covered area and the face's worn light lifted, so the face reads the concept's colour strength and darkness. The stone slab, an uneven oval of grey stone with moss in patches, is built by the script with a texture it paints. Two lower levels of each part carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-statue by tools/samples/blender/creek_tripo.py in the engine repository: the base cut away, the head enlarged and the body widened, decimated to 30,000 triangles, the raw surface baked onto it, and the bronze repainted with its weathering and with fine texture on its folds and curls, its verdigris lightened in the shade and kept green-teal, the warm ochre and rust of the concept painted back on the bare chest, the forearms and the knees, the pale lichen made finer, and the verdigris taken from the scene's cool tint to the concept's green-grey with its covered area and the face's worn light lifted, so the face reads the concept's colour strength and darkness; and, away from the face, the verdigris is darkened to the concept's slate with its colour strength kept about its own lightness. The stone slab, an uneven oval of grey stone with moss in patches, is built by the script with a texture it paints. Two lower levels of each part carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
 			"dir": "sources/showcase/creek-garden/statue",
 			"origin": {
 				"kind": "blender",
@@ -6174,8 +6174,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-garden/statue/statue.glb",
-					"bytes": 3237252,
-					"sha256": "7acde219ce4bc9cda347a8be056599ba52c165872c923ce5fa53a50c92df2c59"
+					"bytes": 3225972,
+					"sha256": "9fc5f7509bef63c515d8798ec4adc1c1a696d9ee45f4951ea4fc22df20486518"
 				}
 			]
 		},
