@@ -708,7 +708,7 @@ def leaf_part(spec, plant, places, rng, grow):
         # Toward the rim the card keeps its green and loses its blue, so the crown's tips read
         # yellower than its inside under every copy's tint.
         warm = spec.get('warm', 0.0) * rim
-        color = tuple(ao * hue * c * (1 - w * warm) for c, w in zip(tint, (0.12, 0.02, 0.55)))
+        color = tuple(ao * hue * c * (1 - w * warm) for c, w in zip(tint, (0.02, -0.28, 0.62)))
         sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
         if spec.get('tent'):
             tent(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])

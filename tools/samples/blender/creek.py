@@ -2261,7 +2261,7 @@ MAPLE = dict(
     turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.52, 0.39, 0.27),
     hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.32, clear=0.5, spacing=0.6, past=0.9, pad=(0.62, 0.16),
     layers=6, settle=0.8, droop=0.4,
-    cards=4000, up=0.5, depth=0.06, card=0.3, lift=0.55, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
+    cards=4200, up=0.5, depth=0.06, card=0.26, lift=0.55, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
     fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.45, warm=0.55, levels=((2, 1.3), (5, 1.7)),
 )
 # The leaves' pale tones, a little warmer or cooler leaf by leaf, so the color that the scene gives
