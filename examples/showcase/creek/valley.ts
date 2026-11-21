@@ -38,12 +38,41 @@ export type PlantKind = (typeof PLANT_KINDS)[number];
 
 /** The size of each model at scale 1: its height and the reach of its foliage about its foot. */
 export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number }> = {
-	'pine-tall': { height: 7.7, reach: 5 },
-	'pine-narrow': { height: 7.6, reach: 3.3 },
-	'pine-low': { height: 3.5, reach: 2.8 },
+	'pine-tall': { height: 7.41, reach: 5.1 },
+	'pine-narrow': { height: 7.56, reach: 2.9 },
+	'pine-low': { height: 3.47, reach: 2.8 },
 	fern: { height: 0.77, reach: 0.82 },
 	hosta: { height: 0.52, reach: 0.6 },
 };
+
+/** How far a pine's trunk reaches about its foot at scale 1, in meters, the widest of the three. */
+export const TRUNK = 0.66;
+
+/**
+ * The scale table of the placed pines: each one's height, in meters, from the least to the most,
+ * as the concept and the fidelity rulings ask. The two tall pines and the tall form behind the
+ * statue stand 7 to 8 m, the low pines 2.8 to 3.7 m; the two small pines on the right hillside and
+ * the clipped tiny pines on the gravel's islands take rows of their own.
+ */
+export const SCALE: Readonly<Record<string, readonly [number, number]>> = {
+	P1: [7, 8],
+	P2: [7, 8],
+	P3: [2.8, 3.7],
+	P4: [2.8, 3.7],
+	P5: [7, 8],
+	P6: [2.8, 3.7],
+	P7: [4, 5],
+	P8: [3, 3.7],
+	P10: [1, 1.5],
+	P11: [0.5, 1],
+};
+
+/**
+ * The ground cover's triangles at the finest and only level of its models, and the most that the
+ * planting may draw of it. The ferns and hostas carry no lower levels, so the count holds them under
+ * the budget until models with levels take their place.
+ */
+export const GROUND_TRIANGLES = { fern: 416, hosta: 560, budget: 25000 } as const;
 
 /**
  * The trees, by hand where the concept has them, from the references helper's planting map: each
