@@ -2288,10 +2288,10 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
 MAPLE = dict(
     raw='maple-trunk/model.glb', sha256='76d0d36f36251f12098c2a9b72234224318ae7911e360eef70109c5d6c11dd63',
     turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.52, 0.39, 0.27),
-    hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.32, clear=0.5, spacing=0.6, past=0.9, pad=(0.62, 0.16),
-    layers=6, settle=0.8, droop=0.4,
-    cards=4200, up=0.5, depth=0.06, card=0.26, lift=0.55, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
-    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.45, warm=0.55, levels=((2, 1.3), (5, 1.7)),
+    hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.32, clear=0.35, spacing=0.5, past=0.9, pad=(0.66, 0.17),
+    layers=7, settle=0.6, droop=0.4,
+    cards=7000, up=0.55, depth=0.06, card=0.26, lift=0.55, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
+    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.3, warm=0.9, levels=((2, 1.3), (5, 1.7)),
 )
 # The leaves' pale tones, a little warmer or cooler leaf by leaf, so the color that the scene gives
 # each copy sets its hue while the leaves keep their light and shade; and the twigs' grey.
@@ -2341,7 +2341,7 @@ def maple_atlas(size, rng):
             # The cell's top is a card's outer end, so a leaf's height up the cell sets how golden
             # it paints.
             golden = middle[1] ** 2
-            tone = tone * np.array([1.0 - 0.05 * golden, 1.0 - 0.02 * golden, 1.0 - 0.4 * golden])
+            tone = tone * np.array([1.0 - 0.1 * golden, 1.0 - 0.02 * golden, 1.0 - 0.6 * golden])
             maple_leaf(tile, middle, angle, 0.045 + 0.022 * rng.random(), tone, patch)
         out[oy:oy + cell, ox:ox + cell] = tile
     return dilate(out)
