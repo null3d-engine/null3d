@@ -737,7 +737,7 @@ def surface_points(obj, count, rng):
     return a[pick] + (b[pick] - a[pick]) * u[:, None] + (c[pick] - a[pick]) * v[:, None]
 
 
-def level_error(level, full, share=0.95, floor=-math.inf, count=20000, seed=1):
+def level_error(level, full, share=0.95, floor=-math.inf, limit=math.inf, count=20000, seed=1):
     """
     A lower level's surface error, in meters, measured both ways between it and the full mesh.
     Points at the height `floor` or below, such as what a slab hides, do not count.
@@ -748,6 +748,11 @@ def level_error(level, full, share=0.95, floor=-math.inf, count=20000, seed=1):
     the share counts the change that the eye sees. With `share` None, the error is the largest
     distance from either mesh's vertices to the other's surface, which suits a solid model, where
     any gap shows in its outline.
+
+    The error comes rounded to a tenth of a millimeter, as the files store it. One past `limit`
+    meters stops the build: the engine would keep the finest level far too long, or switch to a
+    level that looks wrong, and a large error often means that the measure counted a hidden
+    surface or that the decimation broke the shape.
     """
     def tree(obj):
         bm = bmesh.new()
@@ -770,7 +775,10 @@ def level_error(level, full, share=0.95, floor=-math.inf, count=20000, seed=1):
         shown = shown[shown[:, 2] > floor]
         onto = tree(there)
         gaps += [onto.find_nearest(Vector(p))[3] or 0.0 for p in shown]
-    return float(max(gaps) if share is None else np.quantile(gaps, share))
+    error = round(float(max(gaps) if share is None else np.quantile(gaps, share)), 4)
+    if error > limit:
+        raise SystemExit(f'{level.name}: its surface error is {error} m, over the limit of {limit:.3f} m')
+    return error
 
 
 # ---------------------------------------------------------------------------------------------
