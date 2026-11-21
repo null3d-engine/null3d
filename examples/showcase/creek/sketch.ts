@@ -53,7 +53,7 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { DUSK_SKY, duskSkyStrength, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createDuskSky, SPRAY, sprayLight as sprayLightOf } from './lights';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
@@ -131,7 +131,11 @@ const params = new URL(import.meta.url).searchParams;
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
-/** The parts of the scene that the address leaves out, for a bisect or a measure by difference. */
+/**
+ * The parts of the scene that the address leaves out, any of `plants`, `water` and `fog`, for a
+ * bisect or a measure by difference. Without fog, the mist over the water goes too, as the HUD's fog
+ * switch takes it.
+ */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 /**
  * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
@@ -462,17 +466,13 @@ export default defineSketch(async (ctx) => {
 		light();
 	});
 	// The dusk's own sky light, which only Dusk turns up.
-	const duskSky = scene.createHemisphereLight({
-		skyColor: DUSK_SKY.sky,
-		groundColor: DUSK_SKY.ground,
-		intensity: 0,
-	});
+	const duskSky = createDuskSky(scene);
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
-		duskSky.setIntensity(duskSkyStrength(look));
+		duskSky.setLook(look);
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
@@ -496,7 +496,7 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			fog: !WITHOUT.has('fog'),
 			shafts: false,
 			fireflies: false,
 			shadows: true,
