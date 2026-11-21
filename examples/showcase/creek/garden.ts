@@ -1,11 +1,12 @@
-// The Creek garden's built things and its big rocks: the bronze Buddha on its oval slab, over a raised
-// ledge of rough dark rock on the terrace; the roofed gate on its landing on the ridge, with a lantern
-// on each side; the lanterns by the creek and at the front; and the mossy boulders by the gravel and
-// on the slopes. Each is a model finished in Blender from a Tripo3D base
-// (tools/samples/blender/creek_tripo.py), which the asset tool optimized and the sample-assets
-// repository holds. Each part carries its own lower levels, so every copy picks its own level of
-// detail. Places follow the concept picture, read from the opening view onto this land, and every
-// model is seated on the lowest ground under its footprint, so no part of it hangs over a slope.
+// The Creek garden's built things and its big rocks: the bronze Buddha on its oval slab, over a
+// raised ledge of rough dark rock on the terrace; the roofed gate on its landing on the ridge, with
+// a dragon at each end of its ridge and a lantern on each side; the lanterns by the creek and at
+// the front; and the mossy boulders by the gravel and on the slopes. Each is a model finished in
+// Blender from a Tripo3D base (tools/samples/blender/creek_tripo.py), which the asset tool
+// optimized and the sample-assets repository holds. Each part carries its own lower levels, so
+// every copy picks its own level of detail. Places follow the concept picture, read from the
+// opening view onto this land, and every model is seated on the lowest ground under its footprint,
+// so no part of it hangs over a slope.
 import type { MeshArrays, SketchContext } from '@null3d/engine';
 import { type Part, partsOf, type Stand, standPart, tintedPart } from '../../lib/blender-models';
 import { Noise, random } from '../../lib/procedural';
@@ -33,16 +34,19 @@ export interface GardenModels {
 	readonly statue: Part;
 	readonly lantern: Part;
 	readonly gate: Part;
+	/** The glazed dragon that stands at each end of the gate's ridge. */
+	readonly dragon: Part;
 	/** The boulders, largest first; the third is the bank stone. */
 	readonly boulders: readonly [Part, Part, Part];
 }
 
 /** Loads every model at once. */
 export async function loadGarden({ assets }: SketchContext): Promise<GardenModels> {
-	const [statue, lantern, gate, first, second, third] = await Promise.all([
+	const [statue, lantern, gate, dragon, first, second, third] = await Promise.all([
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/statue/statue.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/lantern/lantern.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/gate/gate.glb')),
+		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/dragon/dragon.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-1/boulder-1.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-2/boulder-2.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-3/boulder-3.glb')),
@@ -53,6 +57,7 @@ export async function loadGarden({ assets }: SketchContext): Promise<GardenModel
 		statue: statueParts('statue'),
 		lantern: partsOf(lantern)('lantern'),
 		gate: partsOf(gate)('gate'),
+		dragon: partsOf(dragon)('dragon'),
 		boulders: [
 			partsOf(first)('boulder-1'),
 			partsOf(second)('boulder-2'),
@@ -109,6 +114,12 @@ export const SLAB_REACH = { long: 4.27, wide: 2.74, swell: 0.05 } as const;
 const GATE_YAW = facing([TERRACE.x, TERRACE.z], [LANDING.x, LANDING.z]);
 /** How far each gate lantern stands to the side of the gate's middle, and toward the creek. */
 const GATE_LANTERN = { side: 3.9, front: 0.9 } as const;
+/**
+ * The roof dragons, in the gate model's own meters: how far each stands from the ridge's middle,
+ * with its wave base inside the end curls; the ridge's level top; and how deep its base sinks into
+ * the ridge, so the base does not read as a plinth. Each faces out along the ridge.
+ */
+export const DRAGON = { end: 1.85, ridge: 3.77, sink: 0.14 } as const;
 
 /** The lanterns away from the gate: one on the creek's near bank, and one at the front rim. */
 const LANTERNS: readonly (readonly [number, number, number])[] = [
@@ -272,6 +283,8 @@ export interface GardenPlaces {
 	readonly ledge: Ledge;
 	readonly statue: Placed;
 	readonly gate: Placed;
+	/** The dragons on the gate's ridge, one at each end. */
+	readonly dragons: readonly Stand[];
 	readonly lanterns: readonly Placed[];
 	readonly rocks: readonly (Placed & { readonly model: 0 | 1 })[];
 	/**
@@ -342,6 +355,15 @@ export function gardenPlaces(): GardenPlaces {
 			REACH.lantern,
 		),
 	);
+	const gate = seated(LANDING.x, LANDING.z, GATE_YAW, 1, REACH.gate);
+	// One model at each end, turned to face out along the ridge, never mirrored.
+	const dragons = [-1, 1].map((side) => ({
+		x: gate.x + sx * side * DRAGON.end * gate.size,
+		y: gate.y + (DRAGON.ridge - DRAGON.sink) * gate.size,
+		z: gate.z + sz * side * DRAGON.end * gate.size,
+		yaw: gate.yaw + (side * Math.PI) / 2,
+		size: gate.size,
+	}));
 	placeList = {
 		ledge,
 		statue: {
@@ -352,7 +374,8 @@ export function gardenPlaces(): GardenPlaces {
 			size: STATUE_SIZE,
 			reach: LEDGE.long,
 		},
-		gate: seated(LANDING.x, LANDING.z, GATE_YAW, 1, REACH.gate),
+		gate,
+		dragons,
 		lanterns: [
 			...gateLanterns,
 			...LANTERNS.map(([x, z, turn]) => seated(x, z, turn, 1, REACH.lantern)),
@@ -453,9 +476,9 @@ function ledgeArrays(ledge: Ledge): MeshArrays {
 }
 
 /**
- * Stands the garden's models: the statue on its slab over the rock ledge, the gate and its two
- * lanterns, the other lanterns and the boulders. Returns a test of whether a point lies under one of
- * them, where nothing grows.
+ * Stands the garden's models: the statue on its slab over the rock ledge, the gate with its roof
+ * dragons and its two lanterns, the other lanterns and the boulders. Returns a test of whether a
+ * point lies under one of them, where nothing grows.
  */
 export function createGarden(
 	ctx: SketchContext,
@@ -477,6 +500,7 @@ export function createGarden(
 	standPart(ctx, models.slab, [places.statue], models.slab.material);
 	standPart(ctx, models.statue, [places.statue], models.statue.material);
 	standPart(ctx, models.gate, [places.gate], models.gate.material);
+	standPart(ctx, models.dragon, places.dragons, models.dragon.material);
 	standPart(ctx, models.lantern, places.lanterns, models.lantern.material);
 	for (const model of [0, 1] as const)
 		standPart(
