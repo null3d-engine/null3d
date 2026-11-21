@@ -395,9 +395,11 @@ moment it starts again. So each pattern moves with the water and never stretches
 height and the view from under the water use the same two copies, so the waterline still agrees
 with the surface. A test holds two points 1 cm apart, whose currents differ by 1 mm/s, within the
 waves' own slope after an hour. The old way fails it after ten minutes. With the change, the same
-low view reads 0.76 against 0.53. The foam's clumps are round, six to a meter, with a finer octave,
-and each octave gives way to its mean where a pixel covers one of its clumps. The foam map still
-places the foam.
+low view reads 0.76 against 0.53. The foam's clumps are round, six to a meter, with a finer octave.
+Each octave's grid turns a different way, and the coarse one bends the fine one, so no clump lines
+up with the world's axes. Each octave gives way to its mean where a pixel covers one of its clumps.
+The foam map still places the foam. Foam is broken water full of air, so it is nearly white and
+lets little of the bed through.
 
 ## Rain on the surface
 
