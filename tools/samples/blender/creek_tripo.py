@@ -42,13 +42,12 @@ import bmesh
 import bpy
 import numpy as np
 from mathutils import Matrix, Vector
-from mathutils.bvhtree import BVHTree
 
 # The shared module loads from beside this script, and leaves no bytecode cache in the repository.
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    arguments, export, half, image, link, material, normal_map, orm, smoothstep, stage,
+    arguments, export, half, image, level_error, link, material, normal_map, orm, smoothstep, stage,
 )
 
 SEED = 20261120
@@ -467,26 +466,6 @@ def unwrap(obj):
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.004)
     bpy.ops.object.mode_set(mode='OBJECT')
-
-
-def surface_error(level, full, floor=-math.inf):
-    """
-    The largest distance between two meshes' surfaces, in meters, from each one's vertices above
-    the height `floor` to the other's nearest point, as the engine reads a level's error. What lies
-    below the floor, hidden in the slab, does not count.
-    """
-    def tree(obj):
-        bm = bmesh.new()
-        bm.from_mesh(obj.data)
-        found = BVHTree.FromBMesh(bm)
-        bm.free()
-        return found
-
-    def farthest(points, onto):
-        shown = points[points[:, 2] > floor]
-        return max((onto.find_nearest(Vector(p))[3] or 0.0) for p in shown)
-
-    return max(farthest(vertices_of(level), tree(full)), farthest(vertices_of(full), tree(level)))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1603,15 +1582,16 @@ def level_views(groups, errors, folder, name):
 def levels_of(name, finest, make, height, floor=-math.inf):
     """
     The lower levels that `make(k)` builds for each k from 1, and each one's surface error above
-    the height `floor`, which must stay within its share in `LEVEL_ERROR_LIMIT` of the model's
-    `height`.
+    the height `floor`: the largest distance between the level and the finest one, since a solid
+    model's gaps show in its outline. Each must stay within its share in `LEVEL_ERROR_LIMIT` of the
+    model's `height`.
     """
     levels, errors = [], []
     for k in (1, 2):
         level = make(k)
         level.name = level.data.name = f'{name}-{k}'
         levels.append(level)
-        error = round(surface_error(level, finest, floor), 4)
+        error = round(level_error(level, finest, share=None, floor=floor), 4)
         limit = LEVEL_ERROR_LIMIT[k - 1] * height
         if error > limit:
             raise SystemExit(f'{name}-{k}: its surface error is {error} m, over the limit of {limit:.3f} m')
