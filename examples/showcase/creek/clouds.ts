@@ -388,7 +388,10 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 let round = 0.05 + 0.65 * up * up + 0.15 * lambert + 0.2 * open;
                 // Close to the walls the cliff hides part of the sky, so the cloud there is greyer.
                 let hidden = select(1.0, 0.78 + 0.22 * smoothstep(0.0, 30.0, reach - wall.x), reach < NEAR);
-                form = clamp(mix(sea, round, heapy) * hidden, 0.0, 1.0);
+                // Large soft masses of the sea, some brighter and some greyer, as in the concept.
+                let massAt = (p.xz + material.drift * frame.time) * 0.97 + vec2f(71.0, 13.0);
+                let mass = textureSampleLevel(billows, billowsSampler, massAt / (TILE * 3.0), 0.0).g;
+                form = clamp((mix(sea, round, heapy) + 0.4 * (mass - 0.5)) * hidden, 0.0, 1.0);
                 sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft) * hidden * hidden * hidden;
                 lit = true;
                 lights += 1;
