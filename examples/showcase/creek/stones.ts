@@ -47,7 +47,8 @@ const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
  * in radians at the most; its least length as a share of the longest; the current under which a
  * stone leaves none, and the current at which its wake reaches full length, in meters a second; and
  * the share of a full wake that a riffle's stone leaves, since riffle stones stand close together
- * and their full wakes would join into one white sheet.
+ * and their full wakes would join into one white sheet; and the share that a stone in the east arm's
+ * current leaves, where the concept's water runs clearer than in the west arm.
  */
 const WAKE = {
 	slant: 0.35,
@@ -55,10 +56,14 @@ const WAKE = {
 	shortest: 0.45,
 	still: 0.015,
 	full: 0.25,
-	riffle: 0.65,
+	riffle: 0.55,
+	east: 0.75,
 } as const;
-/** The spring's boil in the pool: how many foam marks, how far they spread, and their sizes, in meters. */
-const SPRING = { marks: 9, spread: 1.2, size: [0.14, 0.3] } as const;
+/**
+ * The spring's boil in the pool: how many foam marks, how far they spread along the pool and across
+ * it, and their sizes, in meters.
+ */
+const SPRING = { marks: 8, spread: [2.2, 1.1], size: [0.1, 0.3] } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -119,9 +124,8 @@ const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
-/** The stones in the current, and the stones scattered on the banks away from the water. */
+/** The stones in the current. */
 const IN_CURRENT = 56;
-const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
 /**
@@ -174,7 +178,7 @@ export interface StonePlace {
 
 /**
  * Where rocks stand: a continuous row of rounded stones along each bank, touching each other; broken
- * stones in the current, across the riffles and on the banks; and at each lip, rock shoulders either
+ * stones in the current and across the riffles; and at each lip, rock shoulders either
  * side of the narrowed creek, with stones in it where the water piles up white before it drops.
  * Every rock stands wholly inside the rim.
  */
@@ -201,11 +205,7 @@ export function rockPlaces(): StonePlace[] {
 		// Where the camera's dip glides along the creek's north half, the stones keep to the south.
 		const across =
 			x > DIP_REACH[0] && x < DIP_REACH[1] ? 0.35 + 0.25 * next() : (next() * 2 - 1) * 0.5;
-		add(x, across, 0.5 + 0.3 * next(), 'broken');
-	}
-	for (let k = 0; k < SCATTERED; k++) {
-		const x = from + (to - from) * next();
-		add(x, (next() < 0.5 ? -1 : 1) * (1.4 + 0.8 * next()), 0.2 + 0.5 * next(), 'broken');
+		add(x, across, 0.5 + 0.3 * next(), 'broken', x > POOL.x ? WAKE.east : 1);
 	}
 	for (const [middle, spread, count, near, far] of RIFFLES)
 		for (let k = 0; k < count; k++) {
@@ -276,12 +276,13 @@ export function createStones(
 	// The spring wells up white in the pool's middle: a boil of foam marks with no stone under them.
 	const spring = random(49);
 	const obstacles: Obstacle[] = Array.from({ length: SPRING.marks }, () => {
-		const angle = spring() * Math.PI * 2;
-		const out = SPRING.spread * Math.sqrt(spring());
+		// Loosely over the pool's length and a little across it, so the boil reads as no pattern.
+		const along = (spring() * 2 - 1) * SPRING.spread[0];
+		const across = (spring() * 2 - 1) * SPRING.spread[1];
 		return {
-			x: POOL.x + Math.cos(angle) * out,
-			z: streamZ(POOL.x) + Math.sin(angle) * out,
-			r: SPRING.size[0] + (SPRING.size[1] - SPRING.size[0]) * spring(),
+			x: POOL.x + along,
+			z: streamZ(POOL.x + along) + across,
+			r: SPRING.size[0] + (SPRING.size[1] - SPRING.size[0]) * spring() ** 2,
 		};
 	});
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {

@@ -4,7 +4,7 @@
 // ground or on the course below, and no lantern, gate or rock stands on the steps or on another's
 // foot. A model or a step raised off its ground fails these tests.
 import { expect, test } from 'bun:test';
-import { gardenPlaces, ledgePoint } from './garden';
+import { gardenPlaces, ledgePoint, SLAB_REACH } from './garden';
 import { alongFlight, flights, groundHeight, STAIRS } from './land';
 import { slabPlaces, wallPlaces } from './steps';
 
@@ -23,8 +23,8 @@ function lowest(x: number, z: number, reach: number): number {
 }
 
 test('each lantern, the gate and every rock stands on the lowest ground under its footprint', () => {
-	const { gate, lanterns, rocks } = gardenPlaces();
-	const models = [gate, ...lanterns, ...rocks];
+	const { gate, lanterns, rocks, ring } = gardenPlaces();
+	const models = [gate, ...lanterns, ...rocks, ...ring];
 	expect(models.length).toBeGreaterThan(20);
 	for (const { x, y, z, reach } of models)
 		expect(
@@ -38,12 +38,27 @@ test("the statue's slab sits on the ledge's flat top, which stands over the terr
 	let [high, low] = [-Infinity, Infinity];
 	for (const point of ledge.outline) {
 		const [x, z] = ledgePoint(ledge, point);
-		high = Math.max(high, groundHeight(x, z));
 		low = Math.min(low, groundHeight(x, z));
+		// Where the top flight cuts into the ledge, the ground beside it is the flight's own ramp, which
+		// rises to the ledge's top.
+		const onSteps = flights().some((flight) => {
+			const { t, side } = alongFlight(flight, x, z);
+			return t > 0 && t < 1.1 && side < STAIRS.half + STAIRS.keep + STAIRS.blend;
+		});
+		if (!onSteps) high = Math.max(high, groundHeight(x, z));
 	}
 	// The top stands clear of all the ground under the outline, and the foot reaches below it.
 	expect(ledge.top - high).toBeGreaterThan(0.2);
 	expect(ledge.foot).toBeLessThan(low);
+	// The ledge's top reaches past the slab's widest outline all round, so no part of the slab's rim
+	// hangs past its edge.
+	for (const [x, z] of ledge.outline) {
+		const angle = Math.atan2(z, x);
+		const slab =
+			(statue.size * (1 + SLAB_REACH.swell)) /
+			Math.hypot(Math.cos(angle) / SLAB_REACH.long, Math.sin(angle) / SLAB_REACH.wide);
+		expect(Math.hypot(x, z), 'the ledge inside the slab').toBeGreaterThan(slab);
+	}
 	// The slab model's rim lies 5 cm under its origin: it rests on the ledge's top, with no air.
 	expect(Math.abs(statue.y - 0.05 * statue.size - ledge.top)).toBeLessThan(0.01);
 });
@@ -83,8 +98,8 @@ test('each wall stone rests on the ground or on the course below it', () => {
 });
 
 test('no lantern, rock or the statue stands on the steps, and no two models share a foot', () => {
-	const { statue, gate, lanterns, rocks } = gardenPlaces();
-	for (const model of [statue, ...lanterns, ...rocks])
+	const { statue, gate, lanterns, rocks, ring } = gardenPlaces();
+	for (const model of [statue, ...lanterns, ...rocks, ...ring])
 		for (const flight of flights()) {
 			const { t, side } = alongFlight(flight, model.x, model.z);
 			const onFlight = t > 0 && t < 1 && side < STAIRS.half + model.reach;
@@ -95,7 +110,7 @@ test('no lantern, rock or the statue stands on the steps, and no two models shar
 			);
 		}
 	// Lanterns, the gate and the statue keep apart from each other and from every rock; the rocks of
-	// one outcrop may touch, as bedrock does.
+	// one outcrop may touch, as bedrock does, and the ring's blocks stand on the ledge's own edge.
 	const singles = [statue, gate, ...lanterns];
 	for (const [i, a] of singles.entries())
 		for (const b of [...singles.slice(i + 1), ...rocks])
