@@ -849,8 +849,8 @@ def build_cave(mat, rng):
 #   gap      the height, as a share of the wood's height, over which the limbs of one tier leave
 #   pad      a pad's radius across, in meters, from the lowest tier to the top; taper is how much
 #            narrower the pad at a limb's end is, and spacing the gap between pads along a limb as
-#            a share of a pad's radius; crest, when given, tops the trunk with one broad pad as wide
-#            as its first share of the crown's width and as thick as its width over its second
+#            a share of a pad's radius; crest, when given, tops the trunk with a cloud of clumps as
+#            wide as its first share of the crown's width, each as thick as its width over its second
 #   inner    the share of a limb's reach, from the trunk, that carries no pad
 #   slope    the steepest rise over run of the wood that carries pads along it; flatten is how
 #            far each pad moves toward its tier's layer, at the level percentile of the heights of
@@ -869,13 +869,13 @@ def build_cave(mat, rng):
 # The tall trunk, which the wide pine and the narrow one are both finished from.
 TALL_TRUNK = dict(
     raw='pine-tall/model.glb', sha256='907b52ee4e6bed5b47760243d8f4e917b194c23a962bda28531d47cbc7884cd6',
-    turn=-90, height=7.8, sink=0.08, limit=0.03, bark=(0.25, 0.22, 0.18),
+    turn=-90, height=7.5, sink=0.08, limit=0.03, bark=(0.25, 0.22, 0.18),
 )
 PINES = {
     'pine-tall': dict(
         TALL_TRUNK, wood=(14000, 5000, 1600),
         fan=(0.3, (0.5, 0.05, 0.0), (0.75, 1.6, 2.1, 1.4, 1.2)), wire=0.6, rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12,
-        keep=0.45, girth=0.3, prune=True, gap=0.15, pad=(0.9, 1.2, 1.0), crest=(0.4, 7.0),
+        keep=0.45, girth=0.3, prune=True, gap=0.15, pad=(0.9, 1.2, 1.0), crest=(0.4, 3.5),
         taper=0.5, spacing=0.9, slope=0.8, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.55, 0.15, 0.15, 0.15, 0.15), flat=7.0, rise=0.1,
         inner=0.0,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
@@ -897,7 +897,7 @@ PINES = {
     'pine-narrow': dict(
         TALL_TRUNK, wood=(12000, 4500, 1500),
         fan=(0.3, (0.35, 0.05, 0.0), (0.6, 0.95, 1.2, 0.85, 0.7)), wire=0.5, rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12,
-        keep=0.45, girth=0.3, prune=True, gap=0.15, pad=(0.75, 0.8, 0.7), crest=(0.45, 7.0),
+        keep=0.45, girth=0.3, prune=True, gap=0.15, pad=(0.75, 0.8, 0.7), crest=(0.45, 3.5),
         taper=0.5, spacing=0.9, slope=0.8, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.35, 0.15, 0.15, 0.15), flat=7.0, rise=0.1,
         inner=0.0,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
@@ -1264,9 +1264,10 @@ def pine_pads(spec, tiers, levels, ends, middles, distance, axis):
     the gaps between the plates. A `floor`, as a share of the height, keeps every pad's underside
     above it. A pad's width runs through `pad` and the most it reaches to the front or the back
     through `deep`, from the lowest tier to the top, and it narrows by `taper` toward the limb's
-    end, so a layer thins to a tip. With `crest`, one broad pad tops the trunk, as a pruned pine's
-    crown is flat on top: as wide as the first share of the crown's width, and as thick as its
-    width over the second. It returns the crown and the cell of wood that each pad on a limb sits on.
+    end, so a layer thins to a tip. With `crest`, a broad cloud of clumps tops the trunk, as a
+    pruned pine's crown is flat on top: as wide as the first share of the crown's width, each clump
+    as thick as its width over the second. It returns the crown and the cell of wood that each pad
+    on a limb sits on.
     """
     height = spec['height']
     low = spec['bare'] * height
@@ -1315,7 +1316,12 @@ def pine_pads(spec, tiers, levels, ends, middles, distance, axis):
         radius = share * (right - left) / 2
         slope, foot = axis
         x, y = levels[-1] * slope + foot
-        plant.pad((x, y, levels[-1] + spec['rise']), (radius, min(radius, spec['deep'][-1]), radius / flat), tiers[-1][0][1] + 1)
+        # Five clumps in a row across the crown, the middle ones highest, so the top reads as a
+        # rounded cloud of needles rather than a disc.
+        size = 0.45 * radius
+        for across, up in ((-0.7, 0.0), (-0.35, 0.1), (0.0, 0.15), (0.35, 0.1), (0.7, 0.0)):
+            middle = (x + across * radius, y, levels[-1] + spec['rise'] + up * radius)
+            plant.pad(middle, (size, min(size, spec['deep'][-1]), size / flat), tiers[-1][0][1] + 1)
     return plant, bearers
 
 
