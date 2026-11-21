@@ -284,10 +284,12 @@ export async function createWaterfall(
 					gravity: [0, -GRAVITY, 0],
 					drag: 0.2,
 					lifetime: [0.5, DROP_LIFE],
-					size: [0.07, 0.18],
+					// Small enough that from far off a drop covers a pixel or less, and reads as spray
+					// rather than as a fleck.
+					size: [0.03, 0.08],
 					sizeOverLife: [1, 1, 0.7],
 					alphaOverLife: [0, 1, 0.8, 0],
-					opacity: 0.85,
+					opacity: 0.7,
 				};
 			const wind = options.wind && { windField: options.wind };
 			if (place.kind === 'mist')
