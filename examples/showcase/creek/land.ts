@@ -230,7 +230,9 @@ export function rimRadius(bearing: number): number {
 	let r =
 		RIM * (1 + 0.05 * rimNoise.fbm2(c * 1.2 + 4, s * 1.2 + 4, 2)) +
 		0.9 * rimNoise.value2(c * 4 + 9, s * 4 + 9) +
-		0.35 * rimNoise.value2(c * 11 + 2, s * 11 + 2) -
+		0.55 * rimNoise.value2(c * 11 + 2, s * 11 + 2) +
+		0.24 * rimNoise.value2(c * 23 + 5, s * 23 + 5) +
+		0.08 * rimNoise.value2(c * 41 + 7, s * 41 + 7) -
 		WEST_BAY.depth * Math.exp(-((turn(WEST_BAY.bearing, bearing) / WEST_BAY.width) ** 2)) +
 		HEADLAND.reach * Math.exp(-((turn(HEADLAND.bearing, bearing) / HEADLAND.width) ** 2));
 	for (const x of [LIPS.west, LIPS.east]) {
@@ -352,7 +354,7 @@ export const STAIRS = {
 	reach: 13.4,
 	steps: [11, 3, 7, 9],
 	rest: 1.2,
-	keep: 0.5,
+	keep: 0.8,
 	blend: 1.4,
 } as const;
 
@@ -595,9 +597,9 @@ const MOSS_BROWN = [0.15, 0.099, 0.02];
 /** The light, yellow-green moss in the sunnier patches. */
 const MOSS_LIGHT = [0.26, 0.202, 0.035];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
-const MOSS_BRIGHT = [0.247, 0.192, 0.035];
-const BED = [0.42, 0.385, 0.315];
-const BED_POOL = [0.14, 0.13, 0.1];
+const MOSS_BRIGHT = [0.3, 0.235, 0.042];
+const BED = [0.53, 0.49, 0.4];
+const BED_POOL = [0.18, 0.165, 0.13];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
 
@@ -607,13 +609,17 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const under = 1 - smoothstep(y, WATER - 0.25, WATER - 0.06);
 	const dark = smoothstep(noise.fbm2(x * 0.11 + 9, z * 0.11, 3), 0.02, 0.32);
 	const brown = smoothstep(noise.fbm2(x * 0.19, z * 0.19 + 9, 3), 0.12, 0.38);
-	// The rim's very edge is wet dark rock, the lip's shoulders among it, so no pale band of bed or
-	// mud runs along the cliff's edge.
-	const edge = 1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.15, 0.8);
+	// The rim's very edge is wet dark rock in broken patches, the lip's shoulders among them, so no
+	// pale band of bed or mud runs along the cliff's edge and the edge never reads as one smooth strip.
+	const edge =
+		(1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.1, 0.75)) *
+		(0.55 + 0.45 * noise.value2(x * 2.7, z * 2.7));
 	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
 	const shade = 0.8 + 0.4 * noise.value2(x * 1.7, z * 1.7);
 	const light = smoothstep(noise.fbm2(x * 0.15 + 21, z * 0.15 + 4, 3), 0.15, 0.45);
 	const band = stairBand(x, z);
+	// The hill reads darker and greyer than the lawns below it, as the concept's shaded slope does.
+	const high = smoothstep(y, 1.5, 4.6);
 	// The bed's cobbles: soft pale and dark shapes that show through the clear water, with no edge
 	// sharp enough to read as a line.
 	const pool = poolShare(x);
@@ -629,7 +635,8 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 		const shore = bright + ((MUD[c] as number) - bright) * wet;
 		const bed = (BED[c] as number) + ((BED_POOL[c] as number) - (BED[c] as number)) * pool;
 		const ground = shore + (bed * cobble - shore) * under;
-		out[c] = (ground + ((STONE[c] as number) - ground) * rocky) * shade;
+		const rockyHigh = Math.max(rocky, high * 0.25);
+		out[c] = (ground + ((STONE[c] as number) - ground) * rockyHigh) * shade * (1 - 0.1 * high);
 	}
 }
 
@@ -782,7 +789,7 @@ export function createLand(
 			vertexColors: true,
 			roughness: 1,
 			uniforms: {
-				gravel: [0.52, 0.39, 0.32],
+				gravel: [0.44, 0.33, 0.27],
 				spacing: RAKE.spacing,
 				box: [RAKE_BOX.x, RAKE_BOX.z, RAKE_BOX.size, RAKE_BOX.size],
 				tile: TILE,

@@ -45,6 +45,7 @@ import {
 	createLand,
 	FALL,
 	LIPS,
+	POOL,
 	streamCurrent,
 	streamDepth,
 	streamHalf,
@@ -205,6 +206,13 @@ const WATER_AT_LIP = FALL.width;
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
 const FOAM_REACH = 0.25;
+/**
+ * How far the foam reaches round the left arm's stones, in meters. The map's trail stays at the
+ * map's reach, so a mark shorter than it carries a longer bright tail, and the left arm's 0.05 m
+ * mark raises its foam from 14.1 to 19.8 per cent. The right arm keeps the map's reach: the swap's
+ * probe showed its bright share is the water's own reflection, not the stones' marks.
+ */
+const FOAM_REACH_WEST = 0.05;
 /** The foam map's box on the ground, over the whole creek. */
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
@@ -255,31 +263,31 @@ function createCreekWater(
 		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
 		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
 		bed: 'shape',
-		// The stream's own bed gives the water all its depth, so the surface draws opaque. The water is
-		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
+		// The stream's own bed gives the water all its depth. Its tint absorbs so little over that
+		// depth that the pale bed shows through everywhere, as the concept's shallow creek does.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#377472',
-			attenuationDistance: 1.2,
-			// From the opening view the calm pool would mirror the bright overcast and hide its bed:
-			// a weaker reflection lets the dark bed through, as the concept's pool shows it, and leaves
-			// the arms' water under their foam's brightness.
-			specularIntensity: 0.25,
-			// A thin volume bends the bed's picture little, so the view along the water close up
-			// never reaches past the frame's edge for it.
-			thickness: 0.15,
+			attenuationColor: '#5b97a2',
+			attenuationDistance: 4,
 		},
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
 		// round marks with no stretch of its own: a trail as long as the reach adds none. On High its
 		// texels are 2 cm, so no step shows in the foam's outline close up.
-		foam: foamMap(ctx, obstacles, {
-			origin: FOAM_BOX.origin,
-			size: FOAM_BOX.size,
-			width: foamTexels,
-			height: Math.round((foamTexels * FOAM_BOX.size[1]) / FOAM_BOX.size[0]),
-			reach: FOAM_REACH,
-			trail: FOAM_REACH,
-		}),
+		foam: foamMap(
+			ctx,
+			obstacles.map((stone) => ({
+				...stone,
+				...(stone.x < POOL.x && { reach: FOAM_REACH_WEST }),
+			})),
+			{
+				origin: FOAM_BOX.origin,
+				size: FOAM_BOX.size,
+				width: foamTexels,
+				height: Math.round((foamTexels * FOAM_BOX.size[1]) / FOAM_BOX.size[0]),
+				reach: FOAM_REACH,
+				trail: FOAM_REACH,
+			},
+		),
 	});
 }
 
