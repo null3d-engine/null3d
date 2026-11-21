@@ -99,6 +99,11 @@ const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
 const STATUE_SIZE = 0.97;
 /** How far the slab model's rim stands below its own origin, in meters at its own size. */
 const SLAB_FOOT = 0.05;
+/**
+ * The slab model's half length and half width at its own size, in meters, and how far its outline
+ * may swell past that oval, as a share: the ledge's top must reach past it all round.
+ */
+export const SLAB_REACH = { long: 4.27, wide: 2.74, swell: 0.05 } as const;
 
 /** The gate faces along its line down the ridge, so the steps pass through it. */
 const GATE_YAW = facing([TERRACE.x, TERRACE.z], [LANDING.x, LANDING.z]);
@@ -193,11 +198,12 @@ function hillRocks(): RockPlace[] {
 
 /**
  * The rock round the ledge: how many blocks stand round its edge, close enough to overlap, with
- * joints between them; their sizes, as small copies of the largest boulder; how far out from the ledge's outline they stand, in
- * meters; how far their tops wander about the ledge's top, in meters, from below to above it; and
- * how far the front's gap for the steps reaches each side of their middle line.
+ * joints between them; their sizes, as small copies of the largest boulder; how far out from the
+ * ledge's outline they stand, in meters; how far their tops wander about the ledge's top, in
+ * meters, from below to above it; and how far the front's gap for the steps reaches each side of
+ * their middle line.
  */
-const RING = {
+export const RING = {
 	blocks: 24,
 	size: [0.2, 0.3],
 	out: 0.12,
@@ -209,9 +215,12 @@ const RING = {
  * The blocks of rock round the ledge's edge, with joints between them, so the ledge reads as the
  * hill's own rock rather than a disc set on it. The front stays open where the steps climb in.
  */
-function ringRocks(ledge: Ledge): RockPlace[] {
+/** A block of the ledge's ring, with how far its top stands over the ledge's top, in meters. */
+type RingRock = RockPlace & { crown: number };
+
+function ringRocks(ledge: Ledge): RingRock[] {
 	const next = random(99);
-	const blocks: RockPlace[] = [];
+	const blocks: RingRock[] = [];
 	const n = ledge.outline.length;
 	for (let b = 0; b < RING.blocks; b++) {
 		const point = ledge.outline[Math.floor(((b + 0.5) / RING.blocks) * n) % n] as readonly [
@@ -222,9 +231,8 @@ function ringRocks(ledge: Ledge): RockPlace[] {
 		const out = (Math.hypot(point[0], point[1]) + RING.out) / Math.hypot(point[0], point[1]);
 		const [x, z] = ledgePoint(ledge, [point[0] * out, point[1] * out]);
 		const size = RING.size[0] + (RING.size[1] - RING.size[0]) * next();
-		// The sink here is how far the block's top stands under the ledge's top.
-		const below = -(RING.top[0] + (RING.top[1] - RING.top[0]) * next());
-		blocks.push({ model: 0, x, z, yaw: next() * Math.PI * 2, size, sink: below });
+		const crown = RING.top[0] + (RING.top[1] - RING.top[0]) * next();
+		blocks.push({ model: 0, x, z, yaw: next() * Math.PI * 2, size, sink: 0, crown });
 	}
 	return blocks;
 }
@@ -266,8 +274,11 @@ export interface GardenPlaces {
 	readonly gate: Placed;
 	readonly lanterns: readonly Placed[];
 	readonly rocks: readonly (Placed & { readonly model: 0 | 1 })[];
-	/** The blocks of rock round the ledge, which make it part of the hill: they stand on its edge. */
-	readonly ring: readonly (Placed & { readonly model: 0 | 1 })[];
+	/**
+	 * The blocks of rock round the ledge, which make it part of the hill: they stand on its edge, each
+	 * with the height of its top.
+	 */
+	readonly ring: readonly (Placed & { readonly model: 0 | 1; readonly top: number })[];
 }
 
 /** A point of a ledge's outline, in world meters. */
@@ -340,11 +351,12 @@ export function gardenPlaces(): GardenPlaces {
 		ring: ringRocks(ledge).map((rock) => {
 			const reach = REACH.boulder[rock.model] * rock.size;
 			const ground = lowestGround(rock.x, rock.z, reach);
-			// Each block's top stands about level with the ledge's, sunk as deep as that asks, and never
+			// Each block's top stands its crown over the ledge's top, sunk as deep as that asks, and never
 			// less than seated, so no block hangs over the slope below it.
 			const height = BOULDER_HEIGHT[rock.model] * rock.size;
-			const sink = Math.max(0, ground - SEAT + height - ledge.top - rock.sink);
-			return { ...seated(rock.x, rock.z, rock.yaw, rock.size, reach, sink), model: rock.model };
+			const sink = Math.max(0, ground - SEAT + height - (ledge.top + rock.crown));
+			const place = seated(rock.x, rock.z, rock.yaw, rock.size, reach, sink);
+			return { ...place, model: rock.model, top: place.y + height };
 		}),
 		rocks: [...BOULDERS, ...hillRocks(), ...outcrops(ledge)].map((rock) => ({
 			...seated(
