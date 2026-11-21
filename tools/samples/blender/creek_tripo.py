@@ -236,11 +236,13 @@ PATINA = dict(
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
     face=0.42,
-    face_vivid=1.6,
+    face_vivid=1.0,
     ochre=(0.62, 0.48, 0.30),
-    stain=0.55,
+    shade_teal=0.62,
+    body_vivid=1.25,
+    stain=0.50,
     face_size=(0.5, 0.5, 0.45),
-    teal=(1.0, 2.5),
+    teal=(1.0, 3.6),
     teal_tint=(1.01, 0.96, 1.01),
 )
 
@@ -832,6 +834,7 @@ def repaint(maps, height, eyes, eye, chest, rng):
     ridge, hollow = np.clip(bend, 0, 1), np.clip(-bend, 0, 1)
     up = smoothstep(0.2, 0.9, facing[..., 2])
     upright = 1 - np.abs(facing[..., 2])
+    waist = float(chest[0][2]) - 1.0
 
     # Small specks darker than their surroundings in every direction read as pits in the metal:
     # they take the lightness round them. A painted pleat is dark across but not along itself, so
@@ -894,7 +897,6 @@ def repaint(maps, height, eyes, eye, chest, rng):
 
     # Below the chest and down the statue's right arm the cyan turns gray-green.
     z, x = position[..., 2], position[..., 0]
-    waist = float(chest[0][2]) - 1.0
     lower = np.maximum(smoothstep(waist + 0.4, waist - 0.4, z), smoothstep(-1.4, -1.9, x) * smoothstep(waist + 3.0, waist + 2.4, z))
     color *= 1 + (np.array(PATINA['green'], np.float32) - 1) * lower[..., None]
     # The knees' bronze darkens, and their rust keeps its warmth and lightness.
@@ -942,6 +944,16 @@ def repaint(maps, height, eyes, eye, chest, rng):
     color = gray + (color - gray) * (1 + (PATINA['teal'][1] - 1) * teal)[..., None]
     color = color * (1 + (PATINA['teal'][0] - 1) * teal * smoothstep(0.35, 0.1, final))[..., None]
     color = color * (1 + (np.array(PATINA['teal_tint'], np.float32) - 1) * teal[..., None])
+    # The robe, the arms and the hair keep the concept's dark slate: the verdigris away from the
+    # face's basin darkens by up to `shade_teal` of its lightness. The garden's look lifts shadows,
+    # so the albedo falls further than the picture's lightness alone suggests.
+    wide_face = smoothstep(2.2, 1.05, look)
+    body = teal * (1 - wide_face)
+    color *= (1 - PATINA['shade_teal'] * body)[..., None]
+    # The darkened bronze keeps its green: the verdigris away from the face grows `body_vivid` times
+    # in colour strength about its own lightness, which the face's own setting does not touch.
+    body_gray = (color @ LUMA)[..., None]
+    color = body_gray + (color - body_gray) * (1 + (PATINA['body_vivid'] - 1) * body)[..., None]
     # Warm stains: the bare chest, the forearms and the knees take ochre and rust in patches, as the
     # concept's do. The raw texture carries almost none, so the stains are painted: a soft noise mask
     # over the skin and the rubbed stone, tinted by `ochre` and kept near the surface's own light.
@@ -949,10 +961,10 @@ def repaint(maps, height, eyes, eye, chest, rng):
     side = smoothstep(1.3, 2.1, np.abs(x)) * smoothstep(waist - 0.6, waist - 1.2, z)
     srng = np.random.default_rng(SEED + 1)
     stain = np.maximum(
-        smoothstep(0.55, 0.82, noise3(position, 0.2, srng, 4)) * warmth,
+        smoothstep(0.62, 0.88, noise3(position, 0.2, srng, 4)) * warmth,
         np.maximum(
-            smoothstep(0.30, 0.60, noise3(position, 0.25, srng, 4)) * side,
-            smoothstep(0.38, 0.68, noise3(position, 0.22, srng, 4)) * arm,
+            smoothstep(0.36, 0.66, noise3(position, 0.25, srng, 4)) * side,
+            smoothstep(0.42, 0.72, noise3(position, 0.22, srng, 4)) * arm,
         ),
     )
     local = np.maximum(color @ LUMA, 0.05)
