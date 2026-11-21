@@ -5594,7 +5594,7 @@
 		{
 			"id": "showcase/creek-pines",
 			"title": "Creek cloud-pruned pines",
-			"purpose": "The Creek garden's tall and low cloud-pruned pines, each a wood node and a needles node with two lower levels of detail, finished from raw Tripo3D trunks",
+			"purpose": "The Creek garden's wide tall, narrow tall and low cloud-pruned pines, each a wood node and a needles node with two lower levels of detail, finished from raw Tripo3D trunks",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -5604,8 +5604,8 @@
 				"CC-BY-NC-4.0"
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
-			"fetched": "2026-11-20",
-			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunks showcase/creek-raw-pine-tall and showcase/creek-raw-pine-low (Tripo3D H3.1), whose SHA-256 the script checks. The script trains each crown flat, cuts the bare twig ends, keeps the trunks' own bark maps, and adds layers of needle pads with needle cards that it paints. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
+			"fetched": "2026-11-21",
+			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunks showcase/creek-raw-pine-tall and showcase/creek-raw-pine-low (Tripo3D H3.1), whose SHA-256 the script checks; the wide and the narrow pine share the tall trunk. The script trains each tier of limbs level into a layer of needle pads, cuts each limb back to its last pad, drops wood that the cuts part from the trunk, keeps the trunks' own bark maps, and adds needle cards that it paints. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek-pines",
 			"origin": {
 				"kind": "blender",
@@ -5615,8 +5615,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-pines/pines.glb",
-					"bytes": 3340168,
-					"sha256": "e39b2f1b8d4ee1c5fa8c015cafee3f258fec470319aeeba7488c1f082a8195a2"
+					"bytes": 3397660,
+					"sha256": "3d24d99116e85289fdaa92b772047fe8254502c8a0c1ff27cbbb8e772a59a527"
 				}
 			]
 		},
