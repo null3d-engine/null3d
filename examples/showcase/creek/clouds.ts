@@ -504,14 +504,16 @@ fn unlit(input: SurfaceInput) -> vec4f {
     if behind > 0.0 {
         let at = eye + dir * end;
         let side = 1.0 - smoothstep(0.85, 1.0, wall_at(at.xz).w);
-        // Round a calm fall's foot the rock stays dark down to the cloud's own level; round a
-        // spraying one it fades into the spray over a few meters, so the mist meets the wall softly.
+        // Round a calm fall's foot the rock stays dark down to the cloud's own level. Round a
+        // spraying one the mist lies thin on the rock, so the wall behind the bright spray stays
+        // dark and the spray fades toward it.
         let calm = near_falls(at.xz, 1.0 - material.spray, 6.0, 26.0);
+        let wet = near_falls(at.xz, material.spray, 8.0, 24.0);
         let over = mix(material.top + 5.5, material.top + 0.5, calm);
-        let sprayed = 0.55 * near_falls(at.xz, material.spray, 10.0, 40.0) * (1.0 - smoothstep(material.top - 3.0, material.top + 6.0, at.y));
-        let lost = max(0.82 * side * (1.0 - smoothstep(material.top - 1.0, over, at.y)), sprayed);
+        let lost = 0.82 * side * (1.0 - smoothstep(material.top - 1.0, over, at.y)) * (1.0 - 0.8 * wet);
         // The two fades together never take more than the light left.
-        let veil = min(0.25 * (1.0 - smoothstep(material.top - 0.5, material.top + 4.5, at.y)) + lost, 1.0) * clear;
+        let low = 0.25 * (1.0 - smoothstep(material.top - 0.5, material.top + 4.5, at.y)) * (1.0 - 0.6 * wet);
+        let veil = min(low + lost, 1.0) * clear;
         color += veil * aerial(cloud_color(0.65, 0.0), end);
         clear -= veil;
     }
