@@ -56,7 +56,7 @@ export const POOL = { x: -2, length: 2.8, widening: 1.2, depth: 0.45 } as const;
  * reach, and its height over the water. A ridge runs down from it toward the creek, which the steps
  * climb.
  */
-export const TERRACE = { x: 9, z: -16, top: 3.6, slope: 8, height: 4.8 } as const;
+export const TERRACE = { x: 9, z: -16, top: 5.4, slope: 8, height: 4.8 } as const;
 /** The ridge's foot near the creek's far bank, and its half width at the foot, in meters. */
 const RIDGE = { x: 10.3, z: 9, half: 3.5 } as const;
 
@@ -315,7 +315,31 @@ function hill(x: number, z: number): number {
 }
 
 /** The height of the dry land at a point, before the creek's channel cuts it. */
+/**
+ * The paved landing on the ridge where the gate stands, between the lower and upper flights of
+ * steps: its middle, its level radius and the meters over which it blends into the slope.
+ */
+export const LANDING = { x: 11.2, z: 2.5, radius: 3.6, blend: 1.8 } as const;
+/** The landing's height: the slope's own height at its middle, found once. */
+let landingHeight: number | undefined;
+
+/** The height of the land, apart from the creek's channel, with the landing laid level. */
 function landHeight(x: number, z: number): number {
+	const slope = slopeHeight(x, z);
+	const level =
+		1 -
+		smoothstep(
+			Math.hypot(x - LANDING.x, z - LANDING.z),
+			LANDING.radius,
+			LANDING.radius + LANDING.blend,
+		);
+	if (level <= 0) return slope;
+	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
+	return slope + (landingHeight - slope) * level;
+}
+
+/** The height of the land, apart from the creek's channel and the landing. */
+function slopeHeight(x: number, z: number): number {
 	const d = fromStream(x, z);
 	const across = Math.abs(z - streamZ(x));
 	const rolling = 0.22 * noise.fbm2(x * 0.16 + 3, z * 0.16, 4) * smoothstep(d, 1.4, 3);

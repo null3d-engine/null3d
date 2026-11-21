@@ -38,6 +38,7 @@ import { createAir } from './air';
 import { createCliff } from './cliff';
 import { createClouds } from './clouds';
 import { createFlora } from './flora';
+import { createGarden, loadGarden } from './garden';
 import {
 	cameraFloor,
 	createLand,
@@ -334,8 +335,10 @@ export default defineSketch(async (ctx) => {
 	createCliff(ctx, land.rim, detail.texture);
 	page.post('loading', 'Gathering the cloud');
 	const clouds = await createClouds(ctx, quality.preset);
-	page.post('loading', 'Laying the stones');
-	const stones = createStones(ctx, detail.rock, detail.texture);
+	page.post('loading', 'Setting the statue, the gate and the stones');
+	const models = await loadGarden(ctx);
+	createGarden(ctx, models);
+	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders[2]);
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(

@@ -203,10 +203,13 @@ export const particleTextures = {
 				const round = [0.42, 0.62, 0.32, 0.5][frame] as number;
 				const tipBend = [0.1, -0.08, 0.15, 0][frame] as number;
 				const x = u - tipBend * (v + 1) ** 2 * 0.25;
-				const along = (v + 0.95) / 1.85;
+				// The leaf, its stem included, stays clear of the frame's edges, so no particle shows a
+				// leaf cut straight by the side of its square.
+				const along = (v + 0.88) / 1.76;
 				const half = round * Math.sin(Math.PI * Math.min(Math.max(along, 0), 1)) ** 0.8;
-				const inside = smooth(half + 0.04, half - 0.04, Math.abs(x));
-				const stem = along < 0 && along > -0.06 && Math.abs(x) < 0.03 ? 1 : 0;
+				const ends = smooth(-0.03, 0.01, along) * smooth(1.03, 0.99, along);
+				const inside = smooth(half + 0.04, half - 0.04, Math.abs(x)) * ends;
+				const stem = along < 0 && along > -0.045 && Math.abs(x) < 0.03 ? 1 : 0;
 				const rib = Math.exp(-x * x * 900);
 				const offset = ((Math.abs(x) * 1.6 - along * 4 + 10) % 0.5) - 0.25;
 				const vein = Math.exp(-offset * offset * 400);
