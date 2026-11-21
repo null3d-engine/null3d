@@ -525,6 +525,7 @@ export default defineSketch(async (ctx) => {
 	// The falls' spray and mist are unlit, so they take the cloud's own tone of the air: its color
 	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
 	const sprayLight: [number, number, number] = [0, 0, 0];
+	const eastLight: [number, number, number] = [0, 0, 0];
 	const sprayAir: [number, number, number] = [-1, -1, -1];
 	const lightFalls = () => {
 		const air = stage.airColor;
@@ -535,7 +536,10 @@ export default defineSketch(async (ctx) => {
 		if (moved <= SPRAY.step) return;
 		for (let c = 0; c < 3; c++) sprayAir[c] = air[c];
 		sprayLightOf(air, sprayLight);
-		for (const fall of falls) fall.setLight(sprayLight);
+		for (let c = 0; c < 3; c++) eastLight[c] = (sprayLight[c] as number) * SPRAY.east;
+		// The falls stand in the lips' order, west then east.
+		falls[0]?.setLight(sprayLight);
+		falls[1]?.setLight(eastLight);
 	};
 	// The clouds and the falls take the air's color now too, since a held frame runs no update.
 	clouds.update(stage.airColor, stage.light);
