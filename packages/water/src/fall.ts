@@ -259,7 +259,7 @@ export function fallSheet(sheet: FallSheet): MeshArrays {
  * The kinds of a fall's particle emitters: the froth over the brink, the spray that falls inside the
  * column with the water, the mist that the fall bursts into, and the plume at its foot.
  */
-export type FallEmitterKind = 'froth' | 'body' | 'mist' | 'plume';
+export type FallEmitterKind = 'froth' | 'drops' | 'mist' | 'plume';
 
 /**
  * One of a fall's particle emitters: where it stands, how it turns, the box that it emits in, and
@@ -289,10 +289,10 @@ export const MIST_WIDTH = 1.2;
 
 /**
  * The fall's four particle emitters. The froth stands just past the brink, across the lip's width.
- * The body's spray falls inside the column, over the upper two thirds of the drop. The mist gathers
- * about the column nearly three quarters of the way down, a little wider than the fall there and
- * over the lower half of the drop. The
- * plume stands at the foot, past the end of the path. Each turns with the lip, and each makes puffs
+ * The drops leave the column's surface over the upper two thirds of the drop, from a box a little
+ * wider and deeper than the column. The mist gathers about the column nearly three quarters of the
+ * way down, a little wider than the fall there and over the lower half of the drop. The plume
+ * stands at the foot, past the end of the path. Each turns with the lip, and each makes puffs
  * in step with the water's width and its drop.
  */
 export function fallEmitters(sheet: FallSheet): FallEmitter[] {
@@ -315,8 +315,8 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 	fallPlace(fallTime(sheet.drop), sheet.speed, place);
 	const footOut = place[0];
 	const footHalf = halfAt(sheet.drop);
-	// The spray inside the column: across the water's width and through the column's depth, over
-	// the upper two thirds of the drop.
+	// The drops thrown off the column: across the water's width and through the column's depth and
+	// a little past them, over the upper two thirds of the drop.
 	const upper = sheet.drop * 0.35;
 	fallPlace(fallTime(upper), sheet.speed, place);
 	const bodyOut = place[0];
@@ -333,11 +333,11 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 			halfWidth: sheet.halfWidth,
 		},
 		{
-			kind: 'body',
+			kind: 'drops',
 			position: at(bodyOut + bodyDepth, -upper),
 			turn,
-			box: [bodyHalf * 1.6, sheet.drop * 0.6, 2 * bodyDepth + 0.6],
-			rate: 5 * sheet.halfWidth * Math.max(1, sheet.drop / 6),
+			box: [bodyHalf * 2.2, sheet.drop * 0.6, 2 * bodyDepth + 1.2],
+			rate: 90 * sheet.halfWidth * Math.max(1, sheet.drop / 10),
 			halfWidth: sheet.halfWidth,
 		},
 		{
