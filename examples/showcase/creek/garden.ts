@@ -7,10 +7,20 @@
 // the opening view onto this land.
 import type { SketchContext } from '@null3d/engine';
 import { type Part, partsOf, type Stand, standPart, tintedPart } from '../../lib/blender-models';
-import { rock } from '../../lib/procedural';
+import { random, rock } from '../../lib/procedural';
 import { sampleUrl } from '../../lib/samples';
 import { rockMaps } from './cliff';
-import { groundHeight, LANDING, TERRACE } from './land';
+import {
+	alongFlight,
+	bearingOf,
+	flights,
+	groundHeight,
+	LANDING,
+	onTop,
+	rimRadius,
+	STAIRS,
+	TERRACE,
+} from './land';
 import { MOSS_MUTE, mossy } from './stones';
 
 /** The models that the garden places. */
@@ -78,7 +88,18 @@ const LANTERNS: readonly (readonly [number, number, number])[] = [
  * The big boulders: which model, its place, its turn and its size. The largest stands beside the
  * gravel garden; the others lie on the slopes under the terrace and on the banks' far side.
  */
-const BOULDERS: readonly { model: 0 | 1; x: number; z: number; yaw: number; size: number }[] = [
+/** A rock that the garden stands: which model, its place, its turn, its size and how deep it sinks. */
+interface RockStand {
+	model: 0 | 1;
+	x: number;
+	z: number;
+	yaw: number;
+	size: number;
+	/** How deep its foot sinks, in meters for each unit of size. */
+	sink?: number;
+}
+
+const BOULDERS: readonly RockStand[] = [
 	{ model: 0, x: -9.3, z: 3.6, yaw: 0.6, size: 0.6 },
 	{ model: 1, x: -17.6, z: 9.4, yaw: 2.1, size: 0.5 },
 	{ model: 1, x: 17.4, z: 6.2, yaw: 4.4, size: 0.5 },
@@ -86,6 +107,70 @@ const BOULDERS: readonly { model: 0 | 1; x: number; z: number; yaw: number; size
 	{ model: 0, x: 15.2, z: -12.5, yaw: 3.3, size: 0.45 },
 	{ model: 1, x: 6.4, z: 5.8, yaw: 5.1, size: 0.4 },
 ];
+
+/** The heights of the two big boulder models at their own size, in meters. */
+const MODEL_HEIGHT = [3.9, 2.3] as const;
+
+/**
+ * The rock of the hill under the terrace, as the concept's mossy rock between its shrubs: how many
+ * outcrops, each a group of a few rocks close together, and how many rocks to a group, from least
+ * to most; how far a group's rocks spread; how far out from the terrace's middle the outcrops lie
+ * (from the terrace's edge to near the slope's foot); the rocks' sizes; how deep they sink, as a
+ * share of their height; and how far they keep from the steps' middle line and from the landing's
+ * middle, in meters.
+ */
+const HILL = {
+	groups: 12,
+	group: [2, 4],
+	spread: 1.6,
+	reach: [TERRACE.top + 0.2, TERRACE.top + TERRACE.slope * 0.85],
+	size: [0.22, 0.55],
+	sink: [0.3, 0.55],
+	stairs: STAIRS.half + 1.4,
+	landing: LANDING.radius + 1.2,
+} as const;
+
+/** The outcrops on the hill: groups of small copies of the big boulders, sunk deep so they read as bedrock. */
+function hillRocks(): RockStand[] {
+	const next = random(97);
+	const rocks: RockStand[] = [];
+	for (let group = 0, tries = 0; group < HILL.groups && tries < HILL.groups * 40; tries++) {
+		const bearing = next() * Math.PI * 2;
+		const out = HILL.reach[0] + (HILL.reach[1] - HILL.reach[0]) * Math.sqrt(next());
+		const [gx, gz] = [TERRACE.x + Math.cos(bearing) * out, TERRACE.z + Math.sin(bearing) * out];
+		const count = HILL.group[0] + Math.floor(next() * (HILL.group[1] - HILL.group[0] + 1));
+		const mine: RockStand[] = [];
+		for (let k = 0; k < count; k++) {
+			const [x, z] = [gx + (next() - 0.5) * 2 * HILL.spread, gz + (next() - 0.5) * 2 * HILL.spread];
+			const size =
+				HILL.size[0] + (HILL.size[1] - HILL.size[0]) * next() ** 1.5 * (k === 0 ? 1 : 0.7);
+			const model = next() < 0.45 ? 0 : 1;
+			const reach = (model === 0 ? 2.8 : 1.8) * size;
+			if (!onTop(x, z) || Math.hypot(x, z) > rimRadius(bearingOf(x, z)) - reach - 0.5) continue;
+			if (Math.hypot(x - LANDING.x, z - LANDING.z) < HILL.landing + reach) continue;
+			if (
+				flights().some((flight) => {
+					const { t, side } = alongFlight(flight, x, z);
+					return t > -0.15 && t < 1.15 && side < HILL.stairs + reach;
+				})
+			)
+				continue;
+			const share = HILL.sink[0] + (HILL.sink[1] - HILL.sink[0]) * next();
+			mine.push({
+				model,
+				x,
+				z,
+				yaw: next() * Math.PI * 2,
+				size,
+				sink: share * MODEL_HEIGHT[model],
+			});
+		}
+		if (mine.length === 0) continue;
+		rocks.push(...mine);
+		group++;
+	}
+	return rocks;
+}
 
 /** How far a model's foot sinks into the ground, so it never stands on the slope's air. */
 const SINK = 0.08;
@@ -154,10 +239,11 @@ export function createGarden(
 	standPart(ctx, models.gate, [onGround(LANDING.x, LANDING.z, GATE_YAW, 1)], models.gate.material);
 	const lanterns = [...gateLanterns(), ...LANTERNS.map(([x, z, yaw]) => onGround(x, z, yaw, 1))];
 	standPart(ctx, models.lantern, lanterns, models.lantern.material);
+	const outcrops = hillRocks();
 	for (const model of [0, 1] as const) {
-		const mine = BOULDERS.filter((b) => b.model === model).map((b) =>
-			onGround(b.x, b.z, b.yaw, b.size, 0.15),
-		);
+		const mine = [...BOULDERS, ...outcrops]
+			.filter((b) => b.model === model)
+			.map((b) => onGround(b.x, b.z, b.yaw, b.size, b.sink ?? 0.15));
 		standPart(
 			ctx,
 			models.boulders[model],
@@ -170,7 +256,11 @@ export function createGarden(
 		{ x: STATUE_AT[0], z: STATUE_AT[1], r: STEP.long },
 		{ x: LANDING.x, z: LANDING.z, r: 3 },
 		...lanterns.map(({ x, z }) => ({ x, z, r: 0.9 })),
-		...BOULDERS.map(({ x, z, size, model }) => ({ x, z, r: (model === 0 ? 2.8 : 1.8) * size })),
+		...[...BOULDERS, ...outcrops].map(({ x, z, size, model }) => ({
+			x,
+			z,
+			r: (model === 0 ? 2.8 : 1.8) * size,
+		})),
 	];
 	return (x, z) => feet.some((f) => Math.hypot(x - f.x, z - f.z) < f.r);
 }
