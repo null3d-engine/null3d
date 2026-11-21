@@ -2150,17 +2150,21 @@ function createKeeps(ctx: SketchContext, surfaces: Surfaces): Object3D[] {
 	);
 }
 
-/** The kit boulder's size, in meters: its span across the ground and its height, which its rows were set for. */
-const KIT_ROCK = { across: 2.9, tall: 1.85 } as const;
 /**
- * How far each rock form grows on each axis to stand at the kit boulder's size, from the size that
- * the form measures in its file along x, y and z: 2.74 x 1.09 x 1.97 m, 4.09 x 0.81 x 1.89 m and
- * 1.83 x 1.60 x 1.65 m.
+ * The kit boulder's size, in meters, which its rows were set for: the mean of its two spans across
+ * the ground, from 1.78 m and 2.53 m, and its height.
+ */
+const KIT_ROCK = { across: 2.15, tall: 1.94 } as const;
+/**
+ * How far each rock form grows to stand at the kit boulder's size. Each form measures 2.74 x 1.09
+ * x 1.97 m, 4.09 x 0.81 x 1.89 m and 1.83 x 1.60 x 1.65 m in its file: one factor across the
+ * ground, from the mean of its two spans, keeps its own footprint, and one in height squares its
+ * flatness with the kit boulder's.
  */
 const ROCK_FITS: Readonly<Partial<Record<PropForm, readonly [number, number, number]>>> = {
-	'rock-a': [KIT_ROCK.across / 2.74, KIT_ROCK.tall / 1.09, KIT_ROCK.across / 1.97],
-	'rock-b': [KIT_ROCK.across / 4.09, KIT_ROCK.tall / 0.81, KIT_ROCK.across / 1.89],
-	'rock-c': [KIT_ROCK.across / 1.83, KIT_ROCK.tall / 1.6, KIT_ROCK.across / 1.65],
+	'rock-a': [KIT_ROCK.across / 2.355, KIT_ROCK.tall / 1.09, KIT_ROCK.across / 2.355],
+	'rock-b': [KIT_ROCK.across / 2.99, KIT_ROCK.tall / 0.81, KIT_ROCK.across / 2.99],
+	'rock-c': [KIT_ROCK.across / 1.74, KIT_ROCK.tall / 1.6, KIT_ROCK.across / 1.74],
 };
 
 /** The rocks of the coast: angular boulders in several sizes, tumbled below the cliffs and offshore. */
