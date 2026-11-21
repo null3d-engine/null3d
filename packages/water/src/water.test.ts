@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LONG_WAVES, waveHeight } from './water';
+import { CARRY_CYCLE, LONG_WAVES, waveHeight } from './water';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 
@@ -89,6 +89,26 @@ describe('the water’s waves', () => {
 		expect(wgslFunction(read('underwater.wgsl'), 'caustics')).toBe(
 			wgslFunction(read('water.wgsl'), 'caustics'),
 		);
+	});
+
+	it('carries its patterns in the same two copies in both shaders and on the CPU', () => {
+		const surface = read('water.wgsl');
+		const under = read('underwater.wgsl');
+		for (const name of ['carried', 'cycle_seed', 'caustic_net'])
+			expect(wgslFunction(under, name)).toBe(wgslFunction(surface, name));
+		const cycle = (source: string) =>
+			Number(/const CARRY_CYCLE: f32 = ([0-9.]+);/.exec(source)?.[1]);
+		expect(cycle(surface)).toBe(CARRY_CYCLE);
+		expect(cycle(under)).toBe(CARRY_CYCLE);
+		// Each wave reads both copies, with the seeds that start each one afresh, wherever the long
+		// waves are worked out: the surface, the waterline under it, and the CPU's height.
+		for (const body of [wgslFunction(surface, 'waves'), wgslFunction(under, 'surface_height')]) {
+			expect(body).toContain('carried(t)');
+			expect(body).toContain('cycle_seed(t, 0.0)');
+			expect(body).toContain('cycle_seed(t, 0.5)');
+		}
+		expect(wgslFunction(surface, 'cycle_seed')).toContain('0.618034');
+		expect(read('water.ts')).toContain('0.618034');
 	});
 
 	it('carries the waves with the current, and never stretches them where the current changes', () => {

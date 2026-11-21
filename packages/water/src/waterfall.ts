@@ -220,6 +220,13 @@ export async function createWaterfall(
 	// the whole drop. The water breaks up and bursts into mist over this part, so the burst stands
 	// above the cloud rather than inside it.
 	const shown: FallSheet = { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink + 1, 1)) };
+	// Above a cloud the spray stays clear of it: the cloud draws first, so a puff that sank into it
+	// would show over its tops as a pale disc. The mist and the plume gather over the shown drop's
+	// part above the cloud, and the mist sinks slowly.
+	const intoCloud = options.fadeBelow !== undefined;
+	const sprayed: FallSheet = intoCloud
+		? { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink - 1.5, 1)) }
+		: sheet;
 	const material = materials.shader({
 		color: '#f2f3f2',
 		roughness: 0.95,
@@ -329,7 +336,7 @@ export async function createWaterfall(
 					...wind,
 					capacity: room(place.rate, MIST_LIFE),
 					speed: [0, 0.4],
-					velocity: [0, -2, 0.6],
+					velocity: [0, intoCloud ? -0.4 : -2, 0.6],
 					drag: 0.8,
 					turbulence: 0.8,
 					turbulenceScale: 0.3,
@@ -358,7 +365,7 @@ export async function createWaterfall(
 				opacity: 0.7,
 			};
 		};
-		const places = fallEmitters(shown);
+		const places = fallEmitters(sprayed);
 		const made = await Promise.all(
 			places.map((place, k) => createParticles(ctx, look(place, 61 + k))),
 		);
