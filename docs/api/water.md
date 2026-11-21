@@ -228,7 +228,8 @@ window overhead, and turns the light back past that window's edge.
 over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water
 does while the air slows it. Below the tongue it turns white: a solid column of rough round ropes,
 with soft gray shade between them and clumps of froth that ride down with the water. Its outline
-tears into lobes and wisps, and it widens a little as it falls. Over its lower half it breaks up
+tears into lobes and wisps. Below the lip it draws in a little, and its sides wander and break
+into separate ropes, so a notch as wide as the lip shows rock beside it; lower down it widens again. Over its lower half it breaks up
 into clumps and bursts into billows of mist gathered round its foot, so it never lands and never
 ends in a line. Spray froths at the lip, and a plume of mist
 rises at its foot.

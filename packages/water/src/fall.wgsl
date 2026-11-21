@@ -174,6 +174,13 @@ fn surface(input: SurfaceInput) -> Surface {
     let grazing = abs(dot(input.normal, input.viewDirection));
     let lobes = value2(vec2f(around * 9.0 + 11.0, crossed * 2.2));
     alpha *= smoothstep(0.1, 0.5, grazing + (froth - 0.5) * 1.1 + (lobes - 0.5) * 0.5 + (fine - 0.5) * 0.5);
+    // Seen from the front, the column's sides break into separate ropes as it falls, with the rock
+    // showing between them, so its edges are never two straight lines. The ends of the oval, which a
+    // side view looks at, stay whole.
+    let across_place = abs(input.uv.x) / material.halfWidth;
+    let sides = smoothstep(0.45, 0.8, across_place + (lobes - 0.5) * 0.3) * smoothstep(0.5, 0.8, facing);
+    let breaking = sides * smoothstep(0.8, 4.0, fallen);
+    alpha *= mix(1.0, smoothstep(0.25, 0.6, core + (froth - 0.5) * 0.5), breaking);
     // The water gives way to the mist over the lower half of the drop, so it never lands. Each
     // clump ends at its own height, so no line runs across the fall.
     let ending = share + (froth - 0.5) * 0.3 + (core - 0.5) * 0.12;

@@ -21,7 +21,9 @@ import {
 	GRAVITY,
 	MIST_DEPTH,
 	MIST_WIDTH,
+	sideAt,
 	TONGUE,
+	WOBBLE,
 } from './fall';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
@@ -217,7 +219,9 @@ describe('a waterfall’s column', () => {
 			const angle = (uvs1[v * 2] as number) * Math.PI * 2;
 			fallPlace(t, SHEET.speed, at);
 			const depth = columnDepth(SHEET.halfWidth, at[1]);
-			const half = SHEET.halfWidth + SHEET.spread * at[1];
+			const side: [number, number] = [0, 0];
+			sideAt(SHEET.halfWidth, SHEET.spread, at[1], Math.sin(angle) >= 0 ? 1 : -1, side);
+			const half = side[0];
 			expect(positions[v * 3] as number).toBeCloseTo(
 				10 + at[0] + depth * (1 + Math.cos(angle)) + shiftOf(SHEET, uvs, v),
 				3,
@@ -245,19 +249,46 @@ describe('a waterfall’s column', () => {
 		}
 	});
 
-	it('widens as it falls', () => {
-		const { positions } = meshOf(SHEET);
-		const width = (row: number[]) => {
-			const zs = row.map((v) => positions[v * 3 + 2] as number);
-			return Math.max(...zs) - Math.min(...zs);
-		};
+	it('draws in over its first meters, its two sides uneven, then widens by its spread', () => {
+		const { positions, uvs1 } = meshOf(SHEET);
 		const rows = rowsOf(SHEET);
-		let last = 0;
-		for (const row of rows) {
-			expect(width(row)).toBeGreaterThanOrEqual(last - 1e-4);
-			last = width(row);
+		const at = (fallen: number) =>
+			rows.find((row) => (uvs1[(row[0] as number) * 2 + 1] as number) >= fallen) as number[];
+		/** How far each side of a row reaches from the middle of the lip, in meters. */
+		const reach = (row: number[]) => {
+			const zs = row.map((v) => (positions[v * 3 + 2] as number) + 4);
+			return { right: Math.max(...zs), left: -Math.min(...zs) };
+		};
+		const lip = reach(at(0));
+		expect(lip.right).toBeCloseTo(SHEET.halfWidth, 3);
+		expect(lip.left).toBeCloseTo(SHEET.halfWidth, 3);
+		// A few meters down the water has drawn in, so rock shows beside it in a notch as wide as the
+		// lip, and the two sides stand at different widths.
+		const drawn = reach(at(4));
+		expect(drawn.right + drawn.left).toBeLessThan(2 * SHEET.halfWidth);
+		let uneven = 0;
+		for (const fallen of [2, 4, 6, 8, 10]) {
+			const r = reach(at(fallen));
+			uneven = Math.max(uneven, Math.abs(r.right - r.left));
 		}
-		expect(last).toBeCloseTo(2 * (SHEET.halfWidth + SHEET.spread * SHEET.drop), 2);
+		expect(uneven).toBeGreaterThan(SHEET.halfWidth * WOBBLE);
+		// At the foot the spread has widened it again.
+		const foot = reach(rows[rows.length - 1] as number[]);
+		const side: [number, number] = [0, 0];
+		sideAt(SHEET.halfWidth, SHEET.spread, SHEET.drop, 1, side);
+		expect(foot.right).toBeCloseTo(side[0], 2);
+		expect(foot.right + foot.left).toBeGreaterThan(2 * SHEET.halfWidth);
+	});
+
+	it('gives each side’s width a rate that matches its change', () => {
+		const out: [number, number] = [0, 0];
+		const ahead: [number, number] = [0, 0];
+		for (const side of [1, -1])
+			for (const fallen of [0.5, 3, 9]) {
+				sideAt(2.5, 0.1, fallen, side, out);
+				sideAt(2.5, 0.1, fallen + 1e-4, side, ahead);
+				expect(out[1]).toBeCloseTo((ahead[0] - out[0]) / 1e-4, 3);
+			}
 	});
 
 	it('stands as a solid column with nearly parallel sides, as deep as the creek is wide', () => {
