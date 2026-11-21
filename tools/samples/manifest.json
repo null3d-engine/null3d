@@ -5567,7 +5567,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
 			"fetched": "2026-11-21",
-			"changes": "Built in Blender 5.3 by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each tree and plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Blender runs with four threads, since the cave's mesh depends on the thread count: built with four threads, the cave keeps its shape, but its vertices come out in another order and 26 of its triangles take other split vertices, with other normals and colours. The fern and the hosta each carry two lower levels with their measured surface errors, built from a replay of the random draws that built them, so every model after them keeps its bytes. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/creek.ts.",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each tree and plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Blender runs with four threads, since the cave's mesh depends on the thread count: built with four threads, the cave keeps its shape, but its vertices come out in another order and 26 of its triangles take other split vertices, with other normals and colours. The fern and the hosta each carry two lower levels with their measured surface errors, built from a replay of the random draws that built them, so every model after them keeps its bytes; the hosta's leaf paints a little darker, so its dry gold reads less pale under the garden's light. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek",
 			"origin": {
 				"kind": "blender",
@@ -5581,8 +5581,8 @@
 				},
 				{
 					"path": "sources/showcase/creek/plants.glb",
-					"bytes": 497564,
-					"sha256": "66747239f87631b4ded86fcf7edf7e9ee9c467aa571ed52714c3c8218abf413a"
+					"bytes": 497192,
+					"sha256": "49c9f74c3a0809a9f2aba77b92f14d75a1c6f3d2a96aa12e7666b4bd98b0eccc"
 				},
 				{
 					"path": "sources/showcase/creek/trees.glb",
@@ -5634,7 +5634,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
 			"fetched": "2026-11-21",
-			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each shrub is a mound of pads, each an opaque body that wears a leaf mat in windows of its own, with cut-out tufts of tiny leaves; the autumn clump is several small mounds on pale leaves, each in two tones that run into its neighbours'; the rim conifer is four drooping layers of needle sprays with golden tips, reaching further and lower on one side; the moss cushion is one low matt mound. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
+			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each shrub is a mound of pads, each an opaque body that wears a leaf mat in windows of its own, with cut-out tufts of tiny leaves; the autumn clump is several small mounds on pale leaves, each in two tones that run into its neighbours'; the rim conifer is four drooping layers of needle sprays with golden tips, reaching further and lower on one side; the clipped shrub's leaf tips paint a yellower olive than its mat, and its cut-out tufts paint darker than the mat, so the ball does not speckle pale at a distance; the moss cushion is one low matt mound. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek-garden-plants",
 			"origin": {
 				"kind": "blender",
@@ -5643,8 +5643,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-garden-plants/garden.glb",
-					"bytes": 1223960,
-					"sha256": "2a2a14b0199f91dd7494131c22980dc5c043f964411b5e4fa69635ca199a02d9"
+					"bytes": 1211140,
+					"sha256": "2238bdb2ac2532a8ae82cc919760ffd20a1167ebf004b92b3308b5e205028eba"
 				}
 			]
 		},
@@ -5662,7 +5662,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
 			"fetched": "2026-11-21",
-			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunk showcase/creek-raw-maple-trunk (Tripo3D H3.1), whose SHA-256 the script checks. The script cuts back the broken hanging limb and the low limbs that would stand bare, rounds off the limbs' blunt ends, keeps the trunk's own bark maps under a brown tint, and grows a crown of pale palmate leaf sprays that it paints, in drooping tiers along the limbs, with a spray on every limb's end. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
+			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunk showcase/creek-raw-maple-trunk (Tripo3D H3.1), whose SHA-256 the script checks. The script cuts back the broken hanging limb and the low limbs that would stand bare, rounds off the limbs' blunt ends, keeps the trunk's own bark maps under a brown tint, and grows a crown of small pale palmate leaf sprays painted along every twig, in drooping tiers on small pads along the limbs: a spray runs finer and yellower toward its outer end, so the crown's inside reads darker and its rim golden. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek-maples",
 			"origin": {
 				"kind": "blender",
@@ -5672,8 +5672,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-maples/maples.glb",
-					"bytes": 1087060,
-					"sha256": "03e7087e1766a7225c4930681d3cad470f24a93f8f2be171e7cb425918d2a5d9"
+					"bytes": 1353168,
+					"sha256": "30d3b43782ead07dad463f7a96827d725871f040550a404705599d70963ed5e6"
 				}
 			]
 		},
