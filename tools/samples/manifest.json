@@ -5615,8 +5615,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-pines/pines.glb",
-					"bytes": 3436368,
-					"sha256": "0b229647d9117608faa3801e29dcb1cc19be5b23bc33717d153ac4d95aa2b1ce"
+					"bytes": 3436336,
+					"sha256": "857e7635fe304788a899f0dd51e8983e9f93c35b82903386640a36b119d09e18"
 				}
 			]
 		},
