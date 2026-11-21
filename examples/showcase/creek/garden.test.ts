@@ -110,16 +110,23 @@ test("a dragon stands on each end of the gate's ridge, facing out, its base insi
 	expect(dragons.length).toBe(2);
 	const [c, s] = [Math.cos(gate.yaw), Math.sin(gate.yaw)];
 	for (const dragon of dragons) {
+		// One model at its own size: a negative size would turn it inside out, a mirrored copy.
+		expect(dragon.size, 'a mirrored or shrunk dragon').toBeCloseTo(gate.size, 6);
 		// The dragon's foot in the gate model's own frame: across its ridge, up, and along its depth.
 		const [dx, dz] = [dragon.x - gate.x, dragon.z - gate.z];
 		const across = (dx * c - dz * s) / gate.size;
 		const along = (dx * s + dz * c) / gate.size;
 		expect(Math.abs(along), 'a dragon off the ridge line').toBeLessThan(0.01);
-		expect((dragon.y - gate.y) / gate.size, 'a dragon over the ridge').toBeLessThan(DRAGON.ridge);
+		// Its foot lies its base's sink under the ridge's top: neither lifted off nor buried.
+		const up = (dragon.y - gate.y) / gate.size;
+		expect(Math.abs(up - (DRAGON.ridge - DRAGON.sink)), 'a dragon off the ridge').toBeLessThan(
+			0.03,
+		);
 		// Its head points out along the ridge, away from the gate's middle.
 		const out = Math.sin(dragon.yaw) * c - Math.cos(dragon.yaw) * s;
 		expect(out * Math.sign(across), 'a dragon facing in').toBeGreaterThan(0.99);
-		// Its wave base reaches 0.38 m ahead of its foot, and the ridge's top is level to 2.2 m out.
+		// Its wave base reaches 0.38 m ahead of its foot. The ridge's top is level to 2.2 m out and
+		// rises into the curl past it, so the sunk base may reach a few centimeters further, no more.
 		expect(Math.abs(across) + 0.38 * dragon.size, 'a dragon past the end curl').toBeLessThan(2.25);
 	}
 });
