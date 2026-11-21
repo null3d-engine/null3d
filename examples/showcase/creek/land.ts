@@ -56,7 +56,7 @@ export const POOL = { x: -2, length: 2.8, widening: 1.2, depth: 0.45 } as const;
  * reach, and its height over the water. A ridge runs down from it toward the creek, which the steps
  * climb.
  */
-export const TERRACE = { x: 9, z: -16, top: 5.4, slope: 8, height: 4.8 } as const;
+export const TERRACE = { x: 9, z: -16, top: 5.4, slope: 8, height: 4.6 } as const;
 /** The ridge's foot near the creek's far bank, and its half width at the foot, in meters. */
 const RIDGE = { x: 10.3, z: 9, half: 3.5 } as const;
 
@@ -386,6 +386,20 @@ export function flights(): readonly Flight[] {
 	return flightList;
 }
 
+/** How far a point lies in the band of bright moss beside a flight of steps, from 0 to 1. */
+function stairBand(x: number, z: number): number {
+	let band = 0;
+	for (const flight of flights()) {
+		const { t, side } = alongFlight(flight, x, z);
+		if (t < -0.03 || t > 1.03) continue;
+		const inside = smoothstep(side, STAIRS.half - 0.1, STAIRS.half + 0.05);
+		const outside =
+			1 - smoothstep(side, STAIRS.half + STAIRS.keep - 0.1, STAIRS.half + STAIRS.keep + 0.15);
+		band = Math.max(band, inside * outside);
+	}
+	return band;
+}
+
 /** How far along a flight a point lies, from 0 at its foot to 1 at its head, and how far to its side. */
 export function alongFlight(flight: Flight, x: number, z: number): { t: number; side: number } {
 	const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
@@ -506,6 +520,8 @@ export function cameraFloor(x: number, z: number): number {
 const MOSS = [0.17, 0.135, 0.035];
 const MOSS_DARK = [0.075, 0.075, 0.03];
 const MOSS_BROWN = [0.12, 0.085, 0.035];
+/** The bright moss in the band beside each flight of steps, between the slabs and the side walls. */
+const MOSS_BRIGHT = [0.2, 0.2, 0.04];
 const BED = [0.42, 0.385, 0.315];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
@@ -521,10 +537,12 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const edge = 1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.15, 0.8);
 	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
 	const shade = 0.88 + 0.24 * noise.value2(x * 1.7, z * 1.7);
+	const band = stairBand(x, z);
 	for (let c = 0; c < 3; c++) {
 		const moss = (MOSS[c] as number) + ((MOSS_DARK[c] as number) - (MOSS[c] as number)) * dark;
 		const patchy = moss + ((MOSS_BROWN[c] as number) - moss) * brown * 0.7;
-		const shore = patchy + ((MUD[c] as number) - patchy) * wet;
+		const bright = patchy + ((MOSS_BRIGHT[c] as number) - patchy) * band;
+		const shore = bright + ((MUD[c] as number) - bright) * wet;
 		const ground = shore + ((BED[c] as number) - shore) * under;
 		out[c] = (ground + ((STONE[c] as number) - ground) * rocky) * shade;
 	}

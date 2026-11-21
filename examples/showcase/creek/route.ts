@@ -17,7 +17,7 @@ import { streamHalf, streamZ } from './land';
  */
 export const WIDE: readonly [number, number, number] = [20.5, 14.3, 42.9];
 /** The point that the opening shot looks at, over the creek in front of the garden's middle. */
-export const WIDE_LOOK: readonly [number, number, number] = [7.7, 1, 16];
+export const WIDE_LOOK: readonly [number, number, number] = [7.7, 1.4, 16];
 
 /**
  * A point over the creek at x, at a height, and across it by a share of its half width: 0 on its

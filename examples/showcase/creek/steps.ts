@@ -5,8 +5,9 @@
 // ground or sinks into it.
 import type { MeshArrays, SketchContext } from '@null3d/engine';
 import { Noise, random, rock } from '../../lib/procedural';
+import { rockMaps } from './cliff';
 import { alongFlight, type Flight, flights, groundHeight, STAIRS } from './land';
-import { mossy, stoneMaps } from './stones';
+import { mossy } from './stones';
 
 /**
  * The slabs: how far each reaches past its tread's length, so the steps overlap a little; how far its
@@ -25,12 +26,12 @@ const SLAB = {
 const STRIPS = 6;
 
 /** Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. */
-const TREAD = [0.17, 0.152, 0.118] as const;
+const TREAD = [0.2, 0.165, 0.112] as const;
 const RISER = [0.05, 0.04, 0.028] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 
 /** The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes. */
-const WALL = { out: 0.45, spacing: 0.55, size: [0.22, 0.38], rows: 2 } as const;
+const WALL = { out: 0.45, spacing: 0.5, size: [0.24, 0.36], rows: 2 } as const;
 
 const noise = new Noise(71);
 
@@ -115,10 +116,10 @@ function flightSlabs(built: Parameters<typeof face>[0], flight: Flight, next: ()
 			];
 			const shades = corners.map(([x, , z], c) => {
 				const a = c < 2 ? a0 : a1;
-				const moss = Math.min(
-					1,
-					Math.max(0, (Math.abs(a) - 0.6) / 0.4 + 0.3 * noise.value2(x * 2, z * 2)),
-				);
+				// Moss creeps in from the slab's ends and lies in patches over its worn middle.
+				const ends = (Math.abs(a) - 0.45) / 0.4 + 0.35 * noise.value2(x * 2, z * 2);
+				const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.25) * 2.5;
+				const moss = Math.min(1, Math.max(0, ends, patches));
 				const base = tone(TREAD, x, z, 0.4);
 				return [0, 1, 2].map(
 					(i) => (base[i] as number) + ((MOSS[i] as number) - (base[i] as number)) * moss,
@@ -179,14 +180,15 @@ export function createSteps(
 		// The stones' own grain and cracks over the slabs' colours, so no slab reads as smooth.
 		material: materials.standard({
 			vertexColors: true,
-			...stoneMaps(textures, textureSize),
+			...rockMaps(textures, textureSize),
 			roughness: 0.95,
 		}),
 		castShadows: true,
 		receiveShadows: true,
 	});
-	// The walls: a row of dark mossy stones each side, two courses high, sunk into the moss band.
-	const stone = geometry.fromArrays(mossy(rock(77, detail, [1, 0.6, 0.85], 0.12), 78, 0.3));
+	// The walls: low courses of flat dark stones laid along each side, beyond a band of moss, the
+	// upper course smaller and set back over the joints of the lower.
+	const stone = geometry.fromArrays(mossy(rock(77, detail, [1.3, 0.5, 0.75], 0.14), 78, 0.25));
 	const places: { x: number; y: number; z: number; size: number; turn: number }[] = [];
 	for (const flight of flights()) {
 		const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
@@ -195,19 +197,22 @@ export function createSteps(
 		for (const side of [-1, 1])
 			for (let d = 0; d < length; d += WALL.spacing)
 				for (let row = 0; row < WALL.rows; row++) {
-					const size = WALL.size[0] + (WALL.size[1] - WALL.size[0]) * next();
-					const out = STAIRS.half + WALL.out + size * 0.5 + (next() - 0.5) * 0.1;
+					const size =
+						(WALL.size[0] + (WALL.size[1] - WALL.size[0]) * next()) * (row === 1 ? 0.8 : 1);
+					const out = STAIRS.half + WALL.out + size * 0.6 + (next() - 0.5) * 0.08 - row * 0.05;
 					const along = d + (row === 1 ? WALL.spacing / 2 : 0);
 					if (along > length) continue;
 					const x = flight.from[0] + fx * along - fz * side * out;
 					const z = flight.from[1] + fz * along + fx * side * out;
-					const y = groundHeight(x, z) + (row === 1 ? size * 0.55 : -size * 0.2);
-					places.push({ x, y, z, size, turn: next() * Math.PI * 2 });
+					const y = groundHeight(x, z) + (row === 1 ? size * 0.42 : -size * 0.1);
+					// Each stone lies along the flight, its long side with the wall.
+					const turn = Math.atan2(fx, fz) + Math.PI / 2 + (next() - 0.5) * 0.4;
+					places.push({ x, y, z, size, turn });
 				}
 	}
 	const walls = scene.createInstances(stone, places.length, {
 		// A dark tint over the mossy stones' colours: the walls read as dark stacked rock.
-		material: materials.standard({ vertexColors: true, color: '#7a746c', roughness: 0.95 }),
+		material: materials.standard({ vertexColors: true, color: '#8c847a', roughness: 0.95 }),
 		castShadows: true,
 		receiveShadows: true,
 	});
