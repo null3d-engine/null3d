@@ -538,12 +538,18 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
 	const shade = 0.88 + 0.24 * noise.value2(x * 1.7, z * 1.7);
 	const band = stairBand(x, z);
+	// The bed's cobbles: pale stones with darker gaps and darker stones among them, which show
+	// through the clear water.
+	const cobble =
+		0.72 +
+		0.38 * smoothstep(noise.value2(x * 3.2 + 41, z * 3.2), -0.2, 0.25) -
+		0.25 * smoothstep(noise.value2(x * 1.4 + 13, z * 1.4 + 5), 0.35, 0.6);
 	for (let c = 0; c < 3; c++) {
 		const moss = (MOSS[c] as number) + ((MOSS_DARK[c] as number) - (MOSS[c] as number)) * dark;
 		const patchy = moss + ((MOSS_BROWN[c] as number) - moss) * brown * 0.7;
 		const bright = patchy + ((MOSS_BRIGHT[c] as number) - patchy) * band;
 		const shore = bright + ((MUD[c] as number) - bright) * wet;
-		const ground = shore + ((BED[c] as number) - shore) * under;
+		const ground = shore + ((BED[c] as number) * cobble - shore) * under;
 		out[c] = (ground + ((STONE[c] as number) - ground) * rocky) * shade;
 	}
 }
