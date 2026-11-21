@@ -116,6 +116,20 @@ describe('a waterfall’s fade into a cloud', () => {
 		expect(across[2]).toBeCloseTo(0, 9);
 	});
 
+	it('bursts into mist above the cloud, over the part of the drop that shows', async () => {
+		// The lip stands at 1 m and the fall drops 16 m; the cloud's top is at -5 m.
+		const cloud = -5;
+		const into = await fallWith({ fadeBelow: cloud });
+		const open = await fallWith({});
+		const mistOf = (buffers: BufferRecord[]) =>
+			((buffers[2] as BufferRecord).position as number[])[1] as number;
+		expect(mistOf(into.buffers)).toBeGreaterThan(cloud);
+		expect(mistOf(open.buffers)).toBeLessThan(cloud);
+		// The material breaks the water up over the same shown part.
+		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + 1, 9);
+		expect(open.shaders[0]?.uniforms.drop).toBe(16);
+	});
+
 	it('refuses a height that is not a number', async () => {
 		await expect(fallWith({ fadeBelow: Number.NaN, spray: 0 })).rejects.toThrow(/fadeBelow/);
 	});
