@@ -7,9 +7,9 @@
 // repository holds. Each part carries its own lower levels, so every copy picks its own level of
 // detail. Places follow the concept picture, read from the opening view onto this land, and every
 // model is seated on the lowest ground under its footprint, so no part of it hangs over a slope.
-import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
+import { type MeshArrays, quat, type SketchContext } from '@null3d/engine';
 import { type Part, partsOf, type Stand, standPart, tintedPart } from '../../lib/blender-models';
-import { Noise, random } from '../../lib/procedural';
+import { Noise, random, rock } from '../../lib/procedural';
 import { sampleUrl } from '../../lib/samples';
 import { rockMaps } from './cliff';
 import {
@@ -26,9 +26,7 @@ import {
 	statueYaw,
 	TERRACE,
 } from './land';
-import { MOSS_MUTE, TEXTURED_MOSS } from './stones';
-
-const { smoothstep } = math;
+import { MOSS_MUTE, mossy, TEXTURED_MOSS } from './stones';
 
 /** The models that the garden places. */
 export interface GardenModels {
@@ -173,33 +171,34 @@ const HILL = {
 } as const;
 
 /**
- * The low rock walls across the statue's hill, as the concept's terraces of grey rock: how far each
- * wall runs from the terrace's middle, the first at the flat top's edge and the rest down the
- * slope; the bearings that the walls span, over the hill's side toward the creek; the spacing of a
- * wall's points along it; the lengths of its stretches and of the gaps between them; how far past
- * the ledge's oval they stop; how far its uphill and downhill faces stand from its line; how high
- * its top stands over the highest ground under it, and how far its faces sink below the ground at
- * their feet; and how far its ends taper into the slope, all in meters. They keep off the steps as
- * the hill's outcrops do.
+ * The low walls of stacked stone across the statue's hill, as the concept's terraces: how far each
+ * wall runs from the terrace's middle, the first below the ring of blocks round the ledge and the
+ * rest down the slope; the bearings that the walls span, over the hill's side toward the creek; the
+ * spacing of a wall's points along it; the lengths of its stretches and of the gaps between them;
+ * how far past the ledge's oval they stop; the sizes of its stones, as half their length in meters;
+ * how far its back row of stones stands uphill of its front row, and its top course uphill of its
+ * line, as shares of a stone's size; how much smaller the top course's stones are; and how far a
+ * stone's footprint reaches, as a share of its size. They keep off the steps, and off the rocks set
+ * by hand, as the hill's outcrops do; the hill's own rocks keep off them.
  */
 const TERRACE_WALLS = {
-	rings: [TERRACE.top + 0.6, TERRACE.top + 1.9, TERRACE.top + 3.2, TERRACE.top + 4.5],
-	bearings: [0.3, 2.8],
+	rings: [TERRACE.top + 1.4, TERRACE.top + 2.6, TERRACE.top + 3.8, TERRACE.top + 5],
+	bearings: [0.3, 3],
 	spacing: 0.4,
-	stretch: [4, 8],
-	gap: [0.8, 1.6],
+	stretch: [5, 10],
+	gap: [0.8, 1.3],
 	ledge: 0.8,
-	back: 0.6,
-	front: 0.5,
-	top: [0.35, 0.65],
-	sink: 0.25,
-	taper: 0.5,
+	size: [0.42, 0.65],
+	back: 1.1,
+	top: 0.55,
+	smaller: 0.8,
+	reach: 1.1,
 } as const;
 /**
- * The linear color of the terrace walls' rock, under the moss on their tops: it leans cool, so the
- * rock texture's warm cast leaves it grey.
+ * Linear colors of the walls' stones: a grey that leans cool, so the rock texture's warm cast
+ * leaves it grey, and moss over their tops and in the seams between them.
  */
-const TERRACE_ROCK = [0.11, 0.12, 0.14] as const;
+const TERRACE_TONES = { stone: [0.09, 0.094, 0.1], moss: TEXTURED_MOSS } as const;
 
 /** True for a footprint that would lie on or beside a flight of steps. */
 const onStairs = (x: number, z: number, reach: number) =>
@@ -209,7 +208,11 @@ const onStairs = (x: number, z: number, reach: number) =>
 	});
 
 /** The outcrops on the hill: groups of small copies of the big boulders, sunk deep so they read as bedrock. */
-function hillRocks(): RockPlace[] {
+function hillRocks(walls: readonly TerracePoint[][]): RockPlace[] {
+	// A hill rock keeps off the terrace walls, wide enough for their back rows and stones' reach.
+	const band = TERRACE_WALLS.size[1] * (TERRACE_WALLS.back + TERRACE_WALLS.reach);
+	const onWall = (x: number, z: number, reach: number) =>
+		walls.some((wall) => wall.some((point) => Math.hypot(x - point.x, z - point.z) < reach + band));
 	const next = random(97);
 	const rocks: RockPlace[] = [];
 	for (let group = 0, tries = 0; group < HILL.groups && tries < HILL.groups * 40; tries++) {
@@ -227,7 +230,7 @@ function hillRocks(): RockPlace[] {
 			if (!onTop(x, z) || Math.hypot(x, z) > rimRadius(bearingOf(x, z)) - reach - 0.5) continue;
 			if (Math.hypot(x - LANDING.x, z - LANDING.z) < HILL.landing + reach) continue;
 			if (Math.hypot(x - TERRACE.x, z - TERRACE.z) < LEDGE.long + reach + 0.3) continue;
-			if (onStairs(x, z, reach)) continue;
+			if (onStairs(x, z, reach) || onWall(x, z, reach)) continue;
 			const sink = HILL.sink[0] + (HILL.sink[1] - HILL.sink[0]) * next();
 			mine.push({ model, x, z, yaw: next() * Math.PI * 2, size, sink });
 		}
@@ -323,6 +326,8 @@ export interface GardenPlaces {
 	 * with the height of its top.
 	 */
 	readonly ring: readonly (Placed & { readonly model: 0 | 1; readonly top: number })[];
+	/** The terrace walls' lines across the hill, each stretch a list of points along it. */
+	readonly walls: readonly TerracePoint[][];
 }
 
 /** A point of a ledge's outline, in world meters. */
@@ -341,42 +346,47 @@ export function nearLedge(ledge: Ledge, x: number, z: number, margin: number): b
 	return Math.hypot(across / (LEDGE.long + margin), along / (LEDGE.wide + margin)) < 1;
 }
 
-/** One point along a terrace wall: its line on the ground, its bearing and its top's height. */
+/** True for a footprint of the given reach that meets a rock's or a ledge block's footprint. */
+export function underRock(x: number, z: number, reach: number): boolean {
+	const { rocks, ring } = gardenPlaces();
+	return [...rocks, ...ring].some(
+		(rock) => Math.hypot(x - rock.x, z - rock.z) < rock.reach + reach,
+	);
+}
+
+/** One point along a terrace wall's line on the ground, with its bearing from the terrace. */
 export interface TerracePoint {
 	readonly x: number;
 	readonly z: number;
 	readonly bearing: number;
-	/** The height of the wall's top over the ground on its line, tapered to nothing at its ends. */
-	readonly top: number;
+}
+
+/** The terrace walls' lines, each stretch a list of points along it, as the garden places them. */
+export function terraceWalls(): readonly TerracePoint[][] {
+	return gardenPlaces().walls;
 }
 
 /**
- * The terrace walls, found from the land alone: each wall follows the hill's slope at one distance
- * from the terrace's middle, with a little wander, and breaks into stretches with gaps, stopped
- * short of the steps, the ledge and the rim. Each stretch is a list of points along it.
+ * The terrace walls' lines, found from the land and the rocks placed by hand: each wall follows the
+ * hill's slope at one distance from the terrace's middle, with a little wander, and breaks into
+ * stretches with gaps, stopped short of the steps, the ledge, the rim and the rocks given, the
+ * boulders, outcrops and ledge blocks. Each stretch is a list of points along it.
  */
-export function terraceWalls(): TerracePoint[][] {
+function wallLines(ledge: Ledge, fixed: readonly Placed[]): TerracePoint[][] {
 	const noise = new Noise(76);
 	const next = random(76);
 	const between = (range: readonly [number, number]) => range[0] + (range[1] - range[0]) * next();
-	const { ledge } = gardenPlaces();
 	const walls: TerracePoint[][] = [];
+	// A wall breaks where a rock stands on its line; a stone of its back row that would still meet
+	// the rock is left out where the stones are laid.
+	const clear = TERRACE_WALLS.size[1] * TERRACE_WALLS.reach;
 	TERRACE_WALLS.rings.forEach((radius, ring) => {
 		const step = TERRACE_WALLS.spacing / radius;
 		const [from, to] = TERRACE_WALLS.bearings;
-		let run: { x: number; z: number; bearing: number }[] = [];
+		let run: TerracePoint[] = [];
 		const close = () => {
-			// A stretch too short to taper at both ends is left out.
-			const length = run.length * TERRACE_WALLS.spacing;
-			if (length > TERRACE_WALLS.taper * 2.5)
-				walls.push(
-					run.map((point, k) => {
-						const along = Math.min(k, run.length - 1 - k) * TERRACE_WALLS.spacing;
-						const [low, high] = TERRACE_WALLS.top;
-						const top = low + (high - low) * (0.5 + 0.5 * noise.value2(point.bearing * 9, ring));
-						return { ...point, top: top * smoothstep(along, 0, TERRACE_WALLS.taper) };
-					}),
-				);
+			// A stretch too short to hold a few stones is left out.
+			if (run.length * TERRACE_WALLS.spacing > TERRACE_WALLS.size[1] * 6) walls.push(run);
 			run = [];
 		};
 		// The wall stands and breaks in turn, each stretch and gap of its own length.
@@ -393,9 +403,11 @@ export function terraceWalls(): TerracePoint[][] {
 			const z = TERRACE.z + Math.sin(bearing) * out;
 			const stands =
 				standing &&
-				Math.hypot(x, z) < rimRadius(bearingOf(x, z)) - TERRACE_WALLS.front - 0.5 &&
+				Math.hypot(x, z) <
+					rimRadius(bearingOf(x, z)) - TERRACE_WALLS.size[1] * TERRACE_WALLS.reach - 0.5 &&
 				!nearLedge(ledge, x, z, TERRACE_WALLS.ledge) &&
-				!onStairs(x, z, TERRACE_WALLS.back);
+				!onStairs(x, z, TERRACE_WALLS.size[1] * TERRACE_WALLS.reach) &&
+				!fixed.some((rock) => Math.hypot(x - rock.x, z - rock.z) < rock.reach + clear);
 			if (stands) run.push({ x, z, bearing });
 			else close();
 		}
@@ -404,67 +416,79 @@ export function terraceWalls(): TerracePoint[][] {
 	return walls;
 }
 
+/** A stone of a terrace wall: where it stands, its turn about y and its small tilt, and its size. */
+export interface TerraceStone extends Stand {
+	/** The stone's tilt about its long and its short side, in radians. */
+	readonly tilt: readonly [number, number];
+	/** Whether it lies in the top course, on the rows under it, rather than on the ground. */
+	readonly capping: boolean;
+}
+
 /**
- * The terrace walls' mesh: for each stretch, a band of rock along its line, with a rough face down
- * into the ground on each side and a mossy top over the higher ground under it, notched into blocks.
+ * The terrace walls' stones: along each stretch, a front row seated on the lowest ground under each
+ * stone, so its face stands out of the slope; a back row behind it over the front row's joints, so
+ * the wall has thickness; and a top course of smaller stones over both. Each lies along its wall.
  */
-function terraceArrays(walls: readonly TerracePoint[][]): MeshArrays {
-	const noise = new Noise(81);
-	const positions: number[] = [];
-	const colors: number[] = [];
-	const uvs: number[] = [];
-	const indices: number[] = [];
-	const add = (x: number, y: number, z: number, moss: number, u: number) => {
-		const shade = 0.8 + 0.35 * noise.value2(x * 2.3, z * 2.3 + y);
-		const m = Math.min(1, Math.max(0, moss + 0.3 * noise.value2(x * 1.4 + 3, z * 1.4)));
-		positions.push(x, y, z);
-		for (let c = 0; c < 3; c++) {
-			const rock = TERRACE_ROCK[c] as number;
-			colors.push((rock + ((TEXTURED_MOSS[c] as number) - rock) * m) * shade);
+export function terraceStones(): TerraceStone[] {
+	const next = random(77);
+	const stones: TerraceStone[] = [];
+	const between = (range: readonly [number, number]) => range[0] + (range[1] - range[0]) * next();
+	for (const wall of gardenPlaces().walls) {
+		// The wall's length along its points, so each row's stones are laid by distance.
+		const lengths = [0];
+		for (let k = 1; k < wall.length; k++) {
+			const [a, b] = [wall[k - 1] as TerracePoint, wall[k] as TerracePoint];
+			lengths.push((lengths[k - 1] as number) + Math.hypot(b.x - a.x, b.z - a.z));
 		}
-		uvs.push(u, y * 0.5);
-	};
-	// From uphill to downhill, each ring's offset from the line, and whether it lies on the top.
-	const rings = [
-		{ out: -TERRACE_WALLS.back, top: false, moss: 0.2 },
-		{ out: -TERRACE_WALLS.back * 0.6, top: true, moss: 0.8 },
-		{ out: 0, top: true, moss: 0.45 },
-		{ out: TERRACE_WALLS.front, top: false, moss: 0 },
-	];
-	for (const wall of walls) {
-		const first = positions.length / 3;
-		wall.forEach((point, k) => {
-			const [ox, oz] = [Math.cos(point.bearing), Math.sin(point.bearing)];
-			const rough = 0.1 * noise.value2(k * 0.9, point.bearing * 5);
-			// The wall's top stands over the highest ground under it, and dips at each block's joint.
-			const ground = rings.map(({ out }) =>
-				groundHeight(point.x + ox * (out + rough), point.z + oz * (out + rough)),
-			);
-			const joint =
-				1 - 0.25 * Math.max(0, Math.cos((k * TERRACE_WALLS.spacing * Math.PI) / 1.2)) ** 8;
-			const top = Math.max(...ground) + point.top * joint;
-			const u = k * TERRACE_WALLS.spacing * 0.5;
-			rings.forEach(({ out, top: onTop, moss }, ring) => {
-				const y = onTop
-					? top - (ring === 1 ? 0.06 : 0)
-					: (ground[ring] as number) - TERRACE_WALLS.sink;
-				add(point.x + ox * (out + rough), y, point.z + oz * (out + rough), moss, u);
-			});
-		});
-		for (let k = 0; k < wall.length - 1; k++)
-			for (let ring = 0; ring < rings.length - 1; ring++) {
-				const a = first + k * rings.length + ring;
-				const b = first + (k + 1) * rings.length + ring;
-				indices.push(a, a + 1, b, b, a + 1, b + 1);
+		const total = lengths[lengths.length - 1] as number;
+		const at = (distance: number): TerracePoint => {
+			let k = 1;
+			while (k < wall.length - 1 && (lengths[k] as number) < distance) k++;
+			const [a, b] = [wall[k - 1] as TerracePoint, wall[k] as TerracePoint];
+			const t =
+				(distance - (lengths[k - 1] as number)) /
+				((lengths[k] as number) - (lengths[k - 1] as number) || 1);
+			return {
+				x: a.x + (b.x - a.x) * t,
+				z: a.z + (b.z - a.z) * t,
+				bearing: a.bearing + (b.bearing - a.bearing) * t,
+			};
+		};
+		const lay = (row: 'front' | 'back' | 'top', offset: number) => {
+			for (let distance = offset; distance < total; ) {
+				const size = between(TERRACE_WALLS.size) * (row === 'top' ? TERRACE_WALLS.smaller : 1);
+				const middle = Math.min(total, distance + size);
+				const point = at(middle);
+				// Uphill is toward the terrace's middle, against the bearing.
+				const up = row === 'back' ? TERRACE_WALLS.back : row === 'top' ? TERRACE_WALLS.top : 0;
+				const x = point.x - Math.cos(point.bearing) * up * size;
+				const z = point.z - Math.sin(point.bearing) * up * size;
+				const reach = size * TERRACE_WALLS.reach;
+				distance += size * 1.75;
+				// A stone whose footprint would meet a hill rock's is left out, so no two cross.
+				if (underRock(x, z, reach)) continue;
+				const ground = lowestGround(x, z, reach);
+				// The top course rests on the rows under it; the rows stand on the lowest ground under them.
+				const y = row === 'top' ? groundHeight(x, z) + size * 0.55 : ground + size * 0.02;
+				stones.push({
+					x,
+					y,
+					z,
+					yaw:
+						Math.atan2(-Math.sin(point.bearing), Math.cos(point.bearing)) +
+						Math.PI / 2 +
+						(next() - 0.5) * 0.3,
+					size,
+					tilt: [(next() - 0.5) * 0.12, (next() - 0.5) * 0.12],
+					capping: row === 'top',
+				});
 			}
+		};
+		lay('front', 0);
+		lay('back', TERRACE_WALLS.size[0] * 0.9);
+		lay('top', TERRACE_WALLS.size[0] * 0.5);
 	}
-	return {
-		positions: new Float32Array(positions),
-		colors: new Float32Array(colors),
-		uvs: new Float32Array(uvs),
-		indices: new Uint32Array(indices),
-		computeNormals: true,
-	};
+	return stones;
 }
 
 let placeList: GardenPlaces | undefined;
@@ -521,6 +545,31 @@ export function gardenPlaces(): GardenPlaces {
 		yaw: gate.yaw + (side * Math.PI) / 2,
 		size: gate.size,
 	}));
+	const ring = ringRocks(ledge).map((rock) => {
+		const reach = REACH.boulder[rock.model] * rock.size;
+		const ground = lowestGround(rock.x, rock.z, reach);
+		// Each block's top stands its crown over the ledge's top, sunk as deep as that asks, and never
+		// less than seated, so no block hangs over the slope below it.
+		const height = BOULDER_HEIGHT[rock.model] * rock.size;
+		const sink = Math.max(0, ground - SEAT + height - (ledge.top + rock.crown));
+		const place = seated(rock.x, rock.z, rock.yaw, rock.size, reach, sink);
+		return { ...place, model: rock.model, top: place.y + height };
+	});
+	const placeRock = (rock: RockPlace) => ({
+		...seated(
+			rock.x,
+			rock.z,
+			rock.yaw,
+			rock.size,
+			REACH.boulder[rock.model] * rock.size,
+			rock.sink * BOULDER_HEIGHT[rock.model] * rock.size,
+		),
+		model: rock.model,
+	});
+	// The rocks by hand stand first; the walls keep off them, and the hill's own rocks off the walls.
+	const fixed = [...BOULDERS, ...outcrops(ledge)].map(placeRock);
+	const walls = wallLines(ledge, [...fixed, ...ring]);
+	const rocks = [...fixed, ...hillRocks(walls).map(placeRock)];
 	placeList = {
 		ledge,
 		statue: {
@@ -537,27 +586,9 @@ export function gardenPlaces(): GardenPlaces {
 			...gateLanterns,
 			...LANTERNS.map(([x, z, turn]) => seated(x, z, turn, 1, REACH.lantern)),
 		],
-		ring: ringRocks(ledge).map((rock) => {
-			const reach = REACH.boulder[rock.model] * rock.size;
-			const ground = lowestGround(rock.x, rock.z, reach);
-			// Each block's top stands its crown over the ledge's top, sunk as deep as that asks, and never
-			// less than seated, so no block hangs over the slope below it.
-			const height = BOULDER_HEIGHT[rock.model] * rock.size;
-			const sink = Math.max(0, ground - SEAT + height - (ledge.top + rock.crown));
-			const place = seated(rock.x, rock.z, rock.yaw, rock.size, reach, sink);
-			return { ...place, model: rock.model, top: place.y + height };
-		}),
-		rocks: [...BOULDERS, ...hillRocks(), ...outcrops(ledge)].map((rock) => ({
-			...seated(
-				rock.x,
-				rock.z,
-				rock.yaw,
-				rock.size,
-				REACH.boulder[rock.model] * rock.size,
-				rock.sink * BOULDER_HEIGHT[rock.model] * rock.size,
-			),
-			model: rock.model,
-		})),
+		ring,
+		rocks,
+		walls,
 	};
 	return placeList;
 }
@@ -640,6 +671,7 @@ function ledgeArrays(ledge: Ledge): MeshArrays {
 export function createGarden(
 	ctx: SketchContext,
 	models: GardenModels,
+	detail: number,
 	textureSize: number,
 ): (x: number, z: number) => boolean {
 	const { scene, geometry, materials, textures } = ctx;
@@ -666,25 +698,57 @@ export function createGarden(
 			[...places.rocks, ...places.ring].filter((rock) => rock.model === model),
 			tintedPart(materials, models.boulders[model], MOSS_MUTE, 0.95),
 		);
-	// The terrace walls: grey rock faces under mossy tops, with the rock's grain.
-	const walls = terraceWalls();
-	scene.createMesh({
-		mesh: geometry.fromArrays(terraceArrays(walls)),
-		material: materials.standard({
-			vertexColors: true,
-			...rockMaps(textures, textureSize),
-			roughness: 0.95,
-		}),
-		castShadows: true,
-		receiveShadows: true,
+	// The terrace walls: broken grey stones with moss on their tops and in their seams, two shapes
+	// for variety, with the cliff rock's grain.
+	const stones = terraceStones();
+	const stoneMaterial = materials.standard({
+		vertexColors: true,
+		...rockMaps(textures, textureSize),
+		roughness: 0.95,
 	});
-	const feet = [
-		places.statue,
-		places.gate,
-		...places.lanterns,
-		...places.rocks,
-		...places.ring,
-		...walls.flat().map((point) => ({ ...point, reach: TERRACE_WALLS.back })),
-	];
-	return (x, z) => feet.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
+	for (const shape of [0, 1]) {
+		const mine = stones.filter((_, k) => k % 2 === shape);
+		const mesh = geometry.fromArrays(
+			mossy(
+				rock(91 + shape, Math.max(1, detail - 2), [1, 0.7, 0.85], 0.15),
+				93 + shape,
+				0.55,
+				TERRACE_TONES,
+			),
+		);
+		const batch = scene.createInstances(mesh, mine.length, {
+			material: stoneMaterial,
+			castShadows: true,
+			receiveShadows: true,
+		});
+		mine.forEach(({ x, y, z, yaw, size, tilt }, row) => {
+			const turn = quat.fromEuler(quat.create(), tilt[0], yaw, tilt[1], 'YXZ');
+			batch.positions.set([x, y, z], row * 3);
+			batch.rotations.set(turn, row * 4);
+			batch.scales.set([size, size, size], row * 3);
+		});
+		batch.markDirty();
+	}
+	return underGarden;
+}
+
+let feetList: readonly Placed[] | undefined;
+
+/**
+ * True for a point under the statue, the gate, a lantern, a boulder or a terrace wall's stone,
+ * where nothing grows.
+ */
+export function underGarden(x: number, z: number): boolean {
+	if (!feetList) {
+		const places = gardenPlaces();
+		feetList = [
+			places.statue,
+			places.gate,
+			...places.lanterns,
+			...places.rocks,
+			...places.ring,
+			...terraceStones().map((stone) => ({ ...stone, reach: stone.size * TERRACE_WALLS.reach })),
+		];
+	}
+	return feetList.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
 }
