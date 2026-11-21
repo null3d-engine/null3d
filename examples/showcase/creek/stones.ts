@@ -93,15 +93,11 @@ export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArra
 	return { ...arrays, colors };
 }
 
-/** The tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
-export const MOSS_MUTE = '#a9a79e';
+/** The warm tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
+export const MOSS_MUTE = '#c4b6a2';
 /** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
 const STONE_TONE = [0.2, 0.17, 0.125] as const;
 const MOSS_TONE = [0.13, 0.115, 0.03] as const;
-
-/** The stones' texture maps: grey stone with darker cracks and light grains, which colors tint. */
-export const stoneMaps = (textures: SketchContext['textures'], size: number) =>
-	textureSet(textures, size, rockTexel);
 
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
@@ -119,14 +115,16 @@ const DIP_REACH = [2.5, 19] as const;
  * The bank stones' smallest and largest size, and how close they stand, as a share of their size,
  * so each overlaps the last; how far each sinks into the bank, as a share of its size, from least
  * to most, so their tops stand uneven; how far each tips, in radians at the most; the half width
- * of the finished bank-stone model at its own size, which sets the model's scale.
+ * of each finished rock model at its own size, largest boulder first, which sets its scale; and
+ * the shares of the row that the largest and the middle boulder take, the rest being bank stones.
  */
 const BANK = {
-	size: [0.4, 0.85],
-	spacing: 1.35,
+	size: [0.32, 0.95],
+	spacing: 1.3,
 	sink: [0.12, 0.4],
 	tilt: 0.35,
-	modelHalf: 0.9,
+	modelHalf: [2.7, 1.8, 0.9],
+	mix: [0.08, 0.2],
 } as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
@@ -243,14 +241,14 @@ export function createStones(
 	ctx: SketchContext,
 	detail: number,
 	textureSize: number,
-	bankStone?: Part,
+	bankModels?: readonly [Part, Part, Part],
 ): {
 	clear(x: number, z: number): boolean;
 	fit(preset: QualityPreset): void;
 	obstacles: Obstacle[];
 } {
 	const { scene, geometry, materials, textures } = ctx;
-	const maps = stoneMaps(textures, textureSize);
+	const maps = textureSet(textures, textureSize, rockTexel);
 	const look = { vertexColors: true, ...maps, uvTransform: { repeat: [2, 1] } } as const;
 	const dry = materials.standard({ ...look, roughness: 1 });
 	// Stones in the stream and at its edge are wet: a little darker, and with a faint sheen.
@@ -261,7 +259,7 @@ export function createStones(
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
 		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
 		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
-		if (kind === 'bank' && bankStone) continue;
+		if (kind === 'bank' && bankModels) continue;
 		const squash =
 			kind === 'bank'
 				? ([1, 0.62 + 0.12 * next(), 0.85 + 0.15 * next()] as const)
@@ -325,38 +323,48 @@ export function createStones(
 		}
 	}
 
-	// The bank row from the finished bank-stone model, when the scene has it: each copy as wide as
-	// the stone it stands for, tipped a little and sunk unevenly into the bank, so no two tops stand
-	// alike. A muted copy of the model's material keeps its moss olive rather than golden from afar.
-	if (bankStone) {
-		const bank = places.filter((place) => place.kind === 'bank');
-		const material = tintedPart(materials, bankStone, MOSS_MUTE, 0.95);
-		const batch = scene.createInstances(bankStone.mesh, bank.length, {
-			material,
-			castShadows: true,
-			receiveShadows: true,
-		});
-		bank.forEach(({ x, z, size }, row) => {
-			const turn = quat.fromEuler(
-				quat.create(),
-				(next() * 2 - 1) * BANK.tilt,
-				next() * Math.PI * 2,
-				(next() * 2 - 1) * BANK.tilt,
-				'YXZ',
-			);
-			const sink = BANK.sink[0] + (BANK.sink[1] - BANK.sink[0]) * next();
-			const at = [x, groundHeight(x, z) - size * sink, z] as const;
-			const { position, rotation, scale } = placedTurned(
-				bankStone,
-				at,
-				turn,
-				size / BANK.modelHalf,
-			);
-			batch.positions.set(position, row * 3);
-			batch.rotations.set(rotation, row * 4);
-			batch.scales.set(scale, row * 3);
-		});
-		batch.markDirty();
+	// The bank row from the finished rock models, when the scene has them: mostly the bank stone, with
+	// now and then a small copy of a larger boulder, so the row is no string of like beads. Each copy
+	// is as wide as the stone it stands for, tipped a little and sunk unevenly into the bank. A warm,
+	// muted copy of each model's material keeps its moss olive rather than golden from afar.
+	if (bankModels) {
+		const bank = places
+			.filter((place) => place.kind === 'bank')
+			.map((place) => {
+				const pick = next();
+				return { ...place, model: pick < BANK.mix[0] ? 0 : pick < BANK.mix[1] ? 1 : 2 };
+			});
+		for (const model of [0, 1, 2] as const) {
+			const part = bankModels[model];
+			const mine = bank.filter((place) => place.model === model);
+			if (mine.length === 0) continue;
+			const batch = scene.createInstances(part.mesh, mine.length, {
+				material: tintedPart(materials, part, MOSS_MUTE, 0.95),
+				castShadows: true,
+				receiveShadows: true,
+			});
+			mine.forEach(({ x, z, size }, row) => {
+				const turn = quat.fromEuler(
+					quat.create(),
+					(next() * 2 - 1) * BANK.tilt,
+					next() * Math.PI * 2,
+					(next() * 2 - 1) * BANK.tilt,
+					'YXZ',
+				);
+				const sink = BANK.sink[0] + (BANK.sink[1] - BANK.sink[0]) * next();
+				const at = [x, groundHeight(x, z) - size * sink, z] as const;
+				const { position, rotation, scale } = placedTurned(
+					part,
+					at,
+					turn,
+					size / (BANK.modelHalf[model] as number),
+				);
+				batch.positions.set(position, row * 3);
+				batch.rotations.set(rotation, row * 4);
+				batch.scales.set(scale, row * 3);
+			});
+			batch.markDirty();
+		}
 	}
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.

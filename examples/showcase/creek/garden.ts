@@ -9,6 +9,7 @@ import type { SketchContext } from '@null3d/engine';
 import { type Part, partsOf, type Stand, standPart, tintedPart } from '../../lib/blender-models';
 import { rock } from '../../lib/procedural';
 import { sampleUrl } from '../../lib/samples';
+import { rockMaps } from './cliff';
 import { groundHeight, LANDING, TERRACE } from './land';
 import { MOSS_MUTE, mossy } from './stones';
 
@@ -57,9 +58,10 @@ const STATUE_YAW = facing(STATUE_AT, [LANDING.x, LANDING.z]);
 /**
  * The rough stone step under the statue's slab, as the concept's base has: its half length and
  * half width, in meters, a little past the slab's own, how far its top stands over the terrace, how
- * thick it is, and how far the moss reaches down from its top over its edges.
+ * thick it is, how far the moss reaches down from its top over its edges, and how roughly its faces
+ * break: a dark mossy ledge, not a plate.
  */
-const STEP = { long: 5, wide: 3.4, rise: 0.35, thick: 0.7, moss: 0.4 } as const;
+const STEP = { long: 5, wide: 3.4, rise: 0.35, thick: 0.9, moss: 0.3, rough: 0.16 } as const;
 
 /** The gate faces down the ridge, as the statue does, so the steps pass through it. */
 const GATE_YAW = STATUE_YAW;
@@ -119,15 +121,26 @@ function gateLanterns(): Stand[] {
 export function createGarden(
 	ctx: SketchContext,
 	models: GardenModels,
+	textureSize: number,
 ): (x: number, z: number) => boolean {
 	const { scene, geometry, materials } = ctx;
 	// The step: a flattened rough rock under the slab, whose top stands a little over the terrace.
 	const terrace = groundHeight(STATUE_AT[0], STATUE_AT[1]);
 	const step = scene.createMesh({
 		mesh: geometry.fromArrays(
-			mossy(rock(91, 3, [1, STEP.thick / STEP.long, STEP.wide / STEP.long], 0.04), 92, STEP.moss),
+			mossy(
+				rock(91, 4, [1, STEP.thick / STEP.long, STEP.wide / STEP.long], STEP.rough),
+				92,
+				STEP.moss,
+			),
 		),
-		material: materials.standard({ vertexColors: true, roughness: 0.95 }),
+		// Darker than the bank stones' colours: the ledge is dark rock with moss on its top.
+		material: materials.standard({
+			vertexColors: true,
+			...rockMaps(ctx.textures, textureSize),
+			color: '#7d756b',
+			roughness: 0.95,
+		}),
 		castShadows: true,
 		receiveShadows: true,
 	});

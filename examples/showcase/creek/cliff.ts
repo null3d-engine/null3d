@@ -79,6 +79,10 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	out.occlusion = (0.9 + 0.1 * smoothstep(broad, -0.3, 0.3)) * (1 - 0.45 * pits);
 }
 
+/** The cliff rock's texture maps: pitted, mottled, warm stone with no line drawn on it. */
+export const rockMaps = (textures: SketchContext['textures'], size: number) =>
+	textureSet(textures, size, rockTexel);
+
 /** One block of a pillar: its foot below the rim, how far it stands out, and its face's tilt. */
 interface Block {
 	foot: number;
@@ -375,7 +379,7 @@ export function createCliff(
 	rim: Float32Array,
 	textureSize: number,
 ): void {
-	const maps = textureSet(textures, textureSize, rockTexel);
+	const maps = rockMaps(textures, textureSize);
 	scene.createMesh({
 		mesh: geometry.fromArrays(wallArrays(rim)),
 		material: materials.shader({
