@@ -150,7 +150,10 @@ fn surface(input: SurfaceInput) -> Surface {
     // before an edge.
     let piled = smoothstep(-0.8 * material.apron, 0.0, t) * smoothstep(0.35, 0.6, froth);
     let foam = max(white, max(lines * 0.9, piled * 0.85) * (1.0 - white));
-    let body = clamp(rope * mix(0.8, 1.15, froth) * mix(0.9, 1.08, fine), 0.0, 1.0);
+    // Fine bright streaks run down the ropes, and the froth shades them only a little, so the
+    // white reads as streaked rather than mottled.
+    let streaked = streak_layer(lip * 1.6, crossed, vec2f(5.0, 1.4), 3.3);
+    let body = clamp(rope * mix(0.9, 1.1, froth) * mix(0.86, 1.12, streaked) * mix(0.95, 1.04, fine), 0.0, 1.0);
     s.baseColor = mix(material.glass, white_color * mix(0.22, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
