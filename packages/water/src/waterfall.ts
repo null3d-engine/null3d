@@ -31,6 +31,8 @@ const SPREAD = 0.3;
 const MOST_SPRAY = 3;
 /** The glassy water's color at the lip: a grey green, as linear red, green and blue. */
 const GLASS = [0.05, 0.075, 0.068] as const;
+/** The height that stands for no cloud below the fall: far below any scene. */
+const NO_FADE = -1e9;
 /** The meters below the lip over which the water turns from glassy to white. */
 const CLEAR = 0.7;
 /** The gap to a wall behind the sheet over which the sheet fades as it nears it, in meters. */
@@ -86,6 +88,20 @@ export interface WaterfallOptions {
 	 * default.
 	 */
 	readonly spread?: number;
+	/**
+	 * How far upstream of the lip the fall's water starts, lying on the river's surface, in meters.
+	 * There it fades in at uneven distances and takes the place of the river's own surface, so the
+	 * river's square end at the lip is covered and the water runs into the fall with no straight
+	 * edge. Give the reach of the broken water before the brink. It is 1 by default.
+	 */
+	readonly apron?: number;
+	/**
+	 * The world height of a cloud sea, a fog bank or a mist that the fall drops into, in meters. A
+	 * cloud that draws before the fall does not hide it, so below this height the fall vanishes
+	 * itself over 2.5 m, each clump at its own depth. The water then breaks up and bursts into mist
+	 * over the part of the drop above the cloud. By default it never vanishes.
+	 */
+	readonly fadeBelow?: number;
 	/**
 	 * The spray and the mist, as a factor of the fall's own, from 0 to 3. It is 1 by default. At 0
 	 * the fall makes no particles, neither the particles add-on nor the engine's particle code loads,
@@ -151,6 +167,20 @@ function sprayAmount(amount: number): number {
 	return amount;
 }
 
+/** The lip's direction across the water, to its right, as a unit vector in the world. */
+function acrossOf(direction: WaterPoint): [number, number, number] {
+	const length = Math.hypot(direction[0], direction[1]);
+	return [-direction[1] / length, 0, direction[0] / length];
+}
+
+/** The height below which a fall vanishes, from its options: far below any scene when none is given. */
+function sinkHeight(height: number | undefined): number {
+	if (height === undefined) return NO_FADE;
+	if (typeof height !== 'number' || !Number.isFinite(height))
+		throw error(`a waterfall's fadeBelow must be a finite number, and it is ${height}`);
+	return height;
+}
+
 /** The births that a system keeps room for: its most rate over its longest life, and a margin. */
 function room(rate: number, life: number): number {
 	return Math.ceil(rate * MOST_SPRAY * life * 1.15) + 16;
@@ -180,10 +210,23 @@ export async function createWaterfall(
 		speed,
 		drop: options.drop,
 		spread: options.spread ?? SPREAD,
+		apron: options.apron ?? APRON,
 		...(options.mesh && { mesh: options.mesh }),
 	};
 	checkFallSheet(sheet);
 	let spray = sprayAmount(options.spray ?? 1);
+	const sink = sinkHeight(options.fadeBelow);
+	// The part of the drop that shows: down to a meter below the cloud that the fall sinks into, or
+	// the whole drop. The water breaks up and bursts into mist over this part, so the burst stands
+	// above the cloud rather than inside it.
+	const shown: FallSheet = { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink + 1, 1)) };
+	// Above a cloud the spray stays clear of it: the cloud draws first, so a puff that sank into it
+	// would show over its tops as a pale disc. The mist and the plume gather over the shown drop's
+	// part above the cloud, and the mist sinks slowly.
+	const intoCloud = options.fadeBelow !== undefined;
+	const sprayed: FallSheet = intoCloud
+		? { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink - 1.5, 1)) }
+		: sheet;
 	const material = materials.shader({
 		color: '#f2f3f2',
 		roughness: 0.95,
@@ -203,11 +246,13 @@ export async function createWaterfall(
 		sceneInputs: ['sceneDepth'],
 		uniforms: {
 			glass: [GLASS[0], GLASS[1], GLASS[2]],
-			drop: sheet.drop,
+			drop: shown.drop,
 			clear: CLEAR,
 			softness: SOFTNESS,
-			apron: APRON / speed,
+			apron: (sheet.apron ?? APRON) / speed,
 			halfWidth: sheet.halfWidth,
+			fadeBelow: sink,
+			across: acrossOf(options.direction),
 		},
 	});
 	const mesh = scene.createMesh({
@@ -276,10 +321,12 @@ export async function createWaterfall(
 					gravity: [0, -GRAVITY, 0],
 					drag: 0.2,
 					lifetime: [0.5, DROP_LIFE],
-					size: [0.07, 0.18],
+					// Small enough that from far off a drop covers a pixel or less, and reads as spray
+					// rather than as a fleck.
+					size: [0.03, 0.08],
 					sizeOverLife: [1, 1, 0.7],
 					alphaOverLife: [0, 1, 0.8, 0],
-					opacity: 0.85,
+					opacity: 0.7,
 				};
 			const wind = options.wind && { windField: options.wind };
 			if (place.kind === 'mist')
@@ -289,7 +336,7 @@ export async function createWaterfall(
 					...wind,
 					capacity: room(place.rate, MIST_LIFE),
 					speed: [0, 0.4],
-					velocity: [0, -2, 0.6],
+					velocity: [0, intoCloud ? -0.4 : -2, 0.6],
 					drag: 0.8,
 					turbulence: 0.8,
 					turbulenceScale: 0.3,
@@ -318,7 +365,7 @@ export async function createWaterfall(
 				opacity: 0.7,
 			};
 		};
-		const places = fallEmitters(sheet);
+		const places = fallEmitters(sprayed);
 		const made = await Promise.all(
 			places.map((place, k) => createParticles(ctx, look(place, 61 + k))),
 		);

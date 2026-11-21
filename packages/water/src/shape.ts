@@ -234,13 +234,16 @@ interface Nearest {
 function nearestSegment(segments: readonly Segment[], x: number, z: number, found: Nearest): void {
 	let best = Number.POSITIVE_INFINITY;
 	found.segment = undefined;
-	for (const segment of segments) {
+	// An indexed loop: the view from under the water asks for the current in every frame.
+	for (let index = 0; index < segments.length; index++) {
+		const segment = segments[index] as Segment;
 		const px = x - segment.ax;
 		const pz = z - segment.az;
-		const along = math.clamp(px * segment.dx + pz * segment.dz, 0, segment.length);
+		const along = Math.min(Math.max(px * segment.dx + pz * segment.dz, 0), segment.length);
 		const qx = px - segment.dx * along;
 		const qz = pz - segment.dz * along;
-		const distance = Math.hypot(qx, qz);
+		// A square root rather than Math.hypot, whose rest arguments can allocate in every call.
+		const distance = Math.sqrt(qx * qx + qz * qz);
 		if (distance < best) {
 			best = distance;
 			found.segment = segment;
@@ -387,9 +390,15 @@ export function fromShore(shore: readonly WaterPoint[], x: number, z: number): n
 /** True when a point lies inside an outline, by the even-odd rule. */
 function insideOutline(shore: readonly WaterPoint[], x: number, z: number): boolean {
 	let inside = false;
+	// The corners are read by index: destructuring would make an iterator for each one, and the
+	// view from under the water asks for the surface in every frame.
 	for (let i = 0, j = shore.length - 1; i < shore.length; j = i++) {
-		const [xi, zi] = shore[i] as WaterPoint;
-		const [xj, zj] = shore[j] as WaterPoint;
+		const a = shore[i] as WaterPoint;
+		const b = shore[j] as WaterPoint;
+		const xi = a[0];
+		const zi = a[1];
+		const xj = b[0];
+		const zj = b[1];
 		if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
 	}
 	return inside;

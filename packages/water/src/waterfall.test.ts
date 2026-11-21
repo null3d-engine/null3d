@@ -21,10 +21,15 @@ interface BufferRecord {
 function fakeContext() {
 	const buffers: BufferRecord[] = [];
 	const destroyed: string[] = [];
+	const shaders: { uniforms: Record<string, unknown> }[] = [];
+	const meshes: { mesh: { uvs: Float32Array } }[] = [];
 	const ctx = {
 		time: { now: 0, dt: 1 / 60 },
 		scene: {
-			createMesh: () => ({ destroy: () => destroyed.push('mesh') }),
+			createMesh: (options: { mesh: { uvs: Float32Array } }) => {
+				meshes.push(options);
+				return { destroy: () => destroyed.push('mesh') };
+			},
 			createParticleBuffer: async () => {
 				const record: BufferRecord = { values: [], destroyed: false };
 				buffers.push(record);
@@ -51,10 +56,15 @@ function fakeContext() {
 			},
 		},
 		geometry: { fromArrays: (arrays: unknown) => arrays },
-		materials: { shader: () => ({ destroy: () => destroyed.push('material') }) },
+		materials: {
+			shader: (options: { uniforms: Record<string, unknown> }) => {
+				shaders.push(options);
+				return { destroy: () => destroyed.push('material') };
+			},
+		},
 		textures: { fromData: () => ({ destroy() {} }) },
 	};
-	return { ctx: ctx as unknown as SketchContext, buffers, destroyed };
+	return { ctx: ctx as unknown as SketchContext, buffers, destroyed, shaders, meshes };
 }
 
 /** A creek 5 m wide that falls 16 m off a lip at (2, 3), running along +x. */
@@ -75,6 +85,61 @@ async function fallWith(options: Partial<WaterfallOptions> = {}) {
 	const fall = await createWaterfall(context.ctx, { ...FALL, ...options });
 	return { ...context, fall };
 }
+
+describe('a waterfall’s apron', () => {
+	it('starts as far up the river as it is told, and fades in over that reach', async () => {
+		const { shaders, meshes } = await fallWith({ apron: 3, spray: 0 });
+		// The material fades the apron in over the seconds that the water takes to cross it.
+		expect(shaders[0]?.uniforms.apron).toBeCloseTo(3 / (FALL.speed as number), 6);
+		// The mesh's earliest water left the apron's upstream end that many seconds before the lip.
+		const uvs = meshes[0]?.mesh.uvs as Float32Array;
+		let earliest = 0;
+		for (let k = 1; k < uvs.length; k += 2) earliest = Math.min(earliest, uvs[k] as number);
+		expect(earliest).toBeCloseTo(-3 / (FALL.speed as number), 5);
+	});
+});
+
+describe('a waterfall’s fade into a cloud', () => {
+	it('vanishes below the height it is given, and never without one', async () => {
+		const into = await fallWith({ fadeBelow: -9.5, spray: 0 });
+		expect(into.shaders[0]?.uniforms.fadeBelow).toBe(-9.5);
+		const open = await fallWith({ spray: 0 });
+		expect(open.shaders[0]?.uniforms.fadeBelow as number).toBeLessThan(-1e6);
+	});
+
+	it('tells its material the lip’s direction across the water, to its right', async () => {
+		const { shaders } = await fallWith({ direction: [0, -2], spray: 0 });
+		const across = shaders[0]?.uniforms.across as number[];
+		// Water running along -z has its right toward +x, as the column's mesh lays it out.
+		expect(across[0]).toBeCloseTo(1, 9);
+		expect(across[1]).toBe(0);
+		expect(across[2]).toBeCloseTo(0, 9);
+	});
+
+	it('bursts into mist above the cloud, over the part of the drop that shows', async () => {
+		// The lip stands at 1 m and the fall drops 16 m; the cloud's top is at -5 m.
+		const cloud = -5;
+		const into = await fallWith({ fadeBelow: cloud });
+		const open = await fallWith({});
+		const mistOf = (buffers: BufferRecord[]) =>
+			((buffers[2] as BufferRecord).position as number[])[1] as number;
+		expect(mistOf(into.buffers)).toBeGreaterThan(cloud);
+		expect(mistOf(open.buffers)).toBeLessThan(cloud);
+		// The plume gathers above the cloud too: the cloud draws first, so a puff inside it would
+		// show over its tops as a pale disc.
+		const plumeOf = (buffers: BufferRecord[]) =>
+			((buffers[3] as BufferRecord).position as number[])[1] as number;
+		expect(plumeOf(into.buffers)).toBeGreaterThan(cloud + 1);
+		expect(plumeOf(open.buffers)).toBeLessThan(cloud);
+		// The material breaks the water up over the same shown part.
+		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + 1, 9);
+		expect(open.shaders[0]?.uniforms.drop).toBe(16);
+	});
+
+	it('refuses a height that is not a number', async () => {
+		await expect(fallWith({ fadeBelow: Number.NaN, spray: 0 })).rejects.toThrow(/fadeBelow/);
+	});
+});
 
 describe('a waterfall’s particle systems', () => {
 	it('makes the froth, the mist and the plume where the fall’s emitters stand, turned with the lip', async () => {
