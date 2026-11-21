@@ -325,10 +325,10 @@ export const LANDING = { x: 11.2, z: 2.5, radius: 5, blend: 1.8 } as const;
 let landingHeight: number | undefined;
 
 /**
- * The flights of steps from the creek's far bank up to the terrace, about 29 steps as the concept
+ * The flights of steps from the creek's far bank up to the statue, about 30 steps as the concept
  * picture has them: a lower flight on a diagonal from the bank to the gate's front; behind the gate a
- * few steps that turn the route; and two flights straight down from the statue, with a short level
- * rest between them, which leave the statue along its own facing, off the gate's line, so the route
+ * few steps that turn the route; and two flights straight down from the statue, the top one cut
+ * into the rock ledge under it, with a short level rest between them, which leave the statue along its own facing, off the gate's line, so the route
  * bends back to the gate. The lower flight's foot on the bank; the steps' half width; how far the
  * steps run from the landing's middle to the gate's front and to its back; how far the statue's
  * flights reach from its middle before the turn; the steps in each flight, from the bottom; the
@@ -340,7 +340,7 @@ export const STAIRS = {
 	half: 1,
 	gate: 3.24,
 	reach: 13.4,
-	steps: [11, 3, 8, 7],
+	steps: [11, 3, 7, 9],
 	rest: 1.2,
 	keep: 0.5,
 	blend: 1.4,
@@ -352,6 +352,30 @@ export const STAIRS = {
  * flights leave it along that facing.
  */
 export const STATUE_TURN = (15 * Math.PI) / 180;
+
+/**
+ * The ledge of rock under the statue's slab: its half length across the statue and half width along
+ * its facing, in meters, a little past the slab's own; how far its flat top stands over the terrace;
+ * how far its foot reaches below the lowest ground under it; how much its outline wanders, as a
+ * share; how many points its outline has; and how far into it the top flight's last steps cut.
+ */
+export const LEDGE = {
+	long: 4.5,
+	wide: 3,
+	rise: 0.4,
+	foot: 0.35,
+	rough: 0.06,
+	points: 48,
+	cut: 0.15,
+} as const;
+
+let ledgeLevel: number | undefined;
+
+/** The height of the ledge's flat top: the terrace's own height and the ledge's rise. */
+export function ledgeTop(): number {
+	ledgeLevel ??= slopeHeight(TERRACE.x, TERRACE.z) + LEDGE.rise;
+	return ledgeLevel;
+}
 
 /** The statue's facing, as a turn about y from +z: down its flights, off the gate's line. */
 export const statueYaw = () =>
@@ -383,10 +407,11 @@ export function flights(): readonly Flight[] {
 	const yaw = statueYaw();
 	const [fx, fz] = [Math.sin(yaw), Math.cos(yaw)];
 	const down = (d: number): [number, number] => [TERRACE.x + fx * d, TERRACE.z + fz * d];
-	const head = TERRACE.top - 0.6;
+	// The top flight climbs past the terrace's edge and cuts into the ledge's front, up to its top.
+	const head = LEDGE.wide - LEDGE.cut;
 	const middle = (STAIRS.reach + head) / 2;
 	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
-	const top = slopeHeight(TERRACE.x, TERRACE.z);
+	const top = ledgeTop();
 	const [lower, turn, first, second] = STAIRS.steps;
 	const rise = (top - landingHeight) / (turn + first + second);
 	const turned = landingHeight + rise * turn;
