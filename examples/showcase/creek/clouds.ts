@@ -26,7 +26,7 @@ export const CLOUD = {
 	top: CLOUD_TOP,
 	depth: 12,
 	heap: 9,
-	tower: 50,
+	tower: 24,
 	reach: 1500,
 	dome: 1600,
 } as const;
@@ -176,13 +176,15 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
             let wisp = textureSampleLevel(billows, billowsSampler, vec2f(along / 7.0, (p.y - frame.time * 0.4) / 19.0), 0.0).b;
             // A thin veil over the tops' first meters joins the wisps, so the rock fades into them.
             let veil = smoothstep(-0.5, 0.8, p.y - h) * (1.0 - smoothstep(0.0, 5.0, rise));
-            mist = foot * wall.z * (band * smoothstep(0.3, 0.75, wisp) + 0.12 * veil);
+            // The veil thickens over the last meters before the rock, so the rock fades into it.
+            let close = 0.12 + 0.18 * (1.0 - smoothstep(0.0, 4.0, r - wall.x));
+            mist = foot * wall.z * (band * smoothstep(0.3, 0.75, wisp) + close * veil);
         }
     } else {
         // Far out, the billows of the largest copy rise into towers past the horizon, and sink
         // back into the sea before the rays' reach, so no tower is cut where the rays end.
-        let rise = smoothstep(NEAR, 450.0, r) * (1.0 - smoothstep(900.0, 1350.0, r)) * smoothstep(0.25, 0.9, big);
-        h += material.tower * rise * sqrt(rise);
+        let rise = smoothstep(NEAR, 450.0, r) * (1.0 - smoothstep(900.0, 1350.0, r)) * smoothstep(0.3, 1.0, big);
+        h += material.tower * rise * rise;
     }
     return vec4f(h, mist, a, fray);
 }
@@ -207,19 +209,21 @@ fn density_of(p: vec3f, here: vec4f, t: f32) -> vec2f {
 }
 
 /// The faint mountain far past the cliff that shows through the cloud, as in the concept's upper
-/// right: how much of it a ray meets, by where the ray crosses a ring 1,300 meters round the
-/// cliff. Its peak stands at a bearing of -1.416 radians, 54 meters under the water's level, with
-/// a steep side toward the cliff's west and a long one to the east.
+/// right: how much of it a ray meets where it crosses a ring 1,300 meters round the cliff. Its
+/// rounded peak stands at a bearing of -1.416 radians, 54 meters under the water's level; its side
+/// toward the cliff's west falls steeply and its east side runs long, with a slightly rough ridge.
+/// Broad banks of cloud drift across its lower half and pale its foot, so the cloud half hides it.
 fn mountain(eye: vec3f, dir: vec3f) -> f32 {
     let t = leave_disc(eye.xz, dir.xz, 1300.0);
     let at = eye + dir * t;
-    let bearing = atan2(at.z, at.x);
-    let off = (bearing + 1.4157) * 1300.0;
-    let fall = select(1.03, 2.7, off < 0.0);
-    let ridge = -53.7 - fall * (sqrt(off * off + 400.0) - 20.0) + 5.0 * sin(off * 0.07) + 2.5 * sin(off * 0.23 + 1.3);
-    // A soft edge, and a foot that the cloud in front of it pales.
+    let off = (atan2(at.z, at.x) + 1.4157) * 1300.0;
+    let width = select(87.0, 42.0, off < 0.0);
+    let rough = textureSampleLevel(billows, billowsSampler, vec2f(off / 90.0 + 0.61, 0.71), 0.0).b;
+    let ridge = -53.7 - 180.0 * (1.0 - exp(-(off * off) / (width * width))) + 8.0 * (rough - 0.5);
     let under = ridge - at.y;
-    return smoothstep(-10.0, 10.0, under) * (1.0 - 0.45 * smoothstep(30.0, 120.0, under));
+    let bank = textureSampleLevel(billows, billowsSampler, vec2f(off / 400.0 + frame.time * 0.0005, at.y / 70.0 + 0.3), 0.0).b;
+    let veiled = smoothstep(0.3, 0.8, bank) * smoothstep(15.0, 80.0, under);
+    return smoothstep(-5.0, 12.0, under) * (1.0 - 0.7 * veiled) * (1.0 - 0.35 * smoothstep(40.0, 130.0, under));
 }
 
 fn unlit(input: SurfaceInput) -> vec4f {
@@ -391,7 +395,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
     }
     // The far mountain shows through the far sea as a faint grey-blue shape; a near billow hides it.
     let ghost = mountain(eye, dir) * smoothstep(120.0, 300.0, select(t, met, met > 0.0));
-    let blue = cloud_air() * 1.15 * vec3f(0.84, 0.92, 1.14);
+    let blue = cloud_air() * 0.95 * vec3f(0.84, 0.92, 1.14);
     return vec4f(mix(color / alpha, blue, ghost * 0.9), alpha);
 }
 `;
