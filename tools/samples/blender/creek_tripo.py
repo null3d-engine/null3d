@@ -194,7 +194,10 @@ MODELS = {
 # and less pink. The bronze on the knees keeps `knee` of its lightness, and their rust all of it.
 # Last, on the upper arms and lapels, the raw color's light and dark at the pleats'
 # scale is laid back over the finished color `pleats` strong, so the darkening does not squeeze
-# them.
+# them. Then each texel's light and dark against those round it, at the scale of the folds and the
+# curls, grows `detail[0]` times on the body and `detail[1]` times on the hair, so the fine texture
+# holds at a distance; the hair keeps `hair_tone` of its lightness, and the curls' gaps, deep in
+# the baked occlusion, darken by up to `curls`.
 PATINA = dict(
     middle=0.18,
     contrast=1.4,
@@ -208,13 +211,16 @@ PATINA = dict(
     streak_width=(0.03, 0.08),
     streak_length=1.6,
     streak=0.05,
-    bumps=0.4,
-    relief=12.0,
+    bumps=0.55,
+    relief=16.0,
     eye=(0.62, 0.64, 0.60),
     warm=(1.07, 1.0, 0.88),
     hairline=0.55,
     green=(1.02, 1.0, 0.9),
     pleats=2.0,
+    detail=(1.9, 3.2),
+    hair_tone=0.8,
+    curls=0.6,
     knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
@@ -246,6 +252,10 @@ SLAB = dict(
 # The largest surface error each lower level of the garden's other models may have, as a share of
 # the model's height; the build stops past it. The coarser level may stray further.
 LEVEL_ERROR_LIMIT = (0.05, 0.12)
+
+# How strongly the garden's other models raise their color's light and dark into their normals.
+# Each keeps all of the relief that its decimation lost; the statue's patina sets its own.
+MODEL_RELIEF = 12.0
 
 
 def raw_folder():
@@ -881,6 +891,19 @@ def repaint(maps, height, eyes, eye, chest, rng):
     robe = smoothstep(chin - 0.4, chin - 0.8, z) * smoothstep(waist - 0.2, waist + 0.3, z) * (1 - warmth)
     color *= (1 + PATINA['pleats'] * band * robe)[..., None]
 
+    # Fine texture that holds at a distance: each texel's light and dark against the texels in use
+    # round it, at the scale of the folds and the curls, grows `detail[0]` times on the body and
+    # `detail[1]` times on the hair, and the hair keeps `hair_tone` of its lightness.
+    final = color @ LUMA
+    around = box_blur(final * used, 5) / np.maximum(box_blur(used.astype(np.float32), 5), 1e-3)
+    grow = PATINA['detail'][0] + (PATINA['detail'][1] - PATINA['detail'][0]) * hair
+    color *= np.clip(1 + (grow - 1) * (final / np.maximum(around, 0.02) - 1), 0.3, 1.8)[..., None]
+    color *= (1 - (1 - PATINA['hair_tone']) * hair)[..., None]
+    # The curls' gaps, deep in the baked occlusion, darken by up to `curls` on the hair, so the
+    # curls read under any light.
+    gaps = np.clip(1 - occlusion / max(float(np.median(occlusion[used & (hair > 0.5)])), 1e-3), 0, 1)
+    color *= (1 - PATINA['curls'] * hair * np.clip(gaps * 3, 0, 1))[..., None]
+
     for middle_point in eyes:
         d = (position - np.array(middle_point, np.float32)) / np.array((eye[0], eye[0], eye[1]), np.float32)
         mark = smoothstep(1.0, 0.4, np.sqrt((d * d).sum(axis=2))) * smoothstep(0.2, 0.6, -facing[..., 1])
@@ -943,12 +966,12 @@ def box_blur(texels, radius):
     return texels
 
 
-def relief(normal, color, speck, keep=None):
+def relief(normal, color, speck, bumps, lift):
     """
-    A normal map with its small bumps kept at `keep` of their strength (the patina's `bumps` unless
-    given), flattened where `speck` filled a dark speck and where it dents inward, and the color's
-    light and dark at the scale of the robe's pleats raised into it as relief, pale above dark, so
-    the painted pleats stand out. The finest speckle stays flat, so the bronze does not crinkle.
+    A normal map with its small bumps kept at `bumps` of their strength, flattened where `speck`
+    filled a dark speck and where it dents inward, and the color's light and dark at the scale of
+    the robe's pleats raised into it as relief `lift` strong, pale above dark, so the painted
+    pleats stand out. The finest speckle stays flat, so the bronze does not crinkle.
     """
     n = normal * 2 - 1
     # A dent in the normal map tilts inward from every side, so the tilt's spread runs strongly
@@ -956,12 +979,12 @@ def relief(normal, color, speck, keep=None):
     # each.
     spread = np.gradient(n[..., 0], axis=1) + np.gradient(n[..., 1], axis=0)
     dent = np.clip(box_blur(smoothstep(0.08, 0.2, -box_blur(spread, 1)), 2) * 3, 0, 1)
-    n[..., :2] *= (PATINA['bumps'] if keep is None else keep) * ((1 - speck) * (1 - dent))[..., None]
+    n[..., :2] *= bumps * ((1 - speck) * (1 - dent))[..., None]
     luma = color @ LUMA
     height = box_blur(luma, 2) - box_blur(luma, 10)
     rise, across = np.gradient(height)
-    n[..., 0] -= PATINA['relief'] * across
-    n[..., 1] -= PATINA['relief'] * rise
+    n[..., 0] -= lift * across
+    n[..., 1] -= lift * rise
     n /= np.maximum(np.linalg.norm(n, axis=2, keepdims=True), 1e-6)
     return n * 0.5 + 0.5
 
@@ -969,7 +992,8 @@ def relief(normal, color, speck, keep=None):
 def finished_material(name, maps, painted, roughness, metal, occlusion):
     """The model's metal-rough material: the repainted color, the relief normals and the packed ORM."""
     color = image(f'{name}-color', painted)
-    normal = image(f'{name}-normal', relief(maps['normal'], maps['color'], maps['speck']), 'Non-Color')
+    normal = image(f'{name}-normal', relief(maps['normal'], maps['color'], maps['speck'], PATINA['bumps'], PATINA['relief']),
+                   'Non-Color')
     packed = image(f'{name}-orm', np.dstack([occlusion, roughness, metal]), 'Non-Color')
     return material(name, color, normal, packed, roughness=0.8, tint=False)
 
@@ -1588,7 +1612,7 @@ def finish_model(name, spec, raw, rng):
     model.data.materials.append(material(
         name,
         image(f'{name}-color', painted),
-        image(f'{name}-normal', relief(maps['normal'], maps['color'], flat, keep=1.0), 'Non-Color'),
+        image(f'{name}-normal', relief(maps['normal'], maps['color'], flat, 1.0, MODEL_RELIEF), 'Non-Color'),
         image(f'{name}-orm', np.dstack([occlusion, roughness, metal]), 'Non-Color'),
         roughness=0.9,
         tint=False,

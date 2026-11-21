@@ -15,7 +15,7 @@ import type { QualityPreset, SketchContext, Texture } from '@null3d/engine';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import type { Stage } from '../../lib/stage';
-import { CLOUD_TOP, rimRadius } from './land';
+import { CLOUD_TOP, LIPS, rimRadius, streamCurrent, streamSlope, streamZ, WATER } from './land';
 
 /**
  * The cloud sea, in meters: the height of the sea's highest tops, how deep its billows run under
@@ -30,6 +30,36 @@ export const CLOUD = {
 	reach: 1500,
 	dome: 1600,
 } as const;
+/** The steady speed that the air lets a fall's water reach, in meters a second, as the water add-on's. */
+const FALL_TERMINAL = 15;
+/** The seconds in which the air takes hold of falling water: the steady speed over gravity. */
+const FALL_DRAG = FALL_TERMINAL / 9.81;
+
+/**
+ * How far out from its lip a fall's water is once it has fallen `drop` meters, after leaving at
+ * `speed` meters a second. This follows the water add-on's fall path, where the air slows both the
+ * water's way out and its fall, so the cloud meets the column where the add-on draws it.
+ */
+export function fallOut(speed: number, drop: number): number {
+	const a = drop / (FALL_TERMINAL * FALL_DRAG);
+	const seconds = FALL_DRAG * (a + Math.log1p(Math.sqrt(1 - Math.exp(-2 * a))));
+	return speed * FALL_DRAG * (1 - Math.exp(-seconds / FALL_DRAG));
+}
+
+/**
+ * Where a fall's column meets the cloud's top, in x and z, from what the scene passes the fall: the
+ * way it leaves its lip (out along the creek's own line there), and the current's speed just
+ * upstream of the lip.
+ */
+export function fallFoot(lip: number): [number, number] {
+	const away = Math.sign(lip);
+	const [dx, dz] = [away, away * streamSlope(lip)];
+	const speed = Math.hypot(...streamCurrent(lip - away * 0.3));
+	const out = fallOut(speed, WATER - CLOUD_TOP) / Math.hypot(dx, dz);
+	return [lip + dx * out, streamZ(lip) + dz * out];
+}
+/** The west fall's foot, then the east fall's, in x and z. */
+const FALLS = [...fallFoot(LIPS.west), ...fallFoot(LIPS.east)] as const;
 /** The width of the billow map's tile on the cloud, in meters, which the cloud's WGSL repeats. */
 const TILE = 160;
 /** The billow map's texels along each side at each preset. */
@@ -80,6 +110,7 @@ struct Uniforms {
     steps: f32,
     reach: f32,
     texels: f32,
+    falls: vec4f,
 }
 
 var billows: texture_2d<f32>;
@@ -124,6 +155,11 @@ const TILE: f32 = 160.0;
 const NEAR: f32 = 180.0;
 /// The radius inside which mist can drift at the walls' foot: past the widest rim and the mist's reach.
 const MISTY: f32 = 46.0;
+
+/// How far a point lies, in xz, from the nearer of the two falls' feet.
+fn to_fall(p: vec2f) -> f32 {
+    return min(length(p - material.falls.xy), length(p - material.falls.zw));
+}
 
 /// The rim's radius, the heap's share, the mist's share and the front wall's share at a point's
 /// bearing round the cliff.
@@ -184,6 +220,16 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
             // The puffs are densest at the front wall's foot, as in the concept; along the side walls
             // they are thin, so the rock there stays dark for most of its height.
             mist = foot * wall.z * (band * mix(0.35, 2.6, wall.w) * smoothstep(0.25, 0.65, puff) + close * veil);
+        }
+        // Spray where each fall drops into the cloud: a mass of round puffs round its foot, densest
+        // low down, that climbs well over the tops, so the fall's lower half dissolves into it.
+        let spraying = 1.0 - smoothstep(4.0, 16.0, to_fall(p.xz));
+        if spraying > 0.001 {
+            let climb = p.y - (material.top - 2.0);
+            let spray = spraying * smoothstep(-0.5, 0.8, p.y - h) * (1.0 - smoothstep(4.0, 12.0, climb));
+            let along = atan2(p.z, p.x) * wall.x;
+            let billow = textureSampleLevel(billows, billowsSampler, vec2f(along + 31.0, (p.y - frame.time * 0.8) * 1.4) / 18.0, 0.0).r;
+            mist = max(mist, spray * (0.8 + 1.6 * smoothstep(0.25, 0.7, billow)));
         }
     } else {
         // Far out, the billows of the largest copy rise into towers past the horizon, and sink
@@ -392,7 +438,9 @@ fn unlit(input: SurfaceInput) -> vec4f {
             if !lit {
                 last = t;
             }
-            let tone = cloud_color(mix(form, 0.7, misty), sunlit * (1.0 - misty)) * mix(0.72, 1.0, deep);
+            // The spray round a fall's foot catches the light and reads brighter than the cloud.
+            let spraylit = mix(0.7, 1.05, 1.0 - smoothstep(6.0, 20.0, to_fall(p.xz)));
+            let tone = cloud_color(mix(form, spraylit, misty), sunlit * (1.0 - misty)) * mix(0.72, 1.0, deep);
             let alpha = 1.0 - exp(-density * stride);
             color += clear * alpha * aerial(tone, t);
             clear *= 1.0 - alpha;
@@ -715,6 +763,7 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 			steps: STEPS[preset],
 			reach: CLOUD.reach,
 			texels: size,
+			falls: [...FALLS] as [number, number, number, number],
 		},
 	});
 	// The cloud draws on the effect layer: the water's reflection leaves it out, and the camera's
