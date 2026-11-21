@@ -4,7 +4,7 @@
 // ground or on the course below, and no lantern, gate or rock stands on the steps or on another's
 // foot. A model or a step raised off its ground fails these tests.
 import { expect, test } from 'bun:test';
-import { gardenPlaces, ledgePoint } from './garden';
+import { gardenPlaces, ledgePoint, RING, SLAB_REACH } from './garden';
 import { alongFlight, flights, groundHeight, STAIRS } from './land';
 import { slabPlaces, wallPlaces } from './steps';
 
@@ -50,6 +50,21 @@ test("the statue's slab sits on the ledge's flat top, which stands over the terr
 	// The top stands clear of all the ground under the outline, and the foot reaches below it.
 	expect(ledge.top - high).toBeGreaterThan(0.2);
 	expect(ledge.foot).toBeLessThan(low);
+	// The ledge's top reaches past the slab's widest outline all round, so no part of the slab's rim
+	// hangs past its edge.
+	for (const [x, z] of ledge.outline) {
+		const angle = Math.atan2(z, x);
+		const slab =
+			(statue.size * (1 + SLAB_REACH.swell)) /
+			Math.hypot(Math.cos(angle) / SLAB_REACH.long, Math.sin(angle) / SLAB_REACH.wide);
+		expect(Math.hypot(x, z), 'the ledge inside the slab').toBeGreaterThan(slab);
+	}
+	// The ring's blocks stand about level with the ledge's top, never over the highest that the ring
+	// allows, so none stands up past the slab's foot.
+	for (const block of gardenPlaces().ring) {
+		expect(block.top - ledge.top, 'a ring block over the ledge').toBeLessThan(RING.top[1] + 0.005);
+		expect(block.top - ledge.top, 'a ring block sunk out of sight').toBeGreaterThan(-0.5);
+	}
 	// The slab model's rim lies 5 cm under its origin: it rests on the ledge's top, with no air.
 	expect(Math.abs(statue.y - 0.05 * statue.size - ledge.top)).toBeLessThan(0.01);
 });

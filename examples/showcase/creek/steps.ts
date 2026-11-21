@@ -1,6 +1,6 @@
 // The flights of stone steps from the creek's far bank through the gate to the terrace: worn grey
-// slabs, uneven in length and edge, pale on the tread and dark on the riser, with moss creeping in at
-// their ends, and a low wall of dark stacked rock along each side. Each step sits on the even ramp
+// slabs, uneven in length and edge, pale on the tread and dark on the riser, with moss creeping in
+// at their ends, and a low wall of stacked rock along each side. Each step sits on the even ramp
 // that the land lays under its flight, with its body sunk below the ramp, so none floats above the
 // ground or sinks into it.
 import type { MeshArrays, SketchContext } from '@null3d/engine';
@@ -32,9 +32,13 @@ const SLAB = {
 } as const;
 const STRIPS = 6;
 
-/** Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. */
-const TREAD = [0.3, 0.296, 0.282] as const;
-const RISER = [0.045, 0.04, 0.034] as const;
+/**
+ * Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. The tread
+ * leans cool, so the rock texture's warm cast leaves it a pale, near-grey stone, paler than the
+ * moss.
+ */
+const TREAD = [0.82, 0.84, 0.9] as const;
+const RISER = [0.1, 0.092, 0.08] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 
 /**
@@ -185,7 +189,7 @@ function slab(built: Parameters<typeof face>[0], next: () => number, place: Slab
 			const ends = (Math.abs(a) - 0.45) / 0.4 + 0.35 * noise.value2(x * 2, z * 2);
 			const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.42) * 2.5;
 			const moss = Math.min(1, Math.max(0, ends, patches));
-			const base = tone(TREAD, x, z, 0.4);
+			const base = tone(TREAD, x, z, 0.3);
 			return [0, 1, 2].map(
 				(i) => (base[i] as number) + ((MOSS[i] as number) - (base[i] as number)) * moss,
 			) as [number, number, number];
@@ -291,24 +295,24 @@ export function createSteps(
 		material: materials.standard({
 			vertexColors: true,
 			...rockMaps(textures, textureSize),
-			color: '#cdd2da',
+			color: '#eef2f8',
 			roughness: 0.95,
 		}),
 		castShadows: true,
 		receiveShadows: true,
 	});
-	// The walls: low courses of flat dark stones laid along each side, beyond a band of moss.
+	// The walls: low courses of flat stones laid along each side, beyond a band of moss.
 	const stone = geometry.fromArrays(
 		mossy(rock(77, Math.max(1, detail - 2), [1.2, 0.55, 0.8], 0.3), 78, 0.15),
 	);
 	const places = wallPlaces();
 	const walls = scene.createInstances(stone, places.length, {
-		// A grey tint over the stones' colours, broken in facets, with the rock's grain: dark stacked
-		// rock, not smooth rolls.
+		// A pale grey tint over the stones' colours, broken in facets, with the rock's grain: stacked
+		// brown rock in the bank stones' tone, darker than the treads, not smooth rolls.
 		material: materials.standard({
 			vertexColors: true,
 			...rockMaps(textures, textureSize),
-			color: '#8e8d89',
+			color: '#c8c6c0',
 			roughness: 0.95,
 		}),
 		castShadows: true,
