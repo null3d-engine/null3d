@@ -43,6 +43,7 @@ import {
 	CLOUD_TOP,
 	cameraFloor,
 	createLand,
+	FALL,
 	LIPS,
 	streamCurrent,
 	streamDepth,
@@ -195,14 +196,6 @@ const CLOSE_SHOT: Shot = {
 const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
-/**
- * Each lip's fall: how far it drops, so its mist bursts just above the cloud's tops; how far each
- * side widens per meter fallen, so it fans out down the drop; the share of the creek's half width
- * that leaves over the lip: the water that shows there, between the lip's shoulders; and how far up
- * the creek its water starts, in meters, so it covers the river's square end and piles froth toward
- * the brink.
- */
-const FALL = { drop: 17, spread: 0.12, width: 0.9, apron: 2.5 } as const;
 /**
  * How far the sheet reaches at each lip, in half widths: as far as the fall, so no edge of the sheet
  * runs on past it over the rim.
@@ -378,20 +371,20 @@ export default defineSketch(async (ctx) => {
 				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
-	// A fall at each lip, where the creek's sheet ends: it leaves with the creek's own width and
-	// speed, and drops into the cloud. It lies past the water's edge, so the reflection leaves it out.
+	// A fall at each lip, where the creek's sheet ends: it leaves with the creek's own width, drops
+	// close to the rock under the lip and into the cloud. It lies past the water's edge, so the
+	// reflection leaves it out.
 	page.post('loading', 'Pouring the falls');
 	const falls: Waterfall[] = water
 		? await Promise.all(
 				[LIPS.west, LIPS.east].map((x) => {
 					const away = Math.sign(x);
-					const [vx, vz] = streamCurrent(x - away * 0.3);
 					return createWaterfall(ctx, {
 						lip: [x, streamZ(x)],
 						direction: [away, away * streamSlope(x)],
 						halfWidth: streamHalf(x) * FALL.width,
 						level: WATER,
-						speed: Math.hypot(vx, vz),
+						speed: FALL.speed,
 						drop: FALL.drop,
 						spread: FALL.spread,
 						apron: FALL.apron,

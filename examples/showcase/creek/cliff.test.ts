@@ -2,10 +2,24 @@
 // stand exactly where its first does, with the same normal, at every height, or the view would pass
 // through the cliff at the seam, and the noise that shapes the rock must wrap round the ring, or the
 // rock would step where the ring joins. Where the camera may stand past the rim, the rock must stay
-// within the reach that the camera's floor keeps clear of.
+// within the reach that the camera's floor keeps clear of. Under each lip the rock must follow the
+// falling water down close behind it, by the water add-on's own path for the fall.
 import { expect, test } from 'bun:test';
+import { brinkAt, drawnHalf, fallPlace, fallTime } from '../../../packages/water/src/fall';
 import { aroundNoise, pillars, relief, wallArrays } from './cliff';
-import { bearingOf, landArrays, OVER_WATER, rimRadius, WALL_REACH, WATER } from './land';
+import {
+	bearingOf,
+	FALL,
+	LIPS,
+	landArrays,
+	OVER_WATER,
+	rimRadius,
+	streamHalf,
+	streamSlope,
+	streamZ,
+	WALL_REACH,
+	WATER,
+} from './land';
 
 /** The land's detail for the test: coarse, since the seam does not depend on it. */
 const QUADS = 48;
@@ -98,4 +112,51 @@ test('at the heights the camera reaches past the rim, the rock stands within the
 		expect(Math.hypot(x, z) - rimRadius(bearingOf(x, z))).toBeLessThan(WALL_REACH);
 	}
 	expect(checked).toBeGreaterThan(100);
+});
+
+test('under each lip the rock follows the falling water down, close behind its back', () => {
+	const { rim } = landArrays(160);
+	const wall = wallArrays(rim).positions as Float32Array;
+	const columns = rim.length / 3 + 1;
+	const rows = wall.length / 3 / columns;
+	const path: [number, number] = [0, 0];
+	const brink: [number, number] = [0, 0];
+	for (const lip of [LIPS.west, LIPS.east]) {
+		const away = Math.sign(lip);
+		const length = Math.hypot(1, streamSlope(lip));
+		const [dx, dz] = [away / length, (away * streamSlope(lip)) / length];
+		const [ox, oz] = [lip, streamZ(lip)];
+		for (const depth of [2, 6, 13]) {
+			fallPlace(fallTime(depth), FALL.speed, path);
+			const width = drawnHalf(streamHalf(lip) * FALL.width, FALL.spread, depth);
+			const y = WATER - depth;
+			const gaps: number[] = [];
+			for (let column = 0; column < columns - 1; column++) {
+				// The column's place at this depth, between the two rows round it.
+				for (let row = 0; row < rows - 1; row++) {
+					const a = (row * columns + column) * 3;
+					const b = a + columns * 3;
+					const [ya, yb] = [wall[a + 1] as number, wall[b + 1] as number];
+					if (ya < y || yb > y) continue;
+					const t = ya === yb ? 0 : (ya - y) / (ya - yb);
+					const x = (wall[a] as number) + ((wall[b] as number) - (wall[a] as number)) * t;
+					const z =
+						(wall[a + 2] as number) + ((wall[b + 2] as number) - (wall[a + 2] as number)) * t;
+					const across = -(x - ox) * dz + (z - oz) * dx;
+					const forward = (x - ox) * dx + (z - oz) * dz;
+					if (Math.abs(across) <= width && Math.abs(forward) < 6) {
+						brinkAt(across / width, brink);
+						gaps.push(path[0] + brink[0] - forward);
+					}
+					break;
+				}
+			}
+			const at = `the ${away < 0 ? 'west' : 'east'} lip, ${depth} m down`;
+			expect(gaps.length, `${at}: rock under the fall`).toBeGreaterThan(4);
+			// The water clears the rock everywhere across, and the rock leans back from it nowhere.
+			expect(Math.min(...gaps), `${at}: the nearest rock`).toBeGreaterThan(0.25);
+			gaps.sort((p, q) => p - q);
+			expect(gaps[gaps.length >> 1], `${at}: the rock's middle`).toBeLessThan(0.8);
+		}
+	}
 });
