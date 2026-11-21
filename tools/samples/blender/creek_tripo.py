@@ -205,10 +205,13 @@ MODELS = {
 # the baked occlusion, darken by up to `curls`. Then the verdigris, every green, cyan and blue
 # off the bare chest, grows `teal[1]` times in color strength, its shaded part up to `teal[0]`
 # times lighter, and takes the `teal_tint`, a little bluer, so it keeps the concept's green-teal
-# and its folds are not black in the garden's gentle color look.
+# and its folds are not black in the garden's gentle color look. The bare chest, the forearms and
+# the knees take `ochre` stains in soft patches, `stain` strong, kept near their own light, because
+# the raw surface carries almost none of the warm marks that the concept shows there; and within
+# the face's basin the colour's strength grows `face_vivid` times about its own lightness.
 PATINA = dict(
-    middle=0.14,
-    contrast=2.5,
+    middle=0.18,
+    contrast=1.4,
     strength=0.3,
     fold=0.32,
     ridge=0.12,
@@ -232,10 +235,13 @@ PATINA = dict(
     knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
-    face=0.20,
+    face=0.42,
+    face_vivid=1.6,
+    ochre=(0.62, 0.48, 0.30),
+    stain=0.55,
     face_size=(0.5, 0.5, 0.45),
-    teal=(1.4, 2.5),
-    teal_tint=(1.0, 0.95, 1.02),
+    teal=(1.0, 2.5),
+    teal_tint=(1.01, 0.96, 1.01),
 )
 
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
@@ -883,8 +889,8 @@ def repaint(maps, height, eyes, eye, chest, rng):
     # Fine rust and lichen, a few centimeters across with soft edges, rust away from the folds.
     rust = smoothstep(0.58, 0.78, noise3(position, 0.06, rng, 3)) * (0.4 + 0.6 * up) * occlusion
     color *= 1 + (np.array(PATINA['rust'], np.float32) - 1) * rust[..., None]
-    lichen = smoothstep(0.7, 0.85, noise3(position, 0.03, rng, 2)) * (0.3 + 0.7 * up) * occlusion
-    color = mix(color, PATINA['lichen'], 0.55 * lichen)
+    lichen = smoothstep(0.72, 0.86, noise3(position, 0.022, rng, 2)) * (0.3 + 0.7 * up) * occlusion
+    color = mix(color, PATINA['lichen'], 0.38 * lichen)
 
     # Below the chest and down the statue's right arm the cyan turns gray-green.
     z, x = position[..., 2], position[..., 0]
@@ -929,13 +935,33 @@ def repaint(maps, height, eyes, eye, chest, rng):
     # `teal[1]` times in color strength, its shaded part, the darker texels, up to `teal[0]` times
     # lighter, and it takes the `teal_tint`.
     hue = hue_of(color)
-    teal = (smoothstep(120, 140, hue) * smoothstep(250, 230, hue) * smoothstep(0.03, 0.08, strength_of(color))
+    teal = (smoothstep(120, 140, hue) * smoothstep(250, 230, hue) * smoothstep(0.02, 0.05, strength_of(color))
             * (1 - warmth))
     final = color @ LUMA
     gray = final[..., None]
     color = gray + (color - gray) * (1 + (PATINA['teal'][1] - 1) * teal)[..., None]
     color = color * (1 + (PATINA['teal'][0] - 1) * teal * smoothstep(0.35, 0.1, final))[..., None]
     color = color * (1 + (np.array(PATINA['teal_tint'], np.float32) - 1) * teal[..., None])
+    # Warm stains: the bare chest, the forearms and the knees take ochre and rust in patches, as the
+    # concept's do. The raw texture carries almost none, so the stains are painted: a soft noise mask
+    # over the skin and the rubbed stone, tinted by `ochre` and kept near the surface's own light.
+    arm = smoothstep(1.4, 1.9, np.abs(x)) * smoothstep(waist - 0.6, waist + 0.2, z) * smoothstep(waist + 3.4, waist + 2.6, z) * smoothstep(0.1, 0.5, -facing[..., 1])
+    side = smoothstep(1.3, 2.1, np.abs(x)) * smoothstep(waist - 0.6, waist - 1.2, z)
+    srng = np.random.default_rng(SEED + 1)
+    stain = np.maximum(
+        smoothstep(0.55, 0.82, noise3(position, 0.2, srng, 4)) * warmth,
+        np.maximum(
+            smoothstep(0.30, 0.60, noise3(position, 0.25, srng, 4)) * side,
+            smoothstep(0.38, 0.68, noise3(position, 0.22, srng, 4)) * arm,
+        ),
+    )
+    local = np.maximum(color @ LUMA, 0.05)
+    ochre = np.array(PATINA['ochre'], np.float32) * (0.55 + 0.9 * local)[..., None]
+    color = mix(color, ochre, PATINA['stain'] * stain)
+    # The face keeps the concept's colour strength: within the face's basin, the colour's strength
+    # grows `face_vivid` times about its own lightness.
+    face_gray = (color @ LUMA)[..., None]
+    color = face_gray + (color - face_gray) * (1 + (PATINA['face_vivid'] - 1) * face_mask)[..., None]
 
     for middle_point in eyes:
         d = (position - np.array(middle_point, np.float32)) / np.array((eye[0], eye[0], eye[1]), np.float32)
