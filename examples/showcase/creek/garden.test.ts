@@ -12,6 +12,7 @@ import {
 	RING,
 	SLAB_REACH,
 	type TerracePoint,
+	terraceStones,
 	terraceWalls,
 } from './garden';
 import { alongFlight, flights, groundHeight, STAIRS } from './land';
@@ -160,6 +161,28 @@ test('the terrace walls lie across the hill, off the steps and clear of the ledg
 	}
 	// Enough wall that the hill reads as terraced rock from the opening view.
 	expect(length, 'the walls across the hill').toBeGreaterThan(30);
+});
+
+test("each terrace wall's stone rests on the ground or on the rows under it", () => {
+	const stones = terraceStones();
+	const rows = stones.filter((stone) => !stone.capping);
+	expect(stones.length).toBeGreaterThan(60);
+	for (const stone of stones) {
+		if (stone.capping) {
+			// A top stone lies over a stone of the rows, near enough that the two overlap.
+			const under = rows.some(
+				(row) => Math.hypot(row.x - stone.x, row.z - stone.z) < (row.size + stone.size) * 0.8,
+			);
+			expect(under, 'a top stone with no row under it').toBe(true);
+		} else {
+			// A stone's flattened underside lies about a third of its size under its middle.
+			const underside = stone.y - stone.size * 0.3;
+			expect(
+				underside - lowest(stone.x, stone.z, stone.size * 1.1),
+				'the air under a stone',
+			).toBeLessThan(0.02);
+		}
+	}
 });
 
 test('the walls stop short of the ledge, clear of the blocks of rock round it', () => {
