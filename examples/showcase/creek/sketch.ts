@@ -84,6 +84,13 @@ const DSLR_FOCAL_LENGTH = 50;
  * left and a little from the front, as in the concept picture.
  */
 const HEADING = Math.PI + 0.58;
+/**
+ * The dusk's own sky light: with the sun down, the garden takes only the sky map's dim light and
+ * reads as one dark shape against the brighter cloud, so the afterglow lights it from above in a
+ * lilac grey and from the ground in its shade, at this strength in Dusk alone and none in any other
+ * mood.
+ */
+const DUSK_SKY = { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.35 } as const;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
@@ -431,8 +438,6 @@ export default defineSketch(async (ctx) => {
 		// up past the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as
 		// the statue's chest, as the concept's warm light does, with no fill to warm every face.
 		exposureScale: 3.2,
-		// With no fill, the dusk garden would read as a black shape: its own exposure opens it up.
-		moodExposure: { Dusk: 1.7 },
 		environmentScale: 1.4,
 		sunScale: 0.6,
 		backdrop: [0.02, 0.03, 0.05],
@@ -463,11 +468,18 @@ export default defineSketch(async (ctx) => {
 		fit();
 		light();
 	});
+	// The dusk's own sky light, which only Dusk turns up.
+	const duskSky = scene.createHemisphereLight({
+		skyColor: DUSK_SKY.sky,
+		groundColor: DUSK_SKY.ground,
+		intensity: 0,
+	});
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
+		duskSky.setIntensity(DUSK_SKY.gain * moodShare(look, 'Dusk'));
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
