@@ -5556,7 +5556,7 @@
 		{
 			"id": "showcase/creek",
 			"title": "Creek trees, plants and cave",
-			"purpose": "The organic models of the engine's Creek showcase scene: oak, beech and birch trees, a fern, a hosta, a shrub, wildflowers and a rocky cave mouth",
+			"purpose": "The organic models of the engine's Creek showcase scene: oak, beech and birch trees, a fern and a hosta with two lower levels of detail each, a shrub, wildflowers and a rocky cave mouth",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -5566,8 +5566,8 @@
 				"CC0-1.0"
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
-			"fetched": "2026-11-18",
-			"changes": "Built in Blender 5.3 by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each tree and plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Blender runs with four threads, since the cave's mesh depends on the thread count: built with four threads, the cave keeps its shape, but its vertices come out in another order and 26 of its triangles take other split vertices, with other normals and colours. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/creek.ts.",
+			"fetched": "2026-11-21",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each tree and plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Blender runs with four threads, since the cave's mesh depends on the thread count: built with four threads, the cave keeps its shape, but its vertices come out in another order and 26 of its triangles take other split vertices, with other normals and colours. The fern and the hosta each carry two lower levels with their measured surface errors, built from a replay of the random draws that built them, so every model after them keeps its bytes. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek",
 			"origin": {
 				"kind": "blender",
@@ -5581,8 +5581,8 @@
 				},
 				{
 					"path": "sources/showcase/creek/plants.glb",
-					"bytes": 481656,
-					"sha256": "b5403c9678149c1569ccbedb7601f83eb0880dfc766108a89020d9d67c5ab2fc"
+					"bytes": 497564,
+					"sha256": "66747239f87631b4ded86fcf7edf7e9ee9c467aa571ed52714c3c8218abf413a"
 				},
 				{
 					"path": "sources/showcase/creek/trees.glb",
@@ -5617,6 +5617,63 @@
 					"path": "sources/showcase/creek-pines/pines.glb",
 					"bytes": 3679624,
 					"sha256": "d496e5db6e9163616383bfa07c3129202f05a8415cfee369e6a139d46fb1742d"
+				}
+			]
+		},
+		{
+			"id": "showcase/creek-garden-plants",
+			"title": "Creek garden ground plants",
+			"purpose": "The Creek garden's ground cover: an azalea, a clipped shrub, a moss cushion, a mixed autumn shrub clump and a rim conifer, each a body node and, but for the moss, a tufts node, with two lower levels of detail",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
+			"fetched": "2026-11-21",
+			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Each shrub is a mound of pads, each an opaque body that wears a leaf mat in windows of its own, with cut-out tufts of tiny leaves; the autumn clump is several small mounds on pale leaves, each in two tones that run into its neighbours'; the rim conifer is four drooping layers of needle sprays with golden tips, reaching further and lower on one side; the moss cushion is one low matt mound. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
+			"dir": "sources/showcase/creek-garden-plants",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/creek-garden-plants/garden.glb",
+					"bytes": 1245140,
+					"sha256": "0b99e8487da0e4cfc7310d5383f75c8fe2fc06587c65b0c9f601ebd35763e2ef"
+				}
+			]
+		},
+		{
+			"id": "showcase/creek-maples",
+			"title": "Creek garden maple",
+			"purpose": "The Creek garden's maple, a wood node and a leaves node with two lower levels of detail, finished from a raw Tripo3D trunk; its leaves are pale, so each copy's colour makes it red, orange or yellow",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
+			"fetched": "2026-11-21",
+			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunk showcase/creek-raw-maple-trunk (Tripo3D H3.1), whose SHA-256 the script checks. The script cuts back the broken hanging limb and the low limbs that would stand bare, rounds off the limbs' blunt ends, keeps the trunk's own bark maps under a brown tint, and grows a crown of pale palmate leaf sprays that it paints, in drooping tiers along the limbs, with a spray on every limb's end. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
+			"dir": "sources/showcase/creek-maples",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/creek-maples/maples.glb",
+					"bytes": 1087060,
+					"sha256": "03e7087e1766a7225c4930681d3cad470f24a93f8f2be171e7cb425918d2a5d9"
 				}
 			]
 		},
