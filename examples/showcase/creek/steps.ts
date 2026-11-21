@@ -26,8 +26,8 @@ const SLAB = {
 const STRIPS = 6;
 
 /** Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. */
-const TREAD = [0.2, 0.165, 0.112] as const;
-const RISER = [0.05, 0.04, 0.028] as const;
+const TREAD = [0.19, 0.178, 0.155] as const;
+const RISER = [0.045, 0.04, 0.034] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 
 /** The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes. */
