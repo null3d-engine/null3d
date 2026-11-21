@@ -1,12 +1,13 @@
 // The waterfall's column: the path that falling water takes from a river's lip, and the mesh around
 // it. Water leaves the lip level with the river, carried out at the current's speed, and falls under
 // gravity while the air slows it toward a steady speed. So the column curves over at the lip and then
-// drops almost straight; it draws in a little below the lip, its sides wander, and it widens as it
-// falls. Its section is an ellipse: as wide as the water, thin at the lip and as deep as the creek is
-// wide a few meters down, so it reads as a solid column from the side as well as from the front. A short apron lies on the river's surface upstream of the
-// lip, so the fall starts on the water rather than at the river mesh's edge. The texture coordinates
-// carry each point's place across the lip and how long its water has fallen, which the material
-// reads to move its streaks with the water. The fall's particle emitters stand along the same path.
+// drops almost straight; it draws in below the lip, its sides wander, and it widens as it falls.
+// Its section is an ellipse: as wide as the water, thin under the brink so it hangs close to the
+// rock, and deeper with each meter it falls, so it reads as a solid column from the side as well as
+// from the front. A short apron lies on the river's surface upstream of the lip, so the fall starts
+// on the water rather than at the river mesh's edge. The texture coordinates carry each point's
+// place across the lip and how long its water has fallen, which the material reads to move its
+// streaks with the water. The fall's particle emitters stand along the same path.
 import type { MeshArrays } from '@null3d/engine';
 
 /** Gravity, in meters a second squared. */
@@ -131,11 +132,11 @@ export function checkFallSheet(sheet: FallSheet): void {
 }
 
 /**
- * How deep the column grows below the lip, as a share of the lip's half width each side of its
- * middle: about twice as deep, out from the wall, as the drawn-in water is wide. So a fall seen
- * from the side is a broad fan, and from the front a narrow stream.
+ * How deep the column grows as it falls, as a share of the lip's half width each side of its
+ * middle. It grows slowly, so under the brink the water hangs thin and close to the rock, and lower
+ * down it fans out from the wall as a fall's water does.
  */
-export const COLUMN_DEPTH = 0.7;
+export const COLUMN_DEPTH = 0.6;
 /** How thick the water is as it leaves the lip, each side of the column's middle, in meters. */
 export const TONGUE = 0.12;
 /** The most that the brink stands out past the lip's line at some places across, in meters. */
@@ -196,7 +197,7 @@ export function sideAt(
 }
 
 /** The meters that the water falls before the column reaches most of its depth, as a scale. */
-const DEPTH_GROWTH = 1.5;
+const DEPTH_GROWTH = 3;
 
 /**
  * Half the column's depth, out from the wall, after the water has fallen `fallen` meters: the

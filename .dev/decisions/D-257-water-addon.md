@@ -445,9 +445,10 @@ height and width, to the path, to nearly parallel sides, and to a column that ne
 **The column.** One closed tube gives the fall its body. Its section is an oval as wide as the
 water. The back of the oval follows the path, so no water lies behind the lip's line. The front
 stands out from it by the column's depth. That depth is the tongue's thickness at the lip, and it
-grows over the first meters of the drop to about twice the width of the drawn-in water. So the fall
-seen from the side is a broad fan, as the concept's left fall is, and from the front a narrow
-stream, as its right fall is. Below that the front and back run nearly parallel. Seen from the side, as
+grows slowly, over about 3 m of the drop, toward 0.6 of the lip's half width each side. So under
+the brink the water hangs thin and close to the rock, as the owner asked of the Creek's falls; a
+build that reached twice the drawn-in water's width within the first meters drew a slab about 130
+pixels deep from the side, which held the fall off the rock. Seen from the side, as
 the concept's camera sees its left fall, the fall is a
 solid column, and its depth comes from the water's own thickness and the spray round it. An
 earlier build used three sheets at different angles. From the side they fanned out from one point
@@ -486,8 +487,11 @@ about one size down the whole drop: a set of noise layers that ride with the wat
 cells for each second, takes over as the water speeds up. The ropes show as shade, so the column
 stays solid. Lower down, holes open in the shade first, shaped by the clumps. Each clump ends at
 its own height. White water scatters the light that
-reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and it
-reads white beside the cloud. It fades where the copy of the scene's depth shows a wall close behind
+reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and the
+sun's much as one does. It also gives back a share of the air's light, the light that the scene
+gives the spray and the mist with `setLight`: lit only by the scene, the Creek's streams read 140 to
+160 against the cloud's mist at 185 to 206, a grey ribbon, where the concept's falls are the
+lightest thing in their corners. With the share they read 159 to 194. It fades where the copy of the scene's depth shows a wall close behind
 it. The mist is particles: large, faint billows sized by the creek, gathered round the column's foot
 about four times as wide as it. Many overlap at any place, so they read as one even mist; fewer,
 brighter puffs read as separate balls of cotton against the cloud. The mist and the plume draw

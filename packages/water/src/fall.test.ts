@@ -1,6 +1,6 @@
 // The waterfall's column: it starts at the lip's height and width, follows the path of falling
-// water, never rises, widens as it falls, stands as deep as the creek is wide with nearly parallel
-// sides, and looks out from its middle. The spray's emitters stand at the brink, in the column, about
+// water, never rises, widens as it falls, hangs thin under the brink and deepens as it falls, and
+// looks out from its middle. The spray's emitters stand at the brink, in the column, about
 // it lower down and at the foot, turned across the fall.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -294,22 +294,23 @@ describe('a waterfall’s column', () => {
 			}
 	});
 
-	it('stands as a solid column with nearly parallel sides, as deep as the creek is wide', () => {
+	it('hangs thin below the brink and deepens slowly as it falls, a solid column', () => {
 		const { positions, uvs1 } = meshOf(SHEET);
 		const rows = rowsOf(SHEET);
 		const at = (fallen: number) =>
 			rows.find((row) => (uvs1[(row[0] as number) * 2 + 1] as number) >= fallen) as number[];
-		// Below the first few meters the column's depth holds within a tenth, so from the side its
-		// front and back run nearly parallel, and the depth is the creek's width times the column's
-		// share.
-		const depths = [6, 10, 14, 19].map((fallen) => {
+		// Thin under the brink, so its water hangs close to the rock, and deeper with each meter it
+		// falls, toward the creek's width times the column's share.
+		const full = 2 * COLUMN_DEPTH * SHEET.halfWidth;
+		const depths = [2, 6, 10, 14, 19].map((fallen) => {
 			const [back, front] = outOf(positions, at(fallen));
 			return front - back;
 		});
-		for (const depth of depths) {
-			expect(depth).toBeGreaterThan(2 * COLUMN_DEPTH * SHEET.halfWidth * 0.9);
-			expect(depth).toBeLessThan(2 * COLUMN_DEPTH * SHEET.halfWidth * 1.01);
-		}
+		expect(depths[0] as number).toBeLessThan(full * 0.6);
+		for (let k = 1; k < depths.length; k++)
+			expect(depths[k] as number).toBeGreaterThan(depths[k - 1] as number);
+		expect(depths[4] as number).toBeGreaterThan(full * 0.95);
+		expect(depths[4] as number).toBeLessThan(full * 1.01);
 		// The front arcs out over the first meters and then falls nearly straight: below 6 m it moves
 		// out by less than a tenth of the drop.
 		const [, front6] = outOf(positions, at(6));
@@ -530,8 +531,12 @@ describe('the column’s shader', () => {
 		expect(body(read('fall.wgsl'))).toBe(body(read('water.wgsl')));
 	});
 
-	it('vanishes below a cloud’s top, each clump at its own depth', () => {
+	it('vanishes below a cloud’s top, each clump at its own depth, as the last word on its cover', () => {
 		const shader = read('fall.wgsl');
+		// Nothing after the fade changes the water's cover again.
+		expect(shader).toMatch(
+			/alpha \*= smoothstep\(material\.fadeBelow - material\.sinkDepth, material\.fadeBelow \+ SINK_LEAD, sink\);\s*s\.alpha = clamp\(alpha, 0\.0, 1\.0\);/,
+		);
 		expect(shader).toContain('let sink = input.worldPosition.y + (froth - 0.5) * 0.8;');
 		expect(shader).toContain(
 			'alpha *= smoothstep(material.fadeBelow - material.sinkDepth, material.fadeBelow + SINK_LEAD, sink);',

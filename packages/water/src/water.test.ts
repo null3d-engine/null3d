@@ -283,7 +283,9 @@ describe('the water’s color along a low view', () => {
 
 describe('the view from under the water', () => {
 	/** An underwater view over still water at a level, with a camera at a height turned about +y. */
-	function viewAt(height: number, turn = 0) {
+	function viewAt(start: number, turn = 0) {
+		let height = start;
+		let removed = 0;
 		const asked: number[] = [];
 		const effects: { uniforms: Record<string, unknown> }[] = [];
 		const set: Record<string, unknown> = {};
@@ -319,13 +321,25 @@ describe('the view from under the water', () => {
 				effects.push(options);
 				return options;
 			},
-			removeEffect() {},
+			removeEffect() {
+				removed++;
+			},
 			setEffectUniform(_effect: unknown, name: string, value: unknown) {
 				set[name] = Array.isArray(value) ? [...value] : value;
 			},
 		};
 		const view = createUnderwater({ post } as unknown as SketchContext, camera, water);
-		return { view, asked, effects, set, camera: camera as unknown as { fov: number } };
+		return {
+			view,
+			asked,
+			effects,
+			set,
+			camera: camera as unknown as { fov: number },
+			moveTo(next: number) {
+				height = next;
+			},
+			removed: () => removed,
+		};
 	}
 
 	it('adds its effect only near or under the surface, where it asks for the surface’s height', () => {
@@ -336,6 +350,25 @@ describe('the view from under the water', () => {
 		const under = viewAt(0.5);
 		under.view.update(0, [1, 1, 1], [1, 1, 1]);
 		expect(under.effects).toHaveLength(1);
+	});
+
+	it('adds its effect within the near gap and keeps it until the far one', () => {
+		// The surface stands at 1 m; the effect comes within 0.6 m of it and goes past 1 m.
+		const view = viewAt(1.5);
+		const frame = () => view.view.update(0, [1, 1, 1], [1, 1, 1]);
+		frame();
+		expect(view.effects).toHaveLength(1);
+		// 0.8 m up, between the two gaps: the effect stays, as the camera has not gone past 1 m.
+		view.moveTo(1.8);
+		frame();
+		expect(view.removed()).toBe(0);
+		view.moveTo(2.2);
+		frame();
+		expect(view.removed()).toBe(1);
+		// Coming down to 0.8 m again does not add it back: it comes within 0.6 m alone.
+		view.moveTo(1.8);
+		frame();
+		expect(view.effects).toHaveLength(1);
 	});
 
 	it('turns the camera’s axes with it in every frame, and its lens when it zooms', () => {
