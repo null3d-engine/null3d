@@ -351,7 +351,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 // Close to the walls the cliff hides part of the sky, so the cloud there is greyer.
                 let hidden = select(1.0, 0.78 + 0.22 * smoothstep(0.0, 30.0, reach - wall.x), reach < NEAR);
                 form = clamp(mix(sea, round, heapy) * hidden, 0.0, 1.0);
-                sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft) * hidden;
+                sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft) * hidden * hidden * hidden;
                 met = t;
                 lit = true;
             }
