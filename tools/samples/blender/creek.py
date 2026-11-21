@@ -46,10 +46,10 @@ from mathutils.kdtree import KDTree
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    PIXEL_PER_METER, Builder, Plant, arguments, at_distance, blend_up, branch_phase, close_up, crown_cards,
+    PIXEL_PER_METER, Builder, Plant, arguments, at_distance, blend_up, branch_phase, cells, close_up, crown_cards,
     dilate, export, fbm, frame_of, half, image, inside, leaf_color, leaf_mask, leaf_part, level_error, link,
-    material, needle_atlas, normal_map, occlusion_of, orm, over, plant_reach, plant_top, preview, rock_texture,
-    smoothstep, sprig_atlas, stage, strip, tent, tube, value_noise,
+    material, needle_atlas, normal_map, occlusion_of, orm, over, paint_leaf, paint_line, plant_reach, plant_top,
+    preview, rock_texture, smoothstep, sprig_atlas, stage, strip, tent, tube, value_noise,
 )
 
 SEED = 20261011
@@ -1667,6 +1667,294 @@ def build_pine(name, spec, raw, leaf_mat, rng):
     return objects, plant, len(ends), len(tiers), cut, errors
 
 
+# ---------------------------------------------------------------------------------------------
+# The garden's ground plants: azaleas, clipped shrubs and moss cushions
+# ---------------------------------------------------------------------------------------------
+
+# The plants' colors, painted so that a render under the overcast sky gives the concept's figures
+# in the plants checklist (references/plants/checklist.md): the azalea's dull deep crimson with some
+# dark green, the clipped shrub's dark olive and the moss's yellow olive. The sky's sheen on a
+# rough surface greys it, so the paint is purer than the figures. Each kind's last tone is its
+# darkest, the shade deep between its leaves.
+GARDEN_TONES = {
+    'azalea': ((0.56, 0.24, 0.1), (0.48, 0.18, 0.08), (0.6, 0.22, 0.12), (0.2, 0.25, 0.06)),
+    'clipped': ((0.27, 0.28, 0.04), (0.32, 0.33, 0.06), (0.17, 0.18, 0.03)),
+    'moss': ((0.36, 0.31, 0.0), (0.44, 0.38, 0.01), (0.19, 0.15, 0.0)),
+}
+# How each mound's leaves are painted: a tuft's leaf length and count, then the mat's, with
+# lengths in shares of an atlas cell.
+GARDEN_PAINT = {'azalea': (0.12, 170, 0.04, 5000), 'clipped': (0.08, 340, 0.03, 8000)}
+
+
+def leaf_clump(tile, rng, count, length, tones, patch, opaque):
+    """
+    Tiny pointed leaves laid every way: over the whole cell on its darkest tone when `opaque`, as
+    the mat a mound's body wears, or else in a ragged clump of a few overlapping blobs, whose edge
+    lets the sky through, as a tuft on the mound.
+    """
+    blobs = []
+    if opaque:
+        tile[..., :3] = np.array(tones[-1]) * 0.6
+        tile[..., 3] = 1.0
+    else:
+        for _ in range(4):
+            x, y = np.clip(rng.normal(0.5, 0.05, 2), 0.4, 0.6)
+            blobs.append((x, y, 0.14 + 0.08 * rng.random()))
+    made = 0
+    while made < count:
+        base = (rng.random(), rng.random())
+        if blobs and not any((base[0] - x) ** 2 + (base[1] - y) ** 2 < r * r for x, y, r in blobs):
+            continue
+        made += 1
+        tone = np.array(tones[int(rng.random() * len(tones))]) * (0.75 + 0.45 * rng.random())
+        reach = length * (0.7 + 0.6 * rng.random())
+        paint_leaf(tile, base, rng.random() * 2 * math.pi, reach, 0.42, tone, 0.0, patch, 0.6, 0.12)
+
+
+def moss_mat(tile, rng, tones, patch):
+    """
+    Velvety moss: a yellow-olive ground that falls to its dark tone in the hollows, where the
+    mottle is low, grained texel by texel, under many fine short strands that follow the same
+    light and dark.
+    """
+    cell = tile.shape[0]
+    lit = smoothstep(0.25, 0.75, patch)[..., None]
+    grain = 0.85 + 0.3 * rng.random((cell, cell, 1))
+    tile[..., :3] = (np.array(tones[-1])[None, None] * (1 - lit) + np.array(tones[0])[None, None] * lit) * grain
+    tile[..., 3] = 1.0
+    for _ in range(20000):
+        base = (rng.random(), rng.random())
+        y, x = min(int(base[1] * cell), cell - 1), min(int(base[0] * cell), cell - 1)
+        tone = np.array(tones[int(rng.random() * 2)]) * (0.55 + 0.5 * patch[y, x] + 0.2 * rng.random())
+        tip = (base[0] + rng.normal(0, 0.004), base[1] + 0.006 + rng.normal(0, 0.004))
+        paint_line(tile, base, tip, 1.0 / cell, tone)
+
+
+def garden_atlases(size, rng):
+    """
+    The ground plants' two atlases, each 2 x 2: the tufts, with cut-out edges, of the azalea and
+    the clipped shrub; and the opaque mats that their bodies wear, with the moss in the third cell.
+    """
+    cell, offsets = cells(size)
+    tufts = np.zeros((size, size, 4), np.float32)
+    mats = np.zeros((size, size, 4), np.float32)
+    mottle = fbm(size, size, 8, 8, rng, 4)
+    for k, kind in enumerate(('azalea', 'clipped', 'moss')):
+        oy, ox = offsets[k]
+        patch = mottle[oy:oy + cell, ox:ox + cell]
+        mat = np.zeros((cell, cell, 4), np.float32)
+        if kind == 'moss':
+            moss_mat(mat, rng, GARDEN_TONES[kind], patch)
+        else:
+            tuft_length, tuft_count, mat_length, mat_count = GARDEN_PAINT[kind]
+            tuft = np.zeros((cell, cell, 4), np.float32)
+            leaf_clump(tuft, rng, tuft_count, tuft_length, GARDEN_TONES[kind], patch, False)
+            leaf_clump(mat, rng, mat_count, mat_length, GARDEN_TONES[kind], patch, True)
+            tufts[oy:oy + cell, ox:ox + cell] = tuft
+        mats[oy:oy + cell, ox:ox + cell] = mat
+    return dilate(tufts), mats
+
+
+def mound(rng, across, high, swells, swell, uneven, flat):
+    """
+    A mound of foliage `across` meters wide and `high` meters tall, as pads: a core that fills it,
+    and `swells` pads round its dome, from near the ground to the top, that make its soft lumps.
+    A swell is `swell` of the mound's half-width; `uneven` from 0 to 1 is how much the swells
+    differ in size, and `flat` how much lower than wide each one is.
+    """
+    plant = Plant()
+    a = across / 2
+    core = plant.branch([Vector((0, 0, 0)), Vector((0, 0, high * 0.5))], [0.02, 0.01], 0)
+    plant.pad((0, 0, 0), (a * 0.8, a * 0.8, high * 0.82), core)
+    for k in range(swells):
+        # Even over the dome by area: the sine of the height angle runs evenly, round by the
+        # golden angle.
+        rise = 0.12 + 0.88 * (k + 0.5) / swells
+        tilt, turn = math.asin(rise), k * 2.399963 + rng.normal(0, 0.25)
+        size = a * swell * (1 + uneven * (2 * rng.random() - 1))
+        sunk = size * (1 - flat)
+        out = Vector((math.cos(turn), math.sin(turn), 0)) * math.cos(tilt) * (a - size)
+        middle = out + Vector((0, 0, max((high - sunk) * rise, sunk * 0.3)))
+        branch = plant.branch([Vector((0, 0, 0)), middle], [0.015, 0.008], 1)
+        plant.pad(tuple(middle), (size, size, sunk), branch)
+    return plant
+
+
+def mound_bodies(builder, plant, spec, around, rings, cell, scale, rng):
+    """
+    The opaque body of each pad of a mound: an ellipsoid, `body` times the pad's size, darker
+    underneath and inside, as `pad_bodies` makes the pines'. A face inside another pad's body, or
+    under the ground, is left out, and what is left of a body under the ground is pressed up into
+    a shallow skirt. Each face wears its own window of the atlas cell `cell`, at `scale` meters to
+    the cell, so the mat's leaves keep their size on every pad; they lie every way, so the
+    windows' edges do not show.
+    """
+    top, reach = plant_top(plant), plant_reach(plant)
+    center = Vector(np.array([tuple(c) for c, _, _ in plant.pads]).mean(axis=0))
+    cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
+    bodies = [(c, r * spec['body']) for c, r, _ in plant.pads]
+    margin = 0.01
+    for index, ((c, r), (_, _, branch)) in enumerate(zip(bodies, plant.pads)):
+        grid = []
+        for i in range(rings + 1):
+            t = i / rings
+            lift, spread = -math.cos(math.pi * t), math.sin(math.pi * t)
+            row = []
+            for j in range(around):
+                a = 2 * math.pi * j / around
+                n = Vector((spread * math.cos(a), spread * math.sin(a), lift))
+                p = c + Vector((n.x * r.x, n.y * r.y, n.z * r.z))
+                normal = Vector((n.x / r.x, n.y / r.y, n.z / r.z)).normalized()
+                out = p - center
+                out = out.normalized() if out.length > 1e-4 else normal
+                rim = min(1.0, (p - center).length / max(reach, 1e-3))
+                ao = spec['shade'] + (1 - spec['shade']) * float(smoothstep(-0.7, 0.7, 0.8 * normal.z + 0.5 * rim - 0.1))
+                ao *= 1 - spec['underside'] * float(smoothstep(0.0, -0.8, normal.z))
+                sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
+                row.append((p, (normal + out * spec['bend']).normalized(), (ao, ao, ao), sway))
+            grid.append(row)
+
+        def kept(p):
+            # The skirt sinks into the ground where a copy stands on a slope.
+            return Vector((p.x, p.y, max(p.z, -0.1)))
+
+
+        def hidden(p, index=index):
+            return p.z < -0.02 or any(inside(p - o, s) < 0.95 for k, (o, s) in enumerate(bodies) if k != index)
+
+        for i in range(rings):
+            for j in range(around):
+                quad = (grid[i][j], grid[i][(j + 1) % around], grid[i + 1][(j + 1) % around], grid[i + 1][j])
+                if all(hidden(q[0]) for q in quad):
+                    continue
+                points = [q[0] for q in quad]
+                mid = sum(points, Vector()) / 4
+                facing = (points[2] - points[0]).cross(points[3] - points[1])
+                facing = facing.normalized() if facing.length > 1e-9 else quad[0][1]
+                side = points[1] - points[0] if (points[1] - points[0]).length > 1e-5 else points[2] - points[3]
+                side = (side - facing * side.dot(facing)).normalized()
+                local = [((q - mid).dot(side), (q - mid).dot(facing.cross(side))) for q in points]
+                half = max(max(abs(x), abs(y)) for x, y in local)
+                k = min(0.5 / scale, (0.25 - margin) / max(half, 1e-4))
+                room = 0.25 - margin - half * k
+                wu = cu + 0.25 + (2 * rng.random() - 1) * room
+                wv = cv + 0.25 + (2 * rng.random() - 1) * room
+                builder.face(*(builder.vertex(kept(q[0]), (wu + x * k, wv + y * k), q[2], q[1], q[3]) for q, (x, y) in zip(quad, local)))
+
+
+def cushion(builder, waves, across, high, around, rings, cell, scale):
+    """
+    A moss cushion: a low dome `across` meters wide and `high` tall, flat on top, with a full
+    rounded edge that meets the ground steeply. The `waves` (size, heading, phase, wavelength in
+    shares of the half-width) raise it in soft swells and sink it in hollows, which are darker. It
+    wears the atlas cell `cell` from above, at `scale` meters to the cell.
+    """
+    a = across / 2
+    cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
+    total = sum(w for w, _, _, _ in waves)
+    k = min(0.5 / scale, 0.24 / (a * 1.1 + high))
+
+    def swell(x, y):
+        return sum(w * math.sin((math.cos(d) * x + math.sin(d) * y) * 2 * math.pi / length + g)
+                   for w, d, g, length in waves) / total
+
+    def surface(turn, rise):
+        # A superellipse in profile: flat on top, steep and round at the edge.
+        out = math.cos(rise) ** (2 / 3)
+        x, y = out * math.cos(turn), out * math.sin(turn)
+        reach = a * out * (1 + 0.06 * swell(math.cos(turn), math.sin(turn)))
+        z = high * math.sin(rise) ** (2 / 3) * (1 + 0.3 * swell(x, y))
+        return Vector((reach * math.cos(turn), reach * math.sin(turn), z))
+
+    rows = []
+    for i in range(rings + 1):
+        rise = 0.5 * math.pi * i / rings
+        row = []
+        for j in range(around):
+            turn = 2 * math.pi * j / around
+            p = surface(turn, rise)
+            e = 1e-3
+            normal = (surface(turn + e, rise) - surface(turn - e, rise)).cross(
+                surface(turn, min(rise + e, 0.5 * math.pi)) - surface(turn, max(rise - e, 0.0)))
+            normal = -normal if normal.z < 0 else normal
+            normal = normal.normalized() if normal.length > 1e-12 else Vector((0, 0, 1))
+            ao = 0.62 + 0.38 * float(smoothstep(-0.8, 0.8, swell(p.x / a, p.y / a)))
+            ao *= 0.8 + 0.2 * float(smoothstep(0.0, 0.5, p.z / high))
+            # The steep edge unfolds outward by its height, so its moss is not drawn out in streaks.
+            uv = (cu + 0.25 + (p.x + normal.x * p.z) * k, cv + 0.25 + (p.y + normal.y * p.z) * k)
+            row.append(builder.vertex(p, uv, (ao, ao, ao), normal, (p.z / high, 0.0)))
+        rows.append(row)
+    for lower, upper in zip(rows, rows[1:]):
+        for j in range(around):
+            builder.face(lower[j], lower[(j + 1) % around], upper[(j + 1) % around], upper[j])
+
+
+# The ground plants, after the plants checklist's sizes and the plant guides' review. A mound
+# (azalea, clipped shrub) is a core and `swells` pads, with an opaque body of `bodies` (around,
+# rings) per pad at the full level and the two lower ones, and `tufts` cut-out tufts of `card`
+# meters; a cushion is one dome of `bodies` (around, rings). Each wears atlas cell `cell` at `scale`
+# meters to the cell. `sway` scales the bend that a free crown would take: a clipped shrub barely
+# moves, moss less.
+GARDEN_TUFTS = {'lift': 0.5, 'scatter': 0.3, 'centered': 0.5, 'fold': 0.1, 'bend': 0.75, 'tent': False,
+                'shade': 0.5, 'underside': 0.35, 'body': 0.92, 'tint': (1.0, 1.0, 1.0)}
+GARDEN = {
+    'azalea': {'across': 1.8, 'high': 0.65, 'swells': 12, 'swell': 0.34, 'uneven': 0.25, 'flat': 0.3,
+               'tufts': 420, 'card': 0.15, 'cell': 0, 'scale': 0.5, 'sway': 0.45, 'bodies': ((10, 6), (8, 4), (6, 4))},
+    'clipped-shrub': {'across': 1.6, 'high': 1.35, 'swells': 8, 'swell': 0.44, 'uneven': 0.35, 'flat': 0.1,
+                      'tufts': 460, 'card': 0.13, 'cell': 1, 'scale': 0.4, 'sway': 0.3,
+                      'bodies': ((10, 6), (8, 4), (6, 4))},
+    'moss-cushion': {'across': 1.4, 'high': 0.2, 'cell': 2, 'scale': 1.6, 'sway': 0.08, 'bodies': ((32, 6), (16, 4), (10, 3))},
+}
+# Each lower level keeps every `every`th tuft at `grow` times its size, as the pines' do.
+GARDEN_LEVELS = ((2, 1.35), (4, 1.7))
+
+
+def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
+    """
+    One ground plant's parts at the full level and the two lower ones: its opaque body and, on a
+    mound, its tufts. Returns the objects, the plant's size (high, across) and each part's level
+    errors.
+    """
+    plant = mound(rng, spec['across'], spec['high'], spec['swells'], spec['swell'], spec['uneven'], spec['flat']) \
+        if 'swells' in spec else None
+    tufts_spec = dict(GARDEN_TUFTS, card=spec.get('card', 0.1), cells=(spec['cell'],))
+    places = [place for place in crown_cards(plant, rng, spec['tufts'], 0.6, 0.15) if place[0].z > 0.04] if plant else []
+    waves = [(rng.uniform(0.3, 1.0), rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi), rng.uniform(0.5, 1.2)) for _ in range(4)]
+
+    def calmed(builder):
+        # The plant sways as `sway` of a free crown would.
+        builder.sways = [(w * spec['sway'], phase) for w, phase in builder.sways]
+        return builder
+
+    def parts(k, every, grow, stream):
+        suffix = '' if k == 0 else f'-{k}'
+        body = Builder()
+        if plant:
+            mound_bodies(body, plant, tufts_spec, *spec['bodies'][k], spec['cell'], spec['scale'], stream)
+        else:
+            cushion(body, waves, spec['across'], spec['high'], *spec['bodies'][k], spec['cell'], spec['scale'])
+        made = {'body': calmed(body).build(f'{name}-body{suffix}', mat_mat)}
+        if plant:
+            made['tufts'] = calmed(leaf_part(tufts_spec, plant, places[::every], stream, grow)).build(f'{name}-tufts{suffix}', tuft_mat)
+        return made
+
+    full = parts(0, 1, 1.0, rng)
+    objects, errors = list(full.values()), {f'{name}-{part}': [] for part in full}
+    for k, (every, grow) in enumerate(GARDEN_LEVELS, start=1):
+        level = parts(k, every, grow, np.random.default_rng((SEED, 90 + k, ident)))
+        for part, obj in level.items():
+            # A low plant's limit follows its width, with a floor: 5 cm for its body, which keeps
+            # its switch past 60 m, and 12 cm for its tufts, whose thinning the measure counts in
+            # full though the body under them hardly changes.
+            floor = 0.12 if part == 'tufts' else 0.05
+            errors[f'{name}-{part}'].append(level_error(obj, full[part], limit=max(0.07 * spec['across'], floor)))
+        objects += list(level.values())
+    corners = [Vector(c) for o in full.values() for c in o.bound_box]
+    size = (max(c.z for c in corners), max(max(c.x for c in corners) - min(c.x for c in corners),
+                                           max(c.y for c in corners) - min(c.y for c in corners)))
+    return objects, size, errors
+
+
 def main():
     out, shots = arguments('creek.py')
     rng = np.random.default_rng(SEED)
@@ -1735,17 +2023,36 @@ def main():
         report.update(export(os.path.join(out, 'pines.glb'), pines, {'needles'}, errors))
         files.append('pines.glb')
 
+    # The garden's ground plants, after the pines, from streams of their own, so they too leave
+    # every other file as it was.
+    grounds = GARDEN if 'garden' in chosen_models() else {}
+    ground_errors = {}
+    if grounds:
+        tufts, mats = garden_atlases(1024, np.random.default_rng((SEED, 80)))
+        tuft_mat = material('garden-tufts', image('garden-tufts', tufts), cutout=True, roughness=0.75)
+        mat_mat = material('garden-mats', image('garden-mats', mats[..., :3]), roughness=1.0)
+        ground = []
+        for ident, (name, spec) in enumerate(grounds.items()):
+            objects, (high, across), measured = build_ground_plant(name, spec, tuft_mat, mat_mat, np.random.default_rng((SEED, 82, ident)), ident)
+            ground += objects
+            ground_errors.update(measured)
+            print(f'CREEK {name}: {high:.2f} m high, {across:.2f} m across')
+        report.update(export(os.path.join(out, 'garden.glb'), ground, {'garden-tufts'}, ground_errors))
+        files.append('garden.glb')
+
     for name, triangles in report.items():
         print(f'CREEK {name}: {triangles} triangles')
     for name, (plant, ends, tiers, cut) in crowns.items():
         print(f'CREEK {name}: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, '
               f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads, {cut} vertices of bare twig cut')
-    for part, measured in sorted(errors.items()) if wanted else ():
+    for part, measured in sorted({**(errors if wanted else {}), **ground_errors}.items()):
         print(f"CREEK {part} level errors: {', '.join(f'{e} m (switch at {e / PIXEL_PER_METER:.0f} m)' for e in measured)}")
     for file in files:
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
     if shots:
-        for name in TREES:
+        # Each group's pictures render when its model is asked for, as a build of every model does.
+        chosen = chosen_models()
+        for name in TREES if 'trees' in chosen else ():
             parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
             preview(parts, os.path.join(shots, f'{name}.png'))
             close_up(parts, os.path.join(shots, f'{name}-close.png'))
@@ -1753,11 +2060,30 @@ def main():
             levels = [parts] + [[bpy.data.objects[f'{name}-wood-{k}'], bpy.data.objects[f'{name}-leaves-{k}']] for k in (1, 2)]
             for distance in (40, 80):
                 at_distance(levels, os.path.join(shots, f'{name}-levels-{distance}m.png'), distance)
-        for plant in plants:
+        for plant in plants if 'plants' in chosen else ():
             preview([plant], os.path.join(shots, f'{plant.name}.png'))
             close_up([plant], os.path.join(shots, f'{plant.name}-close.png'), box=(0.25, 0.75, 0.2, 0.7))
-        preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
+        if 'cave' in chosen:
+            preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
         preview_pines(shots, wanted, errors if wanted else {})
+        preview_grounds(shots, grounds)
+
+
+def preview_grounds(shots, grounds):
+    """
+    Renders each ground plant under the overcast sky: from the concept's height, with and without
+    the ground, from the side, and its levels at a page's size.
+    """
+    for name in grounds:
+        def level(suffix):
+            return [o for o in (bpy.data.objects.get(f'{name}-body{suffix}'), bpy.data.objects.get(f'{name}-tufts{suffix}')) if o]
+
+        parts = level('')
+        overcast(parts, os.path.join(shots, f'{name}-concept.png'), 0, 20, (640, 640))
+        overcast(parts, os.path.join(shots, f'{name}-concept-matte.png'), 0, 20, (640, 640), matte=True)
+        overcast(parts, os.path.join(shots, f'{name}-side.png'), 90, 8, (640, 640))
+        levels = [parts, level('-1'), level('-2')]
+        overcast_levels(levels, os.path.join(shots, f'{name}-levels-20m-concept.png'), 20, 27)
 
 
 def preview_pines(shots, pines, errors):
@@ -1788,7 +2114,7 @@ def chosen_models():
     """The models that `--models <a,b>` after `--` names, or every model the script writes."""
     args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     if '--models' not in args:
-        return ('trees', 'plants', 'cave', 'pines')
+        return ('trees', 'plants', 'cave', 'pines', 'garden')
     return tuple(args[args.index('--models') + 1].split(','))
 
 
