@@ -51,20 +51,21 @@ export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number
  * broad side to the opening camera. The map's points come from the concept's pixels moved onto this
  * land by landmarks, then onto the ground through the opening camera. P1 is the tall pine beyond
  * the gravel's west end, P2 the tall narrow pine on the hill's top left, P3 leans over the front
- * lantern, P4 stands east of the steps' foot, its crown clear of them, and P6 at the hill's left
- * foot, both larger than the scale table's low pine as the concept's flatter lens shows them, P5
- * behind the statue's right shoulder, P7 and P8 small on the right hillside, a little inside the
- * rim, and P10 and P11 are the clipped tiny pines on the gravel's moss islands.
+ * lantern, P4 stands east of the steps' foot, low enough in the view that the gate's right lantern
+ * stands clear above it, and P6 at the hill's left foot. P5 stands behind the statue in the tall
+ * pine's broad form, so its crown shows on both sides of the statue's head. P7 and P8 are small on
+ * the right hillside, a little inside the rim, P7 in the tall pine's form, wider than tall; and P10
+ * and P11 are the clipped tiny pines on the gravel's moss islands.
  */
 export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
 	['P1', -16.2, 0, 'pine-tall', 1, 0.2],
 	['P2', -5.8, -16.6, 'pine-narrow', 1.05, -0.15],
 	['P3', 1.6, 22.2, 'pine-low', 0.9, 0.3],
-	['P4', 16.2, 8.6, 'pine-low', 1.4, -0.2],
-	['P5', 8.4, -22.4, 'pine-narrow', 0.9, 0.1],
-	['P6', -0.2, -7.6, 'pine-low', 1.5, -0.25],
-	['P7', 18.3, -15.3, 'pine-narrow', 0.4, 0.25],
-	['P8', 25.4, -1.9, 'pine-narrow', 0.35, -0.3],
+	['P4', 18.8, 10.5, 'pine-low', 1, -0.2],
+	['P5', 8.4, -22.4, 'pine-tall', 1, 0.1],
+	['P6', -0.2, -7.6, 'pine-low', 1.05, -0.25],
+	['P7', 18.3, -15.3, 'pine-tall', 0.59, 0.25],
+	['P8', 25.4, -1.9, 'pine-narrow', 0.44, -0.3],
 	['P10', 2, 5.3, 'pine-low', 0.37, 0.4],
 	['P11', 6.1, 7.1, 'pine-low', 0.2, -0.4],
 ];
