@@ -16,7 +16,6 @@ import {
 	fromStream,
 	groundHeight,
 	LIPS,
-	POOL,
 	rimRadius,
 	streamCurrent,
 	streamHalf,
@@ -45,10 +44,10 @@ const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /**
  * How each wake strays from the current: its slant from it at the stone and its bend at each link,
  * in radians at the most; its least length as a share of the longest; the current under which a
- * stone leaves none, and the current at which its wake reaches full length, in meters a second; and
- * the share of a full wake that a riffle's stone leaves, since riffle stones stand close together
- * and their full wakes would join into one white sheet; and the share that a stone in the east arm's
- * current leaves, where the concept's water runs clearer than in the west arm.
+ * stone leaves none, and the current at which its wake reaches full length, in meters a second; the
+ * share of a full wake that a riffle's stone leaves, since riffle stones stand close together and
+ * their full wakes would join into one white sheet; and the share that a lone stone in the current
+ * leaves, so each arm's foam lies in streaks with clear water between, as the concept's.
  */
 const WAKE = {
 	slant: 0.35,
@@ -57,13 +56,8 @@ const WAKE = {
 	still: 0.015,
 	full: 0.25,
 	riffle: 0.55,
-	east: 0.75,
+	current: 0.85,
 } as const;
-/**
- * The spring's boil in the pool: how many foam marks, how far they spread along the pool and across
- * it, and their sizes, in meters.
- */
-const SPRING = { marks: 8, spread: [2.2, 1.1], size: [0.1, 0.3] } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -84,8 +78,25 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	out.occlusion = 1 - 0.5 * crack;
 }
 
-/** Gives a rock's vertices colors: dark flecked stone, and moss where the rock faces up. */
-export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
+/** The linear colors of a mossy stone: its bare stone, and the moss that caps it. */
+export interface MossTones {
+	readonly stone: readonly [number, number, number];
+	readonly moss: readonly [number, number, number];
+}
+
+/** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
+const STONE_TONES: MossTones = { stone: [0.2, 0.17, 0.125], moss: [0.13, 0.115, 0.03] };
+
+/**
+ * Gives a rock's vertices colors: flecked stone, and moss where the rock faces up, in the creek's
+ * stone tones unless others are given.
+ */
+export function mossy(
+	arrays: MeshArrays,
+	seed: number,
+	cover: number,
+	{ stone, moss: mossTone }: MossTones = STONE_TONES,
+): MeshArrays {
 	const positions = arrays.positions as Float32Array;
 	const colors = new Float32Array(positions.length);
 	const local = new Noise(seed);
@@ -105,17 +116,13 @@ export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArra
 		// Warm grey-brown stone, with yellow-olive moss where it faces up.
 		for (let c = 0; c < 3; c++)
 			colors[v * 3 + c] =
-				shade *
-				((STONE_TONE[c] as number) + ((MOSS_TONE[c] as number) - (STONE_TONE[c] as number)) * moss);
+				shade * ((stone[c] as number) + ((mossTone[c] as number) - (stone[c] as number)) * moss);
 	}
 	return { ...arrays, colors };
 }
 
 /** The warm tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
 export const MOSS_MUTE = '#bab6a2';
-/** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
-const STONE_TONE = [0.2, 0.17, 0.125] as const;
-const MOSS_TONE = [0.13, 0.115, 0.03] as const;
 
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
@@ -147,8 +154,9 @@ const BANK = {
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, how many stand in it, and the share of the creek's width they
  * span, from one side to the other (-1 to 1). Four lie on the west arm, sparse enough that its
- * wakes break up with clear water between them; and one just past each end of the pool, where its water leaves it shallow enough to
- * break white. The east sill lies on the camera's dip and stays clear.
+ * wakes break up with clear water between them; and one just past each end of the pool, where its
+ * water runs out into an arm shallow enough to break white, so the pool itself lies calm. The east
+ * sill lies on the camera's dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number, number, number])[] = [
 	[-14, 1.2, 5, -0.8, 0.8],
@@ -205,7 +213,7 @@ export function rockPlaces(): StonePlace[] {
 		// Where the camera's dip glides along the creek's north half, the stones keep to the south.
 		const across =
 			x > DIP_REACH[0] && x < DIP_REACH[1] ? 0.35 + 0.25 * next() : (next() * 2 - 1) * 0.5;
-		add(x, across, 0.5 + 0.3 * next(), 'broken', x > POOL.x ? WAKE.east : 1);
+		add(x, across, 0.5 + 0.3 * next(), 'broken', WAKE.current);
 	}
 	for (const [middle, spread, count, near, far] of RIFFLES)
 		for (let k = 0; k < count; k++) {
@@ -273,18 +281,7 @@ export function createStones(
 	const wet = materials.standard({ ...look, color: '#c2baa8', roughness: 0.8 });
 	const next = random(43);
 	const places = rockPlaces();
-	// The spring wells up white in the pool's middle: a boil of foam marks with no stone under them.
-	const spring = random(49);
-	const obstacles: Obstacle[] = Array.from({ length: SPRING.marks }, () => {
-		// Loosely over the pool's length and a little across it, so the boil reads as no pattern.
-		const along = (spring() * 2 - 1) * SPRING.spread[0];
-		const across = (spring() * 2 - 1) * SPRING.spread[1];
-		return {
-			x: POOL.x + along,
-			z: streamZ(POOL.x + along) + across,
-			r: SPRING.size[0] + (SPRING.size[1] - SPRING.size[0]) * spring() ** 2,
-		};
-	});
+	const obstacles: Obstacle[] = [];
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
 		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
 		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
