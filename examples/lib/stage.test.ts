@@ -137,6 +137,25 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
 });
 
+test("a scene's grey sun at golden hour keeps its brightness and loses its tint, and midday keeps its own", () => {
+	const plain = staged();
+	const grey = staged({ sunGrey: { Golden: 1 } });
+	const colors = (mood: Mood) =>
+		[plain, grey].map(({ stage, frames }) => {
+			stage.set(mood);
+			frames(240);
+			return [...stage.light.color];
+		});
+	const luma = (c: readonly number[]) =>
+		0.2126 * (c[0] as number) + 0.7152 * (c[1] as number) + 0.0722 * (c[2] as number);
+	const [warm, greyed] = colors('Golden') as [number[], number[]];
+	expect(Math.max(...warm) - Math.min(...warm), 'the golden sun is warm').toBeGreaterThan(0.05);
+	expect(Math.max(...greyed) - Math.min(...greyed), 'the grey sun has no tint').toBeLessThan(0.01);
+	expect(luma(greyed)).toBeCloseTo(luma(warm), 3);
+	const [noon, noonGrey] = colors('Midday') as [number[], number[]];
+	for (let k = 0; k < 3; k++) expect(noonGrey[k]).toBeCloseTo(noon[k] as number, 4);
+});
+
 test("a scene's grey fog keeps the air's brightness and drops its tint, and the air keeps its color", () => {
 	const plain = staged();
 	const grey = staged({ fogGrey: 1 });

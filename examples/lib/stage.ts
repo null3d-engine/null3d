@@ -206,6 +206,12 @@ export interface StageOptions {
 	 */
 	fogGrey?: number;
 	/**
+	 * How far the sun's color moves toward a grey of its own brightness in some moods, from 0, the
+	 * hour's own color, to 1, for a scene whose land should keep its colors under a low sun: the sky
+	 * keeps its warmth and the shadows their length. It eases between moods as the haze does.
+	 */
+	sunGrey?: Partial<Record<FixedMood, number>>;
+	/**
 	 * A factor on the exposure of every outdoor mood, for a scene whose own lights carry it: a city
 	 * at night asks for more than a moonlit field. The default is 1, and the studio keeps its own.
 	 */
@@ -322,6 +328,7 @@ export function createMoods(
 		backdrop,
 		haze = {},
 		fogGrey = 0,
+		sunGrey = {},
 		exposureScale = 1,
 		environmentScale = 1,
 		sunScale = 1,
@@ -426,8 +433,18 @@ export function createMoods(
 		}
 		target.intensity = day.light.intensity * weather.light * sunScale;
 		target.skyIntensity = day.skyIntensity * weather.light;
-		// The fog's factor follows the look of the hour, so it moves between moods with the light.
+		// The fog's factor and the sun's grey follow the look of the hour, so they move between moods
+		// with the light.
 		moodMix(hours, mix);
+		const grey = (mood: Mood) => sunGrey[mood as FixedMood] ?? 0;
+		const toGrey = blend(grey(mix.from), grey(mix.to), mix.share);
+		const sunLuma =
+			0.2126 * (target.color[0] as number) +
+			0.7152 * (target.color[1] as number) +
+			0.0722 * (target.color[2] as number);
+		for (let k = 0; k < 3; k++)
+			target.color[k] =
+				(target.color[k] as number) + (sunLuma - (target.color[k] as number)) * toGrey;
 		const factor = (mood: Mood) => haze[mood as FixedMood] ?? 1;
 		target.density = fogDensity * blend(factor(mix.from), factor(mix.to), mix.share) * weather.fog;
 		target.glow = day.fog.sunGlow;
