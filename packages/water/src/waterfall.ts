@@ -45,7 +45,7 @@ const NO_FADE = -1e9;
 const CLEAR = 0.7;
 /** The gap to a wall behind the sheet over which the sheet fades as it nears it, in meters. */
 const SOFTNESS = 0.6;
-/** The light on the spray and the mist when the scene sets none, as a linear color. */
+/** The air's light on the spray, the mist and the white water when the scene sets none, linear. */
 const MIST_LIGHT = [0.92, 0.93, 0.95] as const;
 /** The longest life of a puff of the froth, a drop, a puff of the mist and the plume, in seconds. */
 const FROTH_LIFE = 1.8;
@@ -150,8 +150,9 @@ export interface Waterfall {
 	 */
 	update(): void;
 	/**
-	 * Sets the light on the spray and the mist, as a linear color. Particles are not lit, so a scene
-	 * gives them its light in each mood. The sheet takes the scene's own light.
+	 * Sets the air's light on the spray and the mist, as a linear color. Particles are not lit, so a
+	 * scene gives them its light in each mood. The sheet takes the scene's own light, and its white
+	 * water gives back a share of this one too, as the mist round it does.
 	 */
 	setLight(color: readonly [red: number, green: number, blue: number]): void;
 	/**
@@ -264,7 +265,7 @@ export async function createWaterfall(
 		alphaMode: 'blend',
 		depthWrite: false,
 		// White water lets the light behind it through, so a low sun behind the fall lights it.
-		diffuseTransmission: 0.35,
+		diffuseTransmission: 0.7,
 		...options.material,
 		wgsl: fallShader,
 		// The sheet fades where it nears a wall behind it, from the copy of the scene's depth.
@@ -279,6 +280,7 @@ export async function createWaterfall(
 			fadeBelow: sink,
 			sinkDepth: SINK_DEPTH,
 			across: acrossOf(options.direction),
+			glow: [MIST_LIGHT[0], MIST_LIGHT[1], MIST_LIGHT[2]],
 		},
 	});
 	const mesh = scene.createMesh({
@@ -421,6 +423,7 @@ export async function createWaterfall(
 			light[0] = color[0];
 			light[1] = color[1];
 			light[2] = color[2];
+			material.set({ glow: light });
 			for (let k = 0; k < emitters.length; k++) (emitters[k] as Emitter).system.set(tint);
 		},
 		setSpray(amount) {

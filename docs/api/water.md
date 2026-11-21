@@ -237,13 +237,14 @@ rises at its foot.
 
 The sheet's material moves each streak with the water from the sketch's time alone. So the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
-the water speeds up. The fall is one closed column with an oval section. It is thin at the lip, and
-a few meters down it is about twice as deep, out from the cliff, as the drawn-in water is wide.
-Below that its front and back run nearly parallel. So the fall has a solid body from the side as well as from the front.
-Its outline
-thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly off
-the column. White water scatters the light that reaches it from all round. So the column takes the
-sky's light as a surface facing up does, and it reads white. The scene's light lights the column,
+the water speeds up. The fall is one closed column with an oval section. It is thin under the
+brink, so its water hangs close to the rock, and it deepens out from the cliff over its first few
+meters as it falls. So the fall has a solid body from the side as well as from the front. Its
+outline thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly
+off the column. White water scatters the light that reaches it from all round. So the column takes
+the sky's light as a surface facing up does, and gives back a share of the air's light that
+`setLight` names, as the mist beside it does, so it reads as the lightest thing beside it. The
+scene's light lights the column,
 and the column fades where it nears a wall or a ledge behind it. The spray and
 the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
 
@@ -309,7 +310,7 @@ first use:
 | Member | What it does |
 | --- | --- |
 | `update()` | Steps the spray and the mist. Call it once in each frame, in `onLateUpdate`, after the wind steps |
-| `setLight(color)` | Sets the light on the spray and the mist, as a linear color. Particles are not lit, so give them the scene's light in each mood |
+| `setLight(color)` | Sets the air's light on the spray and the mist, as a linear color. Particles are not lit, so give them the scene's light in each mood. The column's white water gives back a share of it too |
 | `setSpray(amount)` | Sets the spray and the mist, from 0 to 3. A storm raises it |
 | `fallTime` | The seconds that the water takes from the lip to the foot |
 | `destroy()` | Removes the sheet, its material and its particles |
