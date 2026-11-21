@@ -5605,7 +5605,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
 			"fetched": "2026-11-21",
-			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunks showcase/creek-raw-pine-tall and showcase/creek-raw-pine-low (Tripo3D H3.1), whose SHA-256 the script checks; the wide and the narrow pine share the tall trunk. The script trains each tier of limbs level into a layer of needle pads, cuts each limb back to its last pad, drops wood that the cuts part from the trunk, keeps the trunks' own bark maps, and adds needle cards that it paints. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
+			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunks showcase/creek-raw-pine-tall and showcase/creek-raw-pine-low (Tripo3D H3.1), whose SHA-256 the script checks; the wide and the narrow pine share the tall trunk. The script trains each tier of limbs level into a layer of needle clumps under a low dome, cuts each limb back to its last pad, drops wood that the cuts part from the trunk, keeps the trunks' own bark maps, and adds needle cards that it paints. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek-pines",
 			"origin": {
 				"kind": "blender",
@@ -5615,8 +5615,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-pines/pines.glb",
-					"bytes": 3397660,
-					"sha256": "3d24d99116e85289fdaa92b772047fe8254502c8a0c1ff27cbbb8e772a59a527"
+					"bytes": 3377016,
+					"sha256": "d89d1bfa1eb9c0381abd9a05e7971e981f0ea7590aaafd4a063ef7f0ec1bd872"
 				}
 			]
 		},
