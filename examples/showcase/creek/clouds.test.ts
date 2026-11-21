@@ -4,8 +4,18 @@
 // wall, and the traced cloud and its dome keep the same copy of the cloud's light.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { billowField, FRONT, RIM_RANGE, RIM_TEXELS, streakField, wallData } from './clouds';
-import { rimRadius } from './land';
+import { fallPlace, fallTime } from '../../../packages/water/src/fall';
+import {
+	billowField,
+	FRONT,
+	fallFoot,
+	fallOut,
+	RIM_RANGE,
+	RIM_TEXELS,
+	streakField,
+	wallData,
+} from './clouds';
+import { CLOUD_TOP, LIPS, rimRadius, streamCurrent, streamSlope, streamZ, WATER } from './land';
 
 /** A small map, quick to build, with the same domes as the real ones. */
 const SIZE = 64;
@@ -108,4 +118,34 @@ test("the cloud and the dome hold the same copy of the cloud's light", () => {
 	const copies = [...source.matchAll(/\/\/ light \{\n([\s\S]*?)\/\/ \} light/g)].map((m) => m[1]);
 	expect(copies).toHaveLength(2);
 	expect(copies[0]).toBe(copies[1]);
+});
+
+describe("the falls' feet in the cloud", () => {
+	/** How far out the water add-on's own fall path is once the water has fallen `drop` meters. */
+	const drawnOut = (speed: number, drop: number) => {
+		const place: [number, number] = [0, 0];
+		fallPlace(fallTime(drop), speed, place);
+		return place;
+	};
+
+	test("the distance out follows the water add-on's fall path within a few centimeters", () => {
+		for (const speed of [0.3, 0.8, 1.2, 2])
+			for (const drop of [2, 10.5, 17, 40]) {
+				const [out, fallen] = drawnOut(speed, drop);
+				expect(Math.abs(fallen - drop)).toBeLessThan(0.01);
+				expect(Math.abs(fallOut(speed, drop) - out)).toBeLessThan(0.03);
+			}
+	});
+
+	test("each foot lies where the add-on's column meets the cloud's top, along the fall's way", () => {
+		for (const lip of [LIPS.west, LIPS.east]) {
+			const away = Math.sign(lip);
+			const [dx, dz] = [away, away * streamSlope(lip)];
+			const length = Math.hypot(dx, dz);
+			const [out] = drawnOut(Math.hypot(...streamCurrent(lip - away * 0.3)), WATER - CLOUD_TOP);
+			const [x, z] = fallFoot(lip);
+			expect(Math.abs(x - (lip + (dx / length) * out))).toBeLessThan(0.03);
+			expect(Math.abs(z - (streamZ(lip) + (dz / length) * out))).toBeLessThan(0.03);
+		}
+	});
 });
