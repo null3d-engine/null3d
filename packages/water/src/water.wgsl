@@ -317,8 +317,11 @@ const FOAM_CELLS: f32 = 6.0;
 /// covers there. Where a pixel covers more than a clump, an octave gives way to its mean, so the
 /// foam never breaks into a grid of dots far off.
 fn foam_clumps(q: vec2f, footprint: f32) -> f32 {
-    let a = q * FOAM_CELLS;
-    let b = a * 2.3 + vec2f(7.0, 3.1);
+    // Each octave turns its grid a different way, and the coarse one bends the fine one, so no clump
+    // lines up with the world's axes.
+    let a = mat2x2f(0.866, 0.5, -0.5, 0.866) * q * FOAM_CELLS;
+    let bend = vec2f(value2(a * 0.5 + vec2f(3.3, 1.7)), value2(a * 0.5 + vec2f(9.1, 5.2))) - vec2f(0.5);
+    let b = mat2x2f(0.766, -0.643, 0.643, 0.766) * q * FOAM_CELLS * 2.3 + bend * 1.5 + vec2f(7.0, 3.1);
     let near = 1.0 - smoothstep(0.5, 1.1, footprint * FOAM_CELLS);
     let fine = 1.0 - smoothstep(0.5, 1.1, footprint * FOAM_CELLS * 2.3);
     return 0.6 * mix(0.5, value2(a), near) + 0.4 * mix(0.5, value2(b), fine);
@@ -526,9 +529,10 @@ fn surface(input: SurfaceInput) -> Surface {
     if share < 1.0 {
         flecks = mix(foam_flecks(p, vec2f(0.0), frame.time, footprint), flecks, share);
     }
-    let stoneFoam = 0.85 * smoothstep(0.45, 0.95, near * (0.3 + 1.0 * flecks));
+    let stoneFoam = 0.95 * smoothstep(0.45, 0.95, near * (0.3 + 1.0 * flecks));
     let foam = max(edgeFoam, stoneFoam);
-    s.baseColor = mix(s.baseColor, vec3f(0.8), foam);
+    // Foam is broken white water: nearly white, and too full of air to show the bed through it.
+    s.baseColor = mix(s.baseColor, vec3f(0.93), foam);
     s.roughness = mix(s.roughness, 0.6, foam);
     if !input.frontFacing {
         // Seen from under the water: the world above shows through, bent by the ripples, clearest in
@@ -540,7 +544,7 @@ fn surface(input: SurfaceInput) -> Surface {
         let window = smoothstep(WINDOW - 0.05, WINDOW + 0.05, overhead);
         s.reflection = vec4f(0.0);
         s.thickness = 0.05;
-        s.transmission = mix(0.8, 1.0, window) * (1.0 - 0.7 * foam);
+        s.transmission = mix(0.8, 1.0, window) * (1.0 - 0.9 * foam);
         s.baseColor = mix(vec3f(0.08, 0.16, 0.15), s.baseColor, window);
         s.alpha = 1.0;
         return s;
@@ -560,7 +564,7 @@ fn surface(input: SurfaceInput) -> Surface {
     }
     light = mix(CAUSTIC_MEAN, light, 1.0 - smoothstep(0.025, 0.07, footprint));
     s.emissive += material.caustics * light * reach;
-    s.transmission = 1.0 - 0.7 * foam;
+    s.transmission = 1.0 - 0.9 * foam;
     // The soft shore: the water fades to nothing as its gap to the bed closes, so its edge lies in a
     // band against the bed rather than on the mesh's own edge.
     s.alpha = smoothstep(0.0, material.softness, gap);
