@@ -166,7 +166,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // show as shade, not as gaps. Lower down the column breaks up: long upright gaps open in the
     // shade between the ropes first, until only the ropes' cores are left, torn into clumps.
     var alpha = mix(0.9, 0.97, white);
-    let breakup = smoothstep(0.25, 0.85, share);
+    let breakup = smoothstep(0.4, 0.9, share);
     let long = streak_layer(lip, crossed, vec2f(2.5, 1.2), 3.7);
     let solid = core + (long - 0.5) * 0.5 + (froth - 0.5) * 0.25;
     let threshold = mix(-0.4, 0.95, breakup);
@@ -194,7 +194,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // The water gives way to the mist over the lower half of the drop, so it never lands. Each
     // clump ends at its own height, so no line runs across the fall.
     let ending = share + (froth - 0.5) * 0.3 + (core - 0.5) * 0.12;
-    alpha *= 1.0 - smoothstep(0.55, 0.95, ending);
+    alpha *= 1.0 - smoothstep(0.62, 0.98, ending);
     // The apron fades in from its upstream end, over the river's own surface, sooner in some places
     // across than in others, so neither it nor the river's square end draws a line. The column's
     // back lies on its front at the lip, so it shows only once the column has some depth.

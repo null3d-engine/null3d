@@ -98,7 +98,8 @@ export interface WaterfallOptions {
 	/**
 	 * The world height of a cloud sea, a fog bank or a mist that the fall drops into, in meters. A
 	 * cloud that draws before the fall does not hide it, so below this height the fall vanishes
-	 * itself over 2.5 m, each clump at its own depth. By default it never does.
+	 * itself over 2.5 m, each clump at its own depth. The water then breaks up and bursts into mist
+	 * over the part of the drop above the cloud. By default it never vanishes.
 	 */
 	readonly fadeBelow?: number;
 	/**
@@ -214,6 +215,11 @@ export async function createWaterfall(
 	};
 	checkFallSheet(sheet);
 	let spray = sprayAmount(options.spray ?? 1);
+	const sink = sinkHeight(options.fadeBelow);
+	// The part of the drop that shows: down to a meter below the cloud that the fall sinks into, or
+	// the whole drop. The water breaks up and bursts into mist over this part, so the burst stands
+	// above the cloud rather than inside it.
+	const shown: FallSheet = { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink + 1, 1)) };
 	const material = materials.shader({
 		color: '#f2f3f2',
 		roughness: 0.95,
@@ -233,12 +239,12 @@ export async function createWaterfall(
 		sceneInputs: ['sceneDepth'],
 		uniforms: {
 			glass: [GLASS[0], GLASS[1], GLASS[2]],
-			drop: sheet.drop,
+			drop: shown.drop,
 			clear: CLEAR,
 			softness: SOFTNESS,
 			apron: (sheet.apron ?? APRON) / speed,
 			halfWidth: sheet.halfWidth,
-			fadeBelow: sinkHeight(options.fadeBelow),
+			fadeBelow: sink,
 			across: acrossOf(options.direction),
 		},
 	});
@@ -352,7 +358,7 @@ export async function createWaterfall(
 				opacity: 0.7,
 			};
 		};
-		const places = fallEmitters(sheet);
+		const places = fallEmitters(shown);
 		const made = await Promise.all(
 			places.map((place, k) => createParticles(ctx, look(place, 61 + k))),
 		);

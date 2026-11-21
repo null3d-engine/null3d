@@ -466,7 +466,8 @@ notch as wide as the lip shows rock at both edges of the falling water. A view a
 which sees the ends of the oval face on, keeps them whole; the material learns the lip's direction
 across the water for that. A fall may give the height of a cloud that it drops into
 (`fadeBelow`). The Creek's cloud draws before the blended objects and cannot hide a fall, so below
-that height the fall vanishes itself over 2.5 m, each clump at its own depth. The mesh's texture coordinates carry each point's place across the lip and
+that height the fall vanishes itself over 2.5 m, each clump at its own depth. The water then breaks
+up and bursts into mist over the part of the drop above the cloud, so the burst shows. The mesh's texture coordinates carry each point's place across the lip and
 the time since its water crossed it. The material's noise reads those two. So every streak rides
 down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
 
