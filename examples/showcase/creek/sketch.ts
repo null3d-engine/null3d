@@ -90,7 +90,7 @@ const HEADING = Math.PI + 0.58;
  * lilac grey and from the ground in its shade, at this strength in Dusk alone and none in any other
  * mood.
  */
-const DUSK_SKY = { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.35 } as const;
+const DUSK_SKY = { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.26 } as const;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
