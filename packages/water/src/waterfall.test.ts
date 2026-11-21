@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
 import { type FallSheet, fallEmitters } from './fall';
-import { createWaterfall, SINK_DEPTH, type WaterfallOptions } from './waterfall';
+import { createWaterfall, type WaterfallOptions } from './waterfall';
 
 /** What one stand-in particle buffer was told. */
 interface BufferRecord {
@@ -13,6 +13,8 @@ interface BufferRecord {
 	rate?: number;
 	position?: number[];
 	rotation?: number[];
+	/** The draw order among blended objects that the add-on set, if any. */
+	order?: number;
 	values: Record<string, unknown>[];
 	destroyed: boolean;
 }
@@ -41,6 +43,9 @@ function fakeContext() {
 						},
 						setRotation: (...xyzw: number[]) => {
 							record.rotation = xyzw;
+						},
+						setRenderOrder: (order: number) => {
+							record.order = order;
 						},
 						setParent() {},
 					},
@@ -131,8 +136,9 @@ describe('a waterfall’s fade into a cloud', () => {
 			((buffers[3] as BufferRecord).position as number[])[1] as number;
 		expect(plumeOf(into.buffers)).toBeGreaterThan(cloud);
 		expect(plumeOf(open.buffers)).toBeLessThan(cloud);
-		// The material breaks the water up over the same shown part.
-		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + SINK_DEPTH, 9);
+		// The material breaks the water up over the same shown part, down to a meter below the
+		// cloud's top.
+		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + 1, 9);
 		expect(open.shaders[0]?.uniforms.drop).toBe(16);
 	});
 
@@ -158,6 +164,10 @@ describe('a waterfall’s particle systems', () => {
 			expect(rotation[1] as number).toBeCloseTo(Math.SQRT1_2, 6);
 			expect(rotation[2]).toBe(0);
 			expect(rotation[3] as number).toBeCloseTo(Math.SQRT1_2, 6);
+			// The mist and the plume draw after the column, over its lower part, so the water
+			// dissolves into them. The froth and the drops sort with it by distance.
+			const wraps = place.kind === 'mist' || place.kind === 'plume';
+			expect(record.order).toBe(wraps ? 1 : undefined);
 		}
 		fall.destroy();
 	});

@@ -228,17 +228,19 @@ window overhead, and turns the light back past that window's edge.
 over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water
 does while the air slows it. Below the tongue it turns white: a solid column of rough round ropes,
 with soft gray shade between them and clumps of froth that ride down with the water. Its outline
-tears into lobes and wisps. Below the lip it draws in a little, and its sides wander and break
-into separate ropes, so a notch as wide as the lip shows rock beside it; lower down it widens again. Over its lower half it breaks up
-into clumps and bursts into billows of mist gathered round its foot, so it never lands and never
-ends in a line. Spray froths at the lip, and a plume of mist
+tears into lobes and wisps. Over its first meters it draws in to about a third of the lip's
+width, and its sides wander and break into separate ropes, so a notch as wide as the lip shows
+rock beside it. Over its lower half it breaks up into clumps and dissolves into a broad mist,
+about four times its width, that draws over its foot. So it never lands and never ends in a
+line. Spray froths at the lip, and a plume of mist
 rises at its foot.
 
 The sheet's material moves each streak with the water from the sketch's time alone. So the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
 the water speeds up. The fall is one closed column with an oval section. It is thin at the lip, and
-a few meters down it is nearly as deep as the creek is wide. Below that its front and back run
-nearly parallel. So the fall has a solid body from the side as well as from the front. Its outline
+a few meters down it is about as deep as the drawn-in water is wide. Below that its front and
+back run nearly parallel. So the fall has a solid body from the side as well as from the front.
+Its outline
 thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly off
 the column. White water scatters the light that reaches it from all round. So the column takes the
 sky's light as a surface facing up does, and it reads white. The scene's light lights the column,
@@ -293,7 +295,7 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `drop` | A number above 0, in meters | Required | How far the fall drops below the lip. The sheet thins into mist over the lower half of the drop |
 | `spread` | A number from 0 | 0.3 | How far each side of the sheet widens for each meter that the water falls. At 0.3 a creek 5 m wide that falls 13 m is about twice as wide halfway down |
 | `apron` | A number above 0, in meters | 1 | How far up the river the fall's water starts, lying on the river's surface. It fades in at uneven distances and covers the river's square end, so the water runs into the fall with no straight edge at the lip. Give the reach of the broken water before the brink |
-| `fadeBelow` | A number, in meters | None | The world height of a cloud sea, a fog bank or a mist that the fall drops into. A cloud that draws before the fall does not hide it, so below this height the fall vanishes itself over 6 m, each clump at its own depth. The water breaks up and bursts into mist over the part of the drop above it |
+| `fadeBelow` | A number, in meters | None | The world height of a cloud sea, a fog bank or a mist that the fall drops into. A cloud that draws before the fall does not hide it, so below this height the fall vanishes itself over 2.5 m, each clump at its own depth. The water breaks up and bursts into mist over the part of the drop above it |
 | `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles, and neither `@null3d/particles` nor the engine's particle code loads |
 | `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
 | `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |
@@ -402,7 +404,9 @@ near the eye and spends its vertices far away.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
 - **A waterfall.** It draws one blended mesh, a closed column of just over 2,000 triangles at the
   default detail. It adds four particle systems. They are a froth at the lip, the drops thrown off
-  the column, the mist that the fall bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The column reads the copy
+  the column, the mist that the fall dissolves into, and the plume at its foot. For a fall 2.5 m
+  wide that drops 10 m, each holds a few hundred large puffs at most; a taller or wider fall makes
+  more. The column reads the copy
   of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
   phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a
