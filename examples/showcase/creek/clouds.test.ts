@@ -15,7 +15,7 @@ import {
 	streakField,
 	wallData,
 } from './clouds';
-import { CLOUD_TOP, LIPS, rimRadius, streamCurrent, streamSlope, streamZ, WATER } from './land';
+import { CLOUD_TOP, FALL, LIPS, rimRadius, streamSlope, streamZ, WATER } from './land';
 
 /** A small map, quick to build, with the same domes as the real ones. */
 const SIZE = 64;
@@ -142,7 +142,7 @@ describe("the falls' feet in the cloud", () => {
 			const away = Math.sign(lip);
 			const [dx, dz] = [away, away * streamSlope(lip)];
 			const length = Math.hypot(dx, dz);
-			const [out] = drawnOut(Math.hypot(...streamCurrent(lip - away * 0.3)), WATER - CLOUD_TOP);
+			const [out] = drawnOut(FALL.speed, WATER - CLOUD_TOP);
 			const [x, z] = fallFoot(lip);
 			expect(Math.abs(x - (lip + (dx / length) * out))).toBeLessThan(0.03);
 			expect(Math.abs(z - (streamZ(lip) + (dz / length) * out))).toBeLessThan(0.03);

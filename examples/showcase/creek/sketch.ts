@@ -53,7 +53,7 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { DUSK_SKY, duskSkyStrength, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createDuskSky, SPRAY, sprayLight as sprayLightOf } from './lights';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
@@ -131,7 +131,11 @@ const params = new URL(import.meta.url).searchParams;
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
-/** The parts of the scene that the address leaves out, for a bisect or a measure by difference. */
+/**
+ * The parts of the scene that the address leaves out, any of `plants`, `water` and `fog`, for a
+ * bisect or a measure by difference. Without fog, the mist over the water goes too, as the HUD's fog
+ * switch takes it.
+ */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 /**
  * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
@@ -201,6 +205,13 @@ const WATER_REACH = 1.36;
  * runs on past it over the rim.
  */
 const WATER_AT_LIP = FALL.width;
+/**
+ * The air's haze: its density at the cloud's tops, and how fast it thins above them, by a factor of
+ * e every 1 / falloff meters. It lies thick over the cloud sea and the cliff's lower face, as it did
+ * as an even haze, and thin over the garden, so the garden's colors read about alike from 10 m and
+ * from the opening camera's 45 m: under one part in a hundred of each pixel is haze there.
+ */
+const AIR = { density: 0.0215, falloff: 0.35 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
@@ -415,7 +426,8 @@ export default defineSketch(async (ctx) => {
 	// The garden opens on a soft morning under heavy cloud, with the air thick over the cloud sea.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
-		fogDensity: 0.0025,
+		fogDensity: AIR.density,
+		fogHeight: { height: CLOUD_TOP, falloff: AIR.falloff },
 		cloudCoverage: 0.95,
 		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
 		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
@@ -454,17 +466,13 @@ export default defineSketch(async (ctx) => {
 		light();
 	});
 	// The dusk's own sky light, which only Dusk turns up.
-	const duskSky = scene.createHemisphereLight({
-		skyColor: DUSK_SKY.sky,
-		groundColor: DUSK_SKY.ground,
-		intensity: 0,
-	});
+	const duskSky = createDuskSky(scene);
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
-		duskSky.setIntensity(duskSkyStrength(look));
+		duskSky.setLook(look);
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
@@ -488,7 +496,7 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			fog: !WITHOUT.has('fog'),
 			shafts: false,
 			fireflies: false,
 			shadows: true,
