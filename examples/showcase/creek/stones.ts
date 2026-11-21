@@ -43,9 +43,10 @@ const SHALLOW = 0.32;
 const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /**
  * How each wake strays from the current: its slant from it at the stone and its bend at each link,
- * in radians at the most, and its least length as a share of the longest.
+ * in radians at the most; its least length as a share of the longest; the current under which a
+ * stone leaves none, and the current at which its wake reaches full length, in meters a second.
  */
-const WAKE = { slant: 0.35, bend: 0.06, shortest: 0.45 } as const;
+const WAKE = { slant: 0.35, bend: 0.06, shortest: 0.45, still: 0.015, full: 0.25 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -128,15 +129,18 @@ const BANK = {
 } as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
- * along the creek its rocks spread, and how many stand in it. One lies on the west sill, one below
- * it and two upstream of it, so the west arm runs white along its length; the east sill lies on
- * the camera's dip and stays clear.
+ * along the creek its rocks spread, how many stand in it, and the share of the creek's width they
+ * span, from one side to the other (-1 to 1). Four lie on the west arm, so it runs white along its
+ * length; and one just past each end of the pool, where its water leaves it shallow enough to
+ * break white. The east sill lies on the camera's dip and stays clear.
  */
-const RIFFLES: readonly (readonly [number, number, number])[] = [
-	[-14, 1.2, 8],
-	[-11.5, 1.8, 12],
-	[-8.8, 1.2, 10],
-	[-6.5, 1.4, 10],
+const RIFFLES: readonly (readonly [number, number, number, number, number])[] = [
+	[-14, 1.2, 8, -0.8, 0.8],
+	[-11.5, 1.8, 12, -0.8, 0.8],
+	[-8.8, 1.2, 10, -0.8, 0.8],
+	[-6.5, 1.4, 10, -0.8, 0.8],
+	[-5.6, 0.7, 6, -0.7, 0.7],
+	[1.8, 0.7, 6, -0.7, 0.7],
 ];
 
 /** True for a point that lies inside the rim by at least `margin` meters. */
@@ -189,10 +193,10 @@ export function rockPlaces(): StonePlace[] {
 		const x = from + (to - from) * next();
 		add(x, (next() < 0.5 ? -1 : 1) * (1.4 + 0.8 * next()), 0.2 + 0.5 * next(), 'broken');
 	}
-	for (const [middle, spread, count] of RIFFLES)
+	for (const [middle, spread, count, near, far] of RIFFLES)
 		for (let k = 0; k < count; k++) {
 			const x = middle + (next() * 2 - 1) * spread;
-			const across = ((k + 0.5) / count) * 1.6 - 0.8 + (next() - 0.5) * 0.15;
+			const across = near + ((k + 0.5) / count) * (far - near) + (next() - 0.5) * 0.15;
 			add(x, across, 0.42 + 0.25 * next(), 'broken');
 		}
 	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge. Each
@@ -302,10 +306,15 @@ export function createStones(
 					// rather than run side by side; a stone in still water leaves none.
 					const [vx, vz] = streamCurrent(x, z);
 					const speed = Math.hypot(vx, vz);
-					if (speed > 0.05) {
+					if (speed > WAKE.still) {
 						const slant = (next() * 2 - 1) * WAKE.slant;
 						const bend = (next() * 2 - 1) * WAKE.bend;
-						const links = Math.round(TRAIL.links * (WAKE.shortest + (1 - WAKE.shortest) * next()));
+						// A slow current carries a short wake, a quick one a long wake.
+						const reach = Math.min(1, speed / WAKE.full);
+						const links = Math.max(
+							2,
+							Math.round(TRAIL.links * reach * (WAKE.shortest + (1 - WAKE.shortest) * next())),
+						);
 						let [px, pz] = [x, z];
 						let angle = Math.atan2(vz, vx) + slant;
 						for (let k = 0; k <= links; k++) {
