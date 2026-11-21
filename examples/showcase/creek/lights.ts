@@ -16,7 +16,7 @@ export const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.0
  * lilac grey and from the ground in its shade, at this strength in Dusk alone and none in any other
  * mood.
  */
-export const DUSK_SKY = { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.26 } as const;
+export const DUSK_SKY = { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.38 } as const;
 
 /**
  * Writes the light on the falls' spray for an air color into `out`: the air greyed toward its
