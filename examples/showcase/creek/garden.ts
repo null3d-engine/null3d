@@ -98,8 +98,11 @@ const LEDGE = { long: 5, wide: 3.4, rise: 0.4, foot: 0.35, rough: 0.07, points: 
 
 /** Where the statue stands: the terrace's middle, facing down its flights. */
 const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
-/** The placed statue and slab's size, against the model's own. */
-const STATUE_SIZE = 1;
+/**
+ * The placed statue and slab's size against the model's own: a little under it, so the statue reads
+ * as large against the garden from the opening view as the concept's does.
+ */
+const STATUE_SIZE = 0.97;
 /** How far the slab model's rim stands below its own origin, in meters at its own size. */
 const SLAB_FOOT = 0.05;
 
