@@ -80,10 +80,14 @@ test('the air grows with distance over the garden and lies thick over the cloud 
 	const farRim = airShare(density, WIDE, [-20, 0.5, 0]);
 	const farCliff = airShare(density, WIDE, [-22, -8, 5]);
 	const clouds = airShare(density, WIDE, [-60, CLOUD_TOP, -40]);
-	expect(close, 'the close view').toBeLessThan(0.03);
+	expect(close, 'the close view').toBeLessThan(0.04);
 	expect(bank, 'the front bank from the opening camera').toBeGreaterThan(close);
-	expect(bank, 'the front bank from the opening camera').toBeLessThan(0.08);
+	expect(bank, 'the front bank from the opening camera').toBeLessThan(0.1);
 	expect(farRim, "the garden's far rim").toBeGreaterThan(bank);
 	expect(farCliff, 'the far cliff').toBeGreaterThan(farRim);
 	expect(clouds, "the cloud's tops at 120 m").toBeGreaterThan(0.3);
+	// The far cliff wall takes more air than the near wall's lower face, so it reads lighter.
+	const nearWall = airShare(density, WIDE, [12, -12, 26]);
+	const farWall = airShare(density, WIDE, [27, -4, 0]);
+	expect(farWall, 'the far wall against the near').toBeGreaterThan(nearWall);
 });

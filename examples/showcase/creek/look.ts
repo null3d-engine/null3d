@@ -36,13 +36,13 @@ fn toneCurve(color: vec3f) -> vec3f {
 
 /**
  * The air: its density at the cloud's tops, how fast it thins above them, by a factor of e every
- * 1 / falloff meters, and how far its color moves toward a grey. It lies thick over the cloud sea
- * and the cliff's lower face, and grows with distance over the garden, a few parts in a hundred of
- * each pixel by the opening camera's 45 m and more toward the far wall, so far colors read weaker
- * and the far wall lighter, as the concept's do. Its near-neutral grey weakens them without the
- * sky's blue.
+ * 1 / falloff meters, and how far its color moves toward a grey. It thins only gently with height,
+ * so it grows with distance more than with depth: under a tenth of each pixel by the opening
+ * camera's 45 m, more on the far cliff wall than on the near wall's lower face, so far colors read
+ * weaker and the far wall lighter, as the concept's do, and it keeps its share over the cloud sea.
+ * Its near-neutral grey weakens far colors without the sky's blue.
  */
-export const AIR = { density: 0.0086, falloff: 0.12, grey: 0.9 } as const;
+export const AIR = { density: 0.0043, falloff: 0.05, grey: 0.9 } as const;
 
 /** The Creek's stage options, the air's among them. */
 export const STAGE: StageOptions = {
@@ -52,6 +52,9 @@ export const STAGE: StageOptions = {
 	fogGrey: AIR.grey,
 	cloudCoverage: 0.95,
 	haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
+	// The low sun of dawn and golden hour keeps its long shadows and the sky its warmth, but its own
+	// light is less saturated, so the land stays olive and gold with some green under it.
+	sunGrey: { Dawn: 0.6, Golden: 0.6 },
 	// The cloud above and the cloud below both fill the garden with soft light: the sun's own light
 	// is weakened and the sky's share grows, so the shadows stay soft, and the picture opens up past
 	// the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as the
