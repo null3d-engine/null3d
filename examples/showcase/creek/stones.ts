@@ -119,9 +119,8 @@ const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
-/** The stones in the current, and the stones scattered on the banks away from the water. */
+/** The stones in the current. */
 const IN_CURRENT = 56;
-const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
 /**
@@ -174,7 +173,7 @@ export interface StonePlace {
 
 /**
  * Where rocks stand: a continuous row of rounded stones along each bank, touching each other; broken
- * stones in the current, across the riffles and on the banks; and at each lip, rock shoulders either
+ * stones in the current and across the riffles; and at each lip, rock shoulders either
  * side of the narrowed creek, with stones in it where the water piles up white before it drops.
  * Every rock stands wholly inside the rim.
  */
@@ -202,10 +201,6 @@ export function rockPlaces(): StonePlace[] {
 		const across =
 			x > DIP_REACH[0] && x < DIP_REACH[1] ? 0.35 + 0.25 * next() : (next() * 2 - 1) * 0.5;
 		add(x, across, 0.5 + 0.3 * next(), 'broken');
-	}
-	for (let k = 0; k < SCATTERED; k++) {
-		const x = from + (to - from) * next();
-		add(x, (next() < 0.5 ? -1 : 1) * (1.4 + 0.8 * next()), 0.2 + 0.5 * next(), 'broken');
 	}
 	for (const [middle, spread, count, near, far] of RIFFLES)
 		for (let k = 0; k < count; k++) {
