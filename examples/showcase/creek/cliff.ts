@@ -34,15 +34,19 @@ const TILT = 0.45;
  */
 const UNDERCUT = 0.55;
 /**
- * How far the rock stands back under each lip, in meters at the least, so a fall leaving the lip
- * drops clear of the wall; the shares of the creek's half width where the water shows at the lip,
- * where the water's sheet runs on under the banks and the rock stands flush, and where no buttress
- * may stand proud enough to hide the fall; how far the rock stands proud there, in meters, and
- * the share of any crag past that which folds back into the wall as a hollow instead.
+ * The notch under each lip: how far the rock stands back under the fall, in meters at the least, so
+ * the water drops clear of the wall; the share of the creek's half width that the fall takes, as
+ * the sketch gives it; how far the notch reaches past the fall on each side, in meters, as agreed
+ * with the water add-on's falls, and how far its ledge in that margin stands back; the shares of
+ * the half width where the water's sheet runs on under the banks and the rock stands flush, and
+ * where no buttress may stand proud enough to hide the fall; how far the rock stands proud there,
+ * in meters, and the share of any crag past that which folds back into the wall as a hollow instead.
  */
 const LIP_RECESS = {
 	back: 0.9,
-	water: 1.3,
+	fall: 0.9,
+	margin: 0.4,
+	ledge: 0.35,
 	sheet: 1.45,
 	clear: 3,
 	proud: 0.15,
@@ -261,7 +265,7 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// it, under the banks, where the water's sheet runs on under the ground, the rock stands
 			// flush, so the sheet stays inside it; and on round, no buttress stands proud enough to
 			// hide the fall.
-			const { water, sheet, clear } = lipShares(x, z);
+			const { fall, notch, sheet, clear } = lipShares(x, z);
 			const raw = offset + UNDERCUT;
 			// A crag that would stand proud folds back into the wall as a hollow, so the face beside the
 			// fall stays broken and still never stands out far enough to hide it.
@@ -277,7 +281,10 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			const broken = pressed - LIP_BREAK.fissure * fissure - LIP_BREAK.ledge * (ledge + 0.5);
 			const capped = offset + (Math.min(broken, pressed) - offset) * clear;
 			const flush = capped + (Math.max(pressed, 0) - capped) * sheet;
-			const shaped = flush + (Math.min(flush, -LIP_RECESS.back) - flush) * water;
+			// The notch: a ledge stepped back a little across the margin beside the fall, and the rock
+			// stood well back under the fall itself, so it drops clear with rock showing at both sides.
+			const ledged = flush + (Math.min(flush, -LIP_RECESS.ledge) - flush) * notch;
+			const shaped = ledged + (Math.min(ledged, -LIP_RECESS.back) - ledged) * fall;
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
 			const grow = smoothstep(depth, 0, 1.2);
 			const out = (shaped + FLARE * depth * (1 - clear)) * grow;
@@ -313,19 +320,24 @@ export function wallArrays(rim: Float32Array): MeshArrays {
  * shows at the lip; `sheet`, over the banks either side, where the water's sheet runs on under the
  * ground; and `clear`, on round the rim either side, where the fall must show past the rock.
  */
-function lipShares(x: number, z: number): { water: number; sheet: number; clear: number } {
-	let water = 0;
+function lipShares(
+	x: number,
+	z: number,
+): { fall: number; notch: number; sheet: number; clear: number } {
+	let fall = 0;
+	let notch = 0;
 	let sheet = 0;
 	let clear = 0;
 	for (const lip of [LIPS.west, LIPS.east]) {
 		const half = streamHalf(lip);
 		const reach = Math.hypot(x - lip, z - streamZ(lip));
 		const share = (from: number, over: number) => 1 - smoothstep(reach, from, from + over);
-		water = Math.max(water, share(half * LIP_RECESS.water, 0.25));
+		fall = Math.max(fall, share(half * LIP_RECESS.fall, 0.15));
+		notch = Math.max(notch, share(half * LIP_RECESS.fall + LIP_RECESS.margin, 0.15));
 		sheet = Math.max(sheet, share(half * LIP_RECESS.sheet, 0.8));
 		clear = Math.max(clear, share(half * LIP_RECESS.clear, 3));
 	}
-	return { water, sheet, clear };
+	return { fall, notch, sheet, clear };
 }
 
 /**
