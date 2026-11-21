@@ -53,6 +53,7 @@ import {
 } from './land';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
+import { createSteps } from './steps';
 import { createStones, type Obstacle } from './stones';
 
 // The camera route, which this scene's frames and the shared route check both read.
@@ -60,16 +61,17 @@ export { SHOTS };
 
 /**
  * The detail that each preset builds at the start: the land's quads, which also set the walls'
- * columns, texture sizes, the rocks' subdivisions and the water's columns.
+ * columns, texture sizes, the rocks' subdivisions, the water's columns and the foam map's texels
+ * along the creek.
  */
 const DETAIL: Record<
 	QualityPreset,
-	{ land: number; texture: number; rock: number; water: number }
+	{ land: number; texture: number; rock: number; water: number; foam: number }
 > = {
-	low: { land: 160, texture: 256, rock: 2, water: 160 },
-	medium: { land: 224, texture: 512, rock: 3, water: 240 },
-	high: { land: 256, texture: 512, rock: 3, water: 300 },
-	ultra: { land: 320, texture: 1024, rock: 3, water: 360 },
+	low: { land: 160, texture: 256, rock: 2, water: 160, foam: 1024 },
+	medium: { land: 224, texture: 512, rock: 3, water: 240, foam: 1536 },
+	high: { land: 256, texture: 512, rock: 3, water: 300, foam: 2048 },
+	ultra: { land: 320, texture: 1024, rock: 3, water: 360, foam: 2048 },
 };
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -156,6 +158,21 @@ const EFFECTS = params.get('effects') === 'on';
 const GUST_STRENGTH = Number(params.get('gust')) || 0;
 const GUST_SEND_AT = Number(params.get('gust-at')) || 0;
 /**
+ * A fixed view that the address names, as six numbers: the camera's place, then the point it looks
+ * at. A picture of a part that the route passes only from afar, such as the steps, names one; the
+ * route still runs under it.
+ */
+const VIEW = fixedView(params.get('view'));
+
+/** The six numbers of a `view` address, or undefined, with a warning, when it is not six numbers. */
+function fixedView(text: string | null): readonly number[] | undefined {
+	if (text === null) return undefined;
+	const values = text.split(',').map(Number);
+	if (values.length === 6 && values.every(Number.isFinite)) return values;
+	console.warn(`creek: view= takes six numbers, the camera's x,y,z then its target's; got ${text}`);
+	return undefined;
+}
+/**
  * True draws the scene from just above the stream, looking along it, so the picture shows the
  * water's surface close up. The picture tests ask for it; the demo and its route never do.
  */
@@ -175,16 +192,22 @@ const WATER_ROWS = 56;
 /** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
 const WATER_REACH = 1.36;
 /**
- * Each lip's fall: how far it drops, into the cloud, where it thins away; how far each side widens
+ * Each lip's fall: how far it drops, so its mist bursts just above the cloud's tops; how far each side widens
  * per meter fallen, so it fans out down the drop; and the share of the creek's half width that
  * leaves over the lip: the water that shows there, between the lip's shoulders.
  */
-const FALL = { drop: 22, spread: 0.12, width: 0.9 } as const;
+const FALL = { drop: 17, spread: 0.12, width: 0.9 } as const;
 /**
  * How far the sheet reaches at each lip, in half widths: as far as the fall, so no edge of the sheet
  * runs on past it over the rim.
  */
 const WATER_AT_LIP = FALL.width;
+/**
+ * The warm fill light that the garden takes from the overcast, beside the sky map's own blue-grey
+ * light, as the concept's warm light shows on the statue's chest and the rock: its colour from above
+ * and from the ground, as linear shares, and its strength for each unit of the air's brightness.
+ */
+const FILL = { sky: [1, 0.84, 0.62], ground: [0.5, 0.36, 0.2], gain: 8 } as const;
 /**
  * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
  * cast, its strength over the air's, and the least change of the air that it follows.
@@ -192,9 +215,9 @@ const WATER_AT_LIP = FALL.width;
 const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.01 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
-/** The foam map's box on the ground, over the whole creek, and its texels. */
 /** How far the foam reaches round each mark of the foam map, in meters. */
 const FOAM_REACH = 0.35;
+/** The foam map's box on the ground, over the whole creek. */
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
 /**
@@ -208,6 +231,7 @@ const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2,
 function createCreekWater(
 	ctx: SketchContext,
 	columns: number,
+	foamTexels: number,
 	obstacles: readonly Obstacle[],
 	alwaysReflect: boolean,
 	reflectScale: 0.25 | 0.5 | 1 | undefined,
@@ -247,20 +271,20 @@ function createCreekWater(
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#3e9e92',
-			attenuationDistance: 0.6,
+			attenuationColor: '#4f9a96',
+			attenuationDistance: 1.2,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,
 		},
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
-		// round marks with no stretch of its own: a trail as long as the reach adds none. Its texels
-		// are 2 cm, so no step shows in the foam's outline close up.
+		// round marks with no stretch of its own: a trail as long as the reach adds none. On High its
+		// texels are 2 cm, so no step shows in the foam's outline close up.
 		foam: foamMap(ctx, obstacles, {
 			origin: FOAM_BOX.origin,
 			size: FOAM_BOX.size,
-			width: 2048,
-			height: 576,
+			width: foamTexels,
+			height: Math.round((foamTexels * FOAM_BOX.size[1]) / FOAM_BOX.size[0]),
 			reach: FOAM_REACH,
 			trail: FOAM_REACH,
 		}),
@@ -337,13 +361,15 @@ export default defineSketch(async (ctx) => {
 	const clouds = await createClouds(ctx, quality.preset);
 	page.post('loading', 'Setting the statue, the gate and the stones');
 	const models = await loadGarden(ctx);
-	createGarden(ctx, models);
-	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders[2]);
+	createGarden(ctx, models, detail.texture);
+	createSteps(ctx, detail.rock, detail.texture);
+	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders);
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
 				ctx,
 				detail.water,
+				detail.foam,
 				stones.obstacles,
 				ALWAYS_REFLECT,
 				REFLECT_SCALE as 0.25 | 0.5 | 1 | undefined,
@@ -388,13 +414,13 @@ export default defineSketch(async (ctx) => {
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
 		fogDensity: 0.0025,
-		cloudCoverage: 0.75,
+		cloudCoverage: 0.95,
 		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
 		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
 		// light is weak and the sky's share grows, so the shadows stay soft, and the picture opens up
 		// past the clear sky's exposure.
 		exposureScale: 3.2,
-		environmentScale: 2.2,
+		environmentScale: 1.4,
 		sunScale: 0.35,
 		backdrop: [0.02, 0.03, 0.05],
 	});
@@ -507,6 +533,13 @@ export default defineSketch(async (ctx) => {
 	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
 	const sprayLight: [number, number, number] = [0, 0, 0];
 	const sprayAir: [number, number, number] = [-1, -1, -1];
+	// The warm fill from the overcast above and the earth below, which the sky map's blue-grey light
+	// lacks: its strength follows the air's brightness, so it dims with the hour.
+	const fill = scene.createHemisphereLight({
+		skyColor: FILL.sky,
+		groundColor: FILL.ground,
+		intensity: 0,
+	});
 	const lightFalls = () => {
 		const air = stage.airColor;
 		const moved =
@@ -521,6 +554,7 @@ export default defineSketch(async (ctx) => {
 				(grey + (air[c] - grey) * SPRAY.color) * (SPRAY.tint[c] as number) * SPRAY.gain;
 		}
 		for (const fall of falls) fall.setLight(sprayLight);
+		fill.setIntensity(FILL.gain * grey);
 	};
 	// The clouds and the falls take the air's color now too, since a held frame runs no update.
 	clouds.update(stage.airColor, stage.light);
@@ -582,6 +616,11 @@ export default defineSketch(async (ctx) => {
 			}
 			// The cascade probe times one view, so its route holds the opening pose.
 			film.update(CASCADE_PROBE || STILL_ROUTE ? 0 : dt);
+			if (VIEW) {
+				const [px, py, pz, tx, ty, tz] = VIEW as [number, number, number, number, number, number];
+				camera.setPosition(px, py, pz);
+				camera.lookAt(tx, ty, tz);
+			}
 			// After the camera moves, so the view under the water turns the frame the camera dips.
 			underwater?.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
