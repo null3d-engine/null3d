@@ -460,9 +460,11 @@ by design, and that fade drew the lip as a ruler line where the water left the s
 itself is uneven: each place across turns down up to 0.35 m past the lip's line, front and back
 alike, so the column keeps its depth. Below the lip the water draws in by about a fifth of its width
 over the first meters, and each side wanders in and out on its own, before the spread widens it
-again. So a notch as wide as the lip shows rock at both edges of the falling water. Seen from the
-front, the column's sides break into separate ropes as it falls; the ends of its oval, which a side
-view looks at, stay whole. A fall may give the height of a cloud that it drops into
+again. Seen from the front, the outermost water also thins away over the first meters, and the
+column's sides break into separate ropes, front and back alike, so the rock shows through. So a
+notch as wide as the lip shows rock at both edges of the falling water. A view along the lip,
+which sees the ends of the oval face on, keeps them whole; the material learns the lip's direction
+across the water for that. A fall may give the height of a cloud that it drops into
 (`fadeBelow`). The Creek's cloud draws before the blended objects and cannot hide a fall, so below
 that height the fall vanishes itself over 2.5 m, each clump at its own depth. The mesh's texture coordinates carry each point's place across the lip and
 the time since its water crossed it. The material's noise reads those two. So every streak rides

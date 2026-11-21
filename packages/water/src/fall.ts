@@ -149,11 +149,11 @@ export function brinkAt(across: number, out: [shift: number, slope: number]): vo
 }
 
 /** The share of the lip's width that the falling water draws in over its first meters. */
-export const NARROW = 0.22;
+export const NARROW = 0.3;
 /** The meters that the water falls before it has drawn in most of that share, as a scale. */
-const NARROW_GROWTH = 3;
+const NARROW_GROWTH = 1.5;
 /** How far each side of the column wanders in and out as it falls, as a share of the lip's width. */
-export const WOBBLE = 0.08;
+export const WOBBLE = 0.1;
 
 /**
  * Half the column's width on one side, after the water has fallen `fallen` meters, and its rate

@@ -107,6 +107,15 @@ describe('a waterfall’s fade into a cloud', () => {
 		expect(open.shaders[0]?.uniforms.fadeBelow as number).toBeLessThan(-1e6);
 	});
 
+	it('tells its material the lip’s direction across the water, to its right', async () => {
+		const { shaders } = await fallWith({ direction: [0, -2], spray: 0 });
+		const across = shaders[0]?.uniforms.across as number[];
+		// Water running along -z has its right toward +x, as the column's mesh lays it out.
+		expect(across[0]).toBeCloseTo(1, 9);
+		expect(across[1]).toBe(0);
+		expect(across[2]).toBeCloseTo(0, 9);
+	});
+
 	it('refuses a height that is not a number', async () => {
 		await expect(fallWith({ fadeBelow: Number.NaN, spray: 0 })).rejects.toThrow(/fadeBelow/);
 	});

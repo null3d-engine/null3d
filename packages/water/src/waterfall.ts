@@ -166,6 +166,12 @@ function sprayAmount(amount: number): number {
 	return amount;
 }
 
+/** The lip's direction across the water, to its right, as a unit vector in the world. */
+function acrossOf(direction: WaterPoint): [number, number, number] {
+	const length = Math.hypot(direction[0], direction[1]);
+	return [-direction[1] / length, 0, direction[0] / length];
+}
+
 /** The height below which a fall vanishes, from its options: far below any scene when none is given. */
 function sinkHeight(height: number | undefined): number {
 	if (height === undefined) return NO_FADE;
@@ -233,6 +239,7 @@ export async function createWaterfall(
 			apron: (sheet.apron ?? APRON) / speed,
 			halfWidth: sheet.halfWidth,
 			fadeBelow: sinkHeight(options.fadeBelow),
+			across: acrossOf(options.direction),
 		},
 	});
 	const mesh = scene.createMesh({

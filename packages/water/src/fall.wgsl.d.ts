@@ -11,6 +11,7 @@ declare const shader: CompiledMaterial<
 		readonly apron: 'f32';
 		readonly halfWidth: 'f32';
 		readonly fadeBelow: 'f32';
+		readonly across: 'vec3f';
 	},
 	never
 >;
