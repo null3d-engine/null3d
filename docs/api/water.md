@@ -152,11 +152,13 @@ from 1 at its edge to 0 a little way off. It stretches that reach downstream, so
 | `origin`, `size` | Two numbers each, in meters | Required | The world area that the map covers |
 | `width`, `height` | Texels | 1024, 224 | The map's texels along x and along z |
 | `reach` | A finite number above 0, in meters | 0.35 | How far the foam reaches around a mark that gives no reach of its own |
-| `trail` | A number above 0, in meters | 1.6 | How far downstream the foam trails behind a mark. 0 leaves a ring |
+| `trail` | A number, in meters | 1.6 | How far downstream the foam trails behind a mark. 0 or less leaves a ring |
 
 A mark takes a `reach` of its own, in meters, in place of the map's. So one water can foam further
 around some of its stones than around others. A mark without one keeps the map's reach. Give
 neither the map's reach nor the mark's and the call stops: a reach must be a finite number above 0.
+The foam reaches `trail × (1 + r / reach)` meters downstream of a mark, so a mark with a shorter
+reach trails further in proportion to its radius.
 
 ## Wind on the surface
 
