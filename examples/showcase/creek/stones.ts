@@ -45,10 +45,10 @@ const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /**
  * How each wake strays from the current: its slant from it at the stone and its bend at each link,
  * in radians at the most; its least length as a share of the longest; the current under which a
- * stone leaves none, and the current at which its wake reaches full length, in meters a second; and
- * the share of a full wake that a riffle's stone leaves, since riffle stones stand close together
- * and their full wakes would join into one white sheet; and the share that a stone in the east arm's
- * current leaves, where the concept's water runs clearer than in the west arm.
+ * stone leaves none, and the current at which its wake reaches full length, in meters a second; the
+ * share of a full wake that a riffle's stone leaves, since riffle stones stand close together and
+ * their full wakes would join into one white sheet; and the share that a lone stone in the current
+ * leaves, so each arm's foam lies in streaks with clear water between, as the concept's.
  */
 const WAKE = {
 	slant: 0.35,
@@ -57,13 +57,14 @@ const WAKE = {
 	still: 0.015,
 	full: 0.25,
 	riffle: 0.55,
-	east: 0.75,
+	current: 0.85,
 } as const;
 /**
- * The spring's boil in the pool: how many foam marks, how far they spread along the pool and across
- * it, and their sizes, in meters.
+ * The white water where the pool runs out into each arm: how many foam marks, half at each end;
+ * how far from the pool's middle they lie along it, from nearest to furthest, and how far across it
+ * at the most; and their sizes, all in meters.
  */
-const SPRING = { marks: 8, spread: [2.2, 1.1], size: [0.1, 0.3] } as const;
+const SPRING = { marks: 12, ends: [1.3, 2.2], across: 1.1, size: [0.1, 0.3] } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -147,8 +148,9 @@ const BANK = {
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, how many stand in it, and the share of the creek's width they
  * span, from one side to the other (-1 to 1). Four lie on the west arm, sparse enough that its
- * wakes break up with clear water between them; and one just past each end of the pool, where its water leaves it shallow enough to
- * break white. The east sill lies on the camera's dip and stays clear.
+ * wakes break up with clear water between them; and one just past each end of the pool, where its
+ * water leaves it shallow enough to break white. The east sill lies on the camera's dip and stays
+ * clear.
  */
 const RIFFLES: readonly (readonly [number, number, number, number, number])[] = [
 	[-14, 1.2, 5, -0.8, 0.8],
@@ -205,7 +207,7 @@ export function rockPlaces(): StonePlace[] {
 		// Where the camera's dip glides along the creek's north half, the stones keep to the south.
 		const across =
 			x > DIP_REACH[0] && x < DIP_REACH[1] ? 0.35 + 0.25 * next() : (next() * 2 - 1) * 0.5;
-		add(x, across, 0.5 + 0.3 * next(), 'broken', x > POOL.x ? WAKE.east : 1);
+		add(x, across, 0.5 + 0.3 * next(), 'broken', WAKE.current);
 	}
 	for (const [middle, spread, count, near, far] of RIFFLES)
 		for (let k = 0; k < count; k++) {
@@ -273,12 +275,13 @@ export function createStones(
 	const wet = materials.standard({ ...look, color: '#c2baa8', roughness: 0.8 });
 	const next = random(43);
 	const places = rockPlaces();
-	// The spring wells up white in the pool's middle: a boil of foam marks with no stone under them.
+	// The pool's water breaks white where it runs out into each arm: foam marks with no stone under
+	// them, half at each end of the pool, loosely placed so they read as no pattern.
 	const spring = random(49);
-	const obstacles: Obstacle[] = Array.from({ length: SPRING.marks }, () => {
-		// Loosely over the pool's length and a little across it, so the boil reads as no pattern.
-		const along = (spring() * 2 - 1) * SPRING.spread[0];
-		const across = (spring() * 2 - 1) * SPRING.spread[1];
+	const obstacles: Obstacle[] = Array.from({ length: SPRING.marks }, (_, k) => {
+		const end = k % 2 === 0 ? -1 : 1;
+		const along = end * (SPRING.ends[0] + (SPRING.ends[1] - SPRING.ends[0]) * spring());
+		const across = (spring() * 2 - 1) * SPRING.across;
 		return {
 			x: POOL.x + along,
 			z: streamZ(POOL.x + along) + across,
