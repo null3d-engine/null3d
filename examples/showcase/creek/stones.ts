@@ -44,9 +44,20 @@ const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /**
  * How each wake strays from the current: its slant from it at the stone and its bend at each link,
  * in radians at the most; its least length as a share of the longest; the current under which a
- * stone leaves none, and the current at which its wake reaches full length, in meters a second.
+ * stone leaves none, and the current at which its wake reaches full length, in meters a second; the
+ * share of a full wake that a riffle's stone leaves, since riffle stones stand close together and
+ * their full wakes would join into one white sheet; and the share that a lone stone in the current
+ * leaves, so each arm's foam lies in streaks with clear water between, as the concept's.
  */
-const WAKE = { slant: 0.35, bend: 0.06, shortest: 0.45, still: 0.015, full: 0.25 } as const;
+const WAKE = {
+	slant: 0.35,
+	bend: 0.06,
+	shortest: 0.45,
+	still: 0.015,
+	full: 0.25,
+	riffle: 0.55,
+	current: 0.85,
+} as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -67,8 +78,30 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	out.occlusion = 1 - 0.5 * crack;
 }
 
-/** Gives a rock's vertices colors: dark flecked stone, and moss where the rock faces up. */
-export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
+/** The linear colors of a mossy stone: its bare stone, and the moss that caps it. */
+export interface MossTones {
+	readonly stone: readonly [number, number, number];
+	readonly moss: readonly [number, number, number];
+}
+
+/** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
+const STONE_TONES: MossTones = { stone: [0.2, 0.17, 0.125], moss: [0.13, 0.115, 0.03] };
+/**
+ * The linear color of moss on a mesh that wears the rock texture, which darkens and warms it: it
+ * stands lighter and greener than it draws, so it draws as light as the ground's moss.
+ */
+export const TEXTURED_MOSS = [0.2, 0.2, 0.06] as const;
+
+/**
+ * Gives a rock's vertices colors: flecked stone, and moss where the rock faces up, in the creek's
+ * stone tones unless others are given.
+ */
+export function mossy(
+	arrays: MeshArrays,
+	seed: number,
+	cover: number,
+	{ stone, moss: mossTone }: MossTones = STONE_TONES,
+): MeshArrays {
 	const positions = arrays.positions as Float32Array;
 	const colors = new Float32Array(positions.length);
 	const local = new Noise(seed);
@@ -88,17 +121,13 @@ export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArra
 		// Warm grey-brown stone, with yellow-olive moss where it faces up.
 		for (let c = 0; c < 3; c++)
 			colors[v * 3 + c] =
-				shade *
-				((STONE_TONE[c] as number) + ((MOSS_TONE[c] as number) - (STONE_TONE[c] as number)) * moss);
+				shade * ((stone[c] as number) + ((mossTone[c] as number) - (stone[c] as number)) * moss);
 	}
 	return { ...arrays, colors };
 }
 
 /** The warm tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
 export const MOSS_MUTE = '#bab6a2';
-/** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
-const STONE_TONE = [0.2, 0.17, 0.125] as const;
-const MOSS_TONE = [0.13, 0.115, 0.03] as const;
 
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
@@ -107,9 +136,8 @@ const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
-/** The stones in the current, and the stones scattered on the banks away from the water. */
+/** The stones in the current. */
 const IN_CURRENT = 56;
-const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
 /**
@@ -130,15 +158,16 @@ const BANK = {
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, how many stand in it, and the share of the creek's width they
- * span, from one side to the other (-1 to 1). Four lie on the west arm, so it runs white along its
- * length; and one just past each end of the pool, where its water leaves it shallow enough to
- * break white. The east sill lies on the camera's dip and stays clear.
+ * span, from one side to the other (-1 to 1). Four lie on the west arm, sparse enough that its
+ * wakes break up with clear water between them; and one just past each end of the pool, where its
+ * water runs out into an arm shallow enough to break white, so the pool itself lies calm. The east
+ * sill lies on the camera's dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number, number, number])[] = [
-	[-14, 1.2, 8, -0.8, 0.8],
-	[-11.5, 1.8, 12, -0.8, 0.8],
-	[-8.8, 1.2, 10, -0.8, 0.8],
-	[-6.5, 1.4, 10, -0.8, 0.8],
+	[-14, 1.2, 5, -0.8, 0.8],
+	[-11.5, 1.8, 7, -0.8, 0.8],
+	[-8.8, 1.2, 6, -0.8, 0.8],
+	[-6.5, 1.4, 6, -0.8, 0.8],
 	[-5.6, 0.7, 6, -0.7, 0.7],
 	[1.8, 0.7, 6, -0.7, 0.7],
 ];
@@ -156,20 +185,22 @@ export interface StonePlace {
 	z: number;
 	size: number;
 	kind: StoneKind;
+	/** The share of a full wake's length and width that the stone leaves in the current. */
+	wake: number;
 }
 
 /**
  * Where rocks stand: a continuous row of rounded stones along each bank, touching each other; broken
- * stones in the current, across the riffles and on the banks; and at each lip, rock shoulders either
+ * stones in the current and across the riffles; and at each lip, rock shoulders either
  * side of the narrowed creek, with stones in it where the water piles up white before it drops.
  * Every rock stands wholly inside the rim.
  */
 export function rockPlaces(): StonePlace[] {
 	const next = random(41);
 	const places: StonePlace[] = [];
-	const add = (x: number, across: number, size: number, kind: StoneKind) => {
+	const add = (x: number, across: number, size: number, kind: StoneKind, wake = 1) => {
 		const z = streamZ(x) + across * streamHalf(x);
-		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size, kind });
+		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size, kind, wake });
 	};
 	const from = LIPS.west + LIP_CLEAR;
 	const to = LIPS.east - LIP_CLEAR;
@@ -187,17 +218,13 @@ export function rockPlaces(): StonePlace[] {
 		// Where the camera's dip glides along the creek's north half, the stones keep to the south.
 		const across =
 			x > DIP_REACH[0] && x < DIP_REACH[1] ? 0.35 + 0.25 * next() : (next() * 2 - 1) * 0.5;
-		add(x, across, 0.5 + 0.3 * next(), 'broken');
-	}
-	for (let k = 0; k < SCATTERED; k++) {
-		const x = from + (to - from) * next();
-		add(x, (next() < 0.5 ? -1 : 1) * (1.4 + 0.8 * next()), 0.2 + 0.5 * next(), 'broken');
+		add(x, across, 0.5 + 0.3 * next(), 'broken', WAKE.current);
 	}
 	for (const [middle, spread, count, near, far] of RIFFLES)
 		for (let k = 0; k < count; k++) {
 			const x = middle + (next() * 2 - 1) * spread;
 			const across = near + ((k + 0.5) / count) * (far - near) + (next() - 0.5) * 0.15;
-			add(x, across, 0.42 + 0.25 * next(), 'broken');
+			add(x, across, 0.42 + 0.25 * next(), 'broken', WAKE.riffle);
 		}
 	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge. Each
 	// stands back from the lip by its own foot's reach, so it stays wholly on the cliff.
@@ -283,7 +310,7 @@ export function createStones(
 				castShadows: true,
 				receiveShadows: true,
 			});
-			group.forEach(({ x, z, size, yaw: turn }, row) => {
+			group.forEach(({ x, z, size, wake, yaw: turn }, row) => {
 				// A stone in the current sits up on the bed; one on the bank sinks into the ground.
 				const inStream = fromStream(x, z) < IN_STREAM;
 				const y = groundHeight(x, z) - size * (inStream ? 0.05 : 0.2);
@@ -313,7 +340,9 @@ export function createStones(
 						const reach = Math.min(1, speed / WAKE.full);
 						const links = Math.max(
 							2,
-							Math.round(TRAIL.links * reach * (WAKE.shortest + (1 - WAKE.shortest) * next())),
+							Math.round(
+								TRAIL.links * reach * wake * (WAKE.shortest + (1 - WAKE.shortest) * next()),
+							),
 						);
 						let [px, pz] = [x, z];
 						let angle = Math.atan2(vz, vx) + slant;
@@ -323,7 +352,7 @@ export function createStones(
 							pz += Math.sin(angle) * step;
 							angle += bend;
 							const spread = Math.min(1, 0.4 + 0.15 * k) * (1 - k / (links + 1));
-							obstacles.push({ x: px, z: pz, r: r * TRAIL.width * spread });
+							obstacles.push({ x: px, z: pz, r: r * TRAIL.width * wake * spread });
 						}
 					}
 				}
