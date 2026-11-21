@@ -47,7 +47,8 @@ const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
  * in radians at the most; its least length as a share of the longest; the current under which a
  * stone leaves none, and the current at which its wake reaches full length, in meters a second; and
  * the share of a full wake that a riffle's stone leaves, since riffle stones stand close together
- * and their full wakes would join into one white sheet.
+ * and their full wakes would join into one white sheet; and the share that a stone in the east arm's
+ * current leaves, where the concept's water runs clearer than in the west arm.
  */
 const WAKE = {
 	slant: 0.35,
@@ -55,10 +56,14 @@ const WAKE = {
 	shortest: 0.45,
 	still: 0.015,
 	full: 0.25,
-	riffle: 0.65,
+	riffle: 0.55,
+	east: 0.75,
 } as const;
-/** The spring's boil in the pool: how many foam marks, how far they spread, and their sizes, in meters. */
-const SPRING = { marks: 9, spread: 1.2, size: [0.14, 0.3] } as const;
+/**
+ * The spring's boil in the pool: how many foam marks, how far they spread along the pool and across
+ * it, and their sizes, in meters.
+ */
+const SPRING = { marks: 8, spread: [2.2, 1.1], size: [0.1, 0.3] } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -200,7 +205,7 @@ export function rockPlaces(): StonePlace[] {
 		// Where the camera's dip glides along the creek's north half, the stones keep to the south.
 		const across =
 			x > DIP_REACH[0] && x < DIP_REACH[1] ? 0.35 + 0.25 * next() : (next() * 2 - 1) * 0.5;
-		add(x, across, 0.5 + 0.3 * next(), 'broken');
+		add(x, across, 0.5 + 0.3 * next(), 'broken', x > POOL.x ? WAKE.east : 1);
 	}
 	for (const [middle, spread, count, near, far] of RIFFLES)
 		for (let k = 0; k < count; k++) {
@@ -271,12 +276,13 @@ export function createStones(
 	// The spring wells up white in the pool's middle: a boil of foam marks with no stone under them.
 	const spring = random(49);
 	const obstacles: Obstacle[] = Array.from({ length: SPRING.marks }, () => {
-		const angle = spring() * Math.PI * 2;
-		const out = SPRING.spread * Math.sqrt(spring());
+		// Loosely over the pool's length and a little across it, so the boil reads as no pattern.
+		const along = (spring() * 2 - 1) * SPRING.spread[0];
+		const across = (spring() * 2 - 1) * SPRING.spread[1];
 		return {
-			x: POOL.x + Math.cos(angle) * out,
-			z: streamZ(POOL.x) + Math.sin(angle) * out,
-			r: SPRING.size[0] + (SPRING.size[1] - SPRING.size[0]) * spring(),
+			x: POOL.x + along,
+			z: streamZ(POOL.x + along) + across,
+			r: SPRING.size[0] + (SPRING.size[1] - SPRING.size[0]) * spring() ** 2,
 		};
 	});
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
