@@ -205,13 +205,12 @@ fn leave_disc(eye: vec2f, dir: vec2f, r: f32) -> f32 {
     return (-b + sqrt(max(b * b - a * c, 0.0))) / a;
 }
 
-/// How thick the cloud is at a point, as the billows' body and the mist apart: the body starts as
-/// a thin haze a little over its top, so a ray that grazes a billow takes some of it rather than
-/// all or none, thickens over its top meters, softer far off, and frays where its edge is eaten.
+/// How thick the cloud is at a point, as the billows' body and the mist apart: the body thickens
+/// over its top meters, softer far off, and frays where its edge is eaten.
 fn density_of(p: vec3f, here: vec4f, t: f32) -> vec2f {
     let soft = 2.2 + t * 0.012;
     let inside = here.x - p.y - here.w * 1.8;
-    return vec2f(smoothstep(-0.8 - t * 0.01, soft, inside) * 1.4, here.y * 0.45);
+    return vec2f(smoothstep(-0.3, soft, inside) * 1.4, here.y * 0.45);
 }
 
 fn unlit(input: SurfaceInput) -> vec4f {
