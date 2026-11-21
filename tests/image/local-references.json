@@ -95,6 +95,12 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
+	"chromium-swiftshader/compat/demo-water.png": {
+		"test": "demo-water",
+		"tier": "compat",
+		"date": "2026-11-21",
+		"reason": "the foam's tail now runs to the fade's own end; drawn here so the branch is green until CI draws the set"
+	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -358,6 +364,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/webgl2/demo-water.png": {
+		"test": "demo-water",
+		"tier": "webgl2",
+		"date": "2026-11-21",
+		"reason": "the foam's tail now runs to the fade's own end; drawn here so the branch is green until CI draws the set"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -664,6 +676,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
+	},
+	"chromium-swiftshader/webgpu/demo-water.png": {
+		"test": "demo-water",
+		"tier": "webgpu",
+		"date": "2026-11-21",
+		"reason": "the foam's tail now runs to the fade's own end; drawn here so the branch is green until CI draws the set"
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
