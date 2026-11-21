@@ -58,7 +58,7 @@ const DOMES = [
 ] as const;
 
 /** The faint lilac cast of the concept's cloud, never pure white. */
-const TINT = [0.955, 0.945, 1.08] as const;
+const TINT = [0.935, 0.93, 1.12] as const;
 
 /**
  * The cloud itself, drawn on the inside of a sphere round the camera with no depth test, so every
