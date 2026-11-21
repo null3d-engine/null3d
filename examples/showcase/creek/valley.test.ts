@@ -23,7 +23,11 @@ import { onSteps } from './steps';
 import { ROCK_REACH, rockPlaces } from './stones';
 import {
 	crownOf,
-	GROUND_TRIANGLES,
+	GROUND_BUDGET,
+	groundTriangles,
+	MAPLE_SPOTS,
+	PLANT_KINDS,
+	type PlantKind,
 	placeValley,
 	SCALE,
 	SIZES,
@@ -53,8 +57,8 @@ const models = (() => {
 })();
 
 test('each tree stands at its scale, on growing ground, seated, clear of the rocks, its trunk off the steps', () => {
-	// Every tree of the list stands: none is dropped for the camera's route.
-	expect(valley.trees.length).toBe(TREES.length);
+	// Every pine of the list stands: none is dropped for the camera's route.
+	expect(valley.trees.filter((tree) => tree.kind !== 'maple').length).toBe(TREES.length);
 	TREES.forEach(([label, , , kind, size], k) => {
 		const tree = valley.trees[k] as Spot;
 		const at = `${label}, the ${kind} at ${tree.x}, ${tree.z}`;
@@ -161,11 +165,49 @@ test('no tree or plant stands in the opening view of the statue, read along samp
 	}
 });
 
-test('the ground cover stays within its triangle budget while it has no lower levels', () => {
-	const ferns = valley.plants.filter((plant) => plant.kind === 'fern').length;
-	const hostas = valley.plants.filter((plant) => plant.kind === 'hosta').length;
-	expect(ferns + hostas).toBeGreaterThan(30);
-	expect(ferns * GROUND_TRIANGLES.fern + hostas * GROUND_TRIANGLES.hosta).toBeLessThanOrEqual(
-		GROUND_TRIANGLES.budget,
+test('every maple stands near its mapped place, at about its mapped width, seated and clear', () => {
+	const maples = valley.trees.filter((tree) => tree.kind === 'maple');
+	expect(maples).toHaveLength(MAPLE_SPOTS.length);
+	MAPLE_SPOTS.forEach(([label, x, z, color, width], k) => {
+		const maple = maples[k] as Spot;
+		const at = `${label}, the ${color} maple at ${maple.x.toFixed(1)}, ${maple.z.toFixed(1)}`;
+		expect(maple.color, `${at}: its color`).toBe(color);
+		expect(
+			Math.hypot(maple.x - x, maple.z - z),
+			`${at}: from its mapped place`,
+		).toBeLessThanOrEqual(4);
+		const drawn = SIZES.maple.reach * 2 * maple.size;
+		expect(drawn, `${at}: its width against the map's`).toBeLessThanOrEqual(width + 1e-6);
+		expect(drawn, `${at}: its width against the map's`).toBeGreaterThanOrEqual(width * 0.7 - 1e-6);
+		expect(maple.y - groundHeight(maple.x, maple.z), `${at} over the ground`).toBeLessThan(0);
+		for (const model of models)
+			expect(
+				Math.hypot(maple.x - model.x, maple.z - model.z),
+				`${at}: its trunk into ${model.kind}`,
+			).toBeGreaterThan(model.reach + TRUNK * maple.size);
+		expect(onSteps(maple.x, maple.z), `${at}: its trunk on the steps`).toBe(false);
+	});
+});
+
+test("the ground cover holds the planting map's kinds within its triangle budget", () => {
+	const counts = Object.fromEntries(PLANT_KINDS.map((kind) => [kind, 0])) as Record<
+		PlantKind,
+		number
+	>;
+	for (const plant of valley.plants) counts[plant.kind as PlantKind]++;
+	// The planting map's rough counts: conifers at the rims, clipped shrubs, azaleas, many autumn
+	// clumps and moss cushions, with ferns and hostas under them.
+	expect(counts['rim-conifer']).toBeGreaterThanOrEqual(4);
+	expect(counts['clipped-shrub']).toBeGreaterThanOrEqual(6);
+	expect(counts.azalea).toBeGreaterThanOrEqual(8);
+	expect(counts['autumn-clump']).toBeGreaterThanOrEqual(35);
+	expect(counts['moss-cushion']).toBeGreaterThanOrEqual(30);
+	const { full, drawn } = groundTriangles(valley.plants);
+	console.log(
+		`the ground cover: ${full} triangles at its finest level, ${drawn} drawn from the opening camera`,
 	);
+	expect(drawn, 'the ground cover drawn from the opening camera').toBeLessThanOrEqual(
+		GROUND_BUDGET,
+	);
+	expect(drawn).toBeLessThan(full);
 });

@@ -37,15 +37,17 @@ export interface Placement {
 /**
  * Where a part lands when its model stands at a point, turned about y by `yaw` and scaled by
  * `size`. The part's own place in its file comes first: the asset tool's quantized meshes keep
- * their offset and scale there.
+ * their offset and scale there. A `width` narrower than one narrows the part about the model's
+ * origin, across its own x, so it keeps its foot and height.
  */
 export function placed(
 	node: PrefabNode,
 	at: readonly [number, number, number],
 	yaw: number,
 	size: number,
+	width = 1,
 ): Placement {
-	return placedTurned(node, at, quat.fromEuler(quat.create(), 0, yaw, 0), size);
+	return placedTurned(node, at, quat.fromEuler(quat.create(), 0, yaw, 0), size, width);
 }
 
 /**
@@ -57,12 +59,17 @@ export function placedTurned(
 	at: readonly [number, number, number],
 	turn: QuatLike,
 	size: number,
+	width = 1,
 ): Placement {
-	const offset = vec3.transformQuat(vec3.create(), node.position, turn);
+	const offset = vec3.transformQuat(
+		vec3.create(),
+		[node.position[0] * width, node.position[1], node.position[2]],
+		turn,
+	);
 	return {
 		position: [at[0] + offset[0] * size, at[1] + offset[1] * size, at[2] + offset[2] * size],
 		rotation: [...quat.multiply(quat.create(), turn, node.rotation)] as Placement['rotation'],
-		scale: [node.scale[0] * size, node.scale[1] * size, node.scale[2] * size],
+		scale: [node.scale[0] * size * width, node.scale[1] * size, node.scale[2] * size],
 	};
 }
 
@@ -91,6 +98,8 @@ export interface Stand {
 	readonly z: number;
 	readonly yaw: number;
 	readonly size: number;
+	/** Its share of its model's width across its broad side, where it stands narrower than its size. */
+	readonly width?: number;
 }
 
 /**
@@ -114,6 +123,7 @@ export function standPart(
 			[stand.x, stand.y, stand.z],
 			stand.yaw,
 			stand.size,
+			stand.width,
 		);
 		batch.positions.set(position, row * 3);
 		batch.rotations.set(rotation, row * 4);

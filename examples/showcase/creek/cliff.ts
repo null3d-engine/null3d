@@ -231,8 +231,8 @@ export function relief(
 }
 
 /** Linear colors of the rock: warm near-black faces, a dark grey-brown on the lighter ones. */
-const CHARCOAL = [0.026, 0.017, 0.009];
-const GREY_BROWN = [0.06, 0.04, 0.022];
+const CHARCOAL = [0.028, 0.027, 0.019];
+const GREY_BROWN = [0.065, 0.062, 0.045];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
