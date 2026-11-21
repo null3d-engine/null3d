@@ -1,11 +1,12 @@
-// The Creek garden's built things and its big rocks: the bronze Buddha on its oval slab, over a raised
-// ledge of rough dark rock on the terrace; the roofed gate on its landing on the ridge, with a lantern
-// on each side; the lanterns by the creek and at the front; and the mossy boulders by the gravel and
-// on the slopes. Each is a model finished in Blender from a Tripo3D base
-// (tools/samples/blender/creek_tripo.py), which the asset tool optimized and the sample-assets
-// repository holds. Each part carries its own lower levels, so every copy picks its own level of
-// detail. Places follow the concept picture, read from the opening view onto this land, and every
-// model is seated on the lowest ground under its footprint, so no part of it hangs over a slope.
+// The Creek garden's built things and its big rocks: the bronze Buddha on its oval slab, over a
+// raised ledge of rough dark rock on the terrace; the roofed gate on its landing on the ridge, with
+// a dragon at each end of its ridge and a lantern on each side; the lanterns by the creek and at
+// the front; and the mossy boulders by the gravel and on the slopes. Each is a model finished in
+// Blender from a Tripo3D base (tools/samples/blender/creek_tripo.py), which the asset tool
+// optimized and the sample-assets repository holds. Each part carries its own lower levels, so
+// every copy picks its own level of detail. Places follow the concept picture, read from the
+// opening view onto this land, and every model is seated on the lowest ground under its footprint,
+// so no part of it hangs over a slope.
 import type { MeshArrays, SketchContext } from '@null3d/engine';
 import { type Part, partsOf, type Stand, standPart, tintedPart } from '../../lib/blender-models';
 import { Noise, random } from '../../lib/procedural';
@@ -17,13 +18,15 @@ import {
 	flights,
 	groundHeight,
 	LANDING,
+	LEDGE,
+	ledgeTop,
 	onTop,
 	rimRadius,
 	STAIRS,
 	statueYaw,
 	TERRACE,
 } from './land';
-import { MOSS_MUTE } from './stones';
+import { MOSS_MUTE, TEXTURED_MOSS } from './stones';
 
 /** The models that the garden places. */
 export interface GardenModels {
@@ -31,16 +34,19 @@ export interface GardenModels {
 	readonly statue: Part;
 	readonly lantern: Part;
 	readonly gate: Part;
+	/** The glazed dragon that stands at each end of the gate's ridge. */
+	readonly dragon: Part;
 	/** The boulders, largest first; the third is the bank stone. */
 	readonly boulders: readonly [Part, Part, Part];
 }
 
 /** Loads every model at once. */
 export async function loadGarden({ assets }: SketchContext): Promise<GardenModels> {
-	const [statue, lantern, gate, first, second, third] = await Promise.all([
+	const [statue, lantern, gate, dragon, first, second, third] = await Promise.all([
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/statue/statue.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/lantern/lantern.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/gate/gate.glb')),
+		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/dragon/dragon.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-1/boulder-1.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-2/boulder-2.glb')),
 		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-3/boulder-3.glb')),
@@ -51,6 +57,7 @@ export async function loadGarden({ assets }: SketchContext): Promise<GardenModel
 		statue: statueParts('statue'),
 		lantern: partsOf(lantern)('lantern'),
 		gate: partsOf(gate)('gate'),
+		dragon: partsOf(dragon)('dragon'),
 		boulders: [
 			partsOf(first)('boulder-1'),
 			partsOf(second)('boulder-2'),
@@ -88,14 +95,6 @@ export function lowestGround(x: number, z: number, reach: number): number {
 	return low;
 }
 
-/**
- * The raised ledge of rough dark rock under the statue's slab, as the concept's base has: its half
- * length and half width, in meters, a little past the slab's own; how far its flat top stands over
- * the highest ground under it; how far its foot reaches below the lowest; how much its outline
- * wanders, as a share; and how many points its outline has.
- */
-const LEDGE = { long: 5, wide: 3.4, rise: 0.4, foot: 0.35, rough: 0.07, points: 48 } as const;
-
 /** Where the statue stands: the terrace's middle, facing down its flights. */
 const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
 /**
@@ -105,11 +104,22 @@ const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
 const STATUE_SIZE = 0.97;
 /** How far the slab model's rim stands below its own origin, in meters at its own size. */
 const SLAB_FOOT = 0.05;
+/**
+ * The slab model's half length and half width at its own size, in meters, and how far its outline
+ * may swell past that oval, as a share: the ledge's top must reach past it all round.
+ */
+export const SLAB_REACH = { long: 4.27, wide: 2.74, swell: 0.05 } as const;
 
 /** The gate faces along its line down the ridge, so the steps pass through it. */
 const GATE_YAW = facing([TERRACE.x, TERRACE.z], [LANDING.x, LANDING.z]);
 /** How far each gate lantern stands to the side of the gate's middle, and toward the creek. */
 const GATE_LANTERN = { side: 3.9, front: 0.9 } as const;
+/**
+ * The roof dragons, in the gate model's own meters: how far each stands from the ridge's middle,
+ * with its wave base inside the end curls; the ridge's level top; and how deep its base sinks into
+ * the ridge, so the base does not read as a plinth. Each faces out along the ridge.
+ */
+export const DRAGON = { end: 1.85, ridge: 3.77, sink: 0.14 } as const;
 
 /** The lanterns away from the gate: one on the creek's near bank, and one at the front rim. */
 const LANTERNS: readonly (readonly [number, number, number])[] = [
@@ -197,6 +207,61 @@ function hillRocks(): RockPlace[] {
 	return rocks;
 }
 
+/**
+ * The rock round the ledge: how many blocks stand round its edge, close enough to overlap, with
+ * joints between them; their sizes, as small copies of the largest boulder; how far out from the
+ * ledge's outline they stand, in meters; how far their tops wander about the ledge's top, in
+ * meters, from below to above it; and how far the front's gap for the steps reaches each side of
+ * their middle line.
+ */
+export const RING = {
+	blocks: 24,
+	size: [0.2, 0.3],
+	out: 0.12,
+	top: [-0.16, 0.06],
+	gap: STAIRS.half + 0.35,
+} as const;
+
+/** A block of the ledge's ring, with how far its top stands over the ledge's top, in meters. */
+type RingRock = RockPlace & { crown: number };
+
+/**
+ * The blocks of rock round the ledge's edge, with joints between them, so the ledge reads as the
+ * hill's own rock rather than a disc set on it. The front stays open where the steps climb in.
+ */
+function ringRocks(ledge: Ledge): RingRock[] {
+	const next = random(99);
+	const blocks: RingRock[] = [];
+	const n = ledge.outline.length;
+	for (let b = 0; b < RING.blocks; b++) {
+		const point = ledge.outline[Math.floor(((b + 0.5) / RING.blocks) * n) % n] as readonly [
+			number,
+			number,
+		];
+		if (point[1] > 0 && Math.abs(point[0]) < RING.gap) continue;
+		const out = (Math.hypot(point[0], point[1]) + RING.out) / Math.hypot(point[0], point[1]);
+		const [x, z] = ledgePoint(ledge, [point[0] * out, point[1] * out]);
+		const size = RING.size[0] + (RING.size[1] - RING.size[0]) * next();
+		const crown = RING.top[0] + (RING.top[1] - RING.top[0]) * next();
+		blocks.push({ model: 0, x, z, yaw: next() * Math.PI * 2, size, sink: 0, crown });
+	}
+	return blocks;
+}
+
+/** The mossy outcrops at both sides of the ledge, as the concept has beside its statue. */
+function outcrops(ledge: Ledge): RockPlace[] {
+	return [
+		{ side: -1, along: -0.6, model: 0 as const, size: 0.42, yaw: 0.8 },
+		{ side: -1, along: 1.2, model: 1 as const, size: 0.45, yaw: 2.4 },
+		{ side: 1, along: -0.4, model: 0 as const, size: 0.38, yaw: 4.1 },
+		{ side: 1, along: 1.4, model: 1 as const, size: 0.4, yaw: 5.3 },
+	].map(({ side, along, model, size, yaw }) => {
+		const reach = REACH.boulder[model] * size;
+		const [x, z] = ledgePoint(ledge, [side * (LEDGE.long + reach * 0.9), along]);
+		return { model, x, z, yaw, size, sink: 0.25 };
+	});
+}
+
 /** A model placed in the garden: its stand, and how far its footprint reaches on the ground. */
 export interface Placed extends Stand {
 	readonly reach: number;
@@ -218,8 +283,15 @@ export interface GardenPlaces {
 	readonly ledge: Ledge;
 	readonly statue: Placed;
 	readonly gate: Placed;
+	/** The dragons on the gate's ridge, one at each end. */
+	readonly dragons: readonly Stand[];
 	readonly lanterns: readonly Placed[];
 	readonly rocks: readonly (Placed & { readonly model: 0 | 1 })[];
+	/**
+	 * The blocks of rock round the ledge, which make it part of the hill: they stand on its edge, each
+	 * with the height of its top.
+	 */
+	readonly ring: readonly (Placed & { readonly model: 0 | 1; readonly top: number })[];
 }
 
 /** A point of a ledge's outline, in world meters. */
@@ -229,6 +301,15 @@ export function ledgePoint(ledge: Ledge, point: readonly [number, number]): [num
 	return [ledge.x + point[0] * c + point[1] * s, ledge.z - point[0] * s + point[1] * c];
 }
 
+/** True for a point within the ledge's oval grown by a margin, in meters. */
+export function nearLedge(ledge: Ledge, x: number, z: number, margin: number): boolean {
+	const [c, s] = [Math.cos(ledge.yaw), Math.sin(ledge.yaw)];
+	const [dx, dz] = [x - ledge.x, z - ledge.z];
+	// The point in the ledge's own frame: the turn of ledgePoint, undone.
+	const [across, along] = [dx * c - dz * s, dx * s + dz * c];
+	return Math.hypot(across / (LEDGE.long + margin), along / (LEDGE.wide + margin)) < 1;
+}
+
 let placeList: GardenPlaces | undefined;
 
 /** Where everything stands, found once. */
@@ -236,19 +317,25 @@ export function gardenPlaces(): GardenPlaces {
 	if (placeList) return placeList;
 	const noise = new Noise(93);
 	const yaw = statueYaw();
+	// The outline wanders in broken facets, and its front is cut back where the top flight climbs in.
 	const outline = Array.from({ length: LEDGE.points }, (_, k) => {
 		const angle = (k / LEDGE.points) * Math.PI * 2;
-		const wander = 1 + LEDGE.rough * noise.fbm2(Math.cos(angle) * 2 + 7, Math.sin(angle) * 2, 3);
-		return [Math.cos(angle) * LEDGE.long * wander, Math.sin(angle) * LEDGE.wide * wander] as const;
+		const facet = Math.floor((k / LEDGE.points) * RING.blocks);
+		const wander =
+			1 +
+			LEDGE.rough * noise.fbm2(Math.cos(angle) * 2 + 7, Math.sin(angle) * 2, 3) +
+			0.05 * noise.value2(facet * 3.1 + 0.5, 11);
+		const [x, z] = [Math.cos(angle) * LEDGE.long * wander, Math.sin(angle) * LEDGE.wide * wander];
+		const cut = z > 0 && Math.abs(x) < STAIRS.half + 0.1;
+		return [x, cut ? Math.min(z, LEDGE.wide - LEDGE.cut) : z] as const;
 	});
-	const shape = { x: STATUE_AT[0], z: STATUE_AT[1], yaw, outline, top: 0, foot: 0 };
-	let [high, low] = [-Infinity, Infinity];
+	const shape = { x: STATUE_AT[0], z: STATUE_AT[1], yaw, outline, top: ledgeTop(), foot: 0 };
+	let low = Infinity;
 	for (const point of [[0, 0] as const, ...outline]) {
 		const [x, z] = ledgePoint(shape, point);
-		high = Math.max(high, groundHeight(x, z));
 		low = Math.min(low, groundHeight(x, z));
 	}
-	const ledge: Ledge = { ...shape, top: high + LEDGE.rise, foot: low - LEDGE.foot };
+	const ledge: Ledge = { ...shape, foot: low - LEDGE.foot };
 	const seated = (x: number, z: number, turn: number, size: number, reach: number, sink = 0) => ({
 		x,
 		y: lowestGround(x, z, reach) - SEAT - sink,
@@ -268,6 +355,15 @@ export function gardenPlaces(): GardenPlaces {
 			REACH.lantern,
 		),
 	);
+	const gate = seated(LANDING.x, LANDING.z, GATE_YAW, 1, REACH.gate);
+	// One model at each end, turned to face out along the ridge, never mirrored.
+	const dragons = [-1, 1].map((side) => ({
+		x: gate.x + sx * side * DRAGON.end * gate.size,
+		y: gate.y + (DRAGON.ridge - DRAGON.sink) * gate.size,
+		z: gate.z + sz * side * DRAGON.end * gate.size,
+		yaw: gate.yaw + (side * Math.PI) / 2,
+		size: gate.size,
+	}));
 	placeList = {
 		ledge,
 		statue: {
@@ -278,12 +374,23 @@ export function gardenPlaces(): GardenPlaces {
 			size: STATUE_SIZE,
 			reach: LEDGE.long,
 		},
-		gate: seated(LANDING.x, LANDING.z, GATE_YAW, 1, REACH.gate),
+		gate,
+		dragons,
 		lanterns: [
 			...gateLanterns,
 			...LANTERNS.map(([x, z, turn]) => seated(x, z, turn, 1, REACH.lantern)),
 		],
-		rocks: [...BOULDERS, ...hillRocks()].map((rock) => ({
+		ring: ringRocks(ledge).map((rock) => {
+			const reach = REACH.boulder[rock.model] * rock.size;
+			const ground = lowestGround(rock.x, rock.z, reach);
+			// Each block's top stands its crown over the ledge's top, sunk as deep as that asks, and never
+			// less than seated, so no block hangs over the slope below it.
+			const height = BOULDER_HEIGHT[rock.model] * rock.size;
+			const sink = Math.max(0, ground - SEAT + height - (ledge.top + rock.crown));
+			const place = seated(rock.x, rock.z, rock.yaw, rock.size, reach, sink);
+			return { ...place, model: rock.model, top: place.y + height };
+		}),
+		rocks: [...BOULDERS, ...hillRocks(), ...outcrops(ledge)].map((rock) => ({
 			...seated(
 				rock.x,
 				rock.z,
@@ -298,9 +405,8 @@ export function gardenPlaces(): GardenPlaces {
 	return placeList;
 }
 
-/** Linear colors of the ledge: dark rock, and the moss on its top's rim and its upper sides. */
+/** The linear color of the ledge's dark rock, under the moss on its top's rim and its upper sides. */
 const LEDGE_ROCK = [0.05, 0.042, 0.033] as const;
-const LEDGE_MOSS = [0.09, 0.085, 0.025] as const;
 
 /**
  * The ledge's mesh: a flat top inside its outline, a rough chamfer, and sides that flare a little
@@ -325,16 +431,17 @@ function ledgeArrays(ledge: Ledge): MeshArrays {
 		positions.push(x, y, z);
 		for (let c = 0; c < 3; c++)
 			colors.push(
-				((LEDGE_ROCK[c] as number) + ((LEDGE_MOSS[c] as number) - (LEDGE_ROCK[c] as number)) * m) *
+				((LEDGE_ROCK[c] as number) +
+					((TEXTURED_MOSS[c] as number) - (LEDGE_ROCK[c] as number)) * m) *
 					shade,
 			);
 		uvs.push(u, v);
 	};
-	// The top: a fan from the middle, flat.
+	// The top: a fan from the middle, flat, bare under the slab and mossy in the band round it.
 	add(ledge.x, ledge.top, ledge.z, 0, ledge.x * 0.4, ledge.z * 0.4);
 	for (let k = 0; k < n; k++) {
 		const [x, z] = ledgePoint(ledge, ledge.outline[k] as readonly [number, number]);
-		add(x, ledge.top, z, 0.4, x * 0.4, z * 0.4);
+		add(x, ledge.top, z, 0.85, x * 0.4, z * 0.4);
 	}
 	for (let k = 0; k < n; k++) indices.push(0, 1 + ((k + 1) % n), 1 + k);
 	// The sides: each ring of the outline pushed out and down, with rough wander, joined by quads.
@@ -369,9 +476,9 @@ function ledgeArrays(ledge: Ledge): MeshArrays {
 }
 
 /**
- * Stands the garden's models: the statue on its slab over the rock ledge, the gate and its two
- * lanterns, the other lanterns and the boulders. Returns a test of whether a point lies under one of
- * them, where nothing grows.
+ * Stands the garden's models: the statue on its slab over the rock ledge, the gate with its roof
+ * dragons and its two lanterns, the other lanterns and the boulders. Returns a test of whether a
+ * point lies under one of them, where nothing grows.
  */
 export function createGarden(
 	ctx: SketchContext,
@@ -393,14 +500,15 @@ export function createGarden(
 	standPart(ctx, models.slab, [places.statue], models.slab.material);
 	standPart(ctx, models.statue, [places.statue], models.statue.material);
 	standPart(ctx, models.gate, [places.gate], models.gate.material);
+	standPart(ctx, models.dragon, places.dragons, models.dragon.material);
 	standPart(ctx, models.lantern, places.lanterns, models.lantern.material);
 	for (const model of [0, 1] as const)
 		standPart(
 			ctx,
 			models.boulders[model],
-			places.rocks.filter((rock) => rock.model === model),
+			[...places.rocks, ...places.ring].filter((rock) => rock.model === model),
 			tintedPart(materials, models.boulders[model], MOSS_MUTE, 0.95),
 		);
-	const feet = [places.statue, places.gate, ...places.lanterns, ...places.rocks];
+	const feet = [places.statue, places.gate, ...places.lanterns, ...places.rocks, ...places.ring];
 	return (x, z) => feet.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
 }

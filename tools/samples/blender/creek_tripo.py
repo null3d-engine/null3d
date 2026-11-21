@@ -137,6 +137,15 @@ STATUE = dict(
 # lightness, and the pale band at each post's foot, `feet[1]` meters tall, takes the posts' own
 # lightness, so the feet do not glare white in a bright scene.
 #
+# The roof dragon keeps its raw glaze colours, but its body's green-grey scales keep `darken` of
+# their lightness, with its joints, the texels darker than the tiles round them, darkened `joints`
+# times their own share more; its tail fan's pale tiles, round `fan`, turn a grey `fan_step` times
+# the body's lightness; its belly band loses its pink; and its glaze's roughness is `glaze`, so it
+# glints. Its base is cut level `base_cut` of its height above its lowest point and closed, so its
+# foot sits flat on the gate's ridge, and the wave slab below `base[0]` of its height loses its
+# rear `base[1]` of the model's length. Its head faces -y, as every model here faces, and the
+# scene turns each copy to face out along the ridge.
+#
 # A boulder's stone keeps `darken` of its lightness, grows
 # `vivid` times in color strength, and its light and dark round their local mean grow `contrast`
 # times, so the pits read; its moss keeps `moss_darken` of its lightness, white specks fade
@@ -153,6 +162,9 @@ MODELS = {
                  rear=0.273, blocks=0.08, beam=0.55, rear_tone=(1.2, 0.8), spread=1.96, brackets=0.69,
                  weather=0.012, roof_tone=(0.82, 1.8), timber_tint=(0.96, 1.0, 0.98),
                  darken=0.65, vivid=1.7, feet=(0.72, 0.45)),
+    'dragon': dict(file='model.glb', turn=180.0, height=0.9, sink=0.01, triangles=3000, levels=(0.55, 0.25),
+                   texture=512, base_cut=0.02, base=(0.16, 0.16), darken=0.8, joints=1.5, glaze=0.4,
+                   fan=(0.354, 0.85, 0.14, 0.11), fan_step=1.3),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
@@ -182,7 +194,10 @@ MODELS = {
 # and less pink. The bronze on the knees keeps `knee` of its lightness, and their rust all of it.
 # Last, on the upper arms and lapels, the raw color's light and dark at the pleats'
 # scale is laid back over the finished color `pleats` strong, so the darkening does not squeeze
-# them.
+# them. Then each texel's light and dark against those round it, at the scale of the folds and the
+# curls, grows `detail[0]` times on the body and `detail[1]` times on the hair, so the fine texture
+# holds at a distance; the hair keeps `hair_tone` of its lightness, and the curls' gaps, deep in
+# the baked occlusion, darken by up to `curls`.
 PATINA = dict(
     middle=0.18,
     contrast=1.4,
@@ -196,13 +211,16 @@ PATINA = dict(
     streak_width=(0.03, 0.08),
     streak_length=1.6,
     streak=0.05,
-    bumps=0.4,
-    relief=12.0,
+    bumps=0.55,
+    relief=16.0,
     eye=(0.62, 0.64, 0.60),
     warm=(1.07, 1.0, 0.88),
     hairline=0.55,
     green=(1.02, 1.0, 0.9),
     pleats=2.0,
+    detail=(1.9, 3.2),
+    hair_tone=0.8,
+    curls=0.6,
     knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
@@ -212,27 +230,32 @@ PATINA = dict(
 SKY = (0.58, 0.58, 0.6)
 
 # The slab's stone, as display colors: the stone's dark warm gray and the pale and dark specks in
-# it, which `speck` of its texels carry; the moss's colors from its shade to its light, the depth
-# of the band along the rim that it grows in, in meters, the share of that band it covers, and the
-# height of the band at the foot where it grows in patches too; and
-# how far, in meters, the side wanders from its oval, against the rim's own wander.
+# it, which `speck` of its texels carry; the moss's greyed olive from its shade to its light, the
+# depth from the rim, in meters, in which its patches are likelier, and the share of the surface
+# the patches cover; how far, in meters, the side wanders from its oval, against the rim's own
+# wander; and `lobes`, the share by which the outline swells and shrinks round its turn, so it is
+# no perfect oval.
 SLAB = dict(
     stone=(0.35, 0.33, 0.29),
     pale=(0.56, 0.54, 0.49),
     dark=(0.16, 0.15, 0.13),
     speck=0.12,
-    moss_shade=(0.28, 0.25, 0.06),
-    moss_light=(0.56, 0.49, 0.12),
-    moss_band=0.4,
-    moss_cover=0.62,
-    moss_foot=0.12,
+    moss_shade=(0.24, 0.23, 0.13),
+    moss_light=(0.44, 0.42, 0.24),
+    moss_band=0.5,
+    moss_cover=0.35,
     rough=0.07,
-    rim=0.03,
+    rim=0.05,
+    lobes=0.05,
 )
 
 # The largest surface error each lower level of the garden's other models may have, as a share of
 # the model's height; the build stops past it. The coarser level may stray further.
 LEVEL_ERROR_LIMIT = (0.05, 0.12)
+
+# How strongly the garden's other models raise their color's light and dark into their normals.
+# Each keeps all of the relief that its decimation lost; the statue's patina sets its own.
+MODEL_RELIEF = 12.0
 
 
 def raw_folder():
@@ -868,6 +891,19 @@ def repaint(maps, height, eyes, eye, chest, rng):
     robe = smoothstep(chin - 0.4, chin - 0.8, z) * smoothstep(waist - 0.2, waist + 0.3, z) * (1 - warmth)
     color *= (1 + PATINA['pleats'] * band * robe)[..., None]
 
+    # Fine texture that holds at a distance: each texel's light and dark against the texels in use
+    # round it, at the scale of the folds and the curls, grows `detail[0]` times on the body and
+    # `detail[1]` times on the hair, and the hair keeps `hair_tone` of its lightness.
+    final = color @ LUMA
+    around = box_blur(final * used, 5) / np.maximum(box_blur(used.astype(np.float32), 5), 1e-3)
+    grow = PATINA['detail'][0] + (PATINA['detail'][1] - PATINA['detail'][0]) * hair
+    color *= np.clip(1 + (grow - 1) * (final / np.maximum(around, 0.02) - 1), 0.3, 1.8)[..., None]
+    color *= (1 - (1 - PATINA['hair_tone']) * hair)[..., None]
+    # The curls' gaps, deep in the baked occlusion, darken by up to `curls` on the hair, so the
+    # curls read under any light.
+    gaps = np.clip(1 - occlusion / max(float(np.median(occlusion[used & (hair > 0.5)])), 1e-3), 0, 1)
+    color *= (1 - PATINA['curls'] * hair * np.clip(gaps * 3, 0, 1))[..., None]
+
     for middle_point in eyes:
         d = (position - np.array(middle_point, np.float32)) / np.array((eye[0], eye[0], eye[1]), np.float32)
         mark = smoothstep(1.0, 0.4, np.sqrt((d * d).sum(axis=2))) * smoothstep(0.2, 0.6, -facing[..., 1])
@@ -930,12 +966,12 @@ def box_blur(texels, radius):
     return texels
 
 
-def relief(normal, color, speck, keep=None):
+def relief(normal, color, speck, bumps, lift):
     """
-    A normal map with its small bumps kept at `keep` of their strength (the patina's `bumps` unless
-    given), flattened where `speck` filled a dark speck and where it dents inward, and the color's
-    light and dark at the scale of the robe's pleats raised into it as relief, pale above dark, so
-    the painted pleats stand out. The finest speckle stays flat, so the bronze does not crinkle.
+    A normal map with its small bumps kept at `bumps` of their strength, flattened where `speck`
+    filled a dark speck and where it dents inward, and the color's light and dark at the scale of
+    the robe's pleats raised into it as relief `lift` strong, pale above dark, so the painted
+    pleats stand out. The finest speckle stays flat, so the bronze does not crinkle.
     """
     n = normal * 2 - 1
     # A dent in the normal map tilts inward from every side, so the tilt's spread runs strongly
@@ -943,12 +979,12 @@ def relief(normal, color, speck, keep=None):
     # each.
     spread = np.gradient(n[..., 0], axis=1) + np.gradient(n[..., 1], axis=0)
     dent = np.clip(box_blur(smoothstep(0.08, 0.2, -box_blur(spread, 1)), 2) * 3, 0, 1)
-    n[..., :2] *= (PATINA['bumps'] if keep is None else keep) * ((1 - speck) * (1 - dent))[..., None]
+    n[..., :2] *= bumps * ((1 - speck) * (1 - dent))[..., None]
     luma = color @ LUMA
     height = box_blur(luma, 2) - box_blur(luma, 10)
     rise, across = np.gradient(height)
-    n[..., 0] -= PATINA['relief'] * across
-    n[..., 1] -= PATINA['relief'] * rise
+    n[..., 0] -= lift * across
+    n[..., 1] -= lift * rise
     n /= np.maximum(np.linalg.norm(n, axis=2, keepdims=True), 1e-6)
     return n * 0.5 + 0.5
 
@@ -956,7 +992,8 @@ def relief(normal, color, speck, keep=None):
 def finished_material(name, maps, painted, roughness, metal, occlusion):
     """The model's metal-rough material: the repainted color, the relief normals and the packed ORM."""
     color = image(f'{name}-color', painted)
-    normal = image(f'{name}-normal', relief(maps['normal'], maps['color'], maps['speck']), 'Non-Color')
+    normal = image(f'{name}-normal', relief(maps['normal'], maps['color'], maps['speck'], PATINA['bumps'], PATINA['relief']),
+                   'Non-Color')
     packed = image(f'{name}-orm', np.dstack([occlusion, roughness, metal]), 'Non-Color')
     return material(name, color, normal, packed, roughness=0.8, tint=False)
 
@@ -991,9 +1028,10 @@ def slab_layout(t, quarter, along, top, rx, ry):
 
 def stone_slab(name, rx, ry, height, bevel, sides, mat):
     """
-    A low oval stone slab from just below the ground to `height`, with semi-axes `rx` and `ry`. Its
-    side leans in a little as it rises and wanders a few centimeters, rough as split stone, up to a
-    crisp bevel `bevel` deep round its top, whose rim wanders less. The same noise in space shapes
+    A low stone slab, an uneven oval, from just below the ground to `height`, with semi-axes `rx`
+    and `ry`. Its outline swells and shrinks round its turn. Its side leans in a little as it rises
+    and wanders a few centimeters, rough as split stone, up to a bevel `bevel` deep round its top,
+    whose rim wanders and chips. The same noise in space shapes
     every level of detail. The top shades flat, so the rim between it and the smooth bevel stays a
     sharp line. The texture covers the slab once, as `slab_layout` lays it out.
     """
@@ -1012,10 +1050,14 @@ def stone_slab(name, rx, ry, height, bevel, sides, mat):
     points = np.array(points)
     flat = points.reshape(-1, 3)
     wander = (noise3(flat, 0.3, rng) - 0.5) * 2
+    chips = (noise3(flat, 0.12, rng) - 0.5) * 2
     rim = np.repeat([z >= height - bevel - 1e-4 for z, _ in rings], sides)
-    amount = np.where(rim, SLAB['rim'], SLAB['rough'])
+    amount = np.where(rim, SLAB['rim'] * (0.5 * wander + 0.5 * chips), SLAB['rough'] * wander)
+    # The outline swells and shrinks round its turn, the same at every height, so it is no oval.
+    lobes = 1 + SLAB['lobes'] * (noise3(flat * np.array([1, 1, 0], np.float32), 2.0, rng, 2) - 0.5) * 2
+    flat[:, :2] *= lobes[:, None]
     outward = flat[:, :2] / np.maximum(np.linalg.norm(flat[:, :2], axis=1), 1e-6)[:, None]
-    flat[:, :2] += outward * (wander * amount)[:, None]
+    flat[:, :2] += outward * amount[:, None]
     points = flat.reshape(len(rings), sides, 3)
 
     bm = bmesh.new()
@@ -1053,8 +1095,8 @@ def slab_material(rx, ry, height, bevel, size, rng):
     """
     The slab's own texture, painted once over its surface as `slab_layout` lays it out: each texel
     takes its place on the slab, then dark speckled stone with pale lichen spots, darker toward the
-    foot, and moss in a broken band along the rim, coarse and fine at once, down the side's top and
-    in over the top's edge, and in patches along the foot. Its normals and roughness, at half the
+    foot, and greyed olive moss in patches of uneven size, coarse and fine at once, likelier near
+    the rim and creeping over its edge. Its normals and roughness, at half the
     color's size, follow the stone's grain and the moss's tufts.
     """
     lean = 0.03 * min(rx, ry)
@@ -1103,15 +1145,13 @@ def slab_material(rx, ry, height, bevel, size, rng):
     worn = smoothstep(0.08, 0.0, rim_distance) * smoothstep(0.55, 0.7, noise3(position + 9.1, 0.3, rng, 2))
     color = mix(color, SLAB['pale'], 0.6 * worn)
 
-    # Moss: a band along the rim that thins in, broken into patches, with tufts at two scales.
-    # The band's depth wanders, so clumps creep over the edge and down the side unevenly.
-    reach = SLAB['moss_band'] * (0.5 + noise3(position * np.array([1, 1, 0], np.float32), 0.4, rng, 2))
-    band = smoothstep(reach, 0.4 * reach, rim_distance)
-    band = np.maximum(band, side * smoothstep(SLAB['moss_foot'], 0.3 * SLAB['moss_foot'], position[..., 2]) * 0.8)
-    clumps = np.maximum(noise3(position, 0.6, rng, 2), noise3(position + 5.3, 0.18, rng, 2) - 0.08)
-    patches = smoothstep(1 - SLAB['moss_cover'] - 0.08, 1 - SLAB['moss_cover'] + 0.08, clumps)
+    # Moss in patches of uneven size, not bands: likelier near the rim, where it creeps over the
+    # edge, and sparse on the side and the top, with tufts at two scales.
+    near = smoothstep(SLAB['moss_band'], 0.0, rim_distance)
+    clumps = np.maximum(noise3(position, 0.6, rng, 2), noise3(position + 5.3, 0.18, rng, 2) - 0.08) + 0.16 * near
+    patches = smoothstep(1 - SLAB['moss_cover'] - 0.06, 1 - SLAB['moss_cover'] + 0.06, clumps)
     tufts = noise3(position, 0.02, rng, 2)
-    moss = np.clip(band * patches * smoothstep(0.3, 0.6, tufts + 0.25 * patches), 0, 1)
+    moss = np.clip(patches * smoothstep(0.3, 0.6, tufts + 0.25 * patches), 0, 1)
     moss_color = mix(np.broadcast_to(np.array(SLAB['moss_shade'], np.float32), position.shape).copy(), SLAB['moss_light'], tufts)
     color = mix(color, moss_color, moss)
 
@@ -1149,6 +1189,15 @@ def vertex_colors_of(obj, img):
     np.add.at(total, owner, picked)
     np.add.at(count, owner, 1)
     return total / np.maximum(count, 1)[:, None]
+
+
+def hue_of(color):
+    """Each texel's hue, in degrees from 0 to 360."""
+    r, g, b = color[..., 0], color[..., 1], color[..., 2]
+    top, bottom = color.max(axis=-1), color.min(axis=-1)
+    spread = np.maximum(top - bottom, 1e-6)
+    hue = np.where(top == r, ((g - b) / spread) % 6, np.where(top == g, (b - r) / spread + 2, (r - g) / spread + 4))
+    return hue * 60
 
 
 def strength_of(color):
@@ -1193,6 +1242,62 @@ def flatten_moss(obj, color, spec):
     return int(moss.sum())
 
 
+def cut_away(bm, faces, point, normal):
+    """
+    Cuts the faces with the plane through `point` along `normal` and removes what lies on the
+    normal's side; returns how many faces went. Each element goes in once, in the mesh's own
+    order: a set's order changes from run to run, and the cut makes its new vertices in the order
+    it gets them.
+    """
+    verts = list(dict.fromkeys(v for f in faces for v in f.verts))
+    edges = list(dict.fromkeys(e for f in faces for e in f.edges))
+    before = len(bm.faces)
+    bmesh.ops.bisect_plane(bm, geom=verts + edges + faces, plane_co=point, plane_no=normal, clear_outer=True)
+    return before - len(bm.faces)
+
+
+def close_cuts(bm, uv):
+    """
+    Drops the vertices that cuts left alone and closes every hole they opened, each new face
+    painted from the texture places of the rim round it.
+    """
+    loose = [v for v in bm.verts if not v.link_faces]
+    bmesh.ops.delete(bm, geom=loose, context='VERTS')
+    known = {}
+    for f in bm.faces:
+        for corner in f.loops:
+            known.setdefault(corner.vert, corner[uv].uv.copy())
+    rims = [e for e in bm.edges if e.is_boundary]
+    closed = bmesh.ops.holes_fill(bm, edges=rims, sides=0)['faces']
+    closed = bmesh.ops.triangulate(bm, faces=closed)['faces']
+    for f in closed:
+        for corner in f.loops:
+            corner[uv].uv = known.get(corner.vert, corner[uv].uv)
+
+
+def trim_base(obj, spec):
+    """
+    Cuts away the dragon's base past the body's rear foot: the wave slab, below `base[0]` of the
+    height, runs `base[1]` of the model's length further back than the photo's waves, which lie
+    under the body's rise only. The plate under the head stays, since the foot stands on it.
+    Returns how many faces went.
+    """
+    co = vertices_of(obj)
+    low, high = co[:, 2].min(), co[:, 2].max()
+    front, rear = co[:, 1].min(), co[:, 1].max()
+    top = low + spec['base'][0] * (high - low)
+    edge = rear - spec['base'][1] * (rear - front)
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    uv = bm.loops.layers.uv.active
+    doomed = cut_away(bm, [f for f in bm.faces if max(v.co.z for v in f.verts) < top and max(v.co.y for v in f.verts) > edge],
+                      (0, edge, 0), Vector((0, 1, 0)))
+    close_cuts(bm, uv)
+    bm.to_mesh(obj.data)
+    bm.free()
+    return doomed
+
+
 def gate_surgery(obj, spec, rng):
     """
     Takes away the rear frame that Tripo3D added to the gate from a front view alone. One flat cut
@@ -1212,35 +1317,15 @@ def gate_surgery(obj, spec, rng):
     bm.from_mesh(obj.data)
     uv = bm.loops.layers.uv.active
 
-    def cut(faces, point, normal):
-        # Each element once, in the mesh's own order: a set's order changes from run to run, and
-        # the cut makes its new vertices in the order it gets them.
-        verts = list(dict.fromkeys(v for f in faces for v in f.verts))
-        edges = list(dict.fromkeys(e for f in faces for e in f.edges))
-        before = len(bm.faces)
-        bmesh.ops.bisect_plane(bm, geom=verts + edges + faces, plane_co=point, plane_no=normal, clear_outer=True)
-        return before - len(bm.faces)
-
     # The posts' backs lean: the cut runs from `cut[0]` of the height at the foot to `cut[1]` at the
     # roof line.
     foot, top = (share * (high - low) for share in spec['cut'])
-    doomed = cut([f for f in bm.faces if max(v.co.z for v in f.verts) < roof], (0, foot, low),
-                 Vector((0, 1, -(top - foot) / (roof - low))).normalized())
+    doomed = cut_away(bm, [f for f in bm.faces if max(v.co.z for v in f.verts) < roof], (0, foot, low),
+                      Vector((0, 1, -(top - foot) / (roof - low))).normalized())
     # Behind the front posts and inside the roof's ends, everything below the ties goes.
-    doomed += cut([f for f in bm.faces if f.calc_center_median().y > 0 and abs(f.calc_center_median().x) < spec['eaves'] * (high - low)
-                   and min(v.co.z for v in f.verts) < tie], (0, 0, tie), Vector((0, 0, -1)))
-    loose = [v for v in bm.verts if not v.link_faces]
-    bmesh.ops.delete(bm, geom=loose, context='VERTS')
-    known = {}
-    for f in bm.faces:
-        for corner in f.loops:
-            known.setdefault(corner.vert, corner[uv].uv.copy())
-    rims = [e for e in bm.edges if e.is_boundary]
-    closed = bmesh.ops.holes_fill(bm, edges=rims, sides=0)['faces']
-    closed = bmesh.ops.triangulate(bm, faces=closed)['faces']
-    for f in closed:
-        for corner in f.loops:
-            corner[uv].uv = known.get(corner.vert, corner[uv].uv)
+    doomed += cut_away(bm, [f for f in bm.faces if f.calc_center_median().y > 0 and abs(f.calc_center_median().x) < spec['eaves'] * (high - low)
+                            and min(v.co.z for v in f.verts) < tie], (0, 0, tie), Vector((0, 0, -1)))
+    close_cuts(bm, uv)
 
     # The front posts lean forward toward their feet: they stand upright again below the beam.
     beam = low + spec['beam'] * (high - low)
@@ -1455,6 +1540,30 @@ def repaint_model(name, spec, maps, rng):
         band = smoothstep(blocks - 0.02, blocks + 0.02, z) * smoothstep(blocks + spec['feet'][1], blocks + 0.6 * spec['feet'][1], z)
         color *= (1 - band * (1 - np.minimum(own / np.maximum(luma, 0.02), 1)))[..., None]
         color = darken(color, spec['feet'][0], smoothstep(blocks + 0.02, blocks - 0.02, z))
+    elif name == 'dragon':
+        # Where each texel lies along the dragon, from its head (0) to its tail's end (1), and up.
+        position = maps['position']
+        lo, hi = position.reshape(-1, 3).min(axis=0), position.reshape(-1, 3).max(axis=0)
+        along = (position[..., 1] - lo[1]) / (hi[1] - lo[1])
+        up = (position[..., 2] - lo[2]) / (hi[2] - lo[2])
+        hue, strength, luma = hue_of(color), strength_of(color), color @ LUMA
+        # The body's green-grey scales read as one dark mass with fine dark joints: they keep
+        # `darken` of their lightness, and a texel darker than the tiles round it, a joint,
+        # darkens `joints` times its own share more.
+        body = smoothstep(40, 60, hue) * smoothstep(210, 190, hue) * smoothstep(0.04, 0.1, strength)
+        joint = np.clip(1 - luma / np.maximum(box_blur(luma, 3), 0.02), 0, 1)
+        color = color * (1 - body * (1 - spec['darken'] * np.clip(1 - spec['joints'] * joint, 0, 1)))[..., None]
+        # The fan at the tail's curl, its pale tiles round the curl's middle at `fan` (along, up
+        # and the two half sizes, as shares), turns grey, `fan_step` times the body's lightness.
+        centre_along, centre_up, half_along, half_up = spec['fan']
+        fan = smoothstep(1.0, 0.8, np.hypot((along - centre_along) / half_along, (up - centre_up) / half_up))
+        pale = smoothstep(0.45, 0.6, luma) * smoothstep(0.25, 0.15, strength)
+        grey = float(np.median((color @ LUMA)[body > 0.5])) * spec['fan_step']
+        color = mix(color, np.full(3, grey, np.float32), fan * pale)
+        # The belly band under the top arch, pale pink-tan, loses its colour to a pale grey.
+        pink = ((hue < 35) | (hue > 340)) * smoothstep(0.12, 0.2, strength) * smoothstep(0.55, 0.45, strength)
+        pink = pink * smoothstep(0.28, 0.38, luma) * smoothstep(0.42, 0.5, up)
+        color = mix(color, (color @ LUMA)[..., None] * np.ones(3, np.float32), pink)
     else:
         stone = 1 - moss
         color = vivid(color, spec['vivid'], stone)
@@ -1468,6 +1577,9 @@ def repaint_model(name, spec, maps, rng):
         foot = smoothstep(spec['foot'] * spec['height'], 0.0, z) * stone
         color = darken(color, 0.72, foot)
     roughness = np.clip(0.88 + 0.06 * moss, 0, 1)
+    if 'glaze' in spec:
+        # Glazed tiles glint: their roughness is the `glaze`.
+        roughness = np.full_like(roughness, spec['glaze'])
     return np.clip(color, 0, 1), roughness, np.zeros_like(roughness), occlusion
 
 
@@ -1475,10 +1587,14 @@ def finish_model(name, spec, raw, rng):
     """One of the garden's other models, with two lower levels, their errors, and its figures."""
     high, color, normal = import_raw(os.path.join(raw, name, spec['file']), name)
     figures = dict(raw_triangles=triangles_of(high))
+    if 'base_cut' in spec:
+        cut_below(high, spec['base_cut'])
     co = vertices_of(high)
     set_vertices(high, standing(co, spec['height'], spec['turn'], -spec['sink'])(co))
     if name == 'gate':
         figures['faces_cut'] = gate_surgery(high, spec, rng)
+    if 'base' in spec:
+        figures['base_trimmed'] = trim_base(high, spec)
     if 'flatten' in spec:
         figures['moss_flattened'] = flatten_moss(high, color, spec)
     if name == 'lantern':
@@ -1496,7 +1612,7 @@ def finish_model(name, spec, raw, rng):
     model.data.materials.append(material(
         name,
         image(f'{name}-color', painted),
-        image(f'{name}-normal', relief(maps['normal'], maps['color'], flat, keep=1.0), 'Non-Color'),
+        image(f'{name}-normal', relief(maps['normal'], maps['color'], flat, 1.0, MODEL_RELIEF), 'Non-Color'),
         image(f'{name}-orm', np.dstack([occlusion, roughness, metal]), 'Non-Color'),
         roughness=0.9,
         tint=False,

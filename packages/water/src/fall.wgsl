@@ -22,7 +22,16 @@ struct Uniforms {
     apron: f32,
     // Half the water's width at the lip, in meters.
     halfWidth: f32,
+    // The world height below which the fall vanishes, as into a cloud sea that draws before it.
+    fadeBelow: f32,
+    // The lip's direction across the water, to its right, as a unit vector in the world.
+    across: vec3f,
 }
+
+/// The meters below `fadeBelow` over which the fall vanishes, and the meters above it where it
+/// starts to thin.
+const SINK_DEPTH: f32 = 2.5;
+const SINK_LEAD: f32 = 0.5;
 
 /// The ropes that the white water parts into, for each meter round the column.
 const ROPES_PER_METER: f32 = 0.9;
@@ -137,7 +146,10 @@ fn surface(input: SurfaceInput) -> Surface {
     let streaks = streak_layer(lip + warp * 2.0, crossed, vec2f(3.7, 0.6), 1.9);
     let patches = streak_layer(lip, crossed, vec2f(1.1, 0.3), 2.3);
     let lines = smoothstep(0.5, 0.8, streaks) * smoothstep(0.15, 0.6, patches);
-    let foam = max(white, lines * 0.9 * (1.0 - white));
+    // On the apron the water breaks into froth as it nears the brink, as white water piles up
+    // before an edge.
+    let piled = smoothstep(-0.8 * material.apron, 0.0, t) * smoothstep(0.35, 0.6, froth);
+    let foam = max(white, max(lines * 0.9, piled * 0.85) * (1.0 - white));
     let body = clamp(rope * mix(0.8, 1.15, froth) * mix(0.9, 1.08, fine), 0.0, 1.0);
     s.baseColor = mix(material.glass, white_color * mix(0.22, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
@@ -154,7 +166,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // show as shade, not as gaps. Lower down the column breaks up: long upright gaps open in the
     // shade between the ropes first, until only the ropes' cores are left, torn into clumps.
     var alpha = mix(0.9, 0.97, white);
-    let breakup = smoothstep(0.25, 0.85, share);
+    let breakup = smoothstep(0.4, 0.9, share);
     let long = streak_layer(lip, crossed, vec2f(2.5, 1.2), 3.7);
     let solid = core + (long - 0.5) * 0.5 + (froth - 0.5) * 0.25;
     let threshold = mix(-0.4, 0.95, breakup);
@@ -164,21 +176,45 @@ fn surface(input: SurfaceInput) -> Surface {
     let grazing = abs(dot(input.normal, input.viewDirection));
     let lobes = value2(vec2f(around * 9.0 + 11.0, crossed * 2.2));
     alpha *= smoothstep(0.1, 0.5, grazing + (froth - 0.5) * 1.1 + (lobes - 0.5) * 0.5 + (fine - 0.5) * 0.5);
+    // Seen from the front, the column's sides break into separate ropes as it falls, with the rock
+    // showing between them, so its edges are never two straight lines. A view along the lip, which
+    // sees the ends of the oval face on, keeps them whole.
+    // The pattern reads the place across the lip alone, so the column's front and back break
+    // alike and the rock shows through both.
+    let across_place = abs(input.uv.x) / material.halfWidth;
+    let frontal_view = 1.0 - smoothstep(0.45, 0.85, abs(dot(input.viewDirection, material.across)));
+    let side_lobes = value2(vec2f(sign(input.uv.x) * 7.0 + 2.0, crossed * 1.8));
+    let sides = smoothstep(0.32, 0.66, across_place + (side_lobes - 0.5) * 0.35) * frontal_view;
+    let breaking = sides * smoothstep(0.1, 1.2, fallen);
+    let strand = value2(vec2f(input.uv.x * 2.4 + 3.0, crossed * 0.7));
+    alpha *= mix(1.0, smoothstep(0.45, 0.62, strand + (froth - 0.5) * 0.3), breaking);
+    // Its outermost water thins away as it falls, so the fall draws in from the rock on both sides.
+    let edge = mix(1.05, 0.6, smoothstep(0.0, 1.8, fallen)) + (side_lobes - 0.5) * 0.2;
+    alpha *= mix(1.0, 1.0 - smoothstep(edge - 0.06, edge + 0.04, across_place), frontal_view);
     // The water gives way to the mist over the lower half of the drop, so it never lands. Each
     // clump ends at its own height, so no line runs across the fall.
     let ending = share + (froth - 0.5) * 0.3 + (core - 0.5) * 0.12;
-    alpha *= 1.0 - smoothstep(0.55, 0.95, ending);
-    // The apron fades in from its upstream end, over the river's own surface. The column's back
-    // lies on its front at the lip, so it shows only once the column has some depth.
-    alpha *= smoothstep(-material.apron, -0.4 * material.apron, t);
+    alpha *= 1.0 - smoothstep(0.62, 0.98, ending);
+    // The apron fades in from its upstream end, over the river's own surface, sooner in some places
+    // across than in others, so neither it nor the river's square end draws a line. The column's
+    // back lies on its front at the lip, so it shows only once the column has some depth.
+    let start = t + (patches - 0.5) * 0.5 * material.apron;
+    alpha *= smoothstep(-material.apron, -0.4 * material.apron, start);
     let back = smoothstep(0.3, -0.3, facing);
     alpha *= mix(1.0, smoothstep(0.05, 0.8, fallen), back);
     s.baseColor *= mix(1.0, 0.85, back);
 
-    // Where the column nears a wall or a ledge behind it, it fades rather than cutting a line.
+    // Where the column nears a wall or a ledge behind it, it fades rather than cutting a line. The
+    // apron and the first meter of the fall lie on the river and its brink by design, so they do
+    // not fade there: a fade would draw the lip as a straight line where the water leaves it.
     let place = input.fragCoord.xy / frame.resolution;
     let gap = max(sceneDistance(place) - distance_of(input.fragCoord.z), 0.0);
-    alpha *= smoothstep(0.0, material.softness, gap);
+    let on_brink = 1.0 - smoothstep(0.4, 1.5, fallen);
+    alpha *= mix(smoothstep(0.0, material.softness, gap), 1.0, on_brink);
+    // A cloud that draws before the fall does not hide it, so the fall vanishes itself where it
+    // sinks into the cloud, each clump at its own depth.
+    let sink = input.worldPosition.y + (froth - 0.5) * 0.8;
+    alpha *= smoothstep(material.fadeBelow - SINK_DEPTH, material.fadeBelow + SINK_LEAD, sink);
     s.alpha = clamp(alpha, 0.0, 1.0);
     return s;
 }

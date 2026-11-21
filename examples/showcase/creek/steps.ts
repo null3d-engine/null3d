@@ -1,14 +1,14 @@
 // The flights of stone steps from the creek's far bank through the gate to the terrace: worn grey
-// slabs, uneven in length and edge, pale on the tread and dark on the riser, with moss creeping in at
-// their ends, and a low wall of dark stacked rock along each side. Each step sits on the even ramp
+// slabs, uneven in length and edge, pale on the tread and dark on the riser, with moss creeping in
+// at their ends, and a low wall of stacked rock along each side. Each step sits on the even ramp
 // that the land lays under its flight, with its body sunk below the ramp, so none floats above the
 // ground or sinks into it.
 import type { MeshArrays, SketchContext } from '@null3d/engine';
 import { Noise, random, rock } from '../../lib/procedural';
 import { rockMaps } from './cliff';
-import { lowestGround } from './garden';
+import { gardenPlaces, lowestGround, nearLedge } from './garden';
 import { alongFlight, flights, STAIRS } from './land';
-import { mossy } from './stones';
+import { mossy, TEXTURED_MOSS } from './stones';
 
 /**
  * The slabs: how far each reaches past its tread's length, so the steps overlap a little; how far its
@@ -32,16 +32,32 @@ const SLAB = {
 } as const;
 const STRIPS = 6;
 
-/** Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. */
-const TREAD = [0.19, 0.178, 0.155] as const;
-const RISER = [0.045, 0.04, 0.034] as const;
+/**
+ * Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. The tread
+ * is a pale stone, which the rock texture's warm cast turns a light warm tan, paler than the moss.
+ */
+const TREAD = [0.8, 0.77, 0.74] as const;
+const RISER = [0.1, 0.092, 0.08] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
+/**
+ * Linear colors of the wall stones: a grey stone, lighter than it draws under the rock texture, and
+ * moss as light as the ground's.
+ */
+const WALL_TONES = { stone: [0.3, 0.29, 0.28], moss: TEXTURED_MOSS } as const;
 
 /**
  * The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes, the
- * courses, and how far a stone's footprint reaches on the ground, as a share of its size.
+ * courses, how far a stone's footprint reaches on the ground, as a share of its size, and how far
+ * past the ledge's oval they stop, in meters, so the rock round the ledge flanks the cut steps.
  */
-const WALL = { out: 0.45, spacing: 0.5, size: [0.24, 0.36], rows: 2, reach: 1.2 } as const;
+const WALL = {
+	out: 0.45,
+	spacing: 0.5,
+	size: [0.24, 0.36],
+	rows: 2,
+	reach: 1.2,
+	ledge: 0.8,
+} as const;
 
 const noise = new Noise(71);
 
@@ -183,9 +199,9 @@ function slab(built: Parameters<typeof face>[0], next: () => number, place: Slab
 			const a = c < 2 ? a0 : a1;
 			// Moss creeps in from the step's ends and lies in patches over its worn middle.
 			const ends = (Math.abs(a) - 0.45) / 0.4 + 0.35 * noise.value2(x * 2, z * 2);
-			const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.25) * 2.5;
+			const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.42) * 2.5;
 			const moss = Math.min(1, Math.max(0, ends, patches));
-			const base = tone(TREAD, x, z, 0.4);
+			const base = tone(TREAD, x, z, 0.3);
 			return [0, 1, 2].map(
 				(i) => (base[i] as number) + ((MOSS[i] as number) - (base[i] as number)) * moss,
 			) as [number, number, number];
@@ -238,6 +254,7 @@ export interface WallStone {
  */
 export function wallPlaces(): WallStone[] {
 	const next = random(75);
+	const { ledge } = gardenPlaces();
 	const places: WallStone[] = [];
 	for (const flight of flights()) {
 		const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
@@ -253,6 +270,7 @@ export function wallPlaces(): WallStone[] {
 					if (along > length) continue;
 					const x = flight.from[0] + fx * along - fz * side * out;
 					const z = flight.from[1] + fz * along + fx * side * out;
+					if (nearLedge(ledge, x, z, WALL.ledge)) continue;
 					// The lower course sits down in the ground; the upper rests on it.
 					const y = lowestGround(x, z, size * WALL.reach) + (row === 1 ? size * 0.3 : -size * 0.15);
 					// Each stone lies along the flight, its long side with the wall.
@@ -286,23 +304,30 @@ export function createSteps(
 	};
 	scene.createMesh({
 		mesh: geometry.fromArrays(arrays),
-		// The stones' own grain and cracks over the slabs' colours, so no slab reads as smooth.
+		// The rock's grain over the slabs' colours, so no slab reads as smooth, under a cool tint
+		// that takes out the rock texture's warmth: the steps are pale grey cut stone.
 		material: materials.standard({
 			vertexColors: true,
 			...rockMaps(textures, textureSize),
+			color: '#eef2f8',
 			roughness: 0.95,
 		}),
 		castShadows: true,
 		receiveShadows: true,
 	});
-	// The walls: low courses of flat dark stones laid along each side, beyond a band of moss.
+	// The walls: low courses of rounded stones laid along each side, beyond a band of moss, with moss
+	// over their tops, so each side reads as a low mossy rock wall.
 	const stone = geometry.fromArrays(
-		mossy(rock(77, Math.max(1, detail - 2), [1.3, 0.5, 0.75], 0.14), 78, 0.25),
+		mossy(rock(77, Math.max(1, detail - 2), [1, 0.7, 0.9], 0.12), 78, 0.75, WALL_TONES),
 	);
 	const places = wallPlaces();
 	const walls = scene.createInstances(stone, places.length, {
-		// A dark tint over the mossy stones' colours: the walls read as dark stacked rock.
-		material: materials.standard({ vertexColors: true, color: '#8c847a', roughness: 0.95 }),
+		// The stones' own colors, with the rock's grain: grey rock under moss, darker than the treads.
+		material: materials.standard({
+			vertexColors: true,
+			...rockMaps(textures, textureSize),
+			roughness: 0.95,
+		}),
 		castShadows: true,
 		receiveShadows: true,
 	});
