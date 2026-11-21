@@ -276,6 +276,9 @@ function createCreekWater(
 			alphaMode: 'opaque',
 			attenuationColor: '#4f9a96',
 			attenuationDistance: 1.2,
+			// From the opening view the calm pool would mirror the bright overcast and hide its bed:
+			// a weaker reflection lets the dark bed through, as the concept's pool shows it.
+			specularIntensity: 0.5,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,

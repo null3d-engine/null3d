@@ -1,13 +1,13 @@
 // The Creek garden's built things and its big rocks: the bronze Buddha on its oval slab, over a
 // raised ledge of rough dark rock on the terrace; the roofed gate on its landing on the ridge, with
 // a dragon at each end of its ridge and a lantern on each side; the lanterns by the creek and at
-// the front; and the mossy boulders by the gravel and on the slopes. Each is a model finished in
-// Blender from a Tripo3D base (tools/samples/blender/creek_tripo.py), which the asset tool
-// optimized and the sample-assets repository holds. Each part carries its own lower levels, so
-// every copy picks its own level of detail. Places follow the concept picture, read from the
-// opening view onto this land, and every model is seated on the lowest ground under its footprint,
-// so no part of it hangs over a slope.
-import type { MeshArrays, SketchContext } from '@null3d/engine';
+// the front; the mossy boulders by the gravel and on the slopes; and low walls of grey rock across
+// the statue's hill. Each model is finished in Blender from a Tripo3D base
+// (tools/samples/blender/creek_tripo.py), which the asset tool optimized and the sample-assets
+// repository holds. Each part carries its own lower levels, so every copy picks its own level of
+// detail. Places follow the concept picture, read from the opening view onto this land, and every
+// model is seated on the lowest ground under its footprint, so no part of it hangs over a slope.
+import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
 import { type Part, partsOf, type Stand, standPart, tintedPart } from '../../lib/blender-models';
 import { Noise, random } from '../../lib/procedural';
 import { sampleUrl } from '../../lib/samples';
@@ -27,6 +27,8 @@ import {
 	TERRACE,
 } from './land';
 import { MOSS_MUTE, TEXTURED_MOSS } from './stones';
+
+const { smoothstep } = math;
 
 /** The models that the garden places. */
 export interface GardenModels {
@@ -170,6 +172,35 @@ const HILL = {
 	landing: LANDING.radius + 0.6,
 } as const;
 
+/**
+ * The low rock walls across the statue's hill, as the concept's terraces of grey rock: how far each
+ * wall runs from the terrace's middle, the first at the flat top's edge and the rest down the
+ * slope; the bearings that the walls span, over the hill's side toward the creek; the spacing of a
+ * wall's points along it; the lengths of its stretches and of the gaps between them; how far past
+ * the ledge's oval they stop; how far its uphill and downhill faces stand from its line; how high
+ * its top stands over the highest ground under it, and how far its faces sink below the ground at
+ * their feet; and how far its ends taper into the slope, all in meters. They keep off the steps as
+ * the hill's outcrops do.
+ */
+const TERRACE_WALLS = {
+	rings: [TERRACE.top + 0.6, TERRACE.top + 1.9, TERRACE.top + 3.2, TERRACE.top + 4.5],
+	bearings: [0.3, 2.8],
+	spacing: 0.4,
+	stretch: [4, 8],
+	gap: [0.8, 1.6],
+	ledge: 0.8,
+	back: 0.6,
+	front: 0.5,
+	top: [0.35, 0.65],
+	sink: 0.25,
+	taper: 0.5,
+} as const;
+/**
+ * The linear color of the terrace walls' rock, under the moss on their tops: it leans cool, so the
+ * rock texture's warm cast leaves it grey.
+ */
+const TERRACE_ROCK = [0.11, 0.12, 0.14] as const;
+
 /** True for a footprint that would lie on or beside a flight of steps. */
 const onStairs = (x: number, z: number, reach: number) =>
 	flights().some((flight) => {
@@ -308,6 +339,132 @@ export function nearLedge(ledge: Ledge, x: number, z: number, margin: number): b
 	// The point in the ledge's own frame: the turn of ledgePoint, undone.
 	const [across, along] = [dx * c - dz * s, dx * s + dz * c];
 	return Math.hypot(across / (LEDGE.long + margin), along / (LEDGE.wide + margin)) < 1;
+}
+
+/** One point along a terrace wall: its line on the ground, its bearing and its top's height. */
+export interface TerracePoint {
+	readonly x: number;
+	readonly z: number;
+	readonly bearing: number;
+	/** The height of the wall's top over the ground on its line, tapered to nothing at its ends. */
+	readonly top: number;
+}
+
+/**
+ * The terrace walls, found from the land alone: each wall follows the hill's slope at one distance
+ * from the terrace's middle, with a little wander, and breaks into stretches with gaps, stopped
+ * short of the steps, the ledge and the rim. Each stretch is a list of points along it.
+ */
+export function terraceWalls(): TerracePoint[][] {
+	const noise = new Noise(76);
+	const next = random(76);
+	const between = (range: readonly [number, number]) => range[0] + (range[1] - range[0]) * next();
+	const { ledge } = gardenPlaces();
+	const walls: TerracePoint[][] = [];
+	TERRACE_WALLS.rings.forEach((radius, ring) => {
+		const step = TERRACE_WALLS.spacing / radius;
+		const [from, to] = TERRACE_WALLS.bearings;
+		let run: { x: number; z: number; bearing: number }[] = [];
+		const close = () => {
+			// A stretch too short to taper at both ends is left out.
+			const length = run.length * TERRACE_WALLS.spacing;
+			if (length > TERRACE_WALLS.taper * 2.5)
+				walls.push(
+					run.map((point, k) => {
+						const along = Math.min(k, run.length - 1 - k) * TERRACE_WALLS.spacing;
+						const [low, high] = TERRACE_WALLS.top;
+						const top = low + (high - low) * (0.5 + 0.5 * noise.value2(point.bearing * 9, ring));
+						return { ...point, top: top * smoothstep(along, 0, TERRACE_WALLS.taper) };
+					}),
+				);
+			run = [];
+		};
+		// The wall stands and breaks in turn, each stretch and gap of its own length.
+		let standing = true;
+		let left = between(TERRACE_WALLS.stretch);
+		for (let bearing = from; bearing <= to; bearing += step) {
+			left -= TERRACE_WALLS.spacing;
+			if (left < 0) {
+				standing = !standing;
+				left = between(standing ? TERRACE_WALLS.stretch : TERRACE_WALLS.gap);
+			}
+			const out = radius + 0.25 * noise.value2(bearing * 3, ring * 5.1);
+			const x = TERRACE.x + Math.cos(bearing) * out;
+			const z = TERRACE.z + Math.sin(bearing) * out;
+			const stands =
+				standing &&
+				Math.hypot(x, z) < rimRadius(bearingOf(x, z)) - TERRACE_WALLS.front - 0.5 &&
+				!nearLedge(ledge, x, z, TERRACE_WALLS.ledge) &&
+				!onStairs(x, z, TERRACE_WALLS.back);
+			if (stands) run.push({ x, z, bearing });
+			else close();
+		}
+		close();
+	});
+	return walls;
+}
+
+/**
+ * The terrace walls' mesh: for each stretch, a band of rock along its line, with a rough face down
+ * into the ground on each side and a mossy top over the higher ground under it, notched into blocks.
+ */
+function terraceArrays(walls: readonly TerracePoint[][]): MeshArrays {
+	const noise = new Noise(81);
+	const positions: number[] = [];
+	const colors: number[] = [];
+	const uvs: number[] = [];
+	const indices: number[] = [];
+	const add = (x: number, y: number, z: number, moss: number, u: number) => {
+		const shade = 0.8 + 0.35 * noise.value2(x * 2.3, z * 2.3 + y);
+		const m = Math.min(1, Math.max(0, moss + 0.3 * noise.value2(x * 1.4 + 3, z * 1.4)));
+		positions.push(x, y, z);
+		for (let c = 0; c < 3; c++) {
+			const rock = TERRACE_ROCK[c] as number;
+			colors.push((rock + ((TEXTURED_MOSS[c] as number) - rock) * m) * shade);
+		}
+		uvs.push(u, y * 0.5);
+	};
+	// From uphill to downhill, each ring's offset from the line, and whether it lies on the top.
+	const rings = [
+		{ out: -TERRACE_WALLS.back, top: false, moss: 0.2 },
+		{ out: -TERRACE_WALLS.back * 0.6, top: true, moss: 0.8 },
+		{ out: 0, top: true, moss: 0.45 },
+		{ out: TERRACE_WALLS.front, top: false, moss: 0 },
+	];
+	for (const wall of walls) {
+		const first = positions.length / 3;
+		wall.forEach((point, k) => {
+			const [ox, oz] = [Math.cos(point.bearing), Math.sin(point.bearing)];
+			const rough = 0.1 * noise.value2(k * 0.9, point.bearing * 5);
+			// The wall's top stands over the highest ground under it, and dips at each block's joint.
+			const ground = rings.map(({ out }) =>
+				groundHeight(point.x + ox * (out + rough), point.z + oz * (out + rough)),
+			);
+			const joint =
+				1 - 0.25 * Math.max(0, Math.cos((k * TERRACE_WALLS.spacing * Math.PI) / 1.2)) ** 8;
+			const top = Math.max(...ground) + point.top * joint;
+			const u = k * TERRACE_WALLS.spacing * 0.5;
+			rings.forEach(({ out, top: onTop, moss }, ring) => {
+				const y = onTop
+					? top - (ring === 1 ? 0.06 : 0)
+					: (ground[ring] as number) - TERRACE_WALLS.sink;
+				add(point.x + ox * (out + rough), y, point.z + oz * (out + rough), moss, u);
+			});
+		});
+		for (let k = 0; k < wall.length - 1; k++)
+			for (let ring = 0; ring < rings.length - 1; ring++) {
+				const a = first + k * rings.length + ring;
+				const b = first + (k + 1) * rings.length + ring;
+				indices.push(a, a + 1, b, b, a + 1, b + 1);
+			}
+	}
+	return {
+		positions: new Float32Array(positions),
+		colors: new Float32Array(colors),
+		uvs: new Float32Array(uvs),
+		indices: new Uint32Array(indices),
+		computeNormals: true,
+	};
 }
 
 let placeList: GardenPlaces | undefined;
@@ -477,8 +634,8 @@ function ledgeArrays(ledge: Ledge): MeshArrays {
 
 /**
  * Stands the garden's models: the statue on its slab over the rock ledge, the gate with its roof
- * dragons and its two lanterns, the other lanterns and the boulders. Returns a test of whether a
- * point lies under one of them, where nothing grows.
+ * dragons and its two lanterns, the other lanterns and the boulders; and lays the low rock walls
+ * across the hill. Returns a test of whether a point lies under one of them, where nothing grows.
  */
 export function createGarden(
 	ctx: SketchContext,
@@ -509,6 +666,25 @@ export function createGarden(
 			[...places.rocks, ...places.ring].filter((rock) => rock.model === model),
 			tintedPart(materials, models.boulders[model], MOSS_MUTE, 0.95),
 		);
-	const feet = [places.statue, places.gate, ...places.lanterns, ...places.rocks, ...places.ring];
+	// The terrace walls: grey rock faces under mossy tops, with the rock's grain.
+	const walls = terraceWalls();
+	scene.createMesh({
+		mesh: geometry.fromArrays(terraceArrays(walls)),
+		material: materials.standard({
+			vertexColors: true,
+			...rockMaps(textures, textureSize),
+			roughness: 0.95,
+		}),
+		castShadows: true,
+		receiveShadows: true,
+	});
+	const feet = [
+		places.statue,
+		places.gate,
+		...places.lanterns,
+		...places.rocks,
+		...places.ring,
+		...walls.flat().map((point) => ({ ...point, reach: TERRACE_WALLS.back })),
+	];
 	return (x, z) => feet.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
 }
