@@ -1528,12 +1528,8 @@ def build_pine(name, spec, raw, leaf_mat, rng):
             'leaves': needles(places[::every], own, grow, spec['bodies'][k]).build(f'{name}-leaves-{k}', leaf_mat),
         }
         for part, obj in level.items():
-            # Each level's error is measured, and one past the limit stops the build: the engine
-            # would keep the finest level far too long, or switch to a level that looks wrong.
-            error = round(level_error(obj, full[part]), 4)
-            if error > spec['limit'] * spec['height']:
-                raise SystemExit(f"{name}-{part}-{k}: its surface error is {error} m, over the limit of {spec['limit'] * spec['height']:.3f} m")
-            errors[f'{name}-{part}'].append(error)
+            # Each level's error is measured, and one past the limit stops the build.
+            errors[f'{name}-{part}'].append(level_error(obj, full[part], limit=spec['limit'] * spec['height']))
         objects += list(level.values())
     raw_mesh = wood.data
     bpy.data.objects.remove(wood)

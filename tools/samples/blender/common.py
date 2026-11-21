@@ -18,6 +18,7 @@ import struct
 import sys
 import tempfile
 
+import bmesh
 import bpy
 import numpy as np
 from mathutils import Vector
@@ -736,21 +737,48 @@ def surface_points(obj, count, rng):
     return a[pick] + (b[pick] - a[pick]) * u[:, None] + (c[pick] - a[pick]) * v[:, None]
 
 
-def level_error(level, full, share=0.95, count=20000, seed=1):
+def level_error(level, full, share=0.95, floor=-math.inf, limit=math.inf, count=20000, seed=1):
     """
-    A lower level's surface error, in meters: the distance below which `share` of the points spread
-    over both surfaces lie from the other surface. A level that drops leaf cards moves a few points
-    far, so the largest distance would keep the finest level on screen for no gain, while the
-    share counts the change that the eye sees.
+    A lower level's surface error, in meters, measured both ways between it and the full mesh.
+    Points at the height `floor` or below, such as what a slab hides, do not count.
+
+    With a `share`, the error is the distance below which that share of the points spread over
+    both surfaces by area lie from the other surface. A level that drops leaf cards moves a few
+    points far, so the largest distance would keep the finest level on screen for no gain, while
+    the share counts the change that the eye sees. With `share` None, the error is the largest
+    distance from either mesh's vertices to the other's surface, which suits a solid model, where
+    any gap shows in its outline.
+
+    The error comes rounded to a tenth of a millimeter, as the files store it. One past `limit`
+    meters stops the build: the engine would keep the finest level far too long, or switch to a
+    level that looks wrong, and a large error often means that the measure counted a hidden
+    surface or that the decimation broke the shape.
     """
     def tree(obj):
-        return BVHTree.FromPolygons([v.co for v in obj.data.vertices], [p.vertices for p in obj.data.polygons])
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        found = BVHTree.FromBMesh(bm)
+        bm.free()
+        return found
+
+    def points(obj, rng):
+        if share is not None:
+            return surface_points(obj, count, rng)
+        co = np.empty(len(obj.data.vertices) * 3, np.float32)
+        obj.data.vertices.foreach_get('co', co)
+        return co.reshape(-1, 3)
 
     rng = np.random.default_rng(seed)
     gaps = []
-    for points, onto in ((surface_points(level, count, rng), tree(full)), (surface_points(full, count, rng), tree(level))):
-        gaps += [onto.find_nearest(Vector(p))[3] or 0.0 for p in points]
-    return float(np.quantile(gaps, share))
+    for here, there in ((level, full), (full, level)):
+        shown = points(here, rng)
+        shown = shown[shown[:, 2] > floor]
+        onto = tree(there)
+        gaps += [onto.find_nearest(Vector(p))[3] or 0.0 for p in shown]
+    error = round(float(max(gaps) if share is None else np.quantile(gaps, share)), 4)
+    if error > limit:
+        raise SystemExit(f'{level.name}: its surface error is {error} m, over the limit of {limit:.3f} m')
+    return error
 
 
 # ---------------------------------------------------------------------------------------------
