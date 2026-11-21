@@ -399,7 +399,10 @@ low view reads 0.76 against 0.53. The foam's clumps are round, six to a meter, w
 Each octave's grid turns a different way, and the coarse one bends the fine one, so no clump lines
 up with the world's axes. Each octave gives way to its mean where a pixel covers one of its clumps.
 The foam map still places the foam. Foam is broken water full of air, so it is nearly white and
-lets little of the bed through.
+lets little of the bed through. The coarse clumps are smeared a third of a meter downstream, so
+foam lies in streaks behind what breaks the water. Clear water is the rule: foam needs both a
+stone close by and a strong fleck. From the Creek's opening camera, 24% of the west arm's water
+reads pale, as the concept's does.
 
 ## Rain on the surface
 

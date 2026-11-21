@@ -313,18 +313,25 @@ const CAUSTIC_MEAN: f32 = 0.077;
 /// The foam's clumps for each meter, the same along the current and across it.
 const FOAM_CELLS: f32 = 6.0;
 
-/// Two octaves of the foam's clumps at a point, from 0 to 1. `footprint` is the meters that one pixel
+/// Two octaves of the foam's clumps at a point, from 0 to 1, drawn out into streaks along `along`,
+/// the current's direction (or nothing in still water). `footprint` is the meters that one pixel
 /// covers there. Where a pixel covers more than a clump, an octave gives way to its mean, so the
 /// foam never breaks into a grid of dots far off.
-fn foam_clumps(q: vec2f, footprint: f32) -> f32 {
+fn foam_clumps(q: vec2f, along: vec2f, footprint: f32) -> f32 {
     // Each octave turns its grid a different way, and the coarse one bends the fine one, so no clump
     // lines up with the world's axes.
-    let a = mat2x2f(0.866, 0.5, -0.5, 0.866) * q * FOAM_CELLS;
+    let turn = mat2x2f(0.866, 0.5, -0.5, 0.866);
+    let a = turn * q * FOAM_CELLS;
     let bend = vec2f(value2(a * 0.5 + vec2f(3.3, 1.7)), value2(a * 0.5 + vec2f(9.1, 5.2))) - vec2f(0.5);
     let b = mat2x2f(0.766, -0.643, 0.643, 0.766) * q * FOAM_CELLS * 2.3 + bend * 1.5 + vec2f(7.0, 3.1);
+    // The coarse clumps are smeared a third of a meter downstream, so foam lies in streaks behind
+    // what breaks the water rather than in round blotches of one size.
+    let step = turn * along * (FOAM_CELLS * 0.17);
+    let streak = (value2(a) + value2(a - step) + value2(a - step * 2.0)) / 3.0;
+    let coarse = 0.5 + (streak - 0.5) * 1.45;
     let near = 1.0 - smoothstep(0.5, 1.1, footprint * FOAM_CELLS);
     let fine = 1.0 - smoothstep(0.5, 1.1, footprint * FOAM_CELLS * 2.3);
-    return 0.6 * mix(0.5, value2(a), near) + 0.4 * mix(0.5, value2(b), fine);
+    return 0.65 * mix(0.5, coarse, near) + 0.35 * mix(0.5, value2(b), fine);
 }
 
 /// The flecks that break the foam around the stones, which the current carries downstream in two
@@ -332,8 +339,9 @@ fn foam_clumps(q: vec2f, footprint: f32) -> f32 {
 /// current changes.
 fn foam_flecks(p: vec2f, flow: vec2f, t: f32, footprint: f32) -> f32 {
     let copies = carried(t);
-    let a = foam_clumps(p - flow * copies.x + vec2f(cycle_seed(t, 0.0) * 37.0, 0.0), footprint);
-    let b = foam_clumps(p - flow * copies.y + vec2f(0.0, cycle_seed(t, 0.5) * 41.0 + 11.0), footprint);
+    let along = select(vec2f(0.0), normalize(flow), length(flow) > 1e-4);
+    let a = foam_clumps(p - flow * copies.x + vec2f(cycle_seed(t, 0.0) * 37.0, 0.0), along, footprint);
+    let b = foam_clumps(p - flow * copies.y + vec2f(0.0, cycle_seed(t, 0.5) * 41.0 + 11.0), along, footprint);
     let wa = copies.z;
     let wb = copies.w;
     // Two noises blended halve the spread; this gives it back.
@@ -522,17 +530,19 @@ fn surface(input: SurfaceInput) -> Surface {
     // Shallow water at the edges carries a little foam.
     let edgeFoam = (1.0 - smoothstep(0.0, 0.05, depth)) * smoothstep(0.0, 0.03, w.x + 0.012);
     // Foam around the stones: the map holds how near each point lies to a stone, stretched
-    // downstream, and moving noise breaks it into flecks that the current carries away.
+    // downstream, and moving noise breaks it into flecks that the current carries away. Clear water
+    // is the rule: foam needs both a stone close by and a strong fleck, so it gathers in streaks
+    // behind the stones and thins to scattered flecks further off.
     let foamUv = (p - material.foamOrigin) / material.foamSize;
     let near = textureSampleLevel(foamMap, foamMapSampler, foamUv, 0.0).r;
     var flecks = foam_flecks(p, current.xy * current.z, frame.time, footprint);
     if share < 1.0 {
         flecks = mix(foam_flecks(p, vec2f(0.0), frame.time, footprint), flecks, share);
     }
-    let stoneFoam = 0.95 * smoothstep(0.45, 0.95, near * (0.3 + 1.0 * flecks));
+    let stoneFoam = smoothstep(0.57, 0.85, near * (0.205 + 0.95 * flecks));
     let foam = max(edgeFoam, stoneFoam);
     // Foam is broken white water: nearly white, and too full of air to show the bed through it.
-    s.baseColor = mix(s.baseColor, vec3f(0.93), foam);
+    s.baseColor = mix(s.baseColor, vec3f(1.0), foam);
     s.roughness = mix(s.roughness, 0.6, foam);
     if !input.frontFacing {
         // Seen from under the water: the world above shows through, bent by the ripples, clearest in
