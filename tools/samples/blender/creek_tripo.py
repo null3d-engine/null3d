@@ -194,7 +194,10 @@ MODELS = {
 # and less pink. The bronze on the knees keeps `knee` of its lightness, and their rust all of it.
 # Last, on the upper arms and lapels, the raw color's light and dark at the pleats'
 # scale is laid back over the finished color `pleats` strong, so the darkening does not squeeze
-# them.
+# them. Then each texel's light and dark against those round it, at the scale of the folds and the
+# curls, grows `detail[0]` times on the body and `detail[1]` times on the hair, so the fine texture
+# holds at a distance; the hair keeps `hair_tone` of its lightness, and the curls' gaps, deep in
+# the baked occlusion, darken by up to `curls`.
 PATINA = dict(
     middle=0.18,
     contrast=1.4,
@@ -208,13 +211,16 @@ PATINA = dict(
     streak_width=(0.03, 0.08),
     streak_length=1.6,
     streak=0.05,
-    bumps=0.4,
-    relief=12.0,
+    bumps=0.55,
+    relief=16.0,
     eye=(0.62, 0.64, 0.60),
     warm=(1.07, 1.0, 0.88),
     hairline=0.55,
     green=(1.02, 1.0, 0.9),
     pleats=2.0,
+    detail=(1.9, 3.2),
+    hair_tone=0.8,
+    curls=0.6,
     knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
@@ -880,6 +886,19 @@ def repaint(maps, height, eyes, eye, chest, rng):
     chin = float(np.mean([p[2] for p in eyes]))
     robe = smoothstep(chin - 0.4, chin - 0.8, z) * smoothstep(waist - 0.2, waist + 0.3, z) * (1 - warmth)
     color *= (1 + PATINA['pleats'] * band * robe)[..., None]
+
+    # Fine texture that holds at a distance: each texel's light and dark against the texels in use
+    # round it, at the scale of the folds and the curls, grows `detail[0]` times on the body and
+    # `detail[1]` times on the hair, and the hair keeps `hair_tone` of its lightness.
+    final = color @ LUMA
+    around = box_blur(final * used, 5) / np.maximum(box_blur(used.astype(np.float32), 5), 1e-3)
+    grow = PATINA['detail'][0] + (PATINA['detail'][1] - PATINA['detail'][0]) * hair
+    color *= np.clip(1 + (grow - 1) * (final / np.maximum(around, 0.02) - 1), 0.3, 1.8)[..., None]
+    color *= (1 - (1 - PATINA['hair_tone']) * hair)[..., None]
+    # The curls' gaps, deep in the baked occlusion, darken by up to `curls` on the hair, so the
+    # curls read under any light.
+    gaps = np.clip(1 - occlusion / max(float(np.median(occlusion[used & (hair > 0.5)])), 1e-3), 0, 1)
+    color *= (1 - PATINA['curls'] * hair * np.clip(gaps * 3, 0, 1))[..., None]
 
     for middle_point in eyes:
         d = (position - np.array(middle_point, np.float32)) / np.array((eye[0], eye[0], eye[1]), np.float32)
