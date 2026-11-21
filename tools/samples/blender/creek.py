@@ -852,7 +852,8 @@ def build_cave(mat, rng):
 #            a share of a pad's radius; vary is how much each pad's width and thickness vary at
 #            random; crest, when given, tops the trunk with a dome of clumps as wide as its first
 #            share of the crown's width, sitting its second share of the height above the layer
-#            below; spread, when given, is the farthest from the trunk's axis a pad sits; span,
+#            below and as tall as its third share of its half width; spread, when given, is
+#            the farthest from the trunk's foot a pad sits; span,
 #            when given with wire, the shares of the height between which the layers lie
 #   inner    the share of a limb's reach, from the trunk, that carries no pad
 #   slope    the steepest rise over run of the wood that carries pads along it; flatten is how
@@ -878,7 +879,7 @@ PINES = {
     'pine-tall': dict(
         TALL_TRUNK, wood=(14000, 5000, 1600),
         fan=(0.3, (0.5, 0.05, 0.0), (0.55, 1.4, 1.95, 1.35, 1.1)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12,
-        keep=0.45, girth=0.3, prune=True, gap=0.2, pad=(1.0, 1.35, 1.1), vary=0.35, crest=(0.4, 0.05),
+        keep=0.45, girth=0.3, prune=True, gap=0.2, pad=(1.0, 1.35, 1.1), vary=0.35, crest=(0.4, 0.05, 0.33),
         taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.6, 0.3, 0.3, 0.3, 0.3), flat=3.0, rise=0.1,
         inner=0.0,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
@@ -890,7 +891,7 @@ PINES = {
         turn=-90, height=3.4, sink=0.15, wood=(8000, 3000, 1000), limit=0.03, bark=(0.17, 0.11, 0.055),
         fan=(0.3, (0.8,), (1.25,)), rigid=0.25, climb=(0.3, 0.3, 1.5, 0.35), bare=0.45, stub=0.12, twig=0.2, keep=0.3, girth=0.3, prune=True,
         gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8, slope=2.0, flatten=0.3, hold=1.0, level=70,
-        floor=0.6, spread=1.9, deep=(0.5,), flat=2.2, rise=0.1, inner=0.0,
+        floor=0.6, spread=2.3, deep=(0.5,), flat=2.2, rise=0.1, inner=0.0,
         body=0.5, bodies=((10, 5), (6, 3), (5, 2)), underside=0.1,
         cards=3400, up=0.6, depth=0.3, card=0.35, lift=0.7, scatter=0.3, centered=0.5, cells=(0, 1, 2),
         fold=0.08, bend=0.55, tint=(1.0, 0.93, 0.74), shade=0.7, levels=((2, 1.3), (5, 1.7)),
@@ -900,7 +901,7 @@ PINES = {
     'pine-narrow': dict(
         TALL_TRUNK, wood=(12000, 4500, 1500),
         fan=(0.3, (0.35, 0.05, 0.0), (0.75, 0.7, 0.6, 0.5, 0.4)), wire=0.5, span=(0.4, 0.88), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12,
-        keep=0.45, girth=0.3, prune=True, gap=0.1, pad=(0.85, 0.75, 0.55), vary=0.35, crest=(0.35, 0.04),
+        keep=0.45, girth=0.3, prune=True, gap=0.1, pad=(0.85, 0.75, 0.55), vary=0.35, crest=(0.35, 0.04, 0.6),
         taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.45, 0.4, 0.35, 0.3), flat=2.8, rise=0.1,
         inner=0.0,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
@@ -1267,13 +1268,14 @@ def pine_pads(spec, tiers, levels, ends, middles, distance, axis, rng):
     moves each pad toward its tier's layer by no more than `hold` times its thickness, so a tier
     reads as one plate across the trunk that still carries every limb, and the limbs show bare in
     the gaps between the plates. A `floor`, as a share of the height, keeps every pad's underside
-    above it, and no pad sits farther than `spread`, when given, from the trunk's axis. A pad's
+    above it, and no pad sits farther than `spread`, when given, from the trunk's foot. A pad's
     width runs through `pad` and the most it reaches to the front or the back through `deep`, from
     the lowest tier to the top; it narrows by `taper` toward the limb's end, so a layer thins to a
     tip, and its width and its thickness each vary at random by up to `vary` of themselves, so a
     layer reads as clumps of several sizes. With `crest`, a dome of five clumps tops the trunk:
     as wide as the first share of the crown's width, highest in the middle, with its underside
-    the second share of the height above the layer below, so it sits on that layer. It returns
+    the second share of the height above the layer below, so it sits on that layer, and as tall
+    as the third share of its half width. It returns
     the crown and the cell of wood that bears each pad.
     """
     height = spec['height']
@@ -1317,7 +1319,7 @@ def pine_pads(spec, tiers, levels, ends, middles, distance, axis, rng):
                     math.hypot(c.x - p[0], c.y - p[1]) < 1.25 * size and abs(c.z - z) < r.z
                     for c, r, _ in plant.pads
                 )
-                inward = math.hypot(*(p[:2] - (p[2] * slope + foot))) <= spec.get('spread', math.inf)
+                inward = math.hypot(*(p[:2] - foot)) <= spec.get('spread', math.inf)
                 if (first or (level and p[2] > low and out[j] >= spec['inner'])) and inward and not taken:
                     plant.pad((p[0], p[1], z), (size, min(size, deep), thick), k + 1)
                     bearers.append(int(cells[j]))
@@ -1326,17 +1328,16 @@ def pine_pads(spec, tiers, levels, ends, middles, distance, axis, rng):
     if 'crest' in spec and len(tiers) > 1:
         left = min(c.x - r.x for c, r, _ in plant.pads)
         right = max(c.x + r.x for c, r, _ in plant.pads)
-        share, gap = spec['crest']
+        share, gap, rise = spec['crest']
         radius = share * (right - left) / 2
         size = 0.45 * radius
-        # The dome's underside sits just above the layer below the top tier, and its top reaches
-        # the top tier's pads, so the top reads as one rounded clump on the crown, not a disc held
-        # up on bare wood. Each clump is borne by the top tier's wood nearest it.
+        # The dome's underside sits just above the layer below the top tier, so the top reads as
+        # one rounded clump on the crown, not a disc held up on bare wood. Each clump is borne by
+        # the top tier's wood nearest it.
         below = plant.pads[starts[-2]:starts[-1]]
-        base = max(c.z + r.z for c, r, _ in below) + gap * height
-        top = max([c.z + r.z for c, r, _ in plant.pads[starts[-1]:]] + [base + size])
-        # A dome no taller than a third of its half width, as the concept's top is a low dome.
-        half = min(max(top - base, size) / 2, radius / 3)
+        base = max((c.z + r.z for c, r, _ in below), default=levels[-2] + spec['rise']) + gap * height
+        # The dome rises by the crest's third share of its half width.
+        half = rise * radius
         x, y = base * slope + foot
         wood = np.array([c for _, _, cells in tiers[-1] for c in cells])
         for across, up in ((-0.7, 0.55), (-0.35, 0.8), (0.0, 1.0), (0.35, 0.8), (0.7, 0.55)):
