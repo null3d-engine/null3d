@@ -564,8 +564,11 @@ export default defineSketch(async (ctx) => {
 		const grey = 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2];
 		for (let c = 0; c < 3; c++) {
 			sprayAir[c] = air[c];
-			sprayLight[c] =
-				(grey + (air[c] - grey) * SPRAY.color) * (SPRAY.tint[c] as number) * SPRAY.gain;
+			// The particles take a light of at most one in each part, which the bright noon air passes.
+			sprayLight[c] = Math.min(
+				1,
+				(grey + (air[c] - grey) * SPRAY.color) * (SPRAY.tint[c] as number) * SPRAY.gain,
+			);
 		}
 		for (const fall of falls) fall.setLight(sprayLight);
 		fill.setIntensity(FILL.gain * grey);
