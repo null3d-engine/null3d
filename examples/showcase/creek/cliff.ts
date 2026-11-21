@@ -74,7 +74,13 @@ const LIP_BREAK = { fissure: 0.7, ledge: 0.45 } as const;
  * walls run on down into the cloud from the opening camera, as the concept's do, rather than ending
  * in an outline over it.
  */
-const FLARE = 0.08;
+const FLARE = 0.12;
+/**
+ * How far the lower wall steps out toward the cloud, in meters, and the depths it grows in over: the
+ * island's base stands out below the crags, so the opening view's bottom rows see dark rock rather
+ * than past the wall at the cloud.
+ */
+const LOWER = { out: 3.3, from: 3.5, to: 10 } as const;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
 const TILE = 2.2;
 
@@ -341,7 +347,8 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// The rock starts at the rim's own line, and its relief, its teeth and its cracks grow in
 			// just below the land's edge.
 			const grow = smoothstep(depth, 0, 0.55);
-			const grown = (shaped + FLARE * depth * (1 - clear)) * grow;
+			const lower = LOWER.out * smoothstep(depth, LOWER.from, LOWER.to);
+			const grown = (shaped + (FLARE * depth + lower) * (1 - clear)) * grow;
 			// Where the camera may stand past the rim, the rock stays inside the reach it keeps clear.
 			const limit = WALL_REACH - 0.2;
 			const high = smoothstep(y, 0.2, 1);

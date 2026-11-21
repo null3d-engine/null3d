@@ -598,8 +598,8 @@ const MOSS_BROWN = [0.15, 0.099, 0.02];
 const MOSS_LIGHT = [0.26, 0.202, 0.035];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
 const MOSS_BRIGHT = [0.3, 0.235, 0.042];
-const BED = [0.42, 0.385, 0.315];
-const BED_POOL = [0.14, 0.13, 0.1];
+const BED = [0.53, 0.49, 0.4];
+const BED_POOL = [0.18, 0.165, 0.13];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
 
