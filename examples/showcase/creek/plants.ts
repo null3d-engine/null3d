@@ -42,9 +42,9 @@ const SWAY = {
  * The texture keeps each leaf's shading.
  */
 const GROUND_TINTS: readonly (readonly [number, number, number])[] = [
-	[5.1, 1.28, 2.4],
-	[6.1, 1.38, 2.2],
-	[5.7, 1.02, 2.3],
+	[5.1, 1.28, 1.9],
+	[6.1, 1.38, 1.75],
+	[5.7, 1.02, 1.85],
 ];
 
 /** The models that the planting draws. */
