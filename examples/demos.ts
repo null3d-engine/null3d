@@ -146,13 +146,15 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Creek',
 		scene: 'A garden on a cliff above a sea of cloud',
 		summary:
-			'A clear creek crosses the top of a round cliff from rim to rim, fed by a spring pool, over a stony bed that shows through the water. Raked gravel curves between moss islands below a hill and its terrace, dark walls of pillars and ledges run down into the cloud, and the cloud billows and drifts in the light of the time of day.',
+			'A clear creek crosses the top of a round cliff from rim to rim, fed by a spring pool, over a cobbled bed that shows through the water, and leaves over both rims in white falls. Mossy stones line its banks. Stone steps climb from the creek through a roofed gate between stone lanterns to a bronze Buddha on a terrace, above raked gravel and moss islands. Dark walls of pillars and ledges run down into the cloud, which billows and drifts in the light of the time of day.',
+		assets:
+			'Shows how a statue, a gate, lanterns and boulders load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail.',
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,
-		// A software GPU draws the scene with its bloom and the whole valley of plants, which
-		// takes it well past a minute on a loaded runner, past three on an emulated Firefox GPU, and
-		// past five while the machine runs other work.
+		// A software GPU draws the scene with its bloom, its water and its models, which takes it
+		// well past a minute on a loaded runner, past three on an emulated Firefox GPU, and past five
+		// while the machine runs other work.
 		timeoutSeconds: 600,
 	},
 	{
