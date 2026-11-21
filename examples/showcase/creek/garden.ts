@@ -417,7 +417,7 @@ function wallLines(ledge: Ledge, fixed: readonly Placed[]): TerracePoint[][] {
 }
 
 /** A stone of a terrace wall: where it stands, its turn about y and its small tilt, and its size. */
-export interface TerraceStone extends Stand {
+export interface TerraceStone extends Placed {
 	/** The stone's tilt about its long and its short side, in radians. */
 	readonly tilt: readonly [number, number];
 	/** Whether it lies in the top course, on the rows under it, rather than on the ground. */
@@ -479,6 +479,7 @@ export function terraceStones(): TerraceStone[] {
 						Math.PI / 2 +
 						(next() - 0.5) * 0.3,
 					size,
+					reach,
 					tilt: [(next() - 0.5) * 0.12, (next() - 0.5) * 0.12],
 					capping: row === 'top',
 				});
@@ -747,7 +748,7 @@ export function underGarden(x: number, z: number): boolean {
 			...places.lanterns,
 			...places.rocks,
 			...places.ring,
-			...terraceStones().map((stone) => ({ ...stone, reach: stone.size * TERRACE_WALLS.reach })),
+			...terraceStones(),
 		];
 	}
 	return feetList.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
