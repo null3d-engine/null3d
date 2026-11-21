@@ -84,12 +84,14 @@ describe("the walls' map", () => {
 		}
 	});
 
-	test('no heap rises before the front wall, and heaps rise elsewhere', () => {
+	test('no heap rises before the front wall, which the map marks, and heaps rise elsewhere', () => {
 		let heaped = 0;
 		for (let k = 0; k < RIM_TEXELS; k++) {
 			const heap = data[k * 4 + 1] as number;
-			if (turn(bearing(k), FRONT.middle) <= FRONT.half) expect(heap).toBe(0);
-			else if (heap > 0) heaped++;
+			if (turn(bearing(k), FRONT.middle) <= FRONT.half) {
+				expect(heap).toBe(0);
+				expect(data[k * 4 + 3]).toBe(255);
+			} else if (heap > 0) heaped++;
 		}
 		expect(heaped).toBeGreaterThan(RIM_TEXELS / 2);
 	});

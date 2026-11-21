@@ -125,11 +125,12 @@ const NEAR: f32 = 180.0;
 /// The radius inside which mist can drift at the walls' foot: past the widest rim and the mist's reach.
 const MISTY: f32 = 46.0;
 
-/// The rim's radius, the heap's share and the mist's share at a point's bearing round the cliff.
-fn wall_at(p: vec2f) -> vec3f {
+/// The rim's radius, the heap's share, the mist's share and the front wall's share at a point's
+/// bearing round the cliff.
+fn wall_at(p: vec2f) -> vec4f {
     let turn = atan2(p.y, p.x) / 6.283185307 + 0.5;
-    let w = textureSampleLevel(walls, wallsSampler, vec2f(turn, 0.5), 0.0).rgb;
-    return vec3f(18.0 + 16.0 * w.r, w.g, w.b);
+    let w = textureSampleLevel(walls, wallsSampler, vec2f(turn, 0.5), 0.0);
+    return vec4f(18.0 + 16.0 * w.r, w.g, w.b, w.a);
 }
 
 /// The cloud at a point: its height there, in meters, from the sea's two layers of billows, the
@@ -163,22 +164,26 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
         h += 4.5 * (small - 0.6) * (1.0 - smoothstep(NEAR * 0.55, NEAR, r));
         // The billows' edges fray, so a top never ends on one clean line.
         fray = textureSampleLevel(billows, billowsSampler, (q + vec2f(7.0, 19.0)) / 21.0, lod).b;
-        // The mist at the walls' foot rises from the sea's level in wisps of uneven height: tall
-        // where the wall's own stretch of mist runs high, short elsewhere, each wisp a column that
-        // climbs and thins. It veils the rock over the billows, so the wall fades into the cloud.
-        let foot = 1.0 - smoothstep(1.0, 8.0, r - wall.x);
+        // The mist at the walls' foot rises from the sea's level in dense puffs to an uneven height:
+        // tall where the wall's own stretch of mist runs high, short elsewhere, thinning as it
+        // climbs. It veils the rock over the billows, so the wall fades into the cloud.
+        let foot = 1.0 - smoothstep(1.0, 11.0, r - wall.x);
         let rise = p.y - (material.top - 2.0);
         if foot * wall.z > 0.001 && p.y > h - 0.5 && rise < 9.0 {
             let along = atan2(p.z, p.x) * wall.x;
             let reach = 3.0 + 6.0 * textureSampleLevel(billows, billowsSampler, vec2f(along / 70.0 + 0.37, 0.61), 0.0).b;
             // No wisp climbs past a few meters under the rim, so the walls' upper part stays clear.
             let band = smoothstep(-0.5, 0.8, p.y - h) * (1.0 - smoothstep(reach * 0.25, reach, rise)) * (1.0 - smoothstep(-4.5, -1.5, p.y));
-            let wisp = textureSampleLevel(billows, billowsSampler, vec2f(along / 7.0, (p.y - frame.time * 0.4) / 19.0), 0.0).b;
+            // Round puffs, from the billow map's domes stood upright against the wall, that climb
+            // slowly.
+            let puff = textureSampleLevel(billows, billowsSampler, vec2f(along, (p.y - frame.time * 0.3) * 1.4) / 26.0, 0.0).r;
             // A thin veil over the tops' first meters joins the wisps, so the rock fades into them.
             let veil = smoothstep(-0.5, 0.8, p.y - h) * (1.0 - smoothstep(0.0, 5.0, rise));
             // The veil thickens over the last meters before the rock, so the rock fades into it.
-            let close = 0.12 + 0.18 * (1.0 - smoothstep(0.0, 4.0, r - wall.x));
-            mist = foot * wall.z * (band * smoothstep(0.3, 0.75, wisp) + close * veil);
+            let close = 0.05 + 0.12 * (1.0 - smoothstep(0.0, 4.0, r - wall.x));
+            // The puffs are densest at the front wall's foot, as in the concept; along the side walls
+            // they are thinner, so the billows there keep their light and shade.
+            mist = foot * wall.z * (band * mix(0.9, 2.6, wall.w) * smoothstep(0.25, 0.65, puff) + close * veil);
         }
     } else {
         // Far out, the billows of the largest copy rise into towers past the horizon, and sink
@@ -200,30 +205,13 @@ fn leave_disc(eye: vec2f, dir: vec2f, r: f32) -> f32 {
     return (-b + sqrt(max(b * b - a * c, 0.0))) / a;
 }
 
-/// How thick the cloud is at a point, as the billows' body and the mist apart: the body thickens
-/// over its top meters, softer far off, and frays where its edge is eaten.
+/// How thick the cloud is at a point, as the billows' body and the mist apart: the body starts as
+/// a thin haze a little over its top, so a ray that grazes a billow takes some of it rather than
+/// all or none, thickens over its top meters, softer far off, and frays where its edge is eaten.
 fn density_of(p: vec3f, here: vec4f, t: f32) -> vec2f {
     let soft = 2.2 + t * 0.012;
     let inside = here.x - p.y - here.w * 1.8;
-    return vec2f(smoothstep(-0.3, soft, inside) * 1.4, here.y * 0.45);
-}
-
-/// The faint mountain far past the cliff that shows through the cloud, as in the concept's upper
-/// right: how much of it a ray meets where it crosses a ring 1,300 meters round the cliff. Its
-/// rounded peak stands at a bearing of -1.416 radians, 54 meters under the water's level; its side
-/// toward the cliff's west falls steeply and its east side runs long, with a slightly rough ridge.
-/// Broad banks of cloud drift across its lower half and pale its foot, so the cloud half hides it.
-fn mountain(eye: vec3f, dir: vec3f) -> f32 {
-    let t = leave_disc(eye.xz, dir.xz, 1300.0);
-    let at = eye + dir * t;
-    let off = (atan2(at.z, at.x) + 1.4157) * 1300.0;
-    let width = select(87.0, 42.0, off < 0.0);
-    let rough = textureSampleLevel(billows, billowsSampler, vec2f(off / 90.0 + 0.61, 0.71), 0.0).b;
-    let ridge = -53.7 - 180.0 * (1.0 - exp(-(off * off) / (width * width))) + 8.0 * (rough - 0.5);
-    let under = ridge - at.y;
-    let bank = textureSampleLevel(billows, billowsSampler, vec2f(off / 400.0 + frame.time * 0.0005, at.y / 70.0 + 0.3), 0.0).b;
-    let veiled = smoothstep(0.3, 0.8, bank) * smoothstep(15.0, 80.0, under);
-    return smoothstep(-5.0, 12.0, under) * (1.0 - 0.7 * veiled) * (1.0 - 0.35 * smoothstep(40.0, 130.0, under));
+    return vec2f(smoothstep(-0.8 - t * 0.01, soft, inside) * 1.4, here.y * 0.45);
 }
 
 fn unlit(input: SurfaceInput) -> vec4f {
@@ -236,6 +224,27 @@ fn unlit(input: SurfaceInput) -> vec4f {
     let forward = max(-(camera.view * vec4f(dir, 0.0)).z, 1e-3);
     let behind = sceneDistance(uv);
     let end = select(material.reach, min(behind / forward, material.reach), behind > 0.0);
+    // At an outline of the scene, as where the cloud meets the rock's edge, the pixels round this
+    // one end at very different depths. There the ray runs on to the farthest of them and keeps
+    // what it gathered by the nearest; the two blend by the share of the five pixels that end near,
+    // so the cloud's edge there is as soft as the outline's coverage and never follows the pixel grid.
+    let texel_uv = 1.0 / frame.resolution;
+    var near = end;
+    var far = end;
+    var ends = vec4f(0.0);
+    for (var k = 0; k < 4; k++) {
+        let o = select(vec2f(0.0, select(-1.0, 1.0, k == 3)), vec2f(select(-1.0, 1.0, k == 1), 0.0), k < 2);
+        let b = sceneDistance(uv + o * texel_uv);
+        let e = select(material.reach, min(b / forward, material.reach), b > 0.0);
+        ends[k] = e;
+        near = min(near, e);
+        far = max(far, e);
+    }
+    let outline = far - near > 2.0 + near * 0.15;
+    let middle = 0.5 * (near + far);
+    let nearShare = (select(0.0, 1.0, end < middle) + dot(select(vec4f(0.0), vec4f(1.0), ends < vec4f(middle)), vec4f(1.0))) / 5.0;
+    let limit = select(end, far, outline);
+    let limitHit = select(behind > 0.0, far < material.reach, outline);
     // Where the ray can first meet cloud: under the heaps' highest tops inside the disc round the
     // cliff, and under the towers' highest tops past it.
     let low = material.top + material.heap + 1.0;
@@ -254,7 +263,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
             start = 1e9;
         }
     }
-    if start >= end {
+    if start >= limit {
         return vec4f(0.0);
     }
     // The size of a pixel on the cloud per meter of distance, for the map's mip level.
@@ -265,19 +274,31 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // held picture draws the same each time.
     let cell = vec3u(vec2u(input.fragCoord.xy), u32(frame.time * 60.0));
     let jitter = f32(pcg3d(cell).x) / 4294967295.0;
-    var t = min(start + jitter * 0.25 * (0.6 + start * 0.01), mix(start, end, 0.5));
-    // Where the ray first met the cloud, for the far mountain.
-    var met = 0.0;
+    var t = min(start + jitter * 0.25 * (0.6 + start * 0.01), mix(start, limit, 0.5));
     var clear = 1.0;
     var color = vec3f(0.0);
     var form = 0.0;
     var sunlit = 0.0;
     var lit = false;
+    // How many billows the ray has taken light from: past the first, a billow met after clear air
+    // takes its own light, so a heap's outline in front of another is not cut hard.
+    var lights = 0;
+    // Where along the ray its light was last read.
+    var litAt = 0.0;
+    // What the ray gathered by the nearest end, at an outline.
+    var nearColor = vec3f(0.0);
+    var nearClear = 1.0;
+    var kept = !outline;
     let steps = i32(material.steps);
     // The last point in clear air, where the search for the cloud's edge starts.
     var last = t;
     for (var i = 0; i < steps; i++) {
-        if t >= end || clear < 0.02 {
+        if !kept && t >= near {
+            nearColor = color;
+            nearClear = clear;
+            kept = true;
+        }
+        if t >= limit || clear < 0.02 {
             break;
         }
         var p = eye + dir * t;
@@ -288,9 +309,12 @@ fn unlit(input: SurfaceInput) -> vec4f {
         let lod = log2(max(t * pixel / texel, 1.0));
         // Over its last meters before the scene's surface the cloud thins away, so a wall fades into
         // the cloud with no cut line along its blocks.
-        let contact = select(1.0, smoothstep(0.0, 3.0, end - t), behind > 0.0);
+        let contact = select(1.0, smoothstep(0.0, 3.0, limit - t), limitHit);
         var here = cloud_at(p, lod);
-        var parts = density_of(p, here, t) * contact;
+        // The billows thin over their last meters before the rock; the mist only over its last
+        // meter, so it runs on up to the rock and veils it.
+        let touch = vec2f(contact, select(1.0, smoothstep(0.0, 1.0, limit - t), limitHit));
+        var parts = density_of(p, here, t) * touch;
         if parts.x > 0.002 && !lit && t > last {
             // The step from clear air or mist went past the billow's edge: halve the gap a few
             // times to find it, so the edge neither rings nor grains with the steps.
@@ -309,12 +333,18 @@ fn unlit(input: SurfaceInput) -> vec4f {
             t = hi;
             p = eye + dir * t;
             here = cloud_at(p, lod);
-            parts = density_of(p, here, t) * contact;
+            parts = density_of(p, here, t) * touch;
         }
         let density = parts.x + parts.y;
         let h = here.x;
         let above = p.y - h;
         if density > 0.002 {
+            // A ray that has gathered little since its light was read, and has gone on some way,
+            // reads it again: it grazed one billow's haze and now meets the next billow, which
+            // takes its own light, so their outlines blend by how much of each the ray crossed.
+            if lit && lights < 4 && clear > 0.75 && t - litAt > 2.0 + t * 0.04 {
+                lit = false;
+            }
             if !lit && parts.x > 0.002 {
                 // Where the ray first meets the billow, past any mist: its slope, from its heights a step to each
                 // side; the sky's light on the sides that face up; the main light on the sides that
@@ -356,11 +386,17 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 let hidden = select(1.0, 0.78 + 0.22 * smoothstep(0.0, 30.0, reach - wall.x), reach < NEAR);
                 form = clamp(mix(sea, round, heapy) * hidden, 0.0, 1.0);
                 sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft) * hidden * hidden * hidden;
-                met = t;
                 lit = true;
+                lights += 1;
+                litAt = t;
             }
             // The last step ends at the scene's surface, so the cloud before a wall thins smoothly.
-            let stride = min(0.35 + t * 0.008, end - t);
+            // At an outline the ray stops exactly at the nearest end before it runs on, so what it
+            // keeps there holds nothing from behind the rock.
+            var stride = min(0.35 + t * 0.008, limit - t);
+            if !kept && near > t {
+                stride = min(stride, near - t + 1e-3);
+            }
             // Deeper in the billow the cloud darkens a little.
             let deep = exp(-max(-above, 0.0) / 3.0);
             // Mist is a grey that the sun barely reaches; the billow takes its own light. Mist met
@@ -379,24 +415,34 @@ fn unlit(input: SurfaceInput) -> vec4f {
             // side slips between two steps, and in short steps through the mist by the walls.
             let longest = select(4.0 + t * 0.09, 0.5 + t * 0.01, length(p.xz) < MISTY && above < 8.5);
             last = t;
-            t += clamp(above * 0.5, 0.3 + t * 0.07, longest);
+            lit = lit && lights >= 3;
+            var advance = clamp(above * 0.5, 0.25 + t * 0.025, longest);
+            if !kept && near > t {
+                advance = min(advance, near - t + 1e-3);
+            }
+            t += advance;
         }
     }
     // A ray that runs out of steps over open sea would show the dome through a hole: it meets the
     // sea's tops where they lie on average, at that distance's tone.
-    if clear > 0.02 && t < end && end >= material.reach && dir.y < -0.002 {
+    if clear > 0.02 && t < limit && limit >= material.reach && dir.y < -0.002 {
         let meet = max((eye.y - (material.top - material.depth * 0.4)) / -dir.y, t);
         color += clear * aerial(cloud_color(0.7, 0.0), meet);
         clear = 0.0;
+    }
+    if outline {
+        if !kept {
+            nearColor = color;
+            nearClear = clear;
+        }
+        color = mix(color, nearColor, nearShare);
+        clear = mix(clear, nearClear, nearShare);
     }
     let alpha = 1.0 - clear;
     if alpha < 0.001 {
         return vec4f(0.0);
     }
-    // The far mountain shows through the far sea as a faint grey-blue shape; a near billow hides it.
-    let ghost = mountain(eye, dir) * smoothstep(120.0, 300.0, select(t, met, met > 0.0));
-    let blue = cloud_air() * 0.95 * vec3f(0.84, 0.92, 1.14);
-    return vec4f(mix(color / alpha, blue, ghost * 0.9), alpha);
+    return vec4f(color / alpha, alpha);
 }
 `;
 
@@ -580,7 +626,8 @@ const turnBetween = (a: number, b: number) =>
 
 /**
  * The walls' map round the cliff, one texel per bearing: the rim's radius, how high the tops heap
- * against the wall there, and how thick the mist at its foot drifts.
+ * against the wall there, how thick the mist at its foot drifts, and how much of the front wall
+ * the bearing is.
  */
 export function wallData(): Uint8Array {
 	const next = random(509);
@@ -615,7 +662,7 @@ export function wallData(): Uint8Array {
 		data[k * 4] = Math.round(Math.min(Math.max(rim, 0), 1) * 255);
 		data[k * 4 + 1] = Math.round(heap * (1 - front) * 255);
 		data[k * 4 + 2] = Math.round(mist * (1 - 0.35 * front) * 255);
-		data[k * 4 + 3] = 255;
+		data[k * 4 + 3] = Math.round(front * 255);
 	}
 	return data;
 }
