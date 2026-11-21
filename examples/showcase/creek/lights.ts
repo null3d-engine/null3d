@@ -27,8 +27,8 @@ export const SPRAY = {
  */
 export const MOOD_SKIES = {
 	Dusk: { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.38 },
-	Dawn: { sky: [0.6, 0.85, 0.88], ground: [0.24, 0.3, 0.26], gain: 1.1 },
-	Golden: { sky: [0.6, 0.85, 0.88], ground: [0.24, 0.3, 0.26], gain: 1.1 },
+	Dawn: { sky: [0.6, 0.85, 0.88], ground: [0.24, 0.3, 0.26], gain: 0.55 },
+	Golden: { sky: [0.6, 0.85, 0.88], ground: [0.24, 0.3, 0.26], gain: 0.55 },
 } as const;
 
 /**
