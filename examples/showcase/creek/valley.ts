@@ -7,7 +7,7 @@
 // every device and both GPU paths draw the same garden. A plant that the camera's route would fly
 // into is left out, so no pass crosses a crown.
 import { routePosition, routeTimeline } from '../../lib/cinematic';
-import { random } from '../../lib/procedural';
+import { Noise, random } from '../../lib/procedural';
 import { gardenPlaces, underGarden } from './garden';
 import {
 	bearingOf,
@@ -26,6 +26,8 @@ import { ROCK_REACH, rockPlaces } from './stones';
 
 /** The seed that places the garden. */
 export const SEED = 7;
+/** The slow, uneven wave over the garden whose crests gather a kind into patches. */
+const PATCHES = new Noise(SEED);
 
 /** The trees that stand by hand: the three forms of the cloud-pruned pine. */
 export const TREE_KINDS = ['pine-tall', 'pine-narrow', 'pine-low'] as const;
@@ -140,29 +142,36 @@ interface Rule {
 
 /**
  * The rules of the ground cover, in the order they place. A plant keeps its room from every plant
- * that stood before it, so the rules that place first take the best ground: hostas in the damp by
- * the water, ferns in the shade and over the rest of the moss in patches.
+ * that stood before it, so the rules that place first take the best ground. The concept's low growth
+ * gathers in clumps, never in even rows: hostas and ferns by the water where the patches gather
+ * them, and ferns in the pines' shade.
  */
 const RULES: readonly Rule[] = [
 	{
 		kind: 'hosta',
-		spacing: 1.6,
+		spacing: 1.8,
 		scale: [1, 1.5],
-		clump: [3, 1.4],
+		clump: [4, 1.1],
 		tolerances: [
-			['water', 0, 0.4, 3, 6],
-			['patch', 0.25, 0.45, 1, 1.01],
+			['water', 0, 0.3, 2.5, 4.5],
+			['patch', 0.35, 0.55, 1, 1.01],
 		],
 	},
 	{
 		kind: 'fern',
-		spacing: 1.3,
+		spacing: 1.6,
 		scale: [0.9, 1.4],
-		clump: [4, 1.6],
+		clump: [5, 1.3],
+		tolerances: [['shade', 0.1, 0.35, 1, 1.01]],
+	},
+	{
+		kind: 'fern',
+		spacing: 2,
+		scale: [0.9, 1.3],
+		clump: [4, 1.2],
 		tolerances: [
-			['water', 0.4, 1.2, 40, 50],
-			['slope', -1, 0, 1.2, 2],
-			['patch', 0.3, 0.5, 1, 1.01],
+			['water', 0.2, 0.8, 3.5, 6],
+			['patch', 0.4, 0.6, 1, 1.01],
 		],
 	},
 ];
@@ -237,7 +246,7 @@ function groundAt(x: number, z: number, trees: readonly Spot[]): Ground {
 		water: Math.max(0, Math.abs(z - streamZ(x)) - streamHalf(x)),
 		slope,
 		shade,
-		patch: (Math.sin(x * 0.45 + 1.7) + Math.sin(z * 0.6 - x * 0.2) + 2) / 4,
+		patch: 0.5 + 0.5 * PATCHES.fbm2(x * 0.18, z * 0.18, 3),
 	};
 }
 
@@ -342,8 +351,7 @@ export function placeValley(): Valley {
 		const ground = groundAt(x, z, trees);
 		let score = 1;
 		for (const tolerance of rule.tolerances) score *= meets(ground[tolerance[0]], tolerance);
-		// The shade under the crowns suits every kind of the ground cover.
-		return Math.max(score, rule.kind === 'fern' ? ground.shade : 0);
+		return score;
 	};
 	/** Places a copy of a rule's kind where it keeps its room and misses the view and the route. */
 	const place = (rule: Rule, x: number, z: number, yaw: number, size: number): boolean => {

@@ -1,11 +1,12 @@
 // The garden's trees and ground cover: the Blender models of the pines and of today's ferns and
 // hostas, standing where `valley.ts` places them, each kind one instance batch per part, so every
-// copy picks its own level of detail. They sway in the scene's one wind field through the shared
+// copy picks its own level of detail. Each copy of the ground cover takes a tint of its own. They sway in the scene's one wind field through the shared
 // wind material, which reads each vertex's bend weight from the models' second texture
 // coordinates and draws the file's own textures.
 import type { Material, SketchContext } from '@null3d/engine';
 import type { Wind } from '@null3d/wind';
-import { type Part, partsOf, standPart, swayingPart } from '../../lib/blender-models';
+import { type Part, partsOf, placed, standPart, swayingPart } from '../../lib/blender-models';
+import { random } from '../../lib/procedural';
 import { sampleUrl } from '../../lib/samples';
 import { createSway } from '../../lib/sway';
 import {
@@ -28,6 +29,18 @@ const SWAY = {
 	needles: { sway: 0.008, stiffness: 2.2, rustle: 0.012, roughness: 0.7 },
 	plant: { sway: 0.018, stiffness: 1.4, rustle: 0.01, roughness: 0.7 },
 } as const;
+
+/**
+ * The tints over the ground cover's own green, one to a copy, toward the concept's low growth:
+ * olive, gold and dull red, in linear shares. The green map holds little red or blue, so a tint
+ * raises both past one and cuts the green, which turns the leaves' hue and keeps their strength of
+ * color near the concept's; the texture keeps each leaf's shading under the tint.
+ */
+const GROUND_TINTS: readonly (readonly [number, number, number])[] = [
+	[2.4, 0.62, 1.6],
+	[2.8, 0.68, 1.2],
+	[2.6, 0.45, 1.5],
+];
 
 /** The models that the planting draws. */
 export interface PlantModels {
@@ -84,13 +97,34 @@ export function createPlants(
 		stand(wood, spots, swayingPart(sway, wood, SWAY.wood, false));
 		stand(leaves, spots, swayingPart(sway, leaves, SWAY.needles, true));
 	}
+	const next = random(91);
 	for (const kind of PLANT_KINDS) {
 		const part = models.plants[kind];
-		// Each plant's foot sinks a little, so no copy stands proud of a slope.
-		const spots = valley.plants
-			.filter((spot) => spot.kind === kind)
-			.map((spot) => ({ ...spot, y: spot.y - 0.03 }));
-		stand(part, spots, swayingPart(sway, part, SWAY.plant, true));
+		const spots = valley.plants.filter((spot) => spot.kind === kind);
+		if (spots.length === 0) continue;
+		// Each copy takes one of the tints, a little lighter or darker, over the part's own map.
+		const batch = ctx.scene.createInstances(part.mesh, spots.length, {
+			material: swayingPart(sway, part, SWAY.plant, true),
+			castShadows: true,
+			receiveShadows: true,
+			colors: true,
+		});
+		spots.forEach((spot, row) => {
+			// Each plant's foot sinks a little, so no copy stands proud of a slope.
+			const { position, rotation, scale } = placed(
+				part,
+				[spot.x, spot.y - 0.03, spot.z],
+				spot.yaw,
+				spot.size,
+			);
+			batch.positions.set(position, row * 3);
+			batch.rotations.set(rotation, row * 4);
+			batch.scales.set(scale, row * 3);
+			const tint = GROUND_TINTS[Math.floor(next() * GROUND_TINTS.length)] as readonly number[];
+			const shade = 0.85 + 0.3 * next();
+			batch.colors?.set([...tint.map((share) => share * shade), 1], row * 4);
+		});
+		batch.markDirty();
 	}
 	return { update: () => sway.update() };
 }
