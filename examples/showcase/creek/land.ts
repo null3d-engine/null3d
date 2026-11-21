@@ -595,7 +595,7 @@ export function cameraFloor(x: number, z: number): number {
 const MOSS = [0.195, 0.142, 0.026];
 const MOSS_DARK = [0.06, 0.063, 0.009];
 /** The green of the moss mats that fill the hollows between the rock shelves. */
-const MOSS_GREEN = [0.035, 0.055, 0.012];
+const MOSS_GREEN = [0.018, 0.065, 0.012];
 const MOSS_BROWN = [0.15, 0.099, 0.02];
 /** The light, yellow-green moss in the sunnier patches. */
 const MOSS_LIGHT = [0.32, 0.26, 0.03];
@@ -629,13 +629,13 @@ const ZONES: GroundZones = { shelf: 0, mats: 0, lichen: 0 };
  */
 export function groundZones(x: number, z: number, y: number, out: GroundZones): void {
 	const under = 1 - smoothstep(y, WATER - 0.25, WATER - 0.06);
-	const shelf = smoothstep(noise.fbm2(x * 0.07 + 31, z * 0.07 - 7, 3), -0.04, 0.18) * (1 - under);
+	const shelf = smoothstep(noise.fbm2(x * 0.07 + 31, z * 0.07 - 7, 3), -0.08, 0.14) * (1 - under);
 	out.shelf = shelf;
 	out.mats =
 		(1 - shelf) * smoothstep(noise.fbm2(x * 0.16 - 17, z * 0.16 + 5, 3), -0.1, 0.3) * (1 - under);
 	out.lichen =
 		shelf *
-		(0.3 + 0.7 * 4 * shelf * (1 - shelf)) *
+		(0.45 + 0.55 * 4 * shelf * (1 - shelf)) *
 		smoothstep(noise.fbm2(x * 0.45 + 11, z * 0.45, 2), 0, 0.35);
 }
 
