@@ -42,13 +42,12 @@ import bmesh
 import bpy
 import numpy as np
 from mathutils import Matrix, Vector
-from mathutils.bvhtree import BVHTree
 
 # The shared module loads from beside this script, and leaves no bytecode cache in the repository.
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    arguments, export, half, image, link, material, normal_map, orm, smoothstep, stage,
+    arguments, export, half, image, level_error, link, material, normal_map, orm, smoothstep, stage,
 )
 
 SEED = 20261120
@@ -81,7 +80,10 @@ THREADS = 4
 # depth of the bevel on its rim in meters, the sides of each level, and its texture's side.
 #
 # `triangles` is the figure's budget at its finest level, `levels` each lower level's share of
-# it, and `texture` the side of every map of the figure in texels.
+# it, and `texture` the side of every map of the figure in texels. Each lower level of the figure
+# and the slab may stray at most its share in `limits` of the height, tighter than the other
+# models' `LEVEL_ERROR_LIMIT`, so that a hidden surface counted by mistake, such as a cap inside
+# the slab, stops the build at both levels.
 STATUE = dict(
     folder='statue',
     file='model.glb',
@@ -99,6 +101,7 @@ STATUE = dict(
     slab=dict(height=0.1, width=1.25, front=0.12, bevel=0.04, sides=(112, 56, 24), texture=1024),
     triangles=30000,
     levels=(0.34, 0.1),
+    limits=(0.015, 0.02),
     texture=1024,
 )
 
@@ -116,11 +119,11 @@ STATUE = dict(
 # meters out, half `ribs[0]` meters wide there and half `ribs[1]` at the corners, and over the
 # last `eave` meters to its eaves. The gate loses the
 # rear frame that Tripo3D added: everything under the roof, which starts at `roof` of its height,
-# and behind the front posts' backs, which `cut` gives in meters at the foot and at the roof, and
-# behind the posts within `eaves` meters of the middle, everything below the side ties, `tie`
-# meters above the foot. Its front posts stand upright again, losing their lean of `lean` meters
-# per meter. A copy of the left one, `post` times as wide and deep and `rear` meters behind it,
-# stands behind it, the roof grows across by `widen`, and the timber under the roof,
+# and behind the front posts' backs, which `cut` places at the foot and at the roof, and behind
+# the posts within `eaves` of the middle, everything below the side ties, `tie` above the foot;
+# these four are shares of its height. Its front posts stand upright again below the beam, at
+# `beam` of its height, losing their lean of `lean` meters per meter. A copy of the left one, `post` times as wide and deep and `rear` of the
+# height behind it, stands behind it, and the timber under the roof,
 # above the stone blocks at `blocks` of its height, keeps `darken` of its lightness and grows
 # `vivid` times in color strength. The rear post, deeper in the roof's shade, then takes the front
 # posts' tone by the two shares of `rear_tone`, for lightness and color strength. A boulder's stone keeps `darken` of its lightness, grows
@@ -133,9 +136,9 @@ MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
                     texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(1.08, 1.0, 0.85),
                     vivid=1.6, moss_darken=0.7, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1),
-    'gate': dict(file='model.glb', turn=-90.0, height=4.4, sink=0.03, triangles=6000, levels=(0.4, 0.15),
-                 texture=1024, roof=0.64, cut=(-0.505, -0.296), tie=2.92, eaves=2.2, lean=0.09, post=0.58, rear=1.2,
-                 widen=1.09, blocks=0.08, rear_tone=(1.2, 0.8),
+    'gate': dict(file='model.glb', turn=-90.0, height=3.9, sink=0.03, triangles=6000, levels=(0.4, 0.15),
+                 texture=1024, roof=0.64, cut=(-0.1148, -0.0673), tie=0.6636, eaves=0.5, lean=0.09, post=0.58,
+                 rear=0.273, blocks=0.08, beam=0.55, rear_tone=(1.2, 0.8),
                  darken=0.65, vivid=2.3),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
@@ -214,10 +217,8 @@ SLAB = dict(
     rim=0.03,
 )
 
-# The largest surface error each lower level may have, as a share of the model's height. A larger
-# one means that the measure counted a hidden surface, such as the cap in the slab, or that the
-# decimation broke the shape; the engine would then keep the finest level far too long, so the
-# build stops. The coarser level may stray further.
+# The largest surface error each lower level of the garden's other models may have, as a share of
+# the model's height; the build stops past it. The coarser level may stray further.
 LEVEL_ERROR_LIMIT = (0.05, 0.12)
 
 
@@ -467,26 +468,6 @@ def unwrap(obj):
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.004)
     bpy.ops.object.mode_set(mode='OBJECT')
-
-
-def surface_error(level, full, floor=-math.inf):
-    """
-    The largest distance between two meshes' surfaces, in meters, from each one's vertices above
-    the height `floor` to the other's nearest point, as the engine reads a level's error. What lies
-    below the floor, hidden in the slab, does not count.
-    """
-    def tree(obj):
-        bm = bmesh.new()
-        bm.from_mesh(obj.data)
-        found = BVHTree.FromBMesh(bm)
-        bm.free()
-        return found
-
-    def farthest(points, onto):
-        shown = points[points[:, 2] > floor]
-        return max((onto.find_nearest(Vector(p))[3] or 0.0) for p in shown)
-
-    return max(farthest(vertices_of(level), tree(full)), farthest(vertices_of(full), tree(level)))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1207,13 +1188,12 @@ def gate_surgery(obj, spec):
     level cut at the side ties' underside takes the old rear posts' tops that hang below the ties.
     The cuts close, each new face painted from the timber round it. The front posts then stand
     upright, and a copy of the left one, narrowed, stretched from the ground into the tie, moved
-    back and cut level at both ends, stands behind it with the front post's own upright grain. The
-    roof grows across.
+    back and cut level at both ends, stands behind it with the front post's own upright grain.
     """
     co = vertices_of(obj)
     low, high = co[:, 2].min(), co[:, 2].max()
     roof = low + spec['roof'] * (high - low)
-    tie = low + spec['tie']
+    tie = low + spec['tie'] * (high - low)
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     uv = bm.loops.layers.uv.active
@@ -1227,12 +1207,13 @@ def gate_surgery(obj, spec):
         bmesh.ops.bisect_plane(bm, geom=verts + edges + faces, plane_co=point, plane_no=normal, clear_outer=True)
         return before - len(bm.faces)
 
-    # The posts' backs lean: the cut runs from `cut[0]` at the foot to `cut[1]` at the roof line.
-    foot, top = spec['cut']
+    # The posts' backs lean: the cut runs from `cut[0]` of the height at the foot to `cut[1]` at the
+    # roof line.
+    foot, top = (share * (high - low) for share in spec['cut'])
     doomed = cut([f for f in bm.faces if max(v.co.z for v in f.verts) < roof], (0, foot, low),
                  Vector((0, 1, -(top - foot) / (roof - low))).normalized())
     # Behind the front posts and inside the roof's ends, everything below the ties goes.
-    doomed += cut([f for f in bm.faces if f.calc_center_median().y > 0 and abs(f.calc_center_median().x) < spec['eaves']
+    doomed += cut([f for f in bm.faces if f.calc_center_median().y > 0 and abs(f.calc_center_median().x) < spec['eaves'] * (high - low)
                    and min(v.co.z for v in f.verts) < tie], (0, 0, tie), Vector((0, 0, -1)))
     loose = [v for v in bm.verts if not v.link_faces]
     bmesh.ops.delete(bm, geom=loose, context='VERTS')
@@ -1248,7 +1229,7 @@ def gate_surgery(obj, spec):
             corner[uv].uv = known.get(corner.vert, corner[uv].uv)
 
     # The front posts lean forward toward their feet: they stand upright again below the beam.
-    beam = low + 0.55 * (high - low)
+    beam = low + spec['beam'] * (high - low)
     for v in bm.verts:
         if v.co.z < beam and v.co.y < top:
             v.co.y += spec['lean'] * (beam - v.co.z)
@@ -1268,7 +1249,7 @@ def gate_surgery(obj, spec):
     # beyond the level cuts that then give it clean ends.
     for v in made:
         v.co = Vector((middle.x + (v.co.x - middle.x) * spec['post'],
-                       middle.y + spec['rear'] + (v.co.y - middle.y) * spec['post'],
+                       middle.y + spec['rear'] * (high - low) + (v.co.y - middle.y) * spec['post'],
                        low - 0.3 + (v.co.z - bottom) * (tie + 0.6 - low) / (beam - 0.05 - bottom)))
     for height, normal in ((low, (0, 0, -1)), (tie + 0.03, (0, 0, 1))):
         faces = [e for e in copy if isinstance(e, bmesh.types.BMFace) and e.is_valid]
@@ -1283,9 +1264,6 @@ def gate_surgery(obj, spec):
     for f in bmesh.ops.triangulate(bm, faces=capped)['faces']:
         for corner in f.loops:
             corner[uv].uv = rim.get(corner.vert, corner[uv].uv)
-    for v in bm.verts:
-        if v.co.z > roof - 0.1:
-            v.co.x *= 1 + (spec['widen'] - 1) * float(smoothstep(roof - 0.1, roof + 0.1, v.co.z))
     bm.to_mesh(obj.data)
     bm.free()
     return doomed
@@ -1320,6 +1298,30 @@ def cap_stone(spec, position, facing, rng):
     eave = smoothstep(apothem - spec['eave'] * ragged, apothem - 0.5 * spec['eave'] * ragged, out)
     lip = smoothstep(0.4, 0.2, facing[..., 2])
     return np.clip(np.maximum(np.maximum(rib, eave), lip) * on_cap, 0, 1)
+
+
+def seen_from_front(values, position, back, front, cell=0.02):
+    """
+    `values` with each texel where `back` holds replaced by the mean of the `front` texels in the
+    same `cell`-meter square of x and height, or in the squares round it where that one has none:
+    a face on a timber's back then shows the timber's front, its grain and its tone.
+    """
+    x, z = position[..., 0], position[..., 2]
+    i = np.floor((x - x.min()) / cell).astype(int)
+    j = np.floor((z - z.min()) / cell).astype(int)
+    shape = (i.max() + 1, j.max() + 1)
+    sums = np.zeros(shape + values.shape[-1:])
+    counts = np.zeros(shape)
+    np.add.at(sums, (i[front], j[front]), values[front])
+    np.add.at(counts, (i[front], j[front]), 1)
+    near = box_blur(counts, 1)
+    near_sums = np.dstack([box_blur(sums[..., c], 1) for c in range(sums.shape[-1])])
+    mean = np.where((counts > 0)[..., None], sums / np.maximum(counts, 1)[..., None],
+                    near_sums / np.maximum(near, 1e-9)[..., None])
+    take = back & ((counts > 0) | (near > 0))[i, j]
+    out = values.copy()
+    out[take] = mean[i[take], j[take]]
+    return out
 
 
 def repaint_model(name, spec, maps, rng):
@@ -1360,13 +1362,29 @@ def repaint_model(name, spec, maps, rng):
     elif name == 'gate':
         roof = spec['roof'] * spec['height'] - spec['sink']
         blocks = spec['blocks'] * spec['height'] - spec['sink']
+        # The faces that close the cut on the front posts' and blocks' backs lie on the cut, as the
+        # posts' straightening moved it, and the rear post, a copy of the left one, carries them
+        # on its back half. They take what the front faces show at the same place, grain, tone and
+        # occlusion, in place of the raw texture that the closing stretched.
+        position, facing, low = maps['position'], maps['facing'], -spec['sink']
+        foot, top = (share * spec['height'] for share in spec['cut'])
+        beam = low + spec['beam'] * spec['height']
+        tie = spec['tie'] * spec['height'] - spec['sink']
+        cut = foot + (z - low) * (top - foot) / (roof - low) + spec['lean'] * np.maximum(beam - z, 0)
+        back = (np.abs(position[..., 1] - cut) < 0.03) & (z < roof) & (z > low + 0.01)
+        post = (position[..., 1] > 0.15) & (z < tie - 0.05) & (z > low + 0.01)
+        if post.any():
+            back |= post & (position[..., 1] > np.median(position[..., 1][post])) & (np.abs(facing[..., 1]) > 0.7)
+        front = (facing[..., 1] < -0.7) & (position[..., 1] < cut - 0.05)
+        color = seen_from_front(color, position, back, front)
+        occlusion = seen_from_front(occlusion[..., None], position, back, front)[..., 0]
+        maps['color'] = color
         timber = smoothstep(blocks, blocks + 0.08, z) * smoothstep(roof + 0.05, roof - 0.05, z)
         color = vivid(color, spec['vivid'], timber)
         color = darken(color, spec['darken'], timber)
         # Behind the front posts and below the ties only the rear post stands. It stands deeper in
         # the roof's shade, so it takes the front posts' tone: lighter by the first share of
         # `rear_tone`, its color strength by the second.
-        tie = spec['tie'] - spec['sink']
         rear = smoothstep(0.15, 0.3, maps['position'][..., 1]) * smoothstep(tie + 0.02, tie - 0.05, z)
         color = darken(color, spec['rear_tone'][0], rear)
         color = vivid(color, spec['rear_tone'][1], rear)
@@ -1414,7 +1432,7 @@ def finish_model(name, spec, raw, rng):
         tint=False,
     ))
     levels, errors = levels_of(name, model, lambda k: decimated(
-        model, round(spec['triangles'] * spec['levels'][k - 1]), f'{name}-{k}'), spec['height'], 0.0)
+        model, round(spec['triangles'] * spec['levels'][k - 1]), f'{name}-{k}'), spec['height'], LEVEL_ERROR_LIMIT, 0.0)
     bpy.data.objects.remove(high)
     extent = vertices_of(model).max(axis=0) - vertices_of(model).min(axis=0)
     figures['size'] = ' x '.join(f'{v:.2f}' for v in extent)
@@ -1600,22 +1618,19 @@ def level_views(groups, errors, folder, name):
 # ---------------------------------------------------------------------------------------------
 
 
-def levels_of(name, finest, make, height, floor=-math.inf):
+def levels_of(name, finest, make, height, limits, floor=-math.inf):
     """
     The lower levels that `make(k)` builds for each k from 1, and each one's surface error above
-    the height `floor`, which must stay within its share in `LEVEL_ERROR_LIMIT` of the model's
-    `height`.
+    the height `floor`: the largest distance between the level and the finest one, since a solid
+    model's gaps show in its outline. Each must stay within its share in `limits` of the model's
+    `height`, or the build stops.
     """
     levels, errors = [], []
     for k in (1, 2):
         level = make(k)
         level.name = level.data.name = f'{name}-{k}'
         levels.append(level)
-        error = round(surface_error(level, finest, floor), 4)
-        limit = LEVEL_ERROR_LIMIT[k - 1] * height
-        if error > limit:
-            raise SystemExit(f'{name}-{k}: its surface error is {error} m, over the limit of {limit:.3f} m')
-        errors.append(error)
+        errors.append(level_error(level, finest, share=None, floor=floor, limit=limits[k - 1] * height))
     return levels, errors
 
 
@@ -1659,7 +1674,7 @@ def finish_statue(spec, raw, rng):
         return stone_slab(f'slab-{k}' if k else 'slab', rx, ry, slab_height, slab_spec['bevel'], slab_spec['sides'][k], mat)
 
     slab = slab_level(0)
-    slab_levels, slab_errors = levels_of('slab', slab, slab_level, spec['height'])
+    slab_levels, slab_errors = levels_of('slab', slab, slab_level, spec['height'], spec['limits'])
 
     statue = decimated(high, spec['triangles'], 'statue')
     maps = bake_maps(high, statue, color, normal, spec['texture'])
@@ -1667,7 +1682,7 @@ def finish_statue(spec, raw, rng):
     statue.data.materials.clear()
     statue.data.materials.append(finished_material('statue', maps, painted, roughness, metal, occlusion))
     statue_levels, statue_errors = levels_of('statue', statue, lambda k: decimated(
-        statue, round(spec['triangles'] * spec['levels'][k - 1]), f'statue-{k}'), spec['height'], slab_height)
+        statue, round(spec['triangles'] * spec['levels'][k - 1]), f'statue-{k}'), spec['height'], spec['limits'], slab_height)
     bpy.data.objects.remove(high)
     figures = dict(raw_triangles=raw_triangles, pits_filled=pits, figure=figure, slab=slab_height, knees=knees, depth=float(size[1]), slab_width=2 * rx, slab_depth=2 * ry)
     parts = [statue, *statue_levels, slab, *slab_levels]
