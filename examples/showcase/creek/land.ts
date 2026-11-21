@@ -579,13 +579,13 @@ export function cameraFloor(x: number, z: number): number {
 }
 
 /** Linear colors of the ground: yellow-olive moss, its darker green and brown patches, soil and rock. */
-const MOSS = [0.15, 0.14, 0.035];
-const MOSS_DARK = [0.065, 0.075, 0.026];
-const MOSS_BROWN = [0.115, 0.09, 0.034];
+const MOSS = [0.15, 0.14, 0.007];
+const MOSS_DARK = [0.065, 0.075, 0.005];
+const MOSS_BROWN = [0.115, 0.09, 0.007];
 /** The light, yellow-green moss in the sunnier patches. */
-const MOSS_LIGHT = [0.2, 0.2, 0.055];
+const MOSS_LIGHT = [0.2, 0.2, 0.011];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
-const MOSS_BRIGHT = [0.19, 0.19, 0.04];
+const MOSS_BRIGHT = [0.19, 0.19, 0.008];
 const BED = [0.42, 0.385, 0.315];
 const BED_POOL = [0.14, 0.13, 0.1];
 const MUD = [0.06, 0.05, 0.035];
