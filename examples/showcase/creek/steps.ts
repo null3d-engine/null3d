@@ -33,7 +33,7 @@ const SLAB = {
 const STRIPS = 6;
 
 /** Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. */
-const TREAD = [0.27, 0.262, 0.238] as const;
+const TREAD = [0.3, 0.296, 0.282] as const;
 const RISER = [0.045, 0.04, 0.034] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 
@@ -286,10 +286,12 @@ export function createSteps(
 	};
 	scene.createMesh({
 		mesh: geometry.fromArrays(arrays),
-		// The stones' own grain and cracks over the slabs' colours, so no slab reads as smooth.
+		// The rock's grain over the slabs' colours, so no slab reads as smooth, under a cool tint
+		// that takes out the rock texture's warmth: the steps are pale grey cut stone.
 		material: materials.standard({
 			vertexColors: true,
 			...rockMaps(textures, textureSize),
+			color: '#cdd2da',
 			roughness: 0.95,
 		}),
 		castShadows: true,
