@@ -44,16 +44,58 @@ export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number
 };
 
 /**
- * The trees, by hand where the concept has them: each one's place, its kind, its size and its turn
- * about y. The tall pine stands on the far bank beyond the gravel's west end, the narrow pine on the
- * hill's west shoulder behind the statue, a low pine leans over the near bank by the front lantern,
- * and another stands on the hill's foot east of the lower flight.
+ * The trees, by hand where the concept has them, from the references helper's planting map: each
+ * one's label on the map, its place, its kind, its size and its turn about y. The map's points come
+ * from the concept's pixels moved onto this land by landmarks, then onto the ground through the
+ * opening camera; the two narrow pines on the right hillside stand a little inside the rim. P1 is
+ * the tall pine beyond the gravel's west end, P2 the tall narrow pine on the hill's top left, P3
+ * leans over the front lantern, P4 stands at the steps' foot, P5 behind the statue's right
+ * shoulder, P6 at the hill's left foot, P7 and P8 on the right hillside, and P10 and P11 are the
+ * clipped tiny pines on the gravel's moss islands.
  */
-const TREES: readonly (readonly [number, number, TreeKind, number, number])[] = [
-	[-14.5, 6.5, 'pine-tall', 1, 0.4],
-	[0, -13, 'pine-narrow', 1, 2.2],
-	[1, 22.2, 'pine-low', 1, 3.6],
-	[15.5, 9, 'pine-low', 0.9, 5.1],
+export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
+	['P1', -16.2, 0, 'pine-tall', 1, 0.4],
+	['P2', -5.8, -16.6, 'pine-narrow', 1.05, 2.2],
+	['P3', 1.6, 22.2, 'pine-low', 0.9, 3.6],
+	['P4', 13.7, 8.6, 'pine-low', 0.95, 5.1],
+	['P5', 6.9, -21.7, 'pine-narrow', 0.9, 1.3],
+	['P6', -0.2, -7.6, 'pine-low', 1.1, 4.4],
+	['P7', 18.3, -15.3, 'pine-narrow', 0.8, 0.7],
+	['P8', 25.4, -1.9, 'pine-narrow', 0.7, 5.8],
+	['P10', 2, 5.3, 'pine-low', 0.37, 2.9],
+	['P11', 6.1, 7.1, 'pine-low', 0.2, 1.6],
+];
+
+/**
+ * The maples' and shrub-trees' places on the planting map, kept for when the maple model is
+ * pinned: each one's label, its place and its color. M5 and S3 fall on the banks' stones and M9 on
+ * the hill's rock, so each moves to the nearest growing ground when it stands.
+ */
+export const MAPLE_SPOTS: readonly (readonly [
+	string,
+	number,
+	number,
+	'red' | 'orange' | 'yellow' | 'bare',
+])[] = [
+	['M1', -7.8, -5.7, 'red'],
+	['M2', -15.5, -6.5, 'red'],
+	['M3', -20.7, 3.1, 'orange'],
+	['M4', -22.3, 8.6, 'bare'],
+	['M5', -13.4, 17.5, 'red'],
+	['M6', -5.8, 21.1, 'orange'],
+	['M7', 6.2, 22.9, 'red'],
+	['M8', 9.2, 22.1, 'yellow'],
+	['M9', 0.6, -16.4, 'orange'],
+	['M10', 2.7, -18.5, 'red'],
+	['M11', 12, -20.5, 'orange'],
+	['M12', 15, -19, 'bare'],
+	['M13', 19.9, -12.3, 'orange'],
+	['M14', 23, 2.1, 'yellow'],
+	['M15', 19.6, 4, 'red'],
+	['M16', -10.7, -12.4, 'red'],
+	['S1', -22.5, 5.2, 'red'],
+	['S2', 15.4, -18.6, 'red'],
+	['S3', 19.8, 14.2, 'orange'],
 ];
 
 /** One placed model: its kind, its foot on the ground, its turn about y and its size. */
@@ -282,7 +324,7 @@ export function placeValley(): Valley {
 		return !route.some((pose) => hits(solid, pose));
 	};
 	const trees = TREES.map(
-		([x, z, kind, size, yaw]): Spot<TreeKind> => ({
+		([, x, z, kind, size, yaw]): Spot<TreeKind> => ({
 			kind,
 			x,
 			y: groundHeight(x, z) - 0.1,
