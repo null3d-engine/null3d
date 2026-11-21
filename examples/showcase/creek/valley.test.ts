@@ -35,7 +35,7 @@ import {
 const valley = placeValley();
 const all: readonly Spot[] = [...valley.trees, ...valley.plants];
 
-test('each tree stands at its scale, on growing ground, seated, clear of the rocks and the steps', () => {
+test('each tree stands at its scale, on growing ground, seated, clear of the rocks, its trunk off the steps', () => {
 	// Every tree of the list stands: none is dropped for the camera's route.
 	expect(valley.trees.length).toBe(TREES.length);
 	const { rocks, ring } = gardenPlaces();
@@ -54,13 +54,16 @@ test('each tree stands at its scale, on growing ground, seated, clear of the roc
 				Math.hypot(tree.x - rock.x, tree.z - rock.z),
 				`${at}: its trunk into the rock at ${rock.x.toFixed(1)}, ${rock.z.toFixed(1)}`,
 			).toBeGreaterThan(rock.reach + TRUNK * size);
-		// Its crown keeps clear of the steps, so no copy hangs over a tread.
+		// Its trunk and foot keep off the steps; its crown may reach over their edge, as the concept's
+		// does, but not past their middle line.
 		for (const flight of flights()) {
 			const { t, side } = alongFlight(flight, tree.x, tree.z);
-			if (t > -0.1 && t < 1.1)
-				expect(side - STAIRS.half, `${at} over the steps`).toBeGreaterThan(
+			if (t > -0.1 && t < 1.1) {
+				expect(side - STAIRS.half, `${at}: its trunk on the steps`).toBeGreaterThan(TRUNK * size);
+				expect(side, `${at}: its crown past the steps' middle`).toBeGreaterThan(
 					SIZES[kind].reach * size,
 				);
+			}
 		}
 		for (const other of valley.trees) {
 			if (other === tree) continue;
