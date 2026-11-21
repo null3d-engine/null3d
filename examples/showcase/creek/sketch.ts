@@ -255,19 +255,12 @@ function createCreekWater(
 		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
 		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
 		bed: 'shape',
-		// The stream's own bed gives the water all its depth, so the surface draws opaque. The water is
-		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
+		// The stream's own bed gives the water all its depth. Its tint absorbs so little over that
+		// depth that the pale bed shows through everywhere, as the concept's shallow creek does.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#377472',
-			attenuationDistance: 1.2,
-			// From the opening view the calm pool would mirror the bright overcast and hide its bed:
-			// a weaker reflection lets the dark bed through, as the concept's pool shows it, and leaves
-			// the arms' water under their foam's brightness.
-			specularIntensity: 0.25,
-			// A thin volume bends the bed's picture little, so the view along the water close up
-			// never reaches past the frame's edge for it.
-			thickness: 0.15,
+			attenuationColor: '#5b97a2',
+			attenuationDistance: 4,
 		},
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
 		// round marks with no stretch of its own: a trail as long as the reach adds none. On High its

@@ -172,7 +172,7 @@ export const TREES: readonly (readonly [
 	['P2', -5.8, -16.6, 'pine-narrow', 1.03, -0.15],
 	['P3', 1.6, 22.2, 'pine-low', 0.86, 0.3],
 	['P4', 13.7, 8.6, 'pine-low', 0.96, -0.2],
-	['P5', 8.1, -21.6, 'pine-tall', 1.19, 0.1],
+	['P5', 8.1, -24.5, 'pine-tall', 1.12, 0.1],
 	['P6', -0.2, -7.6, 'pine-low', 1, -0.25],
 	['P7', 18.3, -15.3, 'pine-tall', 0.64, 0.25],
 	['P8', 25.4, -1.9, 'pine-narrow', 0.43, -0.3],
@@ -281,9 +281,9 @@ interface Rule {
 const RULES: readonly Rule[] = [
 	{
 		kind: 'rim-conifer',
-		spacing: 3.8,
-		scale: [1.3, 1.9],
-		clump: [1, 2],
+		spacing: 4.2,
+		scale: [1.15, 1.6],
+		clump: [1, 1.5],
 		tolerances: [
 			['rim', 0.4, 0.8, 3, 4.5],
 			['patch', 0.4, 0.5, 1, 1.01],
@@ -291,9 +291,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'clipped-shrub',
-		spacing: 4,
-		scale: [1, 1.5],
-		clump: [1, 1.6],
+		spacing: 4.2,
+		scale: [0.9, 1.3],
+		clump: [1, 1.4],
 		tolerances: [
 			['water', 1, 2.5, 9, 13],
 			['patch', 0.44, 0.56, 1, 1.01],
@@ -301,9 +301,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'azalea',
-		spacing: 3,
-		scale: [0.9, 1.4],
-		clump: [2, 1.8],
+		spacing: 3.2,
+		scale: [0.8, 1.15],
+		clump: [2, 1.7],
 		tolerances: [
 			['water', 0.3, 1, 8, 11],
 			['patch', 0.2, 0.28, 0.55, 0.62],
@@ -311,9 +311,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'autumn-clump',
-		spacing: 3.3,
-		scale: [1, 1.5],
-		clump: [2, 2.2],
+		spacing: 3.7,
+		scale: [0.65, 0.9],
+		clump: [1, 2.0],
 		tolerances: [
 			['height', 0.4, 1, 8, 9],
 			['patch', 0.25, 0.4, 1, 1.01],
@@ -321,9 +321,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'hosta',
-		spacing: 1.4,
-		scale: [1, 1.5],
-		clump: [4, 1.1],
+		spacing: 1.15,
+		scale: [0.9, 1.3],
+		clump: [5, 1.1],
 		tolerances: [
 			['water', 0, 0.3, 2.5, 4.5],
 			['patch', 0.35, 0.55, 1, 1.01],
@@ -331,16 +331,16 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.5,
+		spacing: 1.2,
 		scale: [0.9, 1.4],
-		clump: [5, 1.3],
+		clump: [7, 1.3],
 		tolerances: [['shade', 0.1, 0.35, 1, 1.01]],
 	},
 	{
 		kind: 'fern',
-		spacing: 1.4,
+		spacing: 1.1,
 		scale: [0.9, 1.3],
-		clump: [4, 1.2],
+		clump: [6, 1.2],
 		tolerances: [
 			['water', 0.2, 0.8, 3.5, 6],
 			['patch', 0.4, 0.6, 1, 1.01],
@@ -348,9 +348,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.6,
+		spacing: 1.4,
 		scale: [1, 1.5],
-		clump: [4, 1.3],
+		clump: [5, 1.3],
 		tolerances: [
 			['height', 0.5, 1, 8, 9],
 			['patch', 0.3, 0.4, 0.75, 0.85],
@@ -358,9 +358,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'moss-cushion',
-		spacing: 0.8,
-		scale: [0.8, 2],
-		clump: [2, 1.3],
+		spacing: 0.68,
+		scale: [0.8, 1.6],
+		clump: [3, 1.4],
 		tolerances: [
 			['water', 0.2, 0.5, 20, 30],
 			['height', -1, 0, 6, 8],
@@ -370,8 +370,8 @@ const RULES: readonly Rule[] = [
 
 /** How far from the garden's middle the ground cover's grid reaches each way, in meters. */
 const REACH = 30;
-/** How far inside the rim nothing grows, in meters, so no plant hangs over the edge. */
-const RIM_KEEP = 0.8;
+/** How far inside the rim nothing grows, in meters: a little, since the rim's plants may lean out. */
+const RIM_KEEP = 0.5;
 /** How far past the creek's half width its banks and stones stay bare, as a share of it. */
 const BANK_KEEP = 1.3;
 /** How close the camera may come to a model, in meters, beyond the reach of its leaves. */

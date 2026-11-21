@@ -33,17 +33,18 @@ const SLAB = {
 const STRIPS = 6;
 
 /**
- * Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. The tread
- * is a pale stone, which the rock texture's warm cast turns a light warm tan, paler than the moss.
+ * Linear colors of the steps: the worn warm-grey tread, the dark riser and the moss at the ends. The
+ * tread is a warm stone, which the rock texture's own cast deepens, darker and stronger than the
+ * ground's moss, as the concept's worn steps are.
  */
-const TREAD = [0.8, 0.77, 0.74] as const;
-const RISER = [0.1, 0.092, 0.08] as const;
+const TREAD = [0.37, 0.31, 0.225] as const;
+const RISER = [0.09, 0.082, 0.07] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 /**
- * Linear colors of the wall stones: a grey stone, lighter than it draws under the rock texture, and
- * moss as light as the ground's.
+ * Linear colors of the wall stones: a dark grey stone, so the low walls of stacked rock read darker
+ * than the bright moss band beside them, and moss as light as the ground's.
  */
-const WALL_TONES = { stone: [0.3, 0.29, 0.28], moss: TEXTURED_MOSS } as const;
+const WALL_TONES = { stone: [0.22, 0.21, 0.2], moss: TEXTURED_MOSS } as const;
 
 /**
  * The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes, the
@@ -51,7 +52,7 @@ const WALL_TONES = { stone: [0.3, 0.29, 0.28], moss: TEXTURED_MOSS } as const;
  * past the ledge's oval they stop, in meters, so the rock round the ledge flanks the cut steps.
  */
 const WALL = {
-	out: 0.45,
+	out: 0.9,
 	spacing: 0.5,
 	size: [0.24, 0.36],
 	rows: 2,
@@ -304,12 +305,12 @@ export function createSteps(
 	};
 	scene.createMesh({
 		mesh: geometry.fromArrays(arrays),
-		// The rock's grain over the slabs' colours, so no slab reads as smooth, under a cool tint
-		// that takes out the rock texture's warmth: the steps are pale grey cut stone.
+		// The rock's grain over the slabs' colours, so no slab reads as smooth: the steps are worn,
+		// warm cut stone, which the rock texture's own warmth deepens.
 		material: materials.standard({
 			vertexColors: true,
 			...rockMaps(textures, textureSize),
-			color: '#eef2f8',
+			color: '#fbf3e6',
 			roughness: 0.95,
 		}),
 		castShadows: true,

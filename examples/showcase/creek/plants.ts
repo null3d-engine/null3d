@@ -43,9 +43,9 @@ const SWAY = {
  * The texture keeps each leaf's shading.
  */
 const GROUND_TINTS: readonly (readonly [number, number, number])[] = [
-	[5.1, 1.28, 1.9],
-	[6.1, 1.38, 1.75],
-	[5.7, 1.02, 1.85],
+	[4.35, 1.09, 1.62],
+	[5.2, 1.17, 1.49],
+	[4.85, 0.87, 1.57],
 ];
 
 /**

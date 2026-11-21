@@ -1,38 +1,51 @@
-// The cliff's walls: warm near-black volcanic rock that hangs from the rim of the land and runs down
-// into the sea of cloud. The rock breaks into upright pillars and buttresses of uneven width, cut by
-// black cracks and chimneys. Each pillar steps in and out down its height in blocks, each block's
-// face tilted its own way, which leaves ledges, overhangs and an angular, craggy face. The wall is
-// one mesh in code: its top row is the land's own rim, vertex for vertex, so the two meet with no
+// The cliff's walls: grey-green volcanic rock that hangs from the rim of the land and runs down into
+// the sea of cloud. The rock breaks into upright pillars and buttresses of uneven width, each split
+// into flat vertical facets, and cut by deep black cracks and chimneys. Each pillar steps in and out
+// down its height in blocks, each block's face its own way, which leaves ledges, overhangs and an
+// angular, craggy face; under the turf a band of dark soil and roots hides the join. A fringe of
+// mossy rocks along the rim juts out over the wall, so the land's edge reads as broken rock. The wall
+// is one mesh in code: its top row is the land's own rim, vertex for vertex, so the two meet with no
 // seam, and every noise along the rim reads round a circle, so the ring of columns closes on itself.
-// Its rows spread out with depth, fine where the camera sees the rock and coarse down in the cloud.
+// Its rows spread out with depth, fine where the camera sees the rock and coarser down in the cloud.
 import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
-import { Noise, random, type TexelSample, textureSet } from '../../lib/procedural';
-import { FALL, LIPS, streamHalf, streamZ } from './land';
+import { Noise, random, rock, type TexelSample, textureSet } from '../../lib/procedural';
+import { FALL, LIPS, streamHalf, streamZ, WALL_REACH } from './land';
+import { mossy, TEXTURED_MOSS } from './stones';
 
 /** How far the walls run down below the water's height, in meters: well into the cloud. */
 export const WALL_FOOT = -44;
 /** The rows of vertices from the rim down to the foot. */
-const ROWS = 64;
+const ROWS = 96;
 /** How the rows spread: a power above 1 packs them toward the rim. */
-const ROW_SPREAD = 1.5;
+const ROW_SPREAD = 1.25;
 /** The narrowest and widest pillar, in meters along the rim. */
-const PILLAR = [1.3, 4.6] as const;
+const PILLAR = [0.9, 3.6] as const;
 /** How deep the cracks between the pillars cut into the rock, in meters. */
-const CRACK = [0.6, 1.8] as const;
+const CRACK = [0.7, 2.1] as const;
 /** The share of the crack's side of a pillar that its cut spans: a narrow notch. */
-const CRACK_SPAN = 0.22;
+const CRACK_SPAN = 0.2;
 /** The share of pillars that stand out as buttresses, and how far, in meters. */
-const BUTTRESS = { share: 0.22, out: [0.7, 1.5] as const } as const;
+const BUTTRESS = { share: 0.26, out: [0.8, 1.7] as const } as const;
 /** The shortest and tallest block that a pillar steps by, in meters. */
-const BLOCK = [1.1, 3.6] as const;
+const BLOCK = [0.8, 2.8] as const;
 /** How far a block stands out from or back into its pillar, and how far its face tilts across it. */
-const STEP = 1.05;
-const TILT = 0.45;
+const STEP = 1.2;
+const TILT = 0.55;
 /**
  * How far the rock's face stands back under the rim's line, in meters, so the land's edge overhangs
- * the rock a little, as soil and roots do on the concept's rim.
+ * the rock, as soil and roots do on the concept's rim.
  */
-const UNDERCUT = 0.55;
+const UNDERCUT = 0.85;
+/**
+ * How deep and wide the black chimneys cut into the face, in meters and as a noise's threshold: a
+ * chimney runs near upright down the wall, so it stays a slot at every height, as the concept's
+ * cracks do.
+ */
+const CHIMNEY = { depth: 2.2, cut: 0.12 } as const;
+/** How far the rock teeth under the rim jut out in places, in meters, and the depths they span. */
+const RIM_TEETH = { out: 1.3, from: 0.25, to: [1.2, 4.2] as const } as const;
+/** How far the soil and root band under the turf reaches down the rock, in meters. */
+const SOIL = { depth: 0.75 } as const;
 /**
  * The rock round each lip: how far past the fall's width on each side the rock still follows the
  * water down, in meters; the shares of the creek's half width where the water's sheet runs on under
@@ -61,7 +74,7 @@ const LIP_BREAK = { fissure: 0.7, ledge: 0.45 } as const;
  * walls run on down into the cloud from the opening camera, as the concept's do, rather than ending
  * in an outline over it.
  */
-const FLARE = 0.12;
+const FLARE = 0.25;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
 const TILE = 2.2;
 
@@ -81,10 +94,10 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	const pits = Math.max(0, noise.fbm2(u * 14, v * 14, 3, 14));
 	out.height = broad * 12 + middle * 6 + grain * 3 - pits * 16;
 	const tone = (0.7 + 0.24 * broad + 0.12 * middle + 0.05 * grain) * (1 - 0.3 * pits);
-	// A warm cast, so the shaded faces under the cool sky still read brown-black, as the concept's.
+	// A grey-green cast, so the shaded faces under the cool sky still keep the concept's rock tone.
 	out.r = tone;
-	out.g = tone * 0.9;
-	out.b = tone * 0.78;
+	out.g = tone * 0.96;
+	out.b = tone * 0.86;
 	out.roughness = 0.84 + 0.12 * broad;
 	out.occlusion = (0.9 + 0.1 * smoothstep(broad, -0.3, 0.3)) * (1 - 0.45 * pits);
 }
@@ -208,31 +221,65 @@ export function relief(
 	const above = index === 0 ? undefined : (pillar.blocks[index - 1] as Block);
 	// A block's foot steps sharply into the next one, which leaves a ledge or an overhang there.
 	const into = smoothstep(depth - (above?.foot ?? 0), 0, 0.3);
-	const face = (b: Block | undefined) => (b ? b.step + b.tilt * (t - 0.5) * pillar.width * 0.5 : 0);
+	// Each pillar breaks into a few flat vertical facets, each of its own depth, so the face shows
+	// sharp ridges instead of one rounded flute.
+	const slice = Math.min(3, Math.floor(t * 4));
+	const facetOf = (b: Block) =>
+		noise.value3(slice * 3.1, b.foot * 0.7 + 11, pillar.start * 1.3) * 0.45;
+	const face = (b: Block | undefined) =>
+		b ? b.step + b.tilt * (t - 0.5) * pillar.width * 0.5 + facetOf(b) : 0;
 	const step = face(above) + (face(block) - face(above)) * into;
+	// Black chimneys: deep slots that run near upright down the face, so they stay black at every
+	// height and split the wall into crags, as the concept's cracks do.
+	const chimney =
+		1 -
+		smoothstep(Math.abs(aroundNoise(along, length, 0.55, depth * 0.05 + 61, 3)), 0, CHIMNEY.cut);
+	// Rock teeth just under the rim, which jut past the land's edge in places, so the rim breaks
+	// into rock rather than running as one clean bevel.
+	const tooth =
+		Math.max(0, aroundNoise(along, length, 0.9, depth * 0.6 + 71, 3)) *
+		smoothstep(depth, 0, RIM_TEETH.from) *
+		(1 - smoothstep(depth, RIM_TEETH.to[0], RIM_TEETH.to[1]));
+	// Broad flat facets of the pillar's own, so no face rounds into a flute.
+	const facet = Math.round(aroundNoise(along, length, 0.4, depth * 0.2 + 83, 2) * 2) / 2;
 	const crags =
-		0.65 * aroundNoise(along, length, 0.35, depth * 0.35, 4) +
-		0.4 * Math.abs(aroundNoise(along, length, 1.2, depth * 1.2 + 7, 3)) +
-		0.18 * aroundNoise(along, length, 4, depth * 4 + 2, 2);
-	const bulge = 1.4 * aroundNoise(along, length, 0.025, depth * 0.035 + 11, 3);
+		0.7 * aroundNoise(along, length, 0.35, depth * 0.35, 4) +
+		0.5 * Math.abs(aroundNoise(along, length, 1.2, depth * 1.2 + 7, 3)) +
+		0.1 * aroundNoise(along, length, 4, depth * 4 + 2, 2) +
+		0.55 * facet;
+	const bulge = 1.5 * aroundNoise(along, length, 0.025, depth * 0.035 + 11, 3);
 	// Sharp crests and thin black fissures across the faces, which make the rock craggy close up.
 	const crest =
 		0.22 *
 		Math.max(0, 1 - 2.2 * Math.abs(aroundNoise(along, length, 2.4, depth * 2.4 + 17, 2))) ** 4;
 	const fissure =
-		1 - smoothstep(Math.abs(aroundNoise(along, length, 1.6, depth * 1.1 + 23, 2)), 0, 0.035);
-	const tone = (above ? above.tone + (block.tone - above.tone) * into : block.tone) * (1 - crack);
+		1 - smoothstep(Math.abs(aroundNoise(along, length, 1.6, depth * 1.1 + 23, 2)), 0, 0.045);
+	const tone =
+		(above ? above.tone + (block.tone - above.tone) * into : block.tone) *
+		(1 - crack) *
+		(1 - 0.35 * chimney);
 	return {
 		offset:
-			pillar.out + step + crags + bulge + crest - pillar.crack * crack - 0.12 * fissure - UNDERCUT,
-		crack: Math.max(crack, 0.85 * fissure),
+			pillar.out +
+			step +
+			crags +
+			bulge +
+			crest +
+			RIM_TEETH.out * tooth -
+			pillar.crack * crack -
+			CHIMNEY.depth * chimney -
+			0.2 * fissure -
+			UNDERCUT,
+		crack: Math.max(crack, 0.9 * chimney, 0.9 * fissure),
 		tone,
 	};
 }
 
-/** Linear colors of the rock: warm near-black faces, a dark grey-brown on the lighter ones. */
-const CHARCOAL = [0.028, 0.027, 0.019];
-const GREY_BROWN = [0.065, 0.062, 0.045];
+/** Linear colors of the rock: near-black faces, a grey-green on the lighter ones. */
+const CHARCOAL = [0.047, 0.048, 0.039];
+const GREY_BROWN = [0.163, 0.163, 0.134];
+/** Linear color of the soil and roots that hang under the turf at the rim: dark earth. */
+const SOIL_TONE = [0.07, 0.052, 0.032];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
@@ -289,9 +336,14 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// Under each fall the rock follows the water down, a little behind it.
 			const behind = FALL.speed * HUG.reach * (depth / 2) ** HUG.power - HUG.gap;
 			const shaped = flush + (behind - flush) * hug;
-			// The rock starts at the rim's own line, and its relief grows in over the first meter.
-			const grow = smoothstep(depth, 0, 1.2);
-			const out = (shaped + FLARE * depth * (1 - clear)) * grow;
+			// The rock starts at the rim's own line, and its relief, its teeth and its cracks grow in
+			// just below the land's edge.
+			const grow = smoothstep(depth, 0, 0.55);
+			const grown = (shaped + FLARE * depth * (1 - clear)) * grow;
+			// Where the camera may stand past the rim, the rock stays inside the reach it keeps clear.
+			const limit = WALL_REACH - 0.2;
+			const high = smoothstep(y, 0.2, 1);
+			const out = grown > limit ? limit + (grown - limit) * (1 - high) : grown;
 			const reach = Math.hypot(x, z);
 			const v = (row * columns + column) * 3;
 			positions[v] = x * (1 + out / reach);
@@ -299,11 +351,14 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			positions[v + 2] = z * (1 + out / reach);
 			const lighter = smoothstep(aroundNoise(run, length, 0.08, depth * 0.05 + 5, 3), -0.1, 0.3);
 			const light = 0.55 * tone + 0.45 * lighter;
-			const dark = 1 - 0.95 * crack * grow;
+			const dark = Math.max(0, 1 - 1.5 * crack * grow);
+			// Under the turf the rock's top reads as the soil and roots that the edge overhangs.
+			const soil = (1 - smoothstep(depth, 0, SOIL.depth)) * 0.7;
 			for (let c = 0; c < 3; c++) {
 				const shade =
 					(CHARCOAL[c] as number) + ((GREY_BROWN[c] as number) - (CHARCOAL[c] as number)) * light;
-				colors[v + c] = shade * dark;
+				const rock = shade * dark;
+				colors[v + c] = rock + ((SOIL_TONE[c] as number) * dark - rock) * soil;
 			}
 			uvs.set([(along[column] as number) / tile, -y / tile], (row * columns + column) * 2);
 		}
@@ -397,13 +452,85 @@ fn surface(input: SurfaceInput) -> Surface {
     // Mottling in the world's own space, which the texture's repeats cannot line up with.
     let mottle = 0.8 + 0.3 * (value3(p * 1.1) * 0.6 + value3(p * 3.7) * 0.4);
     var color = s.baseColor * tint * mottle;
-    color = mix(color, material.lichen * tint, streaks * 0.22 * (1.0 - mossy));
-    s.baseColor = mix(color, material.moss * tint, mossy);
+    // The cracks and chimneys stay black: no lichen or moss grows on their shaded faces.
+    let lit = dot(s.baseColor, vec3f(0.2126, 0.7152, 0.0722));
+    let face = smoothstep(0.0015, 0.014, lit);
+    // Fine cracks run down the face in thin shaded lines, which break its broad planes as the
+    // concept's rock is broken.
+    let seam = 1.0 - smoothstep(abs(value3(vec3f(p.x * 1.9, p.y * 0.16, p.z * 1.9)) - 0.5), 0.0, 0.065);
+    color *= 1.0 - 0.6 * seam * face;
+    color = mix(color, material.lichen * tint, streaks * 0.22 * (1.0 - mossy) * face);
+    s.baseColor = mix(color, material.moss * tint, mossy * face);
     s.roughness = mix(orm.g, 0.95, mossy);
     s.occlusion = orm.r;
     return s;
 }
 `;
+
+/**
+ * The rocks of the rim's fringe: how far apart they stand, their size, and how far inside the rim
+ * their feet stand, so each one's outer side juts out over the wall and breaks the land's clean edge.
+ */
+const RIM_FRINGE = { spacing: 1.4, size: [0.25, 0.55], inset: 0.02 } as const;
+
+/** Places the rim's fringe: irregular mossy rocks that break the land's edge over the wall. */
+function rimFringe(
+	{
+		scene,
+		geometry,
+		materials,
+		textures,
+	}: Pick<SketchContext, 'scene' | 'geometry' | 'materials' | 'textures'>,
+	rim: Float32Array,
+	textureSize: number,
+): void {
+	const next = random(83);
+	const count = rim.length / 3;
+	const places: { x: number; y: number; z: number; turn: number; size: number }[] = [];
+	let run = 0;
+	for (let k = 0; k < count; k++) {
+		const a = k * 3;
+		const b = ((k + 1) % count) * 3;
+		run += Math.hypot(
+			(rim[b] as number) - (rim[a] as number),
+			(rim[b + 2] as number) - (rim[a + 2] as number),
+		);
+		if (run < RIM_FRINGE.spacing * (0.7 + 0.6 * next())) continue;
+		run = 0;
+		const [x, y, z] = [rim[a] as number, rim[a + 1] as number, rim[a + 2] as number];
+		const reach = Math.hypot(x, z) || 1;
+		const inset = RIM_FRINGE.inset * next();
+		const size = RIM_FRINGE.size[0] + (RIM_FRINGE.size[1] - RIM_FRINGE.size[0]) * next();
+		places.push({
+			x: x * (1 - inset / reach),
+			y: y + 0.05,
+			z: z * (1 - inset / reach),
+			turn: next() * Math.PI * 2,
+			size,
+		});
+	}
+	const stone = geometry.fromArrays(
+		mossy(rock(89, 1, [1, 0.5, 0.85], 0.22), 90, 0.6, {
+			stone: [0.075, 0.08, 0.07],
+			moss: TEXTURED_MOSS,
+		}),
+	);
+	const batch = scene.createInstances(stone, places.length, {
+		material: materials.standard({
+			vertexColors: true,
+			...rockMaps(textures, textureSize),
+			roughness: 0.95,
+		}),
+		castShadows: true,
+		receiveShadows: true,
+	});
+	places.forEach(({ x, y, z, turn, size }, row) => {
+		batch.positions.set([x, y, z], row * 3);
+		batch.rotations.set([0, Math.sin(turn / 2), 0, Math.cos(turn / 2)], row * 4);
+		batch.scales.set([size * 1.1, size, size * 1.1], row * 3);
+	});
+	batch.markDirty();
+}
 
 /** Makes the cliff's walls under the land's rim. */
 export function createCliff(
@@ -428,4 +555,5 @@ export function createCliff(
 		receiveShadows: true,
 		castShadows: true,
 	});
+	rimFringe({ scene, geometry, materials, textures }, rim, textureSize);
 }
