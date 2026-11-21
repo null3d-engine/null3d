@@ -25,7 +25,7 @@ import { CLOUD_TOP, rimRadius } from './land';
 export const CLOUD = {
 	top: CLOUD_TOP,
 	depth: 12,
-	heap: 8,
+	heap: 9,
 	tower: 50,
 	reach: 1500,
 	dome: 1600,
@@ -39,12 +39,14 @@ const STEPS: Record<QualityPreset, number> = { low: 48, medium: 56, high: 64, ul
 /** How fast the billows drift, in meters a second along x and z. */
 const DRIFT = [0.45, 0.2] as const;
 /** The texels round the cliff's rim in the walls' map, one per bearing. */
-const RIM_TEXELS = 256;
+export const RIM_TEXELS = 256;
+/** The rim radii, in meters, that the walls' map stores in a byte: the lowest and the span. */
+export const RIM_RANGE = { low: 18, span: 16 } as const;
 /**
  * The bearings, in radians from +x toward +z, where the front wall faces the opening view: no heap
  * rises there, so the dark wall shows from the rim down to the frame's foot, as in the concept.
  */
-const FRONT = { middle: 1.13, half: 0.62, edge: 0.3 } as const;
+export const FRONT = { middle: 1.13, half: 0.62, edge: 0.3 } as const;
 /**
  * The domes of each layer of a billow: their radius in meters, how many stand on one tile, and how
  * far each sinks below the surface it stands on, as a share of its radius.
@@ -108,10 +110,11 @@ fn cloud_color(form: f32, lit: f32) -> vec3f {
     return cloud_air() * shade + warm;
 }
 
-/// The air between the camera and a point: the cloud fades toward the air's own color with
-/// distance, never wholly, so the far billows keep some of their light and shade.
+/// The air between the camera and a point: the cloud keeps its light and shade over the first few
+/// hundred meters, then fades fast into the air's own color, so the horizon is one soft haze.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, cloud_air() * 5.4, 0.65 * (1.0 - exp(-distance / 900.0)));
+    let far = distance / 700.0;
+    return mix(color, cloud_air() * 5.4, 1.0 - exp(-far * far));
 }
 // } light
 
@@ -152,7 +155,7 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
         // Against the walls, domes of their own heap up over the sea where the walls' map lets them.
         let close = 1.0 - smoothstep(0.0, 17.0, r - wall.x);
         let dome = textureSampleLevel(billows, billowsSampler, (q + vec2f(53.0, 29.0)) / (TILE * 0.75), lod + 0.4).r;
-        let heaped = material.top - material.depth + (material.depth + material.heap * wall.y) * dome * close;
+        let heaped = material.top - material.depth + (material.depth + material.heap * wall.y) * sqrt(dome) * close;
         h = max(h, heaped);
         // The billows' edges fray, so a top never ends on one clean line.
         fray = textureSampleLevel(billows, billowsSampler, (q + vec2f(7.0, 19.0)) / 21.0, lod).b;
@@ -320,9 +323,14 @@ fn unlit(input: SurfaceInput) -> vec4f {
                     shadow = min(shadow, 1.0 - 0.75 * smoothstep(0.0, 3.0, rise));
                 }
                 let lambert = clamp(dot(normal, sun) * 0.5 + 0.5, 0.0, 1.0) * shadow;
+                // How far this top stands over or under the billows round it, from the map's
+                // coarse level: a top over its neighbours takes the sky's full light, and a hollow
+                // among them lies in their shade, whatever the sun's height.
+                let around = cloud_at(p, max(lod + 2.0, log2(16.0 / texel))).x;
+                let open = clamp(0.5 + (h - around) / 2.0, 0.0, 1.0);
                 let cleft = smoothstep(0.12, 0.75, here.z);
                 let lift = clamp((h - (material.top - material.depth * 1.6)) / (material.depth * 1.6 + 5.0), 0.0, 1.0);
-                form = clamp(0.02 + 0.25 * max(normal.y, 0.0) + 0.4 * lambert + 0.15 * cleft + 0.22 * lift, 0.0, 1.0);
+                form = clamp(0.1 * max(normal.y, 0.0) + 0.25 * lambert + 0.45 * open + 0.1 * cleft + 0.2 * lift, 0.0, 1.0);
                 sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft);
                 met = t;
                 lit = true;
@@ -343,7 +351,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
             // side slips between two steps, and in short steps through the mist by the walls.
             let longest = select(4.0 + t * 0.09, 0.5 + t * 0.01, length(p.xz) < MISTY && above < 8.5);
             last = t;
-            t += clamp(above * 0.5, 0.3 + t * 0.05, longest);
+            t += clamp(above * 0.5, 0.3 + t * 0.07, longest);
         }
     }
     // A ray that runs out of steps over open sea would show the dome through a hole: it meets the
@@ -403,10 +411,11 @@ fn cloud_color(form: f32, lit: f32) -> vec3f {
     return cloud_air() * shade + warm;
 }
 
-/// The air between the camera and a point: the cloud fades toward the air's own color with
-/// distance, never wholly, so the far billows keep some of their light and shade.
+/// The air between the camera and a point: the cloud keeps its light and shade over the first few
+/// hundred meters, then fades fast into the air's own color, so the horizon is one soft haze.
 fn aerial(color: vec3f, distance: f32) -> vec3f {
-    return mix(color, cloud_air() * 5.4, 0.65 * (1.0 - exp(-distance / 900.0)));
+    let far = distance / 700.0;
+    return mix(color, cloud_air() * 5.4, 1.0 - exp(-far * far));
 }
 // } light
 
@@ -446,7 +455,7 @@ const smooth = (x: number, a: number, b: number) => {
  * sinking part way into the surface that the layers below made, as the rounded tops of cumulus do.
  * The heights are scaled to 0 at the lowest point and 1 at the highest.
  */
-function billowField(size: number, seed: number): Float32Array {
+export function billowField(size: number, seed: number): Float32Array {
 	const next = random(seed);
 	const texel = TILE / size;
 	const field = new Float32Array(size * size);
@@ -492,7 +501,7 @@ function billowField(size: number, seed: number): Float32Array {
  * Streaks of a value noise on a tile that repeats, from 0 to 1, for the mist's wisps: a few octaves
  * on lattices that divide the tile, so its edges meet.
  */
-function streakField(size: number, seed: number): Float32Array {
+export function streakField(size: number, seed: number): Float32Array {
 	const next = random(seed);
 	const field = new Float32Array(size * size);
 	let weight = 0;
@@ -552,14 +561,20 @@ const turnBetween = (a: number, b: number) =>
  * The walls' map round the cliff, one texel per bearing: the rim's radius, how high the tops heap
  * against the wall there, and how thick the mist at its foot drifts.
  */
-function wallMap(ctx: SketchContext): Texture {
+export function wallData(): Uint8Array {
 	const next = random(509);
-	// A smooth wave of heaps round the ring, from a few random bumps of uneven width.
-	const bumps = Array.from({ length: 9 }, () => ({
-		at: next() * Math.PI * 2,
-		width: 0.25 + 0.45 * next(),
-		height: 0.4 + 0.6 * next(),
-	}));
+	// The concept's heaps: high against the west wall behind the west fall, along the back walls
+	// behind the island, and up the east wall beside the east fall; a few smaller ones elsewhere.
+	const bumps = [
+		{ at: Math.PI, width: 0.7, height: 1 },
+		{ at: -1.6, width: 0.8, height: 0.9 },
+		{ at: 0.2, width: 0.45, height: 0.7 },
+		...Array.from({ length: 5 }, () => ({
+			at: next() * Math.PI * 2,
+			width: 0.25 + 0.35 * next(),
+			height: 0.3 + 0.4 * next(),
+		})),
+	];
 	const data = new Uint8Array(RIM_TEXELS * 4);
 	for (let k = 0; k < RIM_TEXELS; k++) {
 		const bearing = (k / RIM_TEXELS - 0.5) * Math.PI * 2;
@@ -572,15 +587,22 @@ function wallMap(ctx: SketchContext): Texture {
 		const front =
 			1 - smooth(turnBetween(bearing, FRONT.middle), FRONT.half, FRONT.half + FRONT.edge);
 		const mist = 0.55 + 0.45 * Math.sin(bearing * 3 + 1.1) ** 2;
-		data[k * 4] = Math.round(((rimRadius(bearing) - 18) / 16) * 255);
+		// A radius past the stored range keeps to its end rather than wrapping round the byte.
+		const rim = (rimRadius(bearing) - RIM_RANGE.low) / RIM_RANGE.span;
+		data[k * 4] = Math.round(Math.min(Math.max(rim, 0), 1) * 255);
 		data[k * 4 + 1] = Math.round(heap * (1 - front) * 255);
 		data[k * 4 + 2] = Math.round(mist * (1 - 0.35 * front) * 255);
 		data[k * 4 + 3] = 255;
 	}
+	return data;
+}
+
+/** The walls' map as a texture, read by bearing round the cliff. */
+function wallMap(ctx: SketchContext): Texture {
 	return ctx.textures.fromData({
 		width: RIM_TEXELS,
 		height: 1,
-		data,
+		data: wallData(),
 		colorSpace: 'linear',
 		wrap: ['repeat', 'clamp'],
 	});

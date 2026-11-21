@@ -238,8 +238,8 @@ costs the CPU nothing in a frame. A streak rides down at the water's own speed, 
 the water speeds up. The fall is one closed column with an oval section. It is thin at the lip, and
 a few meters down it is nearly as deep as the creek is wide. Below that its front and back run
 nearly parallel. So the fall has a solid body from the side as well as from the front. Its outline
-thins and tears wherever the view grazes it, so no side shows a clean edge. Spray falls inside the
-column. White water scatters the light that reaches it from all round. So the column takes the
+thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly off
+the column. White water scatters the light that reaches it from all round. So the column takes the
 sky's light as a surface facing up does, and it reads white. The scene's light lights the column,
 and the column fades where it nears a wall or a ledge behind it. The spray and
 the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
@@ -398,8 +398,8 @@ near the eye and spends its vertices far away.
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
 - **A waterfall.** It draws one blended mesh, a closed column of just over 2,000 triangles at the
-  default detail. It adds four particle systems. They are a froth at the lip, the spray inside the
-  column, the mist that the fall bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The column reads the copy
+  default detail. It adds four particle systems. They are a froth at the lip, the drops thrown off
+  the column, the mist that the fall bursts into, and the plume at its foot. Each holds a few hundred large puffs at most. The column reads the copy
   of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
   phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a
