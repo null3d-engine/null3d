@@ -21,10 +21,15 @@ interface BufferRecord {
 function fakeContext() {
 	const buffers: BufferRecord[] = [];
 	const destroyed: string[] = [];
+	const shaders: { uniforms: Record<string, unknown> }[] = [];
+	const meshes: { mesh: { uvs: Float32Array } }[] = [];
 	const ctx = {
 		time: { now: 0, dt: 1 / 60 },
 		scene: {
-			createMesh: () => ({ destroy: () => destroyed.push('mesh') }),
+			createMesh: (options: { mesh: { uvs: Float32Array } }) => {
+				meshes.push(options);
+				return { destroy: () => destroyed.push('mesh') };
+			},
 			createParticleBuffer: async () => {
 				const record: BufferRecord = { values: [], destroyed: false };
 				buffers.push(record);
@@ -51,10 +56,15 @@ function fakeContext() {
 			},
 		},
 		geometry: { fromArrays: (arrays: unknown) => arrays },
-		materials: { shader: () => ({ destroy: () => destroyed.push('material') }) },
+		materials: {
+			shader: (options: { uniforms: Record<string, unknown> }) => {
+				shaders.push(options);
+				return { destroy: () => destroyed.push('material') };
+			},
+		},
 		textures: { fromData: () => ({ destroy() {} }) },
 	};
-	return { ctx: ctx as unknown as SketchContext, buffers, destroyed };
+	return { ctx: ctx as unknown as SketchContext, buffers, destroyed, shaders, meshes };
 }
 
 /** A creek 5 m wide that falls 16 m off a lip at (2, 3), running along +x. */
@@ -75,6 +85,19 @@ async function fallWith(options: Partial<WaterfallOptions> = {}) {
 	const fall = await createWaterfall(context.ctx, { ...FALL, ...options });
 	return { ...context, fall };
 }
+
+describe('a waterfall’s apron', () => {
+	it('starts as far up the river as it is told, and fades in over that reach', async () => {
+		const { shaders, meshes } = await fallWith({ apron: 3, spray: 0 });
+		// The material fades the apron in over the seconds that the water takes to cross it.
+		expect(shaders[0]?.uniforms.apron).toBeCloseTo(3 / (FALL.speed as number), 6);
+		// The mesh's earliest water left the apron's upstream end that many seconds before the lip.
+		const uvs = meshes[0]?.mesh.uvs as Float32Array;
+		let earliest = 0;
+		for (let k = 1; k < uvs.length; k += 2) earliest = Math.min(earliest, uvs[k] as number);
+		expect(earliest).toBeCloseTo(-3 / (FALL.speed as number), 5);
+	});
+});
 
 describe('a waterfall’s particle systems', () => {
 	it('makes the froth, the mist and the plume where the fall’s emitters stand, turned with the lip', async () => {

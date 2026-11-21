@@ -291,6 +291,7 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `speed` | A number above 0, in meters a second | 1.2 | The current at the lip. It sets how far the water leaps out from the lip's line: at 1.2 m/s the back of the column is 0.6 m out 2 m down and 1.3 m out 13 m down. A wall that leans out further meets the water, and the column fades near the rock. Give the speed at the lip itself |
 | `drop` | A number above 0, in meters | Required | How far the fall drops below the lip. The sheet thins into mist over the lower half of the drop |
 | `spread` | A number from 0 | 0.3 | How far each side of the sheet widens for each meter that the water falls. At 0.3 a creek 5 m wide that falls 13 m is about twice as wide halfway down |
+| `apron` | A number above 0, in meters | 1 | How far up the river the fall's water starts, lying on the river's surface. It fades in at uneven distances and covers the river's square end, so the water runs into the fall with no straight edge at the lip. Give the reach of the broken water before the brink |
 | `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles, and neither `@null3d/particles` nor the engine's particle code loads |
 | `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
 | `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |

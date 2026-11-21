@@ -260,8 +260,8 @@
 	"chromium-swiftshader/compat/water-fall.png": {
 		"test": "water-fall",
 		"tier": "compat",
-		"date": "2026-11-20",
-		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's solid column; CI's own drawing replaces it after the merge"
+		"date": "2026-11-21",
+		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's uneven brink and apron; CI's own drawing replaces it after the merge"
 	},
 	"chromium-swiftshader/compat/water-rain.png": {
 		"test": "water-rain",
@@ -554,8 +554,8 @@
 	"chromium-swiftshader/webgl2/water-fall.png": {
 		"test": "water-fall",
 		"tier": "webgl2",
-		"date": "2026-11-20",
-		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's solid column; CI's own drawing replaces it after the merge"
+		"date": "2026-11-21",
+		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's uneven brink and apron; CI's own drawing replaces it after the merge"
 	},
 	"chromium-swiftshader/webgl2/water-rain.png": {
 		"test": "water-rain",
@@ -866,8 +866,8 @@
 	"chromium-swiftshader/webgpu/water-fall.png": {
 		"test": "water-fall",
 		"tier": "webgpu",
-		"date": "2026-11-20",
-		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's solid column; CI's own drawing replaces it after the merge"
+		"date": "2026-11-21",
+		"reason": "Stand-in drawn on this Mac with SwiftShader for the waterfall's uneven brink and apron; CI's own drawing replaces it after the merge"
 	},
 	"chromium-swiftshader/webgpu/water-rain.png": {
 		"test": "water-rain",

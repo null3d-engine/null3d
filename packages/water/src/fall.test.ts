@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import {
 	APRON,
 	APRON_LIFT,
+	BRINK,
+	brinkAt,
 	COLUMN_DEPTH,
 	columnDepth,
 	FALL_SPEED,
@@ -46,6 +48,13 @@ function meshOf(sheet: FallSheet) {
 		uvs1: mesh.uvs1 as Float32Array,
 		indices: mesh.indices as Uint32Array,
 	};
+}
+
+/** How far the brink shifts a vertex out past the path, from its place across in the first coordinate. */
+function shiftOf(sheet: FallSheet, uvs: Float32Array, vertex: number): number {
+	const out: [number, number] = [0, 0];
+	brinkAt((uvs[vertex * 2] as number) / sheet.halfWidth, out);
+	return out[0];
 }
 
 /** The column's vertices, as rows from the apron's top to the foot, each row round the section. */
@@ -135,7 +144,7 @@ describe('a waterfall’s column', () => {
 		const row = lipRow();
 		expect(uvs[(row[0] as number) * 2 + 1]).toBe(0);
 		for (const v of row) {
-			expect(positions[v * 3] as number).toBeCloseTo(10, 5);
+			expect(positions[v * 3] as number).toBeCloseTo(10 + shiftOf(SHEET, uvs, v), 5);
 			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT, 5);
 		}
 		const zs = row.map((v) => positions[v * 3 + 2] as number);
@@ -149,10 +158,55 @@ describe('a waterfall’s column', () => {
 		const top = rowsOf(SHEET)[0] as number[];
 		expect(uvs[(top[0] as number) * 2 + 1] as number).toBeCloseTo(-APRON / SHEET.speed, 5);
 		for (const v of top) {
-			expect(positions[v * 3] as number).toBeCloseTo(10 - APRON, 4);
+			expect(positions[v * 3] as number).toBeCloseTo(10 - APRON + shiftOf(SHEET, uvs, v), 4);
 			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT, 5);
 			expect(normals[v * 3 + 1]).toBe(1);
 		}
+	});
+
+	it('reaches as far up the river as the apron it is given, on the river’s surface', () => {
+		const long = { ...SHEET, apron: 2.5 };
+		const { positions, uvs } = meshOf(long);
+		const top = rowsOf(long)[0] as number[];
+		expect(uvs[(top[0] as number) * 2 + 1] as number).toBeCloseTo(-2.5 / SHEET.speed, 5);
+		for (const v of top) {
+			expect(positions[v * 3] as number).toBeCloseTo(10 - 2.5 + shiftOf(long, uvs, v), 4);
+			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT, 5);
+		}
+		// Every row before the brink lies flat on the river, between the apron's end and the brink.
+		for (const row of rowsOf(long)) {
+			const t = uvs[(row[0] as number) * 2 + 1] as number;
+			if (t >= 0) break;
+			for (const v of row) {
+				expect(positions[v * 3] as number).toBeGreaterThanOrEqual(10 - 2.5 - 1e-4);
+				expect(positions[v * 3] as number).toBeLessThanOrEqual(10 + BRINK + 1e-4);
+				expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT, 5);
+			}
+		}
+	});
+
+	it('turns down at an uneven brink, never behind the lip’s line and never far past it', () => {
+		const { positions, uvs } = meshOf(SHEET);
+		const xs = lipRow().map((v) => positions[v * 3] as number);
+		for (const x of xs) {
+			expect(x).toBeGreaterThanOrEqual(10 - 1e-6);
+			expect(x).toBeLessThanOrEqual(10 + BRINK + 1e-6);
+		}
+		// The brink is not a ruler line: across the lip it moves out by more than a third of its most.
+		expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(BRINK / 3);
+		// Front and back at one place across shift alike, so the column keeps its depth: with the
+		// section's own depth taken away, a front point and the back point across from it stand
+		// equally far out.
+		const { uvs1 } = meshOf(SHEET);
+		const around = SHEET.mesh?.across as number;
+		const at: [number, number] = [0, 0];
+		const row = rowsOf(SHEET)[20] as number[];
+		fallPlace(uvs[(row[0] as number) * 2 + 1] as number, SHEET.speed, at);
+		const depth = columnDepth(SHEET.halfWidth, at[1]);
+		const bare = (v: number) =>
+			(positions[v * 3] as number) - depth * (1 + Math.cos((uvs1[v * 2] as number) * Math.PI * 2));
+		for (let k = 1; k < around / 2; k++)
+			expect(bare(row[k] as number)).toBeCloseTo(bare(row[around / 2 - k] as number), 4);
 	});
 
 	it('follows the path of falling water: its back on the path, its front a full depth out', () => {
@@ -164,7 +218,10 @@ describe('a waterfall’s column', () => {
 			fallPlace(t, SHEET.speed, at);
 			const depth = columnDepth(SHEET.halfWidth, at[1]);
 			const half = SHEET.halfWidth + SHEET.spread * at[1];
-			expect(positions[v * 3] as number).toBeCloseTo(10 + at[0] + depth * (1 + Math.cos(angle)), 3);
+			expect(positions[v * 3] as number).toBeCloseTo(
+				10 + at[0] + depth * (1 + Math.cos(angle)) + shiftOf(SHEET, uvs, v),
+				3,
+			);
 			expect(positions[v * 3 + 1] as number).toBeCloseTo(SHEET.level + APRON_LIFT - at[1], 3);
 			expect(positions[v * 3 + 2] as number).toBeCloseTo(-4 + half * Math.sin(angle), 3);
 			expect(uvs1[v * 2 + 1] as number).toBeCloseTo(at[1], 3);
@@ -247,7 +304,10 @@ describe('a waterfall’s column', () => {
 				(u[0] as number) * (w[1] as number) - (u[1] as number) * (w[0] as number),
 			];
 			// Out from the column's middle at this height.
-			const middle = [10 + at[0] + columnDepth(SHEET.halfWidth, at[1]), -4];
+			const middle = [
+				10 + at[0] + columnDepth(SHEET.halfWidth, at[1]) + shiftOf(SHEET, uvs, vertex),
+				-4,
+			];
 			const outward = [
 				((a as number[])[0] as number) - (middle[0] as number),
 				((a as number[])[2] as number) - (middle[1] as number),
@@ -293,6 +353,7 @@ describe('a waterfall’s column', () => {
 		expect(() => fallSheet({ ...SHEET, halfWidth: -1 })).toThrow(/half width must be above 0/);
 		expect(() => fallSheet({ ...SHEET, direction: [0, 0] })).toThrow(/direction must not be zero/);
 		expect(() => fallSheet({ ...SHEET, spread: -0.1 })).toThrow(/spread must be 0 or more/);
+		expect(() => fallSheet({ ...SHEET, apron: 0 })).toThrow(/apron must be above 0/);
 		expect(() => fallSheet({ ...SHEET, level: Number.NaN })).toThrow(
 			/level must be a finite number/,
 		);

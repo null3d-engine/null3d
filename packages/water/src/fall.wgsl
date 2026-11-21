@@ -137,7 +137,10 @@ fn surface(input: SurfaceInput) -> Surface {
     let streaks = streak_layer(lip + warp * 2.0, crossed, vec2f(3.7, 0.6), 1.9);
     let patches = streak_layer(lip, crossed, vec2f(1.1, 0.3), 2.3);
     let lines = smoothstep(0.5, 0.8, streaks) * smoothstep(0.15, 0.6, patches);
-    let foam = max(white, lines * 0.9 * (1.0 - white));
+    // On the apron the water breaks into froth as it nears the brink, as white water piles up
+    // before an edge.
+    let piled = smoothstep(-0.8 * material.apron, 0.0, t) * smoothstep(0.35, 0.6, froth);
+    let foam = max(white, max(lines * 0.9, piled * 0.85) * (1.0 - white));
     let body = clamp(rope * mix(0.8, 1.15, froth) * mix(0.9, 1.08, fine), 0.0, 1.0);
     s.baseColor = mix(material.glass, white_color * mix(0.22, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
@@ -168,17 +171,22 @@ fn surface(input: SurfaceInput) -> Surface {
     // clump ends at its own height, so no line runs across the fall.
     let ending = share + (froth - 0.5) * 0.3 + (core - 0.5) * 0.12;
     alpha *= 1.0 - smoothstep(0.55, 0.95, ending);
-    // The apron fades in from its upstream end, over the river's own surface. The column's back
-    // lies on its front at the lip, so it shows only once the column has some depth.
-    alpha *= smoothstep(-material.apron, -0.4 * material.apron, t);
+    // The apron fades in from its upstream end, over the river's own surface, sooner in some places
+    // across than in others, so neither it nor the river's square end draws a line. The column's
+    // back lies on its front at the lip, so it shows only once the column has some depth.
+    let start = t + (patches - 0.5) * 0.5 * material.apron;
+    alpha *= smoothstep(-material.apron, -0.4 * material.apron, start);
     let back = smoothstep(0.3, -0.3, facing);
     alpha *= mix(1.0, smoothstep(0.05, 0.8, fallen), back);
     s.baseColor *= mix(1.0, 0.85, back);
 
-    // Where the column nears a wall or a ledge behind it, it fades rather than cutting a line.
+    // Where the column nears a wall or a ledge behind it, it fades rather than cutting a line. The
+    // apron and the first meter of the fall lie on the river and its brink by design, so they do
+    // not fade there: a fade would draw the lip as a straight line where the water leaves it.
     let place = input.fragCoord.xy / frame.resolution;
     let gap = max(sceneDistance(place) - distance_of(input.fragCoord.z), 0.0);
-    alpha *= smoothstep(0.0, material.softness, gap);
+    let on_brink = 1.0 - smoothstep(0.4, 1.5, fallen);
+    alpha *= mix(smoothstep(0.0, material.softness, gap), 1.0, on_brink);
     s.alpha = clamp(alpha, 0.0, 1.0);
     return s;
 }
