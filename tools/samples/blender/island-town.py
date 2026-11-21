@@ -87,6 +87,45 @@ def ashlar_texture(size, rng):
     return np.clip(colour, 0, 1), height, np.clip(rough, 0, 1)
 
 
+def keep_ashlar_texture(size, rng):
+    """
+    Limestone ashlar for the keep: uneven courses of large blocks in varied widths, with joints of
+    their own width, a tone per block and two scales of weathering. The layout is irregular, so a
+    block pattern does not line up with itself across the wall.
+    """
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+    gaps = rng.uniform(0.11, 0.25, 6)
+    cuts = np.concatenate(([0.0], np.cumsum(gaps / gaps.sum()) * size))
+    height = np.zeros((size, size), np.float32)
+    tone = np.ones((size, size), np.float32)
+    joint = np.zeros((size, size), np.float32)
+    for c in range(len(cuts) - 1):
+        count = int(rng.integers(2, 5))
+        widths = rng.uniform(0.75, 1.5, count)
+        edges = np.concatenate(([0.0], np.cumsum(widths) / widths.sum() * size))
+        tones = rng.uniform(0.88, 1.10, count)
+        band = slice(int(round(cuts[c])), int(round(cuts[c + 1])))
+        columns = xx[band]
+        block = np.clip(np.searchsorted(edges, columns, side='right') - 1, 0, count - 1)
+        tone[band] = tones[block]
+        dx = np.minimum(columns - edges[block], edges[block + 1] - columns)
+        dy = np.minimum(yy[band] - cuts[c], cuts[c + 1] - yy[band])
+        joint[band] = np.clip(np.minimum(dx, dy) / rng.uniform(1.8, 3.4), 0.0, 1.0)
+    # Block faces stand proud of their joints, each a little above or below its neighbours.
+    height = (0.42 + 0.58 * smoothstep(0.15, 0.85, joint) + 0.06 * (tone - 1.0)).astype(np.float32)
+    broad = fbm(size, size, 2, 2, rng, 4)
+    mid = fbm(size, size, 12, 12, rng, 3)
+    grain = fbm(size, size, 96, 96, rng, 2)
+    stain = smoothstep(0.58, 0.92, fbm(size, size, 4, 4, rng, 4))
+    shade = (0.94 + 0.06 * broad) * (0.95 + 0.05 * mid) * (0.955 + 0.045 * grain)
+    colour = np.array([0.68, 0.63, 0.53])[None, None, :] * tone[..., None]
+    colour = colour * shade[..., None] * (1 - 0.06 * stain[..., None])
+    mortar = np.array([0.60, 0.57, 0.50])[None, None, :] * (0.94 + 0.06 * broad)[..., None]
+    colour = np.where(joint[..., None] < 0.32, mortar, colour)
+    rough = 0.80 + 0.10 * grain - 0.05 * stain + 0.06 * (1 - joint)
+    return np.clip(colour, 0, 1), height, np.clip(rough, 0, 1)
+
+
 def roof_texture(size, rng):
     """Terracotta barrel tiles in columns and overlapping courses, weathered with lichen."""
     cols, rows = 9, 5
@@ -175,7 +214,7 @@ def make_materials(rng):
         image('town-dome-orm', half(orm(occlusion_of(height, 8), rough)), 'Non-Color'),
         roughness=1.0,
     )
-    return {
+    mats = {
         'walls': material('town-render', image('town-render', render_texture(512, rng)), roughness=0.94),
         'stone': stone,
         'roof': roof,
@@ -183,6 +222,16 @@ def make_materials(rng):
         'wood': material('town-timber', image('town-timber', timber_texture(256, rng)), roughness=0.72),
         'glass': material('town-glass', image('town-glass', glazing_texture(256, rng)), roughness=0.18),
     }
+    # The keep's own ashlar: large irregular blocks that hold their detail at the closest range.
+    colour, height, rough = keep_ashlar_texture(512, rng)
+    mats['keep-stone'] = material(
+        'town-keep-stone',
+        image('town-keep-stone', colour),
+        image('town-keep-stone-normal', half(normal_map(height, 1.2)), 'Non-Color'),
+        image('town-keep-stone-orm', half(orm(occlusion_of(height, 10), rough)), 'Non-Color'),
+        roughness=1.0,
+    )
+    return mats
 
 
 # ---------------------------------------------------------------------------------------------
@@ -228,11 +277,11 @@ class Geo:
             (p[0], -p[2], p[1]), uv, color, (normal[0], -normal[2], normal[1])
         )
 
-    def face(self, points, color, tile=1.0, normal=None, uvs=None):
+    def face(self, points, color, tile=1.0, normal=None, uvs=None, uv_offset=(0.0, 0.0)):
         """
         A face, counter-clockwise seen from outside. A given `normal` also turns the points' order
         right, so a caller may name them in any order. Its texture coordinates run in meters along
-        the face's own plane unless `uvs` gives them.
+        the face's own plane unless `uvs` gives them, and `uv_offset` shifts them within the texture.
         """
         if len(points) < 3:
             return
@@ -248,7 +297,8 @@ class Geo:
             u_axis, v_axis = (1, 0, 0), (0, 1, 0)
         ids = []
         for k, p in enumerate(points):
-            uv = uvs[k] if uvs is not None else (_dot(p, u_axis) / tile, _dot(p, v_axis) / tile)
+            uv = uvs[k] if uvs is not None else (
+                _dot(p, u_axis) / tile + uv_offset[0], _dot(p, v_axis) / tile + uv_offset[1])
             if abs(n[1]) > 0.7:
                 shade = 1.0 if n[1] > 0 else 0.5
             else:
@@ -256,16 +306,23 @@ class Geo:
             ids.append(self.vertex(p, uv, tuple(c * shade for c in color), n))
         self.builder.face(*ids)
 
-    def box(self, x0, y0, z0, x1, y1, z1, color, tile=1.5, top=True, bottom=False):
+    def box(self, x0, y0, z0, x1, y1, z1, color, tile=1.5, top=True, bottom=False,
+            uv_offset=(0.0, 0.0)):
         """The box's faces, outward; `top` and `bottom` may leave a lid off."""
         if top:
-            self.face([(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)], color, tile, (0, 1, 0))
+            self.face([(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)], color, tile,
+                      (0, 1, 0), uv_offset=uv_offset)
         if bottom:
-            self.face([(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)], color, tile, (0, -1, 0))
-        self.face([(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)], color, tile, (0, 0, 1))
-        self.face([(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)], color, tile, (0, 0, -1))
-        self.face([(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)], color, tile, (1, 0, 0))
-        self.face([(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)], color, tile, (-1, 0, 0))
+            self.face([(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)], color, tile,
+                      (0, -1, 0), uv_offset=uv_offset)
+        self.face([(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)], color, tile,
+                  (0, 0, 1), uv_offset=uv_offset)
+        self.face([(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)], color, tile,
+                  (0, 0, -1), uv_offset=uv_offset)
+        self.face([(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)], color, tile,
+                  (1, 0, 0), uv_offset=uv_offset)
+        self.face([(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)], color, tile,
+                  (-1, 0, 0), uv_offset=uv_offset)
 
     def gable(self, axis, ridge, low, high, half, y_eave, y_ridge, color, tile=1.0, overhang=0.45):
         """Two slopes that meet at a ridge running along `axis` ('x' or 'z')."""
@@ -648,19 +705,24 @@ def church(model, detail):
 def keep(model, detail):
     """A hilltop keep: a battered stone tower with battlements over a walled court."""
     stone, glass = model.shape('stone'), model.shape('glass')
+    model.mats['stone'] = model.mats['keep-stone']
     fine, mid = detail == 0, detail <= 1
     white = (0.98, 0.96, 0.91)
+    # One turn of the tower's ashlar covers this many meters, so the pattern spans large blocks.
+    tile = 3.0
 
-    stone.box(-5.5, -3, -5.5, 5.5, 3.2, 5.5, white, 1.6)
-    stone.box(-5.0, 3.0, -5.0, 5.0, 21, 5.0, white, 1.6)
+    stone.box(-5.5, -3, -5.5, 5.5, 3.2, 5.5, white, tile, uv_offset=(0.13, 0.41))
+    stone.box(-5.0, 3.0, -5.0, 5.0, 21, 5.0, white, tile, uv_offset=(0.62, 0.07))
     if mid:
-        stone.box(-5.4, 20.7, -5.4, 5.4, 21.0, 5.4, PALE, 1.2)
-        stone.box(-5.0, 21.0, -5.0, 5.0, 21.9, 5.0, white, 1.6)
+        stone.box(-5.4, 20.7, -5.4, 5.4, 21.0, 5.4, PALE, tile, uv_offset=(0.31, 0.78))
+        stone.box(-5.0, 21.0, -5.0, 5.0, 21.9, 5.0, white, tile, uv_offset=(0.84, 0.24))
         count = 5 if fine else 4
         for k in range(count):
             at = -4.0 + k * (8.0 / (count - 1))
+            shift = ((0.09 * k + 0.05) % 1.0, (0.23 * k + 0.17) % 1.0)
             for x, z in ((at, 5.0), (at, -5.0), (5.0, at), (-5.0, at)):
-                stone.box(x - 0.52, 21.8, z - 0.52, x + 0.52, 23.0, z + 0.52, white, 1.2)
+                stone.box(x - 0.52, 21.8, z - 0.52, x + 0.52, 23.0, z + 0.52, white, tile,
+                          uv_offset=shift)
         # The slit windows and the arched door.
         for y in (6.5, 11.0, 15.5):
             for x, z, nx, nz in ((0, 5.0, 0, 1), (0, -5.0, 0, -1), (5.0, 0, 1, 0), (-5.0, 0, -1, 0)):
@@ -674,17 +736,18 @@ def keep(model, detail):
 
     # The court's three walls, open toward the tower's front.
     walls = ((-11.0, -11.0, 11.0, -9.2), (-11.0, -11.0, -9.2, 11.0), (9.2, -11.0, 11.0, 11.0))
-    for x0, z0, x1, z1 in walls:
-        stone.box(x0, -3, z0, x1, 5.0, z1, white, 1.6)
+    for index, (x0, z0, x1, z1) in enumerate(walls):
+        shift = (0.21 + 0.37 * index, 0.14 + 0.29 * index)
+        stone.box(x0, -3, z0, x1, 5.0, z1, white, tile, uv_offset=shift)
         if fine:
             if x1 - x0 > z1 - z0:
                 for k in range(6):
                     x = x0 + 0.8 + k * (x1 - x0 - 1.6) / 5
-                    stone.box(x - 0.45, 4.9, z0, x + 0.45, 5.9, z1, white, 1.2)
+                    stone.box(x - 0.45, 4.9, z0, x + 0.45, 5.9, z1, white, tile, uv_offset=shift)
             else:
                 for k in range(6):
                     z = z0 + 0.8 + k * (z1 - z0 - 1.6) / 5
-                    stone.box(x0, 4.9, z - 0.45, x1, 5.9, z + 0.45, white, 1.2)
+                    stone.box(x0, 4.9, z - 0.45, x1, 5.9, z + 0.45, white, tile, uv_offset=shift)
 
 
 def lighthouse(model, detail):
@@ -816,7 +879,7 @@ class Model:
     """The parts of one model, each a Geo of one shared material."""
 
     def __init__(self, mats):
-        self.mats = mats
+        self.mats = dict(mats)
         self.parts = {}
 
     def shape(self, part):
@@ -936,6 +999,10 @@ def shoot(near, shots):
                target=(0, 19, 2), size=(800, 600))
     frame_shot(keep_, os.path.join(shots, 'keep-distance.png'), (-0.3, 0.28, 0.92), 220,
                target=(0, 10, 0), size=(640, 420))
+    frame_shot(keep_, os.path.join(shots, 'keep-detail-close.png'), (-0.7, 0.15, 1.0), 0.55,
+               target=(0, 8.0, 5.0), size=(800, 600), lens=20)
+    frame_shot(keep_, os.path.join(shots, 'keep-detail-2m.png'), (-0.15, 0.05, 1.0), 2.0,
+               target=(0, 8.0, 5.0), size=(800, 600))
 
     frame_shot(lighthouse_, os.path.join(shots, 'lighthouse.png'), (-0.65, 0.30, 0.70), 26,
                target=(0, 6, 0), size=(700, 800))
