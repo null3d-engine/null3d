@@ -3,7 +3,8 @@
 // reads the scene's own depth, and a mirror of the banks and the sky that redraws as often as the
 // quality preset affords. The same material draws from below, so a camera that dips under the water
 // keeps its surface. Where two bodies meet, as at a river's mouth, the junction map gives each point
-// to one body and lets the river's waves give way to the lake's without a seam.
+// to one body and lets the river's waves give way to the lake's without a seam. Rain, which is off
+// until a page asks for it, rings the surface where its drops land.
 import {
 	declareAddonNamespace,
 	defineFeature,
@@ -166,6 +167,12 @@ export interface WaterOptions {
 	 * wind add-on's field here, and the surface reads it once for each vertex.
 	 */
 	readonly wind?: WaterWind;
+	/**
+	 * How hard rain falls on the surface, from 0 for none to 1 for a downpour. Each drop rings the
+	 * surface where it lands, and the rings drift with the current. It is 0 by default, and dry water
+	 * pays nothing for the rings.
+	 */
+	readonly rain?: number;
 }
 
 /**
@@ -178,6 +185,11 @@ export interface Water {
 	readonly level: number;
 	/** The height of the long waves and of the wind's lift, as a factor of their base height. */
 	readonly waveAmplitude: number;
+	/**
+	 * The most that the long waves raise or lower the surface from its level, in meters. A point
+	 * further than this above the level is above the water wherever it stands.
+	 */
+	readonly waveReach: number;
 	/** The bodies of water that the surface draws, in the order that the shapes give. */
 	readonly bodies: readonly WaterBody[];
 	/** The frames between two draws of the reflection now. */
@@ -201,8 +213,17 @@ export interface Water {
 	currentAt(x: number, z: number, out: [x: number, z: number]): void;
 	/** Sets the light that the ripples focus on the bed, as a linear color. */
 	setCaustics(light: readonly [x: number, y: number, z: number]): void;
+	/** Sets how hard rain falls on the surface, from 0 for none to 1 for a downpour. */
+	setRain(amount: number): void;
 	/** Removes the surface, its reflection pass and its material. */
 	destroy(): void;
+}
+
+/** A rain amount, or an error that says what it must be. */
+function rainAmount(amount: number): number {
+	if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 1)
+		throw new Error(`@null3d/water: the rain must be from 0 to 1, and it is ${amount}`);
+	return amount;
 }
 
 /** The passes that the add-on added, so that each one names a texture of its own. */
@@ -215,11 +236,36 @@ function bodyList(shapes: WaterShape | readonly WaterShape[]): WaterBody[] {
 	return list.map((shape) => waterBody(shape));
 }
 
+/** The seconds over which a pattern rides the current before it fades into a fresh copy. */
+export const CARRY_CYCLE = 2;
+
+/** The part of a number past its whole part, from 0 up to 1, as WGSL's `fract` gives it. */
+function fract(value: number): number {
+	return value - Math.floor(value);
+}
+
+/** A number from 0 to 1 that changes each time a copy starts afresh, as the shaders' `cycle_seed`. */
+function cycleSeed(t: number, which: number): number {
+	return fract(Math.floor(t / CARRY_CYCLE + which) * 0.618034 + which);
+}
+
+/**
+ * The most that `waveHeight` moves a surface from its level, in meters, for a ripple and a wave
+ * amplitude: each long wave at its full height, and the two copies' weights sum to one.
+ */
+export function waveReach(ripple: number, waveAmplitude: number): number {
+	let reach = 0;
+	for (let index = 0; index < LONG_WAVES.length; index++)
+		reach += 0.05 / (LONG_WAVES[index] as (typeof LONG_WAVES)[number])[2];
+	return reach * Math.abs(ripple * waveAmplitude);
+}
+
 /**
  * The height of a water surface at a point and a sketch time, in meters, as its long waves move it.
  * A `current` carries the whole set downstream, with each wave's direction turned into the
- * current's frame; still water keeps the authored directions and each wave's own speed. `ripple`
- * scales them, and `waveAmplitude` scales the surface's height above the level.
+ * current's frame, in two copies that take turns as the surface's shader draws them; still water
+ * keeps the authored directions and each wave's own speed. `ripple` scales them, and
+ * `waveAmplitude` scales the surface's height above the level.
  *
  * @category api/water
  */
@@ -232,22 +278,45 @@ export function waveHeight(
 	ripple: number,
 	waveAmplitude = 1,
 ): number {
-	const speed = Math.hypot(current[0], current[1]);
+	const speed = Math.sqrt(current[0] * current[0] + current[1] * current[1]);
 	const moving = speed > 1e-5;
 	const cx = moving ? current[0] / speed : 0;
 	const cz = moving ? current[1] / speed : 0;
 	let height = level;
-	for (const [ownX, ownZ, k, ownSpeed] of LONG_WAVES) {
-		const length = Math.hypot(ownX, ownZ);
+	// Two copies of the waves that the current carries, half a cycle apart, as the shaders' `carried`
+	// gives them: the seconds that each has ridden the current, and their weights.
+	const firstShare = fract(t / CARRY_CYCLE);
+	const firstTime = firstShare * CARRY_CYCLE;
+	const secondTime = fract(t / CARRY_CYCLE + 0.5) * CARRY_CYCLE;
+	const firstWeight = 1 - Math.abs(2 * firstShare - 1);
+	const secondWeight = 1 - firstWeight;
+	const firstSeed = cycleSeed(t, 0);
+	const secondSeed = cycleSeed(t, 0.5);
+	for (let index = 0; index < LONG_WAVES.length; index++) {
+		// Read by index: destructuring would make an iterator in every frame.
+		const wave = LONG_WAVES[index] as (typeof LONG_WAVES)[number];
+		const ownX = wave[0];
+		const ownZ = wave[1];
+		const k = wave[2];
+		const ownSpeed = wave[3];
+		const length = Math.sqrt(ownX * ownX + ownZ * ownZ);
 		const along = ownX / length;
 		const across = ownZ / length;
-		// The authored direction turned into the current's frame, and the current's phase.
-		const dx = moving ? cx * along - cz * across : along;
-		const dz = moving ? cz * along + cx * across : across;
-		const phase = moving
-			? k * (dx * x + dz * z - speed * t * (dx * cx + dz * cz))
-			: k * (along * x + across * z) - ownSpeed * t;
-		height += (ripple * waveAmplitude * 0.05 * Math.sin(phase)) / k;
+		const amplitude = (ripple * waveAmplitude * 0.05) / k;
+		if (!moving) {
+			height += amplitude * Math.sin(k * (along * x + across * z) - ownSpeed * t);
+			continue;
+		}
+		// The authored direction turned into the current's frame, and the current's phase in each of
+		// the two copies.
+		const dx = cx * along - cz * across;
+		const dz = cz * along + cx * across;
+		const run = k * speed * (dx * cx + dz * cz);
+		const base = k * (dx * x + dz * z);
+		const turn = 2 * Math.PI * (index + 1);
+		const first = base - run * firstTime + firstSeed * turn;
+		const second = base - run * secondTime + secondSeed * turn;
+		height += amplitude * (firstWeight * Math.sin(first) + secondWeight * Math.sin(second));
 	}
 	return height;
 }
@@ -352,6 +421,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	const { scene, geometry, materials, textures, render, quality } = ctx;
 	const level = options.level ?? 0;
 	const waveAmplitude = options.waveAmplitude ?? WAVE_AMPLITUDE;
+	let rain = rainAmount(options.rain ?? 0);
 	const bodies = bodyList(options.shapes);
 	const foam = options.foam;
 	const foamOrigin = foam?.origin ?? [0, 0];
@@ -418,6 +488,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			windBox: wind?.size ?? 0,
 			windStrength: wind ? 1 : 0,
 			windLayer: 0,
+			rain,
 		},
 	});
 	let meshBytes = 0;
@@ -486,16 +557,19 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		const owner = junction?.ownerAt(x, z) ?? -1;
 		if (owner >= 0) return bodies[owner];
 		let first: WaterBody | undefined;
-		for (const body of bodies)
-			if (body.contains(x, z)) {
-				if (body.kind === 'lake') return body;
-				first ??= body;
-			}
+		// An indexed loop, since the view from under the water asks for the surface every frame.
+		for (let index = 0; index < bodies.length; index++) {
+			const body = bodies[index] as WaterBody;
+			if (!body.contains(x, z)) continue;
+			if (body.kind === 'lake') return body;
+			first ??= body;
+		}
 		return first;
 	};
 	return {
 		level,
 		waveAmplitude,
+		waveReach: waveReach(options.ripple ?? RIPPLE, waveAmplitude),
 		bodies,
 		get reflectionEvery() {
 			return every;
@@ -553,6 +627,12 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			causticLight[1] = light[1];
 			causticLight[2] = light[2];
 			material.set({ caustics: causticLight });
+		},
+		setRain(amount) {
+			// A storm may set the rain every frame, so an unchanged amount costs nothing.
+			if (amount === rain) return;
+			rain = rainAmount(amount);
+			material.set({ rain });
 		},
 		destroy() {
 			host.destroy();

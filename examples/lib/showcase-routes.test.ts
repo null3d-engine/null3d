@@ -16,7 +16,6 @@ import {
 	routePosition,
 	routeTimeline,
 } from './cinematic';
-import { mountainRing } from './mountains';
 import { type ShadowReach, shadowStep } from './shadow-range';
 
 /** How many points of the loop the checks sample, finely enough for the spline's bends. */
@@ -29,8 +28,7 @@ const MOST_SPEED_STEP = MOST_ACCELERATION / 60;
 /** The most that the turning rate changes in a second, in degrees per second. */
 const MOST_TURN_CHANGE = 60;
 
-/** Each scene's route, its camera's bounds and the ground under them: an island has no mountains. */
-const creekRing = mountainRing(creekLand.mountainSettings(160, 32));
+/** Each scene's route, its camera's bounds and the ground under them. */
 const SCENES = [
 	{
 		name: 'island',
@@ -40,8 +38,7 @@ const SCENES = [
 	{
 		name: 'creek',
 		sketch: creek,
-		ground: (x: number, z: number) =>
-			Math.max(creekLand.groundHeight(x, z), creekRing.heightAt(x, z)),
+		ground: creekLand.cameraFloor,
 	},
 ];
 

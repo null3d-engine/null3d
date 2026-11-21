@@ -139,7 +139,7 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Grass that sways in the wind | `@null3d/grass` | `api/grass` | built |
 | Rigid bodies, joints and character movement | the physics add-on | `guides/physics` | not built yet; run Rapier or cannon-es in the sketch worker |
 | Sharp text in the scene | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
-| A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
+| A river, a lake or a waterfall, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
 | An open sea whose waves come from GPU-transformed spectra | `@null3d/water` | `api/water` | built |
 | Trees that sway in the wind | a glTF or code-made mesh, with a material that reads `@null3d/wind`'s field | `api/wind` | built (recipe 24) |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built |

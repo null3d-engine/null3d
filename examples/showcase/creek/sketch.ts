@@ -1,11 +1,11 @@
-// Creek: a showcase scene of a small stream in a grassy valley. Clear water runs over a stony bed:
-// a reflection pass mirrors the banks and the sky in it, and the bed shows through it, bent by its
-// ripples. Oaks, beeches and birches stand on the banks, with ferns, hostas, shrubs and wildflowers
-// below them where the ground suits each, and a cave opens in the far bank: models built by script
-// in Blender, which the scene loads from the sample content. The leaves, the bank plants and the
-// GPU grass sway in the scene's one wind field. Leaves fall from the crowns and float on the
-// current, and fireflies hover at night. The land, its textures, the rocks and the water are made
-// in code.
+// Creek: a showcase scene of a garden on the top of a round cliff that stands in a sea of cloud. A
+// clear creek crosses the top from rim to rim, fed by a spring pool near the middle, and leaves over
+// a lip at each end. A reflection pass mirrors the sky in it, and the bed shows through it, bent by
+// its ripples. Behind the creek a band of raked gravel curves between moss islands, and a hill rises
+// to a terrace. Dark volcanic walls of pillars and ledges run down from the rim into the cloud,
+// whose billows drift on the wind and take the light of each hour. Leaves float on the current and
+// fireflies hover at night. The land, its textures, the walls, the rocks, the water and the clouds
+// are made in code.
 //
 // The controls pick a time of day and turn the effects on and off, among them a "DSLR" lens with
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
@@ -18,66 +18,74 @@ import {
 	type SketchContext,
 	timeOfDay,
 } from '@null3d/engine';
-import { createGrass, swayDistanceFor } from '@null3d/grass';
-import { createUnderwater, createWater, foamMap, type Water, type WaterShape } from '@null3d/water';
+import {
+	createUnderwater,
+	createWater,
+	createWaterfall,
+	foamMap,
+	type Water,
+	type Waterfall,
+	type WaterShape,
+} from '@null3d/water';
 import { createWind, type WindField } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
-import { createHaze } from '../../lib/haze';
 import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
 import type { ShadowReach } from '../../lib/shadow-range';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
+import { createCliff } from './cliff';
+import { createClouds } from './clouds';
 import { createFlora } from './flora';
+import { createGarden, loadGarden } from './garden';
 import {
+	CLOUD_TOP,
+	cameraFloor,
 	createLand,
-	createMountains,
-	GORGE,
-	groundHeight,
-	LAND,
-	STREAM_REACH,
+	FALL,
+	LIPS,
 	streamCurrent,
 	streamDepth,
+	streamHalf,
+	streamSlope,
 	streamZ,
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { loadModels } from './models';
-import { createPlants, type Plants } from './plants';
+import { createDuskSky, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
-import { createStones, type Obstacle, placeCave } from './stones';
-import { placeValley, SEED, SIZES } from './valley';
+import { createSteps } from './steps';
+import { createStones, type Obstacle } from './stones';
+import { placeValley } from './valley';
 
 // The camera route, which this scene's frames and the shared route check both read.
 export { SHOTS };
 
-/** The detail that each preset builds at the start: the land's quads, texture sizes and more. */
+/**
+ * The detail that each preset builds at the start: the land's quads, which also set the walls'
+ * columns, texture sizes, the rocks' subdivisions, the water's columns and the foam map's texels
+ * along the creek.
+ */
 const DETAIL: Record<
 	QualityPreset,
-	{ land: number; texture: number; rock: number; water: number; ring: readonly [number, number] }
+	{ land: number; texture: number; rock: number; water: number; foam: number }
 > = {
-	low: { land: 192, texture: 256, rock: 2, water: 200, ring: [160, 32] },
-	medium: { land: 256, texture: 512, rock: 3, water: 300, ring: [224, 40] },
-	high: { land: 320, texture: 512, rock: 3, water: 400, ring: [288, 48] },
-	ultra: { land: 384, texture: 1024, rock: 3, water: 400, ring: [320, 56] },
+	low: { land: 160, texture: 256, rock: 2, water: 160, foam: 1024 },
+	medium: { land: 224, texture: 512, rock: 3, water: 240, foam: 1536 },
+	high: { land: 256, texture: 512, rock: 3, water: 300, foam: 2048 },
+	ultra: { land: 320, texture: 1024, rock: 3, water: 360, foam: 2048 },
 };
-/**
- * The band either side of the stream that counts as the banks, in meters, where the grass grows
- * thickest, and the tufts the two grass fields draw at the High preset.
- */
-const BANK = 18;
-const BANK_TUFTS = 34_000;
-const LAND_TUFTS = 18_000;
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
 const DSLR_FOCAL_LENGTH = 50;
 /**
- * The turn of the sun's path, so that it rises out of the gorge at one end of the stream and sets
- * into the gorge at the other, over the water.
+ * The turn of the sun's path: in the morning its soft light comes from the opening view's upper
+ * left and a little from the front, as in the concept picture.
  */
-const HEADING = Math.PI;
+const HEADING = Math.PI + 0.58;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
@@ -94,36 +102,40 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 const SHAFT_TINT = [1.0, 0.62, 0.3] as const;
 /** The least change of a look's share that Auto writes to the scene. */
 const LOOK_STEP = 0.005;
-/** The point that the camera looks at, over the stream. */
-const TARGET = [1.5, 0, -0.4] as const;
+/** The point that the camera looks at, over the garden's middle. */
+const TARGET = [WIDE_LOOK[0], WIDE_LOOK[1], WIDE_LOOK[2]] as const;
 /**
- * The creek's core: the sphere around the stream, its banks and their trees, which keeps its
- * shadows wherever the camera stands. The sun's shadows reach this far close up, and further as
- * the camera draws back.
+ * The creek's core: the sphere around the cliff's top, which keeps its shadows wherever the camera
+ * stands. The sun's shadows reach this far close up, and further as the camera draws back.
  */
-export const SHADOW_REACH: ShadowReach = { distance: 60, center: [0, 4, 0], radius: 34 };
+export const SHADOW_REACH: ShadowReach = { distance: 50, center: [0, 1, 0], radius: 28 };
 /**
- * Where the Manual camera may go: around the creek, a little farther back than the opening view
- * stands, and above the ground and the mountains' slopes. Its highest reach, the focus's top plus
- * the distance, stays under the mountains' lowest crest.
+ * Where the Manual camera may go: around the cliff, a little farther back than the opening view
+ * stands, over its top and above the cloud's tops past its walls, where the cloud hides every
+ * view's edge.
  */
 export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 	center: [0, 0],
-	focus: 30,
+	focus: 26,
 	// The point it turns around may sink under the water too, as the route's dip along the bed does.
 	focusHeight: [-0.5, 6],
-	distance: 45,
+	distance: 70,
 	// The stream's bed is the ground under the water, so the camera may dip under the surface but
 	// never through the bed.
 	clearance: 0.15,
 };
 
+const { smoothstep } = math;
 const params = new URL(import.meta.url).searchParams;
 /** True draws the water's reflection in every frame, for the bisect of the Apple WebGPU stall. */
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
-/** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
+/**
+ * The parts of the scene that the address leaves out, any of `plants`, `water` and `fog`, for a
+ * bisect or a measure by difference. Without fog, the mist over the water goes too, as the HUD's fog
+ * switch takes it.
+ */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 /**
  * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
@@ -155,6 +167,21 @@ const EFFECTS = params.get('effects') === 'on';
 const GUST_STRENGTH = Number(params.get('gust')) || 0;
 const GUST_SEND_AT = Number(params.get('gust-at')) || 0;
 /**
+ * A fixed view that the address names, as six numbers: the camera's place, then the point it looks
+ * at. A picture of a part that the route passes only from afar, such as the steps, names one; the
+ * route still runs under it.
+ */
+const VIEW = fixedView(params.get('view'));
+
+/** The six numbers of a `view` address, or undefined, with a warning, when it is not six numbers. */
+function fixedView(text: string | null): readonly number[] | undefined {
+	if (text === null) return undefined;
+	const values = text.split(',').map(Number);
+	if (values.length === 6 && values.every(Number.isFinite)) return values;
+	console.warn(`creek: view= takes six numbers, the camera's x,y,z then its target's; got ${text}`);
+	return undefined;
+}
+/**
  * True draws the scene from just above the stream, looking along it, so the picture shows the
  * water's surface close up. The picture tests ask for it; the demo and its route never do.
  */
@@ -169,72 +196,99 @@ const CLOSE_SHOT: Shot = {
 	seconds: 1,
 	move: 'hold',
 };
-/** The water's length in the middle of the land, whose columns are finer toward the middle. */
-const WATER_MIDDLE = 140;
-/** The meters between the columns of the water that runs on down the valley past the middle. */
-const FAR_STEP = 8;
-/** The rows across the water's sheet: fine where the camera looks, coarse down the gorges. */
-const WATER_ROWS = 48;
-const GORGE_ROWS = 12;
-/** The half width of the water's sheet: the stream's reach, plus the margin that its banks leave. */
-const WATER_HALF = STREAM_REACH + 1;
-/** The water's depth under its middle line, in meters: the mean bed that the stream cuts. */
+/** The rows across the water's sheet. */
+const WATER_ROWS = 56;
+/** How far the water's sheet reaches past the creek's edge, in half widths: to where the bed rises out. */
+const WATER_REACH = 1.36;
+/**
+ * How far the sheet reaches at each lip, in half widths: as far as the fall, so no edge of the sheet
+ * runs on past it over the rim.
+ */
+const WATER_AT_LIP = FALL.width;
+/**
+ * The air's haze: its density at the cloud's tops, and how fast it thins above them, by a factor of
+ * e every 1 / falloff meters. It lies thick over the cloud sea and the cliff's lower face, as it did
+ * as an even haze, and thin over the garden, so the garden's colors read about alike from 10 m and
+ * from the opening camera's 45 m: under one part in a hundred of each pixel is haze there.
+ */
+const AIR = { density: 0.0215, falloff: 0.35 } as const;
+/** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
+/** How far the foam reaches round each mark of the foam map, in meters. */
+const FOAM_REACH = 0.35;
+/** The foam map's box on the ground, over the whole creek. */
+const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
 /**
- * The creek's water, drawn by the add-on. Three sheets run along x: fine columns where the camera
- * looks, and 8 m columns on down each gorge into the haze. The sheets are straight, and the shape
- * gives the bed and the current that the winding stream has at each point, so every part of the
- * water carries the stream's own flow. The stones that break the surface give it the foam. The
- * reflection draws layer 0 alone, which leaves out what lies on or under the water.
+ * The creek's water, drawn by the add-on. One sheet follows the creek from lip to lip: its columns
+ * are its own, and its ends lie square across the creek, on the lips' straight edges, so the water
+ * ends where the rim does. The shape gives the bed and the current at each point, so every part of
+ * the water carries the creek's own flow, out of the pool both ways. The stones that break the
+ * surface give it the foam. The reflection draws layer 0 alone, which leaves out what lies on or
+ * under the water.
  */
 function createCreekWater(
 	ctx: SketchContext,
-	quadsX: number,
+	columns: number,
+	foamTexels: number,
 	obstacles: readonly Obstacle[],
-	reach: number,
 	alwaysReflect: boolean,
 	reflectScale: 0.25 | 0.5 | 1 | undefined,
 	wind: WindField,
 ): Water {
-	const middle = Array.from({ length: quadsX + 1 }, (_, k) => {
-		const s = (k / quadsX) * 2 - 1;
-		return (WATER_MIDDLE / 2) * (0.25 * s + 0.75 * s * s * s);
-	});
-	const steps = Math.ceil((reach - WATER_MIDDLE / 2) / FAR_STEP);
-	const far = Array.from({ length: steps + 1 }, (_, k) => WATER_MIDDLE / 2 + k * FAR_STEP);
-	const sheet = (xs: readonly number[], across: number): WaterShape => ({
+	const xs = Array.from(
+		{ length: columns + 1 },
+		(_, k) => LIPS.west + ((LIPS.east - LIPS.west) * k) / columns,
+	);
+	const sheet: WaterShape = {
 		kind: 'river',
-		middle: xs.map((x) => [x, 0] as const),
-		halfWidth: WATER_HALF,
+		middle: xs.map((x) => [x, streamZ(x)] as const),
+		// Near each lip the sheet narrows to the water that shows, so it never runs on past the rim.
+		halfWidth: xs.map((x) => {
+			const lip = 1 - smoothstep(Math.min(x - LIPS.west, LIPS.east - x), 0.5, 2.5);
+			return streamHalf(x) * (WATER_REACH + (WATER_AT_LIP - WATER_REACH) * lip);
+		}),
 		depth: STREAM_DEPTH,
-		current: (x) => streamCurrent(x),
+		current: streamCurrent,
 		bed: streamDepth,
 		// The columns are the sheet's own, and the bed ends the surface, so the mesh needs no shore band.
-		mesh: { step: 1e9, across, reach: 1 },
-	});
+		mesh: { step: 1e9, across: WATER_ROWS, reach: 1 },
+	};
 	return createWater(ctx, {
-		shapes: [
-			sheet(middle, WATER_ROWS),
-			sheet(far, GORGE_ROWS),
-			sheet(far.map((x) => -x).reverse(), GORGE_ROWS),
-		],
+		shapes: [sheet],
 		level: WATER,
 		layers: 1,
-		// The stream runs slowly, so its surface stays nearly flat: the swell is a tenth of a lake's,
-		// and the fine ripples keep their full strength.
+		// The creek runs smooth between its foam: the swell is a tenth of a lake's, and the fine
+		// ripples are faint, so a low view along the water shows no even lines of them.
 		waveAmplitude: 0.1,
+		ripple: 0.35,
 		wind,
 		...(reflectScale !== undefined && { reflectionScale: reflectScale }),
 		...(alwaysReflect && { reflectionEvery: { low: 1, medium: 1, high: 1, ultra: 1 } }),
 		bed: 'shape',
-		// The stream's own bed gives the water all its depth, so the surface draws opaque.
-		material: { alphaMode: 'opaque' },
+		// The stream's own bed gives the water all its depth, so the surface draws opaque. The water is
+		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
+		material: {
+			alphaMode: 'opaque',
+			attenuationColor: '#4f9a96',
+			attenuationDistance: 1.2,
+			// From the opening view the calm pool would mirror the bright overcast and hide its bed:
+			// a weaker reflection lets the dark bed through, as the concept's pool shows it.
+			specularIntensity: 0.4,
+			// A thin volume bends the bed's picture little, so the view along the water close up
+			// never reaches past the frame's edge for it.
+			thickness: 0.15,
+		},
+		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
+		// round marks with no stretch of its own: a trail as long as the reach adds none. On High its
+		// texels are 2 cm, so no step shows in the foam's outline close up.
 		foam: foamMap(ctx, obstacles, {
-			origin: [-30, -6.5],
-			size: [60, 13],
-			width: 1024,
-			height: 224,
+			origin: FOAM_BOX.origin,
+			size: FOAM_BOX.size,
+			width: foamTexels,
+			height: Math.round((foamTexels * FOAM_BOX.size[1]) / FOAM_BOX.size[0]),
+			reach: FOAM_REACH,
+			trail: FOAM_REACH,
 		}),
 	});
 }
@@ -287,6 +341,7 @@ export default defineSketch(async (ctx) => {
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.05,
+		// Past the cloud's dome, which carries the sea of cloud to the horizon.
 		far: 2000,
 		layers: 1 | UNREFLECTED_LAYER | EFFECT_LAYER,
 		// The camera takes the route's opening pose at once, so even a frame drawn before the
@@ -295,108 +350,93 @@ export default defineSketch(async (ctx) => {
 		target: WIDE_LOOK,
 	});
 	scene.setActiveCamera(camera);
-	// The valley's one wind field. The grass, the falling leaves and the water read it, and G sends
-	// a gust that a person can watch cross the banks.
+	// The garden's one wind field. The falling leaves and the water read it, and G sends a gust that
+	// a person can watch cross the creek.
 	const wind = createWind(ctx, { camera, box: 128 });
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	/** A scratch place for the camera, which the gust control reads. */
 	const here: number[] = [0, 0, 0];
 
-	createLand(ctx, detail.land, detail.texture);
-	const mountains = createMountains(ctx, detail.ring[0], detail.ring[1]);
-	// Haze fills the far ends of the gorges, where the land and the stream run out.
-	const hazes = [0, Math.PI].map((bearing) =>
-		createHaze(ctx, {
-			bearing,
-			from: GORGE.haze[0],
-			to: GORGE.haze[1],
-			halfWidth: 160,
-			solid: 60,
-			fade: 120,
-			floor: GORGE.floorHaze,
-			sheets: 10,
-		}),
-	);
-	page.post('loading', 'Dressing the valley');
-	const stones = createStones(ctx, detail.rock, detail.texture);
+	const land = createLand(ctx, detail.land, detail.texture);
+	createCliff(ctx, land.rim, detail.texture);
+	page.post('loading', 'Gathering the cloud');
+	const clouds = await createClouds(ctx, quality.preset);
+	page.post('loading', 'Setting the statue, the gate and the stones');
+	const models = await loadGarden(ctx);
+	createGarden(ctx, models, detail.rock, detail.texture);
+	createSteps(ctx, detail.rock, detail.texture);
+	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders);
+	page.post('loading', 'Planting the garden');
+	const plants = WITHOUT.has('plants')
+		? undefined
+		: createPlants(ctx, wind, placeValley(), await loadPlants(ctx));
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
 				ctx,
 				detail.water,
+				detail.foam,
 				stones.obstacles,
-				GORGE.end,
 				ALWAYS_REFLECT,
 				REFLECT_SCALE as 0.25 | 0.5 | 1 | undefined,
 				wind.field,
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
+	// A fall at each lip, where the creek's sheet ends: it leaves with the creek's own width, drops
+	// close to the rock under the lip and into the cloud. It lies past the water's edge, so the
+	// reflection leaves it out.
+	page.post('loading', 'Pouring the falls');
+	const falls: Waterfall[] = water
+		? await Promise.all(
+				[LIPS.west, LIPS.east].map((x) => {
+					const away = Math.sign(x);
+					return createWaterfall(ctx, {
+						lip: [x, streamZ(x)],
+						direction: [away, away * streamSlope(x)],
+						halfWidth: streamHalf(x) * FALL.width,
+						level: WATER,
+						speed: FALL.speed,
+						drop: FALL.drop,
+						spread: FALL.spread,
+						apron: FALL.apron,
+						// The cloud draws before the falls, so each fall fades out into it below the cloud's
+						// tops, and its water bursts into mist over the drop above them.
+						fadeBelow: CLOUD_TOP,
+						// The cloud draws the bright mist at each fall's foot, so the fall makes none of its
+						// own, which its spray light would draw greyer over the cloud's.
+						mist: 0,
+						layers: UNREFLECTED_LAYER,
+						wind: wind.field,
+					});
+				}),
+			)
+		: [];
 	const flora = await createFlora(ctx);
-	const valley = placeValley({ rocks: (x, z) => stones.clear(x, z) });
-	// The models download while the valley draws, so a live start shows its first frame without
-	// waiting for them, and the trees, the plants and the cave appear as they land. A held picture
-	// waits for them, so its frame shows the finished scene.
-	let plants: Plants | undefined;
-	const dress = async (): Promise<void> => {
-		const models = await loadModels(ctx);
-		plants = createPlants(ctx, wind, valley, models);
-		placeCave(ctx, models.cave);
-	};
-	if (ctx.engine.held) await dress();
-	else dress().catch((error: unknown) => console.error(error));
-	// Leaves fall from the crowns, from high in each one and across its reach.
-	const crowns = valley.trees.map(({ kind, x, y, z, size }) => ({
-		x,
-		z,
-		top: y + SIZES[kind].height * size * 0.85,
-		reach: SIZES[kind].reach * size,
-	}));
-	const air = await createAir(ctx, crowns, wind.field);
+	// The bare garden has no crowns yet, so no leaves fall; the mist and the motes still drift.
+	const air = await createAir(ctx, [], wind.field);
 	const shafts = createShafts(ctx, camera);
-	// The grass covers the valley: denser along the banks that the camera flies past, thinner over
-	// the slopes above, and never on the water or a stone.
-	const dry = (x: number, z: number) => groundHeight(x, z) > WATER + 0.02 && !stones.clear(x, z);
-	const bank = (x: number, z: number) => dry(x, z) && Math.abs(z - streamZ(x)) < BANK;
-	const grass = WITHOUT.has('grass')
-		? []
-		: await Promise.all([
-				createGrass(ctx, {
-					height: groundHeight,
-					area: { x: 0, z: 0, size: LAND },
-					count: BANK_TUFTS,
-					seed: SEED,
-					mask: bank,
-					wind: wind.field,
-					camera,
-					swayDistance: swayDistanceFor(quality.preset),
-				}),
-				createGrass(ctx, {
-					height: groundHeight,
-					area: { x: 0, z: 0, size: LAND },
-					count: LAND_TUFTS,
-					seed: SEED + 1,
-					mask: (x, z) => dry(x, z) && !bank(x, z),
-					wind: wind.field,
-					camera,
-					swayDistance: swayDistanceFor(quality.preset),
-				}),
-			]);
 	const fit = () => {
-		for (const field of grass) {
-			field.fit(quality.preset);
-			field.setSwayDistance(swayDistanceFor(quality.preset));
-		}
 		stones.fit(quality.preset);
+		clouds.fit(quality.preset);
 	};
 	fit();
 
 	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
 	// draws the real sun by day and the moon at night; Auto moves them across the sky.
+	// The garden opens on a soft morning under heavy cloud, with the air thick over the cloud sea.
 	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
-		fogDensity: 0.006,
-		cloudCoverage: 0.3,
-		haze: { Golden: 1.2, Dusk: 1.5 },
+		fogDensity: AIR.density,
+		fogHeight: { height: CLOUD_TOP, falloff: AIR.falloff },
+		cloudCoverage: 0.95,
+		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
+		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
+		// light is weakened and the sky's share grows, so the shadows stay soft, and the picture opens
+		// up past the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as
+		// the statue's chest, as the concept's warm light does, with no fill to warm every face.
+		exposureScale: 3.2,
+		environmentScale: 1.4,
+		sunScale: 0.6,
 		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
@@ -425,11 +465,14 @@ export default defineSketch(async (ctx) => {
 		fit();
 		light();
 	});
+	// The dusk's own sky light, which only Dusk turns up.
+	const duskSky = createDuskSky(scene);
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
+		duskSky.setLook(look);
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
@@ -453,7 +496,7 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: false,
+			fog: !WITHOUT.has('fog'),
 			shafts: false,
 			fireflies: false,
 			shadows: true,
@@ -478,7 +521,8 @@ export default defineSketch(async (ctx) => {
 					air.setFireflies(on);
 					break;
 				case 'fog':
-					// The mist over the water is haze too, so the fog switch hides it with the fog.
+					// The mist over the water is haze too, so the fog switch hides it with the fog. The
+					// cloud stays, since without it the world's edge would show.
 					air.setMist(on);
 					break;
 				case 'ao':
@@ -502,9 +546,25 @@ export default defineSketch(async (ctx) => {
 		dslr: params.has('dslr'),
 	});
 	const start = params.get('mood');
-	choose(isMood(start) ? start : 'Afternoon');
-	// The haze takes the air's color now too, since a held frame runs no update.
-	for (const haze of hazes) haze.update(stage.airColor, stage.light);
+	choose(isMood(start) ? start : 'Morning');
+	// The falls' spray and mist are unlit, so they take the cloud's own tone of the air: its color
+	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
+	const sprayLight: [number, number, number] = [0, 0, 0];
+	const sprayAir: [number, number, number] = [-1, -1, -1];
+	const lightFalls = () => {
+		const air = stage.airColor;
+		const moved =
+			Math.abs(air[0] - sprayAir[0]) +
+			Math.abs(air[1] - sprayAir[1]) +
+			Math.abs(air[2] - sprayAir[2]);
+		if (moved <= SPRAY.step) return;
+		for (let c = 0; c < 3; c++) sprayAir[c] = air[c];
+		sprayLightOf(air, sprayLight);
+		for (const fall of falls) fall.setLight(sprayLight);
+	};
+	// The clouds and the falls take the air's color now too, since a held frame runs no update.
+	clouds.update(stage.airColor, stage.light);
+	lightFalls();
 
 	const film = createCinematic(ctx, camera, {
 		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
@@ -513,18 +573,15 @@ export default defineSketch(async (ctx) => {
 		keys: [
 			{
 				code: 'KeyG',
-				does: 'send a gust down the valley',
-				// From where the camera stands, so a person can watch the air travel down the valley.
+				does: 'send a gust across the garden',
+				// From where the camera stands, so a person can watch the air travel across the creek.
 				press() {
 					camera.getPosition(here);
 					wind.gust([here[0] as number, here[2] as number], 10);
 				},
 			},
 		],
-		bounds: {
-			...BOUNDS,
-			ground: (x, z) => Math.max(groundHeight(x, z), mountains.heightAt(x, z)),
-		},
+		bounds: { ...BOUNDS, ground: cameraFloor },
 	});
 	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
 	controls.fitShadows();
@@ -548,11 +605,10 @@ export default defineSketch(async (ctx) => {
 			}
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
-			// The field keeps two states, so the plants and the grass read this frame's one.
-			for (const field of grass) field.setWindLayer(wind.field);
 			plants?.update();
 			stage.update(dt);
-			for (const haze of hazes) haze.update(stage.airColor, stage.light);
+			clouds.update(stage.airColor, stage.light);
+			lightFalls();
 			controls.update(t);
 			// In Auto the look follows the hour: the fireflies, the mist and the caustics move to the
 			// next time of day as the light does. A change too small to see is not written.
@@ -567,6 +623,11 @@ export default defineSketch(async (ctx) => {
 			}
 			// The cascade probe times one view, so its route holds the opening pose.
 			film.update(CASCADE_PROBE || STILL_ROUTE ? 0 : dt);
+			if (VIEW) {
+				const [px, py, pz, tx, ty, tz] = VIEW as [number, number, number, number, number, number];
+				camera.setPosition(px, py, pz);
+				camera.lookAt(tx, ty, tz);
+			}
 			// After the camera moves, so the view under the water turns the frame the camera dips.
 			underwater?.update(t, stage.airColor, caustics);
 			const lens = controls.lens();
@@ -577,6 +638,8 @@ export default defineSketch(async (ctx) => {
 			// The particles start where the frame's objects stand, after the wind's field has stepped.
 			flora.update();
 			air.update();
+			clouds.step();
+			for (const fall of falls) fall.update();
 			shafts.update();
 		},
 	};

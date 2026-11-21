@@ -30,15 +30,51 @@ struct Uniforms {
     right: vec3f,
 }
 
-/// The caustics of the water's surface shader, the same ridges drifting with the current. Each WGSL
-/// string compiles on its own, so this one holds its own copy.
-fn caustics(p: vec2f, t: f32, current: vec2f) -> f32 {
-    let q = p * 4.6 - current * (t * 4.0);
+/// How sharp the caustics' ridges are seen from under the water, as the surface draws them close up.
+const CAUSTIC_RIDGE: f32 = 14.0;
+
+// The caustics of the water's surface shader, the same ridges drifting with the current, and the
+// waves' two carried copies. Each WGSL string compiles on its own, so this one holds its own copy.
+/// The seconds over which a pattern rides the current before it fades into a fresh copy.
+const CARRY_CYCLE: f32 = 2.0;
+
+/// Two copies of a pattern that the current carries, half a cycle apart: in x and y the seconds that
+/// each has ridden the current, and in z and w their weights, each nothing at the moment its copy
+/// starts afresh. A pattern that slid by the current times the clock would stretch further every
+/// second wherever the current changes from point to point, into even lines across the view. A copy
+/// that rides for one cycle at most cannot.
+fn carried(t: f32) -> vec4f {
+    let first = fract(t / CARRY_CYCLE);
+    let second = fract(t / CARRY_CYCLE + 0.5);
+    let weight = 1.0 - abs(2.0 * first - 1.0);
+    return vec4f(first * CARRY_CYCLE, second * CARRY_CYCLE, weight, 1.0 - weight);
+}
+
+/// A number from 0 to 1 that changes each time a copy starts afresh: `which` is 0 for the first copy
+/// and 0.5 for the second. A fresh copy starts somewhere new, so the pattern never loops.
+fn cycle_seed(t: f32, which: f32) -> f32 {
+    return fract(floor(t / CARRY_CYCLE + which) * 0.618034 + which);
+}
+
+/// The net of caustic ridges at a place `q` in the pattern's own units. `ridge` sets how thin they
+/// are: 14 draws ridges about 7 mm wide, and a lower power broadens them.
+fn caustic_net(q: vec2f, t: f32, ridge: f32) -> f32 {
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
     let v = (a + b + c) / 3.0;
-    return pow(1.0 - abs(v), 14.0) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
+    return pow(1.0 - abs(v), ridge);
+}
+
+/// Caustics: bright ridges where the ripples focus the light, which drift with the current in two
+/// copies that take turns.
+fn caustics(p: vec2f, t: f32, current: vec2f, ridge: f32) -> f32 {
+    let copies = carried(t);
+    let q = p * 4.6;
+    let first = caustic_net(q - current * (copies.x * 4.0) + vec2f(cycle_seed(t, 0.0) * 37.0, 0.0), t, ridge);
+    let second = caustic_net(q - current * (copies.y * 4.0) + vec2f(0.0, cycle_seed(t, 0.5) * 41.0), t, ridge);
+    // Patches of brighter and fainter light keep the net from looking even.
+    return (first * copies.z + second * copies.w) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
 }
 
 /// The height of the water's surface at a point and time, from the long waves that move its
@@ -54,13 +90,22 @@ fn surface_height(p: vec2f, t: f32) -> f32 {
     let speed = length(uniforms.current);
     let moving = speed > 1e-5;
     let carry = select(vec2f(0.0), uniforms.current / max(speed, 1e-5), moving);
+    let copies = carried(t);
     for (var k = 0u; k < 3u; k++) {
         let w = list[k];
         let own = normalize(w.xy);
         let dir = select(own, vec2f(carry.x * own.x - carry.y * own.y, carry.y * own.x + carry.x * own.y), moving);
-        let still = w.z * dot(own, p) - w.w * t;
-        let carried = w.z * (dot(dir, p) - speed * t * dot(carry, dir));
-        h += uniforms.waveAmplitude * 0.05 / w.z * sin(select(still, carried, moving));
+        let amplitude = uniforms.waveAmplitude * 0.05 / w.z;
+        if moving {
+            let run = w.z * speed * dot(carry, dir);
+            let base = w.z * dot(dir, p);
+            let turn = 6.2831853 * f32(k + 1u);
+            let first = base - run * copies.x + cycle_seed(t, 0.0) * turn;
+            let second = base - run * copies.y + cycle_seed(t, 0.5) * turn;
+            h += amplitude * (copies.z * sin(first) + copies.w * sin(second));
+        } else {
+            h += amplitude * sin(w.z * dot(own, p) - w.w * t);
+        }
     }
     return h;
 }
@@ -100,7 +145,7 @@ fn effect(input: EffectInput) -> vec4f {
         let world = uniforms.eye + ray * reach;
         let below = uniforms.level - world.y;
         if below > 0.0 {
-            let light = caustics(world.xz, t, uniforms.current) * exp(-below * 0.8);
+            let light = caustics(world.xz, t, uniforms.current, CAUSTIC_RIDGE) * exp(-below * 0.8);
             color = vec4f(color.rgb * (vec3f(1.0) + uniforms.caustics * light * 6.0), color.a);
         }
     }

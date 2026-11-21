@@ -41,9 +41,9 @@ from mathutils import Vector
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    TEXTURE_DIR, Builder, arguments, card, cells, close_up, dilate, export, fbm, frame_of, half, image, material,
-    normal_map, occlusion_of, orm, over, paint_leaf, paint_line, preview, smoothstep, sprig_atlas, tent,
-    tube, value_noise,
+    TEXTURE_DIR, Builder, Plant, arguments, branch_phase, cells, close_up, crown_cards, dilate, export, fbm,
+    frame_of, half, image, leaf_part, material, needle_atlas, normal_map, occlusion_of, orm, over, paint_leaf,
+    paint_line, plant_reach, plant_top, preview, smoothstep, sprig_atlas, tent, tube, value_noise,
 )
 
 SEED = 20261118
@@ -51,43 +51,6 @@ SEED = 20261118
 # ---------------------------------------------------------------------------------------------
 # Painting
 # ---------------------------------------------------------------------------------------------
-
-
-def needle_atlas(size, rng):
-    """
-    The stone pine's needles: three tufts seen from above, each a burst of long fine needles from a
-    hidden twig, and a cell of a twig end seen from the side with its needles brushing upward.
-    Every needle stays inside its cell, and its edge fades over a texel.
-    """
-    cell, offsets = cells(size)
-    out = np.zeros((size, size, 4), np.float32)
-    for k, (oy, ox) in enumerate(offsets):
-        tile = np.zeros((cell, cell, 4), np.float32)
-        if k < 3:
-            # Several twig ends crowd into one tuft, so its outline is lumpy, not a round brush.
-            for _ in range(5):
-                cx, cy = 0.5 + rng.normal(0, 0.1), 0.5 + rng.normal(0, 0.1)
-                for _ in range(70):
-                    a = rng.random() * 2 * math.pi
-                    reach = 0.12 + 0.2 * rng.random()
-                    end = (cx + math.cos(a) * reach, cy + math.sin(a) * reach)
-                    end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                    tone = np.array([0.2, 0.33, 0.15]) * (0.75 + 0.5 * rng.random())
-                    paint_line(tile, (cx, cy), end, 0.0045, tone)
-        else:
-            # A twig from the middle of the bottom edge, with needles in pairs along it.
-            paint_line(tile, (0.5, 0.0), (0.5, 0.75), 0.012, [0.32, 0.2, 0.12])
-            for j in range(90):
-                v = 0.05 + 0.75 * rng.random()
-                side = 1 if j % 2 else -1
-                a = math.pi / 2 - side * (0.35 + 0.6 * rng.random())
-                reach = 0.15 + 0.12 * rng.random()
-                end = (0.5 + math.cos(a) * reach, v + math.sin(a) * reach)
-                end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
-                tone = np.array([0.21, 0.34, 0.16]) * (0.75 + 0.5 * rng.random())
-                paint_line(tile, (0.5, v), end, 0.0045, tone)
-        out[oy:oy + cell, ox:ox + cell] = tile
-    return dilate(out)
 
 
 def clump_atlas(size, rng, leaves, length, width, tones, twig, gloss):
@@ -257,20 +220,6 @@ def outward(az, tilt):
     return Vector((math.sin(tilt) * math.cos(az), math.sin(tilt) * math.sin(az), math.cos(tilt)))
 
 
-class Plant:
-    """A plant's branches, as (points, radii, level), and its pads: (center, radii, branch)."""
-
-    def __init__(self):
-        self.branches, self.pads = [], []
-
-    def branch(self, points, radii, level):
-        self.branches.append((points, radii, level))
-        return len(self.branches) - 1
-
-    def pad(self, center, radii, branch):
-        self.pads.append((Vector(center), Vector(radii), branch))
-
-
 def stone_pine(rng):
     """
     A stone pine: a tall bare trunk with a slight lean, forking high into a few limbs that spread
@@ -387,57 +336,9 @@ def oleander(rng):
     return plant
 
 
-def inside(q, radii):
-    """Below 1 where an offset `q` from a pad's middle lies inside the pad's ellipsoid."""
-    return (q.x / radii.x) ** 2 + (q.y / radii.y) ** 2 + (q.z / radii.z) ** 2
-
-
-def crown_cards(plant, rng, count, up=0.6, depth=0.25):
-    """
-    The cards' places on the union of a plant's pads: points on each pad's surface, the more where
-    the surface faces up, less any that fall inside another pad. Each is (point, normal, branch).
-    """
-    areas = [r.x * r.y + r.y * r.z + r.x * r.z for _, r, _ in plant.pads]
-    total = sum(areas)
-    places = []
-    for (c, r, branch), area in zip(plant.pads, areas):
-        want = max(3, round(count * area / total))
-        tries = 0
-        made = 0
-        while made < want and tries < want * 12:
-            tries += 1
-            n = Vector(rng.normal(0, 1, 3)).normalized()
-            if rng.random() > (1 - up) + up * (0.5 + 0.5 * n.z):
-                continue
-            p = c + Vector((n.x * r.x, n.y * r.y, n.z * r.z)) * (1 - depth * rng.random())
-            if any(other is not c and inside(p - other, s) < 0.8 for other, s, _ in plant.pads):
-                continue
-            normal = Vector((n.x / r.x, n.y / r.y, n.z / r.z)).normalized()
-            places.append((p, normal, branch))
-            made += 1
-    return places
-
-
 # ---------------------------------------------------------------------------------------------
 # Parts
 # ---------------------------------------------------------------------------------------------
-
-
-def branch_phase(index):
-    """A branch's phase of flutter, from its place in the plant, spread by the golden ratio."""
-    return (index * 0.6180339887) % 1.0
-
-
-def plant_top(plant):
-    """The height of the plant's highest branch point or pad, which its sway weights are shares of."""
-    tops = [p.z for points, _, _ in plant.branches for p in points]
-    tops += [c.z + r.z for c, r, _ in plant.pads]
-    return max(tops)
-
-
-def plant_reach(plant):
-    """The plant's reach from its trunk, across the ground."""
-    return max([math.hypot(c.x, c.y) + r.x for c, r, _ in plant.pads] + [0.5])
 
 
 def wood_part(spec, plant, depth, fewer, thin):
@@ -477,39 +378,6 @@ def wood_part(spec, plant, depth, fewer, thin):
         tube(wood, pts, rad, sides, (around, max(along, 0.3)), wood_color, flare, sway_of)
     wood.normals = [None] * len(wood.positions)
     return wood
-
-
-def leaf_part(spec, plant, places, rng, grow):
-    """The leaf cards on the given places, each `grow` times its usual size."""
-    leaves = Builder()
-    top = plant_top(plant)
-    reach = plant_reach(plant)
-    center = Vector(np.array([tuple(c) for c, _, _ in plant.pads]).mean(axis=0))
-    tint = Vector(spec['tint'])
-    for p, n, branch in places:
-        facing = (n * (1 - spec['lift']) + Vector((0, 0, spec['lift']))).normalized()
-        facing = (facing + Vector(rng.normal(0, spec['scatter'], 3))).normalized()
-        # The card runs up and out along the pad's surface, as the twig that bears it does.
-        out = Vector((p.x, p.y, 0))
-        out = out.normalized() if out.length > 1e-3 else Vector((1, 0, 0))
-        along = out + Vector((0, 0, 0.8)) + Vector(rng.normal(0, 0.5, 3))
-        along = (along - facing * along.dot(facing))
-        along = along.normalized() if along.length > 1e-3 else frame_of(facing)[0]
-        size = spec['card'] * (0.8 + 0.4 * rng.random()) * grow
-        cell = spec['cells'][int(rng.random() * len(spec['cells']))]
-        cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
-        base = p - along * size * spec['centered']
-        # Darker under the crown and inside it, lighter on top and at the rim.
-        rim = min(1.0, (p - center).length / max(reach, 1e-3))
-        ao = 0.35 + 0.65 * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
-        hue = 0.9 + 0.2 * rng.random()
-        color = tuple(ao * hue * c for c in tint)
-        sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
-        if spec.get('tent'):
-            tent(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
-        else:
-            card(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
-    return leaves
 
 
 def oleander_places(plant, rng):
@@ -577,13 +445,10 @@ def oleander_cards(spec, plant, places, rng, grow):
     return cards
 
 
-# The species: their bark, how their cards sit, and their card budget.
-#   cards    cards at the full level; card is a card's size in meters
-#   lift     how far a card's face turns from its pad's surface toward the sky
-#   scatter  the random turn of each card's face
-#   centered the share of a card that reaches behind its place: 0.5 centers a tuft on it
-#   cells    the atlas cells the cards draw from; fold and bend shape them as `card` says
-#   tent     true draws each card as a `tent`, bent across and along, whose rise is `fold`
+# The species: their bark, how their cards sit, and their card budget. The cards' own shape and
+# turn (card, lift, scatter, centered, cells, fold, bend, tent and tint) are as `leaf_part` says.
+#   cards    cards at the full level
+#   up       how much more of the cards gather where a pad's surface faces the sky
 #   depth    how deep under the pads' surface the cards reach, as a share of a pad's size
 #   levels   the species' own lower levels, where its cards differ in size from the others'
 #   flare    how far the trunk's foot spreads into roots; sides are each level's sides

@@ -1,16 +1,15 @@
-// The creek's own small life: fallen leaves that float down the stream on its current, and fireflies
-// that hover over the banks at night. Each is a particle system of the particles add-on, whose
+// The creek's own small life: fallen leaves that float out from the spring pool on its current, both
+// ways to the lips, and fireflies that hover over the banks at night. Each is a particle system of the particles add-on, whose
 // particles the GPU moves from their birth and age, so a held frame shows what the live scene shows
 // at that time and the sketch runs no loop over them.
 import type { SketchContext } from '@null3d/engine';
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { EFFECT_LAYER } from '../../lib/layers';
-import { FLOW, streamHalf, streamSlope, streamZ, WATER } from './land';
+import { LIPS, POOL, streamCurrent, streamHalf, streamZ, WATER } from './land';
 
-/** The lengths of stream that each carry their own floating leaves, and the leaves on each. */
-const REACHES = 7;
-const REACH = 8;
-const FLOATING = 10;
+/** The lengths of stream on each side of the pool that carry their own floating leaves, and the leaves on each. */
+const REACHES = 3;
+const FLOATING = 8;
 /** Fireflies over each bank at night, and how long each glows. */
 const FIREFLIES = 45;
 const FIREFLY_LIFE: readonly [number, number] = [6, 12];
@@ -25,23 +24,27 @@ export async function createFlora(ctx: SketchContext): Promise<{
 	const { textures } = ctx;
 	const effect = { layers: EFFECT_LAYER, prewarm: true } as const;
 	// Floating leaves: each reach of the stream sets leaves down at its head, which drift along it
-	// with the current, flat on the water, and fade as they pass into the next reach.
+	// with the current, flat on the water, and fade as they pass into the next reach. The reaches
+	// run out from the pool both ways, as the current does.
 	const leafLook = particleTextures.leaves(textures);
+	const reaches = [LIPS.west, LIPS.east].flatMap((lip) => {
+		const length = (lip - POOL.x) / REACHES;
+		return Array.from({ length: REACHES }, (_, k) => ({ x: POOL.x + k * length, length }));
+	});
 	const floating = await Promise.all(
-		Array.from({ length: REACHES }, (_, k) => {
-			const x = (k - REACHES / 2) * REACH;
-			const along = Math.hypot(1, streamSlope(x + REACH / 2));
-			const speed = FLOW / along;
+		reaches.map(({ x, length }, k) => {
+			const [vx, vz] = streamCurrent(x + length / 2);
+			const time = Math.abs(length) / Math.max(0.05, Math.hypot(vx, vz));
 			return createParticles(ctx, {
 				...effect,
 				...leafLook,
 				seed: 61 + k,
 				position: [x, WATER + 0.02, streamZ(x)],
 				shape: { type: 'box', size: [0.5, 0.01, 1.4 * streamHalf(x)] },
-				rate: FLOATING / (REACH / FLOW),
-				lifetime: [REACH / FLOW, (REACH / FLOW) * 1.15],
+				rate: FLOATING / time,
+				lifetime: [time, time * 1.15],
 				speed: [0, 0],
-				velocity: [speed, 0, speed * streamSlope(x + REACH / 2)],
+				velocity: [vx, 0, vz],
 				turbulence: 0.15,
 				turbulenceScale: 3,
 				facing: 'ground',
@@ -62,8 +65,8 @@ export async function createFlora(ctx: SketchContext): Promise<{
 				...effect,
 				...glow,
 				seed: 62 + k,
-				position: [0, 1, streamZ(0) + side * 5],
-				shape: { type: 'box', size: [28, 0.8, 5] },
+				position: [0, 1.2, streamZ(0) + side * 6],
+				shape: { type: 'box', size: [36, 0.8, 5] },
 				rate: FIREFLIES / FIREFLY_LIFE[1],
 				lifetime: FIREFLY_LIFE,
 				speed: [0, 0.1],
@@ -80,10 +83,12 @@ export async function createFlora(ctx: SketchContext): Promise<{
 		),
 	);
 	const systems: readonly ParticleSystem[] = [...floating, ...fireflies];
+	/** The fireflies' opacity, written in place, so a change of hour allocates nothing. */
+	const lit = { opacity: 0 };
 	return {
 		nightLights(share) {
-			const shown = Math.min(1, Math.max(0, share));
-			for (const swarm of fireflies) swarm.set({ opacity: shown });
+			lit.opacity = Math.min(1, Math.max(0, share));
+			for (const swarm of fireflies) swarm.set(lit);
 		},
 		update() {
 			for (const system of systems) system.update();

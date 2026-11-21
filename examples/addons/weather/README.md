@@ -1,14 +1,43 @@
 # Weather
 
-An example add-on that puts rain where it lands: water on the ground, drops on a car's glass, and
+An example add-on for rain: the rain that falls, water on the ground, drops on a car's glass, and
 the link to the particles add-on for the splashes and steam that rain makes. It adds the water to a
 surface that a scene already draws, so the scene keeps its own material, its maps and its paint.
 
 ## The rain itself
 
-The falling streaks are not this add-on's. They come from the core's draw from a vertex count
-(`scene.createVertexDraw`), as the rain demo and Skyway draw them. The splashes and the steam come
-from `@null3d/particles`, which this add-on wraps in two small calls.
+`createRain(ctx, options)` draws the falling rain: streaks in a box of air that follows the camera.
+Each drop is two crossed strips, and the whole box is one mesh. A vertex offset drops every streak
+from the clock, each at its own pace and with a little wind, so the sketch moves no vertex. Skyway's
+streets and the Creek garden's storm share it.
+
+```ts
+import { createRain } from '../../addons/weather/index';
+
+const rain = createRain(ctx, { layers: EFFECT_LAYER });
+// In each frame, after the camera moves:
+rain.follow(camera);
+// A storm, a shelter and a switch:
+rain.setStrength(1.6);
+rain.shelter(canopyPlace, [1.2, 0.8, 2.1]);
+rain.setVisible(false);
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `layers` | Layer 0 | The layers that the rain draws on. A scene's effect layer keeps it out of a clearance guard and a reflection |
+| `color` | A cool gray blue, `[0.34, 0.42, 0.55]` | The light that the streaks give off, as a linear color. The streaks are not lit, so a scene gives them its light |
+| `streaks` | 4,800 | The streaks in the box of air |
+| `reach` | 62 | How far the box reaches either side of the camera, in meters. The box is 58 m tall |
+| `seed` | 19 | The seed of the streaks' places and paces. It seeds the engine's shared random numbers |
+
+The rain fades out within 0.8 m of the camera, so no drop draws a bar across the lens. `shelter`
+keeps it out of an ellipsoid, such as a car's glass bubble: the ellipsoid's middle and heading as
+x, y, z and yaw, and its half axes. The rain casts no shadows and takes no fog.
+
+The splashes and the steam come from `@null3d/particles`, which this add-on wraps in two small
+calls. The rain demo draws its streaks another way, with the core's draw from a vertex count
+(`scene.createVertexDraw`).
 
 ## The wet surface
 
@@ -152,7 +181,9 @@ is not firm: the two readings gave 0.83 and 1.59 ms, and the first sits beside W
 the same preset. No row moved a frame interval.
 
 The windshield is one blended draw of the canopy's own triangles, and the splashes and steam are
-particle buffers of the sizes their calls name.
+particle buffers of the sizes their calls name. The falling rain is one blended, additive mesh of
+the streaks' strips, 19,200 triangles at the default count, and its vertex offset is the only work
+in a frame. Its cost is the screen area that its streaks cover.
 
 ## Limits
 

@@ -1,17 +1,19 @@
 # D-257: The water add-on
 
-Status: decided. Built: the `@null3d/water` add-on, its demo, the reflection's cadence through the
-feature host, one owner for each point where bodies meet, the Creek's migration to the add-on, and
-the ocean, which draws on every GPU path. Owed: a quiet run of the add-on's cost per preset, whose
-gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
+Status: decided. Built: the `@null3d/water` add-on, its demo, and the reflection's cadence through
+the feature host. Built too: one owner for each point where bodies meet, and the Creek's migration.
+Built too: the ocean on every GPU path, the waterfall, and rain on the surface. Owed: a quiet run
+of the add-on's cost per preset, whose gate has run under load. Tasks: M3-F5, M3-E6, M3-F9.
 
 Summary: `@null3d/water` draws a river and a lake from one shape and an open sea of wave spectra,
 with waves, ripples, caustics, foam, soft shores, a reflection and an underwater view. The surface
 reads the copy of the scene's depth, or the bed that the shape describes, so a shore fades against
 the bed. The reflection's cadence is a feature setting of the preset and the governor. The current
 carries the whole wave set downstream, so every crest moves with the river. A page sets the surface's
-height, so a slow stream draws nearly flat and keeps its fine ripples. The Creek draws its water and
-its underwater view through the add-on, and keeps no water code of its own.
+height, so a slow stream draws nearly flat and keeps its fine ripples. A waterfall falls from a
+river's lip along the path of falling water, with streaks that ride the water from the time alone.
+Its spray and mist come from the particles add-on, which the water add-on depends on. The Creek
+draws its water and its underwater view through the add-on, and keeps no water code of its own.
 
 ## Question
 
@@ -95,7 +97,7 @@ the Creek on its own water are closed:
   whole set at the current's speed, so the crests keep every angle between them and every one drifts
   downstream. A river may also give its current as a function of any point, so the Creek's straight
   sheets follow the stream's winding middle line. The caustics and the foam flecks drift the same
-  way.
+  way, each in two copies that take turns, so no pattern stretches where the current changes.
 - **The thickness.** A shape may give its bed as a function of any point, and the water may read it
   in place of the copy of the scene's depth (`bed: 'shape'`). The mesh carries each vertex's bed
   depth in its vertex colors. The Creek gives the analytic bed that its land uses.
@@ -358,6 +360,158 @@ vertex's world place is the origin with its place in the mesh.
   the read keep the rows that the shader names. The demo draws on every path: its WebGL2 tier runs
   at Medium, whose cadence is two, and the reflection keeps its last image there.
 
+## Caustics seen low across the water
+
+The caustics' ridges are about 7 mm wide at their sharpest, a power of 14 over the ridge noise. A
+low view along a creek covers more than that with one pixel a few meters off. The ridges then
+alias into fine, even lines across the view, like scan lines. A probe drew a shallow creek under an
+overcast sky, seen from 1.1 m up. It measured the rows' alternation as the mean second difference
+down the rows, beside the same figure across the columns. With the caustics, it read 10.95 levels far off and 3.44
+mid-way. With them off, it read 0.66 and 0.51, beside 0.45 to 0.58 across the columns.
+
+So the surface broadens the ridges as a pixel grows. The power falls from 14 to 2 as a pixel grows
+from 7 mm to 5 cm. The surface scales the ridges by the power plus one, over 15. A sampling of the
+pattern showed that this keeps their mean brightness within 4 per cent from a power of 4 up. At a
+power of 2 it is 12 per cent darker.
+Where a pixel covers 6 to 15 cm, the caustics give way to that mean. With the change, the probe read
+0.64 far off and 0.98 mid-way, and the near ridges still drew sharp. The view from under the water
+keeps the sharp ridges. Both copies of the caustics take the power as an argument, so the test
+that holds them equal still holds.
+
+## Patterns that ride the current
+
+The waves, the caustics and the foam's flecks all slid by the current times the sketch's time. Where
+the current changes from point to point, as the Creek's winding current does, that offset changes
+too, and it grows with every second. So the longer a scene ran, the more each pattern was squeezed
+into slanted strokes and fine, even lines across a low view. In the Creek a minute and more into its
+route, the lines down one low view alternated 3.4 levels from row to row against 0.6 from column to
+column. With the fine waves stilled they read 0.6 and 0.5, which named the waves; the caustics added
+bright dashes on the same rows. The foam stretched into a printed hatch, and its long cells broke
+into a grid of dots far off.
+
+Each pattern now uses two copies. Each copy rides the current for one cycle of 2 s, then starts
+afresh somewhere new. The two take turns half a cycle apart, and each is weighted to nothing at the
+moment it starts again. So each pattern moves with the water and never stretches. The CPU's wave
+height and the view from under the water use the same two copies, so the waterline still agrees
+with the surface. A test holds two points 1 cm apart, whose currents differ by 1 mm/s, within the
+waves' own slope after an hour. The old way fails it after ten minutes. With the change, the same
+low view reads 0.76 against 0.53. The foam's clumps are round, six to a meter, with a finer octave.
+Each octave's grid turns a different way, and the coarse one bends the fine one, so no clump lines
+up with the world's axes. Each octave gives way to its mean where a pixel covers one of its clumps.
+The foam map still places the foam. Foam is broken water full of air, so it is nearly white and
+lets little of the bed through. The coarse clumps are smeared a third of a meter downstream, so
+foam lies in streaks behind what breaks the water. Clear water is the rule: foam needs both a
+stone close by and a strong fleck. From the Creek's opening camera, 24% of the west arm's water
+reads pale, as the concept's does.
+
+## Rain on the surface
+
+A storm rains on the water, so the surface takes a `rain` amount from 0 to 1, and `setRain` changes
+it. The rings follow the weather example add-on's wet surface (`wet.wgsl`). Each cell takes one drop
+at a time, with its place and its moment from the cell's hash. Its ring grows and fades over its
+cycle. The cell, the rate and the tilt take that block's defaults: 0.9 m, 0.8 rings a second and
+0.32. The water's rings differ in three ways. They drift with the current. Two grids half a cell
+apart keep them from lining up. The amount leaves a share of the cells dry in each cycle, so a
+light rain differs from a downpour.
+
+The surface does not copy the weather block itself. A published package cannot depend on an example
+add-on, and the wet block carries puddles, a mirror and asphalt that water does not have. The rings
+run behind a branch on the uniform, so dry water does none of their work. They give way where a
+pixel covers more than 5 to 16 cm, so far water does not shimmer.
+
+The `water-rain` picture draws a lake in rain, low across the water, on every tier. Against the
+same lake with no rain, the rings move 1.9 to 2.4 per cent of its pixels. Each of those pixels moves
+by more than a tenth of full scale, on each of the three paths. Under a cloudy sky the WebGPU path draws the lake's mirror of the
+clouds differently from the other two, rain or not: core WebGPU draws the sky's volumetric clouds on
+High and Ultra, and the other paths draw the flat layer ([D-297](D-297-volumetric-clouds.md)). So
+the picture takes a clear sky.
+
+## The waterfall
+
+### Question
+
+The Creek's creek falls off both ends of its cliff, and other scenes need falls too. How does a fall
+join a river's end, move without work on the CPU, and get its spray and mist?
+
+### Decision
+
+**The path.** The water leaves the lip level with the river, at the current's speed there. It falls
+while the air slows it toward a steady 15 m/s. The distance fallen is the integral of a hyperbolic
+tangent, and the motion away from the lip decays with the same drag time. So the column curves over
+the lip and then drops almost straight, as a real fall does. A fall of any height keeps streaks that
+the eye can follow. `fall.ts` holds the path and the mesh. Its tests hold the column to the lip's
+height and width, to the path, to nearly parallel sides, and to a column that never rises.
+
+**The column.** One closed tube gives the fall its body. Its section is an oval as wide as the
+water. The back of the oval follows the path, so no water lies behind the lip's line. The front
+stands out from it by the column's depth. That depth is the tongue's thickness at the lip, and it
+grows over the first meters of the drop to about twice the width of the drawn-in water. So the fall
+seen from the side is a broad fan, as the concept's left fall is, and from the front a narrow
+stream, as its right fall is. Below that the front and back run nearly parallel. Seen from the side, as
+the concept's camera sees its left fall, the fall is a
+solid column, and its depth comes from the water's own thickness and the spray round it. An
+earlier build used three sheets at different angles. From the side they fanned out from one point
+at the lip into thin ribs, and the backdrop showed between them. The material thins the column
+wherever the view grazes it, torn by froth and by lobes that ride with the water. So the outline is
+soft from every side, and no sheet edge or cut end shows. An apron runs
+up the river's surface before the lip, a meter unless the fall gives its own `apron`. It fades in
+at uneven distances across, and froth piles on it toward the brink. It covers the river's square
+end, so the river's own mesh ends at the lip with no seam and no straight edge. The apron and the
+first meter of the fall skip the fade near a wall behind them: they lie on the river and its brink
+by design, and that fade drew the lip as a ruler line where the water left the surface. The brink
+itself is uneven: each place across turns down up to 0.35 m past the lip's line, front and back
+alike, so the column keeps its depth. Below the lip the water draws in to about a third of its width
+over the first meters, and each side wanders in and out on its own, before the spread widens it
+again. Seen from the front, the outermost water also thins away over the first meters, and the
+column's sides break into separate ropes, front and back alike, so the rock shows through. So a
+notch as wide as the lip shows rock at both edges of the falling water. A view along the lip,
+which sees the ends of the oval face on, keeps them whole; the material learns the lip's direction
+across the water for that. A fall may give the height of a cloud that it drops into
+(`fadeBelow`). The Creek's cloud draws before the blended objects and cannot hide a fall, so below
+that height the fall vanishes itself over 2.5 m, each clump at its own depth. The water breaks up
+and dissolves into mist over the part of the drop above the cloud, so the burst shows. The
+concept's falls are short streams that end in a broad mist; a build whose falls ran 6 m on into the
+cloud drew a long column where the concept shows only mist. The mesh's texture coordinates carry
+each point's place across the lip and
+the time since its water crossed it. The material's noise reads those two. So every streak rides
+down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
+
+**The look.** The concept's falls set it. A smooth glassy tongue rolls over the lip. Then a solid
+white column of rough ropes falls. The ropes have bright cores, gray shade between them, and torn,
+lobed edges. Over the lower half, the column breaks into clumps, and billows of mist gather round
+its foot and hide its end.
+The ropes are two sets of bands at different spacings that slow noise bends, so no two gaps are
+alike. Each has a round profile, and froth breaks its outline into clumps. The froth's clumps keep
+about one size down the whole drop: a set of noise layers that ride with the water, each with more
+cells for each second, takes over as the water speeds up. The ropes show as shade, so the column
+stays solid. Lower down, holes open in the shade first, shaped by the clumps. Each clump ends at
+its own height. White water scatters the light that
+reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and it
+reads white beside the cloud. It fades where the copy of the scene's depth shows a wall close behind
+it. The mist is particles: large, faint billows sized by the creek, gathered round the column's foot
+about four times as wide as it. Many overlap at any place, so they read as one even mist; fewer,
+brighter puffs read as separate balls of cotton against the cloud. The mist and the plume draw
+after the column, over its lower part, so the water dissolves into them. A scene whose own cloud
+draws the mist at the fall's foot, as the Creek's does, passes `mist: 0`: the fall's puffs take
+the scene's spray light, not the cloud's, and drew a gray patch over the cloud's brighter mist.
+
+**The spray.** The water add-on depends on `@null3d/particles` at the exact version. As
+[D-173](D-173-addon-hooks.md) allows, the grass add-on depends on the wind add-on the same way. A
+fall makes four systems. A froth stands over the brink, and small drops fly off the column. The mist
+gathers where the fall bursts, and a plume rises at its foot. The function `fallEmitters` places
+them along the fall's path and turns them across it. Its tests hold the places, the turn and the
+rates. `createWaterfall` imports the particles add-on on first use. So a page that draws only water
+loads none of it, and neither does a fall with `spray: 0`.
+
+Two other ways were weighed. The add-on could return the emitters' places and leave the systems to
+each scene. Every scene would then repeat the same four systems and their tuning, which is a second
+copy of the feature. A scene could pass the particles add-on's function in. That is a second way to
+make a fall, and the water add-on would copy the particle options' types. Particles are not lit, so
+the scene sets their light with `setLight` in each mood.
+
+**The mesh.** The sheet has no vertex offset, so it is a plain mesh. At the default detail it holds
+just under 4,000 triangles, below the count at which the engine plans levels for a mesh made in code.
+
 ## Consequences
 
 - The add-on's largest material sets were over D-14's first-use shader figure of 58 KB when this was written, and the figure has since risen to 128 KB. The water's
@@ -394,7 +548,15 @@ vertex's world place is the origin with its place in the mesh.
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page
   (`packages/water/page`, which the tarball leaves out) gives the listing check's page, cost and
-  allocation gates a scene to measure.
+  allocation gates a scene to measure. Its view from under the water reads the camera's height in
+  every frame, and its orbit controls turn the camera, as both allocate nothing in a frame.
+- **A frame's numbers.** Code that runs once a frame stays unoptimized in the browser for a long
+  time, and there each fraction that it reads or works out is a new object of about 12 bytes. The
+  allocation gate's window sees that code cold. So the view from under the water first compares the
+  camera's height by the top 16 bits of its float, which read as small whole numbers, against the
+  waves' reach: a camera clearly above the water allocates nothing. Near or under the water the
+  view works out its effect's values, and there it allocated 107 to 135 bytes a frame with the
+  page's camera 0.3 m above the river. Moving those reads into other calls only moved the bytes.
 - The demo's tour is one loop of shots through the route of `examples/lib/cinematic.ts`, as a
   function of the time. It drifts down the river along the bank and dives under the lake for about
   24 s. It then rises, turns to face back over the scene, and circles the valley back to its first

@@ -6,8 +6,8 @@
 // alone. This module gives the block its values: the three vectors, the planar reflection pass and
 // its cadence, and the mirror texture.
 //
-// The rain streaks themselves are not here. They come from the core's draw from a vertex count
-// (M3-A5), and the splashes and steam come from @null3d/particles.
+// The falling rain is `rain.ts`: streaks in a box of air that follows the camera, which a vertex
+// offset drops from the clock. The splashes and steam come from @null3d/particles.
 import type {
 	ColorInput,
 	Material,
@@ -26,6 +26,9 @@ import {
 	particleTextures,
 } from '@null3d/particles';
 import shieldShader from './shield.wgsl';
+
+export { createRain, type Rain, type RainOptions } from './rain';
+
 import wetShader from './wet.wgsl';
 
 /** The four numbers of one of the block's setting vectors. */

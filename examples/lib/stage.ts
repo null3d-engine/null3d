@@ -194,6 +194,12 @@ export interface StageOptions {
 	 */
 	volumetric?: { intensity: number; anisotropy: number; distance: number };
 	/**
+	 * Fog that thins with height, for a scene that stands over a low haze, such as an island over a
+	 * sea of cloud: the fog has the hour's density at `height` and thins above it by a factor of e
+	 * every 1 / `falloff` meters. The studio keeps its even fog. The default is an even fog.
+	 */
+	fogHeight?: { height: number; falloff: number };
+	/**
 	 * A factor on the exposure of every outdoor mood, for a scene whose own lights carry it: a city
 	 * at night asks for more than a moonlit field. The default is 1, and the studio keeps its own.
 	 */
@@ -203,6 +209,12 @@ export interface StageOptions {
 	 * The default is 1. The studio keeps its own light.
 	 */
 	environmentScale?: number;
+	/**
+	 * A factor on the main light that the sun or the moon casts on the scene, for a scene under
+	 * heavy cloud whose light comes mostly from the sky, so its shadows stay soft. The sky itself
+	 * keeps the sun's full light. The default is 1. The studio keeps its own light.
+	 */
+	sunScale?: number;
 	/**
 	 * A factor on the brightness of the sky itself, for a scene whose lights read against a brighter
 	 * sky than the hour gives. The default is 1.
@@ -305,6 +317,7 @@ export function createMoods(
 		haze = {},
 		exposureScale = 1,
 		environmentScale = 1,
+		sunScale = 1,
 		skyScale = 1,
 		starScale = 1,
 	} = options;
@@ -378,6 +391,9 @@ export function createMoods(
 			density: fogDensity,
 			sunGlow: 0,
 			...(options.volumetric === undefined ? {} : { volumetric: options.volumetric }),
+			...(options.fogHeight === undefined
+				? {}
+				: { height: options.fogHeight.height, heightFalloff: options.fogHeight.falloff }),
 		},
 		post: { exposure: 1 },
 	};
@@ -401,7 +417,7 @@ export function createMoods(
 			target.sunPosition[k] = day.atmosphere.sunPosition[k] as number;
 			target.moonPosition[k] = day.atmosphere.moonPosition[k] as number;
 		}
-		target.intensity = day.light.intensity * weather.light;
+		target.intensity = day.light.intensity * weather.light * sunScale;
 		target.skyIntensity = day.skyIntensity * weather.light;
 		// The fog's factor follows the look of the hour, so it moves between moods with the light.
 		moodMix(hours, mix);
@@ -535,6 +551,7 @@ export function createMoods(
 			fog[2] = current.fog[2] as number;
 			look.fog.density = current.density;
 			look.fog.sunGlow = current.glow;
+			if (options.fogHeight) look.fog.heightFalloff = options.fogHeight.falloff;
 			scene.setFog(look.fog);
 		}
 		look.post.exposure = current.exposure;
@@ -556,6 +573,7 @@ export function createMoods(
 		sun.setIntensity(3);
 		if (shown.fog) {
 			look.fog.density = STUDIO_FOG_DENSITY;
+			if (options.fogHeight) look.fog.heightFalloff = 0;
 			look.fog.color[0] = STUDIO_FOG[0];
 			look.fog.color[1] = STUDIO_FOG[1];
 			look.fog.color[2] = STUDIO_FOG[2];

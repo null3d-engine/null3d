@@ -243,12 +243,15 @@
       "name": "@null3d/water",
       "version": "0.0.0",
       "devDependencies": {
+        "@null3d/controls": "workspace:*",
         "@null3d/engine": "workspace:*",
+        "@null3d/particles": "workspace:*",
         "@null3d/vite-plugin": "workspace:*",
         "@webgpu/types": "0.1.74",
       },
       "peerDependencies": {
         "@null3d/engine": "workspace:*",
+        "@null3d/particles": "workspace:*",
       },
     },
     "packages/wind": {

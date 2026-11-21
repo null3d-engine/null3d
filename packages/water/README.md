@@ -8,6 +8,14 @@ the surface keeps it, and a second effect tints, bends and lights the view from 
 give the bed and the current as functions of any point, and may give its own mesh detail, for water
 that a middle line and a width do not describe.
 
+Rain, when a page turns it on with `rain` or `setRain`, rings the surface where its drops land,
+and the rings drift with the current.
+
+`createWaterfall` draws a fall from a river's lip. The water rolls over the lip as a glassy tongue
+and drops almost straight. It turns white, parts into round ropes with torn edges, and from about
+halfway down bursts into a cloud of mist, so it never lands. Its spray, mist and plume come from
+`@null3d/particles`, which loads with the first fall that makes spray.
+
 `createOcean` draws an open sea instead. Its waves come from two or three bands of wave spectra.
 Compute passes transform each band into the height of the sea in every frame. One material sums the
 bands at their own scales, lights their slopes, breaks foam on the crests and mirrors the sky.
@@ -80,6 +88,25 @@ return {
 The sea's mesh follows the camera, and its bands come from `OCEAN_BANDS`. Give `bands` two or three
 bands of your own to change it, and read `heightAt(x, z)` where something floats.
 
+A waterfall falls from the lip at a river's end. End the river's own surface there:
+
+```ts
+import { createWaterfall } from '@null3d/water';
+
+const fall = await createWaterfall(ctx, {
+  lip: [0, 0],
+  direction: [1, 0],
+  halfWidth: 2.8,
+  speed: 1.4,
+  drop: 18,
+});
+return {
+  onLateUpdate() {
+    fall.update();
+  },
+};
+```
+
 ## The two bodies
 
 A river takes the points along its middle, from its source to its mouth, its half width and its
@@ -110,8 +137,11 @@ authored directions and each wave's own speed.
   The pass follows the preset as it changes.
 - The surface lets light through with transmission. The engine therefore copies the scene's colors
   in the frame that the water draws. The surface draws both faces, so it shows from under the water.
-- The water costs no memory until a scene creates it. The add-on's code and its two shaders load
-  only when a sketch imports it.
+- A waterfall draws one blended mesh, a closed column, and four particle systems. Its streaks move
+  from the time alone, so a frame only steps the particles' emitters. The particles add-on and the
+  engine's particle code load with the first fall that makes spray.
+- The water costs no memory until a scene creates it. The add-on's code and its shaders load only
+  when a sketch imports it.
 - The ocean's transform takes 15 of the 31 passes that a sketch may add. Seven butterfly stages run
   for each axis, then one pass puts the heights in meters. Each runs on a 128 by 128 grid with a
   band to a layer. A sketch that draws a sea leaves room for its own passes.

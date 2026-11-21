@@ -1,9 +1,14 @@
 // The add-on's own page, which the listing check opens. A river runs into a lake, both from one
 // material, over a bed that rises through the water at the banks, so the soft shore, the foam, the
-// caustics and the reflection all draw. The camera circles slowly, because the engine rests a still
-// view and the check's cost gate measures the frames that a running page draws.
+// caustics and the reflection all draw. A waterfall drops off a ledge beside the lake with its
+// spray and mist, so the check's gates measure the fall too. The view from under the water checks
+// the camera's height in every frame, as a scene's does, so the allocation gate measures that
+// check; it asks for the moving river's surface height only near the water. The camera circles slowly, because the engine rests a still view and the
+// check's cost gate measures the frames that a running page draws. Orbit controls turn it, as
+// they allocate nothing in a frame.
+import { createOrbitControls } from '@null3d/controls';
 import { defineSketch, math, type SketchContext } from '@null3d/engine';
-import { createWater, foamMap } from '../src/index.ts';
+import { createUnderwater, createWater, createWaterfall, foamMap } from '../src/index.ts';
 
 /** The lake's middle and its two radii, in meters. */
 const LAKE = { x: 18, z: 0, rx: 16, rz: 12 } as const;
@@ -43,15 +48,15 @@ function shapes() {
 	];
 }
 
-export default defineSketch((ctx: SketchContext) => {
+export default defineSketch(async (ctx: SketchContext) => {
 	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground({ sky: { sunPosition: [0.3, 0.2, -0.9], cloudCoverage: 0.3 } });
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,
 		near: 0.05,
 		far: 600,
-		position: [0, 8, 30],
-		target: [0, 0, 0],
+		position: [0, 7, 34],
+		target: [4, 0, 0],
 	});
 	scene.setActiveCamera(camera);
 	scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
@@ -100,13 +105,37 @@ export default defineSketch((ctx: SketchContext) => {
 	});
 	const caustics: [number, number, number] = [0.5, 0.45, 0.35];
 	water.setCaustics(caustics);
+	const underwater = createUnderwater(ctx, camera, water);
+	const air: [number, number, number] = [0.6, 0.65, 0.7];
+	// A fall off the far side of a ledge north of the lake: a short stream's lip, 8 m above the bed.
+	scene.createMesh({
+		mesh: geometry.box({ width: 6, height: 8, depth: 6 }),
+		material: materials.standard({ color: '#4a463f', roughness: 0.95 }),
+		position: [18, 4 - 1.3, -19],
+	});
+	// One turn in about 42 seconds round the river's mouth.
+	const controls = createOrbitControls(ctx, camera, {
+		target: [4, 0, 0],
+		autoRotate: true,
+		autoRotateSpeed: 1.4,
+	});
+	const fall = await createWaterfall(ctx, {
+		lip: [18, -16],
+		direction: [0, 1],
+		halfWidth: 1.5,
+		level: 6.7,
+		speed: 2,
+		drop: 9,
+	});
 	return {
-		onUpdate() {
+		onUpdate(dt: number) {
 			// A slow circle over the river's mouth, so every frame submits a draw.
-			const angle = time.now * 0.15;
-			camera.setPosition(Math.sin(angle) * 34, 7, Math.cos(angle) * 34);
-			camera.lookAt(4, 0, 0);
+			controls.update(dt);
 			water.update();
+			underwater.update(time.now, air, caustics);
+		},
+		onLateUpdate() {
+			fall.update();
 		},
 	};
 });

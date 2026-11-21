@@ -1,6 +1,7 @@
 # The parts that the showcase scenes' Blender scripts share: textures painted with numpy, materials
-# that the glTF exporter reads, a mesh builder, the export with levels of detail, and the preview.
-# Each scene's script imports this module from its own folder, so every model is built the same way.
+# that the glTF exporter reads, a mesh builder, crowns of leaf cards on pads, the export with levels
+# of detail, and the preview. Each scene's script imports this module from its own folder, so every
+# model is built the same way.
 #
 # Every vertex carries the sway that the scenes' wind material reads, in the second set of texture
 # coordinates (TEXCOORD_1 in glTF): its first value is the bend weight, from 0 where the plant is held
@@ -17,9 +18,11 @@ import struct
 import sys
 import tempfile
 
+import bmesh
 import bpy
 import numpy as np
 from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 
 # ---------------------------------------------------------------------------------------------
 # Textures
@@ -113,6 +116,19 @@ def image(name, pixels, colorspace='sRGB'):
     return loaded
 
 
+def rock_texture(size, rng):
+    """Weathered stone: broad tones, cracks and grains, with its height and roughness."""
+    broad = fbm(size, size, 4, 4, rng, 6)
+    cracks = 1 - smoothstep(0.0, 0.035, np.abs(fbm(size, size, 6, 6, rng, 4) - 0.5))
+    grain = value_noise(size, size, 256, 256, rng)
+    height = broad * 1.4 - cracks * 0.5 + grain * 0.12
+    tone = 0.5 + 0.35 * broad - 0.12 * cracks + 0.08 * grain
+    warm = fbm(size, size, 3, 3, rng, 3)
+    color = np.dstack([tone * (0.62 + 0.08 * warm), tone * (0.60 + 0.05 * warm), tone * 0.56])
+    rough = 0.8 + 0.15 * (1 - broad)
+    return color, height, rough
+
+
 def half(texels):
     """Texels at half the width and height, each the mean of four."""
     h, w = texels.shape[:2]
@@ -183,10 +199,11 @@ def occlusion_output():
     return group
 
 
-def material(name, color, normal=None, packed=None, cutout=False, roughness=0.8, normal_strength=1.0):
+def material(name, color, normal=None, packed=None, cutout=False, roughness=0.8, normal_strength=1.0, tint=True):
     """
-    A metal-rough material from images: base color (with alpha for a cutout), normal and ORM. The
-    vertex colors multiply the base color, as glTF draws them, so the preview shows their occlusion.
+    A metal-rough material from images: base color (with alpha for a cutout), normal and ORM. With
+    `tint`, the vertex colors multiply the base color, as glTF draws them, so the preview shows their
+    occlusion; without it, the base color is the texture's alone, for a mesh that has no colors.
     """
     mat = bpy.data.materials.new(name)
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
@@ -196,15 +213,18 @@ def material(name, color, normal=None, packed=None, cutout=False, roughness=0.8,
     tex = nodes.new('ShaderNodeTexImage')
     tex.image = color
     tex.interpolation = 'Cubic' if cutout else 'Linear'
-    tint = nodes.new('ShaderNodeVertexColor')
-    tint.layer_name = 'Color'
-    mix = nodes.new('ShaderNodeMix')
-    mix.data_type = 'RGBA'
-    mix.blend_type = 'MULTIPLY'
-    mix.inputs['Factor'].default_value = 1.0
-    links.new(tex.outputs['Color'], mix.inputs['A'])
-    links.new(tint.outputs['Color'], mix.inputs['B'])
-    links.new(mix.outputs['Result'], bsdf.inputs['Base Color'])
+    if tint:
+        colors = nodes.new('ShaderNodeVertexColor')
+        colors.layer_name = 'Color'
+        mix = nodes.new('ShaderNodeMix')
+        mix.data_type = 'RGBA'
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 1.0
+        links.new(tex.outputs['Color'], mix.inputs['A'])
+        links.new(colors.outputs['Color'], mix.inputs['B'])
+        links.new(mix.outputs['Result'], bsdf.inputs['Base Color'])
+    else:
+        links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
     if cutout:
         links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
         mat.surface_render_method = 'DITHERED'
@@ -527,6 +547,240 @@ def sprig_atlas(size, rng, leaves, length, width, tones, underside, twig, taper=
     return dilate(out)
 
 
+def needle_atlas(size, rng, tones=((0.2, 0.33, 0.15), (0.21, 0.34, 0.16)), twig=(0.32, 0.2, 0.12), mat=False):
+    """
+    A pine's needles: three tufts seen from above, each a burst of long fine needles from a
+    hidden twig, and a cell of a twig end seen from the side with its needles brushing upward.
+    `tones` gives the needles' color in the tufts and on the twig, and `twig` the twig's. Every
+    needle stays inside its cell, and its edge fades over a texel. With `mat`, the last cell is
+    instead a dense, opaque mat of short needles every way, for the body of a crown's pads.
+    """
+    cell, offsets = cells(size)
+    out = np.zeros((size, size, 4), np.float32)
+    for k, (oy, ox) in enumerate(offsets):
+        tile = np.zeros((cell, cell, 4), np.float32)
+        if k == 3 and mat:
+            tile[..., :3] = np.array(tones[1]) * 0.55
+            tile[..., 3] = 1.0
+            for _ in range(2600):
+                a = rng.random() * 2 * math.pi
+                start = (0.02 + 0.96 * rng.random(), 0.02 + 0.96 * rng.random())
+                reach = 0.03 + 0.05 * rng.random()
+                end = (min(0.99, max(0.01, start[0] + math.cos(a) * reach)), min(0.99, max(0.01, start[1] + math.sin(a) * reach)))
+                tone = np.array(tones[1]) * (0.6 + 0.6 * rng.random())
+                paint_line(tile, start, end, 0.003, tone)
+        elif k < 3:
+            # Several twig ends crowd into one tuft, so its outline is lumpy, not a round brush.
+            for _ in range(5):
+                cx, cy = 0.5 + rng.normal(0, 0.1), 0.5 + rng.normal(0, 0.1)
+                for _ in range(70):
+                    a = rng.random() * 2 * math.pi
+                    reach = 0.12 + 0.2 * rng.random()
+                    end = (cx + math.cos(a) * reach, cy + math.sin(a) * reach)
+                    end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
+                    tone = np.array(tones[0]) * (0.75 + 0.5 * rng.random())
+                    paint_line(tile, (cx, cy), end, 0.0045, tone)
+        else:
+            # A twig from the middle of the bottom edge, with needles in pairs along it.
+            paint_line(tile, (0.5, 0.0), (0.5, 0.75), 0.012, twig)
+            for j in range(90):
+                v = 0.05 + 0.75 * rng.random()
+                side = 1 if j % 2 else -1
+                a = math.pi / 2 - side * (0.35 + 0.6 * rng.random())
+                reach = 0.15 + 0.12 * rng.random()
+                end = (0.5 + math.cos(a) * reach, v + math.sin(a) * reach)
+                end = (min(0.97, max(0.03, end[0])), min(0.97, max(0.03, end[1])))
+                tone = np.array(tones[1]) * (0.75 + 0.5 * rng.random())
+                paint_line(tile, (0.5, v), end, 0.0045, tone)
+        out[oy:oy + cell, ox:ox + cell] = tile
+    return dilate(out)
+
+
+# ---------------------------------------------------------------------------------------------
+# Pad crowns
+# ---------------------------------------------------------------------------------------------
+
+
+def branch_phase(index):
+    """A branch's phase of flutter, from its place in the plant, spread by the golden ratio."""
+    return (index * 0.6180339887) % 1.0
+
+
+class Plant:
+    """
+    A plant's branches, as (points, radii, level), and its pads: (center, radii, branch). A pad is
+    an ellipsoid of foliage at the end of a branch, and the crown is the union of its pads.
+    """
+
+    def __init__(self):
+        self.branches, self.pads = [], []
+
+    def branch(self, points, radii, level):
+        self.branches.append((points, radii, level))
+        return len(self.branches) - 1
+
+    def pad(self, center, radii, branch):
+        self.pads.append((Vector(center), Vector(radii), branch))
+
+
+def plant_top(plant):
+    """The height of the plant's highest branch point or pad, which its sway weights are shares of."""
+    tops = [p.z for points, _, _ in plant.branches for p in points]
+    tops += [c.z + r.z for c, r, _ in plant.pads]
+    return max(tops)
+
+
+def plant_reach(plant):
+    """The plant's reach from its trunk, across the ground."""
+    return max([math.hypot(c.x, c.y) + r.x for c, r, _ in plant.pads] + [0.5])
+
+
+def inside(q, radii):
+    """Below 1 where an offset `q` from a pad's middle lies inside the pad's ellipsoid."""
+    return (q.x / radii.x) ** 2 + (q.y / radii.y) ** 2 + (q.z / radii.z) ** 2
+
+
+def crown_cards(plant, rng, count, up=0.6, depth=0.25):
+    """
+    The cards' places on the union of a plant's pads: points on each pad's surface, the more where
+    the surface faces up, less any that fall inside another pad. Each is (point, normal, branch).
+    """
+    areas = [r.x * r.y + r.y * r.z + r.x * r.z for _, r, _ in plant.pads]
+    total = sum(areas)
+    places = []
+    for (c, r, branch), area in zip(plant.pads, areas):
+        want = max(3, round(count * area / total))
+        tries = 0
+        made = 0
+        while made < want and tries < want * 12:
+            tries += 1
+            n = Vector(rng.normal(0, 1, 3)).normalized()
+            if rng.random() > (1 - up) + up * (0.5 + 0.5 * n.z):
+                continue
+            p = c + Vector((n.x * r.x, n.y * r.y, n.z * r.z)) * (1 - depth * rng.random())
+            if any(other is not c and inside(p - other, s) < 0.8 for other, s, _ in plant.pads):
+                continue
+            normal = Vector((n.x / r.x, n.y / r.y, n.z / r.z)).normalized()
+            places.append((p, normal, branch))
+            made += 1
+    return places
+
+
+def leaf_part(spec, plant, places, rng, grow):
+    """
+    The leaf cards on the given places, each `grow` times its usual size. The spec gives:
+      card     a card's size in meters
+      lift     how far a card's face turns from its pad's surface toward the sky
+      scatter  the random turn of each card's face
+      centered the share of a card that reaches behind its place: 0.5 centers a tuft on it
+      cells    the atlas cells the cards draw from; fold and bend shape them as `card` says
+      tent     true draws each card as a `tent`, bent across and along, whose rise is `fold`
+      tint     the color that multiplies every card's
+      shade    the darkest a card grows under the crown and inside it, which defaults to 0.35
+    """
+    leaves = Builder()
+    top = plant_top(plant)
+    reach = plant_reach(plant)
+    center = Vector(np.array([tuple(c) for c, _, _ in plant.pads]).mean(axis=0))
+    tint = Vector(spec['tint'])
+    shade = spec.get('shade', 0.35)
+    for p, n, branch in places:
+        facing = (n * (1 - spec['lift']) + Vector((0, 0, spec['lift']))).normalized()
+        facing = (facing + Vector(rng.normal(0, spec['scatter'], 3))).normalized()
+        # The card runs up and out along the pad's surface, as the twig that bears it does.
+        out = Vector((p.x, p.y, 0))
+        out = out.normalized() if out.length > 1e-3 else Vector((1, 0, 0))
+        along = out + Vector((0, 0, 0.8)) + Vector(rng.normal(0, 0.5, 3))
+        along = (along - facing * along.dot(facing))
+        along = along.normalized() if along.length > 1e-3 else frame_of(facing)[0]
+        size = spec['card'] * (0.8 + 0.4 * rng.random()) * grow
+        cell = spec['cells'][int(rng.random() * len(spec['cells']))]
+        cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
+        base = p - along * size * spec['centered']
+        # Darker under the crown and inside it, lighter on top and at the rim.
+        rim = min(1.0, (p - center).length / max(reach, 1e-3))
+        ao = shade + (1 - shade) * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
+        hue = 0.9 + 0.2 * rng.random()
+        color = tuple(ao * hue * c for c in tint)
+        sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
+        if spec.get('tent'):
+            tent(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
+        else:
+            card(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
+    return leaves
+
+
+# ---------------------------------------------------------------------------------------------
+# Levels of detail
+# ---------------------------------------------------------------------------------------------
+
+# A pixel's size, in meters for each meter away, on a screen 1,080 pixels high at a 45 degree view:
+# a level's error over this is the distance past which it changes the picture by under a pixel.
+PIXEL_PER_METER = 0.00077
+
+
+def surface_points(obj, count, rng):
+    """`count` points spread over an object's surface by area, in its own frame."""
+    mesh = obj.data
+    mesh.calc_loop_triangles()
+    co = np.empty(len(mesh.vertices) * 3, np.float32)
+    mesh.vertices.foreach_get('co', co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    tris = np.empty(len(mesh.loop_triangles) * 3, np.int32)
+    mesh.loop_triangles.foreach_get('vertices', tris)
+    a, b, c = (co[tris.reshape(-1, 3)[:, k]] for k in range(3))
+    area = np.linalg.norm(np.cross(b - a, c - a), axis=1) / 2
+    pick = rng.choice(len(area), count, p=area / area.sum())
+    u, v = rng.random(count), rng.random(count)
+    flip = u + v > 1
+    u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+    return a[pick] + (b[pick] - a[pick]) * u[:, None] + (c[pick] - a[pick]) * v[:, None]
+
+
+def level_error(level, full, share=0.95, floor=-math.inf, limit=math.inf, count=20000, seed=1):
+    """
+    A lower level's surface error, in meters, measured both ways between it and the full mesh.
+    Points at the height `floor` or below, such as what a slab hides, do not count.
+
+    With a `share`, the error is the distance below which that share of the points spread over
+    both surfaces by area lie from the other surface. A level that drops leaf cards moves a few
+    points far, so the largest distance would keep the finest level on screen for no gain, while
+    the share counts the change that the eye sees. With `share` None, the error is the largest
+    distance from either mesh's vertices to the other's surface, which suits a solid model, where
+    any gap shows in its outline.
+
+    The error comes rounded to a tenth of a millimeter, as the files store it. One past `limit`
+    meters stops the build: the engine would keep the finest level far too long, or switch to a
+    level that looks wrong, and a large error often means that the measure counted a hidden
+    surface or that the decimation broke the shape.
+    """
+    def tree(obj):
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        found = BVHTree.FromBMesh(bm)
+        bm.free()
+        return found
+
+    def points(obj, rng):
+        if share is not None:
+            return surface_points(obj, count, rng)
+        co = np.empty(len(obj.data.vertices) * 3, np.float32)
+        obj.data.vertices.foreach_get('co', co)
+        return co.reshape(-1, 3)
+
+    rng = np.random.default_rng(seed)
+    gaps = []
+    for here, there in ((level, full), (full, level)):
+        shown = points(here, rng)
+        shown = shown[shown[:, 2] > floor]
+        onto = tree(there)
+        gaps += [onto.find_nearest(Vector(p))[3] or 0.0 for p in shown]
+    error = round(float(max(gaps) if share is None else np.quantile(gaps, share)), 4)
+    if error > limit:
+        raise SystemExit(f'{level.name}: its surface error is {error} m, over the limit of {limit:.3f} m')
+    return error
+
+
 # ---------------------------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------------------------
@@ -539,9 +793,10 @@ def export(path, objects, masked, levels=(), one_sided=()):
     back faces, each with the normals it needs, draws its cutout with its back faces culled.
 
     An object named `<part>-<k>` is level k of the part named `<part>`, and `levels` gives each
-    level's error. The part's node lists its levels in the MSFT_lod extension, from the finest
-    down, with their errors in its extras, and the levels' nodes leave the scene. Each mesh keeps
-    its two sets of texture coordinates: the texture's, and the sway's.
+    level's error, the same for every part, or maps each part's name to its own levels' errors. The
+    part's node lists its levels in the MSFT_lod extension, from the finest down, with their errors
+    in its extras, and the levels' nodes leave the scene. Each mesh keeps its two sets of texture
+    coordinates: the texture's, and the sway's.
     """
     bpy.ops.object.select_all(action='DESELECT')
     for o in objects:
@@ -588,11 +843,14 @@ def export(path, objects, masked, levels=(), one_sided=()):
         index = {node['name']: k for k, node in enumerate(doc['nodes'])}
         lower = set()
         for k, node in enumerate(doc['nodes']):
-            ids = [index[f"{node['name']}-{n}"] for n in range(1, len(levels) + 1) if f"{node['name']}-{n}" in index]
+            errors = levels.get(node['name'], ()) if isinstance(levels, dict) else levels
+            if not errors and f"{node['name']}-1" in index:
+                raise SystemExit(f"{node['name']} has lower levels but no level errors to give them")
+            ids = [index[f"{node['name']}-{n}"] for n in range(1, len(errors) + 1) if f"{node['name']}-{n}" in index]
             if not ids:
                 continue
             node.setdefault('extensions', {})['MSFT_lod'] = {'ids': ids}
-            node.setdefault('extras', {})['NULL3D_lod_error'] = [levels[n] for n in range(len(ids))]
+            node.setdefault('extras', {})['NULL3D_lod_error'] = [errors[n] for n in range(len(ids))]
             lower.update(ids)
         for scene in doc['scenes']:
             scene['nodes'] = [n for n in scene['nodes'] if n not in lower]

@@ -13,6 +13,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { run as optimize } from '../../../packages/cli/src/assets/optimize.js';
 
+/** The threads that Blender runs with in every build. */
+const BLENDER_THREADS = 4;
 const JSON_CHUNK = 0x4e4f534a;
 const BIN_CHUNK = 0x004e4942;
 
@@ -20,9 +22,9 @@ interface Gltf {
 	images?: { uri?: string; bufferView?: number; mimeType?: string }[];
 	bufferViews?: { buffer: number; byteOffset?: number; byteLength: number }[];
 	buffers?: { byteLength: number; uri?: string }[];
-	nodes?: { name?: string; mesh?: number }[];
+	nodes?: { name?: string; mesh?: number; extensions?: { MSFT_lod?: { ids: number[] } } }[];
 	meshes?: { primitives: { indices?: number; attributes: Record<string, number> }[] }[];
-	accessors?: { count: number }[];
+	accessors?: { count: number; componentType?: number; normalized?: boolean; type?: string }[];
 }
 
 /** The JSON and the binary chunk of a binary glTF file. */
@@ -110,6 +112,37 @@ function parts(bytes: Uint8Array): { name: string; triangles: number; sway: bool
 		});
 }
 
+/**
+ * The lower levels that store a vertex attribute in another form than their node's full level, as
+ * lines that name both. The engine draws a level only when its vertices match the full level's, so
+ * it drops such a level, and the model draws at full detail at every distance.
+ */
+export function levelMismatches(bytes: Uint8Array): string[] {
+	const { json } = readGlb(bytes);
+	const nodes = json.nodes ?? [];
+	const forms = (node: { mesh?: number }) =>
+		new Set(
+			(json.meshes?.[node.mesh as number]?.primitives ?? []).flatMap((p, i) =>
+				Object.entries(p.attributes).map(([name, index]) => {
+					const a = json.accessors?.[index];
+					return `primitive ${i} ${name}: ${a?.componentType}${a?.normalized ? ' normalized' : ''} ${a?.type}`;
+				}),
+			),
+		);
+	return nodes.flatMap((node) =>
+		(node.extensions?.MSFT_lod?.ids ?? []).flatMap((id) => {
+			const full = forms(node);
+			const level = forms(nodes[id] ?? {});
+			const differ = [...full]
+				.filter((f) => !level.has(f))
+				.concat([...level].filter((f) => !full.has(f)));
+			return differ.length > 0
+				? [`${nodes[id]?.name ?? id} against ${node.name ?? '?'}: ${differ.sort().join('; ')}`]
+				: [];
+		}),
+	);
+}
+
 /** What a scene's build makes. */
 export interface SceneModels {
 	/** The Blender script beside this file, such as `creek.py`. */
@@ -123,43 +156,75 @@ export interface SceneModels {
 	readonly blockers?: readonly string[];
 	/** The models whose every part sways, which the build checks after the asset tool. */
 	readonly swaying: readonly string[];
+	/**
+	 * Options that the script gets when the command line does not give them, such as the folder of
+	 * a scene's inputs.
+	 */
+	readonly options?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The models that `--models <a,b>` on the command line picks from a scene's, in the scene's order,
+ * or all of them. The script gets the option too, and may skip what it does not need.
+ */
+export function chosenModels(
+	models: readonly string[],
+	options = process.argv.slice(3),
+): readonly string[] {
+	const at = options.indexOf('--models');
+	if (at < 0) return models;
+	const picked = (options[at + 1] ?? '').split(',').filter((name) => name.length > 0);
+	const unknown = picked.filter((name) => !models.includes(name));
+	if (picked.length === 0 || unknown.length > 0)
+		throw new Error(`--models takes a comma-separated list of ${models.join(', ')}`);
+	return models.filter((model) => picked.includes(model));
 }
 
 /**
  * Runs a scene's Blender script and writes its optimized, packed models into the folder that the
- * command line names. `--preview <folder>` also renders each model with Cycles there.
+ * command line names. The options after the folder go to the script: `--preview <folder>` renders
+ * each model with Cycles there, `--models <a,b>` builds only those models, and a script that reads
+ * inputs names its own, such as `--raw`.
  */
 export async function buildScene({
 	script,
 	models,
 	blockers = [],
 	swaying,
+	options = {},
 }: SceneModels): Promise<void> {
 	const args = process.argv.slice(2);
 	const out = args[0];
 	if (!out || out.startsWith('--'))
 		throw new Error(
-			`Give the output folder: bun tools/samples/blender/${script.replace('.py', '.ts')} <folder> [--preview <folder>]`,
+			`Give the output folder: bun tools/samples/blender/${script.replace('.py', '.ts')} <folder> [options]`,
 		);
-	const shots = args.includes('--preview') ? args[args.indexOf('--preview') + 1] : undefined;
+	const given = args.slice(1);
+	const defaults = Object.entries(options).filter(([flag]) => !given.includes(flag));
+	const chosen = chosenModels(models, given);
 	const scratch = mkdtempSync(join(tmpdir(), `${script.replace('.py', '')}-models-`));
 	try {
 		const built = Bun.spawnSync(
 			[
 				process.env.BLENDER ?? 'blender',
+				// Some meshes come out in an order that depends on Blender's thread count, so every
+				// build runs with the same count and gives the same files on any machine.
+				'--threads',
+				String(BLENDER_THREADS),
 				'--background',
 				'--factory-startup',
 				'--python',
 				join(import.meta.dir, script),
 				'--',
 				join(scratch, 'blender'),
-				...(shots ? ['--preview', resolve(shots)] : []),
+				...given,
+				...defaults.flat(),
 			],
 			{ stdout: 'pipe', stderr: 'pipe' },
 		);
 		if (built.exitCode !== 0) throw new Error(`Blender failed:\n${built.stdout}\n${built.stderr}`);
 		mkdirSync(resolve(out), { recursive: true });
-		for (const model of models) {
+		for (const model of chosen) {
 			const optimized = join(scratch, 'optimized', model);
 			const code = await optimize([
 				join(scratch, 'blender', `${model}.glb`),
@@ -168,6 +233,11 @@ export async function buildScene({
 			]);
 			if (code !== 0) throw new Error(`The asset tool failed on ${model}.glb`);
 			const packed = pack(join(optimized, `${model}.glb`));
+			const mismatched = levelMismatches(packed);
+			if (mismatched.length > 0)
+				throw new Error(
+					`${model}.glb stores levels unlike their full level:\n${mismatched.join('\n')}`,
+				);
 			const found = parts(packed);
 			const still = found.filter((part) => !part.sway).map((part) => part.name);
 			if (swaying.includes(model) && still.length > 0)

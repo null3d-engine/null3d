@@ -1,77 +1,76 @@
-// The creek's trees and plants: the Blender models of `models.ts`, standing where `valley.ts` places
-// them, each kind one instance batch per part, so every copy picks its own level of detail. The
-// trees and the bank plants sway in the scene's one wind field through the shared wind material,
-// which reads each vertex's bend weight from the models' second texture coordinates and draws the
-// file's own textures. Fallen lengths of dead wood, made in code, lie on the woods' floor.
-import { type Material, type MeshArrays, quat, type SketchContext } from '@null3d/engine';
+// The garden's trees and ground cover: the Blender models of the pines and of today's ferns and
+// hostas, standing where `valley.ts` places them, each kind one instance batch per part. Each copy
+// of a pine picks its own level of detail; the ferns and hostas carry only their one level, so
+// `valley.ts` holds their count to a triangle budget. Each copy of the ground cover takes a tint
+// of its own. They sway in the scene's one wind field through the shared
+// wind material, which reads each vertex's bend weight from the models' second texture
+// coordinates and draws the file's own textures.
+import type { Material, SketchContext } from '@null3d/engine';
 import type { Wind } from '@null3d/wind';
-import { type Part, standPart, swayingPart } from '../../lib/blender-models';
+import { type Part, partsOf, placed, standPart, swayingPart } from '../../lib/blender-models';
+import { random } from '../../lib/procedural';
+import { sampleUrl } from '../../lib/samples';
 import { createSway } from '../../lib/sway';
-import { type Models, PLANT_KINDS, TREE_KINDS } from './models';
-import type { Spot, Valley } from './valley';
-
-/** The fallen lengths of dead wood: their length and girth at size 1, in meters. */
-const LOG_LENGTH = 6.3;
-const LOG_GIRTH = 0.22;
+import {
+	PLANT_KINDS,
+	type PlantKind,
+	type Spot,
+	TREE_KINDS,
+	type TreeKind,
+	type Valley,
+} from './valley';
 
 /**
  * How far each part's freest tips move in a wind of one meter a second, in meters, how stiff it is
- * near its root, and how far its leaves flutter. A tree bends as a cantilever, and its wood and its
- * cards share the bend so the cards stay on their twigs; the cards flutter on top. The bank plants
- * bend from their foot.
+ * near its root, and how far its leaves flutter. A pine bends as a stiff cantilever, and its wood
+ * and its needle cards share the bend so the cards stay on their twigs; the cards flutter a little
+ * on top. The ground cover bends from its foot.
  */
 const SWAY = {
-	wood: { sway: 0.012, stiffness: 2, rustle: 0, roughness: 1 },
-	leaves: { sway: 0.012, stiffness: 2, rustle: 0.025, roughness: 0.65 },
+	wood: { sway: 0.008, stiffness: 2.2, rustle: 0, roughness: 1 },
+	needles: { sway: 0.008, stiffness: 2.2, rustle: 0.012, roughness: 0.7 },
 	plant: { sway: 0.018, stiffness: 1.4, rustle: 0.01, roughness: 0.7 },
 } as const;
 
-/** A fallen length of dead wood: a tapered log, its ends rounded, lying along x. */
-function logMesh(): MeshArrays {
-	const sides = 7;
-	const rings = 5;
-	const positions: number[] = [];
-	const normals: number[] = [];
-	const uvs: number[] = [];
-	const indices: number[] = [];
-	for (let ring = 0; ring <= rings; ring++) {
-		const t = ring / rings;
-		// The log tapers toward one end and swells through its middle, as a fallen trunk does.
-		const radius = LOG_GIRTH * (0.7 + 0.3 * Math.sin(Math.PI * t)) * (1 - 0.35 * t);
-		for (let side = 0; side < sides; side++) {
-			const angle = (side / sides) * Math.PI * 2;
-			const [ny, nz] = [Math.cos(angle), Math.sin(angle)];
-			positions.push((t - 0.5) * LOG_LENGTH, ny * radius, nz * radius);
-			normals.push(0, ny, nz);
-			uvs.push(t, side / sides);
-		}
-	}
-	for (let ring = 0; ring < rings; ring++)
-		for (let side = 0; side < sides; side++) {
-			const a = ring * sides + side;
-			const b = ring * sides + ((side + 1) % sides);
-			indices.push(a, a + sides, b, b, a + sides, b + sides);
-		}
-	return { positions, normals, uvs, indices };
+/**
+ * The tints over the ground cover's own green, one to a copy, toward the concept's low growth:
+ * olive, gold and dull red, in linear shares. In linear light the green map's green is about three
+ * times its red, so a tint raises the red well past one and cuts the green to about a quarter of
+ * it, which turns the leaves gold; it raises the blue near the red, so the leaves read at the
+ * concept's strength under the scene's tone curve, and the drawn blue stays under the drawn green.
+ * The texture keeps each leaf's shading.
+ */
+const GROUND_TINTS: readonly (readonly [number, number, number])[] = [
+	[7.5, 1.75, 6],
+	[9, 1.9, 5.4],
+	[8.4, 1.4, 5.7],
+];
+
+/** The models that the planting draws. */
+export interface PlantModels {
+	readonly trees: Record<TreeKind, { readonly wood: Part; readonly leaves: Part }>;
+	readonly plants: Record<PlantKind, Part>;
 }
 
-/** Lays the dead wood: fallen lengths on the woods' floor, each along its own turn. */
-function layDeadWood(ctx: SketchContext, logs: readonly Spot[]): void {
-	if (logs.length === 0) return;
-	const batch = ctx.scene.createInstances(ctx.geometry.fromArrays(logMesh()), logs.length, {
-		material: ctx.materials.standard({ color: '#4a3a2a', roughness: 0.95 }),
-		castShadows: true,
-		receiveShadows: true,
-	});
-	const lying = quat.fromEuler(quat.create(), 0, 0, Math.PI / 2);
-	const turn = quat.create();
-	logs.forEach((log, row) => {
-		batch.positions.set([log.x, log.y + LOG_GIRTH * 0.8 * log.size, log.z], row * 3);
-		quat.fromEuler(turn, 0, log.yaw, 0);
-		batch.rotations.set(quat.multiply(turn, turn, lying), row * 4);
-		batch.scales.fill(log.size, row * 3, row * 3 + 3);
-	});
-	batch.markDirty();
+/** Loads the pines' file and the ground cover's file at once. */
+export async function loadPlants({ assets }: SketchContext): Promise<PlantModels> {
+	const [pines, plants] = await Promise.all([
+		assets.loadGltf(sampleUrl('sources/showcase/creek-pines/pines.glb')),
+		assets.loadGltf(sampleUrl('sources/showcase/creek/plants.glb')),
+	]);
+	const pine = partsOf(pines);
+	const plant = partsOf(plants);
+	return {
+		trees: Object.fromEntries(
+			TREE_KINDS.map((kind) => [
+				kind,
+				{ wood: pine(`${kind}-wood`), leaves: pine(`${kind}-leaves`) },
+			]),
+		) as PlantModels['trees'],
+		plants: Object.fromEntries(
+			PLANT_KINDS.map((kind) => [kind, plant(kind)]),
+		) as PlantModels['plants'],
+	};
 }
 
 /** The drawn plants, and what a frame changes on them. */
@@ -81,15 +80,15 @@ export interface Plants {
 }
 
 /**
- * Draws the valley's trees, bank plants and dead wood from the loaded models. Each part takes the
- * wind material with its file's textures: the bark's color, normal and occlusion maps, and the
- * cards' cutout.
+ * Draws the garden's trees and ground cover from the loaded models. Each part takes the wind
+ * material with its file's textures: the bark's color, normal and occlusion maps, and the cards'
+ * cutout.
  */
 export function createPlants(
 	ctx: SketchContext,
 	wind: Wind,
 	valley: Valley,
-	models: Models,
+	models: PlantModels,
 ): Plants {
 	const sway = createSway(ctx, { wind });
 	/** One batch of a part over the spots that stand it. */
@@ -100,16 +99,36 @@ export function createPlants(
 		const { wood, leaves } = models.trees[kind];
 		const spots = valley.trees.filter((spot) => spot.kind === kind);
 		stand(wood, spots, swayingPart(sway, wood, SWAY.wood, false));
-		stand(leaves, spots, swayingPart(sway, leaves, SWAY.leaves, true));
+		stand(leaves, spots, swayingPart(sway, leaves, SWAY.needles, true));
 	}
+	const next = random(91);
 	for (const kind of PLANT_KINDS) {
 		const part = models.plants[kind];
-		// Each plant's foot sinks a little, so no copy stands proud of a slope.
-		const spots = valley.plants
-			.filter((spot) => spot.kind === kind)
-			.map((spot) => ({ ...spot, y: spot.y - 0.03 }));
-		stand(part, spots, swayingPart(sway, part, SWAY.plant, true));
+		const spots = valley.plants.filter((spot) => spot.kind === kind);
+		if (spots.length === 0) continue;
+		// Each copy takes one of the tints, a little lighter or darker, over the part's own map.
+		const batch = ctx.scene.createInstances(part.mesh, spots.length, {
+			material: swayingPart(sway, part, SWAY.plant, true),
+			castShadows: true,
+			receiveShadows: true,
+			colors: true,
+		});
+		spots.forEach((spot, row) => {
+			// Each plant's foot sinks a little, so no copy stands proud of a slope.
+			const { position, rotation, scale } = placed(
+				part,
+				[spot.x, spot.y - 0.03, spot.z],
+				spot.yaw,
+				spot.size,
+			);
+			batch.positions.set(position, row * 3);
+			batch.rotations.set(rotation, row * 4);
+			batch.scales.set(scale, row * 3);
+			const tint = GROUND_TINTS[Math.floor(next() * GROUND_TINTS.length)] as readonly number[];
+			const shade = 0.85 + 0.3 * next();
+			batch.colors?.set([...tint.map((share) => share * shade), 1], row * 4);
+		});
+		batch.markDirty();
 	}
-	layDeadWood(ctx, valley.deadwood);
 	return { update: () => sway.update() };
 }

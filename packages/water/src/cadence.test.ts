@@ -4,7 +4,7 @@
 // such row, and the figures go when the water goes. The add-on's `water-bounds` debug view draws
 // each body's bounds at the surface, and stops when another view replaces it. The surface also takes
 // the share of the view's path through the water that the page asks for, and reads its depth alone
-// by default.
+// by default. Rain rings the surface only when a page asks for it.
 import { describe, expect, it } from 'bun:test';
 import type { FeatureStats, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
 import { activateAddonDebugView, hasAddonDebugView } from '@null3d/engine/internal';
@@ -24,6 +24,8 @@ function fakeContext(start: QualityPreset = 'medium') {
 	const boxes: [readonly number[], readonly number[], string][] = [];
 	/** The options that each material was made with, and the arrays of each mesh. */
 	const shaderOptions: Record<string, unknown>[] = [];
+	/** The values that each call of a material's `set` gave it. */
+	const materialSets: Record<string, unknown>[] = [];
 	const meshes: MeshArrays[] = [];
 	/** The cadence that the add-on gave each pass, and each switch it set: the calls that it made. */
 	const passEvery: [unknown, number][] = [];
@@ -78,7 +80,12 @@ function fakeContext(start: QualityPreset = 'medium') {
 		materials: {
 			shader: (options: Record<string, unknown>) => {
 				shaderOptions.push(options);
-				return { set() {}, destroy() {} };
+				return {
+					set(values: Record<string, unknown>) {
+						materialSets.push(values);
+					},
+					destroy() {},
+				};
 			},
 		},
 		textures: {
@@ -110,6 +117,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 		boxes,
 		/** The options of the material, and the arrays of the meshes, that the last water made. */
 		shaderOptions,
+		materialSets,
 		meshes,
 		/** The cadence and switch calls that the add-on made. */
 		passEvery,
@@ -313,6 +321,42 @@ describe('the water’s color along a low view', () => {
 
 	it('reads the depth alone unless the page asks otherwise', () => {
 		expect(viewPath()).toBe(0);
+	});
+});
+
+describe('the rain on the surface', () => {
+	/** The rain that the surface's uniforms start with. */
+	const startingRain = (context: ReturnType<typeof fakeContext>) =>
+		(context.shaderOptions.at(-1) as { uniforms?: { rain?: number } }).uniforms?.rain;
+
+	it('is off by default', () => {
+		const context = fakeContext();
+		const water = waterOn(context);
+		expect(startingRain(context)).toBe(0);
+		water.destroy();
+	});
+
+	it('starts at the amount that the page asks for, and follows setRain', () => {
+		const context = fakeContext();
+		const water = waterOn(context, { rain: 0.4 });
+		expect(startingRain(context)).toBe(0.4);
+		water.setRain(1);
+		// An unchanged amount, as a storm sets it every frame, sends nothing.
+		water.setRain(1);
+		water.setRain(0);
+		expect(context.materialSets).toEqual([{ rain: 1 }, { rain: 0 }]);
+		water.destroy();
+	});
+
+	it('refuses an amount outside 0 to 1, and names it', () => {
+		const context = fakeContext();
+		expect(() => waterOn(context, { rain: 1.5 })).toThrow(
+			/rain must be from 0 to 1, and it is 1.5/,
+		);
+		const water = waterOn(context);
+		expect(() => water.setRain(-0.1)).toThrow(/rain must be from 0 to 1/);
+		expect(() => water.setRain(Number.NaN)).toThrow(/rain must be from 0 to 1/);
+		water.destroy();
 	});
 });
 
