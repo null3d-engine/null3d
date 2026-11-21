@@ -181,19 +181,15 @@ export function chosenModels(
 }
 
 /**
- * Runs a scene's Blender script and writes its optimized, packed models into the folder that the
- * command line names. The options after the folder go to the script: `--preview <folder>` renders
- * each model with Cycles there, `--models <a,b>` builds only those models, and a script that reads
- * inputs names its own, such as `--raw`.
+ * Runs a scene's Blender script and writes its optimized, packed models into the folder that
+ * `args`, the command line's by default, names first. The options after the folder go to the
+ * script: `--preview <folder>` renders each model with Cycles there, `--models <a,b>` builds only
+ * those models, and a script that reads inputs names its own, such as `--raw`.
  */
-export async function buildScene({
-	script,
-	models,
-	blockers = [],
-	swaying,
-	options = {},
-}: SceneModels): Promise<void> {
-	const args = process.argv.slice(2);
+export async function buildScene(
+	{ script, models, blockers = [], swaying, options = {} }: SceneModels,
+	args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
 	const out = args[0];
 	if (!out || out.startsWith('--'))
 		throw new Error(
