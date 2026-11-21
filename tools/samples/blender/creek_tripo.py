@@ -212,22 +212,23 @@ PATINA = dict(
 SKY = (0.58, 0.58, 0.6)
 
 # The slab's stone, as display colors: the stone's dark warm gray and the pale and dark specks in
-# it, which `speck` of its texels carry; the moss's colors from its shade to its light, the depth
-# of the band along the rim that it grows in, in meters, the share of that band it covers, and the
-# height of the band at the foot where it grows in patches too; and
-# how far, in meters, the side wanders from its oval, against the rim's own wander.
+# it, which `speck` of its texels carry; the moss's greyed olive from its shade to its light, the
+# depth from the rim, in meters, in which its patches are likelier, and the share of the surface
+# the patches cover; how far, in meters, the side wanders from its oval, against the rim's own
+# wander; and `lobes`, the share by which the outline swells and shrinks round its turn, so it is
+# no perfect oval.
 SLAB = dict(
     stone=(0.35, 0.33, 0.29),
     pale=(0.56, 0.54, 0.49),
     dark=(0.16, 0.15, 0.13),
     speck=0.12,
-    moss_shade=(0.28, 0.25, 0.06),
-    moss_light=(0.56, 0.49, 0.12),
-    moss_band=0.4,
-    moss_cover=0.62,
-    moss_foot=0.12,
+    moss_shade=(0.24, 0.23, 0.13),
+    moss_light=(0.44, 0.42, 0.24),
+    moss_band=0.5,
+    moss_cover=0.35,
     rough=0.07,
-    rim=0.03,
+    rim=0.05,
+    lobes=0.05,
 )
 
 # The largest surface error each lower level of the garden's other models may have, as a share of
@@ -991,9 +992,10 @@ def slab_layout(t, quarter, along, top, rx, ry):
 
 def stone_slab(name, rx, ry, height, bevel, sides, mat):
     """
-    A low oval stone slab from just below the ground to `height`, with semi-axes `rx` and `ry`. Its
-    side leans in a little as it rises and wanders a few centimeters, rough as split stone, up to a
-    crisp bevel `bevel` deep round its top, whose rim wanders less. The same noise in space shapes
+    A low stone slab, an uneven oval, from just below the ground to `height`, with semi-axes `rx`
+    and `ry`. Its outline swells and shrinks round its turn. Its side leans in a little as it rises
+    and wanders a few centimeters, rough as split stone, up to a bevel `bevel` deep round its top,
+    whose rim wanders and chips. The same noise in space shapes
     every level of detail. The top shades flat, so the rim between it and the smooth bevel stays a
     sharp line. The texture covers the slab once, as `slab_layout` lays it out.
     """
@@ -1012,10 +1014,14 @@ def stone_slab(name, rx, ry, height, bevel, sides, mat):
     points = np.array(points)
     flat = points.reshape(-1, 3)
     wander = (noise3(flat, 0.3, rng) - 0.5) * 2
+    chips = (noise3(flat, 0.12, rng) - 0.5) * 2
     rim = np.repeat([z >= height - bevel - 1e-4 for z, _ in rings], sides)
-    amount = np.where(rim, SLAB['rim'], SLAB['rough'])
+    amount = np.where(rim, SLAB['rim'] * (0.5 * wander + 0.5 * chips), SLAB['rough'] * wander)
+    # The outline swells and shrinks round its turn, the same at every height, so it is no oval.
+    lobes = 1 + SLAB['lobes'] * (noise3(flat * np.array([1, 1, 0], np.float32), 2.0, rng, 2) - 0.5) * 2
+    flat[:, :2] *= lobes[:, None]
     outward = flat[:, :2] / np.maximum(np.linalg.norm(flat[:, :2], axis=1), 1e-6)[:, None]
-    flat[:, :2] += outward * (wander * amount)[:, None]
+    flat[:, :2] += outward * amount[:, None]
     points = flat.reshape(len(rings), sides, 3)
 
     bm = bmesh.new()
@@ -1053,8 +1059,8 @@ def slab_material(rx, ry, height, bevel, size, rng):
     """
     The slab's own texture, painted once over its surface as `slab_layout` lays it out: each texel
     takes its place on the slab, then dark speckled stone with pale lichen spots, darker toward the
-    foot, and moss in a broken band along the rim, coarse and fine at once, down the side's top and
-    in over the top's edge, and in patches along the foot. Its normals and roughness, at half the
+    foot, and greyed olive moss in patches of uneven size, coarse and fine at once, likelier near
+    the rim and creeping over its edge. Its normals and roughness, at half the
     color's size, follow the stone's grain and the moss's tufts.
     """
     lean = 0.03 * min(rx, ry)
@@ -1103,15 +1109,13 @@ def slab_material(rx, ry, height, bevel, size, rng):
     worn = smoothstep(0.08, 0.0, rim_distance) * smoothstep(0.55, 0.7, noise3(position + 9.1, 0.3, rng, 2))
     color = mix(color, SLAB['pale'], 0.6 * worn)
 
-    # Moss: a band along the rim that thins in, broken into patches, with tufts at two scales.
-    # The band's depth wanders, so clumps creep over the edge and down the side unevenly.
-    reach = SLAB['moss_band'] * (0.5 + noise3(position * np.array([1, 1, 0], np.float32), 0.4, rng, 2))
-    band = smoothstep(reach, 0.4 * reach, rim_distance)
-    band = np.maximum(band, side * smoothstep(SLAB['moss_foot'], 0.3 * SLAB['moss_foot'], position[..., 2]) * 0.8)
-    clumps = np.maximum(noise3(position, 0.6, rng, 2), noise3(position + 5.3, 0.18, rng, 2) - 0.08)
-    patches = smoothstep(1 - SLAB['moss_cover'] - 0.08, 1 - SLAB['moss_cover'] + 0.08, clumps)
+    # Moss in patches of uneven size, not bands: likelier near the rim, where it creeps over the
+    # edge, and sparse on the side and the top, with tufts at two scales.
+    near = smoothstep(SLAB['moss_band'], 0.0, rim_distance)
+    clumps = np.maximum(noise3(position, 0.6, rng, 2), noise3(position + 5.3, 0.18, rng, 2) - 0.08) + 0.16 * near
+    patches = smoothstep(1 - SLAB['moss_cover'] - 0.06, 1 - SLAB['moss_cover'] + 0.06, clumps)
     tufts = noise3(position, 0.02, rng, 2)
-    moss = np.clip(band * patches * smoothstep(0.3, 0.6, tufts + 0.25 * patches), 0, 1)
+    moss = np.clip(patches * smoothstep(0.3, 0.6, tufts + 0.25 * patches), 0, 1)
     moss_color = mix(np.broadcast_to(np.array(SLAB['moss_shade'], np.float32), position.shape).copy(), SLAB['moss_light'], tufts)
     color = mix(color, moss_color, moss)
 
