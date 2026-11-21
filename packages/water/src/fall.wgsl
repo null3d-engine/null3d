@@ -184,12 +184,12 @@ fn surface(input: SurfaceInput) -> Surface {
     let across_place = abs(input.uv.x) / material.halfWidth;
     let frontal_view = 1.0 - smoothstep(0.45, 0.85, abs(dot(input.viewDirection, material.across)));
     let side_lobes = value2(vec2f(sign(input.uv.x) * 7.0 + 2.0, crossed * 1.8));
-    let sides = smoothstep(0.4, 0.72, across_place + (side_lobes - 0.5) * 0.3) * frontal_view;
-    let breaking = sides * smoothstep(0.2, 2.0, fallen);
+    let sides = smoothstep(0.32, 0.66, across_place + (side_lobes - 0.5) * 0.35) * frontal_view;
+    let breaking = sides * smoothstep(0.1, 1.2, fallen);
     let strand = value2(vec2f(input.uv.x * 2.4 + 3.0, crossed * 0.7));
     alpha *= mix(1.0, smoothstep(0.45, 0.62, strand + (froth - 0.5) * 0.3), breaking);
     // Its outermost water thins away as it falls, so the fall draws in from the rock on both sides.
-    let edge = mix(1.05, 0.7, smoothstep(0.2, 2.5, fallen)) + (side_lobes - 0.5) * 0.14;
+    let edge = mix(1.05, 0.6, smoothstep(0.0, 1.8, fallen)) + (side_lobes - 0.5) * 0.2;
     alpha *= mix(1.0, 1.0 - smoothstep(edge - 0.06, edge + 0.04, across_place), frontal_view);
     // The water gives way to the mist over the lower half of the drop, so it never lands. Each
     // clump ends at its own height, so no line runs across the fall.

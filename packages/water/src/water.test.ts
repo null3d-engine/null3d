@@ -16,6 +16,45 @@ const WAVES = [
 	'vec4f(0.6, 0.8, 5.9, 0.5)',
 ] as const;
 
+/**
+ * A WGSL function of plain arithmetic made runnable in JavaScript, so a test can check its sums:
+ * `fract`, `abs`, `floor` and `vec4f` map to their JavaScript forms, and `cycle` stands for the
+ * shader's carry cycle.
+ */
+function shaderFunction(
+	source: string,
+	name: string,
+	cycle: number,
+): (...args: number[]) => unknown {
+	const start = source.indexOf(`fn ${name}(`);
+	const end = source.indexOf('\n}', start);
+	const text = source.slice(start, end + 2);
+	const params =
+		/\(([^)]*)\)/
+			.exec(text)?.[1]
+			?.split(',')
+			.map((p) => p.split(':')[0]?.trim()) ?? [];
+	const body = text
+		.slice(text.indexOf('{') + 1, text.lastIndexOf('}'))
+		.replace(/\blet\b/g, 'const')
+		.replace(/\bvec4f\(/g, 'vec4f(');
+	const make = new Function(
+		'fract',
+		'abs',
+		'floor',
+		'vec4f',
+		'CARRY_CYCLE',
+		`return function (${params.join(', ')}) {${body}};`,
+	) as (...helpers: unknown[]) => (...args: number[]) => unknown;
+	return make(
+		(v: number) => v - Math.floor(v),
+		Math.abs,
+		Math.floor,
+		(...parts: number[]) => parts,
+		cycle,
+	);
+}
+
 /** The body of the WGSL function `name` in `source`, from its signature to its closing brace. */
 function wgslFunction(source: string, name: string): string {
 	const start = source.indexOf(`fn ${name}(`);
@@ -109,6 +148,60 @@ describe('the water’s waves', () => {
 		}
 		expect(wgslFunction(surface, 'cycle_seed')).toContain('0.618034');
 		expect(read('water.ts')).toContain('0.618034');
+	});
+
+	it('weighs its two copies to a whole, each nothing as it starts afresh, as the shaders sum them', () => {
+		const surface = read('water.wgsl');
+		const carried = shaderFunction(surface, 'carried', CARRY_CYCLE) as (t: number) => number[];
+		const seed = shaderFunction(surface, 'cycle_seed', CARRY_CYCLE) as (
+			t: number,
+			w: number,
+		) => number;
+		for (let t = 0; t < 9; t += 0.137) {
+			const [first, second, wa, wb] = carried(t) as [number, number, number, number];
+			expect(wa + wb).toBeCloseTo(1, 12);
+			expect(first).toBeGreaterThanOrEqual(0);
+			expect(first).toBeLessThan(CARRY_CYCLE);
+			expect(second).toBeGreaterThanOrEqual(0);
+			expect(second).toBeLessThan(CARRY_CYCLE);
+			// A copy's weight follows how far it is through its cycle: nothing at its start and end.
+			expect(wa).toBeCloseTo(1 - Math.abs((2 * first) / CARRY_CYCLE - 1), 12);
+		}
+		// At a copy's restart its weight is nothing and its seed changes, so the jump never shows.
+		for (const restart of [2, 4, 6]) {
+			expect((carried(restart) as number[])[2]).toBeCloseTo(0, 12);
+			expect(seed(restart - 1e-6, 0)).not.toBeCloseTo(seed(restart + 1e-6, 0), 3);
+			expect(seed(restart - 1e-6, 0.5)).toBeCloseTo(seed(restart + 1e-6, 0.5), 12);
+		}
+		// The shaders sum the two copies by their weights, and the CPU's height is that same sum.
+		for (const source of [surface, read('underwater.wgsl')])
+			expect(source).toContain('copies.z * sin(first) + copies.w * sin(second)');
+		const current: [number, number] = [0.21, -0.28];
+		const speed = Math.hypot(...current);
+		for (const [x, z, t] of [
+			[1.5, -2, 0.3],
+			[-7, 4.2, 3.9],
+			[12, 0.5, 61.7],
+		] as const) {
+			const [first, second, wa, wb] = carried(t) as [number, number, number, number];
+			let height = 0;
+			LONG_WAVES.forEach(([ownX, ownZ, k], index) => {
+				const length = Math.hypot(ownX, ownZ);
+				const ax = ownX / length;
+				const az = ownZ / length;
+				const cx = current[0] / speed;
+				const cz = current[1] / speed;
+				const dx = cx * ax - cz * az;
+				const dz = cz * ax + cx * az;
+				const base = k * (dx * x + dz * z);
+				const run = k * speed * (dx * cx + dz * cz);
+				const turn = 6.2831853 * (index + 1);
+				const a = base - run * first + seed(t, 0) * turn;
+				const b = base - run * second + seed(t, 0.5) * turn;
+				height += ((0.05 / k) * (wa * Math.sin(a) + wb * Math.sin(b))) as number;
+			});
+			expect(waveHeight(x, z, t, 0, current, 1)).toBeCloseTo(height, 6);
+		}
 	});
 
 	it('carries the waves with the current, and never stretches them where the current changes', () => {
