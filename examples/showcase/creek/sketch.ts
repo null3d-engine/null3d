@@ -208,12 +208,6 @@ const FALL = { drop: 17, spread: 0.12, width: 0.9, apron: 2.5 } as const;
  */
 const WATER_AT_LIP = FALL.width;
 /**
- * The warm fill light that the garden takes from the overcast, beside the sky map's own blue-grey
- * light, as the concept's warm light shows on the statue's chest and the rock: its colour from above
- * and from the ground, as linear shares, and its strength for each unit of the air's brightness.
- */
-const FILL = { sky: [1, 0.84, 0.62], ground: [0.5, 0.36, 0.2], gain: 8 } as const;
-/**
  * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
  * cast, its strength over the air's, and the least change of the air that it follows.
  */
@@ -431,11 +425,12 @@ export default defineSketch(async (ctx) => {
 		cloudCoverage: 0.95,
 		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
 		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
-		// light is weak and the sky's share grows, so the shadows stay soft, and the picture opens up
-		// past the clear sky's exposure.
+		// light is weakened and the sky's share grows, so the shadows stay soft, and the picture opens
+		// up past the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as
+		// the statue's chest, as the concept's warm light does, with no fill to warm every face.
 		exposureScale: 3.2,
 		environmentScale: 1.4,
-		sunScale: 0.35,
+		sunScale: 0.6,
 		backdrop: [0.02, 0.03, 0.05],
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
@@ -547,13 +542,6 @@ export default defineSketch(async (ctx) => {
 	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
 	const sprayLight: [number, number, number] = [0, 0, 0];
 	const sprayAir: [number, number, number] = [-1, -1, -1];
-	// The warm fill from the overcast above and the earth below, which the sky map's blue-grey light
-	// lacks: its strength follows the air's brightness, so it dims with the hour.
-	const fill = scene.createHemisphereLight({
-		skyColor: FILL.sky,
-		groundColor: FILL.ground,
-		intensity: 0,
-	});
 	const lightFalls = () => {
 		const air = stage.airColor;
 		const moved =
@@ -571,7 +559,6 @@ export default defineSketch(async (ctx) => {
 			);
 		}
 		for (const fall of falls) fall.setLight(sprayLight);
-		fill.setIntensity(FILL.gain * grey);
 	};
 	// The clouds and the falls take the air's color now too, since a held frame runs no update.
 	clouds.update(stage.airColor, stage.light);
