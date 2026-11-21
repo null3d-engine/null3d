@@ -199,6 +199,12 @@ export interface StageOptions {
 	 */
 	exposureScale?: number;
 	/**
+	 * A factor on the exposure in some moods, on top of `exposureScale`, for a scene whose own light
+	 * leaves one hour darker than the rest, such as a dusk with no lamps. It eases between moods as
+	 * the haze does. The default is 1 in every mood.
+	 */
+	moodExposure?: Partial<Record<FixedMood, number>>;
+	/**
 	 * A factor on the light that the sky gives the scene, for a scene whose own lights carry it.
 	 * The default is 1. The studio keeps its own light.
 	 */
@@ -310,6 +316,7 @@ export function createMoods(
 		backdrop,
 		haze = {},
 		exposureScale = 1,
+		moodExposure = {},
 		environmentScale = 1,
 		sunScale = 1,
 		skyScale = 1,
@@ -424,8 +431,11 @@ export function createMoods(
 		const lowSun = smoothstep(0.45, 0.08, sunHeight) * smoothstep(-0.08, 0.02, sunHeight);
 		const daylight = noonExposure * (1 + LOW_SUN_OPEN * lowSun);
 		target.lamps = lampShare(sunHeight);
+		const opening = (mood: Mood) => moodExposure[mood as FixedMood] ?? 1;
 		target.exposure =
-			blend(daylight, day.exposure, smoothstep(-0.05, -0.35, sunHeight)) * exposureScale;
+			blend(daylight, day.exposure, smoothstep(-0.05, -0.35, sunHeight)) *
+			exposureScale *
+			blend(opening(mix.from), opening(mix.to), mix.share);
 		target.sunLight = day.atmosphere.sunIntensity * weather.light;
 		target.moonLight = day.atmosphere.moonIntensity * weather.light;
 		target.stars = day.atmosphere.stars * starScale;
