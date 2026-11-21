@@ -74,7 +74,7 @@ const LIP_BREAK = { fissure: 0.7, ledge: 0.45 } as const;
  * walls run on down into the cloud from the opening camera, as the concept's do, rather than ending
  * in an outline over it.
  */
-const FLARE = 0.12;
+const FLARE = 0.08;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
 const TILE = 2.2;
 
@@ -258,17 +258,19 @@ export function relief(
 		(above ? above.tone + (block.tone - above.tone) * into : block.tone) *
 		(1 - crack) *
 		(1 - 0.35 * chimney);
+	// The lowest wall's fine relief fades, so its columns meet the cloud as broad blocks, not as a
+	// fringe of narrow spikes. The pillars and their blocks still stand.
+	const deep = 1 - 0.75 * smoothstep(depth, 8, 14);
 	return {
 		offset:
 			pillar.out +
 			step +
-			crags +
+			deep * (crags + crest) +
 			bulge +
-			crest +
 			RIM_TEETH.out * tooth -
 			pillar.crack * crack -
 			CHIMNEY.depth * chimney -
-			0.2 * fissure -
+			0.2 * fissure * deep -
 			UNDERCUT,
 		crack: Math.max(crack, 0.9 * chimney, 0.9 * fissure),
 		tone,

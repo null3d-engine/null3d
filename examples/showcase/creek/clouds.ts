@@ -240,7 +240,7 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
             // The puffs are densest at the front wall's foot, as in the concept; along the side walls
             // they are thin, so the rock there stays dark for most of its height.
             let climbing = calm * smoothstep(material.top - 1.0, material.top + 2.0, p.y);
-            mist = foot * wall.z * (band * mix(0.35, 2.6, wall.w) * smoothstep(0.25, 0.65, puff) + close * veil) * (1.0 - climbing);
+            mist = foot * wall.z * (band * mix(0.35, 2.6, wall.w) * smoothstep(0.25, 0.65, puff) + close * veil) * (1.0 - climbing) * (1.0 - 0.9 * wall.w);
         }
         // Spray where a fall drops into the cloud: a mass of round puffs round its foot, densest low
         // down, that climbs only a little over the tops, below the stream's end. It thins over the
