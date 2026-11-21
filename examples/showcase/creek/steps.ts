@@ -8,7 +8,7 @@ import { Noise, random, rock } from '../../lib/procedural';
 import { rockMaps } from './cliff';
 import { gardenPlaces, lowestGround, nearLedge } from './garden';
 import { alongFlight, flights, STAIRS } from './land';
-import { mossy } from './stones';
+import { mossy, TEXTURED_MOSS } from './stones';
 
 /**
  * The slabs: how far each reaches past its tread's length, so the steps overlap a little; how far its
@@ -40,10 +40,10 @@ const TREAD = [0.8, 0.77, 0.74] as const;
 const RISER = [0.1, 0.092, 0.08] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 /**
- * Linear colors of the wall stones: a grey stone, and moss as light as the ground's. The rock
- * texture darkens and warms both, so they stand lighter and greener than they draw.
+ * Linear colors of the wall stones: a grey stone, lighter than it draws under the rock texture, and
+ * moss as light as the ground's.
  */
-const WALL_TONES = { stone: [0.3, 0.29, 0.28], moss: [0.2, 0.2, 0.06] } as const;
+const WALL_TONES = { stone: [0.3, 0.29, 0.28], moss: TEXTURED_MOSS } as const;
 
 /**
  * The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes, the
