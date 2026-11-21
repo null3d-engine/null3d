@@ -1,11 +1,11 @@
 // The add-on's own page, which the listing check opens. A river runs into a lake, both from one
 // material, over a bed that rises through the water at the banks, so the soft shore, the foam, the
 // caustics and the reflection all draw. A waterfall drops off a ledge beside the lake with its
-// spray and mist, so the check's gates measure the fall too. The view from under the water checks
-// the camera's height in every frame, as a scene's does, so the allocation gate measures that
-// check; it asks for the moving river's surface height only near the water. The camera circles slowly, because the engine rests a still view and the
-// check's cost gate measures the frames that a running page draws. Orbit controls turn it, as
-// they allocate nothing in a frame.
+// spray and mist, so the check's gates measure the fall too. The camera circles slowly just above
+// the water, so the view from under the water adds its effect and asks for the river's moving
+// surface height in every frame, as a scene's does, and the allocation gate measures that path.
+// The engine rests a still view, and the check's cost gate measures the frames that a running page
+// draws. Orbit controls turn the camera, as they allocate nothing in a frame.
 import { createOrbitControls } from '@null3d/controls';
 import { defineSketch, math, type SketchContext } from '@null3d/engine';
 import { createUnderwater, createWater, createWaterfall, foamMap } from '../src/index.ts';
@@ -55,8 +55,8 @@ export default defineSketch(async (ctx: SketchContext) => {
 		fov: 50,
 		near: 0.05,
 		far: 600,
-		position: [0, 7, 34],
-		target: [4, 0, 0],
+		position: [0, 0.4, 34],
+		target: [4, 0.4, 0],
 	});
 	scene.setActiveCamera(camera);
 	scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 3, castShadows: true });
@@ -115,7 +115,7 @@ export default defineSketch(async (ctx: SketchContext) => {
 	});
 	// One turn in about 42 seconds round the river's mouth.
 	const controls = createOrbitControls(ctx, camera, {
-		target: [4, 0, 0],
+		target: [4, 0.4, 0],
 		autoRotate: true,
 		autoRotateSpeed: 1.4,
 	});

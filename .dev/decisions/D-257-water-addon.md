@@ -445,9 +445,10 @@ height and width, to the path, to nearly parallel sides, and to a column that ne
 **The column.** One closed tube gives the fall its body. Its section is an oval as wide as the
 water. The back of the oval follows the path, so no water lies behind the lip's line. The front
 stands out from it by the column's depth. That depth is the tongue's thickness at the lip, and it
-grows over the first meters of the drop to about twice the width of the drawn-in water. So the fall
-seen from the side is a broad fan, as the concept's left fall is, and from the front a narrow
-stream, as its right fall is. Below that the front and back run nearly parallel. Seen from the side, as
+grows slowly, over about 3 m of the drop, toward 0.6 of the lip's half width each side. So under
+the brink the water hangs thin and close to the rock, as the owner asked of the Creek's falls; a
+build that reached twice the drawn-in water's width within the first meters drew a slab about 130
+pixels deep from the side, which held the fall off the rock. Seen from the side, as
 the concept's camera sees its left fall, the fall is a
 solid column, and its depth comes from the water's own thickness and the spray round it. An
 earlier build used three sheets at different angles. From the side they fanned out from one point
@@ -460,9 +461,10 @@ end, so the river's own mesh ends at the lip with no seam and no straight edge. 
 first meter of the fall skip the fade near a wall behind them: they lie on the river and its brink
 by design, and that fade drew the lip as a ruler line where the water left the surface. The brink
 itself is uneven: each place across turns down up to 0.35 m past the lip's line, front and back
-alike, so the column keeps its depth. Below the lip the water draws in to about a third of its width
-over the first meters, and each side wanders in and out on its own, before the spread widens it
-again. Seen from the front, the outermost water also thins away over the first meters, and the
+alike, so the column keeps its depth. Below the lip the water draws in to about a quarter of its
+width over the first meters, and each side wanders in and out on its own, before the spread widens
+it again: little while it still falls as a stream, and at its full rate below about 4 m, so it
+opens into a veil there, as the concept's falls do. Seen from the front, the outermost water also thins away over the first meters, and the
 column's sides break into separate ropes, front and back alike, so the rock shows through. So a
 notch as wide as the lip shows rock at both edges of the falling water. A view along the lip,
 which sees the ends of the oval face on, keeps them whole; the material learns the lip's direction
@@ -486,8 +488,12 @@ about one size down the whole drop: a set of noise layers that ride with the wat
 cells for each second, takes over as the water speeds up. The ropes show as shade, so the column
 stays solid. Lower down, holes open in the shade first, shaped by the clumps. Each clump ends at
 its own height. White water scatters the light that
-reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and it
-reads white beside the cloud. It fades where the copy of the scene's depth shows a wall close behind
+reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and the
+sun's much as one does. It also gives back a share of the air's light, the light that the scene
+gives the spray and the mist with `setLight`: lit only by the scene, the Creek's streams read 140 to
+160 against the cloud's mist at 185 to 206, a grey ribbon, where the concept's falls are the
+lightest thing in their corners. With the share, 0.85 of the air's light, the west stream reads 206,
+as the concept's 204 does. A scene can light each fall apart through its own `setLight`. It fades where the copy of the scene's depth shows a wall close behind
 it. The mist is particles: large, faint billows sized by the creek, gathered round the column's foot
 about four times as wide as it. Many overlap at any place, so they read as one even mist; fewer,
 brighter puffs read as separate balls of cotton against the cloud. The mist and the plume draw
@@ -548,15 +554,17 @@ just under 4,000 triangles, below the count at which the engine plans levels for
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page
   (`packages/water/page`, which the tarball leaves out) gives the listing check's page, cost and
-  allocation gates a scene to measure. Its view from under the water reads the camera's height in
-  every frame, and its orbit controls turn the camera, as both allocate nothing in a frame.
-- **A frame's numbers.** Code that runs once a frame stays unoptimized in the browser for a long
-  time, and there each fraction that it reads or works out is a new object of about 12 bytes. The
-  allocation gate's window sees that code cold. So the view from under the water first compares the
-  camera's height by the top 16 bits of its float, which read as small whole numbers, against the
-  waves' reach: a camera clearly above the water allocates nothing. Near or under the water the
-  view works out its effect's values, and there it allocated 107 to 135 bytes a frame with the
-  page's camera 0.3 m above the river. Moving those reads into other calls only moved the bytes.
+  allocation gates a scene to measure. Its camera circles 0.4 m above the water, turned by orbit
+  controls, so the view from under the water adds its effect and asks for the surface's height in
+  every frame, and the gates measure that path.
+- **A frame's numbers.** The view from under the water turns the camera's three axes from lists it
+  made once, and works the lens out only when the field of view changes; it made the axes afresh in
+  every frame before. With the page's camera near the water the allocation gate read 107 to 135
+  bytes a frame before that change and 72 to 87 after it. Warmed for 150 s and 9,000 frames in
+  place of 20 s, the gate still read 58 to 79, so what is left is not warm-up. It is the numbers
+  that the view passes to the water's `surfaceHeight` and `currentAt`, the camera's place, and the
+  heights they return: a fraction that crosses a call the browser does not inline becomes an object,
+  in optimized code too. Taking the place as a list would change the public API, so it stays.
 - The demo's tour is one loop of shots through the route of `examples/lib/cinematic.ts`, as a
   function of the time. It drifts down the river along the bank and dives under the lake for about
   24 s. It then rises, turns to face back over the scene, and circles the valley back to its first

@@ -1,12 +1,13 @@
 // The waterfall's column: the path that falling water takes from a river's lip, and the mesh around
 // it. Water leaves the lip level with the river, carried out at the current's speed, and falls under
 // gravity while the air slows it toward a steady speed. So the column curves over at the lip and then
-// drops almost straight; it draws in a little below the lip, its sides wander, and it widens as it
-// falls. Its section is an ellipse: as wide as the water, thin at the lip and as deep as the creek is
-// wide a few meters down, so it reads as a solid column from the side as well as from the front. A short apron lies on the river's surface upstream of the
-// lip, so the fall starts on the water rather than at the river mesh's edge. The texture coordinates
-// carry each point's place across the lip and how long its water has fallen, which the material
-// reads to move its streaks with the water. The fall's particle emitters stand along the same path.
+// drops almost straight; it draws in below the lip, its sides wander, and it widens as it falls.
+// Its section is an ellipse: as wide as the water, thin under the brink so it hangs close to the
+// rock, and deeper with each meter it falls, so it reads as a solid column from the side as well as
+// from the front. A short apron lies on the river's surface upstream of the lip, so the fall starts
+// on the water rather than at the river mesh's edge. The texture coordinates carry each point's
+// place across the lip and how long its water has fallen, which the material reads to move its
+// streaks with the water. The fall's particle emitters stand along the same path.
 import type { MeshArrays } from '@null3d/engine';
 
 /** Gravity, in meters a second squared. */
@@ -131,11 +132,11 @@ export function checkFallSheet(sheet: FallSheet): void {
 }
 
 /**
- * How deep the column grows below the lip, as a share of the lip's half width each side of its
- * middle: about twice as deep, out from the wall, as the drawn-in water is wide. So a fall seen
- * from the side is a broad fan, and from the front a narrow stream.
+ * How deep the column grows as it falls, as a share of the lip's half width each side of its
+ * middle. It grows slowly, so under the brink the water hangs thin and close to the rock, and lower
+ * down it fans out from the wall as a fall's water does.
  */
-export const COLUMN_DEPTH = 0.7;
+export const COLUMN_DEPTH = 0.6;
 /** How thick the water is as it leaves the lip, each side of the column's middle, in meters. */
 export const TONGUE = 0.12;
 /** The most that the brink stands out past the lip's line at some places across, in meters. */
@@ -153,25 +154,37 @@ export function brinkAt(across: number, out: [shift: number, slope: number]): vo
 }
 
 /** The share of the lip's width that the falling water draws in over its first meters. */
-export const NARROW = 0.7;
+export const NARROW = 0.75;
 /** The meters that the water falls before it has drawn in most of that share, as a scale. */
 const NARROW_GROWTH = 1;
 /** How far each side of the column wanders in and out as it falls, as a share of the lip's width. */
 export const WOBBLE = 0.1;
+/**
+ * The meters that the water falls before it spreads at the full rate that the spread gives: it
+ * spreads little while it still falls as a stream, and opens into a veil lower down.
+ */
+export const VEIL_START = 4;
+
+/** How far one side has spread after `fallen` meters, and its rate for each meter fallen. */
+function spreadOf(spread: number, fallen: number): [far: number, rate: number] {
+	const f = Math.max(fallen, 0);
+	const opened = f + VEIL_START;
+	return [(spread * f * f) / opened, (spread * f * (f + 2 * VEIL_START)) / (opened * opened)];
+}
 
 /**
  * Half the falling water's width after it has fallen `fallen` meters, leaving out the sides' wander:
- * the lip's half width, drawn in over the first meters and widened by the spread.
+ * the lip's half width, drawn in over the first meters and widened by the spread, slowly at first.
  */
 export function drawnHalf(halfWidth: number, spread: number, fallen: number): number {
 	const f = Math.max(fallen, 0);
-	return halfWidth * (1 - NARROW * (1 - Math.exp(-f / NARROW_GROWTH))) + spread * f;
+	return halfWidth * (1 - NARROW * (1 - Math.exp(-f / NARROW_GROWTH))) + spreadOf(spread, f)[0];
 }
 
 /**
  * Half the column's width on one side, after the water has fallen `fallen` meters, and its rate
- * for each meter fallen: the lip's half width drawn in to under a third over the first meters,
- * each side wandering in and out on its own as it falls, then widened by the spread. `side` is 1
+ * for each meter fallen: the lip's half width drawn in to a quarter over the first meters, each
+ * side wandering in and out on its own as it falls, then widened by the spread, more lower down. `side` is 1
  * for the water's right and -1 for its left.
  */
 export function sideAt(
@@ -192,11 +205,11 @@ export function sideAt(
 		halfWidth *
 			((-NARROW * drawn) / NARROW_GROWTH +
 				WOBBLE * (dWander * grown + (wander * Math.exp(-f / 2)) / 2)) +
-		spread;
+		spreadOf(spread, f)[1];
 }
 
 /** The meters that the water falls before the column reaches most of its depth, as a scale. */
-const DEPTH_GROWTH = 1.5;
+const DEPTH_GROWTH = 3;
 
 /**
  * Half the column's depth, out from the wall, after the water has fallen `fallen` meters: the

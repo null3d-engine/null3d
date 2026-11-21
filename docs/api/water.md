@@ -191,7 +191,6 @@ While it is off, the surface skips the rings' work.
 | `update()` | Keeps the sketch's frame loop. The reflection pass carries its own cadence now, so the call changes nothing |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `waveAmplitude` | The height of the long waves and of the wind's lift, as a factor of their base height |
-| `waveReach` | The most that the long waves raise or lower the surface from its level, in meters. A point further than this above the level is above the water wherever it stands |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
 | `setCaustics(light)` | Sets the light that the ripples focus on the bed, as a linear color |
@@ -220,10 +219,7 @@ light with distance into the water's own color.
 | `release` | A number, in meters | 1 | How far above the surface the camera goes before the effect is removed |
 
 Call `update(t, air, caustics)` in each frame with the sketch's time, the light of the air at the
-horizon, and the light of the caustics. While the camera is clear of the waves' reach by more than
-`ready`, the call reads only the camera's height and allocates nothing. Near or under the water it
-asks for the surface's height and sets the effect's values, and there it can allocate about a
-hundred bytes a frame until the browser optimizes it. The surface seen from below shows the world above through a
+horizon, and the light of the caustics. The surface seen from below shows the world above through a
 window overhead, and turns the light back past that window's edge.
 
 ## Waterfalls
@@ -232,7 +228,7 @@ window overhead, and turns the light back past that window's edge.
 over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water
 does while the air slows it. Below the tongue it turns white: a solid column of rough round ropes,
 with soft gray shade between them and clumps of froth that ride down with the water. Its outline
-tears into lobes and wisps. Over its first meters it draws in to about a third of the lip's
+tears into lobes and wisps. Over its first meters it draws in to about a quarter of the lip's
 width, and its sides wander and break into separate ropes, so a notch as wide as the lip shows
 rock beside it. Over its lower half it breaks up into clumps and dissolves into a broad mist,
 about four times its width, that draws over its foot. So it never lands and never ends in a
@@ -241,13 +237,14 @@ rises at its foot.
 
 The sheet's material moves each streak with the water from the sketch's time alone. So the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
-the water speeds up. The fall is one closed column with an oval section. It is thin at the lip, and
-a few meters down it is about twice as deep, out from the cliff, as the drawn-in water is wide.
-Below that its front and back run nearly parallel. So the fall has a solid body from the side as well as from the front.
-Its outline
-thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly off
-the column. White water scatters the light that reaches it from all round. So the column takes the
-sky's light as a surface facing up does, and it reads white. The scene's light lights the column,
+the water speeds up. The fall is one closed column with an oval section. It is thin under the
+brink, so its water hangs close to the rock, and it deepens out from the cliff over its first few
+meters as it falls. So the fall has a solid body from the side as well as from the front. Its
+outline thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly
+off the column. White water scatters the light that reaches it from all round. So the column takes
+the sky's light as a surface facing up does, and gives back a share of the air's light that
+`setLight` names, as the mist beside it does, so it reads as the lightest thing beside it. The
+scene's light lights the column,
 and the column fades where it nears a wall or a ledge behind it. The spray and
 the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
 
@@ -297,7 +294,7 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `level` | A number, in meters | 0 | The height of the water's surface at the lip |
 | `speed` | A number above 0, in meters a second | 1.2 | The current at the lip. It sets how far the water leaps out from the lip's line: at 1.2 m/s the back of the column is 0.6 m out 2 m down and 1.3 m out 13 m down. A wall that leans out further meets the water, and the column fades near the rock. Give the speed at the lip itself |
 | `drop` | A number above 0, in meters | Required | How far the fall drops below the lip. The sheet thins into mist over the lower half of the drop |
-| `spread` | A number from 0 | 0.3 | How far each side of the sheet widens for each meter that the water falls. At 0.3 a creek 5 m wide that falls 13 m is about twice as wide halfway down |
+| `spread` | A number from 0 | 0.3 | How far each side of the sheet widens for each meter that the water falls, once it has fallen a few meters: while it still falls as a stream it spreads little, and lower down it opens into a veil. At 0.3 a creek 5 m wide that falls 13 m is about three quarters as wide as the creek halfway down, and half as wide again at its foot |
 | `apron` | A number above 0, in meters | 1 | How far up the river the fall's water starts, lying on the river's surface. It fades in at uneven distances and covers the river's square end, so the water runs into the fall with no straight edge at the lip. Give the reach of the broken water before the brink |
 | `fadeBelow` | A number, in meters | None | The world height of a cloud sea, a fog bank or a mist that the fall drops into. A cloud that draws before the fall does not hide it, so below this height the fall vanishes itself over 2.5 m, each clump at its own depth. The water breaks up and bursts into mist over the part of the drop above it |
 | `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles, and neither `@null3d/particles` nor the engine's particle code loads |
@@ -313,7 +310,7 @@ first use:
 | Member | What it does |
 | --- | --- |
 | `update()` | Steps the spray and the mist. Call it once in each frame, in `onLateUpdate`, after the wind steps |
-| `setLight(color)` | Sets the light on the spray and the mist, as a linear color. Particles are not lit, so give them the scene's light in each mood |
+| `setLight(color)` | Sets the air's light on the spray and the mist, as a linear color. Particles are not lit, so give them the scene's light in each mood. The column's white water gives back a share of it too |
 | `setSpray(amount)` | Sets the spray and the mist, from 0 to 3. A storm raises it |
 | `fallTime` | The seconds that the water takes from the lip to the foot |
 | `destroy()` | Removes the sheet, its material and its particles |

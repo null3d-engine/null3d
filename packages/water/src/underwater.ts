@@ -15,24 +15,10 @@ import {
 import underwaterShader from './underwater.wgsl';
 import type { Water } from './water';
 
-/** Which of each pair of 16-bit words of a 32-bit float holds its top bits on this machine. */
-const TOP = new Uint16Array(new Float32Array([1]).buffer)[1] === 0 ? 0 : 1;
-
-/**
- * The top 16 bits of a 32-bit float, as a whole number that orders as the floats do: of two floats
- * whose numbers differ, the larger number is the larger float. Floats whose top bits match give
- * the same number, and only their full values tell them apart. A whole number this small is never
- * an object, so code that compares two of them allocates nothing, even unoptimized.
- */
-export function topOrder(top: number): number {
-	return top & 0x8000 ? 0xffff - top : top | 0x8000;
-}
-
-/** The order of the top bits of a 32-bit float, as `topOrder` gives it. */
-function orderOf(value: number): number {
-	const float = new Float32Array([value]);
-	return topOrder(new Uint16Array(float.buffer)[TOP] as number);
-}
+/** The camera's own axes before it turns: right, up and back. */
+const RIGHT: [number, number, number] = [1, 0, 0];
+const UP: [number, number, number] = [0, 1, 0];
+const BACK: [number, number, number] = [0, 0, 1];
 
 /** How much of the light the water swallows for each meter along the view. */
 const DENSITY = 0.07;
@@ -110,44 +96,34 @@ export function createUnderwater(
 	const tint: [number, number, number] = [0, 0, 0];
 	const caustics: [number, number, number] = [0, 0, 0];
 	const current: [number, number] = [0, 0];
-	// The camera's place as 32-bit floats, and the same bytes as 16-bit words.
-	const place = new Float32Array(3);
-	const words = new Uint16Array(place.buffer);
-	// Above these heights the camera is clear of the highest wave by the gap that adds the effect,
-	// or by the gap that removes it, so the surface's height under it is not needed. Each is kept
-	// as the order of its top bits.
-	const readyAbove = orderOf(water.level + water.waveReach + ready);
-	const releaseAbove = orderOf(water.level + water.waveReach + release);
 	let effect: Effect | null = null;
+	// The lens from the camera's field of view, worked out again only when that changes.
+	let fov = Number.NaN;
+	let lens = 0;
 	return {
 		update(t, air, light) {
-			// Code that runs once a frame stays unoptimized for a long time, and there each fraction
-			// that it reads or works out is a new object. So the camera's height is first compared
-			// by the top bits of its float alone, which read as small whole numbers: a camera clearly
-			// above the waves allocates nothing.
-			camera.getPosition(place);
-			const clear = topOrder(words[2 + TOP] as number) > (effect ? releaseAbove : readyAbove);
-			if (!clear) camera.getPosition(eye);
-			if (
-				clear ||
-				(eye[1] as number) - water.surfaceHeight(eye[0] as number, eye[2] as number, t) >
-					(effect ? release : ready)
-			) {
+			camera.getPosition(eye);
+			const above = (eye[1] as number) - water.surfaceHeight(eye[0] as number, eye[2] as number, t);
+			if (above > (effect ? release : ready)) {
 				if (effect) post.removeEffect(effect);
 				effect = null;
 				return;
 			}
 			camera.getRotation(turn);
-			vec3.transformQuat(right, [1, 0, 0], turn);
-			vec3.transformQuat(up, [0, 1, 0], turn);
-			vec3.transformQuat(back, [0, 0, 1], turn);
+			vec3.transformQuat(right, RIGHT, turn);
+			vec3.transformQuat(up, UP, turn);
+			vec3.transformQuat(back, BACK, turn);
 			water.currentAt(eye[0] as number, eye[2] as number, current);
 			for (let c = 0; c < 3; c++) {
 				tint[c] = (air[c] as number) * (color[c] as number);
 				caustics[c] = light[c] as number;
 			}
 			// The lens changes with the depth of field's focal length.
-			const lens = Math.tan((camera.fov * Math.PI) / 360);
+			const zoomed = camera.fov !== fov;
+			if (zoomed) {
+				fov = camera.fov;
+				lens = Math.tan((fov * Math.PI) / 360);
+			}
 			if (!effect) {
 				effect = post.addEffect({
 					wgsl: underwaterShader,
@@ -174,7 +150,7 @@ export function createUnderwater(
 			post.setEffectUniform(effect, 'right', right);
 			post.setEffectUniform(effect, 'up', up);
 			post.setEffectUniform(effect, 'back', back);
-			post.setEffectUniform(effect, 'lens', lens);
+			if (zoomed) post.setEffectUniform(effect, 'lens', lens);
 			post.setEffectUniform(effect, 'current', current);
 		},
 		destroy() {
