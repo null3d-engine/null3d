@@ -1760,12 +1760,12 @@ def build_pine(name, spec, raw, leaf_mat, rng):
 # ---------------------------------------------------------------------------------------------
 
 # The plants' colors, painted so that a render under the overcast sky gives the concept's figures
-# in the plants checklist (references/plants/checklist.md): the azalea's dull deep crimson with some
-# dark green, the clipped shrub's dark olive and the moss's yellow olive. The sky's sheen on a
+# in the plants checklist (references/plants/checklist.md): the azalea's dull deep crimson with
+# lighter tips and some dark green, the clipped shrub's dark olive and the moss's yellow olive. The sky's sheen on a
 # rough surface greys it, so the paint is purer than the figures, but for the moss, which is matt. Each kind's last tone is its
 # darkest, the shade deep between its leaves.
 GARDEN_TONES = {
-    'azalea': ((0.56, 0.24, 0.1), (0.48, 0.18, 0.08), (0.6, 0.22, 0.12), (0.2, 0.25, 0.06)),
+    'azalea': ((0.55, 0.24, 0.16), (0.47, 0.19, 0.13), (0.6, 0.23, 0.17), (0.66, 0.37, 0.3), (0.2, 0.25, 0.06)),
     'clipped': ((0.27, 0.28, 0.04), (0.32, 0.33, 0.06), (0.17, 0.18, 0.03)),
     'moss': ((0.4, 0.337, 0.132), (0.48, 0.405, 0.158), (0.22, 0.185, 0.073)),
     'pale': ((0.95, 0.93, 0.88), (0.9, 0.86, 0.8), (0.97, 0.92, 0.84), (0.55, 0.52, 0.48)),
@@ -1781,7 +1781,7 @@ CLUMP_TONES = ((0.62, 0.5, 0.1), (0.62, 0.4, 0.08), (0.4, 0.4, 0.14), (0.62, 0.5
                (0.38, 0.28, 0.13))
 # How each mound's leaves are painted: a tuft's leaf length and count, then the mat's, with
 # lengths in shares of an atlas cell.
-GARDEN_PAINT = {'azalea': (0.12, 170, 0.04, 5000), 'clipped': (0.05, 700, 0.03, 8000), 'pale': (0.12, 170, 0.04, 5000)}
+GARDEN_PAINT = {'azalea': (0.09, 260, 0.04, 5000), 'clipped': (0.05, 700, 0.03, 8000), 'pale': (0.12, 170, 0.04, 5000)}
 
 
 def leaf_clump(tile, rng, count, length, tones, patch, opaque):
@@ -2030,7 +2030,7 @@ GARDEN_TUFTS = {'lift': 0.5, 'scatter': 0.3, 'centered': 0.5, 'fold': 0.1, 'bend
                 'shade': 0.5, 'underside': 0.35, 'body': 0.92, 'tint': (1.0, 1.0, 1.0)}
 GARDEN = {
     'azalea': {'across': 1.8, 'high': 0.65, 'swells': 12, 'swell': 0.34, 'uneven': 0.25, 'flat': 0.3,
-               'tufts': 420, 'card': 0.15, 'cell': 0, 'scale': 0.5, 'sway': 0.45, 'bodies': ((10, 6), (8, 4), (6, 4))},
+               'tufts': 600, 'card': 0.11, 'cell': 0, 'scale': 0.5, 'sway': 0.45, 'bodies': ((10, 6), (8, 4), (6, 4))},
     'clipped-shrub': {'across': 1.8, 'high': 1.05, 'swells': 9, 'swell': 0.38, 'uneven': 0.35, 'flat': 0.2, 'core': 0.9,
                       'tufts': 900, 'card': 0.08, 'cell': 1, 'scale': 0.4, 'sway': 0.3,
                       'bodies': ((10, 6), (8, 4), (6, 4))},
