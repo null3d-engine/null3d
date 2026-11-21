@@ -6066,7 +6066,7 @@
 		{
 			"id": "showcase/creek-garden-gate",
 			"title": "Creek garden gate",
-			"purpose": "The tiled timber gate of the Creek garden, 4.4 m tall",
+			"purpose": "The tiled timber gate of the Creek garden, 3.9 m to the ridge under a 4.7 m roof",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -6077,7 +6077,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
 			"fetched": "2026-11-20",
-			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-gate by tools/samples/blender/creek_tripo.py in the engine repository: the rear frame cut away flush with the front posts' backs and below the side ties, the front posts stood upright, a narrowed copy of the left front post set behind it as the rear post, the roof widened, decimated to 6,000 triangles and laid out afresh, the raw color and relief baked onto it, and the timber darkened and warmed. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-gate by tools/samples/blender/creek_tripo.py in the engine repository: the rear frame cut away flush with the front posts' backs and below the side ties, the front posts stood upright, a narrowed copy of the left front post set behind it as the rear post, sized to 3.9 m in the raw model's proportion, decimated to 6,000 triangles and laid out afresh, the raw color and relief baked onto it, the timber darkened and warmed, and the faces that close the cut painted with the front faces' grain. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
 			"dir": "sources/showcase/creek-garden/gate",
 			"origin": {
 				"kind": "blender",
@@ -6087,8 +6087,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-garden/gate/gate.glb",
-					"bytes": 2236536,
-					"sha256": "bd6df309a52f7242551777b9f71b00983c92175d7113cd3a2e9aa502580f0dc0"
+					"bytes": 2285124,
+					"sha256": "48ffd183c2b5bdfb4fc319e0639df6e9772b2f224c1ac1f8faca2e159bce81b0"
 				}
 			]
 		},
