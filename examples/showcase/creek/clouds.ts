@@ -26,7 +26,7 @@ export const CLOUD = {
 	top: CLOUD_TOP,
 	depth: 12,
 	heap: 9,
-	tower: 24,
+	tower: 36,
 	reach: 1500,
 	dome: 1600,
 } as const;
