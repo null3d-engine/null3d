@@ -94,7 +94,7 @@ export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArra
 }
 
 /** The warm tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
-export const MOSS_MUTE = '#c4b6a2';
+export const MOSS_MUTE = '#bab6a2';
 /** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
 const STONE_TONE = [0.2, 0.17, 0.125] as const;
 const MOSS_TONE = [0.13, 0.115, 0.03] as const;

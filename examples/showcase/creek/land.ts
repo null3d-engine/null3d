@@ -521,7 +521,7 @@ const MOSS = [0.17, 0.135, 0.035];
 const MOSS_DARK = [0.075, 0.075, 0.03];
 const MOSS_BROWN = [0.12, 0.085, 0.035];
 /** The bright moss in the band beside each flight of steps, between the slabs and the side walls. */
-const MOSS_BRIGHT = [0.2, 0.2, 0.04];
+const MOSS_BRIGHT = [0.19, 0.27, 0.04];
 const BED = [0.42, 0.385, 0.315];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
