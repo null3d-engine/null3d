@@ -224,9 +224,10 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
         let rise = p.y - (material.top - 2.0);
         if foot * wall.z > 0.001 && p.y > h - 0.5 && rise < 9.0 {
             let along = atan2(p.z, p.x) * wall.x;
-            let reach = 3.0 + 6.0 * textureSampleLevel(billows, billowsSampler, vec2f(along / 70.0 + 0.37, 0.61), 0.0).b;
             // On the front wall the mists rise lower, so the rock shows above the cloud's tops.
-            reach *= mix(1.0, 0.45, wall.w);
+            let reach =
+                (3.0 + 6.0 * textureSampleLevel(billows, billowsSampler, vec2f(along / 70.0 + 0.37, 0.61), 0.0).b) *
+                mix(1.0, 0.45, wall.w);
             // No wisp climbs past a few meters under the rim, so the walls' upper part stays clear.
             let band = smoothstep(-0.5, 0.8, p.y - h) * (1.0 - smoothstep(reach * 0.25, reach, rise)) * (1.0 - smoothstep(-4.5, -1.5, p.y));
             // Round puffs, from the billow map's domes stood upright against the wall, that climb
