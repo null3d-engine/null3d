@@ -416,7 +416,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
             let longest = select(4.0 + t * 0.09, 0.5 + t * 0.01, length(p.xz) < MISTY && above < 8.5);
             last = t;
             lit = lit && lights >= 3;
-            var advance = clamp(above * 0.5, 0.25 + t * 0.025, longest);
+            var advance = clamp(above * 0.5, 0.3 + t * 0.07, longest);
             if !kept && near > t {
                 advance = min(advance, near - t + 1e-3);
             }
