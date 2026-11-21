@@ -24,6 +24,8 @@ struct Uniforms {
     halfWidth: f32,
     // The world height below which the fall vanishes, as into a cloud sea that draws before it.
     fadeBelow: f32,
+    // The lip's direction across the water, to its right, as a unit vector in the world.
+    across: vec3f,
 }
 
 /// The meters below `fadeBelow` over which the fall vanishes, and the meters above it where it
@@ -175,12 +177,20 @@ fn surface(input: SurfaceInput) -> Surface {
     let lobes = value2(vec2f(around * 9.0 + 11.0, crossed * 2.2));
     alpha *= smoothstep(0.1, 0.5, grazing + (froth - 0.5) * 1.1 + (lobes - 0.5) * 0.5 + (fine - 0.5) * 0.5);
     // Seen from the front, the column's sides break into separate ropes as it falls, with the rock
-    // showing between them, so its edges are never two straight lines. The ends of the oval, which a
-    // side view looks at, stay whole.
+    // showing between them, so its edges are never two straight lines. A view along the lip, which
+    // sees the ends of the oval face on, keeps them whole.
+    // The pattern reads the place across the lip alone, so the column's front and back break
+    // alike and the rock shows through both.
     let across_place = abs(input.uv.x) / material.halfWidth;
-    let sides = smoothstep(0.45, 0.8, across_place + (lobes - 0.5) * 0.3) * smoothstep(0.5, 0.8, facing);
-    let breaking = sides * smoothstep(0.8, 4.0, fallen);
-    alpha *= mix(1.0, smoothstep(0.25, 0.6, core + (froth - 0.5) * 0.5), breaking);
+    let frontal_view = 1.0 - smoothstep(0.45, 0.85, abs(dot(input.viewDirection, material.across)));
+    let side_lobes = value2(vec2f(sign(input.uv.x) * 7.0 + 2.0, crossed * 1.8));
+    let sides = smoothstep(0.4, 0.72, across_place + (side_lobes - 0.5) * 0.3) * frontal_view;
+    let breaking = sides * smoothstep(0.2, 2.0, fallen);
+    let strand = value2(vec2f(input.uv.x * 2.4 + 3.0, crossed * 0.7));
+    alpha *= mix(1.0, smoothstep(0.45, 0.62, strand + (froth - 0.5) * 0.3), breaking);
+    // Its outermost water thins away as it falls, so the fall draws in from the rock on both sides.
+    let edge = mix(1.05, 0.7, smoothstep(0.2, 2.5, fallen)) + (side_lobes - 0.5) * 0.14;
+    alpha *= mix(1.0, 1.0 - smoothstep(edge - 0.06, edge + 0.04, across_place), frontal_view);
     // The water gives way to the mist over the lower half of the drop, so it never lands. Each
     // clump ends at its own height, so no line runs across the fall.
     let ending = share + (froth - 0.5) * 0.3 + (core - 0.5) * 0.12;
