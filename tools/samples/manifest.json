@@ -5662,7 +5662,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
 			"fetched": "2026-11-21",
-			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunk showcase/creek-raw-maple-trunk (Tripo3D H3.1), whose SHA-256 the script checks. The script cuts back the broken hanging limb and the low limbs that would stand bare, rounds off the limbs' blunt ends, keeps the trunk's own bark maps under a brown tint, and grows a crown of small pale palmate leaf sprays painted along every twig, in drooping tiers on small pads along the limbs: a spray runs finer and yellower toward its outer end, so the crown's inside reads darker and its rim golden. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
+			"changes": "Built in Blender 5.3, with four threads, by tools/samples/blender/creek.py in the engine repository from the raw trunk showcase/creek-raw-maple-trunk (Tripo3D H3.1), whose SHA-256 the script checks. The script cuts back the broken hanging limb and the low limbs that would stand bare, rounds off the limbs' blunt ends, keeps the trunk's own bark maps under a brown tint, and grows a crown of small pale palmate leaf sprays painted along every twig, in drooping tiers on small pads along the limbs, with pads set nearer the trunk and along every limb: a spray runs finer and yellower toward its outer end, so the crown fills between its layers while its inside reads darker and its rim golden. Each part carries its sway in its second texture coordinates, and each lower level its measured surface error. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek.ts.",
 			"dir": "sources/showcase/creek-maples",
 			"origin": {
 				"kind": "blender",
@@ -5672,8 +5672,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-maples/maples.glb",
-					"bytes": 1353168,
-					"sha256": "30d3b43782ead07dad463f7a96827d725871f040550a404705599d70963ed5e6"
+					"bytes": 2118900,
+					"sha256": "2048a5a0b499f2b602fd3019e45257dfd25fdcd9685434d73ebbab40e430dfd7"
 				}
 			]
 		},
