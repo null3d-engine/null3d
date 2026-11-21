@@ -1,9 +1,9 @@
 // The waterfall's column: the path that falling water takes from a river's lip, and the mesh around
 // it. Water leaves the lip level with the river, carried out at the current's speed, and falls under
 // gravity while the air slows it toward a steady speed. So the column curves over at the lip and then
-// drops almost straight, and it widens as it falls. Its section is an ellipse: as wide as the water,
-// thin at the lip and as deep as the creek is wide a few meters down, so it reads as a solid column
-// from the side as well as from the front. A short apron lies on the river's surface upstream of the
+// drops almost straight; it draws in a little below the lip, its sides wander, and it widens as it
+// falls. Its section is an ellipse: as wide as the water, thin at the lip and as deep as the creek is
+// wide a few meters down, so it reads as a solid column from the side as well as from the front. A short apron lies on the river's surface upstream of the
 // lip, so the fall starts on the water rather than at the river mesh's edge. The texture coordinates
 // carry each point's place across the lip and how long its water has fallen, which the material
 // reads to move its streaks with the water. The fall's particle emitters stand along the same path.
@@ -15,7 +15,7 @@ export const GRAVITY = 9.81;
 export const FALL_SPEED = 15;
 /** How long the air takes to slow the water's sideways motion, and to bring its fall near the steady speed. */
 const DRAG_TIME = FALL_SPEED / GRAVITY;
-/** How far upstream of the lip the sheet's apron reaches, in meters. */
+/** How far upstream of the lip the fall's apron reaches when a fall gives none, in meters. */
 export const APRON = 1;
 /** How far above the river's surface the apron lies, so the river's ripples stay under it, in meters. */
 export const APRON_LIFT = 0.02;
@@ -58,6 +58,8 @@ export interface FallSheet {
 	readonly drop: number;
 	/** How far each side of the sheet widens for each meter that the water falls. */
 	readonly spread: number;
+	/** How far upstream of the lip the apron reaches over the river's surface, in meters. */
+	readonly apron?: number;
 	/** The mesh's detail. */
 	readonly mesh?: WaterfallMesh;
 }
@@ -118,6 +120,8 @@ export function checkFallSheet(sheet: FallSheet): void {
 	if (sheet.drop <= 0) throw error("a waterfall's drop must be above 0");
 	finite(sheet.spread, 'spread');
 	if (sheet.spread < 0) throw error("a waterfall's spread must be 0 or more");
+	finite(sheet.apron ?? APRON, 'apron');
+	if ((sheet.apron ?? APRON) <= 0) throw error("a waterfall's apron must be above 0");
 	for (const [value, what] of [
 		[sheet.mesh?.across ?? ACROSS, 'sections across'],
 		[sheet.mesh?.down ?? DOWN, 'rows down'],
@@ -130,6 +134,54 @@ export function checkFallSheet(sheet: FallSheet): void {
 export const COLUMN_DEPTH = 0.8;
 /** How thick the water is as it leaves the lip, each side of the column's middle, in meters. */
 export const TONGUE = 0.12;
+/** The most that the brink stands out past the lip's line at some places across, in meters. */
+export const BRINK = 0.35;
+
+/**
+ * How far past the lip's line the water leaves the flat at a place across the lip, from -1 at one
+ * end to 1 at the other: an uneven brink from 0 to `BRINK`, so the edge where the water turns down
+ * is not a ruler line. It writes the distance and its rate across into `out`.
+ */
+export function brinkAt(across: number, out: [shift: number, slope: number]): void {
+	out[0] = BRINK * (0.5 + 0.3 * Math.sin(5.1 * across + 0.7) + 0.2 * Math.sin(11.3 * across + 2.1));
+	out[1] =
+		BRINK * (0.3 * 5.1 * Math.cos(5.1 * across + 0.7) + 0.2 * 11.3 * Math.cos(11.3 * across + 2.1));
+}
+
+/** The share of the lip's width that the falling water draws in over its first meters. */
+export const NARROW = 0.3;
+/** The meters that the water falls before it has drawn in most of that share, as a scale. */
+const NARROW_GROWTH = 1.5;
+/** How far each side of the column wanders in and out as it falls, as a share of the lip's width. */
+export const WOBBLE = 0.1;
+
+/**
+ * Half the column's width on one side, after the water has fallen `fallen` meters, and its rate
+ * for each meter fallen: the lip's half width drawn in a little over the first meters, each side
+ * wandering in and out on its own as it falls, then widened by the spread. `side` is 1 for the
+ * water's right and -1 for its left.
+ */
+export function sideAt(
+	halfWidth: number,
+	spread: number,
+	fallen: number,
+	side: number,
+	out: [half: number, rate: number],
+): void {
+	const f = Math.max(fallen, 0);
+	const drawn = Math.exp(-f / NARROW_GROWTH);
+	const phase = side > 0 ? 2.1 : 0;
+	const wander = Math.sin(0.9 * f + phase) + 0.5 * Math.sin(2.3 * f + 2 * phase);
+	const dWander = 0.9 * Math.cos(0.9 * f + phase) + 1.15 * Math.cos(2.3 * f + 2 * phase);
+	const grown = 1 - Math.exp(-f / 2);
+	out[0] = halfWidth * (1 - NARROW * (1 - drawn) + WOBBLE * wander * grown) + spread * f;
+	out[1] =
+		halfWidth *
+			((-NARROW * drawn) / NARROW_GROWTH +
+				WOBBLE * (dWander * grown + (wander * Math.exp(-f / 2)) / 2)) +
+		spread;
+}
+
 /** The meters that the water falls before the column reaches most of its depth, as a scale. */
 const DEPTH_GROWTH = 1.5;
 
@@ -154,7 +206,7 @@ function columnDepthSlope(halfWidth: number, fallen: number): number {
  * The mesh of a fall's column, in world space. Its rows run from the apron's upstream end, over the
  * lip, to the foot of the fall, bunched where the column curves over, and its sections run round the
  * column's section: an ellipse whose back follows the path of the falling water and whose front
- * stands out from it by the column's depth. The first texture coordinate holds each point's place
+ * stands out from it by the column's depth, each place across shifted out by the uneven brink. The first texture coordinate holds each point's place
  * across the lip in meters and the seconds since its water left the lip, negative on the apron. The
  * second holds the place round the section, from 0 at the front to 1 back at the front, and the
  * meters that the water has fallen. The front faces look out from the column's middle.
@@ -170,6 +222,7 @@ export function fallSheet(sheet: FallSheet): MeshArrays {
 	const rx = -dz;
 	const rz = dx;
 	const { halfWidth, spread, level, speed } = sheet;
+	const apron = sheet.apron ?? APRON;
 	const end = fallTime(sheet.drop);
 	const rows = APRON_ROWS + down + 1;
 	const columns = around + 1;
@@ -180,12 +233,15 @@ export function fallSheet(sheet: FallSheet): MeshArrays {
 	const uvs1 = new Float32Array(count * 2);
 	const indices = new Uint32Array((rows - 1) * around * 6);
 	const place: [number, number] = [0, 0];
+	const brink: [number, number] = [0, 0];
+	const right: [number, number] = [0, 0];
+	const left: [number, number] = [0, 0];
 	let v = 0;
 	for (let row = 0; row < rows; row++) {
 		// The apron's rows run up to the lip at even steps of time, and the fall's rows after it.
 		const t =
 			row < APRON_ROWS
-				? (-(APRON_ROWS - row) / APRON_ROWS) * (APRON / speed)
+				? (-(APRON_ROWS - row) / APRON_ROWS) * (apron / speed)
 				: end * ((row - APRON_ROWS) / down) ** ROW_BUNCHING;
 		const falling = t > 0;
 		fallPlace(t, speed, place);
@@ -194,9 +250,9 @@ export function fallSheet(sheet: FallSheet): MeshArrays {
 		// The path's speeds out from the lip and down, which the tangent down the column reads.
 		const out = falling ? speed * Math.exp(-t / DRAG_TIME) : speed;
 		const fallSpeed = falling ? FALL_SPEED * Math.tanh(t / DRAG_TIME) : 0;
-		const half = halfWidth + spread * fallen;
+		sideAt(halfWidth, spread, fallen, 1, right);
+		sideAt(halfWidth, spread, fallen, -1, left);
 		const depth = columnDepth(halfWidth, fallen);
-		const widen = spread * fallSpeed;
 		const deepen = columnDepthSlope(halfWidth, fallen) * fallSpeed;
 		for (let column = 0; column < columns; column++, v++) {
 			const share = column / around;
@@ -204,14 +260,19 @@ export function fallSheet(sheet: FallSheet): MeshArrays {
 			const c = Math.cos(angle);
 			const sn = Math.sin(angle);
 			// The section's middle stands out from the path by its half depth, so the back follows the
-			// path and the front stands a full depth out.
-			const outward = forward + depth * (1 + c);
+			// path and the front stands a full depth out. Each place across shifts by the brink's
+			// unevenness there, front and back alike, so the column keeps its depth.
+			brinkAt(sn, brink);
+			// Each side of the column has its own width as it falls.
+			const half = sn >= 0 ? right[0] : left[0];
+			const widen = (sn >= 0 ? right[1] : left[1]) * fallSpeed;
+			const outward = forward + depth * (1 + c) + brink[0];
 			positions[v * 3] = sheet.lip[0] + dx * outward + rx * half * sn;
 			positions[v * 3 + 1] = level + APRON_LIFT - fallen;
 			positions[v * 3 + 2] = sheet.lip[1] + dz * outward + rz * half * sn;
 			// The tangent round the section and the tangent down the column; their cross product is
 			// the normal that looks out from the column's middle.
-			const ra = -depth * sn;
+			const ra = -depth * sn + brink[1] * c;
 			const ax = dx * ra + rx * half * c;
 			const az = dz * ra + rz * half * c;
 			const along = out + deepen * (1 + c);
