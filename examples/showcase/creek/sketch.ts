@@ -33,7 +33,7 @@ import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
 import type { ShadowReach } from '../../lib/shadow-range';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
-import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
+import { isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
 import { createCliff } from './cliff';
 import { createClouds } from './clouds';
@@ -53,7 +53,8 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { createDuskSky, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createMoodSkies, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createCreekStage, HEADING } from './look';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
@@ -81,11 +82,6 @@ const DETAIL: Record<
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
 const DSLR_FOCAL_LENGTH = 50;
-/**
- * The turn of the sun's path: in the morning its soft light comes from the opening view's upper
- * left and a little from the front, as in the concept picture.
- */
-const HEADING = Math.PI + 0.58;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
@@ -205,17 +201,10 @@ const WATER_REACH = 1.36;
  * runs on past it over the rim.
  */
 const WATER_AT_LIP = FALL.width;
-/**
- * The air's haze: its density at the cloud's tops, and how fast it thins above them, by a factor of
- * e every 1 / falloff meters. It lies thick over the cloud sea and the cliff's lower face, as it did
- * as an even haze, and thin over the garden, so the garden's colors read about alike from 10 m and
- * from the opening camera's 45 m: under one part in a hundred of each pixel is haze there.
- */
-const AIR = { density: 0.0215, falloff: 0.35 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
-const FOAM_REACH = 0.35;
+const FOAM_REACH = 0.25;
 /** The foam map's box on the ground, over the whole creek. */
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
@@ -270,11 +259,12 @@ function createCreekWater(
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#4f9a96',
+			attenuationColor: '#377472',
 			attenuationDistance: 1.2,
 			// From the opening view the calm pool would mirror the bright overcast and hide its bed:
-			// a weaker reflection lets the dark bed through, as the concept's pool shows it.
-			specularIntensity: 0.4,
+			// a weaker reflection lets the dark bed through, as the concept's pool shows it, and leaves
+			// the arms' water under their foam's brightness.
+			specularIntensity: 0.25,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,
@@ -423,22 +413,7 @@ export default defineSketch(async (ctx) => {
 
 	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
 	// draws the real sun by day and the moon at night; Auto moves them across the sky.
-	// The garden opens on a soft morning under heavy cloud, with the air thick over the cloud sea.
-	const stage = createMoods(ctx, sun, sky, room, {
-		heading: HEADING,
-		fogDensity: AIR.density,
-		fogHeight: { height: CLOUD_TOP, falloff: AIR.falloff },
-		cloudCoverage: 0.95,
-		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
-		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
-		// light is weakened and the sky's share grows, so the shadows stay soft, and the picture opens
-		// up past the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as
-		// the statue's chest, as the concept's warm light does, with no fill to warm every face.
-		exposureScale: 3.2,
-		environmentScale: 1.4,
-		sunScale: 0.6,
-		backdrop: [0.02, 0.03, 0.05],
-	});
+	const stage = createCreekStage(ctx, sun, sky, room);
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
 	/**
 	 * The look the scene shows: two moods and the share of the second. An hour's look blends between
@@ -465,14 +440,14 @@ export default defineSketch(async (ctx) => {
 		fit();
 		light();
 	});
-	// The dusk's own sky light, which only Dusk turns up.
-	const duskSky = createDuskSky(scene);
+	// The moods' own sky lights, which only dusk, dawn and golden hour turn up.
+	const moodSkies = createMoodSkies(scene);
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
-		duskSky.setLook(look);
+		moodSkies.setLook(look);
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
@@ -550,6 +525,7 @@ export default defineSketch(async (ctx) => {
 	// The falls' spray and mist are unlit, so they take the cloud's own tone of the air: its color
 	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
 	const sprayLight: [number, number, number] = [0, 0, 0];
+	const eastLight: [number, number, number] = [0, 0, 0];
 	const sprayAir: [number, number, number] = [-1, -1, -1];
 	const lightFalls = () => {
 		const air = stage.airColor;
@@ -560,7 +536,10 @@ export default defineSketch(async (ctx) => {
 		if (moved <= SPRAY.step) return;
 		for (let c = 0; c < 3; c++) sprayAir[c] = air[c];
 		sprayLightOf(air, sprayLight);
-		for (const fall of falls) fall.setLight(sprayLight);
+		for (let c = 0; c < 3; c++) eastLight[c] = (sprayLight[c] as number) * SPRAY.east;
+		// The falls stand in the lips' order, west then east.
+		falls[0]?.setLight(sprayLight);
+		falls[1]?.setLight(eastLight);
 	};
 	// The clouds and the falls take the air's color now too, since a held frame runs no update.
 	clouds.update(stage.airColor, stage.light);

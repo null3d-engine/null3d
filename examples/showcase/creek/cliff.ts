@@ -56,8 +56,12 @@ const LIP_RECESS = {
 const HUG = { reach: 0.5, power: 0.41, gap: 0.35 } as const;
 /** How deep the upright fissures cut into the face beside each lip, and how far its ledges step. */
 const LIP_BREAK = { fissure: 0.7, ledge: 0.45 } as const;
-/** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
-const FLARE = 0.05;
+/**
+ * How far the rock spreads outward per meter of depth: the cliff widens toward its foot, so the
+ * walls run on down into the cloud from the opening camera, as the concept's do, rather than ending
+ * in an outline over it.
+ */
+const FLARE = 0.12;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
 const TILE = 2.2;
 

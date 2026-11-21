@@ -677,6 +677,8 @@ def leaf_part(spec, plant, places, rng, grow):
       tent     true draws each card as a `tent`, bent across and along, whose rise is `fold`
       tint     the color that multiplies every card's
       shade    the darkest a card grows under the crown and inside it, which defaults to 0.35
+      slant    how steeply a card runs up from its place, out along the pad: 0.8 by default, and
+               below 0 for a spray that droops
     """
     leaves = Builder()
     top = plant_top(plant)
@@ -690,7 +692,7 @@ def leaf_part(spec, plant, places, rng, grow):
         # The card runs up and out along the pad's surface, as the twig that bears it does.
         out = Vector((p.x, p.y, 0))
         out = out.normalized() if out.length > 1e-3 else Vector((1, 0, 0))
-        along = out + Vector((0, 0, 0.8)) + Vector(rng.normal(0, 0.5, 3))
+        along = out + Vector((0, 0, spec.get('slant', 0.8))) + Vector(rng.normal(0, 0.5, 3))
         along = (along - facing * along.dot(facing))
         along = along.normalized() if along.length > 1e-3 else frame_of(facing)[0]
         size = spec['card'] * (0.8 + 0.4 * rng.random()) * grow

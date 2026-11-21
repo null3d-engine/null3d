@@ -2,30 +2,40 @@
 // keeps within what the particles take, with its hue, at the bright noon air.
 import { expect, test } from 'bun:test';
 import { MOODS } from '../../lib/stage';
-import { createDuskSky, DUSK_SKY, sprayLight } from './lights';
+import { createMoodSkies, MOOD_SKIES, sprayLight } from './lights';
 
-test('the dusk sky light shines in Dusk alone, eased in and out of it', () => {
+test("each mood's own sky light shines in that mood alone, eased in and out of it", () => {
 	const made: { skyColor: unknown; groundColor: unknown; intensity: number }[] = [];
-	let strength = Number.NaN;
+	const strengths: number[] = [];
 	const scene = {
 		createHemisphereLight: (options: (typeof made)[number]) => {
-			made.push(options);
-			return { setIntensity: (value: number) => (strength = value) };
+			const k = made.push(options) - 1;
+			strengths[k] = Number.NaN;
+			return { setIntensity: (value: number) => (strengths[k] = value) };
 		},
 	};
-	const sky = createDuskSky(scene as never);
-	expect(made).toHaveLength(1);
-	expect(made[0]?.skyColor).toEqual(DUSK_SKY.sky);
-	expect(made[0]?.groundColor).toEqual(DUSK_SKY.ground);
-	expect(made[0]?.intensity, 'dark until a look turns it up').toBe(0);
-	expect(DUSK_SKY.gain).toBeGreaterThan(0);
+	const skies = createMoodSkies(scene as never);
+	const entries = Object.entries(MOOD_SKIES);
+	expect(made).toHaveLength(entries.length);
+	entries.forEach(([, { sky, ground, gain }], k) => {
+		expect(made[k]?.skyColor).toEqual(sky);
+		expect(made[k]?.groundColor).toEqual(ground);
+		expect(made[k]?.intensity, 'dark until a look turns it up').toBe(0);
+		expect(gain).toBeGreaterThan(0);
+	});
 	for (const mood of MOODS) {
-		sky.setLook({ from: mood, to: mood, share: 0 });
-		if (mood === 'Dusk') expect(strength, 'the dusk light in Dusk').toBeCloseTo(DUSK_SKY.gain, 6);
-		else expect(strength, `the dusk light in ${mood}`).toBe(0);
+		skies.setLook({ from: mood, to: mood, share: 0 });
+		entries.forEach(([owner, { gain }], k) => {
+			const at = `the ${owner} light in ${mood}`;
+			if (owner === mood) expect(strengths[k], at).toBeCloseTo(gain, 6);
+			else expect(strengths[k], at).toBe(0);
+		});
 	}
-	sky.setLook({ from: 'Golden', to: 'Dusk', share: 0.5 });
-	expect(strength).toBeCloseTo(DUSK_SKY.gain / 2, 6);
+	skies.setLook({ from: 'Afternoon', to: 'Dusk', share: 0.5 });
+	expect(strengths[entries.findIndex(([m]) => m === 'Dusk')]).toBeCloseTo(
+		MOOD_SKIES.Dusk.gain / 2,
+		6,
+	);
 });
 
 test("the spray light keeps within one in each part, and keeps the air's hue at noon", () => {

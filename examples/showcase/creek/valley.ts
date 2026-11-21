@@ -8,7 +8,7 @@
 // into is left out, so no pass crosses a crown.
 import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { Noise, random } from '../../lib/procedural';
-import { gardenPlaces, underGarden } from './garden';
+import { gardenPlaces, terraceStones, underGarden } from './garden';
 import {
 	bearingOf,
 	gravelPlace,
@@ -19,6 +19,7 @@ import {
 	streamHalf,
 	streamZ,
 	TERRACE,
+	WATER,
 } from './land';
 import { SHOTS, WIDE } from './route';
 import { onSteps } from './steps';
@@ -30,20 +31,38 @@ export const SEED = 7;
 const PATCHES = new Noise(SEED);
 
 /** The trees that stand by hand: the three forms of the cloud-pruned pine. */
-export const TREE_KINDS = ['pine-tall', 'pine-narrow', 'pine-low'] as const;
+export const TREE_KINDS = ['pine-tall', 'pine-narrow', 'pine-low', 'maple'] as const;
 export type TreeKind = (typeof TREE_KINDS)[number];
 /** The ground cover that the rules place. */
-export const PLANT_KINDS = ['fern', 'hosta'] as const;
+export const PLANT_KINDS = [
+	'rim-conifer',
+	'clipped-shrub',
+	'azalea',
+	'autumn-clump',
+	'moss-cushion',
+	'fern',
+	'hosta',
+] as const;
 export type PlantKind = (typeof PLANT_KINDS)[number];
 
-/** The size of each model at scale 1: its height and the reach of its foliage about its foot. */
-export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number }> = {
-	'pine-tall': { height: 7.41, reach: 5.1 },
-	'pine-narrow': { height: 7.56, reach: 2.9 },
-	'pine-low': { height: 3.47, reach: 2.8 },
-	fern: { height: 0.77, reach: 0.82 },
-	hosta: { height: 0.52, reach: 0.6 },
-};
+/**
+ * The size of each model at scale 1: its height, the reach of its foliage across its broad side,
+ * and its reach toward and away from that side, as the pine helper's builds measure them.
+ */
+export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number; depth: number }> =
+	{
+		'pine-tall': { height: 6.87, reach: 5.4, depth: 3.15 },
+		'pine-narrow': { height: 7.74, reach: 2.81, depth: 2.3 },
+		'pine-low': { height: 3.63, reach: 2.59, depth: 1.66 },
+		maple: { height: 5.6, reach: 3.85, depth: 3.85 },
+		'rim-conifer': { height: 1.3, reach: 1.1, depth: 1.1 },
+		'clipped-shrub': { height: 1.3, reach: 0.79, depth: 0.79 },
+		azalea: { height: 0.67, reach: 0.9, depth: 0.9 },
+		'autumn-clump': { height: 0.6, reach: 1.1, depth: 1.1 },
+		'moss-cushion': { height: 0.25, reach: 0.72, depth: 0.72 },
+		fern: { height: 0.77, reach: 0.82, depth: 0.82 },
+		hosta: { height: 0.52, reach: 0.6, depth: 0.6 },
+	};
 
 /** How far a pine's trunk reaches about its foot at scale 1, in meters, the widest of the three. */
 export const TRUNK = 0.66;
@@ -69,11 +88,20 @@ export const SCALE: Readonly<Record<string, readonly [number, number]>> = {
 };
 
 /**
- * The ground cover's triangles at the finest and only level of its models, and the most that the
- * planting may draw of it. The ferns and hostas carry no lower levels, so the count holds them under
- * the budget until models with levels take their place.
+ * The ground cover's triangles at the finest level of each model, body and tufts together, and the
+ * most that the planting may hold at that level. Each model keeps two lower levels, so the camera
+ * draws far fewer: the budget bounds the planting as though every copy were near.
  */
-export const GROUND_TRIANGLES = { fern: 416, hosta: 560, budget: 25000 } as const;
+export const GROUND_TRIANGLES: Record<PlantKind, number> & { readonly budget: number } = {
+	'rim-conifer': 6148,
+	'clipped-shrub': 3174,
+	azalea: 2420,
+	'autumn-clump': 4096,
+	'moss-cushion': 384,
+	fern: 416,
+	hosta: 560,
+	budget: 320000,
+};
 
 /**
  * The trees, by hand where the concept has them, from the references helper's planting map: each
@@ -90,16 +118,16 @@ export const GROUND_TRIANGLES = { fern: 416, hosta: 560, budget: 25000 } as cons
  * gravel's moss islands.
  */
 export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
-	['P1', -16.2, 0, 'pine-tall', 1, 0.2],
-	['P2', -5.8, -16.6, 'pine-narrow', 1.05, -0.15],
-	['P3', 1.6, 22.2, 'pine-low', 0.9, 0.3],
-	['P4', 13.7, 8.6, 'pine-low', 1, -0.2],
-	['P5', 8.1, -21.6, 'pine-tall', 1.1, 0.1],
-	['P6', -0.2, -7.6, 'pine-low', 1.05, -0.25],
-	['P7', 18.3, -15.3, 'pine-tall', 0.59, 0.25],
-	['P8', 25.4, -1.9, 'pine-narrow', 0.44, -0.3],
-	['P10', 2, 5.3, 'pine-low', 0.37, 0.4],
-	['P11', 6.1, 7.1, 'pine-low', 0.2, -0.4],
+	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2],
+	['P2', -5.8, -16.6, 'pine-narrow', 1.03, -0.15],
+	['P3', 1.6, 22.2, 'pine-low', 0.86, 0.3],
+	['P4', 13.7, 8.6, 'pine-low', 0.96, -0.2],
+	['P5', 8.1, -21.6, 'pine-tall', 1.19, 0.1],
+	['P6', -0.2, -7.6, 'pine-low', 1, -0.25],
+	['P7', 18.3, -15.3, 'pine-tall', 0.64, 0.25],
+	['P8', 25.4, -1.9, 'pine-narrow', 0.43, -0.3],
+	['P10', 2, 5.3, 'pine-low', 0.35, 0.4],
+	['P11', 6.1, 7.1, 'pine-low', 0.19, -0.4],
 ];
 
 /**
@@ -113,36 +141,34 @@ export function broadSideToCamera(x: number, z: number): number {
 	return Math.atan2(dx, dz);
 }
 
+/** A maple's leaf color: red, orange or yellow, or bare, its leaves fallen. */
+export type MapleColor = 'red' | 'orange' | 'yellow' | 'bare';
+
 /**
- * The maples' and shrub-trees' places on the planting map, kept for when the maple model is
- * pinned: each one's label, its place and its color. M5 and S3 fall on the banks' stones and M9 on
- * the hill's rock, so each moves to the nearest growing ground when it stands.
+ * The maples' and shrub-trees' places on the planting map: each one's label, its place, its color
+ * and its crown's width in meters, which sets its size against the maple model's. M5 and S3 fall
+ * on the banks' stones and M9 on the hill's rock, so each moves to the nearest growing ground.
  */
-export const MAPLE_SPOTS: readonly (readonly [
-	string,
-	number,
-	number,
-	'red' | 'orange' | 'yellow' | 'bare',
-])[] = [
-	['M1', -7.8, -5.7, 'red'],
-	['M2', -15.5, -6.5, 'red'],
-	['M3', -20.7, 3.1, 'orange'],
-	['M4', -22.3, 8.6, 'bare'],
-	['M5', -13.4, 17.5, 'red'],
-	['M6', -5.8, 21.1, 'orange'],
-	['M7', 6.2, 22.9, 'red'],
-	['M8', 9.2, 22.1, 'yellow'],
-	['M9', 0.6, -16.4, 'orange'],
-	['M10', 2.7, -18.5, 'red'],
-	['M11', 12, -20.5, 'orange'],
-	['M12', 15, -19, 'bare'],
-	['M13', 19.9, -12.3, 'orange'],
-	['M14', 23, 2.1, 'yellow'],
-	['M15', 19.6, 4, 'red'],
-	['M16', -10.7, -12.4, 'red'],
-	['S1', -22.5, 5.2, 'red'],
-	['S2', 15.4, -18.6, 'red'],
-	['S3', 19.8, 14.2, 'orange'],
+export const MAPLE_SPOTS: readonly (readonly [string, number, number, MapleColor, number])[] = [
+	['M1', -7.8, -5.7, 'red', 9.8],
+	['M2', -15.5, -6.5, 'red', 3.6],
+	['M3', -20.7, 3.1, 'orange', 3.6],
+	['M4', -22.3, 8.6, 'bare', 3.1],
+	['M5', -13.4, 17.5, 'red', 5.1],
+	['M6', -5.8, 21.1, 'orange', 5.3],
+	['M7', 6.2, 22.9, 'red', 5.3],
+	['M8', 9.2, 22.1, 'yellow', 3.8],
+	['M9', 0.6, -16.4, 'orange', 9],
+	['M10', 2.7, -18.5, 'red', 6],
+	['M11', 12, -20.5, 'orange', 7],
+	['M12', 15, -19, 'bare', 6],
+	['M13', 19.9, -12.3, 'orange', 5.9],
+	['M14', 23, 2.1, 'yellow', 3.6],
+	['M15', 19.6, 4, 'red', 6.5],
+	['M16', -10.7, -12.4, 'red', 6.7],
+	['S1', -22.5, 5.2, 'red', 2.4],
+	['S2', 15.4, -18.6, 'red', 2.4],
+	['S3', 19.8, 14.2, 'orange', 2.4],
 ];
 
 /** One placed model: its kind, its foot on the ground, its turn about y and its size. */
@@ -153,6 +179,8 @@ export interface Spot<Kind extends string = string> {
 	readonly z: number;
 	readonly yaw: number;
 	readonly size: number;
+	/** A maple's leaf color. */
+	readonly color?: MapleColor;
 }
 
 /** The ground's measures that a rule reads, at one point. */
@@ -165,6 +193,10 @@ interface Ground {
 	readonly shade: number;
 	/** A slow wave over the garden, from 0 to 1, whose crests gather a kind into patches. */
 	readonly patch: number;
+	/** The distance inside the rim, in meters. */
+	readonly rim: number;
+	/** The ground's height over the water, in meters: the hill rises to about 5. */
+	readonly height: number;
 }
 
 /**
@@ -188,10 +220,53 @@ interface Rule {
 /**
  * The rules of the ground cover, in the order they place. A plant keeps its room from every plant
  * that stood before it, so the rules that place first take the best ground. The concept's low growth
- * gathers in clumps, never in even rows: hostas and ferns by the water where the patches gather
- * them, and ferns in the pines' shade.
+ * gathers in clumps, never in even rows, by the planting map's zones: dark conifer shrubs at the
+ * rims, clipped dark green shrubs and crimson azaleas on the moss lawns, mounds of mixed autumn
+ * shrubs over the hill and the right rim, hostas and ferns by the water where the patches gather
+ * them, ferns in the trees' shade, and last moss cushions on the low lawns and the gravel's islands
+ * between them.
  */
 const RULES: readonly Rule[] = [
+	{
+		kind: 'rim-conifer',
+		spacing: 3.5,
+		scale: [0.8, 1.2],
+		clump: [1, 1.8],
+		tolerances: [
+			['rim', 0.6, 1, 2.5, 4],
+			['patch', 0.48, 0.6, 1, 1.01],
+		],
+	},
+	{
+		kind: 'clipped-shrub',
+		spacing: 4,
+		scale: [0.8, 1.3],
+		clump: [0, 0],
+		tolerances: [
+			['water', 1, 2.5, 9, 13],
+			['patch', 0.44, 0.56, 1, 1.01],
+		],
+	},
+	{
+		kind: 'azalea',
+		spacing: 3.5,
+		scale: [0.7, 1.2],
+		clump: [1, 1.8],
+		tolerances: [
+			['water', 0.4, 1.2, 7, 10],
+			['patch', 0.25, 0.32, 0.5, 0.58],
+		],
+	},
+	{
+		kind: 'autumn-clump',
+		spacing: 3.45,
+		scale: [0.7, 1.2],
+		clump: [2, 1.8],
+		tolerances: [
+			['height', 0.8, 1.6, 8, 9],
+			['patch', 0.3, 0.45, 1, 1.01],
+		],
+	},
 	{
 		kind: 'hosta',
 		spacing: 1.8,
@@ -204,7 +279,7 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.6,
+		spacing: 2.4,
 		scale: [0.9, 1.4],
 		clump: [5, 1.3],
 		tolerances: [['shade', 0.1, 0.35, 1, 1.01]],
@@ -217,6 +292,16 @@ const RULES: readonly Rule[] = [
 		tolerances: [
 			['water', 0.2, 0.8, 3.5, 6],
 			['patch', 0.4, 0.6, 1, 1.01],
+		],
+	},
+	{
+		kind: 'moss-cushion',
+		spacing: 1.6,
+		scale: [0.6, 1.6],
+		clump: [2, 1.3],
+		tolerances: [
+			['water', 0.2, 0.6, 6, 9],
+			['height', -1, 0, 2.2, 3.2],
 		],
 	},
 ];
@@ -292,6 +377,8 @@ function groundAt(x: number, z: number, trees: readonly Spot[]): Ground {
 		slope,
 		shade,
 		patch: 0.5 + 0.5 * PATCHES.fbm2(x * 0.18, z * 0.18, 3),
+		rim: rimRadius(bearingOf(x, z)) - Math.hypot(x, z),
+		height: groundHeight(x, z) - WATER,
 	};
 }
 
@@ -312,27 +399,48 @@ export interface Solid {
 	readonly kind: string;
 	readonly x: number;
 	readonly z: number;
-	/** The reach about its foot, with the camera's clearance, in meters. */
-	readonly radius: number;
+	/** Its turn about y, along which its depth runs. */
+	readonly yaw: number;
+	/** Its reach across its broad side and along its turn, with any clearance, in meters. */
+	readonly reach: number;
+	readonly depth: number;
 	/** The height of its top, with the camera's clearance, in meters. */
 	readonly top: number;
 }
 
-/** The room that one placed model keeps. */
-export function solidOf(spot: Spot): Solid {
+/**
+ * A placed model's crown with a clearance round it: an upright cylinder over an ellipse, as wide as
+ * its broad side and as deep as its depth along its turn.
+ */
+export function crownOf(spot: Spot, clearance = 0): Solid {
 	const size = SIZES[spot.kind as keyof typeof SIZES];
 	return {
 		kind: spot.kind,
 		x: spot.x,
 		z: spot.z,
-		radius: size.reach * spot.size + CLEARANCE,
-		top: spot.y + size.height * spot.size + CLEARANCE,
+		yaw: spot.yaw,
+		reach: size.reach * spot.size + clearance,
+		depth: size.depth * spot.size + clearance,
+		top: spot.y + size.height * spot.size + clearance,
 	};
+}
+
+/** The room that one placed model keeps from the camera. */
+export function solidOf(spot: Spot): Solid {
+	return crownOf(spot, CLEARANCE);
+}
+
+/** True when a ground point lies under a solid: inside its ellipse. */
+export function underSolid(solid: Solid, x: number, z: number): boolean {
+	const [dx, dz] = [x - solid.x, z - solid.z];
+	const along = dx * Math.sin(solid.yaw) + dz * Math.cos(solid.yaw);
+	const across = dx * Math.cos(solid.yaw) - dz * Math.sin(solid.yaw);
+	return (across / solid.reach) ** 2 + (along / solid.depth) ** 2 < 1;
 }
 
 /** True when a route pose passes through a model's room. */
 export function hits(solid: Solid, pose: readonly [number, number, number]): boolean {
-	return pose[1] <= solid.top && Math.hypot(pose[0] - solid.x, pose[2] - solid.z) < solid.radius;
+	return pose[1] <= solid.top && underSolid(solid, pose[0], pose[2]);
 }
 
 /**
@@ -341,19 +449,21 @@ export function hits(solid: Solid, pose: readonly [number, number, number]): boo
  */
 export function blocksStatue(spot: Spot): boolean {
 	const { statue } = gardenPlaces();
-	const size = SIZES[spot.kind as keyof typeof SIZES];
-	const [reach, top] = [size.reach * spot.size, spot.y + size.height * spot.size];
+	const crown = crownOf(spot);
 	return STATUE_VIEW.some(([ox, oy, oz]) => {
-		const target = [statue.x + ox, statue.y + oy * statue.size, statue.z + oz];
-		const [dx, dz] = [(target[0] as number) - WIDE[0], (target[2] as number) - WIDE[2]];
-		// The nearest point of the line's ground track to the model's foot, and the line's height there.
-		const t = Math.min(
-			1,
-			Math.max(0, ((spot.x - WIDE[0]) * dx + (spot.z - WIDE[2]) * dz) / (dx * dx + dz * dz)),
-		);
-		const near = Math.hypot(WIDE[0] + dx * t - spot.x, WIDE[2] + dz * t - spot.z);
-		const height = WIDE[1] + ((target[1] as number) - WIDE[1]) * t;
-		return near < reach && height < top;
+		const target = [statue.x + ox, statue.y + oy * statue.size, statue.z + oz] as const;
+		// The line, sampled every 0.25 m, passes under the crown's top inside its ellipse.
+		const length = Math.hypot(target[0] - WIDE[0], target[1] - WIDE[1], target[2] - WIDE[2]);
+		for (let d = 0; d < length; d += 0.25) {
+			const t = d / length;
+			const y = WIDE[1] + (target[1] - WIDE[1]) * t;
+			if (
+				y < crown.top &&
+				underSolid(crown, WIDE[0] + (target[0] - WIDE[0]) * t, WIDE[2] + (target[2] - WIDE[2]) * t)
+			)
+				return true;
+		}
+		return false;
 	});
 }
 
@@ -361,6 +471,33 @@ export function blocksStatue(spot: Spot): boolean {
 export interface Valley {
 	readonly trees: readonly Spot<TreeKind>[];
 	readonly plants: readonly Spot<PlantKind>[];
+}
+
+/**
+ * The nearest point to a tree's mapped place where its trunk stands on growing ground, clear of the
+ * garden's models by its own reach, and where `fits` holds: the place itself when it does, else the
+ * first such point on rings about it, a quarter of a meter apart, out to 4 m, or undefined.
+ */
+function growingNear(
+	x: number,
+	z: number,
+	trunk: number,
+	fits: (x: number, z: number) => boolean,
+): [number, number] | undefined {
+	const { statue, gate, lanterns, rocks, ring } = gardenPlaces();
+	const models = [statue, gate, ...lanterns, ...rocks, ...ring, ...terraceStones()];
+	const clear = (px: number, pz: number) =>
+		!bare(px, pz) &&
+		models.every((m) => Math.hypot(px - m.x, pz - m.z) > m.reach + trunk) &&
+		fits(px, pz);
+	if (clear(x, z)) return [x, z];
+	for (let ring = 0.25; ring <= 4; ring += 0.25)
+		for (let k = 0; k < 24; k++) {
+			const turn = (k / 24) * Math.PI * 2;
+			const [px, pz] = [x + Math.cos(turn) * ring, z + Math.sin(turn) * ring];
+			if (clear(px, pz)) return [px, pz];
+		}
+	return undefined;
 }
 
 /**
@@ -377,7 +514,7 @@ export function placeValley(): Valley {
 		const solid = solidOf(spot);
 		return !route.some((pose) => hits(solid, pose));
 	};
-	const trees = TREES.map(
+	const pines = TREES.map(
 		([, x, z, kind, size, turn]): Spot<TreeKind> => ({
 			kind,
 			x,
@@ -386,7 +523,28 @@ export function placeValley(): Valley {
 			yaw: broadSideToCamera(x, z) + turn,
 			size,
 		}),
-	).filter(clearOfRoute);
+	);
+	// Each maple stands at the nearest growing ground to its mapped place that keeps the camera's
+	// route clear, at its mapped width, or a little smaller where the route passes close.
+	const maples = MAPLE_SPOTS.flatMap(([, mx, mz, color, width]): Spot<TreeKind>[] => {
+		const yaw = next() * Math.PI * 2;
+		for (const share of [1, 0.9, 0.8, 0.7]) {
+			const size = (width * share) / (2 * SIZES.maple.reach);
+			const at = (x: number, z: number): Spot<TreeKind> => ({
+				kind: 'maple',
+				x,
+				y: groundHeight(x, z) - 0.1,
+				z,
+				yaw,
+				size,
+				color,
+			});
+			const found = growingNear(mx, mz, TRUNK * size, (x, z) => clearOfRoute(at(x, z)));
+			if (found) return [at(found[0], found[1])];
+		}
+		return [];
+	});
+	const trees = [...pines.filter(clearOfRoute), ...maples];
 	/** The rooms that the placed ground cover keeps, and the trunks, which nothing grows through. */
 	const taken: { x: number; z: number; r: number }[] = trees.map(({ x, z }) => ({ x, z, r: 0.8 }));
 	const plants: Spot<PlantKind>[] = [];
@@ -438,7 +596,7 @@ export function placeValley(): Valley {
  * The room that every placed model keeps, which the camera's route must miss.
  *
  * @param valley The models that `placeValley` placed.
- * @returns One cylinder for each tree and plant.
+ * @returns One upright cylinder over an ellipse for each tree and plant.
  */
 export function valleySolids(valley: Valley): Solid[] {
 	return [...valley.trees, ...valley.plants].map(solidOf);

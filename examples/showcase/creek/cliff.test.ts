@@ -118,6 +118,17 @@ test('under each lip the rock follows the falling water down, close behind its b
 	const { rim } = landArrays(160);
 	const wall = wallArrays(rim).positions as Float32Array;
 	const columns = rim.length / 3 + 1;
+	// The wall's columns stand about this far apart round the rim, so the water's drawn width holds
+	// its share of them, whatever its width.
+	let rimLength = 0;
+	for (let k = 0; k < columns - 1; k++) {
+		const [a, b] = [k * 3, ((k + 1) % (columns - 1)) * 3];
+		rimLength += Math.hypot(
+			(rim[b] as number) - (rim[a] as number),
+			(rim[b + 2] as number) - (rim[a + 2] as number),
+		);
+	}
+	const spacing = rimLength / (columns - 1);
 	const rows = wall.length / 3 / columns;
 	const path: [number, number] = [0, 0];
 	const brink: [number, number] = [0, 0];
@@ -152,7 +163,12 @@ test('under each lip the rock follows the falling water down, close behind its b
 				}
 			}
 			const at = `the ${away < 0 ? 'west' : 'east'} lip, ${depth} m down`;
-			expect(gaps.length, `${at}: rock under the fall`).toBeGreaterThan(4);
+			// Most of the columns that the water's width spans, and at least two, stand under it.
+			const spanned = (2 * width) / spacing;
+			expect(
+				gaps.length,
+				`${at}: rock under the fall, of about ${spanned.toFixed(1)} columns`,
+			).toBeGreaterThanOrEqual(Math.max(2, Math.floor(spanned * 0.75)));
 			// The water clears the rock everywhere across, and the rock leans back from it nowhere.
 			expect(Math.min(...gaps), `${at}: the nearest rock`).toBeGreaterThan(0.25);
 			gaps.sort((p, q) => p - q);

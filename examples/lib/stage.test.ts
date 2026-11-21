@@ -29,6 +29,7 @@ function staged(overrides: Partial<StageOptions> = {}) {
 			sunGlow: number;
 			height?: number;
 			heightFalloff?: number;
+			curve?: string;
 		} | null;
 		dir?: readonly number[];
 		exposure?: number;
@@ -135,6 +136,41 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test("a scene's fog curve holds through the hours, and the studio's fog stays exponential", () => {
+	const { stage, last, frames } = staged({ fogCurve: 'exp2' });
+	stage.set('Midday');
+	frames(240);
+	expect(last.fog?.curve).toBe('exp2');
+	stage.set('Studio');
+	expect(last.fog?.curve).toBe('exponential');
+	stage.set('Dawn');
+	frames(240);
+	expect(last.fog?.curve).toBe('exp2');
+	const plain = staged();
+	plain.stage.set('Midday');
+	plain.frames(240);
+	expect(plain.last.fog?.curve).toBeUndefined();
+});
+
+test("a scene's grey fog keeps the air's brightness and drops its tint, and the air keeps its color", () => {
+	const plain = staged();
+	const grey = staged({ fogGrey: 1 });
+	for (const { stage, frames } of [plain, grey]) {
+		stage.set('Midday');
+		frames(240);
+	}
+	const luma = (c: readonly number[]) =>
+		0.2126 * (c[0] as number) + 0.7152 * (c[1] as number) + 0.0722 * (c[2] as number);
+	const air = plain.last.fog?.color as readonly number[];
+	const fog = grey.last.fog?.color as readonly number[];
+	// The plain fog is the air's color, with its tint.
+	expect(Math.max(...air) - Math.min(...air)).toBeGreaterThan(0.005);
+	for (let k = 0; k < 3; k++) expect(air[k]).toBeCloseTo(plain.stage.airColor[k] as number, 4);
+	// The grey fog is the air's brightness with no tint, and the air the scene reads keeps its color.
+	for (let k = 0; k < 3; k++) expect(fog[k]).toBeCloseTo(luma(air), 4);
+	for (let k = 0; k < 3; k++) expect(grey.stage.airColor[k]).toBeCloseTo(air[k] as number, 4);
 });
 
 test("a scene's fog that thins with height holds through the hours, and the studio's stays even", () => {

@@ -24,8 +24,8 @@ const MIST_ARMS = [
 	{ from: LIPS.west, to: POOL.x },
 	{ from: POOL.x, to: LIPS.east },
 ] as const;
-/** The mist's puffs over each meter of creek, and how long each lives. */
-const MIST_PER_METER = 1.5;
+/** The mist's wisps over each meter of creek, and how long each lives. */
+const MIST_PER_METER = 1.2;
 const MIST_LIFE: readonly [number, number] = [14, 22];
 
 /** A crown that leaves fall from: its middle on the ground, its height and its reach. */
@@ -50,7 +50,7 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 		leaves: [0.8, 0.82, 0.9],
 		motes: [0.6, 0.5, 0.4],
 		mist: [0.7, 0.72, 0.85],
-		mistOpacity: 0.35,
+		mistOpacity: 0.2,
 	},
 	Morning: {
 		leaves: [0.95, 1, 0.9],
@@ -174,10 +174,11 @@ export async function createAir(
 			}),
 		),
 	);
-	// Mist: broad puffs that lie low over each arm of the water and drift downstream with its
-	// current, in each mood's own color. The creek runs nearly straight along x between the pool
-	// and each lip, so one bank covers an arm: a box over the arm's course, moving at the arm's
-	// mean current.
+	// Mist: thin, broken wisps that lie flat on each arm of the water, long and turned every way,
+	// and drift downstream with its current, in each mood's own color. Flat on the water, they read
+	// as a low sheet from far off and fade where they meet the banks, with no round puff standing
+	// over the creek. The creek runs nearly straight along x between the pool and each lip, so one
+	// bank covers an arm: a box over the arm's course, moving at the arm's mean current.
 	const smoke = particleTextures.smoke(textures);
 	const mist = await Promise.all(
 		MIST_ARMS.map(({ from, to }, k) => {
@@ -202,13 +203,17 @@ export async function createAir(
 				...air,
 				...smoke,
 				seed: 73 + k,
-				position: [(from + to) / 2, WATER + 0.5, z],
-				shape: { type: 'box', size: [length, 0.5, 4 + high - low] },
+				position: [(from + to) / 2, WATER + 0.3, z],
+				shape: { type: 'box', size: [length, 0.25, 4 + high - low] },
 				rate: (MIST_PER_METER * length) / MIST_LIFE[1],
 				lifetime: MIST_LIFE,
 				speed: [0, 0],
 				velocity: [vx * 0.4, 0, vz * 0.4],
-				size: [1.5, 3],
+				facing: 'ground',
+				rotation: [0, Math.PI * 2],
+				size: [3, 6],
+				aspect: 0.4,
+				softness: 0.4,
 				alphaOverLife: [0, 1, 1, 0],
 				blending: 'normal',
 			});
