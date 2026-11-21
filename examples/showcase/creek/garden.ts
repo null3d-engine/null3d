@@ -102,6 +102,8 @@ const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
  * as large against the garden from the opening view as the concept's does.
  */
 const STATUE_SIZE = 0.97;
+/** The cool tint over the slab's warm texture, which leaves its stone a light grey. */
+const SLAB_TINT = '#e0ecfc';
 /** How far the slab model's rim stands below its own origin, in meters at its own size. */
 const SLAB_FOOT = 0.05;
 /**
@@ -417,7 +419,7 @@ function wallLines(ledge: Ledge, fixed: readonly Placed[]): TerracePoint[][] {
 }
 
 /** A stone of a terrace wall: where it stands, its turn about y and its small tilt, and its size. */
-export interface TerraceStone extends Stand {
+export interface TerraceStone extends Placed {
 	/** The stone's tilt about its long and its short side, in radians. */
 	readonly tilt: readonly [number, number];
 	/** Whether it lies in the top course, on the rows under it, rather than on the ground. */
@@ -479,6 +481,7 @@ export function terraceStones(): TerraceStone[] {
 						Math.PI / 2 +
 						(next() - 0.5) * 0.3,
 					size,
+					reach,
 					tilt: [(next() - 0.5) * 0.12, (next() - 0.5) * 0.12],
 					capping: row === 'top',
 				});
@@ -686,7 +689,9 @@ export function createGarden(
 		castShadows: true,
 		receiveShadows: true,
 	});
-	standPart(ctx, models.slab, [places.statue], models.slab.material);
+	// The slab's stone reads grey, as the concept's does, under a cool tint over its warm texture,
+	// on a copy of its material, which it shares with the statue.
+	standPart(ctx, models.slab, [places.statue], tintedPart(materials, models.slab, SLAB_TINT, 0.85));
 	standPart(ctx, models.statue, [places.statue], models.statue.material);
 	standPart(ctx, models.gate, [places.gate], models.gate.material);
 	standPart(ctx, models.dragon, places.dragons, models.dragon.material);
@@ -747,7 +752,7 @@ export function underGarden(x: number, z: number): boolean {
 			...places.lanterns,
 			...places.rocks,
 			...places.ring,
-			...terraceStones().map((stone) => ({ ...stone, reach: stone.size * TERRACE_WALLS.reach })),
+			...terraceStones(),
 		];
 	}
 	return feetList.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);

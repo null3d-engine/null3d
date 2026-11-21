@@ -23,7 +23,13 @@ function staged(overrides: Partial<StageOptions> = {}) {
 		background?: unknown;
 		backgroundOptions?: { intensity?: number };
 		environment?: unknown;
-		fog?: { color: readonly number[]; density: number; sunGlow: number } | null;
+		fog?: {
+			color: readonly number[];
+			density: number;
+			sunGlow: number;
+			height?: number;
+			heightFalloff?: number;
+		} | null;
 		dir?: readonly number[];
 		exposure?: number;
 		sunIntensity?: number;
@@ -36,8 +42,8 @@ function staged(overrides: Partial<StageOptions> = {}) {
 		setEnvironment: (environment: unknown) => {
 			last.environment = environment;
 		},
-		setFog: (fog: { color: readonly number[]; density: number; sunGlow: number } | null) => {
-			last.fog = fog;
+		setFog: (fog: typeof last.fog) => {
+			last.fog = fog && { ...fog };
 		},
 	};
 	const sun = {
@@ -129,6 +135,62 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test("a scene's grey sun at golden hour keeps its brightness and loses its tint, and midday keeps its own", () => {
+	const plain = staged();
+	const grey = staged({ sunGrey: { Golden: 1 } });
+	const colors = (mood: Mood) =>
+		[plain, grey].map(({ stage, frames }) => {
+			stage.set(mood);
+			frames(240);
+			return [...stage.light.color];
+		});
+	const luma = (c: readonly number[]) =>
+		0.2126 * (c[0] as number) + 0.7152 * (c[1] as number) + 0.0722 * (c[2] as number);
+	const [warm, greyed] = colors('Golden') as [number[], number[]];
+	expect(Math.max(...warm) - Math.min(...warm), 'the golden sun is warm').toBeGreaterThan(0.05);
+	expect(Math.max(...greyed) - Math.min(...greyed), 'the grey sun has no tint').toBeLessThan(0.01);
+	expect(luma(greyed)).toBeCloseTo(luma(warm), 3);
+	const [noon, noonGrey] = colors('Midday') as [number[], number[]];
+	for (let k = 0; k < 3; k++) expect(noonGrey[k]).toBeCloseTo(noon[k] as number, 4);
+});
+
+test("a scene's grey fog keeps the air's brightness and drops its tint, and the air keeps its color", () => {
+	const plain = staged();
+	const grey = staged({ fogGrey: 1 });
+	for (const { stage, frames } of [plain, grey]) {
+		stage.set('Midday');
+		frames(240);
+	}
+	const luma = (c: readonly number[]) =>
+		0.2126 * (c[0] as number) + 0.7152 * (c[1] as number) + 0.0722 * (c[2] as number);
+	const air = plain.last.fog?.color as readonly number[];
+	const fog = grey.last.fog?.color as readonly number[];
+	// The plain fog is the air's color, with its tint.
+	expect(Math.max(...air) - Math.min(...air)).toBeGreaterThan(0.005);
+	for (let k = 0; k < 3; k++) expect(air[k]).toBeCloseTo(plain.stage.airColor[k] as number, 4);
+	// The grey fog is the air's brightness with no tint, and the air the scene reads keeps its color.
+	for (let k = 0; k < 3; k++) expect(fog[k]).toBeCloseTo(luma(air), 4);
+	for (let k = 0; k < 3; k++) expect(grey.stage.airColor[k]).toBeCloseTo(air[k] as number, 4);
+});
+
+test("a scene's fog that thins with height holds through the hours, and the studio's stays even", () => {
+	const { stage, last, frames } = staged({ fogHeight: { height: -10, falloff: 0.3 } });
+	stage.set('Midday');
+	frames(240);
+	expect(last.fog?.height).toBe(-10);
+	expect(last.fog?.heightFalloff).toBe(0.3);
+	stage.set('Studio');
+	expect(last.fog?.heightFalloff).toBe(0);
+	stage.set('Dawn');
+	frames(240);
+	expect(last.fog?.heightFalloff).toBe(0.3);
+	// A scene that asks for none keeps an even fog.
+	const even = staged();
+	even.stage.set('Midday');
+	even.frames(240);
+	expect(even.last.fog?.heightFalloff ?? 0).toBe(0);
 });
 
 test('the light travels downward from above through every fixed mood', () => {

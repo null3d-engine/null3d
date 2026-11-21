@@ -35,6 +35,16 @@ export const OVER_WATER = 0.5;
  */
 export const LIPS = { west: -20.3, east: 20 } as const;
 /**
+ * Each lip's fall: how far it drops, so its mist bursts just above the cloud's tops; how far each
+ * side widens per meter fallen, so it fans out down the drop; the share of the creek's half width
+ * that leaves over the lip: the water that shows there, between the lip's shoulders; how far up the
+ * creek its water starts, in meters, so it covers the river's square end and piles froth toward the
+ * brink; and the speed at which it leaves the lip, in meters a second: slower than the creek's
+ * current there, so it drops near upright, close to the rock under the lip, as the concept's falls
+ * do.
+ */
+export const FALL = { drop: 17, spread: 0.12, width: 0.9, apron: 2.5, speed: 0.3 } as const;
+/**
  * A bay in the rim beside the west lip, on the side toward the opening view: its bearing, its depth
  * and its half width in radians. It keeps the near wall from hiding the west fall from the concept's
  * camera, so the fall shows in profile, as in the concept picture.
@@ -579,13 +589,13 @@ export function cameraFloor(x: number, z: number): number {
 }
 
 /** Linear colors of the ground: golden-olive moss, its darker and browner patches, soil and rock. */
-const MOSS = [0.15, 0.105, 0.007];
-const MOSS_DARK = [0.065, 0.053, 0.005];
-const MOSS_BROWN = [0.115, 0.072, 0.007];
+const MOSS = [0.195, 0.142, 0.012];
+const MOSS_DARK = [0.085, 0.07, 0.005];
+const MOSS_BROWN = [0.15, 0.099, 0.009];
 /** The light, yellow-green moss in the sunnier patches. */
-const MOSS_LIGHT = [0.2, 0.15, 0.011];
+const MOSS_LIGHT = [0.26, 0.202, 0.016];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
-const MOSS_BRIGHT = [0.19, 0.143, 0.008];
+const MOSS_BRIGHT = [0.247, 0.192, 0.016];
 const BED = [0.42, 0.385, 0.315];
 const BED_POOL = [0.14, 0.13, 0.1];
 const MUD = [0.06, 0.05, 0.035];

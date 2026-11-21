@@ -51,15 +51,16 @@ export const TRUNK = 0.66;
 /**
  * The scale table of the placed pines: each one's height, in meters, from the least to the most,
  * as the concept and the fidelity rulings ask. The two tall pines stand 7 to 8 m and the low pines
- * 2.8 to 3.7 m; the narrow pine behind the statue, seen over its shoulders, the two small pines on
- * the right hillside and the clipped tiny pines on the gravel's islands take rows of their own.
+ * 2.8 to 3.7 m; the tall pine close behind the statue, whose pads stand beside its head, the two
+ * small pines on the right hillside and the clipped tiny pines on the gravel's islands take rows of
+ * their own.
  */
 export const SCALE: Readonly<Record<string, readonly [number, number]>> = {
 	P1: [7, 8],
 	P2: [7, 8],
 	P3: [2.8, 3.7],
 	P4: [2.8, 3.7],
-	P5: [9.5, 10.5],
+	P5: [7.5, 9],
 	P6: [2.8, 3.7],
 	P7: [4, 5],
 	P8: [3, 3.7],
@@ -81,17 +82,19 @@ export const GROUND_TRIANGLES = { fern: 416, hosta: 560, budget: 25000 } as cons
  * land by landmarks, then onto the ground through the opening camera. P1 is the tall pine beyond
  * the gravel's west end, P2 the tall narrow pine on the hill's top left, P3 leans over the front
  * lantern, P4 stands at the lower flight's foot with the gate's right lantern above it, its crown
- * over the steps' edge as the concept's is, and P6 at the hill's left foot. P5 stands behind the
- * statue, a narrow pine taller than the rest, so its crown shows as a dark mass beside the statue's
- * head. P7 and P8 are small on the right hillside, a little inside the rim, P7 in the tall pine's
- * form, wider than tall; and P10 and P11 are the clipped tiny pines on the gravel's moss islands.
+ * over the steps' edge as the concept's is, and P6 at the hill's left foot. P5 stands close behind
+ * the statue in the tall pine's flat-topped form, a little larger than the other tall pines and a
+ * little left of the head from the opening camera, so its upper pads stand beside the head on both
+ * sides and none above it. P7 and P8 are small on the right hillside, a little inside the rim, P7
+ * in the tall pine's form, wider than tall; and P10 and P11 are the clipped tiny pines on the
+ * gravel's moss islands.
  */
 export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
 	['P1', -16.2, 0, 'pine-tall', 1, 0.2],
 	['P2', -5.8, -16.6, 'pine-narrow', 1.05, -0.15],
 	['P3', 1.6, 22.2, 'pine-low', 0.9, 0.3],
 	['P4', 13.7, 8.6, 'pine-low', 1, -0.2],
-	['P5', 8.4, -22.4, 'pine-narrow', 1.35, 0.1],
+	['P5', 8.1, -21.6, 'pine-tall', 1.1, 0.1],
 	['P6', -0.2, -7.6, 'pine-low', 1.05, -0.25],
 	['P7', 18.3, -15.3, 'pine-tall', 0.59, 0.25],
 	['P8', 25.4, -1.9, 'pine-narrow', 0.44, -0.3],
