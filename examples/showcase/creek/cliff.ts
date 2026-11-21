@@ -79,9 +79,29 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	out.occlusion = (0.9 + 0.1 * smoothstep(broad, -0.3, 0.3)) * (1 - 0.45 * pits);
 }
 
-/** The cliff rock's texture maps: pitted, mottled, warm stone with no line drawn on it. */
-export const rockMaps = (textures: SketchContext['textures'], size: number) =>
-	textureSet(textures, size, rockTexel);
+/** The rock maps already made, by the scene's texture factory and their size. */
+const madeMaps = new WeakMap<object, Map<number, ReturnType<typeof textureSet>>>();
+
+/**
+ * The cliff rock's texture maps: pitted, mottled, warm stone with no line drawn on it. The walls,
+ * the steps and the statue's ledge share one set of each size, made once.
+ */
+export function rockMaps(
+	textures: SketchContext['textures'],
+	size: number,
+): ReturnType<typeof textureSet> {
+	let sizes = madeMaps.get(textures);
+	if (!sizes) {
+		sizes = new Map();
+		madeMaps.set(textures, sizes);
+	}
+	let maps = sizes.get(size);
+	if (!maps) {
+		maps = textureSet(textures, size, rockTexel);
+		sizes.set(size, maps);
+	}
+	return maps;
+}
 
 /** One block of a pillar: its foot below the rim, how far it stands out, and its face's tilt. */
 interface Block {

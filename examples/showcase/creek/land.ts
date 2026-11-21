@@ -316,29 +316,46 @@ function hill(x: number, z: number): number {
 
 /** The height of the dry land at a point, before the creek's channel cuts it. */
 /**
- * The paved landing on the ridge where the gate stands, between the lower and upper flights of
- * steps: its middle, its level radius and the meters over which it blends into the slope.
+ * The level landing on the ridge where the gate stands with a lantern on each side, between the
+ * lower and upper flights of steps: its middle, its level radius, wide enough for both lanterns'
+ * feet, and the meters over which it blends into the slope.
  */
-export const LANDING = { x: 11.2, z: 2.5, radius: 3.6, blend: 1.8 } as const;
+export const LANDING = { x: 11.2, z: 2.5, radius: 5, blend: 1.8 } as const;
 /** The landing's height: the slope's own height at its middle, found once. */
 let landingHeight: number | undefined;
 
 /**
- * The flights of steps from the creek's far bank up to the terrace, about 29 steps in three flights as
- * the concept picture has them: a lower flight on a diagonal from the bank to the front of the
- * gate's landing, then from the landing's back two flights straight up the ridge toward the statue,
- * with a short level rest between them. The lower flight's foot on the bank; the steps' half width;
- * the steps in each flight, from the bottom; the rest's length; and how far the ground beside the
- * steps keeps their level before it blends back into the slope, in meters.
+ * The flights of steps from the creek's far bank up to the terrace, about 29 steps as the concept
+ * picture has them: a lower flight on a diagonal from the bank to the gate's front; behind the gate a
+ * few steps that turn the route; and two flights straight down from the statue, with a short level
+ * rest between them, which leave the statue along its own facing, off the gate's line, so the route
+ * bends back to the gate. The lower flight's foot on the bank; the steps' half width; how far the
+ * steps run from the landing's middle to the gate's front and to its back; how far the statue's
+ * flights reach from its middle before the turn; the steps in each flight, from the bottom; the
+ * rest's length; and how far the ground beside the steps keeps their level before it blends back
+ * into the slope, in meters.
  */
 export const STAIRS = {
 	foot: [9.4, 10.6],
 	half: 1,
-	steps: [11, 9, 9],
+	gate: 3.24,
+	reach: 13.4,
+	steps: [11, 3, 8, 7],
 	rest: 1.2,
 	keep: 0.5,
 	blend: 1.4,
 } as const;
+
+/**
+ * The turn of the statue's facing to its own right from the line down the ridge to the gate, in
+ * radians: it faces the camera from about 20 degrees off its line, as the concept's does, and its
+ * flights leave it along that facing.
+ */
+export const STATUE_TURN = (15 * Math.PI) / 180;
+
+/** The statue's facing, as a turn about y from +z: down its flights, off the gate's line. */
+export const statueYaw = () =>
+	Math.atan2(LANDING.x - TERRACE.x, LANDING.z - TERRACE.z) - STATUE_TURN;
 
 /** One flight of steps: where it starts and ends on the ground, its height at each end and its steps. */
 export interface Flight {
@@ -351,37 +368,46 @@ export interface Flight {
 
 let flightList: readonly Flight[] | undefined;
 
-/** The three flights, found once: their ends from the landing and the terrace, their heights from the slope. */
+/**
+ * The four flights, found once: their ends from the landing, the gate's line and the statue's
+ * facing, their heights from the slope and an even rise.
+ */
 export function flights(): readonly Flight[] {
 	if (flightList) return flightList;
 	const length = Math.hypot(LANDING.x - TERRACE.x, LANDING.z - TERRACE.z);
-	// The gate's axis, from the landing's middle up the ridge to the statue; a point on it by its
-	// distance from the landing's middle.
+	// The gate's line, from the landing's middle up the ridge toward the statue.
 	const [ax, az] = [(TERRACE.x - LANDING.x) / length, (TERRACE.z - LANDING.z) / length];
-	const on = (d: number): [number, number] => [LANDING.x + ax * d, LANDING.z + az * d];
-	const reach = LANDING.radius * 0.9;
-	const head = length - (TERRACE.top - 0.6);
-	const middle = (reach + head) / 2;
+	const front: [number, number] = [LANDING.x - ax * STAIRS.gate, LANDING.z - az * STAIRS.gate];
+	const back: [number, number] = [LANDING.x + ax * STAIRS.gate, LANDING.z + az * STAIRS.gate];
+	// The statue's flights, along its facing from its middle out to the turn.
+	const yaw = statueYaw();
+	const [fx, fz] = [Math.sin(yaw), Math.cos(yaw)];
+	const down = (d: number): [number, number] => [TERRACE.x + fx * d, TERRACE.z + fz * d];
+	const head = TERRACE.top - 0.6;
+	const middle = (STAIRS.reach + head) / 2;
 	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
 	const top = slopeHeight(TERRACE.x, TERRACE.z);
-	const [, first, second] = STAIRS.steps;
-	const rest = landingHeight + ((top - landingHeight) * first) / (first + second);
+	const [lower, turn, first, second] = STAIRS.steps;
+	const rise = (top - landingHeight) / (turn + first + second);
+	const turned = landingHeight + rise * turn;
+	const rest = turned + rise * first;
 	flightList = [
 		{
 			from: STAIRS.foot,
-			to: on(-reach),
+			to: front,
 			low: slopeHeight(STAIRS.foot[0], STAIRS.foot[1]),
 			high: landingHeight,
-			steps: STAIRS.steps[0],
+			steps: lower,
 		},
+		{ from: back, to: down(STAIRS.reach), low: landingHeight, high: turned, steps: turn },
 		{
-			from: on(reach),
-			to: on(middle - STAIRS.rest / 2),
-			low: landingHeight,
+			from: down(STAIRS.reach),
+			to: down(middle + STAIRS.rest / 2),
+			low: turned,
 			high: rest,
 			steps: first,
 		},
-		{ from: on(middle + STAIRS.rest / 2), to: on(head), low: rest, high: top, steps: second },
+		{ from: down(middle - STAIRS.rest / 2), to: down(head), low: rest, high: top, steps: second },
 	];
 	return flightList;
 }
@@ -423,7 +449,10 @@ function landHeight(x: number, z: number): number {
 		height += (landingHeight - height) * level;
 	}
 	// Under each flight the ground runs as an even ramp from its foot to its head, which the steps
-	// sit on, and it blends back into the slope beside it and past its ends.
+	// sit on, and it blends back into the slope beside it and past its ends. Where two flights meet
+	// at a turn, each holds the ground beside it, so every tread stays above its ground and every
+	// slab's body below it.
+	let ramp: { height: number; share: number; beside: boolean; side: number } | undefined;
 	for (const flight of flights()) {
 		const { t, side } = alongFlight(flight, x, z);
 		const length = Math.hypot(flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]);
@@ -432,9 +461,17 @@ function landHeight(x: number, z: number): number {
 		const share =
 			(1 - smoothstep(side, keep, keep + STAIRS.blend)) * (1 - smoothstep(past, 0, STAIRS.blend));
 		if (share <= 0) continue;
-		const ramp = flight.low + (flight.high - flight.low) * Math.min(Math.max(t, 0), 1);
-		height += (ramp - height) * share;
+		const level = flight.low + (flight.high - flight.low) * Math.min(Math.max(t, 0), 1);
+		// A flight that the point lies beside holds it over one that the point lies past, and of two
+		// that it lies beside, the one whose line it lies nearer.
+		const beside = t >= 0 && t <= 1;
+		const better =
+			!ramp ||
+			(beside && !ramp.beside) ||
+			(beside === ramp.beside && (beside ? side < ramp.side : share > ramp.share));
+		if (better) ramp = { height: level, share, beside, side };
 	}
+	if (ramp) height += (ramp.height - height) * ramp.share;
 	return height;
 }
 
@@ -520,8 +557,8 @@ export function cameraFloor(x: number, z: number): number {
 const MOSS = [0.17, 0.135, 0.035];
 const MOSS_DARK = [0.075, 0.075, 0.03];
 const MOSS_BROWN = [0.12, 0.085, 0.035];
-/** The bright moss in the band beside each flight of steps, between the slabs and the side walls. */
-const MOSS_BRIGHT = [0.17, 0.23, 0.036];
+/** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
+const MOSS_BRIGHT = [0.2, 0.175, 0.036];
 const BED = [0.42, 0.385, 0.315];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
