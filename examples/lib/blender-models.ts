@@ -74,18 +74,27 @@ export function placedTurned(
 }
 
 /**
- * A copy of a part's material that draws its colour and normal maps under a tint and a roughness of
- * its own, such as one that mutes a model's moss.
+ * A copy of a part's material that draws the file's maps under a tint and a roughness of its own,
+ * such as one that mutes a model's moss: its colour and normal maps, the packed texture that holds
+ * its occlusion with its metalness and roughness, and the normal scale that the loader gives a mesh
+ * without tangents. Only the colour and the roughness are overridden.
  */
 export function tintedPart(
 	materials: SketchContext['materials'],
 	part: Part,
 	tint: string,
 	roughness: number,
+	normalScale: readonly [number, number] = [1, -1],
 ): Material {
 	return materials.standard({
 		...(part.maps.map && { map: part.maps.map }),
 		...(part.maps.normalMap && { normalMap: part.maps.normalMap }),
+		// The scripts pack the occlusion with the metalness and roughness, in one texture.
+		...(part.maps.metalnessRoughnessMap && {
+			metalnessRoughnessMap: part.maps.metalnessRoughnessMap,
+		}),
+		...(part.maps.aoMap && { aoMap: part.maps.aoMap }),
+		normalScale,
 		color: tint,
 		roughness,
 	});

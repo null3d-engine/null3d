@@ -88,57 +88,152 @@ export const SCALE: Readonly<Record<string, readonly [number, number]>> = {
 };
 
 /**
- * Each ground plant's parts: their triangles at each of their three levels, and the distances from
- * the camera, in meters, at which a copy of scale 1 switches to its next level, as the cloud
- * helper's builds measure them at the opening camera's resolution. A copy of another scale switches
- * at that many times the distance.
+ * The height, in pixels, of the render that the levels' switch table encodes at High's one-pixel
+ * threshold. The table's switches are the distances at which the pinned model switches, worked out
+ * the engine's own way: its error times the part's node scale times this height and the camera's
+ * `p11` over two. A copy of another scale switches at that many times the distance, and a render of
+ * another height at its share of this one.
+ */
+export const LEVEL_RULER = 1080;
+
+/** `1 / tan(fov / 2)` for the camera's 45 degree vertical field of view, as the engine's rule takes it. */
+const P11 = 1 / Math.tan((22.5 * Math.PI) / 180);
+
+/**
+ * Each ground plant's parts: their triangles at each of their three levels; the distances at which a
+ * copy of scale 1 switches to its next level on the ruler above; and its bounding sphere, its centre
+ * in meters from the model's foot and its radius, both at scale 1, which the engine measures its
+ * levels from. All of them are read from the pinned models' own bounds, node scales and
+ * `NULL3D_lod_error` values.
  */
 export const GROUND_LEVELS: Record<
 	PlantKind,
 	readonly {
 		readonly triangles: readonly [number, number, number];
 		readonly switches: readonly [number, number];
+		readonly offset: readonly [number, number, number];
+		readonly radius: number;
 	}[]
 > = {
 	'rim-conifer': [
-		{ triangles: [1408, 938, 804], switches: [40, 47] },
-		{ triangles: [4740, 2372, 1188], switches: [69, 123] },
+		{
+			triangles: [1088, 722, 618],
+			switches: [40.5, 47.1],
+			offset: [1.1672, 0.6272, 1.0245],
+			radius: 1.6749,
+		},
+		{
+			triangles: [4708, 2356, 1180],
+			switches: [70, 117.7],
+			offset: [1.8432, 1.1522, 1.7993],
+			radius: 2.4945,
+		},
 	],
 	'clipped-shrub': [
-		{ triangles: [534, 330, 256], switches: [79, 105] },
-		{ triangles: [2640, 1320, 660], switches: [61, 99] },
+		{
+			triangles: [534, 330, 256],
+			switches: [79.7, 105.5],
+			offset: [0.8001, 0.5452, 0.7822],
+			radius: 1.2221,
+		},
+		{
+			triangles: [2640, 1320, 660],
+			switches: [61.5, 98.9],
+			offset: [0.8892, 0.5459, 0.8345],
+			radius: 1.3097,
+		},
 	],
 	azalea: [
-		{ triangles: [852, 498, 394], switches: [79, 93] },
-		{ triangles: [1568, 784, 392], switches: [72, 114] },
+		{
+			triangles: [852, 498, 394],
+			switches: [79.7, 93.2],
+			offset: [0.8318, 0.3577, 0.789],
+			radius: 1.1929,
+		},
+		{
+			triangles: [1568, 784, 392],
+			switches: [62.4, 97.5],
+			offset: [0.8991, 0.381, 0.8814],
+			radius: 1.2913,
+		},
 	],
 	'autumn-clump': [
-		{ triangles: [1744, 1154, 724], switches: [55, 77] },
-		{ triangles: [2352, 1176, 588], switches: [55, 80] },
+		{
+			triangles: [1744, 1154, 724],
+			switches: [55, 77.3],
+			offset: [0.8604, 0.3131, 0.8513],
+			radius: 1.2425,
+		},
+		{
+			triangles: [2352, 1176, 588],
+			switches: [55.3, 80.2],
+			offset: [0.9762, 0.3724, 1],
+			radius: 1.3953,
+		},
 	],
-	'moss-cushion': [{ triangles: [384, 128, 60], switches: [23, 49] }],
-	fern: [{ triangles: [416, 208, 104], switches: [24, 72] }],
-	hosta: [{ triangles: [560, 200, 120], switches: [21, 91] }],
+	'moss-cushion': [
+		{
+			triangles: [384, 128, 60],
+			switches: [23.5, 49.7],
+			offset: [0.7083, 0.1731, 0.7191],
+			radius: 1.0241,
+		},
+	],
+	fern: [
+		{
+			triangles: [416, 208, 104],
+			switches: [24.4, 72.6],
+			offset: [0.803, 0.3735, 0.8791],
+			radius: 1.2136,
+		},
+	],
+	hosta: [
+		{
+			triangles: [560, 200, 120],
+			switches: [20.6, 91.3],
+			offset: [0.5863, 0.2583, 0.5792],
+			radius: 0.8637,
+		},
+	],
 };
 
 /** The most triangles that the ground cover may draw from the opening camera, at its levels. */
 export const GROUND_BUDGET = 320000;
 
+/** The engine's least distance, which its level rule never measures below. */
+const LEAST_DISTANCE = 1e-3;
+
 /**
  * The ground cover's triangles: at the finest level of every copy, and as drawn from a camera, each
- * part of each copy at the level its distance and scale pick.
+ * part of each copy at the level its distance and scale pick. The distance is the engine's: to the
+ * part's bounding-sphere centre, less half its world radius, capped at twice the distance to its
+ * nearest point; and the switches are read for the render's height against the ruler above.
  */
 export function groundTriangles(
 	plants: readonly Spot[],
 	from: readonly [number, number, number] = WIDE,
+	height = LEVEL_RULER,
 ): { full: number; drawn: number } {
 	let full = 0;
 	let drawn = 0;
 	for (const plant of plants)
-		for (const { triangles, switches } of GROUND_LEVELS[plant.kind as PlantKind]) {
-			const far = Math.hypot(plant.x - from[0], plant.y - from[1], plant.z - from[2]) / plant.size;
+		for (const { triangles, switches, offset, radius } of GROUND_LEVELS[plant.kind as PlantKind]) {
 			full += triangles[0];
-			drawn += triangles[far < switches[0] ? 0 : far < switches[1] ? 1 : 2];
+			// The part's bounding-sphere centre: its place in the model, turned by the copy's yaw and
+			// scaled, about the copy's foot, which sinks a little.
+			const [ox, oy, oz] = [offset[0] * plant.size, offset[1] * plant.size, offset[2] * plant.size];
+			const centre: [number, number, number] = [
+				plant.x + Math.cos(plant.yaw) * ox + Math.sin(plant.yaw) * oz,
+				plant.y - 0.03 + oy,
+				plant.z - Math.sin(plant.yaw) * ox + Math.cos(plant.yaw) * oz,
+			];
+			const far = Math.hypot(centre[0] - from[0], centre[1] - from[1], centre[2] - from[2]);
+			const world = radius * plant.size;
+			const near = (r: number) => Math.max(far - r, LEAST_DISTANCE);
+			const distance = Math.min(near(0.5 * world), 2 * near(world));
+			const scale = (plant.size * height) / LEVEL_RULER;
+			drawn +=
+				triangles[distance > switches[1] * scale ? 2 : distance > switches[0] * scale ? 1 : 0];
 		}
 	return { full, drawn };
 }
