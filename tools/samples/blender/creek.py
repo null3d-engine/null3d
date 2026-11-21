@@ -842,7 +842,8 @@ def build_cave(mat, rng):
 #   bark     the bark's mean color in the concept, which the wood's vertex colors bring it to
 #   bare     the share of the wood's height that carries no pad
 #   stub     the shortest limb, as a share of the wood's height, that carries a pad; twig is the
-#            length of bare wood at a limb's end, as such a share, that `trim_twigs` cuts, and keep
+#            length of bare wood at a limb's end, as such a share, that `trim_twigs` cuts where no
+#            pad grown by snug (2 when not given) in its squared measure holds it, and keep
 #            the distance from the trunk's axis within which it cuts nothing; prune cuts any wood
 #            past the pads, as a crown is pruned to its outline; girth is how far from the wood
 #            that bears a pad the cut keeps wood, at least a limb's width
@@ -863,7 +864,9 @@ def build_cave(mat, rng):
 #            above that share of the height, deep is the most a pad reaches to the front or back,
 #            from the lowest tier to the top, and hold how far, in pad thicknesses, a pad may leave
 #            its own wood for its layer
-#   rise     how far a pad's middle sits above its layer, in meters
+#   rise     how far a pad's middle sits above its layer, in meters; droop, when given, how far a
+#            layer falls for each meter out from where its limbs leave, and stagger how far each
+#            pad moves up or down at random
 #   cards    needle cards at the full level; up and depth place them as `crown_cards` says, and
 #            card, lift, scatter, centered, cells, fold, bend, tint and shade shape them as
 #            `leaf_part` says
@@ -878,10 +881,10 @@ TALL_TRUNK = dict(
 PINES = {
     'pine-tall': dict(
         TALL_TRUNK, wood=(14000, 5000, 1600),
-        fan=(0.3, (0.5, 0.05, 0.0), (0.55, 1.4, 1.95, 1.35, 1.1)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12,
-        keep=0.45, girth=0.3, prune=True, gap=0.2, pad=(1.0, 1.35, 1.1), vary=0.35, crest=(0.4, 0.05, 0.33),
-        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.6, 0.3, 0.3, 0.3, 0.3), flat=3.0, rise=0.1,
-        inner=0.0,
+        fan=(0.3, (0.5, 0.05, 0.0), (0.55, 1.4, 1.95, 1.35, 1.1)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
+        keep=0.45, girth=0.3, prune=True, gap=0.2, pad=(1.0, 1.35, 1.1), vary=0.35, crest=(0.27, 0.05, 0.33),
+        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.3, deep=(0.6, 0.3, 0.3, 0.3, 0.3), flat=3.0, rise=0.1, droop=0.15, stagger=0.15,
+        inner=0.2,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=3600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
         fold=0.06, bend=0.55, tint=(1.0, 1.0, 1.0), shade=0.8, levels=((2, 1.3), (5, 1.7)),
@@ -900,9 +903,9 @@ PINES = {
     # 0.7 times as wide as it is tall.
     'pine-narrow': dict(
         TALL_TRUNK, wood=(12000, 4500, 1500),
-        fan=(0.3, (0.35, 0.05, 0.0), (0.75, 0.7, 0.6, 0.5, 0.4)), wire=0.5, span=(0.4, 0.88), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12,
-        keep=0.45, girth=0.3, prune=True, gap=0.1, pad=(0.85, 0.75, 0.55), vary=0.35, crest=(0.35, 0.04, 0.6),
-        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.45, 0.4, 0.35, 0.3), flat=2.8, rise=0.1,
+        fan=(0.3, (0.35, 0.05, 0.0), (0.5, 0.55, 0.55, 0.5, 0.4)), wire=0.5, span=(0.4, 0.82), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12,
+        keep=0.45, girth=0.3, prune=True, gap=0.1, pad=(0.55, 0.6, 0.55), vary=0.35, crest=(0.3, 0.04, 0.3),
+        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.45, 0.4, 0.35, 0.3), flat=2.8, rise=0.1, droop=0.12, stagger=0.1,
         inner=0.0,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=2600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
@@ -1244,10 +1247,11 @@ def pine_tiers(spec, ends, starts, middles, distance, parent):
 
 def wired(middles, tiers, levels, distance, limb, spec):
     """
-    How far each cell of the wood rises or falls as a gardener wires a pruned pine's limbs level:
-    past the point where a limb leaves, its middle line eases to its tier's layer within `wire`
-    meters out. Each cell moves as the middle line does at its distance along the wood, so the
-    limb keeps its section.
+    How far each cell of the wood rises or falls as a gardener wires a pruned pine's limbs: past
+    the point where a limb leaves, its middle line eases to its tier's layer within `wire` meters
+    out, and the layer falls by `droop` meters for each meter farther out, so a layer droops toward
+    its ends. Each cell moves as the middle line does at its distance along the wood, so the limb
+    keeps its section.
     """
     rise = np.zeros(len(middles))
     for tier, level in zip(tiers, levels):
@@ -1256,7 +1260,7 @@ def wired(middles, tiers, levels, distance, limb, spec):
             mine = np.where((limb == k) & (distance >= along[0]))[0]
             line = np.interp(distance[mine], along, middles[cells, 2])
             out = np.hypot(*(middles[mine, :2] - middles[cells[0], :2]).T)
-            rise[mine] = (level - line) * smoothstep(0.0, spec['wire'], out)
+            rise[mine] = (level - spec.get('droop', 0.0) * out - line) * smoothstep(0.0, spec['wire'], out)
     return rise
 
 
@@ -1306,9 +1310,12 @@ def pine_pads(spec, tiers, levels, ends, middles, distance, axis, rng):
                 level = runs_level(p, q, spec['slope'])
                 size = across * (1 - spec['taper'] * out[j]) * (1 + vary * (2 * rng.random() - 1))
                 thick = size / spec['flat'] * (1 + vary * (2 * rng.random() - 1))
-                # The pad moves toward its layer, but never so far that it lets go of its own wood.
-                shift = float(np.clip((level_z - p[2]) * spec['flatten'], -spec['hold'] * thick, spec['hold'] * thick))
-                z = p[2] + shift + spec['rise']
+                # The pad moves toward its layer, which droops as the wood does, but never so far that
+                # it lets go of its own wood; then it moves up or down by up to `stagger`, so one
+                # layer's clumps sit at different heights.
+                target = level_z - spec.get('droop', 0.0) * math.hypot(*(p[:2] - points[0, :2]))
+                shift = float(np.clip((target - p[2]) * spec['flatten'], -spec['hold'] * thick, spec['hold'] * thick))
+                z = p[2] + shift + spec['rise'] + spec.get('stagger', 0.0) * (2 * rng.random() - 1)
                 # A crown with a floor keeps every pad's underside above it, so its lower edge is level.
                 if 'floor' in spec:
                     z = max(z, spec['floor'] * height + thick)
@@ -1380,7 +1387,7 @@ def trim_twigs(obj, plant, bearers, spec, ends, inverse, middles, distance, pare
       farther: so each limb ends at its last pad, and a limb that bears none goes back to the
       wood it leaves, even where it reaches into another limb's pads;
     - a bare twig, the last `twig` of the wood's height before a limb's end, goes where no pad
-      grown by half again holds it, above the bare trunk;
+      grown by `snug` in its squared measure (2 when not given) holds it, above the bare trunk;
     - with `prune`, any wood that reaches out past the pads goes;
     - nothing else within `keep` of the trunk's axis or in the lowest tenth of the height is cut,
       so the trunk and its foot never show a hole;
@@ -1414,7 +1421,7 @@ def trim_twigs(obj, plant, bearers, spec, ends, inverse, middles, distance, pare
     # Wood above the middle of the highest pad goes, the trunk's top too, so the trunk ends
     # inside its top pad.
     gone = (z > max(c.z for c, _, _ in plant.pads)) | (clear & (
-        ~borne | (~held(middles, plant.pads, 2.0) & (z > spec['bare'] * height) & near)
+        ~borne | (~held(middles, plant.pads, spec.get('snug', 2.0)) & (z > spec['bare'] * height) & near)
     ))
     if spec.get('prune'):
         # The crown is pruned to its outline: no wood reaches out past its pads.
@@ -1552,7 +1559,10 @@ def pine_wood(obj, plant, inverse, phase, shade):
 
 
 def decimated(obj, triangles, name):
-    """A copy of the object cut to about `triangles` triangles, which keeps its UVs and colors."""
+    """
+    A copy of the object cut to about `triangles` triangles, which keeps its UVs and colors. A cut
+    can part a thin piece of wood from its limb, so only the largest piece, the tree, stays.
+    """
     copy = link(bpy.data.objects.new(name, obj.data.copy()))
     have = sum(len(p.vertices) - 2 for p in copy.data.polygons)
     if have > triangles:
@@ -1565,6 +1575,11 @@ def decimated(obj, triangles, name):
         old = copy.data
         copy.data = mesh
         bpy.data.meshes.remove(old)
+    bm = bmesh.new()
+    bm.from_mesh(copy.data)
+    drop_loose(bm, -1.0)
+    bm.to_mesh(copy.data)
+    bm.free()
     copy.data.name = name
     return copy
 
