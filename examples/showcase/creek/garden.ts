@@ -17,6 +17,8 @@ import {
 	flights,
 	groundHeight,
 	LANDING,
+	LEDGE,
+	ledgeTop,
 	onTop,
 	rimRadius,
 	STAIRS,
@@ -87,14 +89,6 @@ export function lowestGround(x: number, z: number, reach: number): number {
 		}
 	return low;
 }
-
-/**
- * The raised ledge of rough dark rock under the statue's slab, as the concept's base has: its half
- * length and half width, in meters, a little past the slab's own; how far its flat top stands over
- * the highest ground under it; how far its foot reaches below the lowest; how much its outline
- * wanders, as a share; and how many points its outline has.
- */
-const LEDGE = { long: 5, wide: 3.4, rise: 0.4, foot: 0.35, rough: 0.07, points: 48 } as const;
 
 /** Where the statue stands: the terrace's middle, facing down its flights. */
 const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
@@ -197,6 +191,58 @@ function hillRocks(): RockPlace[] {
 	return rocks;
 }
 
+/**
+ * The rock round the ledge: how many blocks stand round its edge, close enough to overlap, with
+ * joints between them; their sizes, as small copies of the largest boulder; how far out from the ledge's outline they stand, in
+ * meters; how far their tops wander about the ledge's top, in meters, from below to above it; and
+ * how far the front's gap for the steps reaches each side of their middle line.
+ */
+const RING = {
+	blocks: 24,
+	size: [0.2, 0.3],
+	out: 0.12,
+	top: [-0.16, 0.06],
+	gap: STAIRS.half + 0.35,
+} as const;
+
+/**
+ * The blocks of rock round the ledge's edge, with joints between them, so the ledge reads as the
+ * hill's own rock rather than a disc set on it. The front stays open where the steps climb in.
+ */
+function ringRocks(ledge: Ledge): RockPlace[] {
+	const next = random(99);
+	const blocks: RockPlace[] = [];
+	const n = ledge.outline.length;
+	for (let b = 0; b < RING.blocks; b++) {
+		const point = ledge.outline[Math.floor(((b + 0.5) / RING.blocks) * n) % n] as readonly [
+			number,
+			number,
+		];
+		if (point[1] > 0 && Math.abs(point[0]) < RING.gap) continue;
+		const out = (Math.hypot(point[0], point[1]) + RING.out) / Math.hypot(point[0], point[1]);
+		const [x, z] = ledgePoint(ledge, [point[0] * out, point[1] * out]);
+		const size = RING.size[0] + (RING.size[1] - RING.size[0]) * next();
+		// The sink here is how far the block's top stands under the ledge's top.
+		const below = -(RING.top[0] + (RING.top[1] - RING.top[0]) * next());
+		blocks.push({ model: 0, x, z, yaw: next() * Math.PI * 2, size, sink: below });
+	}
+	return blocks;
+}
+
+/** The mossy outcrops at both sides of the ledge, as the concept has beside its statue. */
+function outcrops(ledge: Ledge): RockPlace[] {
+	return [
+		{ side: -1, along: -0.6, model: 0 as const, size: 0.42, yaw: 0.8 },
+		{ side: -1, along: 1.2, model: 1 as const, size: 0.45, yaw: 2.4 },
+		{ side: 1, along: -0.4, model: 0 as const, size: 0.38, yaw: 4.1 },
+		{ side: 1, along: 1.4, model: 1 as const, size: 0.4, yaw: 5.3 },
+	].map(({ side, along, model, size, yaw }) => {
+		const reach = REACH.boulder[model] * size;
+		const [x, z] = ledgePoint(ledge, [side * (LEDGE.long + reach * 0.9), along]);
+		return { model, x, z, yaw, size, sink: 0.25 };
+	});
+}
+
 /** A model placed in the garden: its stand, and how far its footprint reaches on the ground. */
 export interface Placed extends Stand {
 	readonly reach: number;
@@ -220,6 +266,8 @@ export interface GardenPlaces {
 	readonly gate: Placed;
 	readonly lanterns: readonly Placed[];
 	readonly rocks: readonly (Placed & { readonly model: 0 | 1 })[];
+	/** The blocks of rock round the ledge, which make it part of the hill: they stand on its edge. */
+	readonly ring: readonly (Placed & { readonly model: 0 | 1 })[];
 }
 
 /** A point of a ledge's outline, in world meters. */
@@ -236,19 +284,25 @@ export function gardenPlaces(): GardenPlaces {
 	if (placeList) return placeList;
 	const noise = new Noise(93);
 	const yaw = statueYaw();
+	// The outline wanders in broken facets, and its front is cut back where the top flight climbs in.
 	const outline = Array.from({ length: LEDGE.points }, (_, k) => {
 		const angle = (k / LEDGE.points) * Math.PI * 2;
-		const wander = 1 + LEDGE.rough * noise.fbm2(Math.cos(angle) * 2 + 7, Math.sin(angle) * 2, 3);
-		return [Math.cos(angle) * LEDGE.long * wander, Math.sin(angle) * LEDGE.wide * wander] as const;
+		const facet = Math.floor((k / LEDGE.points) * RING.blocks);
+		const wander =
+			1 +
+			LEDGE.rough * noise.fbm2(Math.cos(angle) * 2 + 7, Math.sin(angle) * 2, 3) +
+			0.05 * noise.value2(facet * 3.1 + 0.5, 11);
+		const [x, z] = [Math.cos(angle) * LEDGE.long * wander, Math.sin(angle) * LEDGE.wide * wander];
+		const cut = z > 0 && Math.abs(x) < STAIRS.half + 0.1;
+		return [x, cut ? Math.min(z, LEDGE.wide - LEDGE.cut) : z] as const;
 	});
-	const shape = { x: STATUE_AT[0], z: STATUE_AT[1], yaw, outline, top: 0, foot: 0 };
-	let [high, low] = [-Infinity, Infinity];
+	const shape = { x: STATUE_AT[0], z: STATUE_AT[1], yaw, outline, top: ledgeTop(), foot: 0 };
+	let low = Infinity;
 	for (const point of [[0, 0] as const, ...outline]) {
 		const [x, z] = ledgePoint(shape, point);
-		high = Math.max(high, groundHeight(x, z));
 		low = Math.min(low, groundHeight(x, z));
 	}
-	const ledge: Ledge = { ...shape, top: high + LEDGE.rise, foot: low - LEDGE.foot };
+	const ledge: Ledge = { ...shape, foot: low - LEDGE.foot };
 	const seated = (x: number, z: number, turn: number, size: number, reach: number, sink = 0) => ({
 		x,
 		y: lowestGround(x, z, reach) - SEAT - sink,
@@ -283,7 +337,16 @@ export function gardenPlaces(): GardenPlaces {
 			...gateLanterns,
 			...LANTERNS.map(([x, z, turn]) => seated(x, z, turn, 1, REACH.lantern)),
 		],
-		rocks: [...BOULDERS, ...hillRocks()].map((rock) => ({
+		ring: ringRocks(ledge).map((rock) => {
+			const reach = REACH.boulder[rock.model] * rock.size;
+			const ground = lowestGround(rock.x, rock.z, reach);
+			// Each block's top stands about level with the ledge's, sunk as deep as that asks, and never
+			// less than seated, so no block hangs over the slope below it.
+			const height = BOULDER_HEIGHT[rock.model] * rock.size;
+			const sink = Math.max(0, ground - SEAT + height - ledge.top - rock.sink);
+			return { ...seated(rock.x, rock.z, rock.yaw, rock.size, reach, sink), model: rock.model };
+		}),
+		rocks: [...BOULDERS, ...hillRocks(), ...outcrops(ledge)].map((rock) => ({
 			...seated(
 				rock.x,
 				rock.z,
@@ -398,9 +461,9 @@ export function createGarden(
 		standPart(
 			ctx,
 			models.boulders[model],
-			places.rocks.filter((rock) => rock.model === model),
+			[...places.rocks, ...places.ring].filter((rock) => rock.model === model),
 			tintedPart(materials, models.boulders[model], MOSS_MUTE, 0.95),
 		);
-	const feet = [places.statue, places.gate, ...places.lanterns, ...places.rocks];
+	const feet = [places.statue, places.gate, ...places.lanterns, ...places.rocks, ...places.ring];
 	return (x, z) => feet.some((f) => Math.hypot(x - f.x, z - f.z) < f.reach);
 }
