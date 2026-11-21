@@ -107,7 +107,7 @@ def fern_frond(w, h, rng):
     out = np.zeros((h, w, 4), np.float32)
     half = 0.5 * w / h
     stem = np.abs(px) - 0.004 * (1.2 - py)
-    over(out, np.array([0.28, 0.36, 0.14]), np.clip(-stem * h + 0.5, 0, 1) * (py < 0.97))
+    over(out, np.array([0.32, 0.42, 0.16]), np.clip(-stem * h + 0.5, 0, 1) * (py < 0.97))
     pairs = 26
     for k in range(pairs):
         v = 0.06 + 0.9 * k / pairs
@@ -117,8 +117,8 @@ def fern_frond(w, h, rng):
             coverage, s, t = leaf_mask(px, py, (0, v), angle, reach * 1.05 + 1e-3, 0.17, 0.0, h)
             lobes = 1 - 0.35 * smoothstep(0.6, 1.0, np.abs(np.sin(s * np.pi * 7)))
             coverage = coverage * (np.abs(t) < lobes)
-            shade = 0.8 + 0.25 * s - 0.15 * np.abs(t) + 0.1 * (1 - v)
-            color = np.array([0.24, 0.42, 0.12])[None, None] * shade[..., None]
+            shade = 0.9 + 0.15 * s - 0.08 * np.abs(t) + 0.05 * (1 - v)
+            color = np.array([0.29, 0.48, 0.15])[None, None] * shade[..., None]
             over(out, color, coverage)
     return dilate(out)
 
@@ -136,10 +136,11 @@ def broad_leaf(size, rng):
     veins = smoothstep(0.8, 1.0, np.abs(np.cos(np.abs(t) * np.pi * 4.5)))
     midrib = np.exp(-((px - 0.5) / 0.012) ** 2)
     mottle = fbm(size, size, 8, 8, rng, 4)
-    shade = 0.85 - 0.18 * veins + 0.2 * midrib - 0.1 * smoothstep(0.7, 1.0, np.abs(t)) + 0.15 * (mottle - 0.5)
-    rim = smoothstep(0.82, 0.97, np.abs(t))
-    color = np.array([0.22, 0.40, 0.16])[None, None] * shade[..., None]
-    color = color * (1 - rim[..., None]) + np.array([0.50, 0.55, 0.26]) * rim[..., None]
+    shade = 0.9 - 0.12 * veins + 0.15 * midrib - 0.06 * smoothstep(0.7, 1.0, np.abs(t)) + 0.12 * (mottle - 0.5)
+    # A pale rim of the body's own hue, which no gold tint turns orange.
+    rim = smoothstep(0.86, 0.98, np.abs(t))
+    color = np.array([0.27, 0.46, 0.19])[None, None] * shade[..., None]
+    color = color * (1 - rim[..., None]) + np.array([0.34, 0.52, 0.21]) * rim[..., None]
     over(out, color, coverage)
     return dilate(out)
 
@@ -432,8 +433,12 @@ def build_tree(name, spec, bark_mat, leaf_mat, rng):
 # ---------------------------------------------------------------------------------------------
 
 
-def build_fern(mat, rng):
-    """A fern: arching fronds around a crown, each a folded strip with the frond texture."""
+def build_fern(mat, rng, steps=8, every=1):
+    """
+    A fern: arching fronds around a crown, each a folded strip with the frond texture, in `steps`
+    rows from its foot to its tip. A lower level keeps every `every`th frond; it draws the same
+    random values for every frond, so its fronds lie where the full fern's do.
+    """
     b = Builder()
     fronds = 13
     for k in range(fronds):
@@ -446,7 +451,6 @@ def build_fern(mat, rng):
         points, widths, sides = [], [], []
         p = Vector((0, 0, 0.02))
         d = (heading * math.cos(rise) + Vector((0, 0, math.sin(rise)))).normalized()
-        steps = 8
         for i in range(steps + 1):
             t = i / steps
             points.append(p.copy())
@@ -455,15 +459,20 @@ def build_fern(mat, rng):
             d = (d + Vector((0, 0, -0.6)) * (length / steps) * (0.6 + t)).normalized()
             p = p + d * (length / steps)
         shade = 0.85 + 0.25 * rng.random()
+        if k % every:
+            continue
         strip(
-            b, points, widths, sides, 0.12, lambda t, s=shade: (s * (0.5 + 0.5 * t),) * 3, (0, 0, 1, 1), 1,
+            b, points, widths, sides, 0.12, lambda t, s=shade: (s * (0.7 + 0.3 * t),) * 3, (0, 0, 1, 1), 1,
             lambda t, k=k: (t, branch_phase(k)),
         )
     return b
 
 
-def build_hosta(mat, rng):
-    """A hosta: broad leaves on stalks around a crown, each leaf a cupped grid with the leaf texture."""
+def build_hosta(mat, rng, rows=7, cols=5):
+    """
+    A hosta: broad leaves on stalks around a crown, each leaf a cupped grid with the leaf texture,
+    `rows` along it and `cols` across. A lower level has fewer rows and columns on the same leaves.
+    """
     b = Builder()
     leaves = 10
     for k in range(leaves):
@@ -476,7 +485,7 @@ def build_hosta(mat, rng):
         # The stalk: a thin strip that samples the stalk at the foot of the leaf texture.
         stalk_pts = [Vector((0, 0, 0)).lerp(top, t) + Vector((0, 0, 0.04 * math.sin(math.pi * t))) for t in (0, 0.5, 1)]
         strip(
-            b, stalk_pts, [0.03] * 3, [side] * 3, 0.0, lambda t: (0.7 + 0.3 * t,) * 3, (0.47, 0.0, 0.53, 0.1), 0,
+            b, stalk_pts, [0.03] * 3, [side] * 3, 0.0, lambda t: (0.8 + 0.2 * t,) * 3, (0.47, 0.0, 0.53, 0.1), 0,
             lambda t, k=k: (0.5 * t, branch_phase(k)),
         )
         # The blade: rows along the leaf, columns across, cupped across and drooping toward its tip.
@@ -486,7 +495,6 @@ def build_hosta(mat, rng):
         up = along0.cross(side).normalized()
         if up.z < 0:
             up = -up
-        rows, cols = 7, 5
         grid = []
         for i in range(rows):
             s = i / (rows - 1)
@@ -498,7 +506,7 @@ def build_hosta(mat, rng):
                 cup = 0.5 * x * x / size * 1.6
                 q = top - along0 * size * 0.12 + along0 * s * size + side * x + up * (cup + droop)
                 n = (up - side * (x / size) * 0.8 + along0 * 0.6 * s).normalized()
-                ao = 0.65 + 0.35 * s
+                ao = 0.78 + 0.22 * s
                 row.append(b.vertex(q, (u, 0.12 + 0.86 * s), (ao, ao, ao), blend_up(n, 0.3), (0.5 + 0.5 * s, branch_phase(k))))
             grid.append(row)
         for a, c in zip(grid, grid[1:]):
@@ -1754,12 +1762,12 @@ def build_pine(name, spec, raw, leaf_mat, rng):
 # The plants' colors, painted so that a render under the overcast sky gives the concept's figures
 # in the plants checklist (references/plants/checklist.md): the azalea's dull deep crimson with some
 # dark green, the clipped shrub's dark olive and the moss's yellow olive. The sky's sheen on a
-# rough surface greys it, so the paint is purer than the figures. Each kind's last tone is its
+# rough surface greys it, so the paint is purer than the figures, but for the moss, which is matt. Each kind's last tone is its
 # darkest, the shade deep between its leaves.
 GARDEN_TONES = {
     'azalea': ((0.56, 0.24, 0.1), (0.48, 0.18, 0.08), (0.6, 0.22, 0.12), (0.2, 0.25, 0.06)),
     'clipped': ((0.27, 0.28, 0.04), (0.32, 0.33, 0.06), (0.17, 0.18, 0.03)),
-    'moss': ((0.36, 0.31, 0.0), (0.44, 0.38, 0.01), (0.19, 0.15, 0.0)),
+    'moss': ((0.4, 0.337, 0.132), (0.48, 0.405, 0.158), (0.22, 0.185, 0.073)),
     'pale': ((0.95, 0.93, 0.88), (0.9, 0.86, 0.8), (0.97, 0.92, 0.84), (0.55, 0.52, 0.48)),
 }
 # The autumn clump's shrubs' colors, which multiply their pale leaves, one shrub each in a seeded
@@ -1773,7 +1781,7 @@ CLUMP_TONES = ((0.62, 0.5, 0.1), (0.62, 0.4, 0.08), (0.4, 0.4, 0.14), (0.62, 0.5
                (0.38, 0.28, 0.13))
 # How each mound's leaves are painted: a tuft's leaf length and count, then the mat's, with
 # lengths in shares of an atlas cell.
-GARDEN_PAINT = {'azalea': (0.12, 170, 0.04, 5000), 'clipped': (0.08, 340, 0.03, 8000), 'pale': (0.12, 170, 0.04, 5000)}
+GARDEN_PAINT = {'azalea': (0.12, 170, 0.04, 5000), 'clipped': (0.05, 700, 0.03, 8000), 'pale': (0.12, 170, 0.04, 5000)}
 
 
 def leaf_clump(tile, rng, count, length, tones, patch, opaque):
@@ -1809,14 +1817,19 @@ def moss_mat(tile, rng, tones, patch):
     """
     cell = tile.shape[0]
     lit = smoothstep(0.25, 0.75, patch)[..., None]
-    grain = 0.85 + 0.3 * rng.random((cell, cell, 1))
+    # Grain at a few centimeters, which still shows as a speckle when the cushion is small, and a
+    # fine one texel by texel.
+    clumps = 0.6 * value_noise(cell, cell, 40, 40, rng) + 0.4 * value_noise(cell, cell, 90, 90, rng)
+    grain = ((0.62 + 0.76 * clumps) * (0.9 + 0.2 * rng.random((cell, cell))))[..., None]
     tile[..., :3] = (np.array(tones[-1])[None, None] * (1 - lit) + np.array(tones[0])[None, None] * lit) * grain
     tile[..., 3] = 1.0
     for _ in range(20000):
         base = (rng.random(), rng.random())
         y, x = min(int(base[1] * cell), cell - 1), min(int(base[0] * cell), cell - 1)
         tone = np.array(tones[int(rng.random() * 2)]) * (0.55 + 0.5 * patch[y, x] + 0.2 * rng.random())
-        tip = (base[0] + rng.normal(0, 0.004), base[1] + 0.006 + rng.normal(0, 0.004))
+        # Each strand leans its own way, so the moss shows no streaks along the texture.
+        lean = rng.random() * 2 * math.pi
+        tip = (base[0] + 0.007 * math.cos(lean), base[1] + 0.007 * math.sin(lean))
         paint_line(tile, base, tip, 1.0 / cell, tone)
 
 
@@ -1846,17 +1859,18 @@ def garden_atlases(size, rng):
     return dilate(tufts), mats
 
 
-def mound(rng, across, high, swells, swell, uneven, flat):
+def mound(rng, across, high, swells, swell, uneven, flat, core=0.8):
     """
     A mound of foliage `across` meters wide and `high` meters tall, as pads: a core that fills it,
-    and `swells` pads round its dome, from near the ground to the top, that make its soft lumps.
-    A swell is `swell` of the mound's half-width; `uneven` from 0 to 1 is how much the swells
-    differ in size, and `flat` how much lower than wide each one is.
+    `core` of its size, and `swells` pads round its dome, from near the ground to the top, that
+    make its soft lumps; a larger core sinks the swells deeper into one mass. A swell is `swell` of
+    the mound's half-width; `uneven` from 0 to 1 is how much the swells differ in size, and `flat`
+    how much lower than wide each one is.
     """
     plant = Plant()
     a = across / 2
-    core = plant.branch([Vector((0, 0, 0)), Vector((0, 0, high * 0.5))], [0.02, 0.01], 0)
-    plant.pad((0, 0, 0), (a * 0.8, a * 0.8, high * 0.82), core)
+    middle = plant.branch([Vector((0, 0, 0)), Vector((0, 0, high * 0.5))], [0.02, 0.01], 0)
+    plant.pad((0, 0, 0), (a * core, a * core, high * (core + 0.02)), middle)
     for k in range(swells):
         # Even over the dome by area: the sine of the height angle runs evenly, round by the
         # golden angle.
@@ -1959,8 +1973,8 @@ def mound_bodies(builder, plant, spec, around, rings, cell, scale, rng, tints=No
 
 def cushion(builder, waves, across, high, around, rings, cell, scale):
     """
-    A moss cushion: a low dome `across` meters wide and `high` tall, flat on top, with a full
-    rounded edge that meets the ground steeply. The `waves` (size, heading, phase, wavelength in
+    A moss cushion: a low mound `across` meters wide and `high` tall, highest in the middle and
+    falling to a soft edge. The `waves` (size, heading, phase, wavelength in
     shares of the half-width) raise it in soft swells and sink it in hollows, which are darker. It
     wears the atlas cell `cell` from above, at `scale` meters to the cell.
     """
@@ -1974,11 +1988,11 @@ def cushion(builder, waves, across, high, around, rings, cell, scale):
                    for w, d, g, length in waves) / total
 
     def surface(turn, rise):
-        # A superellipse in profile: flat on top, steep and round at the edge.
-        out = math.cos(rise) ** (2 / 3)
+        # A mound in profile: highest in the middle, falling to a soft edge.
+        out = math.cos(rise)
         x, y = out * math.cos(turn), out * math.sin(turn)
         reach = a * out * (1 + 0.06 * swell(math.cos(turn), math.sin(turn)))
-        z = high * math.sin(rise) ** (2 / 3) * (1 + 0.3 * swell(x, y))
+        z = high * (1 - out * out) * (1 + 0.3 * swell(x, y))
         return Vector((reach * math.cos(turn), reach * math.sin(turn), z))
 
     rows = []
@@ -2017,10 +2031,10 @@ GARDEN_TUFTS = {'lift': 0.5, 'scatter': 0.3, 'centered': 0.5, 'fold': 0.1, 'bend
 GARDEN = {
     'azalea': {'across': 1.8, 'high': 0.65, 'swells': 12, 'swell': 0.34, 'uneven': 0.25, 'flat': 0.3,
                'tufts': 420, 'card': 0.15, 'cell': 0, 'scale': 0.5, 'sway': 0.45, 'bodies': ((10, 6), (8, 4), (6, 4))},
-    'clipped-shrub': {'across': 1.6, 'high': 1.35, 'swells': 8, 'swell': 0.44, 'uneven': 0.35, 'flat': 0.1,
-                      'tufts': 460, 'card': 0.13, 'cell': 1, 'scale': 0.4, 'sway': 0.3,
+    'clipped-shrub': {'across': 1.8, 'high': 1.05, 'swells': 9, 'swell': 0.38, 'uneven': 0.35, 'flat': 0.2, 'core': 0.9,
+                      'tufts': 900, 'card': 0.08, 'cell': 1, 'scale': 0.4, 'sway': 0.3,
                       'bodies': ((10, 6), (8, 4), (6, 4))},
-    'moss-cushion': {'across': 1.4, 'high': 0.2, 'cell': 2, 'scale': 1.6, 'sway': 0.08, 'bodies': ((32, 6), (16, 4), (10, 3))},
+    'moss-cushion': {'across': 1.4, 'high': 0.3, 'cell': 2, 'matt': True, 'scale': 1.6, 'sway': 0.08, 'bodies': ((32, 6), (16, 4), (10, 3))},
     'autumn-clump': {'across': 2.2, 'high': 0.6, 'shrubs': 6, 'swells': 4, 'swell': 0.42, 'uneven': 0.6, 'flat': 0.45,
                      'tufts': 760, 'card': 0.13, 'cell': 3, 'scale': 0.5, 'sway': 0.5, 'bodies': ((8, 5), (6, 4), (5, 3))},
     'rim-conifer': {'across': 2.4, 'high': 1.3, 'swells': 9, 'swell': 0.4, 'uneven': 0.4, 'flat': 0.35, 'needles': True,
@@ -2046,7 +2060,7 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
         tones = [linear(CLUMP_TONES[picked[owner[b] % len(CLUMP_TONES)]]) for b in range(len(owner))]
         tints = [tones[b] for _, _, b in plant.pads]
     elif 'swells' in spec:
-        plant = mound(rng, spec['across'], spec['high'], *shape)
+        plant = mound(rng, spec['across'], spec['high'], *shape, core=spec.get('core', 0.8))
     tufts_spec = dict(GARDEN_TUFTS, card=spec.get('card', 0.1), cells=spec.get('tuft_cells', (spec['cell'],)), **spec.get('sprays', {}))
     places = [place for place in crown_cards(plant, rng, spec['tufts'], 0.6, 0.15) if place[0].z > 0.04] if plant else []
     waves = [(rng.uniform(0.3, 1.0), rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi), rng.uniform(0.5, 1.2)) for _ in range(4)]
@@ -2109,16 +2123,18 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
 #   spacing  the distance between pads along a limb, in meters
 #   past     how far the last pad stands out past the limb's end along the limb, as the leaves reach
 #            past the wood: in full on a limb that rises, a third of it on one that runs level
+#   layers, settle and droop lay the pads in tiers, as `maple_crown` says
 #   pad      a pad's half-width and half-height, in meters
 #   cards, up, depth, card, lift, scatter, centered, cells, fold, bend, tint and shade as the
 #            pines' needles take them
 #   levels   each lower level's (every, grow), as the pines' are
 MAPLE = dict(
     raw='maple-trunk/model.glb', sha256='76d0d36f36251f12098c2a9b72234224318ae7911e360eef70109c5d6c11dd63',
-    turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.2, 0.18, 0.16),
-    hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.42, clear=0.5, spacing=0.9, past=0.9, pad=(0.75, 0.32),
-    cards=1900, up=0.5, depth=0.15, card=0.55, lift=0.85, scatter=0.3, centered=0.45, cells=(0, 1, 2, 3),
-    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+    turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.36, 0.27, 0.19),
+    hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.32, clear=0.5, spacing=0.9, past=0.9, pad=(0.9, 0.22),
+    layers=5, settle=0.7, droop=0.35,
+    cards=2000, up=0.5, depth=0.15, card=0.55, lift=0.9, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
+    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.7, levels=((2, 1.3), (5, 1.7)),
 )
 # The leaves' pale tones, a little warmer or cooler leaf by leaf, so the color that the scene gives
 # each copy sets its hue while the leaves keep their light and shade; and the twigs' grey.
@@ -2126,7 +2142,7 @@ MAPLE_PALE = ((0.97, 0.95, 0.92), (0.98, 0.93, 0.88), (0.95, 0.95, 0.86), (0.86,
 MAPLE_TWIG = (0.32, 0.28, 0.26)
 # The colors that the previews give the three kinds of copy, from the concept's maples: red,
 # orange and yellow.
-MAPLE_TINTS = {'red': (1.0, 0.47, 0.25), 'orange': (1.0, 0.66, 0.2), 'yellow': (1.0, 0.82, 0.22)}
+MAPLE_TINTS = {'red': (1.0, 0.54, 0.32), 'orange': (1.0, 0.65, 0.32), 'yellow': (1.0, 0.74, 0.32)}
 
 
 def maple_leaf(tile, middle, angle, length, tone, patch):
@@ -2168,16 +2184,22 @@ def maple_atlas(size, rng):
 
 def maple_crown(spec, ends, middles, distance, parent, kept, rng):
     """
-    The maple's crown as pads along its limbs: on each kept limb, from its end back toward the
+    The maple's crown as flat sprays in layers. On each kept limb, from its end back toward the
     trunk, a pad every `spacing` meters of wood that stands above the crown's base and clear of the
-    trunk, and one past the end, as `past` says; a pad nearer than most of the spacing to one
-    already grown is left out. Limb k's pads hang from branch k + 1, whose phase its wood
-    carries.
+    trunk, one on the limb's end, so no cut end shows, and one past it, as `past` says. Each pad but
+    the one on the end settles `settle` of the way onto the nearest of `layers` heights between the
+    crown's base and the wood's top; every pad droops by `droop` meters at the crown's rim and
+    narrows toward it, so the sprays lie in tapering tiers with dark and limbs between them. A pad
+    nearer than most of the spacing to one already grown is left out. Limb k's pads hang from
+    branch k + 1, whose phase its wood carries.
     """
     plant = Plant()
     height = spec['height']
     plant.branch([Vector((0, 0, 0)), Vector((0, 0, height * 0.5))], [0.2, 0.1], 0)
     half, thick = spec['pad']
+    base = spec['base'] * height
+    reach = float(np.hypot(middles[:, 0], middles[:, 1]).max())
+    tiers = np.linspace(base + thick, float(middles[:, 2].max()), spec['layers'])
     for k, e in enumerate(ends):
         path = root_path(e, parent)
         branch = plant.branch([Vector(middles[path[0]]), Vector(middles[e])], [0.05, 0.02], 1)
@@ -2186,20 +2208,23 @@ def maple_crown(spec, ends, middles, distance, parent, kept, rng):
         tip = Vector(middles[e])
         along = tip - Vector(middles[path[max(0, len(path) - 6)]])
         along = along.normalized() if along.length > 1e-3 else Vector((0, 0, 1))
-        spots = [tip + along * spec['past'] * (1 + 2 * max(0.0, along.z)) / 3]
+        spots = [(tip, False), (tip + along * spec['past'] * (1 + 2 * max(0.0, along.z)) / 3, True)]
         mark = spec['spacing']
         for c in reversed(path):
             if distance[e] - distance[c] < mark:
                 continue
             mark += spec['spacing']
-            spots.append(Vector(middles[c]))
-        for p in spots:
-            if p.z < spec['base'] * height or math.hypot(p.x, p.y) < spec['clear']:
+            spots.append((Vector(middles[c]), True))
+        for p, settles in spots:
+            if p.z < base or math.hypot(p.x, p.y) < spec['clear']:
                 continue
-            if any((p - c).length < 0.7 * spec['spacing'] for c, _, _ in plant.pads):
+            out = min(1.0, math.hypot(p.x, p.y) / reach)
+            layer = float(tiers[np.argmin(np.abs(tiers - p.z))])
+            q = Vector((p.x, p.y, p.z + (layer - p.z) * (spec['settle'] if settles else 0.0) - spec['droop'] * out * out))
+            if any((q - c).length < 0.7 * spec['spacing'] for c, _, _ in plant.pads):
                 continue
-            size = half * (0.8 + 0.4 * rng.random())
-            plant.pad(tuple(p + Vector((0, 0, thick * 0.3))), (size, size, thick), branch)
+            size = half * (0.8 + 0.4 * rng.random()) * (1.15 - 0.45 * out)
+            plant.pad(tuple(q + Vector((0, 0, thick * 0.3))), (size, size, thick), branch)
     return plant
 
 
@@ -2331,12 +2356,27 @@ def main():
     hosta_mat = material('hosta', image('hosta', broad_leaf(512, rng)), cutout=True, roughness=0.8)
     shrub_mat = material('shrub', atlas, cutout=True, roughness=0.65)
     flower_mat = material('flowers', image('flowers', flower_atlas(512, rng)), cutout=True, roughness=0.6)
-    plants = [
-        build_fern(fern_mat, rng).build('fern', fern_mat),
-        build_hosta(hosta_mat, rng).build('hosta', hosta_mat),
-        build_shrub(shrub_mat, rng).build('shrub', shrub_mat),
-        build_flowers(flower_mat, rng).build('flowers', flower_mat),
-    ]
+    # The fern's and the hosta's lower levels replay the random draws that built them, so their
+    # fronds and leaves lie where the full ones do, and the stream goes on as it did for the rest.
+    def replay(state):
+        again = np.random.Generator(type(rng.bit_generator)())
+        again.bit_generator.state = state
+        return again
+
+    before_fern = rng.bit_generator.state
+    fern = build_fern(fern_mat, rng).build('fern', fern_mat)
+    before_hosta = rng.bit_generator.state
+    hosta = build_hosta(hosta_mat, rng).build('hosta', hosta_mat)
+    plants = [fern, hosta, build_shrub(shrub_mat, rng).build('shrub', shrub_mat), build_flowers(flower_mat, rng).build('flowers', flower_mat)]
+    plant_errors = {'fern': [], 'hosta': []}
+    for k, (fern_level, hosta_level) in enumerate((((4, 1), (4, 3)), ((2, 1), (3, 2))), start=1):
+        lower = {
+            'fern': build_fern(fern_mat, replay(before_fern), *fern_level).build(f'fern-{k}', fern_mat),
+            'hosta': build_hosta(hosta_mat, replay(before_hosta), *hosta_level).build(f'hosta-{k}', hosta_mat),
+        }
+        for name, obj in lower.items():
+            plant_errors[name].append(level_error(obj, fern if name == 'fern' else hosta, limit=0.12))
+        plants += list(lower.values())
 
     color, height, rough = rock_texture(1024, rng)
     rock_mat = material(
@@ -2350,7 +2390,7 @@ def main():
     report = {}
     errors = [level['error'] for level in TREE_LEVELS]
     report.update(export(os.path.join(out, 'trees.glb'), tree_objects, {'leaves'}, errors))
-    report.update(export(os.path.join(out, 'plants.glb'), plants, {'fern', 'hosta', 'shrub', 'flowers'}))
+    report.update(export(os.path.join(out, 'plants.glb'), plants, {'fern', 'hosta', 'shrub', 'flowers'}, plant_errors))
     report.update(export(os.path.join(out, 'cave.glb'), [cave], set()))
 
     # The pines draw from random streams of their own, after the other models, so they leave every
@@ -2381,14 +2421,18 @@ def main():
     if grounds:
         tufts, mats = garden_atlases(1024, np.random.default_rng((SEED, 80)))
         tuft_mat = material('garden-tufts', image('garden-tufts', tufts), cutout=True, roughness=0.75)
-        mat_mat = material('garden-mats', image('garden-mats', mats[..., :3]), roughness=1.0)
+        mats_image = image('garden-mats', mats[..., :3])
+        mat_mat = material('garden-mats', mats_image, roughness=1.0)
+        # Moss is matt: the sky's sheen on it would grey its golden green.
+        moss_mat = material('garden-moss', mats_image, roughness=1.0)
+        moss_mat.node_tree.nodes.get('Principled BSDF').inputs['Specular IOR Level'].default_value = 0.0
         needles = material(
             'rim-needles', image('rim-needles', needle_atlas(1024, np.random.default_rng((SEED, 120)), RIM_TONES, NEEDLE_TWIG, mat=True)),
             cutout=True, roughness=0.7,
         )
         ground = []
         for ident, (name, spec) in enumerate(grounds.items()):
-            mats_of = (needles, needles) if spec.get('needles') else (tuft_mat, mat_mat)
+            mats_of = (needles, needles) if spec.get('needles') else (tuft_mat, moss_mat if spec.get('matt') else mat_mat)
             objects, (high, across), measured = build_ground_plant(name, spec, *mats_of, np.random.default_rng((SEED, 82, ident)), ident)
             ground += objects
             ground_errors.update(measured)
@@ -2413,7 +2457,7 @@ def main():
     for name, (plant, ends, tiers, cut) in crowns.items():
         print(f'CREEK {name}: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, '
               f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads, {cut} vertices of bare twig cut')
-    for part, measured in sorted({**(errors if wanted else {}), **ground_errors, **maple_errors}.items()):
+    for part, measured in sorted({**plant_errors, **(errors if wanted else {}), **ground_errors, **maple_errors}.items()):
         print(f"CREEK {part} level errors: {', '.join(f'{e} m (switch at {e / PIXEL_PER_METER:.0f} m)' for e in measured)}")
     for file in files:
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
