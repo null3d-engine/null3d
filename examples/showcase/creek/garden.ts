@@ -26,7 +26,7 @@ import {
 	statueYaw,
 	TERRACE,
 } from './land';
-import { MOSS_MUTE } from './stones';
+import { MOSS_MUTE, TEXTURED_MOSS } from './stones';
 
 /** The models that the garden places. */
 export interface GardenModels {
@@ -405,9 +405,8 @@ export function gardenPlaces(): GardenPlaces {
 	return placeList;
 }
 
-/** Linear colors of the ledge: dark rock, and the moss on its top's rim and its upper sides. */
+/** The linear color of the ledge's dark rock, under the moss on its top's rim and its upper sides. */
 const LEDGE_ROCK = [0.05, 0.042, 0.033] as const;
-const LEDGE_MOSS = [0.09, 0.085, 0.025] as const;
 
 /**
  * The ledge's mesh: a flat top inside its outline, a rough chamfer, and sides that flare a little
@@ -432,16 +431,17 @@ function ledgeArrays(ledge: Ledge): MeshArrays {
 		positions.push(x, y, z);
 		for (let c = 0; c < 3; c++)
 			colors.push(
-				((LEDGE_ROCK[c] as number) + ((LEDGE_MOSS[c] as number) - (LEDGE_ROCK[c] as number)) * m) *
+				((LEDGE_ROCK[c] as number) +
+					((TEXTURED_MOSS[c] as number) - (LEDGE_ROCK[c] as number)) * m) *
 					shade,
 			);
 		uvs.push(u, v);
 	};
-	// The top: a fan from the middle, flat.
+	// The top: a fan from the middle, flat, bare under the slab and mossy in the band round it.
 	add(ledge.x, ledge.top, ledge.z, 0, ledge.x * 0.4, ledge.z * 0.4);
 	for (let k = 0; k < n; k++) {
 		const [x, z] = ledgePoint(ledge, ledge.outline[k] as readonly [number, number]);
-		add(x, ledge.top, z, 0.4, x * 0.4, z * 0.4);
+		add(x, ledge.top, z, 0.85, x * 0.4, z * 0.4);
 	}
 	for (let k = 0; k < n; k++) indices.push(0, 1 + ((k + 1) % n), 1 + k);
 	// The sides: each ring of the outline pushed out and down, with rough wander, joined by quads.
