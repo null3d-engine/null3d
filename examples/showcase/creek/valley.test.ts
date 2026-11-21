@@ -3,7 +3,7 @@
 // the statue. The ground cover is held to each mask through that mask's own function, not through
 // the rule that places it, so a mask dropped from the rule fails here; and to its budget.
 import { expect, test } from 'bun:test';
-import { gardenPlaces, underGarden } from './garden';
+import { gardenPlaces, terraceStones } from './garden';
 import {
 	alongFlight,
 	bearingOf,
@@ -34,11 +34,25 @@ import {
 
 const valley = placeValley();
 const all: readonly Spot[] = [...valley.trees, ...valley.plants];
+/**
+ * The garden's models, each kind listed here from the garden's own places with its own footprint,
+ * so a kind left out of the placing rule still fails the tests.
+ */
+const models = (() => {
+	const places = gardenPlaces();
+	return [
+		...[places.statue].map((f) => ({ ...f, kind: 'the statue' })),
+		...[places.gate].map((f) => ({ ...f, kind: 'the gate' })),
+		...places.lanterns.map((f) => ({ ...f, kind: 'a lantern' })),
+		...places.rocks.map((f) => ({ ...f, kind: 'a hill rock' })),
+		...places.ring.map((f) => ({ ...f, kind: "a block of the ledge's ring" })),
+		...terraceStones().map((f) => ({ ...f, kind: 'a terrace wall stone' })),
+	];
+})();
 
 test('each tree stands at its scale, on growing ground, seated, clear of the rocks, its trunk off the steps', () => {
 	// Every tree of the list stands: none is dropped for the camera's route.
 	expect(valley.trees.length).toBe(TREES.length);
-	const { rocks, ring } = gardenPlaces();
 	TREES.forEach(([label, , , kind, size], k) => {
 		const tree = valley.trees[k] as Spot;
 		const at = `${label}, the ${kind} at ${tree.x}, ${tree.z}`;
@@ -48,12 +62,13 @@ test('each tree stands at its scale, on growing ground, seated, clear of the roc
 		expect(height, `${at}: its height against the scale table`).toBeLessThanOrEqual(high);
 		// Its foot lies a little into the ground, so no root shows air under it.
 		expect(tree.y - groundHeight(tree.x, tree.z), `${at} over the ground`).toBeLessThan(0);
-		// Its trunk's base keeps off every rock's footprint, as the walls' stones do.
-		for (const rock of [...rocks, ...ring])
+		// Its trunk's base keeps off every model's footprint: the rocks, the walls' stones, the
+		// lanterns, the gate and the statue.
+		for (const model of models)
 			expect(
-				Math.hypot(tree.x - rock.x, tree.z - rock.z),
-				`${at}: its trunk into the rock at ${rock.x.toFixed(1)}, ${rock.z.toFixed(1)}`,
-			).toBeGreaterThan(rock.reach + TRUNK * size);
+				Math.hypot(tree.x - model.x, tree.z - model.z),
+				`${at}: its trunk into ${model.kind} at ${model.x.toFixed(1)}, ${model.z.toFixed(1)}`,
+			).toBeGreaterThan(model.reach + TRUNK * size);
 		// Its trunk and foot keep off the steps; its crown may reach over their edge, as the concept's
 		// does, but not past their middle line.
 		for (const flight of flights()) {
@@ -104,7 +119,10 @@ test('nothing grows past the rim, in the creek or on its stones, on the steps, l
 		expect(gravelPlace(x, z).edge > 0 || islandDistance(x, z) < 0, `${at} on the gravel`).toBe(
 			true,
 		);
-		expect(underGarden(x, z), `${at} under the garden's models or walls`).toBe(false);
+		for (const model of models)
+			expect(Math.hypot(x - model.x, z - model.z), `${at} under ${model.kind}`).toBeGreaterThan(
+				model.reach,
+			);
 	}
 });
 

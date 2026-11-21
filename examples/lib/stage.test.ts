@@ -23,7 +23,13 @@ function staged(overrides: Partial<StageOptions> = {}) {
 		background?: unknown;
 		backgroundOptions?: { intensity?: number };
 		environment?: unknown;
-		fog?: { color: readonly number[]; density: number; sunGlow: number } | null;
+		fog?: {
+			color: readonly number[];
+			density: number;
+			sunGlow: number;
+			height?: number;
+			heightFalloff?: number;
+		} | null;
 		dir?: readonly number[];
 		exposure?: number;
 		sunIntensity?: number;
@@ -36,8 +42,8 @@ function staged(overrides: Partial<StageOptions> = {}) {
 		setEnvironment: (environment: unknown) => {
 			last.environment = environment;
 		},
-		setFog: (fog: { color: readonly number[]; density: number; sunGlow: number } | null) => {
-			last.fog = fog;
+		setFog: (fog: typeof last.fog) => {
+			last.fog = fog && { ...fog };
 		},
 	};
 	const sun = {
@@ -129,6 +135,24 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test("a scene's fog that thins with height holds through the hours, and the studio's stays even", () => {
+	const { stage, last, frames } = staged({ fogHeight: { height: -10, falloff: 0.3 } });
+	stage.set('Midday');
+	frames(240);
+	expect(last.fog?.height).toBe(-10);
+	expect(last.fog?.heightFalloff).toBe(0.3);
+	stage.set('Studio');
+	expect(last.fog?.heightFalloff).toBe(0);
+	stage.set('Dawn');
+	frames(240);
+	expect(last.fog?.heightFalloff).toBe(0.3);
+	// A scene that asks for none keeps an even fog.
+	const even = staged();
+	even.stage.set('Midday');
+	even.frames(240);
+	expect(even.last.fog?.heightFalloff ?? 0).toBe(0);
 });
 
 test('the light travels downward from above through every fixed mood', () => {
