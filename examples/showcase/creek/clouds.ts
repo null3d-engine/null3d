@@ -58,7 +58,7 @@ const DOMES = [
 ] as const;
 
 /** The faint lilac cast of the concept's cloud, never pure white. */
-const TINT = [0.955, 0.945, 1.08] as const;
+const TINT = [0.935, 0.93, 1.12] as const;
 
 /**
  * The cloud itself, drawn on the inside of a sphere round the camera with no depth test, so every
@@ -422,7 +422,8 @@ fn unlit(input: SurfaceInput) -> vec4f {
         let at = eye + dir * end;
         let side = 1.0 - smoothstep(0.85, 1.0, wall_at(at.xz).w);
         let lost = 0.82 * side * (1.0 - smoothstep(material.top - 1.0, material.top + 5.5, at.y));
-        let veil = (0.25 * (1.0 - smoothstep(material.top - 0.5, material.top + 4.5, at.y)) + lost) * clear;
+        // The two fades together never take more than the light left.
+        let veil = min(0.25 * (1.0 - smoothstep(material.top - 0.5, material.top + 4.5, at.y)) + lost, 1.0) * clear;
         color += veil * aerial(cloud_color(0.65, 0.0), end);
         clear -= veil;
     }
