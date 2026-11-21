@@ -3,13 +3,13 @@
 // statue; and the ground cover keeps off the masks that the rules score zero.
 import { expect, test } from 'bun:test';
 import { groundHeight } from './land';
-import { bare, blocksStatue, placeValley, SIZES, type TreeKind } from './valley';
+import { bare, blocksStatue, placeValley, SIZES, TREES, type TreeKind } from './valley';
 
 const valley = placeValley();
 
 test('each tree stands by hand on ground that grows, seated, apart and out of the view to the statue', () => {
 	// Every tree of the list stands: none is dropped for the camera's route.
-	expect(valley.trees.length).toBe(4);
+	expect(valley.trees.length).toBe(TREES.length);
 	for (const tree of valley.trees) {
 		const at = `the ${tree.kind} at ${tree.x}, ${tree.z}`;
 		expect(bare(tree.x, tree.z), `${at} on bare ground`).toBe(false);
@@ -18,7 +18,11 @@ test('each tree stands by hand on ground that grows, seated, apart and out of th
 		expect(blocksStatue(tree), `${at} in the view to the statue`).toBe(false);
 		for (const other of valley.trees) {
 			if (other === tree) continue;
-			const room = (SIZES[tree.kind as TreeKind].reach + SIZES[other.kind as TreeKind].reach) * 0.5;
+			// Crowns may touch, as the concept's do, but no two trunks stand within each other's crown.
+			const room =
+				(SIZES[tree.kind as TreeKind].reach * tree.size +
+					SIZES[other.kind as TreeKind].reach * other.size) *
+				0.4;
 			expect(
 				Math.hypot(tree.x - other.x, tree.z - other.z),
 				`${at} crowding another`,
