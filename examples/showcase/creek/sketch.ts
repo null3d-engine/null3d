@@ -45,6 +45,7 @@ import {
 	createLand,
 	FALL,
 	LIPS,
+	POOL,
 	streamCurrent,
 	streamDepth,
 	streamHalf,
@@ -205,6 +206,13 @@ const WATER_AT_LIP = FALL.width;
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
 const FOAM_REACH = 0.25;
+/**
+ * How far the foam reaches round the stones of each arm, in meters. The right arm (east of the
+ * pool) carries more foam than the concept's, so its stones' marks reach less; the left arm
+ * carries less, so its marks reach further.
+ */
+const FOAM_REACH_WEST = 0.45;
+const FOAM_REACH_EAST = 0.08;
 /** The foam map's box on the ground, over the whole creek. */
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
@@ -265,14 +273,21 @@ function createCreekWater(
 		// The stones' own trails carry the foam downstream both ways from the pool, so the map draws
 		// round marks with no stretch of its own: a trail as long as the reach adds none. On High its
 		// texels are 2 cm, so no step shows in the foam's outline close up.
-		foam: foamMap(ctx, obstacles, {
-			origin: FOAM_BOX.origin,
-			size: FOAM_BOX.size,
-			width: foamTexels,
-			height: Math.round((foamTexels * FOAM_BOX.size[1]) / FOAM_BOX.size[0]),
-			reach: FOAM_REACH,
-			trail: FOAM_REACH,
-		}),
+		foam: foamMap(
+			ctx,
+			obstacles.map((stone) => ({
+				...stone,
+				reach: stone.x < POOL.x ? FOAM_REACH_WEST : FOAM_REACH_EAST,
+			})),
+			{
+				origin: FOAM_BOX.origin,
+				size: FOAM_BOX.size,
+				width: foamTexels,
+				height: Math.round((foamTexels * FOAM_BOX.size[1]) / FOAM_BOX.size[0]),
+				reach: FOAM_REACH,
+				trail: FOAM_REACH,
+			},
+		),
 	});
 }
 
