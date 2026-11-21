@@ -2130,7 +2130,7 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
 #   levels   each lower level's (every, grow), as the pines' are
 MAPLE = dict(
     raw='maple-trunk/model.glb', sha256='76d0d36f36251f12098c2a9b72234224318ae7911e360eef70109c5d6c11dd63',
-    turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.36, 0.27, 0.19),
+    turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.52, 0.39, 0.27),
     hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.32, clear=0.5, spacing=0.9, past=0.9, pad=(0.9, 0.22),
     layers=5, settle=0.7, droop=0.35,
     cards=2000, up=0.5, depth=0.15, card=0.55, lift=0.9, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
