@@ -87,6 +87,13 @@ export interface WaterfallOptions {
 	 */
 	readonly spread?: number;
 	/**
+	 * How far upstream of the lip the fall's water starts, lying on the river's surface, in meters.
+	 * There it fades in at uneven distances and takes the place of the river's own surface, so the
+	 * river's square end at the lip is covered and the water runs into the fall with no straight
+	 * edge. Give the reach of the broken water before the brink. It is 1 by default.
+	 */
+	readonly apron?: number;
+	/**
 	 * The spray and the mist, as a factor of the fall's own, from 0 to 3. It is 1 by default. At 0
 	 * the fall makes no particles, neither the particles add-on nor the engine's particle code loads,
 	 * and `setSpray` has nothing to raise.
@@ -180,6 +187,7 @@ export async function createWaterfall(
 		speed,
 		drop: options.drop,
 		spread: options.spread ?? SPREAD,
+		apron: options.apron ?? APRON,
 		...(options.mesh && { mesh: options.mesh }),
 	};
 	checkFallSheet(sheet);
@@ -206,7 +214,7 @@ export async function createWaterfall(
 			drop: sheet.drop,
 			clear: CLEAR,
 			softness: SOFTNESS,
-			apron: APRON / speed,
+			apron: (sheet.apron ?? APRON) / speed,
 			halfWidth: sheet.halfWidth,
 		},
 	});

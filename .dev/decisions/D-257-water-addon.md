@@ -442,8 +442,13 @@ earlier build used three sheets at different angles. From the side they fanned o
 at the lip into thin ribs, and the backdrop showed between them. The material thins the column
 wherever the view grazes it, torn by froth and by lobes that ride with the water. So the outline is
 soft from every side, and no sheet edge or cut end shows. An apron runs
-a meter up the river's surface before the lip, and fades in there. So the river's own mesh ends at
-the lip with no seam. The mesh's texture coordinates carry each point's place across the lip and
+up the river's surface before the lip, a meter unless the fall gives its own `apron`. It fades in
+at uneven distances across, and froth piles on it toward the brink. It covers the river's square
+end, so the river's own mesh ends at the lip with no seam and no straight edge. The apron and the
+first meter of the fall skip the fade near a wall behind them: they lie on the river and its brink
+by design, and that fade drew the lip as a ruler line where the water left the surface. The brink
+itself is uneven: each place across turns down up to 0.35 m past the lip's line, front and back
+alike, so the column keeps its depth. The mesh's texture coordinates carry each point's place across the lip and
 the time since its water crossed it. The material's noise reads those two. So every streak rides
 down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
 
