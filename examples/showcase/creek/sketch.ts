@@ -367,7 +367,7 @@ export default defineSketch(async (ctx) => {
 	const clouds = await createClouds(ctx, quality.preset);
 	page.post('loading', 'Setting the statue, the gate and the stones');
 	const models = await loadGarden(ctx);
-	createGarden(ctx, models, detail.texture);
+	createGarden(ctx, models, detail.rock, detail.texture);
 	createSteps(ctx, detail.rock, detail.texture);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders);
 	const water = WITHOUT.has('water')
