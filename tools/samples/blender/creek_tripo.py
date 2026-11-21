@@ -193,6 +193,10 @@ MODELS = {
 # from the face's cyan to the concept's gray-green. Lightness above `pale` keeps 40% of its rise,
 # so pale patches such as the left knee's stay muted, and warm rust takes the `brown` tint, darker
 # and less pink. The bronze on the knees keeps `knee` of its lightness, and their rust all of it.
+# The face's worn light: within `face_size` meters of the eyes, on the faces that look forward and
+# below the hairline, the color rises by up to `face`, a little more on the ridges, eased out to the
+# face's edge. It rises after the pale patches' mute, so the face keeps the light that the knees
+# and the lap lose, and it does not reach the hair.
 # Last, on the upper arms and lapels, the raw color's light and dark at the pleats'
 # scale is laid back over the finished color `pleats` strong, so the darkening does not squeeze
 # them. Then each texel's light and dark against those round it, at the scale of the folds and the
@@ -203,8 +207,8 @@ MODELS = {
 # times lighter, and takes the `teal_tint`, a little bluer, so it keeps the concept's green-teal
 # and its folds are not black in the garden's gentle color look.
 PATINA = dict(
-    middle=0.18,
-    contrast=1.4,
+    middle=0.14,
+    contrast=2.5,
     strength=0.3,
     fold=0.32,
     ridge=0.12,
@@ -228,7 +232,9 @@ PATINA = dict(
     knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
-    teal=(1.4, 1.8),
+    face=0.20,
+    face_size=(0.5, 0.5, 0.45),
+    teal=(1.4, 2.5),
     teal_tint=(1.0, 0.95, 1.02),
 )
 
@@ -852,6 +858,15 @@ def repaint(maps, height, eyes, eye, chest, rng):
         streaks = rain_streaks(position + np.array([0.37 * k, -0.21 * k, 0], np.float32), width, rng)
         tone += PATINA['streak'] * (1 if k == 0 else -1) * streaks * below
     tone = np.where(tone > PATINA['pale'], PATINA['pale'] + 0.4 * (tone - PATINA['pale']), tone)
+    # The worn highlights of the face: the forehead, the nose's bridge and the cheeks catch the light,
+    # up to `face` over the face and a little more on its ridges, eased out to its edge and kept off
+    # the hair. They rise after the pale patches' mute, so the face's light is not held back with the
+    # knees' and the lap's.
+    middle_eye = np.mean(np.array(eyes, np.float32), axis=0)
+    lean = (position - middle_eye) / np.array(PATINA['face_size'], np.float32)
+    look = np.sqrt((lean * lean).sum(axis=2))
+    face_mask = smoothstep(1.0, 0.3, look) * smoothstep(0.15, 0.55, -facing[..., 1]) * (1 - hair)
+    tone += PATINA['face'] * face_mask * (0.85 + 0.15 * ridge)
     tone = np.clip(tone, 0.05, 0.8)
     color = raw * (tone / np.maximum(luma, 0.02))[..., None]
     # Warm rust darkens toward brown, so it reads less pale and less pink.
