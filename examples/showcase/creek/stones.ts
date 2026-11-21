@@ -85,12 +85,12 @@ export interface MossTones {
 }
 
 /** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
-const STONE_TONES: MossTones = { stone: [0.2, 0.17, 0.125], moss: [0.13, 0.115, 0.03] };
+const STONE_TONES: MossTones = { stone: [0.2, 0.17, 0.125], moss: [0.13, 0.115, 0.06] };
 /**
  * The linear color of moss on a mesh that wears the rock texture, which darkens and warms it: it
  * stands lighter and greener than it draws, so it draws as light as the ground's moss.
  */
-export const TEXTURED_MOSS = [0.2, 0.2, 0.06] as const;
+export const TEXTURED_MOSS = [0.2, 0.2, 0.1] as const;
 
 /**
  * Gives a rock's vertices colors: flecked stone, and moss where the rock faces up, in the creek's
