@@ -35,6 +35,16 @@ export const OVER_WATER = 0.5;
  */
 export const LIPS = { west: -20.3, east: 20 } as const;
 /**
+ * Each lip's fall: how far it drops, so its mist bursts just above the cloud's tops; how far each
+ * side widens per meter fallen, so it fans out down the drop; the share of the creek's half width
+ * that leaves over the lip: the water that shows there, between the lip's shoulders; how far up the
+ * creek its water starts, in meters, so it covers the river's square end and piles froth toward the
+ * brink; and the speed at which it leaves the lip, in meters a second: slower than the creek's
+ * current there, so it drops near upright, close to the rock under the lip, as the concept's falls
+ * do.
+ */
+export const FALL = { drop: 17, spread: 0.12, width: 0.9, apron: 2.5, speed: 0.3 } as const;
+/**
  * A bay in the rim beside the west lip, on the side toward the opening view: its bearing, its depth
  * and its half width in radians. It keeps the near wall from hiding the west fall from the concept's
  * camera, so the fall shows in profile, as in the concept picture.
