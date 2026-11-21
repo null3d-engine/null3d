@@ -147,12 +147,15 @@ STATUE = dict(
 # `base[1]` of the model's length. Its head faces -y, as every model here faces, and the scene turns
 # each copy to face out along the ridge.
 #
-# A boulder's stone keeps `darken` of its lightness, grows
-# `vivid` times in color strength, and its light and dark round their local mean grow `contrast`
-# times, so the pits read; its moss keeps `moss_darken` of its lightness, white specks fade
-# to pale gray-green, and its foot darkens below `foot` of its height. `flatten` lowers moss that
-# Tripo3D built as spikes to that share of its height above its rim, after smoothing it, and
-# `wide` keeps the boulder's width within that many times its height.
+# A boulder's stone keeps `darken` of its lightness, grows `vivid` times in color strength, and its
+# light and dark round their local mean grow `contrast` times, so the pits read; its moss keeps
+# `moss_darken` of its lightness and `moss_vivid` of its color strength and takes the `moss_tint`, a
+# greyed yellow-olive that stays below full strength even close up, white specks fade to pale
+# gray-green, and its foot darkens below `foot` of its height. `flatten` lowers moss that Tripo3D
+# built as spikes to that share of its height above its rim, after smoothing it, and `wide` keeps
+# the boulder's width within that many times its height.
+# The boulders' moss tone, alike on all three, as the creek's bank row mixes them.
+BOULDER_MOSS = dict(moss_vivid=0.7, moss_tint=(0.97, 1.0, 1.0))
 MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
                     texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(0.99, 1.0, 0.82),
@@ -167,12 +170,14 @@ MODELS = {
                    texture=512, base_cut=0.02, base=(0.16, 0.16), darken=0.8, joints=1.5, glaze=0.4,
                    teeth=1.25),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
-                      texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
+                      texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True,
+                      **BOULDER_MOSS),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
-                      texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.72, foot=0.08, specks=True),
+                      texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.72, foot=0.08, specks=True,
+                      **BOULDER_MOSS),
     'boulder-3': dict(file='model.glb', turn=0.0, height=0.9, sink=0.04, triangles=1500, levels=(0.6, 0.4),
                       texture=512, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=0.62, foot=0.08, specks=False,
-                      flatten=0.35, wide=(1.6, 2.0)),
+                      flatten=0.35, wide=(1.6, 2.0), **BOULDER_MOSS),
 }
 
 # The weathered bronze. The raw color is the base: its hue and color strength stay, cyan on the
@@ -1573,6 +1578,8 @@ def repaint_model(name, spec, maps, rng):
         luma = color @ LUMA
         color *= (1 + (spec['contrast'] - 1) * stone * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
         color = darken(color, spec['moss_darken'], moss)
+        color = vivid(color, spec['moss_vivid'], moss)
+        color = color * (1 + (np.array(spec['moss_tint'], np.float32) - 1) * moss[..., None])
         if spec['specks']:
             white = smoothstep(0.5, 0.65, raw @ LUMA) * (1 - smoothstep(0.1, 0.2, strength_of(raw)))
             color = mix(color, (0.50, 0.53, 0.47), 0.8 * white)
