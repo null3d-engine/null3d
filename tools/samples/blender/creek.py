@@ -139,8 +139,8 @@ def broad_leaf(size, rng):
     shade = 0.9 - 0.12 * veins + 0.15 * midrib - 0.06 * smoothstep(0.7, 1.0, np.abs(t)) + 0.12 * (mottle - 0.5)
     # A pale rim of the body's own hue, which no gold tint turns orange.
     rim = smoothstep(0.86, 0.98, np.abs(t))
-    color = np.array([0.27, 0.46, 0.19])[None, None] * shade[..., None]
-    color = color * (1 - rim[..., None]) + np.array([0.34, 0.52, 0.21]) * rim[..., None]
+    color = np.array([0.24, 0.41, 0.17])[None, None] * shade[..., None]
+    color = color * (1 - rim[..., None]) + np.array([0.3, 0.46, 0.19]) * rim[..., None]
     over(out, color, coverage)
     return dilate(out)
 
@@ -1791,10 +1791,13 @@ def build_pine(name, spec, raw, leaf_mat, rng):
 # darkest, the shade deep between its leaves.
 GARDEN_TONES = {
     'azalea': ((0.55, 0.24, 0.16), (0.47, 0.19, 0.13), (0.6, 0.23, 0.17), (0.66, 0.37, 0.3), (0.2, 0.25, 0.06)),
-    'clipped': ((0.27, 0.28, 0.04), (0.32, 0.33, 0.06), (0.17, 0.18, 0.03)),
+    'clipped': ((0.3, 0.3, 0.03), (0.34, 0.33, 0.04), (0.19, 0.19, 0.02)),
     'moss': ((0.4, 0.337, 0.132), (0.48, 0.405, 0.158), (0.22, 0.185, 0.073)),
-    'pale': ((0.95, 0.93, 0.88), (0.9, 0.86, 0.8), (0.97, 0.92, 0.84), (0.55, 0.52, 0.48)),
+    'pale': ((0.74, 0.73, 0.69), (0.7, 0.67, 0.62), (0.76, 0.72, 0.66), (0.43, 0.41, 0.37)),
 }
+# How much darker a kind's cut-out tufts paint than the mat beneath them: the cards that face the
+# sky catch its light, and the clipped shrub's tufts would otherwise speckle its ball white.
+GARDEN_TUFT_SHADE = {'azalea': 1.0, 'clipped': 0.84, 'pale': 1.0}
 # The autumn clump's shrubs' main colors, which multiply their pale leaves, one shrub each in a
 # seeded order: gold and yellow orange for half the shrubs, two dull olives and a brown, as the
 # concept's low growth is gold broken with dull green. Each shrub also has a second tone: rust for
@@ -1833,7 +1836,7 @@ def leaf_clump(tile, rng, count, length, tones, patch, opaque):
         if blobs and not any((base[0] - x) ** 2 + (base[1] - y) ** 2 < r * r for x, y, r in blobs):
             continue
         made += 1
-        tone = np.array(tones[int(rng.random() * len(tones))]) * (0.75 + 0.45 * rng.random())
+        tone = np.array(tones[int(rng.random() * len(tones))]) * (0.8 + 0.22 * rng.random())
         reach = length * (0.7 + 0.6 * rng.random())
         paint_leaf(tile, base, rng.random() * 2 * math.pi, reach, 0.42, tone, 0.0, patch, 0.6, 0.12)
 
@@ -1882,6 +1885,7 @@ def garden_atlases(size, rng):
             tuft_length, tuft_count, mat_length, mat_count = GARDEN_PAINT[kind]
             tuft = np.zeros((cell, cell, 4), np.float32)
             leaf_clump(tuft, rng, tuft_count, tuft_length, GARDEN_TONES[kind], patch, False)
+            tuft[..., :3] *= GARDEN_TUFT_SHADE.get(kind, 1.0)
             leaf_clump(mat, rng, mat_count, mat_length, GARDEN_TONES[kind], patch, True)
             tufts[oy:oy + cell, ox:ox + cell] = tuft
         mats[oy:oy + cell, ox:ox + cell] = mat
@@ -2255,10 +2259,10 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
 MAPLE = dict(
     raw='maple-trunk/model.glb', sha256='76d0d36f36251f12098c2a9b72234224318ae7911e360eef70109c5d6c11dd63',
     turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.52, 0.39, 0.27),
-    hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.32, clear=0.5, spacing=0.9, past=0.9, pad=(0.9, 0.22),
-    layers=5, settle=0.7, droop=0.35,
-    cards=2000, up=0.5, depth=0.15, card=0.55, lift=0.9, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
-    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.7, levels=((2, 1.3), (5, 1.7)),
+    hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.32, clear=0.5, spacing=0.6, past=0.9, pad=(0.62, 0.16),
+    layers=6, settle=0.8, droop=0.4,
+    cards=4000, up=0.5, depth=0.06, card=0.3, lift=0.55, scatter=0.25, centered=0.4, cells=(0, 1, 2, 3),
+    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.45, warm=0.55, levels=((2, 1.3), (5, 1.7)),
 )
 # The leaves' pale tones, a little warmer or cooler leaf by leaf, so the color that the scene gives
 # each copy sets its hue while the leaves keep their light and shade; and the twigs' grey.
@@ -2278,8 +2282,9 @@ def maple_leaf(tile, middle, angle, length, tone, patch):
 def maple_atlas(size, rng):
     """
     The maple's sprays in a 2 x 2 atlas: in each cell a twig from the bottom middle with a few side
-    twigs, and small pale palmate leaves clustered round their tips, as a maple holds its leaves in
-    flat sprays.
+    twigs, and small pale palmate leaves along every twig, as a maple holds its leaves in flat
+    sprays. The leaves grow finer toward the twigs' ends, and yellower, so a spray's outer half reads
+    lighter than its inside.
     """
     cell, offsets = cells(size)
     out = np.zeros((size, size, 4), np.float32)
@@ -2287,21 +2292,28 @@ def maple_atlas(size, rng):
     for oy, ox in offsets:
         tile = np.zeros((cell, cell, 4), np.float32)
         patch = mottle[oy:oy + cell, ox:ox + cell]
-        top = (0.5 + rng.normal(0, 0.04), 0.66)
-        paint_line(tile, (0.5, 0.0), top, 0.01, MAPLE_TWIG)
-        tips = [top]
+        top = (0.5 + rng.normal(0, 0.03), 0.74)
+        paint_line(tile, (0.5, 0.0), top, 0.008, MAPLE_TWIG)
+        twigs = [((0.5, 0.0), top)]
         for side in (-1, 1, -1, 1):
-            t = 0.12 + 0.4 * rng.random()
+            t = 0.1 + 0.42 * rng.random()
             start = (0.5 + (top[0] - 0.5) * t / top[1], t)
-            tip = (0.5 + side * (0.2 + 0.1 * rng.random()), min(t + 0.2 + 0.15 * rng.random(), 0.8))
-            paint_line(tile, start, tip, 0.006, MAPLE_TWIG)
-            tips.append(tip)
-        for _ in range(34):
-            tip = tips[int(rng.random() * len(tips))]
-            middle = tuple(float(v) for v in np.clip(np.array(tip) + rng.normal(0, 0.09, 2), 0.15, 0.85))
-            angle = math.atan2(middle[1] - 0.1, middle[0] - 0.5) + rng.normal(0, 0.5)
-            tone = np.array(MAPLE_PALE[int(rng.random() * len(MAPLE_PALE))]) * (0.8 + 0.25 * rng.random())
-            maple_leaf(tile, middle, angle, 0.09 + 0.04 * rng.random(), tone, patch)
+            tip = (0.5 + side * (0.17 + 0.09 * rng.random()), min(t + 0.18 + 0.14 * rng.random(), 0.86))
+            paint_line(tile, start, tip, 0.005, MAPLE_TWIG)
+            twigs.append((start, tip))
+        for _ in range(130):
+            start, tip = twigs[int(rng.random() * len(twigs))]
+            along = 0.2 + 0.8 * rng.random()
+            middle = (start[0] + (tip[0] - start[0]) * along + rng.normal(0, 0.025),
+                      start[1] + (tip[1] - start[1]) * along + rng.normal(0, 0.025))
+            middle = tuple(float(v) for v in np.clip(middle, 0.1, 0.9))
+            angle = math.atan2(middle[1] - 0.1, middle[0] - 0.5) + rng.normal(0, 0.6)
+            tone = np.array(MAPLE_PALE[int(rng.random() * len(MAPLE_PALE))]) * (0.78 + 0.25 * rng.random())
+            # The cell's top is a card's outer end, so a leaf's height up the cell sets how golden
+            # it paints.
+            golden = middle[1] ** 2
+            tone = tone * np.array([1.0 - 0.05 * golden, 1.0 - 0.02 * golden, 1.0 - 0.4 * golden])
+            maple_leaf(tile, middle, angle, 0.045 + 0.022 * rng.random(), tone, patch)
         out[oy:oy + cell, ox:ox + cell] = tile
     return dilate(out)
 
@@ -2544,7 +2556,7 @@ def main():
     ground_errors = {}
     if grounds:
         tufts, mats = garden_atlases(1024, np.random.default_rng((SEED, 80)))
-        tuft_mat = material('garden-tufts', image('garden-tufts', tufts), cutout=True, roughness=0.75)
+        tuft_mat = material('garden-tufts', image('garden-tufts', tufts), cutout=True, roughness=1.0)
         mats_image = image('garden-mats', mats[..., :3])
         mat_mat = material('garden-mats', mats_image, roughness=1.0)
         # Moss is matt: the sky's sheen on it would grey its golden green.
