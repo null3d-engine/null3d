@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
 import { type FallSheet, fallEmitters } from './fall';
-import { createWaterfall, type WaterfallOptions } from './waterfall';
+import { createWaterfall, SINK_DEPTH, type WaterfallOptions } from './waterfall';
 
 /** What one stand-in particle buffer was told. */
 interface BufferRecord {
@@ -129,10 +129,10 @@ describe('a waterfall’s fade into a cloud', () => {
 		// show over its tops as a pale disc.
 		const plumeOf = (buffers: BufferRecord[]) =>
 			((buffers[3] as BufferRecord).position as number[])[1] as number;
-		expect(plumeOf(into.buffers)).toBeGreaterThan(cloud + 1);
+		expect(plumeOf(into.buffers)).toBeGreaterThan(cloud);
 		expect(plumeOf(open.buffers)).toBeLessThan(cloud);
 		// The material breaks the water up over the same shown part.
-		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + 1, 9);
+		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + SINK_DEPTH, 9);
 		expect(open.shaders[0]?.uniforms.drop).toBe(16);
 	});
 

@@ -346,7 +346,7 @@ export interface FallEmitter {
 /** How far down the drop the mist that the fall bursts into gathers, as a share of the drop. */
 export const MIST_DEPTH = 0.72;
 /** How many times the fall's width the mist's cloud spreads over, gathered about the fall. */
-export const MIST_WIDTH = 1.2;
+export const MIST_WIDTH = 1.8;
 
 /**
  * The fall's four particle emitters. The froth stands just past the brink, across the lip's width.
