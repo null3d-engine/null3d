@@ -677,6 +677,8 @@ def leaf_part(spec, plant, places, rng, grow):
       tent     true draws each card as a `tent`, bent across and along, whose rise is `fold`
       tint     the color that multiplies every card's
       shade    the darkest a card grows under the crown and inside it, which defaults to 0.35
+      warm     how far a card turns yellow toward the crown's rim, 0 by default, as an autumn
+               maple's outer leaves do
       slant    how steeply a card runs up from its place, out along the pad: 0.8 by default, and
                below 0 for a spray that droops
     """
@@ -703,7 +705,10 @@ def leaf_part(spec, plant, places, rng, grow):
         rim = min(1.0, (p - center).length / max(reach, 1e-3))
         ao = shade + (1 - shade) * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
         hue = 0.9 + 0.2 * rng.random()
-        color = tuple(ao * hue * c for c in tint)
+        # Toward the rim the card keeps its green and loses its blue, so the crown's tips read
+        # yellower than its inside under every copy's tint.
+        warm = spec.get('warm', 0.0) * rim
+        color = tuple(ao * hue * c * (1 - w * warm) for c, w in zip(tint, (0.02, -0.28, 0.62)))
         sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
         if spec.get('tent'):
             tent(leaves, base, along, facing, size, (cu, cv, cu + 0.5, cv + 0.5), color, center, sway, spec['fold'], spec['bend'])
