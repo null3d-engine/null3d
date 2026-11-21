@@ -34,14 +34,16 @@ const SWAY = {
 
 /**
  * The tints over the ground cover's own green, one to a copy, toward the concept's low growth:
- * olive, gold and dull red, in linear shares. The green map holds little red, so a tint raises it
- * well past one and cuts the green, which turns the leaves' hue; its blue stays under its green,
- * so the leaves' yellow rims turn orange, never pink. The texture keeps each leaf's shading.
+ * olive, gold and dull red, in linear shares. In linear light the green map's green is about three
+ * times its red, so a tint raises the red well past one and cuts the green to about a quarter of
+ * it, which turns the leaves gold; it raises the blue near the red, so the leaves read at the
+ * concept's strength under the scene's tone curve, and the drawn blue stays under the drawn green.
+ * The texture keeps each leaf's shading.
  */
 const GROUND_TINTS: readonly (readonly [number, number, number])[] = [
-	[3.6, 0.82, 0.47],
-	[4.1, 0.9, 0.3],
-	[3.8, 0.6, 0.43],
+	[7.5, 1.75, 6],
+	[9, 1.9, 5.4],
+	[8.4, 1.4, 5.7],
 ];
 
 /** The models that the planting draws. */
