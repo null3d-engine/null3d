@@ -1,5 +1,6 @@
 // The Creek's own lights beside the stage's sun and sky: the light on the falls' spray, which
-// follows the air's color, and the dusk's own sky light, which only Dusk turns up. Each is worked
+// follows the air's color, and the moods' own sky lights, which only dusk, dawn and golden hour
+// turn up. Each is worked
 // out here from the hour's look, so a test can hold it.
 import type { SketchContext } from '@null3d/engine';
 import { type MoodMix, moodShare } from '../../lib/stage';
@@ -18,12 +19,17 @@ export const SPRAY = {
 } as const;
 
 /**
- * The dusk's own sky light: with the sun down, the garden takes only the sky map's dim light and
- * reads as one dark shape against the brighter cloud, so the afterglow lights it from above in a
- * lilac grey and from the ground in its shade, at this strength in Dusk alone and none in any other
- * mood.
+ * The moods' own sky lights on the land: with the sun low or gone, the garden takes most of its
+ * light from the sky map, warm at dawn and golden hour and dim at dusk. Each of these moods adds a
+ * light from above in its own color and from the ground in its shade, at its strength in that mood
+ * and none in any other. Dusk's afterglow is a lilac grey that lifts the dark land; dawn's and golden
+ * hour's are a cool grey that leaves the land some green under the warm sun and sky.
  */
-export const DUSK_SKY = { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.38 } as const;
+export const MOOD_SKIES = {
+	Dusk: { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.38 },
+	Dawn: { sky: [0.6, 0.85, 0.88], ground: [0.24, 0.3, 0.26], gain: 1.1 },
+	Golden: { sky: [0.6, 0.85, 0.88], ground: [0.24, 0.3, 0.26], gain: 1.1 },
+} as const;
 
 /**
  * Writes the light on the falls' spray for an air color into `out`: the air greyed toward its
@@ -43,20 +49,24 @@ export function sprayLight(
 	return out;
 }
 
-/** The dusk's own sky light in a scene, which follows the look that the scene shows. */
-export interface DuskSky {
-	/** Sets the light for a look: its full strength in Dusk, eased in and out of it, else none. */
+/** The moods' own sky lights in a scene, which follow the look that the scene shows. */
+export interface MoodSkies {
+	/** Sets the lights for a look: each at its full strength in its mood, eased in and out of it. */
 	setLook(look: MoodMix): void;
 }
 
-/** Makes the dusk's own sky light in a scene, dark until a look turns it up. */
-export function createDuskSky(
+/** Makes the moods' own sky lights in a scene, dark until a look turns one up. */
+export function createMoodSkies(
 	scene: Pick<SketchContext['scene'], 'createHemisphereLight'>,
-): DuskSky {
-	const light = scene.createHemisphereLight({
-		skyColor: DUSK_SKY.sky,
-		groundColor: DUSK_SKY.ground,
-		intensity: 0,
-	});
-	return { setLook: (look) => light.setIntensity(DUSK_SKY.gain * moodShare(look, 'Dusk')) };
+): MoodSkies {
+	const lights = Object.entries(MOOD_SKIES).map(([mood, { sky, ground, gain }]) => ({
+		mood: mood as keyof typeof MOOD_SKIES,
+		gain,
+		light: scene.createHemisphereLight({ skyColor: sky, groundColor: ground, intensity: 0 }),
+	}));
+	return {
+		setLook: (look) => {
+			for (const { mood, gain, light } of lights) light.setIntensity(gain * moodShare(look, mood));
+		},
+	};
 }

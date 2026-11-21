@@ -53,7 +53,7 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { createDuskSky, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createMoodSkies, SPRAY, sprayLight as sprayLightOf } from './lights';
 import { createCreekStage, HEADING } from './look';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
@@ -440,14 +440,14 @@ export default defineSketch(async (ctx) => {
 		fit();
 		light();
 	});
-	// The dusk's own sky light, which only Dusk turns up.
-	const duskSky = createDuskSky(scene);
+	// The moods' own sky lights, which only dusk, dawn and golden hour turn up.
+	const moodSkies = createMoodSkies(scene);
 	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
-		duskSky.setLook(look);
+		moodSkies.setLook(look);
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
