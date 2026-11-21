@@ -123,7 +123,15 @@ export function createPlants(
 	const sway = createSway(ctx, { wind });
 	/** One batch of a part over the spots that stand it. */
 	const stand = (part: Part, spots: readonly Spot[], material: Material) => {
-		if (spots.length > 0) standPart(ctx, part, spots, material);
+		if (spots.length === 0) return;
+		const batch = standPart(ctx, part, spots, material);
+		// A tree that stands narrower than its form keeps its height and loses width across its broad
+		// side, along the model's own x.
+		spots.forEach((spot, row) => {
+			if (spot.width !== undefined)
+				batch.scales[row * 3] = (batch.scales[row * 3] as number) * spot.width;
+		});
+		batch.markDirty();
 	};
 	/** One batch of a part over the spots that stand it, each copy with a color of its own. */
 	const tinted = (

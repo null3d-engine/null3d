@@ -116,9 +116,19 @@ export const GROUND_TRIANGLES: Record<PlantKind, number> & { readonly budget: nu
  * sides and none above it. P7 and P8 are small on the right hillside, a little inside the rim, P7
  * in the tall pine's form, wider than tall; and P10 and P11 are the clipped tiny pines on the
  * gravel's moss islands.
+ * A seventh number, where given, narrows the tree across its broad side to that share of its
+ * model's width, its height kept: P1 stands a quarter narrower than its form, as the concept's.
  */
-export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
-	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2],
+export const TREES: readonly (readonly [
+	string,
+	number,
+	number,
+	TreeKind,
+	number,
+	number,
+	number?,
+])[] = [
+	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2, 0.75],
 	['P2', -5.8, -16.6, 'pine-narrow', 1.03, -0.15],
 	['P3', 1.6, 22.2, 'pine-low', 0.86, 0.3],
 	['P4', 13.7, 8.6, 'pine-low', 0.96, -0.2],
@@ -181,6 +191,8 @@ export interface Spot<Kind extends string = string> {
 	readonly size: number;
 	/** A maple's leaf color. */
 	readonly color?: MapleColor;
+	/** Its share of its model's width across its broad side, where it stands narrower than its size. */
+	readonly width?: number;
 }
 
 /** The ground's measures that a rule reads, at one point. */
@@ -419,7 +431,7 @@ export function crownOf(spot: Spot, clearance = 0): Solid {
 		x: spot.x,
 		z: spot.z,
 		yaw: spot.yaw,
-		reach: size.reach * spot.size + clearance,
+		reach: size.reach * spot.size * (spot.width ?? 1) + clearance,
 		depth: size.depth * spot.size + clearance,
 		top: spot.y + size.height * spot.size + clearance,
 	};
@@ -515,13 +527,14 @@ export function placeValley(): Valley {
 		return !route.some((pose) => hits(solid, pose));
 	};
 	const pines = TREES.map(
-		([, x, z, kind, size, turn]): Spot<TreeKind> => ({
+		([, x, z, kind, size, turn, width]): Spot<TreeKind> => ({
 			kind,
 			x,
 			y: groundHeight(x, z) - 0.1,
 			z,
 			yaw: broadSideToCamera(x, z) + turn,
 			size,
+			...(width !== undefined && { width }),
 		}),
 	);
 	// Each maple stands at the nearest growing ground to its mapped place that keeps the camera's
