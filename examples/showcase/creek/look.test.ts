@@ -36,7 +36,7 @@ function staged() {
 	return { stage, last };
 }
 
-/** The air's share of a pixel on a line of sight, by the engine's height fog. */
+/** The air's share of a pixel on a line of sight, by the engine's height fog and its curve. */
 function airShare(density: number, from: readonly number[], to: readonly number[]): number {
 	const distance = Math.hypot(
 		(to[0] as number) - (from[0] as number),
@@ -46,7 +46,8 @@ function airShare(density: number, from: readonly number[], to: readonly number[
 	const climb = AIR.falloff * ((to[1] as number) - (from[1] as number));
 	const ratio = Math.abs(climb) < 1e-2 ? 1 - climb / 2 : (1 - Math.exp(-climb)) / climb;
 	const atCamera = Math.exp(-AIR.falloff * ((from[1] as number) - CLOUD_TOP));
-	return 1 - Math.exp(-density * distance * atCamera * ratio);
+	const k = density * distance * atCamera * ratio;
+	return 1 - Math.exp(-(AIR.curve === 'exp2' ? k * k : k));
 }
 
 test('the Creek sets its own tone curve, with a gentler color boost than the punchy look', () => {
