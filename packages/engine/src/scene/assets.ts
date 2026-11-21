@@ -221,6 +221,17 @@ export interface ModelMakers {
  */
 export type ProgressHandler = (loaded: number, total: number, url: string) => void;
 
+/** How long a download waits before its one retry, in ms. */
+const RETRY_DELAY_MS = 250;
+
+/**
+ * Waits before a download's retry. A tunnel or a proxy can refuse a session's first request while
+ * the same file serves a moment later, and a short wait lets it answer again.
+ */
+function waitBeforeRetry(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+}
+
 /**
  * Loads files, and textures from image files. Every call runs outside the sketch's frames, so a
  * frame never waits for a download or a decode. A sketch finds it as `ctx.assets`. Addresses
@@ -836,26 +847,48 @@ export class Assets {
 		return download;
 	}
 
-	/** Downloads a file, counts its bytes for the progress handlers, and gives failures their codes. */
+	/**
+	 * Downloads a file, counts its bytes for the progress handlers, and gives failures their codes.
+	 * A fetch that fails at the network level, or a server fault, gets one retry after a short wait;
+	 * a refused answer and a body that will not read are reported as they come.
+	 */
 	private async download(address: URL, call: string): Promise<Blob> {
 		// The bytes this download's response announced, and whether it delivered them.
 		let announced = 0;
 		let delivered = false;
 		try {
-			let response: Response;
-			try {
-				response = await fetch(address);
-			} catch (error) {
+			let response: Response | undefined;
+			let failure: unknown;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				response = undefined;
+				failure = undefined;
+				try {
+					response = await fetch(address);
+				} catch (error) {
+					failure = error;
+					if (attempt === 0) {
+						await waitBeforeRetry();
+						continue;
+					}
+					break;
+				}
+				if (response.status >= 500 && attempt === 0) {
+					await waitBeforeRetry();
+					continue;
+				}
+				break;
+			}
+			if (!response) {
 				// Fetch gives no reason for a blocked response, so another origin's refusal and a
 				// network failure look alike. Another origin's file usually fails for its headers.
 				if (address.origin !== new URL(this.base).origin)
 					throw new EngineError(
 						'E1413',
-						`${call}() could not read ${address}: its server did not allow this page to read it, or could not be reached (${reasonOf(error)}).`,
+						`${call}() could not read ${address}: its server did not allow this page to read it, or could not be reached (${reasonOf(failure)}).`,
 					);
 				throw new EngineError(
 					'E1411',
-					`${call}() could not download ${address}: ${reasonOf(error)}.`,
+					`${call}() could not download ${address}: ${reasonOf(failure)}.`,
 				);
 			}
 			if (!response.ok)
