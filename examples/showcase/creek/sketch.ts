@@ -52,6 +52,7 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
+import { DUSK_SKY, duskSkyStrength, SPRAY, sprayLight as sprayLightOf } from './lights';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
@@ -84,13 +85,6 @@ const DSLR_FOCAL_LENGTH = 50;
  * left and a little from the front, as in the concept picture.
  */
 const HEADING = Math.PI + 0.58;
-/**
- * The dusk's own sky light: with the sun down, the garden takes only the sky map's dim light and
- * reads as one dark shape against the brighter cloud, so the afterglow lights it from above in a
- * lilac grey and from the ground in its shade, at this strength in Dusk alone and none in any other
- * mood.
- */
-const DUSK_SKY = { sky: [0.75, 0.7, 0.85], ground: [0.3, 0.27, 0.27], gain: 0.26 } as const;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
@@ -214,11 +208,6 @@ const FALL = { drop: 17, spread: 0.12, width: 0.9, apron: 2.5 } as const;
  * runs on past it over the rim.
  */
 const WATER_AT_LIP = FALL.width;
-/**
- * The light on the falls' spray and mist: how much of the air's own color it keeps, its faint lilac
- * cast, its strength over the air's, and the least change of the air that it follows.
- */
-const SPRAY = { color: 0.15, tint: [1, 0.975, 1.02], gain: 5.6, step: 0.01 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
@@ -482,7 +471,7 @@ export default defineSketch(async (ctx) => {
 		look.from = mix.from;
 		look.to = mix.to;
 		look.share = mix.share;
-		duskSky.setIntensity(DUSK_SKY.gain * moodShare(look, 'Dusk'));
+		duskSky.setIntensity(duskSkyStrength(look));
 		flora.nightLights(moodShare(look, 'Night') + moodShare(look, 'Dusk'));
 		air.setLook(look);
 		const a = CAUSTICS[look.from];
@@ -568,15 +557,8 @@ export default defineSketch(async (ctx) => {
 			Math.abs(air[1] - sprayAir[1]) +
 			Math.abs(air[2] - sprayAir[2]);
 		if (moved <= SPRAY.step) return;
-		const grey = 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2];
-		for (let c = 0; c < 3; c++) {
-			sprayAir[c] = air[c];
-			// The particles take a light of at most one in each part, which the bright noon air passes.
-			sprayLight[c] = Math.min(
-				1,
-				(grey + (air[c] - grey) * SPRAY.color) * (SPRAY.tint[c] as number) * SPRAY.gain,
-			);
-		}
+		for (let c = 0; c < 3; c++) sprayAir[c] = air[c];
+		sprayLightOf(air, sprayLight);
 		for (const fall of falls) fall.setLight(sprayLight);
 	};
 	// The clouds and the falls take the air's color now too, since a held frame runs no update.
