@@ -73,14 +73,17 @@ export function foamMap(
 		throw new Error('@null3d/water: a foam map needs texels in both axes');
 	if (size[0] <= 0 || size[1] <= 0)
 		throw new Error('@null3d/water: a foam map size must be above 0');
-	if (reach <= 0) throw new Error('@null3d/water: a foam reach must be above 0');
+	// A reach that is not a finite number above 0 lays no foam, or lays it over the whole map.
+	if (!(reach > 0) || !Number.isFinite(reach))
+		throw new Error('@null3d/water: a foam reach must be a finite number above 0');
 	// The map's cells are square, so one texel covers the same distance along both axes.
 	const texel = size[0] / width;
 	const near = new Float32Array(width * height);
 	for (const { x, z, r, reach: own } of obstacles) {
 		// Each mark reaches as far as it names, and as far as the map names without one.
 		const mark = own ?? reach;
-		if (mark <= 0) throw new Error('@null3d/water: a foam reach must be above 0');
+		if (!(mark > 0) || !Number.isFinite(mark))
+			throw new Error('@null3d/water: a foam reach must be a finite number above 0');
 		const [i0, i1] = [(x - r - mark - origin[0]) / texel, (x + r + trail - origin[0]) / texel];
 		const [j0, j1] = [(z - r - mark - origin[1]) / texel, (z + r + mark - origin[1]) / texel];
 		for (let j = Math.max(0, Math.floor(j0)); j <= Math.min(height - 1, Math.ceil(j1)); j++) {
