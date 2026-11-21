@@ -129,7 +129,7 @@ const params = new URL(import.meta.url).searchParams;
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
-/** The parts of the scene that the address leaves out, for the bisect of the Apple WebGPU stall. */
+/** The parts of the scene that the address leaves out, for a bisect or a measure by difference. */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 /**
  * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
@@ -367,7 +367,9 @@ export default defineSketch(async (ctx) => {
 	createSteps(ctx, detail.rock, detail.texture);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders);
 	page.post('loading', 'Planting the garden');
-	const plants = createPlants(ctx, wind, placeValley(), await loadPlants(ctx));
+	const plants = WITHOUT.has('plants')
+		? undefined
+		: createPlants(ctx, wind, placeValley(), await loadPlants(ctx));
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
@@ -605,7 +607,7 @@ export default defineSketch(async (ctx) => {
 			}
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
-			plants.update();
+			plants?.update();
 			stage.update(dt);
 			clouds.update(stage.airColor, stage.light);
 			lightFalls();
