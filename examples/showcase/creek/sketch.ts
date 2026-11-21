@@ -33,7 +33,7 @@ import { EFFECT_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { reportLoading } from '../../lib/progress';
 import type { ShadowReach } from '../../lib/shadow-range';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
-import { createMoods, isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
+import { isMood, type Mood, type MoodMix, moodMix, moodShare } from '../../lib/stage';
 import { createAir } from './air';
 import { createCliff } from './cliff';
 import { createClouds } from './clouds';
@@ -54,6 +54,7 @@ import {
 	WATER,
 } from './land';
 import { createDuskSky, SPRAY, sprayLight as sprayLightOf } from './lights';
+import { createCreekStage, HEADING } from './look';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
@@ -81,11 +82,6 @@ const DETAIL: Record<
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
 const DSLR_FOCAL_LENGTH = 50;
-/**
- * The turn of the sun's path: in the morning its soft light comes from the opening view's upper
- * left and a little from the front, as in the concept picture.
- */
-const HEADING = Math.PI + 0.58;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Auto: [0.32, 0.3, 0.25],
@@ -205,13 +201,6 @@ const WATER_REACH = 1.36;
  * runs on past it over the rim.
  */
 const WATER_AT_LIP = FALL.width;
-/**
- * The air's haze: its density at the cloud's tops, and how fast it thins above them, by a factor of
- * e every 1 / falloff meters. It lies thick over the cloud sea and the cliff's lower face, as it did
- * as an even haze, and thin over the garden, so the garden's colors read about alike from 10 m and
- * from the opening camera's 45 m: under one part in a hundred of each pixel is haze there.
- */
-const AIR = { density: 0.0215, falloff: 0.35 } as const;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
@@ -423,22 +412,7 @@ export default defineSketch(async (ctx) => {
 
 	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
 	// draws the real sun by day and the moon at night; Auto moves them across the sky.
-	// The garden opens on a soft morning under heavy cloud, with the air thick over the cloud sea.
-	const stage = createMoods(ctx, sun, sky, room, {
-		heading: HEADING,
-		fogDensity: AIR.density,
-		fogHeight: { height: CLOUD_TOP, falloff: AIR.falloff },
-		cloudCoverage: 0.95,
-		haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
-		// The cloud above and the cloud below both fill the garden with soft light: the sun's own
-		// light is weakened and the sky's share grows, so the shadows stay soft, and the picture opens
-		// up past the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as
-		// the statue's chest, as the concept's warm light does, with no fill to warm every face.
-		exposureScale: 3.2,
-		environmentScale: 1.4,
-		sunScale: 0.6,
-		backdrop: [0.02, 0.03, 0.05],
-	});
+	const stage = createCreekStage(ctx, sun, sky, room);
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
 	/**
 	 * The look the scene shows: two moods and the share of the second. An hour's look blends between
