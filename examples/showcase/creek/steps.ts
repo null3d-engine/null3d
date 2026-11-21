@@ -34,10 +34,9 @@ const STRIPS = 6;
 
 /**
  * Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. The tread
- * leans cool, so the rock texture's warm cast leaves it a pale, near-grey stone, paler than the
- * moss.
+ * is a pale stone, which the rock texture's warm cast turns a light warm tan, paler than the moss.
  */
-const TREAD = [0.82, 0.84, 0.9] as const;
+const TREAD = [0.8, 0.77, 0.74] as const;
 const RISER = [0.1, 0.092, 0.08] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 /**
