@@ -198,7 +198,10 @@ MODELS = {
 # them. Then each texel's light and dark against those round it, at the scale of the folds and the
 # curls, grows `detail[0]` times on the body and `detail[1]` times on the hair, so the fine texture
 # holds at a distance; the hair keeps `hair_tone` of its lightness, and the curls' gaps, deep in
-# the baked occlusion, darken by up to `curls`.
+# the baked occlusion, darken by up to `curls`. Then the verdigris, every green, cyan and blue
+# off the bare chest, grows `teal[1]` times in color strength, its shaded part up to `teal[0]`
+# times lighter, and takes the `teal_tint`, a little bluer, so it keeps the concept's green-teal
+# and its folds are not black in the garden's gentle color look.
 PATINA = dict(
     middle=0.18,
     contrast=1.4,
@@ -225,6 +228,8 @@ PATINA = dict(
     knee=0.7,
     pale=0.38,
     brown=(0.86, 0.80, 0.72),
+    teal=(1.4, 1.8),
+    teal_tint=(1.0, 0.95, 1.02),
 )
 
 # The preview's backdrop, the concept picture's cloud gray, in linear values.
@@ -904,6 +909,18 @@ def repaint(maps, height, eyes, eye, chest, rng):
     # curls read under any light.
     gaps = np.clip(1 - occlusion / max(float(np.median(occlusion[used & (hair > 0.5)])), 1e-3), 0, 1)
     color *= (1 - PATINA['curls'] * hair * np.clip(gaps * 3, 0, 1))[..., None]
+
+    # The verdigris, every green, cyan and blue texel with some color off the bare chest, grows
+    # `teal[1]` times in color strength, its shaded part, the darker texels, up to `teal[0]` times
+    # lighter, and it takes the `teal_tint`.
+    hue = hue_of(color)
+    teal = (smoothstep(120, 140, hue) * smoothstep(250, 230, hue) * smoothstep(0.03, 0.08, strength_of(color))
+            * (1 - warmth))
+    final = color @ LUMA
+    gray = final[..., None]
+    color = gray + (color - gray) * (1 + (PATINA['teal'][1] - 1) * teal)[..., None]
+    color = color * (1 + (PATINA['teal'][0] - 1) * teal * smoothstep(0.35, 0.1, final))[..., None]
+    color = color * (1 + (np.array(PATINA['teal_tint'], np.float32) - 1) * teal[..., None])
 
     for middle_point in eyes:
         d = (position - np.array(middle_point, np.float32)) / np.array((eye[0], eye[0], eye[1]), np.float32)
