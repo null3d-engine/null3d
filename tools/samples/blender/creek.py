@@ -1966,10 +1966,12 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
 #   hang     a limb whose end hangs this many meters below where it leaves its parent is a broken
 #            one, and so is one whose end stays below `low` of the height, under the crown; each
 #            is cut back to a stub `stub` meters past `clear`
+#   taper    the length over which each limb's blunt end is rounded off, in meters
 #   base     the crown's base, as a share of the height: no pad grows below it
 #   clear    no pad grows nearer the trunk's axis than this, in meters
 #   spacing  the distance between pads along a limb, in meters
-#   past     how far the last pad stands out past the limb's end, as the leaves reach past the wood
+#   past     how far the last pad stands out past the limb's end along the limb, as the leaves reach
+#            past the wood: in full on a limb that rises, a third of it on one that runs level
 #   pad      a pad's half-width and half-height, in meters
 #   cards, up, depth, card, lift, scatter, centered, cells, fold, bend, tint and shade as the
 #            pines' needles take them
@@ -1977,9 +1979,9 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
 MAPLE = dict(
     raw='maple-trunk/model.glb', sha256='76d0d36f36251f12098c2a9b72234224318ae7911e360eef70109c5d6c11dd63',
     turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.2, 0.18, 0.16),
-    hang=0.3, low=0.3, stub=0.3, base=0.42, clear=0.5, spacing=0.9, past=0.45, pad=(0.85, 0.38),
-    cards=2200, up=0.5, depth=0.25, card=0.55, lift=0.75, scatter=0.3, centered=0.45, cells=(0, 1, 2, 3),
-    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.7, levels=((2, 1.3), (5, 1.7)),
+    hang=0.3, low=0.3, stub=0.3, taper=0.35, base=0.42, clear=0.5, spacing=0.9, past=0.9, pad=(0.75, 0.32),
+    cards=1900, up=0.5, depth=0.15, card=0.55, lift=0.85, scatter=0.3, centered=0.45, cells=(0, 1, 2, 3),
+    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.8, levels=((2, 1.3), (5, 1.7)),
 )
 # The leaves' pale tones, a little warmer or cooler leaf by leaf, so the color that the scene gives
 # each copy sets its hue while the leaves keep their light and shade; and the twigs' grey.
@@ -2031,8 +2033,8 @@ def maple_crown(spec, ends, middles, distance, parent, kept, rng):
     """
     The maple's crown as pads along its limbs: on each kept limb, from its end back toward the
     trunk, a pad every `spacing` meters of wood that stands above the crown's base and clear of the
-    trunk, the last one `past` meters out past the end; a pad nearer than most of the spacing to
-    one already grown is left out. Limb k's pads hang from branch k + 1, whose phase its wood
+    trunk, and one past the end, as `past` says; a pad nearer than most of the spacing to one
+    already grown is left out. Limb k's pads hang from branch k + 1, whose phase its wood
     carries.
     """
     plant = Plant()
@@ -2045,9 +2047,9 @@ def maple_crown(spec, ends, middles, distance, parent, kept, rng):
         if k not in kept:
             continue
         tip = Vector(middles[e])
-        out = Vector((tip.x, tip.y, 0))
-        out = out.normalized() if out.length > 1e-3 else Vector((1, 0, 0))
-        spots = [tip + out * spec['past']]
+        along = tip - Vector(middles[path[max(0, len(path) - 6)]])
+        along = along.normalized() if along.length > 1e-3 else Vector((0, 0, 1))
+        spots = [tip + along * spec['past'] * (1 + 2 * max(0.0, along.z)) / 3]
         mark = spec['spacing']
         for c in reversed(path):
             if distance[e] - distance[c] < mark:
@@ -2062,6 +2064,20 @@ def maple_crown(spec, ends, middles, distance, parent, kept, rng):
             size = half * (0.8 + 0.4 * rng.random())
             plant.pad(tuple(p + Vector((0, 0, thick * 0.3))), (size, size, thick), branch)
     return plant
+
+
+def taper_ends(obj, ends, inverse, middles, distance, limb, length):
+    """
+    Rounds off each limb's blunt end: over its last `length` meters of wood, the wood draws in
+    toward the limb's middle line, to a fifth of its girth at the very end.
+    """
+    mesh = obj.data
+    co = positions(mesh)
+    left = distance[np.asarray(ends)[limb[inverse]]] - distance[inverse]
+    pull = 0.8 * np.clip(1 - left / length, 0, 1)
+    co = co + (middles[inverse] - co) * pull[:, None]
+    mesh.vertices.foreach_set('co', co.astype(np.float32).ravel())
+    mesh.update()
 
 
 def cut_wood(obj, gone):
@@ -2105,6 +2121,7 @@ def build_maple(name, spec, raw, leaf_mat, rng):
     broken = {k for k, (e, s) in enumerate(zip(ends, starts))
               if middles[e][2] < middles[s][2] - spec['hang'] or middles[e][2] < spec['low'] * spec['height']}
     plant = maple_crown(spec, ends, middles, distance, parent, set(range(len(ends))) - broken, rng)
+    taper_ends(wood, ends, inverse, middles, distance, limb, spec['taper'])
     pine_wood(wood, plant, inverse, limb_phases(ends, starts, distance, parent, limb), shade)
     # Each is cut where it stands out past the trunk, so the trunk's own wood, which may lead to a
     # low limb from the foot, stays whole.
