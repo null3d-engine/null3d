@@ -891,7 +891,7 @@ PINES = {
         inner=0.2,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=3600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.69, 0.89, 0.89), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.611, 0.823, 0.823), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
     'pine-low': dict(
         raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
@@ -901,7 +901,7 @@ PINES = {
         floor=0.3, spread=2.0, deep=(0.5,), flat=1.7, rise=0.1, droop=0.35, stagger=0.15, inner=0.0,
         body=0.5, bodies=((10, 5), (6, 3), (5, 2)), underside=0.1,
         cards=3400, up=0.6, depth=0.3, card=0.35, lift=0.7, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.08, bend=0.55, tint=(0.76, 0.96, 0.71), shade=0.7, levels=((2, 1.3), (5, 1.7)),
+        fold=0.08, bend=0.55, tint=(0.658, 0.861, 0.607), shade=0.7, levels=((2, 1.3), (5, 1.7)),
     ),
     # The concept's top pine: the tall trunk with its limbs kept short, broad from its rounded top
     # down, about four fifths as wide as it is tall.
@@ -913,7 +913,7 @@ PINES = {
         inner=0.1,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=2600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.74, 0.82, 0.82), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.668, 0.740, 0.740), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
 }
 
