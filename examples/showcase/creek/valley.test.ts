@@ -22,6 +22,7 @@ import { WIDE } from './route';
 import { onSteps } from './steps';
 import { ROCK_REACH, rockPlaces } from './stones';
 import {
+	crownOf,
 	GROUND_TRIANGLES,
 	placeValley,
 	SCALE,
@@ -30,6 +31,7 @@ import {
 	TREES,
 	TRUNK,
 	type TreeKind,
+	underSolid,
 } from './valley';
 
 const valley = placeValley();
@@ -141,8 +143,7 @@ test('no tree or plant stands in the opening view of the statue, read along samp
 		statue.z + (oz as number),
 	]);
 	for (const spot of all) {
-		const size = SIZES[spot.kind as keyof typeof SIZES];
-		const [reach, top] = [size.reach * spot.size, spot.y + size.height * spot.size];
+		const crown = crownOf(spot);
 		for (const target of targets) {
 			const length = Math.hypot(...target.map((v, i) => (v as number) - (WIDE[i] as number)));
 			for (let d = 0; d < length; d += 0.25) {
@@ -150,8 +151,7 @@ test('no tree or plant stands in the opening view of the statue, read along samp
 					(v, i) => (WIDE[i] as number) + (((v as number) - (WIDE[i] as number)) * d) / length,
 				);
 				const inside =
-					(p[1] as number) < top &&
-					Math.hypot((p[0] as number) - spot.x, (p[2] as number) - spot.z) < reach;
+					(p[1] as number) < crown.top && underSolid(crown, p[0] as number, p[2] as number);
 				expect(
 					inside,
 					`the ${spot.kind} at ${spot.x.toFixed(1)}, ${spot.z.toFixed(1)} in the view to the statue`,

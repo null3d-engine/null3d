@@ -36,14 +36,18 @@ export type TreeKind = (typeof TREE_KINDS)[number];
 export const PLANT_KINDS = ['fern', 'hosta'] as const;
 export type PlantKind = (typeof PLANT_KINDS)[number];
 
-/** The size of each model at scale 1: its height and the reach of its foliage about its foot. */
-export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number }> = {
-	'pine-tall': { height: 7.41, reach: 5.1 },
-	'pine-narrow': { height: 7.56, reach: 2.9 },
-	'pine-low': { height: 3.47, reach: 2.8 },
-	fern: { height: 0.77, reach: 0.82 },
-	hosta: { height: 0.52, reach: 0.6 },
-};
+/**
+ * The size of each model at scale 1: its height, the reach of its foliage across its broad side,
+ * and its reach toward and away from that side, as the pine helper's builds measure them.
+ */
+export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number; depth: number }> =
+	{
+		'pine-tall': { height: 6.87, reach: 5.4, depth: 3.15 },
+		'pine-narrow': { height: 7.74, reach: 2.81, depth: 2.3 },
+		'pine-low': { height: 3.63, reach: 2.59, depth: 1.66 },
+		fern: { height: 0.77, reach: 0.82, depth: 0.82 },
+		hosta: { height: 0.52, reach: 0.6, depth: 0.6 },
+	};
 
 /** How far a pine's trunk reaches about its foot at scale 1, in meters, the widest of the three. */
 export const TRUNK = 0.66;
@@ -90,16 +94,16 @@ export const GROUND_TRIANGLES = { fern: 416, hosta: 560, budget: 25000 } as cons
  * gravel's moss islands.
  */
 export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
-	['P1', -16.2, 0, 'pine-tall', 1, 0.2],
-	['P2', -5.8, -16.6, 'pine-narrow', 1.05, -0.15],
-	['P3', 1.6, 22.2, 'pine-low', 0.9, 0.3],
-	['P4', 13.7, 8.6, 'pine-low', 1, -0.2],
-	['P5', 8.1, -21.6, 'pine-tall', 1.1, 0.1],
-	['P6', -0.2, -7.6, 'pine-low', 1.05, -0.25],
-	['P7', 18.3, -15.3, 'pine-tall', 0.59, 0.25],
-	['P8', 25.4, -1.9, 'pine-narrow', 0.44, -0.3],
-	['P10', 2, 5.3, 'pine-low', 0.37, 0.4],
-	['P11', 6.1, 7.1, 'pine-low', 0.2, -0.4],
+	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2],
+	['P2', -5.8, -16.6, 'pine-narrow', 1.03, -0.15],
+	['P3', 1.6, 22.2, 'pine-low', 0.86, 0.3],
+	['P4', 13.7, 8.6, 'pine-low', 0.96, -0.2],
+	['P5', 8.1, -21.6, 'pine-tall', 1.19, 0.1],
+	['P6', -0.2, -7.6, 'pine-low', 1, -0.25],
+	['P7', 18.3, -15.3, 'pine-tall', 0.64, 0.25],
+	['P8', 25.4, -1.9, 'pine-narrow', 0.43, -0.3],
+	['P10', 2, 5.3, 'pine-low', 0.35, 0.4],
+	['P11', 6.1, 7.1, 'pine-low', 0.19, -0.4],
 ];
 
 /**
@@ -204,7 +208,7 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.6,
+		spacing: 1.95,
 		scale: [0.9, 1.4],
 		clump: [5, 1.3],
 		tolerances: [['shade', 0.1, 0.35, 1, 1.01]],
@@ -312,27 +316,48 @@ export interface Solid {
 	readonly kind: string;
 	readonly x: number;
 	readonly z: number;
-	/** The reach about its foot, with the camera's clearance, in meters. */
-	readonly radius: number;
+	/** Its turn about y, along which its depth runs. */
+	readonly yaw: number;
+	/** Its reach across its broad side and along its turn, with any clearance, in meters. */
+	readonly reach: number;
+	readonly depth: number;
 	/** The height of its top, with the camera's clearance, in meters. */
 	readonly top: number;
 }
 
-/** The room that one placed model keeps. */
-export function solidOf(spot: Spot): Solid {
+/**
+ * A placed model's crown with a clearance round it: an upright cylinder over an ellipse, as wide as
+ * its broad side and as deep as its depth along its turn.
+ */
+export function crownOf(spot: Spot, clearance = 0): Solid {
 	const size = SIZES[spot.kind as keyof typeof SIZES];
 	return {
 		kind: spot.kind,
 		x: spot.x,
 		z: spot.z,
-		radius: size.reach * spot.size + CLEARANCE,
-		top: spot.y + size.height * spot.size + CLEARANCE,
+		yaw: spot.yaw,
+		reach: size.reach * spot.size + clearance,
+		depth: size.depth * spot.size + clearance,
+		top: spot.y + size.height * spot.size + clearance,
 	};
+}
+
+/** The room that one placed model keeps from the camera. */
+export function solidOf(spot: Spot): Solid {
+	return crownOf(spot, CLEARANCE);
+}
+
+/** True when a ground point lies under a solid: inside its ellipse. */
+export function underSolid(solid: Solid, x: number, z: number): boolean {
+	const [dx, dz] = [x - solid.x, z - solid.z];
+	const along = dx * Math.sin(solid.yaw) + dz * Math.cos(solid.yaw);
+	const across = dx * Math.cos(solid.yaw) - dz * Math.sin(solid.yaw);
+	return (across / solid.reach) ** 2 + (along / solid.depth) ** 2 < 1;
 }
 
 /** True when a route pose passes through a model's room. */
 export function hits(solid: Solid, pose: readonly [number, number, number]): boolean {
-	return pose[1] <= solid.top && Math.hypot(pose[0] - solid.x, pose[2] - solid.z) < solid.radius;
+	return pose[1] <= solid.top && underSolid(solid, pose[0], pose[2]);
 }
 
 /**
@@ -341,19 +366,21 @@ export function hits(solid: Solid, pose: readonly [number, number, number]): boo
  */
 export function blocksStatue(spot: Spot): boolean {
 	const { statue } = gardenPlaces();
-	const size = SIZES[spot.kind as keyof typeof SIZES];
-	const [reach, top] = [size.reach * spot.size, spot.y + size.height * spot.size];
+	const crown = crownOf(spot);
 	return STATUE_VIEW.some(([ox, oy, oz]) => {
-		const target = [statue.x + ox, statue.y + oy * statue.size, statue.z + oz];
-		const [dx, dz] = [(target[0] as number) - WIDE[0], (target[2] as number) - WIDE[2]];
-		// The nearest point of the line's ground track to the model's foot, and the line's height there.
-		const t = Math.min(
-			1,
-			Math.max(0, ((spot.x - WIDE[0]) * dx + (spot.z - WIDE[2]) * dz) / (dx * dx + dz * dz)),
-		);
-		const near = Math.hypot(WIDE[0] + dx * t - spot.x, WIDE[2] + dz * t - spot.z);
-		const height = WIDE[1] + ((target[1] as number) - WIDE[1]) * t;
-		return near < reach && height < top;
+		const target = [statue.x + ox, statue.y + oy * statue.size, statue.z + oz] as const;
+		// The line, sampled every 0.25 m, passes under the crown's top inside its ellipse.
+		const length = Math.hypot(target[0] - WIDE[0], target[1] - WIDE[1], target[2] - WIDE[2]);
+		for (let d = 0; d < length; d += 0.25) {
+			const t = d / length;
+			const y = WIDE[1] + (target[1] - WIDE[1]) * t;
+			if (
+				y < crown.top &&
+				underSolid(crown, WIDE[0] + (target[0] - WIDE[0]) * t, WIDE[2] + (target[2] - WIDE[2]) * t)
+			)
+				return true;
+		}
+		return false;
 	});
 }
 
@@ -438,7 +465,7 @@ export function placeValley(): Valley {
  * The room that every placed model keeps, which the camera's route must miss.
  *
  * @param valley The models that `placeValley` placed.
- * @returns One cylinder for each tree and plant.
+ * @returns One upright cylinder over an ellipse for each tree and plant.
  */
 export function valleySolids(valley: Valley): Solid[] {
 	return [...valley.trees, ...valley.plants].map(solidOf);

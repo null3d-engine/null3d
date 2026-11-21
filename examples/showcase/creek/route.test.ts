@@ -18,7 +18,7 @@ import {
 } from './land';
 import { SHOTS } from './route';
 import { ROCK_REACH, rockPlaces } from './stones';
-import { placeValley, valleySolids } from './valley';
+import { hits, placeValley, valleySolids } from './valley';
 
 /** The height of the creek's surface at a point and time, as the water's shape gives its current. */
 const surfaceHeight = (x: number, z: number, t: number) =>
@@ -123,8 +123,7 @@ test('the creek route stays clear of the trees and the plants', () => {
 		routePosition(route, (step / SAMPLES) * route.total, pose);
 		const at = [pose[0] as number, pose[1] as number, pose[2] as number] as const;
 		for (const solid of solids) {
-			const inside =
-				at[1] <= solid.top && Math.hypot(at[0] - solid.x, at[2] - solid.z) < solid.radius;
+			const inside = hits(solid, at);
 			expect(
 				inside,
 				`the route passes through the ${solid.kind} at ${solid.x.toFixed(1)}, ${solid.z.toFixed(1)} at ${at.map((v) => v.toFixed(2)).join(', ')}`,
