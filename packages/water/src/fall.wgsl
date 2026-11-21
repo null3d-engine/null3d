@@ -150,7 +150,10 @@ fn surface(input: SurfaceInput) -> Surface {
     // before an edge.
     let piled = smoothstep(-0.8 * material.apron, 0.0, t) * smoothstep(0.35, 0.6, froth);
     let foam = max(white, max(lines * 0.9, piled * 0.85) * (1.0 - white));
-    let body = clamp(rope * mix(0.8, 1.15, froth) * mix(0.9, 1.08, fine), 0.0, 1.0);
+    // Fine bright streaks run down the ropes, and the froth shades them only a little, so the
+    // white reads as streaked rather than mottled.
+    let streaked = streak_layer(lip * 1.6, crossed, vec2f(5.0, 1.4), 3.3);
+    let body = clamp(rope * mix(0.9, 1.1, froth) * mix(0.86, 1.12, streaked) * mix(0.95, 1.04, fine), 0.0, 1.0);
     s.baseColor = mix(material.glass, white_color * mix(0.22, 1.1, body), foam);
     s.roughness = mix(0.06, s.roughness, foam);
     s.diffuseTransmission = s.diffuseTransmission * white;
@@ -189,12 +192,12 @@ fn surface(input: SurfaceInput) -> Surface {
     let strand = value2(vec2f(input.uv.x * 2.4 + 3.0, crossed * 0.7));
     alpha *= mix(1.0, smoothstep(0.45, 0.62, strand + (froth - 0.5) * 0.3), breaking);
     // Its outermost water thins away as it falls, so the fall draws in from the rock on both sides.
-    let edge = mix(1.05, 0.6, smoothstep(0.0, 1.8, fallen)) + (side_lobes - 0.5) * 0.2;
+    let edge = mix(1.05, 0.3, smoothstep(0.0, 1.4, fallen)) + (side_lobes - 0.5) * 0.2;
     alpha *= mix(1.0, 1.0 - smoothstep(edge - 0.06, edge + 0.04, across_place), frontal_view);
     // The water gives way to the mist over the lower half of the drop, so it never lands. Each
     // clump ends at its own height, so no line runs across the fall.
     let ending = share + (froth - 0.5) * 0.3 + (core - 0.5) * 0.12;
-    alpha *= 1.0 - smoothstep(0.62, 0.98, ending);
+    alpha *= 1.0 - smoothstep(0.42, 0.75, ending);
     // The apron fades in from its upstream end, over the river's own surface, sooner in some places
     // across than in others, so neither it nor the river's square end draws a line. The column's
     // back lies on its front at the lip, so it shows only once the column has some depth.

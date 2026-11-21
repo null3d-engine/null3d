@@ -539,7 +539,10 @@ fn surface(input: SurfaceInput) -> Surface {
     if share < 1.0 {
         flecks = mix(foam_flecks(p, vec2f(0.0), frame.time, footprint), flecks, share);
     }
-    let stoneFoam = smoothstep(0.57, 0.85, near * (0.205 + 0.95 * flecks));
+    // Close up, where a clump spans many pixels, its edge softens over a wider band, so the foam
+    // breaks up at its edges rather than ending in a hard line; the share of foam stays the same.
+    let foamEdge = mix(0.24, 0.14, smoothstep(0.004, 0.03, footprint));
+    let stoneFoam = smoothstep(0.71 - foamEdge, 0.71 + foamEdge, near * (0.205 + 0.95 * flecks));
     let foam = max(edgeFoam, stoneFoam);
     // Foam is broken white water: nearly white, and too full of air to show the bed through it.
     s.baseColor = mix(s.baseColor, vec3f(1.0), foam);
