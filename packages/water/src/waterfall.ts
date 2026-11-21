@@ -110,6 +110,13 @@ export interface WaterfallOptions {
 	 */
 	readonly spray?: number;
 	/**
+	 * The mist round the fall's foot and the plume that rises from it, as a factor of the fall's
+	 * own, from 0 to 3, which `spray` scales too. It is 1 by default. At 0 the fall makes neither,
+	 * for a scene whose own cloud draws the mist at the fall's foot: puffs lit apart from that cloud
+	 * would draw a gray patch over it.
+	 */
+	readonly mist?: number;
+	/**
 	 * The layers that the sheet and its spray draw on, as a 32-bit mask. It is layer 0 by default.
 	 * Leave out the layers that a water's reflection draws when the fall lies past the water's edge.
 	 */
@@ -161,11 +168,16 @@ function error(message: string): Error {
 	return error;
 }
 
-/** A spray amount, or an error that says what it must be. */
-function sprayAmount(amount: number): number {
+/** A spray or mist amount, or an error that says what it must be. */
+function sprayAmount(amount: number, what = 'spray'): number {
 	if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MOST_SPRAY)
-		throw error(`a waterfall's spray must be from 0 to ${MOST_SPRAY}, and it is ${amount}`);
+		throw error(`a waterfall's ${what} must be from 0 to ${MOST_SPRAY}, and it is ${amount}`);
 	return amount;
+}
+
+/** Whether an emitter makes the mist round the fall's foot, which the `mist` option scales. */
+function atFoot(place: FallEmitter): boolean {
+	return place.kind === 'mist' || place.kind === 'plume';
 }
 
 /** The lip's direction across the water, to its right, as a unit vector in the world. */
@@ -216,6 +228,7 @@ export async function createWaterfall(
 	};
 	checkFallSheet(sheet);
 	let spray = sprayAmount(options.spray ?? 1);
+	const mist = sprayAmount(options.mist ?? 1, 'mist');
 	const sink = sinkHeight(options.fadeBelow);
 	// The part of the drop that shows: down to a meter below the cloud that the fall sinks into, or
 	// the whole drop. The water breaks up and bursts into mist over this part, so the burst stands
@@ -285,6 +298,8 @@ export async function createWaterfall(
 			...(options.layers !== undefined && { layers: options.layers }),
 		};
 		const billow = mistBillow(sprayed);
+		// The births a second of an emitter at a spray of 1.
+		const own = (place: FallEmitter) => place.rate * (atFoot(place) ? mist : 1);
 		const look = (place: FallEmitter, seed: number): ParticleSystemOptions => {
 			const half = place.halfWidth;
 			const base = {
@@ -292,7 +307,7 @@ export async function createWaterfall(
 				seed,
 				position: place.position,
 				shape: { type: 'box' as const, size: place.box },
-				rate: place.rate * spray,
+				rate: own(place) * spray,
 			};
 			if (place.kind === 'froth')
 				// A fine spray thrown out and down with the water over the brink: many small, faint
@@ -368,19 +383,21 @@ export async function createWaterfall(
 				opacity: 0.7,
 			};
 		};
-		const places = fallEmitters(sprayed);
+		// Each emitter keeps its seed whichever others the fall leaves out.
+		const seeded = fallEmitters(sprayed).map((place, k) => ({ place, seed: 61 + k }));
+		const kept = seeded.filter(({ place }) => own(place) > 0);
 		const made = await Promise.all(
-			places.map((place, k) => createParticles(ctx, look(place, 61 + k))),
+			kept.map(({ place, seed }) => createParticles(ctx, look(place, seed))),
 		);
 		for (let k = 0; k < made.length; k++) {
 			const system = made[k] as ParticleSystem;
-			const place = places[k] as FallEmitter;
+			const place = (kept[k] as (typeof kept)[number]).place;
 			// Each system's frame turns with the lip, so its box lies across the fall.
 			system.object.setRotation(0, Math.sin(place.turn / 2), 0, Math.cos(place.turn / 2));
 			// The mist and the plume wrap the column's lower part, so they draw over it wherever the
 			// two meet, and the water dissolves into them.
-			if (place.kind === 'mist' || place.kind === 'plume') system.object.setRenderOrder(1);
-			emitters.push({ system, rate: place.rate });
+			if (atFoot(place)) system.object.setRenderOrder(1);
+			emitters.push({ system, rate: own(place) });
 		}
 	}
 	return {

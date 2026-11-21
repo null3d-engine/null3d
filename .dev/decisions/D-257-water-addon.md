@@ -445,8 +445,9 @@ height and width, to the path, to nearly parallel sides, and to a column that ne
 **The column.** One closed tube gives the fall its body. Its section is an oval as wide as the
 water. The back of the oval follows the path, so no water lies behind the lip's line. The front
 stands out from it by the column's depth. That depth is the tongue's thickness at the lip, and it
-grows over the first meters of the drop to about the width of the drawn-in water, so the falling
-water is a round bundle. Below that the front and back run nearly parallel. Seen from the side, as
+grows over the first meters of the drop to about twice the width of the drawn-in water. So the fall
+seen from the side is a broad fan, as the concept's left fall is, and from the front a narrow
+stream, as its right fall is. Below that the front and back run nearly parallel. Seen from the side, as
 the concept's camera sees its left fall, the fall is a
 solid column, and its depth comes from the water's own thickness and the spray round it. An
 earlier build used three sheets at different angles. From the side they fanned out from one point
@@ -490,7 +491,9 @@ reads white beside the cloud. It fades where the copy of the scene's depth shows
 it. The mist is particles: large, faint billows sized by the creek, gathered round the column's foot
 about four times as wide as it. Many overlap at any place, so they read as one even mist; fewer,
 brighter puffs read as separate balls of cotton against the cloud. The mist and the plume draw
-after the column, over its lower part, so the water dissolves into them.
+after the column, over its lower part, so the water dissolves into them. A scene whose own cloud
+draws the mist at the fall's foot, as the Creek's does, passes `mist: 0`: the fall's puffs take
+the scene's spray light, not the cloud's, and drew a gray patch over the cloud's brighter mist.
 
 **The spray.** The water add-on depends on `@null3d/particles` at the exact version. As
 [D-173](D-173-addon-hooks.md) allows, the grass add-on depends on the wind add-on the same way. A
@@ -545,7 +548,15 @@ just under 4,000 triangles, below the count at which the engine plans levels for
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page
   (`packages/water/page`, which the tarball leaves out) gives the listing check's page, cost and
-  allocation gates a scene to measure.
+  allocation gates a scene to measure. Its view from under the water reads the camera's height in
+  every frame, and its orbit controls turn the camera, as both allocate nothing in a frame.
+- **A frame's numbers.** Code that runs once a frame stays unoptimized in the browser for a long
+  time, and there each fraction that it reads or works out is a new object of about 12 bytes. The
+  allocation gate's window sees that code cold. So the view from under the water first compares the
+  camera's height by the top 16 bits of its float, which read as small whole numbers, against the
+  waves' reach: a camera clearly above the water allocates nothing. Near or under the water the
+  view works out its effect's values, and there it allocated 107 to 135 bytes a frame with the
+  page's camera 0.3 m above the river. Moving those reads into other calls only moved the bytes.
 - The demo's tour is one loop of shots through the route of `examples/lib/cinematic.ts`, as a
   function of the time. It drifts down the river along the bank and dives under the lake for about
   24 s. It then rises, turns to face back over the scene, and circles the valley back to its first
