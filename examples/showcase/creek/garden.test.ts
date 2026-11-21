@@ -59,11 +59,13 @@ test("the statue's slab sits on the ledge's flat top, which stands over the terr
 			Math.hypot(Math.cos(angle) / SLAB_REACH.long, Math.sin(angle) / SLAB_REACH.wide);
 		expect(Math.hypot(x, z), 'the ledge inside the slab').toBeGreaterThan(slab);
 	}
-	// The ring's blocks stand about level with the ledge's top, never over the highest that the ring
-	// allows, so none stands up past the slab's foot.
+	// The ring's blocks stand about level with the ledge's top, within the range that the ring
+	// allows, so none stands up past the slab's foot and none sinks out of sight.
 	for (const block of gardenPlaces().ring) {
 		expect(block.top - ledge.top, 'a ring block over the ledge').toBeLessThan(RING.top[1] + 0.005);
-		expect(block.top - ledge.top, 'a ring block sunk out of sight').toBeGreaterThan(-0.5);
+		expect(block.top - ledge.top, 'a ring block sunk too deep').toBeGreaterThan(
+			RING.top[0] - 0.005,
+		);
 	}
 	// The slab model's rim lies 5 cm under its origin: it rests on the ledge's top, with no air.
 	expect(Math.abs(statue.y - 0.05 * statue.size - ledge.top)).toBeLessThan(0.01);
