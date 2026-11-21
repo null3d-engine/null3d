@@ -42,8 +42,8 @@ const UNDERCUT = 0.55;
  */
 const LIP_RECESS = {
 	back: 0.9,
-	water: 1.05,
-	sheet: 1.25,
+	water: 1.3,
+	sheet: 1.45,
 	clear: 3,
 	proud: 0.15,
 	fold: 0.6,
