@@ -231,11 +231,35 @@ function bodyList(shapes: WaterShape | readonly WaterShape[]): WaterBody[] {
 	return list.map((shape) => waterBody(shape));
 }
 
+/** The seconds over which a pattern rides the current before it fades into a fresh copy. */
+export const CARRY_CYCLE = 2;
+
+/**
+ * Two copies of a pattern that the current carries, half a cycle apart, as the shaders' `carried`
+ * gives them: the seconds that each has ridden the current, and their weights.
+ */
+function carried(
+	t: number,
+): [first: number, second: number, firstWeight: number, secondWeight: number] {
+	const fract = (value: number) => value - Math.floor(value);
+	const first = fract(t / CARRY_CYCLE);
+	const second = fract(t / CARRY_CYCLE + 0.5);
+	const weight = 1 - Math.abs(2 * first - 1);
+	return [first * CARRY_CYCLE, second * CARRY_CYCLE, weight, 1 - weight];
+}
+
+/** A number from 0 to 1 that changes each time a copy starts afresh, as the shaders' `cycle_seed`. */
+function cycleSeed(t: number, which: number): number {
+	const value = Math.floor(t / CARRY_CYCLE + which) * 0.618034 + which;
+	return value - Math.floor(value);
+}
+
 /**
  * The height of a water surface at a point and a sketch time, in meters, as its long waves move it.
  * A `current` carries the whole set downstream, with each wave's direction turned into the
- * current's frame; still water keeps the authored directions and each wave's own speed. `ripple`
- * scales them, and `waveAmplitude` scales the surface's height above the level.
+ * current's frame, in two copies that take turns as the surface's shader draws them; still water
+ * keeps the authored directions and each wave's own speed. `ripple` scales them, and
+ * `waveAmplitude` scales the surface's height above the level.
  *
  * @category api/water
  */
@@ -253,17 +277,27 @@ export function waveHeight(
 	const cx = moving ? current[0] / speed : 0;
 	const cz = moving ? current[1] / speed : 0;
 	let height = level;
-	for (const [ownX, ownZ, k, ownSpeed] of LONG_WAVES) {
+	const copies = carried(t);
+	for (let index = 0; index < LONG_WAVES.length; index++) {
+		const [ownX, ownZ, k, ownSpeed] = LONG_WAVES[index] as (typeof LONG_WAVES)[number];
 		const length = Math.hypot(ownX, ownZ);
 		const along = ownX / length;
 		const across = ownZ / length;
-		// The authored direction turned into the current's frame, and the current's phase.
-		const dx = moving ? cx * along - cz * across : along;
-		const dz = moving ? cz * along + cx * across : across;
-		const phase = moving
-			? k * (dx * x + dz * z - speed * t * (dx * cx + dz * cz))
-			: k * (along * x + across * z) - ownSpeed * t;
-		height += (ripple * waveAmplitude * 0.05 * Math.sin(phase)) / k;
+		const amplitude = (ripple * waveAmplitude * 0.05) / k;
+		if (!moving) {
+			height += amplitude * Math.sin(k * (along * x + across * z) - ownSpeed * t);
+			continue;
+		}
+		// The authored direction turned into the current's frame, and the current's phase in each of
+		// the two copies.
+		const dx = cx * along - cz * across;
+		const dz = cz * along + cx * across;
+		const run = k * speed * (dx * cx + dz * cz);
+		const base = k * (dx * x + dz * z);
+		const turn = 2 * Math.PI * (index + 1);
+		const first = base - run * copies[0] + cycleSeed(t, 0) * turn;
+		const second = base - run * copies[1] + cycleSeed(t, 0.5) * turn;
+		height += amplitude * (copies[2] * Math.sin(first) + copies[3] * Math.sin(second));
 	}
 	return height;
 }
