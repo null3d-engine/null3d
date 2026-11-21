@@ -11,17 +11,22 @@ import { mossy } from './stones';
 
 /**
  * The slabs: how far each reaches past its tread's length, so the steps overlap a little; how far its
- * body sinks below the ramp; how much its width, its front edge and its height wander, in meters;
- * how far it turns off the flight's line, in radians; and how many strips its tread has across, so
+ * body sinks below the ramp; how much the step's width, a slab's edges and its height wander, in
+ * meters; how far a slab turns off the flight's line, in radians; how much its length wanders, as a
+ * share; half the joint between two slabs of a step, in meters; and the share of steps laid in three
+ * slabs rather than two. A step's tread has up to as many strips across as the constant below, so
  * the moss can creep in at the ends.
  */
 const SLAB = {
 	overlap: 0.08,
 	sink: 0.35,
 	width: 0.12,
-	edge: 0.05,
+	edge: 0.06,
 	height: 0.025,
-	turn: 0.04,
+	turn: 0.05,
+	length: 0.12,
+	joint: 0.025,
+	three: 0.4,
 } as const;
 const STRIPS = 6;
 
@@ -84,73 +89,120 @@ function flightSlabs(built: Parameters<typeof face>[0], flight: Flight, next: ()
 	const tread = length / flight.steps;
 	const rise = (flight.high - flight.low) / flight.steps;
 	for (let k = 0; k < flight.steps; k++) {
-		const turn = Math.atan2(dz, dx) + (next() * 2 - 1) * SLAB.turn;
-		const [fx, fz] = [Math.cos(turn), Math.sin(turn)];
-		const [sx, sz] = [-fz, fx];
 		const along = (k + 0.5) * tread;
-		const [cx, cz] = [
+		const middle: [number, number] = [
 			flight.from[0] + (dx / length) * along,
 			flight.from[1] + (dz / length) * along,
 		];
 		const half = STAIRS.half + (next() * 2 - 1) * SLAB.width;
-		const back = (tread / 2) * (1 + SLAB.overlap);
 		const top = flight.low + (k + 1) * rise;
-		const bottom = top - rise - SLAB.sink;
-		// The tread: strips across, each corner a little off level, the ends mossy.
-		const corner = (a: number, b: number, y: number): [number, number, number] => [
-			cx + sx * a * half + fx * b,
-			y,
-			cz + sz * a * half + fz * b,
-		];
-		const front = -back - (next() * 2 - 1) * SLAB.edge;
-		const lift = () => top + (next() * 2 - 1) * SLAB.height;
-		const edgeLift = Array.from({ length: STRIPS + 1 }, lift);
-		const backLift = Array.from({ length: STRIPS + 1 }, lift);
-		for (let strip = 0; strip < STRIPS; strip++) {
-			const [a0, a1] = [(strip / STRIPS) * 2 - 1, ((strip + 1) / STRIPS) * 2 - 1];
-			const corners = [
-				corner(a0, front, edgeLift[strip] as number),
-				corner(a0, back, backLift[strip] as number),
-				corner(a1, back, backLift[strip + 1] as number),
-				corner(a1, front, edgeLift[strip + 1] as number),
-			];
-			const shades = corners.map(([x, , z], c) => {
-				const a = c < 2 ? a0 : a1;
-				// Moss creeps in from the slab's ends and lies in patches over its worn middle.
-				const ends = (Math.abs(a) - 0.45) / 0.4 + 0.35 * noise.value2(x * 2, z * 2);
-				const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.25) * 2.5;
-				const moss = Math.min(1, Math.max(0, ends, patches));
-				const base = tone(TREAD, x, z, 0.4);
-				return [0, 1, 2].map(
-					(i) => (base[i] as number) + ((MOSS[i] as number) - (base[i] as number)) * moss,
-				) as [number, number, number];
+		// Each step lies in two or three slabs of uneven length across the flight, with narrow joints
+		// between them, so no step reads as one long plank.
+		const pieces = next() < SLAB.three ? 3 : 2;
+		const cuts = [-1];
+		for (let p = 1; p < pieces; p++)
+			cuts.push(-1 + (2 * p) / pieces + (next() - 0.5) * (1.2 / pieces));
+		cuts.push(1);
+		const joint = SLAB.joint / half;
+		for (let p = 0; p < pieces; p++)
+			slab(built, next, {
+				middle,
+				heading: Math.atan2(dz, dx),
+				half,
+				from: (cuts[p] as number) + (p > 0 ? joint : 0),
+				to: (cuts[p + 1] as number) - (p < pieces - 1 ? joint : 0),
+				depth: tread / 2,
+				top,
+				bottom: top - rise - SLAB.sink,
 			});
-			face(built, corners, shades, [0, 1, 0]);
-		}
-		// The riser, facing down the flight, and the two ends and the back, all in shade.
-		const low = [
-			corner(-1, front, bottom),
-			corner(1, front, bottom),
-			corner(1, back, bottom),
-			corner(-1, back, bottom),
+	}
+}
+
+/** One slab of a step: its share of the step's width, from `from` to `to` across it, from -1 to 1. */
+interface SlabPlace {
+	middle: readonly [number, number];
+	heading: number;
+	half: number;
+	from: number;
+	to: number;
+	depth: number;
+	top: number;
+	bottom: number;
+}
+
+/**
+ * One slab, added to the arrays being built: its tread in strips across, each corner a little off
+ * level and its front edge broken; moss creeping in from the step's ends and in patches; its riser,
+ * ends and back in shade.
+ */
+function slab(built: Parameters<typeof face>[0], next: () => number, place: SlabPlace): void {
+	const turn = place.heading + (next() * 2 - 1) * SLAB.turn;
+	const [fx, fz] = [Math.cos(turn), Math.sin(turn)];
+	const [sx, sz] = [-fz, fx];
+	const [cx, cz] = place.middle;
+	const corner = (a: number, b: number, y: number): [number, number, number] => [
+		cx + sx * a * place.half + fx * b,
+		y,
+		cz + sz * a * place.half + fz * b,
+	];
+	const strips = Math.max(2, Math.round((STRIPS * (place.to - place.from)) / 2));
+	const across = (i: number) => place.from + ((place.to - place.from) * i) / strips;
+	const reach = place.depth * (1 + SLAB.overlap) * (1 + (next() * 2 - 1) * SLAB.length);
+	const back = Array.from({ length: strips + 1 }, () => reach + (next() * 2 - 1) * SLAB.edge * 0.5);
+	const front = Array.from({ length: strips + 1 }, () => -reach - (next() * 2 - 1) * SLAB.edge);
+	const lift = () => place.top + (next() * 2 - 1) * SLAB.height;
+	const frontLift = Array.from({ length: strips + 1 }, lift);
+	const backLift = Array.from({ length: strips + 1 }, lift);
+	const dark = (p: readonly [number, number, number]) => tone(RISER, p[0], p[2], 0.3);
+	for (let strip = 0; strip < strips; strip++) {
+		const [a0, a1] = [across(strip), across(strip + 1)];
+		const corners = [
+			corner(a0, front[strip] as number, frontLift[strip] as number),
+			corner(a0, back[strip] as number, backLift[strip] as number),
+			corner(a1, back[strip + 1] as number, backLift[strip + 1] as number),
+			corner(a1, front[strip + 1] as number, frontLift[strip + 1] as number),
 		];
-		const high = [
-			corner(-1, front, edgeLift[0] as number),
-			corner(1, front, edgeLift[STRIPS] as number),
-			corner(1, back, backLift[STRIPS] as number),
-			corner(-1, back, backLift[0] as number),
+		const shades = corners.map(([x, , z], c) => {
+			const a = c < 2 ? a0 : a1;
+			// Moss creeps in from the step's ends and lies in patches over its worn middle.
+			const ends = (Math.abs(a) - 0.45) / 0.4 + 0.35 * noise.value2(x * 2, z * 2);
+			const patches = (noise.value2(x * 1.3 + 5, z * 1.3) - 0.25) * 2.5;
+			const moss = Math.min(1, Math.max(0, ends, patches));
+			const base = tone(TREAD, x, z, 0.4);
+			return [0, 1, 2].map(
+				(i) => (base[i] as number) + ((MOSS[i] as number) - (base[i] as number)) * moss,
+			) as [number, number, number];
+		});
+		face(built, corners, shades, [0, 1, 0]);
+		// The riser under this strip's front edge, and the back under its back edge.
+		const riser = [
+			corner(a0, front[strip] as number, place.bottom),
+			corner(a1, front[strip + 1] as number, place.bottom),
+			corner(a1, front[strip + 1] as number, frontLift[strip + 1] as number),
+			corner(a0, front[strip] as number, frontLift[strip] as number),
 		];
-		const dark = (p: readonly [number, number, number]) => tone(RISER, p[0], p[2], 0.3);
-		const sides: [number, number, number, number, [number, number, number]][] = [
-			[0, 1, 1, 0, [-fx, 0, -fz]],
-			[1, 2, 2, 1, [sx, 0, sz]],
-			[2, 3, 3, 2, [fx, 0, fz]],
-			[3, 0, 0, 3, [-sx, 0, -sz]],
+		face(built, riser, riser.map(dark), [-fx, 0, -fz]);
+		const rear = [
+			corner(a1, back[strip + 1] as number, place.bottom),
+			corner(a0, back[strip] as number, place.bottom),
+			corner(a0, back[strip] as number, backLift[strip] as number),
+			corner(a1, back[strip + 1] as number, backLift[strip + 1] as number),
 		];
-		for (const [a, b, , , normal] of sides) {
-			const corners = [low[a], low[b], high[b], high[a]] as [number, number, number][];
-			face(built, corners, corners.map(dark), normal);
-		}
+		face(built, rear, rear.map(dark), [fx, 0, fz]);
+	}
+	// The slab's two ends.
+	for (const [i, sign] of [
+		[0, -1],
+		[strips, 1],
+	] as const) {
+		const a = across(i);
+		const end = [
+			corner(a, front[i] as number, place.bottom),
+			corner(a, back[i] as number, place.bottom),
+			corner(a, back[i] as number, backLift[i] as number),
+			corner(a, front[i] as number, frontLift[i] as number),
+		];
+		face(built, end, end.map(dark), [sx * sign, 0, sz * sign]);
 	}
 }
 
