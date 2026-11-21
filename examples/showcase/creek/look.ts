@@ -42,7 +42,7 @@ fn toneCurve(color: vec3f) -> vec3f {
  * near wall's upper face and reads lighter, as the concept's does, and the cloud sea keeps its
  * haze. Its near-neutral grey weakens far colors without the sky's blue.
  */
-export const AIR = { density: 0.0091, falloff: 0.02, grey: 0.9, curve: 'exp2' } as const;
+export const AIR = { density: 0.0068, falloff: 0.02, grey: 0.9, curve: 'exp2' } as const;
 
 /** The Creek's stage options, the air's among them. */
 export const STAGE: StageOptions = {

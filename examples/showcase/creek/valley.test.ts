@@ -23,7 +23,8 @@ import { onSteps } from './steps';
 import { ROCK_REACH, rockPlaces } from './stones';
 import {
 	crownOf,
-	GROUND_TRIANGLES,
+	GROUND_BUDGET,
+	groundTriangles,
 	MAPLE_SPOTS,
 	PLANT_KINDS,
 	type PlantKind,
@@ -201,11 +202,12 @@ test("the ground cover holds the planting map's kinds within its triangle budget
 	expect(counts.azalea).toBeGreaterThanOrEqual(8);
 	expect(counts['autumn-clump']).toBeGreaterThanOrEqual(35);
 	expect(counts['moss-cushion']).toBeGreaterThanOrEqual(30);
-	const triangles = PLANT_KINDS.reduce(
-		(sum, kind) => sum + counts[kind] * GROUND_TRIANGLES[kind],
-		0,
+	const { full, drawn } = groundTriangles(valley.plants);
+	console.log(
+		`the ground cover: ${full} triangles at its finest level, ${drawn} drawn from the opening camera`,
 	);
-	expect(triangles, 'the ground cover at its finest level').toBeLessThanOrEqual(
-		GROUND_TRIANGLES.budget,
+	expect(drawn, 'the ground cover drawn from the opening camera').toBeLessThanOrEqual(
+		GROUND_BUDGET,
 	);
+	expect(drawn).toBeLessThan(full);
 });

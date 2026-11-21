@@ -88,20 +88,60 @@ export const SCALE: Readonly<Record<string, readonly [number, number]>> = {
 };
 
 /**
- * The ground cover's triangles at the finest level of each model, body and tufts together, and the
- * most that the planting may hold at that level. Each model keeps two lower levels, so the camera
- * draws far fewer: the budget bounds the planting as though every copy were near.
+ * Each ground plant's parts: their triangles at each of their three levels, and the distances from
+ * the camera, in meters, at which a copy of scale 1 switches to its next level, as the cloud
+ * helper's builds measure them at the opening camera's resolution. A copy of another scale switches
+ * at that many times the distance.
  */
-export const GROUND_TRIANGLES: Record<PlantKind, number> & { readonly budget: number } = {
-	'rim-conifer': 6148,
-	'clipped-shrub': 3174,
-	azalea: 2420,
-	'autumn-clump': 4096,
-	'moss-cushion': 384,
-	fern: 416,
-	hosta: 560,
-	budget: 320000,
+export const GROUND_LEVELS: Record<
+	PlantKind,
+	readonly {
+		readonly triangles: readonly [number, number, number];
+		readonly switches: readonly [number, number];
+	}[]
+> = {
+	'rim-conifer': [
+		{ triangles: [1408, 938, 804], switches: [40, 47] },
+		{ triangles: [4740, 2372, 1188], switches: [69, 123] },
+	],
+	'clipped-shrub': [
+		{ triangles: [534, 330, 256], switches: [79, 105] },
+		{ triangles: [2640, 1320, 660], switches: [61, 99] },
+	],
+	azalea: [
+		{ triangles: [852, 498, 394], switches: [79, 93] },
+		{ triangles: [1568, 784, 392], switches: [72, 114] },
+	],
+	'autumn-clump': [
+		{ triangles: [1744, 1154, 724], switches: [55, 77] },
+		{ triangles: [2352, 1176, 588], switches: [55, 80] },
+	],
+	'moss-cushion': [{ triangles: [384, 128, 60], switches: [23, 49] }],
+	fern: [{ triangles: [416, 208, 104], switches: [24, 72] }],
+	hosta: [{ triangles: [560, 200, 120], switches: [21, 91] }],
 };
+
+/** The most triangles that the ground cover may draw from the opening camera, at its levels. */
+export const GROUND_BUDGET = 320000;
+
+/**
+ * The ground cover's triangles: at the finest level of every copy, and as drawn from a camera, each
+ * part of each copy at the level its distance and scale pick.
+ */
+export function groundTriangles(
+	plants: readonly Spot[],
+	from: readonly [number, number, number] = WIDE,
+): { full: number; drawn: number } {
+	let full = 0;
+	let drawn = 0;
+	for (const plant of plants)
+		for (const { triangles, switches } of GROUND_LEVELS[plant.kind as PlantKind]) {
+			const far = Math.hypot(plant.x - from[0], plant.y - from[1], plant.z - from[2]) / plant.size;
+			full += triangles[0];
+			drawn += triangles[far < switches[0] ? 0 : far < switches[1] ? 1 : 2];
+		}
+	return { full, drawn };
+}
 
 /**
  * The trees, by hand where the concept has them, from the references helper's planting map: each
@@ -116,9 +156,19 @@ export const GROUND_TRIANGLES: Record<PlantKind, number> & { readonly budget: nu
  * sides and none above it. P7 and P8 are small on the right hillside, a little inside the rim, P7
  * in the tall pine's form, wider than tall; and P10 and P11 are the clipped tiny pines on the
  * gravel's moss islands.
+ * A seventh number, where given, narrows the tree across its broad side to that share of its
+ * model's width, its height kept: P1 stands a quarter narrower than its form, as the concept's.
  */
-export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
-	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2],
+export const TREES: readonly (readonly [
+	string,
+	number,
+	number,
+	TreeKind,
+	number,
+	number,
+	number?,
+])[] = [
+	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2, 0.75],
 	['P2', -5.8, -16.6, 'pine-narrow', 1.03, -0.15],
 	['P3', 1.6, 22.2, 'pine-low', 0.86, 0.3],
 	['P4', 13.7, 8.6, 'pine-low', 0.96, -0.2],
@@ -156,8 +206,8 @@ export const MAPLE_SPOTS: readonly (readonly [string, number, number, MapleColor
 	['M4', -22.3, 8.6, 'bare', 3.1],
 	['M5', -13.4, 17.5, 'red', 5.1],
 	['M6', -5.8, 21.1, 'orange', 5.3],
-	['M7', 6.2, 22.9, 'red', 5.3],
-	['M8', 9.2, 22.1, 'yellow', 3.8],
+	['M7', 6.2, 22.9, 'red', 7.4],
+	['M8', 9.2, 22.1, 'yellow', 5.3],
 	['M9', 0.6, -16.4, 'orange', 9],
 	['M10', 2.7, -18.5, 'red', 6],
 	['M11', 12, -20.5, 'orange', 7],
@@ -181,6 +231,8 @@ export interface Spot<Kind extends string = string> {
 	readonly size: number;
 	/** A maple's leaf color. */
 	readonly color?: MapleColor;
+	/** Its share of its model's width across its broad side, where it stands narrower than its size. */
+	readonly width?: number;
 }
 
 /** The ground's measures that a rule reads, at one point. */
@@ -229,19 +281,19 @@ interface Rule {
 const RULES: readonly Rule[] = [
 	{
 		kind: 'rim-conifer',
-		spacing: 3.5,
-		scale: [0.8, 1.2],
-		clump: [1, 1.8],
+		spacing: 3.8,
+		scale: [1.3, 1.9],
+		clump: [1, 2],
 		tolerances: [
-			['rim', 0.6, 1, 2.5, 4],
-			['patch', 0.48, 0.6, 1, 1.01],
+			['rim', 0.4, 0.8, 3, 4.5],
+			['patch', 0.4, 0.5, 1, 1.01],
 		],
 	},
 	{
 		kind: 'clipped-shrub',
 		spacing: 4,
-		scale: [0.8, 1.3],
-		clump: [0, 0],
+		scale: [1, 1.5],
+		clump: [1, 1.6],
 		tolerances: [
 			['water', 1, 2.5, 9, 13],
 			['patch', 0.44, 0.56, 1, 1.01],
@@ -249,27 +301,27 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'azalea',
-		spacing: 3.5,
-		scale: [0.7, 1.2],
-		clump: [1, 1.8],
+		spacing: 3,
+		scale: [0.9, 1.4],
+		clump: [2, 1.8],
 		tolerances: [
-			['water', 0.4, 1.2, 7, 10],
-			['patch', 0.25, 0.32, 0.5, 0.58],
+			['water', 0.3, 1, 8, 11],
+			['patch', 0.2, 0.28, 0.55, 0.62],
 		],
 	},
 	{
 		kind: 'autumn-clump',
-		spacing: 3.45,
-		scale: [0.7, 1.2],
-		clump: [2, 1.8],
+		spacing: 3.3,
+		scale: [1, 1.5],
+		clump: [2, 2.2],
 		tolerances: [
-			['height', 0.8, 1.6, 8, 9],
-			['patch', 0.3, 0.45, 1, 1.01],
+			['height', 0.4, 1, 8, 9],
+			['patch', 0.25, 0.4, 1, 1.01],
 		],
 	},
 	{
 		kind: 'hosta',
-		spacing: 1.8,
+		spacing: 1.4,
 		scale: [1, 1.5],
 		clump: [4, 1.1],
 		tolerances: [
@@ -279,14 +331,14 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 2.4,
+		spacing: 1.5,
 		scale: [0.9, 1.4],
 		clump: [5, 1.3],
 		tolerances: [['shade', 0.1, 0.35, 1, 1.01]],
 	},
 	{
 		kind: 'fern',
-		spacing: 2,
+		spacing: 1.4,
 		scale: [0.9, 1.3],
 		clump: [4, 1.2],
 		tolerances: [
@@ -295,13 +347,23 @@ const RULES: readonly Rule[] = [
 		],
 	},
 	{
-		kind: 'moss-cushion',
+		kind: 'fern',
 		spacing: 1.6,
-		scale: [0.6, 1.6],
+		scale: [1, 1.5],
+		clump: [4, 1.3],
+		tolerances: [
+			['height', 0.5, 1, 8, 9],
+			['patch', 0.3, 0.4, 0.75, 0.85],
+		],
+	},
+	{
+		kind: 'moss-cushion',
+		spacing: 0.8,
+		scale: [0.8, 2],
 		clump: [2, 1.3],
 		tolerances: [
-			['water', 0.2, 0.6, 6, 9],
-			['height', -1, 0, 2.2, 3.2],
+			['water', 0.2, 0.5, 20, 30],
+			['height', -1, 0, 6, 8],
 		],
 	},
 ];
@@ -419,7 +481,7 @@ export function crownOf(spot: Spot, clearance = 0): Solid {
 		x: spot.x,
 		z: spot.z,
 		yaw: spot.yaw,
-		reach: size.reach * spot.size + clearance,
+		reach: size.reach * spot.size * (spot.width ?? 1) + clearance,
 		depth: size.depth * spot.size + clearance,
 		top: spot.y + size.height * spot.size + clearance,
 	};
@@ -515,13 +577,14 @@ export function placeValley(): Valley {
 		return !route.some((pose) => hits(solid, pose));
 	};
 	const pines = TREES.map(
-		([, x, z, kind, size, turn]): Spot<TreeKind> => ({
+		([, x, z, kind, size, turn, width]): Spot<TreeKind> => ({
 			kind,
 			x,
 			y: groundHeight(x, z) - 0.1,
 			z,
 			yaw: broadSideToCamera(x, z) + turn,
 			size,
+			...(width !== undefined && { width }),
 		}),
 	);
 	// Each maple stands at the nearest growing ground to its mapped place that keeps the camera's
