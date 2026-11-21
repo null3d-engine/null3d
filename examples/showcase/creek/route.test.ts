@@ -1,5 +1,5 @@
-// Creek's route must stay clear of the cliff's ground and walls, above the cloud's tops past the
-// rim, and dip under the water only along the creek ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)).
+// Creek's route must stay clear of the cliff's ground and walls, of the garden's trees and plants,
+// above the cloud's tops past the rim, and dip under the water only along the creek ([D-170](../../../.dev/decisions/D-170-showcase-camera.md)).
 // The test samples the whole route through the player's own interpolation, and fails when a sample
 // comes too near the ground, the rock or the cloud, or when the dip reaches the bed or a stone. A
 // route edit therefore cannot reintroduce a clip.
@@ -18,6 +18,7 @@ import {
 } from './land';
 import { SHOTS } from './route';
 import { ROCK_REACH, rockPlaces } from './stones';
+import { placeValley, valleySolids } from './valley';
 
 /** The height of the creek's surface at a point and time, as the water's shape gives its current. */
 const surfaceHeight = (x: number, z: number, t: number) =>
@@ -111,4 +112,23 @@ test("past the rim the Manual camera keeps above the water's level, and over the
 	// Over the creek's middle the floor is its bed, under the water, so the dip stays possible.
 	for (const x of [-15, -2, 6, 12])
 		expect(cameraFloor(x, streamZ(x))).toBeLessThan(WATER - BED_CLEARANCE - 0.2);
+});
+
+test('the creek route stays clear of the trees and the plants', () => {
+	const route = routeTimeline(SHOTS);
+	const pose = new Float32Array(6);
+	const solids = valleySolids(placeValley());
+	for (let step = 0; step <= SAMPLES; step++) {
+		// The sample through the player's own interpolation: what it plays is what is checked.
+		routePosition(route, (step / SAMPLES) * route.total, pose);
+		const at = [pose[0] as number, pose[1] as number, pose[2] as number] as const;
+		for (const solid of solids) {
+			const inside =
+				at[1] <= solid.top && Math.hypot(at[0] - solid.x, at[2] - solid.z) < solid.radius;
+			expect(
+				inside,
+				`the route passes through the ${solid.kind} at ${solid.x.toFixed(1)}, ${solid.z.toFixed(1)} at ${at.map((v) => v.toFixed(2)).join(', ')}`,
+			).toBe(false);
+		}
+	}
 });

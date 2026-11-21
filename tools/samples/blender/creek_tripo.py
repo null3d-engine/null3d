@@ -119,32 +119,33 @@ STATUE = dict(
 # meters out, half `ribs[0]` meters wide there and half `ribs[1]` at the corners, each wandering
 # up to `wobble` meters from its line, and over the last `eave` meters to its eaves. The moss's
 # lightness varies in patches about `moss_darken`, and the cap's last `rim` meters, chipped in the
-# raw mesh, are smoothed as its moss is. The gate loses the
-# rear frame that Tripo3D added: everything under the roof, which starts at `roof` of its height,
-# and behind the front posts' backs, which `cut` places at the foot and at the roof, and behind
-# the posts within `eaves` of the middle, everything below the side ties, `tie` above the foot;
-# these four are shares of its height. Its front posts stand upright again below the beam, at
-# `beam` of its height, losing their lean of `lean` meters per meter, and move in until the roof
-# is `spread` times their spacing; above the roof line only the posts' columns move, up to their
-# brackets' tops at `brackets` of the height. A copy of the left one, `post` times as wide and
-# deep and `rear` of the height behind it, its faces wandering by up to `weather` meters, stands
-# behind it. The timber under the roof, above the stone blocks at `blocks` of its height, keeps
-# `darken` of its lightness and grows `vivid` times in color strength. The rear post, deeper in
-# the roof's shade, then takes the front posts' tone by the two shares of `rear_tone`, for
-# lightness and color strength, the tiles keep the first share of `roof_tone` of their lightness,
-# their light and dark round the local mean growing by the second, and all the timber takes the
-# `timber_tint`, toward a weathered grey-brown. The stone blocks keep `feet[0]` of their
-# lightness, and the pale band at each post's foot, `feet[1]` meters tall, takes the posts' own
-# lightness, so the feet do not glare white in a bright scene.
+# raw mesh, are smoothed as its moss is. The gate loses the rear frame that Tripo3D added:
+# everything under the roof, which starts at `roof` of its height, and behind the front posts'
+# backs, which `cut` places at the foot and at the roof, and behind the posts within `eaves` of the
+# middle, everything below the side ties, `tie` above the foot; these four are shares of its height.
+# Its front posts stand upright again below the beam, at `beam` of its height, losing their lean of
+# `lean` meters per meter, and move in until the roof is `spread` times their spacing; above the
+# roof line only the posts' columns move, up to their brackets' tops at `brackets` of the height. A
+# copy of the left one, `post` times as wide and deep and `rear` of the height behind it, its faces
+# wandering by up to `weather` meters, stands behind it. The timber under the roof, above the stone
+# blocks at `blocks` of its height, keeps `darken` of its lightness and grows `vivid` times in color
+# strength. The rear post, deeper in the roof's shade, then takes the front posts' tone by the two
+# shares of `rear_tone`, for lightness and color strength, the tiles take the `roof_tint`, their
+# light and dark round the local mean growing `roof_contrast` times, and all the timber takes the
+# `timber_tint`, toward a pale weathered grey-brown. Both tints lean against the garden's light,
+# which warms the tiles to purple and darkens the wood, so the two read as the concept's there. The
+# stone blocks keep `feet[0]` of their lightness, and the pale band at each post's foot, `feet[1]`
+# meters tall, takes the posts' own lightness, so the feet do not glare white in a bright scene.
 #
-# The roof dragon keeps its raw glaze colours, but its body's green-grey scales keep `darken` of
-# their lightness, with its joints, the texels darker than the tiles round them, darkened `joints`
-# times their own share more; its tail fan's pale tiles, round `fan`, turn a grey `fan_step` times
-# the body's lightness; its belly band loses its pink; and its glaze's roughness is `glaze`, so it
+# The roof dragon keeps its raw glaze colours, but its body's green-grey scales, to the end of its
+# tail's curl, keep `darken` of their lightness, with its joints, the texels darker than the tiles
+# round them, darkened `joints` times their own share more, while its pale grey tail fan, crest
+# blades, teeth and mane keep theirs; its teeth and mane, the pale texels round the head, grow
+# `teeth` times lighter; its belly band loses its pink; and its glaze's roughness is `glaze`, so it
 # glints. Its base is cut level `base_cut` of its height above its lowest point and closed, so its
-# foot sits flat on the gate's ridge, and the wave slab below `base[0]` of its height loses its
-# rear `base[1]` of the model's length. Its head faces -y, as every model here faces, and the
-# scene turns each copy to face out along the ridge.
+# foot sits flat on the gate's ridge, and the wave slab below `base[0]` of its height loses its rear
+# `base[1]` of the model's length. Its head faces -y, as every model here faces, and the scene turns
+# each copy to face out along the ridge.
 #
 # A boulder's stone keeps `darken` of its lightness, grows
 # `vivid` times in color strength, and its light and dark round their local mean grow `contrast`
@@ -154,17 +155,17 @@ STATUE = dict(
 # `wide` keeps the boulder's width within that many times its height.
 MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
-                    texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(1.02, 1.0, 0.82),
-                    vivid=2.0, moss_darken=0.7, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1,
+                    texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(0.99, 1.0, 0.82),
+                    vivid=1.7, moss_darken=0.75, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1,
                     wobble=0.03, rim=0.08),
     'gate': dict(file='model.glb', turn=-90.0, height=3.9, sink=0.03, triangles=6000, levels=(0.4, 0.15),
                  texture=1024, roof=0.64, cut=(-0.1148, -0.0673), tie=0.6636, eaves=0.5, lean=0.09, post=0.58,
                  rear=0.273, blocks=0.08, beam=0.55, rear_tone=(1.2, 0.8), spread=1.96, brackets=0.69,
-                 weather=0.012, roof_tone=(0.82, 1.8), timber_tint=(0.96, 1.0, 0.98),
+                 weather=0.012, roof_tint=(1.02, 1.07, 1.05), roof_contrast=1.8, timber_tint=(1.28, 1.29, 1.25),
                  darken=0.65, vivid=1.7, feet=(0.72, 0.45)),
     'dragon': dict(file='model.glb', turn=180.0, height=0.9, sink=0.01, triangles=3000, levels=(0.55, 0.25),
                    texture=512, base_cut=0.02, base=(0.16, 0.16), darken=0.8, joints=1.5, glaze=0.4,
-                   fan=(0.354, 0.85, 0.14, 0.11), fan_step=1.3),
+                   teeth=1.25),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
@@ -1512,13 +1513,13 @@ def repaint_model(name, spec, maps, rng):
         color = seen_from_front(color, position, back, front)
         occlusion = seen_from_front(occlusion[..., None], position, back, front)[..., 0]
         maps['color'] = color
-        # The tiles, grey above the roof line, keep the first share of `roof_tone` of their
-        # lightness, and their light and dark round the local mean grow by the second, so the rows
-        # show dark gaps and pale tops.
+        # The tiles, grey above the roof line, take the `roof_tint`, and their light and dark round
+        # the local mean grow `roof_contrast` times, so the rows show dark gaps and pale tops. The
+        # tint makes a new array, as the normal map's relief reads the colour the front faces left.
         tiles = smoothstep(roof, roof + 0.1, z) * (1 - smoothstep(0.12, 0.2, strength_of(color)))
-        color = darken(color, spec['roof_tone'][0], tiles)
+        color = color * (1 + (np.array(spec['roof_tint'], np.float32) - 1) * tiles[..., None])
         luma = color @ LUMA
-        color *= (1 + (spec['roof_tone'][1] - 1) * tiles * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
+        color *= (1 + (spec['roof_contrast'] - 1) * tiles * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
         timber = smoothstep(blocks, blocks + 0.08, z) * smoothstep(roof + 0.05, roof - 0.05, z)
         color = vivid(color, spec['vivid'], timber)
         color = darken(color, spec['darken'], timber)
@@ -1547,19 +1548,20 @@ def repaint_model(name, spec, maps, rng):
         along = (position[..., 1] - lo[1]) / (hi[1] - lo[1])
         up = (position[..., 2] - lo[2]) / (hi[2] - lo[2])
         hue, strength, luma = hue_of(color), strength_of(color), color @ LUMA
-        # The body's green-grey scales read as one dark mass with fine dark joints: they keep
-        # `darken` of their lightness, and a texel darker than the tiles round it, a joint,
-        # darkens `joints` times its own share more.
-        body = smoothstep(40, 60, hue) * smoothstep(210, 190, hue) * smoothstep(0.04, 0.1, strength)
+        # The pale grey things: the tail fan's tiles, the crest blades, the teeth and the mane.
+        pale = smoothstep(0.45, 0.55, luma) * smoothstep(0.25, 0.15, strength)
+        # The body's green-grey scales, to the end of the tail's curl, read as one dark mass with
+        # fine dark joints: they keep `darken` of their lightness, and a texel darker than the
+        # tiles round it, a joint, darkens `joints` times its own share more. The pale things keep
+        # their own lightness, so the fan's tiles stay a step paler than the body.
+        body = (smoothstep(40, 60, hue) * smoothstep(210, 190, hue) * smoothstep(0.04, 0.1, strength)
+                * smoothstep(0.55, 0.42, luma))
         joint = np.clip(1 - luma / np.maximum(box_blur(luma, 3), 0.02), 0, 1)
         color = color * (1 - body * (1 - spec['darken'] * np.clip(1 - spec['joints'] * joint, 0, 1)))[..., None]
-        # The fan at the tail's curl, its pale tiles round the curl's middle at `fan` (along, up
-        # and the two half sizes, as shares), turns grey, `fan_step` times the body's lightness.
-        centre_along, centre_up, half_along, half_up = spec['fan']
-        fan = smoothstep(1.0, 0.8, np.hypot((along - centre_along) / half_along, (up - centre_up) / half_up))
-        pale = smoothstep(0.45, 0.6, luma) * smoothstep(0.25, 0.15, strength)
-        grey = float(np.median((color @ LUMA)[body > 0.5])) * spec['fan_step']
-        color = mix(color, np.full(3, grey, np.float32), fan * pale)
+        # The teeth and the mane's plates, the palest things on the head, keep their white: the
+        # pale texels round the head grow `teeth` times lighter, against the 512 map's blur.
+        head = smoothstep(0.42, 0.36, along) * smoothstep(0.55, 0.48, up)
+        color = color * (1 + (spec['teeth'] - 1) * head * pale)[..., None]
         # The belly band under the top arch, pale pink-tan, loses its colour to a pale grey.
         pink = ((hue < 35) | (hue > 340)) * smoothstep(0.12, 0.2, strength) * smoothstep(0.55, 0.45, strength)
         pink = pink * smoothstep(0.28, 0.38, luma) * smoothstep(0.42, 0.5, up)
