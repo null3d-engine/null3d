@@ -47,26 +47,38 @@ export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number
 
 /**
  * The trees, by hand where the concept has them, from the references helper's planting map: each
- * one's label on the map, its place, its kind, its size and its turn about y. The map's points come
- * from the concept's pixels moved onto this land by landmarks, then onto the ground through the
- * opening camera; the two narrow pines on the right hillside stand a little inside the rim. P1 is
- * the tall pine beyond the gravel's west end, P2 the tall narrow pine on the hill's top left, P3
- * leans over the front lantern, P4 stands at the steps' foot, P5 behind the statue's right
- * shoulder, P6 at the hill's left foot, P7 and P8 on the right hillside, and P10 and P11 are the
- * clipped tiny pines on the gravel's moss islands.
+ * one's label on the map, its place, its kind, its size and its turn about y away from showing its
+ * broad side to the opening camera. The map's points come from the concept's pixels moved onto this
+ * land by landmarks, then onto the ground through the opening camera. P1 is the tall pine beyond
+ * the gravel's west end, P2 the tall narrow pine on the hill's top left, P3 leans over the front
+ * lantern, P4 stands east of the steps' foot, its crown clear of them, and P6 at the hill's left
+ * foot, both larger than the scale table's low pine as the concept's flatter lens shows them, P5
+ * behind the statue's right shoulder, P7 and P8 small on the right hillside, a little inside the
+ * rim, and P10 and P11 are the clipped tiny pines on the gravel's moss islands.
  */
 export const TREES: readonly (readonly [string, number, number, TreeKind, number, number])[] = [
-	['P1', -16.2, 0, 'pine-tall', 1, 0.4],
-	['P2', -5.8, -16.6, 'pine-narrow', 1.05, 2.2],
-	['P3', 1.6, 22.2, 'pine-low', 0.9, 3.6],
-	['P4', 13.7, 8.6, 'pine-low', 0.95, 5.1],
-	['P5', 6.9, -21.7, 'pine-narrow', 0.9, 1.3],
-	['P6', -0.2, -7.6, 'pine-low', 1.1, 4.4],
-	['P7', 18.3, -15.3, 'pine-narrow', 0.8, 0.7],
-	['P8', 25.4, -1.9, 'pine-narrow', 0.7, 5.8],
-	['P10', 2, 5.3, 'pine-low', 0.37, 2.9],
-	['P11', 6.1, 7.1, 'pine-low', 0.2, 1.6],
+	['P1', -16.2, 0, 'pine-tall', 1, 0.2],
+	['P2', -5.8, -16.6, 'pine-narrow', 1.05, -0.15],
+	['P3', 1.6, 22.2, 'pine-low', 0.9, 0.3],
+	['P4', 16.2, 8.6, 'pine-low', 1.4, -0.2],
+	['P5', 8.4, -22.4, 'pine-narrow', 0.9, 0.1],
+	['P6', -0.2, -7.6, 'pine-low', 1.5, -0.25],
+	['P7', 18.3, -15.3, 'pine-narrow', 0.4, 0.25],
+	['P8', 25.4, -1.9, 'pine-narrow', 0.35, -0.3],
+	['P10', 2, 5.3, 'pine-low', 0.37, 0.4],
+	['P11', 6.1, 7.1, 'pine-low', 0.2, -0.4],
 ];
+
+/**
+ * The turn about y that shows a model's broad side, along its own x, across the opening camera's
+ * line of sight to a point.
+ */
+export function broadSideToCamera(x: number, z: number): number {
+	const [dx, dz] = [x - WIDE[0], z - WIDE[2]];
+	// The model's x turns to (cos, -sin) of the turn, which lies across the line of sight (dx, dz)
+	// when the turn is the line's own bearing.
+	return Math.atan2(dx, dz);
+}
 
 /**
  * The maples' and shrub-trees' places on the planting map, kept for when the maple model is
@@ -333,12 +345,12 @@ export function placeValley(): Valley {
 		return !route.some((pose) => hits(solid, pose));
 	};
 	const trees = TREES.map(
-		([, x, z, kind, size, yaw]): Spot<TreeKind> => ({
+		([, x, z, kind, size, turn]): Spot<TreeKind> => ({
 			kind,
 			x,
 			y: groundHeight(x, z) - 0.1,
 			z,
-			yaw,
+			yaw: broadSideToCamera(x, z) + turn,
 			size,
 		}),
 	).filter(clearOfRoute);
