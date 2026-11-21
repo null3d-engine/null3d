@@ -461,9 +461,10 @@ end, so the river's own mesh ends at the lip with no seam and no straight edge. 
 first meter of the fall skip the fade near a wall behind them: they lie on the river and its brink
 by design, and that fade drew the lip as a ruler line where the water left the surface. The brink
 itself is uneven: each place across turns down up to 0.35 m past the lip's line, front and back
-alike, so the column keeps its depth. Below the lip the water draws in to about a third of its width
-over the first meters, and each side wanders in and out on its own, before the spread widens it
-again. Seen from the front, the outermost water also thins away over the first meters, and the
+alike, so the column keeps its depth. Below the lip the water draws in to about a quarter of its
+width over the first meters, and each side wanders in and out on its own, before the spread widens
+it again: little while it still falls as a stream, and at its full rate below about 4 m, so it
+opens into a veil there, as the concept's falls do. Seen from the front, the outermost water also thins away over the first meters, and the
 column's sides break into separate ropes, front and back alike, so the rock shows through. So a
 notch as wide as the lip shows rock at both edges of the falling water. A view along the lip,
 which sees the ends of the oval face on, keeps them whole; the material learns the lip's direction

@@ -252,7 +252,7 @@ describe('a waterfall’s column', () => {
 		}
 	});
 
-	it('draws in over its first meters, its two sides uneven, then widens by its spread', () => {
+	it('draws in over its first meters, its two sides uneven, then opens into a veil lower down', () => {
 		const { positions, uvs1 } = meshOf(SHEET);
 		const rows = rowsOf(SHEET);
 		const at = (fallen: number) =>
@@ -275,12 +275,15 @@ describe('a waterfall’s column', () => {
 			uneven = Math.max(uneven, Math.abs(r.right - r.left));
 		}
 		expect(uneven).toBeGreaterThan(SHEET.halfWidth * WOBBLE);
-		// At the foot the spread has widened it again.
+		// At the foot the spread has widened it again, and it spreads faster lower down than while
+		// it still falls as a stream.
 		const foot = reach(rows[rows.length - 1] as number[]);
 		const side: [number, number] = [0, 0];
 		sideAt(SHEET.halfWidth, SHEET.spread, SHEET.drop, 1, side);
 		expect(foot.right).toBeCloseTo(side[0], 2);
-		expect(foot.right + foot.left).toBeGreaterThan(2 * SHEET.halfWidth);
+		expect(foot.right + foot.left).toBeGreaterThan(1.5 * (drawn.right + drawn.left));
+		const width = (fallen: number) => drawnHalf(SHEET.halfWidth, SHEET.spread, fallen) * 2;
+		expect((width(18) - width(12)) / 6).toBeGreaterThan((width(6) - width(3)) / 3);
 	});
 
 	it('gives each side’s width a rate that matches its change', () => {

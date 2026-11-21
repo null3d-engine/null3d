@@ -154,25 +154,37 @@ export function brinkAt(across: number, out: [shift: number, slope: number]): vo
 }
 
 /** The share of the lip's width that the falling water draws in over its first meters. */
-export const NARROW = 0.7;
+export const NARROW = 0.75;
 /** The meters that the water falls before it has drawn in most of that share, as a scale. */
 const NARROW_GROWTH = 1;
 /** How far each side of the column wanders in and out as it falls, as a share of the lip's width. */
 export const WOBBLE = 0.1;
+/**
+ * The meters that the water falls before it spreads at the full rate that the spread gives: it
+ * spreads little while it still falls as a stream, and opens into a veil lower down.
+ */
+export const VEIL_START = 4;
+
+/** How far one side has spread after `fallen` meters, and its rate for each meter fallen. */
+function spreadOf(spread: number, fallen: number): [far: number, rate: number] {
+	const f = Math.max(fallen, 0);
+	const opened = f + VEIL_START;
+	return [(spread * f * f) / opened, (spread * f * (f + 2 * VEIL_START)) / (opened * opened)];
+}
 
 /**
  * Half the falling water's width after it has fallen `fallen` meters, leaving out the sides' wander:
- * the lip's half width, drawn in over the first meters and widened by the spread.
+ * the lip's half width, drawn in over the first meters and widened by the spread, slowly at first.
  */
 export function drawnHalf(halfWidth: number, spread: number, fallen: number): number {
 	const f = Math.max(fallen, 0);
-	return halfWidth * (1 - NARROW * (1 - Math.exp(-f / NARROW_GROWTH))) + spread * f;
+	return halfWidth * (1 - NARROW * (1 - Math.exp(-f / NARROW_GROWTH))) + spreadOf(spread, f)[0];
 }
 
 /**
  * Half the column's width on one side, after the water has fallen `fallen` meters, and its rate
- * for each meter fallen: the lip's half width drawn in to under a third over the first meters,
- * each side wandering in and out on its own as it falls, then widened by the spread. `side` is 1
+ * for each meter fallen: the lip's half width drawn in to a quarter over the first meters, each
+ * side wandering in and out on its own as it falls, then widened by the spread, more lower down. `side` is 1
  * for the water's right and -1 for its left.
  */
 export function sideAt(
@@ -193,7 +205,7 @@ export function sideAt(
 		halfWidth *
 			((-NARROW * drawn) / NARROW_GROWTH +
 				WOBBLE * (dWander * grown + (wander * Math.exp(-f / 2)) / 2)) +
-		spread;
+		spreadOf(spread, f)[1];
 }
 
 /** The meters that the water falls before the column reaches most of its depth, as a scale. */

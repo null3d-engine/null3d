@@ -92,7 +92,8 @@ export interface WaterfallOptions {
 	 */
 	readonly drop: number;
 	/**
-	 * How far each side of the sheet widens for each meter that the water falls. It is 0.3 by
+	 * How far each side of the sheet widens for each meter that the water falls, once it has fallen
+	 * a few meters: it spreads little at first, and opens into a veil lower down. It is 0.3 by
 	 * default.
 	 */
 	readonly spread?: number;
