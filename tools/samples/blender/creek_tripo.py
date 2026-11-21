@@ -133,7 +133,9 @@ STATUE = dict(
 # the roof's shade, then takes the front posts' tone by the two shares of `rear_tone`, for
 # lightness and color strength, the tiles keep the first share of `roof_tone` of their lightness,
 # their light and dark round the local mean growing by the second, and all the timber takes the
-# `timber_tint`, toward a weathered grey-brown.
+# `timber_tint`, toward a weathered grey-brown. The stone blocks keep `feet[0]` of their
+# lightness, and the pale band at each post's foot, `feet[1]` meters tall, takes the posts' own
+# lightness, so the feet do not glare white in a bright scene.
 #
 # A boulder's stone keeps `darken` of its lightness, grows
 # `vivid` times in color strength, and its light and dark round their local mean grow `contrast`
@@ -150,7 +152,7 @@ MODELS = {
                  texture=1024, roof=0.64, cut=(-0.1148, -0.0673), tie=0.6636, eaves=0.5, lean=0.09, post=0.58,
                  rear=0.273, blocks=0.08, beam=0.55, rear_tone=(1.2, 0.8), spread=1.96, brackets=0.69,
                  weather=0.012, roof_tone=(0.82, 1.8), timber_tint=(0.96, 1.0, 0.98),
-                 darken=0.65, vivid=2.3),
+                 darken=0.65, vivid=1.7, feet=(0.72, 0.45)),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
@@ -1445,6 +1447,14 @@ def repaint_model(name, spec, maps, rng):
         # `timber_tint`.
         wood = smoothstep(blocks, blocks + 0.08, z) * (1 - tiles)
         color *= 1 + (np.array(spec['timber_tint'], np.float32) - 1) * wood[..., None]
+        # The posts' feet are not white: the stone blocks keep `feet[0]` of their lightness, and
+        # the pale band at the foot of each post, up to `feet[1]` meters above its block, comes
+        # down to the posts' own lightness.
+        luma = color @ LUMA
+        own = float(np.median(luma[(timber > 0.9) & (z > blocks + 0.7) & (z < roof - 0.3)]))
+        band = smoothstep(blocks - 0.02, blocks + 0.02, z) * smoothstep(blocks + spec['feet'][1], blocks + 0.6 * spec['feet'][1], z)
+        color *= (1 - band * (1 - np.minimum(own / np.maximum(luma, 0.02), 1)))[..., None]
+        color = darken(color, spec['feet'][0], smoothstep(blocks + 0.02, blocks - 0.02, z))
     else:
         stone = 1 - moss
         color = vivid(color, spec['vivid'], stone)
