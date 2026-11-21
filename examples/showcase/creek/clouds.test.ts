@@ -88,10 +88,16 @@ describe("the walls' map", () => {
 		let heaped = 0;
 		for (let k = 0; k < RIM_TEXELS; k++) {
 			const heap = data[k * 4 + 1] as number;
-			if (turn(bearing(k), FRONT.middle) <= FRONT.half) {
+			const marker = data[k * 4 + 3] as number;
+			const off = turn(bearing(k), FRONT.middle);
+			if (off <= FRONT.half) {
 				expect(heap).toBe(0);
-				expect(data[k * 4 + 3]).toBe(255);
-			} else if (heap > 0) heaped++;
+				expect(marker).toBe(255);
+			} else if (heap > 0) {
+				heaped++;
+			}
+			// Bearings well past the front wall's edge are no part of it.
+			if (off >= FRONT.half + FRONT.edge) expect(marker).toBe(0);
 		}
 		expect(heaped).toBeGreaterThan(RIM_TEXELS / 2);
 	});
