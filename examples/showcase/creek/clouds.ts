@@ -15,7 +15,7 @@ import type { QualityPreset, SketchContext, Texture } from '@null3d/engine';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import type { Stage } from '../../lib/stage';
-import { CLOUD_TOP, LIPS, rimRadius, streamZ } from './land';
+import { CLOUD_TOP, LIPS, rimRadius, streamCurrent, streamSlope, streamZ, WATER } from './land';
 
 /**
  * The cloud sea, in meters: the height of the sea's highest tops, how deep its billows run under
@@ -30,11 +30,36 @@ export const CLOUD = {
 	reach: 1500,
 	dome: 1600,
 } as const;
+/** The steady speed that the air lets a fall's water reach, in meters a second, as the water add-on's. */
+const FALL_TERMINAL = 15;
+/** The seconds in which the air takes hold of falling water: the steady speed over gravity. */
+const FALL_DRAG = FALL_TERMINAL / 9.81;
+
 /**
- * Where each fall drops into the cloud, in x and z: the west fall's, then the east fall's, a little
- * out from its lip.
+ * How far out from its lip a fall's water is once it has fallen `drop` meters, after leaving at
+ * `speed` meters a second. This follows the water add-on's fall path, where the air slows both the
+ * water's way out and its fall, so the cloud meets the column where the add-on draws it.
  */
-const FALLS = [LIPS.west - 1.5, streamZ(LIPS.west), LIPS.east + 1.5, streamZ(LIPS.east)] as const;
+export function fallOut(speed: number, drop: number): number {
+	const a = drop / (FALL_TERMINAL * FALL_DRAG);
+	const seconds = FALL_DRAG * (a + Math.log1p(Math.sqrt(1 - Math.exp(-2 * a))));
+	return speed * FALL_DRAG * (1 - Math.exp(-seconds / FALL_DRAG));
+}
+
+/**
+ * Where a fall's column meets the cloud's top, in x and z, from what the scene passes the fall: the
+ * way it leaves its lip (out along the creek's own line there), and the current's speed just
+ * upstream of the lip.
+ */
+export function fallFoot(lip: number): [number, number] {
+	const away = Math.sign(lip);
+	const [dx, dz] = [away, away * streamSlope(lip)];
+	const speed = Math.hypot(...streamCurrent(lip - away * 0.3));
+	const out = fallOut(speed, WATER - CLOUD_TOP) / Math.hypot(dx, dz);
+	return [lip + dx * out, streamZ(lip) + dz * out];
+}
+/** The west fall's foot, then the east fall's, in x and z. */
+const FALLS = [...fallFoot(LIPS.west), ...fallFoot(LIPS.east)] as const;
 /** The width of the billow map's tile on the cloud, in meters, which the cloud's WGSL repeats. */
 const TILE = 160;
 /** The billow map's texels along each side at each preset. */

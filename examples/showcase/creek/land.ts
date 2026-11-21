@@ -587,6 +587,7 @@ const MOSS_LIGHT = [0.2, 0.2, 0.055];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
 const MOSS_BRIGHT = [0.19, 0.19, 0.04];
 const BED = [0.42, 0.385, 0.315];
+const BED_POOL = [0.14, 0.13, 0.1];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
 
@@ -605,15 +606,19 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const band = stairBand(x, z);
 	// The bed's cobbles: soft pale and dark shapes that show through the clear water, with no edge
 	// sharp enough to read as a line.
+	const pool = poolShare(x);
 	const cobble =
-		0.78 + 0.3 * noise.fbm2(x * 2.1 + 41, z * 2.1, 2) - 0.15 * noise.fbm2(x * 0.7 + 13, z * 0.7, 2);
+		0.78 +
+		(0.3 + 0.5 * pool) * noise.fbm2(x * 2.1 + 41, z * 2.1, 2) -
+		0.15 * noise.fbm2(x * 0.7 + 13, z * 0.7, 2);
 	for (let c = 0; c < 3; c++) {
 		const moss = (MOSS[c] as number) + ((MOSS_DARK[c] as number) - (MOSS[c] as number)) * dark;
 		const browned = moss + ((MOSS_BROWN[c] as number) - moss) * brown * 0.7;
 		const patchy = browned + ((MOSS_LIGHT[c] as number) - browned) * light * 0.8;
 		const bright = patchy + ((MOSS_BRIGHT[c] as number) - patchy) * band;
 		const shore = bright + ((MUD[c] as number) - bright) * wet;
-		const ground = shore + ((BED[c] as number) * cobble - shore) * under;
+		const bed = (BED[c] as number) + ((BED_POOL[c] as number) - (BED[c] as number)) * pool;
+		const ground = shore + (bed * cobble - shore) * under;
 		out[c] = (ground + ((STONE[c] as number) - ground) * rocky) * shade;
 	}
 }
