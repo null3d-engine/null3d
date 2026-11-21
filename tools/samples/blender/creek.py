@@ -899,7 +899,7 @@ PINES = {
         inner=0.2,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=3600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.605, 0.823, 0.543), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.585, 0.823, 0.518), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
     'pine-low': dict(
         raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
@@ -921,7 +921,7 @@ PINES = {
         inner=0.1,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=2600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.665, 0.740, 0.634), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.657, 0.740, 0.622), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
 }
 
