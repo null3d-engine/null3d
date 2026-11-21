@@ -95,12 +95,22 @@ test('each wall stone rests on the ground or on the course below it', () => {
 	const stones = wallPlaces();
 	expect(stones.length).toBeGreaterThan(50);
 	for (const { x, y, z, size } of stones) {
-		// A wall stone is half as tall as it is long: its underside lies a quarter of its size down.
-		const underside = y - size * 0.25;
+		// A wall stone's flattened underside lies over a third of its size under its middle.
+		const underside = y - size * 0.35;
 		expect(underside - lowest(x, z, size * 1.2), 'the air under a wall stone').toBeLessThan(
 			0.1 * size,
 		);
 	}
+});
+
+test('the walls stop short of the ledge, clear of the blocks of rock round it', () => {
+	const { ring } = gardenPlaces();
+	for (const stone of wallPlaces())
+		for (const block of ring)
+			expect(
+				Math.hypot(stone.x - block.x, stone.z - block.z),
+				'a wall stone among the ring',
+			).toBeGreaterThan(block.reach + stone.size);
 });
 
 test('no lantern, rock or the statue stands on the steps, and no two models share a foot', () => {

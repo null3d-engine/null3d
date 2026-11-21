@@ -182,8 +182,8 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
             // The veil thickens over the last meters before the rock, so the rock fades into it.
             let close = 0.05 + 0.12 * (1.0 - smoothstep(0.0, 4.0, r - wall.x));
             // The puffs are densest at the front wall's foot, as in the concept; along the side walls
-            // they are thinner, so the billows there keep their light and shade.
-            mist = foot * wall.z * (band * mix(0.9, 2.6, wall.w) * smoothstep(0.25, 0.65, puff) + close * veil);
+            // they are thin, so the rock there stays dark for most of its height.
+            mist = foot * wall.z * (band * mix(0.35, 2.6, wall.w) * smoothstep(0.25, 0.65, puff) + close * veil);
         }
     } else {
         // Far out, the billows of the largest copy rise into towers past the horizon, and sink
@@ -312,7 +312,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
         let lod = log2(max(t * pixel / texel, 1.0));
         // Over its last meters before the scene's surface the cloud thins away, so a wall fades into
         // the cloud with no cut line along its blocks.
-        let contact = select(1.0, smoothstep(0.0, 3.0, limit - t), limitHit);
+        let contact = select(1.0, smoothstep(0.0, 5.0, limit - t), limitHit);
         var here = cloud_at(p, lod);
         // The billows thin over their last meters before the rock; the mist only over its last
         // meter, so it runs on up to the rock and veils it.
@@ -444,12 +444,10 @@ fn unlit(input: SurfaceInput) -> vec4f {
     }
     // The rock just over the cloud fades into it by its height, whatever its depth, so crags that
     // stand at different depths show no bands where the cloud before them is deeper or shallower.
-    // The side walls fade higher than the front wall, whose foot alone the concept veils.
+    // The fade stays low and light, so every wall is dark rock for most of its height.
     if behind > 0.0 {
-        let rock = eye + dir * end;
-        let front = wall_at(rock.xz).w;
-        let fades = mix(9.0, 4.5, front);
-        let veil = mix(0.55, 0.2, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
+        let rock = eye.y + dir.y * end;
+        let veil = 0.25 * (1.0 - smoothstep(material.top - 0.5, material.top + 4.5, rock)) * clear;
         color += veil * aerial(cloud_color(0.65, 0.0), end);
         clear -= veil;
     }
@@ -646,11 +644,9 @@ const turnBetween = (a: number, b: number) =>
  */
 export function wallData(): Uint8Array {
 	const next = random(509);
-	// The concept's heaps: up the face under the west fall to about half its height, high against
-	// the west wall behind that fall, along the back walls behind the island, and up the east wall
-	// beside the east fall; a few smaller ones elsewhere.
+	// The concept's heaps: high against the west wall behind the west fall, along the back walls
+	// behind the island, and up the east wall beside the east fall; a few smaller ones elsewhere.
 	const bumps = [
-		{ at: 2.0, width: 0.3, height: 1 },
 		{ at: Math.PI, width: 0.7, height: 1 },
 		{ at: -1.6, width: 0.8, height: 0.9 },
 		{ at: 0.2, width: 0.45, height: 0.7 },
