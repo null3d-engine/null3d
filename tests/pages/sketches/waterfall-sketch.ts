@@ -1,9 +1,11 @@
 // A waterfall drawn by @null3d/water under an overcast sky. A creek 5.6 m wide runs between two banks
 // to the edge of a dark cliff and falls from its lip into a grey sea of cloud 12 m below it, with
 // the Creek garden's settings for its falls: a glassy tongue over the lip, then a solid white
-// column of rough ropes that breaks up and bursts into mist above the cloud, with a froth at the
-// lip and a plume at the foot. The sheet's streaks move with the time
-// alone and the spray's systems start full, so the held frame shows the running fall. The `view`
+// column of rough ropes that draws in from its sides, breaks up and bursts into mist above the
+// cloud and vanishes into it, with a froth at the lip and a plume at the foot. The column's streaks
+// move with the time alone and the spray's systems start full, so the held frame shows the running
+// fall. The picture so guards the column's broken sides, seen from the front, and its fade into
+// the cloud. The `view`
 // switch moves the camera: `near` stands 10 m from the fall, `side` looks square across its path,
 // past the gap between the water and the wall, and `profile` sees it side-on from above, as the
 // concept's camera sees its left fall. `spray=0` leaves the spray and mist out.
@@ -106,6 +108,8 @@ export default defineSketch(async (ctx) => {
 		speed: SPEED,
 		drop: DROP,
 		spread: 0.16,
+		// The cloud draws before the fall, so the fall vanishes itself where it sinks into it.
+		fadeBelow: CLOUD,
 		spray: SPRAY,
 	});
 	fall.setLight([0.8, 0.8, 0.84]);
