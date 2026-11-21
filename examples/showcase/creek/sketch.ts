@@ -409,6 +409,9 @@ export default defineSketch(async (ctx) => {
 						// The cloud draws before the falls, so each fall fades out into it below the cloud's
 						// tops, and its water bursts into mist over the drop above them.
 						fadeBelow: CLOUD_TOP,
+						// The cloud draws the bright mist at each fall's foot, so the fall makes none of its
+						// own, which its spray light would draw greyer over the cloud's.
+						mist: 0,
 						layers: UNREFLECTED_LAYER,
 						wind: wind.field,
 					});
