@@ -16,6 +16,7 @@ import {
 	fromStream,
 	groundHeight,
 	LIPS,
+	POOL,
 	rimRadius,
 	streamCurrent,
 	streamHalf,
@@ -44,9 +45,20 @@ const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /**
  * How each wake strays from the current: its slant from it at the stone and its bend at each link,
  * in radians at the most; its least length as a share of the longest; the current under which a
- * stone leaves none, and the current at which its wake reaches full length, in meters a second.
+ * stone leaves none, and the current at which its wake reaches full length, in meters a second; and
+ * the share of a full wake that a riffle's stone leaves, since riffle stones stand close together
+ * and their full wakes would join into one white sheet.
  */
-const WAKE = { slant: 0.35, bend: 0.06, shortest: 0.45, still: 0.015, full: 0.25 } as const;
+const WAKE = {
+	slant: 0.35,
+	bend: 0.06,
+	shortest: 0.45,
+	still: 0.015,
+	full: 0.25,
+	riffle: 0.65,
+} as const;
+/** The spring's boil in the pool: how many foam marks, how far they spread, and their sizes, in meters. */
+const SPRING = { marks: 9, spread: 1.2, size: [0.14, 0.3] } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -130,15 +142,15 @@ const BANK = {
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, how many stand in it, and the share of the creek's width they
- * span, from one side to the other (-1 to 1). Four lie on the west arm, so it runs white along its
- * length; and one just past each end of the pool, where its water leaves it shallow enough to
+ * span, from one side to the other (-1 to 1). Four lie on the west arm, sparse enough that its
+ * wakes break up with clear water between them; and one just past each end of the pool, where its water leaves it shallow enough to
  * break white. The east sill lies on the camera's dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number, number, number])[] = [
-	[-14, 1.2, 8, -0.8, 0.8],
-	[-11.5, 1.8, 12, -0.8, 0.8],
-	[-8.8, 1.2, 10, -0.8, 0.8],
-	[-6.5, 1.4, 10, -0.8, 0.8],
+	[-14, 1.2, 5, -0.8, 0.8],
+	[-11.5, 1.8, 7, -0.8, 0.8],
+	[-8.8, 1.2, 6, -0.8, 0.8],
+	[-6.5, 1.4, 6, -0.8, 0.8],
 	[-5.6, 0.7, 6, -0.7, 0.7],
 	[1.8, 0.7, 6, -0.7, 0.7],
 ];
@@ -156,6 +168,8 @@ export interface StonePlace {
 	z: number;
 	size: number;
 	kind: StoneKind;
+	/** The share of a full wake's length and width that the stone leaves in the current. */
+	wake: number;
 }
 
 /**
@@ -167,9 +181,9 @@ export interface StonePlace {
 export function rockPlaces(): StonePlace[] {
 	const next = random(41);
 	const places: StonePlace[] = [];
-	const add = (x: number, across: number, size: number, kind: StoneKind) => {
+	const add = (x: number, across: number, size: number, kind: StoneKind, wake = 1) => {
 		const z = streamZ(x) + across * streamHalf(x);
-		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size, kind });
+		if (insideRim(x, z, size * ROCK_REACH + 0.2)) places.push({ x, z, size, kind, wake });
 	};
 	const from = LIPS.west + LIP_CLEAR;
 	const to = LIPS.east - LIP_CLEAR;
@@ -197,7 +211,7 @@ export function rockPlaces(): StonePlace[] {
 		for (let k = 0; k < count; k++) {
 			const x = middle + (next() * 2 - 1) * spread;
 			const across = near + ((k + 0.5) / count) * (far - near) + (next() - 0.5) * 0.15;
-			add(x, across, 0.42 + 0.25 * next(), 'broken');
+			add(x, across, 0.42 + 0.25 * next(), 'broken', WAKE.riffle);
 		}
 	// The lips: broken shoulders either side, and stones in the narrowed creek before the edge. Each
 	// stands back from the lip by its own foot's reach, so it stays wholly on the cliff.
@@ -259,7 +273,17 @@ export function createStones(
 	const wet = materials.standard({ ...look, color: '#c2baa8', roughness: 0.8 });
 	const next = random(43);
 	const places = rockPlaces();
-	const obstacles: Obstacle[] = [];
+	// The spring wells up white in the pool's middle: a boil of foam marks with no stone under them.
+	const spring = random(49);
+	const obstacles: Obstacle[] = Array.from({ length: SPRING.marks }, () => {
+		const angle = spring() * Math.PI * 2;
+		const out = SPRING.spread * Math.sqrt(spring());
+		return {
+			x: POOL.x + Math.cos(angle) * out,
+			z: streamZ(POOL.x) + Math.sin(angle) * out,
+			r: SPRING.size[0] + (SPRING.size[1] - SPRING.size[0]) * spring(),
+		};
+	});
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
 		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
 		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
@@ -283,7 +307,7 @@ export function createStones(
 				castShadows: true,
 				receiveShadows: true,
 			});
-			group.forEach(({ x, z, size, yaw: turn }, row) => {
+			group.forEach(({ x, z, size, wake, yaw: turn }, row) => {
 				// A stone in the current sits up on the bed; one on the bank sinks into the ground.
 				const inStream = fromStream(x, z) < IN_STREAM;
 				const y = groundHeight(x, z) - size * (inStream ? 0.05 : 0.2);
@@ -313,7 +337,9 @@ export function createStones(
 						const reach = Math.min(1, speed / WAKE.full);
 						const links = Math.max(
 							2,
-							Math.round(TRAIL.links * reach * (WAKE.shortest + (1 - WAKE.shortest) * next())),
+							Math.round(
+								TRAIL.links * reach * wake * (WAKE.shortest + (1 - WAKE.shortest) * next()),
+							),
 						);
 						let [px, pz] = [x, z];
 						let angle = Math.atan2(vz, vx) + slant;
@@ -323,7 +349,7 @@ export function createStones(
 							pz += Math.sin(angle) * step;
 							angle += bend;
 							const spread = Math.min(1, 0.4 + 0.15 * k) * (1 - k / (links + 1));
-							obstacles.push({ x: px, z: pz, r: r * TRAIL.width * spread });
+							obstacles.push({ x: px, z: pz, r: r * TRAIL.width * wake * spread });
 						}
 					}
 				}
