@@ -1680,10 +1680,20 @@ GARDEN_TONES = {
     'azalea': ((0.56, 0.24, 0.1), (0.48, 0.18, 0.08), (0.6, 0.22, 0.12), (0.2, 0.25, 0.06)),
     'clipped': ((0.27, 0.28, 0.04), (0.32, 0.33, 0.06), (0.17, 0.18, 0.03)),
     'moss': ((0.36, 0.31, 0.0), (0.44, 0.38, 0.01), (0.19, 0.15, 0.0)),
+    'pale': ((0.95, 0.93, 0.88), (0.9, 0.86, 0.8), (0.97, 0.92, 0.84), (0.55, 0.52, 0.48)),
 }
+# The autumn clump's shrubs' colors, which multiply their pale leaves, one shrub each in a seeded
+# order: gold and yellow orange for half the shrubs, olive for a fifth or so, then rust and brown,
+# as the plant guides' review counts the concept's.
+# The rim conifer's needles: the concept's dark olive, with lighter yellow-green sprays among them
+# (references/plants/checklist.md: hue 57 to 67, strength 0.37 to 0.46, lightness 0.16 to 0.29),
+# painted purer than the figures, as the other ground plants are.
+RIM_TONES = ((0.28, 0.3, 0.07), (0.38, 0.42, 0.09))
+CLUMP_TONES = ((0.62, 0.5, 0.1), (0.62, 0.4, 0.08), (0.4, 0.4, 0.14), (0.62, 0.5, 0.1), (0.5, 0.22, 0.1),
+               (0.38, 0.28, 0.13))
 # How each mound's leaves are painted: a tuft's leaf length and count, then the mat's, with
 # lengths in shares of an atlas cell.
-GARDEN_PAINT = {'azalea': (0.12, 170, 0.04, 5000), 'clipped': (0.08, 340, 0.03, 8000)}
+GARDEN_PAINT = {'azalea': (0.12, 170, 0.04, 5000), 'clipped': (0.08, 340, 0.03, 8000), 'pale': (0.12, 170, 0.04, 5000)}
 
 
 def leaf_clump(tile, rng, count, length, tones, patch, opaque):
@@ -1732,14 +1742,15 @@ def moss_mat(tile, rng, tones, patch):
 
 def garden_atlases(size, rng):
     """
-    The ground plants' two atlases, each 2 x 2: the tufts, with cut-out edges, of the azalea and
-    the clipped shrub; and the opaque mats that their bodies wear, with the moss in the third cell.
+    The ground plants' two atlases, each 2 x 2: the tufts, with cut-out edges, of the azalea, the
+    clipped shrub and the autumn clump; and the opaque mats that their bodies wear, with the moss in
+    the third cell. The clump's are pale, in the last cell, so its shrubs' colors set its hues.
     """
     cell, offsets = cells(size)
     tufts = np.zeros((size, size, 4), np.float32)
     mats = np.zeros((size, size, 4), np.float32)
     mottle = fbm(size, size, 8, 8, rng, 4)
-    for k, kind in enumerate(('azalea', 'clipped', 'moss')):
+    for k, kind in enumerate(('azalea', 'clipped', 'moss', 'pale')):
         oy, ox = offsets[k]
         patch = mottle[oy:oy + cell, ox:ox + cell]
         mat = np.zeros((cell, cell, 4), np.float32)
@@ -1780,14 +1791,37 @@ def mound(rng, across, high, swells, swell, uneven, flat):
     return plant
 
 
-def mound_bodies(builder, plant, spec, around, rings, cell, scale, rng):
+def clump(rng, across, high, shrubs, swells, swell, uneven, flat):
+    """
+    A loose clump of `shrubs` small mounds growing together, unequal in size and height, as the
+    concept's mixed autumn shrubs: one plant whose branches each belong to one shrub. Returns the
+    plant and the shrub of each branch.
+    """
+    plant, owner = Plant(), []
+    for i in range(shrubs):
+        turn = 2 * math.pi * (i + 0.3 * rng.random()) / shrubs
+        reach = 0.0 if i == 0 else across * (0.22 + 0.12 * rng.random())
+        size = across * (0.5 if i == 0 else 0.3 + 0.15 * rng.random())
+        tall = high * (1.0 if i == 0 else 0.55 + 0.35 * rng.random())
+        offset = Vector((math.cos(turn) * reach, math.sin(turn) * reach, 0))
+        shrub = mound(rng, size, tall, swells, swell, uneven, flat)
+        first = len(plant.branches)
+        for points, radii, level in shrub.branches:
+            plant.branch([q + offset for q in points], radii, level)
+            owner.append(i)
+        for c, r, b in shrub.pads:
+            plant.pad(tuple(c + offset), tuple(r), first + b)
+    return plant, owner
+
+
+def mound_bodies(builder, plant, spec, around, rings, cell, scale, rng, tints=None):
     """
     The opaque body of each pad of a mound: an ellipsoid, `body` times the pad's size, darker
     underneath and inside, as `pad_bodies` makes the pines'. A face inside another pad's body, or
     under the ground, is left out, and what is left of a body under the ground is pressed up into
     a shallow skirt. Each face wears its own window of the atlas cell `cell`, at `scale` meters to
     the cell, so the mat's leaves keep their size on every pad; they lie every way, so the
-    windows' edges do not show.
+    windows' edges do not show. `tints`, one linear color for each pad, multiply its body's.
     """
     top, reach = plant_top(plant), plant_reach(plant)
     center = Vector(np.array([tuple(c) for c, _, _ in plant.pads]).mean(axis=0))
@@ -1811,7 +1845,8 @@ def mound_bodies(builder, plant, spec, around, rings, cell, scale, rng):
                 ao = spec['shade'] + (1 - spec['shade']) * float(smoothstep(-0.7, 0.7, 0.8 * normal.z + 0.5 * rim - 0.1))
                 ao *= 1 - spec['underside'] * float(smoothstep(0.0, -0.8, normal.z))
                 sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
-                row.append((p, (normal + out * spec['bend']).normalized(), (ao, ao, ao), sway))
+                tint = tints[index] if tints else (1.0, 1.0, 1.0)
+                row.append((p, (normal + out * spec['bend']).normalized(), tuple(ao * t for t in tint), sway))
             grid.append(row)
 
         def kept(p):
@@ -1893,8 +1928,10 @@ def cushion(builder, waves, across, high, around, rings, cell, scale):
 # (azalea, clipped shrub) is a core and `swells` pads, with an opaque body of `bodies` (around,
 # rings) per pad at the full level and the two lower ones, and `tufts` cut-out tufts of `card`
 # meters; a cushion is one dome of `bodies` (around, rings). Each wears atlas cell `cell` at `scale`
-# meters to the cell. `sway` scales the bend that a free crown would take: a clipped shrub barely
-# moves, moss less.
+# meters to the cell. An autumn clump is `shrubs` such mounds of `swells` each, every shrub in one
+# of the clump's colors. A rim conifer is a mound in the needles' atlas, whose sprays (`tuft_cells`)
+# stand out from it as `sprays` turns them. `sway` scales the bend that a free crown would take: a clipped shrub
+# barely moves, moss less.
 GARDEN_TUFTS = {'lift': 0.5, 'scatter': 0.3, 'centered': 0.5, 'fold': 0.1, 'bend': 0.75, 'tent': False,
                 'shade': 0.5, 'underside': 0.35, 'body': 0.92, 'tint': (1.0, 1.0, 1.0)}
 GARDEN = {
@@ -1904,6 +1941,11 @@ GARDEN = {
                       'tufts': 460, 'card': 0.13, 'cell': 1, 'scale': 0.4, 'sway': 0.3,
                       'bodies': ((10, 6), (8, 4), (6, 4))},
     'moss-cushion': {'across': 1.4, 'high': 0.2, 'cell': 2, 'scale': 1.6, 'sway': 0.08, 'bodies': ((32, 6), (16, 4), (10, 3))},
+    'autumn-clump': {'across': 2.2, 'high': 0.6, 'shrubs': 6, 'swells': 4, 'swell': 0.42, 'uneven': 0.6, 'flat': 0.45,
+                     'tufts': 760, 'card': 0.13, 'cell': 3, 'scale': 0.5, 'sway': 0.5, 'bodies': ((8, 5), (6, 4), (5, 3))},
+    'rim-conifer': {'across': 2.4, 'high': 1.3, 'swells': 9, 'swell': 0.4, 'uneven': 0.4, 'flat': 0.35, 'needles': True,
+                    'tufts': 700, 'card': 0.42, 'cell': 3, 'tuft_cells': (0, 1, 2), 'scale': 0.6, 'sway': 0.35,
+                    'sprays': {'lift': 0.25, 'scatter': 0.45, 'centered': 0.25, 'fold': 0.15}, 'bodies': ((10, 6), (8, 4), (6, 4))},
 }
 # Each lower level keeps every `every`th tuft at `grow` times its size, as the pines' do.
 GARDEN_LEVELS = ((2, 1.35), (4, 1.7))
@@ -1915,9 +1957,17 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
     mound, its tufts. Returns the objects, the plant's size (high, across) and each part's level
     errors.
     """
-    plant = mound(rng, spec['across'], spec['high'], spec['swells'], spec['swell'], spec['uneven'], spec['flat']) \
-        if 'swells' in spec else None
-    tufts_spec = dict(GARDEN_TUFTS, card=spec.get('card', 0.1), cells=(spec['cell'],))
+    plant, tints, tones = None, None, None
+    shape = [spec.get(key) for key in ('swells', 'swell', 'uneven', 'flat')]
+    if 'shrubs' in spec:
+        plant, owner = clump(rng, spec['across'], spec['high'], spec['shrubs'], *shape)
+        # The middle shrub, the largest, is gold, as most of the concept's clumps are.
+        picked = np.concatenate([[0], 1 + rng.permutation(len(CLUMP_TONES) - 1)])
+        tones = [linear(CLUMP_TONES[picked[owner[b] % len(CLUMP_TONES)]]) for b in range(len(owner))]
+        tints = [tones[b] for _, _, b in plant.pads]
+    elif 'swells' in spec:
+        plant = mound(rng, spec['across'], spec['high'], *shape)
+    tufts_spec = dict(GARDEN_TUFTS, card=spec.get('card', 0.1), cells=spec.get('tuft_cells', (spec['cell'],)), **spec.get('sprays', {}))
     places = [place for place in crown_cards(plant, rng, spec['tufts'], 0.6, 0.15) if place[0].z > 0.04] if plant else []
     waves = [(rng.uniform(0.3, 1.0), rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi), rng.uniform(0.5, 1.2)) for _ in range(4)]
 
@@ -1930,12 +1980,19 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
         suffix = '' if k == 0 else f'-{k}'
         body = Builder()
         if plant:
-            mound_bodies(body, plant, tufts_spec, *spec['bodies'][k], spec['cell'], spec['scale'], stream)
+            mound_bodies(body, plant, tufts_spec, *spec['bodies'][k], spec['cell'], spec['scale'], stream, tints)
         else:
             cushion(body, waves, spec['across'], spec['high'], *spec['bodies'][k], spec['cell'], spec['scale'])
         made = {'body': calmed(body).build(f'{name}-body{suffix}', mat_mat)}
         if plant:
-            made['tufts'] = calmed(leaf_part(tufts_spec, plant, places[::every], stream, grow)).build(f'{name}-tufts{suffix}', tuft_mat)
+            chosen = places[::every]
+            tufts = leaf_part(tufts_spec, plant, chosen, stream, grow)
+            if tones:
+                # Each card (six vertices) takes its shrub's color.
+                for i, (_, _, branch) in enumerate(chosen):
+                    for v in range(6 * i, 6 * i + 6):
+                        tufts.colors[v] = tuple(c * t for c, t in zip(tufts.colors[v], tones[branch]))
+            made['tufts'] = calmed(tufts).build(f'{name}-tufts{suffix}', tuft_mat)
         return made
 
     full = parts(0, 1, 1.0, rng)
@@ -2245,13 +2302,18 @@ def main():
         tufts, mats = garden_atlases(1024, np.random.default_rng((SEED, 80)))
         tuft_mat = material('garden-tufts', image('garden-tufts', tufts), cutout=True, roughness=0.75)
         mat_mat = material('garden-mats', image('garden-mats', mats[..., :3]), roughness=1.0)
+        needles = material(
+            'rim-needles', image('rim-needles', needle_atlas(1024, np.random.default_rng((SEED, 120)), RIM_TONES, NEEDLE_TWIG, mat=True)),
+            cutout=True, roughness=0.7,
+        )
         ground = []
         for ident, (name, spec) in enumerate(grounds.items()):
-            objects, (high, across), measured = build_ground_plant(name, spec, tuft_mat, mat_mat, np.random.default_rng((SEED, 82, ident)), ident)
+            mats_of = (needles, needles) if spec.get('needles') else (tuft_mat, mat_mat)
+            objects, (high, across), measured = build_ground_plant(name, spec, *mats_of, np.random.default_rng((SEED, 82, ident)), ident)
             ground += objects
             ground_errors.update(measured)
             print(f'CREEK {name}: {high:.2f} m high, {across:.2f} m across')
-        report.update(export(os.path.join(out, 'garden.glb'), ground, {'garden-tufts'}, ground_errors))
+        report.update(export(os.path.join(out, 'garden.glb'), ground, {'garden-tufts', 'rim-needles'}, ground_errors))
         files.append('garden.glb')
 
     # The maple, after the garden, from streams of its own, so it too leaves every other file as it
