@@ -207,12 +207,12 @@ const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
 const FOAM_REACH = 0.25;
 /**
- * How far the foam reaches round the stones of each arm, in meters. The left arm's marks reach
- * less and the right's more, as the lead's swap asks; the probe's figures for each arm are in the
- * round's report.
+ * How far the foam reaches round the left arm's stones, in meters. The map's trail stays at the
+ * map's reach, so a mark shorter than it carries a longer bright tail, and the left arm's 0.05 m
+ * mark raises its foam from 14.1 to 19.8 per cent. The right arm keeps the map's reach: the swap's
+ * probe showed its bright share is the water's own reflection, not the stones' marks.
  */
 const FOAM_REACH_WEST = 0.05;
-const FOAM_REACH_EAST = 0.8;
 /** The foam map's box on the ground, over the whole creek. */
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
@@ -277,7 +277,7 @@ function createCreekWater(
 			ctx,
 			obstacles.map((stone) => ({
 				...stone,
-				reach: stone.x < POOL.x ? FOAM_REACH_WEST : FOAM_REACH_EAST,
+				...(stone.x < POOL.x && { reach: FOAM_REACH_WEST }),
 			})),
 			{
 				origin: FOAM_BOX.origin,
