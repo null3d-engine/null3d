@@ -233,16 +233,46 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 }
 // </wind-sample>
 
-/// Caustics: bright ridges where the ripples focus the light, which drift with the current. `ridge`
-/// sets how thin they are: 14 draws ridges about 7 mm wide, and a lower power broadens them.
-fn caustics(p: vec2f, t: f32, current: vec2f, ridge: f32) -> f32 {
-    let q = p * 4.6 - current * (t * 4.0);
+/// The seconds over which a pattern rides the current before it fades into a fresh copy.
+const CARRY_CYCLE: f32 = 2.0;
+
+/// Two copies of a pattern that the current carries, half a cycle apart: in x and y the seconds that
+/// each has ridden the current, and in z and w their weights, each nothing at the moment its copy
+/// starts afresh. A pattern that slid by the current times the clock would stretch further every
+/// second wherever the current changes from point to point, into even lines across the view. A copy
+/// that rides for one cycle at most cannot.
+fn carried(t: f32) -> vec4f {
+    let first = fract(t / CARRY_CYCLE);
+    let second = fract(t / CARRY_CYCLE + 0.5);
+    let weight = 1.0 - abs(2.0 * first - 1.0);
+    return vec4f(first * CARRY_CYCLE, second * CARRY_CYCLE, weight, 1.0 - weight);
+}
+
+/// A number from 0 to 1 that changes each time a copy starts afresh: `which` is 0 for the first copy
+/// and 0.5 for the second. A fresh copy starts somewhere new, so the pattern never loops.
+fn cycle_seed(t: f32, which: f32) -> f32 {
+    return fract(floor(t / CARRY_CYCLE + which) * 0.618034 + which);
+}
+
+/// The net of caustic ridges at a place `q` in the pattern's own units. `ridge` sets how thin they
+/// are: 14 draws ridges about 7 mm wide, and a lower power broadens them.
+fn caustic_net(q: vec2f, t: f32, ridge: f32) -> f32 {
     let a = sin(q.x * 3.1 + t * 1.3 + sin(q.y * 2.3 - t));
     let b = sin(q.y * 3.7 - t * 1.1 + sin(q.x * 1.9 + t * 0.7));
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
     let v = (a + b + c) / 3.0;
+    return pow(1.0 - abs(v), ridge);
+}
+
+/// Caustics: bright ridges where the ripples focus the light, which drift with the current in two
+/// copies that take turns.
+fn caustics(p: vec2f, t: f32, current: vec2f, ridge: f32) -> f32 {
+    let copies = carried(t);
+    let q = p * 4.6;
+    let first = caustic_net(q - current * (copies.x * 4.0) + vec2f(cycle_seed(t, 0.0) * 37.0, 0.0), t, ridge);
+    let second = caustic_net(q - current * (copies.y * 4.0) + vec2f(0.0, cycle_seed(t, 0.5) * 41.0), t, ridge);
     // Patches of brighter and fainter light keep the net from looking even.
-    return pow(1.0 - abs(v), ridge) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
+    return (first * copies.z + second * copies.w) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
 }
 
 /// The width of one cell of the rain's rings in meters, the rings that one cell shows a second, and
@@ -280,8 +310,6 @@ fn rain_rings(p: vec2f, t: f32, flow: vec2f, rain: f32, footprint: f32) -> vec2f
 /// mean, 0.114 at a power of 14, times the mean of the patches that brighten and dim them.
 const CAUSTIC_MEAN: f32 = 0.077;
 
-/// The seconds over which the foam's pattern rides the current before it fades into a fresh one.
-const FOAM_CYCLE: f32 = 1.6;
 /// The foam's clumps for each meter, the same along the current and across it.
 const FOAM_CELLS: f32 = 6.0;
 
@@ -296,23 +324,15 @@ fn foam_clumps(q: vec2f, footprint: f32) -> f32 {
     return 0.6 * mix(0.5, value2(a), near) + 0.4 * mix(0.5, value2(b), fine);
 }
 
-/// The flecks that break the foam around the stones, which the current carries downstream. Each of
-/// two copies of the pattern rides the current for one cycle and then starts afresh, and the two
-/// take turns, half a cycle apart, so the pattern moves with the water without ever stretching
-/// where the current changes.
+/// The flecks that break the foam around the stones, which the current carries downstream in two
+/// copies that take turns, so the pattern moves with the water without ever stretching where the
+/// current changes.
 fn foam_flecks(p: vec2f, flow: vec2f, t: f32, footprint: f32) -> f32 {
-    let first = fract(t / FOAM_CYCLE);
-    let second = fract(t / FOAM_CYCLE + 0.5);
-    let a = foam_clumps(
-        p - flow * (first * FOAM_CYCLE) + vec2f(floor(t / FOAM_CYCLE) * 3.7, 0.0),
-        footprint,
-    );
-    let b = foam_clumps(
-        p - flow * (second * FOAM_CYCLE) + vec2f(0.0, floor(t / FOAM_CYCLE + 0.5) * 5.3 + 11.0),
-        footprint,
-    );
-    let wa = 1.0 - abs(2.0 * first - 1.0);
-    let wb = 1.0 - wa;
+    let copies = carried(t);
+    let a = foam_clumps(p - flow * copies.x + vec2f(cycle_seed(t, 0.0) * 37.0, 0.0), footprint);
+    let b = foam_clumps(p - flow * copies.y + vec2f(0.0, cycle_seed(t, 0.5) * 41.0 + 11.0), footprint);
+    let wa = copies.z;
+    let wb = copies.w;
     // Two noises blended halve the spread; this gives it back.
     return clamp(0.5 + (a * wa + b * wb - 0.5) / sqrt(wa * wa + wb * wb), 0.0, 1.0);
 }
@@ -357,9 +377,10 @@ fn junction(p: vec2f, body: f32) -> vec2f {
 /// The water's height at a point, and its slopes along x and z: long waves, and with `fine` set,
 /// shorter ripples beside them. A current carries the whole set downstream: each wave's direction
 /// turns into the current's frame, so the crests keep every angle between them and all of them
-/// travel with the water. Still water keeps the authored directions and each wave's own speed. A
-/// wave's slope fades as the wave grows finer than `footprint`, the meters that one pixel covers, so
-/// a slope that a pixel cannot resolve never turns into noise that changes each frame.
+/// travel with the water, in two copies that take turns, as `carried` gives them. Still water keeps
+/// the authored directions and each wave's own speed. A wave's slope fades as the wave grows finer
+/// than `footprint`, the meters that one pixel covers, so a slope that a pixel cannot resolve never
+/// turns into noise that changes each frame.
 fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f {
     // Each wave: its direction, its wave number, and the speed it runs at in still water.
     let list = array<vec4f, 6>(
@@ -373,6 +394,7 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f 
     var h = 0.0;
     var slope = vec2f(0.0);
     let moving = current.z > 1e-5;
+    let copies = carried(t);
     let count = select(3u, 6u, fine);
     for (var k = 0u; k < count; k++) {
         let w = list[k];
@@ -383,13 +405,22 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f 
         // The long waves take the surface's height factor, and the fine ripples keep their own.
         let height = select(material.waveAmplitude, 1.0, k >= 3u);
         let amplitude = material.ripple * height * 0.05 / w.z;
-        // Carried: the current moves the whole pattern. Still: each wave runs at its own speed.
-        let still = w.z * dot(own, p) - w.w * t;
-        let carried = w.z * (dot(dir, p) - current.z * t * dot(current.xy, dir));
-        let phase = select(still, carried, moving);
-        h += amplitude * sin(phase);
         let resolved = 1.0 - smoothstep(0.75, 2.0, w.z * footprint);
-        slope += dir * (amplitude * w.z * cos(phase) * resolved);
+        if moving {
+            // Carried: the current moves the whole pattern, in two copies that take turns.
+            let run = w.z * current.z * dot(current.xy, dir);
+            let base = w.z * dot(dir, p);
+            let turn = 6.2831853 * f32(k + 1u);
+            let first = base - run * copies.x + cycle_seed(t, 0.0) * turn;
+            let second = base - run * copies.y + cycle_seed(t, 0.5) * turn;
+            h += amplitude * (copies.z * sin(first) + copies.w * sin(second));
+            slope += dir * (amplitude * w.z * (copies.z * cos(first) + copies.w * cos(second)) * resolved);
+        } else {
+            // Still: each wave runs at its own speed.
+            let still = w.z * dot(own, p) - w.w * t;
+            h += amplitude * sin(still);
+            slope += dir * (amplitude * w.z * cos(still) * resolved);
+        }
     }
     return vec3f(h, slope);
 }
@@ -519,15 +550,15 @@ fn surface(input: SurfaceInput) -> Surface {
     let reach = smoothstep(0.02, 0.15, depth) * exp(-depth * 1.4) * (1.0 - foam);
     // The ridges are about 7 mm wide close up. Where a pixel covers more than a ridge, as a low view
     // along the water does a little way off, they would alias into even lines across the view.
-    // So they broaden with the pixel, at nearly the same mean brightness, and where a pixel covers a
-    // good share of the pattern they give way to that mean.
-    let ridge = clamp(0.1 / max(footprint, 1e-4), 2.0, 14.0);
+    // So they broaden with the pixel, at nearly the same mean brightness, each ridge kept a few
+    // pixels wide, and where a pixel covers a good share of the pattern they give way to that mean.
+    let ridge = clamp(0.04 / max(footprint, 1e-4), 2.0, 14.0);
     let even = (ridge + 1.0) / 15.0;
     var light = caustics(bed, frame.time, current.xy * current.z, ridge) * even;
     if share < 1.0 {
         light = mix(caustics(bed, frame.time, vec2f(0.0), ridge) * even, light, share);
     }
-    light = mix(CAUSTIC_MEAN, light, 1.0 - smoothstep(0.06, 0.15, footprint));
+    light = mix(CAUSTIC_MEAN, light, 1.0 - smoothstep(0.025, 0.07, footprint));
     s.emissive += material.caustics * light * reach;
     s.transmission = 1.0 - 0.7 * foam;
     // The soft shore: the water fades to nothing as its gap to the bed closes, so its edge lies in a

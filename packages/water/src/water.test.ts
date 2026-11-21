@@ -91,23 +91,29 @@ describe('the water’s waves', () => {
 		);
 	});
 
-	it('carries the whole set downstream with the current', () => {
-		// Each wave's phase is measured from the point moved back along the current, so the surface
-		// at one time is the surface at the start, moved by the current's travel.
-		const current: [number, number] = [0.21, -0.28];
-		const points: readonly (readonly [number, number])[] = [
-			[0, 0],
-			[-11, 1.3],
-			[6.5, -2.2],
-		];
-		for (const t of [0.4, 2.5, 7]) {
-			for (const [x, z] of points) {
-				expect(waveHeight(x, z, t, 0, current, 1)).toBeCloseTo(
-					waveHeight(x - current[0] * t, z - current[1] * t, 0, 0, current, 1),
-					9,
-				);
-			}
+	it('carries the waves with the current, and never stretches them where the current changes', () => {
+		// Two points 1 cm apart whose currents differ by 1 mm/s. A wave slid by the current times the
+		// clock drifts out of step between them by a little more every second: after an hour their
+		// heights would differ by most of a wave. Each carried copy rides for one cycle at most, so
+		// the step between them stays as small as the waves' own slope over 1 cm allows.
+		const slow: [number, number] = [0.3, 0];
+		const fast: [number, number] = [0.301, 0];
+		const steepest = 0.05 * LONG_WAVES.length;
+		for (const t of [10, 600, 3600]) {
+			const step = Math.abs(waveHeight(2, 1, t, 0, slow, 1) - waveHeight(2.01, 1, t, 0, fast, 1));
+			expect(step).toBeLessThan(steepest * 0.01 * 2);
 		}
+		// The water moves: a point's height changes as the current carries the waves past it.
+		expect(waveHeight(2, 1, 0.9, 0, slow, 1)).not.toBeCloseTo(waveHeight(2, 1, 0.5, 0, slow, 1), 4);
+	});
+
+	it('starts each carried copy afresh without a jump in the surface', () => {
+		const current: [number, number] = [0.21, -0.28];
+		for (const restart of [2, 3, 4, 101])
+			expect(waveHeight(1.5, -2, restart - 1e-6, 0, current, 1)).toBeCloseTo(
+				waveHeight(1.5, -2, restart + 1e-6, 0, current, 1),
+				5,
+			);
 	});
 
 	it('keeps a lake’s waves moving without a current', () => {

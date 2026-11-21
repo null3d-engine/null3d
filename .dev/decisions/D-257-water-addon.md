@@ -97,7 +97,7 @@ the Creek on its own water are closed:
   whole set at the current's speed, so the crests keep every angle between them and every one drifts
   downstream. A river may also give its current as a function of any point, so the Creek's straight
   sheets follow the stream's winding middle line. The caustics and the foam flecks drift the same
-  way.
+  way, each in two copies that take turns, so no pattern stretches where the current changes.
 - **The thickness.** A shape may give its bed as a function of any point, and the water may read it
   in place of the copy of the scene's depth (`bed: 'shape'`). The mesh carries each vertex's bed
   depth in its vertex colors. The Creek gives the analytic bed that its land uses.
@@ -378,21 +378,26 @@ Where a pixel covers 6 to 15 cm, the caustics give way to that mean. With the ch
 keeps the sharp ridges. Both copies of the caustics take the power as an argument, so the test
 that holds them equal still holds.
 
-## The foam's pattern
+## Patterns that ride the current
 
-The foam's flecks were noise that slid by the current times the sketch's time. Where the current
-changes from point to point, that offset changes too, and it grows with every second. So after a
-while the pattern was stretched into slanted strokes, like a printed hatch. Its cells were also
-longer one way than the other, and nothing faded them where a pixel covered several. Far off they
-broke into a regular grid of dots.
+The waves, the caustics and the foam's flecks all slid by the current times the sketch's time. Where
+the current changes from point to point, as the Creek's winding current does, that offset changes
+too, and it grows with every second. So the longer a scene ran, the more each pattern was squeezed
+into slanted strokes and fine, even lines across a low view. In the Creek a minute and more into its
+route, the lines down one low view alternated 3.4 levels from row to row against 0.6 from column to
+column. With the fine waves stilled they read 0.6 and 0.5, which named the waves; the caustics added
+bright dashes on the same rows. The foam stretched into a printed hatch, and its long cells broke
+into a grid of dots far off.
 
-The flecks now use two copies of the pattern. Each copy rides the current for 1.6 s and then
-starts afresh at a new place. The two take turns half a cycle apart, and each is weighted to
-nothing at the moment it starts again. So the pattern moves with the water and never stretches.
-Two noises blended lose some of their spread, and the blend gives it back. The clumps are round,
-six to a meter, with a finer octave, and each octave gives way to its mean where a pixel covers
-one of its clumps. The foam map still places the foam, so its coverage did not change. In the
-Creek's close view the lower water's middle brightness moved by one level.
+Each pattern now uses two copies. Each copy rides the current for one cycle of 2 s, then starts
+afresh somewhere new. The two take turns half a cycle apart, and each is weighted to nothing at the
+moment it starts again. So each pattern moves with the water and never stretches. The CPU's wave
+height and the view from under the water use the same two copies, so the waterline still agrees
+with the surface. A test holds two points 1 cm apart, whose currents differ by 1 mm/s, within the
+waves' own slope after an hour. The old way fails it after ten minutes. With the change, the same
+low view reads 0.76 against 0.53. The foam's clumps are round, six to a meter, with a finer octave,
+and each octave gives way to its mean where a pixel covers one of its clumps. The foam map still
+places the foam.
 
 ## Rain on the surface
 
