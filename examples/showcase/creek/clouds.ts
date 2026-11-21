@@ -240,7 +240,9 @@ fn unlit(input: SurfaceInput) -> vec4f {
         near = min(near, e);
         far = max(far, e);
     }
-    let outline = far - near > 0.3;
+    // Past a few meters the far side is open cloud, not another crag, and a ray run on through the
+    // rock's edge would find cloud that the rock hides, so such an outline keeps its own edge.
+    let outline = far - near > 0.3 && far - near < 20.0;
     let middle = 0.5 * (near + far);
     let nearShare = (select(0.0, 1.0, end < middle) + dot(select(vec4f(0.0), vec4f(1.0), ends < vec4f(middle)), vec4f(1.0))) / 5.0;
     let limit = select(end, far, outline);
@@ -447,7 +449,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
         let rock = eye + dir * end;
         let front = wall_at(rock.xz).w;
         let fades = mix(9.0, 4.5, front);
-        let veil = mix(0.7, 0.25, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
+        let veil = mix(0.55, 0.2, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
         color += veil * aerial(cloud_color(0.65, 0.0), end);
         clear -= veil;
     }
