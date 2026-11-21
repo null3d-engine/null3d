@@ -283,8 +283,9 @@ fn unlit(input: SurfaceInput) -> vec4f {
     // How many billows the ray has taken light from: past the first, a billow met after clear air
     // takes its own light, so a heap's outline in front of another is not cut hard.
     var lights = 0;
-    // Where along the ray its light was last read.
+    // Where along the ray its light was last read, and the shade of the billows toward the sun.
     var litAt = 0.0;
+    var shadow = 1.0;
     // What the ray gathered by the nearest end, at an outline.
     var nearColor = vec3f(0.0);
     var nearClear = 1.0;
@@ -339,10 +340,10 @@ fn unlit(input: SurfaceInput) -> vec4f {
         let h = here.x;
         let above = p.y - h;
         if density > 0.002 {
-            // A ray that has gathered little since its light was read, and has gone on some way,
-            // reads it again: it grazed one billow's haze and now meets the next billow, which
-            // takes its own light, so their outlines blend by how much of each the ray crossed.
-            if lit && lights < 4 && clear > 0.75 && t - litAt > 2.0 + t * 0.04 {
+            // A ray reads its light again every few meters on its way through the cloud, so a billow
+            // that it reaches past another's edge takes its own light, and their outlines blend by
+            // how much of each the ray crossed rather than switch on one line.
+            if lit && lights < 8 && t - litAt > 1.0 + t * 0.02 {
                 lit = false;
             }
             if !lit && parts.x > 0.002 {
@@ -359,8 +360,9 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 let normal = normalize(vec3f(hc - hx, e, hc - hz));
                 let sun = material.toward;
                 let across = max(length(sun.xz), 0.05);
-                var shadow = 1.0;
-                for (var k = 1; k <= 3; k++) {
+                // The billows toward the sun shade this one, read at the ray's first billow alone;
+                // later readings keep it.
+                for (var k = 1; k <= 3 && lights == 0; k++) {
                     let d = (4.0 + t * 0.02) * f32(k * k);
                     let toward = p.xz + sun.xz / across * d;
                     let rise = cloud_at(vec3f(toward.x, p.y, toward.y), lod + 1.0).x - (p.y + sun.y / across * d);
@@ -444,8 +446,8 @@ fn unlit(input: SurfaceInput) -> vec4f {
     if behind > 0.0 {
         let rock = eye + dir * end;
         let front = wall_at(rock.xz).w;
-        let fades = mix(7.0, 4.5, front);
-        let veil = mix(0.5, 0.25, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
+        let fades = mix(9.0, 4.5, front);
+        let veil = mix(0.7, 0.25, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
         color += veil * aerial(cloud_color(0.65, 0.0), end);
         clear -= veil;
     }
