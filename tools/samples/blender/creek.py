@@ -1955,6 +1955,203 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
     return objects, size, errors
 
 
+# ---------------------------------------------------------------------------------------------
+# The maples
+# ---------------------------------------------------------------------------------------------
+
+# The maple: the raw Tripo3D trunk (one H3.1 run on references/maple-orange-trunk.png, which
+# carries the red maples too) and a crown of pale leaf cards grown along its limbs, which the scene
+# tints per copy red, orange or yellow. The spec gives:
+#   raw, sha256, turn, height, sink, wood, limit and bark as the pines' do
+#   hang     a limb whose end hangs this many meters below where it leaves its parent is a broken
+#            one, and so is one whose end stays below `low` of the height, under the crown; each
+#            is cut back to a stub `stub` meters past `clear`
+#   base     the crown's base, as a share of the height: no pad grows below it
+#   clear    no pad grows nearer the trunk's axis than this, in meters
+#   spacing  the distance between pads along a limb, in meters
+#   past     how far the last pad stands out past the limb's end, as the leaves reach past the wood
+#   pad      a pad's half-width and half-height, in meters
+#   cards, up, depth, card, lift, scatter, centered, cells, fold, bend, tint and shade as the
+#            pines' needles take them
+#   levels   each lower level's (every, grow), as the pines' are
+MAPLE = dict(
+    raw='maple-trunk/model.glb', sha256='76d0d36f36251f12098c2a9b72234224318ae7911e360eef70109c5d6c11dd63',
+    turn=-90, height=5.2, sink=0.1, wood=(14000, 5000, 1600), limit=0.04, bark=(0.2, 0.18, 0.16),
+    hang=0.3, low=0.3, stub=0.3, base=0.42, clear=0.5, spacing=0.9, past=0.45, pad=(0.85, 0.38),
+    cards=2200, up=0.5, depth=0.25, card=0.55, lift=0.75, scatter=0.3, centered=0.45, cells=(0, 1, 2, 3),
+    fold=0.1, bend=0.6, tint=(1.0, 1.0, 1.0), shade=0.7, levels=((2, 1.3), (5, 1.7)),
+)
+# The leaves' pale tones, a little warmer or cooler leaf by leaf, so the color that the scene gives
+# each copy sets its hue while the leaves keep their light and shade; and the twigs' grey.
+MAPLE_PALE = ((0.97, 0.95, 0.92), (0.98, 0.93, 0.88), (0.95, 0.95, 0.86), (0.86, 0.83, 0.8))
+MAPLE_TWIG = (0.32, 0.28, 0.26)
+# The colors that the previews give the three kinds of copy, from the concept's maples: red,
+# orange and yellow.
+MAPLE_TINTS = {'red': (1.0, 0.47, 0.25), 'orange': (1.0, 0.66, 0.2), 'yellow': (1.0, 0.82, 0.22)}
+
+
+def maple_leaf(tile, middle, angle, length, tone, patch):
+    """A small palmate leaf: five pointed lobes from its middle, the middle one the longest."""
+    for turn, reach in ((0.0, 1.0), (0.75, 0.85), (-0.75, 0.85), (1.5, 0.55), (-1.5, 0.55)):
+        paint_leaf(tile, middle, angle + turn, length * reach, 0.38, tone, 0.0, patch, 0.55, 0.0)
+
+
+def maple_atlas(size, rng):
+    """
+    The maple's sprays in a 2 x 2 atlas: in each cell a twig from the bottom middle with a few side
+    twigs, and small pale palmate leaves clustered round their tips, as a maple holds its leaves in
+    flat sprays.
+    """
+    cell, offsets = cells(size)
+    out = np.zeros((size, size, 4), np.float32)
+    mottle = fbm(size, size, 8, 8, rng, 4)
+    for oy, ox in offsets:
+        tile = np.zeros((cell, cell, 4), np.float32)
+        patch = mottle[oy:oy + cell, ox:ox + cell]
+        top = (0.5 + rng.normal(0, 0.04), 0.66)
+        paint_line(tile, (0.5, 0.0), top, 0.01, MAPLE_TWIG)
+        tips = [top]
+        for side in (-1, 1, -1, 1):
+            t = 0.12 + 0.4 * rng.random()
+            start = (0.5 + (top[0] - 0.5) * t / top[1], t)
+            tip = (0.5 + side * (0.2 + 0.1 * rng.random()), min(t + 0.2 + 0.15 * rng.random(), 0.8))
+            paint_line(tile, start, tip, 0.006, MAPLE_TWIG)
+            tips.append(tip)
+        for _ in range(34):
+            tip = tips[int(rng.random() * len(tips))]
+            middle = tuple(float(v) for v in np.clip(np.array(tip) + rng.normal(0, 0.09, 2), 0.15, 0.85))
+            angle = math.atan2(middle[1] - 0.1, middle[0] - 0.5) + rng.normal(0, 0.5)
+            tone = np.array(MAPLE_PALE[int(rng.random() * len(MAPLE_PALE))]) * (0.8 + 0.25 * rng.random())
+            maple_leaf(tile, middle, angle, 0.09 + 0.04 * rng.random(), tone, patch)
+        out[oy:oy + cell, ox:ox + cell] = tile
+    return dilate(out)
+
+
+def maple_crown(spec, ends, middles, distance, parent, kept, rng):
+    """
+    The maple's crown as pads along its limbs: on each kept limb, from its end back toward the
+    trunk, a pad every `spacing` meters of wood that stands above the crown's base and clear of the
+    trunk, the last one `past` meters out past the end; a pad nearer than most of the spacing to
+    one already grown is left out. Limb k's pads hang from branch k + 1, whose phase its wood
+    carries.
+    """
+    plant = Plant()
+    height = spec['height']
+    plant.branch([Vector((0, 0, 0)), Vector((0, 0, height * 0.5))], [0.2, 0.1], 0)
+    half, thick = spec['pad']
+    for k, e in enumerate(ends):
+        path = root_path(e, parent)
+        branch = plant.branch([Vector(middles[path[0]]), Vector(middles[e])], [0.05, 0.02], 1)
+        if k not in kept:
+            continue
+        tip = Vector(middles[e])
+        out = Vector((tip.x, tip.y, 0))
+        out = out.normalized() if out.length > 1e-3 else Vector((1, 0, 0))
+        spots = [tip + out * spec['past']]
+        mark = spec['spacing']
+        for c in reversed(path):
+            if distance[e] - distance[c] < mark:
+                continue
+            mark += spec['spacing']
+            spots.append(Vector(middles[c]))
+        for p in spots:
+            if p.z < spec['base'] * height or math.hypot(p.x, p.y) < spec['clear']:
+                continue
+            if any((p - c).length < 0.7 * spec['spacing'] for c, _, _ in plant.pads):
+                continue
+            size = half * (0.8 + 0.4 * rng.random())
+            plant.pad(tuple(p + Vector((0, 0, thick * 0.3))), (size, size, thick), branch)
+    return plant
+
+
+def cut_wood(obj, gone):
+    """
+    Deletes the wood's vertices marked `gone`, then any piece that the cut parts from the trunk,
+    and closes each cut end, as `trim_twigs` closes the pines'.
+    """
+    mesh = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+    open_before = {e.index for e in bm.edges if e.is_boundary}
+    bmesh.ops.delete(bm, geom=[bm.verts[i] for i in np.where(gone)[0]], context='VERTS')
+    drop_loose(bm, 0.03, 400)
+    close_cuts(bm, open_before)
+    bm.to_mesh(mesh)
+    bm.free()
+
+
+def build_maple(name, spec, raw, leaf_mat, rng):
+    """
+    The maple's wood and leaves objects at each level, its plant, its number of limb ends and of
+    broken limbs cut, and each part's measured level errors.
+    """
+    path = os.path.join(raw, spec['raw'])
+    with open(path, 'rb') as f:
+        found = hashlib.sha256(f.read()).hexdigest()
+    if found != spec['sha256']:
+        raise SystemExit(f"{path} is not the raw trunk that {name} is built from: its SHA-256 is {found}, not {spec['sha256']}")
+    wood, maps = import_raw(path, f'{name}-raw', spec['height'], spec['turn'], spec['sink'])
+    wood.data.materials.append(raw_bark(maps, name, 512))
+    # The vertex colors bring the bark's mean color to the concept's.
+    shade = linear(spec['bark']) / np.maximum(linear(maps['Base Color'][..., :3].reshape(-1, 3).mean(axis=0)), 1e-3)
+    co = positions(wood.data)
+    edges = np.empty(len(wood.data.edges) * 2, np.int32)
+    wood.data.edges.foreach_get('vertices', edges)
+    ends, inverse, middles, distance, parent, limb, around = limb_ends(co, edges.reshape(-1, 2), spec['height'] / 120, spec['height'] / 25)
+    starts = limb_starts(ends, distance, limb)
+    # A broken limb hangs, its end well below where it leaves its parent, or it stays low under the
+    # crown, where it would stand bare.
+    broken = {k for k, (e, s) in enumerate(zip(ends, starts))
+              if middles[e][2] < middles[s][2] - spec['hang'] or middles[e][2] < spec['low'] * spec['height']}
+    plant = maple_crown(spec, ends, middles, distance, parent, set(range(len(ends))) - broken, rng)
+    pine_wood(wood, plant, inverse, limb_phases(ends, starts, distance, parent, limb), shade)
+    # Each is cut where it stands out past the trunk, so the trunk's own wood, which may lead to a
+    # low limb from the foot, stays whole.
+    out = np.hypot(middles[:, 0], middles[:, 1]) > spec['clear'] + spec['stub']
+    gone = np.isin(limb, list(broken)) & out
+    cut_wood(wood, gone[inverse])
+    places = crown_cards(plant, rng, spec['cards'], spec['up'], spec['depth'])
+    full = {
+        'wood': decimated(wood, spec['wood'][0], f'{name}-wood'),
+        'leaves': leaf_part(spec, plant, places, rng, 1.0).build(f'{name}-leaves', leaf_mat),
+    }
+    objects, errors = list(full.values()), {f'{name}-{part}': [] for part in full}
+    for k, (every, grow) in enumerate(spec['levels'], start=1):
+        own = np.random.default_rng((SEED, 110 + k))
+        level = {
+            'wood': decimated(wood, spec['wood'][k], f'{name}-wood-{k}'),
+            'leaves': leaf_part(spec, plant, places[::every], own, grow).build(f'{name}-leaves-{k}', leaf_mat),
+        }
+        for part, obj in level.items():
+            errors[f'{name}-{part}'].append(level_error(obj, full[part], limit=spec['limit'] * spec['height']))
+        objects += list(level.values())
+    raw_mesh = wood.data
+    bpy.data.objects.remove(wood)
+    bpy.data.meshes.remove(raw_mesh)
+    return objects, plant, len(ends), len(broken), errors
+
+
+def tinted(mat, name, tint):
+    """
+    A copy of a material whose base color is multiplied by `tint`, given in sRGB, as the scene's
+    row colors multiply each copy's.
+    """
+    copy = mat.copy()
+    copy.name = name
+    nodes, links = copy.node_tree.nodes, copy.node_tree.links
+    socket = nodes.get('Principled BSDF').inputs['Base Color']
+    source = socket.links[0].from_socket
+    mix = nodes.new('ShaderNodeMix')
+    mix.data_type = 'RGBA'
+    mix.blend_type = 'MULTIPLY'
+    mix.inputs['Factor'].default_value = 1.0
+    links.new(source, mix.inputs[6])
+    mix.inputs[7].default_value = (*linear(tint), 1.0)
+    links.new(mix.outputs[2], socket)
+    return copy
+
+
 def main():
     out, shots = arguments('creek.py')
     rng = np.random.default_rng(SEED)
@@ -2040,12 +2237,24 @@ def main():
         report.update(export(os.path.join(out, 'garden.glb'), ground, {'garden-tufts'}, ground_errors))
         files.append('garden.glb')
 
+    # The maple, after the garden, from streams of its own, so it too leaves every other file as it
+    # was.
+    maple_errors = {}
+    if 'maples' in chosen_models():
+        leaf_mat = material('maple-leaves', image('maple-leaves', maple_atlas(1024, np.random.default_rng((SEED, 100)))),
+                            cutout=True, roughness=0.75)
+        objects, plant, ends, broken, maple_errors = build_maple('maple', MAPLE, raw_folder(), leaf_mat, np.random.default_rng((SEED, 101)))
+        print(f'CREEK maple: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, {ends} limb ends, '
+              f'{broken} broken limbs cut, {len(plant.pads)} pads')
+        report.update(export(os.path.join(out, 'maples.glb'), objects, {'maple-leaves'}, maple_errors))
+        files.append('maples.glb')
+
     for name, triangles in report.items():
         print(f'CREEK {name}: {triangles} triangles')
     for name, (plant, ends, tiers, cut) in crowns.items():
         print(f'CREEK {name}: {plant_top(plant):.1f} m high, {2 * plant_reach(plant):.1f} m across, '
               f'{ends} limb ends, {tiers} tiers, {len(plant.pads)} pads, {cut} vertices of bare twig cut')
-    for part, measured in sorted({**(errors if wanted else {}), **ground_errors}.items()):
+    for part, measured in sorted({**(errors if wanted else {}), **ground_errors, **maple_errors}.items()):
         print(f"CREEK {part} level errors: {', '.join(f'{e} m (switch at {e / PIXEL_PER_METER:.0f} m)' for e in measured)}")
     for file in files:
         print(f'CREEK {file}: {os.path.getsize(os.path.join(out, file)) / 1e6:.2f} MB')
@@ -2067,6 +2276,33 @@ def main():
             preview([cave], os.path.join(shots, 'cave.png'), (0.3, -2.2, 0.35))
         preview_pines(shots, wanted, errors if wanted else {})
         preview_grounds(shots, grounds)
+        if 'maples' in chosen:
+            preview_maple(shots, maple_errors)
+
+
+def preview_maple(shots, errors):
+    """
+    Renders the maple under the overcast sky with its leaves in each copy's color: from the
+    concept's height, with and without the ground, from the side, close up, and orange at its
+    levels' switches.
+    """
+    leaves = [bpy.data.objects['maple-leaves']] + [bpy.data.objects[f'maple-leaves-{k}'] for k in (1, 2)]
+    plain = leaves[0].data.materials[0]
+    parts = [bpy.data.objects['maple-wood'], leaves[0]]
+    for color, tint in MAPLE_TINTS.items():
+        mat = tinted(plain, f'maple-leaves-{color}', tint)
+        for obj in leaves:
+            obj.data.materials[0] = mat
+        overcast(parts, os.path.join(shots, f'maple-{color}-concept.png'), 0, 15, (960, 960))
+        if color == 'orange':
+            overcast(parts, os.path.join(shots, f'maple-{color}-concept-matte.png'), 0, 15, (960, 960), matte=True)
+            overcast(parts, os.path.join(shots, f'maple-{color}-side.png'), 90, 10, (960, 960))
+            overcast(parts, os.path.join(shots, f'maple-{color}-close.png'), 0, 15, (1440, 960), 2.2, 0.7)
+            levels = [parts] + [[bpy.data.objects[f'maple-wood-{k}'], leaves[k]] for k in (1, 2)]
+            for distance in (round(e / PIXEL_PER_METER) for e in errors['maple-leaves']):
+                overcast_levels(levels, os.path.join(shots, f'maple-levels-{distance}m-concept.png'), distance, 15)
+    for obj in leaves:
+        obj.data.materials[0] = plain
 
 
 def preview_grounds(shots, grounds):
@@ -2114,7 +2350,7 @@ def chosen_models():
     """The models that `--models <a,b>` after `--` names, or every model the script writes."""
     args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     if '--models' not in args:
-        return ('trees', 'plants', 'cave', 'pines', 'garden')
+        return ('trees', 'plants', 'cave', 'pines', 'garden', 'maples')
     return tuple(args[args.index('--models') + 1].split(','))
 
 
