@@ -52,10 +52,12 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
+import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
 import { createSteps } from './steps';
 import { createStones, type Obstacle } from './stones';
+import { placeValley } from './valley';
 
 // The camera route, which this scene's frames and the shared route check both read.
 export { SHOTS };
@@ -370,6 +372,8 @@ export default defineSketch(async (ctx) => {
 	createGarden(ctx, models, detail.rock, detail.texture);
 	createSteps(ctx, detail.rock, detail.texture);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders);
+	page.post('loading', 'Planting the garden');
+	const plants = createPlants(ctx, wind, placeValley(), await loadPlants(ctx));
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
@@ -609,6 +613,7 @@ export default defineSketch(async (ctx) => {
 			}
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
+			plants.update();
 			stage.update(dt);
 			clouds.update(stage.airColor, stage.light);
 			lightFalls();
