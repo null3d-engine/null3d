@@ -1795,18 +1795,20 @@ GARDEN_TONES = {
     'moss': ((0.4, 0.337, 0.132), (0.48, 0.405, 0.158), (0.22, 0.185, 0.073)),
     'pale': ((0.95, 0.93, 0.88), (0.9, 0.86, 0.8), (0.97, 0.92, 0.84), (0.55, 0.52, 0.48)),
 }
-# The autumn clump's shrubs' colors, which multiply their pale leaves, one shrub each in a seeded
-# order: gold and yellow orange for half the shrubs, olive for a fifth or so, then rust and brown,
-# as the plant guides' review counts the concept's.
-# The rim conifer's needles: the concept's dark olive, with lighter yellow-green sprays among them
-# (references/plants/checklist.md: hue 57 to 67, strength 0.37 to 0.46, lightness 0.16 to 0.29),
-# painted purer than the figures, as the other ground plants are.
-RIM_TONES = ((0.28, 0.3, 0.07), (0.38, 0.42, 0.09))
-CLUMP_TONES = ((0.62, 0.5, 0.1), (0.62, 0.4, 0.08), (0.4, 0.4, 0.14), (0.62, 0.5, 0.1), (0.5, 0.22, 0.1),
-               (0.38, 0.28, 0.13))
+# The autumn clump's shrubs' main colors, which multiply their pale leaves, one shrub each in a
+# seeded order: gold and yellow orange for half the shrubs or more, olive, and a brown. Each shrub
+# also has a second tone: rust for some, as the concept's red is about a tenth of its clumps, and
+# another shrub's color for the rest, so the colors run into each other.
+CLUMP_TONES = ((0.62, 0.5, 0.1), (0.62, 0.4, 0.08), (0.4, 0.4, 0.14), (0.62, 0.5, 0.1), (0.38, 0.3, 0.12),
+               (0.6, 0.44, 0.09))
+CLUMP_RUST = (0.5, 0.22, 0.1)
+# The rim conifer's sprays, from the twig outward: the concept's dark olive deep in the spray, olive
+# along it and a lighter golden olive at its tip (references/plants/checklist.md and the plant
+# review: hue about 58 to 60, lightness 0.16 to 0.29, golden tips).
+CONIFER_TONES = ((0.14, 0.15, 0.05), (0.3, 0.3, 0.1), (0.5, 0.45, 0.15))
 # How each mound's leaves are painted: a tuft's leaf length and count, then the mat's, with
 # lengths in shares of an atlas cell.
-GARDEN_PAINT = {'azalea': (0.09, 260, 0.04, 5000), 'clipped': (0.05, 700, 0.03, 8000), 'pale': (0.12, 170, 0.04, 5000)}
+GARDEN_PAINT = {'azalea': (0.09, 260, 0.04, 5000), 'clipped': (0.05, 700, 0.03, 8000), 'pale': (0.08, 300, 0.04, 5000)}
 
 
 def leaf_clump(tile, rng, count, length, tones, patch, opaque):
@@ -1907,6 +1909,78 @@ def mound(rng, across, high, swells, swell, uneven, flat, core=0.8):
         middle = out + Vector((0, 0, max((high - sunk) * rise, sunk * 0.3)))
         branch = plant.branch([Vector((0, 0, 0)), middle], [0.015, 0.008], 1)
         plant.pad(tuple(middle), (size, size, sunk), branch)
+    return plant
+
+
+def conifer_atlas(size, rng):
+    """
+    The rim conifer's sprays in a 2 x 2 atlas. Three cells each hold a spray from the bottom middle:
+    a twig with side shoots, all clad in short needles that run from dark olive deep in the spray
+    to golden olive at its tip. The last cell is an opaque mat of short needles every way, dark with
+    a golden speckle, for the body.
+    """
+    cell, offsets = cells(size)
+    out = np.zeros((size, size, 4), np.float32)
+    deep, olive, gold = (np.array(t) for t in CONIFER_TONES)
+
+    def tone_at(t):
+        # Dark deep in the spray, olive along it and golden at its tip.
+        return deep + (olive - deep) * min(1.0, t * 2.0) + (gold - olive) * max(0.0, t * 2.0 - 1.0)
+
+    for k, (oy, ox) in enumerate(offsets):
+        tile = np.zeros((cell, cell, 4), np.float32)
+        if k == 3:
+            tile[..., :3] = (deep + olive) * 0.5
+            tile[..., 3] = 1.0
+            for _ in range(14000):
+                base = (rng.random(), rng.random())
+                lean = rng.random() * 2 * math.pi
+                tone = tone_at(rng.random() ** 1.5) * (0.75 + 0.5 * rng.random())
+                paint_line(tile, base, (base[0] + 0.03 * math.cos(lean), base[1] + 0.03 * math.sin(lean)), 2.5 / cell, tone)
+        else:
+            shoots = [((0.5, 0.03), (0.5 + rng.normal(0, 0.04), 0.95), 0.0)]
+            for j in range(7):
+                t = 0.12 + 0.7 * j / 7 + 0.04 * rng.random()
+                side = 1 if j % 2 else -1
+                start = (0.5, t)
+                shoots.append((start, (0.5 + side * (0.18 + 0.12 * rng.random()) * (1.1 - t), t + 0.12 + 0.08 * rng.random()), t))
+            for start, end, t0 in shoots:
+                paint_line(tile, start, end, 0.006, tuple(deep * 1.2))
+                for n in range(160):
+                    a = rng.random()
+                    at = (start[0] + (end[0] - start[0]) * a, start[1] + (end[1] - start[1]) * a)
+                    t = min(1.0, at[1])
+                    lean = math.atan2(end[1] - start[1], end[0] - start[0]) + (rng.random() - 0.5) * 1.6
+                    length = 0.04 + 0.05 * rng.random()
+                    tone = tone_at(t ** 1.3) * (0.8 + 0.4 * rng.random())
+                    paint_line(tile, at, (at[0] + length * math.cos(lean), at[1] + length * math.sin(lean)), 0.009, tone)
+        out[oy:oy + cell, ox:ox + cell] = tile
+    return dilate(out)
+
+
+def tiered(rng, across, high, tiers, around, lean):
+    """
+    A low spreading conifer `across` meters wide and `high` tall as pads in `tiers` layers, each
+    of `around` flat pads round a small core, narrowing toward the top and drooping at the rim. On
+    the side that `lean` (radians about the vertical) names, the pads reach further and lower, so
+    that side can hang over a rim.
+    """
+    plant = Plant()
+    a = across / 2
+    core = plant.branch([Vector((0, 0, 0)), Vector((0, 0, high * 0.6))], [0.06, 0.03], 0)
+    plant.pad((0, 0, high * 0.35), (a * 0.4, a * 0.4, high * 0.4), core)
+    for t in range(tiers):
+        share = t / max(tiers - 1, 1)
+        z = high * (0.18 + 0.68 * share)
+        ring = a * (0.72 - 0.38 * share)
+        for k in range(around - t):
+            turn = 2 * math.pi * (k + 0.5 * (t % 2)) / (around - t) + rng.normal(0, 0.15)
+            over = max(0.0, math.cos(turn - lean))
+            reach = ring * (1 + 0.35 * over)
+            middle = Vector((math.cos(turn) * reach, math.sin(turn) * reach, z - high * (0.08 + 0.12 * over)))
+            size = a * (0.42 - 0.16 * share) * (0.85 + 0.3 * rng.random())
+            branch = plant.branch([Vector((0, 0, z * 0.5)), middle], [0.03, 0.01], 1)
+            plant.pad(tuple(middle), (size, size, high * 0.18), branch)
     return plant
 
 
@@ -2048,8 +2122,9 @@ def cushion(builder, waves, across, high, around, rings, cell, scale):
 # rings) per pad at the full level and the two lower ones, and `tufts` cut-out tufts of `card`
 # meters; a cushion is one dome of `bodies` (around, rings). Each wears atlas cell `cell` at `scale`
 # meters to the cell. An autumn clump is `shrubs` such mounds of `swells` each, every shrub in one
-# of the clump's colors. A rim conifer is a mound in the needles' atlas, whose sprays (`tuft_cells`)
-# stand out from it as `sprays` turns them. `sway` scales the bend that a free crown would take: a clipped shrub
+# of the clump's colors. A rim conifer is `tiers` layers of `around` flat pads, reaching further
+# and lower toward `lean`, in the conifer's atlas, whose sprays (`tuft_cells`) point out from it and
+# droop as `sprays` turns them. `sway` scales the bend that a free crown would take: a clipped shrub
 # barely moves, moss less.
 GARDEN_TUFTS = {'lift': 0.5, 'scatter': 0.3, 'centered': 0.5, 'fold': 0.1, 'bend': 0.75, 'tent': False,
                 'shade': 0.5, 'underside': 0.35, 'body': 0.92, 'tint': (1.0, 1.0, 1.0)}
@@ -2061,10 +2136,12 @@ GARDEN = {
                       'bodies': ((10, 6), (8, 4), (6, 4))},
     'moss-cushion': {'across': 1.4, 'high': 0.3, 'cell': 2, 'matt': True, 'scale': 1.6, 'sway': 0.08, 'bodies': ((32, 6), (16, 4), (10, 3))},
     'autumn-clump': {'across': 2.2, 'high': 0.6, 'shrubs': 6, 'swells': 4, 'swell': 0.42, 'uneven': 0.6, 'flat': 0.45,
-                     'tufts': 760, 'card': 0.13, 'cell': 3, 'scale': 0.5, 'sway': 0.5, 'bodies': ((8, 5), (6, 4), (5, 3))},
-    'rim-conifer': {'across': 2.4, 'high': 1.3, 'swells': 9, 'swell': 0.4, 'uneven': 0.4, 'flat': 0.35, 'needles': True,
-                    'tufts': 700, 'card': 0.42, 'cell': 3, 'tuft_cells': (0, 1, 2), 'scale': 0.6, 'sway': 0.35,
-                    'sprays': {'lift': 0.25, 'scatter': 0.45, 'centered': 0.25, 'fold': 0.15}, 'bodies': ((10, 6), (8, 4), (6, 4))},
+                     'tufts': 900, 'card': 0.12, 'cell': 3, 'scale': 0.5, 'sway': 0.5, 'bodies': ((8, 5), (6, 4), (5, 3)),
+                     'sprays': {'centered': 0.25, 'lift': 0.35, 'scatter': 0.4, 'body': 0.82}},
+    'rim-conifer': {'across': 2.2, 'high': 1.3, 'tiers': 4, 'around': 7, 'lean': 0.0, 'needles': True,
+                    'tufts': 1400, 'card': 0.45, 'cell': 3, 'tuft_cells': (0, 1, 2), 'scale': 0.5, 'sway': 0.35,
+                    'sprays': {'lift': 0.2, 'scatter': 0.3, 'centered': 0.2, 'fold': 0.12, 'slant': -0.25, 'shade': 0.7, 'body': 0.6},
+                    'bodies': ((8, 4), (7, 3), (6, 3))},
 }
 # Each lower level keeps every `every`th tuft at `grow` times its size, as the pines' do.
 GARDEN_LEVELS = ((2, 1.35), (4, 1.7))
@@ -2082,12 +2159,27 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
         plant, owner = clump(rng, spec['across'], spec['high'], spec['shrubs'], *shape)
         # The middle shrub, the largest, is gold, as most of the concept's clumps are.
         picked = np.concatenate([[0], 1 + rng.permutation(len(CLUMP_TONES) - 1)])
-        tones = [linear(CLUMP_TONES[picked[owner[b] % len(CLUMP_TONES)]]) for b in range(len(owner))]
-        tints = [tones[b] for _, _, b in plant.pads]
+        # The two tones of each shrub, its pads' blend of them, and each card's tone, from a stream
+        # of their own: a card takes its shrub's main tone, its second, or another shrub's.
+        mixing = np.random.default_rng((SEED, 85, ident))
+        mains = [CLUMP_TONES[picked[i % len(CLUMP_TONES)]] for i in range(spec['shrubs'])]
+        seconds = [CLUMP_RUST if mixing.random() < 0.35 else mains[(i + 1) % len(mains)] for i in range(len(mains))]
+        tints = []
+        for _, _, b in plant.pads:
+            share = mixing.uniform(0.0, 0.45)
+            tints.append(linear(tuple(m + (n - m) * share for m, n in zip(mains[owner[b]], seconds[owner[b]]))))
+    elif 'tiers' in spec:
+        plant = tiered(rng, spec['across'], spec['high'], spec['tiers'], spec['around'], spec['lean'])
     elif 'swells' in spec:
         plant = mound(rng, spec['across'], spec['high'], *shape, core=spec.get('core', 0.8))
     tufts_spec = dict(GARDEN_TUFTS, card=spec.get('card', 0.1), cells=spec.get('tuft_cells', (spec['cell'],)), **spec.get('sprays', {}))
     places = [place for place in crown_cards(plant, rng, spec['tufts'], 0.6, 0.15) if place[0].z > 0.04] if plant else []
+    if 'shrubs' in spec:
+        tones = []
+        for _, _, b in places:
+            roll = mixing.random()
+            shrub = owner[b] if roll < 0.85 else int(mixing.integers(len(mains)))
+            tones.append(linear(seconds[shrub] if 0.55 <= roll < 0.85 else mains[shrub]))
     waves = [(rng.uniform(0.3, 1.0), rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi), rng.uniform(0.5, 1.2)) for _ in range(4)]
 
     def calmed(builder):
@@ -2107,10 +2199,10 @@ def build_ground_plant(name, spec, tuft_mat, mat_mat, rng, ident):
             chosen = places[::every]
             tufts = leaf_part(tufts_spec, plant, chosen, stream, grow)
             if tones:
-                # Each card (six vertices) takes its shrub's color.
-                for i, (_, _, branch) in enumerate(chosen):
+                # Each card (six vertices) takes its own tone, the same at every level.
+                for i, tone in enumerate(tones[::every]):
                     for v in range(6 * i, 6 * i + 6):
-                        tufts.colors[v] = tuple(c * t for c, t in zip(tufts.colors[v], tones[branch]))
+                        tufts.colors[v] = tuple(c * t for c, t in zip(tufts.colors[v], tone))
             made['tufts'] = calmed(tufts).build(f'{name}-tufts{suffix}', tuft_mat)
         return made
 
@@ -2452,7 +2544,7 @@ def main():
         moss_mat = material('garden-moss', mats_image, roughness=1.0)
         moss_mat.node_tree.nodes.get('Principled BSDF').inputs['Specular IOR Level'].default_value = 0.0
         needles = material(
-            'rim-needles', image('rim-needles', needle_atlas(1024, np.random.default_rng((SEED, 120)), RIM_TONES, NEEDLE_TWIG, mat=True)),
+            'rim-needles', image('rim-needles', conifer_atlas(1024, np.random.default_rng((SEED, 120)))),
             cutout=True, roughness=0.7,
         )
         ground = []
