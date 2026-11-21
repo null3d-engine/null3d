@@ -6,8 +6,8 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PerspectiveCamera, SketchContext } from '@null3d/engine';
-import { createUnderwater, topOrder } from './underwater';
-import { CARRY_CYCLE, LONG_WAVES, type Water, waveHeight, waveReach } from './water';
+import { createUnderwater } from './underwater';
+import { CARRY_CYCLE, LONG_WAVES, type Water, waveHeight } from './water';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 
@@ -281,55 +281,17 @@ describe('the water’s color along a low view', () => {
 	});
 });
 
-describe('the waves’ reach', () => {
-	it('bounds the surface’s height, and the waves come near it', () => {
-		for (const [ripple, amplitude] of [
-			[1, 1],
-			[2, 0.5],
-			[0.4, 1.5],
-		] as const) {
-			const reach = waveReach(ripple, amplitude);
-			let most = 0;
-			for (let k = 0; k < 20000; k++) {
-				const current: [number, number] = k % 3 === 0 ? [0, 0] : [0.3, -0.2];
-				const x = ((k * 7.31) % 40) - 20;
-				const z = ((k * 3.17) % 30) - 15;
-				const h = waveHeight(x, z, k * 0.0173, 2, current, ripple, amplitude) - 2;
-				most = Math.max(most, Math.abs(h));
-			}
-			expect(most).toBeLessThanOrEqual(reach);
-			expect(most).toBeGreaterThan(reach * 0.6);
-		}
-	});
-});
-
 describe('the view from under the water', () => {
-	/** The top bits of a number as a 32-bit float, as the view reads the camera's height. */
-	const high = new Uint16Array(new Float32Array([1]).buffer)[1] === 0 ? 0 : 1;
-	const top = (value: number) =>
-		topOrder(new Uint16Array(new Float32Array([value]).buffer)[high] as number);
-
-	it('orders floats by their top bits alone, and never the wrong way round', () => {
-		const values = [
-			-300, -12.5, -1.0001, -1, -0.02, 0, 0.004, 0.6436, 0.65, 1, 1.0001, 1.64, 7, 7.02, 1e4,
-		];
-		for (const a of values)
-			for (const b of values) {
-				const ta = top(a);
-				const tb = top(b);
-				// A larger order always means a larger float; floats a part in a hundred apart differ.
-				if (ta > tb) expect(Math.fround(a)).toBeGreaterThan(Math.fround(b));
-				if (Math.abs(a - b) > 0.01 * Math.max(Math.abs(a), Math.abs(b), 1)) expect(ta).not.toBe(tb);
-			}
-	});
-
-	/** An underwater view over still water at a level, with a camera at a height. */
-	function viewAt(height: number) {
+	/** An underwater view over still water at a level, with a camera at a height turned about +y. */
+	function viewAt(start: number, turn = 0) {
+		let height = start;
+		let removed = 0;
 		const asked: number[] = [];
-		const effects: unknown[] = [];
+		const effects: { uniforms: Record<string, unknown> }[] = [];
+		const set: Record<string, unknown> = {};
 		const water = {
 			level: 1,
-			waveReach: 0.05,
+			waveAmplitude: 1,
 			surfaceHeight(x: number, z: number) {
 				asked.push(x, z);
 				return 1;
@@ -349,37 +311,85 @@ describe('the view from under the water', () => {
 			},
 			getRotation(out: { [index: number]: number }) {
 				out[0] = 0;
-				out[1] = 0;
+				out[1] = Math.sin(turn / 2);
 				out[2] = 0;
-				out[3] = 1;
+				out[3] = Math.cos(turn / 2);
 			},
 		} as unknown as PerspectiveCamera;
 		const post = {
-			addEffect: (options: unknown) => {
+			addEffect: (options: { uniforms: Record<string, unknown> }) => {
 				effects.push(options);
 				return options;
 			},
-			removeEffect() {},
-			setEffectUniform() {},
+			removeEffect() {
+				removed++;
+			},
+			setEffectUniform(_effect: unknown, name: string, value: unknown) {
+				set[name] = Array.isArray(value) ? [...value] : value;
+			},
 		};
 		const view = createUnderwater({ post } as unknown as SketchContext, camera, water);
-		view.update(0, [1, 1, 1], [1, 1, 1]);
-		return { asked, effects };
+		return {
+			view,
+			asked,
+			effects,
+			set,
+			camera: camera as unknown as { fov: number },
+			moveTo(next: number) {
+				height = next;
+			},
+			removed: () => removed,
+		};
 	}
 
-	it('asks for no surface height while the camera is clear of the waves', () => {
+	it('adds its effect only near or under the surface, where it asks for the surface’s height', () => {
 		const high = viewAt(8);
-		expect(high.asked).toHaveLength(0);
+		high.view.update(0, [1, 1, 1], [1, 1, 1]);
+		expect(high.asked).toEqual([3, -2]);
 		expect(high.effects).toHaveLength(0);
+		const under = viewAt(0.5);
+		under.view.update(0, [1, 1, 1], [1, 1, 1]);
+		expect(under.effects).toHaveLength(1);
 	});
 
-	it('finds the surface near the water, and draws under it', () => {
-		// Within the waves' reach and the gap that adds the effect, but above the surface by more.
-		const near = viewAt(1.64);
-		expect(near.asked).toEqual([3, -2]);
-		expect(near.effects).toHaveLength(0);
-		const under = viewAt(0.5);
-		expect(under.asked).toEqual([3, -2]);
-		expect(under.effects).toHaveLength(1);
+	it('adds its effect within the near gap and keeps it until the far one', () => {
+		// The surface stands at 1 m; the effect comes within 0.6 m of it and goes past 1 m.
+		const view = viewAt(1.5);
+		const frame = () => view.view.update(0, [1, 1, 1], [1, 1, 1]);
+		frame();
+		expect(view.effects).toHaveLength(1);
+		// 0.8 m up, between the two gaps: the effect stays, as the camera has not gone past 1 m.
+		view.moveTo(1.8);
+		frame();
+		expect(view.removed()).toBe(0);
+		view.moveTo(2.2);
+		frame();
+		expect(view.removed()).toBe(1);
+		// Coming down to 0.8 m again does not add it back: it comes within 0.6 m alone.
+		view.moveTo(1.8);
+		frame();
+		expect(view.effects).toHaveLength(1);
+	});
+
+	it('turns the camera’s axes with it in every frame, and its lens when it zooms', () => {
+		// A quarter turn about +y takes the camera's right to -z and its back to +x.
+		const { view, set, effects, camera } = viewAt(0.5, Math.PI / 2);
+		for (let frame = 0; frame < 3; frame++) view.update(frame, [1, 1, 1], [1, 1, 1]);
+		const close = (got: unknown, want: number[]) => {
+			for (let k = 0; k < want.length; k++)
+				expect((got as number[])[k] as number).toBeCloseTo(want[k] as number, 6);
+		};
+		close(set.right, [0, 0, -1]);
+		close(set.up, [0, 1, 0]);
+		close(set.back, [1, 0, 0]);
+		// The lens goes with the effect, and again only when the field of view changes.
+		const lensOf = (fov: number) => Math.tan((fov * Math.PI) / 360);
+		expect(effects[0]?.uniforms.lens as number).toBeCloseTo(lensOf(50), 9);
+		expect(set.lens).toBeUndefined();
+		camera.fov = 30;
+		view.update(3, [1, 1, 1], [1, 1, 1]);
+		expect(set.lens as number).toBeCloseTo(lensOf(30), 9);
+		// The axes it turns are made once, not in each frame.
+		expect(read('underwater.ts')).not.toMatch(/transformQuat\([a-z]+, \[/);
 	});
 });

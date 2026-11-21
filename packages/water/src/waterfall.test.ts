@@ -3,9 +3,11 @@
 // sets, and none at all for a fall with no spray. The context is a stand-in that records what the
 // add-on asked the engine for, so the test needs no GPU.
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { SketchContext } from '@null3d/engine';
 import { type FallSheet, fallEmitters } from './fall';
-import { createWaterfall, type WaterfallOptions } from './waterfall';
+import { createWaterfall, SINK_DEPTH, type WaterfallOptions } from './waterfall';
 
 /** What one stand-in particle buffer was told. */
 interface BufferRecord {
@@ -64,7 +66,13 @@ function fakeContext() {
 		materials: {
 			shader: (options: { uniforms: Record<string, unknown> }) => {
 				shaders.push(options);
-				return { destroy: () => destroyed.push('material') };
+				return {
+					set: (values: Record<string, unknown>) => {
+						for (const [name, value] of Object.entries(values))
+							options.uniforms[name] = Array.isArray(value) ? [...value] : value;
+					},
+					destroy: () => destroyed.push('material'),
+				};
 			},
 		},
 		textures: { fromData: () => ({ destroy() {} }) },
@@ -108,6 +116,12 @@ describe('a waterfall’s fade into a cloud', () => {
 	it('vanishes below the height it is given, and never without one', async () => {
 		const into = await fallWith({ fadeBelow: -9.5, spray: 0 });
 		expect(into.shaders[0]?.uniforms.fadeBelow).toBe(-9.5);
+		// The shader takes the depth it fades over from the add-on's one constant, which is the
+		// 2.5 m that the docs give.
+		expect(into.shaders[0]?.uniforms.sinkDepth).toBe(SINK_DEPTH);
+		expect(SINK_DEPTH).toBe(2.5);
+		const docs = readFileSync(join(import.meta.dirname, '../../../docs/api/water.md'), 'utf8');
+		expect(docs).toContain(`vanishes itself over ${SINK_DEPTH} m`);
 		const open = await fallWith({ spray: 0 });
 		expect(open.shaders[0]?.uniforms.fadeBelow as number).toBeLessThan(-1e6);
 	});
@@ -136,9 +150,11 @@ describe('a waterfall’s fade into a cloud', () => {
 			((buffers[3] as BufferRecord).position as number[])[1] as number;
 		expect(plumeOf(into.buffers)).toBeGreaterThan(cloud);
 		expect(plumeOf(open.buffers)).toBeLessThan(cloud);
-		// The material breaks the water up over the same shown part, down to a meter below the
-		// cloud's top.
-		expect(into.shaders[0]?.uniforms.drop).toBeCloseTo(1 - cloud + 1, 9);
+		// The material breaks the water up over the same shown part, down to a little below the
+		// cloud's top, within the depth it fades over.
+		const shownBelow = (into.shaders[0]?.uniforms.drop as number) - (1 - cloud);
+		expect(shownBelow).toBeGreaterThan(0);
+		expect(shownBelow).toBeLessThan(SINK_DEPTH);
 		expect(open.shaders[0]?.uniforms.drop).toBe(16);
 	});
 
@@ -197,9 +213,10 @@ describe('a waterfall’s particle systems', () => {
 		fall.destroy();
 	});
 
-	it('gives every system the light that setLight names', async () => {
-		const { buffers, fall } = await fallWith();
+	it('gives every system the light that setLight names, and the white water its glow', async () => {
+		const { buffers, fall, shaders } = await fallWith();
 		fall.setLight([0.2, 0.3, 0.4]);
+		expect(shaders[0]?.uniforms.glow).toEqual([0.2, 0.3, 0.4]);
 		for (const record of buffers) {
 			const last = record.values.at(-1) as { colorOverLife: number[][] };
 			expect(last.colorOverLife).toEqual([

@@ -32,13 +32,20 @@ const SPREAD = 0.3;
 const MOST_SPRAY = 3;
 /** The glassy water's color at the lip: a grey green, as linear red, green and blue. */
 const GLASS = [0.05, 0.075, 0.068] as const;
+/** The meters below a cloud's top over which a fall that sinks into it vanishes, in its shader. */
+export const SINK_DEPTH = 2.5;
+/**
+ * The meters below a cloud's top where the part of the drop that shows ends: the sink has taken
+ * about half the water there, and the cloud hides the rest.
+ */
+const SHOWN_BELOW = 0.4 * SINK_DEPTH;
 /** The height that stands for no cloud below the fall: far below any scene. */
 const NO_FADE = -1e9;
 /** The meters below the lip over which the water turns from glassy to white. */
 const CLEAR = 0.7;
 /** The gap to a wall behind the sheet over which the sheet fades as it nears it, in meters. */
 const SOFTNESS = 0.6;
-/** The light on the spray and the mist when the scene sets none, as a linear color. */
+/** The air's light on the spray, the mist and the white water when the scene sets none, linear. */
 const MIST_LIGHT = [0.92, 0.93, 0.95] as const;
 /** The longest life of a puff of the froth, a drop, a puff of the mist and the plume, in seconds. */
 const FROTH_LIFE = 1.8;
@@ -85,7 +92,8 @@ export interface WaterfallOptions {
 	 */
 	readonly drop: number;
 	/**
-	 * How far each side of the sheet widens for each meter that the water falls. It is 0.3 by
+	 * How far each side of the sheet widens for each meter that the water falls, once it has fallen
+	 * a few meters: it spreads little at first, and opens into a veil lower down. It is 0.3 by
 	 * default.
 	 */
 	readonly spread?: number;
@@ -99,7 +107,7 @@ export interface WaterfallOptions {
 	/**
 	 * The world height of a cloud sea, a fog bank or a mist that the fall drops into, in meters. A
 	 * cloud that draws before the fall does not hide it, so below this height the fall vanishes
-	 * itself over 2.5 m, each clump at its own depth. The water then breaks up and bursts into mist
+	 * itself over `SINK_DEPTH`, 2.5 m, each clump at its own depth. The water then breaks up and bursts into mist
 	 * over the part of the drop above the cloud. By default it never vanishes.
 	 */
 	readonly fadeBelow?: number;
@@ -143,8 +151,9 @@ export interface Waterfall {
 	 */
 	update(): void;
 	/**
-	 * Sets the light on the spray and the mist, as a linear color. Particles are not lit, so a scene
-	 * gives them its light in each mood. The sheet takes the scene's own light.
+	 * Sets the air's light on the spray and the mist, as a linear color. Particles are not lit, so a
+	 * scene gives them its light in each mood. The sheet takes the scene's own light, and its white
+	 * water gives back a share of this one too, as the mist round it does.
 	 */
 	setLight(color: readonly [red: number, green: number, blue: number]): void;
 	/**
@@ -230,10 +239,13 @@ export async function createWaterfall(
 	let spray = sprayAmount(options.spray ?? 1);
 	const mist = sprayAmount(options.mist ?? 1, 'mist');
 	const sink = sinkHeight(options.fadeBelow);
-	// The part of the drop that shows: down to a meter below the cloud that the fall sinks into, or
+	// The part of the drop that shows: down to a little below the cloud that the fall sinks into, or
 	// the whole drop. The water breaks up and bursts into mist over this part, so the burst stands
 	// above the cloud rather than inside it.
-	const shown: FallSheet = { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink + 1, 1)) };
+	const shown: FallSheet = {
+		...sheet,
+		drop: Math.min(sheet.drop, Math.max(level - sink + SHOWN_BELOW, 1)),
+	};
 	// Above a cloud the spray stays clear of it: the cloud draws first, so a puff that sank into it
 	// would show over its tops as a pale disc. The mist and the plume gather over the shown drop's
 	// part above the cloud, and the mist sinks slowly.
@@ -254,7 +266,7 @@ export async function createWaterfall(
 		alphaMode: 'blend',
 		depthWrite: false,
 		// White water lets the light behind it through, so a low sun behind the fall lights it.
-		diffuseTransmission: 0.35,
+		diffuseTransmission: 0.7,
 		...options.material,
 		wgsl: fallShader,
 		// The sheet fades where it nears a wall behind it, from the copy of the scene's depth.
@@ -267,7 +279,9 @@ export async function createWaterfall(
 			apron: (sheet.apron ?? APRON) / speed,
 			halfWidth: sheet.halfWidth,
 			fadeBelow: sink,
+			sinkDepth: SINK_DEPTH,
 			across: acrossOf(options.direction),
+			glow: [MIST_LIGHT[0], MIST_LIGHT[1], MIST_LIGHT[2]],
 		},
 	});
 	const mesh = scene.createMesh({
@@ -410,6 +424,7 @@ export async function createWaterfall(
 			light[0] = color[0];
 			light[1] = color[1];
 			light[2] = color[2];
+			material.set({ glow: light });
 			for (let k = 0; k < emitters.length; k++) (emitters[k] as Emitter).system.set(tint);
 		},
 		setSpray(amount) {
