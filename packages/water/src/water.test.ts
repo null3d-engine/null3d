@@ -281,6 +281,21 @@ describe('the water’s color along a low view', () => {
 	});
 });
 
+describe('the water’s tint', () => {
+	it('takes the volume’s thickness from the bed, and its transmission from the foam', () => {
+		// The surface works both out itself, so a material's own thickness and transmission never
+		// apply: a scene sets the tint with the attenuation, over the bed's own depth.
+		const surface = wgslFunction(read('water.wgsl'), 'surface');
+		const start = surface.indexOf('let depth = mix(');
+		expect(start).toBeGreaterThanOrEqual(0);
+		const depth = surface.slice(start, surface.indexOf(');', start));
+		expect(depth).toContain('input.vertexColor.a');
+		expect(depth).toContain('material.bedFromShape');
+		expect(surface).toContain('s.thickness = max(mix(depth, gap,');
+		expect(surface).toContain('s.transmission = 1.0 - 0.9 * foam;');
+	});
+});
+
 describe('the view from under the water', () => {
 	/** An underwater view over still water at a level, with a camera at a height turned about +y. */
 	function viewAt(start: number, turn = 0) {

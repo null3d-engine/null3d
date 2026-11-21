@@ -137,7 +137,7 @@ the bed at a point, and the current there.
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
 | `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
 | `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
-| `material` | The standard material values | None | The surface's material, such as its volume's tint and its thickness |
+| `material` | The standard material values | None | The surface's material, such as its volume's tint. The surface works its own thickness and transmission out, so it takes no value for those |
 | `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
 | `rain` | A number from 0 to 1 | 0 | How hard rain falls on the surface. Each drop rings the surface where it lands. 0 draws no rings and costs nothing |
 
@@ -201,6 +201,19 @@ While it is off, the surface skips the rings' work.
 `surfaceHeight` and `currentAt` use the body that the point lies over, so a boat, a leaf or a
 swimmer floats and drifts with the water under it. Where a river meets a lake, `currentAt` gives the
 current of the body that owns the point, and `surfaceHeight` follows the flat, mixed surface there.
+
+## The tint of the water
+
+The surface lets the bed's light through. The attenuation then takes a share of that light, for
+each meter that it travels. The surface measures the travel as the depth of the bed under the
+point. The water's own volume reaches from its surface down to that bed. So the tint of a shallow
+creek follows its depth, and the caller sets how fast the tint gathers. `attenuationColor`
+is the color that the light takes after `attenuationDistance` meters. A clear creek takes a pale
+color over a distance of several meters. Most of the bed's light then reaches the eye at every
+point, and a little more of it over the shallows. A dark color over a distance shorter than the
+bed is deep takes most of that light away. The water then reads as an opaque slab of its color,
+with no bed under it. The surface works out its own thickness and transmission, so those two
+values do not apply here.
 
 ## The view from under the water
 
