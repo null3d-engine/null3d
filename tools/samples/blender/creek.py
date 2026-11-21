@@ -1560,8 +1560,9 @@ def pine_wood(obj, plant, inverse, phase, shade):
 
 def decimated(obj, triangles, name):
     """
-    A copy of the object cut to about `triangles` triangles, which keeps its UVs and colors. A cut
-    can part a thin piece of wood from its limb, so only the largest piece, the tree, stays.
+    A copy of the object cut to about `triangles` triangles, which keeps its UVs, within 0 to 1, and
+    its colors. A cut can part a thin piece of wood from its limb, so only the largest piece, the
+    tree, stays.
     """
     copy = link(bpy.data.objects.new(name, obj.data.copy()))
     have = sum(len(p.vertices) - 2 for p in copy.data.polygons)
@@ -1580,6 +1581,13 @@ def decimated(obj, triangles, name):
     keep_largest_piece(bm)
     bm.to_mesh(copy.data)
     bm.free()
+    # A collapse can carry a texture coordinate just past the edge of its map. The asset tool stores
+    # a mesh's coordinates in 16 bits only when all of them lie from 0 to 1, so every level keeps
+    # them there, and the levels of one part are stored alike.
+    for layer in copy.data.uv_layers:
+        uv = np.empty(len(layer.data) * 2, np.float32)
+        layer.data.foreach_get('uv', uv)
+        layer.data.foreach_set('uv', np.clip(uv, 0.0, 1.0))
     copy.data.name = name
     return copy
 
