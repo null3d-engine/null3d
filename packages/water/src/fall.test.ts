@@ -25,6 +25,7 @@ import {
 	TONGUE,
 	WOBBLE,
 } from './fall';
+import { SINK_DEPTH } from './waterfall';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 
@@ -486,6 +487,11 @@ describe('the column’s shader', () => {
 			return source.slice(start, source.indexOf('\n}', start));
 		};
 		expect(body(read('fall.wgsl'))).toBe(body(read('water.wgsl')));
+	});
+
+	it('sinks into a cloud over the depth that the fall’s options give', () => {
+		const sink = Number(/const SINK_DEPTH: f32 = ([0-9.]+);/.exec(read('fall.wgsl'))?.[1]);
+		expect(sink).toBe(SINK_DEPTH);
 	});
 
 	it('sizes the froth’s clumps by the speed of the path’s water', () => {
