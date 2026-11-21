@@ -237,7 +237,9 @@ def material(name, color, normal=None, packed=None, cutout=False, roughness=0.8,
 class Builder:
     """Vertices with a UV, a color, a sway and an optional normal each, and faces over them."""
 
-    def __init__(self):
+    def __init__(self, sway=True):
+        """`sway` false leaves the second texture coordinates out, for a mesh that no wind moves."""
+        self.sway = sway
         self.positions, self.uvs, self.colors, self.normals, self.sways, self.faces = [], [], [], [], [], []
 
     def vertex(self, p, uv, color=(1, 1, 1), normal=None, sway=(0.0, 0.0)):
@@ -264,8 +266,9 @@ class Builder:
         mesh.loops.foreach_get('vertex_index', loops)
         uv = mesh.uv_layers.new(name='UVMap')
         uv.data.foreach_set('uv', np.array(self.uvs, np.float32)[loops].ravel())
-        sway = mesh.uv_layers.new(name='Sway')
-        sway.data.foreach_set('uv', np.array(self.sways, np.float32)[loops].ravel())
+        if self.sway:
+            sway = mesh.uv_layers.new(name='Sway')
+            sway.data.foreach_set('uv', np.array(self.sways, np.float32)[loops].ravel())
         mesh.uv_layers.active = uv
         colors = np.ones((len(self.colors), 4), np.float32)
         colors[:, :3] = self.colors

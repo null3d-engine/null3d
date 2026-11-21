@@ -139,16 +139,18 @@ export function createLand(ctx: SketchContext): Terrain {
 		height: groundHeight,
 		resolution: detail.samples,
 		layers: [
-			// The dark floor under trees.
+			// The dark floor under trees: a mossy grey-olive, dark enough to sink into the crowns
+			// from above.
 			{
-				map: groundMap(ctx, size, [112, 98, 60], [72, 62, 38], 8),
+				map: groundMap(ctx, size, [76, 76, 52], [46, 47, 34], 8),
 				tile: 4,
 				heightFrom: 'alpha',
 				contrast: 0.25,
 			},
-			// Dry grass and warm earth in the open.
+			// Sun-dried grass and earth in the open: an olive straw, with the red held close to the
+			// green so the hills read green-brown rather than rust from above.
 			{
-				map: groundMap(ctx, size, [116, 106, 66], [76, 74, 44], 12),
+				map: groundMap(ctx, size, [96, 96, 70], [60, 62, 46], 12),
 				tile: 5,
 				heightFrom: 'alpha',
 				contrast: 0.25,

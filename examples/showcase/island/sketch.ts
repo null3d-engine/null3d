@@ -22,6 +22,7 @@ import { groundHeight } from './plan';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
 import { createTown } from './town';
+import { createPlaceholderModels, createTraffic } from './traffic';
 import { CASTER_LAYER, createCypressSpires, createTrees } from './trees';
 
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
@@ -47,31 +48,45 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 /**
  * The cinematic route. It opens high off the south-east, showing the whole island. Then it drops to
  * the bay and flies in low toward the beach, turns along the town's waterfront to the harbour and the
- * square, climbs over the south face to the highest hill's tower and circles it, crosses to the eastern hill, sweeps
- * over the golf course, and rises back to the opening view.
+ * square, climbs over the south face to the highest hill's tower, circles it with the keep's crown in
+ * view, pulls out east along the ridge to the eastern hill, sweeps over the golf course, and rises
+ * back to the opening view.
  * The first shot holds still, so a held frame lands on the opening view.
  */
 export const SHOTS: readonly Shot[] = [
 	// The opening view holds only briefly, so the camera starts moving soon after the page loads.
 	{ position: [600, 280, 540], target: [40, 80, -40], seconds: 0.8, move: 'hold' },
+	// Drop from the high south-east toward the bay.
 	{ position: [600, 280, 540], target: [40, 80, -40], seconds: 8 },
-	{ position: [420, 220, 560], target: [150, 40, 150], seconds: 11 },
-	{ position: [150, 55, 520], target: [-60, 30, 230], seconds: 12 },
-	{ position: [-70, 30, 410], target: [-92, 30, 200], seconds: 11 },
-	{ position: [-130, 70, 330], target: [-92, 36, 190], seconds: 9 },
-	{ position: [-110, 165, 60], target: [-110, 150, -220], seconds: 12 },
-	{ position: [-30, 270, -190], target: [-118, 192, -375], seconds: 10 },
-	// Close in on the highest hill's tower, low over its trees, and go most of the way around it.
-	{ position: [-90, 192, -326], target: [-118, 192, -375], seconds: 4 },
-	{ position: [-136, 191, -328], target: [-118, 192, -375], seconds: 4 },
-	{ position: [-166, 190, -358], target: [-118, 192, -375], seconds: 6 },
-	{ position: [-140, 190, -421], target: [-118, 192, -375], seconds: 6 },
-	{ position: [-72, 192, -397], target: [-118, 192, -375], seconds: 6 },
-	{ position: [-74, 196, -354], target: [-118, 192, -375], seconds: 6 },
-	{ position: [90, 250, -250], target: [255, 170, -350], seconds: 9 },
-	{ position: [330, 185, -220], target: [430, 60, -60], seconds: 9 },
-	{ position: [560, 130, -20], target: [430, 45, -70], seconds: 9 },
-	{ position: [680, 240, 300], target: [200, 70, -40], seconds: 9 },
+	{ position: [440, 195, 565], target: [170, 45, 175], seconds: 8 },
+	// Down to the beach and low along the shore.
+	{ position: [290, 105, 555], target: [280, 20, 240], seconds: 8.5 },
+	{ position: [120, 44, 505], target: [-60, 30, 230], seconds: 8.5 },
+	{ position: [-55, 34, 445], target: [-92, 30, 210], seconds: 6 },
+	// The harbour front, then the town square, climbing.
+	{ position: [-150, 58, 350], target: [-92, 34, 195], seconds: 5.5 },
+	{ position: [-152, 135, 255], target: [-98, 40, 190], seconds: 7.5 },
+	{ position: [-115, 205, 115], target: [-105, 110, -90], seconds: 10 },
+	// High over the south face, then down to the tower in steps: each step slows the camera more, so
+	// the turn into the close pass has no jolt.
+	{ position: [-60, 258, -125], target: [-118, 196, -375], seconds: 9.5 },
+	{ position: [-88, 220, -268], target: [-118, 202, -375], seconds: 6 },
+	{ position: [-100, 205, -320], target: [-118, 202, -375], seconds: 7 },
+	// Close in on the highest hill's tower and go most of the way around it. The aim is the keep's
+	// crown, so the tower's top and base both stay inside the view.
+	{ position: [-158, 202, -335], target: [-118, 202, -375], seconds: 7 },
+	{ position: [-180, 201, -390], target: [-118, 202, -375], seconds: 6 },
+	{ position: [-150, 201, -432], target: [-118, 202, -375], seconds: 7.3 },
+	{ position: [-88, 201, -425], target: [-118, 202, -375], seconds: 7 },
+	{ position: [-62, 202, -373], target: [-118, 202, -375], seconds: 11.4 },
+	// Pull out east with the ridge and then the eastern hill as the subject, so land stays in frame.
+	{ position: [20, 232, -300], target: [60, 150, -270], seconds: 11 },
+	{ position: [175, 220, -288], target: [255, 160, -350], seconds: 11 },
+	// Down over the golf course and around the east of the island.
+	{ position: [340, 180, -205], target: [420, 85, -130], seconds: 11 },
+	{ position: [545, 140, -40], target: [430, 55, -70], seconds: 11 },
+	{ position: [680, 230, 280], target: [220, 70, -40], seconds: 6 },
+	{ position: [655, 265, 425], target: [40, 80, -40], seconds: 6.5 },
 ];
 
 const params = new URL(import.meta.url).searchParams;
@@ -200,8 +215,11 @@ export default defineSketch(async (ctx) => {
 	controls.fitShadows();
 
 	const land = createLand(ctx);
-	const sea = createSea(ctx);
-	createTown(ctx);
+	const sea = createSea(ctx, camera);
+	const town = createTown(ctx);
+	// The real car, bus and person models replace the placeholders when they land; the motion
+	// system is the same either way.
+	const traffic = createTraffic(ctx, createPlaceholderModels(ctx));
 	page.post('loading', 'Growing the trees');
 	// The species and the lawns take seconds to grow. A live page draws the island without them and
 	// lets them appear as they land; a held picture, or a page that asks with `?grown`, waits, so its
@@ -224,6 +242,9 @@ export default defineSketch(async (ctx) => {
 	};
 	if (grownFirst) {
 		trees = await createTrees(ctx, camera);
+		// A held frame waits for the town's models too, so it never catches the code-built
+		// landmarks beside the model ones.
+		await town;
 		// The stage writes the light its maps give before the first frame draws.
 		await Promise.all([sky, room]);
 	}
@@ -243,6 +264,7 @@ export default defineSketch(async (ctx) => {
 			camera.getPosition(eye);
 			land.update(eye);
 			sea.update();
+			traffic.update(time.now);
 			trees?.update();
 		},
 	};

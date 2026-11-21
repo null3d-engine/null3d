@@ -27,7 +27,7 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | Four Poly Haven environments at 2048 x 1024, with one OpenEXR copy | Environment light and backgrounds (M2-B2, M2-E2, M2-E3) and the HDR readers (M2-E4) |
 | Colour grading tables in `.cube` and `.3dl` form | Colour grading (M2-F3) |
 | The Creek's trees, plants and cave mouth (`sources/showcase/creek/`), built by script in Blender | The Creek showcase scene (M2-EX8) |
-| The island's stone pines, olives, holm oaks and oleanders (`sources/showcase/island/`), built by script in Blender | The island showcase scene |
+| The island's plants, town landmarks, houses and harbour and beach props (`sources/showcase/island*/`), built by script in Blender | The island showcase scene |
 | Dok11's drone scan of Bolton Priory (`sources/splats/bolton-priory/`): 1,710,551 Gaussian splats, as the SOG file that SuperSplat publishes | The source of the splat stream below |
 | The same scan as a splat stream (`sources/splats/bolton-priory-stream/`): an index and 84 SPZ chunk files, 27.6 MB, made by script | The Gaussian splats demo, and a real scan for the splats add-on's devices |
 
@@ -72,11 +72,14 @@ The showcase scenes' trees and plants, and Creek's cave, are organic shapes that
 | --- | --- |
 | `common.py` | The parts that both scripts share: textures painted with numpy, the materials that the glTF exporter reads, the mesh builder, the export with levels of detail, and the Cycles preview |
 | `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers and a cave mouth with boulders. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss |
-| `island.py` | The island's models: a stone pine, an olive, a holm oak and an oleander, each with a card of the whole plant for the far copies. numpy paints every leaf, needle, flower and bark texture, and Blender bakes the cards from the plants themselves |
+| `island.py` | The island's plants: a cypress, a stone pine, an olive, a holm oak and an oleander, each with a card of the whole plant for the far copies. numpy paints every leaf, needle, flower and bark texture, and Blender bakes the cards from the plants themselves |
+| `island-town.py` | The island's landmarks: the church with its blue ribbed dome and bell tower, the hilltop keep, the harbour lighthouse and three waterfront houses, with two lower levels of detail on each part |
+| `island-houses.py` | The island's thirteen house forms, one for each kind that the plan's lots name: whitewashed or rubble walls, terracotta hip roofs, shuttered windows, framed doors, chimneys, balconies, an arcade, pergolas and roof terraces |
+| `island-props.py` | The island's harbour and beach props: a sailing yacht, an open fishing boat, three boulders, a beach parasol, a sun lounger and a harbour bench |
 | `build.ts` | Runs a script in Blender, optimizes each model with the asset tool, packs each model's KTX2 textures into its own file, and checks that every part that sways kept its sway |
-| `creek.ts`, `island.ts` | Each scene's models for `build.ts` |
+| `creek.ts`, `island.ts`, `island-town.ts`, `island-houses.ts`, `island-props.ts` | Each scene's models for `build.ts` |
 
-Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or `bun tools/samples/blender/island.ts <folder>`. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
+Build a scene's models with `bun tools/samples/blender/creek.ts <folder>` or one of the island's four runners: `island.ts`, `island-town.ts`, `island-houses.ts` and `island-props.ts`. They need Blender 5.3, on the path or where `BLENDER` names it, and the engine's build for the asset tool. Each takes under a minute, and prints each part's triangles and each file's size. `--preview <folder>` also renders each model with Cycles there. To publish them:
 
 1. Copy the files into `sources/showcase/<scene>/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
 2. Commit, push, and pin the commit here, as "Add or change an asset" says.
@@ -85,7 +88,7 @@ The sample-assets repository records these models with the origin kind `blender`
 
 The models are optimized before they go into the sample-assets repository, unlike the other sources there. A sketch loads them with `sampleUrl`, so a website's build copies one file for each model. The asset tool writes its KTX2 textures as separate files, and the build would not copy those. So `build.ts` moves each texture into the model's binary chunk, as an image with a buffer view.
 
-Every vertex of a tree or a plant carries its sway in the second texture coordinates (`TEXCOORD_1`). The first value is the bend weight, from 0 at the root to 1 at the freest tips. The second is a phase from 0 to 1, which sets each branch apart, so the plant flutters part by part. Both stay between 0 and 1, since the asset tool's quantizer keeps no negative texture coordinate. The scenes' wind material (`examples/lib/sway.ts`) reads them. Vertex color alpha cannot carry the weight. glTF multiplies it into the base color's alpha, so a masked card would lose its leaves near the root.
+Every vertex of a tree or a plant carries its sway in the second texture coordinates (`TEXCOORD_1`). The first value is the bend weight, from 0 at the root to 1 at the freest tips. The second is a phase from 0 to 1, which sets each branch apart, so the plant flutters part by part. Both stay between 0 and 1, since the asset tool's quantizer keeps no negative texture coordinate. The scenes' wind material (`examples/lib/sway.ts`) reads them. Vertex color alpha cannot carry the weight. glTF multiplies it into the base color's alpha, so a masked card would lose its leaves near the root. The buildings and props carry no sway: their scripts build with `Builder(sway=False)`, so a model that does not move keeps no wind data.
 
 A scene reads each part's textures from its node's `maps`, which `prefab.find` gives, and the wind material draws them in the file's material's place.
 
@@ -98,13 +101,17 @@ Each model draws with few triangles, so a scene can place many copies. The trees
 | Creek birch: wood, leaves | 3,872, 1,374, 504; 13,968, 4,656, 1,748 |
 | Creek fern, hosta, shrub, wildflowers | 416, 560, 504, 564 |
 | Creek cave mouth | 9,863 |
+| Island cypress: wood, leaves | 868, 322, 282; 6,972, 2,324, 872 |
 | Island stone pine: wood, leaves | 766, 150, 84; 2,804, 936, 284 |
 | Island olive: wood, leaves | 960, 228, 126; 2,080, 696, 208 |
 | Island holm oak: wood, leaves | 612, 148, 72; 5,272, 1,320, 332 |
 | Island oleander: stems, leaves and flowers | 192, 96, 96; 1,280, 768, 288 |
 | Each island plant's far card | 20 |
+| Island town landmarks | 4,545 near-level triangles over 22 parts |
+| Island houses | 1,344 to 4,120 near-level triangles a form, 54,418 over all levels |
+| Island props | Yacht 400, 176, 116; skiff 235, 139, 107; each rock 90, 56, 30; the small props 22 to 84 |
 
-The Creek's trees file takes 4,198 KB, its plants file 470 KB and its cave file 784 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away.
+The Creek's trees file takes 4,198 KB, its plants file 470 KB and its cave file 784 KB. The island's trees file takes 1,753 KB and its shrubs file 256 KB; its town landmarks file 424 KB, its houses file 1,989 KB and its props file 324 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away.
 
 An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film, with each surface's own color and no light, so the engine lights the card once. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 

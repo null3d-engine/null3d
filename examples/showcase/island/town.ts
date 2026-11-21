@@ -3,10 +3,18 @@
 // with its quay wall, moles, pontoons, breakwater and moored boats, the beach with its parasols, the
 // golf course, the park, the hilltop keeps, the rocks of the coast and the street lamps. Each repeated
 // thing is one mesh in an instance batch.
-import { type InstanceBatch, quat, type SketchContext, type Texture } from '@null3d/engine';
+import {
+	type InstanceBatch,
+	type Object3D,
+	quat,
+	type SketchContext,
+	type Texture,
+} from '@null3d/engine';
+import { type Part, standPart } from '../../lib/blender-models';
 import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
 import { WAY_HALF } from './ground';
+import { type HouseLot, loadHouses, standHouse, standsByKind } from './houses';
 import {
 	BAY,
 	formHeight,
@@ -48,6 +56,7 @@ import {
 	shrub,
 	streetLamp,
 } from './kit';
+import { loadLandmarks } from './landmarks';
 import {
 	bunkerSpots,
 	CHURCH_AT,
@@ -56,6 +65,7 @@ import {
 	HOLES,
 	KEEPS,
 	LOTS,
+	type Lot,
 	ROADS,
 	roadEdge,
 	SQUARE,
@@ -66,6 +76,15 @@ import {
 	WALL_EDGE,
 	wayOf,
 } from './plan';
+import {
+	loadProps,
+	loungerStands,
+	type ModelStanding,
+	type PropForm,
+	replaceBatch,
+	replaceWithForms,
+	standsOf,
+} from './props';
 import { CLIMB, LANE, MAIN, PARKS, type Road, type RoadPoint, SIDE_LANE, STREET } from './routes';
 
 /** How far a road's surface lies above the ground it cuts, in meters. */
@@ -962,38 +981,102 @@ interface Surfaces {
  */
 const FAR_HOUSE_ERROR = 0.35;
 
-/** Stands the houses and their gardens: one batch of walls and one of roofs for each kind. */
-function createHouses(ctx: SketchContext, surfaces: Surfaces): void {
+/** The three places along the harbour's head that stand a waterfront house, by x. */
+const WATERFRONT_AT = [-205, -100, -25] as const;
+
+/**
+ * The three front-row lots along the harbour's head that carry the waterfront houses: the lot
+ * nearest each place, between four and eighteen meters inland of the quay street. The other houses
+ * of those rows keep their kit meshes.
+ */
+export function waterfrontLots(): Lot[] {
+	const chosen: Lot[] = [];
+	for (const x of WATERFRONT_AT) {
+		let best: Lot | undefined;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (const lot of LOTS) {
+			if (chosen.includes(lot)) continue;
+			const inlandOf = lot.z - (quayWallZ(lot.x) - 8);
+			if (inlandOf < -18 || inlandOf > -4) continue;
+			const distance = Math.abs(lot.x - x);
+			if (distance < nearest) [best, nearest] = [lot, distance];
+		}
+		if (best) chosen.push(best);
+	}
+	return chosen;
+}
+
+/** The lots that the waterfront houses stand on. */
+const WATERFRONT_LOTS = waterfrontLots();
+
+/** Stands one kind's walls and roofs over the lots given, and returns their two batches. */
+function standKitHouses(
+	ctx: SketchContext,
+	surfaces: Surfaces,
+	kind: (typeof HOUSE_KINDS)[number],
+	lots: readonly Lot[],
+): InstanceBatch[] {
+	if (lots.length === 0) return [];
 	const { scene, geometry } = ctx;
+	const mesh = geometry.fromArrays(finish(kind.walls));
+	mesh.setLevels([{ mesh: geometry.fromArrays(finish(kind.farWalls)), error: FAR_HOUSE_ERROR }]);
+	const w = scene.createInstances(mesh, lots.length, {
+		material: kind.stone ? surfaces.rubble : surfaces.plaster,
+		colors: true,
+		castShadows: true,
+		receiveShadows: true,
+	});
+	const roofMesh = geometry.fromArrays(finish(kind.roof));
+	roofMesh.setLevels([{ mesh: geometry.fromArrays(finish(kind.farRoof)), error: FAR_HOUSE_ERROR }]);
+	const r = scene.createInstances(roofMesh, lots.length, {
+		material: surfaces.tile,
+		colors: true,
+		castShadows: true,
+		receiveShadows: true,
+	});
+	lots.forEach((lot, i) => {
+		const tone = lot.tone * 420;
+		const walls = kind.stone ? STONES : WALLS;
+		row(w, i, lot.x, lot.y, lot.z, lot.yaw, walls[Math.floor(tone) % walls.length]);
+		row(r, i, lot.x, lot.y, lot.z, lot.yaw, ROOFS[Math.floor(tone * 3) % ROOFS.length]);
+	});
+	w.markDirty();
+	r.markDirty();
+	return [w, r];
+}
+
+/** The code-built houses: each kind's batches, and the three harbour-front lots' batches apart. */
+interface KitHouses {
+	readonly byKind: readonly (readonly InstanceBatch[])[];
+	readonly waterfront: readonly InstanceBatch[];
+}
+
+function createHouses(ctx: SketchContext, surfaces: Surfaces): KitHouses {
+	const { scene, geometry } = ctx;
+	const byKind: InstanceBatch[][] = [];
+	const waterfront: InstanceBatch[] = [];
 	HOUSE_KINDS.forEach((kind, k) => {
 		const lots = LOTS.filter((lot) => lot.kind === k);
-		if (lots.length === 0) return;
-		const mesh = geometry.fromArrays(finish(kind.walls));
-		mesh.setLevels([{ mesh: geometry.fromArrays(finish(kind.farWalls)), error: FAR_HOUSE_ERROR }]);
-		const w = scene.createInstances(mesh, lots.length, {
-			material: kind.stone ? surfaces.rubble : surfaces.plaster,
-			colors: true,
-			castShadows: true,
-			receiveShadows: true,
-		});
-		const roofMesh = geometry.fromArrays(finish(kind.roof));
-		roofMesh.setLevels([
-			{ mesh: geometry.fromArrays(finish(kind.farRoof)), error: FAR_HOUSE_ERROR },
-		]);
-		const r = scene.createInstances(roofMesh, lots.length, {
-			material: surfaces.tile,
-			colors: true,
-			castShadows: true,
-			receiveShadows: true,
-		});
-		lots.forEach((lot, i) => {
-			const tone = lot.tone * 420;
-			const walls = kind.stone ? STONES : WALLS;
-			row(w, i, lot.x, lot.y, lot.z, lot.yaw, walls[Math.floor(tone) % walls.length]);
-			row(r, i, lot.x, lot.y, lot.z, lot.yaw, ROOFS[Math.floor(tone * 3) % ROOFS.length]);
-		});
-		w.markDirty();
-		r.markDirty();
+		if (lots.length === 0) {
+			byKind.push([]);
+			return;
+		}
+		byKind.push(
+			standKitHouses(
+				ctx,
+				surfaces,
+				kind,
+				lots.filter((lot) => !WATERFRONT_LOTS.includes(lot)),
+			),
+		);
+		waterfront.push(
+			...standKitHouses(
+				ctx,
+				surfaces,
+				kind,
+				lots.filter((lot) => WATERFRONT_LOTS.includes(lot)),
+			),
+		);
 	});
 	GARDEN_KINDS.forEach((kind, k) => {
 		const lots = LOTS.filter((lot) => lot.garden === k);
@@ -1008,13 +1091,14 @@ function createHouses(ctx: SketchContext, surfaces: Surfaces): void {
 		});
 		batch.markDirty();
 	});
+	return { byKind, waterfront };
 }
 
 /** The climbing flowers on some of the plots' walls. */
 function createClimbers(ctx: SketchContext): void {
 	const { scene, geometry, materials } = ctx;
 	// Bougainvillea climbs in magenta sheets on the sunny fronts of some of the houses.
-	const climbers = LOTS.filter((_, k) => k % 3 === 0);
+	const climbers = LOTS.filter((lot, k) => k % 3 === 0 && !WATERFRONT_LOTS.includes(lot));
 	const mesh = build();
 	for (let k = 0; k < 220; k++) {
 		const a = k * 2.399963;
@@ -1047,7 +1131,10 @@ function createClimbers(ctx: SketchContext): void {
 }
 
 /** The square: stone laid in fans around a stepped fountain, plane trees' beds, cafes and flowers. */
-function createSquare(ctx: SketchContext, surfaces: Surfaces): void {
+function createSquare(
+	ctx: SketchContext,
+	surfaces: Surfaces,
+): { church: Object3D[]; churchY: number } {
 	const { scene, geometry, materials } = ctx;
 	const { x, z, hx, hz } = SQUARE;
 	const y = groundHeight(x, z);
@@ -1123,14 +1210,14 @@ function createSquare(ctx: SketchContext, surfaces: Surfaces): void {
 	});
 	const hall = church();
 	const place = [CHURCH_AT.x, y - 0.1, CHURCH_AT.z] as [number, number, number];
-	scene.createMesh({
+	const hallStone = scene.createMesh({
 		mesh: geometry.fromArrays(finish(hall.stone)),
 		material: surfaces.ashlar,
 		position: place,
 		castShadows: true,
 		receiveShadows: true,
 	});
-	scene.createMesh({
+	const hallRoof = scene.createMesh({
 		mesh: geometry.fromArrays(finish(hall.roof)),
 		material: surfaces.tile,
 		position: place,
@@ -1193,6 +1280,7 @@ function createSquare(ctx: SketchContext, surfaces: Surfaces): void {
 	row(shades, 2, x - hx - 2, top, z - 10, Math.PI / 2);
 	row(shades, 3, x + hx + 2, top, z - 10, -Math.PI / 2);
 	shades.markDirty();
+	return { church: [hallStone, hallRoof], churchY: place[1] };
 }
 
 /** A rock that darkens where the sea wets it, so the pale stone under the water reads as one with the deep. */
@@ -1213,6 +1301,75 @@ fn surface(input: SurfaceInput) -> Surface {
 		roughness: 1,
 		alphaMode: 'mask',
 		alphaCutoff: 0.5,
+	});
+}
+
+/**
+ * Stone that draws the painted stone, cracks and grain of the model file's own stone material,
+ * and darkens where the sea wets it. Its vertex colors carry the tone that the file's material
+ * multiplies into the map.
+ */
+const WET_STONE = /* wgsl */ `
+var colorMap: texture_2d<f32>;
+var normalMap: texture_2d<f32>;
+var ormMap: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let texel = textureSample(colorMap, colorMapSampler, input.uv);
+    s.baseColor *= texel.rgb;
+    let bent = textureSample(normalMap, normalMapSampler, input.uv).xyz * 2.0 - 1.0;
+    let orm = textureSample(ormMap, ormMapSampler, input.uv).rgb;
+    s.occlusion *= orm.r;
+    s.roughness *= orm.g;
+    s.metalness *= orm.b;
+    // The mesh carries no tangents, so the frame across the stone comes from how its position and
+    // its texture coordinates change over the screen.
+    let dp1 = dpdx(input.relativePosition);
+    let dp2 = dpdy(input.relativePosition);
+    let duv1 = dpdx(input.uv);
+    let duv2 = dpdy(input.uv);
+    let n = s.normal;
+    let across1 = cross(n, dp1);
+    let across2 = cross(dp2, n);
+    let t = across2 * duv1.x + across1 * duv2.x;
+    let b = across2 * duv1.y + across1 * duv2.y;
+    let scale = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
+    let mapped = normalize(t * (bent.x * scale) + b * (bent.y * scale) + n * bent.z);
+    s.normal = mapped;
+    s.diffuseNormal = mapped;
+    s.ambientNormal = mapped;
+    // The sea's level is 0, in the island's plan.
+    let wet = 1.0 - smoothstep(-0.6, 0.25, input.worldPosition.y);
+    s.baseColor *= mix(1.0, 0.16, wet);
+    // No stone stands under the surface, where its underside would show through thin water as a bright ring.
+    s.alpha = step(-0.3, input.worldPosition.y);
+    return s;
+}
+`;
+
+/** A stone material of the model's own maps, with the sea's wet darkening and underwater cut. */
+function wetStone({ materials, textures }: SketchContext, part: Part) {
+	const white = () => textures.fromData({ width: 1, height: 1, data: new Uint8Array(4).fill(255) });
+	return materials.shader({
+		wgsl: WET_STONE,
+		vertexColors: true,
+		roughness: 1,
+		alphaMode: 'mask',
+		alphaCutoff: 0.5,
+		textures: {
+			colorMap: part.maps.map ?? white(),
+			normalMap:
+				part.maps.normalMap ??
+				textures.fromData({
+					width: 1,
+					height: 1,
+					colorSpace: 'linear',
+					data: new Uint8Array([128, 128, 255, 255]),
+				}),
+			// The file packs the occlusion with the metalness and the roughness, in one texture.
+			ormMap: part.maps.metalnessRoughnessMap ?? white(),
+		},
 	});
 }
 
@@ -1305,7 +1462,16 @@ export const MOORINGS: readonly (readonly [number, number, number])[] = (() => {
 	});
 })();
 
-function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
+function createHarbour(
+	ctx: SketchContext,
+	surfaces: Surfaces,
+): {
+	lighthouse: Object3D[];
+	at: [number, number, number];
+	sailboats: InstanceBatch;
+	skiffs: InstanceBatch;
+	stones: InstanceBatch;
+} {
 	const { scene, geometry, materials } = ctx;
 	const b = build();
 	const wallStone = build();
@@ -1465,7 +1631,7 @@ function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
 	}
 	breakwater.markDirty();
 	const end = curve(1);
-	scene.createMesh({
+	const light = scene.createMesh({
 		mesh: geometry.fromArrays(finish(lighthouse())),
 		material: materials.standard({ vertexColors: true, roughness: 0.7 }),
 		position: [end.x, 1.9, end.z],
@@ -1523,6 +1689,14 @@ function createHarbour(ctx: SketchContext, surfaces: Surfaces): void {
 		row(trees, k, p.x, p.y, p.z, next() * 6.3, undefined, 0.8 + next() * 0.35);
 	});
 	trees.markDirty();
+	return {
+		lighthouse: [light],
+		at: [end.x, 1.9, end.z],
+		// The model boats and stones replace these once their file lands.
+		sailboats: yachts,
+		skiffs: small,
+		stones: breakwater,
+	};
 }
 
 /** The beach: tight rows of parasols from the back of the sand, in clubs with palms right behind. */
@@ -1566,7 +1740,7 @@ export function parasolSpots(): { x: number; z: number; color: readonly number[]
 	return spots;
 }
 
-function createBeach(ctx: SketchContext): void {
+function createBeach(ctx: SketchContext): InstanceBatch {
 	const next = random(421);
 	const { scene, geometry, materials } = ctx;
 	const spots = parasolSpots();
@@ -1601,6 +1775,7 @@ function createBeach(ctx: SketchContext): void {
 		row(trees, k, x, groundHeight(x, z), z, next() * 6.3, undefined, 0.8 + next() * 0.45);
 	});
 	trees.markDirty();
+	return set;
 }
 
 /** Whether a point lies off the golf course's top: on its steep bank, or down in the shore's bare rock. */
@@ -1831,7 +2006,7 @@ const LAWN_LIFT = 0.1;
 const WALK_CLEAR = 2;
 const GAZEBO_CLEAR = 7;
 
-function createParks(ctx: SketchContext, surfaces: Surfaces): void {
+function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 	const { scene, geometry, materials } = ctx;
 	const b = build();
 	const walls = build();
@@ -1952,10 +2127,11 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): void {
 		row(green, k, p.x, p.y, p.z, k * 1.7, tint, p.scale);
 	});
 	green.markDirty();
+	return benches;
 }
 
 /** The keeps on the hilltops: each stands on the crest, at the middle of its village. */
-function createKeeps(ctx: SketchContext, surfaces: Surfaces): void {
+function createKeeps(ctx: SketchContext, surfaces: Surfaces): Object3D[] {
 	const { scene, geometry } = ctx;
 	const mesh = geometry.fromArrays(finish(keep()));
 	scene.createMesh({
@@ -1963,18 +2139,32 @@ function createKeeps(ctx: SketchContext, surfaces: Surfaces): void {
 		material: surfaces.rubble,
 		receiveShadows: true,
 	});
-	for (const [x, z, y] of KEEPS)
+	return KEEPS.map(([x, z, y]) =>
 		scene.createMesh({
 			mesh,
 			material: surfaces.rubble,
 			position: [x, y, z],
 			castShadows: true,
 			receiveShadows: true,
-		});
+		}),
+	);
 }
 
+/** The kit boulder's size, in meters: its span across the ground and its height, which its rows were set for. */
+const KIT_ROCK = { across: 2.9, tall: 1.85 } as const;
+/**
+ * How far each rock form grows on each axis to stand at the kit boulder's size, from the size that
+ * the form measures in its file along x, y and z: 2.74 x 1.09 x 1.97 m, 4.09 x 0.81 x 1.89 m and
+ * 1.83 x 1.60 x 1.65 m.
+ */
+const ROCK_FITS: Readonly<Partial<Record<PropForm, readonly [number, number, number]>>> = {
+	'rock-a': [KIT_ROCK.across / 2.74, KIT_ROCK.tall / 1.09, KIT_ROCK.across / 1.97],
+	'rock-b': [KIT_ROCK.across / 4.09, KIT_ROCK.tall / 0.81, KIT_ROCK.across / 1.89],
+	'rock-c': [KIT_ROCK.across / 1.83, KIT_ROCK.tall / 1.6, KIT_ROCK.across / 1.65],
+};
+
 /** The rocks of the coast: angular boulders in several sizes, tumbled below the cliffs and offshore. */
-function createRocks(ctx: SketchContext): void {
+function createRocks(ctx: SketchContext): InstanceBatch {
 	const { scene, geometry } = ctx;
 	const next = random(1009);
 	const rocks: { x: number; y: number; z: number; scale: number }[] = [];
@@ -2035,6 +2225,209 @@ function createRocks(ctx: SketchContext): void {
 		);
 	});
 	batch.markDirty();
+	return batch;
+}
+
+/** The bare knob under the highest keep: the band of its cone that scrub and rock fill, in meters. */
+const KNOB_NEAR = 12;
+const KNOB_FAR = 30;
+/** The clearance that a knob plant keeps from a stair's treads, in meters. */
+const KNOB_STAIR_CLEAR = 3;
+/** The least steepness of the cone that a knob plant takes, as rise over run. */
+const KNOB_SLOPE = 0.35;
+/** The tints of the knob's scrub: olive and lentisk greens, with a share of grey-green. */
+const SCRUB_TINTS = [
+	[0.2, 0.3, 0.14, 1],
+	[0.25, 0.36, 0.17, 1],
+	[0.3, 0.4, 0.2, 1],
+	[0.23, 0.3, 0.17, 1],
+	[0.36, 0.42, 0.26, 1],
+] as const;
+/** The tints that take the knob's loose stone from the earth's brown toward a cool limestone. */
+const KNOB_ROCK_TINTS = [
+	[1.2, 1.26, 1.32, 1],
+	[1.04, 1.08, 1.12, 1],
+	[1.32, 1.3, 1.28, 1],
+	[0.9, 0.92, 0.96, 1],
+] as const;
+
+/** A place on the knob that takes a plant, with its own turn, size and tint. */
+interface KnobSpot {
+	x: number;
+	y: number;
+	z: number;
+	turn: number;
+	scale: number;
+	tint: readonly number[];
+}
+
+/**
+ * Plants the bare knob under the highest keep, and buries the court wall's corners and foot in stone.
+ * The scrub and the rocks keep off the court, the stair through the knob, and the ground too flat to
+ * be the cone, so they read as grown on its slope.
+ */
+function createKnob(ctx: SketchContext): void {
+	const { scene, geometry, materials } = ctx;
+	const [kx, kz] = KEEPS[0] as readonly [number, number, number];
+	// The climb through the knob keeps clear of plants.
+	const climb: { x: number; z: number }[] = [];
+	for (const stair of STAIRS)
+		for (const p of stairTreads(stair))
+			if (hypot(p.x - kx, p.z - kz) < KNOB_FAR) climb.push({ x: p.x, z: p.z });
+	const onClimb = (x: number, z: number) =>
+		climb.some((p) => hypot(p.x - x, p.z - z) < KNOB_STAIR_CLEAR);
+	const fits = (x: number, z: number) => {
+		const r = hypot(x - kx, z - kz);
+		return (
+			r >= KNOB_NEAR &&
+			r < KNOB_FAR &&
+			!(Math.abs(x - kx) < 12.4 && Math.abs(z - kz) < 12.4) &&
+			roadEdge(x, z) > 1 &&
+			!onClimb(x, z) &&
+			slopeAt(x, z) > KNOB_SLOPE
+		);
+	};
+	// Stones break in patches across the cone, so the scatter reads as outcrops and not as gravel.
+	const patchy = (x: number, z: number, least: number) =>
+		noise.fbm2(x * 0.09 + 11, z * 0.09 - 4, 2) > least;
+	const rock = random(731);
+	const scrubNext = random(947);
+	const rocks: (KnobSpot & { shape: readonly [number, number, number] })[] = [];
+	const scrub: KnobSpot[] = [];
+	const addRock = (x: number, z: number, y: number, scale: number) => {
+		rocks.push({
+			x,
+			y: y - scale * 0.22,
+			z,
+			turn: rock() * 6.3,
+			scale,
+			// Each stone is flattened and stretched its own way, so a heap shows ledges and not beads.
+			shape: [0.8 + rock() * 0.35, 0.68 + rock() * 0.32, 0.78 + rock() * 0.35],
+			tint: KNOB_ROCK_TINTS[Math.floor(rock() * KNOB_ROCK_TINTS.length)] as readonly number[],
+		});
+	};
+	const addScrub = (x: number, z: number, y: number, scale: number) => {
+		scrub.push({
+			x,
+			y: y - scale * 0.08,
+			z,
+			turn: scrubNext() * 6.3,
+			scale,
+			tint: SCRUB_TINTS[Math.floor(scrubNext() * SCRUB_TINTS.length)] as readonly number[],
+		});
+	};
+	/**
+	 * Heaps stone and bushes over a point of the wall's foot. The wall's base meets the bank in a
+	 * sharp line, so the heaps take that line into the slope, largest at the wall and smaller down
+	 * the bank.
+	 */
+	const bury = (x: number, z: number, reach: number, stones: number, bushes: number) => {
+		const foot = groundHeight(x, z);
+		for (let k = 0; k < stones; k++) {
+			const a = rock() * 6.3;
+			const r = Math.sqrt(rock()) * reach;
+			const at = [x + Math.cos(a) * r, z + Math.sin(a) * r] as const;
+			const scale = 1.05 + rock() * 1.5 - (r / reach) * 0.6;
+			addRock(at[0], at[1], Math.max(groundHeight(at[0], at[1]), foot - r), scale);
+		}
+		for (let k = 0; k < bushes; k++) {
+			const a = scrubNext() * 6.3;
+			const r = 0.4 + scrubNext() * reach * 1.2;
+			const at = [x + Math.cos(a) * r, z + Math.sin(a) * r] as const;
+			addScrub(at[0], at[1], groundHeight(at[0], at[1]), 1 + scrubNext() * 1.2);
+		}
+	};
+	// The court's outer corners, where its walls meet the falling bank.
+	for (const [cx, cz] of [
+		[-11, -11],
+		[11, -11],
+		[-11, 11],
+		[11, 11],
+	] as const)
+		bury(kx + cx, kz + cz, 3, 8, 6);
+	// Along each wall's outer foot, a low line of loose stone ties the wall into the bank. The
+	// court's front is open, so no run crosses the tower's gate.
+	const feet: readonly {
+		from: readonly [number, number];
+		to: readonly [number, number];
+		out: readonly [number, number];
+	}[] = [
+		{ from: [-10.5, -11], to: [10.5, -11], out: [0, -1] },
+		{ from: [-11, -10.5], to: [-11, 10.5], out: [-1, 0] },
+		{ from: [11, -10.5], to: [11, 10.5], out: [1, 0] },
+	];
+	for (const { from, to, out } of feet) {
+		const length = hypot(to[0] - from[0], to[1] - from[1]);
+		for (let s = 0; s <= length; s += 2.4) {
+			const t = s / length;
+			const off = 0.4 + rock() * 0.8;
+			const x = kx + from[0] + (to[0] - from[0]) * t + out[0] * off;
+			const z = kz + from[1] + (to[1] - from[1]) * t + out[1] * off;
+			addRock(x, z, groundHeight(x, z), 0.5 + rock() * 0.8);
+			if (rock() > 0.45) {
+				const bx = kx + from[0] + (to[0] - from[0]) * t + out[0] * (off + 0.8);
+				const bz = kz + from[1] + (to[1] - from[1]) * t + out[1] * (off + 0.8);
+				addScrub(bx, bz, groundHeight(bx, bz), 0.5 + scrubNext() * 0.5);
+			}
+		}
+	}
+	// Loose stone and scrub across the cone, in clumps, so the slope reads as patches of growth
+	// with bare ground between them.
+	for (let attempt = 0; attempt < 600 && rocks.length < 190; attempt++) {
+		const a = rock() * Math.PI * 2;
+		const r = KNOB_NEAR + Math.sqrt(rock()) * (KNOB_FAR - KNOB_NEAR);
+		const cx = kx + Math.cos(a) * r;
+		const cz = kz + Math.sin(a) * r;
+		if (!fits(cx, cz) || !patchy(cx, cz, -0.1)) continue;
+		for (let k = 0, n = 4 + Math.floor(rock() * 6); k < n; k++) {
+			const b = rock() * 6.3;
+			const d = Math.sqrt(rock()) * 3;
+			const x = cx + Math.cos(b) * d;
+			const z = cz + Math.sin(b) * d;
+			if (!fits(x, z)) continue;
+			addRock(x, z, groundHeight(x, z), 0.4 + rock() * 1);
+		}
+	}
+	for (let attempt = 0; attempt < 600 && scrub.length < 620; attempt++) {
+		const a = scrubNext() * Math.PI * 2;
+		const r = KNOB_NEAR + Math.sqrt(scrubNext()) * (KNOB_FAR - KNOB_NEAR);
+		const cx = kx + Math.cos(a) * r;
+		const cz = kz + Math.sin(a) * r;
+		if (!fits(cx, cz) || !patchy(cx, cz, -0.18)) continue;
+		// A clump spreads down the slope, its bushes larger in the middle than at the edge.
+		for (let k = 0, n = 7 + Math.floor(scrubNext() * 9); k < n; k++) {
+			const b = scrubNext() * 6.3;
+			const d = Math.sqrt(scrubNext()) * 3.6;
+			const x = cx + Math.cos(b) * d;
+			const z = cz + Math.sin(b) * d;
+			if (!fits(x, z)) continue;
+			addScrub(x, z, groundHeight(x, z), 1.3 + scrubNext() * 1.7 - (d / 3.6) * 0.5);
+		}
+	}
+	const stone = scene.createInstances(geometry.fromArrays(finish(boulder())), rocks.length, {
+		material: materials.standard({ vertexColors: true, roughness: 1 }),
+		colors: true,
+		layers: INTERIOR_LAYER,
+		castShadows: true,
+		receiveShadows: true,
+	});
+	rocks.forEach((r, k) => {
+		row(stone, k, r.x, r.y, r.z, r.turn, r.tint, r.scale);
+		stone.scales.set([r.scale * r.shape[0], r.scale * r.shape[1], r.scale * r.shape[2]], k * 3);
+	});
+	stone.markDirty();
+	const bushes = scene.createInstances(geometry.fromArrays(finish(shrub(140))), scrub.length, {
+		material: materials.standard({ vertexColors: true, roughness: 0.95, doubleSided: true }),
+		colors: true,
+		castShadows: true,
+		receiveShadows: true,
+	});
+	scrub.forEach((s, k) => {
+		row(bushes, k, s.x, s.y, s.z, s.turn, s.tint, s.scale);
+		// A bush spreads wider than it rises, as scrub does on open ground.
+		bushes.scales.set([s.scale * 1.35, s.scale * 0.85, s.scale * 1.35], k * 3);
+	});
+	bushes.markDirty();
 }
 
 /** Street lamps along the town's streets and around the square. */
@@ -2075,7 +2468,7 @@ function createLamps(ctx: SketchContext): void {
 }
 
 /** Draws everything that the town plan places, apart from its trees. */
-export function createTown(ctx: SketchContext): void {
+export function createTown(ctx: SketchContext): Promise<void> {
 	const { scene, geometry, materials } = ctx;
 	const surfaces: Surfaces = {
 		plaster: materials.standard({
@@ -2121,14 +2514,208 @@ export function createTown(ctx: SketchContext): void {
 		receiveShadows: true,
 		castShadows: true,
 	});
-	createHouses(ctx, surfaces);
+	const houses = createHouses(ctx, surfaces);
 	createClimbers(ctx);
-	createSquare(ctx, surfaces);
-	createHarbour(ctx, surfaces);
-	createBeach(ctx);
+	const square = createSquare(ctx, surfaces);
+	const harbour = createHarbour(ctx, surfaces);
+	const parasols = createBeach(ctx);
 	createGolf(ctx);
-	createParks(ctx, surfaces);
-	createKeeps(ctx, surfaces);
-	createRocks(ctx);
+	const benches = createParks(ctx, surfaces);
+	const keeps = createKeeps(ctx, surfaces);
+	const coast = createRocks(ctx);
+	createKnob(ctx);
 	createLamps(ctx);
+	return settleLandmarks(ctx, {
+		church: square.church,
+		churchY: square.churchY,
+		lighthouse: harbour.lighthouse,
+		lighthouseAt: harbour.at,
+		keeps,
+		houses,
+		props: {
+			sailboats: harbour.sailboats,
+			skiffs: harbour.skiffs,
+			stones: harbour.stones,
+			parasols,
+			benches,
+			coast,
+		},
+	});
+}
+
+/** What the code-built kit stands for each landmark until the models arrive. */
+interface KitLandmarks {
+	readonly church: readonly Object3D[];
+	readonly churchY: number;
+	readonly lighthouse: readonly Object3D[];
+	readonly lighthouseAt: readonly [number, number, number];
+	readonly keeps: readonly Object3D[];
+	readonly houses: KitHouses;
+	readonly props: {
+		readonly sailboats: InstanceBatch;
+		readonly skiffs: InstanceBatch;
+		readonly stones: InstanceBatch;
+		readonly parasols: InstanceBatch;
+		readonly benches: InstanceBatch;
+		readonly coast: InstanceBatch;
+	};
+}
+
+/**
+ * Replaces the code-built landmarks with the model file's parts once it lands. A page without the
+ * sample file keeps the kit, so the demo runs before the asset is published. The load starts after
+ * the town is built, so it never holds up the first frame.
+ */
+async function settleLandmarks(ctx: SketchContext, kit: KitLandmarks): Promise<void> {
+	// The two model files load together. Either may fail without losing the other's models.
+	const [models, houseModels, props] = await Promise.all([
+		loadLandmarks(ctx).catch((error) => {
+			console.warn(
+				'island: the landmark models are unavailable, so the code-built landmarks stand',
+				error,
+			);
+			return undefined;
+		}),
+		loadHouses(ctx).catch((error) => {
+			console.warn(
+				'island: the house models are unavailable, so the code-built houses stand',
+				error,
+			);
+			return undefined;
+		}),
+		loadProps(ctx).catch((error) => {
+			console.warn('island: the prop models are unavailable, so the code-built props stand', error);
+			return undefined;
+		}),
+	]);
+	const placed: InstanceBatch[] = [];
+	const stand = (part: Part, x: number, y: number, z: number, yaw = 0): void => {
+		placed.push(standPart(ctx, part, [{ x, y, z, yaw, size: 1 }], part.material));
+	};
+	/**
+	 * Stands one landmark's parts. If any part cannot stand, it takes back the ones it did and
+	 * leaves the code-built form in place, so one missing part never costs the other landmarks.
+	 */
+	const place = (
+		what: string,
+		parts: readonly (Part | undefined)[],
+		at: (part: Part) => void,
+	): boolean => {
+		const before = placed.length;
+		try {
+			for (const part of parts) if (part) at(part);
+			return true;
+		} catch (error) {
+			for (const batch of placed.splice(before)) batch.destroy();
+			console.warn(
+				`island: the ${what} model could not stand, so its code-built form stays`,
+				error,
+			);
+			return false;
+		}
+	};
+	if (models) {
+		if (
+			place('church', Object.values(models.church), (part) =>
+				stand(part, CHURCH_AT.x, kit.churchY, CHURCH_AT.z),
+			)
+		)
+			for (const object of kit.church) object.destroy();
+		if (
+			place('keep', Object.values(models.keep), (part) => {
+				for (const [x, z, y] of KEEPS) stand(part, x, y, z);
+			})
+		)
+			for (const object of kit.keeps) object.destroy();
+		const [lx, ly, lz] = kit.lighthouseAt;
+		if (place('lighthouse', Object.values(models.lighthouse), (part) => stand(part, lx, ly, lz)))
+			for (const object of kit.lighthouse) object.destroy();
+		// The three waterfront houses go in together: a part that fails takes back all three, so the
+		// kit is never doubled on one lot.
+		const waterfrontFrom = placed.length;
+		let waterfront = true;
+		WATERFRONT_LOTS.forEach((lot, i) => {
+			const house = models.waterfront[i];
+			if (!house) {
+				waterfront = false;
+				return;
+			}
+			if (
+				!place(`waterfront ${i + 1}`, Object.values(house), (part) =>
+					stand(part, lot.x, lot.y, lot.z, lot.yaw),
+				)
+			)
+				waterfront = false;
+		});
+		if (waterfront) for (const batch of kit.houses.waterfront) batch.destroy();
+		else for (const batch of placed.splice(waterfrontFrom)) batch.destroy();
+	}
+	// The houses stand over every lot but the harbour front, which the landmark file owns.
+	if (houseModels) {
+		const lots: HouseLot[] = LOTS.filter((lot) => !WATERFRONT_LOTS.includes(lot)).map((lot) => ({
+			x: lot.x,
+			y: lot.y,
+			z: lot.z,
+			yaw: lot.yaw,
+			kind: lot.kind,
+		}));
+		const stands = standsByKind(lots, HOUSE_KINDS.length);
+		houseModels.forEach((model, kind) => {
+			if (!model) return;
+			const where = stands[kind] ?? [];
+			if (where.length === 0) return;
+			try {
+				standHouse(ctx, model, where);
+				for (const batch of kit.houses.byKind[kind] ?? []) batch.destroy();
+			} catch (error) {
+				console.warn(
+					`island: the ${model.form} house model could not stand, so its code-built form stays`,
+					error,
+				);
+			}
+		});
+	}
+	// Every prop model takes its code-built batch's own rows; a failed form keeps its kit.
+	if (props) {
+		const swap = (kitBatch: InstanceBatch, standings: readonly ModelStanding[]): void => {
+			if (standings.length === 0) return;
+			try {
+				replaceBatch(ctx, kitBatch, standings);
+			} catch (error) {
+				console.warn('island: a prop model could not stand, so its code-built form stays', error);
+			}
+		};
+		// A stone's origin is its base; the code-built boulder's origin lay 0.9 m above it.
+		const stone = {
+			material: (part: Part) => wetStone(ctx, part),
+			drop: 0.9,
+			layers: INTERIOR_LAYER,
+			fits: ROCK_FITS,
+		};
+		try {
+			replaceWithForms(ctx, props.rocks, kit.props.stones, { ...stone, castShadows: false });
+			replaceWithForms(ctx, props.rocks, kit.props.coast, { ...stone, castShadows: true });
+		} catch (error) {
+			console.warn('island: a stone model could not stand, so its code-built stones stay', error);
+		}
+		const yachts: ModelStanding[] = props.yacht
+			? [{ model: props.yacht, options: { castShadows: false } }]
+			: [];
+		swap(kit.props.sailboats, yachts);
+		const skiffs: ModelStanding[] = props.skiff
+			? [{ model: props.skiff, options: { castShadows: false, tint: ['hull'] } }]
+			: [];
+		swap(kit.props.skiffs, skiffs);
+		// The parasol and its two loungers go in together, so a missing part keeps the kit whole.
+		const spots = standsOf(kit.props.parasols);
+		if (props.parasol && props.lounger)
+			swap(kit.props.parasols, [
+				{ model: props.parasol, options: { castShadows: true, tint: ['canvas'] } },
+				{ model: props.lounger, stands: loungerStands(spots), options: { castShadows: true } },
+			]);
+		const benches: ModelStanding[] = props.bench
+			? [{ model: props.bench, options: { castShadows: true } }]
+			: [];
+		swap(kit.props.benches, benches);
+	}
 }

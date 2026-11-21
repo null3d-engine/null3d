@@ -5588,8 +5588,8 @@
 		},
 		{
 			"id": "showcase/island",
-			"title": "Island trees and oleander",
-			"purpose": "The plants of the engine's island showcase scene: a Mediterranean stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail and a card for its far copies",
+			"title": "Island cypress, trees and oleander",
+			"purpose": "The plants of the engine's island showcase scene: a Mediterranean cypress, stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail and a card for its far copies",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -5599,8 +5599,8 @@
 				"CC0-1.0"
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island.py",
-			"fetched": "2026-11-18",
-			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts.",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. The cypress joined the trees file as a short trunk under a tall, dense dark-green spire, its foliage and bark painted by the script. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts.",
 			"dir": "sources/showcase/island",
 			"origin": {
 				"kind": "blender",
@@ -5614,8 +5614,36 @@
 				},
 				{
 					"path": "sources/showcase/island/trees.glb",
-					"bytes": 1266944,
-					"sha256": "9a3e998d57fd6ac1011da80f469a36cc9c485e3bd3bd02a3c50dc05027693d4c"
+					"bytes": 1795280,
+					"sha256": "e89fca56e548b3459d6f2fd1b4c94e6aacad8baebd6838ef7fe1d6f2c4ba1f90"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-town",
+			"title": "Island town landmarks",
+			"purpose": "The landmarks of the engine's island showcase scene: a whitewashed church with a blue ribbed dome, an arched front and a bell tower, a hilltop keep, a harbour lighthouse and three waterfront houses, each with its own levels of detail",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-town.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-town.py in the engine repository, with every texture painted by the script: whitewashed walls, ashlar stone, terracotta roofs, a blue dome, timber and glazing. Each part carries one or two lower levels of detail at a stated surface error. Optimized by the engine asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-town.ts.",
+			"dir": "sources/showcase/island-town",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-town.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-town/town.glb",
+					"bytes": 434336,
+					"sha256": "b9d47c78a3fa057a820a1c6cb99c6a9be9b8191ce6137eec42062f657e5872d8"
 				}
 			]
 		},
@@ -6361,6 +6389,62 @@
 					"path": "sources/splats/bolton-priory-stream/index.json",
 					"bytes": 16358,
 					"sha256": "8b3c6efa646174755186b2f1d1949d059676c4854873752356bde8660947880f"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-houses",
+			"title": "Island Mediterranean houses",
+			"purpose": "The houses of the engine's island showcase scene: thirteen whitewashed and stone Mediterranean forms with terracotta roofs, shuttered dark windows, framed doors, chimneys and, where a form has one, a balcony, an arcade, a pergola, a veranda or a roof terrace, each with two lower levels of detail",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-houses.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-houses.py in the engine repository, with every texture painted by the script: lime whitewash, rubble stone, ashlar trim, terracotta roof tiles, painted timber, dark glazing and a cutout ivy card for the vines. Each house form carries two lower levels of detail with its measured surface error, 0.25 m and 0.80 m. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-houses.ts.",
+			"dir": "sources/showcase/island-houses",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-houses.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-houses/houses.glb",
+					"bytes": 2036900,
+					"sha256": "68e5ccf3f2aa890c93b97d5233dfa7b341f0e9ea4348ea2eabdf85a740f14e6e"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-props",
+			"title": "Island harbour and beach props",
+			"purpose": "The harbour and beach props of the engine's island showcase scene: a sailing yacht with a coachroof, mast, boom and furled sail, an open fishing boat with thwarts and an outboard, three irregular boulders, a canvas parasol, a timber sun lounger and a harbour bench, with painted gelcoat, teak, canvas, metal, glazing and stone textures",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-props.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-props.py in the engine repository, with every texture painted by the script: white gelcoat, golden teak planks, woven canvas, brushed metal, dark glazing and weathered stone. The yacht, the fishing boat and the three boulders carry two lower levels of detail with their measured surface error, 0.40 m and 0.80 m. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-props.ts.",
+			"dir": "sources/showcase/island-props",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-props.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-props/props.glb",
+					"bytes": 331568,
+					"sha256": "a68084cc88bc8aaa732f7262a8e6457e8b730caabfefa18a6b3707c37bf35c6f"
 				}
 			]
 		}

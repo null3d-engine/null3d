@@ -238,6 +238,7 @@ export default defineSketch(async (ctx) => {
 | `foam` | A number above 0, in meters | 1.1 | The height at which foam breaks on a crest |
 | `softness` | A number above 0, in meters | 0.12 | The gap to the bed over which the water fades at a shore |
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection |
+| `reflectionFollowsBudget` | `true` or `false` | `true` | Whether the frame-budget governor may raise `reflectionEvery`. Between draws the sea shows the reflection of an older camera, so on a moving camera a raised count reads as a lag. `false` keeps the count |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws |
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
 | `material` | The standard material values | None | The surface's material, such as the water's tint and its thickness |

@@ -1,4 +1,4 @@
-# Builds the plants of the island showcase scene in Blender: three Mediterranean trees and a
+# Builds the plants of the island showcase scene in Blender: four Mediterranean trees and a
 # flowering shrub. Everything comes from this script and a fixed seed: the shapes, and every
 # texture, which numpy paints. Nothing is downloaded.
 #
@@ -8,23 +8,25 @@
 # `bun tools/samples/blender/island.ts <folder>` runs it and optimizes the files for the scene.
 #
 # It writes two binary glTF files into the output folder, and prints each part's triangles:
-#   trees.glb   stone-pine, olive and holm-oak, each a wood node and a leaves node, with two lower
-#               levels of detail (MSFT_lod): fewer, larger leaf cards and fewer, plainer branches
+#   trees.glb   stone-pine, olive, holm-oak and cypress, each a wood node and a leaves node, with
+#               two lower levels of detail (MSFT_lod): fewer, larger leaf cards and fewer, plainer
+#               branches
 #   shrubs.glb  oleander, a wood node and a leaves node, with two lower levels the same way
 # Each plant also has a far card, `<plant>-card`, a node of its own with a material of its own: two
-# crossed upright quads and one level quad, textured from views of the full plant that Cycles
-# renders in this script, for the copies too far away to need the mesh.
+# crossed upright quads and one level quad, textured from views of the plant that Cycles renders in
+# this script, for the copies too far away to need the mesh. A card is baked from the level of
+# detail that it replaces.
 # A crown is a group of pads, each the foliage at the end of a branch. Its leaf cards lie on the
 # pads' outer surface and face out of it, so the crown's outline is the species' own: the stone
-# pine's flat umbrella, the olive's open, broken crown and the holm oak's dense dome. Each card
-# shows a cluster of needles, leaves or flowers that its texture's alpha cuts out, so the leaf
-# materials are masked and double sided. The wood and the cards carry ambient occlusion and tints
-# in their vertex colors, which glTF multiplies into the base color.
+# pine's flat umbrella, the olive's open, broken crown, the holm oak's dense dome and the cypress's
+# tall, narrow spire. Each card shows a cluster of needles, leaves or flowers that its texture's
+# alpha cuts out, so the leaf materials are masked and double sided. The wood and the cards carry
+# ambient occlusion and tints in their vertex colors, which glTF multiplies into the base color.
 #
 # Every vertex carries its sway in the second texture coordinates (TEXCOORD_1), as `common.py`
 # says: the first is the bend weight, from 0 at the root to 1 at the freest tips, and the second
 # is the phase of the branch that the vertex hangs from, from 0 to 1. --preview also renders each
-# plant with Cycles, a lineup of all four at their true sizes, and the same lineup at the farthest
+# plant with Cycles, a lineup of all five at their true sizes, and the same lineup at the farthest
 # level of detail, for a quick look without the engine.
 #
 # Blender's axes: z is up, and a model's front faces -y, which glTF's export turns into +z.
@@ -42,7 +44,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
     TEXTURE_DIR, Builder, arguments, card, cells, close_up, dilate, export, fbm, frame_of, half, image, material,
-    normal_map, occlusion_of, orm, over, paint_leaf, paint_line, preview, smoothstep, sprig_atlas, tent,
+    normal_map, occlusion_of, orm, over, paint_leaf, paint_line, preview, smoothstep, sprig_atlas, stage, tent,
     tube, value_noise,
 )
 
@@ -219,6 +221,14 @@ def bark(kind, w, h, rng):
         height = 0.3 * mottle - 0.7 * cracks
         color = np.array([0.26, 0.22, 0.19])[None, None] * (0.8 + 0.35 * mottle[..., None]) * (1 - 0.6 * cracks[..., None])
         rough = 0.85 + 0.1 * cracks
+    elif kind == 'cypress':
+        # Grey-brown bark in long fibrous shreds, parted by furrows that run up the trunk.
+        fibre = fbm(h, w, 3, 18, rng, 4)
+        ridges = 0.5 + 0.5 * np.sin(np.arange(w)[None, :] / w * np.pi * 2 * 15 + fbm(h, w, 7, 5, rng, 3) * 11)
+        furrow = smoothstep(0.6, 0.9, ridges)
+        height = 0.5 * fibre - 0.7 * furrow
+        color = np.array([0.33, 0.28, 0.22])[None, None] * (0.78 + 0.42 * fibre[..., None]) * (1 - 0.5 * furrow[..., None])
+        rough = 0.85 + 0.1 * furrow
     else:
         # The oleander's smooth grey-green stems.
         mottle = fbm(h, w, 6, 4, rng, 4)
@@ -367,6 +377,57 @@ def holm_oak(rng):
     return plant
 
 
+def cypress(rng):
+    """
+    A Mediterranean cypress: a short bare trunk that runs on hidden up the middle of a tall, narrow
+    column of foliage. Whorls of short limbs at each height reach out to the column's outline, which
+    is widest across its lower third, closes toward the tip and swells and pinches a little from
+    whorl to whorl, and loose pads fill the middle, so the spire is dense from any side.
+    """
+    plant = Plant()
+    base, top = 0.4, 12.7
+    lean = outward(rng.random() * 2 * math.pi, math.radians(1.5 + 2 * rng.random()))
+    points, radii = path((0, 0, -0.3), lean, 13.0, 0.30, 0.045, 14, rng, 0.012)
+    trunk = plant.branch(points, radii, 0)
+
+    def spread(t):
+        """The column's radius at a share `t` of the foliage's height, widest across its lower third."""
+        return 1.45 * math.sin(min(1.0, t * 1.12 + 0.1) * math.pi) ** 0.62 * (1 - t * 0.35)
+
+    def axle(z):
+        """The trunk's point at a height `z`."""
+        return at(points, min(1.0, max(0.0, (z + 0.3) / 13.0)))[0]
+
+    tiers = 12
+    for k in range(tiers):
+        t = (k + 0.5) / tiers
+        z = base + (top - base) * t
+        middle = axle(z)
+        r = spread(t)
+        limbs = 3 + (k + 1) % 2
+        for j in range(limbs):
+            az = j * 2 * math.pi / limbs + k * 2.39996 + rng.normal(0, 0.18)
+            out = Vector((math.cos(az), math.sin(az), 0))
+            foot = middle + out * 0.05
+            size = 0.66 + 0.2 * rng.random()
+            # The pad's middle stands in from the outline by most of its own reach, so the cards on
+            # its far side end at the column's surface and the spire keeps its measured width.
+            reach = max(0.0, r - size * (0.55 + 0.15 * rng.random()))
+            tip = foot + out * reach
+            lift = r * (0.08 + 0.22 * rng.random())
+            lp, lr = path(foot, tip - foot + Vector((0, 0, lift)), max(0.12, (tip - foot).length), 0.05, 0.016, 2, rng, 0.06, (0, 0, 0.2))
+            limb = plant.branch(lp, lr, 1)
+            plant.pad(lp[-1] + Vector((0, 0, 0.18)), (size, size, size * (1.25 + 0.3 * rng.random())), limb)
+        # Loose pads inside the whorl, so the spire shows no gap between its limbs and its middle is
+        # filled from every side.
+        for j in range(2):
+            inner_az = k * 2.39996 + 0.9 + j * 2.6
+            filler = middle + Vector((math.cos(inner_az), math.sin(inner_az), 0)) * r * (0.28 + 0.12 * j) + Vector((0, 0, 0.15))
+            plant.pad(filler, (0.5, 0.5, 0.75), trunk)
+    plant.pad(axle(top) + Vector((0, 0, 0.1)), (0.5, 0.5, 0.6), trunk)
+    return plant
+
+
 def oleander(rng):
     """
     An oleander: many stems from one clump, from upright in the middle to nearly level at the rim,
@@ -499,9 +560,11 @@ def leaf_part(spec, plant, places, rng, grow):
         cell = spec['cells'][int(rng.random() * len(spec['cells']))]
         cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
         base = p - along * size * spec['centered']
-        # Darker under the crown and inside it, lighter on top and at the rim.
+        # Darker under the crown and inside it, lighter on top and at the rim. A species may keep a
+        # higher floor, so a tall crown's shaded inside does not read as black at a distance.
         rim = min(1.0, (p - center).length / max(reach, 1e-3))
-        ao = 0.35 + 0.65 * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
+        floor = spec.get('ambient', 0.35)
+        ao = floor + (1 - floor) * float(smoothstep(-0.7, 0.7, 0.8 * n.z + 0.5 * rim - 0.1))
         hue = 0.9 + 0.2 * rng.random()
         color = tuple(ao * hue * c for c in tint)
         sway = (0.75 * max(0.0, p.z) / top + 0.35 * math.hypot(p.x, p.y) / reach, branch_phase(branch))
@@ -588,6 +651,15 @@ def oleander_cards(spec, plant, places, rng, grow):
 #   levels   the species' own lower levels, where its cards differ in size from the others'
 #   flare    how far the trunk's foot spreads into roots; sides are each level's sides
 TREES = {
+    'cypress': dict(
+        grow=cypress, bark='cypress', cards=2400, card=0.85, lift=0.1, scatter=0.35, centered=0.45,
+        cells=(0, 1, 2, 3), fold=0.16, bend=0.55, flare=0.2, sides=(7, 4, 3), tint=(1.0, 1.0, 1.0),
+        up=0.45, depth=0.55, tent=True, card_level=2, ambient=0.55,
+        levels=(
+            dict(every=3, grow=1.5, branches=1, sides=2, thin=2, error=0.03),
+            dict(every=8, grow=2.4, branches=1, sides=4, thin=3, error=0.07),
+        ),
+    ),
     'stone-pine': dict(
         grow=stone_pine, bark='pine', cards=700, card=1.5, lift=0.45, scatter=0.25, centered=0.5,
         cells=(0, 1, 2, 3), fold=0.06, bend=0.55, flare=0.45, sides=(8, 5, 3), tint=(1.0, 1.0, 1.0), up=0.85,
@@ -679,7 +751,7 @@ def bark_material(kind, rng, strength):
 # ---------------------------------------------------------------------------------------------
 
 # The texels of each view that a card's atlas holds, side by side: the side view, then the top.
-CARD_TEXELS = {'stone-pine': 512, 'olive': 512, 'holm-oak': 512, 'oleander': 256}
+CARD_TEXELS = {'stone-pine': 512, 'olive': 512, 'holm-oak': 512, 'cypress': 512, 'oleander': 256}
 # The share of the crown's height, from its foot, where the top view's card lies.
 CARD_TOP_AT = 0.65
 # How far each face of a quad stands out from the quad's middle toward its own side, in meters, so
@@ -904,6 +976,11 @@ def main():
     out, shots = arguments('island.py')
 
     atlases = {
+        # Fine dark scale-leaves in dense, lobed tufts, so a card reads as a solid mass of foliage
+        # with the sky showing only between the tufts' outer leaves. A cypress stands as a vertical
+        # column, so its cards catch less of the sun than a broad crown's do; the green is set bright
+        # enough that the crown reads green against turf in the engine instead of black.
+        'cypress': lambda rng: clump_atlas(1024, rng, 760, 0.045, 0.55, ([0.18, 0.33, 0.14], [0.21, 0.37, 0.17], [0.15, 0.3, 0.13]), [0.2, 0.17, 0.12], 0.45),
         'stone-pine': lambda rng: needle_atlas(1024, rng),
         'olive': lambda rng: sprig_atlas(1024, rng, 90, 0.13, 0.15, ([0.36, 0.4, 0.28], [0.32, 0.37, 0.25]), 0.3, [0.36, 0.33, 0.28], 0.6, (0.35, 0.9), 4),
         # Small oval leaves, 2 to 4 cm on a card, dark and waxy, many to a spray.
@@ -916,7 +993,7 @@ def main():
     }
     barks = {
         kind: bark_material(kind, stream(f'bark-{kind}', 1), strength)
-        for kind, strength in (('pine', 8), ('olive', 6), ('holm', 5), ('stem', 2))
+        for kind, strength in (('pine', 8), ('olive', 6), ('holm', 5), ('cypress', 6), ('stem', 2))
     }
 
     trees, plants = [], {}
@@ -925,10 +1002,13 @@ def main():
         trees += objects
         plants[name] = plant
     shrubs, plants['oleander'] = build_oleander(barks['stem'], leaf_mats['oleander'], stream('oleander', 2))
-    # Each plant's far card is baked from its full level, so it draws what the near plant does.
+    # Each plant's far card is baked from the level of detail that it replaces: the full level, or a
+    # species' own far level, whose larger cards stand wider than the full plant's.
     cards = {}
     for name in [*TREES, 'oleander']:
-        cards[name] = build_card(name, [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']])
+        level = TREES.get(name, {}).get('card_level', 0)
+        suffix = '' if level == 0 else f'-{level}'
+        cards[name] = build_card(name, [bpy.data.objects[f'{name}-wood{suffix}'], bpy.data.objects[f'{name}-leaves{suffix}']])
     trees += [cards[name] for name in TREES]
     shrubs.append(cards['oleander'])
 
@@ -954,6 +1034,17 @@ def main():
             parts = [bpy.data.objects[f'{name}-wood'], bpy.data.objects[f'{name}-leaves']]
             preview(parts, os.path.join(shots, f'{name}.png'), (0.9, -2.2, 0.35))
             close_up(parts, os.path.join(shots, f'{name}-close.png'))
+            # A tall plant's trunk stands below its crown's close view, so a camera at a person's
+            # height looks at the foot from a few meters away.
+            if name == 'cypress':
+                cam, _, _ = stage(parts, (0.45, 0.6, 0.85), (720, 720), 24)
+                cam.data.type = 'PERSP'
+                cam.data.lens = 50
+                goal = Vector((0.0, 0.0, 1.1))
+                cam.location = Vector((2.4, -2.4, 1.4))
+                cam.rotation_euler = (goal - cam.location).to_track_quat('-Z', 'Y').to_euler()
+                bpy.context.scene.render.filepath = os.path.join(shots, 'cypress-trunk.png')
+                bpy.ops.render.render(write_still=True)
         lineup(names, '', os.path.join(shots, 'lineup.png'))
         lineup(names, '-2', os.path.join(shots, 'lineup-far.png'), (480, 160))
         for name in names:
