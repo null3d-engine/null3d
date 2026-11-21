@@ -185,6 +185,11 @@ export interface Water {
 	readonly level: number;
 	/** The height of the long waves and of the wind's lift, as a factor of their base height. */
 	readonly waveAmplitude: number;
+	/**
+	 * The most that the long waves raise or lower the surface from its level, in meters. A point
+	 * further than this above the level is above the water wherever it stands.
+	 */
+	readonly waveReach: number;
 	/** The bodies of water that the surface draws, in the order that the shapes give. */
 	readonly bodies: readonly WaterBody[];
 	/** The frames between two draws of the reflection now. */
@@ -242,6 +247,17 @@ function fract(value: number): number {
 /** A number from 0 to 1 that changes each time a copy starts afresh, as the shaders' `cycle_seed`. */
 function cycleSeed(t: number, which: number): number {
 	return fract(Math.floor(t / CARRY_CYCLE + which) * 0.618034 + which);
+}
+
+/**
+ * The most that `waveHeight` moves a surface from its level, in meters, for a ripple and a wave
+ * amplitude: each long wave at its full height, and the two copies' weights sum to one.
+ */
+export function waveReach(ripple: number, waveAmplitude: number): number {
+	let reach = 0;
+	for (let index = 0; index < LONG_WAVES.length; index++)
+		reach += 0.05 / (LONG_WAVES[index] as (typeof LONG_WAVES)[number])[2];
+	return reach * Math.abs(ripple * waveAmplitude);
 }
 
 /**
@@ -553,6 +569,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	return {
 		level,
 		waveAmplitude,
+		waveReach: waveReach(options.ripple ?? RIPPLE, waveAmplitude),
 		bodies,
 		get reflectionEvery() {
 			return every;

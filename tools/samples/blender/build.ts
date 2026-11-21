@@ -22,9 +22,9 @@ interface Gltf {
 	images?: { uri?: string; bufferView?: number; mimeType?: string }[];
 	bufferViews?: { buffer: number; byteOffset?: number; byteLength: number }[];
 	buffers?: { byteLength: number; uri?: string }[];
-	nodes?: { name?: string; mesh?: number }[];
+	nodes?: { name?: string; mesh?: number; extensions?: { MSFT_lod?: { ids: number[] } } }[];
 	meshes?: { primitives: { indices?: number; attributes: Record<string, number> }[] }[];
-	accessors?: { count: number }[];
+	accessors?: { count: number; componentType?: number; normalized?: boolean; type?: string }[];
 }
 
 /** The JSON and the binary chunk of a binary glTF file. */
@@ -110,6 +110,37 @@ function parts(bytes: Uint8Array): { name: string; triangles: number; sway: bool
 				sway: primitives.every((p) => p.attributes.TEXCOORD_1 !== undefined),
 			};
 		});
+}
+
+/**
+ * The lower levels that store a vertex attribute in another form than their node's full level, as
+ * lines that name both. The engine draws a level only when its vertices match the full level's, so
+ * it drops such a level, and the model draws at full detail at every distance.
+ */
+export function levelMismatches(bytes: Uint8Array): string[] {
+	const { json } = readGlb(bytes);
+	const nodes = json.nodes ?? [];
+	const forms = (node: { mesh?: number }) =>
+		new Set(
+			(json.meshes?.[node.mesh as number]?.primitives ?? []).flatMap((p, i) =>
+				Object.entries(p.attributes).map(([name, index]) => {
+					const a = json.accessors?.[index];
+					return `primitive ${i} ${name}: ${a?.componentType}${a?.normalized ? ' normalized' : ''} ${a?.type}`;
+				}),
+			),
+		);
+	return nodes.flatMap((node) =>
+		(node.extensions?.MSFT_lod?.ids ?? []).flatMap((id) => {
+			const full = forms(node);
+			const level = forms(nodes[id] ?? {});
+			const differ = [...full]
+				.filter((f) => !level.has(f))
+				.concat([...level].filter((f) => !full.has(f)));
+			return differ.length > 0
+				? [`${nodes[id]?.name ?? id} against ${node.name ?? '?'}: ${differ.sort().join('; ')}`]
+				: [];
+		}),
+	);
 }
 
 /** What a scene's build makes. */
@@ -202,6 +233,11 @@ export async function buildScene({
 			]);
 			if (code !== 0) throw new Error(`The asset tool failed on ${model}.glb`);
 			const packed = pack(join(optimized, `${model}.glb`));
+			const mismatched = levelMismatches(packed);
+			if (mismatched.length > 0)
+				throw new Error(
+					`${model}.glb stores levels unlike their full level:\n${mismatched.join('\n')}`,
+				);
 			const found = parts(packed);
 			const still = found.filter((part) => !part.sway).map((part) => part.name);
 			if (swaying.includes(model) && still.length > 0)
