@@ -5,7 +5,9 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CARRY_CYCLE, LONG_WAVES, waveHeight } from './water';
+import type { PerspectiveCamera, SketchContext } from '@null3d/engine';
+import { createUnderwater, topOrder } from './underwater';
+import { CARRY_CYCLE, LONG_WAVES, type Water, waveHeight, waveReach } from './water';
 
 const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 
@@ -15,6 +17,45 @@ const WAVES = [
 	'vec4f(0.8, -0.6, 3.7, 0.7)',
 	'vec4f(0.6, 0.8, 5.9, 0.5)',
 ] as const;
+
+/**
+ * A WGSL function of plain arithmetic made runnable in JavaScript, so a test can check its sums:
+ * `fract`, `abs`, `floor` and `vec4f` map to their JavaScript forms, and `cycle` stands for the
+ * shader's carry cycle.
+ */
+function shaderFunction(
+	source: string,
+	name: string,
+	cycle: number,
+): (...args: number[]) => unknown {
+	const start = source.indexOf(`fn ${name}(`);
+	const end = source.indexOf('\n}', start);
+	const text = source.slice(start, end + 2);
+	const params =
+		/\(([^)]*)\)/
+			.exec(text)?.[1]
+			?.split(',')
+			.map((p) => p.split(':')[0]?.trim()) ?? [];
+	const body = text
+		.slice(text.indexOf('{') + 1, text.lastIndexOf('}'))
+		.replace(/\blet\b/g, 'const')
+		.replace(/\bvec4f\(/g, 'vec4f(');
+	const make = new Function(
+		'fract',
+		'abs',
+		'floor',
+		'vec4f',
+		'CARRY_CYCLE',
+		`return function (${params.join(', ')}) {${body}};`,
+	) as (...helpers: unknown[]) => (...args: number[]) => unknown;
+	return make(
+		(v: number) => v - Math.floor(v),
+		Math.abs,
+		Math.floor,
+		(...parts: number[]) => parts,
+		cycle,
+	);
+}
 
 /** The body of the WGSL function `name` in `source`, from its signature to its closing brace. */
 function wgslFunction(source: string, name: string): string {
@@ -111,6 +152,65 @@ describe('the water’s waves', () => {
 		expect(read('water.ts')).toContain('0.618034');
 	});
 
+	it('weighs its two copies to a whole, each nothing as it starts afresh, as the shaders sum them', () => {
+		const surface = read('water.wgsl');
+		const carried = shaderFunction(surface, 'carried', CARRY_CYCLE) as (t: number) => number[];
+		const seed = shaderFunction(surface, 'cycle_seed', CARRY_CYCLE) as (
+			t: number,
+			w: number,
+		) => number;
+		for (let t = 0; t < 9; t += 0.137) {
+			const [first, second, wa, wb] = carried(t) as [number, number, number, number];
+			expect(wa + wb).toBeCloseTo(1, 12);
+			expect(first).toBeGreaterThanOrEqual(0);
+			expect(first).toBeLessThan(CARRY_CYCLE);
+			expect(second).toBeGreaterThanOrEqual(0);
+			expect(second).toBeLessThan(CARRY_CYCLE);
+			// A copy's weight follows how far it is through its cycle: nothing at its start and end.
+			expect(wa).toBeCloseTo(1 - Math.abs((2 * first) / CARRY_CYCLE - 1), 12);
+		}
+		// At a copy's restart its weight is nothing and its seed changes, so the jump never shows.
+		for (const restart of [2, 4, 6]) {
+			expect((carried(restart) as number[])[2]).toBeCloseTo(0, 12);
+			expect(seed(restart - 1e-6, 0)).not.toBeCloseTo(seed(restart + 1e-6, 0), 3);
+			expect(seed(restart - 1e-6, 0.5)).toBeCloseTo(seed(restart + 1e-6, 0.5), 12);
+		}
+		// The shaders sum the two copies by their weights, and the CPU's height is that same sum.
+		for (const source of [surface, read('underwater.wgsl')])
+			expect(source).toContain('copies.z * sin(first) + copies.w * sin(second)');
+		// The surface's slope, which lights it, sums the same two copies, so its shading never
+		// jumps where a copy starts afresh.
+		expect(wgslFunction(surface, 'waves')).toContain(
+			'copies.z * cos(first) + copies.w * cos(second)',
+		);
+		const current: [number, number] = [0.21, -0.28];
+		const speed = Math.hypot(...current);
+		for (const [x, z, t] of [
+			[1.5, -2, 0.3],
+			[-7, 4.2, 3.9],
+			[12, 0.5, 61.7],
+		] as const) {
+			const [first, second, wa, wb] = carried(t) as [number, number, number, number];
+			let height = 0;
+			LONG_WAVES.forEach(([ownX, ownZ, k], index) => {
+				const length = Math.hypot(ownX, ownZ);
+				const ax = ownX / length;
+				const az = ownZ / length;
+				const cx = current[0] / speed;
+				const cz = current[1] / speed;
+				const dx = cx * ax - cz * az;
+				const dz = cz * ax + cx * az;
+				const base = k * (dx * x + dz * z);
+				const run = k * speed * (dx * cx + dz * cz);
+				const turn = 6.2831853 * (index + 1);
+				const a = base - run * first + seed(t, 0) * turn;
+				const b = base - run * second + seed(t, 0.5) * turn;
+				height += ((0.05 / k) * (wa * Math.sin(a) + wb * Math.sin(b))) as number;
+			});
+			expect(waveHeight(x, z, t, 0, current, 1)).toBeCloseTo(height, 6);
+		}
+	});
+
 	it('carries the waves with the current, and never stretches them where the current changes', () => {
 		// Two points 1 cm apart whose currents differ by 1 mm/s. A wave slid by the current times the
 		// clock drifts out of step between them by a little more every second: after an hour their
@@ -178,5 +278,108 @@ describe('the water’s color along a low view', () => {
 				.find((line) => line.startsWith('s.thickness =')) ?? '';
 		expect(thickness).toContain('mix(depth, gap,');
 		expect(thickness).toContain('material.viewPath');
+	});
+});
+
+describe('the waves’ reach', () => {
+	it('bounds the surface’s height, and the waves come near it', () => {
+		for (const [ripple, amplitude] of [
+			[1, 1],
+			[2, 0.5],
+			[0.4, 1.5],
+		] as const) {
+			const reach = waveReach(ripple, amplitude);
+			let most = 0;
+			for (let k = 0; k < 20000; k++) {
+				const current: [number, number] = k % 3 === 0 ? [0, 0] : [0.3, -0.2];
+				const x = ((k * 7.31) % 40) - 20;
+				const z = ((k * 3.17) % 30) - 15;
+				const h = waveHeight(x, z, k * 0.0173, 2, current, ripple, amplitude) - 2;
+				most = Math.max(most, Math.abs(h));
+			}
+			expect(most).toBeLessThanOrEqual(reach);
+			expect(most).toBeGreaterThan(reach * 0.6);
+		}
+	});
+});
+
+describe('the view from under the water', () => {
+	/** The top bits of a number as a 32-bit float, as the view reads the camera's height. */
+	const high = new Uint16Array(new Float32Array([1]).buffer)[1] === 0 ? 0 : 1;
+	const top = (value: number) =>
+		topOrder(new Uint16Array(new Float32Array([value]).buffer)[high] as number);
+
+	it('orders floats by their top bits alone, and never the wrong way round', () => {
+		const values = [
+			-300, -12.5, -1.0001, -1, -0.02, 0, 0.004, 0.6436, 0.65, 1, 1.0001, 1.64, 7, 7.02, 1e4,
+		];
+		for (const a of values)
+			for (const b of values) {
+				const ta = top(a);
+				const tb = top(b);
+				// A larger order always means a larger float; floats a part in a hundred apart differ.
+				if (ta > tb) expect(Math.fround(a)).toBeGreaterThan(Math.fround(b));
+				if (Math.abs(a - b) > 0.01 * Math.max(Math.abs(a), Math.abs(b), 1)) expect(ta).not.toBe(tb);
+			}
+	});
+
+	/** An underwater view over still water at a level, with a camera at a height. */
+	function viewAt(height: number) {
+		const asked: number[] = [];
+		const effects: unknown[] = [];
+		const water = {
+			level: 1,
+			waveReach: 0.05,
+			surfaceHeight(x: number, z: number) {
+				asked.push(x, z);
+				return 1;
+			},
+			currentAt(_x: number, _z: number, out: [number, number]) {
+				out[0] = 0;
+				out[1] = 0;
+			},
+		} as unknown as Water;
+		const camera = {
+			fov: 50,
+			near: 0.1,
+			getPosition(out: { [index: number]: number }) {
+				out[0] = 3;
+				out[1] = height;
+				out[2] = -2;
+			},
+			getRotation(out: { [index: number]: number }) {
+				out[0] = 0;
+				out[1] = 0;
+				out[2] = 0;
+				out[3] = 1;
+			},
+		} as unknown as PerspectiveCamera;
+		const post = {
+			addEffect: (options: unknown) => {
+				effects.push(options);
+				return options;
+			},
+			removeEffect() {},
+			setEffectUniform() {},
+		};
+		const view = createUnderwater({ post } as unknown as SketchContext, camera, water);
+		view.update(0, [1, 1, 1], [1, 1, 1]);
+		return { asked, effects };
+	}
+
+	it('asks for no surface height while the camera is clear of the waves', () => {
+		const high = viewAt(8);
+		expect(high.asked).toHaveLength(0);
+		expect(high.effects).toHaveLength(0);
+	});
+
+	it('finds the surface near the water, and draws under it', () => {
+		// Within the waves' reach and the gap that adds the effect, but above the surface by more.
+		const near = viewAt(1.64);
+		expect(near.asked).toEqual([3, -2]);
+		expect(near.effects).toHaveLength(0);
+		const under = viewAt(0.5);
+		expect(under.asked).toEqual([3, -2]);
+		expect(under.effects).toHaveLength(1);
 	});
 });
