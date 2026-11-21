@@ -948,7 +948,14 @@ def repaint(maps, height, eyes, eye, chest, rng):
     # face's basin darkens by up to `shade_teal` of its lightness. The garden's look lifts shadows,
     # so the albedo falls further than the picture's lightness alone suggests.
     wide_face = smoothstep(2.2, 1.05, look)
-    body = teal * (1 - wide_face)
+    # The bare chest and the lap keep the concept's lightness: neither takes the darkening, which
+    # falls only on the cloth and the hair.
+    chest_keep = (smoothstep(1.6, 0.9, np.sqrt((d * d).sum(axis=2)))
+                  * smoothstep(0.0, 0.4, -facing[..., 1]))
+    lap_keep = (smoothstep(2.2, 1.6, np.abs(x)) * smoothstep(waist - 0.1, waist - 0.9, z)
+                * smoothstep(0.7, 1.1, z))
+    keep = np.maximum(chest_keep, lap_keep)
+    body = teal * (1 - wide_face) * (1 - keep)
     color *= (1 - PATINA['shade_teal'] * body)[..., None]
     # The darkened bronze keeps its green: the verdigris away from the face grows `body_vivid` times
     # in colour strength about its own lightness, which the face's own setting does not touch.
