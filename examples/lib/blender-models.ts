@@ -8,6 +8,7 @@ import {
 	type MeshGeometry,
 	type Prefab,
 	type PrefabNode,
+	type QuatLike,
 	quat,
 	type SketchContext,
 	vec3,
@@ -44,13 +45,43 @@ export function placed(
 	yaw: number,
 	size: number,
 ): Placement {
-	const turn = quat.fromEuler(quat.create(), 0, yaw, 0);
+	return placedTurned(node, at, quat.fromEuler(quat.create(), 0, yaw, 0), size);
+}
+
+/**
+ * Where a part lands when its model stands at a point, turned by the quaternion `turn` and scaled by
+ * `size`, as `placed` does for a turn about y alone.
+ */
+export function placedTurned(
+	node: PrefabNode,
+	at: readonly [number, number, number],
+	turn: QuatLike,
+	size: number,
+): Placement {
 	const offset = vec3.transformQuat(vec3.create(), node.position, turn);
 	return {
 		position: [at[0] + offset[0] * size, at[1] + offset[1] * size, at[2] + offset[2] * size],
 		rotation: [...quat.multiply(quat.create(), turn, node.rotation)] as Placement['rotation'],
 		scale: [node.scale[0] * size, node.scale[1] * size, node.scale[2] * size],
 	};
+}
+
+/**
+ * A copy of a part's material that draws its colour and normal maps under a tint and a roughness of
+ * its own, such as one that mutes a model's moss.
+ */
+export function tintedPart(
+	materials: SketchContext['materials'],
+	part: Part,
+	tint: string,
+	roughness: number,
+): Material {
+	return materials.standard({
+		...(part.maps.map && { map: part.maps.map }),
+		...(part.maps.normalMap && { normalMap: part.maps.normalMap }),
+		color: tint,
+		roughness,
+	});
 }
 
 /** Where one copy of a model stands: its foot, its turn about y and its size. */
