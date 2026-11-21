@@ -99,6 +99,10 @@ export const MOSS_MUTE = '#a9a79e';
 const STONE_TONE = [0.2, 0.17, 0.125] as const;
 const MOSS_TONE = [0.13, 0.115, 0.03] as const;
 
+/** The stones' texture maps: grey stone with darker cracks and light grains, which colors tint. */
+export const stoneMaps = (textures: SketchContext['textures'], size: number) =>
+	textureSet(textures, size, rockTexel);
+
 /** A turn about y by an angle, as the four numbers of a quaternion. */
 const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 
@@ -246,7 +250,7 @@ export function createStones(
 	obstacles: Obstacle[];
 } {
 	const { scene, geometry, materials, textures } = ctx;
-	const maps = textureSet(textures, textureSize, rockTexel);
+	const maps = stoneMaps(textures, textureSize);
 	const look = { vertexColors: true, ...maps, uvTransform: { repeat: [2, 1] } } as const;
 	const dry = materials.standard({ ...look, roughness: 1 });
 	// Stones in the stream and at its edge are wet: a little darker, and with a faint sheen.

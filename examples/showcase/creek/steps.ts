@@ -6,7 +6,7 @@
 import type { MeshArrays, SketchContext } from '@null3d/engine';
 import { Noise, random, rock } from '../../lib/procedural';
 import { alongFlight, type Flight, flights, groundHeight, STAIRS } from './land';
-import { mossy } from './stones';
+import { mossy, stoneMaps } from './stones';
 
 /**
  * The slabs: how far each reaches past its tread's length, so the steps overlap a little; how far its
@@ -25,7 +25,7 @@ const SLAB = {
 const STRIPS = 6;
 
 /** Linear colors of the steps: the worn tread, the shaded riser and the moss at the ends. */
-const TREAD = [0.26, 0.225, 0.165] as const;
+const TREAD = [0.17, 0.152, 0.118] as const;
 const RISER = [0.05, 0.04, 0.028] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 
@@ -119,7 +119,7 @@ function flightSlabs(built: Parameters<typeof face>[0], flight: Flight, next: ()
 					1,
 					Math.max(0, (Math.abs(a) - 0.6) / 0.4 + 0.3 * noise.value2(x * 2, z * 2)),
 				);
-				const base = tone(TREAD, x, z, 0.25);
+				const base = tone(TREAD, x, z, 0.4);
 				return [0, 1, 2].map(
 					(i) => (base[i] as number) + ((MOSS[i] as number) - (base[i] as number)) * moss,
 				) as [number, number, number];
@@ -158,8 +158,9 @@ function flightSlabs(built: Parameters<typeof face>[0], flight: Flight, next: ()
  * whether a point lies on the steps or under their walls, where nothing grows.
  */
 export function createSteps(
-	{ scene, geometry, materials }: SketchContext,
+	{ scene, geometry, materials, textures }: SketchContext,
 	detail: number,
+	textureSize: number,
 ): (x: number, z: number) => boolean {
 	const next = random(73);
 	const built = { positions: [], normals: [], colors: [], uvs: [], indices: [] } as Parameters<
@@ -175,7 +176,12 @@ export function createSteps(
 	};
 	scene.createMesh({
 		mesh: geometry.fromArrays(arrays),
-		material: materials.standard({ vertexColors: true, roughness: 0.92 }),
+		// The stones' own grain and cracks over the slabs' colours, so no slab reads as smooth.
+		material: materials.standard({
+			vertexColors: true,
+			...stoneMaps(textures, textureSize),
+			roughness: 0.95,
+		}),
 		castShadows: true,
 		receiveShadows: true,
 	});
@@ -200,7 +206,8 @@ export function createSteps(
 				}
 	}
 	const walls = scene.createInstances(stone, places.length, {
-		material: materials.standard({ vertexColors: true, roughness: 0.95 }),
+		// A dark tint over the mossy stones' colours: the walls read as dark stacked rock.
+		material: materials.standard({ vertexColors: true, color: '#7a746c', roughness: 0.95 }),
 		castShadows: true,
 		receiveShadows: true,
 	});
