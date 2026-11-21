@@ -288,6 +288,15 @@ export function ledgePoint(ledge: Ledge, point: readonly [number, number]): [num
 	return [ledge.x + point[0] * c + point[1] * s, ledge.z - point[0] * s + point[1] * c];
 }
 
+/** True for a point within the ledge's oval grown by a margin, in meters. */
+export function nearLedge(ledge: Ledge, x: number, z: number, margin: number): boolean {
+	const [c, s] = [Math.cos(ledge.yaw), Math.sin(ledge.yaw)];
+	const [dx, dz] = [x - ledge.x, z - ledge.z];
+	// The point in the ledge's own frame: the turn of ledgePoint, undone.
+	const [across, along] = [dx * c - dz * s, dx * s + dz * c];
+	return Math.hypot(across / (LEDGE.long + margin), along / (LEDGE.wide + margin)) < 1;
+}
+
 let placeList: GardenPlaces | undefined;
 
 /** Where everything stands, found once. */
