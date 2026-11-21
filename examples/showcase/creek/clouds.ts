@@ -312,7 +312,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
         let lod = log2(max(t * pixel / texel, 1.0));
         // Over its last meters before the scene's surface the cloud thins away, so a wall fades into
         // the cloud with no cut line along its blocks.
-        let contact = select(1.0, smoothstep(0.0, 3.0, limit - t), limitHit);
+        let contact = select(1.0, smoothstep(0.0, 5.0, limit - t), limitHit);
         var here = cloud_at(p, lod);
         // The billows thin over their last meters before the rock; the mist only over its last
         // meter, so it runs on up to the rock and veils it.
@@ -448,8 +448,8 @@ fn unlit(input: SurfaceInput) -> vec4f {
     if behind > 0.0 {
         let rock = eye + dir * end;
         let front = wall_at(rock.xz).w;
-        let fades = mix(9.0, 4.5, front);
-        let veil = mix(0.55, 0.2, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
+        let fades = mix(5.5, 4.5, front);
+        let veil = mix(0.35, 0.25, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
         color += veil * aerial(cloud_color(0.65, 0.0), end);
         clear -= veil;
     }
@@ -650,7 +650,7 @@ export function wallData(): Uint8Array {
 	// the west wall behind that fall, along the back walls behind the island, and up the east wall
 	// beside the east fall; a few smaller ones elsewhere.
 	const bumps = [
-		{ at: 2.0, width: 0.3, height: 1 },
+		{ at: 2.0, width: 0.3, height: 0.45 },
 		{ at: Math.PI, width: 0.7, height: 1 },
 		{ at: -1.6, width: 0.8, height: 0.9 },
 		{ at: 0.2, width: 0.45, height: 0.7 },
