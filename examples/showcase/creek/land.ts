@@ -56,7 +56,7 @@ export const POOL = { x: -2, length: 2.8, widening: 1.2, depth: 0.45 } as const;
  * reach, and its height over the water. A ridge runs down from it toward the creek, which the steps
  * climb.
  */
-export const TERRACE = { x: 9, z: -16, top: 5.4, slope: 8, height: 4.8 } as const;
+export const TERRACE = { x: 9, z: -16, top: 5.4, slope: 8, height: 4.6 } as const;
 /** The ridge's foot near the creek's far bank, and its half width at the foot, in meters. */
 const RIDGE = { x: 10.3, z: 9, half: 3.5 } as const;
 
@@ -316,16 +316,127 @@ function hill(x: number, z: number): number {
 
 /** The height of the dry land at a point, before the creek's channel cuts it. */
 /**
- * The paved landing on the ridge where the gate stands, between the lower and upper flights of
- * steps: its middle, its level radius and the meters over which it blends into the slope.
+ * The level landing on the ridge where the gate stands with a lantern on each side, between the
+ * lower and upper flights of steps: its middle, its level radius, wide enough for both lanterns'
+ * feet, and the meters over which it blends into the slope.
  */
-export const LANDING = { x: 11.2, z: 2.5, radius: 3.6, blend: 1.8 } as const;
+export const LANDING = { x: 11.2, z: 2.5, radius: 5, blend: 1.8 } as const;
 /** The landing's height: the slope's own height at its middle, found once. */
 let landingHeight: number | undefined;
 
-/** The height of the land, apart from the creek's channel, with the landing laid level. */
+/**
+ * The flights of steps from the creek's far bank up to the terrace, about 29 steps as the concept
+ * picture has them: a lower flight on a diagonal from the bank to the gate's front; behind the gate a
+ * few steps that turn the route; and two flights straight down from the statue, with a short level
+ * rest between them, which leave the statue along its own facing, off the gate's line, so the route
+ * bends back to the gate. The lower flight's foot on the bank; the steps' half width; how far the
+ * steps run from the landing's middle to the gate's front and to its back; how far the statue's
+ * flights reach from its middle before the turn; the steps in each flight, from the bottom; the
+ * rest's length; and how far the ground beside the steps keeps their level before it blends back
+ * into the slope, in meters.
+ */
+export const STAIRS = {
+	foot: [9.4, 10.6],
+	half: 1,
+	gate: 3.24,
+	reach: 13.4,
+	steps: [11, 3, 8, 7],
+	rest: 1.2,
+	keep: 0.5,
+	blend: 1.4,
+} as const;
+
+/**
+ * The turn of the statue's facing to its own right from the line down the ridge to the gate, in
+ * radians: it faces the camera from about 20 degrees off its line, as the concept's does, and its
+ * flights leave it along that facing.
+ */
+export const STATUE_TURN = (15 * Math.PI) / 180;
+
+/** The statue's facing, as a turn about y from +z: down its flights, off the gate's line. */
+export const statueYaw = () =>
+	Math.atan2(LANDING.x - TERRACE.x, LANDING.z - TERRACE.z) - STATUE_TURN;
+
+/** One flight of steps: where it starts and ends on the ground, its height at each end and its steps. */
+export interface Flight {
+	readonly from: readonly [number, number];
+	readonly to: readonly [number, number];
+	readonly low: number;
+	readonly high: number;
+	readonly steps: number;
+}
+
+let flightList: readonly Flight[] | undefined;
+
+/**
+ * The four flights, found once: their ends from the landing, the gate's line and the statue's
+ * facing, their heights from the slope and an even rise.
+ */
+export function flights(): readonly Flight[] {
+	if (flightList) return flightList;
+	const length = Math.hypot(LANDING.x - TERRACE.x, LANDING.z - TERRACE.z);
+	// The gate's line, from the landing's middle up the ridge toward the statue.
+	const [ax, az] = [(TERRACE.x - LANDING.x) / length, (TERRACE.z - LANDING.z) / length];
+	const front: [number, number] = [LANDING.x - ax * STAIRS.gate, LANDING.z - az * STAIRS.gate];
+	const back: [number, number] = [LANDING.x + ax * STAIRS.gate, LANDING.z + az * STAIRS.gate];
+	// The statue's flights, along its facing from its middle out to the turn.
+	const yaw = statueYaw();
+	const [fx, fz] = [Math.sin(yaw), Math.cos(yaw)];
+	const down = (d: number): [number, number] => [TERRACE.x + fx * d, TERRACE.z + fz * d];
+	const head = TERRACE.top - 0.6;
+	const middle = (STAIRS.reach + head) / 2;
+	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
+	const top = slopeHeight(TERRACE.x, TERRACE.z);
+	const [lower, turn, first, second] = STAIRS.steps;
+	const rise = (top - landingHeight) / (turn + first + second);
+	const turned = landingHeight + rise * turn;
+	const rest = turned + rise * first;
+	flightList = [
+		{
+			from: STAIRS.foot,
+			to: front,
+			low: slopeHeight(STAIRS.foot[0], STAIRS.foot[1]),
+			high: landingHeight,
+			steps: lower,
+		},
+		{ from: back, to: down(STAIRS.reach), low: landingHeight, high: turned, steps: turn },
+		{
+			from: down(STAIRS.reach),
+			to: down(middle + STAIRS.rest / 2),
+			low: turned,
+			high: rest,
+			steps: first,
+		},
+		{ from: down(middle - STAIRS.rest / 2), to: down(head), low: rest, high: top, steps: second },
+	];
+	return flightList;
+}
+
+/** How far a point lies in the band of bright moss beside a flight of steps, from 0 to 1. */
+function stairBand(x: number, z: number): number {
+	let band = 0;
+	for (const flight of flights()) {
+		const { t, side } = alongFlight(flight, x, z);
+		if (t < -0.03 || t > 1.03) continue;
+		const inside = smoothstep(side, STAIRS.half - 0.1, STAIRS.half + 0.05);
+		const outside =
+			1 - smoothstep(side, STAIRS.half + STAIRS.keep - 0.1, STAIRS.half + STAIRS.keep + 0.15);
+		band = Math.max(band, inside * outside);
+	}
+	return band;
+}
+
+/** How far along a flight a point lies, from 0 at its foot to 1 at its head, and how far to its side. */
+export function alongFlight(flight: Flight, x: number, z: number): { t: number; side: number } {
+	const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
+	const length = Math.hypot(dx, dz);
+	const [px, pz] = [x - flight.from[0], z - flight.from[1]];
+	return { t: (px * dx + pz * dz) / (length * length), side: Math.abs(px * dz - pz * dx) / length };
+}
+
+/** The height of the land, apart from the creek's channel, with the landing and the flights laid. */
 function landHeight(x: number, z: number): number {
-	const slope = slopeHeight(x, z);
+	let height = slopeHeight(x, z);
 	const level =
 		1 -
 		smoothstep(
@@ -333,9 +444,35 @@ function landHeight(x: number, z: number): number {
 			LANDING.radius,
 			LANDING.radius + LANDING.blend,
 		);
-	if (level <= 0) return slope;
-	landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
-	return slope + (landingHeight - slope) * level;
+	if (level > 0) {
+		landingHeight ??= slopeHeight(LANDING.x, LANDING.z);
+		height += (landingHeight - height) * level;
+	}
+	// Under each flight the ground runs as an even ramp from its foot to its head, which the steps
+	// sit on, and it blends back into the slope beside it and past its ends. Where two flights meet
+	// at a turn, each holds the ground beside it, so every tread stays above its ground and every
+	// slab's body below it.
+	let ramp: { height: number; share: number; beside: boolean; side: number } | undefined;
+	for (const flight of flights()) {
+		const { t, side } = alongFlight(flight, x, z);
+		const length = Math.hypot(flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]);
+		const past = Math.max(-t, t - 1, 0) * length;
+		const keep = STAIRS.half + STAIRS.keep;
+		const share =
+			(1 - smoothstep(side, keep, keep + STAIRS.blend)) * (1 - smoothstep(past, 0, STAIRS.blend));
+		if (share <= 0) continue;
+		const level = flight.low + (flight.high - flight.low) * Math.min(Math.max(t, 0), 1);
+		// A flight that the point lies beside holds it over one that the point lies past, and of two
+		// that it lies beside, the one whose line it lies nearer.
+		const beside = t >= 0 && t <= 1;
+		const better =
+			!ramp ||
+			(beside && !ramp.beside) ||
+			(beside === ramp.beside && (beside ? side < ramp.side : share > ramp.share));
+		if (better) ramp = { height: level, share, beside, side };
+	}
+	if (ramp) height += (ramp.height - height) * ramp.share;
+	return height;
 }
 
 /** The height of the land, apart from the creek's channel and the landing. */
@@ -377,7 +514,7 @@ export function groundHeight(x: number, z: number): number {
  * sill's band in meters back from the edge, its height at the water's level and how far it wanders,
  * and how many rocks it has to the meter across.
  */
-const LIP_SILL = { band: [0.3, 0.75], level: -0.06, wander: 0.3, rocks: 2.2 } as const;
+const LIP_SILL = { band: [0.3, 0.75], level: 0.02, wander: 0.5, rocks: 2.2 } as const;
 
 /** The sill's height at a point, or far below the ground away from the lips. */
 function lipSill(x: number, z: number): number {
@@ -420,6 +557,8 @@ export function cameraFloor(x: number, z: number): number {
 const MOSS = [0.17, 0.135, 0.035];
 const MOSS_DARK = [0.075, 0.075, 0.03];
 const MOSS_BROWN = [0.12, 0.085, 0.035];
+/** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
+const MOSS_BRIGHT = [0.2, 0.175, 0.036];
 const BED = [0.42, 0.385, 0.315];
 const MUD = [0.06, 0.05, 0.035];
 const STONE = [0.075, 0.065, 0.052];
@@ -435,11 +574,19 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const edge = 1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.15, 0.8);
 	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
 	const shade = 0.88 + 0.24 * noise.value2(x * 1.7, z * 1.7);
+	const band = stairBand(x, z);
+	// The bed's cobbles: pale stones with darker gaps and darker stones among them, which show
+	// through the clear water.
+	const cobble =
+		0.72 +
+		0.38 * smoothstep(noise.value2(x * 3.2 + 41, z * 3.2), -0.2, 0.25) -
+		0.25 * smoothstep(noise.value2(x * 1.4 + 13, z * 1.4 + 5), 0.35, 0.6);
 	for (let c = 0; c < 3; c++) {
 		const moss = (MOSS[c] as number) + ((MOSS_DARK[c] as number) - (MOSS[c] as number)) * dark;
 		const patchy = moss + ((MOSS_BROWN[c] as number) - moss) * brown * 0.7;
-		const shore = patchy + ((MUD[c] as number) - patchy) * wet;
-		const ground = shore + ((BED[c] as number) - shore) * under;
+		const bright = patchy + ((MOSS_BRIGHT[c] as number) - patchy) * band;
+		const shore = bright + ((MUD[c] as number) - bright) * wet;
+		const ground = shore + ((BED[c] as number) * cobble - shore) * under;
 		out[c] = (ground + ((STONE[c] as number) - ground) * rocky) * shade;
 	}
 }
