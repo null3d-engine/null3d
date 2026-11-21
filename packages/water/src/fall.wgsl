@@ -33,7 +33,7 @@ struct Uniforms {
 }
 
 /// The share of the air's light that the white water gives back, as the mist round it does.
-const GLOW: f32 = 0.7;
+const GLOW: f32 = 1.0;
 
 /// The meters above `fadeBelow` where the fall starts to thin.
 const SINK_LEAD: f32 = 0.5;

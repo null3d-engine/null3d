@@ -492,7 +492,8 @@ reaches it from all round. So the sheet takes the sky's light as a surface facin
 sun's much as one does. It also gives back a share of the air's light, the light that the scene
 gives the spray and the mist with `setLight`: lit only by the scene, the Creek's streams read 140 to
 160 against the cloud's mist at 185 to 206, a grey ribbon, where the concept's falls are the
-lightest thing in their corners. With the share they read 159 to 194. It fades where the copy of the scene's depth shows a wall close behind
+lightest thing in their corners. With the share the west stream reads 204 to 205, as the concept's
+does. A scene can light each fall apart through its own `setLight`. It fades where the copy of the scene's depth shows a wall close behind
 it. The mist is particles: large, faint billows sized by the creek, gathered round the column's foot
 about four times as wide as it. Many overlap at any place, so they read as one even mist; fewer,
 brighter puffs read as separate balls of cotton against the cloud. The mist and the plume draw
