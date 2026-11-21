@@ -782,7 +782,7 @@ export function createLand(
 			vertexColors: true,
 			roughness: 1,
 			uniforms: {
-				gravel: [0.52, 0.42, 0.32],
+				gravel: [0.52, 0.49, 0.32],
 				spacing: RAKE.spacing,
 				box: [RAKE_BOX.x, RAKE_BOX.z, RAKE_BOX.size, RAKE_BOX.size],
 				tile: TILE,
