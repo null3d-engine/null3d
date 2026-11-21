@@ -239,7 +239,7 @@ export async function createAir(
 	const mistValues = { colorOverLife: [haze, haze] as const, opacity: mistOpacity };
 	const showMist = () => {
 		mistValues.opacity = mistShown ? mistOpacity : 0;
-		for (const bank of mist) bank.set(mistValues);
+		for (let k = 0; k < mist.length; k++) (mist[k] as ParticleSystem).set(mistValues);
 	};
 	const systems: readonly ParticleSystem[] = [...leaves, ...motes, ...mist];
 	return {
@@ -251,7 +251,7 @@ export async function createAir(
 			mistOpacity = math.lerp(a.mistOpacity, b.mistOpacity, share);
 			// The leaves keep their own colors and take the hour's light as their brightness.
 			leafValues.intensity = math.lerp(brightness(a.leaves), brightness(b.leaves), share);
-			for (const fall of leaves) fall.set(leafValues);
+			for (let k = 0; k < leaves.length; k++) (leaves[k] as ParticleSystem).set(leafValues);
 			// A particle's color stops at white, so the motes' glow, which bloom needs above white,
 			// goes in as each swarm's intensity: the day's pale swarm, and the golden hour's.
 			const day = math.lerp(dayGlow(from), dayGlow(to), share);
@@ -271,7 +271,7 @@ export async function createAir(
 			showMist();
 		},
 		update() {
-			for (const system of systems) system.update();
+			for (let k = 0; k < systems.length; k++) (systems[k] as ParticleSystem).update();
 		},
 	};
 }
