@@ -429,6 +429,8 @@ export default defineSketch(async (ctx) => {
 		// up past the clear sky's exposure. The sun keeps enough to warm the faces it lights, such as
 		// the statue's chest, as the concept's warm light does, with no fill to warm every face.
 		exposureScale: 3.2,
+		// With no fill, the dusk garden would read as a black shape: its own exposure opens it up.
+		moodExposure: { Dusk: 1.7 },
 		environmentScale: 1.4,
 		sunScale: 0.6,
 		backdrop: [0.02, 0.03, 0.05],
