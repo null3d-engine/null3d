@@ -15,6 +15,7 @@ import {
 	fallSheet,
 	fallTime,
 	GRAVITY,
+	mistBillow,
 	type WaterfallMesh,
 } from './fall';
 import fallShader from './fall.wgsl';
@@ -31,8 +32,6 @@ const SPREAD = 0.3;
 const MOST_SPRAY = 3;
 /** The glassy water's color at the lip: a grey green, as linear red, green and blue. */
 const GLASS = [0.05, 0.075, 0.068] as const;
-/** The meters below a cloud's top over which a fall that sinks into it vanishes, as its shader has it. */
-export const SINK_DEPTH = 6;
 /** The height that stands for no cloud below the fall: far below any scene. */
 const NO_FADE = -1e9;
 /** The meters below the lip over which the water turns from glassy to white. */
@@ -100,7 +99,7 @@ export interface WaterfallOptions {
 	/**
 	 * The world height of a cloud sea, a fog bank or a mist that the fall drops into, in meters. A
 	 * cloud that draws before the fall does not hide it, so below this height the fall vanishes
-	 * itself over 6 m, each clump at its own depth. The water then breaks up and bursts into mist
+	 * itself over 2.5 m, each clump at its own depth. The water then breaks up and bursts into mist
 	 * over the part of the drop above the cloud. By default it never vanishes.
 	 */
 	readonly fadeBelow?: number;
@@ -221,16 +220,13 @@ export async function createWaterfall(
 	// The part of the drop that shows: down to a meter below the cloud that the fall sinks into, or
 	// the whole drop. The water breaks up and bursts into mist over this part, so the burst stands
 	// above the cloud rather than inside it.
-	const shown: FallSheet = {
-		...sheet,
-		drop: Math.min(sheet.drop, Math.max(level - sink + SINK_DEPTH, 1)),
-	};
+	const shown: FallSheet = { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink + 1, 1)) };
 	// Above a cloud the spray stays clear of it: the cloud draws first, so a puff that sank into it
 	// would show over its tops as a pale disc. The mist and the plume gather over the shown drop's
 	// part above the cloud, and the mist sinks slowly.
 	const intoCloud = options.fadeBelow !== undefined;
 	const sprayed: FallSheet = intoCloud
-		? { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink + 0.5, 1)) }
+		? { ...sheet, drop: Math.min(sheet.drop, Math.max(level - sink - 0.5, 1)) }
 		: sheet;
 	const material = materials.shader({
 		// White water under an overcast sky leans a little blue.
@@ -288,6 +284,7 @@ export async function createWaterfall(
 			nearFade: 2,
 			...(options.layers !== undefined && { layers: options.layers }),
 		};
+		const billow = mistBillow(sprayed);
 		const look = (place: FallEmitter, seed: number): ParticleSystemOptions => {
 			const half = place.halfWidth;
 			const base = {
@@ -337,7 +334,8 @@ export async function createWaterfall(
 				};
 			const wind = options.wind && { windField: options.wind };
 			if (place.kind === 'mist')
-				// Broad puffs that sink slower than the water and drift out from it.
+				// Large, faint puffs that sink slower than the water and drift out from it. Many overlap
+				// at any place, so they read as one even mist rather than as separate balls.
 				return {
 					...base,
 					...wind,
@@ -348,12 +346,10 @@ export async function createWaterfall(
 					turbulence: 0.8,
 					turbulenceScale: 0.3,
 					lifetime: [2.5, MIST_LIFE],
-					// Billows sized by the creek, not by the fall's fan, so a wide fall makes more of
-					// them rather than a wall of haze.
-					size: [0.6 * sheet.halfWidth, 1.3 * sheet.halfWidth],
+					size: [0.75 * billow, 1.25 * billow],
 					sizeOverLife: [0.6, 1.2, 1.7],
 					alphaOverLife: [0, 0.9, 0.75, 0],
-					opacity: 0.5,
+					opacity: 0.45,
 				};
 			// The plume: broad puffs that rise and spread where the fall thins into cloud.
 			return {
@@ -381,6 +377,9 @@ export async function createWaterfall(
 			const place = places[k] as FallEmitter;
 			// Each system's frame turns with the lip, so its box lies across the fall.
 			system.object.setRotation(0, Math.sin(place.turn / 2), 0, Math.cos(place.turn / 2));
+			// The mist and the plume wrap the column's lower part, so they draw over it wherever the
+			// two meet, and the water dissolves into them.
+			if (place.kind === 'mist' || place.kind === 'plume') system.object.setRenderOrder(1);
 			emitters.push({ system, rate: place.rate });
 		}
 	}

@@ -445,8 +445,9 @@ height and width, to the path, to nearly parallel sides, and to a column that ne
 **The column.** One closed tube gives the fall its body. Its section is an oval as wide as the
 water. The back of the oval follows the path, so no water lies behind the lip's line. The front
 stands out from it by the column's depth. That depth is the tongue's thickness at the lip, and it
-grows over the first meters of the drop to most of the creek's width. Below that the front and back
-run nearly parallel. Seen from the side, as the concept's camera sees its left fall, the fall is a
+grows over the first meters of the drop to about the width of the drawn-in water, so the falling
+water is a round bundle. Below that the front and back run nearly parallel. Seen from the side, as
+the concept's camera sees its left fall, the fall is a
 solid column, and its depth comes from the water's own thickness and the spray round it. An
 earlier build used three sheets at different angles. From the side they fanned out from one point
 at the lip into thin ribs, and the backdrop showed between them. The material thins the column
@@ -458,7 +459,7 @@ end, so the river's own mesh ends at the lip with no seam and no straight edge. 
 first meter of the fall skip the fade near a wall behind them: they lie on the river and its brink
 by design, and that fade drew the lip as a ruler line where the water left the surface. The brink
 itself is uneven: each place across turns down up to 0.35 m past the lip's line, front and back
-alike, so the column keeps its depth. Below the lip the water draws in by about a fifth of its width
+alike, so the column keeps its depth. Below the lip the water draws in to about a third of its width
 over the first meters, and each side wanders in and out on its own, before the spread widens it
 again. Seen from the front, the outermost water also thins away over the first meters, and the
 column's sides break into separate ropes, front and back alike, so the rock shows through. So a
@@ -466,9 +467,11 @@ notch as wide as the lip shows rock at both edges of the falling water. A view a
 which sees the ends of the oval face on, keeps them whole; the material learns the lip's direction
 across the water for that. A fall may give the height of a cloud that it drops into
 (`fadeBelow`). The Creek's cloud draws before the blended objects and cannot hide a fall, so below
-that height the fall vanishes itself over 6 m, each clump at its own depth, so the falls run on
-into the cloud's tops as the concept's do rather than stopping at them. The water then breaks
-up and bursts into mist over the part of the drop above the cloud, so the burst shows. The mesh's texture coordinates carry each point's place across the lip and
+that height the fall vanishes itself over 2.5 m, each clump at its own depth. The water breaks up
+and dissolves into mist over the part of the drop above the cloud, so the burst shows. The
+concept's falls are short streams that end in a broad mist; a build whose falls ran 6 m on into the
+cloud drew a long column where the concept shows only mist. The mesh's texture coordinates carry
+each point's place across the lip and
 the time since its water crossed it. The material's noise reads those two. So every streak rides
 down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
 
@@ -484,8 +487,10 @@ stays solid. Lower down, holes open in the shade first, shaped by the clumps. Ea
 its own height. White water scatters the light that
 reaches it from all round. So the sheet takes the sky's light as a surface facing up does, and it
 reads white beside the cloud. It fades where the copy of the scene's depth shows a wall close behind
-it. The mist is particles, in billows sized by the creek and gathered a little wider than the
-column.
+it. The mist is particles: large, faint billows sized by the creek, gathered round the column's foot
+about four times as wide as it. Many overlap at any place, so they read as one even mist; fewer,
+brighter puffs read as separate balls of cotton against the cloud. The mist and the plume draw
+after the column, over its lower part, so the water dissolves into them.
 
 **The spray.** The water add-on depends on `@null3d/particles` at the exact version. As
 [D-173](D-173-addon-hooks.md) allows, the grass add-on depends on the wind add-on the same way. A
