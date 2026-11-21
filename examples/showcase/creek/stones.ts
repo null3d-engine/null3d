@@ -9,7 +9,7 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
-import { type Part, standPart } from '../../lib/blender-models';
+import { type Part, placedTurned, tintedPart } from '../../lib/blender-models';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import {
 	bearingOf,
@@ -41,6 +41,11 @@ const IN_STREAM = 1.0;
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
 const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
+/**
+ * How each wake strays from the current: its slant from it at the stone and its bend at each link,
+ * in radians at the most, and its least length as a share of the longest.
+ */
+const WAKE = { slant: 0.35, bend: 0.06, shortest: 0.45 } as const;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 
@@ -62,7 +67,7 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 }
 
 /** Gives a rock's vertices colors: dark flecked stone, and moss where the rock faces up. */
-function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
+export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
 	const positions = arrays.positions as Float32Array;
 	const colors = new Float32Array(positions.length);
 	const local = new Noise(seed);
@@ -88,6 +93,8 @@ function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
 	return { ...arrays, colors };
 }
 
+/** The warm tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
+export const MOSS_MUTE = '#bab6a2';
 /** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
 const STONE_TONE = [0.2, 0.17, 0.125] as const;
 const MOSS_TONE = [0.13, 0.115, 0.03] as const;
@@ -100,25 +107,35 @@ const LIP_CLEAR = 1.2;
 /** How far a rock's foot reaches about its middle, as a share of its size. */
 export const ROCK_REACH = 1.6;
 /** The stones in the current, and the stones scattered on the banks away from the water. */
-const IN_CURRENT = 44;
+const IN_CURRENT = 56;
 const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
 /**
- * The bank stones' smallest and largest size, and how close they stand, as a share of their size;
- * how far each sinks into the bank, as a share of its size; and the half width of the finished
- * bank-stone model at its own size, which sets the model's scale.
+ * The bank stones' smallest and largest size, and how close they stand, as a share of their size,
+ * so each overlaps the last; how far each sinks into the bank, as a share of its size, from least
+ * to most, so their tops stand uneven; how far each tips, in radians at the most; the half width
+ * of each finished rock model at its own size, largest boulder first, which sets its scale; and
+ * the shares of the row that the largest and the middle boulder take, the rest being bank stones.
  */
-const BANK = { size: [0.45, 0.8], spacing: 1.7, sink: 0.25, modelHalf: 0.9 } as const;
+const BANK = {
+	size: [0.32, 0.95],
+	spacing: 1.3,
+	sink: [0.12, 0.4],
+	tilt: 0.35,
+	modelHalf: [2.7, 1.8, 0.9],
+	mix: [0.08, 0.2],
+} as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
- * along the creek its rocks spread, and how many stand in it. One lies on the west sill and two
- * upstream of it, so the west arm runs white along its length; the east sill lies on the camera's
- * dip and stays clear.
+ * along the creek its rocks spread, and how many stand in it. One lies on the west sill, one below
+ * it and two upstream of it, so the west arm runs white along its length; the east sill lies on
+ * the camera's dip and stays clear.
  */
 const RIFFLES: readonly (readonly [number, number, number])[] = [
-	[-11.5, 1.8, 10],
-	[-8.8, 1.2, 8],
+	[-14, 1.2, 8],
+	[-11.5, 1.8, 12],
+	[-8.8, 1.2, 10],
 	[-6.5, 1.4, 10],
 ];
 
@@ -224,7 +241,7 @@ export function createStones(
 	ctx: SketchContext,
 	detail: number,
 	textureSize: number,
-	bankStone?: Part,
+	bankModels?: readonly [Part, Part, Part],
 ): {
 	clear(x: number, z: number): boolean;
 	fit(preset: QualityPreset): void;
@@ -242,7 +259,7 @@ export function createStones(
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
 		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
 		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
-		if (kind === 'bank' && bankStone) continue;
+		if (kind === 'bank' && bankModels) continue;
 		const squash =
 			kind === 'bank'
 				? ([1, 0.62 + 0.12 * next(), 0.85 + 0.15 * next()] as const)
@@ -281,16 +298,24 @@ export function createStones(
 							: size * 0.75 * (1 - Math.max(0, WATER - top) / SHALLOW);
 					// The foam trails behind the stone, whichever way the current runs: a wake that starts
 					// narrow at its downstream side, widens away from it and then fades, so none rings it.
+					// Each wake leaves at its own slant and bends as it goes, so wakes cross and break
+					// rather than run side by side; a stone in still water leaves none.
 					const [vx, vz] = streamCurrent(x, z);
 					const speed = Math.hypot(vx, vz);
-					const [ux, uz] = speed > 0.05 ? [vx / speed, vz / speed] : [0, 0];
-					for (let k = 0; k <= TRAIL.links; k++) {
-						const spread = Math.min(1, 0.4 + 0.15 * k) * (1 - k / (TRAIL.links + 1));
-						obstacles.push({
-							x: x + ux * (r + 0.2 + k * TRAIL.step),
-							z: z + uz * (r + 0.2 + k * TRAIL.step),
-							r: r * TRAIL.width * spread,
-						});
+					if (speed > 0.05) {
+						const slant = (next() * 2 - 1) * WAKE.slant;
+						const bend = (next() * 2 - 1) * WAKE.bend;
+						const links = Math.round(TRAIL.links * (WAKE.shortest + (1 - WAKE.shortest) * next()));
+						let [px, pz] = [x, z];
+						let angle = Math.atan2(vz, vx) + slant;
+						for (let k = 0; k <= links; k++) {
+							const step = k === 0 ? r + 0.2 : TRAIL.step;
+							px += Math.cos(angle) * step;
+							pz += Math.sin(angle) * step;
+							angle += bend;
+							const spread = Math.min(1, 0.4 + 0.15 * k) * (1 - k / (links + 1));
+							obstacles.push({ x: px, z: pz, r: r * TRAIL.width * spread });
+						}
 					}
 				}
 			});
@@ -298,23 +323,49 @@ export function createStones(
 		}
 	}
 
-	// The bank row from the finished bank-stone model, when the scene has it: each copy as wide as
-	// the stone it stands for, sunk a little into the bank.
-	if (bankStone)
-		standPart(
-			ctx,
-			bankStone,
-			places
-				.filter((place) => place.kind === 'bank')
-				.map(({ x, z, size }) => ({
-					x,
-					y: groundHeight(x, z) - size * BANK.sink,
-					z,
-					yaw: next() * Math.PI * 2,
-					size: size / BANK.modelHalf,
-				})),
-			bankStone.material,
-		);
+	// The bank row from the finished rock models, when the scene has them: mostly the bank stone, with
+	// now and then a small copy of a larger boulder, so the row is no string of like beads. Each copy
+	// is as wide as the stone it stands for, tipped a little and sunk unevenly into the bank. A warm,
+	// muted copy of each model's material keeps its moss olive rather than golden from afar.
+	if (bankModels) {
+		const bank = places
+			.filter((place) => place.kind === 'bank')
+			.map((place) => {
+				const pick = next();
+				return { ...place, model: pick < BANK.mix[0] ? 0 : pick < BANK.mix[1] ? 1 : 2 };
+			});
+		for (const model of [0, 1, 2] as const) {
+			const part = bankModels[model];
+			const mine = bank.filter((place) => place.model === model);
+			if (mine.length === 0) continue;
+			const batch = scene.createInstances(part.mesh, mine.length, {
+				material: tintedPart(materials, part, MOSS_MUTE, 0.95),
+				castShadows: true,
+				receiveShadows: true,
+			});
+			mine.forEach(({ x, z, size }, row) => {
+				const turn = quat.fromEuler(
+					quat.create(),
+					(next() * 2 - 1) * BANK.tilt,
+					next() * Math.PI * 2,
+					(next() * 2 - 1) * BANK.tilt,
+					'YXZ',
+				);
+				const sink = BANK.sink[0] + (BANK.sink[1] - BANK.sink[0]) * next();
+				const at = [x, groundHeight(x, z) - size * sink, z] as const;
+				const { position, rotation, scale } = placedTurned(
+					part,
+					at,
+					turn,
+					size / (BANK.modelHalf[model] as number),
+				);
+				batch.positions.set(position, row * 3);
+				batch.rotations.set(rotation, row * 4);
+				batch.scales.set(scale, row * 3);
+			});
+			batch.markDirty();
+		}
+	}
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
 	const tints = ['#6e6455', '#7a6a52', '#5c564c'];
