@@ -191,7 +191,6 @@ While it is off, the surface skips the rings' work.
 | `update()` | Keeps the sketch's frame loop. The reflection pass carries its own cadence now, so the call changes nothing |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `waveAmplitude` | The height of the long waves and of the wind's lift, as a factor of their base height |
-| `waveReach` | The most that the long waves raise or lower the surface from its level, in meters. A point further than this above the level is above the water wherever it stands |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
 | `setCaustics(light)` | Sets the light that the ripples focus on the bed, as a linear color |
@@ -220,10 +219,7 @@ light with distance into the water's own color.
 | `release` | A number, in meters | 1 | How far above the surface the camera goes before the effect is removed |
 
 Call `update(t, air, caustics)` in each frame with the sketch's time, the light of the air at the
-horizon, and the light of the caustics. While the camera is clear of the waves' reach by more than
-`ready`, the call reads only the camera's height and allocates nothing. Near or under the water it
-asks for the surface's height and sets the effect's values, and there it can allocate about a
-hundred bytes a frame until the browser optimizes it. The surface seen from below shows the world above through a
+horizon, and the light of the caustics. The surface seen from below shows the world above through a
 window overhead, and turns the light back past that window's edge.
 
 ## Waterfalls

@@ -548,15 +548,17 @@ just under 4,000 triangles, below the count at which the engine plans levels for
   and mesh, the carried wave set, the wave copies, the foam map and the size gates. The demo
   `examples/water` draws both bodies and the view from below. The package's own page
   (`packages/water/page`, which the tarball leaves out) gives the listing check's page, cost and
-  allocation gates a scene to measure. Its view from under the water reads the camera's height in
-  every frame, and its orbit controls turn the camera, as both allocate nothing in a frame.
-- **A frame's numbers.** Code that runs once a frame stays unoptimized in the browser for a long
-  time, and there each fraction that it reads or works out is a new object of about 12 bytes. The
-  allocation gate's window sees that code cold. So the view from under the water first compares the
-  camera's height by the top 16 bits of its float, which read as small whole numbers, against the
-  waves' reach: a camera clearly above the water allocates nothing. Near or under the water the
-  view works out its effect's values, and there it allocated 107 to 135 bytes a frame with the
-  page's camera 0.3 m above the river. Moving those reads into other calls only moved the bytes.
+  allocation gates a scene to measure. Its camera circles 0.4 m above the water, turned by orbit
+  controls, so the view from under the water adds its effect and asks for the surface's height in
+  every frame, and the gates measure that path.
+- **A frame's numbers.** The view from under the water turns the camera's three axes from lists it
+  made once, and works the lens out only when the field of view changes; it made the axes afresh in
+  every frame before. With the page's camera near the water the allocation gate read 107 to 135
+  bytes a frame before that change and 72 to 87 after it. Warmed for 150 s and 9,000 frames in
+  place of 20 s, the gate still read 58 to 79, so what is left is not warm-up. It is the numbers
+  that the view passes to the water's `surfaceHeight` and `currentAt`, the camera's place, and the
+  heights they return: a fraction that crosses a call the browser does not inline becomes an object,
+  in optimized code too. Taking the place as a list would change the public API, so it stays.
 - The demo's tour is one loop of shots through the route of `examples/lib/cinematic.ts`, as a
   function of the time. It drifts down the river along the bank and dives under the lake for about
   24 s. It then rises, turns to face back over the scene, and circles the valley back to its first

@@ -534,7 +534,7 @@ describe('the column’s shader', () => {
 		const shader = read('fall.wgsl');
 		expect(shader).toContain('let sink = input.worldPosition.y + (froth - 0.5) * 0.8;');
 		expect(shader).toContain(
-			'alpha *= smoothstep(material.fadeBelow - SINK_DEPTH, material.fadeBelow + SINK_LEAD, sink);',
+			'alpha *= smoothstep(material.fadeBelow - material.sinkDepth, material.fadeBelow + SINK_LEAD, sink);',
 		);
 	});
 

@@ -24,13 +24,13 @@ struct Uniforms {
     halfWidth: f32,
     // The world height below which the fall vanishes, as into a cloud sea that draws before it.
     fadeBelow: f32,
+    // The meters below `fadeBelow` over which the fall vanishes.
+    sinkDepth: f32,
     // The lip's direction across the water, to its right, as a unit vector in the world.
     across: vec3f,
 }
 
-/// The meters below `fadeBelow` over which the fall vanishes, and the meters above it where it
-/// starts to thin.
-const SINK_DEPTH: f32 = 2.5;
+/// The meters above `fadeBelow` where the fall starts to thin.
 const SINK_LEAD: f32 = 0.5;
 
 /// The ropes that the white water parts into, for each meter round the column.
@@ -217,7 +217,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // A cloud that draws before the fall does not hide it, so the fall vanishes itself where it
     // sinks into the cloud, each clump at its own depth.
     let sink = input.worldPosition.y + (froth - 0.5) * 0.8;
-    alpha *= smoothstep(material.fadeBelow - SINK_DEPTH, material.fadeBelow + SINK_LEAD, sink);
+    alpha *= smoothstep(material.fadeBelow - material.sinkDepth, material.fadeBelow + SINK_LEAD, sink);
     s.alpha = clamp(alpha, 0.0, 1.0);
     return s;
 }
