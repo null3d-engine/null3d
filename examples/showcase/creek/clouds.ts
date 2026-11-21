@@ -15,7 +15,7 @@ import type { QualityPreset, SketchContext, Texture } from '@null3d/engine';
 import { EFFECT_LAYER } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import type { Stage } from '../../lib/stage';
-import { CLOUD_TOP, LIPS, rimRadius, streamZ } from './land';
+import { CLOUD_TOP, LIPS, rimRadius, streamSlope, streamZ } from './land';
 
 /**
  * The cloud sea, in meters: the height of the sea's highest tops, how deep its billows run under
@@ -31,10 +31,17 @@ export const CLOUD = {
 	dome: 1600,
 } as const;
 /**
- * Where each fall drops into the cloud, in x and z: the west fall's, then the east fall's, a little
- * out from its lip.
+ * Where a fall's column meets the cloud's top, in x and z: the way it leaves its lip, as the scene
+ * pours it (out along the creek's own line there), a little over a meter and a half out.
  */
-const FALLS = [LIPS.west - 1.5, streamZ(LIPS.west), LIPS.east + 1.5, streamZ(LIPS.east)] as const;
+function fallFoot(lip: number): [number, number] {
+	const away = Math.sign(lip);
+	const [dx, dz] = [away, away * streamSlope(lip)];
+	const out = 1.6 / Math.hypot(dx, dz);
+	return [lip + dx * out, streamZ(lip) + dz * out];
+}
+/** The west fall's foot, then the east fall's, in x and z. */
+const FALLS = [...fallFoot(LIPS.west), ...fallFoot(LIPS.east)] as const;
 /** The width of the billow map's tile on the cloud, in meters, which the cloud's WGSL repeats. */
 const TILE = 160;
 /** The billow map's texels along each side at each preset. */
