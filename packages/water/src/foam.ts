@@ -85,8 +85,9 @@ export function foamMap(
 		if (!(mark > 0) || !Number.isFinite(mark))
 			throw new Error('@null3d/water: a foam reach must be a finite number above 0');
 		// Downstream the foam fades out at the end that the mark's reach gives the trail, which the
-		// radius stretches: the loop must run to there, or the map cuts a tail that still foams.
-		const end = trail * (1 + r / mark);
+		// radius stretches: the loop must run to there, or the map cuts a tail that still foams. A mark
+		// with no trail leaves a ring, which reaches its reach past the edge on every side.
+		const end = trail > 0 ? trail * (1 + r / mark) : r + mark;
 		const [i0, i1] = [(x - r - mark - origin[0]) / texel, (x + end - origin[0]) / texel];
 		const [j0, j1] = [(z - r - mark - origin[1]) / texel, (z + r + mark - origin[1]) / texel];
 		for (let j = Math.max(0, Math.floor(j0)); j <= Math.min(height - 1, Math.ceil(j1)); j++) {

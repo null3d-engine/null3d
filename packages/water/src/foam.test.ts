@@ -93,6 +93,16 @@ describe('the foam map', () => {
 		expect(read(4)).toBe(0);
 	});
 
+	it('keeps the whole ring where the trail is nothing', () => {
+		const { ctx, texels } = fakeContext();
+		foamMap(ctx, [stone], { ...options, trail: 0 });
+		const { data } = texels();
+		// A ring reaches the mark's reach past its edge on every side, downstream included.
+		expect(read(data, 1.2, 0)).toBeGreaterThan(0.9);
+		expect(read(data, 1.4, 0)).toBeGreaterThan(0.6);
+		expect(read(data, 1.7, 0)).toBe(0);
+	});
+
 	it('refuses a reach that is not a finite number above 0, on the map and on a mark', () => {
 		const message = 'a foam reach must be a finite number above 0';
 		// Nothing and below lay no foam; not a number empties the map, and infinity covers it all.
