@@ -391,6 +391,13 @@ export function junctions(
 		data[k * 4 + 3] = 0;
 	}
 	/** A channel of the map at a point, filtered between the four nearest texel centers. */
+	/** One texel's value in `channel`, from 0 to 1, at a column and row clamped to the map. */
+	const at = (a: number, b: number, channel: number) => {
+		const ci = Math.min(Math.max(a, 0), width - 1);
+		const cj = Math.min(Math.max(b, 0), height - 1);
+		return (data[(cj * width + ci) * 4 + channel] as number) / 255;
+	};
+	// The view from under the water reads the map in every frame, so this makes no closure of its own.
 	const filtered = (x: number, z: number, channel: number, outside: number) => {
 		const u = (x - ox) / texel - 0.5;
 		const w = (z - oz) / texel - 0.5;
@@ -399,13 +406,8 @@ export function junctions(
 		const j = Math.floor(w);
 		const fu = u - i;
 		const fw = w - j;
-		const at = (a: number, b: number) => {
-			const ci = Math.min(Math.max(a, 0), width - 1);
-			const cj = Math.min(Math.max(b, 0), height - 1);
-			return (data[(cj * width + ci) * 4 + channel] as number) / 255;
-		};
-		const low = at(i, j) + (at(i + 1, j) - at(i, j)) * fu;
-		const high = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * fu;
+		const low = at(i, j, channel) + (at(i + 1, j, channel) - at(i, j, channel)) * fu;
+		const high = at(i, j + 1, channel) + (at(i + 1, j + 1, channel) - at(i, j + 1, channel)) * fu;
 		return low + (high - low) * fw;
 	};
 	for (let m = 0; m < count; m++) {

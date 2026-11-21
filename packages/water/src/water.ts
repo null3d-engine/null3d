@@ -234,24 +234,14 @@ function bodyList(shapes: WaterShape | readonly WaterShape[]): WaterBody[] {
 /** The seconds over which a pattern rides the current before it fades into a fresh copy. */
 export const CARRY_CYCLE = 2;
 
-/**
- * Two copies of a pattern that the current carries, half a cycle apart, as the shaders' `carried`
- * gives them: the seconds that each has ridden the current, and their weights.
- */
-function carried(
-	t: number,
-): [first: number, second: number, firstWeight: number, secondWeight: number] {
-	const fract = (value: number) => value - Math.floor(value);
-	const first = fract(t / CARRY_CYCLE);
-	const second = fract(t / CARRY_CYCLE + 0.5);
-	const weight = 1 - Math.abs(2 * first - 1);
-	return [first * CARRY_CYCLE, second * CARRY_CYCLE, weight, 1 - weight];
+/** The part of a number past its whole part, from 0 up to 1, as WGSL's `fract` gives it. */
+function fract(value: number): number {
+	return value - Math.floor(value);
 }
 
 /** A number from 0 to 1 that changes each time a copy starts afresh, as the shaders' `cycle_seed`. */
 function cycleSeed(t: number, which: number): number {
-	const value = Math.floor(t / CARRY_CYCLE + which) * 0.618034 + which;
-	return value - Math.floor(value);
+	return fract(Math.floor(t / CARRY_CYCLE + which) * 0.618034 + which);
 }
 
 /**
@@ -272,15 +262,28 @@ export function waveHeight(
 	ripple: number,
 	waveAmplitude = 1,
 ): number {
-	const speed = Math.hypot(current[0], current[1]);
+	const speed = Math.sqrt(current[0] * current[0] + current[1] * current[1]);
 	const moving = speed > 1e-5;
 	const cx = moving ? current[0] / speed : 0;
 	const cz = moving ? current[1] / speed : 0;
 	let height = level;
-	const copies = carried(t);
+	// Two copies of the waves that the current carries, half a cycle apart, as the shaders' `carried`
+	// gives them: the seconds that each has ridden the current, and their weights.
+	const firstShare = fract(t / CARRY_CYCLE);
+	const firstTime = firstShare * CARRY_CYCLE;
+	const secondTime = fract(t / CARRY_CYCLE + 0.5) * CARRY_CYCLE;
+	const firstWeight = 1 - Math.abs(2 * firstShare - 1);
+	const secondWeight = 1 - firstWeight;
+	const firstSeed = cycleSeed(t, 0);
+	const secondSeed = cycleSeed(t, 0.5);
 	for (let index = 0; index < LONG_WAVES.length; index++) {
-		const [ownX, ownZ, k, ownSpeed] = LONG_WAVES[index] as (typeof LONG_WAVES)[number];
-		const length = Math.hypot(ownX, ownZ);
+		// Read by index: destructuring would make an iterator in every frame.
+		const wave = LONG_WAVES[index] as (typeof LONG_WAVES)[number];
+		const ownX = wave[0];
+		const ownZ = wave[1];
+		const k = wave[2];
+		const ownSpeed = wave[3];
+		const length = Math.sqrt(ownX * ownX + ownZ * ownZ);
 		const along = ownX / length;
 		const across = ownZ / length;
 		const amplitude = (ripple * waveAmplitude * 0.05) / k;
@@ -295,9 +298,9 @@ export function waveHeight(
 		const run = k * speed * (dx * cx + dz * cz);
 		const base = k * (dx * x + dz * z);
 		const turn = 2 * Math.PI * (index + 1);
-		const first = base - run * copies[0] + cycleSeed(t, 0) * turn;
-		const second = base - run * copies[1] + cycleSeed(t, 0.5) * turn;
-		height += amplitude * (copies[2] * Math.sin(first) + copies[3] * Math.sin(second));
+		const first = base - run * firstTime + firstSeed * turn;
+		const second = base - run * secondTime + secondSeed * turn;
+		height += amplitude * (firstWeight * Math.sin(first) + secondWeight * Math.sin(second));
 	}
 	return height;
 }
@@ -538,11 +541,13 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		const owner = junction?.ownerAt(x, z) ?? -1;
 		if (owner >= 0) return bodies[owner];
 		let first: WaterBody | undefined;
-		for (const body of bodies)
-			if (body.contains(x, z)) {
-				if (body.kind === 'lake') return body;
-				first ??= body;
-			}
+		// An indexed loop, since the view from under the water asks for the surface every frame.
+		for (let index = 0; index < bodies.length; index++) {
+			const body = bodies[index] as WaterBody;
+			if (!body.contains(x, z)) continue;
+			if (body.kind === 'lake') return body;
+			first ??= body;
+		}
 		return first;
 	};
 	return {

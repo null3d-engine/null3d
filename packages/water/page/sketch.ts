@@ -1,10 +1,12 @@
 // The add-on's own page, which the listing check opens. A river runs into a lake, both from one
 // material, over a bed that rises through the water at the banks, so the soft shore, the foam, the
 // caustics and the reflection all draw. A waterfall drops off a ledge beside the lake with its
-// spray and mist, so the check's gates measure the fall too. The camera circles slowly, because the
-// engine rests a still view and the check's cost gate measures the frames that a running page draws.
+// spray and mist, so the check's gates measure the fall too. The view from under the water asks
+// for the moving river's surface height in every frame, as a scene's does, so the allocation gate
+// measures that path. The camera circles slowly, because the engine rests a still view and the
+// check's cost gate measures the frames that a running page draws.
 import { defineSketch, math, type SketchContext } from '@null3d/engine';
-import { createWater, createWaterfall, foamMap } from '../src/index.ts';
+import { createUnderwater, createWater, createWaterfall, foamMap } from '../src/index.ts';
 
 /** The lake's middle and its two radii, in meters. */
 const LAKE = { x: 18, z: 0, rx: 16, rz: 12 } as const;
@@ -101,6 +103,8 @@ export default defineSketch(async (ctx: SketchContext) => {
 	});
 	const caustics: [number, number, number] = [0.5, 0.45, 0.35];
 	water.setCaustics(caustics);
+	const underwater = createUnderwater(ctx, camera, water);
+	const air: [number, number, number] = [0.6, 0.65, 0.7];
 	// A fall off the far side of a ledge north of the lake: a short stream's lip, 8 m above the bed.
 	scene.createMesh({
 		mesh: geometry.box({ width: 6, height: 8, depth: 6 }),
@@ -122,6 +126,7 @@ export default defineSketch(async (ctx: SketchContext) => {
 			camera.setPosition(Math.sin(angle) * 34, 7, Math.cos(angle) * 34);
 			camera.lookAt(4, 0, 0);
 			water.update();
+			underwater.update(time.now, air, caustics);
 		},
 		onLateUpdate() {
 			fall.update();
