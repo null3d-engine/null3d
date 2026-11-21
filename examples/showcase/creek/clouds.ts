@@ -46,7 +46,7 @@ export const RIM_RANGE = { low: 18, span: 16 } as const;
  * The bearings, in radians from +x toward +z, where the front wall faces the opening view: no heap
  * rises there, so the dark wall shows from the rim down to the frame's foot, as in the concept.
  */
-export const FRONT = { middle: 1.13, half: 0.62, edge: 0.3 } as const;
+export const FRONT = { middle: 1.03, half: 0.52, edge: 0.25 } as const;
 /**
  * The domes of each layer of a billow: their radius in meters, how many stand on one tile, and how
  * far each sinks below the surface it stands on, as a share of its radius.
@@ -105,7 +105,7 @@ fn cloud_air() -> vec3f {
 /// at form 1, with the main light's own color where it falls on the cloud, so the low sun warms
 /// the tops and leaves the hollows lilac.
 fn cloud_color(form: f32, lit: f32) -> vec3f {
-    let shade = mix(0.9, 5.6, pow(form, 1.5));
+    let shade = mix(0.7, 6.4, form * form);
     let warm = material.sun * material.tint * 0.5 * lit;
     return cloud_air() * shade + warm;
 }
@@ -154,22 +154,29 @@ fn cloud_at(p: vec3f, lod: f32) -> vec4f {
         let wall = wall_at(p.xz);
         // Against the walls, domes of their own heap up over the sea where the walls' map lets them.
         let close = 1.0 - smoothstep(0.0, 17.0, r - wall.x);
-        let dome = textureSampleLevel(billows, billowsSampler, (q + vec2f(53.0, 29.0)) / (TILE * 0.75), lod + 0.4).r;
-        let heaped = material.top - material.depth + (material.depth + material.heap * wall.y) * sqrt(dome) * close;
+        let dome = textureSampleLevel(billows, billowsSampler, (q + vec2f(53.0, 29.0)) / (TILE * 0.35), lod + 1.5).r;
+        let heaped = material.top - 2.0 + (material.heap * wall.y + 2.0) * pow(dome, 0.8) * close;
         h = max(h, heaped);
+        // Near the cliff the billows carry small domes of their own, a few meters across, which
+        // catch light on their tops and shade between them; they fade out toward the disc's edge.
+        let small = textureSampleLevel(billows, billowsSampler, (q + vec2f(91.0, 17.0)) / (TILE * 0.3), lod + 1.74).r;
+        h += 4.5 * (small - 0.6) * (1.0 - smoothstep(NEAR * 0.55, NEAR, r));
         // The billows' edges fray, so a top never ends on one clean line.
         fray = textureSampleLevel(billows, billowsSampler, (q + vec2f(7.0, 19.0)) / 21.0, lod).b;
-        // The mist at the walls' foot rises in wisps of uneven height: tall where the wall's own
-        // stretch of mist runs high, short elsewhere, each wisp a column that climbs and thins.
-        let foot = 1.0 - smoothstep(2.0, 15.0, r - wall.x);
-        let above = p.y - h;
-        if foot * wall.z > 0.001 && above > -0.5 && above < 8.0 {
+        // The mist at the walls' foot rises from the sea's level in wisps of uneven height: tall
+        // where the wall's own stretch of mist runs high, short elsewhere, each wisp a column that
+        // climbs and thins. It veils the rock over the billows, so the wall fades into the cloud.
+        let foot = 1.0 - smoothstep(1.0, 8.0, r - wall.x);
+        let rise = p.y - (material.top - 2.0);
+        if foot * wall.z > 0.001 && p.y > h - 0.5 && rise < 9.0 {
             let along = atan2(p.z, p.x) * wall.x;
-            let reach = 1.5 + 6.5 * textureSampleLevel(billows, billowsSampler, vec2f(along / 70.0 + 0.37, 0.61), 0.0).b;
+            let reach = 3.0 + 6.0 * textureSampleLevel(billows, billowsSampler, vec2f(along / 70.0 + 0.37, 0.61), 0.0).b;
             // No wisp climbs past a few meters under the rim, so the walls' upper part stays clear.
-            let band = smoothstep(-0.5, 0.8, above) * (1.0 - smoothstep(reach * 0.35, reach, above)) * (1.0 - smoothstep(-4.5, -1.5, p.y));
+            let band = smoothstep(-0.5, 0.8, p.y - h) * (1.0 - smoothstep(reach * 0.25, reach, rise)) * (1.0 - smoothstep(-4.5, -1.5, p.y));
             let wisp = textureSampleLevel(billows, billowsSampler, vec2f(along / 7.0, (p.y - frame.time * 0.4) / 19.0), 0.0).b;
-            mist = foot * band * wall.z * smoothstep(0.32, 0.78, wisp);
+            // A thin veil over the tops' first meters joins the wisps, so the rock fades into them.
+            let veil = smoothstep(-0.5, 0.8, p.y - h) * (1.0 - smoothstep(0.0, 5.0, rise));
+            mist = foot * wall.z * (band * smoothstep(0.3, 0.75, wisp) + 0.12 * veil);
         }
     } else {
         // Far out, the billows of the largest copy rise into towers past the horizon, and sink
@@ -191,12 +198,12 @@ fn leave_disc(eye: vec2f, dir: vec2f, r: f32) -> f32 {
     return (-b + sqrt(max(b * b - a * c, 0.0))) / a;
 }
 
-/// How thick the cloud is at a point: the billows' body thickens over its top meters, softer far
-/// off, and frays where its edge is eaten; the mist adds its own.
-fn density_of(p: vec3f, here: vec4f, t: f32) -> f32 {
+/// How thick the cloud is at a point, as the billows' body and the mist apart: the body thickens
+/// over its top meters, softer far off, and frays where its edge is eaten.
+fn density_of(p: vec3f, here: vec4f, t: f32) -> vec2f {
     let soft = 2.2 + t * 0.012;
     let inside = here.x - p.y - here.w * 1.8;
-    return smoothstep(-0.3, soft, inside) * 1.4 + here.y * 0.9;
+    return vec2f(smoothstep(-0.3, soft, inside) * 1.4, here.y * 0.45);
 }
 
 /// The faint mountain far past the cliff that shows through the cloud, as in the concept's upper
@@ -210,7 +217,9 @@ fn mountain(eye: vec3f, dir: vec3f) -> f32 {
     let off = (bearing + 1.4157) * 1300.0;
     let fall = select(1.03, 2.7, off < 0.0);
     let ridge = -53.7 - fall * (sqrt(off * off + 400.0) - 20.0) + 5.0 * sin(off * 0.07) + 2.5 * sin(off * 0.23 + 1.3);
-    return 1.0 - smoothstep(-6.0, 6.0, at.y - ridge);
+    // A soft edge, and a foot that the cloud in front of it pales.
+    let under = ridge - at.y;
+    return smoothstep(-10.0, 10.0, under) * (1.0 - 0.45 * smoothstep(30.0, 120.0, under));
 }
 
 fn unlit(input: SurfaceInput) -> vec4f {
@@ -277,16 +286,16 @@ fn unlit(input: SurfaceInput) -> vec4f {
         // the cloud with no cut line along its blocks.
         let contact = select(1.0, smoothstep(0.0, 3.0, end - t), behind > 0.0);
         var here = cloud_at(p, lod);
-        var density = density_of(p, here, t) * contact;
-        if density > 0.002 && !lit && t > last {
-            // The step from clear air went past the cloud's edge: halve the gap a few times to
-            // find it, so the edge neither rings nor grains with the steps.
+        var parts = density_of(p, here, t) * contact;
+        if parts.x > 0.002 && !lit && t > last {
+            // The step from clear air or mist went past the billow's edge: halve the gap a few
+            // times to find it, so the edge neither rings nor grains with the steps.
             var lo = last;
             var hi = t;
             for (var k = 0; k < 4; k++) {
                 let mid = 0.5 * (lo + hi);
                 let q = eye + dir * mid;
-                let d = density_of(q, cloud_at(q, lod), mid);
+                let d = density_of(q, cloud_at(q, lod), mid).x;
                 if d > 0.002 {
                     hi = mid;
                 } else {
@@ -296,13 +305,14 @@ fn unlit(input: SurfaceInput) -> vec4f {
             t = hi;
             p = eye + dir * t;
             here = cloud_at(p, lod);
-            density = density_of(p, here, t) * contact;
+            parts = density_of(p, here, t) * contact;
         }
+        let density = parts.x + parts.y;
         let h = here.x;
         let above = p.y - h;
         if density > 0.002 {
-            if !lit {
-                // Where the ray first meets the billow: its slope, from its heights a step to each
+            if !lit && parts.x > 0.002 {
+                // Where the ray first meets the billow, past any mist: its slope, from its heights a step to each
                 // side; the sky's light on the sides that face up; the main light on the sides that
                 // face it, unless a billow toward it stands higher; the clefts between domes; and how
                 // high this top stands in the sea.
@@ -327,11 +337,21 @@ fn unlit(input: SurfaceInput) -> vec4f {
                 // coarse level: a top over its neighbours takes the sky's full light, and a hollow
                 // among them lies in their shade, whatever the sun's height.
                 let around = cloud_at(p, max(lod + 2.0, log2(16.0 / texel))).x;
-                let open = clamp(0.5 + (h - around) / 2.0, 0.0, 1.0);
+                // A heap against a wall stands far over the sea round it, so it takes its light from
+                // its own round form: its top bright and its sides grey.
+                let wall = wall_at(p.xz);
+                let reach = length(p.xz);
+                let heapy = select(0.0, (1.0 - smoothstep(0.0, 17.0, reach - wall.x)) * wall.y, reach < NEAR);
+                let open = clamp(0.5 + (h - around) / mix(2.0, 8.0, heapy), 0.0, 1.0);
                 let cleft = smoothstep(0.12, 0.75, here.z);
                 let lift = clamp((h - (material.top - material.depth * 1.6)) / (material.depth * 1.6 + 5.0), 0.0, 1.0);
-                form = clamp(0.1 * max(normal.y, 0.0) + 0.25 * lambert + 0.45 * open + 0.1 * cleft + 0.2 * lift, 0.0, 1.0);
-                sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft);
+                let up = max(normal.y, 0.0);
+                let sea = 0.1 * up + 0.25 * lambert + 0.45 * open + 0.1 * cleft + 0.2 * lift;
+                let round = 0.05 + 0.65 * up * up + 0.15 * lambert + 0.2 * open;
+                // Close to the walls the cliff hides part of the sky, so the cloud there is greyer.
+                let hidden = select(1.0, 0.78 + 0.22 * smoothstep(0.0, 30.0, reach - wall.x), reach < NEAR);
+                form = clamp(mix(sea, round, heapy) * hidden, 0.0, 1.0);
+                sunlit = max(dot(normal, sun), 0.0) * shadow * (0.5 + 0.5 * cleft) * hidden;
                 met = t;
                 lit = true;
             }
@@ -339,9 +359,13 @@ fn unlit(input: SurfaceInput) -> vec4f {
             let stride = min(0.35 + t * 0.008, end - t);
             // Deeper in the billow the cloud darkens a little.
             let deep = exp(-max(-above, 0.0) / 3.0);
-            // Mist is a mid grey that the sun barely reaches; the billow takes its own light.
-            let misty = clamp(here.y * 0.9 * contact / density, 0.0, 1.0);
-            let tone = cloud_color(mix(form, 0.55, misty), sunlit * (1.0 - misty)) * mix(0.72, 1.0, deep);
+            // Mist is a grey that the sun barely reaches; the billow takes its own light. Mist met
+            // before the billow is all mist, and its steps move the billow's edge search on.
+            let misty = select(1.0, clamp(parts.y / density, 0.0, 1.0), lit);
+            if !lit {
+                last = t;
+            }
+            let tone = cloud_color(mix(form, 0.7, misty), sunlit * (1.0 - misty)) * mix(0.72, 1.0, deep);
             let alpha = 1.0 - exp(-density * stride);
             color += clear * alpha * aerial(tone, t);
             clear *= 1.0 - alpha;
@@ -367,8 +391,8 @@ fn unlit(input: SurfaceInput) -> vec4f {
     }
     // The far mountain shows through the far sea as a faint grey-blue shape; a near billow hides it.
     let ghost = mountain(eye, dir) * smoothstep(120.0, 300.0, select(t, met, met > 0.0));
-    let blue = cloud_air() * 3.0 * vec3f(0.86, 0.93, 1.12);
-    return vec4f(mix(color / alpha, blue, ghost * 0.85), alpha);
+    let blue = cloud_air() * 1.15 * vec3f(0.84, 0.92, 1.14);
+    return vec4f(mix(color / alpha, blue, ghost * 0.9), alpha);
 }
 `;
 
@@ -406,7 +430,7 @@ fn cloud_air() -> vec3f {
 /// at form 1, with the main light's own color where it falls on the cloud, so the low sun warms
 /// the tops and leaves the hollows lilac.
 fn cloud_color(form: f32, lit: f32) -> vec3f {
-    let shade = mix(0.9, 5.6, pow(form, 1.5));
+    let shade = mix(0.7, 6.4, form * form);
     let warm = material.sun * material.tint * 0.5 * lit;
     return cloud_air() * shade + warm;
 }
@@ -531,8 +555,8 @@ export function streakField(size: number, seed: number): Float32Array {
 	return field;
 }
 
-/** The billow map: two fields of billows and the mist's streaks, in a texture that repeats. */
-function billowMap(ctx: SketchContext, size: number): Texture {
+/** The billow map's texels at a size: two fields of billows and the mist's streaks. */
+export function billowData(size: number): Uint8Array<ArrayBuffer> {
 	const sea = billowField(size, 211);
 	const swell = billowField(size, 307);
 	const streaks = streakField(size, 401);
@@ -543,14 +567,7 @@ function billowMap(ctx: SketchContext, size: number): Texture {
 		data[i * 4 + 2] = Math.round((streaks[i] as number) * 255);
 		data[i * 4 + 3] = 255;
 	}
-	return ctx.textures.fromData({
-		width: size,
-		height: size,
-		data,
-		colorSpace: 'linear',
-		wrap: 'repeat',
-		mipmaps: true,
-	});
+	return data;
 }
 
 /** The shortest turn between two bearings, in radians. */
@@ -563,9 +580,11 @@ const turnBetween = (a: number, b: number) =>
  */
 export function wallData(): Uint8Array {
 	const next = random(509);
-	// The concept's heaps: high against the west wall behind the west fall, along the back walls
-	// behind the island, and up the east wall beside the east fall; a few smaller ones elsewhere.
+	// The concept's heaps: up the face under the west fall to about half its height, high against
+	// the west wall behind that fall, along the back walls behind the island, and up the east wall
+	// beside the east fall; a few smaller ones elsewhere.
 	const bumps = [
+		{ at: 2.0, width: 0.3, height: 1 },
 		{ at: Math.PI, width: 0.7, height: 1 },
 		{ at: -1.6, width: 0.8, height: 0.9 },
 		{ at: 0.2, width: 0.45, height: 0.7 },
@@ -615,7 +634,26 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 	const toward: [number, number, number] = [0, 1, 0];
 	const sun: [number, number, number] = [0, 0, 0];
 	const tint: [number, number, number] = [...TINT];
-	const size = MAP_SIZE[preset];
+	// The billow map follows the preset: its texels at each size are built once and kept, so a
+	// preset that changes back and forth builds nothing again.
+	const built = new Map<number, Uint8Array<ArrayBuffer>>();
+	const billowsAt = (size: number) => {
+		let data = built.get(size);
+		if (!data) {
+			data = billowData(size);
+			built.set(size, data);
+		}
+		return data;
+	};
+	let size = MAP_SIZE[preset];
+	const billows = ctx.textures.fromData({
+		width: size,
+		height: size,
+		data: billowsAt(size),
+		colorSpace: 'linear',
+		wrap: 'repeat',
+		mipmaps: true,
+	});
 	const cloud = materials.shader({
 		wgsl: cloudWgsl,
 		fog: false,
@@ -625,7 +663,7 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 		doubleSided: true,
 		forceSinglePass: true,
 		sceneInputs: ['sceneDepth'],
-		textures: { billows: billowMap(ctx, size), walls: wallMap(ctx) },
+		textures: { billows, walls: wallMap(ctx) },
 		uniforms: {
 			air,
 			toward,
@@ -685,6 +723,24 @@ export async function createClouds(ctx: SketchContext, preset: QualityPreset): P
 		},
 		fit(next) {
 			cloud.setUniform('steps', STEPS[next]);
+			const wanted = MAP_SIZE[next];
+			if (wanted === size) return;
+			size = wanted;
+			// A texture of another size takes its texels from an image, which comes a little later;
+			// the cloud reads the map by its new size once the image is there.
+			const data = billowsAt(wanted);
+			const image = new ImageData(new Uint8ClampedArray(data.buffer), wanted, wanted);
+			void createImageBitmap(image, {
+				premultiplyAlpha: 'none',
+				colorSpaceConversion: 'none',
+			}).then((bitmap) => {
+				if (size !== wanted) {
+					bitmap.close();
+					return;
+				}
+				billows.update(bitmap);
+				cloud.setUniform('texels', wanted);
+			});
 		},
 		step() {},
 	};
