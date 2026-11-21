@@ -6,12 +6,13 @@
 import type { MeshArrays, SketchContext } from '@null3d/engine';
 import { Noise, random, rock } from '../../lib/procedural';
 import { rockMaps } from './cliff';
-import { alongFlight, type Flight, flights, groundHeight, STAIRS } from './land';
+import { lowestGround } from './garden';
+import { alongFlight, flights, STAIRS } from './land';
 import { mossy } from './stones';
 
 /**
  * The slabs: how far each reaches past its tread's length, so the steps overlap a little; how far its
- * body sinks below the ramp; how much the step's width, a slab's edges and its height wander, in
+ * body sinks below the ramp; how far its tread stands over the ramp; how much the step's width, a slab's edges and its height wander, in
  * meters; how far a slab turns off the flight's line, in radians; how much its length wanders, as a
  * share; half the joint between two slabs of a step, in meters; and the share of steps laid in three
  * slabs rather than two. A step's tread has up to as many strips across as the constant below, so
@@ -20,6 +21,7 @@ import { mossy } from './stones';
 const SLAB = {
 	overlap: 0.08,
 	sink: 0.35,
+	lift: 0.03,
 	width: 0.12,
 	edge: 0.06,
 	height: 0.025,
@@ -35,8 +37,11 @@ const TREAD = [0.19, 0.178, 0.155] as const;
 const RISER = [0.045, 0.04, 0.034] as const;
 const MOSS = [0.12, 0.11, 0.028] as const;
 
-/** The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes. */
-const WALL = { out: 0.45, spacing: 0.5, size: [0.24, 0.36], rows: 2 } as const;
+/**
+ * The side walls: how far out from the steps' edge they stand, their stones' spacing and sizes, the
+ * courses, and how far a stone's footprint reaches on the ground, as a share of its size.
+ */
+const WALL = { out: 0.45, spacing: 0.5, size: [0.24, 0.36], rows: 2, reach: 1.2 } as const;
 
 const noise = new Noise(71);
 
@@ -54,11 +59,15 @@ function face(
 	normal: readonly [number, number, number],
 ): void {
 	const first = built.positions.length / 3;
+	// An upright face takes its texture along itself and up, so the grain does not run in streaks.
+	const upright = Math.abs(normal[1]) < 0.5;
 	corners.forEach((corner, k) => {
 		built.positions.push(...corner);
 		built.normals.push(...normal);
 		built.colors.push(...(shades[k] as readonly [number, number, number]));
-		built.uvs.push(corner[0] * 0.5, corner[2] * 0.5);
+		if (upright)
+			built.uvs.push((corner[0] * -normal[2] + corner[2] * normal[0]) * 0.5, corner[1] * 0.5);
+		else built.uvs.push(corner[0] * 0.5, corner[2] * 0.5);
 	});
 	// The triangles wind so that their front faces the given normal.
 	const [a, b, c] = corners as readonly [
@@ -82,44 +91,52 @@ const tone = (color: readonly [number, number, number], x: number, z: number, de
 	return [color[0] * shade, color[1] * shade, color[2] * shade] as const;
 };
 
-/** The slabs of one flight, added to the arrays being built. */
-function flightSlabs(built: Parameters<typeof face>[0], flight: Flight, next: () => number): void {
-	const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
-	const length = Math.hypot(dx, dz);
-	const tread = length / flight.steps;
-	const rise = (flight.high - flight.low) / flight.steps;
-	for (let k = 0; k < flight.steps; k++) {
-		const along = (k + 0.5) * tread;
-		const middle: [number, number] = [
-			flight.from[0] + (dx / length) * along,
-			flight.from[1] + (dz / length) * along,
-		];
-		const half = STAIRS.half + (next() * 2 - 1) * SLAB.width;
-		const top = flight.low + (k + 1) * rise;
-		// Each step lies in two or three slabs of uneven length across the flight, with narrow joints
-		// between them, so no step reads as one long plank.
-		const pieces = next() < SLAB.three ? 3 : 2;
-		const cuts = [-1];
-		for (let p = 1; p < pieces; p++)
-			cuts.push(-1 + (2 * p) / pieces + (next() - 0.5) * (1.2 / pieces));
-		cuts.push(1);
-		const joint = SLAB.joint / half;
-		for (let p = 0; p < pieces; p++)
-			slab(built, next, {
-				middle,
-				heading: Math.atan2(dz, dx),
-				half,
-				from: (cuts[p] as number) + (p > 0 ? joint : 0),
-				to: (cuts[p + 1] as number) - (p < pieces - 1 ? joint : 0),
-				depth: tread / 2,
-				top,
-				bottom: top - rise - SLAB.sink,
-			});
+/**
+ * Every slab of every flight, found from the land alone, so a test can check them: each step lies in
+ * two or three slabs of uneven length across the flight, with narrow joints between them, so no step
+ * reads as one long plank. Each tread stands a little over the ramp under it, so no ground shows
+ * through the top one.
+ */
+export function slabPlaces(): SlabPlace[] {
+	const next = random(73);
+	const places: SlabPlace[] = [];
+	for (const flight of flights()) {
+		const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
+		const length = Math.hypot(dx, dz);
+		const tread = length / flight.steps;
+		const rise = (flight.high - flight.low) / flight.steps;
+		for (let k = 0; k < flight.steps; k++) {
+			const along = (k + 0.5) * tread;
+			const middle: [number, number] = [
+				flight.from[0] + (dx / length) * along,
+				flight.from[1] + (dz / length) * along,
+			];
+			const half = STAIRS.half + (next() * 2 - 1) * SLAB.width;
+			const top = flight.low + (k + 1) * rise + SLAB.lift;
+			const pieces = next() < SLAB.three ? 3 : 2;
+			const cuts = [-1];
+			for (let p = 1; p < pieces; p++)
+				cuts.push(-1 + (2 * p) / pieces + (next() - 0.5) * (1.2 / pieces));
+			cuts.push(1);
+			const joint = SLAB.joint / half;
+			for (let p = 0; p < pieces; p++)
+				places.push({
+					middle,
+					heading: Math.atan2(dz, dx),
+					half,
+					from: (cuts[p] as number) + (p > 0 ? joint : 0),
+					to: (cuts[p + 1] as number) - (p < pieces - 1 ? joint : 0),
+					depth: tread / 2,
+					top,
+					bottom: top - rise - SLAB.sink,
+				});
+		}
 	}
+	return places;
 }
 
 /** One slab of a step: its share of the step's width, from `from` to `to` across it, from -1 to 1. */
-interface SlabPlace {
+export interface SlabPlace {
 	middle: readonly [number, number];
 	heading: number;
 	half: number;
@@ -206,6 +223,46 @@ function slab(built: Parameters<typeof face>[0], next: () => number, place: Slab
 	}
 }
 
+/** One stone of a side wall: its place, its size and its turn about y. */
+export interface WallStone {
+	readonly x: number;
+	readonly y: number;
+	readonly z: number;
+	readonly size: number;
+	readonly turn: number;
+}
+
+/**
+ * The side walls' stones, found from the land alone: two low courses each side, the upper course
+ * smaller and set back over the joints of the lower, each stone seated on the lowest ground under it.
+ */
+export function wallPlaces(): WallStone[] {
+	const next = random(75);
+	const places: WallStone[] = [];
+	for (const flight of flights()) {
+		const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
+		const length = Math.hypot(dx, dz);
+		const [fx, fz] = [dx / length, dz / length];
+		for (const side of [-1, 1])
+			for (let d = 0; d < length; d += WALL.spacing)
+				for (let row = 0; row < WALL.rows; row++) {
+					const size =
+						(WALL.size[0] + (WALL.size[1] - WALL.size[0]) * next()) * (row === 1 ? 0.8 : 1);
+					const out = STAIRS.half + WALL.out + size * 0.6 + (next() - 0.5) * 0.08 - row * 0.05;
+					const along = d + (row === 1 ? WALL.spacing / 2 : 0);
+					if (along > length) continue;
+					const x = flight.from[0] + fx * along - fz * side * out;
+					const z = flight.from[1] + fz * along + fx * side * out;
+					// The lower course sits down in the ground; the upper rests on it.
+					const y = lowestGround(x, z, size * WALL.reach) + (row === 1 ? size * 0.3 : -size * 0.15);
+					// Each stone lies along the flight, its long side with the wall.
+					const turn = Math.atan2(fx, fz) + Math.PI / 2 + (next() - 0.5) * 0.4;
+					places.push({ x, y, z, size, turn });
+				}
+	}
+	return places;
+}
+
 /**
  * Lays the flights of steps and the low walls of stacked rock along their sides. Returns a test of
  * whether a point lies on the steps or under their walls, where nothing grows.
@@ -215,11 +272,11 @@ export function createSteps(
 	detail: number,
 	textureSize: number,
 ): (x: number, z: number) => boolean {
-	const next = random(73);
+	const next = random(74);
 	const built = { positions: [], normals: [], colors: [], uvs: [], indices: [] } as Parameters<
 		typeof face
 	>[0];
-	for (const flight of flights()) flightSlabs(built, flight, next);
+	for (const place of slabPlaces()) slab(built, next, place);
 	const arrays: MeshArrays = {
 		positions: new Float32Array(built.positions),
 		normals: new Float32Array(built.normals),
@@ -238,30 +295,11 @@ export function createSteps(
 		castShadows: true,
 		receiveShadows: true,
 	});
-	// The walls: low courses of flat dark stones laid along each side, beyond a band of moss, the
-	// upper course smaller and set back over the joints of the lower.
-	const stone = geometry.fromArrays(mossy(rock(77, detail, [1.3, 0.5, 0.75], 0.14), 78, 0.25));
-	const places: { x: number; y: number; z: number; size: number; turn: number }[] = [];
-	for (const flight of flights()) {
-		const [dx, dz] = [flight.to[0] - flight.from[0], flight.to[1] - flight.from[1]];
-		const length = Math.hypot(dx, dz);
-		const [fx, fz] = [dx / length, dz / length];
-		for (const side of [-1, 1])
-			for (let d = 0; d < length; d += WALL.spacing)
-				for (let row = 0; row < WALL.rows; row++) {
-					const size =
-						(WALL.size[0] + (WALL.size[1] - WALL.size[0]) * next()) * (row === 1 ? 0.8 : 1);
-					const out = STAIRS.half + WALL.out + size * 0.6 + (next() - 0.5) * 0.08 - row * 0.05;
-					const along = d + (row === 1 ? WALL.spacing / 2 : 0);
-					if (along > length) continue;
-					const x = flight.from[0] + fx * along - fz * side * out;
-					const z = flight.from[1] + fz * along + fx * side * out;
-					const y = groundHeight(x, z) + (row === 1 ? size * 0.42 : -size * 0.1);
-					// Each stone lies along the flight, its long side with the wall.
-					const turn = Math.atan2(fx, fz) + Math.PI / 2 + (next() - 0.5) * 0.4;
-					places.push({ x, y, z, size, turn });
-				}
-	}
+	// The walls: low courses of flat dark stones laid along each side, beyond a band of moss.
+	const stone = geometry.fromArrays(
+		mossy(rock(77, Math.max(1, detail - 2), [1.3, 0.5, 0.75], 0.14), 78, 0.25),
+	);
+	const places = wallPlaces();
 	const walls = scene.createInstances(stone, places.length, {
 		// A dark tint over the mossy stones' colours: the walls read as dark stacked rock.
 		material: materials.standard({ vertexColors: true, color: '#8c847a', roughness: 0.95 }),

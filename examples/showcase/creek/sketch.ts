@@ -162,7 +162,16 @@ const GUST_SEND_AT = Number(params.get('gust-at')) || 0;
  * at. A picture of a part that the route passes only from afar, such as the steps, names one; the
  * route still runs under it.
  */
-const VIEW = params.get('view')?.split(',').map(Number);
+const VIEW = fixedView(params.get('view'));
+
+/** The six numbers of a `view` address, or undefined, with a warning, when it is not six numbers. */
+function fixedView(text: string | null): readonly number[] | undefined {
+	if (text === null) return undefined;
+	const values = text.split(',').map(Number);
+	if (values.length === 6 && values.every(Number.isFinite)) return values;
+	console.warn(`creek: view= takes six numbers, the camera's x,y,z then its target's; got ${text}`);
+	return undefined;
+}
 /**
  * True draws the scene from just above the stream, looking along it, so the picture shows the
  * water's surface close up. The picture tests ask for it; the demo and its route never do.
@@ -607,7 +616,7 @@ export default defineSketch(async (ctx) => {
 			}
 			// The cascade probe times one view, so its route holds the opening pose.
 			film.update(CASCADE_PROBE || STILL_ROUTE ? 0 : dt);
-			if (VIEW?.length === 6) {
+			if (VIEW) {
 				const [px, py, pz, tx, ty, tz] = VIEW as [number, number, number, number, number, number];
 				camera.setPosition(px, py, pz);
 				camera.lookAt(tx, ty, tz);
