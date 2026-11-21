@@ -191,6 +191,7 @@ While it is off, the surface skips the rings' work.
 | `update()` | Keeps the sketch's frame loop. The reflection pass carries its own cadence now, so the call changes nothing |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `waveAmplitude` | The height of the long waves and of the wind's lift, as a factor of their base height |
+| `waveReach` | The most that the long waves raise or lower the surface from its level, in meters. A point further than this above the level is above the water wherever it stands |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
 | `setCaustics(light)` | Sets the light that the ripples focus on the bed, as a linear color |
@@ -219,7 +220,10 @@ light with distance into the water's own color.
 | `release` | A number, in meters | 1 | How far above the surface the camera goes before the effect is removed |
 
 Call `update(t, air, caustics)` in each frame with the sketch's time, the light of the air at the
-horizon, and the light of the caustics. The surface seen from below shows the world above through a
+horizon, and the light of the caustics. While the camera is clear of the waves' reach by more than
+`ready`, the call reads only the camera's height and allocates nothing. Near or under the water it
+asks for the surface's height and sets the effect's values, and there it can allocate about a
+hundred bytes a frame until the browser optimizes it. The surface seen from below shows the world above through a
 window overhead, and turns the light back past that window's edge.
 
 ## Waterfalls
@@ -238,8 +242,8 @@ rises at its foot.
 The sheet's material moves each streak with the water from the sketch's time alone. So the fall
 costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
 the water speeds up. The fall is one closed column with an oval section. It is thin at the lip, and
-a few meters down it is about as deep as the drawn-in water is wide. Below that its front and
-back run nearly parallel. So the fall has a solid body from the side as well as from the front.
+a few meters down it is about twice as deep, out from the cliff, as the drawn-in water is wide.
+Below that its front and back run nearly parallel. So the fall has a solid body from the side as well as from the front.
 Its outline
 thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly off
 the column. White water scatters the light that reaches it from all round. So the column takes the
@@ -297,6 +301,7 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `apron` | A number above 0, in meters | 1 | How far up the river the fall's water starts, lying on the river's surface. It fades in at uneven distances and covers the river's square end, so the water runs into the fall with no straight edge at the lip. Give the reach of the broken water before the brink |
 | `fadeBelow` | A number, in meters | None | The world height of a cloud sea, a fog bank or a mist that the fall drops into. A cloud that draws before the fall does not hide it, so below this height the fall vanishes itself over 2.5 m, each clump at its own depth. The water breaks up and bursts into mist over the part of the drop above it |
 | `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles, and neither `@null3d/particles` nor the engine's particle code loads |
+| `mist` | A number from 0 to 3 | 1 | The mist round the fall's foot and the plume that rises from it, as a factor of the fall's own, which `spray` scales too. At 0 the fall makes neither, for a scene whose own cloud draws the mist at the fall's foot: puffs lit apart from that cloud draw a gray patch over it |
 | `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
 | `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |
 | `material` | The standard material values | None | The sheet's material, such as the color of its white water |

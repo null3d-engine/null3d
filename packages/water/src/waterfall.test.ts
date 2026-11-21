@@ -210,6 +210,37 @@ describe('a waterfall’s particle systems', () => {
 		fall.destroy();
 	});
 
+	it('scales the mist and the plume with the mist option, and leaves them out at 0', async () => {
+		const places = fallEmitters(SHEET);
+		const atFoot = (kind: string) => kind === 'mist' || kind === 'plume';
+		// At 2 the foot's systems are born twice as fast, and the froth and the drops as before.
+		const doubled = await fallWith({ mist: 2 });
+		doubled.fall.update();
+		for (let k = 0; k < places.length; k++) {
+			const place = places[k] as (typeof places)[number];
+			const share = atFoot(place.kind) ? 2 : 1;
+			expect((doubled.buffers[k] as BufferRecord).rate as number).toBeCloseTo(
+				place.rate * share,
+				9,
+			);
+		}
+		doubled.fall.destroy();
+		// At 0 a scene's own cloud draws the foot's mist, so the fall makes only its froth and drops,
+		// each from its own place, and setSpray still scales them.
+		const none = await fallWith({ mist: 0 });
+		const kept = places.filter((place) => !atFoot(place.kind));
+		expect(none.buffers).toHaveLength(kept.length);
+		none.fall.setSpray(2);
+		none.fall.update();
+		for (let k = 0; k < kept.length; k++) {
+			const record = none.buffers[k] as BufferRecord;
+			expect(record.position).toEqual([...(kept[k] as (typeof kept)[number]).position]);
+			expect(record.rate as number).toBeCloseTo((kept[k] as (typeof kept)[number]).rate * 2, 9);
+		}
+		none.fall.destroy();
+		await expect(fallWith({ mist: 4 })).rejects.toThrow(/mist must be from 0 to 3, and it is 4/);
+	});
+
 	it('makes no particle system for a fall with no spray', async () => {
 		const { buffers, fall } = await fallWith({ spray: 0 });
 		expect(buffers).toHaveLength(0);

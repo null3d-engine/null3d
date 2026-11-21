@@ -132,9 +132,10 @@ export function checkFallSheet(sheet: FallSheet): void {
 
 /**
  * How deep the column grows below the lip, as a share of the lip's half width each side of its
- * middle: about as deep as the drawn-in water is wide, so the falling water is a round bundle.
+ * middle: about twice as deep, out from the wall, as the drawn-in water is wide. So a fall seen
+ * from the side is a broad fan, and from the front a narrow stream.
  */
-export const COLUMN_DEPTH = 0.35;
+export const COLUMN_DEPTH = 0.7;
 /** How thick the water is as it leaves the lip, each side of the column's middle, in meters. */
 export const TONGUE = 0.12;
 /** The most that the brink stands out past the lip's line at some places across, in meters. */

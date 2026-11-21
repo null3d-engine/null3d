@@ -530,6 +530,22 @@ describe('the column’s shader', () => {
 		expect(body(read('fall.wgsl'))).toBe(body(read('water.wgsl')));
 	});
 
+	it('vanishes below a cloud’s top, each clump at its own depth', () => {
+		const shader = read('fall.wgsl');
+		expect(shader).toContain('let sink = input.worldPosition.y + (froth - 0.5) * 0.8;');
+		expect(shader).toContain(
+			'alpha *= smoothstep(material.fadeBelow - SINK_DEPTH, material.fadeBelow + SINK_LEAD, sink);',
+		);
+	});
+
+	it('keeps the apron and the brink whole near a wall, so the lip draws no line', () => {
+		const shader = read('fall.wgsl');
+		expect(shader).toContain('let on_brink = 1.0 - smoothstep(0.4, 1.5, fallen);');
+		expect(shader).toContain(
+			'alpha *= mix(smoothstep(0.0, material.softness, gap), 1.0, on_brink);',
+		);
+	});
+
 	it('sizes the froth’s clumps by the speed of the path’s water', () => {
 		const constant = (name: string) =>
 			Number(new RegExp(`const ${name}: f32 = ([0-9.]+);`).exec(read('fall.wgsl'))?.[1]);
