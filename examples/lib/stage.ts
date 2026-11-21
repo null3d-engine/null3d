@@ -206,11 +206,11 @@ export interface StageOptions {
 	 */
 	fogGrey?: number;
 	/**
-	 * A factor on the fog's color, for a scene whose haze should read paler than the hour's air gives
-	 * it, such as air over a sea of white cloud, so far things grow lighter as they grow weaker. The
-	 * air's color that the stage gives the scene stays the hour's. The default is 1.
+	 * The curve of the outdoor fog over distance: `'exp2'` for a scene whose near ground should stay
+	 * clear while its far things haze, as the fog grows with the square of the distance. The studio
+	 * keeps its even fog. The default is the exponential curve.
 	 */
-	fogScale?: number;
+	fogCurve?: 'exponential' | 'exp2';
 	/**
 	 * A factor on the exposure of every outdoor mood, for a scene whose own lights carry it: a city
 	 * at night asks for more than a moonlit field. The default is 1, and the studio keeps its own.
@@ -328,7 +328,6 @@ export function createMoods(
 		backdrop,
 		haze = {},
 		fogGrey = 0,
-		fogScale = 1,
 		exposureScale = 1,
 		environmentScale = 1,
 		sunScale = 1,
@@ -408,6 +407,7 @@ export function createMoods(
 			...(options.fogHeight === undefined
 				? {}
 				: { height: options.fogHeight.height, heightFalloff: options.fogHeight.falloff }),
+			...(options.fogCurve === undefined ? {} : { curve: options.fogCurve }),
 		},
 		post: { exposure: 1 },
 	};
@@ -564,10 +564,11 @@ export function createMoods(
 			const grey =
 				0.2126 * (air[0] as number) + 0.7152 * (air[1] as number) + 0.0722 * (air[2] as number);
 			for (let k = 0; k < 3; k++)
-				fog[k] = ((air[k] as number) + (grey - (air[k] as number)) * fogGrey) * fogScale;
+				fog[k] = (air[k] as number) + (grey - (air[k] as number)) * fogGrey;
 			look.fog.density = current.density;
 			look.fog.sunGlow = current.glow;
 			if (options.fogHeight) look.fog.heightFalloff = options.fogHeight.falloff;
+			if (options.fogCurve) look.fog.curve = options.fogCurve;
 			scene.setFog(look.fog);
 		}
 		look.post.exposure = current.exposure;
@@ -590,6 +591,7 @@ export function createMoods(
 		if (shown.fog) {
 			look.fog.density = STUDIO_FOG_DENSITY;
 			if (options.fogHeight) look.fog.heightFalloff = 0;
+			if (options.fogCurve) look.fog.curve = 'exponential';
 			look.fog.color[0] = STUDIO_FOG[0];
 			look.fog.color[1] = STUDIO_FOG[1];
 			look.fog.color[2] = STUDIO_FOG[2];

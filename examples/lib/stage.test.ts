@@ -29,6 +29,7 @@ function staged(overrides: Partial<StageOptions> = {}) {
 			sunGlow: number;
 			height?: number;
 			heightFalloff?: number;
+			curve?: string;
 		} | null;
 		dir?: readonly number[];
 		exposure?: number;
@@ -137,17 +138,20 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
 });
 
-test("a scene's fog scale makes its fog paler and leaves the air's color", () => {
+test("a scene's fog curve holds through the hours, and the studio's fog stays exponential", () => {
+	const { stage, last, frames } = staged({ fogCurve: 'exp2' });
+	stage.set('Midday');
+	frames(240);
+	expect(last.fog?.curve).toBe('exp2');
+	stage.set('Studio');
+	expect(last.fog?.curve).toBe('exponential');
+	stage.set('Dawn');
+	frames(240);
+	expect(last.fog?.curve).toBe('exp2');
 	const plain = staged();
-	const pale = staged({ fogScale: 1.5 });
-	for (const { stage, frames } of [plain, pale]) {
-		stage.set('Midday');
-		frames(240);
-	}
-	const air = plain.last.fog?.color as readonly number[];
-	const fog = pale.last.fog?.color as readonly number[];
-	for (let k = 0; k < 3; k++) expect(fog[k]).toBeCloseTo((air[k] as number) * 1.5, 4);
-	for (let k = 0; k < 3; k++) expect(pale.stage.airColor[k]).toBeCloseTo(air[k] as number, 4);
+	plain.stage.set('Midday');
+	plain.frames(240);
+	expect(plain.last.fog?.curve).toBeUndefined();
 });
 
 test("a scene's grey fog keeps the air's brightness and drops its tint, and the air keeps its color", () => {
