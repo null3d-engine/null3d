@@ -1,8 +1,9 @@
-// The ground's tones seed the palette's classes the fidelity reviewer counts: a grey rock, a dark
-// green and a gold. The rendered shares are measured in the round; this holds the seeds' intent, so
-// a tone cannot drift back into the moss class unnoticed.
+// The ground's cover seeds the palette's classes the fidelity reviewer counts: a grey rock, a dark
+// green and a gold, and the zones that carry them over most of its top. The rendered shares are
+// measured in the round; this holds the seed tones and the zones' areas, so the ground cannot drift
+// back into a moss carpet unnoticed.
 import { expect, test } from 'bun:test';
-import { GROUND_CLASS_TONES } from './land';
+import { GROUND_CLASS_TONES, type GroundZones, groundZones, onTop } from './land';
 
 /** The hue in degrees, saturation and value of a linear colour. */
 function hsv(colour: readonly number[]) {
@@ -26,4 +27,26 @@ test('the ground seeds a grey, a dark green and a gold for the palette classes',
 	expect(gold.hue, 'the gold seed hue').toBeGreaterThan(32);
 	expect(gold.hue, 'the gold seed hue').toBeLessThan(50);
 	expect(gold.val, 'the gold seed value').toBeGreaterThan(0.28);
+});
+
+test('the ground zones most of its top into shelves, mats and lichen', () => {
+	const zones: GroundZones = { shelf: 0, mats: 0, lichen: 0 };
+	let sites = 0;
+	let shelf = 0;
+	let mats = 0;
+	let lichen = 0;
+	for (let x = -25; x <= 25; x += 0.5) {
+		for (let z = -25; z <= 25; z += 0.5) {
+			if (!onTop(x, z)) continue;
+			groundZones(x, z, 2, zones);
+			sites++;
+			shelf += zones.shelf;
+			mats += zones.mats;
+			lichen += zones.lichen;
+		}
+	}
+	expect(sites).toBeGreaterThan(5000);
+	expect(shelf / sites, 'the rock shelves').toBeGreaterThan(0.15);
+	expect(mats / sites, 'the moss mats').toBeGreaterThan(0.1);
+	expect(lichen / sites, 'the gold lichen').toBeGreaterThan(0.01);
 });
