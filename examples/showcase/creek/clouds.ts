@@ -223,10 +223,11 @@ fn unlit(input: SurfaceInput) -> vec4f {
     let forward = max(-(camera.view * vec4f(dir, 0.0)).z, 1e-3);
     let behind = sceneDistance(uv);
     let end = select(material.reach, min(behind / forward, material.reach), behind > 0.0);
-    // At an outline of the scene, as where the cloud meets the rock's edge, the pixels round this
-    // one end at very different depths. There the ray runs on to the farthest of them and keeps
-    // what it gathered by the nearest; the two blend by the share of the five pixels that end near,
-    // so the cloud's edge there is as soft as the outline's coverage and never follows the pixel grid.
+    // At an outline of the scene, as where one crag stands in front of another, the pixels round
+    // this one end at different depths, and the cloud before each is a different depth of cloud.
+    // There the ray runs on to the farthest of them and keeps what it gathered by the nearest; the
+    // two blend by the share of the five pixels that end near, so the cloud's edge there is as soft
+    // as the outline's coverage and never follows the pixel grid.
     let texel_uv = 1.0 / frame.resolution;
     var near = end;
     var far = end;
@@ -239,7 +240,7 @@ fn unlit(input: SurfaceInput) -> vec4f {
         near = min(near, e);
         far = max(far, e);
     }
-    let outline = far - near > 2.0 + near * 0.15;
+    let outline = far - near > 0.3;
     let middle = 0.5 * (near + far);
     let nearShare = (select(0.0, 1.0, end < middle) + dot(select(vec4f(0.0), vec4f(1.0), ends < vec4f(middle)), vec4f(1.0))) / 5.0;
     let limit = select(end, far, outline);
@@ -436,6 +437,17 @@ fn unlit(input: SurfaceInput) -> vec4f {
         }
         color = mix(color, nearColor, nearShare);
         clear = mix(clear, nearClear, nearShare);
+    }
+    // The rock just over the cloud fades into it by its height, whatever its depth, so crags that
+    // stand at different depths show no bands where the cloud before them is deeper or shallower.
+    // The side walls fade higher than the front wall, whose foot alone the concept veils.
+    if behind > 0.0 {
+        let rock = eye + dir * end;
+        let front = wall_at(rock.xz).w;
+        let fades = mix(7.0, 4.5, front);
+        let veil = mix(0.5, 0.25, front) * (1.0 - smoothstep(material.top - 0.5, material.top + fades, rock.y)) * clear;
+        color += veil * aerial(cloud_color(0.65, 0.0), end);
+        clear -= veil;
     }
     let alpha = 1.0 - clear;
     if alpha < 0.001 {
