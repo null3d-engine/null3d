@@ -231,7 +231,8 @@ export function rimRadius(bearing: number): number {
 		RIM * (1 + 0.05 * rimNoise.fbm2(c * 1.2 + 4, s * 1.2 + 4, 2)) +
 		0.9 * rimNoise.value2(c * 4 + 9, s * 4 + 9) +
 		0.55 * rimNoise.value2(c * 11 + 2, s * 11 + 2) +
-		0.16 * rimNoise.value2(c * 23 + 5, s * 23 + 5) -
+		0.24 * rimNoise.value2(c * 23 + 5, s * 23 + 5) +
+		0.08 * rimNoise.value2(c * 41 + 7, s * 41 + 7) -
 		WEST_BAY.depth * Math.exp(-((turn(WEST_BAY.bearing, bearing) / WEST_BAY.width) ** 2)) +
 		HEADLAND.reach * Math.exp(-((turn(HEADLAND.bearing, bearing) / HEADLAND.width) ** 2));
 	for (const x of [LIPS.west, LIPS.east]) {
@@ -617,6 +618,8 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const shade = 0.8 + 0.4 * noise.value2(x * 1.7, z * 1.7);
 	const light = smoothstep(noise.fbm2(x * 0.15 + 21, z * 0.15 + 4, 3), 0.15, 0.45);
 	const band = stairBand(x, z);
+	// The hill reads darker and greyer than the lawns below it, as the concept's shaded slope does.
+	const high = smoothstep(y, 1.5, 4.6);
 	// The bed's cobbles: soft pale and dark shapes that show through the clear water, with no edge
 	// sharp enough to read as a line.
 	const pool = poolShare(x);
@@ -632,7 +635,8 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 		const shore = bright + ((MUD[c] as number) - bright) * wet;
 		const bed = (BED[c] as number) + ((BED_POOL[c] as number) - (BED[c] as number)) * pool;
 		const ground = shore + (bed * cobble - shore) * under;
-		out[c] = (ground + ((STONE[c] as number) - ground) * rocky) * shade;
+		const rockyHigh = Math.max(rocky, high * 0.25);
+		out[c] = (ground + ((STONE[c] as number) - ground) * rockyHigh) * shade * (1 - 0.1 * high);
 	}
 }
 

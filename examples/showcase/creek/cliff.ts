@@ -74,7 +74,7 @@ const LIP_BREAK = { fissure: 0.7, ledge: 0.45 } as const;
  * walls run on down into the cloud from the opening camera, as the concept's do, rather than ending
  * in an outline over it.
  */
-const FLARE = 0.25;
+const FLARE = 0.12;
 /** The meters that one repeat of the rock's detail covers, about: a whole number go round the rim. */
 const TILE = 2.2;
 
@@ -471,7 +471,55 @@ fn surface(input: SurfaceInput) -> Surface {
  * The rocks of the rim's fringe: how far apart they stand, their size, and how far inside the rim
  * their feet stand, so each one's outer side juts out over the wall and breaks the land's clean edge.
  */
-const RIM_FRINGE = { spacing: 1.4, size: [0.25, 0.55], inset: 0.02 } as const;
+const RIM_FRINGE = { spacing: 1.4, size: [0.2, 0.6], inset: 0.35 } as const;
+/** How far past the creek's half width the rim's fringe stays, as the planting's bank keep does. */
+export const STREAM_KEEP = 1.3;
+
+/** One rock of the rim's fringe: its place, its turn about y and its size. */
+export interface RimRock {
+	readonly x: number;
+	readonly y: number;
+	readonly z: number;
+	readonly turn: number;
+	readonly size: number;
+}
+
+/**
+ * The rim's fringe's places: irregular mossy rocks that break the land's edge over the wall, spaced
+ * unevenly and set in and out, with now and then a gap, so no row forms. None stands in the creek's
+ * channel where it crosses the rim at a lip.
+ */
+export function rimFringePlaces(rim: Float32Array): RimRock[] {
+	const next = random(83);
+	const count = rim.length / 3;
+	const places: RimRock[] = [];
+	let run = 0;
+	for (let k = 0; k < count; k++) {
+		const a = k * 3;
+		const b = ((k + 1) % count) * 3;
+		run += Math.hypot(
+			(rim[b] as number) - (rim[a] as number),
+			(rim[b + 2] as number) - (rim[a + 2] as number),
+		);
+		if (run < RIM_FRINGE.spacing * (0.35 + 1.3 * next())) continue;
+		run = 0;
+		// Now and then a stretch of rim keeps no rock, so the row never reads as one line.
+		if (next() < 0.18) continue;
+		const [x, y, z] = [rim[a] as number, rim[a + 1] as number, rim[a + 2] as number];
+		if (Math.abs(z - streamZ(x)) < streamHalf(x) * STREAM_KEEP) continue;
+		const reach = Math.hypot(x, z) || 1;
+		const inset = RIM_FRINGE.inset * next();
+		const size = RIM_FRINGE.size[0] + (RIM_FRINGE.size[1] - RIM_FRINGE.size[0]) * next();
+		places.push({
+			x: x * (1 - inset / reach),
+			y: y + 0.05,
+			z: z * (1 - inset / reach),
+			turn: next() * Math.PI * 2,
+			size,
+		});
+	}
+	return places;
+}
 
 /** Places the rim's fringe: irregular mossy rocks that break the land's edge over the wall. */
 function rimFringe(
@@ -484,31 +532,8 @@ function rimFringe(
 	rim: Float32Array,
 	textureSize: number,
 ): void {
-	const next = random(83);
-	const count = rim.length / 3;
-	const places: { x: number; y: number; z: number; turn: number; size: number }[] = [];
-	let run = 0;
-	for (let k = 0; k < count; k++) {
-		const a = k * 3;
-		const b = ((k + 1) % count) * 3;
-		run += Math.hypot(
-			(rim[b] as number) - (rim[a] as number),
-			(rim[b + 2] as number) - (rim[a + 2] as number),
-		);
-		if (run < RIM_FRINGE.spacing * (0.7 + 0.6 * next())) continue;
-		run = 0;
-		const [x, y, z] = [rim[a] as number, rim[a + 1] as number, rim[a + 2] as number];
-		const reach = Math.hypot(x, z) || 1;
-		const inset = RIM_FRINGE.inset * next();
-		const size = RIM_FRINGE.size[0] + (RIM_FRINGE.size[1] - RIM_FRINGE.size[0]) * next();
-		places.push({
-			x: x * (1 - inset / reach),
-			y: y + 0.05,
-			z: z * (1 - inset / reach),
-			turn: next() * Math.PI * 2,
-			size,
-		});
-	}
+	const places = rimFringePlaces(rim);
+	if (places.length === 0) return;
 	const stone = geometry.fromArrays(
 		mossy(rock(89, 1, [1, 0.5, 0.85], 0.22), 90, 0.6, {
 			stone: [0.075, 0.08, 0.07],

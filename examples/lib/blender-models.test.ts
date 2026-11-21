@@ -27,6 +27,7 @@ describe('a tinted part', () => {
 		expect(seen?.map).toBe(colour);
 		expect(seen?.normalMap).toBe(normal);
 		expect(seen?.metalnessRoughnessMap).toBe(orm);
+		expect(seen?.metalness).toBe(1);
 		expect(seen?.aoMap).toBe(ao);
 		expect(seen?.normalScale).toEqual([1, -1]);
 		expect(seen?.color).toBe('#ff0000');

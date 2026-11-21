@@ -6,7 +6,7 @@
 // falling water down close behind it, by the water add-on's own path for the fall.
 import { expect, test } from 'bun:test';
 import { brinkAt, drawnHalf, fallPlace, fallTime } from '../../../packages/water/src/fall';
-import { aroundNoise, pillars, relief, wallArrays } from './cliff';
+import { aroundNoise, pillars, relief, rimFringePlaces, STREAM_KEEP, wallArrays } from './cliff';
 import {
 	bearingOf,
 	FALL,
@@ -112,6 +112,27 @@ test('at the heights the camera reaches past the rim, the rock stands within the
 		expect(Math.hypot(x, z) - rimRadius(bearingOf(x, z))).toBeLessThan(WALL_REACH);
 	}
 	expect(checked).toBeGreaterThan(100);
+});
+
+test("the rim's fringe keeps out of the creek's channel and leaves gaps, so no row forms", () => {
+	const { rim } = landArrays(QUADS);
+	const places = rimFringePlaces(rim);
+	expect(places.length).toBeGreaterThan(20);
+	for (const place of places)
+		expect(
+			Math.abs(place.z - streamZ(place.x)),
+			`a fringe rock at ${place.x.toFixed(1)}, ${place.z.toFixed(1)} in the stream`,
+		).toBeGreaterThanOrEqual(streamHalf(place.x) * STREAM_KEEP);
+	// The gaps: some stretches of the rim carry no rock at all, so the fringe is no regular row.
+	const gaps = places.filter(
+		(place, k) =>
+			k > 0 &&
+			Math.hypot(
+				place.x - (places[k - 1] as typeof place).x,
+				place.z - (places[k - 1] as typeof place).z,
+			) > 3,
+	);
+	expect(gaps.length).toBeGreaterThan(3);
 });
 
 test('under each lip the rock follows the falling water down, close behind its back', () => {

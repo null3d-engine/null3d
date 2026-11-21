@@ -92,6 +92,9 @@ export function tintedPart(
 		// The scripts pack the occlusion with the metalness and roughness, in one texture.
 		...(part.maps.metalnessRoughnessMap && {
 			metalnessRoughnessMap: part.maps.metalnessRoughnessMap,
+			// The map's blue holds the metalness, and the material multiplies it by this factor, whose
+			// default of 0 would leave the map's blue out.
+			metalness: 1,
 		}),
 		...(part.maps.aoMap && { aoMap: part.maps.aoMap }),
 		normalScale,

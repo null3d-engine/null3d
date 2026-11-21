@@ -51,9 +51,9 @@ export type PlantKind = (typeof PLANT_KINDS)[number];
  */
 export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number; depth: number }> =
 	{
-		'pine-tall': { height: 6.87, reach: 5.4, depth: 3.15 },
-		'pine-narrow': { height: 7.74, reach: 2.81, depth: 2.3 },
-		'pine-low': { height: 3.63, reach: 2.59, depth: 1.66 },
+		'pine-tall': { height: 7.48, reach: 5.4, depth: 3.15 },
+		'pine-narrow': { height: 7.68, reach: 2.81, depth: 2.3 },
+		'pine-low': { height: 3.7, reach: 2.59, depth: 1.66 },
 		maple: { height: 5.6, reach: 3.85, depth: 3.85 },
 		'rim-conifer': { height: 1.3, reach: 1.1, depth: 1.1 },
 		'clipped-shrub': { height: 1.3, reach: 0.79, depth: 0.79 },
@@ -119,13 +119,13 @@ export const GROUND_LEVELS: Record<
 		{
 			triangles: [1088, 722, 618],
 			switches: [40.5, 47.1],
-			offset: [1.1672, 0.6272, 1.0245],
+			offset: [0.1467, 0.5272, -0.1018],
 			radius: 1.6749,
 		},
 		{
 			triangles: [4708, 2356, 1180],
 			switches: [70, 117.7],
-			offset: [1.8432, 1.1522, 1.7993],
+			offset: [0.1305, 0.5234, -0.0705],
 			radius: 2.4945,
 		},
 	],
@@ -133,13 +133,13 @@ export const GROUND_LEVELS: Record<
 		{
 			triangles: [534, 330, 256],
 			switches: [79.7, 105.5],
-			offset: [0.8001, 0.5452, 0.7822],
+			offset: [0.0501, 0.4452, 0.037],
 			radius: 1.2221,
 		},
 		{
 			triangles: [2640, 1320, 660],
 			switches: [61.5, 98.9],
-			offset: [0.8892, 0.5459, 0.8345],
+			offset: [0.0397, 0.5088, 0.024],
 			radius: 1.3097,
 		},
 	],
@@ -147,13 +147,13 @@ export const GROUND_LEVELS: Record<
 		{
 			triangles: [852, 498, 394],
 			switches: [79.7, 93.2],
-			offset: [0.8318, 0.3577, 0.789],
+			offset: [0.0287, 0.2577, 0.0133],
 			radius: 1.1929,
 		},
 		{
 			triangles: [1568, 784, 392],
 			switches: [62.4, 97.5],
-			offset: [0.8991, 0.381, 0.8814],
+			offset: [0.0081, 0.3208, 0.0197],
 			radius: 1.2913,
 		},
 	],
@@ -161,13 +161,13 @@ export const GROUND_LEVELS: Record<
 		{
 			triangles: [1744, 1154, 724],
 			switches: [55, 77.3],
-			offset: [0.8604, 0.3131, 0.8513],
+			offset: [-0.1078, 0.2131, 0.0008],
 			radius: 1.2425,
 		},
 		{
 			triangles: [2352, 1176, 588],
 			switches: [55.3, 80.2],
-			offset: [0.9762, 0.3724, 1],
+			offset: [-0.1021, 0.2755, 0.004],
 			radius: 1.3953,
 		},
 	],
@@ -175,7 +175,7 @@ export const GROUND_LEVELS: Record<
 		{
 			triangles: [384, 128, 60],
 			switches: [23.5, 49.7],
-			offset: [0.7083, 0.1731, 0.7191],
+			offset: [-0.0051, 0.1731, 0.0076],
 			radius: 1.0241,
 		},
 	],
@@ -183,7 +183,7 @@ export const GROUND_LEVELS: Record<
 		{
 			triangles: [416, 208, 104],
 			switches: [24.4, 72.6],
-			offset: [0.803, 0.3735, 0.8791],
+			offset: [-0.0224, 0.3935, 0.0063],
 			radius: 1.2136,
 		},
 	],
@@ -191,7 +191,7 @@ export const GROUND_LEVELS: Record<
 		{
 			triangles: [560, 200, 120],
 			switches: [20.6, 91.3],
-			offset: [0.5863, 0.2583, 0.5792],
+			offset: [0.0036, 0.2583, -0.0482],
 			radius: 0.8637,
 		},
 	],
@@ -263,7 +263,7 @@ export const TREES: readonly (readonly [
 	number,
 	number?,
 ])[] = [
-	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2, 0.75],
+	['P1', -16.2, 0, 'pine-tall', 1.065, 0.2, 0.75],
 	['P2', -5.8, -16.6, 'pine-narrow', 1.03, -0.15],
 	['P3', 1.6, 22.2, 'pine-low', 0.86, 0.3],
 	['P4', 13.7, 8.6, 'pine-low', 0.96, -0.2],
@@ -376,9 +376,9 @@ interface Rule {
 const RULES: readonly Rule[] = [
 	{
 		kind: 'rim-conifer',
-		spacing: 4.2,
-		scale: [1.15, 1.6],
-		clump: [1, 1.5],
+		spacing: 3.7,
+		scale: [1.05, 1.45],
+		clump: [2, 1.5],
 		tolerances: [
 			['rim', 0.4, 0.8, 3, 4.5],
 			['patch', 0.4, 0.5, 1, 1.01],
@@ -386,9 +386,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'clipped-shrub',
-		spacing: 4.2,
+		spacing: 3.6,
 		scale: [0.9, 1.3],
-		clump: [1, 1.4],
+		clump: [2, 1.5],
 		tolerances: [
 			['water', 1, 2.5, 9, 13],
 			['patch', 0.44, 0.56, 1, 1.01],
@@ -396,7 +396,7 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'azalea',
-		spacing: 3.2,
+		spacing: 2.9,
 		scale: [0.8, 1.15],
 		clump: [2, 1.7],
 		tolerances: [
@@ -406,9 +406,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'autumn-clump',
-		spacing: 3.7,
-		scale: [0.65, 0.9],
-		clump: [1, 2.0],
+		spacing: 4.3,
+		scale: [0.8, 1.1],
+		clump: [1, 1.8],
 		tolerances: [
 			['height', 0.4, 1, 8, 9],
 			['patch', 0.25, 0.4, 1, 1.01],
