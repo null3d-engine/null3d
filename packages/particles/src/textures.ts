@@ -152,7 +152,9 @@ export const particleTextures = {
 			const body = smooth(edge + 0.25, edge - 0.35, r + (billow - 0.5) * 0.9);
 			// Lit from above: the top of the puff is lighter than its underside.
 			out[0] = 0.72 + 0.28 * smooth(-1, 1, v + (billow - 0.5));
-			out[1] = body * (0.25 + 0.75 * billow) * (1 - 0.55 * age);
+			// The puff thins to nothing before the frame's edge, as it grows, so no particle shows
+			// the straight sides of its square.
+			out[1] = body * (0.25 + 0.75 * billow) * (1 - 0.55 * age) * smooth(1, 0.8, r);
 		});
 	},
 
