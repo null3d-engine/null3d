@@ -131,7 +131,11 @@ const params = new URL(import.meta.url).searchParams;
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
 const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
-/** The parts of the scene that the address leaves out, for a bisect or a measure by difference. */
+/**
+ * The parts of the scene that the address leaves out, any of `plants`, `water` and `fog`, for a
+ * bisect or a measure by difference. Without fog, the mist over the water goes too, as the HUD's fog
+ * switch takes it.
+ */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
 /**
  * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
@@ -492,7 +496,7 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			fog: !WITHOUT.has('fog'),
 			shafts: false,
 			fireflies: false,
 			shadows: true,
