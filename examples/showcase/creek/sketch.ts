@@ -204,7 +204,7 @@ const WATER_AT_LIP = FALL.width;
 /** The water's depth under its middle line, in meters: the mean bed that the creek cuts. */
 const STREAM_DEPTH = 0.62;
 /** How far the foam reaches round each mark of the foam map, in meters. */
-const FOAM_REACH = 0.35;
+const FOAM_REACH = 0.25;
 /** The foam map's box on the ground, over the whole creek. */
 const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2, 11.5] } as const;
 
@@ -259,11 +259,12 @@ function createCreekWater(
 		// clear and shallow, with a muted grey-teal tint, so the pale bed shows through it.
 		material: {
 			alphaMode: 'opaque',
-			attenuationColor: '#4f9a96',
+			attenuationColor: '#377472',
 			attenuationDistance: 1.2,
 			// From the opening view the calm pool would mirror the bright overcast and hide its bed:
-			// a weaker reflection lets the dark bed through, as the concept's pool shows it.
-			specularIntensity: 0.4,
+			// a weaker reflection lets the dark bed through, as the concept's pool shows it, and leaves
+			// the arms' water under their foam's brightness.
+			specularIntensity: 0.25,
 			// A thin volume bends the bed's picture little, so the view along the water close up
 			// never reaches past the frame's edge for it.
 			thickness: 0.15,
