@@ -27,6 +27,7 @@ test('the foam marks thin on the east arm and thicken on the west', () => {
 	// marks take a fraction of the map's width; the west's take more.
 	expect(foamArmFactor(POOL.x + 1)).toBeCloseTo(FOAM_ARM.east, 6);
 	expect(foamArmFactor(POOL.x - 1)).toBeCloseTo(FOAM_ARM.west, 6);
-	expect(FOAM_ARM.east).toBeLessThan(0.5);
+	expect(FOAM_ARM.east).toBeLessThanOrEqual(0.5);
 	expect(FOAM_ARM.west).toBeGreaterThan(1.2);
+	expect(FOAM_ARM.west).toBeLessThanOrEqual(1.25);
 });

@@ -43,12 +43,12 @@ const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
 const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
 /**
- * The share of a mark's radius that each arm's foam takes. The water helper traced the arms: with
- * every mark's radius at half the east reads 17.6 per cent and at a quarter 9.1, against 29.6 at
- * full, so the east's marks take 0.4; the west's carry less than the concept's, so its marks take
- * 1.35. The arm's side is the stone's x against the pool's.
+ * The share of a mark's radius that each arm's foam takes. The drawn round took the east from 30.4
+ * to 11.5 per cent against the concept's 14, so its marks take 0.5; the west overshot from 19.8 to
+ * 26.1 against 24, so its marks take 1.25. The east's fall shows the arm is its foam marks, not the
+ * water's reflection. The arm's side is the stone's x against the pool's.
  */
-export const FOAM_ARM = { east: 0.4, west: 1.35 } as const;
+export const FOAM_ARM = { east: 0.5, west: 1.25 } as const;
 /** The share that a foam mark takes on its arm: west before the pool, east past it. */
 export const foamArmFactor = (x: number) => (x < POOL.x ? FOAM_ARM.west : FOAM_ARM.east);
 /**
