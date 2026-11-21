@@ -106,9 +106,9 @@ Each model draws with few triangles, so a scene can place many copies. The trees
 | Island holm oak: wood, leaves | 612, 148, 72; 5,272, 1,320, 332 |
 | Island oleander: stems, leaves and flowers | 192, 96, 96; 1,280, 768, 288 |
 | Each island plant's far card | 20 |
-| Creek tall pine: wood, needles | 13,173, 4,662, 1,452; 20,086, 9,252, 4,020 |
-| Creek narrow pine: wood, needles | 11,861, 4,433, 1,462; 17,856, 7,892, 3,580 |
-| Creek low pine: wood, needles | 7,926, 2,967, 992; 20,892, 9,424, 4,180 |
+| Creek tall pine: wood, needles | 11,097, 4,347, 1,289; 18,392, 8,640, 3,680 |
+| Creek narrow pine: wood, needles | 10,947, 4,063, 1,311; 15,084, 6,896, 3,024 |
+| Creek low pine: wood, needles | 7,967, 2,985, 994; 20,332, 9,228, 4,068 |
 | Creek garden statue: figure, slab | 29,999, 10,199, 2,999; 1,456, 728, 312 |
 | Creek garden lantern | 1,500, 900, 450 |
 | Creek garden gate | 5,969, 2,371, 871 |
@@ -116,7 +116,7 @@ Each model draws with few triangles, so a scene can place many copies. The trees
 | Creek garden boulders 1 and 2, each | 1,500, 900, 450 |
 | Creek garden boulder 3 | 1,499, 899, 599 |
 
-The Creek's trees file takes 4,198 KB, its plants file 470 KB, its cave file 784 KB and its pines file 3,835 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. The Creek garden's statue file takes 3,154 KB, its lantern 572 KB, its gate 2,250 KB, its roof dragon 674 KB, and its boulders 2,029 KB, 2,075 KB and 514 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away. The tall pine's needles switch about 90 m and 140 m away, and the narrow pine's about 85 m and 130 m away. The low pine's switch about 55 m and 80 m away. Each switch follows the error that the build measures. A pine's lower levels keep one needle card in two and one in five, each a little larger, and coarser pad bodies. They cut the wood to about a third and an eighth of its triangles.
+The Creek's trees file takes 4,198 KB, its plants file 470 KB, its cave file 784 KB and its pines file 3,357 KB. The island's trees file takes 1,237 KB and its shrubs file 256 KB. The Creek garden's statue file takes 3,154 KB, its lantern 572 KB, its gate 2,250 KB, its roof dragon 674 KB, and its boulders 2,029 KB, 2,075 KB and 514 KB. A Creek tree's lower levels keep one leaf spray in three and one in eight, each a little larger, so the leaves keep near their size. They switch about 50 m and 100 m away on a screen 1,080 pixels high. The island's tree levels switch about 40 m and 90 m away, and the oleander's about 15 m and 35 m away. The tall pine's needles switch about 80 m and 130 m away, and the narrow pine's about 85 m and 140 m away. The low pine's switch about 40 m and 65 m away. Each switch follows the error that the build measures. A pine's lower levels keep one needle card in two and one in five, each a little larger, and coarser pad bodies. They cut the wood to about a third and an eighth of its triangles.
 
 An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film, with each surface's own color and no light, so the engine lights the card once. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 

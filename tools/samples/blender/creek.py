@@ -886,34 +886,34 @@ PINES = {
     'pine-tall': dict(
         TALL_TRUNK, wood=(14000, 5000, 1600),
         fan=(0.3, (3.6, 3.0, 2.4), (0.6, 1.6, 1.95, 1.7, 1.45)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
-        keep=0.45, girth=0.12, drop=0.5, sag=0.2, prune=True, gap=0.14, pad=(1.0, 1.35, 1.1), vary=0.45, crest=(0.32, 0.0, 0.33),
-        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=0.9, level=50, floor=0.3, deep=(1.4,), flat=3.0, rise=0.1, droop=0.1, stagger=0.3,
+        keep=0.45, girth=0.08, drop=0.5, sag=0.2, prune=True, gap=0.14, pad=(1.0, 1.35, 1.1), vary=0.45, crest=(0.32, 0.0, 0.33),
+        taper=0.5, spacing=2.6, slope=1.5, flatten=0.9, hold=0.9, level=50, floor=0.3, deep=(1.4,), flat=3.0, rise=0.1, droop=0.1, stagger=0.3,
         inner=0.2,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=3600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.71, 0.88, 0.88), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.69, 0.89, 0.89), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
     'pine-low': dict(
         raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
         turn=-90, height=3.4, sink=0.15, wood=(8000, 3000, 1000), limit=0.03, bark=(0.17, 0.11, 0.055),
-        fan=(0.3, (0.8,), (1.25,)), rigid=0.25, climb=(0.3, 0.3, 1.5, 0.35), bare=0.3, stub=0.12, twig=0.2, keep=0.3, girth=0.2, drop=0.15, sag=0.3, prune=True,
+        fan=(0.3, (0.8,), (0.50,)), rigid=0.25, climb=(0.3, 0.3, 1.5, 0.35), bare=0.3, stub=0.12, twig=0.2, keep=0.3, girth=0.12, drop=0.1, sag=0.3, prune=True,
         gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8, slope=2.0, flatten=0.8, hold=1.0, level=70,
-        floor=0.3, spread=2.3, deep=(0.5,), flat=1.7, rise=0.1, droop=0.35, stagger=0.15, inner=0.0,
+        floor=0.3, spread=2.0, deep=(0.5,), flat=1.7, rise=0.1, droop=0.35, stagger=0.15, inner=0.0,
         body=0.5, bodies=((10, 5), (6, 3), (5, 2)), underside=0.1,
         cards=3400, up=0.6, depth=0.3, card=0.35, lift=0.7, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.08, bend=0.55, tint=(0.77, 0.93, 0.73), shade=0.7, levels=((2, 1.3), (5, 1.7)),
+        fold=0.08, bend=0.55, tint=(0.76, 0.96, 0.71), shade=0.7, levels=((2, 1.3), (5, 1.7)),
     ),
     # The concept's top pine: the tall trunk with its limbs kept short, broad from its rounded top
-    # down, about 0.7 times as wide as it is tall.
+    # down, about four fifths as wide as it is tall.
     'pine-narrow': dict(
-        TALL_TRUNK, wood=(12000, 4500, 1500),
-        fan=(0.3, (1.4, 1.2, 1.0), (0.5, 0.65, 1.15, 1.35, 1.5)), wire=0.5, span=(0.4, 0.82), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
-        keep=0.45, girth=0.15, drop=0.4, sag=0.15, prune=True, gap=0.1, pad=(0.5, 0.8, 0.9), vary=0.35, crest=(0.6, 0.0, 0.45),
-        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=0.9, level=50, floor=0.37, deep=(0.8,), flat=2.8, rise=0.1, droop=0.12, stagger=0.1,
+        TALL_TRUNK, height=7.1, wood=(12000, 4500, 1500),
+        fan=(0.3, (1.4, 1.2, 1.0), (0.5, 0.95, 1.5, 1.5, 1.5)), wire=0.5, span=(0.4, 0.82), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
+        keep=0.45, girth=0.1, drop=0.4, sag=0.25, prune=True, gap=0.1, pad=(0.6, 1.05, 0.95), vary=0.35, crest=(0.6, 0.0, 0.45),
+        taper=0.5, spacing=2.6, slope=1.5, flatten=0.5, hold=0.9, level=50, floor=0.37, deep=(0.8,), flat=2.8, rise=0.1, droop=0.12, stagger=0.15,
         inner=0.1,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=2600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.75, 0.82, 0.82), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.74, 0.82, 0.82), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
 }
 
