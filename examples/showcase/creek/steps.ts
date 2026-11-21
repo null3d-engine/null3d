@@ -337,10 +337,14 @@ export function createSteps(
 		walls.scales.set([size, size, size], row * 3);
 	});
 	walls.markDirty();
+	return onSteps;
+}
+
+/** True for a point on the steps or under their walls, where nothing grows. */
+export function onSteps(x: number, z: number): boolean {
 	const reach = STAIRS.half + WALL.out + WALL.size[1];
-	return (x, z) =>
-		flights().some((flight) => {
-			const { t, side } = alongFlight(flight, x, z);
-			return t > -0.05 && t < 1.05 && side < reach;
-		});
+	return flights().some((flight) => {
+		const { t, side } = alongFlight(flight, x, z);
+		return t > -0.05 && t < 1.05 && side < reach;
+	});
 }

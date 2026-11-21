@@ -52,6 +52,13 @@ const LIP_RECESS = {
 	proud: 0.15,
 	fold: 0.6,
 } as const;
+/**
+ * Under the west fall the rock follows the stream down instead, so it falls against the dark wall
+ * as the concept's does: how far the stream stands out from the rim's line 2 m down, in meters; the
+ * power of the depth by which it moves out further, as the water add-on's fall does, about 1.3 m by
+ * 13 m down; and how far behind the stream the rock stands.
+ */
+const WEST_HUG = { out: 0.6, power: 0.4, gap: 0.35 } as const;
 /** How deep the upright fissures cut into the face beside each lip, and how far its ledges step. */
 const LIP_BREAK = { fissure: 0.7, ledge: 0.45 } as const;
 /** How far the rock spreads outward per meter of depth: the cliff widens a little toward its foot. */
@@ -265,7 +272,7 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// it, under the banks, where the water's sheet runs on under the ground, the rock stands
 			// flush, so the sheet stays inside it; and on round, no buttress stands proud enough to
 			// hide the fall.
-			const { fall, notch, sheet, clear } = lipShares(x, z);
+			const { fall, notch, sheet, clear, west } = lipShares(x, z);
 			const raw = offset + UNDERCUT;
 			// A crag that would stand proud folds back into the wall as a hollow, so the face beside the
 			// fall stays broken and still never stands out far enough to hide it.
@@ -284,7 +291,9 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// The notch: a ledge stepped back a little across the margin beside the fall, and the rock
 			// stood well back under the fall itself, so it drops clear with rock showing at both sides.
 			const ledged = flush + (Math.min(flush, -LIP_RECESS.ledge) - flush) * notch;
-			const shaped = ledged + (Math.min(ledged, -LIP_RECESS.back) - ledged) * fall;
+			const recessed = ledged + (Math.min(ledged, -LIP_RECESS.back) - ledged) * fall;
+			const hug = WEST_HUG.out * (depth / 2) ** WEST_HUG.power - WEST_HUG.gap;
+			const shaped = recessed + (hug - recessed) * west;
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
 			const grow = smoothstep(depth, 0, 1.2);
 			const out = (shaped + FLARE * depth * (1 - clear)) * grow;
@@ -318,26 +327,29 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 /**
  * How near a point of the rim lies to a lip: `water`, from 0 to 1 across the width where the water
  * shows at the lip; `sheet`, over the banks either side, where the water's sheet runs on under the
- * ground; and `clear`, on round the rim either side, where the fall must show past the rock.
+ * ground; `clear`, on round the rim either side, where the fall must show past the rock; and `west`,
+ * the west fall's own share with its margin, where the rock follows its stream down.
  */
 function lipShares(
 	x: number,
 	z: number,
-): { fall: number; notch: number; sheet: number; clear: number } {
+): { fall: number; notch: number; sheet: number; clear: number; west: number } {
 	let fall = 0;
 	let notch = 0;
 	let sheet = 0;
 	let clear = 0;
+	let west = 0;
 	for (const lip of [LIPS.west, LIPS.east]) {
 		const half = streamHalf(lip);
 		const reach = Math.hypot(x - lip, z - streamZ(lip));
 		const share = (from: number, over: number) => 1 - smoothstep(reach, from, from + over);
+		if (lip === LIPS.west) west = share(half * LIP_RECESS.fall + LIP_RECESS.margin, 0.15);
 		fall = Math.max(fall, share(half * LIP_RECESS.fall, 0.15));
 		notch = Math.max(notch, share(half * LIP_RECESS.fall + LIP_RECESS.margin, 0.15));
 		sheet = Math.max(sheet, share(half * LIP_RECESS.sheet, 0.8));
 		clear = Math.max(clear, share(half * LIP_RECESS.clear, 3));
 	}
-	return { fall, notch, sheet, clear };
+	return { fall, notch, sheet, clear, west };
 }
 
 /**
