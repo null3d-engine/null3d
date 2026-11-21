@@ -592,16 +592,21 @@ export function cameraFloor(x: number, z: number): number {
 
 /** Linear colors of the ground: golden-olive moss, its darker and browner patches, soil and rock. */
 const MOSS = [0.195, 0.142, 0.026];
-const MOSS_DARK = [0.085, 0.07, 0.011];
+const MOSS_DARK = [0.06, 0.063, 0.009];
 const MOSS_BROWN = [0.15, 0.099, 0.02];
 /** The light, yellow-green moss in the sunnier patches. */
-const MOSS_LIGHT = [0.26, 0.202, 0.035];
+const MOSS_LIGHT = [0.32, 0.26, 0.03];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
-const MOSS_BRIGHT = [0.3, 0.235, 0.042];
+const MOSS_BRIGHT = [0.34, 0.28, 0.03];
 const BED = [0.53, 0.49, 0.4];
 const BED_POOL = [0.18, 0.165, 0.13];
 const MUD = [0.06, 0.05, 0.035];
-const STONE = [0.075, 0.065, 0.052];
+const STONE = [0.095, 0.093, 0.086];
+/**
+ * The ground's tones that seed the palette's classes, for the class test: a grey rock, a dark
+ * green and a gold. The rendered classes are measured in the round; these hold the intent.
+ */
+export const GROUND_CLASS_TONES = { grey: STONE, dark: MOSS_DARK, gold: MOSS_LIGHT } as const;
 
 /** The ground's color at a point, from its height and its slope, with patches from noise. */
 function groundColor(x: number, z: number, y: number, slope: number, out: number[]): void {
@@ -614,7 +619,7 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 	const edge =
 		(1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.1, 0.75)) *
 		(0.55 + 0.45 * noise.value2(x * 2.7, z * 2.7));
-	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
+	const rocky = Math.max(smoothstep(slope, 0.7, 1.15), edge);
 	const shade = 0.8 + 0.4 * noise.value2(x * 1.7, z * 1.7);
 	const light = smoothstep(noise.fbm2(x * 0.15 + 21, z * 0.15 + 4, 3), 0.15, 0.45);
 	const band = stairBand(x, z);
