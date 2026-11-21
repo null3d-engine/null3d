@@ -12,6 +12,7 @@ import {
 	brinkAt,
 	COLUMN_DEPTH,
 	columnDepth,
+	drawnHalf,
 	FALL_SPEED,
 	type FallSheet,
 	fallEmitters,
@@ -19,8 +20,10 @@ import {
 	fallSheet,
 	fallTime,
 	GRAVITY,
+	MIST_DENSITY,
 	MIST_DEPTH,
 	MIST_WIDTH,
+	mistBillow,
 	sideAt,
 	TONGUE,
 	WOBBLE,
@@ -408,7 +411,9 @@ describe('a waterfall’s spray and mist', () => {
 		const thick = drops?.box[2] as number;
 		expect(out - thick / 2).toBeLessThan(at[0]);
 		expect(out + thick / 2).toBeGreaterThan(at[0] + 2 * depth);
-		expect(drops?.box[0] as number).toBeGreaterThan(SHEET.halfWidth + SHEET.spread * upper);
+		expect(drops?.box[0] as number).toBeGreaterThan(
+			2 * drawnHalf(SHEET.halfWidth, SHEET.spread, upper),
+		);
 		// It stays in the upper drop: its top below the lip, its foot above the fall's lower quarter.
 		const top = (drops?.position[1] as number) + (drops?.box[1] as number) / 2;
 		const foot = (drops?.position[1] as number) - (drops?.box[1] as number) / 2;
@@ -421,7 +426,7 @@ describe('a waterfall’s spray and mist', () => {
 		const at: [number, number] = [0, 0];
 		// The froth stands just past the lip, a little below the river's surface.
 		expect(froth?.position).toEqual([10.25, SHEET.level - 0.1, -4]);
-		// The mist stands about the column's middle, nearly three quarters of the way down.
+		// The mist stands about the column's middle, most of the way down.
 		const middle = SHEET.drop * MIST_DEPTH;
 		fallPlace(fallTime(middle), SHEET.speed, at);
 		const depth = columnDepth(SHEET.halfWidth, middle);
@@ -434,13 +439,46 @@ describe('a waterfall’s spray and mist', () => {
 		expect(plume?.position[1] as number).toBeLessThan(SHEET.level - SHEET.drop * 0.9);
 	});
 
-	it('gathers its mist a little wider than the fall, over the lower half of the drop', () => {
+	it('gathers its mist round the fall’s foot, several times as wide as the water there', () => {
 		const { mist } = byKind(SHEET);
-		const half = SHEET.halfWidth + SHEET.spread * SHEET.drop * MIST_DEPTH;
+		const half = drawnHalf(SHEET.halfWidth, SHEET.spread, SHEET.drop * MIST_DEPTH);
 		expect(mist?.halfWidth).toBeCloseTo(half, 6);
 		expect(mist?.box[0]).toBeCloseTo(2 * half * MIST_WIDTH, 6);
+		// The water draws in below the lip, so the mist is sized by the water, not by the lip.
+		expect(half).toBeLessThan(SHEET.halfWidth + SHEET.spread * SHEET.drop * MIST_DEPTH);
 		const top = (mist?.position[1] as number) + (mist?.box[1] as number) / 2;
-		expect(top).toBeLessThan(SHEET.level - SHEET.drop * 0.4);
+		expect(top).toBeLessThan(SHEET.level - SHEET.drop * 0.6);
+	});
+
+	it('sizes the mist’s billows by the lip and keeps a short fall’s below its lip', () => {
+		// A tall fall’s billows are twice the lip’s width.
+		expect(mistBillow({ ...SHEET, drop: 60 })).toBeCloseTo(4 * SHEET.halfWidth, 9);
+		// A short fall’s are smaller than its drop, so none reaches up to the lip.
+		for (const drop of [2, 6, 20]) {
+			const sheet = { ...SHEET, drop };
+			const { mist } = byKind(sheet);
+			const top = (mist?.position[1] as number) + (mist?.box[1] as number) / 2;
+			expect(top + mistBillow(sheet) / 2).toBeLessThan(sheet.level);
+		}
+	});
+
+	it('keeps its mist as dense for any fall, so it reads as one cloud', () => {
+		// The billows born each second over the box's face, in squares of a billow's width.
+		const density = (sheet: FallSheet) => {
+			const { mist } = byKind(sheet);
+			const box = mist?.box as readonly number[];
+			return (
+				((mist?.rate as number) * mistBillow(sheet) ** 2) /
+				((box[0] as number) * (box[1] as number))
+			);
+		};
+		for (const sheet of [
+			SHEET,
+			{ ...SHEET, halfWidth: 6 },
+			{ ...SHEET, drop: 4 },
+			{ ...SHEET, drop: 80 },
+		])
+			expect(density(sheet)).toBeCloseTo(MIST_DENSITY, 9);
 	});
 
 	it('turns every emitter so its box lies across the fall', () => {
@@ -466,8 +504,12 @@ describe('a waterfall’s spray and mist', () => {
 		}
 	});
 
-	it('makes more puffs for a wider fall and a taller one', () => {
-		const rate = (sheet: FallSheet) => fallEmitters(sheet).map((place) => place.rate);
+	it('makes more spray for a wider fall and a taller one', () => {
+		// The mist keeps its density instead, above.
+		const rate = (sheet: FallSheet) =>
+			fallEmitters(sheet)
+				.filter((place) => place.kind !== 'mist')
+				.map((place) => place.rate);
 		const wide = rate({ ...SHEET, halfWidth: SHEET.halfWidth * 2 });
 		const tall = rate({ ...SHEET, drop: SHEET.drop * 2 });
 		const own = rate(SHEET);
@@ -486,6 +528,22 @@ describe('the column’s shader', () => {
 			return source.slice(start, source.indexOf('\n}', start));
 		};
 		expect(body(read('fall.wgsl'))).toBe(body(read('water.wgsl')));
+	});
+
+	it('vanishes below a cloud’s top, each clump at its own depth', () => {
+		const shader = read('fall.wgsl');
+		expect(shader).toContain('let sink = input.worldPosition.y + (froth - 0.5) * 0.8;');
+		expect(shader).toContain(
+			'alpha *= smoothstep(material.fadeBelow - SINK_DEPTH, material.fadeBelow + SINK_LEAD, sink);',
+		);
+	});
+
+	it('keeps the apron and the brink whole near a wall, so the lip draws no line', () => {
+		const shader = read('fall.wgsl');
+		expect(shader).toContain('let on_brink = 1.0 - smoothstep(0.4, 1.5, fallen);');
+		expect(shader).toContain(
+			'alpha *= mix(smoothstep(0.0, material.softness, gap), 1.0, on_brink);',
+		);
 	});
 
 	it('sizes the froth’s clumps by the speed of the path’s water', () => {
