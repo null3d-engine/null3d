@@ -130,8 +130,12 @@ export function checkFallSheet(sheet: FallSheet): void {
 			throw error(`a waterfall's ${what} must be a whole number from 1`);
 }
 
-/** How deep the column grows below the lip, as a share of the lip's half width each side of its middle. */
-export const COLUMN_DEPTH = 0.8;
+/**
+ * How deep the column grows below the lip, as a share of the lip's half width each side of its
+ * middle: about twice as deep, out from the wall, as the drawn-in water is wide. So a fall seen
+ * from the side is a broad fan, and from the front a narrow stream.
+ */
+export const COLUMN_DEPTH = 0.7;
 /** How thick the water is as it leaves the lip, each side of the column's middle, in meters. */
 export const TONGUE = 0.12;
 /** The most that the brink stands out past the lip's line at some places across, in meters. */
@@ -149,17 +153,26 @@ export function brinkAt(across: number, out: [shift: number, slope: number]): vo
 }
 
 /** The share of the lip's width that the falling water draws in over its first meters. */
-export const NARROW = 0.3;
+export const NARROW = 0.7;
 /** The meters that the water falls before it has drawn in most of that share, as a scale. */
-const NARROW_GROWTH = 1.5;
+const NARROW_GROWTH = 1;
 /** How far each side of the column wanders in and out as it falls, as a share of the lip's width. */
 export const WOBBLE = 0.1;
 
 /**
+ * Half the falling water's width after it has fallen `fallen` meters, leaving out the sides' wander:
+ * the lip's half width, drawn in over the first meters and widened by the spread.
+ */
+export function drawnHalf(halfWidth: number, spread: number, fallen: number): number {
+	const f = Math.max(fallen, 0);
+	return halfWidth * (1 - NARROW * (1 - Math.exp(-f / NARROW_GROWTH))) + spread * f;
+}
+
+/**
  * Half the column's width on one side, after the water has fallen `fallen` meters, and its rate
- * for each meter fallen: the lip's half width drawn in a little over the first meters, each side
- * wandering in and out on its own as it falls, then widened by the spread. `side` is 1 for the
- * water's right and -1 for its left.
+ * for each meter fallen: the lip's half width drawn in to under a third over the first meters,
+ * each side wandering in and out on its own as it falls, then widened by the spread. `side` is 1
+ * for the water's right and -1 for its left.
  */
 export function sideAt(
 	halfWidth: number,
@@ -174,7 +187,7 @@ export function sideAt(
 	const wander = Math.sin(0.9 * f + phase) + 0.5 * Math.sin(2.3 * f + 2 * phase);
 	const dWander = 0.9 * Math.cos(0.9 * f + phase) + 1.15 * Math.cos(2.3 * f + 2 * phase);
 	const grown = 1 - Math.exp(-f / 2);
-	out[0] = halfWidth * (1 - NARROW * (1 - drawn) + WOBBLE * wander * grown) + spread * f;
+	out[0] = drawnHalf(halfWidth, spread, f) + halfWidth * WOBBLE * wander * grown;
 	out[1] =
 		halfWidth *
 			((-NARROW * drawn) / NARROW_GROWTH +
@@ -343,16 +356,29 @@ export interface FallEmitter {
 	readonly halfWidth: number;
 }
 
-/** How far down the drop the mist that the fall bursts into gathers, as a share of the drop. */
-export const MIST_DEPTH = 0.72;
+/** How far down the drop the mist that the fall dissolves into gathers, as a share of the drop. */
+export const MIST_DEPTH = 0.85;
 /** How many times the fall's width the mist's cloud spreads over, gathered about the fall. */
-export const MIST_WIDTH = 1.2;
+export const MIST_WIDTH = 4;
+/**
+ * The mist's billows born each second for each square of a billow's width in the face of the mist's
+ * box: enough that many billows overlap at any place, so the mist reads as one even cloud.
+ */
+export const MIST_DENSITY = 15;
+
+/**
+ * The mean width of the billows of a fall's mist, in meters: twice the lip's width, and no more
+ * than about a third of the drop, so a short fall's mist never reaches up to its lip.
+ */
+export function mistBillow(sheet: FallSheet): number {
+	return Math.min(4 * sheet.halfWidth, 0.3 * sheet.drop);
+}
 
 /**
  * The fall's four particle emitters. The froth stands just past the brink, across the lip's width.
  * The drops leave the column's surface over the upper two thirds of the drop, from a box a little
- * wider and deeper than the column. The mist gathers about the column nearly three quarters of the
- * way down, a little wider than the fall there and over the lower half of the drop. The plume
+ * wider and deeper than the column. The mist gathers about the column's foot, over the drop's
+ * lowest third and four times as wide as the water there. The plume
  * stands at the foot, past the end of the path. Each turns with the lip, and each makes puffs
  * in step with the water's width and its drop.
  */
@@ -368,7 +394,7 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 		sheet.level + height,
 		sheet.lip[1] + dz * forward,
 	];
-	const halfAt = (fallen: number) => sheet.halfWidth + sheet.spread * fallen;
+	const halfAt = (fallen: number) => drawnHalf(sheet.halfWidth, sheet.spread, fallen);
 	const middle = sheet.drop * MIST_DEPTH;
 	fallPlace(fallTime(middle), sheet.speed, place);
 	const mistOut = place[0];
@@ -384,13 +410,19 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 	const bodyHalf = halfAt(upper);
 	const bodyDepth = columnDepth(sheet.halfWidth, upper);
 	const mistDepth = columnDepth(sheet.halfWidth, middle);
+	const mistBox: [number, number, number] = [
+		mistHalf * 2 * MIST_WIDTH,
+		sheet.drop * 0.4,
+		2 * mistDepth + 3,
+	];
+	const billow = mistBillow(sheet);
 	return [
 		{
 			kind: 'froth',
 			position: at(0.25, -0.1),
 			turn,
 			box: [sheet.halfWidth * 1.9, 0.25, 0.5],
-			rate: 6 * sheet.halfWidth,
+			rate: 15 * sheet.halfWidth,
 			halfWidth: sheet.halfWidth,
 		},
 		{
@@ -406,8 +438,8 @@ export function fallEmitters(sheet: FallSheet): FallEmitter[] {
 			// About the column's middle, a little deeper than it, gathered over the lower drop.
 			position: at(mistOut + mistDepth, -middle),
 			turn,
-			box: [mistHalf * 2 * MIST_WIDTH, sheet.drop * 0.5, 2 * mistDepth + 3],
-			rate: 2.2 * mistHalf * Math.max(1, sheet.drop / 6),
+			box: mistBox,
+			rate: (MIST_DENSITY * mistBox[0] * mistBox[1]) / (billow * billow),
 			halfWidth: mistHalf,
 		},
 		{
