@@ -99,6 +99,11 @@ const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
 const STATUE_SIZE = 0.97;
 /** How far the slab model's rim stands below its own origin, in meters at its own size. */
 const SLAB_FOOT = 0.05;
+/**
+ * The slab model's half length and half width at its own size, in meters, and how far its outline
+ * may swell past that oval, as a share: the ledge's top must reach past it all round.
+ */
+export const SLAB_REACH = { long: 4.27, wide: 2.74, swell: 0.05 } as const;
 
 /** The gate faces along its line down the ridge, so the steps pass through it. */
 const GATE_YAW = facing([TERRACE.x, TERRACE.z], [LANDING.x, LANDING.z]);
