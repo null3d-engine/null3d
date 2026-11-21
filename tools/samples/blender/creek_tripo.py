@@ -1522,9 +1522,10 @@ def repaint_model(name, spec, maps, rng):
         occlusion = seen_from_front(occlusion[..., None], position, back, front)[..., 0]
         maps['color'] = color
         # The tiles, grey above the roof line, take the `roof_tint`, and their light and dark round
-        # the local mean grow `roof_contrast` times, so the rows show dark gaps and pale tops.
+        # the local mean grow `roof_contrast` times, so the rows show dark gaps and pale tops. The
+        # tint makes a new array, as the normal map's relief reads the colour the front faces left.
         tiles = smoothstep(roof, roof + 0.1, z) * (1 - smoothstep(0.12, 0.2, strength_of(color)))
-        color *= 1 + (np.array(spec['roof_tint'], np.float32) - 1) * tiles[..., None]
+        color = color * (1 + (np.array(spec['roof_tint'], np.float32) - 1) * tiles[..., None])
         luma = color @ LUMA
         color *= (1 + (spec['roof_contrast'] - 1) * tiles * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
         timber = smoothstep(blocks, blocks + 0.08, z) * smoothstep(roof + 0.05, roof - 0.05, z)
