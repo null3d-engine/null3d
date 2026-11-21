@@ -141,6 +141,23 @@ the bed at a point, and the current there.
 | `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
 | `rain` | A number from 0 to 1 | 0 | How hard rain falls on the surface. Each drop rings the surface where it lands. 0 draws no rings and costs nothing |
 
+## The foam around what breaks the water
+
+`foamMap(ctx, obstacles, options)` makes the map that the surface breaks into flecks. Each obstacle
+is a mark `{ x, z, r }` at the water's surface. The map holds how near every point lies to a mark,
+from 1 at its edge to 0 a little way off. It stretches that reach downstream, so the foam trails.
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `origin`, `size` | Two numbers each, in meters | Required | The world area that the map covers |
+| `width`, `height` | Texels | 1024, 224 | The map's texels along x and along z |
+| `reach` | A number above 0, in meters | 0.35 | How far the foam reaches around a mark that gives no reach of its own |
+| `trail` | A number above 0, in meters | 1.6 | How far downstream the foam trails behind a mark. 0 leaves a ring |
+
+A mark takes a `reach` of its own, in meters, in place of the map's. So one water can foam further
+around some of its stones than around others. A mark without one keeps the map's reach. Give
+neither the map's reach nor the mark's and the call stops: a reach must be above 0.
+
 ## Wind on the surface
 
 Give `createWater` the field that `createWind` makes, and the surface lifts a short wave under the air and carries its crest with the gust. The surface reads the field once for each vertex, and the field's own pass runs before the water draws.

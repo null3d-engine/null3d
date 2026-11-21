@@ -54,6 +54,33 @@ describe('the foam map', () => {
 		expect(read(data, 0.2, 0)).toBe(0);
 	});
 
+	it('keeps a mark’s own reach, and gives a mark without one the map’s reach', () => {
+		const { ctx, texels } = fakeContext();
+		// Two stones of the same size: one reaches 0.8 m, and one takes the map's 0.35 m.
+		foamMap(
+			ctx,
+			[
+				{ x: 2, z: 0.8, r: 0.3, reach: 0.8 },
+				{ x: -0.5, z: 0.8, r: 0.3 },
+			],
+			options,
+		);
+		const { data } = texels();
+		// Half a meter across the current from each stone's edge.
+		expect(read(data, 2, 1.6)).toBeGreaterThan(0.3);
+		expect(read(data, -0.5, 1.6)).toBe(0);
+		// Both keep the foam at their own edge.
+		expect(read(data, 2, 1.1)).toBeGreaterThan(0.9);
+		expect(read(data, -0.5, 1.1)).toBeGreaterThan(0.9);
+	});
+
+	it('refuses a mark whose own reach is nothing', () => {
+		const { ctx } = fakeContext();
+		expect(() => foamMap(ctx, [{ x: 0, z: 0, r: 0.3, reach: 0 }], options)).toThrow(
+			'a foam reach must be above 0',
+		);
+	});
+
 	it('takes the area and the texels that the options give', () => {
 		const { ctx, texels } = fakeContext();
 		const map = foamMap(ctx, [], { ...options, width: 32, height: 16 });
