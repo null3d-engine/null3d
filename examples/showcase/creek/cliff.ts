@@ -34,16 +34,20 @@ const TILT = 0.45;
  */
 const UNDERCUT = 0.55;
 /**
- * How far the rock stands back under each lip, in meters at the least, so a fall leaving the lip
- * drops clear of the wall; the shares of the creek's half width where the water shows at the lip,
- * where the water's sheet runs on under the banks and the rock stands flush, and where no buttress
- * may stand proud enough to hide the fall; how far the rock stands proud there, in meters, and
- * the share of any crag past that which folds back into the wall as a hollow instead.
+ * The notch under each lip: how far the rock stands back under the fall, in meters at the least, so
+ * the water drops clear of the wall; the share of the creek's half width that the fall takes, as
+ * the sketch gives it; how far the notch reaches past the fall on each side, in meters, as agreed
+ * with the water add-on's falls, and how far its ledge in that margin stands back; the shares of
+ * the half width where the water's sheet runs on under the banks and the rock stands flush, and
+ * where no buttress may stand proud enough to hide the fall; how far the rock stands proud there,
+ * in meters, and the share of any crag past that which folds back into the wall as a hollow instead.
  */
 const LIP_RECESS = {
 	back: 0.9,
-	water: 0.7,
-	sheet: 1.05,
+	fall: 0.9,
+	margin: 0.4,
+	ledge: 0.35,
+	sheet: 1.45,
 	clear: 3,
 	proud: 0.15,
 	fold: 0.6,
@@ -71,11 +75,36 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 	const pits = Math.max(0, noise.fbm2(u * 14, v * 14, 3, 14));
 	out.height = broad * 12 + middle * 6 + grain * 3 - pits * 16;
 	const tone = (0.7 + 0.24 * broad + 0.12 * middle + 0.05 * grain) * (1 - 0.3 * pits);
+	// A warm cast, so the shaded faces under the cool sky still read brown-black, as the concept's.
 	out.r = tone;
-	out.g = tone * 0.97;
-	out.b = tone * 0.94;
+	out.g = tone * 0.9;
+	out.b = tone * 0.78;
 	out.roughness = 0.84 + 0.12 * broad;
 	out.occlusion = (0.9 + 0.1 * smoothstep(broad, -0.3, 0.3)) * (1 - 0.45 * pits);
+}
+
+/** The rock maps already made, by the scene's texture factory and their size. */
+const madeMaps = new WeakMap<object, Map<number, ReturnType<typeof textureSet>>>();
+
+/**
+ * The cliff rock's texture maps: pitted, mottled, warm stone with no line drawn on it. The walls,
+ * the steps and the statue's ledge share one set of each size, made once.
+ */
+export function rockMaps(
+	textures: SketchContext['textures'],
+	size: number,
+): ReturnType<typeof textureSet> {
+	let sizes = madeMaps.get(textures);
+	if (!sizes) {
+		sizes = new Map();
+		madeMaps.set(textures, sizes);
+	}
+	let maps = sizes.get(size);
+	if (!maps) {
+		maps = textureSet(textures, size, rockTexel);
+		sizes.set(size, maps);
+	}
+	return maps;
 }
 
 /** One block of a pillar: its foot below the rim, how far it stands out, and its face's tilt. */
@@ -196,8 +225,8 @@ export function relief(
 }
 
 /** Linear colors of the rock: warm near-black faces, a dark grey-brown on the lighter ones. */
-const CHARCOAL = [0.016, 0.011, 0.007];
-const GREY_BROWN = [0.04, 0.028, 0.018];
+const CHARCOAL = [0.026, 0.017, 0.009];
+const GREY_BROWN = [0.06, 0.04, 0.022];
 
 /** Builds the wall's arrays from the rim's vertices, in order up the bearings. */
 export function wallArrays(rim: Float32Array): MeshArrays {
@@ -236,7 +265,7 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			// it, under the banks, where the water's sheet runs on under the ground, the rock stands
 			// flush, so the sheet stays inside it; and on round, no buttress stands proud enough to
 			// hide the fall.
-			const { water, sheet, clear } = lipShares(x, z);
+			const { fall, notch, sheet, clear } = lipShares(x, z);
 			const raw = offset + UNDERCUT;
 			// A crag that would stand proud folds back into the wall as a hollow, so the face beside the
 			// fall stays broken and still never stands out far enough to hide it.
@@ -252,7 +281,10 @@ export function wallArrays(rim: Float32Array): MeshArrays {
 			const broken = pressed - LIP_BREAK.fissure * fissure - LIP_BREAK.ledge * (ledge + 0.5);
 			const capped = offset + (Math.min(broken, pressed) - offset) * clear;
 			const flush = capped + (Math.max(pressed, 0) - capped) * sheet;
-			const shaped = flush + (Math.min(flush, -LIP_RECESS.back) - flush) * water;
+			// The notch: a ledge stepped back a little across the margin beside the fall, and the rock
+			// stood well back under the fall itself, so it drops clear with rock showing at both sides.
+			const ledged = flush + (Math.min(flush, -LIP_RECESS.ledge) - flush) * notch;
+			const shaped = ledged + (Math.min(ledged, -LIP_RECESS.back) - ledged) * fall;
 			// The rock starts at the rim's own line, and its relief grows in over the first meter.
 			const grow = smoothstep(depth, 0, 1.2);
 			const out = (shaped + FLARE * depth * (1 - clear)) * grow;
@@ -288,19 +320,24 @@ export function wallArrays(rim: Float32Array): MeshArrays {
  * shows at the lip; `sheet`, over the banks either side, where the water's sheet runs on under the
  * ground; and `clear`, on round the rim either side, where the fall must show past the rock.
  */
-function lipShares(x: number, z: number): { water: number; sheet: number; clear: number } {
-	let water = 0;
+function lipShares(
+	x: number,
+	z: number,
+): { fall: number; notch: number; sheet: number; clear: number } {
+	let fall = 0;
+	let notch = 0;
 	let sheet = 0;
 	let clear = 0;
 	for (const lip of [LIPS.west, LIPS.east]) {
 		const half = streamHalf(lip);
 		const reach = Math.hypot(x - lip, z - streamZ(lip));
 		const share = (from: number, over: number) => 1 - smoothstep(reach, from, from + over);
-		water = Math.max(water, share(half * LIP_RECESS.water, 0.25));
+		fall = Math.max(fall, share(half * LIP_RECESS.fall, 0.15));
+		notch = Math.max(notch, share(half * LIP_RECESS.fall + LIP_RECESS.margin, 0.15));
 		sheet = Math.max(sheet, share(half * LIP_RECESS.sheet, 0.8));
 		clear = Math.max(clear, share(half * LIP_RECESS.clear, 3));
 	}
-	return { water, sheet, clear };
+	return { fall, notch, sheet, clear };
 }
 
 /**
@@ -374,7 +411,7 @@ export function createCliff(
 	rim: Float32Array,
 	textureSize: number,
 ): void {
-	const maps = textureSet(textures, textureSize, rockTexel);
+	const maps = rockMaps(textures, textureSize);
 	scene.createMesh({
 		mesh: geometry.fromArrays(wallArrays(rim)),
 		material: materials.shader({
