@@ -1,6 +1,8 @@
 // The garden's trees and ground cover: the Blender models of the pines and of today's ferns and
-// hostas, standing where `valley.ts` places them, each kind one instance batch per part, so every
-// copy picks its own level of detail. Each copy of the ground cover takes a tint of its own. They sway in the scene's one wind field through the shared
+// hostas, standing where `valley.ts` places them, each kind one instance batch per part. Each copy
+// of a pine picks its own level of detail; the ferns and hostas carry only their one level, so
+// `valley.ts` holds their count to a triangle budget. Each copy of the ground cover takes a tint
+// of its own. They sway in the scene's one wind field through the shared
 // wind material, which reads each vertex's bend weight from the models' second texture
 // coordinates and draws the file's own textures.
 import type { Material, SketchContext } from '@null3d/engine';
