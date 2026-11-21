@@ -104,8 +104,6 @@ const STATUE_AT = [TERRACE.x, TERRACE.z] as const;
 const STATUE_SIZE = 0.97;
 /** The cool tint over the slab's warm texture, which leaves its stone a light grey. */
 const SLAB_TINT = '#e0ecfc';
-/** A faint cool tint over the statue's texture, which gives back the green the air takes. */
-const STATUE_TINT = '#e4ffff';
 /** How far the slab model's rim stands below its own origin, in meters at its own size. */
 const SLAB_FOOT = 0.05;
 /**
@@ -694,12 +692,7 @@ export function createGarden(
 	// The slab's stone reads grey, as the concept's does, under a cool tint over its warm texture,
 	// on a copy of its material, which it shares with the statue.
 	standPart(ctx, models.slab, [places.statue], tintedPart(materials, models.slab, SLAB_TINT, 0.85));
-	standPart(
-		ctx,
-		models.statue,
-		[places.statue],
-		tintedPart(materials, models.statue, STATUE_TINT, 0.8),
-	);
+	standPart(ctx, models.statue, [places.statue], models.statue.material);
 	standPart(ctx, models.gate, [places.gate], models.gate.material);
 	standPart(ctx, models.dragon, places.dragons, models.dragon.material);
 	standPart(ctx, models.lantern, places.lanterns, models.lantern.material);
