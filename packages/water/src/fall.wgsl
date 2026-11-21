@@ -22,7 +22,14 @@ struct Uniforms {
     apron: f32,
     // Half the water's width at the lip, in meters.
     halfWidth: f32,
+    // The world height below which the fall vanishes, as into a cloud sea that draws before it.
+    fadeBelow: f32,
 }
+
+/// The meters below `fadeBelow` over which the fall vanishes, and the meters above it where it
+/// starts to thin.
+const SINK_DEPTH: f32 = 2.5;
+const SINK_LEAD: f32 = 0.5;
 
 /// The ropes that the white water parts into, for each meter round the column.
 const ROPES_PER_METER: f32 = 0.9;
@@ -187,6 +194,10 @@ fn surface(input: SurfaceInput) -> Surface {
     let gap = max(sceneDistance(place) - distance_of(input.fragCoord.z), 0.0);
     let on_brink = 1.0 - smoothstep(0.4, 1.5, fallen);
     alpha *= mix(smoothstep(0.0, material.softness, gap), 1.0, on_brink);
+    // A cloud that draws before the fall does not hide it, so the fall vanishes itself where it
+    // sinks into the cloud, each clump at its own depth.
+    let sink = input.worldPosition.y + (froth - 0.5) * 0.8;
+    alpha *= smoothstep(material.fadeBelow - SINK_DEPTH, material.fadeBelow + SINK_LEAD, sink);
     s.alpha = clamp(alpha, 0.0, 1.0);
     return s;
 }

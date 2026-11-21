@@ -31,6 +31,8 @@ const SPREAD = 0.3;
 const MOST_SPRAY = 3;
 /** The glassy water's color at the lip: a grey green, as linear red, green and blue. */
 const GLASS = [0.05, 0.075, 0.068] as const;
+/** The height that stands for no cloud below the fall: far below any scene. */
+const NO_FADE = -1e9;
 /** The meters below the lip over which the water turns from glassy to white. */
 const CLEAR = 0.7;
 /** The gap to a wall behind the sheet over which the sheet fades as it nears it, in meters. */
@@ -93,6 +95,12 @@ export interface WaterfallOptions {
 	 * edge. Give the reach of the broken water before the brink. It is 1 by default.
 	 */
 	readonly apron?: number;
+	/**
+	 * The world height of a cloud sea, a fog bank or a mist that the fall drops into, in meters. A
+	 * cloud that draws before the fall does not hide it, so below this height the fall vanishes
+	 * itself over 2.5 m, each clump at its own depth. By default it never does.
+	 */
+	readonly fadeBelow?: number;
 	/**
 	 * The spray and the mist, as a factor of the fall's own, from 0 to 3. It is 1 by default. At 0
 	 * the fall makes no particles, neither the particles add-on nor the engine's particle code loads,
@@ -158,6 +166,14 @@ function sprayAmount(amount: number): number {
 	return amount;
 }
 
+/** The height below which a fall vanishes, from its options: far below any scene when none is given. */
+function sinkHeight(height: number | undefined): number {
+	if (height === undefined) return NO_FADE;
+	if (typeof height !== 'number' || !Number.isFinite(height))
+		throw error(`a waterfall's fadeBelow must be a finite number, and it is ${height}`);
+	return height;
+}
+
 /** The births that a system keeps room for: its most rate over its longest life, and a margin. */
 function room(rate: number, life: number): number {
 	return Math.ceil(rate * MOST_SPRAY * life * 1.15) + 16;
@@ -216,6 +232,7 @@ export async function createWaterfall(
 			softness: SOFTNESS,
 			apron: (sheet.apron ?? APRON) / speed,
 			halfWidth: sheet.halfWidth,
+			fadeBelow: sinkHeight(options.fadeBelow),
 		},
 	});
 	const mesh = scene.createMesh({

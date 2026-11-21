@@ -99,6 +99,19 @@ describe('a waterfall’s apron', () => {
 	});
 });
 
+describe('a waterfall’s fade into a cloud', () => {
+	it('vanishes below the height it is given, and never without one', async () => {
+		const into = await fallWith({ fadeBelow: -9.5, spray: 0 });
+		expect(into.shaders[0]?.uniforms.fadeBelow).toBe(-9.5);
+		const open = await fallWith({ spray: 0 });
+		expect(open.shaders[0]?.uniforms.fadeBelow as number).toBeLessThan(-1e6);
+	});
+
+	it('refuses a height that is not a number', async () => {
+		await expect(fallWith({ fadeBelow: Number.NaN, spray: 0 })).rejects.toThrow(/fadeBelow/);
+	});
+});
+
 describe('a waterfall’s particle systems', () => {
 	it('makes the froth, the mist and the plume where the fall’s emitters stand, turned with the lip', async () => {
 		const { buffers, fall } = await fallWith();

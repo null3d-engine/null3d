@@ -455,7 +455,9 @@ end, so the river's own mesh ends at the lip with no seam and no straight edge. 
 first meter of the fall skip the fade near a wall behind them: they lie on the river and its brink
 by design, and that fade drew the lip as a ruler line where the water left the surface. The brink
 itself is uneven: each place across turns down up to 0.35 m past the lip's line, front and back
-alike, so the column keeps its depth. The mesh's texture coordinates carry each point's place across the lip and
+alike, so the column keeps its depth. A fall may give the height of a cloud that it drops into
+(`fadeBelow`). The Creek's cloud draws before the blended objects and cannot hide a fall, so below
+that height the fall vanishes itself over 2.5 m, each clump at its own depth. The mesh's texture coordinates carry each point's place across the lip and
 the time since its water crossed it. The material's noise reads those two. So every streak rides
 down at the water's own speed, and stretches as the water speeds up, from the sketch time alone.
 
