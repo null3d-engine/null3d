@@ -116,17 +116,28 @@ STATUE = dict(
 # raw stone shows; the moss takes the `moss` tint, grows in color strength by `vivid` and keeps
 # `moss_darken` of its lightness, and the moss on its cap is smoothed `smooth` times. Grey stone
 # shows on the cap, which spans the shares `cap` of the height: along its ribs, from `knob`
-# meters out, half `ribs[0]` meters wide there and half `ribs[1]` at the corners, and over the
-# last `eave` meters to its eaves. The gate loses the
+# meters out, half `ribs[0]` meters wide there and half `ribs[1]` at the corners, each wandering
+# up to `wobble` meters from its line, and over the last `eave` meters to its eaves. The moss's
+# lightness varies in patches about `moss_darken`, and the cap's last `rim` meters, chipped in the
+# raw mesh, are smoothed as its moss is. The gate loses the
 # rear frame that Tripo3D added: everything under the roof, which starts at `roof` of its height,
 # and behind the front posts' backs, which `cut` places at the foot and at the roof, and behind
 # the posts within `eaves` of the middle, everything below the side ties, `tie` above the foot;
 # these four are shares of its height. Its front posts stand upright again below the beam, at
-# `beam` of its height, losing their lean of `lean` meters per meter. A copy of the left one, `post` times as wide and deep and `rear` of the
-# height behind it, stands behind it, and the timber under the roof,
-# above the stone blocks at `blocks` of its height, keeps `darken` of its lightness and grows
-# `vivid` times in color strength. The rear post, deeper in the roof's shade, then takes the front
-# posts' tone by the two shares of `rear_tone`, for lightness and color strength. A boulder's stone keeps `darken` of its lightness, grows
+# `beam` of its height, losing their lean of `lean` meters per meter, and move in until the roof
+# is `spread` times their spacing; above the roof line only the posts' columns move, up to their
+# brackets' tops at `brackets` of the height. A copy of the left one, `post` times as wide and
+# deep and `rear` of the height behind it, its faces wandering by up to `weather` meters, stands
+# behind it. The timber under the roof, above the stone blocks at `blocks` of its height, keeps
+# `darken` of its lightness and grows `vivid` times in color strength. The rear post, deeper in
+# the roof's shade, then takes the front posts' tone by the two shares of `rear_tone`, for
+# lightness and color strength, the tiles keep the first share of `roof_tone` of their lightness,
+# their light and dark round the local mean growing by the second, and all the timber takes the
+# `timber_tint`, toward a weathered grey-brown. The stone blocks keep `feet[0]` of their
+# lightness, and the pale band at each post's foot, `feet[1]` meters tall, takes the posts' own
+# lightness, so the feet do not glare white in a bright scene.
+#
+# A boulder's stone keeps `darken` of its lightness, grows
 # `vivid` times in color strength, and its light and dark round their local mean grow `contrast`
 # times, so the pits read; its moss keeps `moss_darken` of its lightness, white specks fade
 # to pale gray-green, and its foot darkens below `foot` of its height. `flatten` lowers moss that
@@ -134,12 +145,14 @@ STATUE = dict(
 # `wide` keeps the boulder's width within that many times its height.
 MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
-                    texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(1.08, 1.0, 0.85),
-                    vivid=1.6, moss_darken=0.7, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1),
+                    texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(1.02, 1.0, 0.82),
+                    vivid=2.0, moss_darken=0.7, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1,
+                    wobble=0.03, rim=0.08),
     'gate': dict(file='model.glb', turn=-90.0, height=3.9, sink=0.03, triangles=6000, levels=(0.4, 0.15),
                  texture=1024, roof=0.64, cut=(-0.1148, -0.0673), tie=0.6636, eaves=0.5, lean=0.09, post=0.58,
-                 rear=0.273, blocks=0.08, beam=0.55, rear_tone=(1.2, 0.8),
-                 darken=0.65, vivid=2.3),
+                 rear=0.273, blocks=0.08, beam=0.55, rear_tone=(1.2, 0.8), spread=1.96, brackets=0.69,
+                 weather=0.012, roof_tone=(0.82, 1.8), timber_tint=(0.96, 1.0, 0.98),
+                 darken=0.65, vivid=1.7, feet=(0.72, 0.45)),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
@@ -1180,15 +1193,16 @@ def flatten_moss(obj, color, spec):
     return int(moss.sum())
 
 
-def gate_surgery(obj, spec):
+def gate_surgery(obj, spec, rng):
     """
     Takes away the rear frame that Tripo3D added to the gate from a front view alone. One flat cut
     along the front posts' backs, a centimeter into them, takes everything under the roof behind
     it: the rear posts, their blocks, the rails and the rear beam, so the posts' backs end flat. A
     level cut at the side ties' underside takes the old rear posts' tops that hang below the ties.
     The cuts close, each new face painted from the timber round it. The front posts then stand
-    upright, and a copy of the left one, narrowed, stretched from the ground into the tie, moved
-    back and cut level at both ends, stands behind it with the front post's own upright grain.
+    upright and move closer together, and a copy of the left one, narrowed, weathered, stretched
+    from the ground into the tie, moved back and cut level at both ends, stands behind it with the
+    front post's own upright grain.
     """
     co = vertices_of(obj)
     low, high = co[:, 2].min(), co[:, 2].max()
@@ -1234,10 +1248,24 @@ def gate_surgery(obj, spec):
         if v.co.z < beam and v.co.y < top:
             v.co.y += spec['lean'] * (beam - v.co.z)
 
+    # The front posts stand closer together, so the roof is `spread` times their spacing: each post
+    # with its block, its bracket and the beam's end moves in, and the beam's middle shortens. Below
+    # the roof line everything moves; above it, up to the brackets' tops, only the posts' columns,
+    # so the roof and the row of small blocks under it stay.
+    bottom = low + spec['blocks'] * (high - low) + 0.2
+    columns = np.array([abs(v.co.x) for v in bm.verts if v.co.y < 0 and bottom < v.co.z < beam - 0.05])
+    inner = float(np.percentile(columns, 5))
+    shift = float(np.median(columns)) - max(abs(v.co.x) for v in bm.verts) / spec['spread']
+    brackets = low + spec['brackets'] * (high - low)
+    for v in bm.verts:
+        away = abs(v.co.x)
+        up = 1.0 if v.co.z < roof else (smoothstep(brackets + 0.03, brackets - 0.03, v.co.z)
+                                        * smoothstep(inner - 0.2, inner - 0.15, away))
+        v.co.x -= math.copysign(shift * float(smoothstep(0.3 * inner, inner - 0.15, away) * up), v.co.x)
+
     # The left front post between its block and the beam, above the pale band at its foot: its x
     # span from the front, then every face wholly inside that span, in front of the gate's middle
     # and between those heights.
-    bottom = low + spec['blocks'] * (high - low) + 0.2
     body = [v.co for v in bm.verts if v.co.x < 0 and v.co.y < 0 and bottom < v.co.z < beam]
     xs = np.array([p.x for p in body])
     x0, x1 = np.percentile(xs, 5) - 0.03, np.percentile(xs, 95) + 0.03
@@ -1247,10 +1275,15 @@ def gate_surgery(obj, spec):
     middle = Vector((float(np.median([v.co.x for v in made])), float(np.median([v.co.y for v in made])), 0))
     # Narrowed, moved back and stretched past the ground and into the tie, so its ragged ends lie
     # beyond the level cuts that then give it clean ends.
-    for v in made:
-        v.co = Vector((middle.x + (v.co.x - middle.x) * spec['post'],
-                       middle.y + spec['rear'] * (high - low) + (v.co.y - middle.y) * spec['post'],
-                       low - 0.3 + (v.co.z - bottom) * (tie + 0.6 - low) / (beam - 0.05 - bottom)))
+    # Weathered, not a clean square stick: it narrows a little toward its top, and its faces wander
+    # in and out by up to `weather` meters.
+    wander = noise3(np.array([v.co[:] for v in made], np.float32), 0.15, rng, 2)
+    for v, bump in zip(made, wander):
+        z = low - 0.3 + (v.co.z - bottom) * (tie + 0.6 - low) / (beam - 0.05 - bottom)
+        out = Vector((v.co.x - middle.x, v.co.y - middle.y, 0)) * spec['post']
+        out *= 1 - 0.06 * min(max((z - low) / (tie - low), 0.0), 1.0)
+        out += out.normalized() * spec['weather'] * (2 * float(bump) - 1)
+        v.co = Vector((middle.x + out.x, middle.y + spec['rear'] * (high - low) + out.y, z))
     for height, normal in ((low, (0, 0, -1)), (tie + 0.03, (0, 0, 1))):
         faces = [e for e in copy if isinstance(e, bmesh.types.BMFace) and e.is_valid]
         verts = list(dict.fromkeys(v for f in faces for v in f.verts))
@@ -1269,32 +1302,45 @@ def gate_surgery(obj, spec):
     return doomed
 
 
-def cap_stone(spec, position, facing, rng):
+def cap_shape(spec, position):
     """
-    Where grey stone shows through the moss on the lantern's cap: along its six ribs, from the
-    knob out to the corners and wider toward them, round its eaves, and on its lip, each with a
-    ragged edge. The cap spans the two shares of `cap` of the height; its corners are its farthest
-    points from the lantern's axis, sixty degrees apart.
+    The lantern's cap at each point of `position`, an array of points: how surely the point is on
+    the cap, which spans the two shares of `cap` of the height; its distance from the lantern's
+    axis; its signed angle to the nearest of the cap's six ribs, which run from the knob out to the
+    corners; its distance out along the nearest side's normal, which reaches `apothem` at the
+    eave; and that apothem. The corners are the cap's farthest points from the axis, sixty degrees
+    apart.
     """
     z = position[..., 2]
     low, top = (share * spec['height'] for share in spec['cap'])
     on_cap = smoothstep(low, low + 0.05, z) * smoothstep(top + 0.05, top, z)
-    r = np.linalg.norm(position[..., :2], axis=2)
+    r = np.linalg.norm(position[..., :2], axis=-1)
     theta = np.arctan2(position[..., 1], position[..., 0])
     inside = on_cap > 0.5
     reach = float(r[inside].max())
     far = np.zeros(360)
     np.maximum.at(far, np.floor((theta[inside] + np.pi) / (2 * np.pi) * 360).astype(int) % 360, r[inside])
     corner = (np.argmax(far) + 0.5) / 360 * 2 * np.pi - np.pi
-    turn = (theta - corner) % (np.pi / 3)
-    to_rib = np.minimum(turn, np.pi / 3 - turn)
+    to_rib = (theta - corner + np.pi / 6) % (np.pi / 3) - np.pi / 6
+    out = r * np.cos(np.pi / 6 - np.abs(to_rib))
+    return on_cap, r, to_rib, out, reach * np.cos(np.pi / 6)
+
+
+def cap_stone(spec, position, facing, rng):
+    """
+    Where grey stone shows through the moss on the lantern's cap: along its six ribs, from the
+    knob out to the corners and wider toward them, round its eaves, and on its lip, each with a
+    ragged edge. A rib wanders a little from its straight line, swells and thins along its length,
+    and here and there the moss crosses it.
+    """
+    on_cap, r, to_rib, out, apothem = cap_shape(spec, position)
+    reach = apothem / np.cos(np.pi / 6)
     ragged = 0.5 + noise3(position, 0.07, rng, 3)
     narrow, wide = spec['ribs']
-    width = (narrow + (wide - narrow) * r / reach) * ragged
-    rib = smoothstep(width, 0.5 * width, r * np.sin(to_rib)) * smoothstep(spec['knob'], spec['knob'] + 0.05, r)
-    # The distance out along the nearest side's normal, which reaches the apothem at the eave.
-    out = r * np.cos(np.pi / 6 - to_rib)
-    apothem = reach * np.cos(np.pi / 6)
+    width = (narrow + (wide - narrow) * r / reach) * ragged * (0.6 + 0.8 * noise3(position + 3.7, 0.3, rng, 2))
+    across = np.abs(r * np.sin(to_rib) + spec['wobble'] * (2 * noise3(position + 1.3, 0.35, rng, 2) - 1))
+    rib = (smoothstep(width, 0.5 * width, across) * smoothstep(spec['knob'], spec['knob'] + 0.05, r)
+           * smoothstep(0.25, 0.4, noise3(position + 7.1, 0.25, rng, 2)))
     eave = smoothstep(apothem - spec['eave'] * ragged, apothem - 0.5 * spec['eave'] * ragged, out)
     lip = smoothstep(0.4, 0.2, facing[..., 2])
     return np.clip(np.maximum(np.maximum(rib, eave), lip) * on_cap, 0, 1)
@@ -1353,7 +1399,9 @@ def repaint_model(name, spec, maps, rng):
         color = vivid(color, spec['stone_vivid'], stone)
         color *= 1 + (np.array(spec['moss'], np.float32) - 1) * moss[..., None]
         color = vivid(color, spec['vivid'], moss)
-        color = darken(color, spec['moss_darken'], moss)
+        # The moss grows in patches of its own lightness, not one even coat.
+        patches = spec['moss_darken'] * (0.8 + 0.4 * noise3(maps['position'] + 4.4, 0.12, rng, 2))
+        color = darken(color, patches, moss)
         # Where the cap's stone shows through moss in the raw color, it takes the lantern's own
         # stone color, mottled.
         plain = np.median(color[(raw_moss < 0.05) & (maps['position'][..., 2] > spec['cap'][0] * spec['height'])], axis=0)
@@ -1379,6 +1427,13 @@ def repaint_model(name, spec, maps, rng):
         color = seen_from_front(color, position, back, front)
         occlusion = seen_from_front(occlusion[..., None], position, back, front)[..., 0]
         maps['color'] = color
+        # The tiles, grey above the roof line, keep the first share of `roof_tone` of their
+        # lightness, and their light and dark round the local mean grow by the second, so the rows
+        # show dark gaps and pale tops.
+        tiles = smoothstep(roof, roof + 0.1, z) * (1 - smoothstep(0.12, 0.2, strength_of(color)))
+        color = darken(color, spec['roof_tone'][0], tiles)
+        luma = color @ LUMA
+        color *= (1 + (spec['roof_tone'][1] - 1) * tiles * (luma / np.maximum(box_blur(luma, 6), 0.02) - 1))[..., None]
         timber = smoothstep(blocks, blocks + 0.08, z) * smoothstep(roof + 0.05, roof - 0.05, z)
         color = vivid(color, spec['vivid'], timber)
         color = darken(color, spec['darken'], timber)
@@ -1388,6 +1443,18 @@ def repaint_model(name, spec, maps, rng):
         rear = smoothstep(0.15, 0.3, maps['position'][..., 1]) * smoothstep(tie + 0.02, tie - 0.05, z)
         color = darken(color, spec['rear_tone'][0], rear)
         color = vivid(color, spec['rear_tone'][1], rear)
+        # Bare weathered timber is grey-brown, not red: all the timber above the blocks takes the
+        # `timber_tint`.
+        wood = smoothstep(blocks, blocks + 0.08, z) * (1 - tiles)
+        color *= 1 + (np.array(spec['timber_tint'], np.float32) - 1) * wood[..., None]
+        # The posts' feet are not white: the stone blocks keep `feet[0]` of their lightness, and
+        # the pale band at the foot of each post, up to `feet[1]` meters above its block, comes
+        # down to the posts' own lightness.
+        luma = color @ LUMA
+        own = float(np.median(luma[(timber > 0.9) & (z > blocks + 0.7) & (z < roof - 0.3)]))
+        band = smoothstep(blocks - 0.02, blocks + 0.02, z) * smoothstep(blocks + spec['feet'][1], blocks + 0.6 * spec['feet'][1], z)
+        color *= (1 - band * (1 - np.minimum(own / np.maximum(luma, 0.02), 1)))[..., None]
+        color = darken(color, spec['feet'][0], smoothstep(blocks + 0.02, blocks - 0.02, z))
     else:
         stone = 1 - moss
         color = vivid(color, spec['vivid'], stone)
@@ -1411,11 +1478,14 @@ def finish_model(name, spec, raw, rng):
     co = vertices_of(high)
     set_vertices(high, standing(co, spec['height'], spec['turn'], -spec['sink'])(co))
     if name == 'gate':
-        figures['faces_cut'] = gate_surgery(high, spec)
+        figures['faces_cut'] = gate_surgery(high, spec, rng)
     if 'flatten' in spec:
         figures['moss_flattened'] = flatten_moss(high, color, spec)
     if name == 'lantern':
         smooth_where(high, mossy(vertex_colors_of(high, color)) > 0.5, spec['smooth'])
+        # The cap's edge, chipped in the raw mesh, is smoothed too: its last `rim` meters.
+        on_cap, _, _, out, apothem = cap_shape(spec, vertices_of(high))
+        smooth_where(high, (on_cap > 0.5) & (out > apothem - spec['rim']), spec['smooth'])
     figures['pits_filled'] = fill_pits(high)
     model = decimated(high, spec['triangles'], name)
     unwrap(model)
