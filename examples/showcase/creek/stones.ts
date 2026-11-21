@@ -9,6 +9,7 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
+import { type Part, standPart } from '../../lib/blender-models';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import {
 	bearingOf,
@@ -103,8 +104,12 @@ const IN_CURRENT = 44;
 const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
-/** The bank stones' smallest and largest size, and how close they stand, as a share of their size. */
-const BANK = { size: [0.45, 0.8], spacing: 1.7 } as const;
+/**
+ * The bank stones' smallest and largest size, and how close they stand, as a share of their size;
+ * how far each sinks into the bank, as a share of its size; and the half width of the finished
+ * bank-stone model at its own size, which sets the model's scale.
+ */
+const BANK = { size: [0.45, 0.8], spacing: 1.7, sink: 0.25, modelHalf: 0.9 } as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, and how many stand in it. One lies on the west sill and two
@@ -216,14 +221,16 @@ export function stoneFootprints(places = rockPlaces()): (x: number, z: number) =
 
 /** The stones and the pebbles, and a test of whether anything may stand at a point. */
 export function createStones(
-	{ scene, geometry, materials, textures }: SketchContext,
+	ctx: SketchContext,
 	detail: number,
 	textureSize: number,
+	bankStone?: Part,
 ): {
 	clear(x: number, z: number): boolean;
 	fit(preset: QualityPreset): void;
 	obstacles: Obstacle[];
 } {
+	const { scene, geometry, materials, textures } = ctx;
 	const maps = textureSet(textures, textureSize, rockTexel);
 	const look = { vertexColors: true, ...maps, uvTransform: { repeat: [2, 1] } } as const;
 	const dry = materials.standard({ ...look, roughness: 1 });
@@ -235,6 +242,7 @@ export function createStones(
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
 		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
 		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
+		if (kind === 'bank' && bankStone) continue;
 		const squash =
 			kind === 'bank'
 				? ([1, 0.62 + 0.12 * next(), 0.85 + 0.15 * next()] as const)
@@ -289,6 +297,24 @@ export function createStones(
 			batch.markDirty();
 		}
 	}
+
+	// The bank row from the finished bank-stone model, when the scene has it: each copy as wide as
+	// the stone it stands for, sunk a little into the bank.
+	if (bankStone)
+		standPart(
+			ctx,
+			bankStone,
+			places
+				.filter((place) => place.kind === 'bank')
+				.map(({ x, z, size }) => ({
+					x,
+					y: groundHeight(x, z) - size * BANK.sink,
+					z,
+					yaw: next() * Math.PI * 2,
+					size: size / BANK.modelHalf,
+				})),
+			bankStone.material,
+		);
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
 	const tints = ['#6e6455', '#7a6a52', '#5c564c'];
