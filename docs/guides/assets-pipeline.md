@@ -75,8 +75,9 @@ scene.instantiate(ship);
 | Triangle order | Reordered for the GPU's vertex cache, and vertices in the order that triangles use them | The GPU shades fewer vertices and reads memory in order |
 | Positions | 16-bit integers in 16,384 steps across each mesh, with `KHR_mesh_quantization`, unless the mesh's extras keep them as floats | Half the size of floats. A mesh 100 m long gets steps of 6 mm |
 | Normals and tangents | 8-bit integers | A quarter of the size. Directions stay within about 1 degree |
-| Texture coordinates | 16-bit integers when every value lies from 0 to 1, else floats | Values past 1 would need a texture transform per material |
-| Vertex colors, joint weights | 8-bit integers | Weights still add up to one |
+| Texture coordinates | 16-bit integers when every value of the mesh and its levels of detail lies from 0 to 1, else floats in all of them | Values past 1 would need a texture transform per material. A level draws only when its vertices are stored as the mesh's are |
+| Vertex colors | 8-bit integers when every value of the mesh and its levels of detail lies from 0 to 1, else floats in all of them | A quarter of the size |
+| Joint weights | 8-bit integers | Weights still add up to one |
 | Indices | 16 bits when a mesh has at most 65,535 vertices | Half the size |
 | Buffers | Compressed with meshopt (`EXT_meshopt_compression`) | Smaller downloads. The engine decodes them on load, with no loss, and fetches the decoder only for such files |
 

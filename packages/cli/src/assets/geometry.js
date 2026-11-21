@@ -628,22 +628,29 @@ function quantizeUnit(accessor) {
 }
 
 /**
- * Quantizes a stream of values from 0 to 1 to unsigned normalized integers of 8 or 16 bits, or
- * leaves it as floats when a value lies outside.
+ * True when every value of a stream lies from 0 to 1.
+ *
+ * @param {Accessor} accessor
+ */
+function isFraction(accessor) {
+	for (const v of /** @type {Float32Array} */ (accessor.getArray()))
+		if (!(v >= 0 && v <= 1)) return false;
+	return true;
+}
+
+/**
+ * Quantizes a stream of values from 0 to 1 to unsigned normalized integers of 8 or 16 bits.
  *
  * @param {Accessor} accessor
  * @param {8 | 16} bits
- * @returns {boolean} True when the stream is now integers.
  */
 function quantizeFraction(accessor, bits) {
 	const source = /** @type {Float32Array} */ (accessor.getArray());
-	for (const v of source) if (!(v >= 0 && v <= 1)) return false;
 	const max = 2 ** bits - 1;
 	const out = bits === 8 ? new Uint8Array(source.length) : new Uint16Array(source.length);
 	for (let i = 0; i < source.length; i++)
 		out[i] = Math.round(/** @type {number} */ (source[i]) * max);
 	accessor.setArray(out).setNormalized(true);
-	return true;
 }
 
 /**
@@ -674,27 +681,39 @@ function quantizeWeights(accessor) {
  * 16 bits, colors from 0 to 1 in 8 bits, and joint weights in bytes. Streams of other values keep
  * their floats, and so do the positions of a mesh whose extras ask for floats.
  *
+ * Texture coordinates and colors take one form across each group of meshes that shares a volume,
+ * as positions do: when any stream of one attribute in a group holds a value outside 0 to 1, every
+ * stream of that attribute in the group keeps its floats. A mesh's levels of detail are in its
+ * group, and the engine draws a level only when its vertices take the base mesh's forms.
+ *
  * @param {Document} doc
  */
 export function quantizeMeshes(doc) {
 	let quantized = quantizeGroupPositions(doc);
 	const done = new Set();
-	for (const mesh of doc.getRoot().listMeshes())
-		for (const prim of triangleLists(mesh))
+	for (const group of volumeGroups(doc)) {
+		/** @type {Map<string, Accessor[]>} */
+		const fractions = new Map();
+		for (const prim of group.flatMap(triangleLists))
 			for (const { owner, semantic, accessor } of vertexStreams(prim)) {
 				if (done.has(accessor) || !isFloat(accessor) || owner !== prim) continue;
 				done.add(accessor);
 				if (semantic === 'NORMAL' || semantic === 'TANGENT') {
 					quantizeUnit(accessor);
 					quantized = true;
-				} else if (semantic.startsWith('TEXCOORD_'))
-					quantized = quantizeFraction(accessor, 16) || quantized;
-				else if (semantic.startsWith('COLOR_'))
-					quantized = quantizeFraction(accessor, 8) || quantized;
+				} else if (semantic.startsWith('TEXCOORD_') || semantic.startsWith('COLOR_'))
+					fractions.set(semantic, [...(fractions.get(semantic) ?? []), accessor]);
 				else if (semantic === 'WEIGHTS_0' && accessor.getType() === 'VEC4') {
 					quantizeWeights(accessor);
 					quantized = true;
 				}
 			}
+		for (const [semantic, accessors] of fractions) {
+			if (!accessors.every(isFraction)) continue;
+			for (const accessor of accessors)
+				quantizeFraction(accessor, semantic.startsWith('COLOR_') ? 8 : 16);
+			quantized = true;
+		}
+	}
 	if (quantized) doc.createExtension(KHRMeshQuantization).setRequired(true);
 }

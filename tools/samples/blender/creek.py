@@ -854,8 +854,11 @@ def build_cave(mat, rng):
 #            pad grown by snug (2 when not given) in its squared measure holds it, and keep
 #            the distance from the trunk's axis within which it looks for the trunk itself, which
 #            it never cuts; prune cuts any wood
-#            past the pads, as a crown is pruned to its outline; girth is how far from the wood
-#            that bears a pad the cut keeps wood, at least a limb's width
+#            past the pads, as a crown is pruned to its outline, and wood under a pad's outer rim
+#            more than drop meters below its underside; girth is how far from the wood that bears a
+#            pad the cut keeps wood, at least a limb's width; sag, when given, is how far in meters
+#            a pad's limb may dip below where it leaves the trunk and below the pad before the pad
+#            counts as a tuft on a hook, which goes
 #   gap      the height, as a share of the wood's height, over which the limbs of one tier leave
 #   pad      a pad's radius across, in meters, from the lowest tier to the top; taper is how much
 #            narrower the pad at a limb's end is, and spacing the gap between pads along a limb as
@@ -890,35 +893,35 @@ TALL_TRUNK = dict(
 PINES = {
     'pine-tall': dict(
         TALL_TRUNK, wood=(14000, 5000, 1600),
-        fan=(0.3, (3.0, 2.5, 2.0), (0.5, 1.35, 2.0, 2.0, 1.85)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
-        keep=0.45, girth=0.2, prune=True, gap=0.2, pad=(1.0, 1.35, 1.1), vary=0.35, crest=(0.32, 0.05, 0.33),
-        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.3, deep=(1.2,), flat=3.0, rise=0.1, droop=0.1, stagger=0.15,
+        fan=(0.3, (3.6, 3.0, 2.4), (0.6, 1.6, 1.95, 1.7, 1.45)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
+        keep=0.45, girth=0.08, drop=0.5, sag=0.2, prune=True, gap=0.14, pad=(1.0, 1.35, 1.1), vary=0.45, crest=(0.32, 0.0, 0.33),
+        taper=0.5, spacing=2.6, slope=1.5, flatten=0.9, hold=0.9, level=50, floor=0.3, deep=(1.4,), flat=3.0, rise=0.1, droop=0.1, stagger=0.3,
         inner=0.2,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=3600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.71, 0.88, 0.88), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.605, 0.823, 0.543), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
     'pine-low': dict(
         raw='pine-low/model.glb', sha256='0220c9fd94322434bc66b47af260208f4e9ad72e964db39c67ef41973101569f',
         turn=-90, height=3.4, sink=0.15, wood=(8000, 3000, 1000), limit=0.03, bark=(0.17, 0.11, 0.055),
-        fan=(0.3, (0.8,), (1.25,)), rigid=0.25, climb=(0.3, 0.3, 1.5, 0.35), bare=0.3, stub=0.12, twig=0.2, keep=0.3, girth=0.2, prune=True,
-        gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8, slope=2.0, flatten=0.8, hold=2.0, level=70,
-        floor=0.3, spread=2.3, deep=(0.5,), flat=1.7, rise=0.1, droop=0.35, stagger=0.15, inner=0.0,
+        fan=(0.3, (0.8,), (0.50,)), rigid=0.25, climb=(0.3, 0.3, 1.5, 0.35), bare=0.3, stub=0.12, twig=0.2, keep=0.3, girth=0.12, drop=0.1, sag=0.3, prune=True,
+        gap=0.15, pad=(0.72, 0.55), taper=0.6, spacing=0.8, slope=2.0, flatten=0.8, hold=1.0, level=70,
+        floor=0.3, spread=2.0, deep=(0.5,), flat=1.7, rise=0.1, droop=0.35, stagger=0.15, inner=0.0,
         body=0.5, bodies=((10, 5), (6, 3), (5, 2)), underside=0.1,
         cards=3400, up=0.6, depth=0.3, card=0.35, lift=0.7, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.08, bend=0.55, tint=(0.77, 0.93, 0.73), shade=0.7, levels=((2, 1.3), (5, 1.7)),
+        fold=0.08, bend=0.55, tint=(0.652, 0.861, 0.283), shade=0.7, levels=((2, 1.3), (5, 1.7)),
     ),
     # The concept's top pine: the tall trunk with its limbs kept short, broad from its rounded top
-    # down, about 0.7 times as wide as it is tall.
+    # down, about four fifths as wide as it is tall.
     'pine-narrow': dict(
-        TALL_TRUNK, wood=(12000, 4500, 1500),
-        fan=(0.3, (1.4, 1.2, 1.0), (0.5, 0.65, 0.85, 1.35, 1.5)), wire=0.5, span=(0.4, 0.82), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
-        keep=0.45, girth=0.2, prune=True, gap=0.1, pad=(0.5, 0.65, 0.9), vary=0.35, crest=(0.6, 0.04, 0.45),
-        taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=1.2, level=50, floor=0.37, deep=(0.8,), flat=2.8, rise=0.1, droop=0.12, stagger=0.1,
+        TALL_TRUNK, height=7.1, wood=(12000, 4500, 1500),
+        fan=(0.3, (1.4, 1.2, 1.0), (0.5, 0.95, 1.5, 1.5, 1.5)), wire=0.5, span=(0.4, 0.82), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0,
+        keep=0.45, girth=0.1, drop=0.4, sag=0.25, prune=True, gap=0.1, pad=(0.6, 1.05, 0.95), vary=0.35, crest=(0.6, 0.0, 0.45),
+        taper=0.5, spacing=2.6, slope=1.5, flatten=0.5, hold=0.9, level=50, floor=0.37, deep=(0.8,), flat=2.8, rise=0.1, droop=0.12, stagger=0.15,
         inner=0.1,
         body=0.6, bodies=((10, 5), (6, 3), (5, 2)), underside=0.05,
         cards=2600, up=0.6, depth=0.2, card=0.45, lift=0.75, scatter=0.3, centered=0.5, cells=(0, 1, 2),
-        fold=0.06, bend=0.55, tint=(0.75, 0.82, 0.82), shade=0.8, levels=((2, 1.3), (5, 1.7)),
+        fold=0.06, bend=0.55, tint=(0.665, 0.740, 0.634), shade=0.8, levels=((2, 1.3), (5, 1.7)),
     ),
 }
 
@@ -1411,6 +1414,20 @@ def trunk_cells(middles, axis, keep, cell):
     return trunk
 
 
+def hooked(plant, bearers, spec, middles, parent, trunk):
+    """
+    True for each pad whose own limb hangs on a hook: from where it leaves the trunk, the limb dips
+    more than `sag` below both that point and the pad's underside before it turns up to the pad, as
+    a limb that hangs under the crown and ends in a tuft does.
+    """
+    out = []
+    for (c, r, _), b in zip(plant.pads, bearers):
+        path = [i for i in root_path(b, parent) if not trunk[i]]
+        lowest = min((middles[i][2] for i in path), default=math.inf)
+        out.append(bool(path) and lowest < min(middles[path[0]][2], c.z - r.z) - spec['sag'])
+    return out
+
+
 def trim_twigs(obj, plant, bearers, spec, ends, inverse, middles, distance, parent, around, cell, axis):
     """
     Prunes the wood to the crown, cell by cell of the wood, so each cut runs across a limb and
@@ -1421,16 +1438,25 @@ def trim_twigs(obj, plant, bearers, spec, ends, inverse, middles, distance, pare
       wood it leaves, even where it reaches into another limb's pads;
     - a bare twig, the last `twig` of the wood's height before a limb's end, goes where no pad
       grown by `snug` in its squared measure (2 when not given) holds it, above the bare trunk;
-    - with `prune`, any wood that reaches out past the pads goes;
+    - with `prune`, any wood that reaches out past the pads goes, and so does wood under a pad's
+      outer rim that hangs more than `drop` below its underside;
+    - with `sag`, a pad on a limb that hangs on a hook goes, as `hooked` finds it, and its limb
+      with it when it bears no other pad;
     - nothing else of the trunk itself, as `trunk_cells` finds it, or in the lowest tenth of the
       height is cut, so the trunk and its foot never show a hole, and a limb cut back to the trunk
       leaves no stub;
-    - all wood above the middle of the highest pad goes, so the trunk's top ends inside a pad;
+    - all wood above the middle of the highest pad goes, so the trunk's top ends inside a pad; under
+      a domed top, all wood above the dome's lower third goes, so the raw trunk's torn top goes;
     - wood that the cuts part from the foot goes, whatever its size.
     Each cut end is closed, and a pad left with no wood in or near it goes, unless it rests on a
     pad that keeps its wood.
     """
     height = spec['height']
+    trunk = trunk_cells(middles, axis, spec['keep'], cell)
+    if 'sag' in spec:
+        keep = [not h for h in hooked(plant, bearers, spec, middles, parent, trunk)]
+        plant.pads = [pad for pad, k in zip(plant.pads, keep) if k]
+        bearers = [b for b, k in zip(bearers, keep) if k]
     tips = KDTree(len(middles))
     count = 0
     for e in ends:
@@ -1441,7 +1467,7 @@ def trim_twigs(obj, plant, bearers, spec, ends, inverse, middles, distance, pare
     tips.balance()
     near = np.array([count > 0 and tips.find(m)[2] < 1.5 * cell for m in middles])
     z = middles[:, 2]
-    clear = ~trunk_cells(middles, axis, spec['keep'], cell) & (z > 0.1 * height)
+    clear = ~trunk & (z > 0.1 * height)
     bearing = sorted({c for b in bearers for c in root_path(b, parent)})
     tree = KDTree(len(bearing))
     for i in bearing:
@@ -1452,15 +1478,18 @@ def trim_twigs(obj, plant, bearers, spec, ends, inverse, middles, distance, pare
         for i in range(len(middles))
     ])
     # Wood above the middle of the highest pad goes, the trunk's top too, so the trunk ends
-    # inside its top pad.
-    gone = (z > max(c.z for c, _, _ in plant.pads)) | (clear & (
+    # inside its top pad; under a domed top it ends in the dome's lower third.
+    c, r, _ = max(plant.pads, key=lambda pad: pad[0].z)
+    gone = (z > c.z - (2 / 3 * r.z if 'crest' in spec else 0.0)) | (clear & (
         ~borne | (~held(middles, plant.pads, spec.get('snug', 2.0)) & (z > spec['bare'] * height) & near)
     ))
     if spec.get('prune'):
-        # The crown is pruned to its outline: no wood reaches out past its pads.
+        # The crown is pruned to its outline: no wood reaches out past its pads, nor hangs far
+        # below the rim of the pad over it.
         under = np.zeros(len(middles), bool)
         for c, r, _ in plant.pads:
-            under |= ((middles[:, 0] - c.x) / r.x) ** 2 + ((middles[:, 1] - c.y) / r.y) ** 2 < 1.3
+            across = ((middles[:, 0] - c.x) / r.x) ** 2 + ((middles[:, 1] - c.y) / r.y) ** 2
+            under |= (across < 1.3) & ~((across > 0.5) & (z < c.z - r.z - spec.get('drop', math.inf)))
         gone |= ~under & clear & (z > spec['climb'][0] * height)
     # Only wood that still joins the foot through the cells that stay is kept.
     joined = (z < z.min() + 2 * cell) & ~gone
