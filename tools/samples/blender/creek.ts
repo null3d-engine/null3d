@@ -1,5 +1,6 @@
 // Builds the Creek's models for the sample-assets repository: creek.py's trees, bank plants, cave
-// mouth and sculpted pines, optimized and packed one file each, as `build.ts` says.
+// mouth, sculpted pines and the garden's ground plants, optimized and packed one file each, as
+// `build.ts` says.
 //
 //   bun tools/samples/blender/creek.ts <output folder> [--models <a,b>] [--raw <folder>]
 //     [--preview <folder>]
@@ -12,7 +13,7 @@ import { dirname } from 'node:path';
 import { samplePath } from '../../lib/samples';
 import { buildScene, chosenModels } from './build';
 
-const models = ['trees', 'plants', 'cave', 'pines'];
+const models = ['trees', 'plants', 'cave', 'pines', 'garden'];
 
 /** The folder that holds the raw trunks in the pinned sample content. */
 function pinnedTrunks(): string {
@@ -31,7 +32,7 @@ await buildScene({
 	models,
 	// The rock of the cave hides what lies behind it.
 	blockers: ['cave'],
-	swaying: ['trees', 'plants', 'pines'],
+	swaying: ['trees', 'plants', 'pines', 'garden'],
 	options:
 		chosenModels(models).includes('pines') && !process.argv.includes('--raw')
 			? { '--raw': pinnedTrunks() }
