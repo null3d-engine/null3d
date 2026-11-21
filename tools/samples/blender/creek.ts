@@ -15,18 +15,25 @@ import { buildScene, chosenModels } from './build';
 
 const models = ['trees', 'plants', 'cave', 'pines', 'garden', 'maples'];
 
+/**
+ * The raw trunks in the pinned sample content, by the model finished from them. Each path is
+ * written out, so the sample check can read it.
+ */
+const TRUNKS: Readonly<Record<string, readonly (() => string)[]>> = {
+	pines: [
+		() => samplePath('sources/showcase/creek-raw/pine-low/model.glb'),
+		() => samplePath('sources/showcase/creek-raw/pine-tall/model.glb'),
+	],
+	maples: [() => samplePath('sources/showcase/creek-raw/maple-trunk/model.glb')],
+};
+
 /** The raw trunks that the chosen models are finished from. */
-const trunks = [
-	...(chosenModels(models).includes('pines') ? ['pine-low', 'pine-tall'] : []),
-	...(chosenModels(models).includes('maples') ? ['maple-trunk'] : []),
-];
+const trunks = chosenModels(models).flatMap((model) => TRUNKS[model] ?? []);
 
 /** The folder that holds the chosen models' raw trunks in the pinned sample content. */
 function pinnedTrunks(): string {
 	try {
-		const files = trunks.map((trunk) =>
-			samplePath(`sources/showcase/creek-raw/${trunk}/model.glb`),
-		);
+		const files = trunks.map((find) => find());
 		return dirname(dirname(files[0] as string));
 	} catch (error) {
 		throw new Error(
