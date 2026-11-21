@@ -115,11 +115,11 @@ STATUE = dict(
 # meters out, half `ribs[0]` meters wide there and half `ribs[1]` at the corners, and over the
 # last `eave` meters to its eaves. The gate loses the
 # rear frame that Tripo3D added: everything under the roof, which starts at `roof` of its height,
-# and behind the front posts' backs, which `cut` gives in meters at the foot and at the roof, and
-# behind the posts within `eaves` meters of the middle, everything below the side ties, `tie`
-# meters above the foot. Its front posts stand upright again, losing their lean of `lean` meters
-# per meter. A copy of the left one, `post` times as wide and deep and `rear` meters behind it,
-# stands behind it, the roof grows across by `widen`, and the timber under the roof,
+# and behind the front posts' backs, which `cut` places at the foot and at the roof, and behind
+# the posts within `eaves` of the middle, everything below the side ties, `tie` above the foot;
+# these four are shares of its height. Its front posts stand upright again, losing their lean of
+# `lean` meters per meter. A copy of the left one, `post` times as wide and deep and `rear` of the
+# height behind it, stands behind it, and the timber under the roof,
 # above the stone blocks at `blocks` of its height, keeps `darken` of its lightness and grows
 # `vivid` times in color strength. The rear post, deeper in the roof's shade, then takes the front
 # posts' tone by the two shares of `rear_tone`, for lightness and color strength. A boulder's stone keeps `darken` of its lightness, grows
@@ -132,9 +132,9 @@ MODELS = {
     'lantern': dict(file='model.glb', turn=-90.0, height=2.8, sink=0.03, triangles=1500, levels=(0.6, 0.3),
                     texture=512, darken=0.6, stone_vivid=1.5, moss_edge=(0.35, 0.75), moss=(1.08, 1.0, 0.85),
                     vivid=1.6, moss_darken=0.7, smooth=6, cap=(0.68, 0.87), knob=0.25, ribs=(0.03, 0.1), eave=0.1),
-    'gate': dict(file='model.glb', turn=-90.0, height=4.4, sink=0.03, triangles=6000, levels=(0.4, 0.15),
-                 texture=1024, roof=0.64, cut=(-0.505, -0.296), tie=2.92, eaves=2.2, lean=0.09, post=0.58, rear=1.2,
-                 widen=1.09, blocks=0.08, rear_tone=(1.2, 0.8),
+    'gate': dict(file='model.glb', turn=-90.0, height=3.9, sink=0.03, triangles=6000, levels=(0.4, 0.15),
+                 texture=1024, roof=0.64, cut=(-0.1148, -0.0673), tie=0.6636, eaves=0.5, lean=0.09, post=0.58,
+                 rear=0.273, blocks=0.08, rear_tone=(1.2, 0.8),
                  darken=0.65, vivid=2.3),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
@@ -1186,13 +1186,12 @@ def gate_surgery(obj, spec):
     level cut at the side ties' underside takes the old rear posts' tops that hang below the ties.
     The cuts close, each new face painted from the timber round it. The front posts then stand
     upright, and a copy of the left one, narrowed, stretched from the ground into the tie, moved
-    back and cut level at both ends, stands behind it with the front post's own upright grain. The
-    roof grows across.
+    back and cut level at both ends, stands behind it with the front post's own upright grain.
     """
     co = vertices_of(obj)
     low, high = co[:, 2].min(), co[:, 2].max()
     roof = low + spec['roof'] * (high - low)
-    tie = low + spec['tie']
+    tie = low + spec['tie'] * (high - low)
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     uv = bm.loops.layers.uv.active
@@ -1206,12 +1205,13 @@ def gate_surgery(obj, spec):
         bmesh.ops.bisect_plane(bm, geom=verts + edges + faces, plane_co=point, plane_no=normal, clear_outer=True)
         return before - len(bm.faces)
 
-    # The posts' backs lean: the cut runs from `cut[0]` at the foot to `cut[1]` at the roof line.
-    foot, top = spec['cut']
+    # The posts' backs lean: the cut runs from `cut[0]` of the height at the foot to `cut[1]` at the
+    # roof line.
+    foot, top = (share * (high - low) for share in spec['cut'])
     doomed = cut([f for f in bm.faces if max(v.co.z for v in f.verts) < roof], (0, foot, low),
                  Vector((0, 1, -(top - foot) / (roof - low))).normalized())
     # Behind the front posts and inside the roof's ends, everything below the ties goes.
-    doomed += cut([f for f in bm.faces if f.calc_center_median().y > 0 and abs(f.calc_center_median().x) < spec['eaves']
+    doomed += cut([f for f in bm.faces if f.calc_center_median().y > 0 and abs(f.calc_center_median().x) < spec['eaves'] * (high - low)
                    and min(v.co.z for v in f.verts) < tie], (0, 0, tie), Vector((0, 0, -1)))
     loose = [v for v in bm.verts if not v.link_faces]
     bmesh.ops.delete(bm, geom=loose, context='VERTS')
@@ -1247,7 +1247,7 @@ def gate_surgery(obj, spec):
     # beyond the level cuts that then give it clean ends.
     for v in made:
         v.co = Vector((middle.x + (v.co.x - middle.x) * spec['post'],
-                       middle.y + spec['rear'] + (v.co.y - middle.y) * spec['post'],
+                       middle.y + spec['rear'] * (high - low) + (v.co.y - middle.y) * spec['post'],
                        low - 0.3 + (v.co.z - bottom) * (tie + 0.6 - low) / (beam - 0.05 - bottom)))
     for height, normal in ((low, (0, 0, -1)), (tie + 0.03, (0, 0, 1))):
         faces = [e for e in copy if isinstance(e, bmesh.types.BMFace) and e.is_valid]
@@ -1262,9 +1262,6 @@ def gate_surgery(obj, spec):
     for f in bmesh.ops.triangulate(bm, faces=capped)['faces']:
         for corner in f.loops:
             corner[uv].uv = rim.get(corner.vert, corner[uv].uv)
-    for v in bm.verts:
-        if v.co.z > roof - 0.1:
-            v.co.x *= 1 + (spec['widen'] - 1) * float(smoothstep(roof - 0.1, roof + 0.1, v.co.z))
     bm.to_mesh(obj.data)
     bm.free()
     return doomed
@@ -1345,7 +1342,7 @@ def repaint_model(name, spec, maps, rng):
         # Behind the front posts and below the ties only the rear post stands. It stands deeper in
         # the roof's shade, so it takes the front posts' tone: lighter by the first share of
         # `rear_tone`, its color strength by the second.
-        tie = spec['tie'] - spec['sink']
+        tie = spec['tie'] * spec['height'] - spec['sink']
         rear = smoothstep(0.15, 0.3, maps['position'][..., 1]) * smoothstep(tie + 0.02, tie - 0.05, z)
         color = darken(color, spec['rear_tone'][0], rear)
         color = vivid(color, spec['rear_tone'][1], rear)
