@@ -4,7 +4,16 @@
 // ground or on the course below, and no lantern, gate or rock stands on the steps or on another's
 // foot. A model or a step raised off its ground fails these tests.
 import { expect, test } from 'bun:test';
-import { DRAGON, gardenPlaces, ledgePoint, RING, SLAB_REACH } from './garden';
+import {
+	DRAGON,
+	gardenPlaces,
+	ledgePoint,
+	nearLedge,
+	RING,
+	SLAB_REACH,
+	type TerracePoint,
+	terraceWalls,
+} from './garden';
 import { alongFlight, flights, groundHeight, STAIRS } from './land';
 import { slabPlaces, wallPlaces } from './steps';
 
@@ -110,18 +119,47 @@ test("a dragon stands on each end of the gate's ridge, facing out, its base insi
 	expect(dragons.length).toBe(2);
 	const [c, s] = [Math.cos(gate.yaw), Math.sin(gate.yaw)];
 	for (const dragon of dragons) {
+		// One model at its own size: a negative size would turn it inside out, a mirrored copy.
+		expect(dragon.size, 'a mirrored or shrunk dragon').toBeCloseTo(gate.size, 6);
 		// The dragon's foot in the gate model's own frame: across its ridge, up, and along its depth.
 		const [dx, dz] = [dragon.x - gate.x, dragon.z - gate.z];
 		const across = (dx * c - dz * s) / gate.size;
 		const along = (dx * s + dz * c) / gate.size;
 		expect(Math.abs(along), 'a dragon off the ridge line').toBeLessThan(0.01);
-		expect((dragon.y - gate.y) / gate.size, 'a dragon over the ridge').toBeLessThan(DRAGON.ridge);
+		// Its foot lies its base's sink under the ridge's top: neither lifted off nor buried.
+		const up = (dragon.y - gate.y) / gate.size;
+		expect(Math.abs(up - (DRAGON.ridge - DRAGON.sink)), 'a dragon off the ridge').toBeLessThan(
+			0.03,
+		);
 		// Its head points out along the ridge, away from the gate's middle.
 		const out = Math.sin(dragon.yaw) * c - Math.cos(dragon.yaw) * s;
 		expect(out * Math.sign(across), 'a dragon facing in').toBeGreaterThan(0.99);
-		// Its wave base reaches 0.38 m ahead of its foot, and the ridge's top is level to 2.2 m out.
+		// Its wave base reaches 0.38 m ahead of its foot. The ridge's top is level to 2.2 m out and
+		// rises into the curl past it, so the sunk base may reach a few centimeters further, no more.
 		expect(Math.abs(across) + 0.38 * dragon.size, 'a dragon past the end curl').toBeLessThan(2.25);
 	}
+});
+
+test('the terrace walls lie across the hill, off the steps and clear of the ledge', () => {
+	const { ledge } = gardenPlaces();
+	const walls = terraceWalls();
+	let length = 0;
+	for (const wall of walls) {
+		for (let k = 1; k < wall.length; k++) {
+			const [a, b] = [wall[k - 1], wall[k]] as [TerracePoint, TerracePoint];
+			length += Math.hypot(b.x - a.x, b.z - a.z);
+		}
+		for (const point of wall) {
+			expect(nearLedge(ledge, point.x, point.z, 0), 'a terrace wall on the ledge').toBe(false);
+			for (const flight of flights()) {
+				const { t, side } = alongFlight(flight, point.x, point.z);
+				if (t > 0 && t < 1)
+					expect(side, 'a terrace wall across the steps').toBeGreaterThan(STAIRS.half + 1);
+			}
+		}
+	}
+	// Enough wall that the hill reads as terraced rock from the opening view.
+	expect(length, 'the walls across the hill').toBeGreaterThan(30);
 });
 
 test('the walls stop short of the ledge, clear of the blocks of rock round it', () => {
