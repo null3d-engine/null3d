@@ -6,10 +6,11 @@
 // levels, so every copy picks its own level of detail. Places follow the concept picture, read from
 // the opening view onto this land.
 import type { SketchContext } from '@null3d/engine';
-import { type Part, partsOf, type Stand, standPart } from '../../lib/blender-models';
+import { type Part, partsOf, type Stand, standPart, tintedPart } from '../../lib/blender-models';
 import { rock } from '../../lib/procedural';
 import { sampleUrl } from '../../lib/samples';
 import { groundHeight, LANDING, TERRACE } from './land';
+import { MOSS_MUTE, mossy } from './stones';
 
 /** The models that the garden places. */
 export interface GardenModels {
@@ -55,10 +56,10 @@ const STATUE_YAW = facing(STATUE_AT, [LANDING.x, LANDING.z]);
 
 /**
  * The rough stone step under the statue's slab, as the concept's base has: its half length and
- * half width, in meters, a little past the slab's own, how far its top stands over the terrace, and
- * how thick it is.
+ * half width, in meters, a little past the slab's own, how far its top stands over the terrace, how
+ * thick it is, and how far the moss reaches down from its top over its edges.
  */
-const STEP = { long: 5, wide: 3.4, rise: 0.35, thick: 0.7 } as const;
+const STEP = { long: 5, wide: 3.4, rise: 0.35, thick: 0.7, moss: 0.4 } as const;
 
 /** The gate faces down the ridge, as the statue does, so the steps pass through it. */
 const GATE_YAW = STATUE_YAW;
@@ -124,9 +125,9 @@ export function createGarden(
 	const terrace = groundHeight(STATUE_AT[0], STATUE_AT[1]);
 	const step = scene.createMesh({
 		mesh: geometry.fromArrays(
-			rock(91, 3, [1, STEP.thick / STEP.long, STEP.wide / STEP.long], 0.04),
+			mossy(rock(91, 3, [1, STEP.thick / STEP.long, STEP.wide / STEP.long], 0.04), 92, STEP.moss),
 		),
-		material: materials.standard({ color: '#5d564a', roughness: 0.95 }),
+		material: materials.standard({ vertexColors: true, roughness: 0.95 }),
 		castShadows: true,
 		receiveShadows: true,
 	});
@@ -144,7 +145,12 @@ export function createGarden(
 		const mine = BOULDERS.filter((b) => b.model === model).map((b) =>
 			onGround(b.x, b.z, b.yaw, b.size, 0.15),
 		);
-		standPart(ctx, models.boulders[model], mine, models.boulders[model].material);
+		standPart(
+			ctx,
+			models.boulders[model],
+			mine,
+			tintedPart(materials, models.boulders[model], MOSS_MUTE, 0.95),
+		);
 	}
 	// Footprints, in meters about each foot: the step, the gate, the lanterns and the boulders.
 	const feet = [

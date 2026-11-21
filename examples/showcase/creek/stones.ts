@@ -9,7 +9,7 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
-import { type Part, standPart } from '../../lib/blender-models';
+import { type Part, placedTurned, tintedPart } from '../../lib/blender-models';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import {
 	bearingOf,
@@ -62,7 +62,7 @@ function rockTexel(u: number, v: number, out: TexelSample): void {
 }
 
 /** Gives a rock's vertices colors: dark flecked stone, and moss where the rock faces up. */
-function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
+export function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
 	const positions = arrays.positions as Float32Array;
 	const colors = new Float32Array(positions.length);
 	const local = new Noise(seed);
@@ -88,6 +88,8 @@ function mossy(arrays: MeshArrays, seed: number, cover: number): MeshArrays {
 	return { ...arrays, colors };
 }
 
+/** The tint that mutes the finished rock models' golden moss to the concept's olive, seen from afar. */
+export const MOSS_MUTE = '#a9a79e';
 /** Linear colors of the stones: a warm grey-brown, and the yellow-olive moss that caps them. */
 const STONE_TONE = [0.2, 0.17, 0.125] as const;
 const MOSS_TONE = [0.13, 0.115, 0.03] as const;
@@ -105,11 +107,18 @@ const SCATTERED = 12;
 /** The stretch of the creek where the route's dip glides under the water, along its north half. */
 const DIP_REACH = [2.5, 19] as const;
 /**
- * The bank stones' smallest and largest size, and how close they stand, as a share of their size;
- * how far each sinks into the bank, as a share of its size; and the half width of the finished
- * bank-stone model at its own size, which sets the model's scale.
+ * The bank stones' smallest and largest size, and how close they stand, as a share of their size,
+ * so each overlaps the last; how far each sinks into the bank, as a share of its size, from least
+ * to most, so their tops stand uneven; how far each tips, in radians at the most; the half width
+ * of the finished bank-stone model at its own size, which sets the model's scale.
  */
-const BANK = { size: [0.45, 0.8], spacing: 1.7, sink: 0.25, modelHalf: 0.9 } as const;
+const BANK = {
+	size: [0.4, 0.85],
+	spacing: 1.35,
+	sink: [0.12, 0.4],
+	tilt: 0.35,
+	modelHalf: 0.9,
+} as const;
 /**
  * The riffles, where rocks stand across the current and break it into foam: the x of each, how far
  * along the creek its rocks spread, and how many stand in it. One lies on the west sill and two
@@ -299,22 +308,38 @@ export function createStones(
 	}
 
 	// The bank row from the finished bank-stone model, when the scene has it: each copy as wide as
-	// the stone it stands for, sunk a little into the bank.
-	if (bankStone)
-		standPart(
-			ctx,
-			bankStone,
-			places
-				.filter((place) => place.kind === 'bank')
-				.map(({ x, z, size }) => ({
-					x,
-					y: groundHeight(x, z) - size * BANK.sink,
-					z,
-					yaw: next() * Math.PI * 2,
-					size: size / BANK.modelHalf,
-				})),
-			bankStone.material,
-		);
+	// the stone it stands for, tipped a little and sunk unevenly into the bank, so no two tops stand
+	// alike. A muted copy of the model's material keeps its moss olive rather than golden from afar.
+	if (bankStone) {
+		const bank = places.filter((place) => place.kind === 'bank');
+		const material = tintedPart(materials, bankStone, MOSS_MUTE, 0.95);
+		const batch = scene.createInstances(bankStone.mesh, bank.length, {
+			material,
+			castShadows: true,
+			receiveShadows: true,
+		});
+		bank.forEach(({ x, z, size }, row) => {
+			const turn = quat.fromEuler(
+				quat.create(),
+				(next() * 2 - 1) * BANK.tilt,
+				next() * Math.PI * 2,
+				(next() * 2 - 1) * BANK.tilt,
+				'YXZ',
+			);
+			const sink = BANK.sink[0] + (BANK.sink[1] - BANK.sink[0]) * next();
+			const at = [x, groundHeight(x, z) - size * sink, z] as const;
+			const { position, rotation, scale } = placedTurned(
+				bankStone,
+				at,
+				turn,
+				size / BANK.modelHalf,
+			);
+			batch.positions.set(position, row * 3);
+			batch.rotations.set(rotation, row * 4);
+			batch.scales.set(scale, row * 3);
+		});
+		batch.markDirty();
+	}
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
 	const tints = ['#6e6455', '#7a6a52', '#5c564c'];
