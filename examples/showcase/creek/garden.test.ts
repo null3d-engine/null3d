@@ -32,6 +32,20 @@ function lowest(x: number, z: number, reach: number): number {
 	return low;
 }
 
+/** The ground's highest point under a footprint, read densely: its middle and four rings. */
+function highest(x: number, z: number, reach: number): number {
+	let high = groundHeight(x, z);
+	for (const share of [0.25, 0.5, 0.75, 1])
+		for (let k = 0; k < 24; k++) {
+			const angle = (k / 24) * Math.PI * 2;
+			high = Math.max(
+				high,
+				groundHeight(x + Math.cos(angle) * reach * share, z + Math.sin(angle) * reach * share),
+			);
+		}
+	return high;
+}
+
 test('each lantern, the gate and every rock stands on the lowest ground under its footprint', () => {
 	const { gate, lanterns, rocks, ring } = gardenPlaces();
 	const models = [gate, ...lanterns, ...rocks, ...ring];
@@ -163,25 +177,39 @@ test('the terrace walls lie across the hill, off the steps and clear of the ledg
 	expect(length, 'the walls across the hill').toBeGreaterThan(30);
 });
 
-test("each terrace wall's stone rests on the ground or on the rows under it", () => {
+test("each terrace wall's stone rests on the ground or on the rows under it, clear of the rocks", () => {
 	const stones = terraceStones();
 	const rows = stones.filter((stone) => !stone.capping);
+	const { rocks, ring } = gardenPlaces();
 	expect(stones.length).toBeGreaterThan(60);
 	for (const stone of stones) {
+		// A stone's flattened underside lies about a third of its size under its middle, and a row
+		// stone's top about two thirds of its size over it.
+		const underside = stone.y - stone.size * 0.35;
 		if (stone.capping) {
-			// A top stone lies over a stone of the rows, near enough that the two overlap.
-			const under = rows.some(
-				(row) => Math.hypot(row.x - stone.x, row.z - stone.z) < (row.size + stone.size) * 0.8,
-			);
-			expect(under, 'a top stone with no row under it').toBe(true);
+			// A top stone rests on the highest ground under it or on the top of a row stone it overlaps.
+			const tops = rows
+				.filter(
+					(row) => Math.hypot(row.x - stone.x, row.z - stone.z) < (row.size + stone.size) * 0.8,
+				)
+				.map((row) => row.y + row.size * 0.65);
+			const support = Math.max(highest(stone.x, stone.z, stone.size), ...tops);
+			expect(
+				underside - support,
+				'a top stone over the stones and the ground under it',
+			).toBeLessThan(0.02);
 		} else {
-			// A stone's flattened underside lies about a third of its size under its middle.
-			const underside = stone.y - stone.size * 0.3;
 			expect(
 				underside - lowest(stone.x, stone.z, stone.size * 1.1),
 				'the air under a stone',
 			).toBeLessThan(0.02);
 		}
+		// No stone's footprint meets a rock's or a ledge block's.
+		for (const rock of [...rocks, ...ring])
+			expect(
+				Math.hypot(stone.x - rock.x, stone.z - rock.z),
+				`a wall stone inside the rock at ${rock.x.toFixed(1)}, ${rock.z.toFixed(1)}`,
+			).toBeGreaterThan(rock.reach + stone.size * 1.1);
 	}
 });
 
