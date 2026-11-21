@@ -148,7 +148,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A clear creek crosses the top of a round cliff from rim to rim, fed by a spring pool, over a cobbled bed that shows through the water, and leaves over both rims in white falls. Mossy stones line its banks. Stone steps climb from the creek through a roofed gate between stone lanterns to a bronze Buddha on a terrace, above raked gravel and moss islands. Dark walls of pillars and ledges run down into the cloud, which billows and drifts in the light of the time of day.',
 		assets:
-			'Shows how a statue, a gate, lanterns and boulders load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail.',
+			'Shows how a statue, a gate with its roof dragons, lanterns and boulders load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail.',
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		hold: 0.5,

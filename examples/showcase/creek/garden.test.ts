@@ -4,7 +4,7 @@
 // ground or on the course below, and no lantern, gate or rock stands on the steps or on another's
 // foot. A model or a step raised off its ground fails these tests.
 import { expect, test } from 'bun:test';
-import { gardenPlaces, ledgePoint, RING, SLAB_REACH } from './garden';
+import { DRAGON, gardenPlaces, ledgePoint, RING, SLAB_REACH } from './garden';
 import { alongFlight, flights, groundHeight, STAIRS } from './land';
 import { slabPlaces, wallPlaces } from './steps';
 
@@ -59,11 +59,13 @@ test("the statue's slab sits on the ledge's flat top, which stands over the terr
 			Math.hypot(Math.cos(angle) / SLAB_REACH.long, Math.sin(angle) / SLAB_REACH.wide);
 		expect(Math.hypot(x, z), 'the ledge inside the slab').toBeGreaterThan(slab);
 	}
-	// The ring's blocks stand about level with the ledge's top, never over the highest that the ring
-	// allows, so none stands up past the slab's foot.
+	// The ring's blocks stand about level with the ledge's top, within the range that the ring
+	// allows, so none stands up past the slab's foot and none sinks out of sight.
 	for (const block of gardenPlaces().ring) {
 		expect(block.top - ledge.top, 'a ring block over the ledge').toBeLessThan(RING.top[1] + 0.005);
-		expect(block.top - ledge.top, 'a ring block sunk out of sight').toBeGreaterThan(-0.5);
+		expect(block.top - ledge.top, 'a ring block sunk too deep').toBeGreaterThan(
+			RING.top[0] - 0.005,
+		);
 	}
 	// The slab model's rim lies 5 cm under its origin: it rests on the ledge's top, with no air.
 	expect(Math.abs(statue.y - 0.05 * statue.size - ledge.top)).toBeLessThan(0.01);
@@ -100,6 +102,25 @@ test('each wall stone rests on the ground or on the course below it', () => {
 		expect(underside - lowest(x, z, size * 1.2), 'the air under a wall stone').toBeLessThan(
 			0.1 * size,
 		);
+	}
+});
+
+test("a dragon stands on each end of the gate's ridge, facing out, its base inside the curls", () => {
+	const { gate, dragons } = gardenPlaces();
+	expect(dragons.length).toBe(2);
+	const [c, s] = [Math.cos(gate.yaw), Math.sin(gate.yaw)];
+	for (const dragon of dragons) {
+		// The dragon's foot in the gate model's own frame: across its ridge, up, and along its depth.
+		const [dx, dz] = [dragon.x - gate.x, dragon.z - gate.z];
+		const across = (dx * c - dz * s) / gate.size;
+		const along = (dx * s + dz * c) / gate.size;
+		expect(Math.abs(along), 'a dragon off the ridge line').toBeLessThan(0.01);
+		expect((dragon.y - gate.y) / gate.size, 'a dragon over the ridge').toBeLessThan(DRAGON.ridge);
+		// Its head points out along the ridge, away from the gate's middle.
+		const out = Math.sin(dragon.yaw) * c - Math.cos(dragon.yaw) * s;
+		expect(out * Math.sign(across), 'a dragon facing in').toBeGreaterThan(0.99);
+		// Its wave base reaches 0.38 m ahead of its foot, and the ridge's top is level to 2.2 m out.
+		expect(Math.abs(across) + 0.38 * dragon.size, 'a dragon past the end curl').toBeLessThan(2.25);
 	}
 });
 
