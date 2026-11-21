@@ -1577,11 +1577,40 @@ def decimated(obj, triangles, name):
         bpy.data.meshes.remove(old)
     bm = bmesh.new()
     bm.from_mesh(copy.data)
-    drop_loose(bm, -1.0)
+    keep_largest_piece(bm)
     bm.to_mesh(copy.data)
     bm.free()
     copy.data.name = name
     return copy
+
+
+def keep_largest_piece(bm):
+    """
+    Deletes every piece of a mesh but the largest, where a piece is the faces joined through their
+    corners: an edge with no face, or a face of no area, joins nothing that the exported file
+    shows. Edges and vertices that no face uses go too.
+    """
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
+    bm.faces.ensure_lookup_table()
+    seen, pieces = set(), []
+    for face in bm.faces:
+        if face.index in seen:
+            continue
+        seen.add(face.index)
+        stack, piece = [face], []
+        while stack:
+            f = stack.pop()
+            piece.append(f)
+            for v in f.verts:
+                for g in v.link_faces:
+                    if g.index not in seen:
+                        seen.add(g.index)
+                        stack.append(g)
+        pieces.append(piece)
+    pieces.sort(key=len, reverse=True)
+    bmesh.ops.delete(bm, geom=[f for piece in pieces[1:] for f in piece], context='FACES_ONLY')
+    bmesh.ops.delete(bm, geom=[e for e in bm.edges if not e.link_faces], context='EDGES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
 
 
 def trunk_axis(co, spec):
