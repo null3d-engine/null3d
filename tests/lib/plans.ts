@@ -497,6 +497,7 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 		id: imageItemId(run.id),
 		path: run.path,
 		timeoutSeconds: run.timeoutSeconds,
+		...(run.quietSeconds === undefined ? {} : { quietSeconds: run.quietSeconds }),
 		check: { kind: 'image', run },
 	};
 }

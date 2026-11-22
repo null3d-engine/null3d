@@ -234,6 +234,12 @@ export interface ImageRun {
 	/** The scene that the test draws: its page or sketch module, without the query. */
 	scene: string;
 	timeoutSeconds: number;
+	/**
+	 * The seconds that the runner waits for the page's first result, when the runner's own cap is
+	 * shorter: a heavy scene on a software renderer draws its first frame after the cap. The page's
+	 * own limit still applies, and the command that runs it gives the same value.
+	 */
+	quietSeconds?: number;
 	size: readonly [number, number];
 	/** The sketch time the engine must hold at. */
 	hold?: number;

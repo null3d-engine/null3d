@@ -1077,6 +1077,14 @@ const S6_TIMEOUT_SECONDS = 600;
 const S5_TIMEOUT_SECONDS = 180;
 
 /**
+ * The seconds that the runner waits for S5's and S6's first result. The runner gives a silent page
+ * 90 s unless the page sets its own limit, and a software browser draws these two far past that: on
+ * CI's llvmpipe, S5's first frame arrived at 65 s and its result at 178 s, once the GPU finished,
+ * and it passed when the wait covered it.
+ */
+const BENCH_QUIET_SECONDS = 600;
+
+/**
  * S6's thread modes: the first alone. Copies of one mesh meet in many places of the city, and a
  * pixel where two meet can hold both at the same depth. On WebGPU the culling shader keeps the
  * copies of a mesh in an order that changes from frame to frame, so either copy can win such a
@@ -3967,6 +3975,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
 			timeoutSeconds:
 				scene === 's6' ? S6_TIMEOUT_SECONDS : scene === 's5' ? S5_TIMEOUT_SECONDS : 90,
+			// A software browser draws these two heavy scenes after the runner's 90 s silence cap, so
+			// each names its own wait, which the runner keeps for the page's whole budget.
+			...(scene === 's5' || scene === 's6' ? { quietSeconds: BENCH_QUIET_SECONDS } : {}),
 			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
 			// update rates are its default, and a held frame otherwise catches far characters
 			// between two of their poses.
