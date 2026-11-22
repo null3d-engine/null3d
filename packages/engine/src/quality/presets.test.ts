@@ -9,6 +9,7 @@ import {
 	checkSettings,
 	describeValues,
 	LIVE_SETTINGS,
+	LOWEST_TIER_REFLECTION,
 	LOWEST_TIER_SCALE,
 	lowered,
 	lowestTierCuts,
@@ -683,6 +684,7 @@ describe('the lowest quality tier', () => {
 		expect(cuts.minRenderScale).toBe(LOWEST_TIER_SCALE);
 		expect(cuts.shadows).toBe(false);
 		expect(cuts.bloom).toBe(false);
+		expect(cuts.reflectionScale).toBe(LOWEST_TIER_REFLECTION);
 		expect(cuts.depthPrepass).toBe(false);
 		expect(lowestTierCuts('webgpu', 0.25).minRenderScale).toBe(0.25);
 		expect(lowestTierCuts('webgpu').depthPrepass).toBeUndefined();
@@ -695,6 +697,7 @@ describe('the lowest quality tier', () => {
 			maxRenderScale: settings.maxRenderScale,
 			shadows: settings.shadows,
 			bloom: settings.bloom,
+			reflectionScale: settings.reflectionScale,
 			depthPrepass: settings.depthPrepass,
 		});
 	});

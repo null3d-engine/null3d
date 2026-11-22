@@ -895,9 +895,16 @@ export function presetValue<K extends QualitySettingName>(
 export const LOWEST_TIER_SCALE = 1 / 3;
 
 /**
+ * The lowest quality tier's share of the render size for a reflection pass's texture each way: a
+ * quarter, which draws a sixteenth of the pixels of a full-size reflection.
+ */
+export const LOWEST_TIER_REFLECTION = 0.25;
+
+/**
  * The cuts that the lowest quality tier applies, on the GPU path `tier`: the render scale's floor
- * at the tier's, unless the settings' floor is lower, the sun's shadows and bloom off, and WebGL2's
- * depth prepass off. A sketch that reads the settings sees them while the tier applies (D-382).
+ * at the tier's, unless the settings' floor is lower, the sun's shadows and bloom off, the
+ * reflection passes' textures at a quarter of the render size, and WebGL2's depth prepass off. A
+ * sketch that reads the settings sees them while the tier applies (D-382).
  */
 export function lowestTierCuts(
 	tier: Tier,
@@ -907,6 +914,7 @@ export function lowestTierCuts(
 		minRenderScale: Math.min(min, LOWEST_TIER_SCALE),
 		shadows: false,
 		bloom: false,
+		reflectionScale: LOWEST_TIER_REFLECTION,
 		...(tier === 'webgl2' ? { depthPrepass: false } : {}),
 	};
 }
@@ -922,7 +930,8 @@ export function lowestTierSettings(tier: Tier): Partial<QualitySettings> {
 
 /**
  * The settings that the lowest quality tier replaces, for a frame loop to give back when it
- * leaves: the render scale's range, the sun's shadows, bloom and the depth prepass.
+ * leaves: the render scale's range, the sun's shadows, bloom, the reflection passes' share and the
+ * depth prepass.
  */
 export function tierRestoreSettings(settings: QualitySettings): Partial<QualitySettings> {
 	return {
@@ -930,6 +939,7 @@ export function tierRestoreSettings(settings: QualitySettings): Partial<QualityS
 		maxRenderScale: settings.maxRenderScale,
 		shadows: settings.shadows,
 		bloom: settings.bloom,
+		reflectionScale: settings.reflectionScale,
 		depthPrepass: settings.depthPrepass,
 	};
 }
