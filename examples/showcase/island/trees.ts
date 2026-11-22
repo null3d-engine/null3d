@@ -162,9 +162,16 @@ const TREE_CARDS: Record<QualityPreset, number> = { low: 150, medium: 200, high:
  * How much farther each tree level reaches than its measured error allows, by preset. A tree's middle
  * levels are simple forms, and the hills read as flat slabs where they stand past a hundred metres.
  * Standing them farther keeps the hills whole as the camera moves; the cost is triangles between the
- * switch distances. Ultra keeps the measured reach, since its card hand-over is already far out.
+ * switch distances. Ultra's cards already stand far out, so it takes a smaller stretch than High.
  */
 const LEVEL_REACH: Record<QualityPreset, number> = { low: 1, medium: 1.6, high: 2.2, ultra: 2 };
+/**
+ * The lower levels that a tree draws at each preset. A preset whose coarsest level would switch a
+ * few meters before the card hand-over draws one level fewer: on the largest trees that switch lands
+ * a fraction of a second before the card's, so a crown would change twice at route speed, and the
+ * switch alone takes whole puffs off it.
+ */
+const LEVELS_DRAWN: Record<QualityPreset, number> = { low: 2, medium: 1, high: 2, ultra: 2 };
 const SHRUB_CARDS: Record<QualityPreset, number> = { low: 40, medium: 55, high: 70, ultra: 90 };
 
 /** The side of the grid that stands the forest floor's plants, in meters. */
@@ -535,10 +542,11 @@ export async function createTrees(
 		// spreads across a whole crown at the switch. The levels differ by less than a pixel at the
 		// distances they switch, so a cut at once keeps the crown whole.
 		const { levels } = leaves.mesh;
-		if (levels.length > 0) {
+		const drawn = levels.slice(0, LEVELS_DRAWN[ctx.quality.preset]);
+		if (drawn.length > 0) {
 			const reach = LEVEL_REACH[ctx.quality.preset];
 			leaves.mesh.setLevels(
-				levels.map((level) => ({
+				drawn.map((level) => ({
 					...level,
 					fade: false,
 					...(level.error !== undefined && { error: level.error * reach }),
@@ -548,9 +556,10 @@ export async function createTrees(
 			);
 		}
 		// The wood cuts between its levels at once too: a dithered band on a trunk shows as a stipple.
-		if (wood.mesh.levels.length > 0)
+		const woodDrawn = wood.mesh.levels.slice(0, LEVELS_DRAWN[ctx.quality.preset]);
+		if (woodDrawn.length > 0)
 			wood.mesh.setLevels(
-				wood.mesh.levels.map((level) => ({ ...level, fade: false })),
+				woodDrawn.map((level) => ({ ...level, fade: false })),
 				{ fade: false },
 			);
 		// The wood bends with its leaves but has none to flutter, and its bark's own map gives its
