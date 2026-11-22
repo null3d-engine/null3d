@@ -1838,8 +1838,19 @@ impl SceneSettings {
         self.tone_curve = template;
     }
 
-    /// True when a custom effect, a group of joined effects, the fold into the final pass or the
-    /// custom tone curve draws with pipelines of `template`.
+    /// True when a live view's full-screen pass draws with a pipeline of `template`.
+    fn a_view_draws_template(views: &[View], template: u32) -> bool {
+        views.iter().any(|view| {
+            !view.is_removed()
+                && view
+                    .fullscreen_pass()
+                    .is_some_and(|pass| pass.template == template)
+        })
+    }
+
+    /// True when a custom effect, a group of joined effects, the fold into the final pass, a view's
+    /// full-screen pass or the custom tone curve draws with pipelines of `template`. A compute
+    /// pass's fragment form on WebGL2 is a full-screen pass of its view.
     fn post_uses_template(&self, template: u32) -> bool {
         let joins = &self.effect_joins;
         self.effects
@@ -1847,6 +1858,7 @@ impl SceneSettings {
             .any(|effect| effect.template == template)
             || joins.groups.iter().any(|&(_, group)| group == template)
             || joins.fold.is_some_and(|(_, fold)| fold == template)
+            || Self::a_view_draws_template(&self.views, template)
             || self
                 .tone_curve
                 .is_some_and(|curve| (curve..curve + 2).contains(&template))
@@ -4848,6 +4860,34 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::view::{Fullscreen, PassSource, ViewTarget};
+
+    /// A full-screen pass of a view, such as a compute pass's fragment form on WebGL2, keeps its
+    /// template from release: the pass draws with the pipeline the cache gave it, so a rebuild
+    /// that released the template would destroy a pipeline that the same frame draws.
+    #[test]
+    fn a_views_fullscreen_pass_keeps_its_template() {
+        let template = template::CUSTOM_FIRST + 3;
+        let pass = Fullscreen {
+            template,
+            fallback: true,
+            format: 0,
+            history: false,
+            layers: 1,
+            steps: 1,
+            reset: 0,
+            source: PassSource::None,
+            depth: false,
+            values: [0.0; EFFECT_FLOATS],
+            maps: EffectMaps::default(),
+        };
+        let views = [View::fullscreen(pass, ViewTarget::default())];
+        assert!(SceneSettings::a_view_draws_template(&views, template));
+        assert!(
+            !SceneSettings::a_view_draws_template(&views, template + 1),
+            "a template that no pass draws is released"
+        );
+    }
 
     /// A failed frame's copies never replay, so its large blocks do not wait out their frames.
     #[test]
