@@ -4,10 +4,17 @@
 // such row, and the figures go when the water goes. The add-on's `water-bounds` debug view draws
 // each body's bounds at the surface, and stops when another view replaces it. The surface also takes
 // the share of the view's path through the water that the page asks for, and reads its depth alone
-// by default.
+// by default. Rain rings the surface only when a page asks for it.
 import { describe, expect, it } from 'bun:test';
-import type { FeatureStats, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
+import type {
+	Camera,
+	FeatureStats,
+	MeshArrays,
+	QualityPreset,
+	SketchContext,
+} from '@null3d/engine';
 import { activateAddonDebugView, hasAddonDebugView } from '@null3d/engine/internal';
+import { createOcean } from './ocean';
 import { createWater, type Water, type WaterOptions } from './water';
 
 /** A scale that the governor gives a budget. */
@@ -24,6 +31,8 @@ function fakeContext(start: QualityPreset = 'medium') {
 	const boxes: [readonly number[], readonly number[], string][] = [];
 	/** The options that each material was made with, and the arrays of each mesh. */
 	const shaderOptions: Record<string, unknown>[] = [];
+	/** The values that each call of a material's `set` gave it. */
+	const materialSets: Record<string, unknown>[] = [];
 	const meshes: MeshArrays[] = [];
 	/** The cadence that the add-on gave each pass, and each switch it set: the calls that it made. */
 	const passEvery: [unknown, number][] = [];
@@ -31,6 +40,8 @@ function fakeContext(start: QualityPreset = 'medium') {
 	const quality = {
 		preset: start,
 		settings: {},
+		/** What the frame-budget governor has lowered, and whether the lowest tier applies. */
+		governor: { lowest: false },
 		onChange(handler: () => void) {
 			handlers.add(handler);
 			return () => handlers.delete(handler);
@@ -71,14 +82,21 @@ function fakeContext(start: QualityPreset = 'medium') {
 		scene: {
 			createMesh: (options: { mesh: unknown }) => {
 				meshes.push(options.mesh as MeshArrays);
-				return { destroy() {} };
+				// The sea moves its mesh about the camera, and hides it on request.
+				return { destroy() {}, setPosition() {}, setVisible() {} };
 			},
 		},
 		geometry: { fromArrays: (arrays: unknown) => arrays },
 		materials: {
 			shader: (options: Record<string, unknown>) => {
 				shaderOptions.push(options);
-				return { set() {}, destroy() {} };
+				return {
+					set(values: Record<string, unknown>) {
+						materialSets.push(values);
+					},
+					setUniform() {},
+					destroy() {},
+				};
 			},
 		},
 		textures: {
@@ -110,6 +128,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 		boxes,
 		/** The options of the material, and the arrays of the meshes, that the last water made. */
 		shaderOptions,
+		materialSets,
 		meshes,
 		/** The cadence and switch calls that the add-on made. */
 		passEvery,
@@ -124,10 +143,45 @@ function fakeContext(start: QualityPreset = 'medium') {
 				budget.onScale?.(scale);
 			}
 		},
+		/** Applies or leaves the lowest quality tier, as the governor does, and tells the handlers. */
+		lowestTo(on: boolean) {
+			quality.governor.lowest = on;
+			for (const handler of handlers) handler();
+		},
 		/** Switches the preset, as a menu does, and tells the change handlers. */
 		presetTo(preset: QualityPreset) {
 			quality.preset = preset;
 			for (const handler of handlers) handler();
+		},
+	};
+}
+
+/** A camera at a place and a turn, which a test moves and turns. */
+function fakeCamera(): {
+	getPosition(out: { [index: number]: number }): void;
+	getRotation(out: { [index: number]: number }): void;
+	to(x: number, y: number, z: number): void;
+	turnTo(yaw: number): void;
+} {
+	const place = [0, 1, 0];
+	const turn = [0, 0, 0, 1];
+	return {
+		getPosition(out) {
+			for (let k = 0; k < 3; k++) out[k] = place[k] as number;
+		},
+		getRotation(out) {
+			for (let k = 0; k < 4; k++) out[k] = turn[k] as number;
+		},
+		to(x, y, z) {
+			place[0] = x;
+			place[1] = y;
+			place[2] = z;
+		},
+		turnTo(yaw) {
+			turn[0] = 0;
+			turn[1] = Math.sin(yaw / 2);
+			turn[2] = 0;
+			turn[3] = Math.cos(yaw / 2);
 		},
 	};
 }
@@ -198,6 +252,99 @@ describe('the reflection cadence', () => {
 		context.step(0);
 		expect(water.reflectionEvery).toBe(1);
 		water.destroy();
+	});
+
+	it('draws the reflection in every frame while the camera moves, and takes the cadence back', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const water = waterOn(context, { camera: camera as unknown as Camera });
+		// A still camera keeps the row: Low draws in every second frame.
+		water.update();
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(2);
+		// A move draws the reflection in this frame.
+		camera.to(1, 1, 0);
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		// So does a turn, and the frame after it, which stands still again, takes the cadence back.
+		camera.turnTo(0.3);
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		// The governor's cadence is the one restored, not the preset's row alone.
+		context.step(1);
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(4);
+		water.destroy();
+	});
+
+	it('draws the reflection in every 16th frame in the lowest tier at rest, and a frame while moving', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const water = waterOn(context, { camera: camera as unknown as Camera });
+		const last = () => context.passEvery.at(-1)?.[1];
+		water.update();
+		context.lowestTo(true);
+		water.update();
+		expect(last()).toBe(16);
+		// A camera that moves still draws in every frame, whatever the tier says.
+		camera.to(1, 1, 0);
+		water.update();
+		expect(last()).toBe(1);
+		water.update();
+		// Settled inside the tier: back to its 16.
+		expect(last()).toBe(16);
+		// Leaving the tier gives back the row, with the governor's steps.
+		context.lowestTo(false);
+		water.update();
+		expect(last()).toBe(2);
+		context.step(1);
+		expect(last()).toBe(4);
+		water.destroy();
+	});
+
+	it('draws the sea’s reflection in every 16th frame in the lowest tier at rest, and a frame while moving', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const ocean = createOcean(context.ctx as unknown as SketchContext, {
+			camera: camera as unknown as Camera,
+		});
+		const last = () => context.passEvery.at(-1)?.[1];
+		ocean.update();
+		context.lowestTo(true);
+		ocean.update();
+		expect(last()).toBe(16);
+		camera.to(1, 1, 0);
+		ocean.update();
+		expect(last()).toBe(1);
+		ocean.update();
+		expect(last()).toBe(16);
+		context.lowestTo(false);
+		ocean.update();
+		expect(last()).toBe(2);
+		ocean.destroy();
+	});
+
+	it('draws the sea’s reflection in every frame while the camera moves, and takes the cadence back', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const ocean = createOcean(context.ctx as unknown as SketchContext, {
+			camera: camera as unknown as Camera,
+		});
+		// A still camera keeps the row: Low draws in every second frame.
+		ocean.update();
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(2);
+		camera.to(1, 1, 0);
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		camera.turnTo(0.3);
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		// The governor's cadence is the one restored, not the preset's row alone.
+		context.step(1);
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(4);
+		ocean.destroy();
 	});
 
 	it('refuses a cadence outside the frames that the reflection can wait', () => {
@@ -313,6 +460,42 @@ describe('the water’s color along a low view', () => {
 
 	it('reads the depth alone unless the page asks otherwise', () => {
 		expect(viewPath()).toBe(0);
+	});
+});
+
+describe('the rain on the surface', () => {
+	/** The rain that the surface's uniforms start with. */
+	const startingRain = (context: ReturnType<typeof fakeContext>) =>
+		(context.shaderOptions.at(-1) as { uniforms?: { rain?: number } }).uniforms?.rain;
+
+	it('is off by default', () => {
+		const context = fakeContext();
+		const water = waterOn(context);
+		expect(startingRain(context)).toBe(0);
+		water.destroy();
+	});
+
+	it('starts at the amount that the page asks for, and follows setRain', () => {
+		const context = fakeContext();
+		const water = waterOn(context, { rain: 0.4 });
+		expect(startingRain(context)).toBe(0.4);
+		water.setRain(1);
+		// An unchanged amount, as a storm sets it every frame, sends nothing.
+		water.setRain(1);
+		water.setRain(0);
+		expect(context.materialSets).toEqual([{ rain: 1 }, { rain: 0 }]);
+		water.destroy();
+	});
+
+	it('refuses an amount outside 0 to 1, and names it', () => {
+		const context = fakeContext();
+		expect(() => waterOn(context, { rain: 1.5 })).toThrow(
+			/rain must be from 0 to 1, and it is 1.5/,
+		);
+		const water = waterOn(context);
+		expect(() => water.setRain(-0.1)).toThrow(/rain must be from 0 to 1/);
+		expect(() => water.setRain(Number.NaN)).toThrow(/rain must be from 0 to 1/);
+		water.destroy();
 	});
 });
 

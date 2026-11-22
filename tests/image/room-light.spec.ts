@@ -59,7 +59,9 @@ for (const { gpu, tier, mode, name, source: file } of RUNS)
 	}) => {
 		test.setTimeout(240_000);
 		const source = file ? `&source=${encodeURIComponent(file)}` : '';
-		await page.goto(`room-light.html?gpu=${gpu}&${mode.query}${source}`);
+		// The governor's lowest tier turns shadows and bloom off, which would change a frame that the
+		// test holds steady, so the page keeps the tier out.
+		await page.goto(`room-light.html?gpu=${gpu}&tier=off&${mode.query}${source}`);
 		const result = await pageResult<RoomLightResult>(page, 200_000);
 		expect(result.error).toBeUndefined();
 		expect(result.failures).toEqual([]);

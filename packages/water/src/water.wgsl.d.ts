@@ -17,6 +17,7 @@ declare const shader: CompiledMaterial<
 		readonly windBox: 'f32';
 		readonly windStrength: 'f32';
 		readonly windLayer: 'f32';
+		readonly rain: 'f32';
 	},
 	'mirror' | 'foamMap' | 'junctionMap' | 'wind' | 'airSettings'
 >;

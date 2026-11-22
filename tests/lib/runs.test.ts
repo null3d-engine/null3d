@@ -775,7 +775,9 @@ describe('the checks plan', () => {
 	it('starts the preset change page at its preset through the switch, and fails another start', () => {
 		const change = items.find((item) => item.id === 'preset-change-webgl2');
 		if (!change) throw new Error('the plan lacks the preset change page');
-		expect(change.path).toBe('/tests/pages/preset-change.html?gpu=webgl2&preset=medium&to=low');
+		expect(change.path).toBe(
+			'/tests/pages/preset-change.html?gpu=webgl2&preset=medium&to=low&tier=off',
+		);
 		// A phone that started at its own preset ran Low, and changed nothing.
 		const result = { ok: true, tier: 'webgl2', started: 'low', mode: { preset: 'low' } };
 		expect(judge(change.check, result, NONE_MISSING)).toEqual([

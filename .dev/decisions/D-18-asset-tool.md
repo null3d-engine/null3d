@@ -136,8 +136,9 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 | --- | --- | --- |
 | Positions | Unsigned 14-bit integers in 16 bits, plain, in steps of 1/16,383 of the longest side of the mesh's group. A mesh whose glTF extras hold `"quantizePositions": false` keeps 32-bit floats | gltfpack's default; meshopt compresses fewer bits better. A 100 m building gets 6 mm steps. The setting serves a mesh that spreads small parts over a large space, such as S6's towers merged by material ([D-106](D-106-s6-city.md#one-tower-mesh-per-material)) |
 | Normals, tangents | Signed bytes, normalized | gltfpack's default; the test scene's normals stay within 0.02 of their sources |
-| Texture coordinates | 16-bit normalized integers when every value lies from 0 to 1, else floats | Values past 1 would need a texture transform, and the engine's materials keep one transform for all maps |
-| Colors, joint weights | Normalized bytes; weights keep their sum at one | |
+| Texture coordinates | 16-bit normalized integers when every value lies from 0 to 1 across the mesh's group (the meshes that share its volume, its levels of detail among them), else floats across the group | Values past 1 would need a texture transform, and the engine's materials keep one transform for all maps. The engine draws a level only when its vertices take the base mesh's forms |
+| Colors | Normalized bytes when every value lies from 0 to 1 across the mesh's group, else floats across the group | As texture coordinates |
+| Joint weights | Normalized bytes that keep their sum at one | |
 | Index buffers | 16 bits when the vertices allow | |
 | Compression | `EXT_meshopt_compression` by default, lossless; `--compression none` leaves it out | The engine decodes meshopt in its loader's worker and downloads the decoder only for such files ([D-34](D-34-meshopt-decoding.md)). glTF-Transform writes the EXT form only, which the engine reads as it reads the KHR form |
 | Levels of detail | Planned by error, each about half the level above, in `MSFT_lod` with each level's error ([D-91](D-91-level-planning.md)) | The extension that exists for levels; three.js and the engine ignore it until they read levels |

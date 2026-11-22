@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { type Accessor, Document, type Node } from '@gltf-transform/core';
+import { type Accessor, Document, type Mesh, type Node } from '@gltf-transform/core';
 import { EXTMeshGPUInstancing } from '@gltf-transform/extensions';
 import { POSITION_BITS, quantizeMeshes, reorderMeshes } from './geometry.js';
 import {
@@ -53,6 +53,18 @@ function grid(doc: Document, n: number, size: number, offset: Vec3 = [0, 0, 0]) 
 		.setAttribute('TEXCOORD_0', accessor(new Float32Array(uvs), 'VEC2'))
 		.setIndices(accessor(new Uint32Array(indices), 'SCALAR'));
 	return doc.createMesh('grid').addPrimitive(prim);
+}
+
+/** Gives a mesh vertex colors that rise from 0 to `top` across its vertices. */
+function paint(doc: Document, mesh: Mesh, top: number) {
+	const prim = mesh.listPrimitives()[0]!;
+	const values = prim.getAttribute('POSITION')!.getCount() * 3;
+	const colors = new Float32Array(values).map((_, i) => (top * i) / (values - 1));
+	const buffer = doc.getRoot().listBuffers()[0]!;
+	prim.setAttribute(
+		'COLOR_0',
+		doc.createAccessor().setType('VEC3').setArray(colors).setBuffer(buffer),
+	);
 }
 
 /** Each drawn vertex of a node's mesh in the scene, by its index. */
@@ -434,6 +446,42 @@ describe('levels of detail', () => {
 		const step = node.getScale()[0];
 		expect(step).toBeLessThan(1);
 		expect(lodOf(node)!.getErrors()[0]!).toBeCloseTo(0.1 / step, 3);
+	});
+
+	it("store a file's own levels' texture coordinates and colors in their base mesh's forms", () => {
+		const doc = new Document();
+		const base = grid(doc, 8, 4);
+		const lower = grid(doc, 2, 4);
+		// The base mesh's coordinates reach a little past 1, as a decimated mesh's can, and the
+		// level's stay within; the level's colors pass 1, and the base mesh's stay within.
+		const uv = base.listPrimitives()[0]!.getAttribute('TEXCOORD_0')!;
+		const reaching = (uv.getArray() as Float32Array).slice();
+		reaching[0] = 1.04;
+		uv.setArray(reaching);
+		paint(doc, base, 1);
+		paint(doc, lower, 1.2);
+		const lone = grid(doc, 2, 1);
+		paint(doc, lone, 1);
+		const node = doc.createNode('tree').setMesh(base);
+		const level = doc.createNode('tree_lod1').setMesh(lower);
+		const lod = doc.createExtension(MSFTLod).createLod().addLevel(level).setErrors([0.1]);
+		node.setExtension(MSFT_LOD, lod);
+		doc.createScene().addChild(node).addChild(doc.createNode('lone').setMesh(lone));
+		quantizeMeshes(doc);
+		const forms = (mesh: Mesh) =>
+			['TEXCOORD_0', 'COLOR_0'].map((semantic) => {
+				const accessor = mesh.listPrimitives()[0]!.getAttribute(semantic)!;
+				return `${semantic} ${accessor.getComponentType()} ${accessor.getNormalized()}`;
+			});
+		// The engine draws a level only when each of its vertex attributes takes the base mesh's
+		// form, so a value past 1 in any level keeps that attribute's floats in every level.
+		expect(forms(lower)).toEqual(forms(base));
+		const array = (mesh: Mesh, semantic: string) =>
+			mesh.listPrimitives()[0]!.getAttribute(semantic)!.getArray();
+		expect(array(base, 'TEXCOORD_0')).toBeInstanceOf(Float32Array);
+		expect(array(base, 'COLOR_0')).toBeInstanceOf(Float32Array);
+		expect(array(lone, 'TEXCOORD_0')).toBeInstanceOf(Uint16Array);
+		expect(array(lone, 'COLOR_0')).toBeInstanceOf(Uint8Array);
 	});
 
 	it('store each error in the units of the stored positions, as quantized or not', async () => {

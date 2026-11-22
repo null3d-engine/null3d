@@ -1,7 +1,7 @@
 // The reflection cadence and its budget, which the river, the lake and the sea share: one pass
 // draws the scene a second time, and how often it draws is a feature setting of the quality preset
 // and of the frame-budget governor.
-import type { QualityPreset } from '@null3d/engine';
+import type { Camera, QualityPreset } from '@null3d/engine';
 
 /** The presets in the order that a setting's row gives them. */
 export const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
@@ -9,6 +9,12 @@ export const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
 export const REFLECT_EVERY = [2, 2, 1, 1] as const;
 /** The most frames between two reflection draws that the governor may reach. */
 export const REFLECT_EVERY_MAX = 16;
+/**
+ * How far the camera may move, in meters, and turn, in quaternion units, between two frames before
+ * the reflection reads the view as moving. A held frame's camera stands exactly still.
+ */
+const STILL_MOVE = 1e-4;
+const STILL_TURN = 2e-5;
 /**
  * The reflection pass's time at full quality, per frame, on each preset: the shared figure from the
  * S25's check of planar reflections, halved where the cadence draws every other frame.
@@ -29,4 +35,70 @@ export function cadenceRow(
 		return every;
 	});
 	return row as [number, number, number, number];
+}
+
+/**
+ * The reflection's cadence while a camera moves: the river, the lake and the sea each give their
+ * pass the cadence that the preset and the frame-budget governor settle on, and each draws in every
+ * frame while the camera moves or turns, so a moving view never shows a mirror of an older one.
+ * `set` is the call that gives the pass its cadence, and the object is made once, at setup.
+ *
+ * @category api/water
+ */
+export function reflectionCadence(
+	camera: Camera | undefined,
+	set: (every: number) => void,
+): {
+	/** The cadence that the preset and the governor give, which a still camera keeps. */
+	budget(every: number): void;
+	/**
+	 * True while the lowest quality tier applies, which draws the reflection in every 16th frame
+	 * while the camera is still, whatever the preset and the governor give.
+	 */
+	lowest(on: boolean): void;
+	/** Follows the camera for this frame: a move or a turn draws the reflection in every frame. */
+	follow(): void;
+} {
+	let every = 1;
+	let tier = false;
+	let posed = false;
+	let moving = false;
+	/** The cadence that this frame draws at: every frame while the view moves, else the budget's. */
+	const cadence = (): number => (moving ? 1 : tier ? REFLECT_EVERY_MAX : every);
+	const apply = (): void => set(cadence());
+	const pose = new Float64Array(3);
+	const turn = new Float64Array(4);
+	const held = new Float64Array(7);
+	return {
+		budget(next) {
+			every = next;
+			// A camera that moves draws in every frame whatever the budget says, and takes the new
+			// cadence when the view settles.
+			if (!moving) apply();
+		},
+		lowest(on) {
+			if (on === tier) return;
+			tier = on;
+			apply();
+		},
+		follow() {
+			if (!camera) return;
+			camera.getPosition(pose);
+			camera.getRotation(turn);
+			if (posed) {
+				let still = true;
+				for (let k = 0; k < 3; k++)
+					if (Math.abs((pose[k] as number) - (held[k] as number)) > STILL_MOVE) still = false;
+				for (let k = 0; k < 4; k++)
+					if (Math.abs((turn[k] as number) - (held[k + 3] as number)) > STILL_TURN) still = false;
+				if (!still !== moving) {
+					moving = !still;
+					apply();
+				}
+			}
+			for (let k = 0; k < 3; k++) held[k] = pose[k] as number;
+			for (let k = 0; k < 4; k++) held[k + 3] = turn[k] as number;
+			posed = true;
+		},
+	};
 }

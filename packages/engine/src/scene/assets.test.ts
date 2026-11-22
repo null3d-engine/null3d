@@ -26,6 +26,9 @@ const PAGE = 'https://game.example/levels/one.html';
 /** What the fake server answers for each address: a body, an HTTP status, or a network failure. */
 type Answer = string | Uint8Array | number | 'network';
 
+/** Answers by address: one answer, or one per fetch, whose last answer then repeats. */
+type Answers = Record<string, Answer | readonly Answer[]>;
+
 const realFetch = globalThis.fetch;
 const realDecode = globalThis.createImageBitmap;
 
@@ -33,12 +36,30 @@ const realDecode = globalThis.createImageBitmap;
 let fetched: string[];
 let decoded: ImageBitmapOptions[];
 
-/** Answers fetches from `answers`, and decodes any body but 'broken' into a 4 x 2 image. */
-function serve(answers: Record<string, Answer>): void {
+/** Answers fetches from `answers` in turn, and decodes any body but 'broken' into a 4 x 2 image. */
+function serve(answers: Answers): void {
+	// A list's answers are taken one per fetch; a single answer is read each time, so a test may
+	// change it after the first download.
+	const queues = new Map<string, Answer[]>();
+	const queueOf = (url: string): Answer[] | undefined => {
+		const given = answers[url];
+		if (!Array.isArray(given)) return undefined;
+		let queue = queues.get(url);
+		if (!queue) {
+			queue = [...given];
+			queues.set(url, queue);
+		}
+		return queue;
+	};
 	globalThis.fetch = (async (input: string | URL) => {
 		const url = String(input);
 		fetched.push(url);
-		const answer = answers[url];
+		const queue = queueOf(url);
+		const answer = queue
+			? queue.length > 1
+				? queue.shift()
+				: queue[0]
+			: (answers[url] as Answer | undefined);
 		if (answer === undefined || answer === 'network') throw new TypeError('Failed to fetch');
 		if (typeof answer === 'number') return new Response('', { status: answer });
 		// A server gives a length for what it sends, so the progress handlers know the total.
@@ -364,6 +385,29 @@ describe('assets', () => {
 			'E1411: assets.loadBinary()',
 		);
 		expect(fetched.filter((url) => url.endsWith('missing.png')).length).toBe(3);
+	});
+
+	test('a download that the tunnel refused once gets one retry, a 4xx or a broken body gets none', async () => {
+		serve({
+			'https://game.example/model.glb': [502, 'model'],
+			'https://game.example/offline.glb': ['network', 'model'],
+			'https://game.example/missing.glb': 404,
+			'https://game.example/broken.png': 'broken',
+		});
+		const assets = new Assets(fakeTextures().textures, PAGE);
+		// A server fault and a rejected fetch each serve on the second try.
+		expect(await assets.loadBinary('/model.glb')).toBeInstanceOf(ArrayBuffer);
+		expect(await assets.loadBinary('/offline.glb')).toBeInstanceOf(ArrayBuffer);
+		// A refused answer is reported at once, as before.
+		expect(await codeOf(assets.loadBinary('/missing.glb'))).toBe(
+			'E1411: assets.loadBinary() could not download https://game.example/missing.glb: HTTP 404.',
+		);
+		// A body that arrived but will not read is not a fetch failure, so it is not fetched again.
+		expect(await codeOf(assets.loadTexture('/broken.png'))).toStartWith('E1412:');
+		expect(fetched.filter((url) => url.endsWith('/model.glb'))).toHaveLength(2);
+		expect(fetched.filter((url) => url.endsWith('/offline.glb'))).toHaveLength(2);
+		expect(fetched.filter((url) => url.endsWith('/missing.glb'))).toHaveLength(1);
+		expect(fetched.filter((url) => url.endsWith('/broken.png'))).toHaveLength(1);
 	});
 });
 

@@ -211,14 +211,17 @@ export default defineSketch(({ scene, materials, geometry, textures, render, qua
 			batch.markDirty();
 		}
 	}
-	// ?jump moves the camera to a second place and back each half second, so a test can see whether
-	// the reflection changes in the same frame as what it mirrors.
+	// ?jump moves the camera to a second place and back once every 30 frames it draws, so a test can
+	// see whether the reflection changes in the same frame as what it mirrors. ?jump=<frames> moves
+	// it sooner, which a control needs: a capture of forty frames holds one such move at thirty
+	// frames, and a move that lands just after a reflection's own draw lags in no frame at all.
 	if (!params.has('jump')) return {};
+	const period = Math.max(2, Number(params.get('jump')) || 30);
 	let frames = 0;
 	return {
 		onUpdate() {
 			frames++;
-			const away = Math.floor(frames / 30) % 2 === 1;
+			const away = Math.floor(frames / period) % 2 === 1;
 			camera.setPosition(away ? 0.6 : 0, away ? 3.1 : 2.6, 9);
 			camera.lookAt(0, 0.6, 0);
 		},

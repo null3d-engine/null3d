@@ -1,0 +1,246 @@
+// Every model and step that the garden places touches its ground, with no air under any part of its
+// footprint, and none stands in another's way: the statue's slab sits on its ledge, the ledge stands
+// on the terrace, each step's body reaches into the ground under it, the wall stones rest on the
+// ground or on the course below, and no lantern, gate or rock stands on the steps or on another's
+// foot. A model or a step raised off its ground fails these tests.
+import { expect, test } from 'bun:test';
+import {
+	DRAGON,
+	gardenPlaces,
+	ledgePoint,
+	nearLedge,
+	RING,
+	SLAB_REACH,
+	type TerracePoint,
+	terraceStones,
+	terraceWalls,
+} from './garden';
+import { alongFlight, flights, groundHeight, STAIRS } from './land';
+import { slabPlaces, wallPlaces } from './steps';
+
+/** The ground's lowest point under a footprint, read densely: its middle and four rings. */
+function lowest(x: number, z: number, reach: number): number {
+	let low = groundHeight(x, z);
+	for (const share of [0.25, 0.5, 0.75, 1])
+		for (let k = 0; k < 24; k++) {
+			const angle = (k / 24) * Math.PI * 2;
+			low = Math.min(
+				low,
+				groundHeight(x + Math.cos(angle) * reach * share, z + Math.sin(angle) * reach * share),
+			);
+		}
+	return low;
+}
+
+/** The ground's highest point under a footprint, read densely: its middle and four rings. */
+function highest(x: number, z: number, reach: number): number {
+	let high = groundHeight(x, z);
+	for (const share of [0.25, 0.5, 0.75, 1])
+		for (let k = 0; k < 24; k++) {
+			const angle = (k / 24) * Math.PI * 2;
+			high = Math.max(
+				high,
+				groundHeight(x + Math.cos(angle) * reach * share, z + Math.sin(angle) * reach * share),
+			);
+		}
+	return high;
+}
+
+test('each lantern, the gate and every rock stands on the lowest ground under its footprint', () => {
+	const { gate, lanterns, rocks, ring } = gardenPlaces();
+	const models = [gate, ...lanterns, ...rocks, ...ring];
+	expect(models.length).toBeGreaterThan(20);
+	for (const { x, y, z, reach } of models)
+		expect(
+			y - lowest(x, z, reach),
+			`the air under a model at ${x.toFixed(1)}, ${z.toFixed(1)}`,
+		).toBeLessThan(0.02);
+});
+
+test("the statue's slab sits on the ledge's flat top, which stands over the terrace", () => {
+	const { ledge, statue } = gardenPlaces();
+	let [high, low] = [-Infinity, Infinity];
+	for (const point of ledge.outline) {
+		const [x, z] = ledgePoint(ledge, point);
+		low = Math.min(low, groundHeight(x, z));
+		// Where the top flight cuts into the ledge, the ground beside it is the flight's own ramp, which
+		// rises to the ledge's top.
+		const onSteps = flights().some((flight) => {
+			const { t, side } = alongFlight(flight, x, z);
+			return t > 0 && t < 1.1 && side < STAIRS.half + STAIRS.keep + STAIRS.blend;
+		});
+		if (!onSteps) high = Math.max(high, groundHeight(x, z));
+	}
+	// The top stands clear of all the ground under the outline, and the foot reaches below it.
+	expect(ledge.top - high).toBeGreaterThan(0.2);
+	expect(ledge.foot).toBeLessThan(low);
+	// The ledge's top reaches past the slab's widest outline all round, so no part of the slab's rim
+	// hangs past its edge.
+	for (const [x, z] of ledge.outline) {
+		const angle = Math.atan2(z, x);
+		const slab =
+			(statue.size * (1 + SLAB_REACH.swell)) /
+			Math.hypot(Math.cos(angle) / SLAB_REACH.long, Math.sin(angle) / SLAB_REACH.wide);
+		expect(Math.hypot(x, z), 'the ledge inside the slab').toBeGreaterThan(slab);
+	}
+	// The ring's blocks stand about level with the ledge's top, within the range that the ring
+	// allows, so none stands up past the slab's foot and none sinks out of sight.
+	for (const block of gardenPlaces().ring) {
+		expect(block.top - ledge.top, 'a ring block over the ledge').toBeLessThan(RING.top[1] + 0.005);
+		expect(block.top - ledge.top, 'a ring block sunk too deep').toBeGreaterThan(
+			RING.top[0] - 0.005,
+		);
+	}
+	// The slab model's rim lies 5 cm under its origin: it rests on the ledge's top, with no air.
+	expect(Math.abs(statue.y - 0.05 * statue.size - ledge.top)).toBeLessThan(0.01);
+});
+
+test("every step's slab reaches into the ground under it, and its tread stands above it", () => {
+	const slabs = slabPlaces();
+	expect(slabs.length).toBeGreaterThan(50);
+	for (const slab of slabs) {
+		const [fx, fz] = [Math.cos(slab.heading), Math.sin(slab.heading)];
+		const [sx, sz] = [-fz, fx];
+		const corner = (a: number, b: number) =>
+			groundHeight(
+				slab.middle[0] + sx * a * slab.half + fx * b,
+				slab.middle[1] + sz * a * slab.half + fz * b,
+			);
+		const reach = slab.depth * 1.25;
+		for (const a of [slab.from, slab.to])
+			for (const b of [-reach, reach])
+				expect(corner(a, b) - slab.bottom, 'the body under a corner').toBeGreaterThan(0.05);
+		expect(
+			slab.top - corner((slab.from + slab.to) / 2, 0),
+			'the tread over the ground',
+		).toBeGreaterThan(0);
+	}
+});
+
+test('each wall stone rests on the ground or on the course below it', () => {
+	const stones = wallPlaces();
+	expect(stones.length).toBeGreaterThan(50);
+	for (const { x, y, z, size } of stones) {
+		// A wall stone's flattened underside lies over a third of its size under its middle.
+		const underside = y - size * 0.35;
+		expect(underside - lowest(x, z, size * 1.2), 'the air under a wall stone').toBeLessThan(
+			0.1 * size,
+		);
+	}
+});
+
+test("a dragon stands on each end of the gate's ridge, facing out, its base inside the curls", () => {
+	const { gate, dragons } = gardenPlaces();
+	expect(dragons.length).toBe(2);
+	const [c, s] = [Math.cos(gate.yaw), Math.sin(gate.yaw)];
+	for (const dragon of dragons) {
+		// One model at its own size: a negative size would turn it inside out, a mirrored copy.
+		expect(dragon.size, 'a mirrored or shrunk dragon').toBeCloseTo(gate.size, 6);
+		// The dragon's foot in the gate model's own frame: across its ridge, up, and along its depth.
+		const [dx, dz] = [dragon.x - gate.x, dragon.z - gate.z];
+		const across = (dx * c - dz * s) / gate.size;
+		const along = (dx * s + dz * c) / gate.size;
+		expect(Math.abs(along), 'a dragon off the ridge line').toBeLessThan(0.01);
+		// Its foot lies its base's sink under the ridge's top: neither lifted off nor buried.
+		const up = (dragon.y - gate.y) / gate.size;
+		expect(Math.abs(up - (DRAGON.ridge - DRAGON.sink)), 'a dragon off the ridge').toBeLessThan(
+			0.03,
+		);
+		// Its head points out along the ridge, away from the gate's middle.
+		const out = Math.sin(dragon.yaw) * c - Math.cos(dragon.yaw) * s;
+		expect(out * Math.sign(across), 'a dragon facing in').toBeGreaterThan(0.99);
+		// Its wave base reaches 0.38 m ahead of its foot. The ridge's top is level to 2.2 m out and
+		// rises into the curl past it, so the sunk base may reach a few centimeters further, no more.
+		expect(Math.abs(across) + 0.38 * dragon.size, 'a dragon past the end curl').toBeLessThan(2.25);
+	}
+});
+
+test('the terrace walls lie across the hill, off the steps and clear of the ledge', () => {
+	const { ledge } = gardenPlaces();
+	const walls = terraceWalls();
+	let length = 0;
+	for (const wall of walls) {
+		for (let k = 1; k < wall.length; k++) {
+			const [a, b] = [wall[k - 1], wall[k]] as [TerracePoint, TerracePoint];
+			length += Math.hypot(b.x - a.x, b.z - a.z);
+		}
+		for (const point of wall) {
+			expect(nearLedge(ledge, point.x, point.z, 0), 'a terrace wall on the ledge').toBe(false);
+			for (const flight of flights()) {
+				const { t, side } = alongFlight(flight, point.x, point.z);
+				if (t > 0 && t < 1)
+					expect(side, 'a terrace wall across the steps').toBeGreaterThan(STAIRS.half + 1);
+			}
+		}
+	}
+	// Enough wall that the hill reads as terraced rock from the opening view.
+	expect(length, 'the walls across the hill').toBeGreaterThan(30);
+});
+
+test("each terrace wall's stone rests on the ground or on the rows under it, clear of the rocks", () => {
+	const stones = terraceStones();
+	const rows = stones.filter((stone) => !stone.capping);
+	const { rocks, ring } = gardenPlaces();
+	expect(stones.length).toBeGreaterThan(60);
+	for (const stone of stones) {
+		// A stone's flattened underside lies about a third of its size under its middle, and a row
+		// stone's top about two thirds of its size over it.
+		const underside = stone.y - stone.size * 0.35;
+		if (stone.capping) {
+			// A top stone rests on the highest ground under it or on the top of a row stone it overlaps.
+			const tops = rows
+				.filter(
+					(row) => Math.hypot(row.x - stone.x, row.z - stone.z) < (row.size + stone.size) * 0.8,
+				)
+				.map((row) => row.y + row.size * 0.65);
+			const support = Math.max(highest(stone.x, stone.z, stone.size), ...tops);
+			expect(
+				underside - support,
+				'a top stone over the stones and the ground under it',
+			).toBeLessThan(0.02);
+		} else {
+			expect(
+				underside - lowest(stone.x, stone.z, stone.size * 1.1),
+				'the air under a stone',
+			).toBeLessThan(0.02);
+		}
+		// No stone's footprint meets a rock's or a ledge block's.
+		for (const rock of [...rocks, ...ring])
+			expect(
+				Math.hypot(stone.x - rock.x, stone.z - rock.z),
+				`a wall stone inside the rock at ${rock.x.toFixed(1)}, ${rock.z.toFixed(1)}`,
+			).toBeGreaterThan(rock.reach + stone.size * 1.1);
+	}
+});
+
+test('the walls stop short of the ledge, clear of the blocks of rock round it', () => {
+	const { ring } = gardenPlaces();
+	for (const stone of wallPlaces())
+		for (const block of ring)
+			expect(
+				Math.hypot(stone.x - block.x, stone.z - block.z),
+				'a wall stone among the ring',
+			).toBeGreaterThan(block.reach + stone.size);
+});
+
+test('no lantern, rock or the statue stands on the steps, and no two models share a foot', () => {
+	const { statue, gate, lanterns, rocks, ring } = gardenPlaces();
+	for (const model of [statue, ...lanterns, ...rocks, ...ring])
+		for (const flight of flights()) {
+			const { t, side } = alongFlight(flight, model.x, model.z);
+			const onFlight = t > 0 && t < 1 && side < STAIRS.half + model.reach;
+			// The statue's ledge stands at the head of its flights, which reach up to its edge.
+			if (model === statue) continue;
+			expect(onFlight, `a model on a flight at ${model.x.toFixed(1)}, ${model.z.toFixed(1)}`).toBe(
+				false,
+			);
+		}
+	// Lanterns, the gate and the statue keep apart from each other and from every rock; the rocks of
+	// one outcrop may touch, as bedrock does, and the ring's blocks stand on the ledge's own edge.
+	const singles = [statue, gate, ...lanterns];
+	for (const [i, a] of singles.entries())
+		for (const b of [...singles.slice(i + 1), ...rocks])
+			expect(Math.hypot(a.x - b.x, a.z - b.z), 'two feet that overlap').toBeGreaterThan(
+				a.reach + b.reach - 0.3,
+			);
+});

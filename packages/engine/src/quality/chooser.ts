@@ -147,6 +147,15 @@ export function choosePreset(request: PresetRequest, tier: Tier): QualityPreset 
 }
 
 /**
+ * True when a start has crashed the tab twice, so it begins in the lowest quality tier: Low's half
+ * of the render scale still missed on that device. A page that names a preset starts outside the
+ * tier, as it starts outside the preset choice.
+ */
+export function crashLowest(crashedStarts: number): boolean {
+	return crashedStarts >= 2;
+}
+
+/**
  * The GPU path to start on after crashed starts, when the page leaves the path to the engine:
  * WebGL2 after two, when the last one ran on WebGPU. Undefined leaves the choice to the engine.
  */

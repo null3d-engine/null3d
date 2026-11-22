@@ -497,6 +497,7 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 		id: imageItemId(run.id),
 		path: run.path,
 		timeoutSeconds: run.timeoutSeconds,
+		...(run.quietSeconds === undefined ? {} : { quietSeconds: run.quietSeconds }),
 		check: { kind: 'image', run },
 	};
 }
@@ -2435,6 +2436,33 @@ export function webgpuStallPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The water's reflection while the camera moves, against the same page holding still. The pages are
+ * the ocean's, whose sketch passes its camera into the water and whose camera circles it: at Low the
+ * reflection draws in every second frame at rest and in every frame while the view moves, so the
+ * pair prices that per-frame draw on one device, in one session. The Creek takes the same camera,
+ * and its own still-route page pairs the same way once its sketch passes the camera.
+ */
+export function reflectionMotionPlan(): PlanItem<Check>[] {
+	const sea = (id: string, still: boolean): PlanItem<Check> =>
+		pageItem(
+			id,
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'demo=ocean',
+					'preset=low',
+					'seconds=10',
+					'windows=2',
+					...(still ? ['still'] : []),
+				],
+				timeoutSeconds: 600,
+			},
+		);
+	return [sea('sea-reflection-still', true), sea('sea-reflection-moving', false)];
+}
+
+/**
  * Creek's valley placed by the vegetation add-on's ecological rules, on each GPU path: the page
  * checks its placement against the reference that another device recorded, and times it. The
  * placement reads no GPU, so the two paths must give the same points.
@@ -3397,6 +3425,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	'reflection-motion': reflectionMotionPlan,
 	'ao-calls': () => effectPlan('ao', true),
 	'ao-calls-sync': () => effectPlan('ao', 'sync'),
 	'ao-prepass-color': prepassColorPlan,

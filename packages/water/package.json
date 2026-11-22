@@ -1,7 +1,7 @@
 {
 	"name": "@null3d/water",
 	"version": "0.0.0",
-	"description": "Water for null3D sketches: a river and a lake from one description, with waves, ripples, caustics, foam, soft shores that read the scene's depth, a reflection pass whose cadence follows the quality preset, and the view from under the surface, built on the engine's public API.",
+	"description": "Water for null3D sketches: a river and a lake from one description, with waves, ripples, caustics, foam, soft shores that read the scene's depth, a reflection pass whose cadence follows the quality preset, the view from under the surface, and waterfalls with spray and mist, built on the engine's public API.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
 	"homepage": "https://github.com/null3d-engine/null3d#readme",
@@ -21,7 +21,8 @@
 		"lake",
 		"reflection",
 		"caustics",
-		"underwater"
+		"underwater",
+		"waterfall"
 	],
 	"type": "module",
 	"exports": {
@@ -45,10 +46,13 @@
 		"prepack": "bun ../../tools/build-package.ts water"
 	},
 	"peerDependencies": {
-		"@null3d/engine": "workspace:*"
+		"@null3d/engine": "workspace:*",
+		"@null3d/particles": "workspace:*"
 	},
 	"devDependencies": {
+		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",
+		"@null3d/particles": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
 		"@webgpu/types": "0.1.74"
 	}

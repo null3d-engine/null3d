@@ -14,7 +14,7 @@
 // The stats overlay starts collapsed to its frame rate, as every demo's does.
 import { defineSketch, type GradingSettings, vec3 } from '@null3d/engine';
 import { createLensKit } from '../../addons/lens-kit/index';
-import { createSplashes, createSteam } from '../../addons/weather/index';
+import { createRain, createSplashes, createSteam } from '../../addons/weather/index';
 import { type CameraBounds, type Cinematic, createCinematic, type Shot } from '../../lib/cinematic';
 import { type HudGroup, radioGroup } from '../../lib/controls';
 import { EFFECT_LAYER } from '../../lib/layers';
@@ -25,7 +25,6 @@ import { createCity } from './city';
 import { createFacades } from './facades';
 import { createHero, DRIVE_KEYS, type View } from './hero';
 import { HALF } from './layout';
-import { createRain } from './rain';
 import { createReflection } from './reflection';
 import { createRoamers } from './roamers';
 import { CAR_LOOK, CARS, createTraffic } from './traffic';
@@ -225,7 +224,8 @@ export default defineSketch(async (ctx) => {
 	const traffic = WITHOUT.has('traffic') ? undefined : createTraffic(ctx);
 	// The roaming cars turn, change height and stop at the kerb, among the lanes' straight flow.
 	const roamers = WITHOUT.has('roamers') ? undefined : createRoamers(ctx, CAR_LOOK);
-	const rain = WITHOUT.has('rain') ? undefined : createRain(ctx);
+	// The rain fills the air, so it draws on the effect layer, which the clearance guard ignores.
+	const rain = WITHOUT.has('rain') ? undefined : createRain(ctx, { layers: EFFECT_LAYER });
 	/** The camera's place, which the real lights follow. */
 	const eye = vec3.create();
 	/** The camera's place, which the lens's speed blur follows. */

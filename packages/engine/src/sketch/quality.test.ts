@@ -249,7 +249,9 @@ describe('SketchQuality.lower', () => {
 			followMovingCasters: low.followMovingCasters,
 			farAnimationInterval: low.farAnimationInterval,
 			shadowCascadeBlend: low.shadowCascadeBlend,
+			castShadows: low.castShadows,
 			bloomSize: low.bloomSize,
+			bloom: low.bloom,
 			aoScale: low.aoScale,
 			contactShadowSteps: low.contactShadowSteps,
 			dofSamples: low.dofSamples,
@@ -350,6 +352,8 @@ describe('SketchQuality.setPreset', () => {
 			'followMovingCasters',
 			'farAnimationInterval',
 			'shadowCascadeBlend',
+			'castShadows',
+			'bloom',
 			'aoScale',
 			'contactShadowSteps',
 			'subsurfaceSamples',
@@ -358,6 +362,7 @@ describe('SketchQuality.setPreset', () => {
 			'softwareOcclusion',
 			'governor',
 			'lodShadowThreshold',
+			'depthPrepass',
 		];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);

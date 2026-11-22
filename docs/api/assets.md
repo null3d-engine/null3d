@@ -308,6 +308,8 @@ await assets.preload(['/tex/a.png', '/tex/b.png', '/tex/c.png']);
 
 Loads of one address at the same time share one download. Files that `preload` downloaded wait in memory until a load takes them. The HTTP cache keeps everything else, as it does for a page's own requests.
 
+A download that the network rejects, or that a server answers with a 5xx, is tried once more after a short wait. A tunnel or a proxy can refuse the first request of a session while the same file serves a moment later. A refused answer such as a 404, and a body that arrived but will not read, are reported at once.
+
 A game that plays with no network caches its files and the engine's in its own service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows how each cache fits in.
 
 ### The cache of derived data

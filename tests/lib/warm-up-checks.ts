@@ -19,6 +19,8 @@ export interface WarmUpResult {
 	playPipelines: number;
 	/** Pipelines built while the sketch added an object and warmed it up. */
 	addedPipelines: number;
+	/** The depth prepass setting while the object warmed up, which the lowest tier turns off (D-382). */
+	depthPrepass?: boolean;
 	/** Pipelines built after that. */
 	afterPipelines: number;
 	/** Pixels of the added object's color in the capture. */
@@ -102,9 +104,11 @@ export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): 
 	else {
 		// The added quad is unlit. WebGL2 pairs an opaque pipeline with the prepass's depth pipeline;
 		// the other paths do that only where the depth prepass draws.
-		const perObject =
-			(prepass(tier, playPreset) ? 2 : 1) +
-			(tier === 'webgpu' && prepass(tier, playPreset) ? 1 : 0);
+		// The path's rule decides, unless the engine itself holds the prepass off: a start in the
+		// lowest tier turns it off with its other cuts, and the added object then builds its opaque
+		// pipeline alone.
+		const drawsPrepass = prepass(tier, playPreset) && result.depthPrepass !== false;
+		const perObject = (drawsPrepass ? 2 : 1) + (tier === 'webgpu' && drawsPrepass ? 1 : 0);
 		// A preset that steps down during play can change the render scale, which builds the final
 		// pass's 8-bit variant beside its full-precision one: only that case may hold one more.
 		const stepping = result.firstFramePreset !== result.playPreset;

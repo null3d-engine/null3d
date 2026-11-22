@@ -39,6 +39,13 @@ export const LOCK_PATH = 'tools/samples/lock.json';
 export const MANIFEST_PATH = 'tools/samples/manifest.json';
 /** Licences that sample content may use: CC0 and CC BY, which allow redistribution and commercial use. */
 export const ACCEPTED_LICENCES = /^(CC0-1\.0|CC-BY-[34]\.0)$/;
+/**
+ * The one non-commercial licence that sample content may use: CC BY-NC, and only on a model that a
+ * generative service made, or one finished from such a model, whose entry names its `generator`.
+ * The service's terms bar some commercial uses of its outputs, so the sample-assets repository puts
+ * those models under CC BY-NC, and its own check refuses that licence on an entry with no generator.
+ */
+export const GENERATED_LICENCE = 'CC-BY-NC-4.0';
 /** The file in a cached copy that records the hash of the manifest it passed. */
 const VERIFIED = '.null3d-verified';
 
@@ -68,6 +75,11 @@ export interface SampleAsset {
 	changes: string;
 	dir: string;
 	files: SampleFile[];
+	/**
+	 * The generative service that made the model, or the model it was finished from, such as Tripo3D.
+	 * An asset under CC BY-NC names one.
+	 */
+	generator?: string;
 }
 
 export interface SampleManifest {
@@ -344,10 +356,20 @@ export function copyNamedSamples(root: string, outDir: string, folders = ['examp
 	return [...copied];
 }
 
-/** What makes an asset unfit to ship: a licence outside CC0 and CC BY, or a missing attribution field. */
+/**
+ * What makes an asset unfit to ship: a licence outside CC0 and CC BY, CC BY-NC on an asset that
+ * names no generator, or a missing attribution field.
+ */
 function assetProblems(manifest: SampleManifest, asset: SampleAsset): string[] {
 	const problems: string[] = [];
 	for (const id of asset.license) {
+		if (id === GENERATED_LICENCE && manifest.licenses[id]) {
+			if (!asset.generator?.trim())
+				problems.push(
+					`${asset.id}: licence ${id} is accepted only for a generative service's model, and the asset names no generator`,
+				);
+			continue;
+		}
 		if (!ACCEPTED_LICENCES.test(id) || !manifest.licenses[id])
 			problems.push(`${asset.id}: licence ${id} is not accepted`);
 	}

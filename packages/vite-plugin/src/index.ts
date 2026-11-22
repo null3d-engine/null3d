@@ -359,6 +359,28 @@ const WGSL_FILE = /\.wgsl$/;
 /** A script module, whose code the plugin parses for tagged WGSL. */
 const SCRIPT_FILE = /\.[cm]?[jt]sx?$/;
 
+/** The parameter that keeps a dotted query from naming a module's extension. */
+export const QUERY_EXTENSION_PARAM = 'null3d-query';
+
+/**
+ * Keeps a module's query from deciding its type. Vite reads a dotted word at the end of a module's
+ * address as the extension, so a sketch at `sketch.ts?render-scale=0.5` parses as JavaScript and
+ * fails on its types. The middleware adds a parameter after such a query, which the sketch sees in
+ * `import.meta.url` and ignores, and Vite then reads the file's own extension.
+ */
+export function queryExtensionMiddleware(): Connect.NextHandleFunction {
+	return (req, _res, next) => {
+		const url = req.url ?? '';
+		const at = url.indexOf('?');
+		if (at < 0) return next();
+		const path = url.slice(0, at);
+		const query = url.slice(at + 1);
+		if (!SCRIPT_FILE.test(path) || !/\.\w+$/.test(query)) return next();
+		req.url = `${url}&${QUERY_EXTENSION_PARAM}=1`;
+		next();
+	};
+}
+
 /** Modules of installed packages, which the plugin leaves as they are. */
 const PACKAGE_MODULE = /\/node_modules\//;
 
@@ -939,6 +961,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			},
 		},
 		configureServer(server) {
+			server.middlewares.use(queryExtensionMiddleware());
 			// The engine's shader modules sit outside the project, in the machine's cache or in the
 			// folder that names a set, and the page and its workers reach them from there.
 			const allowed = server.config.server.fs.allow;
@@ -955,6 +978,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			});
 		},
 		configurePreviewServer(server) {
+			server.middlewares.use(queryExtensionMiddleware());
 			server.middlewares.use(isolationMiddleware);
 			server.middlewares.use(immutableAssetsMiddleware);
 		},
