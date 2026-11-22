@@ -37,9 +37,9 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::levels::{DrawRange, LevelRule, NO_LINK};
 use null3d_core::scene::SceneStorage;
 use null3d_core::shared::SharedMut;
-use null3d_core::world::UNBOUNDED_RADIUS;
+use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 
-use super::layout::{BUCKET_WORDS, FIXED, INDEX_ENTRIES_PER_COPY, Layout};
+use super::layout::{BUCKET_WORDS, Bucket, FIXED, INDEX_ENTRIES_PER_COPY, Layout};
 use crate::frame::{CellOffsets, RecordError};
 use crate::levels::{MAX_LEVELS, StageWatches, key_level};
 
@@ -371,7 +371,9 @@ impl Layout {
         let scene_end = sources.partition_point(|&source| source < self.scene_rows);
         let (slots_part, rows_part) = sources.split_at(scene_end);
         if !slots_part.is_empty() {
-            let spheres = scene.world(parity).spheres();
+            let world = scene.world(parity);
+            let spheres = world.spheres();
+            let matrices = world.matrices();
             let slots = scene.cells();
             let radii = scene.local_radii();
             let biases = scene.level_biases();
@@ -382,7 +384,17 @@ impl Layout {
                 if home == NO_BUCKET || self.marks[home as usize] == 0 {
                     continue;
                 }
-                let center = row_center(&spheres, slots[source], cells, source);
+                // The culling shader places each source's bucket sphere by the source's matrix, so
+                // the count reads the same sphere: an object whose pose moves its own bounding
+                // sphere, and a bucket that shares one sphere between its objects, would pick
+                // another level from the sphere that culling tests.
+                let center = Self::bucket_center(
+                    &self.buckets[home as usize],
+                    matrices,
+                    slots,
+                    cells,
+                    source,
+                );
                 let (radius, local, bias) = (spheres.radii[source], radii[source], biases[source]);
                 let range = ranges.range(source);
                 for (view, counts) in views.iter().zip(tally.chunks_exact_mut(stride)) {
@@ -528,6 +540,30 @@ impl Layout {
         }
     }
 
+    /// The centre that the culling shader tests for one source of a scene slot: its bucket's local
+    /// sphere centre placed by the source's matrix, moved by its cell's offset from the camera. The
+    /// shader reads the same centre, so a bucket whose sphere is not the source's own, as one that
+    /// a crowd shares or a skinned object's pose moves, still counts where it draws.
+    fn bucket_center(
+        bucket: &Bucket,
+        matrices: &[f32],
+        slots: &[u32],
+        offsets: &[[f32; 4]],
+        source: usize,
+    ) -> [f32; 3] {
+        let offset = offsets
+            .get(slots[source] as usize)
+            .copied()
+            .unwrap_or([0.0; 4]);
+        let matrix = &matrices[source * MATRIX_FLOATS..][..MATRIX_FLOATS];
+        let [x, y, z] = bucket.center;
+        [
+            matrix[0] * x + matrix[1] * y + matrix[2] * z + matrix[3] + offset[0],
+            matrix[4] * x + matrix[5] * y + matrix[6] * z + matrix[7] + offset[1],
+            matrix[8] * x + matrix[9] * y + matrix[10] * z + matrix[11] + offset[2],
+        ]
+    }
+
     /// Places each bucket's slice of a view's copies: the buckets without levels first, in their
     /// order, then the buckets of the level sets, so a count that moves resizes the slices of
     /// those sets alone. Marks the records of the buckets whose slice moved for the frame's one
@@ -581,7 +617,7 @@ mod tests {
     use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Picked, Switch};
 
     use super::*;
-    use crate::gpu_driven::layout::Bucket;
+    use crate::gpu_driven::layout::{Bucket, COUNTED};
 
     /// Both shaders read the bucket records as an array, so a structure of another length reads
     /// every record after the first at the wrong place.
@@ -669,6 +705,94 @@ mod tests {
             count(false),
             [0, 1],
             "the bucket's sphere alone would move the row to the coarser level"
+        );
+    }
+
+    /// The culling shader tests a bucket's own sphere around each source's matrix, not the sphere
+    /// that the source's pose gives it: a skinned or morphed object's pose moves its sphere inside
+    /// the bucket's, and a bucket of a crowd holds one sphere for every object. The count must read
+    /// the bucket's sphere too, or it names the level that the object's own sphere picks while the
+    /// shader appends to the level that the bucket's sphere picks, whose slice has no room.
+    #[test]
+    fn a_source_of_a_shared_bucket_counts_by_the_buckets_sphere() {
+        use null3d_core::handle::Handle;
+        use null3d_core::instances::BatchTable;
+        use null3d_core::jobs::JobSystem;
+        use null3d_core::scene::{Command, SceneStorage, flags};
+
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut commands = Vec::new();
+        let mut objects = Vec::new();
+        for _ in 0..2 {
+            let object = scene.reserve().unwrap();
+            commands.push(Command::create(object, Handle::NONE, 1, flags::VISIBLE));
+            commands.push(Command::set_draw_range(object, 0.0, f32::INFINITY));
+            objects.push(object);
+        }
+        scene.apply_commands(&commands, 1).unwrap();
+        let mut slots = Vec::new();
+        for &object in &objects {
+            scene.set_position(object, [0.0, 0.0, 12.0]).unwrap();
+            slots.push(scene.resolve(object).unwrap());
+        }
+        // Each pose's own sphere sits 0.4 m ahead of the bucket's shared centre.
+        for &slot in &slots {
+            scene.set_local_sphere(slot, [0.0, 0.0, 0.4], 1.0);
+        }
+        scene.update_transforms(&JobSystem::new(0));
+
+        let mut layout = Layout::default();
+        layout.level_links = vec![
+            LevelLink {
+                value: 0.0,
+                switch: Switch::Distance,
+                next: 1,
+                fade: NO_LINK,
+            },
+            LevelLink {
+                value: 11.0,
+                switch: Switch::Distance,
+                next: NO_LINK,
+                fade: NO_LINK,
+            },
+        ];
+        layout.buckets = vec![
+            Bucket {
+                radius: 1.0,
+                center: [0.0, 0.0, -0.6],
+                ..Bucket::default()
+            },
+            Bucket {
+                radius: 1.0,
+                ..Bucket::default()
+            },
+        ];
+        layout.marks = vec![COUNTED, COUNTED];
+        layout.level_buckets = vec![0, 1];
+        layout.cull_buckets = vec![0; slots.len() + 1];
+        layout.scene_rows = slots.len() as u32 + 1;
+        let view = CopyView {
+            rule: LevelRule::new(1000.0, 1.0, false, 1.0, 0.0),
+            camera: CellPosition::default(),
+            frustum: None,
+        };
+        // The bucket's sphere puts each source's nearest point at 10.4 m, short of the 11 m
+        // switch, so the shader appends both copies to the base level's bucket. The pose's own
+        // sphere puts it at 11.4 m, past the switch.
+        let mut counts = [0u32; 2];
+        layout.count_sources(
+            &scene,
+            &BatchTable::with_capacity(1),
+            std::slice::from_ref(&view),
+            scene.parity(),
+            &[[0.0f32; 4]; 4],
+            &slots,
+            &mut counts,
+            2,
+        );
+        assert_eq!(
+            counts[0], 2,
+            "the count leaves out the level that the shader appends to"
         );
     }
 
