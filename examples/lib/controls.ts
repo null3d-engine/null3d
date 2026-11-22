@@ -101,6 +101,11 @@ export const CAMERA_OPTIONS: readonly HudOption[] = [
 		tip: 'Take over the camera and move through the scene yourself.',
 		key: 'C',
 	},
+	{
+		id: 'Reset',
+		label: 'Reset',
+		tip: 'Ease the camera back to the route’s opening view from wherever it is.',
+	},
 ];
 
 /** The times of day that the HUD labels along its hour slider. */

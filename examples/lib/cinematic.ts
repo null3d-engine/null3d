@@ -264,6 +264,17 @@ export interface CinematicOptions {
 	hud?: boolean;
 	/** How fast the keys pan the manual camera, in canvas pixels per second. The default is 420. */
 	speed?: number;
+	/**
+	 * How much farther the wheel, and a pinch, fly the Manual camera than the default, as a
+	 * multiple: 1 flies a meter for every fifty pixels of scroll. A large scene that the user
+	 * crosses by flying wants more. The default is 1.
+	 */
+	wheelSpeed?: number;
+	/**
+	 * How fast R and F raise and lower the Manual camera, in meters per second. The default is a
+	 * sixtieth of `speed`, which suits a small scene.
+	 */
+	riseSpeed?: number;
 	/** The scene's own keys. A key that the table already holds throws. */
 	keys?: readonly SceneAction[];
 	/** Where the Manual camera may go. Without bounds it goes anywhere. */
@@ -533,10 +544,8 @@ function parameterAt(table: Float32Array, traveled: number): number {
 const GLIDE = 1.5;
 /** How long a double-click's focus takes to ease the camera there, in seconds. */
 const FOCUS_SECONDS = 0.7;
-/** How far a focus stands back from the object, as times its bounding radius, and the limits. */
-const FOCUS_REACH = 3;
-const FOCUS_MIN = 3;
-const FOCUS_MAX = 30;
+/** How far outside its bounds a focus keeps the camera, in meters, so it never enters the object. */
+const FOCUS_CLEARANCE = 1.5;
 /** The largest object a focus takes: the sky, the dome and the far cloud are no subject. */
 const FOCUS_RADIUS_MAX = 60;
 /** The most time between the presses of a double press, in seconds, and the most they may move. */
@@ -547,8 +556,7 @@ const WHEEL_MOVE = 0.02;
 const WHEEL_STEP_MAX = 4;
 /** A pinch, from a trackpad or two fingers on a screen, flies this many times the wheel's reach. */
 const PINCH_BOOST = 10;
-/** How far two fingers' spread change moves the camera, in meters a pixel, and the least that counts. */
-const PINCH_MOVE = WHEEL_MOVE * PINCH_BOOST;
+/** The least change in two fingers' spread that counts as a pinch, in pixels. */
 const PINCH_DEADZONE = 1;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
 const SAMPLES = 240;
@@ -567,6 +575,10 @@ export function createCinematic(
 ): Cinematic {
 	const { input, time, page } = ctx;
 	const { shots, keys = [], driver } = options;
+	/** How far a pixel of scroll flies, and the most one frame may fly, at the scene's speed. */
+	const wheelSpeed = options.wheelSpeed ?? 1;
+	const wheelMove = WHEEL_MOVE * wheelSpeed;
+	const wheelStepMax = WHEEL_STEP_MAX * wheelSpeed;
 	keyTable(keys, driver?.keys);
 	const driving = new Set(driver?.keys.map((key) => key.code));
 	/** Whether one of the driver's keys is down. Any other key reads as up. */
@@ -764,17 +776,31 @@ export function createCinematic(
 			if (away < 1e-3) return;
 			// Focusing takes the camera from the route, as any takeover does.
 			if (mode === 'auto') toggleMode();
-			const distance = Math.min(FOCUS_MAX, Math.max(FOCUS_MIN, radius * FOCUS_REACH));
-			const share = distance / away;
+			// The camera keeps the distance it stands at from the point it turns around, which is the
+			// zoom, and its bearing: the view slides over to the object rather than flying in past
+			// it. It never comes nearer the middle than the object reaches.
+			const [tx, ty, tz] = options.target;
+			const to: [number, number, number] = [
+				(from[0] as number) + (centre[0] - tx),
+				(from[1] as number) + (centre[1] - ty),
+				(from[2] as number) + (centre[2] - tz),
+			];
+			const [dx, dy, dz] = [to[0] - centre[0], to[1] - centre[1], to[2] - centre[2]];
+			const reach = Math.hypot(dx, dy, dz);
+			const least = radius + FOCUS_CLEARANCE;
+			if (reach < least && reach > 1e-6) {
+				const push = least / reach;
+				to[0] = centre[0] + dx * push;
+				to[1] = centre[1] + dy * push;
+				to[2] = centre[2] + dz * push;
+			}
+			const aimed = [centre[0], centre[1], centre[2]] as [number, number, number];
+			if (bounds) keepInside(bounds, aimed, to);
 			focus = {
 				fromPosition: [from[0] as number, from[1] as number, from[2] as number],
 				fromTarget: [options.target[0], options.target[1], options.target[2]],
-				position: [
-					centre[0] + ((from[0] as number) - centre[0]) * share,
-					centre[1] + ((from[1] as number) - centre[1]) * share,
-					centre[2] + ((from[2] as number) - centre[2]) * share,
-				],
-				target: centre,
+				position: to,
+				target: aimed,
 				t: 0,
 			};
 			controls.stop();
@@ -809,31 +835,37 @@ export function createCinematic(
 			// A scene that the user drives moves the camera itself, so the orbit controls stay off.
 			if (driver) driver.take();
 			else controls.enabled = true;
-		} else {
-			// Auto glides: find the nearest point of the route, then ease onto it. The motion the
-			// controls still carry is dropped, so no fling resumes when the user takes over again.
-			mode = 'auto';
-			controls.stop();
-			controls.enabled = false;
-			primed = false;
-			camera.getPosition(from);
-			from[3] = options.target[0];
-			from[4] = options.target[1];
-			from[5] = options.target[2];
-			glideFrom = nearestPhase(from);
-			// A glide from far off takes as long as the scene's glide speed needs.
-			routePose(glideFrom, sample);
-			const away = Math.hypot(
-				(sample[0] as number) - (from[0] as number),
-				(sample[1] as number) - (from[1] as number),
-				(sample[2] as number) - (from[2] as number),
-			);
-			glideSeconds = options.glideSpeed ? Math.max(GLIDE, away / options.glideSpeed) : GLIDE;
-			// The glide measures the route from the moment it starts, so it lands on the moving route
-			// and takes its speed, rather than setting off from a standstill.
-			glideStart = time.now;
-			glide = 0;
-		}
+		} else glidesToRoute(nearestPhase(from));
+		postControls();
+	};
+
+	/**
+	 * Hands the camera back to the route and eases it there from the pose it holds: the nearest
+	 * point by default, or `at`, the phase of a shot such as the route's opening. The motion the
+	 * controls still carry is dropped, so no fling resumes when the user takes over again.
+	 */
+	const glidesToRoute = (at: number): void => {
+		mode = 'auto';
+		controls.stop();
+		controls.enabled = false;
+		primed = false;
+		camera.getPosition(from);
+		from[3] = options.target[0];
+		from[4] = options.target[1];
+		from[5] = options.target[2];
+		glideFrom = at;
+		// A glide from far off takes as long as the scene's glide speed needs.
+		routePose(glideFrom, sample);
+		const away = Math.hypot(
+			(sample[0] as number) - (from[0] as number),
+			(sample[1] as number) - (from[1] as number),
+			(sample[2] as number) - (from[2] as number),
+		);
+		glideSeconds = options.glideSpeed ? Math.max(GLIDE, away / options.glideSpeed) : GLIDE;
+		// The glide measures the route from the moment it starts, so it lands on the moving route
+		// and takes its speed, rather than setting off from a standstill.
+		glideStart = time.now;
+		glide = 0;
 		postControls();
 	};
 
@@ -851,6 +883,11 @@ export function createCinematic(
 			toggleMode();
 		},
 		select(id) {
+			// Reset brings the camera back to the route's opening shot from wherever it is.
+			if (id === 'Reset') {
+				glidesToRoute(0);
+				return;
+			}
 			const wanted = id === 'Manual' ? 'manual' : 'auto';
 			if (wanted !== mode) toggleMode();
 		},
@@ -909,6 +946,7 @@ export function createCinematic(
 				// The keys pan: W and S see forward and back, A and D move across, R and F rise and
 				// fall. The controls take screen pixels, so the frame's step scales the speed.
 				const step = (options.speed ?? 420) * dt;
+				const riseStep = (options.riseSpeed ?? (options.speed ?? 420) / 60) * dt;
 				let across = 0;
 				let along = 0;
 				if (input.isDown(KEY.left)) across += step;
@@ -917,8 +955,8 @@ export function createCinematic(
 				if (input.isDown(KEY.back)) along -= step;
 				if (across !== 0 || along !== 0) controls.pan(across, along);
 				let rise = 0;
-				if (input.isDown(KEY.rise)) rise += step / 60;
-				if (input.isDown(KEY.fall)) rise -= step / 60;
+				if (input.isDown(KEY.rise)) rise += riseStep;
+				if (input.isDown(KEY.fall)) rise -= riseStep;
 				if (rise !== 0) {
 					controls.target[1] = (controls.target[1] as number) + rise;
 					camera.getPosition(from);
@@ -940,9 +978,9 @@ export function createCinematic(
 				const opening = spread > 0 && lastSpread > 0 ? spread - lastSpread : 0;
 				lastSpread = spread;
 				const pinch =
-					-input.pointer.pinch * (PINCH_BOOST - 1) * WHEEL_MOVE +
-					(Math.abs(opening) > PINCH_DEADZONE ? opening * PINCH_MOVE : 0);
-				const flight = -input.pointer.wheel * WHEEL_MOVE + pinch;
+					-input.pointer.pinch * (PINCH_BOOST - 1) * wheelMove +
+					(Math.abs(opening) > PINCH_DEADZONE ? opening * wheelMove * PINCH_BOOST : 0);
+				const flight = -input.pointer.wheel * wheelMove + pinch;
 				if (flight !== 0) {
 					camera.getPosition(from);
 					const forward = [
@@ -956,7 +994,7 @@ export function createCinematic(
 						forward[2] as number,
 					);
 					if (length > 1e-6) {
-						const move = Math.max(-WHEEL_STEP_MAX, Math.min(WHEEL_STEP_MAX, flight));
+						const move = Math.max(-wheelStepMax, Math.min(wheelStepMax, flight));
 						for (let c = 0; c < 3; c++) {
 							const step = ((forward[c] as number) / length) * move;
 							from[c] = (from[c] as number) + step;

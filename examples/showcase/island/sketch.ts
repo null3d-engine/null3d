@@ -211,8 +211,15 @@ export default defineSketch(async (ctx) => {
 		shots: SHOTS,
 		target,
 		groups: controls.groups,
+		// The island spans kilometres, so a scroll flies eight times as far as the default, and the
+		// keys pan twice as fast. R and F rise four times as fast as the pan speed's default.
+		wheelSpeed: 8,
+		speed: 840,
+		riseSpeed: 28,
 		bounds: {
 			...BOUNDS,
+			// The camera keeps just above the turf and the sea, so a scroll reaches the ground.
+			clearance: 0.6,
 			ground: (x, z) => Math.max(groundHeight(x, z), SEA_LEVEL),
 		},
 	});
