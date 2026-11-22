@@ -2,7 +2,8 @@
 // crown three hills, olive terraces and forest cover their slopes, a crescent of beach curves along the
 // south-east, a golf course lies on the eastern headland, and the town stands around its church and
 // square above the harbour. A town plan lays out its roads, houses and trees. The land comes from the
-// terrain add-on, the sea from the water add-on and the trees from the vegetation add-on.
+// terrain add-on, the sea from the water add-on, and the trees from models built in Blender and moved
+// by the wind add-on.
 //
 // The camera runs a cinematic route made for this scene (see SHOTS). `c` toggles between the route
 // (Auto) and the engine's orbit controls, which the user drives (Manual); `h` opens and closes the
@@ -222,9 +223,11 @@ export default defineSketch(async (ctx) => {
 	const traffic = createTraffic(ctx, createPlaceholderModels(ctx));
 	page.post('loading', 'Growing the trees');
 	// The species and the lawns take seconds to grow. A live page draws the island without them and
-	// lets them appear as they land; a held picture, or a page that asks with `?grown`, waits, so its
-	// first frame shows the finished scene.
-	const grownFirst = ctx.engine.held || params.has('grown');
+	// lets them appear as they land; a held picture, a page that asks with `?grown`, or the WebGL2
+	// path waits, so its first frame shows the finished scene. The WebGL2 render plan cannot take
+	// the pipelines that a frame after the first adds, so that path grows before it draws.
+	const grownFirst =
+		ctx.engine.held || params.has('grown') || ctx.engine.capabilities.tier === 'webgl2';
 	// The cypresses need no species assets, so a page that grows the rest later places them before
 	// the first frame.
 	if (!grownFirst) createCypressSpires(ctx);
