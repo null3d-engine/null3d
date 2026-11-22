@@ -578,6 +578,14 @@ function parameterAt(table: Float32Array, traveled: number): number {
 
 /** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
 const GLIDE = 1.5;
+/**
+ * How many frames of the route one clearance query judges, and how many of them are given up, so
+ * the stretch that a later frame travels always lies inside the stretch that was judged. A scene's
+ * query costs far more than the step it guards, and a query over the next frames costs the same as
+ * one over the next step, so the guard runs on about one frame in this many.
+ */
+const GUARD_FRAMES = 16;
+const GUARD_SLACK = 2;
 /** How long a double-click's focus takes to ease the camera there, in seconds. */
 const FOCUS_SECONDS = 0.7;
 /** The largest object a focus takes: the sky, the dome and the far cloud are no subject. */
@@ -703,6 +711,46 @@ export function createCinematic(
 		let index = 0;
 		for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
 		return shots[index] as Shot;
+	};
+
+	/**
+	 * The route time up to which the path ahead is known to keep clear of every surface, so the
+	 * frames before it need no cast of their own. A scene's query of its geometry costs far more
+	 * than the step it guards, and one query can judge a whole stretch of the route: the camera
+	 * follows the route between the two poses that the stretch was judged over.
+	 */
+	let certifiedUntil = Number.NEGATIVE_INFINITY;
+	const fanPose = new Float32Array(6);
+	const fanFrom = vec3.create();
+	const fanTo = vec3.create();
+	/** Judges the stretch of the route ahead, and answers whether it keeps clear. */
+	const certifyAhead = (phase: number, dt: number): boolean => {
+		for (let k = 1; k <= GUARD_FRAMES; k++)
+			// A shot that reveals an inside is never guarded, so no stretch may cross one.
+			if (shotAt(phase + k * dt).through) return false;
+		// The stretch starts where the camera stood after the last frame, which is the step that
+		// the guard tests: a pose already clamped may lie past a surface that this frame crossed.
+		if (!primed) {
+			camera.getPosition(previousCamera);
+			primed = true;
+		}
+		vec3.set(
+			fanFrom,
+			previousCamera[0] as number,
+			previousCamera[1] as number,
+			previousCamera[2] as number,
+		);
+		for (let k = 1; k <= GUARD_FRAMES; k++) {
+			routePose(phase + k * dt, fanPose);
+			fanTo[0] = fanPose[0] as number;
+			fanTo[1] = fanPose[1] as number;
+			fanTo[2] = fanPose[2] as number;
+			if (!clearance.clear(fanFrom, fanTo)) return false;
+			fanFrom[0] = fanTo[0] as number;
+			fanFrom[1] = fanTo[1] as number;
+			fanFrom[2] = fanTo[2] as number;
+		}
+		return true;
 	};
 
 	// The controls orbit the route's opening look-at until a takeover gives them their own target,
@@ -883,6 +931,7 @@ export function createCinematic(
 			controls.target[2] = pose[5] as number;
 			mode = 'manual';
 			glide = 1;
+			certifiedUntil = Number.NEGATIVE_INFINITY;
 			// A scene that the user drives moves the camera itself, so the orbit controls stay off.
 			if (driver) driver.take();
 			else controls.enabled = true;
@@ -917,6 +966,7 @@ export function createCinematic(
 		// and takes its speed, rather than setting off from a standstill.
 		glideStart = time.now;
 		glide = 0;
+		certifiedUntil = Number.NEGATIVE_INFINITY;
 		postControls();
 	};
 
@@ -1099,7 +1149,26 @@ export function createCinematic(
 			}
 			apply(pose);
 			// The route never passes through an object, unless its shot asks to reveal an inside.
-			if (!shotAt(glide < 1 ? glideFrom : time.now + phaseShift).through) guardRoute();
+			// A stretch that one query judged clear needs no cast of its own: the camera holds the
+			// route's pose, which the stretch was judged over, until the certificate runs out.
+			const at = glide < 1 ? glideFrom : time.now + phaseShift;
+			if (shotAt(at).through) return;
+			if (glide >= 1) {
+				if (at >= certifiedUntil) {
+					const clearAhead = certifyAhead(at, dt);
+					certifiedUntil = clearAhead
+						? at + (GUARD_FRAMES - GUARD_SLACK) * dt
+						: Number.NEGATIVE_INFINITY;
+					if (!clearAhead) {
+						guardRoute();
+						return;
+					}
+				}
+				camera.getPosition(previousCamera);
+				return;
+			}
+			// A blended glide pose is not the route's own, so it is guarded as it moves.
+			guardRoute();
 		},
 	};
 }
