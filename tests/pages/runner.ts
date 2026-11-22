@@ -38,14 +38,12 @@ import {
 	imageBufferFault,
 	type MissingAllowed,
 	needsImageBuffers,
-	pathOnGpu,
 	pathsToSkip,
 	skippedForBrowserResult,
 	skippedForImages,
 	skippedForImagesResult,
 	skippedPath,
 	skippedResult,
-	softwareGpu,
 } from '../lib/gpu-paths';
 import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 import { patientFetch } from '../lib/patient-fetch';
@@ -419,26 +417,8 @@ async function openInFrame(
  * Runs one item of a run: its page, at the address where this runner's run and name, and the
  * item's own name, fill the item's placeholders. A startup load's result gets what the server sent for the load.
  */
-/** The switches that an image run adds on a software rasteriser, where the plan carries them. */
-function imageSwitches(item: PlanItem): readonly string[] | undefined {
-	const check = item.check as
-		| { kind?: string; run?: { swiftShaderSwitches?: readonly string[] } }
-		| undefined;
-	return check?.kind === 'image' ? check.run?.swiftShaderSwitches : undefined;
-}
-
-/**
- * Runs one item of a run: its page, at the address where this runner's run and name, and the
- * item's own name, fill the item's placeholders. A page whose image the manifest draws with fewer
- * objects on a software rasteriser runs at that lighter address on such a device: the load follows
- * the rasteriser, not the browser. A startup load's result gets what the server sent for the load.
- */
-async function runItem(item: PlanItem, run: string, software: boolean): Promise<Result> {
-	const path = pathOnGpu(
-		fillRunner(item.path, run, runner, item.id),
-		imageSwitches(item),
-		software,
-	);
+async function runItem(item: PlanItem, run: string): Promise<Result> {
+	const path = fillRunner(item.path, run, runner, item.id);
 	const page = await patientFetch(path, { cache: 'no-store' });
 	if (!page.ok) return { ok: false, error: `page not found (HTTP ${page.status})` };
 	const load = loadOf(path);
@@ -522,16 +502,12 @@ async function runPlan(run: string, from?: number): Promise<void> {
 	await claim(run);
 	const start = from ?? (await resumeAt(run, plan.items));
 	report.start(run, plan.items, start);
-	// The run's first page reads the device; a page that took over mid-run reads the record that
-	// the first one posted, so both apply the same rasteriser's switches to every page.
-	let device: Record<string, unknown> | undefined;
 	if (start === 0) {
 		show(`run ${run}: reading the device`);
-		device = await deviceInfo();
+		const device = await deviceInfo();
 		await post(run, 'device', device);
 		if (device.refreshRateHz === null) await stopWithoutFrames(run, 'device');
-	} else device = (await storedResult(run, 'device')) as Record<string, unknown> | undefined;
-	const software = softwareGpu((device as { gpu?: GpuFacts } | undefined)?.gpu);
+	}
 	const { skipMissing, skipImageFaults } = plan;
 	const reportId = skipMissing?.report ?? skipImageFaults?.report;
 	const reportAt = plan.items.findIndex((item) => item.id === reportId);
@@ -583,7 +559,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		}
 		const runnerRefreshHz = plan.measureRefresh ? await displayRate() : undefined;
 		if (runnerRefreshHz === null) await stopWithoutFrames(run, item.id);
-		const result = await runItem(item, run, software);
+		const result = await runItem(item, run);
 		ran.pages++;
 		ran.lastOwnTab = item.ownTab === true;
 		await post(run, item.id, runnerRefreshHz ? { ...result, runnerRefreshHz } : result);

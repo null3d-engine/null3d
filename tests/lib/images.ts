@@ -44,7 +44,6 @@ import {
 	modeProblems,
 	type ReportedMode,
 } from './engine-checks.ts';
-import { withSwitch } from './gpu-paths.ts';
 import { type ItemResult, slug } from './runs.ts';
 import { REPO_ROOT } from './server.ts';
 
@@ -168,11 +167,9 @@ interface ImageTestSettings {
 	/** How long a page may take to publish its image, in seconds; 60 unless the entry gives another. */
 	timeoutSeconds?: number;
 	/**
-	 * Page switches that a run adds on a software rasteriser, after the others: a lighter load for
-	 * a scene that SwiftShader or llvmpipe draws too slowly in full on CI's machines. The software
-	 * GPU's references show the scene with these switches, and a real GPU draws it in full. The
-	 * switch follows the rasteriser, not the browser, so any browser on a machine without a GPU
-	 * draws the lighter scene.
+	 * Page switches that only the runs on SwiftShader add, after the others: a lighter load for a
+	 * scene that the software GPU draws too slowly in full on CI's machines. The SwiftShader references
+	 * show the scene with these switches, and every other place draws it in full.
 	 */
 	swiftShaderSwitches?: readonly string[];
 }
@@ -261,7 +258,7 @@ export interface ImageRun {
 	deviceTolerance: Tolerance;
 	/** The run of the test's first mode on the same tier, whose pixels every other mode must match. */
 	sameAs?: string;
-	/** The switches that the run adds on a software rasteriser, as `runIn` and the runner page add them. */
+	/** The switches that the run adds on SwiftShader alone, as `runIn` adds them. */
 	swiftShaderSwitches?: readonly string[];
 }
 
@@ -376,6 +373,13 @@ export const runIn = (run: ImageRun, environment: Environment): ImageRun =>
 		? { ...run, path: run.swiftShaderSwitches.reduce(withSwitch, run.path) }
 		: run;
 
+/** A page's address with a switch set: in place when the address has it, and else added at the end. */
+function withSwitch(path: string, entry: string): string {
+	const name = entry.split('=')[0] as string;
+	const existing = new RegExp(`([?&])${name}(=[^&]*)?(?=&|$)`);
+	return existing.test(path) ? path.replace(existing, `$1${entry}`) : `${path}&${entry}`;
+}
+
 /** Names that become folders and files: lowercase words joined by dashes. */
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -449,18 +453,7 @@ export function manifestProblems(
  * Where an image was drawn: in an environment of Playwright's runs, or by a runner of the device
  * runner, such as mac-safari on the device mac.
  */
-export type Place =
-	| { environment: Environment }
-	| {
-			runner: string;
-			device: string;
-			/**
-			 * True when the device draws with a software rasteriser, such as a virtual machine's llvmpipe.
-			 * The image then compares with the software GPU's references, which were drawn with the same
-			 * lighter load, whatever its browser is.
-			 */
-			software?: boolean;
-	  };
+export type Place = { environment: Environment } | { runner: string; device: string };
 
 /** The folder name of the place that drew an image: its environment, or its runner. */
 export const drawnIn = (place: Place) =>
@@ -502,38 +495,21 @@ function othersOf(run: ImageRun, place: Place, own: boolean, set: string): reado
 /**
  * The reference a run's image compares with where it was drawn. An environment compares with its
  * own references. A device compares with its own references where the test records it, and with
- * the real-GPU references at the device tolerance elsewhere. A device that draws on a software
- * rasteriser compares with the software GPU's references, which were drawn with the same lighter
- * load, whatever its browser is. A place that records another accepted drawing compares with that
- * too.
+ * the real-GPU references at the device tolerance elsewhere. A place that records another accepted
+ * drawing compares with that too.
  */
 export function referenceOf(run: ImageRun, place: Place): Reference {
 	const own = 'environment' in place || run.reference.devices.includes(place.device);
-	// The set follows the rasteriser, not the browser: a browser on a machine with no GPU draws the
-	// lighter scene, and the same browser on a real GPU draws the full one.
-	const software = 'device' in place && place.software === true && !own;
 	const set =
-		'environment' in place
-			? place.environment
-			: software
-				? SWIFTSHADER
-				: own
-					? referenceDevice(place.device)
-					: REAL_GPU;
+		'environment' in place ? place.environment : own ? referenceDevice(place.device) : REAL_GPU;
 	const file = `${set}/${run.reference.tier}/${run.reference.test}.png`;
 	const others = othersOf(run, place, own, set);
-	const swiftShader = 'environment' in place && place.environment === SWIFTSHADER;
-	// The software GPU's own references come from another machine, so a software rasteriser that
-	// did not draw them allows the device's tolerance, and a test's software allowance besides.
-	const tolerance = swiftShader
-		? (run.swiftShaderTolerance ?? run.tolerance)
-		: own
-			? run.tolerance
-			: software
-				? { ...run.deviceTolerance, ...run.swiftShaderTolerance }
-				: run.deviceTolerance;
-	const reference = { file, others, tolerance };
-	if (!own && !software && 'device' in place)
+	const ownTolerance =
+		('environment' in place && place.environment === 'chromium-swiftshader'
+			? run.swiftShaderTolerance
+			: undefined) ?? run.tolerance;
+	const reference = { file, others, tolerance: own ? ownTolerance : run.deviceTolerance };
+	if (!own && 'device' in place)
 		return {
 			...reference,
 			fixed: `other browsers and devices compare with the real-GPU references. If the GPU of ${place.device} draws ${run.test} another way, add '${place.device}' to the test's devices in tests/image/manifest.ts, and its next run saves this device's own reference`,

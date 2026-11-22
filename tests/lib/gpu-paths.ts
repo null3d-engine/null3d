@@ -8,44 +8,6 @@ import type { ItemResult } from './runs.ts';
 /** GPU names that mark drawing on the CPU, as on a machine or a virtual machine without a GPU. */
 export const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|basic render driver/i;
 
-/** The GPU names that a runner page or the tool read: the adapter's details and the renderer. */
-export interface GpuNames {
-	webgpu: { vendor: string; architecture: string; device: string } | null;
-	webgl2: { renderer: string } | null;
-}
-
-/**
- * True when the device's GPU names a software rasteriser, such as CI's SwiftShader or a virtual
- * machine's llvmpipe. A page's load follows the rasteriser, never the browser: any browser on a
- * machine with no GPU draws the lighter scene, and the same browser on a real GPU draws the full one.
- */
-export function softwareGpu(gpu: GpuNames | undefined): boolean {
-	if (!gpu) return false;
-	const adapter = gpu.webgpu
-		? [gpu.webgpu.vendor, gpu.webgpu.architecture, gpu.webgpu.device].join(' ')
-		: '';
-	return SOFTWARE_RENDERER.test(`${gpu.webgl2?.renderer ?? ''} ${adapter}`);
-}
-
-/** A page's address with a switch set: in place when the address has it, and else added at the end. */
-export function withSwitch(path: string, entry: string): string {
-	const name = entry.split('=')[0] as string;
-	const existing = new RegExp(`([?&])${name}(=[^&]*)?(?=&|$)`);
-	return existing.test(path) ? path.replace(existing, `$1${entry}`) : `${path}&${entry}`;
-}
-
-/**
- * The address that a page runs at on a device: the page's switches for a software GPU when the
- * device draws with one, and the address as it is otherwise.
- */
-export function pathOnGpu(
-	path: string,
-	softwareSwitches: readonly string[] | undefined,
-	software: boolean,
-): string {
-	return software && softwareSwitches ? softwareSwitches.reduce(withSwitch, path) : path;
-}
-
 /** A GPU path that a page can force with `?gpu=`: core WebGPU, WebGPU's compatibility mode, or WebGL2. */
 export type GpuPath = Tier;
 

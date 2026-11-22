@@ -13,14 +13,12 @@ import {
 	type MissingAllowed,
 	NONE_MISSING,
 	needsImageBuffers,
-	pathOnGpu,
 	pathsToSkip,
 	skippedForImages,
 	skippedForImagesResult,
 	skippedPath,
 	skippedPathsText,
 	skippedResult,
-	softwareGpu,
 } from './gpu-paths.ts';
 import { type Check, gpuPathOf, judge, withGpuPaths } from './plans.ts';
 import type { ItemResult, PlanItem } from './runs.ts';
@@ -249,42 +247,6 @@ describe('the pages that a browser with faulty image buffers skips', () => {
 		});
 		expect(result).toBe(
 			`30 passed, 15 skipped, 0 failed; skipped the pages for WebGPU, which the device lacks; skipped the pages that draw, since ${fault}`,
-		);
-	});
-});
-
-describe('the load that follows the rasteriser', () => {
-	it('names a software rasteriser by the GPU that the device reports', () => {
-		const llvmpipe = { webgpu: null, webgl2: { renderer: 'llvmpipe, or similar' } };
-		const swiftshader = {
-			webgpu: null,
-			webgl2: { renderer: 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))' },
-		};
-		const adapter = {
-			webgpu: { vendor: 'Google', architecture: 'SwiftShader', device: '' },
-			webgl2: null,
-		};
-		const apple = { webgpu: null, webgl2: { renderer: 'Apple M2' } };
-		expect(softwareGpu(llvmpipe)).toBe(true);
-		expect(softwareGpu(swiftshader)).toBe(true);
-		expect(softwareGpu(adapter)).toBe(true);
-		expect(softwareGpu(apple)).toBe(false);
-		expect(softwareGpu(undefined)).toBe(false);
-	});
-
-	it('gives a software device the lighter page, and a real GPU the page as it is', () => {
-		const path = '/bench/pages/null3d/s5.html?gpu=webgl2&hold=2';
-		expect(pathOnGpu(path, ['n=100', 'cloudSteps=0'], true)).toBe(
-			'/bench/pages/null3d/s5.html?gpu=webgl2&hold=2&n=100&cloudSteps=0',
-		);
-		expect(pathOnGpu(path, ['n=100'], false)).toBe(path);
-		expect(pathOnGpu(path, undefined, true)).toBe(path);
-	});
-
-	it('replaces a switch that the page already has', () => {
-		const path = '/page?gpu=webgl2&preset=high';
-		expect(pathOnGpu(path, ['preset=low', 'n=100'], true)).toBe(
-			'/page?gpu=webgl2&preset=low&n=100',
 		);
 	});
 });
