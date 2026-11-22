@@ -1675,20 +1675,22 @@ function visibleStretchesOf(script: Script): { start: Float64Array; end: Float64
 	let before = 0;
 	let at = 0;
 	while (at < count) {
-		const leg = script.legs[at] as Leg;
-		if (leg.hidden) {
-			before += leg.seconds;
+		if ((script.legs[at] as Leg).hidden) {
+			before += (script.legs[at] as Leg).seconds;
 			at++;
 			continue;
 		}
+		// Find the whole stretch first, so every leg of it knows the same two ends.
 		const from = before;
+		const first = at;
 		let to = before;
 		while (at < count && !(script.legs[at] as Leg).hidden) {
-			const each = script.legs[at] as Leg;
-			to += each.seconds;
-			start[at] = from;
-			end[at] = to;
+			to += (script.legs[at] as Leg).seconds;
 			at++;
+		}
+		for (let k = first; k < at; k++) {
+			start[k] = from;
+			end[k] = to;
 		}
 		before = to;
 	}

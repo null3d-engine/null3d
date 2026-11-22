@@ -811,6 +811,34 @@ describe('the fade of an actor', () => {
 		expect(values).toBeGreaterThan(10);
 	});
 
+	it('keeps every visible stretch fully drawn, its middle and its turn alike', () => {
+		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
+		let samples = 0;
+		for (const person of PLAN.people) {
+			for (const trip of person.trips) {
+				// The visible stretch runs from the first walking leg's start to the last one's end.
+				let at = 0;
+				let from = -1;
+				let to = -1;
+				for (const leg of trip.script.legs) {
+					if (leg.from !== leg.to && from < 0) from = at;
+					if (leg.from !== leg.to) to = at + leg.seconds;
+					at += leg.seconds;
+				}
+				if (from < 0 || to <= from) continue;
+				for (let local = 0; local < trip.script.cycle; local += 0.02) {
+					// Away from the fade at each end, the whole stretch draws in full, turn included.
+					if (local <= from + 0.5 || local >= to - 0.5) continue;
+					personAt(person, trip.start + local - person.phase, state);
+					expect(state.hidden).toBe(false);
+					expect(state.fade).toBe(1);
+					samples++;
+				}
+			}
+		}
+		expect(samples).toBeGreaterThan(100);
+	});
+
 	it('keeps a person in sight across the out-and-back turn', () => {
 		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
 		for (const person of PLAN.people) {
