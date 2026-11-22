@@ -76,19 +76,17 @@ planting level would be the next lever, and it waits for the owner.
    `set_depth_prepass` follows it each frame. The tier flips it. A page that starts in the tier gets
    the prepass off from its first frame.
 4. **The settings surface** has two new live flags, `shadows` and `bloom`. `depthPrepass` becomes
-   live. Every preset's row equals today's behavior, so no other preset changes. The further cuts
-   use the existing settings where they exist. These are `reflectionScale`, `softParticles`,
-   `cloudSteps`, `lodThreshold`, `lodShadowThreshold`, `farAnimationInterval`, `aoScale`, `ssrScale`,
-   `fogSlices`, `bounceRays`, `contactShadowSteps`, `bloomSize` and `shadowFilter`. New tier flags
-   cover the cuts the engine has no setting for. They are the water reflection off, the particle
-   systems off, the sky volume off and the plant detail. A sketch reads the flags. The tier is the
-   only writer.
-5. **The further cuts are measured one at a time, and the owner keeps two.** Each is built behind its flag, measured alone on
-   the S8 at both paths, and ranked here by gain. The order follows the perf report. The water
-   reflection goes off first, then to quarter size. Next are the particles off and a shorter leaf
-   switch. Coarser plant levels follow. Then come the sky volume off, the cloud sea's steps, the
-   falls and the dome. A cut is kept only when its gain is above the run's noise. Its look loss must
-   also be acceptable to the owner.
+   live. Every preset's row equals today's behavior, so no other preset changes. The owner keeps two
+   further cuts, and both use what exists. One is the reflection passes' share, `reflectionScale`, at
+   a quarter. The other is the maple leaves beyond 60 m, which the scene hides with the leaves mesh's
+   own level switch. No new flag is needed for them. A sketch reads the cuts through the settings and
+   `quality.governor.lowest`. The tier is the only writer.
+5. **The further cuts are measured one at a time, and the owner keeps two.** Each was measured alone
+   on the S8, in the tier's state, and ranked below by gain. A cut is kept only when its gain is
+   above the run's noise, and its look loss is acceptable to the owner. The kept cuts are the
+   reflection share and the leaves beyond 60 m. The plants, the cloud sea, the creek, the particles,
+   the falls and the fog are not cut. The next lever would be a coarser planting level, and it waits
+   for the owner.
 6. **No other preset's look changes.** The settings' four preset rows reproduce the current behavior
    exactly. The tier's values live in the tier code. The docs state the tier and its cuts. The preset
    table shows only the values the other presets keep.
