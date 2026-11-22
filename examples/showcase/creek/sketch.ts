@@ -12,6 +12,7 @@
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
 import {
+	type Camera,
 	defineSketch,
 	math,
 	type QualityPreset,
@@ -226,6 +227,7 @@ const FOAM_BOX = { origin: [LIPS.west - 1, 9], size: [LIPS.east - LIPS.west + 2,
  */
 function createCreekWater(
 	ctx: SketchContext,
+	camera: Camera,
 	columns: number,
 	foamTexels: number,
 	obstacles: readonly Obstacle[],
@@ -254,6 +256,7 @@ function createCreekWater(
 	return createWater(ctx, {
 		shapes: [sheet],
 		level: WATER,
+		camera,
 		layers: 1,
 		// The creek runs smooth between its foam: the swell is a tenth of a lake's, and the fine
 		// ripples are faint, so a low view along the water shows no even lines of them.
@@ -372,6 +375,7 @@ export default defineSketch(async (ctx) => {
 		? undefined
 		: createCreekWater(
 				ctx,
+				camera,
 				detail.water,
 				detail.foam,
 				stones.obstacles,
