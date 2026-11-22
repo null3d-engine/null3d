@@ -73,11 +73,13 @@ export const SETTING_DOCS: {
 		label: 'Blend between shadow cascades',
 		print: (value) => `${Math.round(Number(value) * 100)}% of each cascade`,
 	},
+	shadows: { label: 'Sun shadows', print: yesNo },
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
 	heroTileSize: { label: 'Hero shadow tile size in texels' },
 	pointLightShadows: { label: 'Point light shadows', print: yesNo },
 	bloomSize: { label: "Bloom's largest level in texels on the short side" },
+	bloom: { label: 'Bloom', print: yesNo },
 	aoScale: {
 		label: 'Ambient occlusion',
 		print: (value) =>

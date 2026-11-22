@@ -14,6 +14,7 @@ import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
+	crashLowest,
 	crashTier,
 	deviceKind,
 	gpuOcclusionChoice,
@@ -27,6 +28,7 @@ import {
 	capTextureMemory,
 	checkedSettings,
 	checkSettings,
+	lowestTierSettings,
 	presetOption,
 	presetValue,
 	type QualityPreset,
@@ -2386,7 +2388,16 @@ async function startEngine(
 			tier === 'webgl2'
 				? false
 				: gpuOcclusionChoice(deviceKind(presetRequest.hints), pageSettings.gpuOcclusion);
-		const tierSettings = { ...pageSettings, gpuOcclusion };
+		// A start that crashed the tab twice begins in the lowest tier, as a page's switch does: the
+		// engine has already lowered the preset, and the tier is the last step down (D-382).
+		const startLowest =
+			switches.lowestTier === 'lowest' ||
+			(switches.preset === undefined && crashLowest(history.crashed));
+		const tierSettings = {
+			...pageSettings,
+			gpuOcclusion,
+			...(startLowest ? lowestTierSettings(tier) : {}),
+		};
 		const textureCapMiB = textureMemoryCap(deviceKind(presetRequest.hints));
 		const quality: QualityStart = {
 			preset,
@@ -2400,6 +2411,7 @@ async function startEngine(
 			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck,
+			lowest: startLowest,
 		};
 		mode = {
 			build,

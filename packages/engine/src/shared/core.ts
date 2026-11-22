@@ -1055,6 +1055,11 @@ export interface CoreGlue extends CoreErrors {
 	emitParticleFrame(id: number): number;
 	/** Emits `count` particles of a system at once, at the place and velocity in its block. */
 	burstParticles(id: number, count: number): number;
+	/**
+	 * Turns each camera view's depth prepass on or off from the next frame on. Ambient occlusion,
+	 * contact shadows, the bounce light and screen-space reflections still draw it while they run.
+	 */
+	setDepthPrepass(on: boolean): number;
 	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
 	setSoftParticles(on: boolean): number;
 	/**
@@ -1620,6 +1625,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleSubMatrices',
 	'emitParticleFrame',
 	'burstParticles',
+	'setDepthPrepass',
 	'setSoftParticles',
 	'createVertexDraw',
 	'destroyVertexDraw',

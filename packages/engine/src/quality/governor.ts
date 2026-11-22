@@ -77,7 +77,7 @@ import * as Role from '../shared/role';
 import { HELD_PERCENT } from '../shared/stats';
 import { BUDGET_STEPS, FULL_SCALE, SCALE_STEP, thousandths } from './budget';
 import { CHECK_MAX_FPS, checkTargetFps } from './check';
-import { QUALITY_SETTINGS } from './presets';
+import { LOWEST_TIER_SCALE, QUALITY_SETTINGS } from './presets';
 
 /** The longest interval between two draws of a far shadow cascade, in frames. */
 export const LONGEST_FAR_INTERVAL = QUALITY_SETTINGS.farCascadeInterval.values.max;
@@ -96,6 +96,13 @@ export const LOWEST_AO_SCALE = thousandths(QUALITY_SETTINGS.aoScale.values[1]);
 
 /** The fewest steps above none that a march of contact shadows takes, which their step lowers to. */
 export const FEWEST_CONTACT_STEPS = QUALITY_SETTINGS.contactShadowSteps.values[1];
+
+/**
+ * The lowest quality tier's render scale floor, in thousandths: a third, below every preset's. The
+ * governor enters the tier when the scale has held at its floor through the sustained window and
+ * the judged frames still miss (D-382).
+ */
+const LOWEST_FLOOR = thousandths(LOWEST_TIER_SCALE);
 
 /**
  * The smallest scale of screen-space reflections' grid above none, in thousandths of the render
@@ -239,7 +246,9 @@ const LOWERED_FRAME_US = 7;
 const SECOND_US = 8;
 /** 1 when the step down on trial lowered the render scale, 0 otherwise. */
 const LOWERED_SCALE_STEP = 9;
-const STATE_SIZE = 10;
+/** 1 when the step down on trial entered the lowest quality tier, 0 otherwise. */
+const LOWERED_TIER = 10;
+const STATE_SIZE = 11;
 
 /**
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
@@ -320,6 +329,26 @@ export class Governor {
 	private software = false;
 	/** True once a failed step below the whole scale closed the render scale, on a software device. */
 	private scaleClosed = false;
+	/**
+	 * True while the lowest quality tier applies: the render scale's floor has fallen, and the tier's
+	 * cuts are on. The governor enters it when the scale has held at the preset's floor through the
+	 * sustained window and the judged frames still miss, and leaves it when the frames keep room
+	 * through the window that raises a step (D-382).
+	 */
+	lowest = false;
+	/** Counts each change of `lowest`, so the frame loop applies the tier's settings. */
+	tierChanges = 0;
+	/** The judged windows in which the scale has held at its floor, since it last left. */
+	private floorWindows = 0;
+	/** True when the frame loop applies the tier's settings, which its entry needs. */
+	private tiered = false;
+	/** The render scale's range while the tier is off, which its exit gives back, in thousandths. */
+	private lowestLow = FULL_SCALE;
+	private lowestHigh = FULL_SCALE;
+	/** The time before which no entry into the tier follows an exit, in whole ms, or -1. */
+	private lowestWait = -1;
+	/** True when the page started in the tier, which the governor's own switch does not end. */
+	private pinned = false;
 	/** The figures of the window to judge, by the `WINDOW_END` to `BUDGET_US` indices. */
 	readonly window = new Int32Array(BUDGET_US + 1);
 	private readonly state = new Int32Array(STATE_SIZE);
@@ -375,13 +404,38 @@ export class Governor {
 	/**
 	 * Sets the range of the render scale, in thousandths, from `low` to `high`, and brings the scale
 	 * into it. The scale starts at the highest. A new range gives the levels new settings, so the
-	 * governor forgets their trials.
+	 * governor forgets their trials. In the lowest quality tier, the floor stays at the tier's, and
+	 * the range's own floor is what the exit gives back.
 	 */
 	setRange(low: number, high: number): void {
-		if (low !== this.low || high !== this.high) this.forgetTrials();
-		this.low = low;
+		let floor = low;
+		if (this.lowest) {
+			if (low !== LOWEST_FLOOR) this.lowestLow = low;
+			if (high !== LOWEST_FLOOR) this.lowestHigh = high;
+			floor = Math.min(low, LOWEST_FLOOR);
+		}
+		if (floor !== this.low || high !== this.high) {
+			this.forgetTrials();
+			this.floorWindows = 0;
+		}
+		this.low = floor;
 		this.high = high;
-		this.scale = this.on ? Math.min(high, Math.max(low, this.scale)) : high;
+		this.scale = this.on ? Math.min(high, Math.max(floor, this.scale)) : high;
+	}
+
+	/**
+	 * Starts in the lowest quality tier, as a page's switch or the chooser asked. `restoreLow` and
+	 * `restoreHigh` are the render scale's range that the exit gives back, in thousandths. A page
+	 * that started in the tier keeps it while the governor is off.
+	 */
+	startLowest(restoreLow: number, restoreHigh: number): void {
+		if (this.lowest) return;
+		this.lowest = true;
+		this.pinned = true;
+		this.lowestLow = restoreLow;
+		this.lowestHigh = restoreHigh;
+		this.low = Math.min(this.low, LOWEST_FLOOR);
+		this.tierChanges++;
 	}
 
 	/**
@@ -490,15 +544,18 @@ export class Governor {
 
 	/**
 	 * Turns the governor on or off. Off, the scale goes to the highest, the budgets to the full scale,
-	 * and the settings apply as set.
+	 * and the settings apply as set. Off also ends a tier that the governor entered; a tier that the
+	 * page started stays as the page set it.
 	 */
 	setOn(on: boolean): void {
 		this.on = on;
 		if (on) return;
 		this.state[LOWERED_AT] = -1;
-		this.scale = this.high;
+		this.state[LOWERED_TIER] = 0;
 		this.budgetLevel = 0;
 		this.steps = 0;
+		if (this.lowest && !this.pinned) this.leaveLowest();
+		this.scale = this.high;
 		this.applySteps();
 	}
 
@@ -512,6 +569,14 @@ export class Governor {
 		if (software === this.software) return;
 		this.software = software;
 		this.scaleClosed = false;
+	}
+
+	/**
+	 * Sets whether the lowest quality tier may enter. Its cuts reach the scene through the sketch's
+	 * settings, so only a frame loop that applies them turns it on.
+	 */
+	setLowestTier(on: boolean): void {
+		this.tiered = on;
 	}
 
 	/**
@@ -564,16 +629,19 @@ export class Governor {
 	gap(now: number, heldUs = 0, budgetUs = 0): void {
 		const { state } = this;
 		const lowered = state[LOWERED_AT] as number;
+		const tier = (state[LOWERED_TIER] as number) !== 0;
 		if (this.on && lowered >= 0) {
 			// A step down is on trial. A held frame that came clearly slower than the second before
 			// the step fails the trial at once, and no further step follows from it.
 			if (heldUs > 0) {
 				if (heldUs * 100 >= (state[LOWERED_FRAME_US] as number) * LOWER_LOSS_PERCENT) {
-					this.undoLower(now);
+					if (tier) this.undoLowest(now);
+					else this.undoLower(now);
 					return;
 				}
 			} else if (now - lowered > LOWER_TRIAL_MS) {
-				this.undoLower(now);
+				if (tier) this.undoLowest(now);
+				else this.undoLower(now);
 				return;
 			}
 		}
@@ -605,6 +673,7 @@ export class Governor {
 		state[ROOM_SINCE] = earlier(state[ROOM_SINCE] as number, by);
 		state[JUDGE_FROM] = earlier(state[JUDGE_FROM] as number, by);
 		state[LOWERED_AT] = earlier(state[LOWERED_AT] as number, by);
+		this.lowestWait = earlier(this.lowestWait, by);
 		for (let level = 0; level < LEVELS; level++) {
 			raisedAt[level] = earlier(raisedAt[level] as number, by);
 			floorUntil[level] = earlier(floorUntil[level] as number, by);
@@ -622,12 +691,16 @@ export class Governor {
 		// The window joins the last second before the trial reads that second: a held frame fills
 		// the windows it spans, and the last of them completes the second that judges a trial.
 		const missed = this.missed(frame, delay, budget);
+		const tier = (state[LOWERED_TIER] as number) !== 0;
 		if (this.lowerFailed(now)) {
-			this.undoLower(now);
+			if (tier) this.undoLowest(now);
+			else this.undoLower(now);
 			return;
 		}
+		this.followFloor();
 		if (missed) {
-			this.lower(now);
+			if (this.lowestReady(now)) this.enterLowest(now);
+			else this.lower(now);
 			return;
 		}
 		const calm = delay * 100 <= budget * ROOM_DELAY_PERCENT;
@@ -642,14 +715,117 @@ export class Governor {
 		state[ROOM_EXCESS_US] = excess;
 		const wait = this.raiseAfter[Math.max(0, this.level() - 1)] as number;
 		if (now - (state[ROOM_SINCE] as number) < wait) return;
-		if (excess * 100 <= windows * budget * (ROOM_PERCENT - 100)) this.raise(now);
-		else {
+		if (excess * 100 <= windows * budget * (ROOM_PERCENT - 100)) {
+			if (this.lowest) this.exitLowest(now);
+			else this.raise(now);
+		} else {
 			// The frames ran a little long over the wait: it starts again, so that frames which
 			// have room later are judged on their own.
 			this.startRoom(now);
 			state[ROOM_WINDOWS] = 1;
 			state[ROOM_EXCESS_US] = frame - budget;
 		}
+	}
+
+	/**
+	 * Counts the judged windows in which the scale held at its floor, which the tier's entry waits
+	 * on, and starts again while the scale is above it. No window that the governor does not judge,
+	 * as while the scene loads, counts.
+	 */
+	private followFloor(): void {
+		if (this.scale > this.low) this.floorWindows = 0;
+		else this.floorWindows++;
+	}
+
+	/**
+	 * True when the lowest quality tier can enter: the scale has held at its floor through the
+	 * sustained window that a step up waits, the frames still miss, no exit's cooldown is running,
+	 * and no failed entry has closed the tier for a wait.
+	 */
+	private lowestReady(now: number): boolean {
+		return (
+			this.tiered &&
+			!this.lowest &&
+			this.scale <= this.low &&
+			this.floorWindows * WINDOW_MS >= RAISE_AFTER_MS &&
+			now >= this.lowestWait &&
+			(this.floorUntil[this.level()] as number) <= now
+		);
+	}
+
+	/**
+	 * Enters the lowest quality tier: its floor falls, and its cuts follow through the sketch's
+	 * settings. The entry goes on trial as a step down does, so frames that the cuts slow take the
+	 * tier back and close it for a wait that doubles with each failure.
+	 */
+	private enterLowest(now: number): void {
+		const { state } = this;
+		this.lowest = true;
+		this.lowestLow = this.low;
+		this.lowestHigh = this.high;
+		this.low = Math.min(this.low, LOWEST_FLOOR);
+		this.floorWindows = 0;
+		this.tierChanges++;
+		state[LOWERED_AT] = now;
+		state[LOWERED_FRAME_US] = state[SECOND_US] as number;
+		state[LOWERED_SCALE_STEP] = 0;
+		state[LOWERED_TIER] = 1;
+		this.settle(true, now);
+	}
+
+	/**
+	 * Leaves the lowest quality tier once the frames have kept room through the window that raises
+	 * a step. The exit gives back the scale's range, raises the scale to its floor at once, and
+	 * waits the same window before the tier can enter again, so a device cannot flap.
+	 */
+	private exitLowest(now: number): void {
+		const { state } = this;
+		this.lowest = false;
+		this.pinned = false;
+		this.low = this.lowestLow;
+		this.high = this.lowestHigh;
+		this.scale = Math.min(this.high, Math.max(this.low, this.scale));
+		this.lowestWait = now + RAISE_AFTER_MS;
+		this.floorWindows = 0;
+		state[LOWERED_TIER] = 0;
+		this.raisedAt[this.level()] = now;
+		this.tierChanges++;
+		this.settle(true, now);
+	}
+
+	/**
+	 * Takes back a tier that slowed the frames, and keeps the governor from entering it again at
+	 * this level until a wait has passed. That wait doubles with each failed entry, as a failed
+	 * step down's does.
+	 */
+	private undoLowest(now: number): void {
+		const level = this.level();
+		const { floorUntil, floorAfter, state } = this;
+		const wait = floorAfter[level] as number;
+		floorUntil[level] = now + wait;
+		floorAfter[level] = Math.min(LONGEST_RAISE_AFTER_MS, wait * 2);
+		this.lowest = false;
+		this.pinned = false;
+		this.low = this.lowestLow;
+		this.high = this.lowestHigh;
+		this.scale = Math.min(this.high, Math.max(this.low, this.scale));
+		this.lowestWait = now + RAISE_AFTER_MS;
+		this.floorWindows = 0;
+		state[LOWERED_AT] = -1;
+		state[LOWERED_TIER] = 0;
+		this.tierChanges++;
+		this.settle(true, now);
+	}
+
+	/** Leaves the tier without a trial, as turning the governor off does: no wait follows. */
+	private leaveLowest(): void {
+		this.lowest = false;
+		this.pinned = false;
+		this.low = this.lowestLow;
+		this.high = this.lowestHigh;
+		this.scale = Math.min(this.high, Math.max(this.low, this.scale));
+		this.floorWindows = 0;
+		this.tierChanges++;
 	}
 
 	/**
@@ -729,6 +905,7 @@ export class Governor {
 			state[LOWERED_AT] = now;
 			state[LOWERED_FRAME_US] = state[SECOND_US] as number;
 			state[LOWERED_SCALE_STEP] = this.scale < scale ? 1 : 0;
+			state[LOWERED_TIER] = 0;
 		}
 		this.settle(moved, now);
 	}
@@ -746,6 +923,7 @@ export class Governor {
 		const second = state[SECOND_US] as number;
 		if (second < 0) return now - lowered > LOWER_TRIAL_MS;
 		state[LOWERED_AT] = -1;
+		state[LOWERED_TIER] = 0;
 		if (second * 100 >= (state[LOWERED_FRAME_US] as number) * LOWER_LOSS_PERCENT) return true;
 		const level = this.level();
 		this.floorUntil[level] = -1;
@@ -767,6 +945,7 @@ export class Governor {
 		floorUntil[level] = now + wait;
 		floorAfter[level] = Math.min(LONGEST_RAISE_AFTER_MS, wait * 2);
 		state[LOWERED_AT] = -1;
+		state[LOWERED_TIER] = 0;
 		this.stepUp();
 		this.settle(true, now);
 	}
@@ -812,6 +991,7 @@ export class Governor {
 		this.floorAfter.fill(FLOOR_AFTER_MS);
 		this.state[LOWERED_AT] = -1;
 		this.state[LOWERED_SCALE_STEP] = 0;
+		this.state[LOWERED_TIER] = 0;
 	}
 
 	/**
