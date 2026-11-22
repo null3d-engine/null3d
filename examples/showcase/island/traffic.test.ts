@@ -1,21 +1,43 @@
 // The traffic plan's checks that need no GPU: loops cut from the stored roads, cars that keep to
 // them, speeds and phases that never repeat, paths that stay on a road, a footpath or the sand,
 // people who hide at a door or a car, and a plan that repeats for a seed and changes with another.
+// Every mover is also held clear of the island's standing objects at a fine step of its timeline.
 import { describe, expect, it } from 'bun:test';
 import type { Material, MeshGeometry, SketchContext } from '@null3d/engine';
-import { SEA_LEVEL, sandAt } from './island';
+import { SEA_LEVEL, sandAt, TOWN, townShare } from './island';
 import { HOUSE_KINDS } from './kit';
-import { doorOf, LOTS, ROADS, roadEdge, slopeAt } from './plan';
 import {
+	doorOf,
+	FILL_SPOTS,
+	groundHeight,
+	LOTS,
+	ROADS,
+	roadEdge,
+	SHRUBS,
+	STAIRS,
+	slopeAt,
+	TERRACES,
+	TREE_SPOTS,
+} from './plan';
+import { LOUNGER_OFFSETS } from './props';
+import { LANE, PARKS } from './routes';
+import { parasolSpots } from './town';
+import {
+	BUS_HALF_LENGTH,
+	BUS_HALF_WIDTH,
 	buildRoadNetwork,
+	CAR_HALF_LENGTH,
+	CAR_HALF_WIDTH,
 	createPlaceholderModels,
 	createTraffic,
 	makePath,
 	type Path,
+	PERSON_RADIUS,
 	type Pose,
 	pathAt,
 	personAt,
 	planTraffic,
+	staticGap,
 	TRAFFIC_SEED,
 	vehicleAt,
 } from './traffic';
@@ -309,6 +331,101 @@ describe('the people', () => {
 		expect(least).toBeGreaterThanOrEqual(0.6);
 	});
 
+	it('keeps every visible person clear of every standing object', () => {
+		const poses = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false }));
+		let least = Number.POSITIVE_INFINITY;
+		for (let seconds = 0; seconds <= 600; seconds += 0.5) {
+			PLAN.people.forEach((person, k) => {
+				personAt(person, seconds, poses[k] as never);
+			});
+			for (const pose of poses)
+				if (!pose.hidden) least = Math.min(least, staticGap(pose.x, pose.z));
+		}
+		// A tree's trunk, a shrub's stems, a terrace wall, a stair, a parasol's pole or a lounger.
+		expect(least).toBeGreaterThanOrEqual(PERSON_RADIUS);
+	});
+
+	it('keeps every vehicle body clear of every standing object', () => {
+		const poses = PLAN.vehicles.map(() => ({ x: 0, y: 0, z: 0, yaw: 0 }));
+		let least = Number.POSITIVE_INFINITY;
+		for (let seconds = 0; seconds <= 600; seconds += 0.25) {
+			PLAN.vehicles.forEach((vehicle, k) => {
+				vehicleAt(vehicle, seconds, poses[k] as Pose);
+			});
+			PLAN.vehicles.forEach((vehicle, k) => {
+				const pose = poses[k] as Pose;
+				const [hl, hw] =
+					vehicle.kind === 'bus'
+						? [BUS_HALF_LENGTH, BUS_HALF_WIDTH]
+						: [CAR_HALF_LENGTH, CAR_HALF_WIDTH];
+				const [c, s] = [Math.cos(pose.yaw), Math.sin(pose.yaw)];
+				for (const [u, v] of [
+					[hl, hw],
+					[hl, -hw],
+					[-hl, hw],
+					[-hl, -hw],
+				] as const) {
+					const x = pose.x + u * s + v * c;
+					const z = pose.z + u * c - v * s;
+					least = Math.min(least, staticGap(x, z));
+				}
+			});
+		}
+		expect(least).toBeGreaterThanOrEqual(0);
+	});
+
+	it('keeps every vehicle body out of every house footprint', () => {
+		const poses = PLAN.vehicles.map(() => ({ x: 0, y: 0, z: 0, yaw: 0 }));
+		const houses = LOTS.map((lot) => {
+			const half = (HOUSE_KINDS[lot.kind] as { half: readonly [number, number] }).half;
+			return { x: lot.x, z: lot.z, yaw: lot.yaw, hw: half[0], hd: half[1] };
+		});
+		let leastRoad = Number.POSITIVE_INFINITY;
+		let worst = '';
+		let inside = 0;
+		for (let seconds = 0; seconds <= 600; seconds += 0.25) {
+			PLAN.vehicles.forEach((vehicle, k) => {
+				vehicleAt(vehicle, seconds, poses[k] as Pose);
+			});
+			PLAN.vehicles.forEach((vehicle, k) => {
+				const pose = poses[k] as Pose;
+				// The drawn model's own size, not the plan's larger box: 3.7 by 1.86 m for the car and
+				// 4.9 by 2.33 for the bus, which is what a visitor sees.
+				const hl = vehicle.kind === 'bus' ? 2.45 : 1.85;
+				const hw = vehicle.kind === 'bus' ? 1.17 : 0.93;
+				const [c, s] = [Math.cos(pose.yaw), Math.sin(pose.yaw)];
+				for (const [u, v] of [
+					[hl, hw],
+					[hl, -hw],
+					[-hl, hw],
+					[-hl, -hw],
+				] as const) {
+					const x = pose.x + u * s + v * c;
+					const z = pose.z + u * c - v * s;
+					const edge = roadEdge(x, z);
+					if (edge < leastRoad) {
+						leastRoad = edge;
+						worst = `${vehicle.kind} at ${seconds.toFixed(1)} s`;
+					}
+					for (const house of houses) {
+						const [ch, sh] = [Math.cos(house.yaw), Math.sin(house.yaw)];
+						const dx = x - house.x;
+						const dz = z - house.z;
+						if (Math.abs(dx * ch - dz * sh) < house.hw && Math.abs(dx * sh + dz * ch) < house.hd) {
+							inside++;
+							break;
+						}
+					}
+				}
+			});
+		}
+		// No corner of any vehicle enters a house, at any sampled moment.
+		expect(inside).toBe(0);
+		// A corner may leave the drawn road on the tightest bend, where a real one overhangs the
+		// verge; the figure is recorded so a change that widens it shows.
+		console.log(`least road edge under a vehicle corner: ${leastRoad.toFixed(2)} m at ${worst}`);
+	});
+
 	it('keeps every visible person outside every vehicle body, parked cars included', () => {
 		const vehicles = PLAN.vehicles.map(() => ({ x: 0, y: 0, z: 0, yaw: 0 }));
 		const people = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false }));
@@ -375,9 +492,11 @@ describe('the people', () => {
 					const [c, s] = [Math.cos(house.yaw), Math.sin(house.yaw)];
 					const dx = pose.x - house.x;
 					const dz = pose.z - house.z;
+					// The house's own frame: its front looks along the lot's turn, so the depth lies on
+					// that axis and the width across it.
 					if (
-						Math.abs(dx * c + dz * s) < house.hw + 0.3 &&
-						Math.abs(-dx * s + dz * c) < house.hd + 0.3
+						Math.abs(dx * c - dz * s) < house.hw + 0.3 &&
+						Math.abs(dx * s + dz * c) < house.hd + 0.3
 					) {
 						inside++;
 						break;

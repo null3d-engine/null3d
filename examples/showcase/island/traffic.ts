@@ -44,8 +44,23 @@ import {
 import { random } from '../../lib/procedural';
 import { BAY, hypot, SEA_LEVEL, sandAt } from './island';
 import { HOUSE_KINDS } from './kit';
-import { CHURCH_AT, doorOf, groundHeight, LOTS, type Lot, ROADS, SQUARE } from './plan';
+import {
+	CHURCH_AT,
+	doorOf,
+	FILL_SPOTS,
+	groundHeight,
+	LOTS,
+	type Lot,
+	ROADS,
+	SHRUBS,
+	SQUARE,
+	STAIRS,
+	TERRACES,
+	TREE_SPOTS,
+} from './plan';
+import { LOUNGER_OFFSETS } from './props';
 import type { Road, RoadPoint } from './routes';
+import { parasolSpots } from './town';
 
 /** A point in the world, in meters. */
 interface Point {
@@ -286,6 +301,8 @@ const WALK_SPEED = [1.05, 1.5] as const;
 const PARKED_KERB = 0.5;
 /** The least gap between a parked car's middle and a moving car's middle, in meters. */
 const PARKED_CLEAR = 2;
+/** The margin that a parked car's outline keeps from a house, in meters. */
+const PARKED_HOUSE_CLEAR = 0.05;
 /** The height of the drawn road's surface over its stored middle line, in meters. */
 const ROAD_SURFACE = 0.3;
 /** The number of stops that the bus makes on its loop. */
@@ -297,14 +314,14 @@ const PERSON_LIFT = 0.8;
 /** How far ahead and behind a mover the heading is read, in meters. */
 const HEADING_SPAN = 1.2;
 /** The half lengths and half widths of a car's and a bus's body, in meters. */
-const CAR_HALF_LENGTH = 2.1;
-const CAR_HALF_WIDTH = 0.9;
-const BUS_HALF_LENGTH = 4.3;
-const BUS_HALF_WIDTH = 1.2;
+export const CAR_HALF_LENGTH = 2.1;
+export const CAR_HALF_WIDTH = 0.9;
+export const BUS_HALF_LENGTH = 4.3;
+export const BUS_HALF_WIDTH = 1.2;
 /** The least gap that a follower keeps between its body and another vehicle's body, in meters. */
 const VEHICLE_GAP = 0.5;
 /** The radius of a person's body, in meters. */
-const PERSON_RADIUS = 0.3;
+export const PERSON_RADIUS = 0.3;
 /** The least gap between two visible people, in meters. */
 const PERSON_CLEAR = 0.6;
 /** The shortest walk that a rider keeps after the walk is cut back to its car, in meters. */
@@ -717,7 +734,17 @@ export function buildRoadNetwork(roads: readonly Road[]): RoadNetwork {
 			const a = cut[k] as { at: number; node: number };
 			const b = cut[k + 1] as { at: number; node: number };
 			if (b.at - a.at < 0.5) continue;
-			const path = makePath(roadSlice(road, cum, a.at, b.at));
+			// Both ends take the junction's own place, so two roads that end a little apart still meet
+			// at one point and a loop of them does not double back across the gap.
+			const slice = roadSlice(road, cum, a.at, b.at);
+			const head = nodes[a.node] as { x: number; z: number };
+			const tail = nodes[b.node] as { x: number; z: number };
+			(slice[0] as Point).x = head.x;
+			(slice[0] as Point).z = head.z;
+			const last = slice[slice.length - 1] as Point;
+			last.x = tail.x;
+			last.z = tail.z;
+			const path = makePath(slice);
 			if (path.length < 1e-3) continue;
 			edges.push({ id: edges.length, road: i, from: a.node, to: b.node, path, half: road.half });
 		}
@@ -1292,23 +1319,152 @@ const HOUSE_GRID = (() => {
 	return grid;
 })();
 
-/** Whether a place lies within a house's rectangle, widened by a margin. */
+/**
+ * Whether a place lies within a house's rectangle, widened by a margin. The rectangle is read both
+ * as the lot's turn draws it and in the turn's mirror, which keeps every walk clear of a house on
+ * either reading.
+ */
 function insideHouse(house: HouseRect, x: number, z: number, margin: number): boolean {
 	const [c, s] = [Math.cos(house.yaw), Math.sin(house.yaw)];
 	const dx = x - house.x;
 	const dz = z - house.z;
-	const u = dx * c + dz * s;
-	const v = -dx * s + dz * c;
-	return Math.abs(u) < house.hw + margin && Math.abs(v) < house.hd + margin;
+	// The drawn frame: the house's front looks along the lot's turn, so its depth lies on that axis.
+	const along = dx * s + dz * c;
+	const across = dx * c - dz * s;
+	if (Math.abs(across) < house.hw + margin && Math.abs(along) < house.hd + margin) return true;
+	// The same lot read the other way round, so a walk keeps the wider of the two footprints.
+	return (
+		Math.abs(dx * c + dz * s) < house.hw + margin && Math.abs(-dx * s + dz * c) < house.hd + margin
+	);
 }
 
-/** Whether a place stands clear of every house beside it, by the walking margin. */
-function housesClear(x: number, z: number): boolean {
+/** Whether a place stands clear of every house beside it, by a margin. */
+function housesClear(x: number, z: number, margin = HOUSE_CLEAR): boolean {
 	for (const house of HOUSE_GRID.get(
 		`${Math.floor(x / HOUSE_CELL)},${Math.floor(z / HOUSE_CELL)}`,
 	) ?? [])
-		if (insideHouse(house, x, z, HOUSE_CLEAR)) return false;
+		if (insideHouse(house, x, z, margin)) return false;
 	return true;
+}
+
+/** The radius of a circle standing for a body that a walk must keep out of, in meters. */
+interface Body {
+	x: number;
+	z: number;
+	r: number;
+}
+
+/** A stretch of a body, such as a wall or a stair, that a walk must keep out of. */
+interface BodyRun {
+	ax: number;
+	az: number;
+	bx: number;
+	bz: number;
+	half: number;
+}
+
+/** The radius of each tree kind's trunk at its foot, before the spot's own scale, in meters. */
+const TRUNK_RADIUS = [0.3, 0.36, 0.39, 0.5] as const;
+/** The radius of the clump that a shrub's stems rise from, before the spot's own scale, in meters. */
+const SHRUB_FOOT = 0.25;
+/** The radius of a parasol's pole, and of the circle that stands for a lounger, in meters. */
+const PARASOL_POLE = 0.05;
+const LOUNGER_FOOT = 1;
+/** The half thickness of a terrace's dry stone wall, and the half width of a stone stair, in meters. */
+const TERRACE_HALF = 0.26;
+const STAIR_HALF = 0.8;
+/** The margin that a walk keeps from a standing object's body, in meters. */
+const BODY_CLEAR = 0.1;
+/** How wide a clear strip the way down to the sand needs for the people who spread across it, in meters. */
+const BEACH_ROOM = PERSON_RADIUS + 1.05 + BODY_CLEAR;
+/** The side of a cell of the static bodies' grid, in meters. */
+const BODY_CELL = 8;
+
+/** The trunks, shrubs, poles and loungers of the island, by a coarse grid. */
+const BODY_GRID = (() => {
+	const grid = new Map<string, Body[]>();
+	const add = (body: Body): void => {
+		const reach = Math.ceil(body.r / BODY_CELL);
+		const [ci, cj] = [Math.floor(body.x / BODY_CELL), Math.floor(body.z / BODY_CELL)];
+		for (let i = ci - reach; i <= ci + reach; i++)
+			for (let j = cj - reach; j <= cj + reach; j++) {
+				const key = `${i},${j}`;
+				const list = grid.get(key);
+				if (list) list.push(body);
+				else grid.set(key, [body]);
+			}
+	};
+	for (const spot of [...TREE_SPOTS, ...FILL_SPOTS])
+		add({ x: spot.x, z: spot.z, r: (TRUNK_RADIUS[spot.kind] ?? 0.5) * spot.scale });
+	for (const spot of SHRUBS) add({ x: spot.x, z: spot.z, r: SHRUB_FOOT * spot.scale });
+	const parasols = parasolSpots();
+	for (const spot of parasols) add({ x: spot.x, z: spot.z, r: PARASOL_POLE });
+	for (const spot of parasols)
+		for (const offset of LOUNGER_OFFSETS) {
+			const [c, s] = [Math.cos(spot.yaw), Math.sin(spot.yaw)];
+			add({
+				x: spot.x + offset.x * c + offset.z * s,
+				z: spot.z - offset.x * s + offset.z * c,
+				r: LOUNGER_FOOT,
+			});
+		}
+	return grid;
+})();
+
+/** The walls and stairs of the island, by a coarse grid. */
+const RUN_GRID = (() => {
+	const grid = new Map<string, BodyRun[]>();
+	const add = (run: BodyRun): void => {
+		const steps = Math.ceil(hypot(run.bx - run.ax, run.bz - run.az) / BODY_CELL);
+		for (let k = 0; k <= steps; k++) {
+			const t = steps === 0 ? 0 : k / steps;
+			const x = run.ax + (run.bx - run.ax) * t;
+			const z = run.az + (run.bz - run.az) * t;
+			for (let i = -1; i <= 1; i++)
+				for (let j = -1; j <= 1; j++) {
+					const key = `${Math.floor(x / BODY_CELL) + i},${Math.floor(z / BODY_CELL) + j}`;
+					const list = grid.get(key);
+					if (!list) grid.set(key, [run]);
+					else if (!list.includes(run)) list.push(run);
+				}
+		}
+	};
+	for (const wall of TERRACES)
+		add({ ax: wall.ax, az: wall.az, bx: wall.bx, bz: wall.bz, half: TERRACE_HALF });
+	for (const stair of STAIRS)
+		for (let k = 0; k + 1 < stair.length; k++) {
+			const a = stair[k] as { x: number; z: number };
+			const b = stair[k + 1] as { x: number; z: number };
+			add({ ax: a.x, az: a.z, bx: b.x, bz: b.z, half: STAIR_HALF });
+		}
+	return grid;
+})();
+
+/** How far a place lies from a body run's own edge, in meters; below zero inside it. */
+function runGap(run: BodyRun, x: number, z: number): number {
+	const dx = run.bx - run.ax;
+	const dz = run.bz - run.az;
+	const length2 = dx * dx + dz * dz || 1;
+	const t = Math.max(0, Math.min(1, ((x - run.ax) * dx + (z - run.az) * dz) / length2));
+	return hypot(x - (run.ax + dx * t), z - (run.az + dz * t)) - run.half;
+}
+
+/**
+ * The least gap from a place to the island's standing objects: a tree's trunk, a shrub's stems, a
+ * terrace's wall, a stair, a parasol's pole or a lounger. Below zero means the place is inside one.
+ */
+export function staticGap(x: number, z: number): number {
+	const key = `${Math.floor(x / BODY_CELL)},${Math.floor(z / BODY_CELL)}`;
+	let least = Number.POSITIVE_INFINITY;
+	for (const body of BODY_GRID.get(key) ?? []) {
+		const gap = hypot(x - body.x, z - body.z) - body.r;
+		if (gap < least) least = gap;
+	}
+	for (const run of RUN_GRID.get(key) ?? []) {
+		const gap = runGap(run, x, z);
+		if (gap < least) least = gap;
+	}
+	return least;
 }
 
 /**
@@ -1494,6 +1650,16 @@ function beachWalk(): Path {
 		sandZ: 0,
 		d: Number.POSITIVE_INFINITY,
 	};
+	/** Whether the strip that the walkers take to the sand lies clear of the standing objects. */
+	const clear = (startX: number, startZ: number, endX: number, endZ: number): boolean => {
+		const reach = Math.max(1, Math.ceil(hypot(endX - startX, endZ - startZ)));
+		for (let k = 0; k <= reach; k++) {
+			const t = k / reach;
+			if (staticGap(startX + (endX - startX) * t, startZ + (endZ - startZ) * t) < BEACH_ROOM)
+				return false;
+		}
+		return true;
+	};
 	for (let pass = 0; pass < 240; pass++) {
 		const angle = BAY.from + BAY.sweep * (pass / 240);
 		const radius = BAY.radius + 12;
@@ -1501,18 +1667,49 @@ function beachWalk(): Path {
 		const sz = BAY.z + Math.sin(angle) * radius;
 		if (sandAt(sx, sz) < 0.4 || groundHeight(sx, sz) < SEA_LEVEL + 1) continue;
 		for (let ri = 0; ri < ROADS.length; ri++) {
-			const found = projectOnRoad(ROADS[ri] as Road, sx, sz);
-			if (found.d < access.d)
-				access = {
-					road: ri,
-					at: found.at,
-					x: found.x,
-					y: found.y,
-					z: found.z,
-					sandX: sx,
-					sandZ: sz,
-					d: found.d,
-				};
+			const road = ROADS[ri] as Road;
+			const found = projectOnRoad(road, sx, sz);
+			if (found.d >= access.d) continue;
+			// A club of parasols on the sand turns the walkers to the next clear way down.
+			const inward = Math.min(road.half + PAVEMENT, found.d);
+			const length = found.d || 1;
+			const nx = (sx - found.x) / length;
+			const nz = (sz - found.z) / length;
+			if (!clear(found.x + nx * inward, found.z + nz * inward, sx, sz)) continue;
+			access = {
+				road: ri,
+				at: found.at,
+				x: found.x,
+				y: found.y,
+				z: found.z,
+				sandX: sx,
+				sandZ: sz,
+				d: found.d,
+			};
+		}
+	}
+	// With no clear way down, the nearest one still serves the beach.
+	if (!Number.isFinite(access.d)) {
+		for (let pass = 0; pass < 240; pass++) {
+			const angle = BAY.from + BAY.sweep * (pass / 240);
+			const radius = BAY.radius + 12;
+			const sx = BAY.x + Math.cos(angle) * radius;
+			const sz = BAY.z + Math.sin(angle) * radius;
+			if (sandAt(sx, sz) < 0.4 || groundHeight(sx, sz) < SEA_LEVEL + 1) continue;
+			for (let ri = 0; ri < ROADS.length; ri++) {
+				const found = projectOnRoad(ROADS[ri] as Road, sx, sz);
+				if (found.d < access.d)
+					access = {
+						road: ri,
+						at: found.at,
+						x: found.x,
+						y: found.y,
+						z: found.z,
+						sandX: sx,
+						sandZ: sz,
+						d: found.d,
+					};
+			}
 		}
 	}
 	const road = ROADS[access.road] as Road;
@@ -1582,6 +1779,25 @@ function parkedClearOfWalks(car: ParkedCar, walks: readonly Path[]): boolean {
 		for (let at = 0; at <= walk.length; at += 0.25) {
 			pathAt(walk, at, pose);
 			if (parkedDistance(car, pose.x, pose.z) < PERSON_RADIUS + 0.2) return false;
+		}
+	return true;
+}
+
+/** Whether a parked car stands clear of every house, reading its whole outline. */
+function parkedClearOfHouses(car: ParkedCar): boolean {
+	const [c, s] = [Math.cos(car.yaw), Math.sin(car.yaw)];
+	const step = 0.5;
+	for (let along = -CAR_HALF_LENGTH; along <= CAR_HALF_LENGTH; along += step)
+		for (const across of [-CAR_HALF_WIDTH, CAR_HALF_WIDTH]) {
+			const x = car.x + s * along + c * across;
+			const z = car.z + c * along - s * across;
+			if (!housesClear(x, z, PARKED_HOUSE_CLEAR)) return false;
+		}
+	for (let across = -CAR_HALF_WIDTH; across <= CAR_HALF_WIDTH; across += step)
+		for (const along of [-CAR_HALF_LENGTH, CAR_HALF_LENGTH]) {
+			const x = car.x + s * along + c * across;
+			const z = car.z + c * along - s * across;
+			if (!housesClear(x, z, PARKED_HOUSE_CLEAR)) return false;
 		}
 	return true;
 }
@@ -1695,25 +1911,69 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 	// The vehicles move together, holding a headway, so that no two ever pass through each other.
 	createMotion(vehicles);
 
-	// The places that moving traffic passes, so that a parked car never stands in its lane.
-	const routePose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
-	const routeScratch: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
-	const trafficPoints: number[] = [];
-	for (let k = 0; k < vehicles.length; k++) {
-		const vehicle = vehicles[k] as VehicleActor;
-		for (let at = 0; at <= vehicle.route.length; at += 0.5) {
-			poseAlong(vehicle.route, at, vehicle.lateral, true, routePose, routeScratch);
-			trafficPoints.push(routePose.x, routePose.z);
+	// The lines that the vehicles' bodies run their middles along, and the roads' own middle lines.
+	// A walk keeps clear of the first, and a parked car stands clear of the second.
+	type Run = { ax: number; az: number; bx: number; bz: number };
+	const routeKey = (x: number, z: number) =>
+		`${Math.floor(x / BODY_CELL)},${Math.floor(z / BODY_CELL)}`;
+	const gridOf = (offset: boolean): Map<string, Run[]> => {
+		const grid = new Map<string, Run[]>();
+		const routePose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+		const routeScratch: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+		for (const vehicle of vehicles) {
+			const count = vehicle.route.distance.length;
+			const lines: { x: number; z: number }[] = [];
+			for (let k = 0; k < count; k++) {
+				poseAlong(
+					vehicle.route,
+					vehicle.route.distance[k] as number,
+					offset ? vehicle.lateral : 0,
+					true,
+					routePose,
+					routeScratch,
+				);
+				lines.push({ x: routePose.x, z: routePose.z });
+			}
+			lines.push(lines[0] as { x: number; z: number });
+			for (let k = 0; k + 1 < lines.length; k++) {
+				const a = lines[k] as { x: number; z: number };
+				const b = lines[k + 1] as { x: number; z: number };
+				const run = { ax: a.x, az: a.z, bx: b.x, bz: b.z };
+				const steps = Math.ceil(hypot(run.bx - run.ax, run.bz - run.az) / BODY_CELL);
+				for (let s = 0; s <= steps; s++) {
+					const t = steps === 0 ? 0 : s / steps;
+					const px = run.ax + (run.bx - run.ax) * t;
+					const pz = run.az + (run.bz - run.az) * t;
+					for (let i = -1; i <= 1; i++)
+						for (let j = -1; j <= 1; j++) {
+							const key = `${Math.floor(px / BODY_CELL) + i},${Math.floor(pz / BODY_CELL) + j}`;
+							const list = grid.get(key);
+							if (!list) grid.set(key, [run]);
+							else if (!list.includes(run)) list.push(run);
+						}
+				}
+			}
 		}
-	}
-	const trafficClearance = (x: number, z: number): number => {
+		return grid;
+	};
+	const distanceTo = (grid: Map<string, Run[]>, x: number, z: number): number => {
 		let nearest = Number.POSITIVE_INFINITY;
-		for (let k = 0; k < trafficPoints.length; k += 2) {
-			const d = hypot((trafficPoints[k] as number) - x, (trafficPoints[k + 1] as number) - z);
+		for (const run of grid.get(routeKey(x, z)) ?? []) {
+			const dx = run.bx - run.ax;
+			const dz = run.bz - run.az;
+			const length2 = dx * dx + dz * dz || 1;
+			const t = Math.max(0, Math.min(1, ((x - run.ax) * dx + (z - run.az) * dz) / length2));
+			const d = hypot(x - (run.ax + dx * t), z - (run.az + dz * t));
 			if (d < nearest) nearest = d;
 		}
 		return nearest;
 	};
+	const bodyGrid = gridOf(true);
+	const laneGrid = gridOf(false);
+	/** How far a place stands from the middle line that a vehicle's body runs on, in meters. */
+	const trafficClearance = (x: number, z: number): number => distanceTo(bodyGrid, x, z);
+	/** How far a place stands from the road's own middle line, in meters. */
+	const laneClearance = (x: number, z: number): number => distanceTo(laneGrid, x, z);
 
 	const eastStreet = roadNear(-52, 190);
 	const westStreet = roadNear(-130, 200);
@@ -1761,10 +2021,10 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 					if (at < 0 || at > length) break;
 					if (direction > 0 ? at >= gate : at <= gate) break;
 					const car = parkedBeside(road, at, side);
-					if (trafficClearance(car.x, car.z) >= PARKED_CLEAR) {
-						parking = { at, car };
-						break;
-					}
+					if (laneClearance(car.x, car.z) < PARKED_CLEAR) continue;
+					if (!parkedClearOfHouses(car)) continue;
+					parking = { at, car };
+					break;
 				}
 			}
 			const route = houseRoute(road, lot, parking ? parking.at : destination);
@@ -1884,7 +2144,8 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			const at = projectOnRoad(definition.road, end.x, end.z).at;
 			for (const shift of [0, -2, 2, -4, 4, -6, 6]) {
 				const beside = parkedBeside(definition.road, at + shift, definition.roadSide);
-				if (trafficClearance(beside.x, beside.z) < PARKED_CLEAR) continue;
+				if (laneClearance(beside.x, beside.z) < PARKED_CLEAR) continue;
+				if (!parkedClearOfHouses(beside)) continue;
 				car = beside;
 				break;
 			}
@@ -1927,7 +2188,8 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		let parkedAt = base;
 		for (const shift of [0, -2, 2, -4, 4, -6, 6]) {
 			const beside = parkedBeside(road, base + shift, draft.definition.roadSide);
-			if (trafficClearance(beside.x, beside.z) < PARKED_CLEAR) continue;
+			if (laneClearance(beside.x, beside.z) < PARKED_CLEAR) continue;
+			if (!parkedClearOfHouses(beside)) continue;
 			if (!parkedClearOfWalks(beside, walkPaths)) continue;
 			placed = beside;
 			parkedAt = base + shift;
@@ -1987,7 +2249,8 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			const at = projectOnRoad(road, lot.gate.x, lot.gate.z).at;
 			const door = doorOf(lot);
 			const car = parkedBeside(road, at, sideToward(road, arcsOf(road), at, door.x, door.z));
-			if (trafficClearance(car.x, car.z) < PARKED_CLEAR) continue;
+			if (laneClearance(car.x, car.z) < PARKED_CLEAR) continue;
+			if (!parkedClearOfHouses(car)) continue;
 			if (!parkedClearOfWalks(car, walkPaths)) continue;
 			parked.push(car);
 			placed++;
