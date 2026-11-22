@@ -4,13 +4,16 @@
 // spread of those loops at their own speeds and phases, and one bus runs a long loop that passes
 // the harbour, waiting at stops. They move together with a headway: a vehicle holds when its body
 // would reach another's, so no two pass through each other. A few cars stand parked at the kerbs.
+// A car drives a run of one loop, fades from sight, and starts its next run on another loop, so no
+// car is ever seen standing still; a run begins at a place that clears every other body.
 //
 // People walk pavements and footpaths between houses, the square, the church, the harbour and the
-// beach. Each person takes a place of its own across the pavement, and each walk is cut to the
-// stretches clear of the houses and of the moving traffic. A script of walking and waiting legs
-// then runs: a hidden wait stands for time inside a building or a car, a visible wait for standing
-// about, and the walk legs carry them between the two. The script repeats, so a person enters and
-// leaves a building, waits by the water, and gets into and out of a car on a fixed cadence.
+// beach. Each person takes a place of its own across the pavement, and each route is cut to the
+// stretches clear of the houses, of the standing objects and of the moving traffic. Two people
+// never walk one line. A person's itinerary holds several walks, each one out and back along its
+// route from a place of its own: the person fades from sight at the end of a walk, stays out of
+// sight for a moment, and fades back in where the next walk begins. The only waits happen out of
+// sight, so a person in view is always walking.
 //
 // The plan is deterministic from a seed. Speeds are stratified so that no two cars share one, and
 // cars that share a loop are spread around it. A different seed gives a different island of traffic.
@@ -21,7 +24,10 @@
 // and wheels draws as several instance batches that move in step. The people near the camera's
 // route draw as skinned walkers that play their own clips, and the rest draw as far proxies. A
 // proxy has no rig, so its own instance row carries the walk: a rise at the rate of its stride, a
-// roll about its heading and a small surge along it, all pausing while the person waits.
+// roll about its heading and a small surge along it. A walker's clip rests while the person is out
+// of sight and starts again with the next walk. A person fades by shrinking its row or its copy
+// over a short moment, since the models' materials are opaque and a row's colour alpha cannot
+// blend one.
 //
 // A vehicle's plain body parts take a colour for each row, so a car and a bus carry a livery of
 // their own. A wheel part spins by the distance that its vehicle travels over its radius, and a
@@ -126,20 +132,54 @@ export interface VehicleActor {
 	readonly halfWidth: number;
 	/** The bus's stops and waits; a car has none and runs its loop without stopping. */
 	readonly script: Script | undefined;
+	/** A car's cycle of runs: each starts elsewhere, and the car hides between two. */
+	readonly runs?: readonly VehicleRun[];
+	/** The seconds of a car's run cycle, which its runs repeat over. */
+	readonly runCycle?: number;
 }
 
-/** A person who walks a path there and back on a repeating script. */
+/** One run of a car: a stretch of a loop that it drives before it hides and starts again. */
+export interface VehicleRun {
+	/** The loop driven. */
+	readonly route: Path;
+	/** The offset from the loop's middle line to the car's side of the road, in meters. */
+	readonly lateral: number;
+	/** The seconds into the run cycle when the run begins. */
+	readonly start: number;
+	/** The meters along the route where the car appears. */
+	readonly from: number;
+	/** How long the car drives before it fades out, in seconds. */
+	readonly seconds: number;
+}
+
+/** One walk in a person's itinerary: a walk out and back, with its own hidden ends. */
+export interface PersonTrip {
+	/** The path walked, from a place on it to its far end. */
+	readonly walk: Path;
+	/** The walking and hidden legs over that path. */
+	readonly script: Script;
+	/** The seconds into the person's itinerary when the trip begins. */
+	readonly start: number;
+}
+
+/** A person who walks a repeating itinerary of walks, each starting at a different place. */
 export interface PersonActor {
-	/** The path walked, from a door or the road to the far end. */
+	/** The path of the first walk, from a door or the road to the far end. */
 	readonly walk: Path;
 	/** The speed of the walking legs, in meters a second. */
 	readonly speed: number;
-	/** The seconds into the script at the start. */
+	/** The seconds into the itinerary at the start. */
 	readonly phase: number;
 	/** The offset from the walk's line to the person's side of the pavement, in meters. */
 	readonly lateral: number;
-	/** The walking and waiting legs. */
+	/** The walking and hidden legs of the first walk. */
 	readonly script: Script;
+	/** The walks that the person takes in turn, each from a place of its own. */
+	readonly trips: readonly PersonTrip[];
+	/** The seconds of the whole itinerary, which repeats. */
+	readonly cycle: number;
+	/** True when the first walk ends beside a car that the person gets into. */
+	readonly ride: boolean;
 }
 
 /** A car that stands still. */
@@ -328,6 +368,8 @@ export const PERSON_RADIUS = 0.3;
 const PERSON_CLEAR = 0.6;
 /** The shortest walk that a rider keeps after the walk is cut back to its car, in meters. */
 const MIN_RIDER_WALK = 5;
+/** The shortest walk that a person keeps, so that a person never blinks in and out of one place. */
+const MIN_PERSON_WALK = 4;
 /** The places that people take across one pavement, a body's width apart, in meters. */
 const SIDES_FOUR = [-1.05, -0.35, 0.35, 1.05] as const;
 const SIDES_THREE = [-0.7, 0, 0.7] as const;
@@ -349,6 +391,22 @@ const STRIDE_ROLL = 0.035;
 const STRIDE_SWAY = 0.025;
 /** The seconds that a stride takes to fade in at the start of a walk and out at its end. */
 const STRIDE_EASE = 0.35;
+/** The seconds that a person takes to fade from sight at the end of a walk and back at its start. */
+const PERSON_FADE = 0.45;
+/** The seconds that a person stays out of sight between two walks, so the move reads as a fade. */
+const TRIP_GAP = [0.6, 1.8] as const;
+/** How many walks a person's itinerary holds, the first one included. */
+const TRIP_COUNT = 4;
+/** The seconds that a car takes to fade from sight at the end of a run and back at its start. */
+const RUN_FADE = 0.6;
+/** The seconds that a car stays out of sight between two runs, so the move reads as a fade. */
+const RUN_HIDE = 1.6;
+/** The shortest and longest run that a car drives before it hides and starts again, in seconds. */
+const RUN_SECONDS = [45, 110] as const;
+/** How many runs a car's cycle holds, which send it round a different loop each time. */
+const CAR_RUNS = 3;
+/** The places that a car tries on a loop where it starts again, across the loop. */
+const RUN_STARTS = 24;
 /** The stretch of route over which a front wheel reads its curve, in meters. */
 const STEER_SPAN = 1.4;
 /** The most that a front wheel turns into a curve, in radians. */
@@ -904,39 +962,44 @@ function finishScript(legs: Leg[]): Script {
 	return { legs, cycle: total, ends };
 }
 
-/** Builds a script from ordered stops, walking forward to the far end and back. */
-function buildScript(
-	length: number,
+/** A script with no legs, for a place that holds none yet. */
+const EMPTY_SCRIPT: Script = { legs: [], cycle: 0, ends: new Float64Array(0) };
+
+/** Adds a leg to a script, unless it has no duration. */
+function addLeg(legs: Leg[], from: number, to: number, seconds: number, hidden: boolean): void {
+	if (seconds <= 1e-9) return;
+	legs.push({ seconds, from, to, hidden });
+}
+
+/**
+ * Builds a person's first walk. A person who gets into a car at the far end walks there and stays
+ * out of sight; every other person walks out and back, then stands out of sight where it started.
+ * The person is never seen standing still.
+ */
+function buildFirstTrip(
+	walk: Path,
 	speed: number,
-	stops: readonly { at: number; seconds: number; hidden: boolean }[],
-	start: { seconds: number; hidden: boolean },
-	end: { seconds: number; hidden: boolean },
+	lead: number,
+	tail: number,
+	ride: boolean,
 ): Script {
 	const legs: Leg[] = [];
-	const add = (from: number, to: number, seconds: number, hidden: boolean): void => {
-		if (seconds <= 1e-9) return;
-		legs.push({ seconds, from, to, hidden });
-	};
-	const ordered = stops
-		.filter((stop) => stop.at > 0.5 && stop.at < length - 0.5)
-		.sort((a, b) => a.at - b.at);
-	add(0, 0, start.seconds, start.hidden);
-	let at = 0;
-	for (const stop of ordered) {
-		add(at, stop.at, Math.abs(stop.at - at) / speed, false);
-		add(stop.at, stop.at, stop.seconds, stop.hidden);
-		at = stop.at;
+	addLeg(legs, 0, 0, lead, true);
+	addLeg(legs, 0, walk.length, walk.length / speed, false);
+	if (ride) addLeg(legs, walk.length, walk.length, tail, true);
+	else {
+		addLeg(legs, walk.length, 0, walk.length / speed, false);
+		addLeg(legs, 0, 0, tail, true);
 	}
-	add(at, length, Math.abs(length - at) / speed, false);
-	add(length, length, end.seconds, end.hidden);
-	at = length;
-	for (let k = ordered.length - 1; k >= 0; k--) {
-		const stop = ordered[k] as { at: number; seconds: number; hidden: boolean };
-		add(at, stop.at, Math.abs(at - stop.at) / speed, false);
-		add(stop.at, stop.at, stop.seconds, stop.hidden);
-		at = stop.at;
-	}
-	add(at, 0, Math.abs(at) / speed, false);
+	return finishScript(legs);
+}
+
+/** Builds a later walk: from a place on the path to its far end and back, out of sight at each end. */
+function buildLaterTrip(walk: Path, speed: number, from: number, tail: number): Script {
+	const legs: Leg[] = [];
+	addLeg(legs, from, walk.length, (walk.length - from) / speed, false);
+	addLeg(legs, walk.length, from, (walk.length - from) / speed, false);
+	addLeg(legs, from, from, tail, true);
 	return finishScript(legs);
 }
 
@@ -1035,6 +1098,20 @@ interface VehicleMotion {
 	/** The rows cached, including step 0. */
 	steps: number;
 	capacity: number;
+	/** The loop of each vehicle's current run, or undefined while it runs its plan's route. */
+	readonly paths: (Path | undefined)[];
+	/** The offset of each vehicle from the middle line of its current run's loop, in meters. */
+	readonly laterals: Float64Array;
+	/** The loops that the runs have used, which the step rows name. */
+	readonly pathList: Path[];
+	/** The loop of each vehicle at each cached step, plus one, or 0 for its plan's route. */
+	stepPaths: Uint16Array;
+	/** The offset of each vehicle from its loop's middle line at each cached step, in meters. */
+	stepLaterals: Float32Array;
+	/** One byte per row: 1 where the vehicle started a run at that step. */
+	respawned: Uint8Array;
+	/** The random stream that picks where a run begins, so a plan repeats for its seed. */
+	readonly rand: () => number;
 	/** The body of each vehicle at the last step. */
 	readonly curX: Float64Array;
 	readonly curZ: Float64Array;
@@ -1110,7 +1187,8 @@ function segmentDistance(
 
 /** Reads a vehicle's body: its middle and its forward direction, at a distance. */
 function bodyAt(
-	actor: VehicleActor,
+	path: Path,
+	lateral: number,
 	at: number,
 	x: Float64Array,
 	z: Float64Array,
@@ -1118,11 +1196,84 @@ function bodyAt(
 	fz: Float64Array,
 	index: number,
 ): void {
-	poseAlong(actor.route, at, actor.lateral, true, MOTION_POSE, MOTION_SCRATCH);
+	poseAlong(path, at, lateral, true, MOTION_POSE, MOTION_SCRATCH);
 	x[index] = MOTION_POSE.x;
 	z[index] = MOTION_POSE.z;
 	fx[index] = Math.sin(MOTION_POSE.yaw);
 	fz[index] = Math.cos(MOTION_POSE.yaw);
+}
+
+/**
+ * The run of a car's cycle at a time, or -1 while the car is out of sight between two runs.
+ * A vehicle without runs, such as the bus, is always in view.
+ */
+function runIndexOf(actor: VehicleActor, seconds: number): number {
+	const runs = actor.runs;
+	const cycle = actor.runCycle;
+	if (!runs || runs.length === 0 || !cycle) return -1;
+	let local = seconds % cycle;
+	if (local < 0) local += cycle;
+	let lo = 0;
+	let hi = runs.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi + 1) >> 1;
+		if ((runs[mid] as VehicleRun).start <= local) lo = mid;
+		else hi = mid - 1;
+	}
+	const run = runs[lo] as VehicleRun;
+	return local < run.start + run.seconds ? lo : -1;
+}
+
+/** Where a car starts a run: a place on the loop clear of every other vehicle's body. */
+function runStart(
+	motion: VehicleMotion,
+	index: number,
+	actor: VehicleActor,
+	path: Path,
+	lateral: number,
+	base: number,
+): number {
+	const count = motion.actors.length;
+	const span = path.length / RUN_STARTS;
+	const turn = Math.floor(motion.rand() * RUN_STARTS);
+	for (let pick = 0; pick < RUN_STARTS; pick++) {
+		const at = (base + ((turn + pick) % RUN_STARTS) * span) % path.length;
+		bodyAt(path, lateral, at, motion.nextX, motion.nextZ, motion.nextFX, motion.nextFZ, index);
+		let clear = true;
+		for (let j = 0; j < count && clear; j++) {
+			if (j === index) continue;
+			const other = motion.actors[j] as VehicleActor;
+			const ox = motion.settled[j] ? (motion.nextX[j] as number) : (motion.curX[j] as number);
+			const oz = motion.settled[j] ? (motion.nextZ[j] as number) : (motion.curZ[j] as number);
+			const ofx = motion.settled[j] ? (motion.nextFX[j] as number) : (motion.curFX[j] as number);
+			const ofz = motion.settled[j] ? (motion.nextFZ[j] as number) : (motion.curFZ[j] as number);
+			const reach = actor.halfLength;
+			const otherReach = other.halfLength;
+			const d = segmentDistance(
+				(motion.nextX[index] as number) - (motion.nextFX[index] as number) * reach,
+				(motion.nextZ[index] as number) - (motion.nextFZ[index] as number) * reach,
+				(motion.nextX[index] as number) + (motion.nextFX[index] as number) * reach,
+				(motion.nextZ[index] as number) + (motion.nextFZ[index] as number) * reach,
+				ox - ofx * otherReach,
+				oz - ofz * otherReach,
+				ox + ofx * otherReach,
+				oz + ofz * otherReach,
+			);
+			if (d < actor.halfWidth + other.halfWidth + VEHICLE_GAP) clear = false;
+		}
+		if (clear) return at;
+	}
+	return base % path.length;
+}
+
+/** The code of a loop in a motion's list, which a step row stores, or adds it. */
+function pathCode(motion: VehicleMotion, path: Path): number {
+	let code = motion.pathList.indexOf(path);
+	if (code < 0) {
+		motion.pathList.push(path);
+		code = motion.pathList.length - 1;
+	}
+	return code + 1;
 }
 
 /** Makes a motion's rows big enough for the next step. */
@@ -1134,6 +1285,15 @@ function growMotion(motion: VehicleMotion): void {
 	const data = new Float32Array(capacity * count);
 	data.set(motion.data);
 	motion.data = data;
+	const respawned = new Uint8Array(capacity * count);
+	respawned.set(motion.respawned);
+	motion.respawned = respawned;
+	const stepPaths = new Uint16Array(capacity * count);
+	stepPaths.set(motion.stepPaths);
+	motion.stepPaths = stepPaths;
+	const stepLaterals = new Float32Array(capacity * count);
+	stepLaterals.set(motion.stepLaterals);
+	motion.stepLaterals = stepLaterals;
 	motion.capacity = capacity;
 }
 
@@ -1154,6 +1314,11 @@ function stepMotion(motion: VehicleMotion): void {
 		nextFZ,
 		sim,
 		settled,
+		paths,
+		laterals,
+		stepPaths,
+		stepLaterals,
+		respawned,
 	} = motion;
 	const count = actors.length;
 	const previous = (steps - 1) * count;
@@ -1163,11 +1328,30 @@ function stepMotion(motion: VehicleMotion): void {
 	for (let i = 0; i < count; i++) {
 		sim[i] = data[previous + i] as number;
 		settled[i] = 0;
+		stepPaths[row + i] = stepPaths[previous + i] as number;
+		stepLaterals[row + i] = stepLaterals[previous + i] as number;
 	}
 	for (let k = 0; k < count; k++) {
 		const i = order[k] as number;
 		const actor = actors[i] as VehicleActor;
 		const current = sim[i] as number;
+		// A car that begins a run starts again somewhere else, out of sight.
+		const before = runIndexOf(actor, from);
+		const after = runIndexOf(actor, to);
+		if (after >= 0 && after !== before) {
+			const run = (actor.runs as readonly VehicleRun[])[after] as VehicleRun;
+			const path = run.route;
+			paths[i] = path;
+			laterals[i] = run.lateral;
+			stepPaths[row + i] = pathCode(motion, path);
+			stepLaterals[row + i] = run.lateral;
+			const at = runStart(motion, i, actor, path, run.lateral, run.from);
+			sim[i] = at;
+			respawned[row + i] = 1;
+			bodyAt(path, run.lateral, at, nextX, nextZ, nextFX, nextFZ, i);
+			settled[i] = 1;
+			continue;
+		}
 		let speed = actor.speed;
 		if (actor.script) {
 			const before = sampleScript(actor.script, from, SCRIPT_STATE).distance;
@@ -1177,7 +1361,16 @@ function stepMotion(motion: VehicleMotion): void {
 			speed = Math.max(0, Math.min(actor.speed, delta / motion.step));
 		}
 		const proposed = current + speed * motion.step;
-		bodyAt(actor, proposed, nextX, nextZ, nextFX, nextFZ, i);
+		bodyAt(
+			paths[i] ?? actor.route,
+			laterals[i] as number,
+			proposed,
+			nextX,
+			nextZ,
+			nextFX,
+			nextFZ,
+			i,
+		);
 		let clear = true;
 		for (let j = 0; j < count && clear; j++) {
 			if (j === i) continue;
@@ -1222,7 +1415,7 @@ function stepMotion(motion: VehicleMotion): void {
 }
 
 /** Builds the headway motion of a plan's vehicles and lets `vehicleAt` read it. */
-function createMotion(actors: readonly VehicleActor[]): VehicleMotion {
+function createMotion(actors: readonly VehicleActor[], seed: number): VehicleMotion {
 	const count = actors.length;
 	const data = new Float32Array(MOTION_ROWS * count);
 	for (let i = 0; i < count; i++) data[i] = (actors[i] as VehicleActor).phase;
@@ -1236,6 +1429,16 @@ function createMotion(actors: readonly VehicleActor[]): VehicleMotion {
 		data,
 		steps: 1,
 		capacity: MOTION_ROWS,
+		paths: new Array<Path | undefined>(count).fill(undefined),
+		laterals: Float64Array.from(actors, (actor) => actor.lateral),
+		pathList: [],
+		stepPaths: new Uint16Array(MOTION_ROWS * count),
+		stepLaterals: Float32Array.from(
+			{ length: MOTION_ROWS * count },
+			(_, k) => (actors[k % count] as VehicleActor).lateral,
+		),
+		respawned: new Uint8Array(MOTION_ROWS * count),
+		rand: random(seed),
 		curX: new Float64Array(count),
 		curZ: new Float64Array(count),
 		curFX: new Float64Array(count),
@@ -1249,7 +1452,16 @@ function createMotion(actors: readonly VehicleActor[]): VehicleMotion {
 	};
 	actors.forEach((actor, index) => {
 		MOTIONS.set(actor, { motion, index });
-		bodyAt(actor, actor.phase, motion.curX, motion.curZ, motion.curFX, motion.curFZ, index);
+		bodyAt(
+			actor.route,
+			actor.lateral,
+			actor.phase,
+			motion.curX,
+			motion.curZ,
+			motion.curFX,
+			motion.curFZ,
+			index,
+		);
 	});
 	return motion;
 }
@@ -1263,8 +1475,11 @@ function advanceMotion(motion: VehicleMotion, seconds: number): void {
 	}
 }
 
-/** The distance that a vehicle has travelled at a time, along its own route. */
-function travelledOf(actor: VehicleActor, seconds: number): number {
+/** A vehicle's place on its loop at a time: its distance, its loop and its side of it. */
+const LANE = { distance: 0, path: undefined as Path | undefined, lateral: 0 };
+
+/** Reads a vehicle's distance and loop at a time. */
+function laneOf(actor: VehicleActor, seconds: number): typeof LANE {
 	const bound = MOTIONS.get(actor);
 	if (bound) {
 		const { motion, index } = bound;
@@ -1275,11 +1490,28 @@ function travelledOf(actor: VehicleActor, seconds: number): number {
 		const f = Math.max(0, Math.min(1, x - i0));
 		const count = motion.actors.length;
 		const a = motion.data[i0 * count + index] as number;
+		// A run's first step moves the car to another loop: keep the old place until it lands.
+		const respawn = i1 > i0 && motion.respawned[i1 * count + index] === 1;
 		const b = motion.data[i1 * count + index] as number;
-		return a + (b - a) * f;
+		// A run's first step lands the car at once: read that step's place and loop, not a mix.
+		LANE.distance = respawn ? b : a + (b - a) * f;
+		const at = (respawn ? i1 : i0) * count + index;
+		const code = motion.stepPaths[at] as number;
+		LANE.path = code === 0 ? actor.route : (motion.pathList[code - 1] as Path);
+		LANE.lateral = motion.stepLaterals[at] as number;
+		return LANE;
 	}
-	if (actor.script) return sampleScript(actor.script, seconds, SCRIPT_STATE).distance;
-	return actor.phase + actor.speed * seconds;
+	LANE.path = actor.route;
+	LANE.lateral = actor.lateral;
+	LANE.distance = actor.script
+		? sampleScript(actor.script, seconds, SCRIPT_STATE).distance
+		: actor.phase + actor.speed * seconds;
+	return LANE;
+}
+
+/** The distance that a vehicle has travelled at a time, along its own route. */
+function travelledOf(actor: VehicleActor, seconds: number): number {
+	return laneOf(actor, seconds).distance;
 }
 
 /**
@@ -1295,34 +1527,96 @@ export function vehicleDistanceAt(actor: VehicleActor, seconds: number): number 
  * a bus waits at its stops. The result is written to `out`, or to a shared pose when it is left out.
  */
 export function vehicleAt(actor: VehicleActor, seconds: number, out: Pose = SHARED_POSE): Pose {
-	const at = travelledOf(actor, seconds);
-	poseAlong(actor.route, at, actor.lateral, true, out, SHARED_SCRATCH);
+	const lane = laneOf(actor, seconds);
+	poseAlong(lane.path ?? actor.route, lane.distance, lane.lateral, true, out, SHARED_SCRATCH);
 	out.y += ROAD_SURFACE;
 	return out;
 }
 
-/** Where a person is at a time, and whether they are out of sight. */
+/**
+ * How much of a vehicle draws at a time, from 0 out of sight to 1 fully in view. A car fades out
+ * at the end of a run and fades back in where its next run begins; a vehicle without runs is
+ * always in view.
+ */
+export function vehicleFadeAt(actor: VehicleActor, seconds: number): number {
+	const runs = actor.runs;
+	const cycle = actor.runCycle;
+	if (!runs || runs.length === 0 || !cycle) return 1;
+	const index = runIndexOf(actor, seconds);
+	if (index < 0) return 0;
+	let local = seconds % cycle;
+	if (local < 0) local += cycle;
+	const run = runs[index] as VehicleRun;
+	const into = local - run.start;
+	return Math.max(0, Math.min(1, into / RUN_FADE, (run.seconds - into) / RUN_FADE));
+}
+
+/** Where a person is at a time, and how far it has faded into sight. */
 export interface PersonState extends Pose {
 	hidden: boolean;
+	/** The share of the person that draws, from 0 out of sight to 1 fully in view. */
+	fade: number;
 }
 
 /** The shared person state. */
-const SHARED_PERSON: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false };
+const SHARED_PERSON: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
+
+/** The trip of an itinerary at a local time, and the seconds from that trip's start. */
+const TRIP = { trip: undefined as PersonTrip | undefined, index: 0, elapsed: 0 };
+
+/** Reads the trip of an itinerary at a time, which lies between zero and the cycle. */
+function tripAt(
+	actor: PersonActor,
+	local: number,
+): {
+	trip: PersonTrip;
+	index: number;
+	elapsed: number;
+} {
+	const trips = actor.trips;
+	let lo = 0;
+	let hi = trips.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi + 1) >> 1;
+		if ((trips[mid] as PersonTrip).start <= local) lo = mid;
+		else hi = mid - 1;
+	}
+	const trip = trips[lo] as PersonTrip;
+	TRIP.trip = trip;
+	TRIP.index = lo;
+	TRIP.elapsed = local - trip.start;
+	return TRIP as { trip: PersonTrip; index: number; elapsed: number };
+}
 
 /**
  * Where a person is at a time. The result is written to `out`, or to a shared state when it is
- * left out.
+ * left out. A person walks one trip of its itinerary, fades from sight at the end of it, and
+ * returns to sight at the start of the next, somewhere else on the island.
  */
 export function personAt(
 	actor: PersonActor,
 	seconds: number,
 	out: PersonState = SHARED_PERSON,
 ): PersonState {
-	const state = sampleScript(actor.script, seconds + actor.phase, SCRIPT_STATE);
-	poseAlong(actor.walk, state.distance, actor.lateral, false, out, SHARED_SCRATCH);
+	const clock = seconds + actor.phase;
+	let local = actor.cycle > 1e-9 ? clock % actor.cycle : 0;
+	if (local < 0) local += actor.cycle;
+	const { trip, elapsed } = tripAt(actor, local);
+	const state = sampleScript(trip.script, elapsed, SCRIPT_STATE);
+	poseAlong(trip.walk, state.distance, actor.lateral, false, out, SHARED_SCRATCH);
 	if (!state.forward) out.yaw += Math.PI;
-	out.hidden = state.hidden;
+	out.fade = fadeOf(trip.script, elapsed, state.hidden);
+	out.hidden = out.fade <= 0;
 	return out;
+}
+
+/** The share of a person that draws at a time of its script, faded at each end of a walk leg. */
+function fadeOf(script: Script, local: number, hidden: boolean): number {
+	if (hidden) return 0;
+	const { leg, elapsed } = legAt(script, local, LEG_STATE);
+	if (leg.seconds <= 1e-9) return 0;
+	const fade = Math.min(1, elapsed / PERSON_FADE, (leg.seconds - elapsed) / PERSON_FADE);
+	return Math.max(0, fade);
 }
 
 /** The rise, roll and surge of a person's stride at a time. */
@@ -1337,18 +1631,6 @@ export interface PersonStride {
 
 /** The shared stride, for a caller that reads one person at a time. */
 const SHARED_STRIDE: PersonStride = { bob: 0, roll: 0, sway: 0 };
-
-/** The walking seconds of one script cycle, worked out once per script. */
-const WALK_CYCLES = new WeakMap<Script, number>();
-function walkSecondsOf(script: Script): number {
-	let seconds = WALK_CYCLES.get(script);
-	if (seconds === undefined) {
-		seconds = 0;
-		for (const leg of script.legs) if (leg.to !== leg.from) seconds += leg.seconds;
-		WALK_CYCLES.set(script, seconds);
-	}
-	return seconds;
-}
 
 /**
  * The stride of a person at a time, written to `out`, or undefined while the person stands still.
@@ -1365,20 +1647,19 @@ export function personStrideAt(
 	out.bob = 0;
 	out.roll = 0;
 	out.sway = 0;
-	const script = actor.script;
-	if (script.cycle <= 1e-9 || script.legs.length === 0) return undefined;
+	if (actor.cycle <= 1e-9 || actor.trips.length === 0) return undefined;
 	const clock = seconds + actor.phase;
-	let local = clock % script.cycle;
-	if (local < 0) local += script.cycle;
-	const { leg, index, elapsed } = legAt(script, local, LEG_STATE);
+	let local = clock % actor.cycle;
+	if (local < 0) local += actor.cycle;
+	const trip = tripAt(actor, local);
+	const script = trip.trip.script;
+	const { leg, index, elapsed } = legAt(script, trip.elapsed, LEG_STATE);
 	if (leg.to === leg.from) return undefined;
 	let walked = elapsed;
 	for (let k = 0; k < index; k++) {
 		const each = script.legs[k] as Leg;
 		if (each.to !== each.from) walked += each.seconds;
 	}
-	// Each cycle adds its own walking seconds, so the stride carries on across the script's wrap.
-	walked += Math.floor(clock / script.cycle) * walkSecondsOf(script);
 	const phase = (2 * Math.PI * actor.speed * walked) / STRIDE_LENGTH;
 	const ease = Math.min(1, elapsed / STRIDE_EASE, (leg.seconds - elapsed) / STRIDE_EASE);
 	const swing = Math.max(0, ease);
@@ -1566,6 +1847,56 @@ export function staticGap(x: number, z: number): number {
 	return least;
 }
 
+/** The least gap that two people's walk lines keep, so neither can meet the other. */
+const LINE_CLEAR = PERSON_CLEAR + 0.05;
+/** The side of a cell of the walk lines' grid, in meters. */
+const LINE_CELL = 2;
+
+/** The places of a walk, half a meter apart. */
+function walkPlaces(path: Path): Point[] {
+	const places: Point[] = [];
+	const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+	for (let at = 0; at <= path.length; at += 0.5) {
+		pathAt(path, at, pose);
+		places.push({ x: pose.x, y: pose.y, z: pose.z });
+	}
+	return places;
+}
+
+/** True when a walk comes within a body's width of a line already in the grid. */
+function lineNear(grid: Map<string, Point[]>, path: Path): boolean {
+	for (const place of walkPlaces(path)) {
+		const ci = Math.floor(place.x / LINE_CELL);
+		const cj = Math.floor(place.z / LINE_CELL);
+		for (let i = ci - 1; i <= ci + 1; i++)
+			for (let j = cj - 1; j <= cj + 1; j++)
+				for (const other of grid.get(`${i},${j}`) ?? [])
+					if (hypot(place.x - other.x, place.z - other.z) < LINE_CLEAR) return true;
+	}
+	return false;
+}
+
+/** Adds a walk's places to the grid. */
+function addLine(grid: Map<string, Point[]>, path: Path): void {
+	for (const place of walkPlaces(path)) {
+		const key = `${Math.floor(place.x / LINE_CELL)},${Math.floor(place.z / LINE_CELL)}`;
+		const list = grid.get(key);
+		if (list) list.push(place);
+		else grid.set(key, [place]);
+	}
+}
+
+/** True when two walks run the same line: they start together and have one length. */
+function sameWalk(a: Path, b: Path): boolean {
+	if (Math.abs(a.length - b.length) > 0.05) return false;
+	return (
+		hypot(
+			(a.xyz[0] as number) - (b.xyz[0] as number),
+			(a.xyz[2] as number) - (b.xyz[2] as number),
+		) < 0.05
+	);
+}
+
 /**
  * Cuts a walk back to the longest stretch whose places the caller accepts, which leaves them clear
  * of the houses and of the motors' paths. With `keepStart`, the stretch runs from the walk's start,
@@ -1657,7 +1988,7 @@ const SEPARATION_STEP = 0.5;
 function visibleTrack(actor: PersonActor): Float32Array {
 	const count = Math.floor(SEPARATION_WINDOW / SEPARATION_STEP) + 1;
 	const out = new Float32Array(count * 2);
-	const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false };
+	const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
 	for (let k = 0; k < count; k++) {
 		personAt(actor, k * SEPARATION_STEP, state);
 		out[k * 2] = state.hidden ? Number.NaN : state.x;
@@ -1693,8 +2024,8 @@ function separatePeople(people: PersonActor[]): void {
 				}
 				if (!near) continue;
 				const person = people[b] as PersonActor;
-				const shift = person.script.cycle * (0.31 + pass * 0.09);
-				people[b] = { ...person, phase: (person.phase + shift) % person.script.cycle };
+				const shift = person.cycle * (0.31 + pass * 0.09);
+				people[b] = { ...person, phase: (person.phase + shift) % person.cycle };
 				tracks[b] = visibleTrack(people[b] as PersonActor);
 				changed = true;
 				budget--;
@@ -1906,10 +2237,8 @@ interface WalkDefinition {
 	readonly path: Path;
 	readonly startHidden: boolean;
 	readonly startSeconds: number;
-	readonly endHidden: boolean;
+	/** The seconds that the walk's end stands out of sight, before the person moves on. */
 	readonly endSeconds: number;
-	/** True adds a visible pause on the way. */
-	readonly mid: boolean;
 	/** True keeps the walk's start at its door when it is trimmed clear of the traffic. */
 	readonly keepStart: boolean;
 	/** The meters that the walk's start moves along its line, so that two starts never meet. */
@@ -1965,6 +2294,12 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 	const vehicles: VehicleActor[] = [];
 	const assigned = new Map<Cycle, number>();
 	const carsPerCycle = Math.max(1, Math.ceil(carCount / Math.max(1, carCycles.length)));
+	/** A cycle of the car set other than the one given, so a run starts on another loop. */
+	const otherCycle = (from: Path): Cycle => {
+		const others = carCycles.filter((cycle) => cycle.path !== from);
+		const pool = others.length > 0 ? others : carCycles;
+		return pool[Math.floor(rand() * pool.length)] as Cycle;
+	};
 	for (let k = 0; k < carCount; k++) {
 		const cycle = carCycles[k % carCycles.length] as Cycle;
 		const onCycle = assigned.get(cycle) ?? 0;
@@ -1974,6 +2309,24 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			(CAR_SPEED[0] as number) +
 			((k + rand() * 0.6) / carCount) * ((CAR_SPEED[1] as number) - (CAR_SPEED[0] as number));
 		const phase = ((onCycle + 0.1 + rand() * 0.6) / carsPerCycle) * cycle.length;
+		// The car's cycle of runs: stretches of loops, each starting somewhere else, with a
+		// hidden moment between two, so that no car is ever seen standing in the road.
+		const runs: VehicleRun[] = [];
+		let start = 0;
+		let route = cycle.path;
+		let at = phase;
+		let lane = lateral;
+		for (let run = 0; run < CAR_RUNS; run++) {
+			if (run > 0) {
+				const next = otherCycle(route);
+				route = next.path;
+				at = rand() * next.length;
+				lane = Math.max(0.25, Math.min(0.6, next.minHalf * 0.3));
+			}
+			const seconds = RUN_SECONDS[0] + rand() * (RUN_SECONDS[1] - RUN_SECONDS[0]);
+			runs.push({ route, lateral: lane, start, from: at, seconds });
+			start += seconds + RUN_HIDE;
+		}
 		vehicles.push({
 			kind: 'car',
 			route: cycle.path,
@@ -1983,6 +2336,8 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			halfLength: CAR_HALF_LENGTH,
 			halfWidth: CAR_HALF_WIDTH,
 			script: undefined,
+			runs,
+			runCycle: start,
 		});
 	}
 	if (busCycle) {
@@ -2008,7 +2363,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		});
 	}
 	// The vehicles move together, holding a headway, so that no two ever pass through each other.
-	createMotion(vehicles);
+	createMotion(vehicles, seed + 977);
 
 	// The lines that the vehicles' bodies run their middles along, and the roads' own middle lines.
 	// A walk keeps clear of the first, and a parked car stands clear of the second.
@@ -2089,7 +2444,8 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 	const promenadeSide = sideToward(quayRoad, quayCumulative, promenadeA, -77, 240);
 	const eastCumulative = arcsOf(eastStreet);
 	const churchSide = sideToward(eastStreet, eastCumulative, churchEast, CHURCH_AT.x, CHURCH_AT.z);
-	const endWait = () => 6 + rand() * 18;
+	// The seconds that a walk's end stays out of sight, so the fade reads and the person is gone.
+	const endWait = () => TRIP_GAP[0] + rand() * (TRIP_GAP[1] - TRIP_GAP[0]);
 	const startWait = () => 4 + rand() * 7;
 	const definitions: WalkDefinition[] = [];
 	const carSpots: ParkedCar[] = [];
@@ -2134,9 +2490,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 				startShift: 0,
 				startHidden: true,
 				startSeconds: startWait(),
-				endHidden: parking !== undefined,
 				endSeconds: parking ? 8 + rand() * 6 : endWait(),
-				mid: rand() < 0.55,
 				sides,
 				sideSlot: kept % sides.length,
 				car: parking?.car,
@@ -2160,9 +2514,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			startShift: k * 1.5,
 			startHidden: true,
 			startSeconds: 6 + rand() * 6,
-			endHidden: false,
-			endSeconds: 8 + rand() * 12,
-			mid: true,
+			endSeconds: 0.6 + rand() * 1.2,
 			sides: SIDES_ONE,
 			sideSlot: 0,
 		});
@@ -2176,10 +2528,8 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			keepStart: false,
 			startShift: k * 1.5,
 			startHidden: false,
-			startSeconds: 2 + rand() * 4,
-			endHidden: false,
-			endSeconds: 5 + rand() * 15,
-			mid: k !== 1,
+			startSeconds: 0,
+			endSeconds: 0.6 + rand() * 1.2,
 			sides: SIDES_FOUR,
 			sideSlot: k,
 		});
@@ -2194,9 +2544,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			startShift: k * 1.5,
 			startHidden: true,
 			startSeconds: 5 + rand() * 8,
-			endHidden: false,
-			endSeconds: 18 + rand() * 25,
-			mid: false,
+			endSeconds: 0.6 + rand() * 1.2,
 			sides: SIDES_FOUR,
 			sideSlot: k,
 		});
@@ -2210,10 +2558,17 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		phase: number;
 		script: Script;
 		definition: WalkDefinition;
-		stops: { at: number; seconds: number; hidden: boolean }[];
+		trips: PersonTrip[];
+		cycle: number;
 		car?: ParkedCar;
 	}
 	const drafts: Draft[] = [];
+	// A place that a walk may take: clear of the houses, of the standing objects and of the
+	// motors' bodies.
+	const usable = (x: number, z: number): boolean =>
+		housesClear(x, z) &&
+		staticGap(x, z) >= PERSON_RADIUS &&
+		trafficClearance(x, z) >= BUS_HALF_WIDTH + PERSON_RADIUS + 0.2;
 	const buildPerson = (definition: WalkDefinition, onRoute: number): Draft => {
 		const sides = definition.sides;
 		// A rider stands on the house side of the pavement, clear of the car at the kerb.
@@ -2221,21 +2576,12 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		const lateral = rider
 			? Math.max(...sides)
 			: (sides[(definition.sideSlot + onRoute) % sides.length] as number);
-		const usable = (x: number, z: number): boolean =>
-			housesClear(x, z) && trafficClearance(x, z) >= BUS_HALF_WIDTH + PERSON_RADIUS + 0.2;
 		let walk = trimWalk(offsetPathWalk(definition.path, lateral), usable, definition.keepStart);
 		if (definition.startShift > 0 && walk.length > definition.startShift + 1)
 			walk = slicePath(walk, definition.startShift, walk.length);
 		const speed =
 			(WALK_SPEED[0] as number) +
 			(0.1 + rand() * 0.8) * ((WALK_SPEED[1] as number) - (WALK_SPEED[0] as number));
-		const stops: { at: number; seconds: number; hidden: boolean }[] = [];
-		if (definition.mid)
-			stops.push({
-				at: walk.length * (0.35 + rand() * 0.3),
-				seconds: 2 + rand() * 5,
-				hidden: false,
-			});
 		// A rider's car stands beside the walk's far end, wherever the clear stretch stops.
 		let car: ParkedCar | undefined;
 		if (definition.road && definition.roadSide !== undefined) {
@@ -2249,35 +2595,57 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 				break;
 			}
 		}
-		const script = buildScript(
-			walk.length,
+		return {
+			walk,
 			speed,
-			stops,
-			{ seconds: definition.startSeconds, hidden: definition.startHidden },
-			{ seconds: definition.endSeconds, hidden: car !== undefined },
-		);
-		const peoplePerRoute = Math.max(1, Math.ceil(peopleCount / Math.max(1, definitions.length)));
-		const phase = ((onRoute + 0.05 + rand() * 0.8) / peoplePerRoute) * script.cycle;
-		return { walk, speed, phase, script, definition, stops, car };
+			phase: 0,
+			script: EMPTY_SCRIPT,
+			definition,
+			trips: [],
+			cycle: 0,
+			car,
+		};
 	};
 	for (const definition of definitions) drafts.push(buildPerson(definition, 0));
-	for (let round = 1; drafts.length < peopleCount; round++)
+	// More walks than people are built, so that a walk too short to read can be dropped.
+	for (let round = 1; drafts.length < peopleCount * 2; round++)
 		for (const definition of definitions) {
-			if (drafts.length >= peopleCount) break;
+			if (drafts.length >= peopleCount * 2) break;
 			drafts.push(buildPerson(definition, round));
 		}
 	// A walk too short to read is dropped, so the people keep the longest routes.
-	if (drafts.length > peopleCount) {
-		drafts.sort(
-			(a, b) =>
-				(b.car !== undefined ? 1 : 0) - (a.car !== undefined ? 1 : 0) ||
-				b.walk.length - a.walk.length,
-		);
-		drafts.length = peopleCount;
+	const longEnough = drafts.filter((draft) => draft.walk.length >= MIN_PERSON_WALK);
+	const chosenDrafts = longEnough.length >= peopleCount ? longEnough : drafts;
+	// Two people never walk one line, so the first of each line keeps it.
+	const lines: Path[] = [];
+	const uniqueDrafts = chosenDrafts.filter((draft) => {
+		if (lines.some((path) => sameWalk(path, draft.walk))) return false;
+		lines.push(draft.walk);
+		return true;
+	});
+	const picks = uniqueDrafts.length >= peopleCount ? uniqueDrafts : chosenDrafts;
+	picks.sort(
+		(a, b) =>
+			(b.car !== undefined ? 1 : 0) - (a.car !== undefined ? 1 : 0) ||
+			b.walk.length - a.walk.length,
+	);
+	// A person takes the next longest walk that no other person's line comes near.
+	const lineGrid = new Map<string, Point[]>();
+	const apart: Draft[] = [];
+	for (const draft of picks) {
+		if (lineNear(lineGrid, draft.walk)) continue;
+		addLine(lineGrid, draft.walk);
+		apart.push(draft);
+		if (apart.length >= peopleCount) break;
 	}
+	const finalDrafts = apart.length >= peopleCount ? apart : picks.slice(0, peopleCount);
+	drafts.length = 0;
+	drafts.push(...finalDrafts);
+	// Every later walk starts at a random point of the line that the person already walks, so a
+	// person never leaves the clear route that the plan cut for it, and no two people share one.
+	const walkPaths = drafts.map((draft) => draft.walk);
 	// Every parked car is checked against every walk line, and a rider's car is moved until it
 	// stands beside the walk without touching it.
-	const walkPaths = drafts.map((draft) => draft.walk);
 	for (const draft of drafts) {
 		if (!draft.car || !draft.definition.road || draft.definition.roadSide === undefined) continue;
 		const road = draft.definition.road;
@@ -2294,7 +2662,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			parkedAt = base + shift;
 			break;
 		}
-		// The walk ends beside its car, so the rider waits at the door of the place it leaves in.
+		// The walk ends beside its car, so the rider gets in at the door of the place it leaves in.
 		if (placed) {
 			const target = pointAt(road, arcsOf(road), parkedAt);
 			const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
@@ -2310,21 +2678,39 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			}
 			if (end < draft.walk.length - 0.5) {
 				const sliced = slicePath(draft.walk, 0, end);
-				// A car that leaves too short a walk is no place for a rider to wait.
+				// A car that leaves too short a walk is no place for a rider to get in.
 				if (sliced.length >= MIN_RIDER_WALK) draft.walk = sliced;
 				else placed = undefined;
 			}
 		}
 		draft.car = placed;
-		draft.script = buildScript(
-			draft.walk.length,
-			draft.speed,
-			draft.stops,
-			{ seconds: draft.definition.startSeconds, hidden: draft.definition.startHidden },
-			{ seconds: draft.definition.endSeconds, hidden: placed !== undefined },
-		);
 	}
-	const people: PersonActor[] = drafts.map((draft) => {
+	// Each person's itinerary: the walk it first takes, then walks from random places of the
+	// island, each one faded out at its end and faded in at its start.
+	const peoplePerRoute = Math.max(1, Math.ceil(peopleCount / Math.max(1, definitions.length)));
+	const people: PersonActor[] = drafts.map((draft, index) => {
+		const definition = draft.definition;
+		const ride = draft.car !== undefined;
+		const first = buildFirstTrip(
+			draft.walk,
+			draft.speed,
+			definition.startHidden ? definition.startSeconds : 0,
+			definition.endSeconds,
+			ride,
+		);
+		const trips: PersonTrip[] = [{ walk: draft.walk, script: first, start: 0 }];
+		let cycle = first.cycle;
+		for (let k = 1; k < TRIP_COUNT; k++) {
+			const walk = draft.walk;
+			const longest = walk.length * 0.65;
+			if (longest < 1) break;
+			const from = Math.max(0, rand() * longest);
+			const tail = TRIP_GAP[0] + rand() * (TRIP_GAP[1] - TRIP_GAP[0]);
+			const script = buildLaterTrip(walk, draft.speed, from, tail);
+			trips.push({ walk, script, start: cycle });
+			cycle += script.cycle;
+		}
+		const phase = ((index + 0.05 + rand() * 0.8) / peoplePerRoute) * cycle;
 		if (draft.car && !usedCars.has(draft.car)) {
 			usedCars.add(draft.car);
 			carSpots.push(draft.car);
@@ -2332,9 +2718,12 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		return {
 			walk: draft.walk,
 			speed: draft.speed,
-			phase: draft.phase,
+			phase,
 			lateral: 0,
-			script: draft.script,
+			script: first,
+			trips,
+			cycle,
+			ride,
 		};
 	});
 	separatePeople(people);
@@ -2586,20 +2975,31 @@ const STEER_SCRATCH: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 
 /** How far a vehicle's front wheel turns into the curve at a distance along its route. */
 function steerAt(actor: VehicleActor, distance: number): number {
-	poseAlong(actor.route, distance - STEER_SPAN, actor.lateral, true, STEER_POSE, STEER_SCRATCH);
+	const bound = MOTIONS.get(actor);
+	const path = bound ? (bound.motion.paths[bound.index] ?? actor.route) : actor.route;
+	const lateral = bound ? (bound.motion.laterals[bound.index] as number) : actor.lateral;
+	poseAlong(path, distance - STEER_SPAN, lateral, true, STEER_POSE, STEER_SCRATCH);
 	const before = STEER_POSE.yaw;
-	poseAlong(actor.route, distance + STEER_SPAN, actor.lateral, true, STEER_POSE, STEER_SCRATCH);
+	poseAlong(path, distance + STEER_SPAN, lateral, true, STEER_POSE, STEER_SCRATCH);
 	let turn = STEER_POSE.yaw - before;
 	if (turn > Math.PI) turn -= Math.PI * 2;
 	else if (turn < -Math.PI) turn += Math.PI * 2;
 	return Math.max(-MAX_STEER, Math.min(MAX_STEER, turn));
 }
 
-/** A walker copy, and whether it last drew. */
+/** A walker copy, and whether it last drew and last walked. */
 interface WalkerCopy {
 	readonly actor: PersonActor;
 	readonly copy: PrefabInstance;
+	/** The clip that the walker plays while it walks. */
+	readonly clip: string;
+	/** The rate at which the walker's clip plays, which keeps its steps with its speed. */
+	readonly rate: number;
 	visible: boolean;
+	/** The share of the walker that last drew, so a still walker writes no scale. */
+	fade: number;
+	/** True while the walker's clip plays, which rests while the person waits out of sight. */
+	walking: boolean;
 }
 
 /**
@@ -2701,18 +3101,16 @@ export function createTraffic(
 			}
 			(copy.find(part.name) as Mesh | undefined)?.setMaterial(material);
 		}
-		copy.animator().play(model.clip, {
-			time: actor.phase,
-			speed: actor.speed / WALK_CLIP_SPEED,
-		});
-		walkers.push({ actor, copy, visible: true });
+		const rate = actor.speed / WALK_CLIP_SPEED;
+		copy.animator().play(model.clip, { time: actor.phase, speed: rate });
+		walkers.push({ actor, copy, clip: model.clip, rate, visible: true, fade: 1, walking: true });
 	}
 
 	const carSteers = models.car.some((part) => part.wheel?.front === true);
 	const busSteers = models.bus.some((part) => part.wheel?.front === true);
 	const drive: Drive = { distance: 0, steer: 0 };
 	const vehiclePose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
-	const personState: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false };
+	const personState: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
 	const personWalk: PersonStride = { bob: 0, roll: 0, sway: 0 };
 
 	const driveVehicle = (
@@ -2723,7 +3121,7 @@ export function createTraffic(
 		vehicleAt(mover.actor, seconds, vehiclePose);
 		drive.distance = vehicleDistanceAt(mover.actor, seconds);
 		drive.steer = steers ? steerAt(mover.actor, drive.distance) : 0;
-		writeRow(mover.parts, mover.row, vehiclePose, 1, drive);
+		writeRow(mover.parts, mover.row, vehiclePose, vehicleFadeAt(mover.actor, seconds), drive);
 	};
 
 	const update = (seconds: number): void => {
@@ -2731,9 +3129,8 @@ export function createTraffic(
 		for (const mover of busMovers) driveVehicle(mover, seconds, busSteers);
 		for (const mover of proxies) {
 			const state = personAt(mover.actor, seconds, personState);
-			const hidden = state.hidden;
-			const stride = hidden ? undefined : personStrideAt(mover.actor, seconds, personWalk);
-			writeRow(mover.parts, mover.row, state, hidden ? 0 : 1, undefined, stride);
+			const stride = state.hidden ? undefined : personStrideAt(mover.actor, seconds, personWalk);
+			writeRow(mover.parts, mover.row, state, state.fade, undefined, stride);
 		}
 		for (const walker of walkers) {
 			const state = personAt(walker.actor, seconds, personState);
@@ -2742,9 +3139,21 @@ export function createTraffic(
 				walker.copy.setVisible(show);
 				walker.visible = show;
 			}
+			// The clip plays only over a walking leg, and it starts again at each new walk, so a
+			// person out of sight never walks on the spot.
+			const walking = personStrideAt(walker.actor, seconds, personWalk) !== undefined;
+			if (walking !== walker.walking) {
+				if (walking) walker.copy.animator().play(walker.clip, { time: 0, speed: walker.rate });
+				else walker.copy.animator().stop();
+				walker.walking = walking;
+			}
 			if (show) {
 				walker.copy.setPosition(state.x, state.y, state.z);
 				walker.copy.setRotationEuler(0, state.yaw, 0);
+				if (state.fade !== walker.fade) {
+					walker.copy.setScale(state.fade, state.fade, state.fade);
+					walker.fade = state.fade;
+				}
 			}
 		}
 	};

@@ -34,6 +34,7 @@ import {
 	type Path,
 	PERSON_RADIUS,
 	type PersonActor,
+	type PersonState,
 	type PersonStride,
 	type Pose,
 	pathAt,
@@ -43,6 +44,7 @@ import {
 	staticGap,
 	TRAFFIC_SEED,
 	vehicleAt,
+	vehicleFadeAt,
 } from './traffic';
 
 /** The point that a sample writes into, so a check allocates nothing per step. */
@@ -249,6 +251,33 @@ describe('the vehicles', () => {
 			expect(nearest).toBeGreaterThanOrEqual(2);
 		}
 	});
+
+	it('fades each car out at the end of its run and starts it again elsewhere', () => {
+		const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+		const cars = PLAN.vehicles.filter((vehicle) => vehicle.kind === 'car');
+		for (const car of cars) {
+			expect(car.runs?.length ?? 0).toBeGreaterThan(0);
+			let vanished: { x: number; z: number } | undefined;
+			let found = false;
+			for (let seconds = 0; seconds < (car.runCycle ?? 0); seconds += 0.1) {
+				const fade = vehicleFadeAt(car, seconds);
+				vehicleAt(car, seconds, pose);
+				if (fade <= 0) {
+					if (!vanished) vanished = { x: pose.x, z: pose.z };
+					continue;
+				}
+				if (vanished) {
+					// A run starts on a loop of its own, at a place clear of the other vehicles.
+					if (Math.hypot(pose.x - vanished.x, pose.z - vanished.z) > 10) {
+						found = true;
+						break;
+					}
+					vanished = undefined;
+				}
+			}
+			expect(found).toBe(true);
+		}
+	});
 });
 
 describe('the people', () => {
@@ -284,7 +313,7 @@ describe('the people', () => {
 		let hidden = false;
 		let seen = false;
 		for (let seconds = 0; seconds < resident.script.cycle; seconds += 0.5) {
-			if (personAt(resident, seconds, { x: 0, y: 0, z: 0, yaw: 0, hidden: false }).hidden)
+			if (personAt(resident, seconds, { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 }).hidden)
 				hidden = true;
 			else seen = true;
 			if (hidden && seen) break;
@@ -301,12 +330,8 @@ describe('the people', () => {
 		// The clear stretch may begin a step or two out from the door's threshold.
 		expect(nearestDoor).toBeLessThan(5);
 
-		// A rider waits out of sight at the far end, where a car stands.
-		const rider = PLAN.people.find((person) =>
-			person.script.legs.some(
-				(leg) => leg.hidden && Math.abs(leg.from - person.walk.length) < 1e-6,
-			),
-		);
+		// A rider gets into its car at the far end, out of sight.
+		const rider = PLAN.people.find((person) => person.ride);
 		expect(rider).toBeDefined();
 		if (!rider) return;
 		const end = pointOf(rider.walk, rider.walk.length);
@@ -317,7 +342,7 @@ describe('the people', () => {
 	});
 
 	it('keeps every pair of visible people apart', () => {
-		const poses = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false }));
+		const poses = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 }));
 		let least = Number.POSITIVE_INFINITY;
 		for (let seconds = 0; seconds <= 600; seconds += 0.5) {
 			PLAN.people.forEach((person, k) => {
@@ -335,7 +360,7 @@ describe('the people', () => {
 	});
 
 	it('keeps every visible person clear of every standing object', () => {
-		const poses = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false }));
+		const poses = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 }));
 		let least = Number.POSITIVE_INFINITY;
 		for (let seconds = 0; seconds <= 600; seconds += 0.5) {
 			PLAN.people.forEach((person, k) => {
@@ -431,7 +456,7 @@ describe('the people', () => {
 
 	it('keeps every visible person outside every vehicle body, parked cars included', () => {
 		const vehicles = PLAN.vehicles.map(() => ({ x: 0, y: 0, z: 0, yaw: 0 }));
-		const people = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false }));
+		const people = PLAN.people.map(() => ({ x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 }));
 		let least = Number.POSITIVE_INFINITY;
 		for (let seconds = 0; seconds <= 600; seconds += 0.25) {
 			PLAN.vehicles.forEach((vehicle, k) => {
@@ -468,7 +493,7 @@ describe('the people', () => {
 	});
 
 	it('keeps every visible person outside every parked car', () => {
-		const pose = { x: 0, y: 0, z: 0, yaw: 0, hidden: false };
+		const pose = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
 		let least = Number.POSITIVE_INFINITY;
 		for (let seconds = 0; seconds <= 600; seconds += 0.5) {
 			for (const person of PLAN.people) {
@@ -485,7 +510,7 @@ describe('the people', () => {
 			const half = (HOUSE_KINDS[lot.kind] as { half: readonly [number, number] }).half;
 			return { x: lot.x, z: lot.z, yaw: lot.yaw, hw: half[0], hd: half[1] };
 		});
-		const pose = { x: 0, y: 0, z: 0, yaw: 0, hidden: false };
+		const pose = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
 		let inside = 0;
 		for (let seconds = 0; seconds <= 600; seconds += 0.5) {
 			for (const person of PLAN.people) {
@@ -509,6 +534,75 @@ describe('the people', () => {
 		}
 		expect(inside).toBe(0);
 	});
+
+	it('keeps every visible person walking, and no walking leg still', () => {
+		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
+		const stride: PersonStride = { bob: 0, roll: 0, sway: 0 };
+		for (const person of PLAN.people) {
+			let visible = 0;
+			for (let seconds = 0; seconds < person.cycle; seconds += 0.1) {
+				personAt(person, seconds, state);
+				if (state.hidden) continue;
+				visible++;
+				// A person in view is on a walking leg, so its stride clock runs.
+				expect(personStrideAt(person, seconds, stride)).toBeDefined();
+			}
+			expect(visible).toBeGreaterThan(0);
+			// No leg of any walk holds the person in view.
+			for (const trip of person.trips)
+				for (const leg of trip.script.legs) if (leg.from === leg.to) expect(leg.hidden).toBe(true);
+		}
+	});
+
+	it('fades a person out at the end of a walk and starts it again elsewhere', () => {
+		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
+		let restarted = 0;
+		for (const person of PLAN.people) {
+			let vanished: { x: number; z: number } | undefined;
+			let found = false;
+			for (let seconds = 0; seconds < person.cycle; seconds += 0.1) {
+				personAt(person, seconds, state);
+				if (state.hidden) {
+					if (!vanished) vanished = { x: state.x, z: state.z };
+					continue;
+				}
+				if (vanished) {
+					const moved = Math.hypot(state.x - vanished.x, state.z - vanished.z);
+					// The person fades back in at a place of its own, not where it left.
+					if (moved > 1) {
+						found = true;
+						break;
+					}
+					vanished = undefined;
+				}
+			}
+			expect(found).toBe(true);
+			if (found) restarted++;
+		}
+		expect(restarted).toBe(PLAN.people.length);
+	});
+
+	it('runs the far proxies with a scale that fades, rather than a jump', () => {
+		// The fade is read from the person's own clock, so it rises from nothing over its first
+		// moments in view and falls to nothing at the end.
+		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: -1 };
+		let rising = false;
+		let falling = false;
+		for (const person of PLAN.people) {
+			let last = 0;
+			for (let seconds = 0; seconds < person.cycle; seconds += 0.05) {
+				personAt(person, seconds, state);
+				if (state.fade > 0 && state.fade < 1) {
+					if (state.fade > last) rising = true;
+					else falling = true;
+				}
+				last = state.fade;
+			}
+			if (rising && falling) break;
+		}
+		expect(rising).toBe(true);
+		expect(falling).toBe(true);
+	});
 });
 
 describe('the walk of a far proxy', () => {
@@ -517,17 +611,26 @@ describe('the walk of a far proxy', () => {
 		{ x: 0, y: 0, z: 0 },
 		{ x: 0, y: 0, z: 10 },
 	]);
-	const walking = (speed: number, phase = 0, seconds = 20): PersonActor => ({
+	const tripOf = (speed: number, script: PersonActor['script'], phase: number): PersonActor => ({
 		walk,
 		speed,
 		phase,
 		lateral: 0,
-		script: {
-			legs: [{ seconds, from: 0, to: 10, hidden: false }],
-			cycle: seconds,
-			ends: Float64Array.from([seconds]),
-		},
+		script,
+		trips: [{ walk, script, start: 0 }],
+		cycle: script.cycle,
+		ride: false,
 	});
+	const walking = (speed: number, phase = 0, seconds = 20): PersonActor =>
+		tripOf(
+			speed,
+			{
+				legs: [{ seconds, from: 0, to: 10, hidden: false }],
+				cycle: seconds,
+				ends: Float64Array.from([seconds]),
+			},
+			phase,
+		);
 	const stride: PersonStride = { bob: 0, roll: 0, sway: 0 };
 
 	it('lifts a proxy without ever dipping it, and rolls and sways within its bounds', () => {
@@ -562,10 +665,9 @@ describe('the walk of a far proxy', () => {
 	});
 
 	it('stands still while the person waits and takes its own phase', () => {
-		const actor = walking(1.4);
-		const waiting: PersonActor = {
-			...actor,
-			script: {
+		const waiting = tripOf(
+			1.4,
+			{
 				legs: [
 					{ seconds: 5, from: 0, to: 10, hidden: false },
 					{ seconds: 5, from: 10, to: 10, hidden: false },
@@ -573,7 +675,8 @@ describe('the walk of a far proxy', () => {
 				cycle: 10,
 				ends: Float64Array.from([5, 10]),
 			},
-		};
+			0,
+		);
 		expect(personStrideAt(waiting, 7, stride)).toBeUndefined();
 		// Two people with different phases do not rise together.
 		const a = walking(1.4, 0);
