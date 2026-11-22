@@ -3,7 +3,7 @@
 Status: decided by the owner, and built. Not built yet: the scene readback that would let the
 overlap check cover Creek and the feature demos. Task: M2-EX8.
 
-Summary: Every showcase scene carries an Auto and a Manual camera, by the owner's rule. Auto is the default and plays a spline route made for that scene alone: it opens on a brief wide view, flies through the scene's interesting parts, never passes through an object and never stops. Manual turns, zooms and pans around the point the route was looking at, inside a ring of mountains that hides the scene's edge; the shared player is `examples/lib/cinematic.ts`, and each scene gives its own shots.
+Summary: Every showcase scene carries an Auto and a Manual camera, by the owner's rule. Auto is the default and plays a spline route made for that scene alone: it opens on a brief wide view, flies through the scene's interesting parts, never passes through an object and never stops. Manual turns and pans around the point the route was looking at, flies forward and back with the wheel or a pinch, takes a double-click to a picked object, and stays inside a ring of mountains that hides the scene's edge; the shared player is `examples/lib/cinematic.ts`, and each scene gives its own shots.
 
 ## Question
 
@@ -19,7 +19,7 @@ The owner set the rule after reviewing the small night town in Chrome.
 
 1. Every showcase scene has the Auto and Manual toggle. The `c` key and a row of the on-screen help switch between them, and the help's camera row is a button, so a touch screen with no keyboard can switch too. Auto is the default, so a first visitor sees the tour with no input.
 2. Auto plays a route tailored to that scene. It opens on a brief hold of a wide establishing view that shows the whole scene, then moves through the scene's interesting parts as a smooth flythrough. It never passes through a building or other geometry, unless a shot intends to reveal what is inside. It never stands still: consecutive shots differ and the loop closes without a pause.
-3. Manual hands the camera to the user at the pose the route left. It turns, zooms and pans around the point that the route was looking at, through the engine's orbit controls (`createOrbitControls` in `@null3d/controls`, the Orbit preset). It stays inside the scene's ring of mountains. The scene's help and the controls HUD name the controls.
+3. Manual hands the camera to the user at the pose the route left. It turns and pans around the point that the route was looking at, and the wheel or a pinch flies it forward and back along the way it faces, through the engine's orbit controls (`createOrbitControls` in `@null3d/controls`, the Orbit preset). It stays inside the scene's ring of mountains. The scene's help and the controls HUD name the controls.
 4. The shared player, `examples/lib/cinematic.ts`, is generic: it plays whatever route a scene gives it, keeps the pose when the user takes over, and glides back onto the nearest point of the route when the user returns to Auto. Each scene defines its own route.
 
 ## Data
@@ -37,20 +37,22 @@ How the data was produced: the routes in `examples/showcase/creek/sketch.ts` and
 
 ## The Manual camera
 
-Manual turns, zooms and pans around the point that the route was looking at.
+Manual turns and pans around the point that the route was looking at, and the wheel or a pinch flies it forward and back along the way it faces.
 
-- Desktop: a left drag turns the camera, the wheel zooms, a right drag pans, and `W`, `A`, `S` and `D` pan the camera: `W` and `S` see forward and back, `A` and `D` move across, and `R` and `F` rise and fall.
-- Touch: one finger turns, a pinch zooms, and a two-finger drag pans.
+- Desktop: a left drag turns the camera, the wheel flies it forward and back, a right drag pans, and `W`, `A`, `S` and `D` pan the camera: `W` and `S` see forward and back, `A` and `D` move across, and `R` and `F` rise and fall.
+- Touch: one finger turns, a pinch flies it forward and back, and a two-finger drag pans.
 
-`examples/lib/cinematic.ts` keeps the camera where the route left it and sets the controls' target to the route's current look-at point, so a turn, a zoom and a pan act around what the shot was showing. The orbit controls answer the fingers themselves. The sketch's frame step calls `pan` for the keys, so the frame path allocates nothing. The player reads the manual speed in pixels a second, and the scenes take its default of 420 pixels a second. A speed in meters, such as 8, moves the camera only a few pixels a frame.
+`examples/lib/cinematic.ts` keeps the camera where the route left it and sets the controls' target to the route's current look-at point, so a turn and a pan act around what the shot was showing. The orbit controls answer the fingers themselves. The sketch's frame step calls `pan` for the keys, so the frame path allocates nothing. The player reads the manual speed in pixels a second, and the scenes take its default of 420 pixels a second. A speed in meters, such as 8, moves the camera only a few pixels a frame.
 
-The Manual camera has no clearance guard. A turn, a zoom and a pan may pass through a building, which is what the owner wants when they fly the scene themselves.
+A double-click on a scene object hands the camera to Manual, or takes it over when Auto is running, and eases it to centre that object. A double tap does the same on a touch screen. The pick comes from the engine's `scene.pick`, which gives the object and a radius for its size; the camera stops about three radii away, between 3 m and 30 m, and a pick with no object or with something larger than 60 m in radius, such as the sky dome, the clouds or a far hillside, changes nothing. The flight takes 0.7 s and ends with the object at the centre of the view, where the orbit controls then turn around it, and the bounds still apply.
+
+The Manual camera has no clearance guard. A turn, a pan and a fly may pass through a building, which is what the owner wants when they fly the scene themselves.
 
 ## A takeover halts the route at once
 
 Taking the camera stops the route's motion at once: the manual camera takes the route's pose that moment and holds it, with no drift, and the controls take their target from the shot's look-at point. The camera is still the moment the mode switches. The pose is the route's own, never a snap to a shot. A takeover during the glide back onto the route keeps the camera exactly where it is, whichever phase the glide has reached, never the route's own pose of that moment.
 
-With damping on, the orbit controls keep the turn, tilt, pan and zoom that remain and decay them in `update`. Auto does not call `update`, so the remainder of the last fling would stay stored and resume at the next takeover. `OrbitControls.stop()` drops the remainder, and `cinematic.ts` calls it at every switch, so the camera is still from the first frame of the mode change.
+With damping on, the orbit controls keep the turn, tilt and pan that remain and decay them in `update`. Auto does not call `update`, so the remainder of the last fling would stay stored and resume at the next takeover. `OrbitControls.stop()` drops the remainder, and `cinematic.ts` calls it at every switch, so the camera is still from the first frame of the mode change.
 
 `examples/lib/takeover.test.ts` checks that the camera holds within a millimeter of the route's pose from the first frame after the switch and does not move over the second that follows. It also checks that a fling does not resume, and that a mid-glide takeover never jumps.
 
@@ -77,14 +79,14 @@ A showcase scene must not stand still for long when its page loads, by the owner
 
 ## The Manual camera stays inside the scene's mountains
 
-Every showcase scene sits inside a ring of mountains, by the owner's rule. The Island is exempt, by the owner's ruling, because it is an isolated island in open sea. The Manual camera can never zoom out past them, and can never turn to below the ground, so the plain background below the horizon never shows past the land's edge. Creek has the same ring and the same bounds as the night town. A dolly out works up to the scene's bounds.
+Every showcase scene sits inside a ring of mountains, by the owner's rule. The Island is exempt, by the owner's ruling, because it is an isolated island in open sea. The Manual camera can never fly out past them, and can never turn to below the ground, so the plain background below the horizon never shows past the land's edge. Creek has the same ring and the same bounds as the night town. A fly out works up to the scene's bounds: the point it turns around moves along, so it stops where the bounds stop it.
 
 - The geometry: a camera that stays inside the ring, below its lowest crest and above the ground never sees the background. Every view ray that falls hits the land or a mountain. Every one that rises hits a mountain or the sky. `examples/lib/mountains.ts` builds the ring from each scene's settings in its `land.ts`. Every bearing's crest stands at least as high as the scene's lowest crest.
 - The bounds: a scene passes `bounds` to `createCinematic`. They hold the farthest distance from the point the camera turns around, which is the orbit controls' own `maxDistance`. They also hold a disc and a band of heights for that point, and the ground's height. The camera's highest reach is that point's highest plus the distance. Each lowest crest stands at least 10 m above it: 95 m against 74 m in the night town, and 65 m against 51 m in Creek. Each distance is above the Auto route's farthest pose: 62 m in the night town and 34 m in Creek. So a takeover never moves the camera. The orbit's lowest angle stays a little past level, 1.85 rad from straight up, so the night town's look up at its tower is in reach. The ground stops anything lower.
 - No ratchet: the ground check lifts the camera along its orbit: same distance, same bearing, a higher angle. Pushing against the ground therefore never draws the camera in. A pan that would carry the point past the disc's edge moves the camera back with it, so the view does not turn.
 - Tests:
   - `examples/lib/mountains.test.ts` checks the crests against the camera's reach and height, and that the ring passes under the land's edge, so the two never overlap.
-  - `examples/lib/bounds.test.ts` drives the bounded camera through a dolly, a push against the ground and a pan. It checks that the distance holds through 400 frames of pushing.
+  - `examples/lib/bounds.test.ts` drives the bounded camera through a fly, a push against the ground and a pan. It checks that the fly keeps the camera's distance from its target, and that the distance holds through 400 frames of pushing.
   - `examples/lib/showcase-routes.test.ts` checks every one of 2,000 poses of each route against its bounds.
 
 Creek adds three things to the ring:
@@ -95,7 +97,7 @@ Creek adds three things to the ring:
 
 ## The shadow range follows the scene's core
 
-Each scene gives `createShowcaseEffects` the sphere of its core. The sun's shadow range follows the camera on a ladder of 1.25 times per step, so the core never leaves it ([Examples](../examples.md#showcase-scenes) gives the rule). A fixed range does not suit a camera that zooms: with shadows that reach 70 m and fade over their last 7 m, a quick zoom carries the whole night town across that fade in about a fifth of a second, and its shadows appear all at once.
+Each scene gives `createShowcaseEffects` the sphere of its core. The sun's shadow range follows the camera on a ladder of 1.25 times per step, so the core never leaves it ([Examples](../examples.md#showcase-scenes) gives the rule). A fixed range does not suit a camera that flies: with shadows that reach 70 m and fade over their last 7 m, a quick fly carries the whole night town across that fade in about a fifth of a second, and its shadows appear all at once.
 
 ## A demo's geometry must not overlap
 

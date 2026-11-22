@@ -17,7 +17,8 @@
 // in a pass each, none joined, for pages that measure what joining saves. ?replay-delay= makes the
 // thread that draws wait before it replays each frame's list, for a test of memory that the sketch
 // thread frees while the list may still point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
-// ?target-fps= sets the frame rate that the engine defends, ?bench publishes the running engine
+// ?tier=lowest starts in the lowest quality tier, ?target-fps= sets the frame rate that the
+// engine defends, ?bench publishes the running engine
 // for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, ?stats shows the
 // stats overlay, and ?view picks a debug view, one of the engine's own or one that an add-on's
 // feature registers.
@@ -75,6 +76,16 @@ export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
 export type SceneFormat = 'rg11b10' | 'rgba16f';
 
 const SCENE_FORMATS: readonly SceneFormat[] = ['rg11b10', 'rgba16f'];
+
+/**
+ * The quality tier that ?tier= names: `lowest` starts the page in the tier below the four presets,
+ * with its start values; `off` keeps the governor out of the tier, so a test measures the presets
+ * alone. Without the switch the governor enters the tier only when frames still miss at the
+ * preset's floor (D-382).
+ */
+export type LowestTier = 'lowest' | 'off';
+
+const LOWEST_TIERS: readonly LowestTier[] = ['lowest', 'off'];
 
 /** The bits per texel of the shadow cascades' depth. */
 export type ShadowDepthBits = 16 | 32;
@@ -291,6 +302,13 @@ export interface Switches {
 	 */
 	preset: QualityPreset | undefined;
 	/**
+	 * `'lowest'` when ?tier=lowest starts the page in the lowest quality tier: the render scale at
+	 * a third, the sun's shadows and bloom off, and WebGL2's depth prepass off. The tier exists for
+	 * tests, devices and a known weak class, while the governor is the default path to it. Undefined
+	 * for any other name, or without the switch.
+	 */
+	lowestTier: LowestTier | undefined;
+	/**
 	 * The text of ?hold=, an empty text for a bare ?hold, or undefined without the switch. The
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
@@ -456,6 +474,7 @@ export function parseSwitches(search: string): Switches {
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
+		lowestTier: oneOf(params.get('tier'), LOWEST_TIERS),
 		hold: params.get('hold') ?? undefined,
 		replay: params.get('replay') ?? undefined,
 		record: params.has('record'),

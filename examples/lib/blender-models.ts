@@ -8,6 +8,7 @@ import {
 	type MeshGeometry,
 	type Prefab,
 	type PrefabNode,
+	type QuatLike,
 	quat,
 	type SketchContext,
 	vec3,
@@ -36,21 +37,70 @@ export interface Placement {
 /**
  * Where a part lands when its model stands at a point, turned about y by `yaw` and scaled by
  * `size`. The part's own place in its file comes first: the asset tool's quantized meshes keep
- * their offset and scale there.
+ * their offset and scale there. A `width` narrower than one narrows the part about the model's
+ * origin, across its own x, so it keeps its foot and height.
  */
 export function placed(
 	node: PrefabNode,
 	at: readonly [number, number, number],
 	yaw: number,
 	size: number,
+	width = 1,
 ): Placement {
-	const turn = quat.fromEuler(quat.create(), 0, yaw, 0);
-	const offset = vec3.transformQuat(vec3.create(), node.position, turn);
+	return placedTurned(node, at, quat.fromEuler(quat.create(), 0, yaw, 0), size, width);
+}
+
+/**
+ * Where a part lands when its model stands at a point, turned by the quaternion `turn` and scaled by
+ * `size`, as `placed` does for a turn about y alone.
+ */
+export function placedTurned(
+	node: PrefabNode,
+	at: readonly [number, number, number],
+	turn: QuatLike,
+	size: number,
+	width = 1,
+): Placement {
+	const offset = vec3.transformQuat(
+		vec3.create(),
+		[node.position[0] * width, node.position[1], node.position[2]],
+		turn,
+	);
 	return {
 		position: [at[0] + offset[0] * size, at[1] + offset[1] * size, at[2] + offset[2] * size],
 		rotation: [...quat.multiply(quat.create(), turn, node.rotation)] as Placement['rotation'],
-		scale: [node.scale[0] * size, node.scale[1] * size, node.scale[2] * size],
+		scale: [node.scale[0] * size * width, node.scale[1] * size, node.scale[2] * size],
 	};
+}
+
+/**
+ * A copy of a part's material that draws the file's maps under a tint and a roughness of its own,
+ * such as one that mutes a model's moss: its colour and normal maps, the packed texture that holds
+ * its occlusion with its metalness and roughness, and the normal scale that the loader gives a mesh
+ * without tangents. Only the colour and the roughness are overridden.
+ */
+export function tintedPart(
+	materials: SketchContext['materials'],
+	part: Part,
+	tint: string,
+	roughness: number,
+	normalScale: readonly [number, number] = [1, -1],
+): Material {
+	return materials.standard({
+		...(part.maps.map && { map: part.maps.map }),
+		...(part.maps.normalMap && { normalMap: part.maps.normalMap }),
+		// The scripts pack the occlusion with the metalness and roughness, in one texture.
+		...(part.maps.metalnessRoughnessMap && {
+			metalnessRoughnessMap: part.maps.metalnessRoughnessMap,
+			// The map's blue holds the metalness, and the material multiplies it by this factor, whose
+			// default of 0 would leave the map's blue out.
+			metalness: 1,
+		}),
+		...(part.maps.aoMap && { aoMap: part.maps.aoMap }),
+		normalScale,
+		color: tint,
+		roughness,
+	});
 }
 
 /** Where one copy of a model stands: its foot, its turn about y and its size. */
@@ -60,6 +110,8 @@ export interface Stand {
 	readonly z: number;
 	readonly yaw: number;
 	readonly size: number;
+	/** Its share of its model's width across its broad side, where it stands narrower than its size. */
+	readonly width?: number;
 }
 
 /**
@@ -83,6 +135,7 @@ export function standPart(
 			[stand.x, stand.y, stand.z],
 			stand.yaw,
 			stand.size,
+			stand.width,
 		);
 		batch.positions.set(position, row * 3);
 		batch.rotations.set(rotation, row * 4);

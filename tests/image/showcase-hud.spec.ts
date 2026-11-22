@@ -223,15 +223,14 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// look from code, so the toast text does not depend on the preset. `bench` publishes the demo's
 	// engine on the page, which is how these tests read the canvas's frames.
 	await page.goto(`/examples/index.html?demo=island&preset=low&bench${size ? '&grown' : ''}`);
-	const hud = page.locator('.hud');
+	const hud = page.locator('#hud-panel');
 	// The sketch posts the HUD as soon as its controls exist, which is before it builds the island's
 	// town, its trees and its grass, and the page shows the controls when that message arrives. The
 	// scene's own builds and its environment maps, which a software GPU spends minutes on, no longer
 	// hold the controls back. The wait keeps the first frame's budget, because the sketch itself
 	// starts first: its core, its modules and the worker the sketch's setup runs in. A page that
 	// never posts the controls still fails here, by the test's own name.
-	await expect(hud).toBeVisible({ timeout: FIRST_FRAME_MS });
-	await expect(page.getByRole('tab', { name: 'Post' })).toBeVisible();
+	await expect(hud).toHaveCount(1, { timeout: FIRST_FRAME_MS });
 	// The controls come up while the sketch finishes its scene, which is before the engine's first
 	// frame. On a software GPU that frame arrives much later, and a picture read before it is an
 	// empty canvas: two empty frames differ by nothing, so a switch's settle would take one for a
@@ -240,9 +239,11 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
 	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
 	progress('the first frame');
-	// Open the panel, as a visitor does, with the chevron.
+	// Open the panel, as a visitor does, with its chevron at the bottom of the scene. The scene's
+	// tabs reach the page's roles only while the panel is open.
 	await page.locator('.hud__chevron').click();
-	await expect(hud).toHaveClass(/\bopen\b/);
+	await expect(page.getByRole('tab', { name: 'Post' })).toHaveCount(1);
+	await expect(hud).toBeVisible();
 	return errors;
 }
 

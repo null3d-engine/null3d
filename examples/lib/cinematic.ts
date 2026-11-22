@@ -28,6 +28,7 @@ import {
 	type Vec3Like,
 	vec3,
 } from '@null3d/engine';
+import { CAMERA_KEYS } from './cinematic-keys';
 import { createClearance } from './clearance';
 import { CAMERA_OPTIONS, type HudGroup, radioGroup } from './controls';
 
@@ -64,15 +65,7 @@ export interface SceneAction extends SceneKey {
 }
 
 /** The keys that the camera reads. W, S, A and D pan the Manual camera, and R and F raise it. */
-const KEY = {
-	mode: 'KeyC',
-	forward: 'KeyW',
-	back: 'KeyS',
-	left: 'KeyA',
-	right: 'KeyD',
-	rise: 'KeyR',
-	fall: 'KeyF',
-} as const;
+const KEY = CAMERA_KEYS;
 
 /** The keys of the Manual camera, which a scene that the user drives replaces with its own. */
 const MANUAL_KEYS: readonly SceneKey[] = [
@@ -338,7 +331,7 @@ export const GROUND_CLEARANCE = 1.5;
  * orbit's angle from straight up, in radians: a little past level, so a shot that looks up at a
  * tower is still in reach, while the ground stops anything lower.
  */
-export const BOUNDED_POLAR_ANGLE = 1.85;
+export const BOUNDED_POLAR_ANGLE = 2.65;
 
 /**
  * Keeps a Manual camera at `position`, turning around `target`, inside `bounds`. The point it turns
@@ -538,6 +531,25 @@ function parameterAt(table: Float32Array, traveled: number): number {
 
 /** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
 const GLIDE = 1.5;
+/** How long a double-click's focus takes to ease the camera there, in seconds. */
+const FOCUS_SECONDS = 0.7;
+/** How far a focus stands back from the object, as times its bounding radius, and the limits. */
+const FOCUS_REACH = 3;
+const FOCUS_MIN = 3;
+const FOCUS_MAX = 30;
+/** The largest object a focus takes: the sky, the dome and the far cloud are no subject. */
+const FOCUS_RADIUS_MAX = 60;
+/** The most time between the presses of a double press, in seconds, and the most they may move. */
+const DOUBLE_CLICK_SECONDS = 0.32;
+const DOUBLE_CLICK_PIXELS = 8;
+/** How far the wheel moves the camera, in meters a pixel of scroll, and the most in one frame. */
+const WHEEL_MOVE = 0.02;
+const WHEEL_STEP_MAX = 4;
+/** A pinch, from a trackpad or two fingers on a screen, flies this many times the wheel's reach. */
+const PINCH_BOOST = 10;
+/** How far two fingers' spread change moves the camera, in meters a pixel, and the least that counts. */
+const PINCH_MOVE = WHEEL_MOVE * PINCH_BOOST;
+const PINCH_DEADZONE = 1;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
 const SAMPLES = 240;
 /** How much the look-at target counts against the camera's position, in the search. */
@@ -594,6 +606,9 @@ export function createCinematic(
 		// its ground; without them the limits are wide.
 		enableDamping: true,
 		screenSpacePanning: false,
+		// The wheel and a pinch are not a dolly toward the point the camera turns around: the frame
+		// moves the camera along the way it faces instead, which reads as flying, not as zooming.
+		enableZoom: false,
 		minDistance: 0.5,
 		maxDistance: bounds ? bounds.distance : Number.POSITIVE_INFINITY,
 		minPolarAngle: 0.05,
@@ -702,6 +717,71 @@ export function createCinematic(
 		options.onControls?.(groups);
 	};
 
+	// A double press on an object focuses the camera on it: the camera eases there over a moment,
+	// keeping the way it already looks at the object, and what it hit stands at the middle.
+	let focus: {
+		readonly fromPosition: readonly [number, number, number];
+		readonly fromTarget: readonly [number, number, number];
+		readonly position: readonly [number, number, number];
+		readonly target: readonly [number, number, number];
+		t: number;
+	} | null = null;
+	let lastClick = { at: Number.NEGATIVE_INFINITY, x: 0, y: 0 };
+	/** The distance between two fingers last frame, so a pinch is the change of it. */
+	let lastSpread = 0;
+
+	/** What a pick's object gives the focus: where it stands and how far it reaches. */
+	interface Focusable {
+		getWorldPosition?(out: number[]): void;
+		mesh?: { radius?: number };
+		meshes?: readonly { radius?: number }[];
+		positions?: Float32Array;
+	}
+	/** Starts a focus on what the canvas shows under a point, or nothing on a miss. */
+	const focusOn = (x: number, y: number): void => {
+		void ctx.scene.pick(x, y).then((hit) => {
+			if (!hit) return;
+			const picked = hit.object as unknown as Focusable;
+			const centre: [number, number, number] = [0, 0, 0];
+			let radius = 2;
+			if (typeof picked.getWorldPosition === 'function') {
+				picked.getWorldPosition(centre);
+				radius = picked.mesh?.radius ?? radius;
+			} else if (picked.positions !== undefined) {
+				const row = Math.max(0, hit.instance) * 3;
+				for (let c = 0; c < 3; c++) centre[c] = picked.positions[row + c] ?? 0;
+				radius = picked.meshes?.[0]?.radius ?? radius;
+			} else return;
+			// The sky, the dome and the far cloud reach too far to be a subject, so a miss on them
+			// changes nothing.
+			if (!(radius > 0) || radius > FOCUS_RADIUS_MAX) return;
+			camera.getPosition(from);
+			const away = Math.hypot(
+				(from[0] as number) - centre[0],
+				(from[1] as number) - centre[1],
+				(from[2] as number) - centre[2],
+			);
+			if (away < 1e-3) return;
+			// Focusing takes the camera from the route, as any takeover does.
+			if (mode === 'auto') toggleMode();
+			const distance = Math.min(FOCUS_MAX, Math.max(FOCUS_MIN, radius * FOCUS_REACH));
+			const share = distance / away;
+			focus = {
+				fromPosition: [from[0] as number, from[1] as number, from[2] as number],
+				fromTarget: [options.target[0], options.target[1], options.target[2]],
+				position: [
+					centre[0] + ((from[0] as number) - centre[0]) * share,
+					centre[1] + ((from[1] as number) - centre[1]) * share,
+					centre[2] + ((from[2] as number) - centre[2]) * share,
+				],
+				target: centre,
+				t: 0,
+			};
+			controls.stop();
+			controls.enabled = false;
+		});
+	};
+
 	/** Switches the camera between the route and the user, as the `c` key and the button do. */
 	const toggleMode = (): void => {
 		if (mode === 'auto') {
@@ -783,6 +863,44 @@ export function createCinematic(
 			}
 			if (input.wasPressed(KEY.mode)) toggleMode();
 			for (const key of keys) if (input.wasPressed(key.code)) key.press();
+			// A double press on the canvas focuses the camera on what it hit.
+			if (input.wasPressed('Mouse0')) {
+				const { x, y } = input.pointer;
+				const quick =
+					time.now - lastClick.at < DOUBLE_CLICK_SECONDS &&
+					Math.hypot(x - lastClick.x, y - lastClick.y) < DOUBLE_CLICK_PIXELS;
+				if (quick) focusOn(x, y);
+				lastClick = { at: time.now, x, y };
+			}
+			if (focus) {
+				// The focus eases the camera to the object and hands it back to the user afterwards.
+				focus.t = Math.min(1, focus.t + dt / FOCUS_SECONDS);
+				const b = smooth(focus.t);
+				const fromP = focus.fromPosition;
+				const toP = focus.position;
+				const fromT = focus.fromTarget;
+				const toT = focus.target;
+				camera.setPosition(
+					(fromP[0] as number) + ((toP[0] as number) - (fromP[0] as number)) * b,
+					(fromP[1] as number) + ((toP[1] as number) - (fromP[1] as number)) * b,
+					(fromP[2] as number) + ((toP[2] as number) - (fromP[2] as number)) * b,
+				);
+				const tx = (fromT[0] as number) + ((toT[0] as number) - (fromT[0] as number)) * b;
+				const ty = (fromT[1] as number) + ((toT[1] as number) - (fromT[1] as number)) * b;
+				const tz = (fromT[2] as number) + ((toT[2] as number) - (fromT[2] as number)) * b;
+				camera.lookAt(tx, ty, tz);
+				options.target[0] = tx;
+				options.target[1] = ty;
+				options.target[2] = tz;
+				if (focus.t >= 1) {
+					controls.target[0] = toT[0] as number;
+					controls.target[1] = toT[1] as number;
+					controls.target[2] = toT[2] as number;
+					focus = null;
+					if (!driver) controls.enabled = true;
+				}
+				return;
+			}
 			if (mode === 'manual' && driver) {
 				driver.update(dt, driverKey);
 				return;
@@ -807,6 +925,46 @@ export function createCinematic(
 					camera.setPosition(from[0] as number, (from[1] as number) + rise, from[2] as number);
 				}
 				controls.update(dt);
+				// The wheel and a pinch fly the camera forward and back along the way it faces, and
+				// the point it turns around comes along, so the view never swells as a zoom does.
+				// A trackpad folds its pinch into the wheel, and two fingers spreading on a screen
+				// is a pinch too, so both fly the camera farther than the same scroll alone.
+				let spread = 0;
+				if (input.touches.length === 2) {
+					const [first, second] = input.touches;
+					spread = Math.hypot(
+						(second?.x ?? 0) - (first?.x ?? 0),
+						(second?.y ?? 0) - (first?.y ?? 0),
+					);
+				}
+				const opening = spread > 0 && lastSpread > 0 ? spread - lastSpread : 0;
+				lastSpread = spread;
+				const pinch =
+					-input.pointer.pinch * (PINCH_BOOST - 1) * WHEEL_MOVE +
+					(Math.abs(opening) > PINCH_DEADZONE ? opening * PINCH_MOVE : 0);
+				const flight = -input.pointer.wheel * WHEEL_MOVE + pinch;
+				if (flight !== 0) {
+					camera.getPosition(from);
+					const forward = [
+						(controls.target[0] as number) - (from[0] as number),
+						(controls.target[1] as number) - (from[1] as number),
+						(controls.target[2] as number) - (from[2] as number),
+					];
+					const length = Math.hypot(
+						forward[0] as number,
+						forward[1] as number,
+						forward[2] as number,
+					);
+					if (length > 1e-6) {
+						const move = Math.max(-WHEEL_STEP_MAX, Math.min(WHEEL_STEP_MAX, flight));
+						for (let c = 0; c < 3; c++) {
+							const step = ((forward[c] as number) / length) * move;
+							from[c] = (from[c] as number) + step;
+							controls.target[c] = (controls.target[c] as number) + step;
+						}
+						camera.setPosition(from[0] as number, from[1] as number, from[2] as number);
+					}
+				}
 				if (bounds) {
 					camera.getPosition(inside);
 					if (keepInside(bounds, controls.target, inside)) {

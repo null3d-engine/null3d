@@ -15,6 +15,11 @@ import {
 import underwaterShader from './underwater.wgsl';
 import type { Water } from './water';
 
+/** The camera's own axes before it turns: right, up and back. */
+const RIGHT: [number, number, number] = [1, 0, 0];
+const UP: [number, number, number] = [0, 1, 0];
+const BACK: [number, number, number] = [0, 0, 1];
+
 /** How much of the light the water swallows for each meter along the view. */
 const DENSITY = 0.07;
 /** The water's own color, as a share of the air's color at the horizon in each channel. */
@@ -92,6 +97,9 @@ export function createUnderwater(
 	const caustics: [number, number, number] = [0, 0, 0];
 	const current: [number, number] = [0, 0];
 	let effect: Effect | null = null;
+	// The lens from the camera's field of view, worked out again only when that changes.
+	let fov = Number.NaN;
+	let lens = 0;
 	return {
 		update(t, air, light) {
 			camera.getPosition(eye);
@@ -102,16 +110,20 @@ export function createUnderwater(
 				return;
 			}
 			camera.getRotation(turn);
-			vec3.transformQuat(right, [1, 0, 0], turn);
-			vec3.transformQuat(up, [0, 1, 0], turn);
-			vec3.transformQuat(back, [0, 0, 1], turn);
+			vec3.transformQuat(right, RIGHT, turn);
+			vec3.transformQuat(up, UP, turn);
+			vec3.transformQuat(back, BACK, turn);
 			water.currentAt(eye[0] as number, eye[2] as number, current);
 			for (let c = 0; c < 3; c++) {
 				tint[c] = (air[c] as number) * (color[c] as number);
 				caustics[c] = light[c] as number;
 			}
 			// The lens changes with the depth of field's focal length.
-			const lens = Math.tan((camera.fov * Math.PI) / 360);
+			const zoomed = camera.fov !== fov;
+			if (zoomed) {
+				fov = camera.fov;
+				lens = Math.tan((fov * Math.PI) / 360);
+			}
 			if (!effect) {
 				effect = post.addEffect({
 					wgsl: underwaterShader,
@@ -138,7 +150,7 @@ export function createUnderwater(
 			post.setEffectUniform(effect, 'right', right);
 			post.setEffectUniform(effect, 'up', up);
 			post.setEffectUniform(effect, 'back', back);
-			post.setEffectUniform(effect, 'lens', lens);
+			if (zoomed) post.setEffectUniform(effect, 'lens', lens);
 			post.setEffectUniform(effect, 'current', current);
 		},
 		destroy() {

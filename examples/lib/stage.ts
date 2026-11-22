@@ -194,6 +194,24 @@ export interface StageOptions {
 	 */
 	volumetric?: { intensity: number; anisotropy: number; distance: number };
 	/**
+	 * Fog that thins with height, for a scene that stands over a low haze, such as an island over a
+	 * sea of cloud: the fog has the hour's density at `height` and thins above it by a factor of e
+	 * every 1 / `falloff` meters. The studio keeps its even fog. The default is an even fog.
+	 */
+	fogHeight?: { height: number; falloff: number };
+	/**
+	 * How far the fog's color moves toward a grey of its own brightness, from 0, the air's color, to
+	 * 1, for a scene whose haze should weaken far colors without tinting them. The air's color that
+	 * the stage gives the scene stays the hour's. The default is 0.
+	 */
+	fogGrey?: number;
+	/**
+	 * The curve of the outdoor fog over distance: `'exp2'` for a scene whose near ground should stay
+	 * clear while its far things haze, as the fog grows with the square of the distance. The studio
+	 * keeps its even fog. The default is the exponential curve.
+	 */
+	fogCurve?: 'exponential' | 'exp2';
+	/**
 	 * A factor on the exposure of every outdoor mood, for a scene whose own lights carry it: a city
 	 * at night asks for more than a moonlit field. The default is 1, and the studio keeps its own.
 	 */
@@ -203,6 +221,12 @@ export interface StageOptions {
 	 * The default is 1. The studio keeps its own light.
 	 */
 	environmentScale?: number;
+	/**
+	 * A factor on the main light that the sun or the moon casts on the scene, for a scene under
+	 * heavy cloud whose light comes mostly from the sky, so its shadows stay soft. The sky itself
+	 * keeps the sun's full light. The default is 1. The studio keeps its own light.
+	 */
+	sunScale?: number;
 	/**
 	 * A factor on the brightness of the sky itself, for a scene whose lights read against a brighter
 	 * sky than the hour gives. The default is 1.
@@ -303,8 +327,10 @@ export function createMoods(
 		cloudCoverage,
 		backdrop,
 		haze = {},
+		fogGrey = 0,
 		exposureScale = 1,
 		environmentScale = 1,
+		sunScale = 1,
 		skyScale = 1,
 		starScale = 1,
 	} = options;
@@ -378,6 +404,10 @@ export function createMoods(
 			density: fogDensity,
 			sunGlow: 0,
 			...(options.volumetric === undefined ? {} : { volumetric: options.volumetric }),
+			...(options.fogHeight === undefined
+				? {}
+				: { height: options.fogHeight.height, heightFalloff: options.fogHeight.falloff }),
+			...(options.fogCurve === undefined ? {} : { curve: options.fogCurve }),
 		},
 		post: { exposure: 1 },
 	};
@@ -401,7 +431,7 @@ export function createMoods(
 			target.sunPosition[k] = day.atmosphere.sunPosition[k] as number;
 			target.moonPosition[k] = day.atmosphere.moonPosition[k] as number;
 		}
-		target.intensity = day.light.intensity * weather.light;
+		target.intensity = day.light.intensity * weather.light * sunScale;
 		target.skyIntensity = day.skyIntensity * weather.light;
 		// The fog's factor follows the look of the hour, so it moves between moods with the light.
 		moodMix(hours, mix);
@@ -530,11 +560,15 @@ export function createMoods(
 		if (shown.fog) {
 			// The fog's color is kept apart from the eased one, since the studio writes its own.
 			const fog = look.fog.color;
-			fog[0] = current.fog[0] as number;
-			fog[1] = current.fog[1] as number;
-			fog[2] = current.fog[2] as number;
+			const air = current.fog;
+			const grey =
+				0.2126 * (air[0] as number) + 0.7152 * (air[1] as number) + 0.0722 * (air[2] as number);
+			for (let k = 0; k < 3; k++)
+				fog[k] = (air[k] as number) + (grey - (air[k] as number)) * fogGrey;
 			look.fog.density = current.density;
 			look.fog.sunGlow = current.glow;
+			if (options.fogHeight) look.fog.heightFalloff = options.fogHeight.falloff;
+			if (options.fogCurve) look.fog.curve = options.fogCurve;
 			scene.setFog(look.fog);
 		}
 		look.post.exposure = current.exposure;
@@ -556,6 +590,8 @@ export function createMoods(
 		sun.setIntensity(3);
 		if (shown.fog) {
 			look.fog.density = STUDIO_FOG_DENSITY;
+			if (options.fogHeight) look.fog.heightFalloff = 0;
+			if (options.fogCurve) look.fog.curve = 'exponential';
 			look.fog.color[0] = STUDIO_FOG[0];
 			look.fog.color[1] = STUDIO_FOG[1];
 			look.fog.color[2] = STUDIO_FOG[2];
