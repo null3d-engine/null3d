@@ -742,13 +742,31 @@ export function createCinematic(
 	/** The distance between two fingers last frame, so a pinch is the change of it. */
 	let lastSpread = 0;
 
-	/** What a pick's object gives the focus: where it stands and how far it reaches. */
+	/** What a pick's object gives the focus: where it stands, how far it reaches and its middle. */
 	interface Focusable {
 		getWorldPosition?(out: number[]): void;
-		mesh?: { radius?: number };
-		meshes?: readonly { radius?: number }[];
+		getRotation?(out: number[]): void;
+		mesh?: { radius?: number; readonly center?: readonly [number, number, number] };
+		meshes?: readonly { radius?: number; readonly center?: readonly [number, number, number] }[];
 		positions?: Float32Array;
+		rotations?: Float32Array;
 	}
+	/** Turns `v` by the unit quaternion `q`, whose parts are x, y, z and w. */
+	const turned = (
+		q: readonly number[],
+		v: readonly [number, number, number],
+	): [number, number, number] => {
+		const [x, y, z, w] = [q[0] ?? 0, q[1] ?? 0, q[2] ?? 0, q[3] ?? 1];
+		const tx = 2 * (y * v[2] - z * v[1]);
+		const ty = 2 * (z * v[0] - x * v[2]);
+		const tz = 2 * (x * v[1] - y * v[0]);
+		return [
+			v[0] + w * tx + (y * tz - z * ty),
+			v[1] + w * ty + (z * tx - x * tz),
+			v[2] + w * tz + (x * ty - y * tx),
+		];
+	};
+	const spin = [0, 0, 0, 1];
 	/** Starts a focus on what the canvas shows under a point, or nothing on a miss. */
 	const focusOn = (x: number, y: number): void => {
 		void ctx.scene.pick(x, y).then((hit) => {
@@ -756,14 +774,27 @@ export function createCinematic(
 			const picked = hit.object as unknown as Focusable;
 			const centre: [number, number, number] = [0, 0, 0];
 			let radius = 2;
+			// The flight aims at the object's middle, not its origin: a house's or a tower's origin
+			// stands at its foot, and a point at the foot sits in the hill the scene's bounds hold it
+			// above. The mesh's own bounding centre is turned by the object's rotation into the world.
+			let local: readonly [number, number, number] = [0, 0, 0];
 			if (typeof picked.getWorldPosition === 'function') {
 				picked.getWorldPosition(centre);
 				radius = picked.mesh?.radius ?? radius;
+				local = picked.mesh?.center ?? local;
+				picked.getRotation?.(spin);
 			} else if (picked.positions !== undefined) {
 				const row = Math.max(0, hit.instance) * 3;
 				for (let c = 0; c < 3; c++) centre[c] = picked.positions[row + c] ?? 0;
 				radius = picked.meshes?.[0]?.radius ?? radius;
+				local = picked.meshes?.[0]?.center ?? local;
+				const turn = (hit.instance ?? 0) * 4;
+				for (let c = 0; c < 4; c++) spin[c] = picked.rotations?.[turn + c] ?? (c === 3 ? 1 : 0);
 			} else return;
+			const middle = turned(spin, local);
+			centre[0] += middle[0];
+			centre[1] += middle[1];
+			centre[2] += middle[2];
 			// The sky, the dome and the far cloud reach too far to be a subject, so a miss on them
 			// changes nothing.
 			if (!(radius > 0) || radius > FOCUS_RADIUS_MAX) return;
@@ -995,10 +1026,50 @@ export function createCinematic(
 					);
 					if (length > 1e-6) {
 						const move = Math.max(-wheelStepMax, Math.min(wheelStepMax, flight));
+						const keptX = from[0] as number;
+						const keptY = from[1] as number;
+						const keptZ = from[2] as number;
+						const keptTarget = [
+							controls.target[0] as number,
+							controls.target[1] as number,
+							controls.target[2] as number,
+						] as [number, number, number];
+						// A forward flight stops at rising ground instead of climbing over it: a step
+						// that would make the bounds lift the camera by more than the bounds lift it
+						// now is not taken.
+						const lift = (): number | undefined => {
+							if (!bounds) return undefined;
+							const probePosition = [from[0] as number, from[1] as number, from[2] as number] as [
+								number,
+								number,
+								number,
+							];
+							const probeTarget = [
+								controls.target[0] as number,
+								controls.target[1] as number,
+								controls.target[2] as number,
+							] as [number, number, number];
+							keepInside(bounds, probeTarget, probePosition);
+							return (probePosition[1] as number) - (from[1] as number);
+						};
+						const beforeLift = lift();
 						for (let c = 0; c < 3; c++) {
 							const step = ((forward[c] as number) / length) * move;
 							from[c] = (from[c] as number) + step;
 							controls.target[c] = (controls.target[c] as number) + step;
+						}
+						const afterLift = lift();
+						if (
+							beforeLift !== undefined &&
+							afterLift !== undefined &&
+							afterLift - beforeLift > 0.01
+						) {
+							from[0] = keptX;
+							from[1] = keptY;
+							from[2] = keptZ;
+							controls.target[0] = keptTarget[0];
+							controls.target[1] = keptTarget[1];
+							controls.target[2] = keptTarget[2];
 						}
 						camera.setPosition(from[0] as number, from[1] as number, from[2] as number);
 					}
