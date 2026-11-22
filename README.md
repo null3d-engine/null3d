@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/null3d-engine/null3d/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/null3d-engine/null3d/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#community-and-license)
-[![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#roadmap)
+[![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](docs/index.md#status-labels)
 [![GPU: WebGPU and WebGL2](https://img.shields.io/badge/GPU-WebGPU%20%2B%20WebGL2-5b45e0.svg)](docs/concepts/backends.md)
 [![Core: Rust and WebAssembly](https://img.shields.io/badge/core-Rust%20%2B%20WebAssembly-b7410e.svg)](docs/concepts/architecture.md)
 [![API: TypeScript](https://img.shields.io/badge/API-TypeScript-3178c6.svg)](docs/index.md)
@@ -21,8 +21,7 @@
 </p>
 
 <p align="center">
-  Pre-alpha: null3D has no release yet.
-  Nothing is on npm yet.
+  Experimental: the API can still change between versions until 1.0.
 </p>
 
 <p align="center">
@@ -32,7 +31,6 @@
   · <a href="#where-it-runs">Where it runs</a>
   · <a href="docs/index.md">Docs</a>
   · <a href="#porting-from-threejs">Porting from three.js</a>
-  · <a href="#roadmap">Roadmap</a>
 </p>
 
 <p align="center">
@@ -52,8 +50,6 @@ null3D is a browser 3D engine that aims to replace three.js where CPU time limit
 It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same sketch code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, null3D aims to match three.js, because both engines use the same browser graphics APIs.
 
 ## Quickstart
-
-The first release, 0.1.0, puts the packages on npm. Until then, [run the demos from a clone](#run-the-demos-from-a-clone) of this repository.
 
 Install the engine from npm and import it, as you would `three`:
 
@@ -162,19 +158,6 @@ flowchart LR
 - **Made for coding agents.** Two agent skills teach agents the engine, and agents look up docs pages by ID. Status labels mark planned APIs, and every error message says how to fix the problem.
 - **Measured against three.js.** Every performance claim comes with a benchmark against a three.js version of the same scene, and image tests compare frames on each GPU tier.
 
-<details>
-<summary><strong>Everything else planned, by version</strong></summary>
-
-<br />
-
-| Version | Adds |
-| --- | --- |
-| 0.1 | Physically based standard materials, custom materials in WGSL, clustered forward lighting, cascaded shadows and spot and point shadows, fog, ACES, AgX and neutral tone mapping, MSAA and FXAA, quality presets, dynamic resolution, render layers, KTX2 textures in the device's compressed format, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
-| 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, more geometry generators in `@null3d/geometry` and vertices that change each frame, raycasting, pointer events on objects, environment lighting, a physical sky and atmosphere, decals, area lights, a light probe grid, clearcoat and sheen, automatic exposure, box-projected reflection probes, weighted transparency, impostors and merged far geometry, light through thin surfaces and under the skin, still views, per-object motion vectors, pixel-exact GPU picking, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths with direct draws where a start-up measurement finds them faster |
-| 0.3 | The docs site and `bunx @null3d/cli docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
-
-</details>
-
 ## Why it is faster
 
 three.js keeps each object as a JavaScript object and walks the scene graph object by object in every frame. That work grows with the object count and runs on the page's main thread. null3D keeps scene data in flat arrays inside WebAssembly memory, processes them in bulk on job workers, and lets your code write straight into them:
@@ -239,6 +222,15 @@ null3D is built so that a coding agent can create, run, test and debug a sketch 
 - Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3D projects, and [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps. Claude Code loads them from `.claude/skills/` in this repository.
 - Every docs page has an ID, such as `concepts/architecture`, and a status. Agents never use an API whose page is `planned`.
 - [AGENTS.md](AGENTS.md) holds the rules for people and agents working on the engine.
+
+Install the skills in Claude Code as a plugin:
+
+```sh
+claude plugin marketplace add https://raw.githubusercontent.com/null3d-engine/null3d/main/.claude-plugin/marketplace.json
+claude plugin install null3d@null3d
+```
+
+[Working with AI agents](docs/guides/agents.md) shows how to install them in claude.ai, the Claude desktop app and other agent tools.
 
 ## Examples
 
@@ -309,18 +301,6 @@ if (input.wasPressed('Mouse0')) {
 - [GPU tiers and backends](docs/concepts/backends.md)
 - [Hosting and cross-origin isolation](docs/getting-started/hosting.md)
 - [three.js to null3D mapping](https://github.com/null3d-engine/null3d/blob/generated/docs/porting/threejs-mapping.md)
-
-## Roadmap
-
-The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The steps themselves do not go to npm. The docs and the skills use their numbers to say when a feature arrives. 1.0 follows with a stable API. From 0.1.0, each release lists its changes in `CHANGELOG.md`.
-
-| Version | What it adds |
-| --- | --- |
-| 0.1, built | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, tone mapping, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
-| 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds. A physical sky, decals, area lights, a light probe grid, clearcoat and sheen, automatic exposure, reflection probes, order-independent transparency and pixel-exact picking. Stand-in images and merged meshes for far objects, light through leaves and skin, still views, per-object motion vectors, direct draws where a start-up measurement finds them faster, and add-ons for particles and terrain |
-| 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling, the porting tools, motion blur, and global illumination from a probe volume that light does not leak through. Video textures and light maps that store direction. Add-ons for Gaussian splats with detail levels and streaming, MSDF text, physics, water and three.js's tone curves. Property animation, glTF's iridescence and anisotropy, multiple views, gizmos, spot-light cookies, CSS3D labels, a tone-mapping flag per material, an ocean for the water add-on, and a build for a plain script tag |
-| 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
-| after 1.0 | The content packs that demanding scenes ask for: OpenPBR materials, distance-field shadows, hair and GPU grass, each taken up when a real scene needs it |
 
 ## Development
 

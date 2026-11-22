@@ -1,6 +1,6 @@
 # D-108: The first release is 0.1.0, as part of M4
 
-Status: decided by the owner, with the particles add-on in M3 and every change in the release notes. Not released yet. Before 0.1.0, the roadmap labels and the docs' `since` values must be settled.
+Status: decided by the owner, with the particles add-on in M3 and every change in the release notes. By the owner's ruling, the rule for the roadmap labels and the docs' `since` values follows 0.1.0.
 
 Summary: null3D's first release, 0.1.0, goes to npm as part of M4, and a final 0.2.0 release follows it. 1.0.0 waits until the API is known to be stable. The release notes list every commit that is not a merge, whichever branch brought it to main.
 
@@ -46,7 +46,7 @@ The owner chose (d):
 
 ### What the first release needs
 
-These come before 0.1.0, within M4:
+The first release needs these. By the owner's ruling, 0.1.0 goes out once items 3 and 5 are done, and items 1, 2 and 4 follow it:
 
 1. Hosting for the docs site and the demos, with the cross-origin isolation headers. Threaded modes need those headers, so the hosts must send them. The owner chooses the hosting.
 2. Basic fuzzing of the file loaders, such as glTF and KTX2. From 0.1.0, users load their own files, so the loaders must not crash or hang on broken input. M4 fuzzes every loader in full.
@@ -70,6 +70,5 @@ So the release notes list every commit that is not a merge, whichever branch bro
 ## Consequences
 
 - [Releases](../releases.md): making a release, the versions, the open point on version labels and the first version of a new package point at 0.1.0.
-- 0.1.0 is the first public release. So the README's roadmap leaves before 0.1.0, and the agent skills are announced at 0.1.0. The release script refuses a README with the roadmap only from 1.0.0 (`tools/lib/release.ts`), and must refuse it from 0.1.0 before that release.
-- The README's quickstart and roadmap name 0.1.0 as the first release, once the steps 0.1 to 0.3 are done. The roadmap's 0.3 row names the four add-ons.
+- 0.1.0 is the first public release. So the README carries no roadmap, and its "For AI agents" section installs the agent skills. The release script refuses a README with the roadmap from 0.1.0 on (`tools/lib/release.ts`).
 - [D-54](D-54-addon-modules.md) names `@null3d/particles` among the add-ons.

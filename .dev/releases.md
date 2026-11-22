@@ -28,19 +28,19 @@ The workflow lands the version on main, then tags, then publishes. Each step is 
 
 ## Versions
 
-The first release is 0.1.0, and it goes out as part of M4 ([D-108](decisions/D-108-first-release.md)). It holds the roadmap steps 0.1 to 0.3, the work of M1, M2 and M3. A final 0.2.0 release follows it, and 1.0.0 waits until the API is known to be stable. Before 0.1.0, the roadmap labels and the docs' `since` values are settled: either they are remapped to the release that ships them, or the roadmap says they are roadmap numbers, not release numbers. The first release that carries the built shader set as a release asset is watched by hand: the archive builds, uploads to the same Release, and a project fetches it and verifies its hash.
+The first release is 0.1.0, and it goes out as part of M4 ([D-108](decisions/D-108-first-release.md)). It holds the roadmap steps 0.1 to 0.3, the work of M1, M2 and M3. A final 0.2.0 release follows it, and 1.0.0 waits until the API is known to be stable. The rule for the roadmap labels and the docs' `since` values follows 0.1.0, by the owner's ruling, as [The version labels](#open-point-the-version-labels) says. The first release that carries the built shader set as a release asset is watched by hand: the archive builds, uploads to the same Release, and a project fetches it and verifies its hash.
 
 The README's roadmap lists the steps 0.1, 0.2 and 0.3 before 1.0. Each names a set of features, and the docs pages' `since` values and the skills' version labels use those numbers. Release 0.1.0 holds all three steps. For 0.1.0, run the Release workflow with `minor`, which takes the packages from 0.0.0 to 0.1.0. After that, the `auto` release type always releases a patch, and you pick `minor` or `major` when a set of features is done. The release script refuses an x.y.0 version while a docs page with that `since` or an earlier one is still `planned` (hard rule 19).
 
-0.1.0 is also the first public release. The roadmap is internal, so it stays in the README until then. Before releasing 0.1.0, remove it: the Roadmap section, its navigation link, the status badge's link and the by-version table under Features. Replace the pre-alpha status line too. The release script refuses 1.0.0 and every later version while the README has the roadmap. Before 0.1.0, it must refuse from 0.1.0 ([D-108](decisions/D-108-first-release.md)).
+0.1.0 is also the first public release. The roadmap is internal, so the README does not carry it. The release script refuses 0.1.0 and every later version while the README has a Roadmap section or a table of planned features by version ([D-108](decisions/D-108-first-release.md)).
 
-At 0.1.0, also announce the agent skills. Add the Claude Code plugin commands to the README's "For AI agents" section, and link `guides/agents` for other agent tools. Until then, `.claude-plugin/marketplace.json` exists and each release attaches the skill zips, but the README does not name them.
+The README's "For AI agents" section gives the Claude Code plugin commands, and links [Working with AI agents](../docs/guides/agents.md) for the other agent tools. Each release writes its version and tag into `.claude-plugin/marketplace.json`, and attaches the skill zips to its GitHub Release.
 
-### Open point for 0.1.0: the version labels
+### Open point: the version labels
 
 Docs pages carry `since: "0.1"`, `"0.2"` or `"0.3"`, and the skills label calls with a version, such as (0.2) or "later in 0.1" (docs rule 6 in AGENTS.md). These labels name the roadmap's steps, but release 0.1.0 holds all three steps. So a page with `since: "0.2"` or `"0.3"` ships in 0.1.0. The release script reads the labels too: it refuses an x.y.0 version while a page with that `since` or an earlier one is `planned`. For 0.1.0 it checks only the pages with `since: "0.1"`.
 
-The rule for these labels is set before 0.1.0 ([D-108](decisions/D-108-first-release.md)). The release script's check, the gate's release step, the README's version labels and the skills then change to match. Until then, the labels stay as they are, because the release script and the M1 exit gate's docs item read them.
+By the owner's ruling, 0.1.0 goes out before the rule for these labels is set ([D-108](decisions/D-108-first-release.md)). Once it is set, the release script's check, the gate's release step, the README's version labels and the skills change to match. Until then, the labels stay as they are, because the release script and the M1 exit gate's docs item read them.
 
 The note under a page's title opens with its page's step and release, such as "Roadmap step 0.2, first released in null3D 0.1.0." That wording lives in `tools/lib/steps.ts` alone. The docs check holds every written page's note to it. It refuses "null3D 0.2" or "null3D 0.3" in a page, because the steps 0.2 and 0.3 ship in 0.1.0, not in releases of those numbers. So when the rule for the labels is set, the wording changes in one place. The `since` rule is part of that rule.
 
@@ -135,7 +135,7 @@ In the dev server, Vite keeps the engine out of its prebundled copy of the contr
 
 ### The first version of a new package
 
-This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/grass`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/water` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
+This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/grass`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/water`, `@null3d/wind` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
