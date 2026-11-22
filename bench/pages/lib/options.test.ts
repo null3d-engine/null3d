@@ -87,8 +87,16 @@ describe('readRunOptions', () => {
 			shadowMapSize: '1024',
 			shadowCascadeBlend: '0.25',
 		};
-		// The page caps its own pixel ratio, and the sketch applies the rest to the engine.
-		const elsewhere = new Set(['governor', 'maxPixelRatio', 'renderScale', 'shadowFilter']);
+		// The page caps its own pixel ratio, and the sketch applies the rest to the engine. The bench's
+		// own `?shadows=` names the sun's cascade count for the bench's scenes, not the engine's
+		// `shadows` flag, so it never reaches the engine's options.
+		const elsewhere = new Set([
+			'governor',
+			'maxPixelRatio',
+			'renderScale',
+			'shadowFilter',
+			'shadows',
+		]);
 		const names = new Set(Object.keys(read('')));
 		const parsed = Object.keys(QUALITY_SETTINGS).filter(
 			(name) => names.has(name) && !elsewhere.has(name),
