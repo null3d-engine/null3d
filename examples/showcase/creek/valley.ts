@@ -51,9 +51,9 @@ export type PlantKind = (typeof PLANT_KINDS)[number];
  */
 export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number; depth: number }> =
 	{
-		'pine-tall': { height: 7.48, reach: 5.4, depth: 3.15 },
-		'pine-narrow': { height: 7.68, reach: 2.81, depth: 2.3 },
-		'pine-low': { height: 3.7, reach: 2.59, depth: 1.66 },
+		'pine-tall': { height: 7.41, reach: 5.4, depth: 3.15 },
+		'pine-narrow': { height: 7.32, reach: 2.81, depth: 2.3 },
+		'pine-low': { height: 3.69, reach: 2.59, depth: 1.66 },
 		maple: { height: 5.6, reach: 3.85, depth: 3.85 },
 		'rim-conifer': { height: 1.3, reach: 1.1, depth: 1.1 },
 		'clipped-shrub': { height: 1.3, reach: 0.79, depth: 0.79 },
