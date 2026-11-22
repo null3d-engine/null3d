@@ -18,6 +18,7 @@ import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
 import { CAMERA_KEYS } from './lib/cinematic-keys';
 import { COARSE_INPUT, type InputKind, watchInputKind } from './lib/input-kind';
 import { startDemo } from './lib/run';
+import { sketchAddress } from './lib/sketch-url';
 import { sourceUrl } from './lib/source';
 import { createTouchActions } from './lib/touch-controls';
 
@@ -614,8 +615,12 @@ async function runDemo(demo: Demo): Promise<void> {
 	});
 	// A sketch reads its switches from its own address, such as Skyway's `mood` and `storm`, so the
 	// page's switches go on to it.
-	const sketch = new URL(demo.sketch);
-	for (const [key, value] of params) if (key !== 'demo') sketch.searchParams.set(key, value);
+	// The page's switches go on the sketch's address, which ends with an inert parameter so a
+	// trailing decimal value never reads as the module's extension.
+	const sketch = sketchAddress(
+		demo.sketch,
+		[...params].filter(([key]) => key !== 'demo'),
+	);
 	try {
 		await startDemo({
 			canvas,

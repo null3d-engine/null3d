@@ -10,6 +10,7 @@
 import { createEngine } from '@null3d/engine';
 import { DEMOS } from '../../examples/demos';
 import { startDemo } from '../../examples/lib/run';
+import { sketchAddress } from '../../examples/lib/sketch-url';
 import { progress, run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -176,8 +177,7 @@ run('demo-device', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	// A demo spells its own cost switches on its sketch's address, as the split page does, so a
 	// page that compares one change at a time passes them here.
-	const sketch = new URL(demo.sketch);
-	for (const id of [
+	const switches = [
 		'morph',
 		'still',
 		'follow',
@@ -192,8 +192,12 @@ run('demo-device', async () => {
 		// Freezes the camera route at its opening shot, for a governed row that must compare one
 		// view with itself before and after the governor's steps.
 		'still-route',
-	])
-		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
+	]
+		.filter((id) => params.has(id))
+		.map((id) => [id, params.get(id) ?? ''] as const);
+	// The address ends with an inert parameter, so a trailing decimal value such as a render scale
+	// never reads as the module's extension.
+	const sketch = sketchAddress(demo.sketch, switches);
 	const runDemo = { ...demo, sketch };
 	const failures: string[] = [];
 	// No stats overlay: its sampling would take frames that this page measures.
