@@ -145,6 +145,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 0, max: 0.5 },
 	},
+	// The sun's cast shadows, which a sketch gives its directional lights' `castShadows` option.
+	// Every preset starts them on. The lowest quality tier turns them off when the frames still
+	// miss with the render scale at the preset's floor (D-382).
+	shadows: {
+		presets: [true, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
 	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
@@ -156,6 +164,14 @@ export const QUALITY_SETTINGS = {
 		presets: [64, 512, 512, 512],
 		changes: 'live',
 		values: [64, 128, 256, 512],
+	},
+	// Whether the sketch draws bloom's glow, which it turns on through `post.set`. Every preset
+	// starts it on. The lowest quality tier turns it off when the frames still miss with the render
+	// scale at the preset's floor (D-382).
+	bloom: {
+		presets: [true, true, true, true],
+		changes: 'live',
+		values: 'flag',
 	},
 	// The size of ambient occlusion's targets, as a share of the render size each way: half on High
 	// and Ultra, and 0 on Low and Medium, where ambient occlusion draws nothing even when the sketch
@@ -560,12 +576,25 @@ export interface QualitySettings {
 	 */
 	shadowCascadeBlend: number;
 	/**
+	 * True while the scene draws the sun's cast shadows, which a sketch gives its directional
+	 * lights' `castShadows` option. Every preset starts it on. The lowest quality tier turns it
+	 * off when the frames still miss with the render scale at the preset's floor. It changes
+	 * during play.
+	 */
+	shadows: boolean;
+	/**
 	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
 	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes
 	 * more than half the canvas's short side. It changes during play, which makes bloom's targets
 	 * again.
 	 */
 	bloomSize: 64 | 128 | 256 | 512;
+	/**
+	 * True while the sketch draws bloom's glow, which it turns on through `post.set`. Every preset
+	 * starts it on. The lowest quality tier turns it off when the frames still miss with the render
+	 * scale at the preset's floor. It changes during play.
+	 */
+	bloom: boolean;
 	/**
 	 * The size of ambient occlusion's targets, as a share of the render size each way: 0.5, 0.25,
 	 * or 0, which draws no ambient occlusion even when `post.set` turns it on. A smaller share costs
@@ -853,6 +882,29 @@ export function presetValue<K extends QualitySettingName>(
 	const setting: Setting = QUALITY_SETTINGS[name];
 	const values = (tier === 'webgl2' && setting.webgl2) || setting.presets;
 	return values[presetIndex(preset)] as SettingValue<K>;
+}
+
+/**
+ * The lowest quality tier's render scale floor: a third of the canvas's width and height, below
+ * Low's half. The governor enters the tier when the render scale has held at the preset's floor
+ * through its sustained window and the judged frames still miss (D-382).
+ */
+export const LOWEST_TIER_SCALE = 1 / 3;
+
+/**
+ * The settings that a start in the lowest quality tier takes on the GPU path `tier`: the render
+ * scale fixed at the tier's floor, the sun's shadows and bloom off, and WebGL2's depth prepass
+ * off. The four presets keep their own values, and the governor changes the same settings when it
+ * enters the tier during play (D-382).
+ */
+export function lowestTierSettings(tier: Tier): Partial<QualitySettings> {
+	return {
+		minRenderScale: LOWEST_TIER_SCALE,
+		maxRenderScale: LOWEST_TIER_SCALE,
+		shadows: false,
+		bloom: false,
+		...(tier === 'webgl2' ? { depthPrepass: false } : {}),
+	};
 }
 
 /**

@@ -9,7 +9,9 @@ import {
 	checkSettings,
 	describeValues,
 	LIVE_SETTINGS,
+	LOWEST_TIER_SCALE,
 	lowered,
+	lowestTierSettings,
 	MIB,
 	presetArgument,
 	presetOption,
@@ -126,11 +128,13 @@ describe('the preset table', () => {
 			'followMovingCasters',
 			'farAnimationInterval',
 			'shadowCascadeBlend',
+			'shadows',
 			'shadowTiles',
 			'shadowTileSize',
 			'heroTileSize',
 			'pointLightShadows',
 			'bloomSize',
+			'bloom',
 			'aoScale',
 			'contactShadowSteps',
 			'dofSamples',
@@ -187,7 +191,9 @@ describe('the preset table', () => {
 			'followMovingCasters',
 			'farAnimationInterval',
 			'shadowCascadeBlend',
+			'shadows',
 			'bloomSize',
+			'bloom',
 			'aoScale',
 			'contactShadowSteps',
 			'dofSamples',
@@ -234,7 +240,9 @@ describe('the preset table', () => {
 			'followMovingCasters',
 			'farAnimationInterval',
 			'shadowCascadeBlend',
+			'shadows',
 			'bloomSize',
+			'bloom',
 			'aoScale',
 			'contactShadowSteps',
 			'dofSamples',
@@ -296,6 +304,8 @@ describe('presetSettings', () => {
 			governor: true,
 			depthPrepass: false,
 			momentTransparency: false,
+			shadows: true,
+			bloom: true,
 		};
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
@@ -554,9 +564,9 @@ describe('checkSettings', () => {
 
 	it('refuses a setting that the call does not take, with E1213, and names those it takes', () => {
 		expect(() =>
-			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
+			checkSettings('quality.set()', { sunShadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, bounceRays, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowThreshold, lodFade, physicalSky, cloudSteps, softwareOcclusion, parallax, governor or lightFit.',
+			'E1213: quality.set() got "sunShadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, shadows, bloomSize, bloom, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, bounceRays, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowThreshold, lodFade, physicalSky, cloudSteps, softwareOcclusion, parallax, governor or lightFit.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(
@@ -651,5 +661,41 @@ describe('lowered', () => {
 		expect(lowered('medium', 1)).toBe('low');
 		expect(lowered('low', 1)).toBe('low');
 		expect(lowered('high', 5)).toBe('low');
+	});
+});
+
+describe('the lowest quality tier', () => {
+	it('fixes the render scale at a third and turns the sun shadows and bloom off on every GPU path', () => {
+		for (const tier of ['webgpu', 'webgpu-compat', 'webgl2'] as const) {
+			const settings = lowestTierSettings(tier);
+			expect([tier, settings.minRenderScale]).toEqual([tier, LOWEST_TIER_SCALE]);
+			expect([tier, settings.maxRenderScale]).toEqual([tier, LOWEST_TIER_SCALE]);
+			expect([tier, settings.shadows]).toEqual([tier, false]);
+			expect([tier, settings.bloom]).toEqual([tier, false]);
+		}
+	});
+
+	it('turns the depth prepass off on WebGL2 alone, where every preset draws it', () => {
+		expect(lowestTierSettings('webgl2').depthPrepass).toBe(false);
+		expect(lowestTierSettings('webgpu').depthPrepass).toBeUndefined();
+		expect(lowestTierSettings('webgpu-compat').depthPrepass).toBeUndefined();
+	});
+
+	it('gives the four presets their old look, with the sun shadows and bloom on', () => {
+		for (const preset of QUALITY_PRESETS) {
+			expect(presetValue('shadows', preset)).toBe(true);
+			expect(presetValue('bloom', preset)).toBe(true);
+		}
+	});
+
+	it('starts a sketch in the tier through its options, which every preset keeps', () => {
+		const tier = lowestTierSettings('webgl2');
+		const settings = presetSettings('low', tier, 'webgl2');
+		expect(settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
+		expect(settings.maxRenderScale).toBe(LOWEST_TIER_SCALE);
+		expect(settings.shadows).toBe(false);
+		expect(settings.bloom).toBe(false);
+		expect(settings.depthPrepass).toBe(false);
+		expect(checkedSettings('low', 'low', tier, 'webgl2')).toEqual(settings);
 	});
 });

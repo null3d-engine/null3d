@@ -49,6 +49,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `softwareOcclusion`, `textureMemoryMiB` | Replace the preset's values of these settings. A sketch can change them during play. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
 | `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes and checks no preset. |
+| `?tier=lowest` | Starts in the lowest quality tier for tests and devices. The render scale fixes at a third, and the sun's shadows and bloom go off. WebGL2 also drops its depth prepass. The four presets keep their looks, and the governor enters the same tier when frames still miss at the preset's floor. |
 | `?target-fps=display` or `?target-fps=90` | Sets the target frame rate. It wins over the `targetFps` option. |
 
 ## Settings

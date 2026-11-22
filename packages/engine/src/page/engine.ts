@@ -27,6 +27,7 @@ import {
 	capTextureMemory,
 	checkedSettings,
 	checkSettings,
+	lowestTierSettings,
 	presetOption,
 	presetValue,
 	type QualityPreset,
@@ -2386,7 +2387,11 @@ async function startEngine(
 			tier === 'webgl2'
 				? false
 				: gpuOcclusionChoice(deviceKind(presetRequest.hints), pageSettings.gpuOcclusion);
-		const tierSettings = { ...pageSettings, gpuOcclusion };
+		const tierSettings = {
+			...pageSettings,
+			gpuOcclusion,
+			...(switches.lowestTier === 'lowest' ? lowestTierSettings(tier) : {}),
+		};
 		const textureCapMiB = textureMemoryCap(deviceKind(presetRequest.hints));
 		const quality: QualityStart = {
 			preset,
