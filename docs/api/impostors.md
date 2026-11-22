@@ -41,7 +41,7 @@ bun add @null3d/engine @null3d/impostors
 import { createImpostors, octahedralAtlas } from '@null3d/impostors';
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, materials, geometry, assets }) => {
+export default defineSketch(async ({ scene, materials, geometry, assets }) => {
   const camera = scene.createPerspectiveCamera({ position: [0, 8, 30], target: [0, 3, 0] });
   scene.setActiveCamera(camera);
 
