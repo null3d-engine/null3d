@@ -38,7 +38,7 @@ The image tests, the device plans and the page tests read `examples/demos.ts`, a
 
 ## Two builds from one folder
 
-The examples page links only by relative addresses, and each demo's entry names its sketch with a literal address. The null3D Vite plugin ships a sketch when it finds `new URL('./x.ts', import.meta.url)` in a module, so a production build of the page holds every sketch, under any address prefix. A sketch address that code builds at run time, such as one from `location.origin`, does not ship.
+The examples page links only by relative addresses, and each demo's entry names its sketch with a literal address. The null3D Vite plugin ships a sketch when it finds `new URL('./x.ts', import.meta.url)` in a module, so a production build of the page holds every sketch, under any address prefix. A sketch address that code builds at run time, such as one from `location.origin`, does not ship. A page that puts its own switches on the address ends it with an inert parameter: Vite reads a module's language from the text after the id's last dot, so a trailing decimal value such as `?render-scale=0.333` would be parsed as JavaScript and a sketch's type-only imports would fail. `examples/lib/sketch-url.ts` adds `null3d-address=` after the switches, and the examples page and the device page build their addresses with it.
 
 ### From a clone
 
