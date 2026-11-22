@@ -1068,6 +1068,15 @@ const S6_SWIFTSHADER_COUNT = 4_000;
 const S6_TIMEOUT_SECONDS = 600;
 
 /**
+ * The seconds that S5's held frame may take. Firefox draws the full crowd, and a run that started
+ * 41 Firefox shards beside 53 browser shards and 49 Safari ones drew S5's first frame in 52 s and
+ * then no result within 90; the same test passes in main's nightly run, whose load is lighter, and
+ * the bench comparison at the garden's head found no frame cost on the WebGL2 path. The page
+ * reports at once when it has stopped, so a larger budget only covers a slow machine.
+ */
+const S5_TIMEOUT_SECONDS = 180;
+
+/**
  * S6's thread modes: the first alone. Copies of one mesh meet in many places of the city, and a
  * pixel where two meet can hold both at the same depth. On WebGPU the culling shader keeps the
  * copies of a mesh in an order that changes from frame to frame, so either copy can win such a
@@ -3956,7 +3965,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
 			hold: HOLD_TIME,
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
-			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
+			timeoutSeconds:
+				scene === 's6' ? S6_TIMEOUT_SECONDS : scene === 's5' ? S5_TIMEOUT_SECONDS : 90,
 			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
 			// update rates are its default, and a held frame otherwise catches far characters
 			// between two of their poses.
