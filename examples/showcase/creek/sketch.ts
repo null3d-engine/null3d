@@ -547,9 +547,6 @@ export default defineSketch(async (ctx) => {
 	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Morning');
-	// The demo opens on the concept's morning and then lets the day run by itself, so the sky moves
-	// without a touch; a named mood holds its hour.
-	if (start === null) choose('Auto');
 	// The falls' spray and mist are unlit, so they take the cloud's own tone of the air: its color
 	// greyed toward its brightness, with a faint lilac cast. A change too small to see is not written.
 	const sprayLight: [number, number, number] = [0, 0, 0];
