@@ -2435,6 +2435,31 @@ export function webgpuStallPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The water's reflection while the camera moves, against the same page holding still: the Creek at
+ * Low, where the reflection draws in every second frame at rest and in every frame while the view
+ * moves. The pair prices that per-frame draw on one device, in one session.
+ */
+export function reflectionMotionPlan(): PlanItem<Check>[] {
+	const creek = (id: string, still: boolean): PlanItem<Check> =>
+		pageItem(
+			id,
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'demo=creek',
+					'preset=low',
+					'seconds=10',
+					'windows=2',
+					...(still ? ['still-route=on'] : []),
+				],
+				timeoutSeconds: 600,
+			},
+		);
+	return [creek('creek-reflection-still', true), creek('creek-reflection-moving', false)];
+}
+
+/**
  * Creek's valley placed by the vegetation add-on's ecological rules, on each GPU path: the page
  * checks its placement against the reference that another device recorded, and times it. The
  * placement reads no GPU, so the two paths must give the same points.
@@ -3397,6 +3422,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	'reflection-motion': reflectionMotionPlan,
 	'ao-calls': () => effectPlan('ao', true),
 	'ao-calls-sync': () => effectPlan('ao', 'sync'),
 	'ao-prepass-color': prepassColorPlan,
