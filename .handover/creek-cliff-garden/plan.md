@@ -30,6 +30,13 @@ The four other concepts stay in the owner's Higgsfield gallery and are not in gi
 
 These rulings widen the model rule of `.dev/examples.md` and D-378, which today allow only models built by script in Blender. The garden's decision record holds the change.
 
+## Owner's rulings, 2026-11-22
+
+- **The crowns stay as they are for this milestone.** The gap against the concept is accepted and recorded: the front pair draws 68 per cent of the concept's warm leaf area and all warm leaves 50 per cent. The far-leaf cut is not taken. The reason is device cost: the leaf cards are 186 ms of the iPad's High frame, about half of it, and the iPad in its real configuration has no spare headroom.
+- **The cloud march at High drops from 64 to 48 steps.** It is the one cost cut the performance work found look-safe, and the drawn frame is identical apart from 28 sky pixels by one level.
+- **The pine shape round goes ahead.** It closes the narrow pine's waist and see-through, the tall pine's bare forks and flat webs (with a time-boxed attempt to rebuild the thin limbs as round tubes), and the low pine's filled cone.
+- **Tablets.** Apple tablets work: the iPad Pro 13 chooses Low, settles at half the render scale and holds 56 to 61 frames a second. Mid-range Android tablets are accepted as slow at Low for this milestone: the Galaxy Tab S8 runs without fault at 9 to 20 frames a second with the scale already at its 0.50 floor. The Galaxy Tab A9 Plus is recorded out of scope at Low: its first frame takes 106 to 140 seconds, no second frame follows, and its GPU process dies. No governor step below the half-scale floor is added. The plant cost is the next milestone's lever.
+
 ## What main changed since 2 November
 
 | The 2 November plan said | Main now | Effect on this plan |
