@@ -158,6 +158,13 @@ export const EDGE_SCRUB: readonly TreeSpot[] = (() => {
  * crown is a few dozen pixels across.
  */
 const TREE_CARDS: Record<QualityPreset, number> = { low: 150, medium: 200, high: 260, ultra: 340 };
+/**
+ * How much farther each tree level reaches than its measured error allows, by preset. A tree's middle
+ * levels are simple forms, and the hills read as flat slabs where they stand past a hundred metres.
+ * Standing them farther keeps the hills whole as the camera moves; the cost is triangles between the
+ * switch distances. Ultra keeps the measured reach, since its card hand-over is already far out.
+ */
+const LEVEL_REACH: Record<QualityPreset, number> = { low: 1, medium: 1.6, high: 2.2, ultra: 2 };
 const SHRUB_CARDS: Record<QualityPreset, number> = { low: 40, medium: 55, high: 70, ultra: 90 };
 
 /** The side of the grid that stands the forest floor's plants, in meters. */
@@ -528,11 +535,18 @@ export async function createTrees(
 		// spreads across a whole crown at the switch. The levels differ by less than a pixel at the
 		// distances they switch, so a cut at once keeps the crown whole.
 		const { levels } = leaves.mesh;
-		if (levels.length > 0)
+		if (levels.length > 0) {
+			const reach = LEVEL_REACH[ctx.quality.preset];
 			leaves.mesh.setLevels(
-				levels.map((level) => ({ ...level, fade: false })),
+				levels.map((level) => ({
+					...level,
+					fade: false,
+					...(level.error !== undefined && { error: level.error * reach }),
+					...(level.coverage !== undefined && { coverage: level.coverage * reach }),
+				})),
 				{ fade: false },
 			);
+		}
 		// The wood bends with its leaves but has none to flutter, and its bark's own map gives its
 		// roughness.
 		const bark = { ...SWAY[kind], rustle: 0, roughness: 1 };

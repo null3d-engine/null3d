@@ -96,228 +96,245 @@ const params = new URL(import.meta.url).searchParams;
 /** The places that the camera's route visits, where the island's people walk as models. */
 const WATCH = SHOTS.map((shot) => shot.position);
 
-export default defineSketch(async (ctx) => {
-	const { scene, assets, post, page, time } = ctx;
-	const preset = ctx.quality.preset;
-	// A phone's range stands still. The stretchable range follows the town as the camera draws back,
-	// which on a phone would grow the shadow maps again over the far hills.
-	const stretchable = preset !== 'low';
-	page.post('loading', 'Raising the island');
-	// The environment maps build on the GPU, and on a software GPU that takes minutes. Nothing that
-	// the visitor's controls need depends on them, so the loads run beside the scene's own build and
-	// the stage takes them when they arrive.
-	const sky = assets.skyEnvironment();
-	const room = assets.builtinEnvironment('room');
-	const sun = scene.createDirectionalLight({
-		castShadows: true,
-		layers: SUN_LAYERS | CASTER_LAYER,
-		// The offsets keep the ground from shadowing itself in the far cascades, whose wide texels would
-		// band it in rings around the camera. One texel of each cascade caps them, so near things stay tight.
-		shadow: {
-			distance: SHADOW_DISTANCE[preset],
-			normalBias: 1,
-			bias: 1,
-			contactDistance: 0.25,
-		},
-	});
-	// Warm light thrown back from the dry ground lifts the shadows' undersides, so they do not read sky blue.
-	scene.createHemisphereLight({ skyColor: '#b9a890', groundColor: '#c2965c', intensity: 0.8 });
-	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
-	// occlusion starts on, so the scene's shadows read.
-	post.set({ ao: { radius: 0.7 } });
-	const camera = scene.createPerspectiveCamera({
-		fov: FOV,
-		near: 0.3,
-		far: 42000,
-		layers: 1 | INTERIOR_LAYER | EFFECT_LAYER,
-	});
-	scene.setActiveCamera(camera);
-	const opening = SHOTS[0]?.target ?? [0, 25, 0];
-	const target: [number, number, number] = [opening[0], opening[1], opening[2]];
+export default defineSketch(
+	// The island's frames are limited by the sketch thread, not the GPU: the governor's lowest tier
+	// would cut the render to a third and turn the effects off without gaining a frame, so the page
+	// keeps full quality and plays at the rate the scene gives.
+	async (ctx) => {
+		const { scene, assets, post, page, time } = ctx;
+		const preset = ctx.quality.preset;
+		// A phone's range stands still. The stretchable range follows the town as the camera draws back,
+		// which on a phone would grow the shadow maps again over the far hills.
+		const stretchable = preset !== 'low';
+		page.post('loading', 'Raising the island');
+		// The environment maps build on the GPU, and on a software GPU that takes minutes. Nothing that
+		// the visitor's controls need depends on them, so the loads run beside the scene's own build and
+		// the stage takes them when they arrive.
+		const sky = assets.skyEnvironment();
+		const room = assets.builtinEnvironment('room');
+		const sun = scene.createDirectionalLight({
+			castShadows: true,
+			layers: SUN_LAYERS | CASTER_LAYER,
+			// The offsets keep the ground from shadowing itself in the far cascades, whose wide texels would
+			// band it in rings around the camera. One texel of each cascade caps them, so near things stay tight.
+			shadow: {
+				distance: SHADOW_DISTANCE[preset],
+				normalBias: 1,
+				bias: 1,
+				contactDistance: 0.25,
+			},
+		});
+		// Warm light thrown back from the dry ground lifts the shadows' undersides, so they do not read sky blue.
+		scene.createHemisphereLight({ skyColor: '#b9a890', groundColor: '#c2965c', intensity: 0.8 });
+		// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
+		// occlusion starts on, so the scene's shadows read.
+		post.set({ ao: { radius: 0.7 } });
+		const camera = scene.createPerspectiveCamera({
+			fov: FOV,
+			near: 0.3,
+			far: 42000,
+			layers: 1 | INTERIOR_LAYER | EFFECT_LAYER,
+		});
+		scene.setActiveCamera(camera);
+		const opening = SHOTS[0]?.target ?? [0, 25, 0];
+		const target: [number, number, number] = [opening[0], opening[1], opening[2]];
 
-	// The analytic sky that Low would draw matches the physical sky only in its mean light over the whole
-	// sphere, so away from the sun it reads far darker and deeper in hue. The island's sky fills half of many
-	// views, so it keeps the physical sky on every preset.
-	// The island draws no screen-space bounce light on any preset: its open daylight gains little from
-	// it, and the frame keeps the time.
-	ctx.quality.set({ physicalSky: true, bounceRays: 0 });
+		// The analytic sky that Low would draw matches the physical sky only in its mean light over the whole
+		// sphere, so away from the sun it reads far darker and deeper in hue. The island's sky fills half of many
+		// views, so it keeps the physical sky on every preset.
+		// The island draws no screen-space bounce light on any preset: its open daylight gains little from
+		// it, and the frame keeps the time.
+		// The scene runs below the engine's frame target, so the quality governor would trade resolution
+		// for frames while the route moves, and the flythrough would soften. The island keeps the full
+		// render scale on every preset instead: the picture stays sharp, and the frame rate is what it is.
+		ctx.quality.set({
+			physicalSky: true,
+			bounceRays: 0,
+			minRenderScale: 1,
+			maxRenderScale: 1,
+			// The walls, the roads and the crowns are seen across the ground at a glancing angle, where a
+			// texture without anisotropy blurs into its own average.
+			maxAnisotropy: 16,
+		});
 
-	// The mood: a summer morning at its start, with a little cloud and a thin haze for depth. `Auto`
-	// moves the sun and the moon across the sky; the other moods hold an hour. The controls and the
-	// camera's route come before the town: they need no part of it, and they post the HUD, so a
-	// visitor gets the controls while the island is still rising.
-	const stage = createMoods(ctx, sun, sky, room, {
-		heading: HEADING,
-		fogDensity: 0.000018,
-		exposureScale: 3,
-		environmentScale: 1,
-		cloudCoverage: 0,
-		haze: { Golden: 0.7 },
-		backdrop: [0.02, 0.025, 0.04],
-	});
-	const start = params.get('mood');
-	if (isMood(start)) stage.set(start);
-	else stage.setHour(MORNING);
+		// The mood: a summer morning at its start, with a little cloud and a thin haze for depth. `Auto`
+		// moves the sun and the moon across the sky; the other moods hold an hour. The controls and the
+		// camera's route come before the town: they need no part of it, and they post the HUD, so a
+		// visitor gets the controls while the island is still rising.
+		const stage = createMoods(ctx, sun, sky, room, {
+			heading: HEADING,
+			fogDensity: 0.000018,
+			exposureScale: 3,
+			environmentScale: 1,
+			cloudCoverage: 0,
+			haze: { Golden: 0.7 },
+			backdrop: [0.02, 0.025, 0.04],
+		});
+		const start = params.get('mood');
+		if (isMood(start)) stage.set(start);
+		else stage.setHour(MORNING);
 
-	// The scene's controls: which effects its HUD offers, what each of its own does, and the state each
-	// starts in. The shared part, the sky, the fog, the environment light, the shadows and the lens,
-	// lives in `createShowcaseEffects`.
-	const controls = createShowcaseEffects(ctx, {
-		camera,
-		sun,
-		...(stretchable && { shadowReach: SHADOW_REACH }),
-		stage,
-		start: {
-			lod: true,
-			sky: true,
-			fog: true,
-			shadows: true,
-			contact: true,
-			ao: true,
-			environment: true,
-			bloom: false,
-			dof: false,
-			exposure: false,
-			vignette: false,
-		},
-		supported: {
-			atmosphere: ['sky', 'fog'],
-			lighting: ['shadows', 'contact', 'ao', 'environment'],
-			post: ['bloom', 'dof', 'exposure', 'vignette'],
-		},
-		apply(id, on) {
-			switch (id) {
-				case 'contact':
-					sun.setShadow({ contactDistance: on ? 0.25 : 0 });
-					break;
-				case 'ao':
-					post.set({ ao: on ? { radius: 0.7 } : false });
-					break;
-				case 'bloom':
-					post.set({ bloom: on ? { blend: 'add', intensity: 0.7, threshold: 1 } : false });
-					break;
-			}
-		},
-		mood: (picked) => stage.set(picked),
-		hour: (hours) => stage.setHour(hours),
-		film: () => film,
-		fov: FOV,
-		focalLength: DSLR_FOCAL_LENGTH,
-		focus: target,
-		dslr: params.has('dslr'),
-	});
-
-	const film = createCinematic(ctx, camera, {
-		shots: SHOTS,
-		target,
-		groups: controls.groups,
-		// The island spans kilometres, so a scroll flies eight times as far as the default, and the
-		// keys pan twice as fast. R and F rise four times as fast as the pan speed's default.
-		wheelSpeed: 8,
-		speed: 840,
-		riseSpeed: 28,
-		bounds: {
-			...BOUNDS,
-			// The camera keeps just above the turf and the sea, so a scroll reaches the ground.
-			clearance: 0.6,
-			ground: (x, z) => Math.max(groundHeight(x, z), SEA_LEVEL),
-		},
-	});
-	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
-	controls.fitShadows();
-
-	const land = createLand(ctx);
-	const sea = createSea(ctx, camera);
-	const town = createTown(ctx);
-	page.post('loading', 'Growing the trees');
-	// The species and the lawns take seconds to grow. A live page draws the island without them and
-	// lets them appear as they land; a held picture, a page that asks with `?grown`, or the WebGL2
-	// path waits, so its first frame shows the finished scene. The WebGL2 render plan cannot take
-	// the pipelines that a frame after the first adds, so that path grows before it draws.
-	const grownFirst =
-		ctx.engine.held || params.has('grown') || ctx.engine.capabilities.tier === 'webgl2';
-	// The real people and vehicle models replace the placeholders when they land; the motion system
-	// is the same either way. A held frame waits for them, so it never catches a placeholder.
-	const life = grownFirst
-		? await loadLifeModels(ctx).catch((error) => {
-				console.warn(
-					'island: the people and vehicle models are unavailable, so the placeholders stand',
-					error,
-				);
-				return undefined;
-			})
-		: undefined;
-	const trafficOptions: TrafficOptions = { watch: WATCH };
-	let traffic = createTraffic(ctx, life ?? createPlaceholderModels(ctx), trafficOptions);
-	// A live page loads the models after its first frame, so the load never holds the first frame.
-	// The placeholders move meanwhile, and they leave when the models stand.
-	let settling = false;
-	const settleTraffic = (): void => {
-		if (settling) return;
-		settling = true;
-		void loadLifeModels(ctx).then(
-			(models) => {
-				try {
-					const grown = createTraffic(ctx, models, trafficOptions);
-					const previous = traffic;
-					traffic = grown;
-					previous.destroy();
-				} catch (error) {
-					console.warn(
-						'island: the people and vehicle models could not stand, so the placeholders stay',
-						error,
-					);
+		// The scene's controls: which effects its HUD offers, what each of its own does, and the state each
+		// starts in. The shared part, the sky, the fog, the environment light, the shadows and the lens,
+		// lives in `createShowcaseEffects`.
+		const controls = createShowcaseEffects(ctx, {
+			camera,
+			sun,
+			...(stretchable && { shadowReach: SHADOW_REACH }),
+			stage,
+			start: {
+				lod: true,
+				sky: true,
+				fog: true,
+				shadows: true,
+				contact: true,
+				ao: true,
+				environment: true,
+				bloom: false,
+				dof: false,
+				exposure: false,
+				vignette: false,
+			},
+			supported: {
+				atmosphere: ['sky', 'fog'],
+				lighting: ['shadows', 'contact', 'ao', 'environment'],
+				post: ['bloom', 'dof', 'exposure', 'vignette'],
+			},
+			apply(id, on) {
+				switch (id) {
+					case 'contact':
+						sun.setShadow({ contactDistance: on ? 0.25 : 0 });
+						break;
+					case 'ao':
+						post.set({ ao: on ? { radius: 0.7 } : false });
+						break;
+					case 'bloom':
+						post.set({ bloom: on ? { blend: 'add', intensity: 0.7, threshold: 1 } : false });
+						break;
 				}
 			},
-			(error: unknown) =>
-				console.warn(
-					'island: the people and vehicle models are unavailable, so the placeholders stay',
-					error,
-				),
-		);
-	};
-	// The cypresses need no species assets, so a page that grows the rest later places them before
-	// the first frame.
-	if (!grownFirst) createCypressSpires(ctx);
-	let trees: { update(): void } | undefined;
-	let growing = false;
-	const grow = (): void => {
-		if (growing) return;
-		growing = true;
-		void createTrees(ctx, camera, { spires: false }).then(
-			(grown) => {
-				trees = grown;
-			},
-			(error: unknown) => console.error(error),
-		);
-	};
-	if (grownFirst) {
-		trees = await createTrees(ctx, camera);
-		// A held frame waits for the town's models too, so it never catches the code-built
-		// landmarks beside the model ones.
-		await town;
-		// The stage writes the light its maps give before the first frame draws.
-		await Promise.all([sky, room]);
-	}
+			mood: (picked) => stage.set(picked),
+			hour: (hours) => stage.setHour(hours),
+			film: () => film,
+			fov: FOV,
+			focalLength: DSLR_FOCAL_LENGTH,
+			focus: target,
+			dslr: params.has('dslr'),
+		});
 
-	const eye: [number, number, number] = [0, 0, 0];
-	return {
-		onUpdate(dt) {
-			// The forest grows once the first frame has drawn, so its species and lawns cost nothing
-			// before it and appear as they land.
-			if (!grownFirst && time.frame >= 2) grow();
-			if (!grownFirst && time.frame >= 2) settleTraffic();
-			const t = time.now;
-			stage.update(dt);
-			controls.update(t);
-			film.update(dt);
-			const lens = controls.lens();
-			if (lens) post.set(lens);
-			camera.getPosition(eye);
-			land.update(eye);
-			sea.update();
-			traffic.update(time.now);
-			trees?.update();
-		},
-	};
-});
+		const film = createCinematic(ctx, camera, {
+			shots: SHOTS,
+			target,
+			groups: controls.groups,
+			// The island spans kilometres, so a scroll flies eight times as far as the default, and the
+			// keys pan twice as fast. R and F rise four times as fast as the pan speed's default.
+			wheelSpeed: 8,
+			speed: 840,
+			riseSpeed: 28,
+			bounds: {
+				...BOUNDS,
+				// The camera keeps just above the turf and the sea, so a scroll reaches the ground.
+				clearance: 0.6,
+				ground: (x, z) => Math.max(groundHeight(x, z), SEA_LEVEL),
+			},
+		});
+		// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
+		controls.fitShadows();
+
+		const land = createLand(ctx);
+		const sea = createSea(ctx, camera);
+		const town = createTown(ctx);
+		page.post('loading', 'Growing the trees');
+		// The species and the lawns take seconds to grow. A live page draws the island without them and
+		// lets them appear as they land; a held picture, a page that asks with `?grown`, or the WebGL2
+		// path waits, so its first frame shows the finished scene. The WebGL2 render plan cannot take
+		// the pipelines that a frame after the first adds, so that path grows before it draws.
+		const grownFirst =
+			ctx.engine.held || params.has('grown') || ctx.engine.capabilities.tier === 'webgl2';
+		// The real people and vehicle models replace the placeholders when they land; the motion system
+		// is the same either way. A held frame waits for them, so it never catches a placeholder.
+		const life = grownFirst
+			? await loadLifeModels(ctx).catch((error) => {
+					console.warn(
+						'island: the people and vehicle models are unavailable, so the placeholders stand',
+						error,
+					);
+					return undefined;
+				})
+			: undefined;
+		const trafficOptions: TrafficOptions = { watch: WATCH };
+		let traffic = createTraffic(ctx, life ?? createPlaceholderModels(ctx), trafficOptions);
+		// A live page loads the models after its first frame, so the load never holds the first frame.
+		// The placeholders move meanwhile, and they leave when the models stand.
+		let settling = false;
+		const settleTraffic = (): void => {
+			if (settling) return;
+			settling = true;
+			void loadLifeModels(ctx).then(
+				(models) => {
+					try {
+						const grown = createTraffic(ctx, models, trafficOptions);
+						const previous = traffic;
+						traffic = grown;
+						previous.destroy();
+					} catch (error) {
+						console.warn(
+							'island: the people and vehicle models could not stand, so the placeholders stay',
+							error,
+						);
+					}
+				},
+				(error: unknown) =>
+					console.warn(
+						'island: the people and vehicle models are unavailable, so the placeholders stay',
+						error,
+					),
+			);
+		};
+		// The cypresses need no species assets, so a page that grows the rest later places them before
+		// the first frame.
+		if (!grownFirst) createCypressSpires(ctx);
+		let trees: { update(): void } | undefined;
+		let growing = false;
+		const grow = (): void => {
+			if (growing) return;
+			growing = true;
+			void createTrees(ctx, camera, { spires: false }).then(
+				(grown) => {
+					trees = grown;
+				},
+				(error: unknown) => console.error(error),
+			);
+		};
+		if (grownFirst) {
+			trees = await createTrees(ctx, camera);
+			// A held frame waits for the town's models too, so it never catches the code-built
+			// landmarks beside the model ones.
+			await town;
+			// The stage writes the light its maps give before the first frame draws.
+			await Promise.all([sky, room]);
+		}
+
+		const eye: [number, number, number] = [0, 0, 0];
+		return {
+			onUpdate(dt) {
+				// The forest grows once the first frame has drawn, so its species and lawns cost nothing
+				// before it and appear as they land.
+				if (!grownFirst && time.frame >= 2) grow();
+				if (!grownFirst && time.frame >= 2) settleTraffic();
+				const t = time.now;
+				stage.update(dt);
+				controls.update(t);
+				film.update(dt);
+				const lens = controls.lens();
+				if (lens) post.set(lens);
+				camera.getPosition(eye);
+				land.update(eye);
+				sea.update();
+				traffic.update(time.now);
+				trees?.update();
+			},
+		};
+	},
+	{ lowestTier: false },
+);
