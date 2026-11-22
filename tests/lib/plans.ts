@@ -2435,30 +2435,29 @@ export function webgpuStallPlan(): PlanItem<Check>[] {
 }
 
 /**
- * The water's reflection while the camera moves, against the same page holding still. The pages are
- * the ocean's, whose sketch passes its camera into the water and whose camera circles it: at Low the
- * reflection draws in every second frame at rest and in every frame while the view moves, so the
- * pair prices that per-frame draw on one device, in one session. The Creek takes the same camera,
- * and its own still-route page pairs the same way once its sketch passes the camera.
+ * The water's reflection while the camera moves, against the same page holding still: the Creek at
+ * Low, where the reflection draws in every second frame at rest and in every frame while the view
+ * moves, so the pair prices that per-frame draw on one device, in one session. The sketch hands the
+ * water its camera, so a still route keeps the cadence and a moving one draws every frame.
  */
 export function reflectionMotionPlan(): PlanItem<Check>[] {
-	const sea = (id: string, still: boolean): PlanItem<Check> =>
+	const creek = (id: string, still: boolean): PlanItem<Check> =>
 		pageItem(
 			id,
 			'demo-device',
 			{ kind: 'probe', tier: 'webgpu' },
 			{
 				switches: [
-					'demo=ocean',
+					'demo=creek',
 					'preset=low',
 					'seconds=10',
 					'windows=2',
-					...(still ? ['still'] : []),
+					...(still ? ['still-route=on'] : []),
 				],
 				timeoutSeconds: 600,
 			},
 		);
-	return [sea('sea-reflection-still', true), sea('sea-reflection-moving', false)];
+	return [creek('creek-reflection-still', true), creek('creek-reflection-moving', false)];
 }
 
 /**
