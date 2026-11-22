@@ -11,5 +11,6 @@
 
 None recorded.
 
-The garden run below reached this device through a temporary entry in the harness's device list, so no
-tier names it. Add the entry back to run it again.
+The garden runs below reached this device through temporary entries in the harness's device list. Since
+`b33ae7ee0` the device is an entry of tier B, `bsgalaxytabs8-chrome`, the nearest mid-range Android
+tablet where Automate has no Galaxy Tab S9 FE.
