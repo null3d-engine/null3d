@@ -1068,13 +1068,12 @@ const S6_SWIFTSHADER_COUNT = 4_000;
 const S6_TIMEOUT_SECONDS = 600;
 
 /**
- * The seconds that S5's held frame may take. Firefox draws the full crowd, and a run that started
- * 41 Firefox shards beside 53 browser shards and 49 Safari ones drew S5's first frame in 52 s and
- * then no result within 90; the same test passes in main's nightly run, whose load is lighter, and
- * the bench comparison at the garden's head found no frame cost on the WebGL2 path. The page
- * reports at once when it has stopped, so a larger budget only covers a slow machine.
+ * The seconds that S5's held frame may take. Firefox draws the full crowd on CI's software
+ * graphics, where the page measured 178 s from its start to its result on a contended runner, and
+ * the figure rises with the host's calibration. The page reports at once when it has stopped, so a
+ * larger budget only covers a slower machine.
  */
-const S5_TIMEOUT_SECONDS = 180;
+const S5_TIMEOUT_SECONDS = 240;
 
 /**
  * The seconds that the runner waits for S5's and S6's first result. The runner gives a silent page

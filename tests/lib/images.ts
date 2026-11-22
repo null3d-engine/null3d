@@ -167,6 +167,11 @@ interface ImageTestSettings {
 	/** How long a page may take to publish its image, in seconds; 60 unless the entry gives another. */
 	timeoutSeconds?: number;
 	/**
+	 * The seconds that the runner waits for the page's first result, for a page that sets its own
+	 * budget above the runner's silence cap.
+	 */
+	quietSeconds?: number;
+	/**
 	 * Page switches that only the runs on SwiftShader add, after the others: a lighter load for a
 	 * scene that the software GPU draws too slowly in full on CI's machines. The SwiftShader references
 	 * show the scene with these switches, and every other place draws it in full.
@@ -347,6 +352,7 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 				path: pathOf(test, tier, mode),
 				scene: sceneFileOf(test),
 				timeoutSeconds: test.timeoutSeconds ?? TIMEOUT_SECONDS,
+				...(test.quietSeconds !== undefined && { quietSeconds: test.quietSeconds }),
 				size: sizeOf(test),
 				...(test.hold !== undefined && { hold: test.hold }),
 				expect: test.expect ?? {},
