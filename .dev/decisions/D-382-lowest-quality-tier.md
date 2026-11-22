@@ -37,16 +37,20 @@ should the engine do for that class? How far should it go?
 ## Decision
 
 1. **The tier is a governor state, not a preset.** It exists only below the active preset. The
-   governor enters it after the scale reaches the preset's floor, and its judged frames still miss.
-   It leaves on the same sustained-room rule that raises a step. It is reversible. No page starts in
-   it by choice, except where the chooser knows the device class is weak.
-2. **The mandatory cuts are four.** In the tier the scale floor falls from the preset's to a third.
+   entry reuses the governor's failed-raise and lower-trial hysteresis. The governor enters the tier
+   after the scale has held at the preset's floor through the sustained window, while the judged
+   frames still miss. It exits only on the sustained-room window that raises a step. One cooldown,
+   equal to that window, follows an exit so a device cannot flap. It is reversible.
+2. **The tier is also an explicit start choice.** A page switch pins it, so tests and devices can
+   measure it. The chooser starts a known weak class in it. The governor stays the default path for
+   everyone else. The four presets' behavior is unchanged.
+3. **The mandatory cuts are four.** In the tier the scale floor falls from the preset's to a third.
    The sun's cast shadows go off. Bloom goes off. On WebGL2 the depth prepass goes off. The first
    three are live settings. The prepass is fixed when the frame builder starts today, so this
    decision makes it live. The core exposes the prepass as a live setting. The frame graph's
    `set_depth_prepass` follows it each frame. The tier flips it. A page that starts in the tier gets
    the prepass off from its first frame.
-3. **The settings surface** has two new live flags, `shadows` and `bloom`. `depthPrepass` becomes
+4. **The settings surface** has two new live flags, `shadows` and `bloom`. `depthPrepass` becomes
    live. Every preset's row equals today's behavior, so no other preset changes. The further cuts
    use the existing settings where they exist. These are `reflectionScale`, `softParticles`,
    `cloudSteps`, `lodThreshold`, `lodShadowThreshold`, `farAnimationInterval`, `aoScale`, `ssrScale`,
@@ -54,13 +58,13 @@ should the engine do for that class? How far should it go?
    cover the cuts the engine has no setting for. They are the water reflection off, the particle
    systems off, the sky volume off and the plant detail. A sketch reads the flags. The tier is the
    only writer.
-4. **The further cuts are measured one at a time.** Each is built behind its flag, measured alone on
+5. **The further cuts are measured one at a time.** Each is built behind its flag, measured alone on
    the S8 at both paths, and ranked here by gain. The order follows the perf report. The water
    reflection goes off first, then to quarter size. Next are the particles off and a shorter leaf
    switch. Coarser plant levels follow. Then come the sky volume off, the cloud sea's steps, the
    falls and the dome. A cut is kept only when its gain is above the run's noise. Its look loss must
    also be acceptable to the owner.
-5. **No other preset's look changes.** The settings' four preset rows reproduce the current behavior
+6. **No other preset's look changes.** The settings' four preset rows reproduce the current behavior
    exactly. The tier's values live in the tier code. The docs state the tier and its cuts. The preset
    table shows only the values the other presets keep.
 
