@@ -1,12 +1,11 @@
 # D-382: The lowest quality tier, taken when the half-scale floor still misses
 
 Status: decided and partly built. The owner approved the tier. The settings surface, the page's
-start switch, the governor's entry, exit and cooldown, and the depth prepass as a live setting are
-built, with their tests and docs. The mandatory cuts change live settings, which the Creek scene's
-flags will read. The further cuts are
-being measured on the Galaxy Tab S8, and are ranked here as they land. Code: the quality presets,
-the governor, the quality settings, the page's settings bridge, the Creek scene's feature flags, the
-tests and the docs.
+start switch, and the governor's entry, exit and cooldown are built, with their tests. The depth
+prepass is a live setting in the core. The mandatory cuts change live settings, which the Creek
+scene reads. The further cuts are measured on the Galaxy Tab S8 and ranked below. Code: the quality
+presets, the governor, the quality settings, the page's settings bridge, the Creek scene's feature
+flags, the tests and the docs.
 
 Summary: A live lowest tier below the quality presets. The tier is entered when the render scale has
 sat at the preset's floor, and the judged frames still miss. In the tier the scale floor falls to a
@@ -35,12 +34,13 @@ should the engine do for that class? How far should it go?
   main pass is 61 per cent of the frame. The cloud sea is 16. The water, falls and particles together
   are under 10. The cloud steps and half the particles are the cheap cuts. They are worth 15 to 40
   ms. The device splits differ, and this tier's ranking uses those.
-- The further cuts ran on the S8 at Low, with the render scale pinned at 0.333, no shadows and no
-  bloom, over 60 s a page. The run is 20261122-024706-ultralow-cuts, on the probe branch at
-  44d9ca1a5, whose address switches stood in for the tier's flags. Each page follows a base page, and the last page removes a layer that draws nothing
-  distinct, as the run's control. The medians of the GPU time saved follow. The frame intervals are
-  not used: the base pages ranged over 33 to 50 ms, and the control moved 16.6 ms. The control's GPU
-  time moved 0.07 ms, which is the run's noise.
+- The further cuts ran on the S8 at Low. The render scale was pinned at 0.333, with no shadows and
+  no bloom, over 60 s a page. The run is 20261122-024706-ultralow-cuts. Its pages ran on the probe
+  branch at 44d9ca1a5, whose address switches stood in for the tier's flags. Each page follows a
+  base page.
+  The last page removes a layer that draws nothing distinct, as the run's control. The medians of
+  the GPU time saved follow. The frame intervals are not used: the base pages ranged over 33 to 50
+  ms, and the control moved 16.6 ms. The control's GPU time moved 0.07 ms, which is the run's noise.
 
 | Cut | What the page left out | GPU ms saved | Draws | Calls a frame |
 | --- | --- | --- | --- | --- |
@@ -53,6 +53,11 @@ should the engine do for that class? How far should it go?
 | the falls | the two waterfalls | 0.33 | 230 to 225 | 326 to 225 |
 | the fog | the volumetric fog | 0.07 | 230 | 232 |
 | the underwater layer | the control | -0.07 | 230 to 229 | 232 |
+
+The owner ruled on the look losses. The tier keeps the planting, the cloud sea and the creek. It
+takes two cuts only: the reflection at a quarter size, and the maple leaves beyond 60 m. It does
+not take the plants, the cloud sea, the creek, the particles, the falls or the fog. A coarser
+planting level would be the next lever, and it waits for the owner.
 
 ## Decision
 
@@ -78,7 +83,7 @@ should the engine do for that class? How far should it go?
    cover the cuts the engine has no setting for. They are the water reflection off, the particle
    systems off, the sky volume off and the plant detail. A sketch reads the flags. The tier is the
    only writer.
-5. **The further cuts are measured one at a time.** Each is built behind its flag, measured alone on
+5. **The further cuts are measured one at a time, and the owner keeps two.** Each is built behind its flag, measured alone on
    the S8 at both paths, and ranked here by gain. The order follows the perf report. The water
    reflection goes off first, then to quarter size. Next are the particles off and a shorter leaf
    switch. Coarser plant levels follow. Then come the sky volume off, the cloud sea's steps, the
