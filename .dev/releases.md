@@ -157,6 +157,8 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
    npm publish target/packages/null3d-wind-0.0.0.tgz --access public --provenance=false
    ```
 
+   npm publishes a new package in two parts. It adds a stand-in version, `0.0.0-stage`, at once, and it publishes 0.0.0 only after the owner approves it in the browser. If an approval is missed or refused, npm keeps the number 0.0.0 for that package and refuses to publish it again. This happened to `@null3d/water`, so its only early version is the stand-in. The package exists, so step 6 still publishes it through trusted publishing.
+
 5. Let the Release workflow publish each of the thirteen packages through trusted publishing. npm asks for a one-time approval on each call:
 
    ```sh
