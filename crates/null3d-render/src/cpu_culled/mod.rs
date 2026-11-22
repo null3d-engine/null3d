@@ -358,10 +358,9 @@ mod ids {
     pub const BLANK_LAST: u32 = LAST_SKINS + 2;
     /// The buffers of GPU picking's reads, one for each read that may wait for the GPU.
     pub const PICK_BUFFERS: u32 = BLANK_LAST + 1;
-    /// The bind group of GPU picking's resolve pass.
-    pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
-    /// The buffers of compute pass reads, one for each read that may wait for the GPU.
-    pub const PASS_READ_BUFFERS: u32 = PICK_GROUP + 1;
+    /// The buffers of compute pass reads, one for each read that may wait for the GPU. The id
+    /// after the pick's buffers stays unused, so the pick's group can sit with the other groups.
+    pub const PASS_READ_BUFFERS: u32 = PICK_BUFFERS + crate::pick::RING as u32 + 1;
     /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
     pub const SKY_LIGHT_BUFFERS: u32 = PASS_READ_BUFFERS + crate::readback::RING as u32;
     /// The index buffer of mesh `mesh`'s tree of cluster patches, which a view draws its chosen
@@ -532,8 +531,11 @@ mod ids {
     /// The bind groups of the one-sample layer's composite and depth copy, after the moment
     /// layer's frame groups.
     pub const SINGLE_GROUPS: u32 = MOMENT_FRAME_GROUPS + MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after the one-sample layer's.
-    pub const TEXTURE_GROUPS: u32 = SINGLE_GROUPS + SingleIds::GROUPS;
+    /// The bind group of GPU picking's resolve pass, after the one-sample layer's. It numbers with
+    /// the other groups, not with the buffers, so that a view's group cannot take its id.
+    pub const PICK_GROUP: u32 = SINGLE_GROUPS + SingleIds::GROUPS;
+    /// The bind groups of materials' maps, after the pick's.
+    pub const TEXTURE_GROUPS: u32 = PICK_GROUP + 1;
 }
 
 /// The group index of the decal pass's scene depth in the decal templates on WebGL2: after the
@@ -3752,6 +3754,7 @@ fn upload_patches(
 
 #[cfg(test)]
 mod tests {
+    use super::data::RING;
     use super::ids;
     use crate::readback::RING as READ_RING;
     use crate::sky_maps::LIGHT_RING;
@@ -3776,6 +3779,24 @@ mod tests {
                 assert!(
                     !reads.contains(&id),
                     "view {index} takes the buffer id {id}, which a read maps"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_pick_group_keeps_an_id_of_its_own() {
+        // The pick's resolve binds its group at group 0, and each view binds groups of other
+        // layouts. Two groups that share an id hand one pass the other's group.
+        let per_view = RING + 1 + RING * RING;
+        for index in 0..MAX_VIEW_IDS {
+            let view = ViewId::from_index(index);
+            let first = ids::frame_group(view);
+            for id in first..first + per_view {
+                assert_ne!(
+                    ids::PICK_GROUP,
+                    id,
+                    "the pick's group takes view {index}'s group id {id}"
                 );
             }
         }
