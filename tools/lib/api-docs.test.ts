@@ -69,6 +69,19 @@ const TABLE = { alpha: 1, beta: 2 } as const;
 export type Code = keyof typeof TABLE;
 
 /**
+ * Made with \`bunx @null3d/cli assets\`, which needs \`@null3d/engine\` too.
+ *
+ * @category api/objects
+ */
+export interface Tooling {
+	/**
+	 * Checks a page with \`bunx @null3d/cli test\` and the
+	 * \`@null3d/engine\` of the project.
+	 */
+	check: number;
+}
+
+/**
  * A long union.
  *
  * @category api/objects
@@ -95,7 +108,7 @@ export const NOT_A_FUNCTION = 1;
 `;
 
 const INDEX = `export { Base, Child, undocumented } from './parts';
-export type { Code, Long, Options } from './parts';
+export type { Code, Long, Options, Tooling } from './parts';
 export type { Pair } from './pair';
 
 /**
@@ -167,6 +180,16 @@ describe('readApi', () => {
 			['add<T extends Pair>(out: T, a: Pair, b: Pair): T', 'Adds two pairs into `out`.'],
 			['undocumentedHelper(): void', ''],
 		]);
+	});
+
+	it('keeps a package name in a summary, which the compiler reads as a tag', () => {
+		const tooling = named('Tooling');
+		expect(tooling.summary).toBe(
+			'Made with `bunx @null3d/cli assets`, which needs `@null3d/engine` too.',
+		);
+		expect(tooling.members[0]?.summary).toBe(
+			'Checks a page with `bunx @null3d/cli test` and the `@null3d/engine` of the project.',
+		);
 	});
 
 	it('shows an alias of private parts as the type it resolves to', () => {

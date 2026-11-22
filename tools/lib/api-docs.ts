@@ -93,6 +93,34 @@ function isInternal(symbol: ts.Symbol, checker: ts.TypeChecker): boolean {
 	return symbol.getJsDocTags(checker).some((t) => t.name === 'internal');
 }
 
+/** The tags that the API's comments use. */
+const DOC_TAGS = new Set(['category', 'internal', 'param', 'returns']);
+
+/**
+ * The part of a comment that the compiler reads as tags but that is text: from the first `@` word
+ * that is no tag of the comments, such as the scope in `bunx @null3d/cli`, up to the first real
+ * tag. The compiler ends a comment's summary at any `@` word, even inside a code span.
+ */
+function misreadTags(node: ts.Node): string {
+	const doc = ts.getJSDocCommentsAndTags(node).filter(ts.isJSDoc).at(-1);
+	const tags = doc?.tags ?? [];
+	const first = tags[0];
+	if (!doc || !first || DOC_TAGS.has(first.tagName.text)) return '';
+	const real = tags.find((t) => DOC_TAGS.has(t.tagName.text));
+	const source = doc.getSourceFile().text;
+	const start = first.getStart();
+	const end = real ? real.getStart() : doc.getEnd() - '*/'.length;
+	const text = source.slice(start, end).replace(/\n\s*\*/g, '\n');
+	return /\s/.test(source[start - 1] ?? '') ? ` ${text}` : text;
+}
+
+/** A symbol's summary: its comment up to its first tag, on one line. */
+function summaryOf(symbol: ts.Symbol, checker: ts.TypeChecker): string {
+	const declaration = symbol.declarations?.[0];
+	const text = ts.displayPartsToString(symbol.getDocumentationComment(checker));
+	return flat(text + (declaration ? misreadTags(declaration) : ''));
+}
+
 /**
  * The class or interface that declares a member. A constructor's parameter properties belong to its
  * class.
@@ -201,7 +229,7 @@ function membersOf(
 		if (isHidden(declaration) || isInternal(member, checker)) continue;
 		// Symbol-keyed members are markers for the engine's own checks, not API.
 		if (member.name.startsWith('__@')) continue;
-		const summary = flat(ts.displayPartsToString(member.getDocumentationComment(checker)));
+		const summary = summaryOf(member, checker);
 		const methods = callables(declarations);
 		if (methods.length === 0)
 			members.push({
@@ -290,7 +318,9 @@ function namespaceDocs(alias: ts.Symbol): { summary: string; page: string | unde
 		: undefined;
 	const category = doc?.tags?.find((t) => t.tagName.text === 'category');
 	return {
-		summary: flat(ts.getTextOfJSDocComment(doc?.comment) ?? ''),
+		summary: statement
+			? flat((ts.getTextOfJSDocComment(doc?.comment) ?? '') + misreadTags(statement))
+			: '',
 		page: category ? ts.getTextOfJSDocComment(category.comment)?.trim() : undefined,
 	};
 }
@@ -329,7 +359,7 @@ function namespaceMembers(
 			...constantCalls(member, checker),
 		]);
 		if (functions.length === 0) others.push(exported.name);
-		const summary = flat(ts.displayPartsToString(member.getDocumentationComment(checker)));
+		const summary = summaryOf(member, checker);
 		for (const declaration of functions)
 			members.push({
 				name: exported.name,
@@ -391,7 +421,7 @@ export function readApi(root: string): ApiReference {
 		const { summary, page } = isNamespace
 			? namespaceDocs(alias)
 			: {
-					summary: flat(ts.displayPartsToString(symbol.getDocumentationComment(checker))),
+					summary: summaryOf(symbol, checker),
 					page: tag(symbol, checker, 'category'),
 				};
 		if (!summary) problems.push(`${where} has no TSDoc summary`);
