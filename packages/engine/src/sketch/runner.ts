@@ -653,7 +653,9 @@ export class SketchRunner {
 		// A device that draws on the CPU keeps the whole render scale once a step below it failed:
 		// its two-step upscale costs about what the smaller scene saves (D-237).
 		this.governor.setSoftware(device.softwareRenderer);
-		this.governor.setLowestTier(true);
+		// The page's `?tier=off` switch keeps the tier out, which a test that measures the presets
+		// asks for.
+		this.governor.setLowestTier(sketch.quality.lowestAllowed !== false);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(

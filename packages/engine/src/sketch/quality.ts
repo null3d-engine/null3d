@@ -27,6 +27,7 @@ import {
 	startValues,
 } from '../quality/presets';
 import type { TextureMemory } from '../scene/textures';
+import type { Tier } from '../shared/tier';
 
 /** The preset and the settings that the page starts a sketch with. */
 export interface QualityStart {
@@ -54,6 +55,16 @@ export interface QualityStart {
 	 * governor then gives the tier's settings back when the frames have room for its window.
 	 */
 	lowest?: boolean;
+	/**
+	 * False when the page's `?tier=off` switch keeps the governor out of the lowest tier, so a
+	 * test measures the presets alone. True or absent lets it enter when frames still miss.
+	 */
+	lowestAllowed?: boolean;
+	/**
+	 * The GPU path whose preset values apply, which WebGL2 overrides for some settings, such as its
+	 * depth prepass. `setPreset` keeps those values, so a change inside one start does not lose them.
+	 */
+	tier?: Tier;
 }
 
 /** The texture memory of a sketch quality without textures, as tests make it. */
@@ -415,6 +426,7 @@ export class SketchQuality implements Quality {
 		readonly textureMemory: TextureMemory = NO_TEXTURE_MEMORY,
 	) {
 		this.preset = start.preset;
+		this.tier = start.tier;
 		this.settings = { ...start.settings };
 		const kept: Record<string, unknown> = { ...start.options };
 		for (const [name, value] of Object.entries(startValues(start.settings))) kept[name] ??= value;
@@ -529,8 +541,11 @@ export class SketchQuality implements Quality {
 
 	/** The settings of `preset`, with `kept`'s values, under the device's texture memory cap. */
 	private presetValues(preset: QualityPreset, kept: Partial<QualitySettings>): QualitySettings {
-		return capTextureMemory(presetSettings(preset, kept), kept, this.textureCapMiB);
+		return capTextureMemory(presetSettings(preset, kept, this.tier), kept, this.textureCapMiB);
 	}
+
+	/** The GPU path whose preset values apply, from the start. */
+	private readonly tier?: Tier;
 
 	setBudget(options: QualityBudgetOptions): QualityBudget {
 		return this.budgets.set(options);

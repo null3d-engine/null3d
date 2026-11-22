@@ -78,13 +78,14 @@ export type SceneFormat = 'rg11b10' | 'rgba16f';
 const SCENE_FORMATS: readonly SceneFormat[] = ['rg11b10', 'rgba16f'];
 
 /**
- * The quality tier that ?tier= asks the page to start in: the lowest one, below the four presets.
- * The page applies the tier's start values, and the governor would otherwise enter it only when
- * frames still miss at the preset's floor (D-382).
+ * The quality tier that ?tier= names: `lowest` starts the page in the tier below the four presets,
+ * with its start values; `off` keeps the governor out of the tier, so a test measures the presets
+ * alone. Without the switch the governor enters the tier only when frames still miss at the
+ * preset's floor (D-382).
  */
-export type LowestTier = 'lowest';
+export type LowestTier = 'lowest' | 'off';
 
-const LOWEST_TIERS: readonly LowestTier[] = ['lowest'];
+const LOWEST_TIERS: readonly LowestTier[] = ['lowest', 'off'];
 
 /** The bits per texel of the shadow cascades' depth. */
 export type ShadowDepthBits = 16 | 32;
