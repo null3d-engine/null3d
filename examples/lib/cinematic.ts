@@ -412,6 +412,42 @@ export function keepInside(bounds: CameraBounds, target: Vec3Like, position: Vec
 	return moved;
 }
 
+/**
+ * Keeps a Manual camera at `position`, turning around `target`, inside `bounds`, without lifting it
+ * with its target: the camera stops at the ground under itself, where the owner wants a scroll to
+ * reach the turf and the sea. The target stays inside its disc, and a horizontal pull moves the
+ * camera across with it, so a pan stops at the edge without turning the view. The target keeps
+ * above the ground where it stands, so a look at an object on a hill meets the hill's surface.
+ * Returns true when anything moved.
+ */
+export function keepClear(bounds: CameraBounds, target: Vec3Like, position: Vec3Like): boolean {
+	const { center, focus, focusHeight, ground, clearance = GROUND_CLEARANCE } = bounds;
+	let moved = false;
+	const dx = (target[0] as number) - center[0];
+	const dz = (target[2] as number) - center[1];
+	const reach = Math.hypot(dx, dz);
+	const pull = reach > focus ? focus / reach - 1 : 0;
+	if (pull !== 0) {
+		target[0] = (target[0] as number) + dx * pull;
+		target[2] = (target[2] as number) + dz * pull;
+		position[0] = (position[0] as number) + dx * pull;
+		position[2] = (position[2] as number) + dz * pull;
+		moved = true;
+	}
+	const over = ground(target[0] as number, target[2] as number);
+	const ty = Math.min(focusHeight[1], Math.max(focusHeight[0], over, target[1] as number));
+	if (ty !== target[1]) {
+		target[1] = ty;
+		moved = true;
+	}
+	const floor = ground(position[0] as number, position[2] as number) + clearance;
+	if ((position[1] as number) < floor) {
+		position[1] = floor;
+		moved = true;
+	}
+	return moved;
+}
+
 /** The cinematic camera of a showcase scene. */
 export interface Cinematic {
 	/** The mode now: `'auto'` follows the route, `'manual'` answers the user. */
@@ -544,8 +580,6 @@ function parameterAt(table: Float32Array, traveled: number): number {
 const GLIDE = 1.5;
 /** How long a double-click's focus takes to ease the camera there, in seconds. */
 const FOCUS_SECONDS = 0.7;
-/** How far outside its bounds a focus keeps the camera, in meters, so it never enters the object. */
-const FOCUS_CLEARANCE = 1.5;
 /** The largest object a focus takes: the sky, the dome and the far cloud are no subject. */
 const FOCUS_RADIUS_MAX = 60;
 /** The most time between the presses of a double press, in seconds, and the most they may move. */
@@ -807,30 +841,14 @@ export function createCinematic(
 			if (away < 1e-3) return;
 			// Focusing takes the camera from the route, as any takeover does.
 			if (mode === 'auto') toggleMode();
-			// The camera keeps the distance it stands at from the point it turns around, which is the
-			// zoom, and its bearing: the view slides over to the object rather than flying in past
-			// it. It never comes nearer the middle than the object reaches.
-			const [tx, ty, tz] = options.target;
-			const to: [number, number, number] = [
-				(from[0] as number) + (centre[0] - tx),
-				(from[1] as number) + (centre[1] - ty),
-				(from[2] as number) + (centre[2] - tz),
-			];
-			const [dx, dy, dz] = [to[0] - centre[0], to[1] - centre[1], to[2] - centre[2]];
-			const reach = Math.hypot(dx, dy, dz);
-			const least = radius + FOCUS_CLEARANCE;
-			if (reach < least && reach > 1e-6) {
-				const push = least / reach;
-				to[0] = centre[0] + dx * push;
-				to[1] = centre[1] + dy * push;
-				to[2] = centre[2] + dz * push;
-			}
+			// The camera stays where it is and the object becomes the point it turns around: the view
+			// turns to it in place, and the wheel or a pinch then flies the camera to it.
 			const aimed = [centre[0], centre[1], centre[2]] as [number, number, number];
-			if (bounds) keepInside(bounds, aimed, to);
+			if (bounds) keepClear(bounds, aimed, [from[0], from[1], from[2]] as [number, number, number]);
 			focus = {
 				fromPosition: [from[0] as number, from[1] as number, from[2] as number],
 				fromTarget: [options.target[0], options.target[1], options.target[2]],
-				position: to,
+				position: [from[0] as number, from[1] as number, from[2] as number],
 				target: aimed,
 				t: 0,
 			};
@@ -1034,36 +1052,21 @@ export function createCinematic(
 							controls.target[1] as number,
 							controls.target[2] as number,
 						] as [number, number, number];
-						// A forward flight stops at rising ground instead of climbing over it: a step
-						// that would make the bounds lift the camera by more than the bounds lift it
-						// now is not taken.
-						const lift = (): number | undefined => {
-							if (!bounds) return undefined;
-							const probePosition = [from[0] as number, from[1] as number, from[2] as number] as [
-								number,
-								number,
-								number,
-							];
-							const probeTarget = [
-								controls.target[0] as number,
-								controls.target[1] as number,
-								controls.target[2] as number,
-							] as [number, number, number];
-							keepInside(bounds, probeTarget, probePosition);
-							return (probePosition[1] as number) - (from[1] as number);
-						};
-						const beforeLift = lift();
+						// A forward flight stops at the ground: a step that would take the camera under
+						// the ground's clearance is not taken. The point the camera turns around may ride
+						// the ground or a hill, and that never stops the flight.
+						const clear = (): boolean =>
+							!bounds ||
+							(from[1] as number) >=
+								bounds.ground(from[0] as number, from[2] as number) +
+									(bounds.clearance ?? GROUND_CLEARANCE) -
+									0.01;
 						for (let c = 0; c < 3; c++) {
 							const step = ((forward[c] as number) / length) * move;
 							from[c] = (from[c] as number) + step;
 							controls.target[c] = (controls.target[c] as number) + step;
 						}
-						const afterLift = lift();
-						if (
-							beforeLift !== undefined &&
-							afterLift !== undefined &&
-							afterLift - beforeLift > 0.01
-						) {
+						if (!clear()) {
 							from[0] = keptX;
 							from[1] = keptY;
 							from[2] = keptZ;
@@ -1076,7 +1079,7 @@ export function createCinematic(
 				}
 				if (bounds) {
 					camera.getPosition(inside);
-					if (keepInside(bounds, controls.target, inside)) {
+					if (keepClear(bounds, controls.target, inside)) {
 						camera.setPosition(inside[0] as number, inside[1] as number, inside[2] as number);
 						camera.lookAt(controls.target[0], controls.target[1], controls.target[2]);
 					}
