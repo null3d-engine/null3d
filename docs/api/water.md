@@ -138,6 +138,7 @@ the bed at a point, and the current there.
 | `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
 | `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
 | `material` | The standard material values | None | The surface's material, such as its volume's tint. The surface works its own thickness and transmission out, so it takes no value for those |
+| `camera` | A `Camera` | None | The camera that the reflection follows. While it moves or turns, the reflection draws in every frame, so a moving view shows no mirror of an older one; a still camera keeps the cadence above. Without one, the cadence holds whatever the view does |
 | `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
 | `rain` | A number from 0 to 1 | 0 | How hard rain falls on the surface. Each drop rings the surface where it lands. 0 draws no rings and costs nothing |
 
@@ -425,7 +426,9 @@ near the eye and spends its vertices far away.
   against the bank. With `bed: 'shape'`, the mesh carries each vertex's bed depth in its vertex
   colors and the surface reads that instead, for a bed that the scene states rather than draws.
 - **The reflection.** The pass draws the scene a second time. It draws every other frame on Low and
-  Medium, so it costs half as much on average there, and every frame on High and Ultra. When frames
+  Medium, so it costs half as much on average there, and every frame on High and Ultra. A camera that
+  moves or turns overrides that, and the reflection then draws in every frame. A moving view never
+  shows a mirror of an older one, and the cadence returns when the view settles. When frames
   take too long, the frame-budget governor doubles the wait, up to every 16th frame. The stats
   overlay shows the cadence as `reflectionEvery`. It shows the pass's GPU time and its share of a
   frame as the water row's budget. It also shows the memory of the mesh arrays, the map of where bodies
