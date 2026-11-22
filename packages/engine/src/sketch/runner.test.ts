@@ -756,6 +756,7 @@ describe('SketchRunner', () => {
 		governor.enterLowest(0);
 		runner.step(0);
 		expect(context.quality.governor.lowest).toBe(true);
+		expect(context.quality.preset).toBe('medium');
 		expect(context.quality.settings.shadows).toBe(false);
 		expect(context.quality.settings.bloom).toBe(false);
 		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
