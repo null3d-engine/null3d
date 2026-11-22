@@ -5,6 +5,11 @@ import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createOcean } from '@null3d/water';
 import { interact } from '../lib/interact';
 
+// A cost page spells one change at a time on the sketch's address: ?still holds the camera at one
+// point of its circle, so a pair of pages can price what a moving view draws.
+const params = new URL(import.meta.url).searchParams;
+const STILL = params.has('still');
+
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, time } = ctx;
 	const day = timeOfDay(15.4, { heading: -2 });
@@ -25,11 +30,11 @@ export default defineSketch(async (ctx) => {
 	const ocean = createOcean(ctx, { camera });
 	return {
 		onUpdate(dt) {
-			const angle = time.now * 0.06;
+			const angle = STILL ? 1.57 : time.now * 0.06;
 			if (!view.userCamera) {
 				camera.setPosition(
 					Math.cos(angle) * 56,
-					12 + 4 * Math.sin(time.now * 0.21),
+					STILL ? 12 : 12 + 4 * Math.sin(time.now * 0.21),
 					Math.sin(angle) * 56,
 				);
 				camera.lookAt(0, 2, 0);
