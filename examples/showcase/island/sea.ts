@@ -440,16 +440,20 @@ export function createSea(ctx: SketchContext, camera: Camera): { update(): void 
 		castShadows: false,
 		receiveShadows: false,
 	});
+	// The far floor shows past the water's own reach, so on Low it takes the haze's pale tone and
+	// the join reads as haze rather than a dark band.
+	const floorColor = () => (ctx.quality.preset === 'low' ? LOW_FLOOR_HEX : DEEP_COLOR_HEX);
+	const farFloor = ctx.materials.standard({
+		color: floorColor(),
+		roughness: 0.9,
+		metalness: 0,
+		doubleSided: true,
+	});
+	// A preset switch at run time takes the floor with it, so the join keeps the preset's colour.
+	ctx.quality.onChange(() => farFloor.set({ color: floorColor() }));
 	ctx.scene.createMesh({
 		mesh: ctx.geometry.fromArrays(openSea(0, SEA_REACH, DEEP_FLOOR - DEEP_LIFT + 0.2)),
-		material: ctx.materials.standard({
-			// The far floor shows past the water's own reach, so on Low it takes the haze's pale tone
-			// and the join reads as haze rather than a dark band.
-			color: ctx.quality.preset === 'low' ? LOW_FLOOR_HEX : DEEP_COLOR_HEX,
-			roughness: 0.9,
-			metalness: 0,
-			doubleSided: true,
-		}),
+		material: farFloor,
 		castShadows: false,
 		receiveShadows: false,
 	});
