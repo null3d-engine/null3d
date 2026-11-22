@@ -3,8 +3,10 @@
 // reads the scene's own depth, and a mirror of the banks and the sky that redraws as often as the
 // quality preset affords. The same material draws from below, so a camera that dips under the water
 // keeps its surface. Where two bodies meet, as at a river's mouth, the junction map gives each point
-// to one body and lets the river's waves give way to the lake's without a seam.
+// to one body and lets the river's waves give way to the lake's without a seam. Rain, which is off
+// until a page asks for it, rings the surface where its drops land.
 import {
+	type Camera,
 	declareAddonNamespace,
 	defineFeature,
 	FeatureHost,
@@ -15,7 +17,7 @@ import {
 	type Texture,
 	type Textures,
 } from '@null3d/engine';
-import { cadenceRow, REFLECT_EVERY_MAX, REFLECT_MS } from './cadence';
+import { cadenceRow, REFLECT_EVERY_MAX, REFLECT_MS, reflectionCadence } from './cadence';
 import { type Junctions, junctions } from './junction';
 import { bodyMesh, type MeshDetail } from './mesh';
 import { type WaterBody, type WaterShape, waterBody } from './shape';
@@ -83,7 +85,13 @@ export interface FoamMap {
 }
 
 /**
- * The standard material values that the water's surface takes.
+ * The standard material values that the water's surface takes. The surface works two of them out
+ * for each pixel, so a value that a call gives for them does not apply: the volume's thickness,
+ * which is the depth of the bed under the surface there, and the transmission, which falls away
+ * where the foam covers the water. Give `attenuationColor` and `attenuationDistance` to tint the
+ * water: the bed's light keeps the share that the attenuation leaves over the bed's depth, so
+ * a shallow, clear creek needs a pale colour over a distance far above its own depth, and a short
+ * distance with a dark colour turns it into an opaque slab that hides the bed.
  *
  * @category api/water
  */
@@ -162,10 +170,23 @@ export interface WaterOptions {
 	/** The standard material values, such as the volume's tint and its thickness. */
 	readonly material?: WaterMaterialOptions;
 	/**
+	 * The camera that the reflection follows. While it moves or turns, the reflection draws in every
+	 * frame, so a moving view never shows a mirror of an older one; a still camera keeps the cadence
+	 * that the preset and the frame-budget governor give. Without one the reflection keeps that
+	 * cadence whether the view moves or not.
+	 */
+	readonly camera?: Camera;
+	/**
 	 * The wind field that lifts the surface's short waves and carries their crests. A page gives the
 	 * wind add-on's field here, and the surface reads it once for each vertex.
 	 */
 	readonly wind?: WaterWind;
+	/**
+	 * How hard rain falls on the surface, from 0 for none to 1 for a downpour. Each drop rings the
+	 * surface where it lands, and the rings drift with the current. It is 0 by default, and dry water
+	 * pays nothing for the rings.
+	 */
+	readonly rain?: number;
 }
 
 /**
@@ -201,8 +222,17 @@ export interface Water {
 	currentAt(x: number, z: number, out: [x: number, z: number]): void;
 	/** Sets the light that the ripples focus on the bed, as a linear color. */
 	setCaustics(light: readonly [x: number, y: number, z: number]): void;
+	/** Sets how hard rain falls on the surface, from 0 for none to 1 for a downpour. */
+	setRain(amount: number): void;
 	/** Removes the surface, its reflection pass and its material. */
 	destroy(): void;
+}
+
+/** A rain amount, or an error that says what it must be. */
+function rainAmount(amount: number): number {
+	if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 1)
+		throw new Error(`@null3d/water: the rain must be from 0 to 1, and it is ${amount}`);
+	return amount;
 }
 
 /** The passes that the add-on added, so that each one names a texture of its own. */
@@ -215,11 +245,25 @@ function bodyList(shapes: WaterShape | readonly WaterShape[]): WaterBody[] {
 	return list.map((shape) => waterBody(shape));
 }
 
+/** The seconds over which a pattern rides the current before it fades into a fresh copy. */
+export const CARRY_CYCLE = 2;
+
+/** The part of a number past its whole part, from 0 up to 1, as WGSL's `fract` gives it. */
+function fract(value: number): number {
+	return value - Math.floor(value);
+}
+
+/** A number from 0 to 1 that changes each time a copy starts afresh, as the shaders' `cycle_seed`. */
+function cycleSeed(t: number, which: number): number {
+	return fract(Math.floor(t / CARRY_CYCLE + which) * 0.618034 + which);
+}
+
 /**
  * The height of a water surface at a point and a sketch time, in meters, as its long waves move it.
  * A `current` carries the whole set downstream, with each wave's direction turned into the
- * current's frame; still water keeps the authored directions and each wave's own speed. `ripple`
- * scales them, and `waveAmplitude` scales the surface's height above the level.
+ * current's frame, in two copies that take turns as the surface's shader draws them; still water
+ * keeps the authored directions and each wave's own speed. `ripple` scales them, and
+ * `waveAmplitude` scales the surface's height above the level.
  *
  * @category api/water
  */
@@ -232,22 +276,45 @@ export function waveHeight(
 	ripple: number,
 	waveAmplitude = 1,
 ): number {
-	const speed = Math.hypot(current[0], current[1]);
+	const speed = Math.sqrt(current[0] * current[0] + current[1] * current[1]);
 	const moving = speed > 1e-5;
 	const cx = moving ? current[0] / speed : 0;
 	const cz = moving ? current[1] / speed : 0;
 	let height = level;
-	for (const [ownX, ownZ, k, ownSpeed] of LONG_WAVES) {
-		const length = Math.hypot(ownX, ownZ);
+	// Two copies of the waves that the current carries, half a cycle apart, as the shaders' `carried`
+	// gives them: the seconds that each has ridden the current, and their weights.
+	const firstShare = fract(t / CARRY_CYCLE);
+	const firstTime = firstShare * CARRY_CYCLE;
+	const secondTime = fract(t / CARRY_CYCLE + 0.5) * CARRY_CYCLE;
+	const firstWeight = 1 - Math.abs(2 * firstShare - 1);
+	const secondWeight = 1 - firstWeight;
+	const firstSeed = cycleSeed(t, 0);
+	const secondSeed = cycleSeed(t, 0.5);
+	for (let index = 0; index < LONG_WAVES.length; index++) {
+		// Read by index: destructuring would make an iterator in every frame.
+		const wave = LONG_WAVES[index] as (typeof LONG_WAVES)[number];
+		const ownX = wave[0];
+		const ownZ = wave[1];
+		const k = wave[2];
+		const ownSpeed = wave[3];
+		const length = Math.sqrt(ownX * ownX + ownZ * ownZ);
 		const along = ownX / length;
 		const across = ownZ / length;
-		// The authored direction turned into the current's frame, and the current's phase.
-		const dx = moving ? cx * along - cz * across : along;
-		const dz = moving ? cz * along + cx * across : across;
-		const phase = moving
-			? k * (dx * x + dz * z - speed * t * (dx * cx + dz * cz))
-			: k * (along * x + across * z) - ownSpeed * t;
-		height += (ripple * waveAmplitude * 0.05 * Math.sin(phase)) / k;
+		const amplitude = (ripple * waveAmplitude * 0.05) / k;
+		if (!moving) {
+			height += amplitude * Math.sin(k * (along * x + across * z) - ownSpeed * t);
+			continue;
+		}
+		// The authored direction turned into the current's frame, and the current's phase in each of
+		// the two copies.
+		const dx = cx * along - cz * across;
+		const dz = cz * along + cx * across;
+		const run = k * speed * (dx * cx + dz * cz);
+		const base = k * (dx * x + dz * z);
+		const turn = 2 * Math.PI * (index + 1);
+		const first = base - run * firstTime + firstSeed * turn;
+		const second = base - run * secondTime + secondSeed * turn;
+		height += amplitude * (firstWeight * Math.sin(first) + secondWeight * Math.sin(second));
 	}
 	return height;
 }
@@ -352,6 +419,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	const { scene, geometry, materials, textures, render, quality } = ctx;
 	const level = options.level ?? 0;
 	const waveAmplitude = options.waveAmplitude ?? WAVE_AMPLITUDE;
+	let rain = rainAmount(options.rain ?? 0);
 	const bodies = bodyList(options.shapes);
 	const foam = options.foam;
 	const foamOrigin = foam?.origin ?? [0, 0];
@@ -418,6 +486,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			windBox: wind?.size ?? 0,
 			windStrength: wind ? 1 : 0,
 			windLayer: 0,
+			rain,
 		},
 	});
 	let meshBytes = 0;
@@ -435,6 +504,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	// the frame-budget governor doubles it while frames take too long. The stats overlay reads the
 	// cadence and the pass's share of a frame from the host's figures.
 	let every = 1;
+	// The reflection draws in every frame while the camera that it follows moves or turns.
+	const cadence = reflectionCadence(options.camera, (next) => render.setPassEvery(pass, next));
 	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
 	let sentBorn = Number.NaN;
 	/** True while the `water-bounds` debug view draws. */
@@ -463,7 +534,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
 				// The pass carries its cadence itself, so no frame recompiles the graph.
-				render.setPassEvery(pass, every);
+				cadence.budget(every);
 			},
 			// A debug view of the add-on's own: the bounds of each water body at the surface.
 			debugViews: [
@@ -486,11 +557,13 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 		const owner = junction?.ownerAt(x, z) ?? -1;
 		if (owner >= 0) return bodies[owner];
 		let first: WaterBody | undefined;
-		for (const body of bodies)
-			if (body.contains(x, z)) {
-				if (body.kind === 'lake') return body;
-				first ??= body;
-			}
+		// An indexed loop, since the view from under the water asks for the surface every frame.
+		for (let index = 0; index < bodies.length; index++) {
+			const body = bodies[index] as WaterBody;
+			if (!body.contains(x, z)) continue;
+			if (body.kind === 'lake') return body;
+			first ??= body;
+		}
 		return first;
 	};
 	return {
@@ -512,6 +585,11 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 					airSettings.update(readingData(wind.air));
 				}
 			}
+			// The lowest quality tier draws the reflection in every 16th frame at rest, and gives the
+			// budget back when it leaves. The host calls a feature only when a setting changes, so the
+			// tier's own state is read here, where it costs a comparison.
+			cadence.lowest(quality.governor.lowest);
+			cadence.follow();
 			// The add-on draws its own debug view: each body's bounds at the water's surface.
 			if (debugBounds) {
 				for (const body of bodies)
@@ -553,6 +631,12 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			causticLight[1] = light[1];
 			causticLight[2] = light[2];
 			material.set({ caustics: causticLight });
+		},
+		setRain(amount) {
+			// A storm may set the rain every frame, so an unchanged amount costs nothing.
+			if (amount === rain) return;
+			rain = rainAmount(amount);
+			material.set({ rain });
 		},
 		destroy() {
 			host.destroy();

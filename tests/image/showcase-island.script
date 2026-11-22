@@ -15,8 +15,10 @@
 2.6 key KeyW up
 3.5 dump #camera.position
 3.5 shot walked
-# The wheel brings the camera closer to the island.
+# The wheel flies the camera forward along its facing, which brings it closer to the island.
 3.8 pointer move 160 90
-3.9 pointer wheel 0 -600
+3.85 pointer wheel 0 -400
+3.9 pointer wheel 0 -400
+3.95 pointer wheel 0 -400
 5 dump #camera.position
 5 shot closer

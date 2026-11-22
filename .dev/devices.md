@@ -897,6 +897,7 @@ Tier B covers low memory, the other browser engines, more GPU lines and desktop 
 | Galaxy S25 | Android 15 | Firefox | Adreno 830 | WebGL2 | Firefox's own engine, Gecko, which has no WebGPU on Android | 10 |
 | Galaxy A16 5G | Android 15 | Chrome | Mali-G68 MP2 or Mali-G57 MC2, 4 to 8 GB | WebGPU or compatibility mode | A low-end Mali with little memory | 15 |
 | Galaxy Tab S11 | Android 16 | Chrome | Immortalis-G925 | WebGPU, compatibility mode, WebGL2 | An Android tablet with ARM's largest GPU | 15 |
+| Galaxy Tab S8 | Android 12 | Chrome | Adreno 730 | WebGPU, compatibility mode, WebGL2 | The mid-range Android tablet, the nearest to the Galaxy Tab S9 FE that Automate lacks; the owner accepted mid-range Android tablets at Low, though slow | 12 |
 | Pixel 11 | Android 17 | Chrome | PowerVR CXTP-48-1536 | Not known yet | The newest Pixel GPU, which Chrome's WebGPU list does not name | 15 |
 | Windows 11 | Windows 11 | Edge, newest | None on BrowserStack | As Chrome in tier A | The default Windows browser | 12 |
 | Windows 11 | Windows 11 | Firefox, newest | None on BrowserStack | WebGPU and WebGL2 with a GPU | Firefox's own WebGPU code on Windows. Not on Automate: without a GPU it gives no WebGL2 either | 12 |

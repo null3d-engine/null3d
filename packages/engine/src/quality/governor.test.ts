@@ -38,6 +38,7 @@ import {
 	WINDOW_END,
 	WINDOW_MS,
 } from './governor';
+import { LOWEST_TIER_SCALE } from './presets';
 
 const BUDGET = 1000 / 60;
 /** Frames at the target rate whose GPU finished each well within one frame. */
@@ -46,6 +47,10 @@ const EASY = { frame: BUDGET, delay: BUDGET / 2 };
 const SLOW = { frame: 2 * BUDGET, delay: 1.5 * BUDGET };
 /** Frames at the target rate that queue on the GPU. */
 const QUEUED = { frame: BUDGET, delay: 2.5 * BUDGET };
+/** Frames at a third of the target rate. */
+const OVER_BUDGET = { frame: 3 * BUDGET, delay: 2 * BUDGET };
+/** The tier's render scale floor, in thousandths. */
+const LOWEST_FLOOR = thousandths(LOWEST_TIER_SCALE);
 /** Frames at the target rate whose GPU took more than about one frame for each. */
 const BUSY = { frame: BUDGET, delay: 1.5 * BUDGET };
 /** Frames at `fps` frames per second whose GPU finished each within one frame. */
@@ -1241,5 +1246,104 @@ describe("the governor's documented order", () => {
 			expect(text).toContain("a budget's step first");
 			expect(text).not.toContain('the render scale first, then');
 		}
+	});
+});
+
+describe('the lowest quality tier', () => {
+	/** The windows of the sustained floor: the time after which the tier may enter. */
+	const SUSTAINED = RAISE_AFTER_MS / WINDOW_MS;
+
+	/** A governor at its render scale's floor, with the tier enabled. */
+	function tiered(low = 500) {
+		const it = controlled(low, FULL_SCALE, low);
+		it.controller.setLowestTier(true);
+		return it;
+	}
+
+	it('enters after the scale has held at its floor through the sustained window, while frames miss', () => {
+		const { controller, judge } = tiered();
+		for (let window = 1; window < SUSTAINED; window++) {
+			judge(SLOW);
+			expect([window, controller.lowest]).toEqual([window, false]);
+		}
+		judge(SLOW);
+		expect(controller.lowest).toBe(true);
+		expect(controller.low).toBe(LOWEST_FLOOR);
+		expect(controller.tierChanges).toBe(1);
+	});
+
+	it('does not enter without a frame loop that applies its settings', () => {
+		const { controller, judge } = controlled(500, FULL_SCALE, 500);
+		for (let window = 0; window < 2 * SUSTAINED; window++) judge(SLOW);
+		expect(controller.lowest).toBe(false);
+	});
+
+	it('leaves on the room window that raises a step, and gives the range back', () => {
+		const { controller, judge } = tiered();
+		for (let window = 0; window < SUSTAINED; window++) judge(SLOW);
+		expect(controller.lowest).toBe(true);
+		let windows = 0;
+		while (controller.lowest && windows < 400) {
+			judge(EASY);
+			windows++;
+		}
+		expect(controller.lowest).toBe(false);
+		expect(controller.tierChanges).toBe(2);
+		expect(controller.low).toBe(500);
+		expect(controller.scale).toBe(500);
+		// The exit waits a window before the tier can enter again, so a device cannot flap.
+		expect(windows).toBeGreaterThanOrEqual(RAISE_AFTER_MS / WINDOW_MS);
+	});
+
+	it('takes a tier that slowed the frames back, and closes it for a doubling wait', () => {
+		const { controller, judge } = tiered();
+		for (let window = 0; window < SUSTAINED; window++) judge(SLOW);
+		expect(controller.lowest).toBe(true);
+		// The first second after the entry comes clearly slower than the second before it.
+		const settling = SETTLE_MS / WINDOW_MS + DROP_AFTER_MS / WINDOW_MS + 1;
+		for (let window = 0; window < settling; window++) judge(OVER_BUDGET);
+		expect(controller.lowest).toBe(false);
+		expect(controller.low).toBe(500);
+		expect(controller.tierChanges).toBe(2);
+		// A failed entry closes it for a wait, which the frames' misses cannot pass early.
+		const closedUntil = FLOOR_AFTER_MS / WINDOW_MS;
+		for (let window = 0; window < closedUntil; window++) judge(SLOW);
+		expect(controller.lowest).toBe(false);
+	});
+
+	it('starts in the tier as a page asks, and gives the preset range back when it leaves', () => {
+		const controller = new Governor();
+		controller.setLowestTier(true);
+		controller.startLowest(500, FULL_SCALE);
+		controller.setRange(LOWEST_FLOOR, LOWEST_FLOOR);
+		expect(controller.lowest).toBe(true);
+		expect(controller.scale).toBe(LOWEST_FLOOR);
+		expect(controller.low).toBe(LOWEST_FLOOR);
+		// The governor's own switch keeps a tier that the page started.
+		controller.setOn(false);
+		expect(controller.lowest).toBe(true);
+		controller.setOn(true);
+		let now = 0;
+		/** Judges one window of `frames`. */
+		const judge = (frames: Frames): void => {
+			now += WINDOW_MS;
+			const { window } = controller;
+			window[WINDOW_END] = now;
+			window[FRAME_US] = Math.round(frames.frame * 1000);
+			window[GPU_DELAY_US] = Math.round(frames.delay * 1000);
+			window[BUDGET_US] = Math.round(BUDGET * 1000);
+			controller.judge();
+		};
+		judge(SLOW);
+		expect(controller.lowest).toBe(true);
+		let windows = 0;
+		while (controller.lowest && windows < 400) {
+			judge(EASY);
+			windows++;
+		}
+		expect(controller.lowest).toBe(false);
+		expect(controller.low).toBe(500);
+		expect(controller.high).toBe(FULL_SCALE);
+		expect(controller.scale).toBe(500);
 	});
 });

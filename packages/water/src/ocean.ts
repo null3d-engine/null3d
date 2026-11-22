@@ -15,7 +15,7 @@ import {
 } from '@null3d/engine';
 import bandsFallbackShader from './bands.fallback.wgsl';
 import bandsShader from './bands.wgsl';
-import { cadenceRow, REFLECT_EVERY_MAX, REFLECT_MS } from './cadence';
+import { cadenceRow, REFLECT_EVERY_MAX, REFLECT_MS, reflectionCadence } from './cadence';
 import fftFallbackShader from './fft.fallback.wgsl';
 import fftShader from './fft.wgsl';
 import oceanShader from './ocean.wgsl';
@@ -120,8 +120,9 @@ export interface Ocean {
 	/** The frames between two draws of the reflection now. */
 	readonly reflectionEvery: number;
 	/**
-	 * Moves the sea's mesh about the camera. The reflection pass carries its own cadence. Call once in
-	 * each frame, after the camera moves and before the engine draws.
+	 * Moves the sea's mesh about the camera, and draws the reflection in every frame while that
+	 * camera moves or turns. Call once in each frame, after the camera moves and before the engine
+	 * draws.
 	 */
 	update(): void;
 	/**
@@ -333,6 +334,8 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 
 	// The feature carries the cadence through the sketch's quality, as the river and lake water does.
 	let every = 1;
+	// The sea's reflection draws in every frame while the camera that it follows moves or turns.
+	const cadence = reflectionCadence(camera, (next) => render.setPassEvery(reflection, next));
 	const host = new FeatureHost({
 		quality,
 		tier: ctx.engine.capabilities.tier,
@@ -353,7 +356,7 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
 				// The pass carries its cadence itself, so no frame recompiles the graph.
-				render.setPassEvery(reflection, every);
+				cadence.budget(every);
 			},
 		}),
 	);
@@ -381,6 +384,11 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 		update() {
 			camera.getPosition(eye);
 			mesh.setPosition(eye[0], level, eye[2]);
+			// The lowest quality tier draws the reflection in every 16th frame at rest, and gives the
+			// budget back when it leaves. The host calls a feature only when a setting changes, so the
+			// tier's own state is read here, where it costs a comparison.
+			cadence.lowest(quality.governor.lowest);
+			cadence.follow();
 		},
 		heightAt(x, z) {
 			return sum(x, z, ctx.time.now);

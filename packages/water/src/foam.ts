@@ -17,6 +17,12 @@ export interface FoamObstacle {
 	readonly z: number;
 	/** The obstacle's radius at the water's surface, in meters. */
 	readonly r: number;
+	/**
+	 * How far this obstacle's foam reaches from its edge, in meters, in place of the map's `reach`.
+	 * It suits a scene whose parts of one water carry different foam, such as a creek whose arms
+	 * break the surface by different amounts.
+	 */
+	readonly reach?: number;
 }
 
 /**
@@ -33,7 +39,10 @@ export interface FoamMapOptions {
 	readonly width?: number;
 	/** The map's texels along z. It is 224 by default. */
 	readonly height?: number;
-	/** How far the foam reaches around an obstacle, in meters. It is 0.35 by default. */
+	/**
+	 * How far the foam reaches around an obstacle, in meters. It is 0.35 by default, and every
+	 * obstacle that gives no reach of its own takes it.
+	 */
 	readonly reach?: number;
 	/**
 	 * How far downstream, toward +x, the foam trails behind an obstacle, in meters. It is 1.6 by
@@ -64,21 +73,31 @@ export function foamMap(
 		throw new Error('@null3d/water: a foam map needs texels in both axes');
 	if (size[0] <= 0 || size[1] <= 0)
 		throw new Error('@null3d/water: a foam map size must be above 0');
-	if (reach <= 0) throw new Error('@null3d/water: a foam reach must be above 0');
+	// A reach that is not a finite number above 0 lays no foam, or lays it over the whole map.
+	if (!(reach > 0) || !Number.isFinite(reach))
+		throw new Error('@null3d/water: a foam reach must be a finite number above 0');
 	// The map's cells are square, so one texel covers the same distance along both axes.
 	const texel = size[0] / width;
 	const near = new Float32Array(width * height);
-	for (const { x, z, r } of obstacles) {
-		const [i0, i1] = [(x - r - reach - origin[0]) / texel, (x + r + trail - origin[0]) / texel];
-		const [j0, j1] = [(z - r - reach - origin[1]) / texel, (z + r + reach - origin[1]) / texel];
+	for (const { x, z, r, reach: own } of obstacles) {
+		// Each mark reaches as far as it names, and as far as the map names without one.
+		const mark = own ?? reach;
+		if (!(mark > 0) || !Number.isFinite(mark))
+			throw new Error('@null3d/water: a foam reach must be a finite number above 0');
+		// Downstream the foam fades out at the end that the mark's reach gives the trail, which the
+		// radius stretches: the loop must run to there, or the map cuts a tail that still foams. A mark
+		// with no trail leaves a ring, which reaches its reach past the edge on every side.
+		const end = trail > 0 ? trail * (1 + r / mark) : r + mark;
+		const [i0, i1] = [(x - r - mark - origin[0]) / texel, (x + end - origin[0]) / texel];
+		const [j0, j1] = [(z - r - mark - origin[1]) / texel, (z + r + mark - origin[1]) / texel];
 		for (let j = Math.max(0, Math.floor(j0)); j <= Math.min(height - 1, Math.ceil(j1)); j++) {
 			for (let i = Math.max(0, Math.floor(i0)); i <= Math.min(width - 1, Math.ceil(i1)); i++) {
 				const dx = i * texel + origin[0] - x;
 				const dz = j * texel + origin[1] - z;
 				// Downstream, the distance counts less, so the foam trails behind the obstacle.
-				const along = dx > 0 && trail > 0 ? dx * (reach / trail) : dx;
+				const along = dx > 0 && trail > 0 ? dx * (mark / trail) : dx;
 				const edge = Math.hypot(along, dz) - r;
-				const value = 1 - Math.min(Math.max(edge / reach, 0), 1);
+				const value = 1 - Math.min(Math.max(edge / mark, 0), 1);
 				const k = j * width + i;
 				if (edge > -r && value > (near[k] as number)) near[k] = value;
 			}

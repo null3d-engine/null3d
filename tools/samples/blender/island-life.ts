@@ -22,5 +22,5 @@ await buildScene({
 	// Each wheel's origin is its axle, which a scene turns about. Quantizing a wheel's positions
 	// would move that origin into the mesh's bounds, so the wheels keep float positions.
 	floatPositions: ['hatchback-wheel-', 'minibus-wheel-'],
-	inputs: ['--raw', resolve(raw)],
+	options: { '--raw': resolve(raw) },
 });

@@ -1068,13 +1068,20 @@ const S6_SWIFTSHADER_COUNT = 4_000;
 const S6_TIMEOUT_SECONDS = 600;
 
 /**
- * The seconds that S5's held frame may take. Firefox draws the full crowd, and a run that started
- * 41 Firefox shards beside 53 browser shards and 49 Safari ones drew S5's first frame in 52 s and
- * then no result within 90; the same test passes in main's nightly run, whose load is lighter, and
- * the bench comparison at the garden's head found no frame cost on the WebGL2 path. The page
- * reports at once when it has stopped, so a larger budget only covers a slow machine.
+ * The seconds that S5's held frame may take. Firefox draws the full crowd on CI's software
+ * graphics, where the page measured 178 s from its start to its result on a contended runner, and
+ * the figure rises with the host's calibration. The page reports at once when it has stopped, so a
+ * larger budget only covers a slower machine.
  */
-const S5_TIMEOUT_SECONDS = 180;
+const S5_TIMEOUT_SECONDS = 240;
+
+/**
+ * The seconds that the runner waits for S5's and S6's first result. The runner gives a silent page
+ * 90 s unless the page sets its own limit, and a software browser draws these two far past that: on
+ * CI's llvmpipe, S5's first frame arrived at 65 s and its result at 178 s, once the GPU finished,
+ * and it passed when the wait covered it.
+ */
+const BENCH_QUIET_SECONDS = 600;
 
 /**
  * S6's thread modes: the first alone. Copies of one mesh meet in many places of the city, and a
@@ -1587,6 +1594,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		switches: ['view=water-bounds'],
 		modes: ALL_MODES,
+	},
+	// Rain on a lake, seen low across the water: each drop rings the surface where it lands, and the
+	// rings bend the mirror of the sky, a pale post and a dark stone. The add-on's surface draws the
+	// rings only while rain falls, so this is the one picture that draws its rain, on every tier.
+	{
+		name: 'water-rain',
+		sketch: 'tests/pages/sketches/water-rain-sketch.ts?rain',
+		hold: 1,
+		size: [480, 270],
+	},
+	// A creek that falls 18 m off the edge of a cliff, drawn by the water add-on's waterfall: glassy
+	// at the lip, then white ropes of streaks with ragged edges that thin into mist, with spray at the
+	// lip, mist down the fall and a plume at its foot. The sheet's material moves its streaks from
+	// the time alone, and the spray's systems start full, so the held frame shows the running fall.
+	// Every tier must draw the sheet's material, its fade against the cliff, and the particles.
+	{
+		name: 'water-fall',
+		sketch: 'tests/pages/sketches/waterfall-sketch.ts',
+		hold: 2,
+		size: [640, 360],
 	},
 	{
 		name: 'depth-textures',
@@ -3947,6 +3974,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
 			timeoutSeconds:
 				scene === 's6' ? S6_TIMEOUT_SECONDS : scene === 's5' ? S5_TIMEOUT_SECONDS : 90,
+			// A software browser draws these two heavy scenes after the runner's 90 s silence cap, so
+			// each names its own wait, which the runner keeps for the page's whole budget.
+			...(scene === 's5' || scene === 's6' ? { quietSeconds: BENCH_QUIET_SECONDS } : {}),
 			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
 			// update rates are its default, and a held frame otherwise catches far characters
 			// between two of their poses.

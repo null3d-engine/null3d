@@ -3,9 +3,12 @@
 import { createEngine } from '@null3d/engine';
 
 const canvas = document.querySelector('canvas') as HTMLCanvasElement;
-const every = new URLSearchParams(location.search).get('every') ?? '1';
+const params = new URLSearchParams(location.search);
+const every = params.get('every') ?? '1';
+// ?jump=<frames> sets the camera's own period; without a number the sketch keeps its own.
+const jump = params.get('jump');
 const sketch = new URL('./sketches/reflection-sketch.ts', import.meta.url);
-sketch.search = `?water&jump&every=${every}`;
+sketch.search = `?water&jump&every=${every}${jump === null ? '' : `&jump=${jump}`}`;
 (globalThis as { __ready?: boolean }).__ready = false;
 await createEngine({ canvas, sketch, preset: 'high' });
 (globalThis as { __ready?: boolean }).__ready = true;

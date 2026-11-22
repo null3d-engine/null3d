@@ -1632,10 +1632,13 @@ impl FrameGraph {
         self.declared = false;
     }
 
-    /// Gives each view a depth prepass before its opaque pass, or none.
+    /// Gives each view a depth prepass before its opaque pass, or none. The passes are declared
+    /// again when it changes.
     pub(crate) fn set_depth_prepass(&mut self, on: bool) {
-        self.prepass = on;
-        self.declared = false;
+        if on != self.prepass {
+            self.prepass = on;
+            self.declared = false;
+        }
     }
 
     /// Sets how a prepass that a screen step splits from the opaque pass starts the stand-in color

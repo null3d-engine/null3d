@@ -74,8 +74,14 @@ function change(
 	return sum / count;
 }
 
-/** How much of each jump's change in the water arrives after the frame of the jump itself, at most. */
-function lateShare(frames: ReturnType<typeof decodePngRgba>[]): number {
+/**
+ * How much of each jump's change in the water arrives after the frame of the jump itself, at most,
+ * looking `look` frames past the jump. Four is the window of a reflection that draws in every frame
+ * or every second one. A control whose reflection draws in one frame of four needs a wider window:
+ * the arrival then falls on the fourth frame, the window's own last, and a slow GPU that presents
+ * two drawn frames as one moves it out of it.
+ */
+function lateShare(frames: ReturnType<typeof decodePngRgba>[], look = 4): number {
 	const above = frames.slice(1).map((frame, k) => change(frames[k] as never, frame, 0, 0.45));
 	const water = frames.slice(1).map((frame, k) => change(frames[k] as never, frame, WATER_FROM, 1));
 	// The first transition is where the page's first presented frame arrives, not a camera move.
@@ -84,10 +90,10 @@ function lateShare(frames: ReturnType<typeof decodePngRgba>[]): number {
 	const steps = Math.max(...above.slice(1), 0);
 	let worst = 0;
 	let jumps = 0;
-	for (let k = 1; k + 5 < above.length; k++) {
+	for (let k = 1; k + look + 1 < above.length; k++) {
 		if ((above[k] as number) < steps / 2 || (above[k - 1] as number) >= steps / 2) continue;
 		jumps++;
-		const late = Math.max(...water.slice(k + 1, k + 5));
+		const late = Math.max(...water.slice(k + 1, k + look + 1));
 		worst = Math.max(worst, late / Math.max(water[k] as number, 1e-3));
 	}
 	console.log(
@@ -111,10 +117,24 @@ for (const [path, query] of [
 		expect(late).toBeLessThan(MOST_LATE);
 	});
 
+/**
+ * The cadence of the control's reflection, one frame in four, and the frames between its camera's
+ * moves. The moves come sooner than every thirtieth frame so that the capture holds several of
+ * them: a move that lands just after a draw of the reflection lags in no frame at all, and forty
+ * frames hold one move at thirty frames, so one unlucky move was the control's whole evidence.
+ */
+const LAG_EVERY = 4;
+const LAG_JUMP = 7;
+
 test('the measure sees a reflection that lags', async ({ page }) => {
 	// The page starts, and then the capture waits for the frames the measure reads.
 	test.setTimeout(READY_MS + CAPTURE_MS + 60_000);
-	const late = lateShare(await record(page, 'gpu=webgpu&every=4'));
+	// The window is twice the cadence, so the arrival cannot fall outside it on a machine that
+	// presents two of its drawn frames as one.
+	const late = lateShare(
+		await record(page, `gpu=webgpu&every=${LAG_EVERY}&jump=${LAG_JUMP}`),
+		LAG_EVERY * 2,
+	);
 	console.log(`late share with a lag: ${late.toFixed(3)}`);
 	expect(late).toBeGreaterThan(MOST_LATE);
 });

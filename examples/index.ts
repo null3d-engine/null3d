@@ -15,6 +15,7 @@ import type { QualityPreset } from '@null3d/engine';
 import { COMPARE_GROUP, COMPARISONS } from './compare/comparisons';
 import { runComparison } from './compare-page';
 import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
+import { COARSE_INPUT, type InputKind, watchInputKind } from './lib/input-kind';
 import { startDemo } from './lib/run';
 import { sourceUrl } from './lib/source';
 
@@ -211,31 +212,52 @@ function keyHelp(demo: Demo): HTMLElement | undefined {
 }
 
 /**
- * Runs the demo on a canvas that fills the panel, with a caption at its top left and its key help
- * beside it. The caption shows the demo's title and summary, with a link to its code on the main
- * branch, and starts folded.
+ * The demo's gestures, for a finger: what a drag and the touch controls do, with no key caps, since
+ * a touch screen has no keyboard.
  */
-async function runDemo(demo: Demo): Promise<void> {
-	document.title = `${demo.title} · ${demo.scene}: null3D demos`;
-	const canvas = element('canvas');
-	// The labels' layer covers the canvas, and lets the pointer through to it.
-	const labels = element('div');
-	labels.className = 'labels';
-	const caption = element('details');
-	caption.className = 'caption';
-	const title = element('summary');
-	const h1 = element('h1');
-	h1.append(...heading(demo, true));
-	// The chevron floats at the top right of the summary, in place of the native marker. It points
-	// down while the caption is folded and up while it is open, and the summary toggles it once.
-	const chevron = element('span');
-	chevron.className = 'caption__chevron';
-	chevron.setAttribute('aria-hidden', 'true');
+function gestureHelp(demo: Demo): HTMLElement {
+	const panel = element('dl');
+	panel.className = 'gestures';
+	panel.setAttribute('aria-label', 'Gestures');
+	const row = (what: string, does: string): void => {
+		panel.append(element('dt', what), element('dd', does));
+	};
+	row('Drag the scene', 'Turn the camera in Manual mode');
+	row('Pinch', 'Zoom in or out');
+	row('Two fingers', 'Pan the camera in Manual mode');
+	row('Auto / Manual', 'Switch between the camera route and your control');
+	if (demo.gustKey !== undefined) row('Gust', 'Send a gust across the scene');
+	return panel;
+}
+
+/** The sheet's about: the demo's title, what it shows, its code and its credits. */
+function aboutBody(demo: Demo): HTMLElement {
+	const body = element('div');
+	body.className = 'about';
+	const scene = element('p', demo.scene);
+	scene.className = 'about__scene';
+	const summary = element('p', demo.summary);
+	summary.className = 'about__summary';
+	const code = element('a', 'View code', sourceUrl(demo));
+	code.target = '_blank';
+	code.rel = 'noopener';
+	const links = element('p');
+	links.className = 'quiet';
+	links.append(code);
+	const credits = element('p', 'Built by the null3D contributors.');
+	credits.className = 'quiet';
+	body.append(scene, summary, links, credits);
+	return body;
+}
+
+/** An SVG chevron, pointing down unless the caller's own class turns it. */
+function chevronIcon(size: number): SVGSVGElement {
 	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 	svg.setAttribute('viewBox', '0 0 24 24');
 	svg.setAttribute('fill', 'none');
-	svg.setAttribute('width', '18');
-	svg.setAttribute('height', '18');
+	svg.setAttribute('width', String(size));
+	svg.setAttribute('height', String(size));
+	svg.setAttribute('aria-hidden', 'true');
 	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 	path.setAttribute('d', 'M6 9l6 6 6-6');
 	path.setAttribute('stroke', 'currentColor');
@@ -243,49 +265,172 @@ async function runDemo(demo: Demo): Promise<void> {
 	path.setAttribute('stroke-linecap', 'round');
 	path.setAttribute('stroke-linejoin', 'round');
 	svg.append(path);
-	chevron.append(svg);
-	title.append(h1, chevron);
-	caption.append(title, element('p', demo.summary));
-	const code = element('a', 'View code', sourceUrl(demo));
-	code.target = '_blank';
-	code.rel = 'noopener';
-	const links = element('p');
-	links.className = 'quiet';
-	links.append(code);
-	caption.append(links);
-	// The demo's keys sit beside the caption, so a reader finds them without pressing at random.
+	return svg;
+}
+
+/**
+ * The demos page's About sheet: the demo's information over the scene, as a bottom sheet on a
+ * finger and a centred dialog on a mouse. It scrolls inside, closes by its button, by Escape or by
+ * a press on its backdrop, holds the focus while it is open, and never resizes the scene.
+ */
+interface Sheet {
+	readonly element: HTMLElement;
+	open(): void;
+	close(): void;
+	/** Shows a start's failure in the sheet. */
+	showError(message: string): void;
+	readonly isOpen: boolean;
+}
+
+/** Builds the sheet of a demo. */
+function createSheet(demo: Demo): Sheet {
+	const root = element('div');
+	root.className = 'sheet';
+	root.hidden = true;
+	const backdrop = element('div');
+	backdrop.className = 'sheet__backdrop';
+	const dialog = element('section');
+	dialog.className = 'sheet__dialog';
+	dialog.setAttribute('role', 'dialog');
+	dialog.setAttribute('aria-modal', 'true');
+	dialog.setAttribute('aria-labelledby', 'sheet-title');
+	const head = element('header');
+	head.className = 'sheet__head';
+	const heading = element('h2', demo.title);
+	heading.id = 'sheet-title';
+	const close = element('button', '×');
+	close.type = 'button';
+	close.className = 'sheet__close';
+	close.setAttribute('aria-label', 'Close');
+	head.append(heading, close);
+	const body = element('div');
+	body.className = 'sheet__body';
+	const about = aboutBody(demo);
+	body.append(about);
+	dialog.append(head, body);
+	root.append(backdrop, dialog);
+
+	let opener: HTMLElement | undefined;
+	const focusable = (): HTMLElement[] =>
+		[
+			...dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex="0"]'),
+		].filter((node) => !node.hidden && node.offsetParent !== null);
+	const open = (): void => {
+		opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+		root.hidden = false;
+		close.focus();
+	};
+	const closeSheet = (): void => {
+		if (root.hidden) return;
+		root.hidden = true;
+		opener?.focus();
+		opener = undefined;
+	};
+	backdrop.addEventListener('click', closeSheet);
+	close.addEventListener('click', closeSheet);
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape' && !root.hidden) closeSheet();
+	});
+	dialog.addEventListener('keydown', (event) => {
+		if (event.key !== 'Tab') return;
+		const nodes = focusable();
+		if (nodes.length === 0) return;
+		const first = nodes[0] as HTMLElement;
+		const last = nodes[nodes.length - 1] as HTMLElement;
+		const active = document.activeElement;
+		if (event.shiftKey && (active === first || active === null)) {
+			event.preventDefault();
+			last.focus();
+		} else if (!event.shiftKey && active === last) {
+			event.preventDefault();
+			first.focus();
+		}
+	});
+	const sheet: Sheet = {
+		element: root,
+		open,
+		close: closeSheet,
+		showError(message) {
+			const error = element('p', message);
+			error.className = 'error';
+			about.append(error);
+		},
+		get isOpen() {
+			return !root.hidden;
+		},
+	};
+	return sheet;
+}
+
+/**
+ * Runs the demo on a canvas that fills the panel, with a compact title chip at its top left that
+ * opens the demo's about sheet, and holds its key help below: keys on a mouse, gestures on a finger.
+ */
+async function runDemo(demo: Demo): Promise<void> {
+	document.title = `${demo.title} · ${demo.scene}: null3D demos`;
+	const canvas = element('canvas');
+	// The labels' layer covers the canvas, and lets the pointer through to it.
+	const labels = element('div');
+	labels.className = 'labels';
 	const corner = element('div');
 	corner.className = 'corner';
-	corner.append(caption);
-	const keys = keyHelp(demo);
-	if (keys) corner.append(keys);
-	stage.append(canvas, labels, corner);
-	// A demo's choices, such as a showcase scene's time of day, and a page part's buttons sit in a bar
+	const chip = element('button');
+	chip.type = 'button';
+	chip.className = 'chip';
+	chip.setAttribute('aria-haspopup', 'dialog');
+	chip.append(...heading(demo, true), chevronIcon(16));
+	corner.append(chip);
+	const sheet = createSheet(demo);
+	// The demo's key help sits under the chip on a mouse, and a gesture legend takes its place on a
+	// finger. The scene's own controls are the sliding panel that its sketch posts.
+	const help = element('div');
+	help.className = 'corner__help';
+	corner.append(help);
+	// The demo's choices, such as a showcase scene's time of day, and a page part's buttons sit in a bar
 	// at the bottom of the panel.
 	const choices =
 		(demo.choices || demo.pagePart) && !params.has('hold') ? element('div') : undefined;
 	if (choices) {
 		choices.className = 'choices';
-		stage.append(choices);
 	}
-	// The help that a showcase scene posts: its keys and the camera mode. A held frame has none.
 	const hud = !params.has('hold') ? element('div') : undefined;
 	if (hud) {
 		hud.className = 'hud';
 		hud.hidden = true;
-		stage.append(hud);
 	}
+	stage.append(canvas, labels, corner);
+	if (choices) stage.append(choices);
+	stage.append(sheet.element);
+	if (hud) stage.append(hud);
+	chip.addEventListener('click', () => sheet.open());
+	// The pointer's capability picks the input, and a change of it moves the page with it.
+	const query = matchMedia(COARSE_INPUT);
+	const stopWatching = watchInputKind(query, (kind) => {
+		document.body.dataset.input = kind;
+		const drawn = demo.controls?.length
+			? kind === 'coarse'
+				? gestureHelp(demo)
+				: keyHelp(demo)
+			: undefined;
+		help.replaceChildren(...(drawn ? [drawn] : []));
+		help.hidden = drawn === undefined;
+	});
 	// A sketch reads its switches from its own address, such as Skyway's `mood` and `storm`, so the
 	// page's switches go on to it.
 	const sketch = new URL(demo.sketch);
 	for (const [key, value] of params) if (key !== 'demo') sketch.searchParams.set(key, value);
 	try {
-		await startDemo({ canvas, demo: { ...demo, sketch }, labels, choices, hud, preset });
+		await startDemo({
+			canvas,
+			demo: { ...demo, sketch },
+			labels,
+			choices,
+			hud,
+			preset,
+		});
 	} catch (error) {
-		const message = element('p', error instanceof Error ? error.message : String(error));
-		message.className = 'error';
-		caption.append(message);
-		caption.open = true;
+		sheet.showError(error instanceof Error ? error.message : String(error));
+		sheet.open();
 	}
 }
 

@@ -79,9 +79,9 @@ A name that is not `auto`, `low`, `medium`, `high` or `ultra` fails the start wi
 A phone closes a tab that uses too much memory, and the page gets no event for it. So while the engine starts, it keeps a note in the page's `localStorage`. It removes the note once the engine has drawn for its first few seconds, or when the page stops the engine or leaves before then. A note that the next start finds means that the tab crashed during that start:
 
 - After one crashed start, the engine starts one preset lower than it would.
-- After two in a row, it starts at Low. If the start that crashed drew with WebGPU, it draws with WebGL2, unless the page names a GPU path.
+- After two in a row, it starts at Low, in the [lowest quality tier](#the-lowest-quality-tier). If the start that crashed drew with WebGPU, it draws with WebGL2, unless the page names a GPU path.
 
-This also applies to a preset that the page names, so a device that crashed at the player's choice can start again. The page can read the count in `engine.mode.crashedStarts` and tell the player. When the browser refuses the storage, as in a sandboxed frame, each start counts as a normal one. Hold mode and the `?preset=` switch leave the note alone. The note belongs to one sketch module and one origin.
+This also applies to a preset that the page names, so a device that crashed at the player's choice can start again. The `?preset=` switch fixes the preset and starts outside the tier, as it ignores the crashes. The page can read the count in `engine.mode.crashedStarts` and tell the player. When the browser refuses the storage, as in a sandboxed frame, each start counts as a normal one. Hold mode and the `?preset=` switch leave the note alone. The note belongs to one sketch module and one origin.
 
 ## The preset check
 
@@ -298,6 +298,16 @@ Each step follows the rules of dynamic resolution. Frames must stay over budget 
 Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the [target frame rate](#the-target-frame-rate): by default the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls, and the target falls with it.
 
 `quality.governor` reports what the governor lowered, and the `quality.onChange` handlers run after each shadow step. So a sketch can lighten its own work at the same time: [Quality API](../api/quality.md#the-frame-budget-governor) shows how. `quality.set({ governor: false })` turns the governor off. The scene then draws at `maxRenderScale`, with the shadow settings as set, as a benchmark or a recorded video needs. Hold mode has no governor.
+
+### The lowest quality tier
+
+Some devices reach the lowest render scale and still miss the target. Below the four presets sits a lowest tier for them. The governor enters it when the render scale has held at its floor through the sustained window, and the judged frames still miss. Its cuts are a third-size render scale floor, no sun shadows, no bloom, and reflection passes at a quarter of the render size. On WebGL2 it also turns the depth prepass off.
+
+The tier changes live settings that a sketch can read. These are `minRenderScale`, `castShadows`, `bloom` and `reflectionScale`, and `depthPrepass` where the GPU path draws it. The four presets keep their values, so no other look changes. `quality.governor.lowest` reports whether the tier applies.
+
+The entry goes on trial as a step down does. Frames that come clearly slower after it take the tier back, and close it for a wait that doubles with each failed entry. The governor leaves the tier when the frames keep room through the window that raises a step. It then waits that same window before the tier can enter again, so a device cannot flap.
+
+`?tier=lowest` starts a page in the tier, for tests, devices and a known weak class. The governor stays the default path to the tier.
 
 ### Settings of an add-on's feature
 

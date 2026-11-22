@@ -54,6 +54,66 @@ describe('the foam map', () => {
 		expect(read(data, 0.2, 0)).toBe(0);
 	});
 
+	it('keeps a mark’s own reach, and gives a mark without one the map’s reach', () => {
+		const { ctx, texels } = fakeContext();
+		// Two stones of the same size: one reaches 0.8 m, and one takes the map's 0.35 m.
+		foamMap(
+			ctx,
+			[
+				{ x: 2, z: 0.8, r: 0.3, reach: 0.8 },
+				{ x: -0.5, z: 0.8, r: 0.3 },
+			],
+			options,
+		);
+		const { data } = texels();
+		// Half a meter across the current from each stone's edge.
+		expect(read(data, 2, 1.6)).toBeGreaterThan(0.3);
+		expect(read(data, -0.5, 1.6)).toBe(0);
+		// Both keep the foam at their own edge.
+		expect(read(data, 2, 1.1)).toBeGreaterThan(0.9);
+		expect(read(data, -0.5, 1.1)).toBeGreaterThan(0.9);
+	});
+
+	it('runs the trail to the end that its own reach gives it', () => {
+		const { ctx, texels } = fakeContext();
+		// The map's own defaults, a reach of 0.35 m and a trail of 1.6 m, on 0.1 m texels. The fade
+		// ends at trail × (1 + r / reach) = 2.97 m; short of it the tail still foams.
+		foamMap(ctx, [{ x: 1, z: 0, r: 0.3 }], {
+			origin: [-2, -4],
+			size: [8, 8],
+			width: 80,
+			height: 80,
+		});
+		const { data } = texels();
+		const read = (x: number): number =>
+			(data[(40 * 80 + Math.round((x + 2) / 0.1)) * 4] as number) / 255;
+		// 2.2 m downstream still foams: the loop used to stop 1.9 m out and cut this to nothing.
+		expect(read(3.2)).toBeGreaterThan(0.3);
+		// Past the fade's own end there is none.
+		expect(read(4)).toBe(0);
+	});
+
+	it('keeps the whole ring where the trail is nothing', () => {
+		const { ctx, texels } = fakeContext();
+		foamMap(ctx, [stone], { ...options, trail: 0 });
+		const { data } = texels();
+		// A ring reaches the mark's reach past its edge on every side, downstream included.
+		expect(read(data, 1.2, 0)).toBeGreaterThan(0.9);
+		expect(read(data, 1.4, 0)).toBeGreaterThan(0.6);
+		expect(read(data, 1.7, 0)).toBe(0);
+	});
+
+	it('refuses a reach that is not a finite number above 0, on the map and on a mark', () => {
+		const message = 'a foam reach must be a finite number above 0';
+		// Nothing and below lay no foam; not a number empties the map, and infinity covers it all.
+		for (const reach of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+			const map = fakeContext();
+			expect(() => foamMap(map.ctx, [stone], { ...options, reach })).toThrow(message);
+			const mark = fakeContext();
+			expect(() => foamMap(mark.ctx, [{ ...stone, reach }], options)).toThrow(message);
+		}
+	});
+
 	it('takes the area and the texels that the options give', () => {
 		const { ctx, texels } = fakeContext();
 		const map = foamMap(ctx, [], { ...options, width: 32, height: 16 });

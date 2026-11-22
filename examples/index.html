@@ -87,7 +87,7 @@
 				border: 1px solid rgb(255 255 255 / 0.18);
 				box-shadow: 0 0 30px rgb(0 0 0 / 0.45);
 			}
-			/* The demo's caption, with its key help under it. */
+			/* The demo's title chip, at the corner of the panel. */
 			.corner {
 				position: absolute;
 				top: 0.75rem;
@@ -101,7 +101,6 @@
 				pointer-events: none;
 			}
 			.corner > * { pointer-events: auto; }
-			.corner > .caption { position: static; max-width: 100%; }
 			/* The on-screen driving pad: a thumb stick at the bottom left, buttons at the bottom right. */
 			.pad { position: absolute; inset: 0; pointer-events: none; }
 			.pad[hidden] { display: none; }
@@ -160,11 +159,13 @@
 			}
 			.keys {
 				display: grid;
-				grid-template-columns: auto auto;
+				grid-template-columns: auto 1fr;
 				align-items: center;
 				gap: 0.3rem 0.6rem;
 				margin: 0;
 				padding: 0.5rem 0.7rem;
+				width: 100%;
+				box-sizing: border-box;
 				font-size: 12px;
 				color: var(--muted);
 				background: linear-gradient(180deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.02)), rgb(13 17 23 / 0.72);
@@ -175,7 +176,7 @@
 				box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
 			}
 			.keys dt { display: flex; gap: 0.2rem; justify-content: flex-end; }
-			.keys dd { margin: 0; white-space: nowrap; }
+			.keys dd { margin: 0; }
 			.keys kbd {
 				min-width: 1.6em;
 				padding: 2px 5px 3px;
@@ -187,40 +188,93 @@
 				border-bottom-width: 2px;
 				border-radius: 5px;
 			}
-			.caption {
-				position: absolute;
-				top: 0.75rem;
-				left: 0.75rem;
-				/* Room at the right for the stats overlay, collapsed to its frame rate. */
-				max-width: min(24rem, calc(100% - 10rem));
-				padding: 0.4rem 0.75rem;
-				font-size: 14px;
-				background: rgb(13 17 23 / 0.8);
-				border-radius: 6px;
-			}
-			.caption summary {
-				position: relative;
-				cursor: pointer;
-				/* Room at the right for the floating chevron, so the two-line title clears it. */
-				padding-right: 1.7rem;
-				list-style: none;
-			}
-			.caption summary::-webkit-details-marker { display: none; }
-			.caption summary::marker { content: ""; }
-			.caption__chevron {
-				position: absolute;
-				top: 0.05rem;
-				right: 0;
-				display: inline-flex;
+			.gestures {
+				display: grid;
+				grid-template-columns: auto 1fr;
+				align-items: baseline;
+				gap: 0.35rem 0.75rem;
+				margin: 0;
+				padding: 0.5rem 0.2rem;
+				font-size: 13px;
 				color: var(--muted);
-				pointer-events: none;
 			}
-			.caption__chevron svg { transition: transform 200ms ease; }
-			.caption[open] .caption__chevron svg { transform: rotate(180deg); }
-			.caption h1 { display: inline; font-size: 1rem; margin: 0; }
-			.caption p { margin: 0.35rem 0 0; }
-			.caption .quiet { font-size: 12px; }
-			.caption .quiet a { color: var(--muted); }
+			.gestures dt { color: var(--text); font-weight: 600; white-space: nowrap; }
+			.gestures dd { margin: 0; }
+			/* The demo's title chip: compact, at the top left, and it opens the demo's sheet. */
+			.chip {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.4rem;
+				max-width: 100%;
+				padding: 0.45rem 0.7rem;
+				color: var(--text);
+				font: inherit;
+				font-size: 0.95rem;
+				text-align: left;
+				background: rgb(13 17 23 / 0.8);
+				border: 1px solid rgb(255 255 255 / 0.14);
+				border-radius: 999px;
+				cursor: pointer;
+			}
+			.chip:hover { background: rgb(13 17 23 / 0.92); }
+			.chip:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
+			/* The chip stays compact: its scene line and its progress bar read in the sheet. */
+			.chip .scene { display: none; }
+			.chip .growth { margin-top: 0 !important; }
+			.chip svg { flex: 0 0 auto; color: var(--muted); }
+			/* The demo's sheet: a centred dialog on a mouse, a bottom sheet on a finger. */
+			.sheet {
+				position: absolute;
+				inset: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				z-index: 30;
+			}
+			.sheet[hidden] { display: none; }
+			.sheet__backdrop { position: absolute; inset: 0; background: rgb(5 8 12 / 0.5); }
+			.sheet__dialog {
+				position: relative;
+				display: flex;
+				flex-direction: column;
+				width: min(34rem, calc(100% - 2rem));
+				max-height: min(80dvh, 44rem);
+				color: var(--text);
+				background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0) 30%), rgb(16 21 30 / 0.96);
+				border: 1px solid rgb(255 255 255 / 0.18);
+				border-radius: 16px;
+				box-shadow: 0 30px 70px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.12);
+			}
+			body[data-input="coarse"] .sheet { align-items: flex-end; }
+			body[data-input="coarse"] .sheet__dialog {
+				width: 100%;
+				max-width: none;
+				max-height: 80dvh;
+				border-radius: 18px 18px 0 0;
+				padding-bottom: env(safe-area-inset-bottom);
+			}
+			.sheet__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 0.9rem 0.2rem 1rem; }
+			.sheet__head h2 { margin: 0; font-size: 1.05rem; }
+			.sheet__close {
+				width: 44px;
+				height: 44px;
+				color: var(--text);
+				font-size: 22px;
+				line-height: 1;
+				background: transparent;
+				border: 1px solid transparent;
+				border-radius: 50%;
+				cursor: pointer;
+			}
+			.sheet__close:hover { background: rgb(255 255 255 / 0.1); }
+			.sheet__close:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
+			.sheet__body { overflow-y: auto; overscroll-behavior: contain; padding: 0.9rem 1rem 1.1rem; }
+			.about__scene { margin: 0 0 0.5rem; color: var(--muted); }
+			.about__summary { margin: 0 0 0.6rem; line-height: 1.45; }
+			.about .quiet { margin: 0.25rem 0 0; font-size: 12px; color: var(--muted); }
+			.about .quiet a { color: var(--muted); }
+			.corner__help { display: flex; flex-direction: column; align-items: flex-start; }
+			.corner__help[hidden] { display: none; }
 			.choices {
 				position: absolute;
 				bottom: 0.75rem;
@@ -1010,7 +1064,6 @@
 				.sidebar, .sidebar.open { transition: none; }
 				.loader { transition: none; }
 				.loader__fill { animation: none; width: 100%; }
-				.caption__chevron svg { transition: none; }
 			}
 		</style>
 	</head>

@@ -316,6 +316,13 @@ function pointAttribute(gl: WebGL2RenderingContext, stride: number, a: VertexAtt
 }
 
 /**
+ * A framebuffer that a live context refused. The backend skips the frame and asks again on the
+ * next one, because a driver can answer a lost context's check with a refusal before the loss flag
+ * is set; the same refusal on the next frame is a format the device does not draw into.
+ */
+export class WebGL2TargetRefused extends Error {}
+
+/**
  * How GL stores each texture format, by format code, for a canvas with alpha or without. A
  * compressed format is there only when the context turned on its extension, which the backend
  * asks for by name.
@@ -381,6 +388,39 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	add(G.FORMAT_DEPTH32_FLOAT, gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, depth);
 	add(G.FORMAT_DEPTH16_UNORM, gl.DEPTH_COMPONENT16, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, depth);
 	return formats;
+}
+
+/** The name of each format that a framebuffer's attachments may take. */
+const FORMAT_NAMES: Readonly<Record<number, string>> = {
+	[G.FORMAT_CANVAS]: 'the canvas',
+	[G.FORMAT_RGBA8_UNORM]: 'RGBA8',
+	[G.FORMAT_RGBA8_UNORM_SRGB]: 'sRGB8',
+	[G.FORMAT_RGBA16_FLOAT]: 'RGBA16F',
+	[G.FORMAT_RG16_FLOAT]: 'RG16F',
+	[G.FORMAT_RG11B10_UFLOAT]: 'R11G11B10F',
+	[G.FORMAT_RGB9E5_UFLOAT]: 'RGB9E5',
+	[G.FORMAT_RGBA32_FLOAT]: 'RGBA32F',
+	[G.FORMAT_R32_UINT]: 'R32UI',
+	[G.FORMAT_R32_FLOAT]: 'R32F',
+	[G.FORMAT_RGBA32_UINT]: 'RGBA32UI',
+	[G.FORMAT_R16_FLOAT]: 'R16F',
+	[G.FORMAT_DEPTH24_PLUS]: 'depth24',
+	[G.FORMAT_DEPTH32_FLOAT]: 'depth32f',
+	[G.FORMAT_DEPTH16_UNORM]: 'depth16',
+};
+
+/** A framebuffer's attachments by name and GL's own format number, for a driver report. */
+function describeFramebuffer(
+	first: GlTexture,
+	depth: GlTexture | null,
+	second: GlTexture | null,
+): string {
+	const name = (target: GlTexture) =>
+		`${FORMAT_NAMES[target.format.code] ?? `format ${target.format.code}`} (0x${target.format.internal.toString(16)})`;
+	const parts = [`color ${name(first)}`];
+	if (second) parts.push(`second color ${name(second)}`);
+	if (depth) parts.push(`depth ${name(depth)}`);
+	return parts.join(', ');
 }
 
 /** The linear color formats that WebGL2 both renders into and filters, so `generateMipmap` takes them. */
@@ -492,6 +532,13 @@ export class WebGL2Backend {
 	readonly joins: JoinedBuilds;
 	/** True once a list has replayed, after which no frame waits for a joined shader's compile. */
 	private replayed = false;
+	/**
+	 * How many frames in a row a live context has refused a target, and the target's message, so
+	 * the next frame may refuse one again before the engine ends: a lost context can answer the
+	 * check this way before its flag is set, and a cadence can put two targets in the way.
+	 */
+	private refusedFrames = 0;
+	private refusedTarget = '';
 	/** The opcode and word of the command that the replay is carrying out. */
 	private replayOp = -1;
 	private replayWord = -1;
@@ -973,7 +1020,9 @@ export class WebGL2Backend {
 
 	/**
 	 * Replays the draw list in `words[start, end)`. `floats` views the same memory as `words`, for
-	 * float operands; `memory` is the engine memory that uploads read from.
+	 * float operands; `memory` is the engine memory that uploads read from. A target that a live
+	 * context refuses ends the replay without an error, and the next frame asks again before the
+	 * refusal is reported: a lost context can answer the check that way before its flag is set.
 	 */
 	replay(
 		words: Uint32Array,
@@ -996,6 +1045,37 @@ export class WebGL2Backend {
 		this.floats = floats;
 		this.unpackSlot = (this.unpackSlot + 1) % UNPACK_RING;
 		this.unpackUsed = 0;
+		try {
+			this.replayOps(words, floats, start, end);
+		} catch (error) {
+			if (!(error instanceof WebGL2TargetRefused)) throw error;
+			// A live context refused a target. The driver can answer a lost context's check this
+			// way before the loss flag is set, so this frame draws nothing and the next frame asks
+			// again. A cadence can put two targets in the way on alternating frames, so the retry
+			// counts frames, not names.
+			if (this.refusedFrames > 0) {
+				const before = this.refusedTarget;
+				throw new WebGL2TargetRefused(
+					before === error.message
+						? error.message
+						: `${error.message}; the frame before refused ${before}`,
+				);
+			}
+			this.refusedFrames = 1;
+			this.refusedTarget = error.message;
+			// The frame's finished reads still go, as at the end of every replay: a read that waits
+			// for a frame which never draws again would hold its page waiting.
+			this.flushReads();
+			return;
+		}
+		this.refusedFrames = 0;
+		this.refusedTarget = '';
+		this.flushReads();
+		this.replayed = true;
+	}
+
+	/** Replays a draw list's commands, as `replay` describes them. */
+	private replayOps(words: Uint32Array, floats: Float32Array, start: number, end: number): void {
 		const gl = this.gl;
 		for (let i = start; i < end; ) {
 			const header = words[i] as number;
@@ -1201,8 +1281,6 @@ export class WebGL2Backend {
 			}
 			i += length;
 		}
-		this.flushReads();
-		this.replayed = true;
 	}
 
 	/**
@@ -2466,10 +2544,17 @@ export class WebGL2Backend {
 			gl.drawBuffers(TWO_DRAW_BUFFERS);
 		}
 		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-		if (status !== gl.FRAMEBUFFER_COMPLETE)
-			throw new Error(
-				`WebGL2 cannot draw into this target's format (status 0x${status.toString(16)})`,
-			);
+		if (status !== gl.FRAMEBUFFER_COMPLETE) {
+			gl.deleteFramebuffer(framebuffer);
+			const target = describeFramebuffer(first, depth, second);
+			const text = `${target} (status 0x${status.toString(16)})`;
+			// A driver can answer a lost context's check with this status before the loss flag is
+			// set. The renderer drops a frame error while the context is lost, and its recovery
+			// then starts.
+			if (gl.isContextLost())
+				throw new Error(`WebGL2 lost its context inside a framebuffer check: ${text}`);
+			throw new WebGL2TargetRefused(`WebGL2 cannot draw into ${text}`);
+		}
 		return framebuffer;
 	}
 

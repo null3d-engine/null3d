@@ -71,9 +71,14 @@ export const PRESET_CHANGE = { from: 'medium', to: 'low' } as const satisfies Re
 
 /**
  * The preset change page's switches for that change. The engine's own ?preset= switch fixes the
- * start, so no crash marker that an earlier page left can lower it.
+ * start, so no crash marker that an earlier page left can lower it, and ?tier=off keeps the
+ * governor out of the lowest tier, whose cuts would change the settings the page reads.
  */
-export const PRESET_CHANGE_SWITCHES = [`preset=${PRESET_CHANGE.from}`, `to=${PRESET_CHANGE.to}`];
+export const PRESET_CHANGE_SWITCHES = [
+	`preset=${PRESET_CHANGE.from}`,
+	`to=${PRESET_CHANGE.to}`,
+	'tier=off',
+];
 
 /** What the preset change page reports. */
 export interface PresetChangeResult {

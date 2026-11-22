@@ -3,6 +3,7 @@ import type { Tier } from '../shared/tier';
 import {
 	afterCrashes,
 	choosePreset,
+	crashLowest,
 	crashTier,
 	type DeviceHints,
 	deviceKind,
@@ -185,6 +186,15 @@ describe('afterCrashes', () => {
 		expect(afterCrashes('low', 1)).toBe('low');
 		expect(afterCrashes('medium', 1)).toBe('low');
 		expect(afterCrashes('ultra', 0)).toBe('ultra');
+	});
+});
+
+describe('crashLowest', () => {
+	it('starts in the lowest tier after two crashed starts', () => {
+		expect(crashLowest(2)).toBe(true);
+		expect(crashLowest(3)).toBe(true);
+		expect(crashLowest(1)).toBe(false);
+		expect(crashLowest(0)).toBe(false);
 	});
 });
 

@@ -3,7 +3,7 @@ id: api/water
 title: "Water (@null3d/water)"
 status: experimental
 since: "0.3"
-summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createOcean: an open sea of spectra transformed on the GPU."
+summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, rain rings, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createWaterfall: a fall from a river's lip, with spray and mist. createOcean: an open sea of spectra transformed on the GPU."
 ---
 
 # Water (@null3d/water)
@@ -24,16 +24,23 @@ flowchart LR
     sea --> ocean["The sea"]
     preset["The quality preset"] --> mirror
     camera["A camera under the surface"] --> under["createUnderwater"]
+    lip["A river's lip,<br/>its current and a drop"] --> path["The path of<br/>falling water"]
+    path --> sheet["A column of water:<br/>streaks that ride the water"]
+    path --> spray["Spray, mist<br/>and a plume"]
+    sheet --> fall["The waterfall"]
+    spray --> fall
 ```
 
 `@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
 
-`createOcean` draws an open sea instead. Its waves come from wave spectra, and the GPU transforms them into heights in every frame. The bands of swell and chop then move on their own, and the surface reads the slopes that the transform writes.
+`createWaterfall` draws a fall from a river's lip, with spray at the lip, mist down the fall and a plume of mist at its foot.
 
-The package is built on the engine's public API. Its surface and underwater shaders ship compiled, so your build does not compile them, and the package needs no extra setup for them.
+`createOcean` draws an open sea instead. Its waves come from wave spectra, and the GPU transforms them into heights in every frame. The bands of swell and chop then move on their own, and the surface reads the slopes that the transform writes. Its reflection takes the same cadence as the river's: the preset's and the governor's at rest, and every frame while the camera that `update()` follows moves or turns.
+
+The package is built on the engine's public API. Its surface and underwater shaders ship compiled, so your build does not compile them, and the package needs no extra setup for them. A waterfall's spray comes from `@null3d/particles`, which the package lists as a peer dependency. It loads with the first fall that makes spray.
 
 ```sh
-bun add @null3d/water
+bun add @null3d/water @null3d/particles
 ```
 
 ```ts
@@ -130,8 +137,29 @@ the bed at a point, and the current there.
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
 | `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
 | `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
-| `material` | The standard material values | None | The surface's material, such as its volume's tint and its thickness |
+| `material` | The standard material values | None | The surface's material, such as its volume's tint. The surface works its own thickness and transmission out, so it takes no value for those |
+| `camera` | A `Camera` | None | The camera that the reflection follows. While it moves or turns, the reflection draws in every frame, so a moving view shows no mirror of an older one; a still camera keeps the cadence above. Without one, the cadence holds whatever the view does |
 | `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
+| `rain` | A number from 0 to 1 | 0 | How hard rain falls on the surface. Each drop rings the surface where it lands. 0 draws no rings and costs nothing |
+
+## The foam around what breaks the water
+
+`foamMap(ctx, obstacles, options)` makes the map that the surface breaks into flecks. Each obstacle
+is a mark `{ x, z, r }` at the water's surface. The map holds how near every point lies to a mark,
+from 1 at its edge to 0 a little way off. It stretches that reach downstream, so the foam trails.
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `origin`, `size` | Two numbers each, in meters | Required | The world area that the map covers |
+| `width`, `height` | Texels | 1024, 224 | The map's texels along x and along z |
+| `reach` | A finite number above 0, in meters | 0.35 | How far the foam reaches around a mark that gives no reach of its own |
+| `trail` | A number, in meters | 1.6 | How far downstream the foam trails behind a mark. 0 or less leaves a ring |
+
+A mark takes a `reach` of its own, in meters, in place of the map's. So one water can foam further
+around some of its stones than around others. A mark without one keeps the map's reach. Give
+neither the map's reach nor the mark's and the call stops: a reach must be a finite number above 0.
+The foam reaches `trail × (1 + r / reach)` meters downstream of a mark, so a mark with a shorter
+reach trails further in proportion to its radius.
 
 ## Wind on the surface
 
@@ -155,6 +183,25 @@ return {
 
 `waveAmplitude` scales the lift that the wind gives the surface, along with the long waves. A slow stream can therefore keep a nearly flat surface, with fine ripples. Its wind field still moves the plants and the leaves around it.
 
+## Rain on the surface
+
+Give `createWater` a `rain` amount, or call `water.setRain(amount)` while the scene runs, and each
+raindrop rings the surface where it lands. A ring grows and fades in about a second, and the rings
+drift downstream with the current. They bend the surface's mirror and its highlights, as real rain
+does. A light rain rings a few of the surface's cells, and a downpour rings all of them.
+
+```ts
+const water = createWater(ctx, { shapes, rain: 0 });
+
+// When a storm starts:
+water.setRain(1);
+```
+
+The rings follow the wet surface of the weather example add-on. Each cell of a grid about a meter
+wide takes one drop at a time, with its place and its moment from the cell's hash. They give way where
+one pixel covers more than a ring's line, so far water does not shimmer. Rain is off by default.
+While it is off, the surface skips the rings' work.
+
 ## The water object
 
 `createWater` returns an object:
@@ -167,12 +214,26 @@ return {
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
 | `currentAt(x, z, out)` | The current at a point, as a velocity in meters a second, written into `out` |
 | `setCaustics(light)` | Sets the light that the ripples focus on the bed, as a linear color |
+| `setRain(amount)` | Sets how hard rain falls on the surface, from 0 to 1 |
 | `bodies` | The resolved bodies: their bounds, `depthAt`, `contains` and `currentAt` |
 | `destroy()` | Removes the surface, its reflection pass and its material |
 
 `surfaceHeight` and `currentAt` use the body that the point lies over, so a boat, a leaf or a
 swimmer floats and drifts with the water under it. Where a river meets a lake, `currentAt` gives the
 current of the body that owns the point, and `surfaceHeight` follows the flat, mixed surface there.
+
+## The tint of the water
+
+The surface lets the bed's light through. The attenuation then takes a share of that light, for
+each meter that it travels. The surface measures the travel as the depth of the bed under the
+point. The water's own volume reaches from its surface down to that bed. So the tint of a shallow
+creek follows its depth, and the caller sets how fast the tint gathers. `attenuationColor`
+is the color that the light takes after `attenuationDistance` meters. A clear creek takes a pale
+color over a distance of several meters. Most of the bed's light then reaches the eye at every
+point, and a little more of it over the shallows. A dark color over a distance shorter than the
+bed is deep takes most of that light away. The water then reads as an opaque slab of its color,
+with no bed under it. The surface works out its own thickness and transmission, so those two
+values do not apply here.
 
 ## The view from under the water
 
@@ -193,6 +254,102 @@ light with distance into the water's own color.
 Call `update(t, air, caustics)` in each frame with the sketch's time, the light of the air at the
 horizon, and the light of the caustics. The surface seen from below shows the world above through a
 window overhead, and turns the light back past that window's edge.
+
+## Waterfalls
+
+`createWaterfall(ctx, options)` makes a waterfall that falls from a river's lip. The water rolls
+over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water
+does while the air slows it. Below the tongue it turns white: a solid column of rough round ropes,
+with soft gray shade between them and clumps of froth that ride down with the water. Its outline
+tears into lobes and wisps. Over its first meters it draws in to about a quarter of the lip's
+width, and its sides wander and break into separate ropes, so a notch as wide as the lip shows
+rock beside it. Over its lower half it breaks up into clumps and dissolves into a broad mist,
+about four times its width, that draws over its foot. So it never lands and never ends in a
+line. Spray froths at the lip, and a plume of mist
+rises at its foot.
+
+The sheet's material moves each streak with the water from the sketch's time alone. So the fall
+costs the CPU nothing in a frame. A streak rides down at the water's own speed, and it stretches as
+the water speeds up. The fall is one closed column with an oval section. It is thin under the
+brink, so its water hangs close to the rock, and it deepens out from the cliff over its first few
+meters as it falls. So the fall has a solid body from the side as well as from the front. Its
+outline thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly
+off the column. White water scatters the light that reaches it from all round. So the column takes
+the sky's light as a surface facing up does, and gives back a share of the air's light that
+`setLight` names, as the mist beside it does, so it reads as the lightest thing beside it. The
+scene's light lights the column,
+and the column fades where it nears a wall or a ledge behind it. The spray and
+the mist are systems of [`@null3d/particles`](particles.md), which the water package depends on.
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+import { createWater, createWaterfall } from '@null3d/water';
+
+export default defineSketch(async (ctx) => {
+  const { scene } = ctx;
+  const camera = scene.createPerspectiveCamera({ position: [17, 5, 18], target: [0, -6, 0] });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [0.35, -0.8, 0.5], intensity: 1.6 });
+  scene.setEnvironment(await ctx.assets.skyEnvironment());
+
+  // The creek runs along +x and ends at the lip.
+  const water = createWater(ctx, {
+    shapes: { kind: 'river', middle: [[-40, 0], [0, 0]], halfWidth: 2.8, depth: 0.7, speed: 1.4 },
+  });
+  const fall = await createWaterfall(ctx, {
+    lip: [0, 0],
+    direction: [1, 0],
+    halfWidth: 2.8,
+    speed: 1.4,
+    drop: 18,
+  });
+
+  return {
+    onUpdate() {
+      water.update();
+    },
+    onLateUpdate() {
+      fall.update();
+    },
+  };
+});
+```
+
+End the river's own surface at the lip. The sheet starts a meter upstream of it, on the river's
+surface, and fades in there. So the river and the fall meet without a seam.
+
+| Option | Takes | Default | What it sets |
+| --- | --- | --- | --- |
+| `lip` | `[x, z]` in meters | Required | The middle of the lip, where the river's surface ends and the water falls |
+| `direction` | `[x, z]` | Required | The way the water runs over the lip. Its length does not matter |
+| `halfWidth` | A number above 0, in meters | Required | Half the river's width at the lip |
+| `level` | A number, in meters | 0 | The height of the water's surface at the lip |
+| `speed` | A number above 0, in meters a second | 1.2 | The current at the lip. It sets how far the water leaps out from the lip's line: at 1.2 m/s the back of the column is 0.6 m out 2 m down and 1.3 m out 13 m down. A wall that leans out further meets the water, and the column fades near the rock. Give the speed at the lip itself |
+| `drop` | A number above 0, in meters | Required | How far the fall drops below the lip. The sheet thins into mist over the lower half of the drop |
+| `spread` | A number from 0 | 0.3 | How far each side of the sheet widens for each meter that the water falls, once it has fallen a few meters: while it still falls as a stream it spreads little, and lower down it opens into a veil. At 0.3 a creek 5 m wide that falls 13 m is about three quarters as wide as the creek halfway down, and half as wide again at its foot |
+| `apron` | A number above 0, in meters | 1 | How far up the river the fall's water starts, lying on the river's surface. It fades in at uneven distances and covers the river's square end, so the water runs into the fall with no straight edge at the lip. Give the reach of the broken water before the brink |
+| `fadeBelow` | A number, in meters | None | The world height of a cloud sea, a fog bank or a mist that the fall drops into. A cloud that draws before the fall does not hide it, so below this height the fall vanishes itself over 2.5 m, each clump at its own depth. The water breaks up and bursts into mist over the part of the drop above it |
+| `spray` | A number from 0 to 3 | 1 | The spray and the mist, as a factor of the fall's own. At 0 the fall makes no particles, and neither `@null3d/particles` nor the engine's particle code loads |
+| `mist` | A number from 0 to 3 | 1 | The mist round the fall's foot and the plume that rises from it, as a factor of the fall's own, which `spray` scales too. At 0 the fall makes neither, for a scene whose own cloud draws the mist at the fall's foot: puffs lit apart from that cloud draw a gray patch over it |
+| `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
+| `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |
+| `material` | The standard material values | None | The sheet's material, such as the color of its white water |
+| `mesh` | `{ across, down }` | 16 and 40 | The sections across the sheet, and its rows from the lip to the foot |
+
+`createWaterfall` returns a promise of a waterfall object, since the particle code downloads on
+first use:
+
+| Member | What it does |
+| --- | --- |
+| `update()` | Steps the spray and the mist. Call it once in each frame, in `onLateUpdate`, after the wind steps |
+| `setLight(color)` | Sets the air's light on the spray and the mist, as a linear color. Particles are not lit, so give them the scene's light in each mood. The column's white water gives back a share of it too |
+| `setSpray(amount)` | Sets the spray and the mist, from 0 to 3. A storm raises it |
+| `fallTime` | The seconds that the water takes from the lip to the foot |
+| `destroy()` | Removes the sheet, its material and its particles |
+
+A fall that lies past the edge of a water's surface does not show in that water's mirror. Put it on
+a layer that the water's `layers` option leaves out, so the reflection pass skips it.
 
 ## The ocean
 
@@ -252,7 +409,7 @@ holds longer waves, and a taller significant height lifts them further.
 
 | Member | What it does |
 | --- | --- |
-| `update()` | Moves the mesh about the camera. The reflection pass carries its own cadence. Call it once in each frame, after the camera moves |
+| `update()` | Moves the mesh about the camera, and follows it for the reflection's cadence, which draws in every frame while the view moves. Call it once in each frame, after the camera moves |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `heightAt(x, z)` | The height of the sea at a world place, in meters, at the sketch time. It runs the bands' transforms on this thread, and transforms again only when the sketch time moves, so several reads in a frame share one |
 | `bands` | The bands, in the order that they sum |
@@ -270,7 +427,11 @@ near the eye and spends its vertices far away.
   against the bank. With `bed: 'shape'`, the mesh carries each vertex's bed depth in its vertex
   colors and the surface reads that instead, for a bed that the scene states rather than draws.
 - **The reflection.** The pass draws the scene a second time. It draws every other frame on Low and
-  Medium, so it costs half as much on average there, and every frame on High and Ultra. When frames
+  Medium, so it costs half as much on average there, and every frame on High and Ultra. A camera that
+  moves or turns overrides that, and the reflection then draws in every frame. A moving view never
+  shows a mirror of an older one, and the cadence returns when the view settles. While the lowest
+  quality tier applies, a still camera draws it in every 16th frame whatever the preset and the
+  governor give; leaving the tier gives the budget back. When frames
   take too long, the frame-budget governor doubles the wait, up to every 16th frame. The stats
   overlay shows the cadence as `reflectionEvery`. It shows the pass's GPU time and its share of a
   frame as the water row's budget. It also shows the memory of the mesh arrays, the map of where bodies
@@ -281,6 +442,13 @@ near the eye and spends its vertices far away.
 - **Transmission.** The surface lets light through, so the engine copies the scene's colors in the
   frame that the water draws. The water draws both faces.
 - **Nothing before its first use.** A page that never creates water downloads none of the add-on.
+- **A waterfall.** It draws one blended mesh, a closed column of just over 2,000 triangles at the
+  default detail. It adds four particle systems. They are a froth at the lip, the drops thrown off
+  the column, the mist that the fall dissolves into, and the plume at its foot. For a fall 2.5 m
+  wide that drops 10 m, each holds a few hundred large puffs at most; a taller or wider fall makes
+  more. The column reads the copy
+  of the scene's depth. The puffs blend over the pixels that they cover, so lower `spray` where a
+  phone's frame is short.
 - **One way to make water.** Use this package rather than a hand-written custom material, so a
   scene's water has one owner.
 - **One water a page.** The add-on registers one water feature, so a page makes its water with one

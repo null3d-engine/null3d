@@ -45,10 +45,12 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `targetFps: 'display'` or a whole number | The frame rate that the preset check and the governor defend. Without it, the display's refresh rate, at most 60. `'display'` defends the display's full rate, and a number caps the target at that rate: [The target frame rate](../concepts/quality-presets.md#the-target-frame-rate). |
 | `maxPixelRatio` | Replaces the preset's pixel ratio cap. |
 | `antialias: 'msaa'`, `'fxaa'` or `'none'` | Replaces the preset's anti-aliasing mode. |
-| `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `heroTileSize`, `pointLightShadows`, `depthPrepass`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
-| `softwareOcclusion`, `textureMemoryMiB` | Replace the preset's values of these settings. A sketch can change them during play. |
+| `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `heroTileSize`, `pointLightShadows`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
+| `depthPrepass`, `softwareOcclusion`, `textureMemoryMiB` | Replace the preset's values of these settings. A sketch can change them during play. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
 | `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes and checks no preset. |
+| `?tier=lowest` | Starts in the lowest quality tier for tests and devices. The render scale fixes at a third, and the sun's cast shadows and bloom go off. WebGL2 also drops its depth prepass. The four presets keep their looks, and the governor enters the same tier when frames still miss at the preset's floor. |
+| `?tier=off` | Keeps the governor out of the lowest quality tier, so a test reads the presets' own settings and looks on a slow machine. |
 | `?target-fps=display` or `?target-fps=90` | Sets the target frame rate. It wins over the `targetFps` option. |
 
 ## Settings
@@ -94,7 +96,7 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers a sketch's budgets and the render scale in turn, a budget's step first, until the render scale reaches its lowest. Then it lowers the levels of detail, the live shadow settings, bloom's size, ambient occlusion's scale and the scale of screen-space reflections. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order of the steps and the rules that drive them. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now. [`QualityGovernor`](reference/quality.md#qualitygovernor) lists each of its members with the step that changes it.
+When frames take too long, the engine lowers a sketch's budgets and the render scale in turn, a budget's step first, until the render scale reaches its lowest. Then it lowers the levels of detail, the live shadow settings, bloom's size, ambient occlusion's scale and the scale of screen-space reflections. Then it lowers the steps of contact shadows and the far characters' update interval. It raises them again once frames have time to spare. When the frames still miss at the render scale's floor, it enters the [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier). [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order of the steps and the rules that drive them. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now. [`QualityGovernor`](reference/quality.md#qualitygovernor) lists each of its members with the step that changes it.
 
 The `quality.onChange` handlers run after each of these steps. So a sketch can lighten its own work with the engine's:
 

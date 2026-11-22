@@ -75,6 +75,53 @@ describe('LoadPhases', () => {
 			{ lane: 'engine', phase: { key: 'core', text: 'Starting the engine' } },
 		]);
 	});
+
+	it('leaves no bar for a counted phase that has reached its whole', () => {
+		const phases = new LoadPhases();
+		phases.show('scene', { key: 'build', text: 'Building the scene', value: 0.99 });
+		expect(phases.list()).toHaveLength(1);
+		phases.show('scene', { key: 'build', text: 'Building the scene', value: 1 });
+		expect(phases.list()).toEqual([]);
+		// An uncounted phase has no whole to reach, so it keeps its bar until its lane moves on.
+		phases.show('engine', { key: 'core', text: 'Starting the engine' });
+		expect(phases.list()).toHaveLength(1);
+	});
+});
+
+describe('LoadMeter', () => {
+	it("holds a measure's percentage while it runs, and starts again after its whole", () => {
+		const meter = new LoadMeter();
+		const show = (value: number) =>
+			meter.show({ key: 'files:Downloading', text: 'Downloading scene files', value }).value;
+		expect(show(0.8)).toBe(0.8);
+		expect(show(0.2)).toBe(0.8);
+		expect(show(1)).toBe(1);
+		expect(show(0.1)).toBe(0.1);
+		expect(show(0.05)).toBe(0.1);
+	});
+
+	it('shows a later measure under the same label, which the first measure had hidden', () => {
+		const phases = new LoadPhases();
+		const meter = new LoadMeter();
+		const show = (value: number) =>
+			phases.show(
+				'files',
+				meter.show({ key: 'files:Downloading', text: 'Downloading scene files', value }),
+			);
+		show(0.4);
+		expect(phases.list()).toHaveLength(1);
+		show(1);
+		expect(phases.list()).toEqual([]);
+		show(0.1);
+		expect(phases.list()).toEqual([
+			{
+				lane: 'files',
+				phase: { key: 'files:Downloading', text: 'Downloading scene files', value: 0.1 },
+			},
+		]);
+		show(0.9);
+		expect(phases.list()[0]?.phase.value).toBe(0.9);
+	});
 });
 
 describe('StartMeter', () => {
