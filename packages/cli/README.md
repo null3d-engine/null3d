@@ -1,6 +1,6 @@
 # null3D
 
-The command-line tool for [null3D](https://github.com/null3d-engine/null3d), a browser 3D engine for games and heavy 3D apps.
+The command-line tool for [null3D](https://github.com/null3d-engine/null3d), a browser 3D engine for games and apps with many moving objects.
 
 You do not need this tool to use the engine. Install `@null3d/engine` from npm, add `@null3d/vite-plugin` to your Vite config, and run Vite. This tool adds jobs that a bundler does not do, such as headless tests, screenshots and benchmarks.
 
