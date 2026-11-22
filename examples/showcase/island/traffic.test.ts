@@ -33,9 +33,12 @@ import {
 	makePath,
 	type Path,
 	PERSON_RADIUS,
+	type PersonActor,
+	type PersonStride,
 	type Pose,
 	pathAt,
 	personAt,
+	personStrideAt,
 	planTraffic,
 	staticGap,
 	TRAFFIC_SEED,
@@ -508,6 +511,84 @@ describe('the people', () => {
 	});
 });
 
+describe('the walk of a far proxy', () => {
+	// One walking leg, so the stride clock runs at every sample.
+	const walk = makePath([
+		{ x: 0, y: 0, z: 0 },
+		{ x: 0, y: 0, z: 10 },
+	]);
+	const walking = (speed: number, phase = 0, seconds = 20): PersonActor => ({
+		walk,
+		speed,
+		phase,
+		lateral: 0,
+		script: {
+			legs: [{ seconds, from: 0, to: 10, hidden: false }],
+			cycle: seconds,
+			ends: Float64Array.from([seconds]),
+		},
+	});
+	const stride: PersonStride = { bob: 0, roll: 0, sway: 0 };
+
+	it('lifts a proxy without ever dipping it, and rolls and sways within its bounds', () => {
+		const actor = walking(1.45);
+		let lowest = Number.POSITIVE_INFINITY;
+		let highest = 0;
+		let mostRoll = 0;
+		let mostSway = 0;
+		for (let seconds = 0; seconds <= 8; seconds += 0.002) {
+			const pose = personStrideAt(actor, seconds, stride);
+			if (!pose) continue;
+			lowest = Math.min(lowest, pose.bob);
+			highest = Math.max(highest, pose.bob);
+			mostRoll = Math.max(mostRoll, Math.abs(pose.roll));
+			mostSway = Math.max(mostSway, Math.abs(pose.sway));
+		}
+		expect(lowest).toBeGreaterThanOrEqual(0);
+		expect(highest).toBeGreaterThan(0.03);
+		expect(mostRoll).toBeGreaterThan(0.02);
+		expect(mostRoll).toBeLessThanOrEqual(0.035);
+		expect(mostSway).toBeGreaterThan(0.01);
+		expect(mostSway).toBeLessThanOrEqual(0.025);
+	});
+
+	it('steps faster when the person walks faster', () => {
+		// One stride a second at the fast speed: at 2.25 s the fast walk is at its top and the slow
+		// walk, at half the speed, is halfway up.
+		personStrideAt(walking(1.45), 2.25, stride);
+		const fastBob = stride.bob;
+		personStrideAt(walking(0.725), 2.25, stride);
+		expect(fastBob).toBeGreaterThan(stride.bob + 0.01);
+	});
+
+	it('stands still while the person waits and takes its own phase', () => {
+		const actor = walking(1.4);
+		const waiting: PersonActor = {
+			...actor,
+			script: {
+				legs: [
+					{ seconds: 5, from: 0, to: 10, hidden: false },
+					{ seconds: 5, from: 10, to: 10, hidden: false },
+				],
+				cycle: 10,
+				ends: Float64Array.from([5, 10]),
+			},
+		};
+		expect(personStrideAt(waiting, 7, stride)).toBeUndefined();
+		// Two people with different phases do not rise together.
+		const a = walking(1.4, 0);
+		const b = walking(1.4, 0.25);
+		let differs = false;
+		for (let seconds = 0; seconds <= 4 && !differs; seconds += 0.02) {
+			personStrideAt(a, seconds, stride);
+			const aBob = stride.bob;
+			personStrideAt(b, seconds, stride);
+			if (Math.abs(aBob - stride.bob) > 0.005) differs = true;
+		}
+		expect(differs).toBe(true);
+	});
+});
+
 describe('the drawing', () => {
 	it('writes every mover into a fake scene, with no GPU', () => {
 		const batches: {
@@ -570,6 +651,16 @@ describe('the drawing', () => {
 			}
 		}
 		expect(hidden).toBe(true);
+		// A proxy's own row carries its walk, so a visible proxy's height changes with time.
+		traffic.update(0.1);
+		const heights = Float32Array.from(peopleBatch.positions);
+		let moved = false;
+		for (let frame = 0; frame < 200 && !moved; frame++) {
+			traffic.update(0.1 + frame * 0.05);
+			for (let row = 0; row < peopleBatch.count; row++)
+				if (peopleBatch.positions[row * 3 + 1] !== heights[row * 3 + 1]) moved = true;
+		}
+		expect(moved).toBe(true);
 		for (const batch of batches)
 			for (const value of batch.positions) expect(Number.isFinite(value)).toBe(true);
 	});

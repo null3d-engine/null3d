@@ -19,7 +19,9 @@
 // the real car, bus and person models replace it without a change to the motion. Each model is a
 // list of parts, and every part of a model takes the same transform, so a model with a body, glass
 // and wheels draws as several instance batches that move in step. The people near the camera's
-// route draw as skinned walkers that play their own clips, and the rest stand as far proxies.
+// route draw as skinned walkers that play their own clips, and the rest draw as far proxies. A
+// proxy has no rig, so its own instance row carries the walk: a rise at the rate of its stride, a
+// roll about its heading and a small surge along it, all pausing while the person waits.
 //
 // A vehicle's plain body parts take a colour for each row, so a car and a bus carry a livery of
 // their own. A wheel part spins by the distance that its vehicle travels over its radius, and a
@@ -337,6 +339,16 @@ const DOOR_STEP = 0.5;
 
 /** The speed that each walk clip's steps are made for, in meters a second. */
 const WALK_CLIP_SPEED = 1.4;
+/** The meters that a full stride covers, which sets the rate of a proxy's walk. */
+const STRIDE_LENGTH = 1.45;
+/** How high a stride lifts a proxy, in meters; its lowest point keeps the feet on the ground. */
+const STRIDE_BOB = 0.035;
+/** How far a proxy rolls about its heading, in radians. */
+const STRIDE_ROLL = 0.035;
+/** How far a proxy surges along its heading, in meters. */
+const STRIDE_SWAY = 0.025;
+/** The seconds that a stride takes to fade in at the start of a walk and out at its end. */
+const STRIDE_EASE = 0.35;
 /** The stretch of route over which a front wheel reads its curve, in meters. */
 const STEER_SPAN = 1.4;
 /** The most that a front wheel turns into a curve, in radians. */
@@ -960,6 +972,39 @@ interface ScriptState {
 /** The state scratch that every script sample writes into. */
 const SCRIPT_STATE: ScriptState = { distance: 0, hidden: false, forward: true };
 
+/** A script's leg at a time, and how much of that leg has passed. */
+interface LegState {
+	leg: Leg;
+	/** The leg's place in the script. */
+	index: number;
+	/** The seconds from the leg's start. */
+	elapsed: number;
+}
+
+/** The leg scratch that every script read writes into. */
+const LEG_STATE: LegState = {
+	leg: { seconds: 0, from: 0, to: 0, hidden: true },
+	index: 0,
+	elapsed: 0,
+};
+
+/** Reads the leg of a script at a local time, which lies between zero and the cycle. */
+function legAt(script: Script, local: number, out: LegState = LEG_STATE): LegState {
+	const ends = script.ends;
+	let lo = 0;
+	let hi = ends.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if ((ends[mid] as number) <= local) lo = mid + 1;
+		else hi = mid;
+	}
+	const before = lo === 0 ? 0 : (ends[lo - 1] as number);
+	out.leg = script.legs[lo] as Leg;
+	out.index = lo;
+	out.elapsed = local - before;
+	return out;
+}
+
 /** Reads a script at a time. The script repeats; a negative time wraps like a positive one. */
 function sampleScript(script: Script, seconds: number, out: ScriptState): ScriptState {
 	if (script.cycle <= 1e-9 || script.legs.length === 0) {
@@ -970,17 +1015,8 @@ function sampleScript(script: Script, seconds: number, out: ScriptState): Script
 	}
 	let local = seconds % script.cycle;
 	if (local < 0) local += script.cycle;
-	const ends = script.ends;
-	let lo = 0;
-	let hi = ends.length - 1;
-	while (lo < hi) {
-		const mid = (lo + hi) >> 1;
-		if ((ends[mid] as number) <= local) lo = mid + 1;
-		else hi = mid;
-	}
-	const leg = script.legs[lo] as Leg;
-	const before = lo === 0 ? 0 : (ends[lo - 1] as number);
-	const t = leg.seconds > 1e-9 ? (local - before) / leg.seconds : 0;
+	const { leg, elapsed } = legAt(script, local, LEG_STATE);
+	const t = leg.seconds > 1e-9 ? elapsed / leg.seconds : 0;
 	out.distance = leg.from + (leg.to - leg.from) * t;
 	out.hidden = leg.hidden;
 	out.forward = leg.to >= leg.from;
@@ -1286,6 +1322,69 @@ export function personAt(
 	poseAlong(actor.walk, state.distance, actor.lateral, false, out, SHARED_SCRATCH);
 	if (!state.forward) out.yaw += Math.PI;
 	out.hidden = state.hidden;
+	return out;
+}
+
+/** The rise, roll and surge of a person's stride at a time. */
+export interface PersonStride {
+	/** The height above the ground, in meters, which never goes below zero. */
+	bob: number;
+	/** The roll about the heading, in radians. */
+	roll: number;
+	/** The surge along the heading, in meters. */
+	sway: number;
+}
+
+/** The shared stride, for a caller that reads one person at a time. */
+const SHARED_STRIDE: PersonStride = { bob: 0, roll: 0, sway: 0 };
+
+/** The walking seconds of one script cycle, worked out once per script. */
+const WALK_CYCLES = new WeakMap<Script, number>();
+function walkSecondsOf(script: Script): number {
+	let seconds = WALK_CYCLES.get(script);
+	if (seconds === undefined) {
+		seconds = 0;
+		for (const leg of script.legs) if (leg.to !== leg.from) seconds += leg.seconds;
+		WALK_CYCLES.set(script, seconds);
+	}
+	return seconds;
+}
+
+/**
+ * The stride of a person at a time, written to `out`, or undefined while the person stands still.
+ * The clock reads the time and phase of `personAt`, and it advances only over the walking legs, so
+ * the step rate follows the walking speed and the stride rests while the person waits. The rise is
+ * a lifted cosine, so a footfall meets the ground and a mid-stride is the highest point. The
+ * amplitude fades at each end of a walking leg, so a stride starts and stops without a jolt.
+ */
+export function personStrideAt(
+	actor: PersonActor,
+	seconds: number,
+	out: PersonStride = SHARED_STRIDE,
+): PersonStride | undefined {
+	out.bob = 0;
+	out.roll = 0;
+	out.sway = 0;
+	const script = actor.script;
+	if (script.cycle <= 1e-9 || script.legs.length === 0) return undefined;
+	const clock = seconds + actor.phase;
+	let local = clock % script.cycle;
+	if (local < 0) local += script.cycle;
+	const { leg, index, elapsed } = legAt(script, local, LEG_STATE);
+	if (leg.to === leg.from) return undefined;
+	let walked = elapsed;
+	for (let k = 0; k < index; k++) {
+		const each = script.legs[k] as Leg;
+		if (each.to !== each.from) walked += each.seconds;
+	}
+	// Each cycle adds its own walking seconds, so the stride carries on across the script's wrap.
+	walked += Math.floor(clock / script.cycle) * walkSecondsOf(script);
+	const phase = (2 * Math.PI * actor.speed * walked) / STRIDE_LENGTH;
+	const ease = Math.min(1, elapsed / STRIDE_EASE, (leg.seconds - elapsed) / STRIDE_EASE);
+	const swing = Math.max(0, ease);
+	out.bob = STRIDE_BOB * 0.5 * (1 - Math.cos(2 * phase)) * swing;
+	out.roll = STRIDE_ROLL * Math.sin(phase) * swing;
+	out.sway = STRIDE_SWAY * Math.sin(2 * phase) * swing;
 	return out;
 }
 
@@ -2291,11 +2390,15 @@ const ROW_LOCAL = quat.create();
 const ROW_SPIN = quat.create();
 const ROW_STEER = quat.create();
 const ROW_WHEEL = quat.create();
+const ROW_ROLL = quat.create();
 const ROW_OFFSET = vec3.create();
+/** The axis of a model's roll, which is its own forward axis. */
+const FORWARD = [0, 0, 1] as const;
 
 /**
  * Puts one mover's transform into every part of its model. A part keeps its own place in the file,
- * which a quantized mesh stores in its node, and `drive` spins a wheel and turns a front one.
+ * which a quantized mesh stores in its node, and `drive` spins a wheel and turns a front one. A
+ * walk stride rolls the model about its heading, lifts it, and surges it along the heading.
  */
 function writeRow(
 	parts: readonly BoundPart[],
@@ -2303,7 +2406,12 @@ function writeRow(
 	pose: Pose,
 	scale: number,
 	drive?: Drive,
+	stride?: PersonStride,
 ): void {
+	// A stride moves the whole row, so its sway is read once for every part of it.
+	const surgeX = (stride?.sway ?? 0) * Math.sin(pose.yaw);
+	const surgeZ = (stride?.sway ?? 0) * Math.cos(pose.yaw);
+	const rise = stride?.bob ?? 0;
 	for (let k = 0; k < parts.length; k++) {
 		const part = (parts[k] as BoundPart).part;
 		const batch = (parts[k] as BoundPart).batch;
@@ -2311,9 +2419,13 @@ function writeRow(
 		const rotations = batch.rotations;
 		const scales = batch.scales;
 		const turn = quat.fromEuler(ROW_TURN, 0, pose.yaw + (part.yaw ?? 0), 0);
-		let x = pose.x;
-		let y = pose.y + (part.lift ?? 0);
-		let z = pose.z;
+		if (stride) {
+			quat.setAxisAngle(ROW_ROLL, FORWARD, stride.roll);
+			quat.multiply(turn, turn, ROW_ROLL);
+		}
+		let x = pose.x + surgeX;
+		let y = pose.y + (part.lift ?? 0) + rise;
+		let z = pose.z + surgeZ;
 		if (part.position) {
 			vec3.transformQuat(ROW_OFFSET, part.position, turn);
 			x += ROW_OFFSET[0] as number;
@@ -2601,6 +2713,7 @@ export function createTraffic(
 	const drive: Drive = { distance: 0, steer: 0 };
 	const vehiclePose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 	const personState: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false };
+	const personWalk: PersonStride = { bob: 0, roll: 0, sway: 0 };
 
 	const driveVehicle = (
 		mover: BoundMover<VehicleActor>,
@@ -2618,7 +2731,9 @@ export function createTraffic(
 		for (const mover of busMovers) driveVehicle(mover, seconds, busSteers);
 		for (const mover of proxies) {
 			const state = personAt(mover.actor, seconds, personState);
-			writeRow(mover.parts, mover.row, state, state.hidden ? 0 : 1);
+			const hidden = state.hidden;
+			const stride = hidden ? undefined : personStrideAt(mover.actor, seconds, personWalk);
+			writeRow(mover.parts, mover.row, state, hidden ? 0 : 1, undefined, stride);
 		}
 		for (const walker of walkers) {
 			const state = personAt(walker.actor, seconds, personState);
