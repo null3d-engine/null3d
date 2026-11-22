@@ -137,10 +137,11 @@ STATUE = dict(
 # stone blocks keep `feet[0]` of their lightness, and the pale band at each post's foot, `feet[1]`
 # meters tall, takes the posts' own lightness, so the feet do not glare white in a bright scene.
 #
-# The roof dragon keeps its raw glaze colours, but its body's green-grey scales, to the end of its
-# tail's curl, keep `darken` of their lightness, with its joints, the texels darker than the tiles
-# round them, darkened `joints` times their own share more, while its pale grey tail fan, crest
-# blades, teeth and mane keep theirs; its teeth and mane, the pale texels round the head, grow
+# The roof dragon takes the owner's deep green glaze, `glaze_rgb` (about hue 170, color strength
+# 0.35, lightness 0.28), over its glazed clay, `glaze_mix` strong, its light and dark kept from the
+# raw surface; its body's scales first keep `darken` of their lightness, with its joints, the texels
+# darker than the tiles round them, darkened `joints` times their own share more, while its pale
+# grey tail fan, crest blades, teeth and mane keep their own; its teeth and mane, the pale texels round the head, grow
 # `teeth` times lighter; its belly band loses its pink; and its glaze's roughness is `glaze`, so it
 # glints. Its base is cut level `base_cut` of its height above its lowest point and closed, so its
 # foot sits flat on the gate's ridge, and the wave slab below `base[0]` of its height loses its rear
@@ -165,7 +166,7 @@ MODELS = {
                  darken=0.65, vivid=1.7, feet=(0.72, 0.45)),
     'dragon': dict(file='model.glb', turn=180.0, height=0.9, sink=0.01, triangles=3000, levels=(0.55, 0.25),
                    texture=512, base_cut=0.02, base=(0.16, 0.16), darken=0.8, joints=1.5, glaze=0.4,
-                   teeth=1.25),
+                   teeth=1.25, glaze_rgb=(0.07, 0.30, 0.28), glaze_mix=0.95),
     'boulder-1': dict(file='model.glb', turn=0.0, height=4.0, sink=0.12, triangles=1500, levels=(0.6, 0.3),
                       texture=1024, darken=0.85, vivid=1.5, contrast=1.8, moss_darken=1.0, foot=0.08, specks=True),
     'boulder-2': dict(file='model.glb', turn=0.0, height=2.4, sink=0.08, triangles=1500, levels=(0.6, 0.3),
@@ -1635,6 +1636,13 @@ def repaint_model(name, spec, maps, rng):
                 * smoothstep(0.55, 0.42, luma))
         joint = np.clip(1 - luma / np.maximum(box_blur(luma, 3), 0.02), 0, 1)
         color = color * (1 - body * (1 - spec['darken'] * np.clip(1 - spec['joints'] * joint, 0, 1)))[..., None]
+        # The owner's deep green glaze: the glazed clay takes the statue's green, its light and dark
+        # kept from the raw surface, while the pale teeth, mane, crest and fan keep their own.
+        glazed = 1 - pale
+        mid = float(np.median(luma[glazed > 0.5])) if np.any(glazed > 0.5) else 0.3
+        shade = np.clip(luma / max(mid, 1e-3), 0.6, 1.45)
+        green = np.array(spec['glaze_rgb'], np.float32)[None, None] * shade[..., None]
+        color = mix(color, green, spec['glaze_mix'] * glazed)
         # The teeth and the mane's plates, the palest things on the head, keep their white: the
         # pale texels round the head grow `teeth` times lighter, against the 512 map's blur.
         head = smoothstep(0.42, 0.36, along) * smoothstep(0.55, 0.48, up)
