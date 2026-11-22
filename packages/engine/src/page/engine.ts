@@ -855,6 +855,14 @@ const MAX_EARLY_MESSAGES = 256;
  */
 export const WORKER_REPLY_LIMIT_MS = 600_000;
 
+/**
+ * How long a copy of a worker whose script did not load may take to report its first reply. A
+ * script that loads reports in about a second on the slowest machines that run the tests, so a
+ * copy that has sent nothing by this time never ran: the page fails the start with E1405 rather
+ * than waiting for a worker that may never speak.
+ */
+export const RETRY_REPLY_MS = 10_000;
+
 interface TierChoice {
 	tier: Tier;
 	forceCompat: boolean;
@@ -992,6 +1000,8 @@ export class EngineWorker {
 	private scriptLoaded = false;
 	/** True once the page replaced a worker whose script did not load. */
 	private retried = false;
+	/** Clears the wait for the replacement worker's first reply, or undefined once it has one. */
+	private retryTimer: ReturnType<typeof setTimeout> | undefined;
 	/**
 	 * The messages that the page sent before the worker reported that its script loaded. A worker
 	 * that has not run its script cannot take them, so they wait here: a copy that replaces a
@@ -1046,6 +1056,9 @@ export class EngineWorker {
 		};
 		const listen = (worker: Worker) => {
 			worker.onmessage = (event: MessageEvent<WorkerReply>) => {
+				// A worker that answers at all has run its script: the replacement no longer needs
+				// its error's wait, and its own error listener names whatever fails next.
+				this.heardReply();
 				const reply = event.data;
 				switch (reply.type) {
 					case 'recorded':
@@ -1123,6 +1136,7 @@ export class EngineWorker {
 			};
 			this.unwatch?.();
 			this.unwatch = watchWorkerError(worker, (message) => {
+				this.heardReply();
 				// A worker whose script, or a file that the script imports, did not load fails before
 				// it reports its first step. That fault comes and goes, so the worker gets one more
 				// copy before the page reports it, whatever the browser's message says. A failure
@@ -1130,12 +1144,22 @@ export class EngineWorker {
 				// the copy the same way, so it is reported at once.
 				if (!this.scriptLoaded && this.restart && !this.retried && !errorOfMessage(message)) {
 					this.retried = true;
-					worker.terminate();
+					// The copy starts while the failed worker still runs. A browser can keep a
+					// stopped module worker's failed script load in its cache, and a copy started
+					// after that stop then waits for a script that never arrives.
 					try {
 						const copy = this.restart();
 						this.worker = copy;
 						listen(copy);
+						// A copy that never speaks fails the start with E1405, rather than leaving
+						// the page to wait for a worker that may never answer.
+						this.retryTimer = setTimeout(() => {
+							this.retryTimer = undefined;
+							failed(this.stalledFailure());
+							this.answerStop?.();
+						}, RETRY_REPLY_MS);
 						events.workerRestart?.(this.role, this.script === undefined ? '' : String(this.script));
+						worker.terminate();
 						return;
 					} catch {
 						// The browser refused the copy too, so the page reports the first failure.
@@ -1167,10 +1191,31 @@ export class EngineWorker {
 	}
 
 	/**
+	 * What the page reports when the copy that replaced a worker whose script did not load has sent
+	 * nothing within the wait. The first failure named the script; the copy's silence names it too,
+	 * so a wrong path stays visible and a stall is not read as a wrong path.
+	 */
+	private stalledFailure(): string {
+		const script = this.script === undefined ? '' : String(this.script);
+		const at = script
+			? `its script at ${script}, or a file that it imports, did not load`
+			: 'its script, or a file that it imports, did not load';
+		return `${at}, and a second copy sent nothing within ${RETRY_REPLY_MS / 1000} s`;
+	}
+
+	/** Ends the wait for a replacement worker's first reply, once one arrives or the worker fails. */
+	private heardReply(): void {
+		if (this.retryTimer === undefined) return;
+		clearTimeout(this.retryTimer);
+		this.retryTimer = undefined;
+	}
+
+	/**
 	 * Drops the handlers that reach this engine, so a worker that the page keeps, such as a drawing
 	 * worker parked with its canvas, holds none of the engine or its shared memory alive.
 	 */
 	detach(): void {
+		this.heardReply();
 		this.unwatch?.();
 		this.unwatch = undefined;
 		this.worker.onmessage = null;
@@ -1239,6 +1284,7 @@ export class EngineWorker {
 
 	/** Stops the worker, and fails each request that still waits for its answer. */
 	terminate(): void {
+		this.heardReply();
 		this.worker.terminate();
 		for (const pending of this.waiting.splice(0)) pending.reject(new Error('the engine stopped'));
 	}

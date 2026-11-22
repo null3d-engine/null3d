@@ -8,7 +8,7 @@ import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { BUILD_WAIT_LIMIT_MS } from '../render/scene-renderer';
 import type { WorkerReply } from '../workers/protocol';
-import { EngineWorker, WORKER_REPLY_LIMIT_MS } from './engine';
+import { EngineWorker, RETRY_REPLY_MS, WORKER_REPLY_LIMIT_MS } from './engine';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -258,6 +258,81 @@ test('a worker whose script did not load gets one more copy, and the messages he
 	expect(second.sent).toEqual([{ type: 'init', core: 'core' }]);
 	second.reply({ type: 'ready', role: 'render', threaded: true, version: 'test' });
 	await expect(engineWorker.ready()).resolves.toMatchObject({ type: 'ready' });
+});
+
+test('the copy starts before the failed worker stops', () => {
+	const first = fakeWorker();
+	const second = fakeWorker();
+	const order: string[] = [];
+	const { events } = unwatched();
+	const engineWorker = new EngineWorker(first.worker, 'render', SCRIPT, events, () => {
+		order.push('copy');
+		return second.worker;
+	});
+	first.raw.terminate = () => order.push('stop');
+	first.loadFailure();
+	// A browser can keep a stopped module worker's failed script load, and a copy started after
+	// the stop then waits for a script that never arrives.
+	expect(order).toEqual(['copy', 'stop']);
+	// The copy still takes the message held for the worker that it replaced.
+	engineWorker.send({ type: 'init', core: 'core' });
+	expect(second.sent).toEqual([]);
+	second.reply({ type: 'progress', role: 'render', step: 'loaded' });
+	expect(second.sent).toEqual([{ type: 'init', core: 'core' }]);
+});
+
+test('a copy that sends nothing fails the start with E1405, naming its script', async () => {
+	const timers = heldTimers();
+	try {
+		const first = fakeWorker();
+		const second = fakeWorker();
+		const { events, failures } = unwatched();
+		const engineWorker = new EngineWorker(
+			first.worker,
+			'render',
+			SCRIPT,
+			events,
+			() => second.worker,
+		);
+		first.loadFailure();
+		// The wait for the copy's first reply is armed while nothing else fails the start.
+		expect(timers.armed()).toBe(1);
+		timers.fire();
+		await expect(engineWorker.ready()).rejects.toThrow(
+			`the render worker did not start: its script at ${SCRIPT}, or a file that it imports, did not load, and a second copy sent nothing within ${RETRY_REPLY_MS / 1000} s.`,
+		);
+		const error = await engineWorker.ready().then(
+			() => undefined,
+			(reason: EngineError) => reason,
+		);
+		expect(error?.code).toBe('E1405');
+		expect(failures).toEqual([]);
+	} finally {
+		timers.restore();
+	}
+});
+
+test('a reply from the copy ends the wait for it', () => {
+	const timers = heldTimers();
+	try {
+		const first = fakeWorker();
+		const second = fakeWorker();
+		const { events } = unwatched();
+		const engineWorker = new EngineWorker(
+			first.worker,
+			'render',
+			SCRIPT,
+			events,
+			() => second.worker,
+		);
+		first.loadFailure();
+		expect(timers.armed()).toBe(1);
+		second.reply({ type: 'progress', role: 'render', step: 'loaded' });
+		expect(timers.armed()).toBe(0);
+		expect(engineWorker.handle).toBe(second.worker);
+	} finally {
+		timers.restore();
+	}
 });
 
 test('a worker whose script does not load twice fails the start with E1405, naming its script', async () => {
