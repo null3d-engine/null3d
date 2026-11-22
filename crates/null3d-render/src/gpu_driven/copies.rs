@@ -41,7 +41,7 @@ use null3d_core::world::UNBOUNDED_RADIUS;
 
 use super::layout::{BUCKET_WORDS, FIXED, INDEX_ENTRIES_PER_COPY, Layout};
 use crate::frame::{CellOffsets, RecordError};
-use crate::levels::{StageWatches, key_level};
+use crate::levels::{MAX_LEVELS, StageWatches, key_level};
 
 /// How far from a switch distance a source counts toward both levels that it may pick, as a share
 /// of the distance. It dwarfs the difference that a CPU and a GPU can make of the same distance,
@@ -471,31 +471,38 @@ impl Layout {
         let rule = view.rule;
         let distance = rule.distances(center, radius);
         // A source at a switch distance counts toward both levels, and one inside a band toward
-        // both levels' fade buckets, so the slices hold whatever the shader picks. One walk of the
-        // source's levels picks at both edges of the slack.
-        let mut picked = [u32::MAX; 4];
+        // both levels' fade buckets, so the slices hold whatever the shader picks. The span reads
+        // both edges of the slack and every level between the two answers, which a second
+        // decision inside the window can pick. A set has at most `MAX_LEVELS` levels and one fade
+        // bucket for each, so the span names at most twice that many buckets.
+        let mut picked = [u32::MAX; 2 * MAX_LEVELS];
         let mut len = 0;
-        let edges = rule.pick_both(
-            &self.level_links,
-            home,
-            scale,
-            radius,
-            distance.scaled(1.0 - SLACK),
-            distance.scaled(1.0 + SLACK),
-            bias,
-            range,
-        );
-        for edge in edges {
+        {
             let mut keep = |bucket: u32| {
-                if len < picked.len() && !picked[..len].contains(&bucket) {
+                if picked[..len].contains(&bucket) {
+                    return;
+                }
+                if len < picked.len() {
                     picked[len] = bucket;
                     len += 1;
+                } else {
+                    // A span longer than a set's buckets still takes room for the copy: the extra
+                    // count only enlarges the slice, and never narrows it.
+                    counts[bucket as usize] += 1;
                 }
             };
-            let (entries, len, _) = edge.entries(home, self.codes);
-            for entry in &entries[..len] {
-                keep(entry.bucket);
-            }
+            rule.pick_span(
+                &self.level_links,
+                home,
+                scale,
+                radius,
+                distance.scaled(1.0 - SLACK),
+                distance.scaled(1.0 + SLACK),
+                bias,
+                range,
+                self.codes,
+                &mut keep,
+            );
         }
         for &bucket in &picked[..len] {
             counts[bucket as usize] += 1;
@@ -571,7 +578,7 @@ impl Layout {
 
 #[cfg(test)]
 mod tests {
-    use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Switch};
+    use null3d_core::levels::{DrawRange, LevelLink, LevelRule, NO_LINK, Picked, Switch};
 
     use super::*;
     use crate::gpu_driven::layout::Bucket;
@@ -662,6 +669,78 @@ mod tests {
             count(false),
             [0, 1],
             "the bucket's sphere alone would move the row to the coarser level"
+        );
+    }
+
+    /// The count samples the slack window's two ends. Two switches inside that window leave the
+    /// shader on the level between them, which neither end names, so the count must hold it too.
+    /// Level 1 switches in at 10 m and level 2 at 10.01 m, a tenth of a per cent apart, inside the
+    /// window's fifth of a per cent each side. A source whose nearest point lies at 10.005 m draws
+    /// level 1: its near end names the base level and its far end the coarsest.
+    #[test]
+    fn a_source_between_two_switches_counts_the_level_it_draws() {
+        let mut layout = Layout::default();
+        layout.level_links = vec![
+            LevelLink {
+                value: 0.0,
+                switch: Switch::Distance,
+                next: 1,
+                fade: NO_LINK,
+            },
+            LevelLink {
+                value: 10.0,
+                switch: Switch::Distance,
+                next: 2,
+                fade: NO_LINK,
+            },
+            LevelLink {
+                value: 10.01,
+                switch: Switch::Distance,
+                next: NO_LINK,
+                fade: NO_LINK,
+            },
+        ];
+        layout.buckets = (0..3)
+            .map(|_| Bucket {
+                radius: 1.0,
+                ..Bucket::default()
+            })
+            .collect();
+        let view = CopyView {
+            rule: LevelRule::new(1000.0, 1.0, false, 1.0, 0.0),
+            camera: CellPosition::default(),
+            frustum: None,
+        };
+        assert_eq!(
+            view.rule.pick(
+                &layout.level_links,
+                0,
+                1.0,
+                1.0,
+                10.005,
+                1.0,
+                DrawRange::NONE
+            ),
+            Picked::One(1),
+            "the shader draws the level between the two switches",
+        );
+        let mut counts = [0u32; 3];
+        // The source's sphere of radius 1 puts its nearest point at 10.005 m.
+        layout.count_source(
+            &mut counts,
+            &view,
+            0,
+            [0.0, 0.0, 11.005],
+            1.0,
+            1.0,
+            1.0,
+            DrawRange::NONE,
+            false,
+        );
+        assert_eq!(
+            counts,
+            [1, 1, 1],
+            "the count leaves out the level that the shader draws"
         );
     }
 }
