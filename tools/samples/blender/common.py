@@ -535,7 +535,7 @@ def sprig_atlas(size, rng, leaves, length, width, tones, underside, twig, taper=
 # ---------------------------------------------------------------------------------------------
 
 
-def export(path, objects, masked, levels=(), one_sided=()):
+def export(path, objects, masked, levels=(), one_sided=(), animations=False):
     """Writes the objects as one binary glTF file, then marks the cutout materials masked.
 
     A masked material is double sided, unless `one_sided` names it: a mesh that carries its own
@@ -545,6 +545,9 @@ def export(path, objects, masked, levels=(), one_sided=()):
     level's error. The part's node lists its levels in the MSFT_lod extension, from the finest
     down, with their errors in its extras, and the levels' nodes leave the scene. Each mesh keeps
     its two sets of texture coordinates: the texture's, and the sway's.
+
+    `animations` writes the actions of the armatures among the objects, and their skins, which a
+    model that moves needs. The nodes that only hold joints carry no mesh and have no triangles.
     """
     bpy.ops.object.select_all(action='DESELECT')
     for o in objects:
@@ -562,7 +565,8 @@ def export(path, objects, masked, levels=(), one_sided=()):
         export_all_vertex_colors=False,
         export_materials='EXPORT',
         export_image_format='AUTO',
-        export_animations=False,
+        export_animations=animations,
+        export_skins=animations,
         export_extras=False,
         export_cameras=False,
         export_lights=False,
@@ -583,7 +587,7 @@ def export(path, objects, masked, levels=(), one_sided=()):
         else:
             m.pop('alphaMode', None)
             m.pop('doubleSided', None)
-    swaying = {o.data.name for o in objects if 'Sway' in o.data.uv_layers}
+    swaying = {o.data.name for o in objects if o.type == 'MESH' and 'Sway' in o.data.uv_layers}
     for mesh in doc['meshes']:
         if mesh['name'] in swaying and any('TEXCOORD_1' not in p['attributes'] for p in mesh['primitives']):
             raise SystemExit(f"{mesh['name']} lost its sway coordinates in the export")
@@ -607,6 +611,8 @@ def export(path, objects, masked, levels=(), one_sided=()):
         f.write(struct.pack('<III', 0x46546C67, 2, 12 + len(body)) + body)
     triangles = {}
     for node in doc['nodes']:
+        if 'mesh' not in node:
+            continue
         mesh = doc['meshes'][node['mesh']]
         triangles[node['name']] = sum(doc['accessors'][p['indices']]['count'] // 3 for p in mesh['primitives'])
     return triangles
@@ -618,7 +624,7 @@ def stage(objects, sky, size, samples):
     size, and returns the preview camera and the objects' lowest and highest points.
     """
     scene = bpy.context.scene
-    for o in scene.collection.objects:
+    for o in scene.objects:
         if o.type == 'MESH':
             o.hide_render = o not in objects
     points = [o.matrix_world @ Vector(c) for o in objects for c in o.bound_box]

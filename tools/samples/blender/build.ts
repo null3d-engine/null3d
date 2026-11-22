@@ -8,7 +8,7 @@
 //    whole model. A page then loads it by its address alone, and a build copies one file.
 //
 // BLENDER names Blender's executable, which defaults to the one on the path.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { run as optimize } from '../../../packages/cli/src/assets/optimize.js';
@@ -123,6 +123,8 @@ export interface SceneModels {
 	readonly blockers?: readonly string[];
 	/** The models whose every part sways, which the build checks after the asset tool. */
 	readonly swaying: readonly string[];
+	/** Extra arguments after `--` for the Blender script, such as the folder of its raw inputs. */
+	readonly inputs?: readonly string[];
 }
 
 /**
@@ -134,6 +136,7 @@ export async function buildScene({
 	models,
 	blockers = [],
 	swaying,
+	inputs = [],
 }: SceneModels): Promise<void> {
 	const args = process.argv.slice(2);
 	const out = args[0];
@@ -154,10 +157,18 @@ export async function buildScene({
 				'--',
 				join(scratch, 'blender'),
 				...(shots ? ['--preview', resolve(shots)] : []),
+				...inputs,
 			],
 			{ stdout: 'pipe', stderr: 'pipe' },
 		);
 		if (built.exitCode !== 0) throw new Error(`Blender failed:\n${built.stdout}\n${built.stderr}`);
+		// Blender quits with status 0 when a script raises before it writes anything, so the build
+		// checks each model that the script promised instead of trusting its status alone.
+		for (const model of models) {
+			const written = join(scratch, 'blender', `${model}.glb`);
+			if (!existsSync(written))
+				throw new Error(`Blender wrote no ${model}.glb:\n${built.stdout}\n${built.stderr}`);
+		}
 		mkdirSync(resolve(out), { recursive: true });
 		for (const model of models) {
 			const optimized = join(scratch, 'optimized', model);
