@@ -99,6 +99,11 @@ const SHORTEST_RETAINING = 18;
 /** The depth below the land's form at which a road's cut must have its wall, in meters. */
 export const MOST_RETAINING = 4;
 const ROAD_LIFT = 0.3;
+/**
+ * How far a road's flat shoulder reaches past its asphalt, in meters. It holds a car parked at the
+ * kerb, whose wheels sit inside the body's edge, rather than leaving them over the falling verge.
+ */
+const ROAD_VERGE = 1.35;
 /** How far along a road its flared mouth runs, and how far of that lies inside the road it meets, in meters. */
 const MOUTH_RUN = 10;
 const MOUTH_INSIDE = 4;
@@ -654,7 +659,7 @@ function roadMesh(): Build {
 			const value = tar * Math.max(0.7, fine) * (Math.abs(t) < 0.5 ? 0.94 : 1.06);
 			return [value * 1.08, value, value * 0.9];
 		};
-		strip(b, points, (k) => (half + 0.45) * flare(k), dust, ROAD_LIFT - 0.05, cross);
+		strip(b, points, (k) => (half + ROAD_VERGE) * flare(k), dust, ROAD_LIFT - 0.05, cross);
 		// The road's raised edge slopes down to the ground on each side.
 		const first = b.positions.length / 3;
 		points.forEach((p, k) => {
@@ -662,7 +667,7 @@ function roadMesh(): Build {
 			const c = points[Math.min(points.length - 1, k + 1)] as RoadPoint;
 			const length = hypot(c.x - a.x, c.z - a.z) || 1;
 			const [nx, nz] = [-(c.z - a.z) / length, (c.x - a.x) / length];
-			const inner = (half + 0.45) * flare(k);
+			const inner = (half + ROAD_VERGE) * flare(k);
 			for (const [off, lift] of [
 				[-inner - 0.9, -0.15],
 				[-inner, ROAD_LIFT - 0.05],
@@ -683,7 +688,7 @@ function roadMesh(): Build {
 		if (end === 'circle') {
 			const tail = points[last] as RoadPoint;
 			const flat = () => tail.y;
-			patch(b, tail.x, tail.z, () => circleRadius(half) + 0.45, dust, ROAD_LIFT - 0.04, flat);
+			patch(b, tail.x, tail.z, () => circleRadius(half) + ROAD_VERGE, dust, ROAD_LIFT - 0.04, flat);
 			patch(b, tail.x, tail.z, () => circleRadius(half), tone(last), ROAD_LIFT + 0.01, flat);
 		}
 	}
@@ -1196,20 +1201,61 @@ function createClimbers(ctx: SketchContext): void {
 	const { scene, geometry, materials } = ctx;
 	// Bougainvillea climbs in magenta sheets on the sunny fronts of some of the houses.
 	const climbers = LOTS.filter((lot, k) => k % 3 === 0 && !WATERFRONT_LOTS.includes(lot));
+	// A fixed value from 0 to 1 for each leaf and each of its choices, so every house's climber is
+	// the same on every run.
+	const hash = (k: number, salt: number): number => {
+		let h = Math.imul(k + 1, 0x27d4eb2d) ^ Math.imul(salt + 7, 0x165667b1);
+		h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+		h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+		h ^= h >>> 16;
+		return (h >>> 0) / 4294967296;
+	};
+	// The vine grows in a few thick clumps rather than a disc: each is a centre on the wall, a
+	// spread, and its own share of flowers, so the blossoms gather instead of checking the leaves.
+	const CLUMPS: readonly { x: number; y: number; r: number; tall: number; flower: number }[] = [
+		{ x: -1.1, y: 1.1, r: 0.58, tall: 1.35, flower: 0.42 },
+		{ x: -0.35, y: 2.1, r: 0.62, tall: 1.2, flower: 0.3 },
+		{ x: 0.55, y: 2.8, r: 0.52, tall: 1.1, flower: 0.16 },
+		{ x: 1.12, y: 1.6, r: 0.5, tall: 1.25, flower: 0.38 },
+		{ x: 0.2, y: 0.95, r: 0.62, tall: 1.2, flower: 0.24 },
+		{ x: -0.95, y: 2.95, r: 0.44, tall: 1.0, flower: 0.1 },
+	];
+	const LEAF_TINTS: readonly Color[] = [
+		[0.09, 0.19, 0.055],
+		[0.12, 0.23, 0.07],
+		[0.075, 0.16, 0.05],
+	];
+	const BLOOM_TINTS: readonly Color[] = [
+		[0.55, 0.065, 0.3],
+		[0.63, 0.1, 0.35],
+		[0.48, 0.05, 0.24],
+	];
 	const mesh = build();
-	for (let k = 0; k < 220; k++) {
-		const a = k * 2.399963;
-		const r = Math.sqrt((k + 0.5) / 220);
-		const [x, y] = [Math.cos(a) * r * 1.5, 1.5 + Math.sin(a) * r * 1.4];
-		const s = 0.045 + ((k * 13) % 7) * 0.008;
-		const tint: Color =
-			k % 4 === 0 ? [0.1, 0.2, 0.06] : k % 3 ? [0.5, 0.05, 0.26] : [0.62, 0.1, 0.32];
+	const LEAVES = 520;
+	for (let k = 0; k < LEAVES; k++) {
+		const clump = CLUMPS[k % CLUMPS.length] as (typeof CLUMPS)[number];
+		const a = hash(k, 1) * Math.PI * 2;
+		const r = Math.sqrt(hash(k, 2));
+		const x = clump.x + Math.cos(a) * r * clump.r;
+		const y = clump.y + Math.sin(a) * r * clump.r * clump.tall;
+		if (Math.abs(x) > 1.55 || y < 0.12 || y > 3.95) continue;
+		// A leaf is a small quad turned any way on the wall, smaller toward its clump's edge where
+		// the growth thins.
+		const s = (0.05 + hash(k, 3) * 0.045) * (1.05 - 0.35 * r);
+		const t = hash(k, 4) * Math.PI * 2;
+		const [ca, sa] = [Math.cos(t) * s, Math.sin(t) * s];
+		const [cb, sb] = [-Math.sin(t) * s, Math.cos(t) * s];
+		const z = 0.04 + hash(k, 5) * 0.06;
+		const bloom = hash(k, 6) < clump.flower;
+		const tint = bloom
+			? (BLOOM_TINTS[Math.floor(hash(k, 7) * BLOOM_TINTS.length)] as Color)
+			: (LEAF_TINTS[Math.floor(hash(k, 8) * LEAF_TINTS.length)] as Color);
 		quad(
 			mesh,
-			[x - s, y - s, 0.05],
-			[x + s, y - s, 0.09],
-			[x + s, y + s, 0.05],
-			[x - s, y + s, 0.09],
+			[x - ca - cb, y - sa - sb, z],
+			[x + ca - cb, y + sa - sb, z],
+			[x + ca + cb, y + sa + sb, z],
+			[x - ca + cb, y - sa + sb, z],
 			tint,
 		);
 	}
@@ -1228,6 +1274,64 @@ function createClimbers(ctx: SketchContext): void {
 }
 
 /** The square: stone laid in fans around a stepped fountain, plane trees' beds, cafes and flowers. */
+/**
+ * The places of the square's cafe tables, its pots and its awnings, as the square draws them. Each
+ * is given in the world's x and z, and the awnings carry their turn.
+ */
+export function squarePropPlaces(): {
+	covered: [number, number][];
+	open: [number, number][];
+	pots: [number, number][];
+	awnings: { x: number; z: number; yaw: number }[];
+} {
+	const { x, z, hx, hz } = SQUARE;
+	// The cafe tables stand along the square's fringes, under canvas in some places and open in others.
+	const covered: [number, number][] = [];
+	const open: [number, number][] = [];
+	for (const side of [-1, 1])
+		for (let i = 0; i < 6; i++) {
+			const px = x + side * (hx - 1 + (i % 2) * 2.6);
+			const pz = z - hz + 5 + i * 5.6;
+			// A covered table keeps its chairs on the paving, under the awning that shelters it.
+			if (i % 3 === 0) covered.push([px, pz]);
+			else open.push([px, pz]);
+		}
+	for (let i = 0; i < 10; i++) {
+		const px = x - hx + 3 + i * 4.6;
+		if (Math.abs(px - x) < 5) continue;
+		open.push([px, z + hz - 2 - (i % 2) * 2.4]);
+		if (i % 4 === 1) covered.push([px, z + hz + 1.8]);
+	}
+	for (let i = 0; i < 6; i++) open.push([x - 10 + i * 4, z - hz + 1 + (i % 2) * 2.2]);
+	// Flowering pots gather by the fountain, the trees and the church's steps.
+	const pots: [number, number][] = [];
+	for (let k = 0; k < 8; k++) {
+		const a = (k / 8) * Math.PI * 2 + 0.3;
+		pots.push([x + Math.cos(a) * 7.4, z + Math.sin(a) * 7.4]);
+	}
+	for (const px of [-12, -8, 8, 12]) pots.push([x + px, z - hz - 3.5]);
+	for (const [ox, oz] of [
+		[-16.5, -3],
+		[10, -8.5],
+		[-11, 14],
+		[17, 9],
+	] as const)
+		pots.push([x + ox, z + oz]);
+	const awnings = [
+		{ x: x - hx - 2, z: z + 4, yaw: Math.PI / 2 },
+		{ x: x + hx + 2, z: z + 4, yaw: -Math.PI / 2 },
+		{ x: x - hx - 2, z: z - 10, yaw: Math.PI / 2 },
+		{ x: x + hx + 2, z: z - 10, yaw: -Math.PI / 2 },
+	];
+	return { covered, open, pots, awnings };
+}
+
+/** The height of the square's paved floor, and the half sizes of the ground that it covers. */
+export function squareFloor(): { x: number; z: number; halfX: number; halfZ: number; top: number } {
+	const { x, z, hx, hz } = SQUARE;
+	return { x, z, halfX: hx + 3, halfZ: hz + 6, top: groundHeight(x, z) + DRAPE };
+}
+
 function createSquare(
 	ctx: SketchContext,
 	surfaces: Surfaces,
@@ -1239,7 +1343,8 @@ function createSquare(
 	const top = y + DRAPE;
 	// The fans of small stones cover the square's whole floor, out to the streets on its sides. They lie in
 	// a map, whose finer levels fade with distance, so they never shimmer into rings.
-	const [wide, deep] = [hx + 1, hz + 6];
+	// The paved floor runs past the cafe tables at the square's fringes, so every table stands on it.
+	const [wide, deep] = [hx + 3, hz + 6];
 	scene.createMesh({
 		mesh: geometry.fromArrays({
 			positions: [
@@ -1322,22 +1427,7 @@ function createSquare(
 		receiveShadows: true,
 	});
 	// The cafe tables stand along the square's fringes, under canvas in some places and open in others.
-	const covered: [number, number][] = [];
-	const open: [number, number][] = [];
-	for (const side of [-1, 1])
-		for (let i = 0; i < 6; i++) {
-			const px = x + side * (hx - 1 + (i % 2) * 2.6);
-			const pz = z - hz + 5 + i * 5.6;
-			if (i % 3 === 0) covered.push([px + side * 0.5, pz]);
-			else open.push([px, pz]);
-		}
-	for (let i = 0; i < 10; i++) {
-		const px = x - hx + 3 + i * 4.6;
-		if (Math.abs(px - x) < 5) continue;
-		open.push([px, z + hz - 2 - (i % 2) * 2.4]);
-		if (i % 4 === 1) covered.push([px, z + hz + 1.8]);
-	}
-	for (let i = 0; i < 6; i++) open.push([x - 10 + i * 4, z - hz + 1 + (i % 2) * 2.2]);
+	const places = squarePropPlaces();
 	const put = (arrays: Build, spots: readonly (readonly [number, number])[]) => {
 		const batch = scene.createInstances(geometry.fromArrays(finish(arrays)), spots.length, {
 			material: materials.standard({ vertexColors: true, roughness: 0.85, doubleSided: true }),
@@ -1349,33 +1439,18 @@ function createSquare(
 		});
 		batch.markDirty();
 	};
-	put(cafeTable(), covered);
-	put(bareTable(), open);
-	// Flowering pots gather by the fountain, the trees and the church's steps.
-	const pots: [number, number][] = [];
-	for (let k = 0; k < 8; k++) {
-		const a = (k / 8) * Math.PI * 2 + 0.3;
-		pots.push([x + Math.cos(a) * 7.4, z + Math.sin(a) * 7.4]);
-	}
-	for (const px of [-12, -8, 8, 12]) pots.push([x + px, z - hz - 3.5]);
-	for (const [ox, oz] of [
-		[-16.5, -3],
-		[10, -8.5],
-		[-11, 14],
-		[17, 9],
-	] as const)
-		pots.push([x + ox, z + oz]);
-	put(planter(), pots);
+	put(cafeTable(), places.covered);
+	put(bareTable(), places.open);
+	put(planter(), places.pots);
 	// Canvas awnings hang from the fronts of the houses at the square's southern corners.
 	const shades = scene.createInstances(geometry.fromArrays(finish(awning())), 4, {
 		material: materials.standard({ vertexColors: true, roughness: 0.9, doubleSided: true }),
 		castShadows: true,
 		receiveShadows: true,
 	});
-	row(shades, 0, x - hx - 2, top, z + 4, Math.PI / 2);
-	row(shades, 1, x + hx + 2, top, z + 4, -Math.PI / 2);
-	row(shades, 2, x - hx - 2, top, z - 10, Math.PI / 2);
-	row(shades, 3, x + hx + 2, top, z - 10, -Math.PI / 2);
+	places.awnings.forEach((awning, k) => {
+		row(shades, k, awning.x, top, awning.z, awning.yaw);
+	});
 	shades.markDirty();
 	return { church: [hallStone, hallRoof], churchY: place[1] };
 }
@@ -1796,11 +1871,19 @@ function createHarbour(
 	};
 }
 
+/** One parasol's place on the sand, its canvas's tint and its turn. */
+export interface ParasolSpot {
+	readonly x: number;
+	readonly z: number;
+	readonly color: readonly number[];
+	readonly yaw: number;
+}
+
 /** The beach: tight rows of parasols from the back of the sand, in clubs with palms right behind. */
 /** The parasols' places on the sand: in clubs, off the houses and the roads. */
-export function parasolSpots(): { x: number; z: number; color: readonly number[]; yaw: number }[] {
+export function parasolSpots(): ParasolSpot[] {
 	const next = random(419);
-	const spots: { x: number; z: number; color: readonly number[]; yaw: number }[] = [];
+	const spots: ParasolSpot[] = [];
 	const COLORS = [
 		[0.86, 0.78, 0.6, 1],
 		[0.72, 0.6, 0.4, 1],
@@ -1837,10 +1920,22 @@ export function parasolSpots(): { x: number; z: number; color: readonly number[]
 	return spots;
 }
 
+/** The diameter of a parasol's canvas, with a little clearance, in meters. */
+const PARASOL_SPAN = 3.05;
+
+/** The parasol places, with no two canvases overlapping. */
+export function parasolClubs(): ParasolSpot[] {
+	const kept: ParasolSpot[] = [];
+	for (const spot of parasolSpots())
+		if (kept.every((other) => hypot(other.x - spot.x, other.z - spot.z) >= PARASOL_SPAN))
+			kept.push(spot);
+	return kept;
+}
+
 function createBeach(ctx: SketchContext): InstanceBatch {
 	const next = random(421);
 	const { scene, geometry, materials } = ctx;
-	const spots = parasolSpots();
+	const spots = parasolClubs();
 	const set = scene.createInstances(geometry.fromArrays(finish(parasol())), spots.length, {
 		material: materials.standard({ vertexColors: true, roughness: 0.8, doubleSided: true }),
 		colors: true,
@@ -2076,6 +2171,48 @@ function createGolf(ctx: SketchContext): void {
 	scene.createMesh({ mesh: geometry.fromArrays(finish(flags)), material, castShadows: true });
 }
 
+/** A point of a park's drawn ground: its place and the height that it lies at. */
+export interface ParkPoint {
+	x: number;
+	y: number;
+	z: number;
+}
+
+/** A bench of a park, with its turn about +y. */
+export interface ParkSeat extends ParkPoint {
+	yaw: number;
+}
+
+/** A shrub of a park's beds, with its size. */
+export interface ParkHedge extends ParkPoint {
+	scale: number;
+}
+
+/** One stretch of a park's lookout wall. */
+export interface ParkWall {
+	a: ParkPoint;
+	b: ParkPoint;
+}
+
+/** Everything that a park places, as the code draws it. */
+export interface ParkPlan {
+	x: number;
+	z: number;
+	radius: number;
+	/** The park's own level, at its middle. */
+	y: number;
+	/** The lawn's radius before its variation at each bearing. */
+	r: number;
+	shape: (a: number) => number;
+	walk: ParkPoint[];
+	branch: ParkPoint[];
+	gazebo: ParkPoint;
+	seats: ParkSeat[];
+	lamps: ParkPoint[];
+	hedges: ParkHedge[];
+	wall: ParkWall[];
+}
+
 /** The outline of a park's lawn, as its radius at each bearing. */
 function parkShape(x: number, z: number, r: number) {
 	return (a: number) => r * (1 + 0.14 * Math.sin(a * 2 + x) + 0.09 * Math.sin(a * 5 + z));
@@ -2106,19 +2243,164 @@ function parkBranch(x: number, y: number, z: number, walk: readonly { x: number;
 	return branch;
 }
 
-/** The lawns of the parks, for grass: each one's square, the lawn's height, and where its lawn lies. */
-export function parkLawns() {
+/** The base that every drawn park surface lies over the park's level, and the lift of each. */
+const PARK_BASE = 0.02;
+const LAWN_LIFT = 0.1;
+const APRON_LIFT = 0.07;
+const WALK_LIFT = 0.13;
+const BRANCH_LIFT = 0.14;
+/** How far the apron reaches past the lawn, and the half width of the walk and the branch, in meters. */
+const APRON_REACH = 3;
+const WALK_STRIP = 1.5;
+const BRANCH_STRIP = 1.2;
+/** The radius of a gazebo's lowest step, and how far a bench reaches around its own middle, in meters. */
+const GAZEBO_STEP = 4.7;
+const BENCH_REACH = 1;
+/** How far a lamp's foot reaches around its own post, in meters. */
+const LAMP_REACH = 0.3;
+/** The half length and half depth of a bench's footprint, in meters. */
+const BENCH_HALF = { along: 0.9, across: 0.27 } as const;
+
+/** How far a point stands from a line of points on the ground, in meters. */
+function gapToLine(line: readonly { x: number; z: number }[], x: number, z: number): number {
+	let least = Number.POSITIVE_INFINITY;
+	for (let k = 0; k + 1 < line.length; k++) {
+		const a = line[k] as { x: number; z: number };
+		const b = line[k + 1] as { x: number; z: number };
+		const dx = b.x - a.x;
+		const dz = b.z - a.z;
+		const length2 = dx * dx + dz * dz || 1;
+		const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / length2));
+		least = Math.min(least, hypot(x - (a.x + dx * t), z - (a.z + dz * t)));
+	}
+	return least;
+}
+
+/**
+ * The height of the surface that a park draws at a place: its gravel walk or branch, its lawn, the
+ * apron past the lawn, or the open ground off the park.
+ */
+export function parkSurface(plan: ParkPlan, x: number, z: number): number {
+	const [dx, dz] = [x - plan.x, z - plan.z];
+	const d = hypot(dx, dz);
+	const edge = plan.shape(Math.atan2(dz, dx));
+	let height = Number.NEGATIVE_INFINITY;
+	if (gapToLine(plan.walk, x, z) <= WALK_STRIP) height = plan.y + PARK_BASE + WALK_LIFT;
+	if (gapToLine(plan.branch, x, z) <= BRANCH_STRIP)
+		height = Math.max(height, plan.y + PARK_BASE + BRANCH_LIFT);
+	if (d <= edge) height = Math.max(height, plan.y + PARK_BASE + LAWN_LIFT);
+	else if (d <= edge + APRON_REACH) height = Math.max(height, plan.y + PARK_BASE + APRON_LIFT);
+	return height > Number.NEGATIVE_INFINITY ? height : groundHeight(x, z);
+}
+
+/** The highest surface under a bench's footprint, so that the bench rests on it. */
+function seatHeight(plan: ParkPlan, x: number, z: number, yaw: number): number {
+	const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+	let highest = Number.NEGATIVE_INFINITY;
+	for (const u of [-BENCH_HALF.along, 0, BENCH_HALF.along])
+		for (const v of [-BENCH_HALF.across, BENCH_HALF.across])
+			highest = Math.max(highest, parkSurface(plan, x + u * c + v * s, z - u * s + v * c));
+	return highest;
+}
+
+/**
+ * Every park's drawn ground and the objects on it. A bench stands clear of the gazebo's stepped
+ * base and on the surface under its footprint, and a lamp stands on the surface under its base.
+ */
+export function parkPlans(): ParkPlan[] {
 	return PARKS.map(([x, z, radius]) => {
 		const y = groundHeight(x, z);
 		const r = radius * 0.72;
 		const shape = parkShape(x, z, r);
 		const walk = parkWalk(x, y, z, shape);
-		const paths = [...walk, ...parkBranch(x, y, z, walk)];
+		const branch = parkBranch(x, y, z, walk);
+		const [gx, gz] = [x + 3, z + 2];
+		const plan: ParkPlan = {
+			x,
+			z,
+			radius,
+			y,
+			r,
+			shape,
+			walk,
+			branch,
+			gazebo: { x: gx, y: y + PARK_BASE + LAWN_LIFT, z: gz },
+			seats: [],
+			lamps: [],
+			hedges: [],
+			wall: [],
+		};
+		walk.forEach((p, k) => {
+			if (k % 8 !== 2) return;
+			const q = walk[Math.min(walk.length - 1, k + 1)] as ParkPoint;
+			const along = Math.atan2(q.z - p.z, q.x - p.x);
+			// A bench stands on the walk's near side, or on the far side where the near side
+			// would stand in the gazebo's steps.
+			for (const side of [1, -1]) {
+				const at = {
+					x: p.x - side * Math.sin(along) * 2.2,
+					z: p.z + side * Math.cos(along) * 2.2,
+				};
+				if (hypot(at.x - gx, at.z - gz) < GAZEBO_STEP + BENCH_REACH) continue;
+				const yaw = side > 0 ? -along : Math.PI - along;
+				plan.seats.push({ ...at, y: seatHeight(plan, at.x, at.z, yaw), yaw });
+				break;
+			}
+		});
+		// A lamp stands clear of every bench, on either side of the walk, and on the surface below it.
+		walk.forEach((p, k) => {
+			if (k % 13 !== 6) return;
+			for (const side of [1, -1]) {
+				const x = p.x + side * Math.sin(k) * 2;
+				const z = p.z + side * Math.cos(k) * 2;
+				if (plan.seats.some((seat) => hypot(seat.x - x, seat.z - z) < BENCH_REACH + LAMP_REACH))
+					continue;
+				plan.lamps.push({ x, y: parkSurface(plan, x, z), z });
+				break;
+			}
+		});
+		// Beds of leafy shrubs lie along the lawn's edge, thick around the gazebo.
+		for (let k = 0; k < 54; k++) {
+			const a = (k / 54) * Math.PI * 2;
+			const rr = shape(a) + 1.5 + ((k * 7) % 5) * 0.5;
+			plan.hedges.push({
+				x: x + Math.cos(a) * rr,
+				y: y + PARK_BASE + APRON_LIFT,
+				z: z + Math.sin(a) * rr,
+				scale: 0.8 + ((k * 3) % 4) * 0.25,
+			});
+		}
+		for (let k = 0; k < 14; k++) {
+			const a = (k / 14) * Math.PI * 2;
+			plan.hedges.push({
+				x: gx + Math.cos(a) * 6.5,
+				y: y + PARK_BASE + LAWN_LIFT,
+				z: gz + Math.sin(a) * 6.5,
+				scale: 0.6 + (k % 3) * 0.25,
+			});
+		}
+		// A low stone wall stands at the lookout, on the park's downhill side.
+		for (let a = 1; a < 2.4; a += 0.08) {
+			const [ra, rb] = [shape(a) + 5, shape(a + 0.08) + 5];
+			plan.wall.push({
+				a: { x: x + Math.cos(a) * ra, y, z: z + Math.sin(a) * ra },
+				b: { x: x + Math.cos(a + 0.08) * rb, y, z: z + Math.sin(a + 0.08) * rb },
+			});
+		}
+		return plan;
+	});
+}
+
+/** The lawns of the parks, for grass: each one's square, the lawn's height, and where its lawn lies. */
+export function parkLawns() {
+	return parkPlans().map((plan) => {
+		const { x, z, r, shape, walk } = plan;
+		const paths = [...walk, ...plan.branch];
 		return {
 			x,
 			z,
 			size: r * 2.6,
-			height: y + LAWN_LIFT,
+			height: plan.y + LAWN_LIFT,
 			where: (px: number, pz: number) => {
 				const [dx, dz] = [px - x, pz - z];
 				const inside = shape(Math.atan2(dz, dx)) - 0.3 - hypot(dx, dz);
@@ -2146,8 +2428,7 @@ function edgeHash(x: number, z: number): number {
 }
 
 /** The parks: mottled lawns with a winding gravel walk, a gazebo, benches, hedges, lamps and a low wall. */
-/** How high a lawn lies over the park's level, and how far grass keeps from a walk and a gazebo, in meters. */
-const LAWN_LIFT = 0.1;
+/** How far grass keeps from a walk and a gazebo, in meters. */
 const WALK_CLEAR = 2;
 const GAZEBO_CLEAR = 7;
 /** The last stretch of a lawn, in meters, over which its cover and its colour fade into the ground. */
@@ -2157,20 +2438,18 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 	const { scene, geometry, materials } = ctx;
 	const b = build();
 	const walls = build();
-	const seats: { x: number; y: number; z: number; yaw: number }[] = [];
-	const hedges: { x: number; y: number; z: number; scale: number }[] = [];
-	const lamps: { x: number; y: number; z: number }[] = [];
+	const seats: ParkSeat[] = [];
+	const hedges: ParkHedge[] = [];
+	const lamps: ParkPoint[] = [];
 	const lawn: Color = [0.15, 0.26, 0.07];
 	const gravel: Color = [0.5, 0.45, 0.34];
-	for (const [x, z, radius] of PARKS) {
-		const y = groundHeight(x, z);
-		const flat = () => y + 0.02;
-		const r = radius * 0.72;
+	for (const plan of parkPlans()) {
+		const { x, z, y, shape, walk, branch, gazebo } = plan;
+		const flat = () => y + PARK_BASE;
 		// An uneven lawn, and a gravel walk that winds around it with a branch to the gazebo. The lawn
 		// fades into its darker apron over its last half metre, so its outline does not read as a line.
-		const shape = parkShape(x, z, r);
 		const apron: Color = [0.1, 0.18, 0.05];
-		patch(b, x, z, (a) => shape(a) + 3, apron, 0.07, flat);
+		patch(b, x, z, (a) => shape(a) + APRON_REACH, apron, APRON_LIFT, flat);
 		patch(
 			b,
 			x,
@@ -2190,13 +2469,10 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 			LAWN_LIFT,
 			flat,
 		);
-		const walk = parkWalk(x, y, z, shape);
-		strip(b, walk, 1.5, gravel, 0.13);
-		const [gx, gz] = [x + 3, z + 2];
-		const branch = parkBranch(x, y, z, walk);
-		strip(b, branch, 1.2, gravel, 0.14);
+		strip(b, walk, WALK_STRIP, gravel, WALK_LIFT);
+		strip(b, branch, BRANCH_STRIP, gravel, BRANCH_LIFT);
 		const hall = pavilion();
-		const place = [gx, y + 0.12, gz] as [number, number, number];
+		const place = [gazebo.x, gazebo.y, gazebo.z] as [number, number, number];
 		scene.createMesh({
 			mesh: geometry.fromArrays(finish(hall.stone)),
 			material: surfaces.ashlar,
@@ -2211,51 +2487,10 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 			castShadows: true,
 			receiveShadows: true,
 		});
-		walk.forEach((p, k) => {
-			if (k % 8 === 2) {
-				const q = walk[Math.min(walk.length - 1, k + 1)] as { x: number; z: number };
-				const along = Math.atan2(q.z - p.z, q.x - p.x);
-				seats.push({
-					x: p.x - Math.sin(along) * 2.2,
-					y: y + 0.12,
-					z: p.z + Math.cos(along) * 2.2,
-					yaw: -along,
-				});
-			}
-			if (k % 13 === 6)
-				lamps.push({ x: p.x + Math.sin(k) * 2, y: y + 0.1, z: p.z + Math.cos(k) * 2 });
-		});
-		// Beds of leafy shrubs lie along the lawn's edge, thick around the gazebo.
-		for (let k = 0; k < 54; k++) {
-			const a = (k / 54) * Math.PI * 2;
-			const rr = shape(a) + 1.5 + ((k * 7) % 5) * 0.5;
-			hedges.push({
-				x: x + Math.cos(a) * rr,
-				y,
-				z: z + Math.sin(a) * rr,
-				scale: 0.8 + ((k * 3) % 4) * 0.25,
-			});
-		}
-		for (let k = 0; k < 14; k++) {
-			const a = (k / 14) * Math.PI * 2;
-			hedges.push({
-				x: gx + Math.cos(a) * 6.5,
-				y: y + 0.1,
-				z: gz + Math.sin(a) * 6.5,
-				scale: 0.6 + (k % 3) * 0.25,
-			});
-		}
-		// A low stone wall stands at the lookout, on the park's downhill side.
-		for (let a = 1; a < 2.4; a += 0.08) {
-			const [ra, rb] = [shape(a) + 5, shape(a + 0.08) + 5];
-			wallStretch(
-				walls,
-				{ x: x + Math.cos(a) * ra, y, z: z + Math.sin(a) * ra },
-				{ x: x + Math.cos(a + 0.08) * rb, y, z: z + Math.sin(a + 0.08) * rb },
-				0.7,
-				[0.9, 0.86, 0.78],
-			);
-		}
+		seats.push(...plan.seats);
+		lamps.push(...plan.lamps);
+		hedges.push(...plan.hedges);
+		for (const { a, b: c } of plan.wall) wallStretch(walls, a, c, 0.7, [0.9, 0.86, 0.78]);
 	}
 	const material = materials.standard({ vertexColors: true, roughness: 0.92 });
 	scene.createMesh({ mesh: geometry.fromArrays(finish(b)), material, receiveShadows: true });
@@ -2615,7 +2850,9 @@ function createLamps(ctx: SketchContext): void {
 			const length = hypot(p.x - q.x, p.z - q.z) || 1;
 			const x = p.x - ((p.z - q.z) / length) * (half + 0.5);
 			const z = p.z + ((p.x - q.x) / length) * (half + 0.5);
-			places.push({ x, y: groundHeight(x, z), z });
+			// A lamp stands on the drawn shoulder, whose surface sits below the road's own line over
+			// the cut ground, rather than on that cut ground.
+			places.push({ x, y: p.y + ROAD_LIFT - 0.05, z });
 		}
 	}
 	const { x, z, hx, hz } = SQUARE;
@@ -2882,7 +3119,11 @@ async function settleLandmarks(ctx: SketchContext, kit: KitLandmarks): Promise<v
 		if (props.parasol && props.lounger)
 			swap(kit.props.parasols, [
 				{ model: props.parasol, options: { castShadows: true, tint: ['canvas'] } },
-				{ model: props.lounger, stands: loungerStands(spots), options: { castShadows: true } },
+				{
+					model: props.lounger,
+					stands: loungerStands(spots, groundHeight),
+					options: { castShadows: true },
+				},
 			]);
 		const benches: ModelStanding[] = props.bench
 			? [{ model: props.bench, options: { castShadows: true } }]

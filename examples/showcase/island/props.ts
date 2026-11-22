@@ -132,7 +132,10 @@ export interface PropOptions {
 	readonly layers?: number;
 }
 
-/** The two loungers of each parasol spot, turned with the spot. */
+/**
+ * The two loungers of each parasol spot, turned with the spot. A height gives the surface under
+ * each lounger, so a lounger on a slope stands on its own ground rather than at the parasol's.
+ */
 export function loungerStands(
 	spots: readonly {
 		readonly x: number;
@@ -140,18 +143,15 @@ export function loungerStands(
 		readonly z: number;
 		readonly yaw: number;
 	}[],
+	height?: (x: number, z: number) => number,
 ): Stand[] {
 	const stands: Stand[] = [];
 	for (const spot of spots)
 		for (const offset of LOUNGER_OFFSETS) {
 			const [c, s] = [Math.cos(spot.yaw), Math.sin(spot.yaw)];
-			stands.push({
-				x: spot.x + offset.x * c + offset.z * s,
-				y: spot.y,
-				z: spot.z - offset.x * s + offset.z * c,
-				yaw: spot.yaw,
-				size: 1,
-			});
+			const x = spot.x + offset.x * c + offset.z * s;
+			const z = spot.z - offset.x * s + offset.z * c;
+			stands.push({ x, y: height ? height(x, z) : spot.y, z, yaw: spot.yaw, size: 1 });
 		}
 	return stands;
 }
