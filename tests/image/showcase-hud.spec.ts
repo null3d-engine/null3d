@@ -231,7 +231,6 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// starts first: its core, its modules and the worker the sketch's setup runs in. A page that
 	// never posts the controls still fails here, by the test's own name.
 	await expect(hud).toHaveCount(1, { timeout: FIRST_FRAME_MS });
-	await expect(page.getByRole('tab', { name: 'Post' })).toHaveCount(1);
 	// The controls come up while the sketch finishes its scene, which is before the engine's first
 	// frame. On a software GPU that frame arrives much later, and a picture read before it is an
 	// empty canvas: two empty frames differ by nothing, so a switch's settle would take one for a
@@ -240,9 +239,11 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
 	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
 	progress('the first frame');
-	// Open the panel, as a visitor does, with the title chip and its Controls tab.
+	// Open the panel, as a visitor does, with the title chip and its Controls tab. The scene's tabs
+	// live in that tab of the sheet, so they reach the page's roles only while it is open.
 	await page.locator('.chip').click();
 	await page.getByRole('tab', { name: 'Controls' }).click();
+	await expect(page.getByRole('tab', { name: 'Post' })).toHaveCount(1);
 	await expect(hud).toBeVisible();
 	return errors;
 }
