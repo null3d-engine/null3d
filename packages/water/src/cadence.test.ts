@@ -6,7 +6,13 @@
 // the share of the view's path through the water that the page asks for, and reads its depth alone
 // by default. Rain rings the surface only when a page asks for it.
 import { describe, expect, it } from 'bun:test';
-import type { FeatureStats, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
+import type {
+	Camera,
+	FeatureStats,
+	MeshArrays,
+	QualityPreset,
+	SketchContext,
+} from '@null3d/engine';
 import { activateAddonDebugView, hasAddonDebugView } from '@null3d/engine/internal';
 import { createWater, type Water, type WaterOptions } from './water';
 
@@ -140,6 +146,36 @@ function fakeContext(start: QualityPreset = 'medium') {
 	};
 }
 
+/** A camera at a place and a turn, which a test moves and turns. */
+function fakeCamera(): {
+	getPosition(out: { [index: number]: number }): void;
+	getRotation(out: { [index: number]: number }): void;
+	to(x: number, y: number, z: number): void;
+	turnTo(yaw: number): void;
+} {
+	const place = [0, 1, 0];
+	const turn = [0, 0, 0, 1];
+	return {
+		getPosition(out) {
+			for (let k = 0; k < 3; k++) out[k] = place[k] as number;
+		},
+		getRotation(out) {
+			for (let k = 0; k < 4; k++) out[k] = turn[k] as number;
+		},
+		to(x, y, z) {
+			place[0] = x;
+			place[1] = y;
+			place[2] = z;
+		},
+		turnTo(yaw) {
+			turn[0] = 0;
+			turn[1] = Math.sin(yaw / 2);
+			turn[2] = 0;
+			turn[3] = Math.cos(yaw / 2);
+		},
+	};
+}
+
 /** A short river, from (0, 0) to (10, 0). */
 const RIVER = {
 	kind: 'river',
@@ -205,6 +241,29 @@ describe('the reflection cadence', () => {
 		expect(water.reflectionEvery).toBe(2);
 		context.step(0);
 		expect(water.reflectionEvery).toBe(1);
+		water.destroy();
+	});
+
+	it('draws the reflection in every frame while the camera moves, and takes the cadence back', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const water = waterOn(context, { camera: camera as unknown as Camera });
+		// A still camera keeps the row: Low draws in every second frame.
+		water.update();
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(2);
+		// A move draws the reflection in this frame.
+		camera.to(1, 1, 0);
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		// So does a turn, and the frame after it, which stands still again, takes the cadence back.
+		camera.turnTo(0.3);
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		// The governor's cadence is the one restored, not the preset's row alone.
+		context.step(1);
+		water.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(4);
 		water.destroy();
 	});
 
