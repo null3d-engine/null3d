@@ -895,18 +895,42 @@ export function presetValue<K extends QualitySettingName>(
 export const LOWEST_TIER_SCALE = 1 / 3;
 
 /**
- * The settings that a start in the lowest quality tier takes on the GPU path `tier`: the render
- * scale fixed at the tier's floor, the sun's shadows and bloom off, and WebGL2's depth prepass
- * off. The four presets keep their own values, and the governor changes the same settings when it
- * enters the tier during play (D-382).
+ * The cuts that the lowest quality tier applies, on the GPU path `tier`: the render scale's floor
+ * at the tier's, unless the settings' floor is lower, the sun's shadows and bloom off, and WebGL2's
+ * depth prepass off. A sketch that reads the settings sees them while the tier applies (D-382).
  */
-export function lowestTierSettings(tier: Tier): Partial<QualitySettings> {
+export function lowestTierCuts(
+	tier: Tier,
+	min: number = LOWEST_TIER_SCALE,
+): Partial<QualitySettings> {
 	return {
-		minRenderScale: LOWEST_TIER_SCALE,
-		maxRenderScale: LOWEST_TIER_SCALE,
+		minRenderScale: Math.min(min, LOWEST_TIER_SCALE),
 		shadows: false,
 		bloom: false,
 		...(tier === 'webgl2' ? { depthPrepass: false } : {}),
+	};
+}
+
+/**
+ * The settings that a start in the lowest quality tier takes on the GPU path `tier`: the cuts,
+ * with the render scale fixed at the tier's floor. The four presets keep their own values, and the
+ * governor applies the same cuts when it enters the tier during play (D-382).
+ */
+export function lowestTierSettings(tier: Tier): Partial<QualitySettings> {
+	return { ...lowestTierCuts(tier), maxRenderScale: LOWEST_TIER_SCALE };
+}
+
+/**
+ * The settings that the lowest quality tier replaces, for a frame loop to give back when it
+ * leaves: the render scale's range, the sun's shadows, bloom and the depth prepass.
+ */
+export function tierRestoreSettings(settings: QualitySettings): Partial<QualitySettings> {
+	return {
+		minRenderScale: settings.minRenderScale,
+		maxRenderScale: settings.maxRenderScale,
+		shadows: settings.shadows,
+		bloom: settings.bloom,
+		depthPrepass: settings.depthPrepass,
 	};
 }
 

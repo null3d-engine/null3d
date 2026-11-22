@@ -51,10 +51,12 @@ import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, thousandths } from '../quality/budget';
 import { Governor, GovernorLoop } from '../quality/governor';
 import {
-	LOWEST_TIER_SCALE,
+	lowestTierCuts,
+	presetSettings,
 	presetValue,
 	type QualitySettings,
 	SKETCH_SETTINGS,
+	tierRestoreSettings,
 } from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import type { DerivedCache } from '../scene/derived-cache';
@@ -723,13 +725,7 @@ export class SketchRunner {
 				thousandths(presetValue('minRenderScale', preset, path)),
 				thousandths(presetValue('maxRenderScale', preset, path)),
 			);
-			this.tierRestore = {
-				minRenderScale: presetValue('minRenderScale', preset, path),
-				maxRenderScale: presetValue('maxRenderScale', preset, path),
-				shadows: presetValue('shadows', preset, path),
-				bloom: presetValue('bloom', preset, path),
-				depthPrepass: presetValue('depthPrepass', preset, path),
-			};
+			this.tierRestore = tierRestoreSettings(presetSettings(preset, {}, path));
 			this.tierChanges = this.governor.tierChanges;
 		}
 		this.applyFrameSettings(this.quality.settings);
@@ -1317,26 +1313,11 @@ export class SketchRunner {
 		this.tierChanges = governor.tierChanges;
 		const { settings } = this.quality;
 		if (governor.lowest) {
-			this.tierRestore ??= {
-				minRenderScale: settings.minRenderScale,
-				maxRenderScale: settings.maxRenderScale,
-				shadows: settings.shadows,
-				bloom: settings.bloom,
-				depthPrepass: settings.depthPrepass,
-			};
-			const prepass = this.sketch.capabilities.tier === 'webgl2';
-			if (
-				settings.shadows ||
-				settings.bloom ||
-				settings.minRenderScale > LOWEST_TIER_SCALE ||
-				(prepass && settings.depthPrepass)
-			)
-				void this.quality.setGoverned({
-					minRenderScale: Math.min(settings.minRenderScale, LOWEST_TIER_SCALE),
-					shadows: false,
-					bloom: false,
-					...(prepass ? { depthPrepass: false } : {}),
-				});
+			this.tierRestore ??= tierRestoreSettings(settings);
+			const cuts = lowestTierCuts(this.sketch.capabilities.tier, settings.minRenderScale);
+			const current = settings as unknown as Record<string, unknown>;
+			if (Object.entries(cuts).some(([name, value]) => current[name] !== value))
+				void this.quality.setGoverned(cuts);
 		} else if (this.tierRestore) {
 			const restore = this.tierRestore;
 			this.tierRestore = undefined;

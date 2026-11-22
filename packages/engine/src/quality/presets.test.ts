@@ -11,6 +11,7 @@ import {
 	LIVE_SETTINGS,
 	LOWEST_TIER_SCALE,
 	lowered,
+	lowestTierCuts,
 	lowestTierSettings,
 	MIB,
 	presetArgument,
@@ -26,6 +27,7 @@ import {
 	SKETCH_SETTINGS,
 	takesValue,
 	targetFpsOption,
+	tierRestoreSettings,
 } from './presets';
 
 // The page sets the table of fixes that ends each error's message before it can raise an error.
@@ -674,6 +676,27 @@ describe('the lowest quality tier', () => {
 			expect([tier, settings.shadows]).toEqual([tier, false]);
 			expect([tier, settings.bloom]).toEqual([tier, false]);
 		}
+	});
+
+	it('cuts the settings without raising a floor that is lower than its own', () => {
+		const cuts = lowestTierCuts('webgl2', 0.4);
+		expect(cuts.minRenderScale).toBe(LOWEST_TIER_SCALE);
+		expect(cuts.shadows).toBe(false);
+		expect(cuts.bloom).toBe(false);
+		expect(cuts.depthPrepass).toBe(false);
+		expect(lowestTierCuts('webgpu', 0.25).minRenderScale).toBe(0.25);
+		expect(lowestTierCuts('webgpu').depthPrepass).toBeUndefined();
+	});
+
+	it('names the settings that it gives back', () => {
+		const settings = presetSettings('low');
+		expect(tierRestoreSettings(settings)).toEqual({
+			minRenderScale: settings.minRenderScale,
+			maxRenderScale: settings.maxRenderScale,
+			shadows: settings.shadows,
+			bloom: settings.bloom,
+			depthPrepass: settings.depthPrepass,
+		});
 	});
 
 	it('turns the depth prepass off on WebGL2 alone, where every preset draws it', () => {
