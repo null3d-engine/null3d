@@ -45,5 +45,8 @@ first. After the first heavy page, `getContext('webgl2')` returns null, so the n
 canvas has no WebGL2 context`. Capping the engine's job workers and memory (`jobs=2`, `memory=256`)
 changed nothing: its first frame took 139.9 s, slower than the 107.0 s of the defaults. The engine
 named no refused target and no lost context on the first page. The render worker blocks in the
-driver's first draw of each new program. Whether this class runs the garden at Low is the owner's
-call.
+driver's first draw of each new program.
+
+The owner's ruling records this tablet out of scope for the garden at Low. Mid-range Android tablets
+are accepted as slow at Low for this milestone, and the governor has no step below the half-scale
+floor.
