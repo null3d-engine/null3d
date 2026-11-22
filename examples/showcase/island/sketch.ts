@@ -156,6 +156,17 @@ export default defineSketch(
 			// texture without anisotropy blurs into its own average.
 			maxAnisotropy: 16,
 		});
+		// At High and Ultra the frames are the sketch thread's, and the governor cannot make that work
+		// cheaper: its steps only soften the picture (the render scale, the levels of detail, the shadow
+		// filter and the effects) for no frame. Low and Medium keep it, since a phone's frames are the
+		// GPU's. The detail steps matter most: with the scale pinned, they raise the level threshold and
+		// cut the crowns near the camera, which reads as a jolt.
+		const guardQuality = () => {
+			const wanted = ctx.quality.preset === 'low' || ctx.quality.preset === 'medium';
+			if (ctx.quality.settings.governor !== wanted) void ctx.quality.set({ governor: wanted });
+		};
+		guardQuality();
+		ctx.quality.onChange(guardQuality);
 
 		// The mood: a summer morning at its start, with a little cloud and a thin haze for depth. `Auto`
 		// moves the sun and the moon across the sky; the other moods hold an hour. The controls and the

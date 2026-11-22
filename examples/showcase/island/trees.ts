@@ -547,6 +547,12 @@ export async function createTrees(
 				{ fade: false },
 			);
 		}
+		// The wood cuts between its levels at once too: a dithered band on a trunk shows as a stipple.
+		if (wood.mesh.levels.length > 0)
+			wood.mesh.setLevels(
+				wood.mesh.levels.map((level) => ({ ...level, fade: false })),
+				{ fade: false },
+			);
 		// The wood bends with its leaves but has none to flutter, and its bark's own map gives its
 		// roughness.
 		const bark = { ...SWAY[kind], rustle: 0, roughness: 1 };
