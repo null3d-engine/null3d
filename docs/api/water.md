@@ -35,7 +35,7 @@ flowchart LR
 
 `createWaterfall` draws a fall from a river's lip, with spray at the lip, mist down the fall and a plume of mist at its foot.
 
-`createOcean` draws an open sea instead. Its waves come from wave spectra, and the GPU transforms them into heights in every frame. The bands of swell and chop then move on their own, and the surface reads the slopes that the transform writes.
+`createOcean` draws an open sea instead. Its waves come from wave spectra, and the GPU transforms them into heights in every frame. The bands of swell and chop then move on their own, and the surface reads the slopes that the transform writes. Its reflection takes the same cadence as the river's: the preset's and the governor's at rest, and every frame while the camera that `update()` follows moves or turns.
 
 The package is built on the engine's public API. Its surface and underwater shaders ship compiled, so your build does not compile them, and the package needs no extra setup for them. A waterfall's spray comes from `@null3d/particles`, which the package lists as a peer dependency. It loads with the first fall that makes spray.
 
@@ -408,7 +408,7 @@ holds longer waves, and a taller significant height lifts them further.
 
 | Member | What it does |
 | --- | --- |
-| `update()` | Moves the mesh about the camera. The reflection pass carries its own cadence. Call it once in each frame, after the camera moves |
+| `update()` | Moves the mesh about the camera, and follows it for the reflection's cadence, which draws in every frame while the view moves. Call it once in each frame, after the camera moves |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `heightAt(x, z)` | The height of the sea at a world place, in meters, at the sketch time. It runs the bands' transforms on this thread, and transforms again only when the sketch time moves, so several reads in a frame share one |
 | `bands` | The bands, in the order that they sum |

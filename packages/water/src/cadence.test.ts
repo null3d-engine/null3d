@@ -14,6 +14,7 @@ import type {
 	SketchContext,
 } from '@null3d/engine';
 import { activateAddonDebugView, hasAddonDebugView } from '@null3d/engine/internal';
+import { createOcean } from './ocean';
 import { createWater, type Water, type WaterOptions } from './water';
 
 /** A scale that the governor gives a budget. */
@@ -79,7 +80,8 @@ function fakeContext(start: QualityPreset = 'medium') {
 		scene: {
 			createMesh: (options: { mesh: unknown }) => {
 				meshes.push(options.mesh as MeshArrays);
-				return { destroy() {} };
+				// The sea moves its mesh about the camera, and hides it on request.
+				return { destroy() {}, setPosition() {}, setVisible() {} };
 			},
 		},
 		geometry: { fromArrays: (arrays: unknown) => arrays },
@@ -90,6 +92,7 @@ function fakeContext(start: QualityPreset = 'medium') {
 					set(values: Record<string, unknown>) {
 						materialSets.push(values);
 					},
+					setUniform() {},
 					destroy() {},
 				};
 			},
@@ -265,6 +268,29 @@ describe('the reflection cadence', () => {
 		water.update();
 		expect(context.passEvery.at(-1)?.[1]).toBe(4);
 		water.destroy();
+	});
+
+	it('draws the sea’s reflection in every frame while the camera moves, and takes the cadence back', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const ocean = createOcean(context.ctx as unknown as SketchContext, {
+			camera: camera as unknown as Camera,
+		});
+		// A still camera keeps the row: Low draws in every second frame.
+		ocean.update();
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(2);
+		camera.to(1, 1, 0);
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		camera.turnTo(0.3);
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(1);
+		// The governor's cadence is the one restored, not the preset's row alone.
+		context.step(1);
+		ocean.update();
+		expect(context.passEvery.at(-1)?.[1]).toBe(4);
+		ocean.destroy();
 	});
 
 	it('refuses a cadence outside the frames that the reflection can wait', () => {
