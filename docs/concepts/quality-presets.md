@@ -79,9 +79,9 @@ A name that is not `auto`, `low`, `medium`, `high` or `ultra` fails the start wi
 A phone closes a tab that uses too much memory, and the page gets no event for it. So while the engine starts, it keeps a note in the page's `localStorage`. It removes the note once the engine has drawn for its first few seconds, or when the page stops the engine or leaves before then. A note that the next start finds means that the tab crashed during that start:
 
 - After one crashed start, the engine starts one preset lower than it would.
-- After two in a row, it starts at Low. If the start that crashed drew with WebGPU, it draws with WebGL2, unless the page names a GPU path.
+- After two in a row, it starts at Low, in the [lowest quality tier](#the-lowest-quality-tier). If the start that crashed drew with WebGPU, it draws with WebGL2, unless the page names a GPU path.
 
-This also applies to a preset that the page names, so a device that crashed at the player's choice can start again. The page can read the count in `engine.mode.crashedStarts` and tell the player. When the browser refuses the storage, as in a sandboxed frame, each start counts as a normal one. Hold mode and the `?preset=` switch leave the note alone. The note belongs to one sketch module and one origin.
+This also applies to a preset that the page names, so a device that crashed at the player's choice can start again. The `?preset=` switch fixes the preset and starts outside the tier, as it ignores the crashes. The page can read the count in `engine.mode.crashedStarts` and tell the player. When the browser refuses the storage, as in a sandboxed frame, each start counts as a normal one. Hold mode and the `?preset=` switch leave the note alone. The note belongs to one sketch module and one origin.
 
 ## The preset check
 
