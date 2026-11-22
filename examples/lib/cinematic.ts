@@ -1095,9 +1095,14 @@ export function createCinematic(
 						forward[2] as number,
 					);
 					if (length > 1e-6) {
-						// The step stops short of the point, so a zoom in never passes through it.
+						// The step stops short of the point, so a zoom in never passes through it, and
+						// short of the farthest the camera may stand from it.
 						const room = Math.max(0, length - MIN_ZOOM_DISTANCE);
-						const move = Math.max(-wheelStepMax, Math.min(wheelStepMax, flight, room));
+						const out = bounds ? Math.max(0, bounds.distance - length) : wheelStepMax;
+						const move = Math.max(
+							Math.max(-wheelStepMax, -out),
+							Math.min(wheelStepMax, flight, room),
+						);
 						const keptX = from[0] as number;
 						const keptY = from[1] as number;
 						const keptZ = from[2] as number;
@@ -1124,7 +1129,7 @@ export function createCinematic(
 				}
 				if (bounds) {
 					camera.getPosition(inside);
-					if (keepClear(bounds, controls.target, inside)) {
+					if (keepInside(bounds, controls.target, inside)) {
 						camera.setPosition(inside[0] as number, inside[1] as number, inside[2] as number);
 						camera.lookAt(controls.target[0], controls.target[1], controls.target[2]);
 					}
