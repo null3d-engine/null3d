@@ -37,7 +37,7 @@ should the engine do for that class? How far should it go?
   ms. The device splits differ, and this tier's ranking uses those.
 - The further cuts ran on the S8 at Low, with the render scale pinned at 0.333, no shadows and no
   bloom, over 60 s a page. The run is 20261122-024706-ultralow-cuts, on the probe branch at
-  44d9ca1a5. Each page follows a base page, and the last page removes a layer that draws nothing
+  44d9ca1a5, whose address switches stood in for the tier's flags. Each page follows a base page, and the last page removes a layer that draws nothing
   distinct, as the run's control. The medians of the GPU time saved follow. The frame intervals are
   not used: the base pages ranged over 33 to 50 ms, and the control moved 16.6 ms. The control's GPU
   time moved 0.07 ms, which is the run's noise.
@@ -103,9 +103,9 @@ should the engine do for that class? How far should it go?
 
 - `packages/engine/src/quality/presets.ts`: the new settings and their four-preset rows, the live
   class of `depthPrepass`, and the tier's values.
-- `packages/engine/src/quality/governor.ts`: the tier's entry and exit, its place in the step order,
-  and the cut flags it sets.
-- `packages/engine/src/page/engine.ts`: the `quality.set` bridge for the live prepass and the flags.
+- `packages/engine/src/quality/governor.ts`: the tier's entry, exit and cooldown, and their trials.
+- `packages/engine/src/page/engine.ts` and `packages/engine/src/sketch/runner.ts`: the start switch,
+  and the bridge that applies the tier's cuts and gives the settings back.
 - `crates/null3d-*`: the live prepass in the frame builder.
 - `examples/showcase/creek/`: the scene reads the tier's flags for the shadows, bloom, reflection,
   particles, cloud sea and plant detail.
