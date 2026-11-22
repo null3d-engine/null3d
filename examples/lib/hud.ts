@@ -1,9 +1,9 @@
-// The showcase scenes' controls HUD. A translucent chevron sits at the bottom of the panel; pressing
-// it slides a full panel of controls up over glass. The panel is tabbed: one tab per group of the
-// model, and only the selected group's buttons show, so the panel stays short on any screen, a phone
-// included. The tab bar scrolls across, the selected group scrolls inside a bounded panel, and the
-// selected tab is remembered while the panel is open. The sketch posts the model, this shell draws
-// it, and a pick goes back to the sketch as a message. The CSS lives with the examples' styles.
+// The showcase scenes' controls HUD: a panel of grouped controls that the demos page shows in its
+// controls sheet. The panel is tabbed: one tab per group of the model, and only the selected group's
+// buttons show, so the panel stays short on any screen, a phone included. The tab bar scrolls
+// across, the selected group scrolls inside a bounded panel, and the selected tab is remembered
+// while the panel is open. The sketch posts the model, this shell draws it, and a pick goes back to
+// the sketch as a message. The CSS lives with the examples' styles.
 //
 // A button's tip describes what it does alone, with no input device named. The tip shows on hover,
 // keyboard focus and a press, and hides on a leave, a blur, a tap elsewhere, a scroll or after a
@@ -274,6 +274,7 @@ export function createHud(
 	element: HTMLElement,
 	stage: HTMLElement,
 	post: (name: string, value: string) => void,
+	host: HTMLElement = element,
 ): Hud {
 	element.replaceChildren();
 	element.classList.add('hud');
@@ -286,40 +287,13 @@ export function createHud(
 	tabs.setAttribute('aria-label', 'Scene control groups');
 	const body = node('div', 'hud__body');
 	panel.append(tabs, body);
-	const chevron = node('button', 'hud__chevron');
-	chevron.type = 'button';
-	chevron.setAttribute('aria-expanded', 'false');
-	chevron.setAttribute('aria-controls', 'hud-panel');
-	chevron.setAttribute('aria-keyshortcuts', 'H');
-	chevron.setAttribute('title', 'Scene controls (H)');
-	const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-	arrow.setAttribute('viewBox', '0 0 24 24');
-	arrow.setAttribute('width', '22');
-	arrow.setAttribute('height', '22');
-	arrow.setAttribute('fill', 'none');
-	arrow.setAttribute('aria-hidden', 'true');
-	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-	path.setAttribute('d', 'M6 15l6-6 6 6');
-	path.setAttribute('stroke', 'currentColor');
-	path.setAttribute('stroke-width', '2');
-	path.setAttribute('stroke-linecap', 'round');
-	path.setAttribute('stroke-linejoin', 'round');
-	arrow.append(path);
-	const badge = node('kbd', 'hud__key', 'H');
-	chevron.append(arrow, badge);
-	element.append(panel, chevron);
+	host.append(panel);
 
 	// The tip floats over the stage, above the panel and outside its scroll box.
 	const tip = node('div', 'hud__tip');
 	tip.setAttribute('role', 'tooltip');
 	stage.append(tip);
 
-	const setOpen = (open: boolean): void => {
-		element.classList.toggle('open', open);
-		chevron.setAttribute('aria-expanded', String(open));
-		chevron.setAttribute('aria-label', open ? 'Hide scene controls' : 'Show scene controls');
-		if (!open) hideTip();
-	};
 	/** The listeners that outlive `element`, which one signal drops together. */
 	const listeners = new AbortController();
 	const { signal } = listeners;
@@ -354,8 +328,6 @@ export function createHud(
 		button.addEventListener('blur', hideTip);
 		button.addEventListener('click', () => showTip(button, true));
 	};
-	bindTip(chevron);
-	chevron.addEventListener('click', () => setOpen(!element.classList.contains('open')));
 	panel.addEventListener('scroll', hideTip);
 	stage.addEventListener(
 		'pointerdown',
@@ -365,23 +337,6 @@ export function createHud(
 		},
 		{ signal },
 	);
-	document.addEventListener(
-		'keydown',
-		(event) => {
-			// A shortcut never fights a browser or an editor shortcut, and never types into a field.
-			if (event.ctrlKey || event.metaKey || event.altKey) return;
-			const target = event.target;
-			if (
-				target instanceof HTMLElement &&
-				(target.isContentEditable || target.matches('input, textarea, select'))
-			)
-				return;
-			if (event.key === 'h' || event.key === 'H') setOpen(!element.classList.contains('open'));
-			else if (event.key === 'Escape') setOpen(false);
-		},
-		{ signal },
-	);
-
 	/** The buttons drawn now, by their group and id, so a render only turns them on and off. */
 	let drawn = new Map<string, HTMLButtonElement>();
 	/** The sliders drawn now, by their group's name, so a render only moves their values. */
@@ -618,6 +573,7 @@ export function createHud(
 	return {
 		render(model, visible) {
 			element.hidden = !visible;
+			panel.hidden = !visible;
 			draw(model);
 			toastChanges(model);
 		},
@@ -627,6 +583,7 @@ export function createHud(
 			clearTimeout(toastTimer);
 			tip.remove();
 			toast.remove();
+			panel.remove();
 			element.replaceChildren();
 		},
 	};

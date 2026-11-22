@@ -28,6 +28,7 @@ import {
 	type Vec3Like,
 	vec3,
 } from '@null3d/engine';
+import { CAMERA_KEYS } from './cinematic-keys';
 import { createClearance } from './clearance';
 import { CAMERA_OPTIONS, type HudGroup, radioGroup } from './controls';
 
@@ -64,15 +65,7 @@ export interface SceneAction extends SceneKey {
 }
 
 /** The keys that the camera reads. W, S, A and D pan the Manual camera, and R and F raise it. */
-const KEY = {
-	mode: 'KeyC',
-	forward: 'KeyW',
-	back: 'KeyS',
-	left: 'KeyA',
-	right: 'KeyD',
-	rise: 'KeyR',
-	fall: 'KeyF',
-} as const;
+const KEY = CAMERA_KEYS;
 
 /** The keys of the Manual camera, which a scene that the user drives replaces with its own. */
 const MANUAL_KEYS: readonly SceneKey[] = [
