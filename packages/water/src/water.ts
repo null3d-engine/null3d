@@ -17,7 +17,7 @@ import {
 	type Texture,
 	type Textures,
 } from '@null3d/engine';
-import { cadenceRow, REFLECT_EVERY_MAX, REFLECT_MS } from './cadence';
+import { cadenceRow, REFLECT_EVERY_MAX, REFLECT_MS, reflectionCadence } from './cadence';
 import { type Junctions, junctions } from './junction';
 import { bodyMesh, type MeshDetail } from './mesh';
 import { type WaterBody, type WaterShape, waterBody } from './shape';
@@ -36,12 +36,6 @@ const RIPPLE = 1;
 const WAVE_AMPLITUDE = 1;
 /** The meters of the gap to the bed over which the water fades to nothing at a shore. */
 const SOFTNESS = 0.12;
-/**
- * How far the camera may move, in meters, and turn, in quaternion units, between two frames before
- * the reflection reads the view as moving. A held frame's camera stands exactly still.
- */
-const STILL_MOVE = 1e-4;
-const STILL_TURN = 2e-5;
 
 /** The long waves that move the water's vertices: each one's direction, wave number and speed. */
 export const LONG_WAVES = [
@@ -510,14 +504,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 	// the frame-budget governor doubles it while frames take too long. The stats overlay reads the
 	// cadence and the pass's share of a frame from the host's figures.
 	let every = 1;
-	// The camera that the reflection follows, whose pose the frame before is kept so that a move or
-	// a turn draws the reflection in every frame, and the cadence returns when the view settles.
-	const camera = options.camera;
-	const pose = new Float64Array(3);
-	const turn = new Float64Array(4);
-	const held = new Float64Array(7);
-	let posed = false;
-	let moving = false;
+	// The reflection draws in every frame while the camera that it follows moves or turns.
+	const cadence = reflectionCadence(options.camera, (next) => render.setPassEvery(pass, next));
 	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
 	let sentBorn = Number.NaN;
 	/** True while the `water-bounds` debug view draws. */
@@ -545,10 +533,8 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			memory: () => meshBytes + junctionMap.bytes + (ownFoam ? foamMap.bytes : 0),
 			quality: (_preset, _settings, own) => {
 				every = own.settings.reflectionEvery as number;
-				// The pass carries its cadence itself, so no frame recompiles the graph. A camera that
-				// moves draws in every frame whatever the budget says, and takes the new cadence when
-				// the view settles.
-				if (!moving) render.setPassEvery(pass, every);
+				// The pass carries its cadence itself, so no frame recompiles the graph.
+				cadence.budget(every);
 			},
 			// A debug view of the add-on's own: the bounds of each water body at the surface.
 			debugViews: [
@@ -599,27 +585,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 					airSettings.update(readingData(wind.air));
 				}
 			}
-			// A camera that moves or turns would show a mirror of an older view between the budgeted
-			// draws, so the reflection draws in every frame while it moves, and takes the budgeted
-			// cadence once the view settles.
-			if (camera) {
-				camera.getPosition(pose);
-				camera.getRotation(turn);
-				if (posed) {
-					let still = true;
-					for (let k = 0; k < 3; k++)
-						if (Math.abs((pose[k] as number) - (held[k] as number)) > STILL_MOVE) still = false;
-					for (let k = 0; k < 4; k++)
-						if (Math.abs((turn[k] as number) - (held[k + 3] as number)) > STILL_TURN) still = false;
-					if (!still !== moving) {
-						moving = !still;
-						render.setPassEvery(pass, moving ? 1 : every);
-					}
-				}
-				for (let k = 0; k < 3; k++) held[k] = pose[k] as number;
-				for (let k = 0; k < 4; k++) held[k + 3] = turn[k] as number;
-				posed = true;
-			}
+			cadence.follow();
 			// The add-on draws its own debug view: each body's bounds at the water's surface.
 			if (debugBounds) {
 				for (const body of bodies)
