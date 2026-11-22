@@ -224,8 +224,8 @@ function gestureHelp(demo: Demo): HTMLElement {
 	const row = (what: string, does: string): void => {
 		panel.append(element('dt', what), element('dd', does));
 	};
-	row('Drag the pad', 'Pan in Manual mode');
-	row('Rise and fall', 'Move the Manual camera up or down');
+	row('Drag the scene', 'Turn the camera in Manual mode');
+	row('Pinch', 'Zoom in or out');
 	row('Auto / Manual', 'Switch between the camera route and your control');
 	if (demo.gustKey !== undefined) row('Gust', 'Send a gust across the scene');
 	return panel;
@@ -436,8 +436,9 @@ interface TouchControls {
 }
 
 /**
- * The touch controls: the camera's mode, a thumb-sized pad that pans, the rise and the fall, and
- * the demo's own action where it has one. Each sends the key that the keyboard sends.
+ * The touch controls: the camera's mode, and the demo's own action where it has one. Turning and
+ * zooming stay on the scene's own gestures, so the picture keeps the screen. Each control sends the
+ * key that the keyboard sends.
  */
 function createTouchControls(demo: Demo): TouchControls {
 	const actions = createTouchActions(sendKey);
@@ -448,71 +449,7 @@ function createTouchControls(demo: Demo): TouchControls {
 	mode.type = 'button';
 	mode.className = 'touch__btn touch__mode';
 	mode.addEventListener('click', () => actions.tap(CAMERA_KEYS.mode));
-	const rise = element('button', '▲');
-	rise.type = 'button';
-	rise.className = 'touch__btn touch__rise';
-	rise.setAttribute('aria-label', 'Raise the camera');
-	const fall = element('button', '▼');
-	fall.type = 'button';
-	fall.className = 'touch__btn touch__fall';
-	fall.setAttribute('aria-label', 'Lower the camera');
-	const pad = element('div');
-	pad.className = 'touch__pad';
-	pad.setAttribute('role', 'application');
-	pad.setAttribute('aria-label', 'Drag to pan');
-	const knob = element('div');
-	knob.className = 'touch__knob';
-	pad.append(knob);
-	const place = (x: number, y: number): void => {
-		knob.style.transform = `translate(${x * 38}px, ${y * 38}px)`;
-	};
-	const move = (event: PointerEvent): void => {
-		const box = pad.getBoundingClientRect();
-		const x = Math.max(-1, Math.min(1, ((event.clientX - box.left) / box.width) * 2 - 1));
-		const y = Math.max(-1, Math.min(1, ((event.clientY - box.top) / box.height) * 2 - 1));
-		actions.pad(x, y);
-		place(x, y);
-	};
-	const stop = (): void => {
-		actions.pad(0, 0);
-		place(0, 0);
-	};
-	pad.addEventListener('pointerdown', (event) => {
-		pad.setPointerCapture(event.pointerId);
-		move(event);
-	});
-	pad.addEventListener('pointermove', (event) => {
-		if (pad.hasPointerCapture(event.pointerId)) move(event);
-	});
-	pad.addEventListener('pointerup', stop);
-	pad.addEventListener('pointercancel', stop);
-	/** A pressed button holds its key while the finger stays, and releases it on the way up. */
-	const held = (button: HTMLButtonElement, code: string): void => {
-		button.addEventListener('pointerdown', (event) => {
-			button.setPointerCapture(event.pointerId);
-			actions.hold(code);
-			button.classList.add('touch__btn--held');
-		});
-		const up = (): void => {
-			actions.release(code);
-			button.classList.remove('touch__btn--held');
-		};
-		button.addEventListener('pointerup', up);
-		button.addEventListener('pointercancel', up);
-		button.addEventListener('pointerleave', up);
-		button.addEventListener('keydown', (event) => {
-			if (event.key !== ' ' && event.key !== 'Enter') return;
-			event.preventDefault();
-			actions.hold(code);
-		});
-		button.addEventListener('keyup', up);
-	};
-	held(rise, CAMERA_KEYS.rise);
-	held(fall, CAMERA_KEYS.fall);
-	const buttons = element('div');
-	buttons.className = 'touch__vertical';
-	buttons.append(rise, fall);
-	wrap.append(mode, pad, buttons);
+	wrap.append(mode);
 	if (demo.gustKey !== undefined) {
 		const gust = element('button', 'Gust');
 		gust.type = 'button';

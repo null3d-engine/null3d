@@ -32,7 +32,7 @@ export const LOAD_LANES: readonly LoadLane[] = ['engine', 'files', 'scene'];
 /**
  * The phases that the loading overlay shows under its main bar. Each lane holds one phase at a
  * time: a phase appears when its work begins and gives way when the next phase of its lane begins,
- * so a finished phase never keeps a bar.
+ * and a counted phase that reaches its whole leaves at once, so a finished phase never keeps a bar.
  */
 export class LoadPhases {
 	private readonly lanes: Record<LoadLane, LoadPhase | undefined> = {
@@ -41,9 +41,12 @@ export class LoadPhases {
 		scene: undefined,
 	};
 
-	/** Shows the phase in its lane, replacing the phase that ran there before it. */
+	/**
+	 * Shows the phase in its lane, replacing the phase that ran there before it. A counted phase
+	 * that has reached its whole is over, so its lane holds no phase.
+	 */
 	show(lane: LoadLane, phase: LoadPhase): void {
-		this.lanes[lane] = phase;
+		this.lanes[lane] = phase.value === undefined || shareOf(phase.value) < 1 ? phase : undefined;
 	}
 
 	/** Ends the lane's phase, when its work is over and the next phase has not begun. */

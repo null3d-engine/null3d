@@ -75,6 +75,17 @@ describe('LoadPhases', () => {
 			{ lane: 'engine', phase: { key: 'core', text: 'Starting the engine' } },
 		]);
 	});
+
+	it('leaves no bar for a counted phase that has reached its whole', () => {
+		const phases = new LoadPhases();
+		phases.show('scene', { key: 'build', text: 'Building the scene', value: 0.99 });
+		expect(phases.list()).toHaveLength(1);
+		phases.show('scene', { key: 'build', text: 'Building the scene', value: 1 });
+		expect(phases.list()).toEqual([]);
+		// An uncounted phase has no whole to reach, so it keeps its bar until its lane moves on.
+		phases.show('engine', { key: 'core', text: 'Starting the engine' });
+		expect(phases.list()).toHaveLength(1);
+	});
 });
 
 describe('StartMeter', () => {
