@@ -42,11 +42,13 @@ const AFTER = 9;
 const STEP = 2 / 255;
 
 /**
- * The least share of channels that the sent gust must move. The run recorded beside the test reads
- * about 0.32 on the Mac's GPU and 0.35 on its software GPU, so the floor sits well below the
- * smaller of the two while a page that sends no gust still fails.
+ * The least share of channels that the sent gust must move. The old 5% floor was the old valley's
+ * calibration, whose broadleaf trees filled this camera's view; the owner's planting replaced them
+ * with the garden's maples, pines and ground cover, which cover less of it. The recorded runs for
+ * the garden read 0.0404 on the Mac's GPU and 0.0243 on CI's WebGL2 pipelined path, so the floor
+ * sits below the smaller of the two while a page that sends no gust still moves nothing.
  */
-const LEAST_MOVED = 0.05;
+const LEAST_MOVED = 0.02;
 
 /** Each pixel's red, green and blue, from 0 to 1, and the frame's own result. */
 async function imageOf(page: Page, address: string, timeoutMs: number): Promise<Drawing> {

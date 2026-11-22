@@ -74,8 +74,12 @@ const FOOT_SHADE = 0.1;
 const TILE = 160;
 /** The billow map's texels along each side at each preset. */
 const MAP_SIZE: Record<QualityPreset, number> = { low: 256, medium: 256, high: 512, ultra: 512 };
-/** The most steps that a view ray takes through the cloud at each preset. */
-const STEPS: Record<QualityPreset, number> = { low: 48, medium: 56, high: 64, ultra: 80 };
+/**
+ * The most steps that a view ray takes through the cloud at each preset. High's march takes 48, the
+ * performance helper's one look-safe cut: the sea's grain stays inside the animation, at about a
+ * millisecond a frame.
+ */
+const STEPS: Record<QualityPreset, number> = { low: 48, medium: 56, high: 48, ultra: 80 };
 /** How fast the billows drift, in meters a second along x and z. */
 const DRIFT = [0.45, 0.2] as const;
 /** The texels round the cliff's rim in the walls' map, one per bearing. */

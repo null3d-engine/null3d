@@ -1,7 +1,8 @@
 // The creek's land: the flat top of a round cliff that stands in a sea of cloud. A creek crosses it
 // from rim to rim, fed by a spring pool near the middle, and runs out both ways to a lip at each end,
 // where it leaves over the edge. Behind the creek lies a band of raked gravel with moss islands in
-// it, and behind that a hill rises to the terrace that the statue stands on. Moss covers the rest.
+// it, and behind that a hill rises to the terrace that the statue stands on. Moss covers the rest in
+// patches, between shelves of bare rock, with darker moss in the hollows and gold lichen on the rock.
 // Everything that stands on the ground asks this module for its height, so the stones, the water
 // and the walls meet the ground where it is.
 import { type MeshArrays, math, type SketchContext } from '@null3d/engine';
@@ -230,7 +231,9 @@ export function rimRadius(bearing: number): number {
 	let r =
 		RIM * (1 + 0.05 * rimNoise.fbm2(c * 1.2 + 4, s * 1.2 + 4, 2)) +
 		0.9 * rimNoise.value2(c * 4 + 9, s * 4 + 9) +
-		0.35 * rimNoise.value2(c * 11 + 2, s * 11 + 2) -
+		0.55 * rimNoise.value2(c * 11 + 2, s * 11 + 2) +
+		0.24 * rimNoise.value2(c * 23 + 5, s * 23 + 5) +
+		0.08 * rimNoise.value2(c * 41 + 7, s * 41 + 7) -
 		WEST_BAY.depth * Math.exp(-((turn(WEST_BAY.bearing, bearing) / WEST_BAY.width) ** 2)) +
 		HEADLAND.reach * Math.exp(-((turn(HEADLAND.bearing, bearing) / HEADLAND.width) ** 2));
 	for (const x of [LIPS.west, LIPS.east]) {
@@ -352,7 +355,7 @@ export const STAIRS = {
 	reach: 13.4,
 	steps: [11, 3, 7, 9],
 	rest: 1.2,
-	keep: 0.5,
+	keep: 0.8,
 	blend: 1.4,
 } as const;
 
@@ -590,30 +593,75 @@ export function cameraFloor(x: number, z: number): number {
 
 /** Linear colors of the ground: golden-olive moss, its darker and browner patches, soil and rock. */
 const MOSS = [0.195, 0.142, 0.026];
-const MOSS_DARK = [0.085, 0.07, 0.011];
+const MOSS_DARK = [0.06, 0.063, 0.009];
+/** The green of the moss mats that fill the hollows between the rock shelves. */
+const MOSS_GREEN = [0.018, 0.065, 0.012];
 const MOSS_BROWN = [0.15, 0.099, 0.02];
 /** The light, yellow-green moss in the sunnier patches. */
-const MOSS_LIGHT = [0.26, 0.202, 0.035];
+const MOSS_LIGHT = [0.32, 0.26, 0.03];
 /** The bright olive moss in the band beside each flight of steps, between the slabs and the walls. */
-const MOSS_BRIGHT = [0.247, 0.192, 0.035];
-const BED = [0.42, 0.385, 0.315];
-const BED_POOL = [0.14, 0.13, 0.1];
+const MOSS_BRIGHT = [0.34, 0.28, 0.03];
+const BED = [0.53, 0.49, 0.4];
+const BED_POOL = [0.18, 0.165, 0.13];
 const MUD = [0.06, 0.05, 0.035];
-const STONE = [0.075, 0.065, 0.052];
+const STONE = [0.095, 0.093, 0.086];
+/** The pale grey of the rock shelves that lie open between the moss. */
+const PAVING = [0.2, 0.195, 0.185];
+/**
+ * The ground's tones that seed the palette's classes, for the class test: a grey rock, a dark
+ * green and a gold. The rendered classes are measured in the round; these hold the intent.
+ */
+export const GROUND_CLASS_TONES = { grey: PAVING, dark: MOSS_GREEN, gold: MOSS_LIGHT } as const;
 
-/** The ground's color at a point, from its height and its slope, with patches from noise. */
-function groundColor(x: number, z: number, y: number, slope: number, out: number[]): void {
+/** The shares of the ground's cover at a point: bare rock, moss mats and gold lichen. */
+export interface GroundZones {
+	shelf: number;
+	mats: number;
+	lichen: number;
+}
+/** A scratch for `groundColor` to read its zones into, so the vertex loop allocates nothing. */
+const ZONES: GroundZones = { shelf: 0, mats: 0, lichen: 0 };
+
+/**
+ * The ground's cover at a point: broad shelves of bare rock break the lawn, as the concept's
+ * ground shows rock between its moss; a low field picks the shelves, dark moss mats fill the
+ * hollows between them, and gold lichen crusts the rock's tops and rims. The water keeps its bed.
+ */
+export function groundZones(x: number, z: number, y: number, out: GroundZones): void {
+	const under = 1 - smoothstep(y, WATER - 0.25, WATER - 0.06);
+	const shelf = smoothstep(noise.fbm2(x * 0.07 + 31, z * 0.07 - 7, 3), -0.08, 0.14) * (1 - under);
+	out.shelf = shelf;
+	out.mats =
+		(1 - shelf) * smoothstep(noise.fbm2(x * 0.16 - 17, z * 0.16 + 5, 3), -0.1, 0.3) * (1 - under);
+	out.lichen =
+		shelf *
+		(0.45 + 0.55 * 4 * shelf * (1 - shelf)) *
+		smoothstep(noise.fbm2(x * 0.45 + 11, z * 0.45, 2), 0, 0.35);
+}
+
+/**
+ * The ground's color at a point, from its height and its slope, with its patches from noise: moss
+ * over most of it, shelves of bare rock, dark moss mats in the hollows between them, and gold
+ * lichen on the rock. Exported so the class test can sample where each zone lies.
+ */
+export function groundColor(x: number, z: number, y: number, slope: number, out: number[]): void {
 	const wet = 1 - smoothstep(y, WATER - 0.04, WATER + 0.16);
 	const under = 1 - smoothstep(y, WATER - 0.25, WATER - 0.06);
 	const dark = smoothstep(noise.fbm2(x * 0.11 + 9, z * 0.11, 3), 0.02, 0.32);
 	const brown = smoothstep(noise.fbm2(x * 0.19, z * 0.19 + 9, 3), 0.12, 0.38);
-	// The rim's very edge is wet dark rock, the lip's shoulders among it, so no pale band of bed or
-	// mud runs along the cliff's edge.
-	const edge = 1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.15, 0.8);
-	const rocky = Math.max(smoothstep(slope, 0.85, 1.4), edge);
+	// The rim's very edge is wet dark rock in broken patches, the lip's shoulders among them, so no
+	// pale band of bed or mud runs along the cliff's edge and the edge never reads as one smooth strip.
+	const edge =
+		(1 - smoothstep(rimRadius(bearingOf(x, z)) - Math.hypot(x, z), 0.1, 0.75)) *
+		(0.55 + 0.45 * noise.value2(x * 2.7, z * 2.7));
+	const rocky = Math.max(smoothstep(slope, 0.7, 1.15), edge);
 	const shade = 0.8 + 0.4 * noise.value2(x * 1.7, z * 1.7);
-	const light = smoothstep(noise.fbm2(x * 0.15 + 21, z * 0.15 + 4, 3), 0.15, 0.45);
+	const light = smoothstep(noise.fbm2(x * 0.15 + 21, z * 0.15 + 4, 3), 0.08, 0.4);
 	const band = stairBand(x, z);
+	groundZones(x, z, y, ZONES);
+	const { shelf, mats, lichen: crust } = ZONES;
+	// The hill reads darker and greyer than the lawns below it, as the concept's shaded slope does.
+	const high = smoothstep(y, 1.5, 4.6);
 	// The bed's cobbles: soft pale and dark shapes that show through the clear water, with no edge
 	// sharp enough to read as a line.
 	const pool = poolShare(x);
@@ -629,7 +677,12 @@ function groundColor(x: number, z: number, y: number, slope: number, out: number
 		const shore = bright + ((MUD[c] as number) - bright) * wet;
 		const bed = (BED[c] as number) + ((BED_POOL[c] as number) - (BED[c] as number)) * pool;
 		const ground = shore + (bed * cobble - shore) * under;
-		out[c] = (ground + ((STONE[c] as number) - ground) * rocky) * shade;
+		const rockyHigh = Math.max(rocky, high * 0.25);
+		const stone = ground + ((STONE[c] as number) - ground) * rockyHigh;
+		const paved = stone + ((PAVING[c] as number) - stone) * shelf;
+		const matted = paved + ((MOSS_GREEN[c] as number) - paved) * mats;
+		const crusted = matted + ((MOSS_LIGHT[c] as number) - matted) * crust;
+		out[c] = crusted * shade * (1 - 0.1 * high);
 	}
 }
 
@@ -782,7 +835,7 @@ export function createLand(
 			vertexColors: true,
 			roughness: 1,
 			uniforms: {
-				gravel: [0.52, 0.39, 0.32],
+				gravel: [0.44, 0.33, 0.27],
 				spacing: RAKE.spacing,
 				box: [RAKE_BOX.x, RAKE_BOX.z, RAKE_BOX.size, RAKE_BOX.size],
 				tile: TILE,

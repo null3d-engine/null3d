@@ -25,6 +25,7 @@ import {
 	crownOf,
 	GROUND_BUDGET,
 	groundTriangles,
+	LEVEL_RULER,
 	MAPLE_SPOTS,
 	PLANT_KINDS,
 	type PlantKind,
@@ -203,11 +204,14 @@ test("the ground cover holds the planting map's kinds within its triangle budget
 	expect(counts['autumn-clump']).toBeGreaterThanOrEqual(35);
 	expect(counts['moss-cushion']).toBeGreaterThanOrEqual(30);
 	const { full, drawn } = groundTriangles(valley.plants);
+	const picture = groundTriangles(valley.plants, undefined, 752);
 	console.log(
-		`the ground cover: ${full} triangles at its finest level, ${drawn} drawn from the opening camera`,
+		`the ground cover: ${full} triangles at its finest level; drawn at ${LEVEL_RULER} pixels ` +
+			`high, High's 1 pixel: ${drawn}; at the pictures' 752: ${picture.drawn}`,
 	);
-	expect(drawn, 'the ground cover drawn from the opening camera').toBeLessThanOrEqual(
-		GROUND_BUDGET,
-	);
+	expect(
+		drawn,
+		`the ground cover drawn at ${LEVEL_RULER} pixels high, High's 1 pixel`,
+	).toBeLessThanOrEqual(GROUND_BUDGET);
 	expect(drawn).toBeLessThan(full);
 });

@@ -51,9 +51,9 @@ export type PlantKind = (typeof PLANT_KINDS)[number];
  */
 export const SIZES: Record<TreeKind | PlantKind, { height: number; reach: number; depth: number }> =
 	{
-		'pine-tall': { height: 6.87, reach: 5.4, depth: 3.15 },
-		'pine-narrow': { height: 7.74, reach: 2.81, depth: 2.3 },
-		'pine-low': { height: 3.63, reach: 2.59, depth: 1.66 },
+		'pine-tall': { height: 7.41, reach: 5.4, depth: 3.15 },
+		'pine-narrow': { height: 7.32, reach: 2.81, depth: 2.3 },
+		'pine-low': { height: 3.69, reach: 2.59, depth: 1.66 },
 		maple: { height: 5.6, reach: 3.85, depth: 3.85 },
 		'rim-conifer': { height: 1.3, reach: 1.1, depth: 1.1 },
 		'clipped-shrub': { height: 1.3, reach: 0.79, depth: 0.79 },
@@ -88,57 +88,152 @@ export const SCALE: Readonly<Record<string, readonly [number, number]>> = {
 };
 
 /**
- * Each ground plant's parts: their triangles at each of their three levels, and the distances from
- * the camera, in meters, at which a copy of scale 1 switches to its next level, as the cloud
- * helper's builds measure them at the opening camera's resolution. A copy of another scale switches
- * at that many times the distance.
+ * The height, in pixels, of the render that the levels' switch table encodes at High's one-pixel
+ * threshold. The table's switches are the distances at which the pinned model switches, worked out
+ * the engine's own way: its error times the part's node scale times this height and the camera's
+ * `p11` over two. A copy of another scale switches at that many times the distance, and a render of
+ * another height at its share of this one.
+ */
+export const LEVEL_RULER = 1080;
+
+/** `1 / tan(fov / 2)` for the camera's 45 degree vertical field of view, as the engine's rule takes it. */
+const P11 = 1 / Math.tan((22.5 * Math.PI) / 180);
+
+/**
+ * Each ground plant's parts: their triangles at each of their three levels; the distances at which a
+ * copy of scale 1 switches to its next level on the ruler above; and its bounding sphere, its centre
+ * in meters from the model's foot and its radius, both at scale 1, which the engine measures its
+ * levels from. All of them are read from the pinned models' own bounds, node scales and
+ * `NULL3D_lod_error` values.
  */
 export const GROUND_LEVELS: Record<
 	PlantKind,
 	readonly {
 		readonly triangles: readonly [number, number, number];
 		readonly switches: readonly [number, number];
+		readonly offset: readonly [number, number, number];
+		readonly radius: number;
 	}[]
 > = {
 	'rim-conifer': [
-		{ triangles: [1408, 938, 804], switches: [40, 47] },
-		{ triangles: [4740, 2372, 1188], switches: [69, 123] },
+		{
+			triangles: [1088, 722, 618],
+			switches: [40.5, 47.1],
+			offset: [0.1467, 0.5272, -0.1018],
+			radius: 1.6749,
+		},
+		{
+			triangles: [4708, 2356, 1180],
+			switches: [70, 117.7],
+			offset: [0.1305, 0.5234, -0.0705],
+			radius: 2.4945,
+		},
 	],
 	'clipped-shrub': [
-		{ triangles: [534, 330, 256], switches: [79, 105] },
-		{ triangles: [2640, 1320, 660], switches: [61, 99] },
+		{
+			triangles: [534, 330, 256],
+			switches: [79.7, 105.5],
+			offset: [0.0501, 0.4452, 0.037],
+			radius: 1.2221,
+		},
+		{
+			triangles: [2640, 1320, 660],
+			switches: [61.5, 98.9],
+			offset: [0.0397, 0.5088, 0.024],
+			radius: 1.3097,
+		},
 	],
 	azalea: [
-		{ triangles: [852, 498, 394], switches: [79, 93] },
-		{ triangles: [1568, 784, 392], switches: [72, 114] },
+		{
+			triangles: [852, 498, 394],
+			switches: [79.7, 93.2],
+			offset: [0.0287, 0.2577, 0.0133],
+			radius: 1.1929,
+		},
+		{
+			triangles: [1568, 784, 392],
+			switches: [62.4, 97.5],
+			offset: [0.0081, 0.3208, 0.0197],
+			radius: 1.2913,
+		},
 	],
 	'autumn-clump': [
-		{ triangles: [1744, 1154, 724], switches: [55, 77] },
-		{ triangles: [2352, 1176, 588], switches: [55, 80] },
+		{
+			triangles: [1744, 1154, 724],
+			switches: [55, 77.3],
+			offset: [-0.1078, 0.2131, 0.0008],
+			radius: 1.2425,
+		},
+		{
+			triangles: [2352, 1176, 588],
+			switches: [55.3, 80.2],
+			offset: [-0.1021, 0.2755, 0.004],
+			radius: 1.3953,
+		},
 	],
-	'moss-cushion': [{ triangles: [384, 128, 60], switches: [23, 49] }],
-	fern: [{ triangles: [416, 208, 104], switches: [24, 72] }],
-	hosta: [{ triangles: [560, 200, 120], switches: [21, 91] }],
+	'moss-cushion': [
+		{
+			triangles: [384, 128, 60],
+			switches: [23.5, 49.7],
+			offset: [-0.0051, 0.1731, 0.0076],
+			radius: 1.0241,
+		},
+	],
+	fern: [
+		{
+			triangles: [416, 208, 104],
+			switches: [24.4, 72.6],
+			offset: [-0.0224, 0.3935, 0.0063],
+			radius: 1.2136,
+		},
+	],
+	hosta: [
+		{
+			triangles: [560, 200, 120],
+			switches: [20.6, 91.3],
+			offset: [0.0036, 0.2583, -0.0482],
+			radius: 0.8637,
+		},
+	],
 };
 
 /** The most triangles that the ground cover may draw from the opening camera, at its levels. */
 export const GROUND_BUDGET = 320000;
 
+/** The engine's least distance, which its level rule never measures below. */
+const LEAST_DISTANCE = 1e-3;
+
 /**
  * The ground cover's triangles: at the finest level of every copy, and as drawn from a camera, each
- * part of each copy at the level its distance and scale pick.
+ * part of each copy at the level its distance and scale pick. The distance is the engine's: to the
+ * part's bounding-sphere centre, less half its world radius, capped at twice the distance to its
+ * nearest point; and the switches are read for the render's height against the ruler above.
  */
 export function groundTriangles(
 	plants: readonly Spot[],
 	from: readonly [number, number, number] = WIDE,
+	height = LEVEL_RULER,
 ): { full: number; drawn: number } {
 	let full = 0;
 	let drawn = 0;
 	for (const plant of plants)
-		for (const { triangles, switches } of GROUND_LEVELS[plant.kind as PlantKind]) {
-			const far = Math.hypot(plant.x - from[0], plant.y - from[1], plant.z - from[2]) / plant.size;
+		for (const { triangles, switches, offset, radius } of GROUND_LEVELS[plant.kind as PlantKind]) {
 			full += triangles[0];
-			drawn += triangles[far < switches[0] ? 0 : far < switches[1] ? 1 : 2];
+			// The part's bounding-sphere centre: its place in the model, turned by the copy's yaw and
+			// scaled, about the copy's foot, which sinks a little.
+			const [ox, oy, oz] = [offset[0] * plant.size, offset[1] * plant.size, offset[2] * plant.size];
+			const centre: [number, number, number] = [
+				plant.x + Math.cos(plant.yaw) * ox + Math.sin(plant.yaw) * oz,
+				plant.y - 0.03 + oy,
+				plant.z - Math.sin(plant.yaw) * ox + Math.cos(plant.yaw) * oz,
+			];
+			const far = Math.hypot(centre[0] - from[0], centre[1] - from[1], centre[2] - from[2]);
+			const world = radius * plant.size;
+			const near = (r: number) => Math.max(far - r, LEAST_DISTANCE);
+			const distance = Math.min(near(0.5 * world), 2 * near(world));
+			const scale = (plant.size * height) / LEVEL_RULER;
+			drawn +=
+				triangles[distance > switches[1] * scale ? 2 : distance > switches[0] * scale ? 1 : 0];
 		}
 	return { full, drawn };
 }
@@ -168,11 +263,11 @@ export const TREES: readonly (readonly [
 	number,
 	number?,
 ])[] = [
-	['P1', -16.2, 0, 'pine-tall', 1.08, 0.2, 0.75],
+	['P1', -16.2, 0, 'pine-tall', 1.065, 0.2, 0.75],
 	['P2', -5.8, -16.6, 'pine-narrow', 1.03, -0.15],
 	['P3', 1.6, 22.2, 'pine-low', 0.86, 0.3],
 	['P4', 13.7, 8.6, 'pine-low', 0.96, -0.2],
-	['P5', 8.1, -21.6, 'pine-tall', 1.19, 0.1],
+	['P5', 8.1, -24.5, 'pine-tall', 1.12, 0.1],
 	['P6', -0.2, -7.6, 'pine-low', 1, -0.25],
 	['P7', 18.3, -15.3, 'pine-tall', 0.64, 0.25],
 	['P8', 25.4, -1.9, 'pine-narrow', 0.43, -0.3],
@@ -281,9 +376,9 @@ interface Rule {
 const RULES: readonly Rule[] = [
 	{
 		kind: 'rim-conifer',
-		spacing: 3.8,
-		scale: [1.3, 1.9],
-		clump: [1, 2],
+		spacing: 4,
+		scale: [1.05, 1.45],
+		clump: [1, 1.4],
 		tolerances: [
 			['rim', 0.4, 0.8, 3, 4.5],
 			['patch', 0.4, 0.5, 1, 1.01],
@@ -291,9 +386,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'clipped-shrub',
-		spacing: 4,
-		scale: [1, 1.5],
-		clump: [1, 1.6],
+		spacing: 2.8,
+		scale: [0.9, 1.3],
+		clump: [1, 1.4],
 		tolerances: [
 			['water', 1, 2.5, 9, 13],
 			['patch', 0.44, 0.56, 1, 1.01],
@@ -301,9 +396,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'azalea',
-		spacing: 3,
-		scale: [0.9, 1.4],
-		clump: [2, 1.8],
+		spacing: 2.9,
+		scale: [0.8, 1.15],
+		clump: [2, 1.7],
 		tolerances: [
 			['water', 0.3, 1, 8, 11],
 			['patch', 0.2, 0.28, 0.55, 0.62],
@@ -311,9 +406,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'autumn-clump',
-		spacing: 3.3,
-		scale: [1, 1.5],
-		clump: [2, 2.2],
+		spacing: 4.55,
+		scale: [0.8, 1.1],
+		clump: [2, 1.8],
 		tolerances: [
 			['height', 0.4, 1, 8, 9],
 			['patch', 0.25, 0.4, 1, 1.01],
@@ -321,9 +416,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'hosta',
-		spacing: 1.4,
-		scale: [1, 1.5],
-		clump: [4, 1.1],
+		spacing: 1.15,
+		scale: [0.9, 1.3],
+		clump: [5, 1.1],
 		tolerances: [
 			['water', 0, 0.3, 2.5, 4.5],
 			['patch', 0.35, 0.55, 1, 1.01],
@@ -331,14 +426,14 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.5,
+		spacing: 1.7,
 		scale: [0.9, 1.4],
-		clump: [5, 1.3],
+		clump: [4, 1.3],
 		tolerances: [['shade', 0.1, 0.35, 1, 1.01]],
 	},
 	{
 		kind: 'fern',
-		spacing: 1.4,
+		spacing: 1.6,
 		scale: [0.9, 1.3],
 		clump: [4, 1.2],
 		tolerances: [
@@ -348,9 +443,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'fern',
-		spacing: 1.6,
+		spacing: 1.9,
 		scale: [1, 1.5],
-		clump: [4, 1.3],
+		clump: [3, 1.3],
 		tolerances: [
 			['height', 0.5, 1, 8, 9],
 			['patch', 0.3, 0.4, 0.75, 0.85],
@@ -358,9 +453,9 @@ const RULES: readonly Rule[] = [
 	},
 	{
 		kind: 'moss-cushion',
-		spacing: 0.8,
-		scale: [0.8, 2],
-		clump: [2, 1.3],
+		spacing: 0.68,
+		scale: [0.8, 1.6],
+		clump: [3, 1.4],
 		tolerances: [
 			['water', 0.2, 0.5, 20, 30],
 			['height', -1, 0, 6, 8],
@@ -370,8 +465,8 @@ const RULES: readonly Rule[] = [
 
 /** How far from the garden's middle the ground cover's grid reaches each way, in meters. */
 const REACH = 30;
-/** How far inside the rim nothing grows, in meters, so no plant hangs over the edge. */
-const RIM_KEEP = 0.8;
+/** How far inside the rim nothing grows, in meters: a little, since the rim's plants may lean out. */
+const RIM_KEEP = 0.5;
 /** How far past the creek's half width its banks and stones stay bare, as a share of it. */
 const BANK_KEEP = 1.3;
 /** How close the camera may come to a model, in meters, beyond the reach of its leaves. */

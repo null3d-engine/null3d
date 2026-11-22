@@ -3,7 +3,7 @@ import * as G from '../../generated/gpu';
 import { loadGlslShaders, type ShaderVariants } from '../../generated/shaders';
 import { MemoryViews } from '../../shared/memory-views';
 import { ReadSink } from '../readback';
-import { WebGL2Backend } from './backend';
+import { WebGL2Backend, WebGL2TargetRefused } from './backend';
 
 /**
  * A WebGL2 context that lists the calls made on it, with their arguments in `log`. Its constants
@@ -103,6 +103,77 @@ describe('WebGL2Backend', () => {
 		backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
 		expect(calls.filter((name) => name === 'createFramebuffer')).toHaveLength(2);
 		expect(calls.filter((name) => name === 'checkFramebufferStatus')).toHaveLength(2);
+	});
+
+	it('names the formats and the lost context when the device takes it away inside a framebuffer check', async () => {
+		// A driver can answer a lost context's framebuffer check with FRAMEBUFFER_UNSUPPORTED,
+		// before the loss flag is visible; the message must then say the context went, not that the
+		// format is refused, or the renderer cannot take the frame as a loss and recover.
+		const { gl } = fakeContext(false, (name) =>
+			name === 'checkFramebufferStatus' ? 0x8cdd : name === 'isContextLost' ? true : undefined,
+		);
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const words: number[] = [];
+		const push = (op: number, operands: number[]) =>
+			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		push(G.OP_CREATE_TEXTURE, [1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D]);
+		push(G.OP_CREATE_TEXTURE, [2, 4, 4, 1, G.FORMAT_DEPTH32_FLOAT, usage, 1, 1, G.VIEW_2D]);
+		push(G.OP_BEGIN_RENDER_PASS, [1, G.NO_TARGET, 2, 0, 0, 0, 0, 0, 0]);
+		push(G.OP_END_RENDER_PASS, []);
+		const list = new Uint32Array(words);
+		const replay = () =>
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		expect(replay).toThrow(
+			/WebGL2 lost its context inside a framebuffer check: color RGBA16F .*depth depth32f .*0x8cdd/,
+		);
+	});
+
+	it('holds refused targets for one frame, then reports them even when two take turns', async () => {
+		// A live context's refusal is asked again on the next frame before the engine ends: a
+		// driver can report a loss this way one task before the loss flag is set. A cadence can
+		// refuse one target on one frame and another on the next, so the retry counts frames rather
+		// than comparing names.
+		const { gl } = fakeContext(false, (name) =>
+			name === 'checkFramebufferStatus' ? 0x8cdd : undefined,
+		);
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		const list = (...commands: [number, ...number[]][]) => {
+			const words: number[] = [];
+			for (const [op, ...operands] of commands)
+				words.push(op | ((operands.length + 1) << 8), ...operands);
+			const drawn = new Uint32Array(words);
+			return () =>
+				backend.replay(drawn, new Float32Array(drawn.buffer), 0, drawn.length, new ArrayBuffer(64));
+		};
+		list(
+			[G.OP_CREATE_TEXTURE, 1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D],
+			[G.OP_CREATE_TEXTURE, 2, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D],
+			[G.OP_CREATE_TEXTURE, 3, 4, 4, 1, G.FORMAT_DEPTH32_FLOAT, usage, 1, 1, G.VIEW_2D],
+		)();
+		const colourOnly = list(
+			[G.OP_BEGIN_RENDER_PASS, 1, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, 0],
+			[G.OP_END_RENDER_PASS],
+		);
+		const withDepth = list(
+			[G.OP_BEGIN_RENDER_PASS, 2, G.NO_TARGET, 3, 0, 0, 0, 0, 0, 0],
+			[G.OP_END_RENDER_PASS],
+		);
+		expect(colourOnly).not.toThrow();
+		// The second frame refuses a different target, and both are named.
+		let thrown: unknown;
+		try {
+			withDepth();
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(WebGL2TargetRefused);
+		expect((thrown as Error).message).toMatch(
+			/depth depth32f .*frame before refused WebGL2 cannot draw into color RGBA16F/,
+		);
 	});
 
 	it('names no draw buffer on a pass that draws into depth alone', async () => {

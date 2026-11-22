@@ -16,6 +16,7 @@ import {
 	fromStream,
 	groundHeight,
 	LIPS,
+	POOL,
 	rimRadius,
 	streamCurrent,
 	streamHalf,
@@ -41,6 +42,15 @@ const IN_STREAM = 1.0;
 const SHALLOW = 0.32;
 /** The foam's trail behind a stone in the current: its links, the meters between them, and its width. */
 const TRAIL = { links: 18, step: 0.4, width: 2.6 } as const;
+/**
+ * The share of a mark's radius that each arm's foam takes. The drawn round took the east from 30.4
+ * to 11.5 per cent against the concept's 14, so its marks take 0.5; the west overshot from 19.8 to
+ * 26.1 against 24, so its marks take 1.25. The east's fall shows the arm is its foam marks, not the
+ * water's reflection. The arm's side is the stone's x against the pool's.
+ */
+export const FOAM_ARM = { east: 0.5, west: 1.25 } as const;
+/** The share that a foam mark takes on its arm: west before the pool, east past it. */
+export const foamArmFactor = (x: number) => (x < POOL.x ? FOAM_ARM.west : FOAM_ARM.east);
 /**
  * How each wake strays from the current: its slant from it at the stone and its bend at each link,
  * in radians at the most; its least length as a share of the longest; the current under which a
@@ -352,7 +362,11 @@ export function createStones(
 							pz += Math.sin(angle) * step;
 							angle += bend;
 							const spread = Math.min(1, 0.4 + 0.15 * k) * (1 - k / (links + 1));
-							obstacles.push({ x: px, z: pz, r: r * TRAIL.width * wake * spread });
+							obstacles.push({
+								x: px,
+								z: pz,
+								r: r * TRAIL.width * wake * spread * foamArmFactor(x),
+							});
 						}
 					}
 				}
