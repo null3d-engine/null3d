@@ -8,7 +8,7 @@ import { streamHalf, streamZ } from './land';
  * The cinematic route. It opens on the whole cliff from high at the front, looking down on the
  * garden as the concept picture does, and holds there only briefly, so a held frame lands on a
  * settled pose and the camera moves off it at once. It circles the cliff over the sea of cloud,
- * then comes down to the east lip and runs low along the creek, back toward the spring pool. On the
+ * looks up at the sky where the sun and the moon cross it, then comes down to the east lip and runs low along the creek, back toward the spring pool. On the
  * way the camera sinks under the surface and glides along the bed for about six seconds, between
  * the stones, then rises out of the water and runs on past the pool to the west lip, where the
  * creek leaves over the edge into the cloud. Last it climbs back to the opening view, which closes
@@ -30,7 +30,7 @@ const over = (x: number, y: number, across = 0): readonly [number, number, numbe
 ];
 
 /** The point that the orbit looks at, over the garden's middle. */
-const MIDDLE: readonly [number, number, number] = [0, 1.5, 4];
+const MIDDLE: readonly [number, number, number] = [0, 3, 4];
 
 export const SHOTS: readonly Shot[] = [
 	// The opening: the whole cliff from high at the front. It holds briefly, so the image test's
@@ -45,6 +45,11 @@ export const SHOTS: readonly Shot[] = [
 	{ position: [-8, 19, -45.3], target: MIDDLE, seconds: 7 },
 	{ position: [29.6, 18, -35.2], target: MIDDLE, seconds: 7 },
 	{ position: [45.3, 15, -8], target: MIDDLE, seconds: 7 },
+	// Up over the garden and toward the sky where the sun rises. The camera holds there, so the sun
+	// crosses the frame as the day moves, and a later pass of the loop sees another hour.
+	{ position: [10, 12, 12], target: [-22.8, 14, 34.8], seconds: 5, move: 'hold' },
+	// The same pose, so the camera leaves the sky view smoothly instead of stepping away from it.
+	{ position: [10, 12, 12], target: [-22.8, 14, 34.8], seconds: 3 },
 	// Down to the east lip, then low along the creek toward the pool. The camera sinks under the
 	// surface and glides along the bed, between the stones, then rises out of the water again. The
 	// dip passes through the surface on purpose.
@@ -55,8 +60,18 @@ export const SHOTS: readonly Shot[] = [
 	{ position: over(-2.5, 1.5), target: over(-14.5, 0.5), seconds: 6 },
 	// On past the pool toward the west lip, then out over the near bank, looking back at the lip
 	// where the creek leaves over the edge into the cloud.
-	{ position: over(-12, 1.8), target: over(-19.5, 0.9), seconds: 6 },
-	{ position: [-17, 4.5, 24], target: over(-19, 0.9), seconds: 7 },
+	{ position: over(-12, 1.8), target: over(-19.5, 1.8), seconds: 6 },
+	{ position: [-17, 4.5, 24], target: over(-19, 1.8), seconds: 7 },
+	// Up through two raised poses, so the camera's turn into the sky stays gentle and its aim lifts
+	// clear of the bank.
+	{ position: [-13, 6.5, 22], target: [-8, 8, 24], seconds: 5 },
+	{ position: [-2, 9, 22], target: [10, 26, 30], seconds: 6 },
+	// High over the garden, where the moon stands at night and the sun at midday, and then toward
+	// the sky where the sun sets. Both hold, so the sky moves past a still camera.
+	{ position: [4, 10, 18], target: [6.5, 38.3, 46.2], seconds: 5, move: 'hold' },
+	{ position: [4, 10, 18], target: [6.5, 38.3, 46.2], seconds: 5 },
+	{ position: [-6, 12, 8], target: [28.4, 15.6, -12], seconds: 5, move: 'hold' },
+	{ position: [-6, 12, 8], target: [28.4, 15.6, -12], seconds: 3 },
 	// Up and round to the opening view, which closes the loop.
 	{ position: [-14, 12, 40], target: [-4, 1.5, 12], seconds: 8 },
 ];

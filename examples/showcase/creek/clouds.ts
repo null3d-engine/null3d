@@ -578,8 +578,9 @@ fn aerial(color: vec3f, distance: f32) -> vec3f {
 
 fn unlit(input: SurfaceInput) -> vec4f {
     let dir = normalize(input.relativePosition);
-    // Above the horizon the air stays thick, and the overcast thins up to the sky's own cloud.
-    let haze = mix(0.96, 0.72, smoothstep(0.02, 0.9, dir.y));
+    // The air stays thick at the horizon, where it sinks the walls into cloud, and thins fast above
+    // so the sun, the moon and the stars show through, behind the sky's own clouds.
+    let haze = mix(0.96, 0.1, smoothstep(0.03, 0.45, dir.y));
     let cover = 1.0 - smoothstep(-0.01, 0.03, dir.y);
     // The far sea, where the cloud's rays end: its tops at their brightest, faded by the air.
     let color = cloud_color(0.8, 0.25 * max(material.toward.y, 0.0));

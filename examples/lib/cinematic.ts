@@ -331,7 +331,7 @@ export const GROUND_CLEARANCE = 1.5;
  * orbit's angle from straight up, in radians: a little past level, so a shot that looks up at a
  * tower is still in reach, while the ground stops anything lower.
  */
-export const BOUNDED_POLAR_ANGLE = 1.85;
+export const BOUNDED_POLAR_ANGLE = 2.65;
 
 /**
  * Keeps a Manual camera at `position`, turning around `target`, inside `bounds`. The point it turns
