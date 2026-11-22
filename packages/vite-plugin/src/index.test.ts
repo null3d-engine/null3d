@@ -13,6 +13,8 @@ import null3d, {
 	inlineLimit,
 	missingCoreFiles,
 	NOTICES_FILE,
+	QUERY_EXTENSION_PARAM,
+	queryExtensionMiddleware,
 	thirdPartyNotices,
 } from './index';
 
@@ -466,5 +468,33 @@ describe('the streamed shader files', () => {
 			.plugins()
 			.map((plugin) => plugin.name);
 		expect(names).toContain('null3d:streamed-shader-assets');
+	});
+});
+
+describe('the query-extension middleware', () => {
+	/** The URL that the middleware leaves for `url`, as Vite's transform would receive it. */
+	const rewritten = (url: string): string => {
+		const req = { url } as { url?: string };
+		queryExtensionMiddleware()(req as never, {} as never, () => {});
+		return req.url ?? '';
+	};
+
+	it('keeps a dotted query from naming the module type', () => {
+		for (const query of ['render-scale=0.5', 'render-scale=0.333', 'x=1.25'])
+			expect(rewritten(`/examples/a.ts?${query}`)).toBe(
+				`/examples/a.ts?${query}&${QUERY_EXTENSION_PARAM}=1`,
+			);
+	});
+
+	it('leaves an address whose query cannot be an extension as it is', () => {
+		for (const url of [
+			'/examples/a.ts',
+			'/examples/a.ts?seconds=60',
+			'/examples/a.ts?render-scale=0.5&still',
+			`/examples/a.ts?render-scale=0.5&${QUERY_EXTENSION_PARAM}=1`,
+			'/examples/a.json?x=1.5',
+			'/examples/a.wgsl?x=1.5',
+		])
+			expect(rewritten(url)).toBe(url);
 	});
 });
