@@ -56,7 +56,7 @@ struct Surface {
   baseColor: vec3f,        // linear RGB
   alpha: f32,              // with alphaMode: 'mask', pixels below alphaCutoff draw nothing
   metalness: f32,
-  roughness: f32,          // perceptual roughness, as in glTF and three.js
+  roughness: f32,          // perceptual roughness, as in glTF
   normal: vec3f,           // world space, unit length
   diffuseNormal: vec3f,    // (0.3) lights the sun's diffuse and the ambient and hemisphere lights; starts as the mesh's normal
   ambientNormal: vec3f,    // (0.3) lights the sky's light alone: ambient, hemisphere, environment, probes; starts as the mesh's normal
@@ -397,7 +397,7 @@ const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap'
 const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custom material's texture
 ```
 
-- The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
+- The texture holds linear color after the exposure, upright with v = 0 at its bottom row.
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
 - A full-screen pass (0.2) runs an effect's WGSL (`fn effect`) over a texture of its own: `render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale, input, textures, uniforms })`. `input.uv`, `pixel` and `size` are the pass's own. `input: 'sceneColor'` or `'outlineMask'` gives `input.color`, `effectColor` and `effectPixel` an image, and places the pass after the camera's passes; a pass with no input runs before them, so name the image on every pass of a chain that a scene image starts. `effectInputSize()` gives that image's size. `render.setPassUniform` changes a uniform. Use a pass for blur steps, mask edges and GPU-painted textures that materials or effects read. Docs: `api/render`, `guides/custom-passes`.
@@ -455,8 +455,8 @@ The build resolves imports before translating, and adds only the functions the s
 - `null3d::math`: constants such as `PI`, `modulo` with GLSL's sign rule, `remap` and rotations.
 - `null3d::noise`: integer hashes, `random`, and value, Perlin, simplex, Worley and fractal noise. Each noise has a 2D and a 3D form, such as `simplex2` and `fbm3(p, octaves)`. The hashes give the same bits on every GPU, so a pattern looks the same everywhere.
 - `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx`, `tone_map_agx_punchy` and `tone_map_neutral`.
-- `null3d::lighting`: `lambert`, and three.js's physically based functions, such as `brdf_ggx`, `pbr_material` and `direct_light`.
-- `null3d::fog`: the curves `fog_linear` and `fog_exp2`, with three.js's formulas, and `fog_exponential`. Pass each curve the point's straight-line distance from the camera, as the engine does, so the fog stays put as the camera turns. The module also has `fog_height_ratio`, which thins the fog with height, `fog_color`, which adds the sun's glow, and `apply_fog`.
+- `null3d::lighting`: `lambert`, and the physically based functions of glTF's metallic-roughness model, such as `brdf_ggx`, `pbr_material` and `direct_light`.
+- `null3d::fog`: the curves `fog_linear`, `fog_exp2` and `fog_exponential`. `fog_linear` is a smooth step from 0 at `near` to 1 at `far`, and `fog_exp2` is `1 - exp(-(density * distance)^2)`. Pass each curve the point's straight-line distance from the camera, as the engine does, so the fog stays put as the camera turns. The module also has `fog_height_ratio`, which thins the fog with height, `fog_color`, which adds the sun's glow, and `apply_fog`.
 - `null3d::vertex`: instance transforms, `transform_normal` for uneven scale, and `to_clip`.
 - `null3d::depth`: `linear_depth` and the view-z conversions for the engine's reversed depth, which hold on both GPU paths. `toward_camera` gives the direction from a view-space position to the camera, for a perspective or an orthographic camera.
 - `null3d::sdf`: signed distances of shapes, and ways to combine them.
