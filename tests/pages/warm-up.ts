@@ -23,10 +23,13 @@ run('warm-up', async () => {
 	// Play starts once the first frame, which built the scene's pipelines, is on screen.
 	await engine.firstFrame;
 	const play = await engine.measure(SECONDS);
+	/** The depth prepass setting while the object warmed up, as the sketch reported it. */
+	let depthPrepass: boolean | undefined;
 	const warmed = new Promise<void>((resolve) => {
-		const off = engine.onSketchMessage((name) => {
+		const off = engine.onSketchMessage((name, data) => {
 			if (name !== 'warmed') return;
 			off();
+			depthPrepass = (data as { depthPrepass?: boolean } | undefined)?.depthPrepass;
 			resolve();
 		});
 	});
@@ -57,6 +60,7 @@ run('warm-up', async () => {
 		firstFrameDoneMs: play.load.firstFrameDoneMs,
 		playPipelines: play.pipelines,
 		addedPipelines: added.pipelines,
+		depthPrepass,
 		afterPipelines: after.pipelines,
 		magenta,
 		failures,

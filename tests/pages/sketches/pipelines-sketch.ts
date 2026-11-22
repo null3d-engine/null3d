@@ -23,7 +23,7 @@ function quad(uvs: boolean, colors: boolean, uvs1 = false): MeshArrays {
 	};
 }
 
-export default defineSketch(async ({ scene, materials, geometry, page, post }) => {
+export default defineSketch(async ({ scene, materials, geometry, page, post, quality }) => {
 	post.set({ toneMapping: 'none' });
 	scene.setBackground('#20242a');
 	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.1, far: 50 });
@@ -64,7 +64,9 @@ export default defineSketch(async ({ scene, materials, geometry, page, post }) =
 		added.setVisible(false);
 		void scene.warmUp().then(() => {
 			added.setVisible(true);
-			page.post('warmed');
+			// A start in the lowest tier turns the WebGL2 prepass off, and the count follows the
+			// setting the engine holds rather than the path's rule (D-382).
+			page.post('warmed', { depthPrepass: quality.settings.depthPrepass });
 		});
 	});
 });
