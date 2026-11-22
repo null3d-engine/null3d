@@ -19,11 +19,12 @@ import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
 import { SEA_LEVEL } from './island';
 import { createLand } from './land';
+import { loadLifeModels } from './models';
 import { groundHeight } from './plan';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
 import { createTown } from './town';
-import { createPlaceholderModels, createTraffic } from './traffic';
+import { createPlaceholderModels, createTraffic, type TrafficOptions } from './traffic';
 import { CASTER_LAYER, createCypressSpires, createTrees } from './trees';
 
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
@@ -91,6 +92,9 @@ export const SHOTS: readonly Shot[] = [
 ];
 
 const params = new URL(import.meta.url).searchParams;
+
+/** The places that the camera's route visits, where the island's people walk as models. */
+const WATCH = SHOTS.map((shot) => shot.position);
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, page, time } = ctx;
@@ -218,9 +222,6 @@ export default defineSketch(async (ctx) => {
 	const land = createLand(ctx);
 	const sea = createSea(ctx, camera);
 	const town = createTown(ctx);
-	// The real car, bus and person models replace the placeholders when they land; the motion
-	// system is the same either way.
-	const traffic = createTraffic(ctx, createPlaceholderModels(ctx));
 	page.post('loading', 'Growing the trees');
 	// The species and the lawns take seconds to grow. A live page draws the island without them and
 	// lets them appear as they land; a held picture, a page that asks with `?grown`, or the WebGL2
@@ -228,6 +229,46 @@ export default defineSketch(async (ctx) => {
 	// the pipelines that a frame after the first adds, so that path grows before it draws.
 	const grownFirst =
 		ctx.engine.held || params.has('grown') || ctx.engine.capabilities.tier === 'webgl2';
+	// The real people and vehicle models replace the placeholders when they land; the motion system
+	// is the same either way. A held frame waits for them, so it never catches a placeholder.
+	const life = grownFirst
+		? await loadLifeModels(ctx).catch((error) => {
+				console.warn(
+					'island: the people and vehicle models are unavailable, so the placeholders stand',
+					error,
+				);
+				return undefined;
+			})
+		: undefined;
+	const trafficOptions: TrafficOptions = { watch: WATCH };
+	let traffic = createTraffic(ctx, life ?? createPlaceholderModels(ctx), trafficOptions);
+	// A live page loads the models after its first frame, so the load never holds the first frame.
+	// The placeholders move meanwhile, and they leave when the models stand.
+	let settling = false;
+	const settleTraffic = (): void => {
+		if (settling) return;
+		settling = true;
+		void loadLifeModels(ctx).then(
+			(models) => {
+				try {
+					const grown = createTraffic(ctx, models, trafficOptions);
+					const previous = traffic;
+					traffic = grown;
+					previous.destroy();
+				} catch (error) {
+					console.warn(
+						'island: the people and vehicle models could not stand, so the placeholders stay',
+						error,
+					);
+				}
+			},
+			(error: unknown) =>
+				console.warn(
+					'island: the people and vehicle models are unavailable, so the placeholders stay',
+					error,
+				),
+		);
+	};
 	// The cypresses need no species assets, so a page that grows the rest later places them before
 	// the first frame.
 	if (!grownFirst) createCypressSpires(ctx);
@@ -258,6 +299,7 @@ export default defineSketch(async (ctx) => {
 			// The forest grows once the first frame has drawn, so its species and lawns cost nothing
 			// before it and appear as they land.
 			if (!grownFirst && time.frame >= 2) grow();
+			if (!grownFirst && time.frame >= 2) settleTraffic();
 			const t = time.now;
 			stage.update(dt);
 			controls.update(t);

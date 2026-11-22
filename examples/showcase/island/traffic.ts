@@ -18,13 +18,29 @@
 // The caller supplies the models. `createPlaceholderModels` gives simple geometry for a first run;
 // the real car, bus and person models replace it without a change to the motion. Each model is a
 // list of parts, and every part of a model takes the same transform, so a model with a body, glass
-// and wheels draws as several instance batches that move in step.
+// and wheels draws as several instance batches that move in step. The people near the camera's
+// route draw as skinned walkers that play their own clips, and the rest stand as far proxies.
+//
+// A vehicle's plain body parts take a colour for each row, so a car and a bus carry a livery of
+// their own. A wheel part spins by the distance that its vehicle travels over its radius, and a
+// front wheel turns a little into the curve.
 //
 // Counts at the default options: 9 cars, 1 bus, 8 parked cars and 18 people. A frame samples each
 // mover's path and writes its transform into one vertex row per part: 28 movers and about 0.01 ms
 // of work on this Mac.
 
-import type { InstanceBatch, Material, MeshGeometry, SketchContext } from '@null3d/engine';
+import {
+	color,
+	type InstanceBatch,
+	type Material,
+	type Mesh,
+	type MeshGeometry,
+	type Prefab,
+	type PrefabInstance,
+	quat,
+	type SketchContext,
+	vec3,
+} from '@null3d/engine';
 import { random } from '../../lib/procedural';
 import { BAY, hypot, SEA_LEVEL, sandAt } from './island';
 import { HOUSE_KINDS } from './kit';
@@ -142,6 +158,24 @@ export interface TrafficOptions {
 	readonly people?: number;
 	/** False leaves the bus out. The default runs it. */
 	readonly bus?: boolean;
+	/**
+	 * The places that the camera visits. The people whose walks come nearest them draw as skinned
+	 * walkers; the rest stand as far proxies. Left out, every person draws as a proxy.
+	 */
+	readonly watch?: readonly (readonly [number, number, number])[];
+	/** How many people walk as models near the watch places. The default is 6. */
+	readonly walkers?: number;
+}
+
+/** A part of a model that takes a colour for each row. */
+export type TintRole = 'paint' | 'accent' | 'cloth' | 'legs' | 'feet';
+
+/** How a wheel turns: by the distance travelled over its radius, and a front wheel into a curve. */
+export interface WheelSpin {
+	/** The wheel's radius, in meters. */
+	readonly radius: number;
+	/** True for a front wheel, which steers into the curve. */
+	readonly front?: boolean;
 }
 
 /** One drawable part of a car, a bus or a person. */
@@ -152,21 +186,63 @@ export interface TrafficPart {
 	readonly lift?: number;
 	/** The radians added to the path's heading, so the model's front points forward. The default is 0. */
 	readonly yaw?: number;
-	/** The part's uniform scale. The default is 1. */
+	/** The part's uniform scale, multiplied into its node's own scale. The default is 1. */
 	readonly scale?: number;
+	/**
+	 * The part's own place in its file, which the parts of a quantized model store in their nodes.
+	 * The position is in the model's meters, and the scale is per axis.
+	 */
+	readonly position?: readonly [number, number, number];
+	readonly rotation?: readonly [number, number, number, number];
+	readonly nodeScale?: readonly [number, number, number];
+	/** The colour role of the part, when its plain material takes a colour for each row. */
+	readonly tint?: TintRole;
+	/** How the part turns, when it is a wheel. */
+	readonly wheel?: WheelSpin;
+}
+
+/** A mesh node of a skinned walker, and the colour that its clothing takes. */
+export interface WalkerPart {
+	/** The node's name in the model file. */
+	readonly name: string;
+	/** The colour role of the node, when its plain material takes a colour of its own. */
+	readonly tint?: TintRole;
+}
+
+/** A skinned walker that a person near the camera's route draws. */
+export interface WalkerModel {
+	/** The file that holds the walker. */
+	readonly prefab: Prefab;
+	/** The walker's mesh nodes, and the colour of each clothing part. */
+	readonly parts: readonly WalkerPart[];
+	/** The nodes of the file that a copy hides, which are the models that it does not draw. */
+	readonly hidden: readonly string[];
+	/** The clip that the walker plays. */
+	readonly clip: string;
+}
+
+/** A person's model: the far proxy that stands, and the skinned walker when the file holds one. */
+export interface PersonModel {
+	/** The standing parts that draw this person far from the camera. */
+	readonly parts: readonly TrafficPart[];
+	/** The skinned walker, or undefined while the file holds only the standing parts. */
+	readonly walker?: WalkerModel;
 }
 
 /** The models that the motion draws. Every part of one model takes that model's transform. */
 export interface TrafficModels {
 	readonly car: readonly TrafficPart[];
 	readonly bus: readonly TrafficPart[];
-	readonly person: readonly TrafficPart[];
+	/** The people's models, which the people's indices cycle through. */
+	readonly people: readonly PersonModel[];
 }
 
 /** The moving scene, as the caller drives it. */
 export interface Traffic {
 	/** Places every mover at the given seconds since the scene started. */
 	update(seconds: number): void;
+	/** Removes every batch, walker copy and material that the traffic made. */
+	destroy(): void;
 	readonly counts: TrafficPlan['counts'];
 	/** The number of instance rows that draw. */
 	readonly rows: number;
@@ -181,6 +257,10 @@ export const TRAFFIC_SEED = 20261122;
 const DEFAULT_CARS = 9;
 const DEFAULT_PARKED = 8;
 const DEFAULT_PEOPLE = 18;
+/** How many people walk as models near the camera's route, by default. */
+const DEFAULT_WALKERS = 6;
+/** How near a walk must pass a watched place to read as close, in meters. */
+const WATCH_STEP = 2;
 
 /** How far past a road's edge a pavement runs, in meters. */
 const PAVEMENT = 1;
@@ -237,6 +317,62 @@ const SIDES_ONE = [1.05] as const;
 const HOUSE_CLEAR = 0.45;
 /** How far ahead of a door a person steps out before the walk counts, in meters. */
 const DOOR_STEP = 0.5;
+
+/** The speed that each walk clip's steps are made for, in meters a second. */
+const WALK_CLIP_SPEED = 1.4;
+/** The stretch of route over which a front wheel reads its curve, in meters. */
+const STEER_SPAN = 1.4;
+/** The most that a front wheel turns into a curve, in radians. */
+const MAX_STEER = 0.5;
+/** The palette of the cars on the road, as sRGB hex colors. */
+const MOVING_CAR_COLOURS = [
+	'#b8452f',
+	'#2f608c',
+	'#5f6b3f',
+	'#c9a24a',
+	'#6d7076',
+	'#d9d3c4',
+] as const;
+/** The palette of the cars at the kerb, which shares no color with the moving ones. */
+const PARKED_CAR_COLOURS = ['#9aa3a8', '#7d9995', '#8899ab', '#cfc6b1'] as const;
+/** The bus's hull and its band. */
+const BUS_PAINT = '#2f5d85';
+const BUS_BAND = '#e8e0cc';
+/** The shirts that the people of the town wear, as sRGB hex colors. */
+const SHIRT_COLOURS = ['#b8482f', '#3f6f8f', '#6a7f4a', '#d8c9a3', '#7a5a83', '#3d7a6e'] as const;
+/** The trousers and dresses that they wear. */
+const LEG_COLOURS = ['#3d4550', '#6a5c4a', '#5a6a74', '#8a7f6a', '#4a5b52', '#6b4a44'] as const;
+/** The shoes that every person wears. */
+const SHOE_COLOUR = '#3e352c';
+/** The unit axes that a wheel turns about: across the vehicle, and up. */
+const AXLE = [1, 0, 0] as const;
+const UP = [0, 1, 0] as const;
+
+/** A linear RGBA colour. */
+type Rgba = readonly [number, number, number, number];
+
+/** The linear RGBA of an sRGB hex colour. */
+function linear(hex: string): Rgba {
+	const rgb = color.fromHex([0, 0, 0], hex);
+	return [rgb[0] as number, rgb[1] as number, rgb[2] as number, 1];
+}
+
+/** The colours of the cars on the road, and of the cars at the kerb, as linear RGBA. */
+const MOVING_CAR_PAINT = MOVING_CAR_COLOURS.map(linear);
+const PARKED_CAR_PAINT = PARKED_CAR_COLOURS.map(linear);
+/** The bus's two colours, and the shoe colour, as linear RGBA. */
+const BUS_PAINT_RGBA = linear(BUS_PAINT);
+const BUS_BAND_RGBA = linear(BUS_BAND);
+const SHOE_RGBA = linear(SHOE_COLOUR);
+
+/** The shirt, legs and shoes of the person at a place in the plan, as sRGB hex colors. */
+function clothingOf(index: number): { shirt: string; legs: string; feet: string } {
+	return {
+		shirt: SHIRT_COLOURS[index % SHIRT_COLOURS.length] as string,
+		legs: LEG_COLOURS[index % LEG_COLOURS.length] as string,
+		feet: SHOE_COLOUR,
+	};
+}
 
 /** The distances from the start at each point of a line. */
 function distancesOf(points: readonly Point[]): Float64Array {
@@ -1064,13 +1200,9 @@ function advanceMotion(motion: VehicleMotion, seconds: number): void {
 	}
 }
 
-/**
- * Where a vehicle is at a time. Its plan's motion moves every vehicle with a minimum headway, and
- * a bus waits at its stops. The result is written to `out`, or to a shared pose when it is left out.
- */
-export function vehicleAt(actor: VehicleActor, seconds: number, out: Pose = SHARED_POSE): Pose {
+/** The distance that a vehicle has travelled at a time, along its own route. */
+function travelledOf(actor: VehicleActor, seconds: number): number {
 	const bound = MOTIONS.get(actor);
-	let at: number;
 	if (bound) {
 		const { motion, index } = bound;
 		advanceMotion(motion, seconds);
@@ -1081,9 +1213,26 @@ export function vehicleAt(actor: VehicleActor, seconds: number, out: Pose = SHAR
 		const count = motion.actors.length;
 		const a = motion.data[i0 * count + index] as number;
 		const b = motion.data[i1 * count + index] as number;
-		at = a + (b - a) * f;
-	} else if (actor.script) at = sampleScript(actor.script, seconds, SCRIPT_STATE).distance;
-	else at = actor.phase + actor.speed * seconds;
+		return a + (b - a) * f;
+	}
+	if (actor.script) return sampleScript(actor.script, seconds, SCRIPT_STATE).distance;
+	return actor.phase + actor.speed * seconds;
+}
+
+/**
+ * The distance that a vehicle has travelled at a time, in meters. A wheel turns by it over the
+ * wheel's radius.
+ */
+export function vehicleDistanceAt(actor: VehicleActor, seconds: number): number {
+	return travelledOf(actor, Math.max(0, seconds));
+}
+
+/**
+ * Where a vehicle is at a time. Its plan's motion moves every vehicle with a minimum headway, and
+ * a bus waits at its stops. The result is written to `out`, or to a shared pose when it is left out.
+ */
+export function vehicleAt(actor: VehicleActor, seconds: number, out: Pose = SHARED_POSE): Pose {
+	const at = travelledOf(actor, seconds);
 	poseAlong(actor.route, at, actor.lateral, true, out, SHARED_SCRATCH);
 	out.y += ROAD_SURFACE;
 	return out;
@@ -1867,27 +2016,122 @@ interface BoundMover<T> {
 	readonly row: number;
 }
 
-/** Puts one mover's transform into every part of its model. */
-function writeRow(parts: readonly BoundPart[], row: number, pose: Pose, scale: number): void {
+/** How far a wheel has rolled, and how far its front axle turns into the curve. */
+interface Drive {
+	distance: number;
+	steer: number;
+}
+
+/** Scratch rotations that a row's composition builds, so a frame allocates nothing. */
+const ROW_TURN = quat.create();
+const ROW_LOCAL = quat.create();
+const ROW_SPIN = quat.create();
+const ROW_STEER = quat.create();
+const ROW_WHEEL = quat.create();
+const ROW_OFFSET = vec3.create();
+
+/**
+ * Puts one mover's transform into every part of its model. A part keeps its own place in the file,
+ * which a quantized mesh stores in its node, and `drive` spins a wheel and turns a front one.
+ */
+function writeRow(
+	parts: readonly BoundPart[],
+	row: number,
+	pose: Pose,
+	scale: number,
+	drive?: Drive,
+): void {
 	for (let k = 0; k < parts.length; k++) {
 		const part = (parts[k] as BoundPart).part;
 		const batch = (parts[k] as BoundPart).batch;
 		const positions = batch.positions;
 		const rotations = batch.rotations;
 		const scales = batch.scales;
-		positions[row * 3] = pose.x;
-		positions[row * 3 + 1] = pose.y + (part.lift ?? 0);
-		positions[row * 3 + 2] = pose.z;
-		const half = (pose.yaw + (part.yaw ?? 0)) * 0.5;
-		rotations[row * 4] = 0;
-		rotations[row * 4 + 1] = Math.sin(half);
-		rotations[row * 4 + 2] = 0;
-		rotations[row * 4 + 3] = Math.cos(half);
+		const turn = quat.fromEuler(ROW_TURN, 0, pose.yaw + (part.yaw ?? 0), 0);
+		let x = pose.x;
+		let y = pose.y + (part.lift ?? 0);
+		let z = pose.z;
+		if (part.position) {
+			vec3.transformQuat(ROW_OFFSET, part.position, turn);
+			x += ROW_OFFSET[0] as number;
+			y += ROW_OFFSET[1] as number;
+			z += ROW_OFFSET[2] as number;
+		}
+		positions[row * 3] = x;
+		positions[row * 3 + 1] = y;
+		positions[row * 3 + 2] = z;
+		const q = part.rotation ? quat.multiply(ROW_LOCAL, turn, part.rotation) : turn;
+		if (part.wheel && drive) {
+			quat.setAxisAngle(ROW_SPIN, AXLE, drive.distance / part.wheel.radius);
+			if (part.wheel.front) {
+				quat.setAxisAngle(ROW_STEER, UP, drive.steer);
+				quat.multiply(ROW_WHEEL, ROW_STEER, ROW_SPIN);
+				quat.multiply(q, q, ROW_WHEEL);
+			} else {
+				quat.multiply(q, q, ROW_SPIN);
+			}
+		}
+		rotations[row * 4] = q[0] as number;
+		rotations[row * 4 + 1] = q[1] as number;
+		rotations[row * 4 + 2] = q[2] as number;
+		rotations[row * 4 + 3] = q[3] as number;
 		const size = scale * (part.scale ?? 1);
-		scales[row * 3] = size;
-		scales[row * 3 + 1] = size;
-		scales[row * 3 + 2] = size;
+		scales[row * 3] = size * (part.nodeScale?.[0] ?? 1);
+		scales[row * 3 + 1] = size * (part.nodeScale?.[1] ?? 1);
+		scales[row * 3 + 2] = size * (part.nodeScale?.[2] ?? 1);
 	}
+}
+
+/** Writes one row's colour into a batch that takes a colour per row. */
+function writeColour(batch: InstanceBatch, row: number, colour: Rgba): void {
+	const colours = batch.colors;
+	if (!colours) return;
+	colours[row * 4] = colour[0];
+	colours[row * 4 + 1] = colour[1];
+	colours[row * 4 + 2] = colour[2];
+	colours[row * 4 + 3] = colour[3];
+}
+
+/** Writes one person's clothing colour into every part of its proxy that takes one. */
+function writePersonColours(parts: readonly BoundPart[], row: number, index: number): void {
+	const clothing = clothingOf(index);
+	for (const { batch, part } of parts) {
+		if (part.tint === 'cloth') writeColour(batch, row, linear(clothing.shirt));
+		else if (part.tint === 'legs') writeColour(batch, row, linear(clothing.legs));
+		else if (part.tint === 'feet') writeColour(batch, row, SHOE_RGBA);
+	}
+}
+
+/** Writes a vehicle's paint, and its accent where it has one, into every part that takes one. */
+function writeVehicleColours(
+	parts: readonly BoundPart[],
+	row: number,
+	paint: Rgba,
+	accent: Rgba,
+): void {
+	for (const { batch, part } of parts) {
+		if (part.tint === 'paint') writeColour(batch, row, paint);
+		else if (part.tint === 'accent') writeColour(batch, row, accent);
+	}
+}
+
+/** Builds one instance batch per part of a model, over `count` rows. */
+function bindParts(
+	ctx: SketchContext,
+	models: readonly TrafficPart[],
+	count: number,
+	dynamic: boolean,
+): BoundPart[] {
+	return models.map((part) => ({
+		batch: ctx.scene.createInstances(part.mesh, count, {
+			material: part.material,
+			...(dynamic && { dynamic: true }),
+			castShadows: true,
+			receiveShadows: true,
+			...(part.tint !== undefined && { colors: true }),
+		}),
+		part,
+	}));
 }
 
 /** Builds the instance batches for one model class and binds the actors to their rows. */
@@ -1897,21 +2141,97 @@ function bindMovers<T>(
 	actors: readonly T[],
 ): BoundMover<T>[] {
 	if (actors.length === 0) return [];
-	const parts: BoundPart[] = models.map((part) => ({
-		batch: ctx.scene.createInstances(part.mesh, actors.length, {
-			material: part.material,
-			dynamic: true,
-			castShadows: true,
-			receiveShadows: true,
-		}),
-		part,
-	}));
+	const parts = bindParts(ctx, models, actors.length, true);
 	return actors.map((actor, row) => ({ actor, parts, row }));
+}
+
+/** The nearest distance from a walk to any watched place, in meters. */
+function distanceToWatch(
+	walk: Path,
+	watch: readonly (readonly [number, number, number])[],
+): number {
+	let best = Number.POSITIVE_INFINITY;
+	const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+	for (let at = 0; at <= walk.length; at += WATCH_STEP) {
+		pathAt(walk, at, pose);
+		for (let k = 0; k < watch.length; k++) {
+			const place = watch[k] as readonly [number, number, number];
+			const d = Math.hypot(pose.x - place[0], pose.y - place[1], pose.z - place[2]);
+			if (d < best) best = d;
+		}
+	}
+	return best;
+}
+
+/**
+ * Picks the people who walk as models. Each model kind gets the person nearest a watched place,
+ * then the remaining places go to the nearest people. A kind without a walker stays a proxy.
+ */
+function chooseWalkers(
+	people: readonly PersonActor[],
+	models: TrafficModels,
+	options: TrafficOptions,
+): number[] {
+	const watch = options.watch;
+	const kinds = models.people.length;
+	const limit = Math.max(
+		0,
+		Math.min(people.length, Math.floor(options.walkers ?? DEFAULT_WALKERS)),
+	);
+	if (!watch || watch.length === 0 || kinds === 0 || limit === 0) return [];
+	const reach = people.map((person) => distanceToWatch(person.walk, watch));
+	const hasWalker = (index: number): boolean => models.people[index % kinds]?.walker !== undefined;
+	// Each kind's people, nearest first, and the kinds take one in turn so every walker appears.
+	const byKind: number[][] = [];
+	for (let kind = 0; kind < kinds; kind++) {
+		const list: number[] = [];
+		for (let index = kind; index < people.length; index += kinds)
+			if (hasWalker(index)) list.push(index);
+		list.sort((a, b) => (reach[a] as number) - (reach[b] as number));
+		byKind.push(list);
+	}
+	const chosen = new Set<number>();
+	for (let round = 0; chosen.size < limit; round++) {
+		let added = false;
+		for (const list of byKind) {
+			if (chosen.size >= limit) break;
+			const next = list[round];
+			if (next === undefined) continue;
+			chosen.add(next);
+			added = true;
+		}
+		if (!added) break;
+	}
+	return [...chosen];
+}
+
+/** Scratch poses for reading a route's curve. */
+const STEER_POSE: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+const STEER_SCRATCH: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+
+/** How far a vehicle's front wheel turns into the curve at a distance along its route. */
+function steerAt(actor: VehicleActor, distance: number): number {
+	poseAlong(actor.route, distance - STEER_SPAN, actor.lateral, true, STEER_POSE, STEER_SCRATCH);
+	const before = STEER_POSE.yaw;
+	poseAlong(actor.route, distance + STEER_SPAN, actor.lateral, true, STEER_POSE, STEER_SCRATCH);
+	let turn = STEER_POSE.yaw - before;
+	if (turn > Math.PI) turn -= Math.PI * 2;
+	else if (turn < -Math.PI) turn += Math.PI * 2;
+	return Math.max(-MAX_STEER, Math.min(MAX_STEER, turn));
+}
+
+/** A walker copy, and whether it last drew. */
+interface WalkerCopy {
+	readonly actor: PersonActor;
+	readonly copy: PrefabInstance;
+	visible: boolean;
 }
 
 /**
  * Builds the island's traffic. The caller passes the car, bus and person models; the motion never
- * depends on the placeholders. Call `update` once a frame with the seconds since the scene started.
+ * depends on the placeholders. The people whose walks come nearest the watched places draw as
+ * skinned walkers, and every other person stands as a far proxy. Call `update` once a frame with
+ * the seconds since the scene started.
  */
 export function createTraffic(
 	ctx: SketchContext,
@@ -1919,22 +2239,32 @@ export function createTraffic(
 	options: TrafficOptions = {},
 ): Traffic {
 	const plan = planTraffic(options);
+	const kinds = models.people.length;
+	const chosen = chooseWalkers(plan.people, models, options);
+	const chosenSet = new Set(chosen);
+	const batches: InstanceBatch[] = [];
+	const owned: Material[] = [];
+	const collect = (parts: readonly BoundPart[]): void => {
+		for (const bound of parts) batches.push(bound.batch);
+	};
+
 	const cars = plan.vehicles.filter((vehicle) => vehicle.kind === 'car');
 	const buses = plan.vehicles.filter((vehicle) => vehicle.kind === 'bus');
 	const carMovers = bindMovers(ctx, models.car, cars);
 	const busMovers = bindMovers(ctx, models.bus, buses);
-	const personMovers = bindMovers(ctx, models.person, plan.people);
-	const parkedParts: BoundPart[] =
-		plan.parked.length === 0
-			? []
-			: models.car.map((part) => ({
-					batch: ctx.scene.createInstances(part.mesh, plan.parked.length, {
-						material: part.material,
-						castShadows: true,
-						receiveShadows: true,
-					}),
-					part,
-				}));
+	if (carMovers.length > 0) collect((carMovers[0] as BoundMover<VehicleActor>).parts);
+	if (busMovers.length > 0) collect((busMovers[0] as BoundMover<VehicleActor>).parts);
+	carMovers.forEach((mover, k) => {
+		const paint = MOVING_CAR_PAINT[k % MOVING_CAR_PAINT.length] as Rgba;
+		writeVehicleColours(mover.parts, mover.row, paint, paint);
+	});
+	busMovers.forEach((mover) => {
+		writeVehicleColours(mover.parts, mover.row, BUS_PAINT_RGBA, BUS_BAND_RGBA);
+	});
+
+	const parkedParts =
+		plan.parked.length === 0 ? [] : bindParts(ctx, models.car, plan.parked.length, false);
+	collect(parkedParts);
 	const parkedPose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 	plan.parked.forEach((car, row) => {
 		parkedPose.x = car.x;
@@ -1942,55 +2272,120 @@ export function createTraffic(
 		parkedPose.z = car.z;
 		parkedPose.yaw = car.yaw;
 		writeRow(parkedParts, row, parkedPose, 1);
+		const paint = PARKED_CAR_PAINT[row % PARKED_CAR_PAINT.length] as Rgba;
+		writeVehicleColours(parkedParts, row, paint, paint);
 	});
 	for (const { batch } of parkedParts) batch.markDirty();
 
+	// The far people: one group of batches for each model kind, over the people left as proxies.
+	const proxies: BoundMover<PersonActor>[] = [];
+	let proxyRows = 0;
+	for (let kind = 0; kind < kinds; kind++) {
+		const model = models.people[kind] as PersonModel;
+		const actors: PersonActor[] = [];
+		const indices: number[] = [];
+		for (let index = kind; index < plan.people.length; index += kinds) {
+			if (chosenSet.has(index)) continue;
+			indices.push(index);
+			actors.push(plan.people[index] as PersonActor);
+		}
+		if (actors.length === 0) continue;
+		const movers = bindMovers(ctx, model.parts, actors);
+		if (movers.length === 0) continue;
+		collect((movers[0] as BoundMover<PersonActor>).parts);
+		movers.forEach((mover, row) => {
+			writePersonColours(mover.parts, mover.row, indices[row] as number);
+		});
+		proxyRows += actors.length * (movers[0]?.parts.length ?? 0);
+		proxies.push(...movers);
+	}
+
+	// The near people: one skinned copy each, in the colour of its own clothing.
+	const walkers: WalkerCopy[] = [];
+	const clothing = new Map<string, Material>();
+	for (const index of chosen) {
+		const model = models.people[kinds > 0 ? index % kinds : 0]?.walker;
+		if (!model) continue;
+		const actor = plan.people[index] as PersonActor;
+		const copy = ctx.scene.instantiate(model.prefab, {
+			dynamic: true,
+			castShadows: true,
+			receiveShadows: true,
+		});
+		for (const name of model.hidden) copy.find(name)?.setVisible(false);
+		const colours = clothingOf(index);
+		for (const part of model.parts) {
+			if (part.tint === undefined) continue;
+			const hex =
+				part.tint === 'cloth' ? colours.shirt : part.tint === 'legs' ? colours.legs : colours.feet;
+			let material = clothing.get(hex);
+			if (!material) {
+				material = ctx.materials.standard({ color: hex, roughness: 0.85 });
+				clothing.set(hex, material);
+				owned.push(material);
+			}
+			(copy.find(part.name) as Mesh | undefined)?.setMaterial(material);
+		}
+		copy.animator().play(model.clip, {
+			time: actor.phase,
+			speed: actor.speed / WALK_CLIP_SPEED,
+		});
+		walkers.push({ actor, copy, visible: true });
+	}
+
+	const carSteers = models.car.some((part) => part.wheel?.front === true);
+	const busSteers = models.bus.some((part) => part.wheel?.front === true);
+	const drive: Drive = { distance: 0, steer: 0 };
 	const vehiclePose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
-	const personPose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
-	const personScratch: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+	const personState: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false };
+
+	const driveVehicle = (
+		mover: BoundMover<VehicleActor>,
+		seconds: number,
+		steers: boolean,
+	): void => {
+		vehicleAt(mover.actor, seconds, vehiclePose);
+		drive.distance = vehicleDistanceAt(mover.actor, seconds);
+		drive.steer = steers ? steerAt(mover.actor, drive.distance) : 0;
+		writeRow(mover.parts, mover.row, vehiclePose, 1, drive);
+	};
 
 	const update = (seconds: number): void => {
-		for (let k = 0; k < carMovers.length; k++) {
-			const mover = carMovers[k] as BoundMover<VehicleActor>;
-			vehicleAt(mover.actor, seconds, vehiclePose);
-			writeRow(mover.parts, mover.row, vehiclePose, 1);
+		for (const mover of carMovers) driveVehicle(mover, seconds, carSteers);
+		for (const mover of busMovers) driveVehicle(mover, seconds, busSteers);
+		for (const mover of proxies) {
+			const state = personAt(mover.actor, seconds, personState);
+			writeRow(mover.parts, mover.row, state, state.hidden ? 0 : 1);
 		}
-		for (let k = 0; k < busMovers.length; k++) {
-			const mover = busMovers[k] as BoundMover<VehicleActor>;
-			vehicleAt(mover.actor, seconds, vehiclePose);
-			writeRow(mover.parts, mover.row, vehiclePose, 1);
-		}
-		for (let k = 0; k < personMovers.length; k++) {
-			const mover = personMovers[k] as BoundMover<PersonActor>;
-			const state = sampleScript(mover.actor.script, seconds + mover.actor.phase, SCRIPT_STATE);
-			poseAlong(
-				mover.actor.walk,
-				state.distance,
-				mover.actor.lateral,
-				false,
-				personPose,
-				personScratch,
-			);
-			if (!state.forward) personPose.yaw += Math.PI;
-			writeRow(mover.parts, mover.row, personPose, state.hidden ? 0 : 1);
+		for (const walker of walkers) {
+			const state = personAt(walker.actor, seconds, personState);
+			const show = !state.hidden;
+			if (show !== walker.visible) {
+				walker.copy.setVisible(show);
+				walker.visible = show;
+			}
+			if (show) {
+				walker.copy.setPosition(state.x, state.y, state.z);
+				walker.copy.setRotationEuler(0, state.yaw, 0);
+			}
 		}
 	};
 	update(0);
 
+	const destroy = (): void => {
+		for (const batch of batches) batch.destroy();
+		for (const walker of walkers) walker.copy.destroy();
+		for (const material of owned) material.destroy();
+	};
+
 	const carParts = carMovers[0]?.parts.length ?? 0;
 	const busParts = busMovers[0]?.parts.length ?? 0;
-	const personParts = personMovers[0]?.parts.length ?? 0;
-	const batchCount =
-		parkedParts.length +
-		(carMovers.length > 0 ? carParts : 0) +
-		(busMovers.length > 0 ? busParts : 0) +
-		(personMovers.length > 0 ? personParts : 0);
 	const rowCount =
 		plan.parked.length * parkedParts.length +
-		carMovers.length * carParts +
-		busMovers.length * busParts +
-		personMovers.length * personParts;
-	return { update, counts: plan.counts, rows: rowCount, batches: batchCount };
+		cars.length * carParts +
+		buses.length * busParts +
+		proxyRows;
+	return { update, destroy, counts: plan.counts, rows: rowCount, batches: batches.length };
 }
 
 /**
@@ -2022,11 +2417,15 @@ export function createPlaceholderModels(ctx: SketchContext): TrafficModels {
 				lift: 1.5,
 			},
 		],
-		person: [
+		people: [
 			{
-				mesh: ctx.geometry.capsule({ radius: 0.26, height: 1.05 }),
-				material: cloth,
-				lift: PERSON_LIFT,
+				parts: [
+					{
+						mesh: ctx.geometry.capsule({ radius: 0.26, height: 1.05 }),
+						material: cloth,
+						lift: PERSON_LIFT,
+					},
+				],
 			},
 		],
 	};
