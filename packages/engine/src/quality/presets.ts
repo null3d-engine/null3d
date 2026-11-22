@@ -148,7 +148,7 @@ export const QUALITY_SETTINGS = {
 	// The sun's cast shadows, which a sketch gives its directional lights' `castShadows` option.
 	// Every preset starts them on. The lowest quality tier turns them off when the frames still
 	// miss with the render scale at the preset's floor (D-382).
-	shadows: {
+	castShadows: {
 		presets: [true, true, true, true],
 		changes: 'live',
 		values: 'flag',
@@ -583,7 +583,7 @@ export interface QualitySettings {
 	 * off when the frames still miss with the render scale at the preset's floor. It changes
 	 * during play.
 	 */
-	shadows: boolean;
+	castShadows: boolean;
 	/**
 	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
 	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes
@@ -902,7 +902,7 @@ export const LOWEST_TIER_REFLECTION = 0.25;
 
 /**
  * The cuts that the lowest quality tier applies, on the GPU path `tier`: the render scale's floor
- * at the tier's, unless the settings' floor is lower, the sun's shadows and bloom off, the
+ * at the tier's, unless the settings' floor is lower, the sun's cast shadows and bloom off, the
  * reflection passes' textures at a quarter of the render size, and WebGL2's depth prepass off. A
  * sketch that reads the settings sees them while the tier applies (D-382).
  */
@@ -912,7 +912,7 @@ export function lowestTierCuts(
 ): Partial<QualitySettings> {
 	return {
 		minRenderScale: Math.min(min, LOWEST_TIER_SCALE),
-		shadows: false,
+		castShadows: false,
 		bloom: false,
 		reflectionScale: LOWEST_TIER_REFLECTION,
 		...(tier === 'webgl2' ? { depthPrepass: false } : {}),
@@ -930,14 +930,14 @@ export function lowestTierSettings(tier: Tier): Partial<QualitySettings> {
 
 /**
  * The settings that the lowest quality tier replaces, for a frame loop to give back when it
- * leaves: the render scale's range, the sun's shadows, bloom, the reflection passes' share and the
+ * leaves: the render scale's range, the sun's cast shadows, bloom, the reflection passes' share and the
  * depth prepass.
  */
 export function tierRestoreSettings(settings: QualitySettings): Partial<QualitySettings> {
 	return {
 		minRenderScale: settings.minRenderScale,
 		maxRenderScale: settings.maxRenderScale,
-		shadows: settings.shadows,
+		castShadows: settings.castShadows,
 		bloom: settings.bloom,
 		reflectionScale: settings.reflectionScale,
 		depthPrepass: settings.depthPrepass,

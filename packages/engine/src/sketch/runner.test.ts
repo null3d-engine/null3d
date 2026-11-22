@@ -725,7 +725,7 @@ describe('SketchRunner', () => {
 		});
 		runner.step(0);
 		expect(context.quality.governor.lowest).toBe(true);
-		expect(context.quality.settings.shadows).toBe(false);
+		expect(context.quality.settings.castShadows).toBe(false);
 		expect(context.quality.settings.bloom).toBe(false);
 		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
 		expect(calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(333);
@@ -757,14 +757,14 @@ describe('SketchRunner', () => {
 		runner.step(0);
 		expect(context.quality.governor.lowest).toBe(true);
 		expect(context.quality.preset).toBe('medium');
-		expect(context.quality.settings.shadows).toBe(false);
+		expect(context.quality.settings.castShadows).toBe(false);
 		expect(context.quality.settings.bloom).toBe(false);
 		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
 		expect(context.quality.settings.depthPrepass).toBe(false);
 		governor.exitLowest(0);
 		runner.step(0);
 		expect(context.quality.governor.lowest).toBe(false);
-		expect(context.quality.settings.shadows).toBe(MEDIUM.settings.shadows);
+		expect(context.quality.settings.castShadows).toBe(MEDIUM.settings.castShadows);
 		expect(context.quality.settings.bloom).toBe(MEDIUM.settings.bloom);
 		expect(context.quality.settings.minRenderScale).toBe(MEDIUM.settings.minRenderScale);
 		expect(context.quality.settings.depthPrepass).toBe(true);

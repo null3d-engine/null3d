@@ -320,7 +320,7 @@ export default defineSketch(async (ctx) => {
 	const detail = DETAIL[quality.preset];
 	// The lowest quality tier turns the sun's shadows and bloom off through the settings, so the
 	// scene starts them as the settings say.
-	const tierShadows = quality.settings.shadows;
+	const tierCastShadows = quality.settings.castShadows;
 	const tierBloom = quality.settings.bloom;
 	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
@@ -328,7 +328,7 @@ export default defineSketch(async (ctx) => {
 		assets.builtinEnvironment('room'),
 	]);
 	const sun = scene.createDirectionalLight({
-		castShadows: tierShadows,
+		castShadows: tierCastShadows,
 		layers: SUN_LAYERS,
 		// Two cascades over a wider distance: one box fitted to the camera dropped casters at its
 		// edge as the camera moved, which made the shadows under the trees change.
@@ -486,7 +486,7 @@ export default defineSketch(async (ctx) => {
 			fog: !WITHOUT.has('fog'),
 			shafts: false,
 			fireflies: false,
-			shadows: tierShadows,
+			shadows: tierCastShadows,
 			ao: true,
 			environment: true,
 			bloom: tierBloom,
@@ -535,8 +535,8 @@ export default defineSketch(async (ctx) => {
 	// The lowest quality tier's cuts reach the settings while the page plays, so the scene follows
 	// them, and its HUD shows what it draws.
 	quality.onChange(() => {
-		const { shadows, bloom } = quality.settings;
-		if (controls.on.shadows !== shadows) controls.set('shadows', shadows);
+		const { castShadows, bloom } = quality.settings;
+		if (controls.on.shadows !== castShadows) controls.set('shadows', castShadows);
 		if (controls.on.bloom !== bloom) controls.set('bloom', bloom);
 	});
 	const start = params.get('mood');
