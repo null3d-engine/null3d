@@ -109,6 +109,21 @@ describe('sampleProblems', () => {
 		expect(problems.join('\n')).toContain('no fetch date');
 		expect(problems.join('\n')).toContain('no SHA-256');
 	});
+
+	it('accepts a non-commercial licence only when the asset names its generator', () => {
+		const named = manifestOf(bytes, {
+			license: ['CC-BY-NC-4.0'],
+			...({ generator: 'Tripo3D' } as Record<string, string>),
+		});
+		named.licenses['CC-BY-NC-4.0'] = {
+			name: 'CC BY-NC 4.0',
+			url: 'https://creativecommons.org/licenses/by-nc/4.0/',
+			file: 'LICENSES/CC-BY-NC-4.0.txt',
+		};
+		expect(manifestProblems(named)).toEqual([]);
+		const unnamed = manifestOf(bytes, { license: ['CC-BY-NC-4.0'] });
+		expect(manifestProblems(unnamed).join('\n')).toContain('licence CC-BY-NC-4.0 is not accepted');
+	});
 });
 
 describe('namedSamples', () => {

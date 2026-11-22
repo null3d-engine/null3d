@@ -39,6 +39,12 @@ export const LOCK_PATH = 'tools/samples/lock.json';
 export const MANIFEST_PATH = 'tools/samples/manifest.json';
 /** Licences that sample content may use: CC0 and CC BY, which allow redistribution and commercial use. */
 export const ACCEPTED_LICENCES = /^(CC0-1\.0|CC-BY-[34]\.0)$/;
+/**
+ * The non-commercial licence a generated model may carry, and only an asset that names its
+ * generator: a generator's own terms reach the models it makes, and the record says so where a
+ * visitor reads it.
+ */
+export const GENERATED_LICENCE = /^CC-BY-NC-4\.0$/;
 /** The file in a cached copy that records the hash of the manifest it passed. */
 const VERIFIED = '.null3d-verified';
 
@@ -67,6 +73,8 @@ export interface SampleAsset {
 	fetched: string;
 	changes: string;
 	dir: string;
+	/** The generator that made the asset, when one did, such as `Tripo3D`. */
+	generator?: string;
 	files: SampleFile[];
 }
 
@@ -344,11 +352,16 @@ export function copyNamedSamples(root: string, outDir: string, folders = ['examp
 	return [...copied];
 }
 
-/** What makes an asset unfit to ship: a licence outside CC0 and CC BY, or a missing attribution field. */
+/**
+ * What makes an asset unfit to ship: a licence outside CC0 and CC BY, a non-commercial licence on
+ * an asset that names no generator, or a missing attribution field.
+ */
 function assetProblems(manifest: SampleManifest, asset: SampleAsset): string[] {
 	const problems: string[] = [];
 	for (const id of asset.license) {
-		if (!ACCEPTED_LICENCES.test(id) || !manifest.licenses[id])
+		const accepted =
+			ACCEPTED_LICENCES.test(id) || (asset.generator !== undefined && GENERATED_LICENCE.test(id));
+		if (!accepted || !manifest.licenses[id])
 			problems.push(`${asset.id}: licence ${id} is not accepted`);
 	}
 	if (asset.license.length === 0) problems.push(`${asset.id}: no licence`);
