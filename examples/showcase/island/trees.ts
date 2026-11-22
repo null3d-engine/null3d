@@ -13,7 +13,7 @@ import {
 	type SketchContext,
 } from '@null3d/engine';
 import { createGrass } from '@null3d/grass';
-import { handOverToCards } from '@null3d/impostors';
+import { handOverCards, handOverMeshes, handOverSwitches } from '@null3d/impostors';
 import { createWind } from '@null3d/wind';
 import { type Stand, type SwayLook, standPart, swayingPart } from '../../lib/blender-models';
 import { Noise, random } from '../../lib/procedural';
@@ -426,6 +426,29 @@ function fill(batch: InstanceBatch, spots: readonly TreeSpot[]): void {
 	batch.markDirty();
 }
 
+/** One hand-over group of a plant's stands: its own copies, and the distance at which they swap. */
+export interface HandOverGroup<T> {
+	readonly stands: readonly T[];
+	readonly switchDistance: number;
+}
+
+/**
+ * A plant's stands split into hand-over groups, by their order in the plan, each with its own switch
+ * distance. Every stand lies in exactly one group, so each group's batches hold their own copies and
+ * no copy is stood twice. Groups that a plant has too few stands to fill are left out.
+ */
+export function handOverGroups<T>(stands: readonly T[], handOver: number): HandOverGroup<T>[] {
+	const switches = handOverSwitches(handOver);
+	const groups: { stands: T[]; switchDistance: number }[] = switches.map((switchDistance) => ({
+		stands: [],
+		switchDistance,
+	}));
+	stands.forEach((stand, k) => {
+		groups[k % groups.length]?.stands.push(stand);
+	});
+	return groups.filter((group) => group.stands.length > 0);
+}
+
 /** The trees that stand at the preset's share, and the far canopy, with the wall's share left out. */
 function treeStands(ctx: SketchContext): { kept: readonly TreeSpot[]; fills: readonly TreeSpot[] } {
 	const preset = ctx.quality.preset;
@@ -565,19 +588,19 @@ export async function createTrees(
 		// The wood bends with its leaves but has none to flutter, and its bark's own map gives its
 		// roughness.
 		const bark = { ...SWAY[kind], rustle: 0, roughness: 1 };
+		const woodMaterial = swayingPart(sway, wood, bark, false);
+		const leavesMaterial = swayingPart(sway, leaves, SWAY[kind], true);
+		// The cards stand behind every group, at full coverage before the earliest switch. Each
+		// group's own wood and leaves draw only to its own switch, so a frame takes one group's
+		// cards rather than every tree of the species at once.
 		const cards = standPart(ctx, card, stands, card.material);
-		// A card stands in its plant's own bound, so the hand-over's reach for the card's corners,
-		// which the batch's small file scale makes nearly zero, adds nothing.
-		handOverToCards(
-			standPart(ctx, wood, stands, swayingPart(sway, wood, bark, false)),
-			cards,
-			handOver,
-		);
-		handOverToCards(
-			standPart(ctx, leaves, stands, swayingPart(sway, leaves, SWAY[kind], true)),
-			cards,
-			handOver,
-		);
+		const groups = handOverGroups(stands, handOver);
+		for (const { stands: own, switchDistance } of groups) {
+			handOverMeshes(standPart(ctx, wood, own, woodMaterial), switchDistance);
+			handOverMeshes(standPart(ctx, leaves, own, leavesMaterial), switchDistance);
+		}
+		const earliest = groups[0]?.switchDistance;
+		if (earliest !== undefined) handOverCards(cards, earliest);
 	};
 	/** The plan's spots of one kind, as the stands of one model. */
 	const standsOf = (kind: number): Stand[] =>
