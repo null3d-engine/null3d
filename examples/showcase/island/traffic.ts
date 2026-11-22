@@ -4,8 +4,10 @@
 // spread of those loops at their own speeds and phases, and one bus runs a long loop that passes
 // the harbour, waiting at stops. They move together with a headway: a vehicle holds when its body
 // would reach another's, so no two pass through each other. A few cars stand parked at the kerbs.
-// A car drives a run of one loop, fades from sight, and starts its next run on another loop, so no
-// car is ever seen standing still; a run begins at a place that clears every other body.
+// A car drives a run of one loop, fades from sight over its last metres, and starts its next run on
+// another loop, at a place that clears every other body. The fade follows the distance driven, so a
+// car held in a queue never fades; a car that stands too long at a junction, or meets a car facing
+// it, starts its next run instead of standing there.
 //
 // People walk pavements and footpaths between houses, the square, the church, the harbour and the
 // beach. Each person takes a place of its own across the pavement, and each route is cut to the
@@ -25,9 +27,9 @@
 // route draw as skinned walkers that play their own clips, and the rest draw as far proxies. A
 // proxy has no rig, so its own instance row carries the walk: a rise at the rate of its stride, a
 // roll about its heading and a small surge along it. A walker's clip rests while the person is out
-// of sight and starts again with the next walk. A person fades by shrinking its row or its copy
-// over a short moment, since the models' materials are opaque and a row's colour alpha cannot
-// blend one.
+// of sight and starts again with the next walk. A row fades by shrinking every part about one ground
+// point, so the model keeps its shape; a skinned walker hides whole, because scaling its rig tears
+// the mesh and the engine's opaque materials give no fade that moves no geometry.
 //
 // A vehicle's plain body parts take a colour for each row, so a car and a bus carry a livery of
 // their own. A wheel part spins by the distance that its vehicle travels over its radius, and a
@@ -132,10 +134,8 @@ export interface VehicleActor {
 	readonly halfWidth: number;
 	/** The bus's stops and waits; a car has none and runs its loop without stopping. */
 	readonly script: Script | undefined;
-	/** A car's cycle of runs: each starts elsewhere, and the car hides between two. */
+	/** A car's runs in turn: each covers a stretch of a loop before the car hides and starts again. */
 	readonly runs?: readonly VehicleRun[];
-	/** The seconds of a car's run cycle, which its runs repeat over. */
-	readonly runCycle?: number;
 }
 
 /** One run of a car: a stretch of a loop that it drives before it hides and starts again. */
@@ -144,12 +144,10 @@ export interface VehicleRun {
 	readonly route: Path;
 	/** The offset from the loop's middle line to the car's side of the road, in meters. */
 	readonly lateral: number;
-	/** The seconds into the run cycle when the run begins. */
-	readonly start: number;
 	/** The meters along the route where the car appears. */
 	readonly from: number;
-	/** How long the car drives before it fades out, in seconds. */
-	readonly seconds: number;
+	/** The meters that the car drives before it fades out and starts its next run. */
+	readonly distance: number;
 }
 
 /** One walk in a person's itinerary: a walk out and back, with its own hidden ends. */
@@ -397,10 +395,10 @@ const PERSON_FADE = 0.45;
 const TRIP_GAP = [0.6, 1.8] as const;
 /** How many walks a person's itinerary holds, the first one included. */
 const TRIP_COUNT = 4;
-/** The seconds that a car takes to fade from sight at the end of a run and back at its start. */
-const RUN_FADE = 0.6;
-/** The seconds that a car stays out of sight between two runs, so the move reads as a fade. */
-const RUN_HIDE = 1.6;
+/** The meters over which a car fades from sight at the end of a run and back at its start. */
+const RUN_FADE_METERS = 5;
+/** The seconds that a car may stand before it starts its next run rather than hold a junction. */
+const HELD_ESCAPE = 4;
 /** The shortest and longest run that a car drives before it hides and starts again, in seconds. */
 const RUN_SECONDS = [45, 110] as const;
 /** How many runs a car's cycle holds, which send it round a different loop each time. */
@@ -1110,6 +1108,14 @@ interface VehicleMotion {
 	stepLaterals: Float32Array;
 	/** One byte per row: 1 where the vehicle started a run at that step. */
 	respawned: Uint8Array;
+	/** The share of each vehicle that draws at each cached step, from 0 to 1. */
+	stepFade: Float32Array;
+	/** The meters that each car has driven since its run began. */
+	readonly runMeters: Float64Array;
+	/** The seconds that each car has stood without moving. */
+	readonly held: Float64Array;
+	/** The run of each car's list that it is driving. */
+	readonly runIndex: Uint8Array;
 	/** The random stream that picks where a run begins, so a plan repeats for its seed. */
 	readonly rand: () => number;
 	/** The body of each vehicle at the last step. */
@@ -1125,6 +1131,8 @@ interface VehicleMotion {
 	/** Scratch for each vehicle's distance and settled state during a step. */
 	readonly sim: Float64Array;
 	readonly settled: Uint8Array;
+	/** One for each car that must start its next run rather than stand, such as one facing a car. */
+	readonly rescued: Uint8Array;
 }
 
 /** The motion that each planned vehicle belongs to, and its place in it. */
@@ -1203,27 +1211,6 @@ function bodyAt(
 	fz[index] = Math.cos(MOTION_POSE.yaw);
 }
 
-/**
- * The run of a car's cycle at a time, or -1 while the car is out of sight between two runs.
- * A vehicle without runs, such as the bus, is always in view.
- */
-function runIndexOf(actor: VehicleActor, seconds: number): number {
-	const runs = actor.runs;
-	const cycle = actor.runCycle;
-	if (!runs || runs.length === 0 || !cycle) return -1;
-	let local = seconds % cycle;
-	if (local < 0) local += cycle;
-	let lo = 0;
-	let hi = runs.length - 1;
-	while (lo < hi) {
-		const mid = (lo + hi + 1) >> 1;
-		if ((runs[mid] as VehicleRun).start <= local) lo = mid;
-		else hi = mid - 1;
-	}
-	const run = runs[lo] as VehicleRun;
-	return local < run.start + run.seconds ? lo : -1;
-}
-
 /** Where a car starts a run: a place on the loop clear of every other vehicle's body. */
 function runStart(
 	motion: VehicleMotion,
@@ -1294,6 +1281,9 @@ function growMotion(motion: VehicleMotion): void {
 	const stepLaterals = new Float32Array(capacity * count);
 	stepLaterals.set(motion.stepLaterals);
 	motion.stepLaterals = stepLaterals;
+	const stepFade = new Float32Array(capacity * count);
+	stepFade.set(motion.stepFade);
+	motion.stepFade = stepFade;
 	motion.capacity = capacity;
 }
 
@@ -1314,11 +1304,16 @@ function stepMotion(motion: VehicleMotion): void {
 		nextFZ,
 		sim,
 		settled,
+		rescued,
 		paths,
 		laterals,
 		stepPaths,
 		stepLaterals,
 		respawned,
+		stepFade,
+		runMeters,
+		runIndex,
+		held,
 	} = motion;
 	const count = actors.length;
 	const previous = (steps - 1) * count;
@@ -1330,28 +1325,13 @@ function stepMotion(motion: VehicleMotion): void {
 		settled[i] = 0;
 		stepPaths[row + i] = stepPaths[previous + i] as number;
 		stepLaterals[row + i] = stepLaterals[previous + i] as number;
+		stepFade[row + i] = stepFade[previous + i] as number;
+		rescued[i] = 0;
 	}
 	for (let k = 0; k < count; k++) {
 		const i = order[k] as number;
 		const actor = actors[i] as VehicleActor;
 		const current = sim[i] as number;
-		// A car that begins a run starts again somewhere else, out of sight.
-		const before = runIndexOf(actor, from);
-		const after = runIndexOf(actor, to);
-		if (after >= 0 && after !== before) {
-			const run = (actor.runs as readonly VehicleRun[])[after] as VehicleRun;
-			const path = run.route;
-			paths[i] = path;
-			laterals[i] = run.lateral;
-			stepPaths[row + i] = pathCode(motion, path);
-			stepLaterals[row + i] = run.lateral;
-			const at = runStart(motion, i, actor, path, run.lateral, run.from);
-			sim[i] = at;
-			respawned[row + i] = 1;
-			bodyAt(path, run.lateral, at, nextX, nextZ, nextFX, nextFZ, i);
-			settled[i] = 1;
-			continue;
-		}
 		let speed = actor.speed;
 		if (actor.script) {
 			const before = sampleScript(actor.script, from, SCRIPT_STATE).distance;
@@ -1391,7 +1371,13 @@ function stepMotion(motion: VehicleMotion): void {
 				ox + ofx * otherReach,
 				oz + ofz * otherReach,
 			);
-			if (d < actor.halfWidth + other.halfWidth + VEHICLE_GAP) clear = false;
+			if (d < actor.halfWidth + other.halfWidth + VEHICLE_GAP) {
+				clear = false;
+				// Two cars that face each other can never pass, so the one that moved last starts
+				// its next run instead of standing nose to nose.
+				const facing = (nextFX[i] as number) * ofx + (nextFZ[i] as number) * ofz;
+				if (facing < -0.5) rescued[i] = 1;
+			}
 		}
 		if (clear) {
 			sim[i] = proposed;
@@ -1403,6 +1389,60 @@ function stepMotion(motion: VehicleMotion): void {
 			nextFZ[i] = curFZ[i] as number;
 		}
 		settled[i] = 1;
+	}
+	// Each car's run ends after the distance that the plan gave it. The fade follows that distance,
+	// so a car held in a queue keeps its fade and never vanishes while it stands.
+	for (let i = 0; i < count; i++) {
+		const actor = actors[i] as VehicleActor;
+		const runs = actor.runs;
+		if (!runs || runs.length === 0) continue;
+		let run = runs[runIndex[i] as number] as VehicleRun;
+		const stepMoved = (sim[i] as number) - (data[previous + i] as number);
+		held[i] = stepMoved <= 1e-6 ? (held[i] as number) + motion.step : 0;
+		if (rescued[i] === 1 || (held[i] as number) >= HELD_ESCAPE) {
+			// The car leaves at once, without a fade, because it is standing in a head-on knot.
+			runIndex[i] = ((runIndex[i] as number) + 1) % runs.length;
+			run = runs[runIndex[i] as number] as VehicleRun;
+			const path = run.route;
+			paths[i] = path;
+			laterals[i] = run.lateral;
+			stepPaths[row + i] = pathCode(motion, path);
+			stepLaterals[row + i] = run.lateral;
+			const at = runStart(motion, i, actor, path, run.lateral, run.from);
+			sim[i] = at;
+			runMeters[i] = 0;
+			stepFade[row + i] = 0;
+			respawned[row + i] = 1;
+			bodyAt(path, run.lateral, at, nextX, nextZ, nextFX, nextFZ, i);
+			continue;
+		}
+		const moved = (sim[i] as number) - (data[previous + i] as number);
+		if (moved > 1e-6) runMeters[i] = (runMeters[i] as number) + moved;
+		const travelled = runMeters[i] as number;
+		// A run's last meters fade the car out, and its first meters fade it back in.
+		let fade = Math.min(
+			1,
+			travelled / RUN_FADE_METERS,
+			(run.distance - travelled) / RUN_FADE_METERS,
+		);
+		fade = Math.max(0, fade);
+		if (moved <= 1e-6) stepFade[row + i] = stepFade[previous + i] as number;
+		else stepFade[row + i] = fade;
+		if (travelled < run.distance - 1e-6 || moved <= 1e-6) continue;
+		// The car starts its next run somewhere else on another loop, clear of every body.
+		runIndex[i] = ((runIndex[i] as number) + 1) % runs.length;
+		run = runs[runIndex[i] as number] as VehicleRun;
+		const path = run.route;
+		paths[i] = path;
+		laterals[i] = run.lateral;
+		stepPaths[row + i] = pathCode(motion, path);
+		stepLaterals[row + i] = run.lateral;
+		const at = runStart(motion, i, actor, path, run.lateral, run.from);
+		sim[i] = at;
+		runMeters[i] = 0;
+		stepFade[row + i] = 0;
+		respawned[row + i] = 1;
+		bodyAt(path, run.lateral, at, nextX, nextZ, nextFX, nextFZ, i);
 	}
 	for (let i = 0; i < count; i++) {
 		data[row + i] = sim[i] as number;
@@ -1438,6 +1478,12 @@ function createMotion(actors: readonly VehicleActor[], seed: number): VehicleMot
 			(_, k) => (actors[k % count] as VehicleActor).lateral,
 		),
 		respawned: new Uint8Array(MOTION_ROWS * count),
+		stepFade: Float32Array.from({ length: MOTION_ROWS * count }, (_, k) =>
+			(actors[k % count] as VehicleActor).runs ? 0 : 1,
+		),
+		runMeters: new Float64Array(count),
+		runIndex: new Uint8Array(count),
+		held: new Float64Array(count),
 		rand: random(seed),
 		curX: new Float64Array(count),
 		curZ: new Float64Array(count),
@@ -1449,6 +1495,7 @@ function createMotion(actors: readonly VehicleActor[], seed: number): VehicleMot
 		nextFZ: new Float64Array(count),
 		sim: new Float64Array(count),
 		settled: new Uint8Array(count),
+		rescued: new Uint8Array(count),
 	};
 	actors.forEach((actor, index) => {
 		MOTIONS.set(actor, { motion, index });
@@ -1539,16 +1586,21 @@ export function vehicleAt(actor: VehicleActor, seconds: number, out: Pose = SHAR
  * always in view.
  */
 export function vehicleFadeAt(actor: VehicleActor, seconds: number): number {
-	const runs = actor.runs;
-	const cycle = actor.runCycle;
-	if (!runs || runs.length === 0 || !cycle) return 1;
-	const index = runIndexOf(actor, seconds);
-	if (index < 0) return 0;
-	let local = seconds % cycle;
-	if (local < 0) local += cycle;
-	const run = runs[index] as VehicleRun;
-	const into = local - run.start;
-	return Math.max(0, Math.min(1, into / RUN_FADE, (run.seconds - into) / RUN_FADE));
+	const bound = MOTIONS.get(actor);
+	if (!bound) return 1;
+	const { motion, index } = bound;
+	advanceMotion(motion, seconds);
+	const x = Math.max(0, seconds) / motion.step;
+	const i0 = Math.min(motion.steps - 1, Math.floor(x));
+	const i1 = Math.min(motion.steps - 1, i0 + 1);
+	const f = Math.max(0, Math.min(1, x - i0));
+	const count = motion.actors.length;
+	// The fade belongs to the step, so a car's fade holds while the car stands.
+	if (i1 > i0 && motion.respawned[i1 * count + index] === 1)
+		return motion.stepFade[i1 * count + index] as number;
+	const a = motion.stepFade[i0 * count + index] as number;
+	const b = motion.stepFade[i1 * count + index] as number;
+	return a + (b - a) * f;
 }
 
 /** Where a person is at a time, and how far it has faded into sight. */
@@ -1610,12 +1662,56 @@ export function personAt(
 	return out;
 }
 
-/** The share of a person that draws at a time of its script, faded at each end of a walk leg. */
+/** The visible stretch of a script that each leg belongs to, as its start and end times. */
+const VISIBLE_STRETCHES = new WeakMap<Script, { start: Float64Array; end: Float64Array }>();
+
+/** The stretches of a script that hold a person in view, worked out once per script. */
+function visibleStretchesOf(script: Script): { start: Float64Array; end: Float64Array } {
+	let found = VISIBLE_STRETCHES.get(script);
+	if (found) return found;
+	const count = script.legs.length;
+	const start = new Float64Array(count);
+	const end = new Float64Array(count);
+	let before = 0;
+	let at = 0;
+	while (at < count) {
+		const leg = script.legs[at] as Leg;
+		if (leg.hidden) {
+			before += leg.seconds;
+			at++;
+			continue;
+		}
+		const from = before;
+		let to = before;
+		while (at < count && !(script.legs[at] as Leg).hidden) {
+			const each = script.legs[at] as Leg;
+			to += each.seconds;
+			start[at] = from;
+			end[at] = to;
+			at++;
+		}
+		before = to;
+	}
+	found = { start, end };
+	VISIBLE_STRETCHES.set(script, found);
+	return found;
+}
+
+/**
+ * The share of a person that draws at a time of its script. It fades over the first and last
+ * moment of a stretch that holds the person in view, so a walk out and back stays visible across
+ * the turn and only its ends are faded.
+ */
 function fadeOf(script: Script, local: number, hidden: boolean): number {
 	if (hidden) return 0;
-	const { leg, elapsed } = legAt(script, local, LEG_STATE);
+	const { leg, index } = legAt(script, local, LEG_STATE);
 	if (leg.seconds <= 1e-9) return 0;
-	const fade = Math.min(1, elapsed / PERSON_FADE, (leg.seconds - elapsed) / PERSON_FADE);
+	const { start, end } = visibleStretchesOf(script);
+	const fade = Math.min(
+		1,
+		(local - (start[index] as number)) / PERSON_FADE,
+		((end[index] as number) - local) / PERSON_FADE,
+	);
 	return Math.max(0, fade);
 }
 
@@ -2312,7 +2408,6 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		// The car's cycle of runs: stretches of loops, each starting somewhere else, with a
 		// hidden moment between two, so that no car is ever seen standing in the road.
 		const runs: VehicleRun[] = [];
-		let start = 0;
 		let route = cycle.path;
 		let at = phase;
 		let lane = lateral;
@@ -2324,8 +2419,9 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 				lane = Math.max(0.25, Math.min(0.6, next.minHalf * 0.3));
 			}
 			const seconds = RUN_SECONDS[0] + rand() * (RUN_SECONDS[1] - RUN_SECONDS[0]);
-			runs.push({ route, lateral: lane, start, from: at, seconds });
-			start += seconds + RUN_HIDE;
+			// A run ends after a stretch of driving, not after a time: a car held in a queue keeps
+			// its place and never fades while it stands.
+			runs.push({ route, lateral: lane, from: at, distance: speed * seconds });
 		}
 		vehicles.push({
 			kind: 'car',
@@ -2337,7 +2433,6 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			halfWidth: CAR_HALF_WIDTH,
 			script: undefined,
 			runs,
-			runCycle: start,
 		});
 	}
 	if (busCycle) {
@@ -2796,11 +2891,16 @@ function writeRow(
 	scale: number,
 	drive?: Drive,
 	stride?: PersonStride,
+	fade = 1,
 ): void {
 	// A stride moves the whole row, so its sway is read once for every part of it.
 	const surgeX = (stride?.sway ?? 0) * Math.sin(pose.yaw);
 	const surgeZ = (stride?.sway ?? 0) * Math.cos(pose.yaw);
 	const rise = stride?.bob ?? 0;
+	// Every part scales about one ground point, so the whole model keeps its shape as it shrinks.
+	const groundX = pose.x;
+	const groundY = pose.y;
+	const groundZ = pose.z;
 	for (let k = 0; k < parts.length; k++) {
 		const part = (parts[k] as BoundPart).part;
 		const batch = (parts[k] as BoundPart).batch;
@@ -2821,6 +2921,11 @@ function writeRow(
 			y += ROW_OFFSET[1] as number;
 			z += ROW_OFFSET[2] as number;
 		}
+		if (fade !== 1) {
+			x = groundX + (x - groundX) * fade;
+			y = groundY + (y - groundY) * fade;
+			z = groundZ + (z - groundZ) * fade;
+		}
 		positions[row * 3] = x;
 		positions[row * 3 + 1] = y;
 		positions[row * 3 + 2] = z;
@@ -2839,7 +2944,7 @@ function writeRow(
 		rotations[row * 4 + 1] = q[1] as number;
 		rotations[row * 4 + 2] = q[2] as number;
 		rotations[row * 4 + 3] = q[3] as number;
-		const size = scale * (part.scale ?? 1);
+		const size = scale * (part.scale ?? 1) * fade;
 		scales[row * 3] = size * (part.nodeScale?.[0] ?? 1);
 		scales[row * 3 + 1] = size * (part.nodeScale?.[1] ?? 1);
 		scales[row * 3 + 2] = size * (part.nodeScale?.[2] ?? 1);
@@ -2996,8 +3101,6 @@ interface WalkerCopy {
 	/** The rate at which the walker's clip plays, which keeps its steps with its speed. */
 	readonly rate: number;
 	visible: boolean;
-	/** The share of the walker that last drew, so a still walker writes no scale. */
-	fade: number;
 	/** True while the walker's clip plays, which rests while the person waits out of sight. */
 	walking: boolean;
 }
@@ -3103,7 +3206,7 @@ export function createTraffic(
 		}
 		const rate = actor.speed / WALK_CLIP_SPEED;
 		copy.animator().play(model.clip, { time: actor.phase, speed: rate });
-		walkers.push({ actor, copy, clip: model.clip, rate, visible: true, fade: 1, walking: true });
+		walkers.push({ actor, copy, clip: model.clip, rate, visible: true, walking: true });
 	}
 
 	const carSteers = models.car.some((part) => part.wheel?.front === true);
@@ -3121,7 +3224,15 @@ export function createTraffic(
 		vehicleAt(mover.actor, seconds, vehiclePose);
 		drive.distance = vehicleDistanceAt(mover.actor, seconds);
 		drive.steer = steers ? steerAt(mover.actor, drive.distance) : 0;
-		writeRow(mover.parts, mover.row, vehiclePose, vehicleFadeAt(mover.actor, seconds), drive);
+		writeRow(
+			mover.parts,
+			mover.row,
+			vehiclePose,
+			1,
+			drive,
+			undefined,
+			vehicleFadeAt(mover.actor, seconds),
+		);
 	};
 
 	const update = (seconds: number): void => {
@@ -3130,7 +3241,7 @@ export function createTraffic(
 		for (const mover of proxies) {
 			const state = personAt(mover.actor, seconds, personState);
 			const stride = state.hidden ? undefined : personStrideAt(mover.actor, seconds, personWalk);
-			writeRow(mover.parts, mover.row, state, state.fade, undefined, stride);
+			writeRow(mover.parts, mover.row, state, 1, undefined, stride, state.fade);
 		}
 		for (const walker of walkers) {
 			const state = personAt(walker.actor, seconds, personState);
@@ -3150,10 +3261,6 @@ export function createTraffic(
 			if (show) {
 				walker.copy.setPosition(state.x, state.y, state.z);
 				walker.copy.setRotationEuler(0, state.yaw, 0);
-				if (state.fade !== walker.fade) {
-					walker.copy.setScale(state.fade, state.fade, state.fade);
-					walker.fade = state.fade;
-				}
 			}
 		}
 	};

@@ -257,26 +257,61 @@ describe('the vehicles', () => {
 		const cars = PLAN.vehicles.filter((vehicle) => vehicle.kind === 'car');
 		for (const car of cars) {
 			expect(car.runs?.length ?? 0).toBeGreaterThan(0);
-			let vanished: { x: number; z: number } | undefined;
+			let last: { x: number; z: number } | undefined;
+			let lastFade = 1;
+			let dimmest = 1;
 			let found = false;
-			for (let seconds = 0; seconds < (car.runCycle ?? 0); seconds += 0.1) {
+			for (let seconds = 0; seconds < 600 && !found; seconds += 0.05) {
 				const fade = vehicleFadeAt(car, seconds);
 				vehicleAt(car, seconds, pose);
-				if (fade <= 0) {
-					if (!vanished) vanished = { x: pose.x, z: pose.z };
-					continue;
-				}
-				if (vanished) {
-					// A run starts on a loop of its own, at a place clear of the other vehicles.
-					if (Math.hypot(pose.x - vanished.x, pose.z - vanished.z) > 10) {
-						found = true;
-						break;
-					}
-					vanished = undefined;
-				}
+				dimmest = Math.min(dimmest, fade);
+				// A run starts on a loop of its own, and the car was dim before the move.
+				if (last && Math.hypot(pose.x - last.x, pose.z - last.z) > 10) found = lastFade < 0.25;
+				last = { x: pose.x, z: pose.z };
+				lastFade = fade;
 			}
 			expect(found).toBe(true);
+			expect(dimmest).toBeLessThan(0.05);
 		}
+	});
+
+	it('never leaves a car standing for more than a moment', () => {
+		const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+		for (const car of PLAN.vehicles.filter((vehicle) => vehicle.kind === 'car')) {
+			let last: { x: number; z: number } | undefined;
+			let still = 0;
+			let longest = 0;
+			for (let seconds = 0; seconds < 600; seconds += 0.1) {
+				vehicleAt(car, seconds, pose);
+				if (last && Math.hypot(pose.x - last.x, pose.z - last.z) < 1e-4) {
+					still += 0.1;
+					longest = Math.max(longest, still);
+				} else still = 0;
+				last = { x: pose.x, z: pose.z };
+			}
+			expect(longest).toBeLessThan(5);
+		}
+	});
+
+	it('never fades a car while it stands still', () => {
+		const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+		let still = 0;
+		for (const car of PLAN.vehicles.filter((vehicle) => vehicle.kind === 'car')) {
+			let last: { x: number; z: number } | undefined;
+			let lastFade = 1;
+			for (let seconds = 0; seconds < 600; seconds += 0.1) {
+				const fade = vehicleFadeAt(car, seconds);
+				vehicleAt(car, seconds, pose);
+				if (last && Math.hypot(pose.x - last.x, pose.z - last.z) < 1e-4) {
+					still++;
+					// A held car keeps the share it last drew, so it never shrinks in place.
+					expect(Math.abs(fade - lastFade)).toBeLessThan(1e-3);
+				}
+				last = { x: pose.x, z: pose.z };
+				lastFade = fade;
+			}
+		}
+		expect(still).toBeGreaterThan(0);
 	});
 });
 
@@ -689,6 +724,117 @@ describe('the walk of a far proxy', () => {
 			if (Math.abs(aBob - stride.bob) > 0.005) differs = true;
 		}
 		expect(differs).toBe(true);
+	});
+});
+
+/** A fake scene that records each batch, so a test can read the rows that the drawing writes. */
+function fakeScene(): {
+	batches: {
+		count: number;
+		positions: Float32Array;
+		rotations: Float32Array;
+		scales: Float32Array;
+		dirty: boolean;
+		markDirty(): void;
+	}[];
+	ctx: SketchContext;
+} {
+	const batches: {
+		count: number;
+		positions: Float32Array;
+		rotations: Float32Array;
+		scales: Float32Array;
+		dirty: boolean;
+		markDirty(): void;
+	}[] = [];
+	const mesh = {} as MeshGeometry;
+	const material = {} as Material;
+	const ctx = {
+		materials: { standard: () => material },
+		geometry: { box: () => mesh, capsule: () => mesh },
+		scene: {
+			createInstances: (_mesh: MeshGeometry, count: number) => {
+				const batch = {
+					count,
+					positions: new Float32Array(count * 3),
+					rotations: new Float32Array(count * 4),
+					scales: new Float32Array(count * 3),
+					dirty: false,
+					markDirty() {
+						batch.dirty = true;
+					},
+				};
+				batches.push(batch);
+				return batch;
+			},
+		},
+	} as unknown as SketchContext;
+	return { batches, ctx };
+}
+
+describe('the fade of an actor', () => {
+	it('shrinks every part of a person about its ground point, so the model keeps its shape', () => {
+		const { batches, ctx } = fakeScene();
+		const mesh = {} as MeshGeometry;
+		const material = {} as Material;
+		// A person of three parts: feet on the ground, a body above them and a head over it.
+		const lifts = [0, 0.9, 1.6] as const;
+		const models = {
+			car: [],
+			bus: [],
+			people: [
+				{
+					parts: lifts.map((lift) => ({ mesh, material, lift })),
+				},
+			],
+		};
+		const options = { people: 1, cars: 0, parkedCars: 0, bus: false, walkers: 0 } as const;
+		const traffic = createTraffic(ctx, models, options);
+		const actor = planTraffic(options).people[0] as PersonActor;
+		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
+		// Every part of every fade value sits on the line from the ground to its full height.
+		let values = 0;
+		for (let t = 0; t < 120; t += 0.02) {
+			personAt(actor, t, state);
+			if (state.fade <= 0.01 || state.fade >= 0.99) continue;
+			traffic.update(t);
+			values++;
+			const fade = state.fade;
+			lifts.forEach((lift, k) => {
+				const batch = batches[k] as (typeof batches)[number];
+				const rise = (batch.positions[1] as number) - state.y;
+				expect(rise).toBeGreaterThan((lift - 0.05) * fade);
+				expect(rise).toBeLessThan((lift + 0.05) * fade + 1e-6);
+				expect(batch.scales[0] as number).toBeCloseTo(fade, 5);
+			});
+		}
+		expect(values).toBeGreaterThan(10);
+	});
+
+	it('keeps a person in sight across the out-and-back turn', () => {
+		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
+		for (const person of PLAN.people) {
+			for (const trip of person.trips) {
+				// The turn lies between the trip's first two walking legs, once the lead passes.
+				let at = 0;
+				let walked = 0;
+				let turn = -1;
+				for (const leg of trip.script.legs) {
+					if (leg.from !== leg.to) {
+						walked++;
+						if (walked === 2) turn = at;
+					}
+					at += leg.seconds;
+				}
+				if (turn < 0) continue;
+				// A step past the boundary, inside the walk back.
+				const clock = trip.start + turn + 0.02 - person.phase;
+				personAt(person, clock, state);
+				expect(state.hidden).toBe(false);
+				// The middle of a visible stretch is fully drawn, so the turn does not blink.
+				expect(state.fade).toBe(1);
+			}
+		}
 	});
 });
 
