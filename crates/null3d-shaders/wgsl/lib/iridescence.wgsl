@@ -32,7 +32,8 @@ fn ior_to_reflectance_color(transmitted_ior: vec3f, incident_ior: f32) -> vec3f 
 }
 
 /// The eye's sensitivity to a film's optical path difference `opd`, in three color channels, turned
-/// by the phase `shift`: three.js's `evalSensitivity`, a fit in the Fourier domain.
+/// by the phase `shift`. It is Belcour and Barla's fit in the Fourier domain, with XYZ changed to
+/// linear sRGB.
 fn eval_sensitivity(opd: f32, shift: vec3f) -> vec3f {
     let phase = 2.0 * PI * opd * 1.0e-9;
     let value = vec3f(5.4856e-13, 4.4201e-13, 5.2481e-13);
@@ -56,8 +57,9 @@ fn eval_sensitivity(opd: f32, shift: vec3f) -> vec3f {
 }
 
 /// The reflectance of a film of `thickness` nanometers and index `film_ior`, over a surface whose
-/// reflectance at normal incidence is `base_reflectance`, seen at the cosine `cos_theta1` from the air.
-/// three.js's `evalIridescence`: two interfaces whose reflections add, with the phase between them.
+/// reflectance at normal incidence is `base_reflectance`, seen at the cosine `cos_theta1` from the
+/// air. Belcour and Barla's model: two interfaces whose reflections add, with the phase between
+/// them.
 fn eval_iridescence(
     outside_ior: f32,
     film_ior: f32,
@@ -115,8 +117,8 @@ fn eval_iridescence(
     return max(interference, vec3f(0.0));
 }
 
-/// The reflectance at normal incidence that a Fresnel term at the cosine `dot_v_h` implies, after
-/// inverting Schlick's approximation: three.js's `Schlick_to_F0`.
+/// The reflectance at normal incidence that a Fresnel term at the cosine `dot_v_h` implies, by
+/// inverting Schlick's approximation.
 fn schlick_to_reflectance(f: vec3f, f90: f32, dot_v_h: f32) -> vec3f {
     let x = clamp(1.0 - dot_v_h, 0.0, 1.0);
     let x2 = x * x;

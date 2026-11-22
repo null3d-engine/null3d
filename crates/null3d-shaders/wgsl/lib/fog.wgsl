@@ -37,13 +37,14 @@ struct Fog {
     curve: u32,
 }
 
-/// The factor of linear fog, as three.js's `Fog`: 0 up to `near`, 1 from `far`, and a smooth step
-/// between them. `near` must be less than `far`.
+/// The factor of linear fog: 0 up to `near`, 1 from `far`, and a smooth step between them. `near`
+/// must be less than `far`.
 fn fog_linear(distance: f32, near: f32, far: f32) -> f32 {
     return smoothstep(near, far, distance);
 }
 
-/// The factor of exponential squared fog, as three.js's `FogExp2`, for a `density` such as 0.02.
+/// The factor of exponential squared fog, 1 - exp(-(density × distance)²), for a `density` such
+/// as 0.02.
 fn fog_exp2(distance: f32, density: f32) -> f32 {
     return 1.0 - exp(-density * density * distance * distance);
 }

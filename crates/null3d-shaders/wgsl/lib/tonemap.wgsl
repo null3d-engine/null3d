@@ -43,7 +43,7 @@ struct Output {
 }
 
 /// Exposed linear scene color after the tone mapping: linear color from 0 to 1. Without tone
-/// mapping, the exposed color is clipped at 1, as three.js's LinearToneMapping does.
+/// mapping, the exposed color is clipped at 1.
 fn tone_map(exposed: vec3f, settings: Output) -> vec3f {
     if settings.tone_mapping == AGX {
         return tone_map_agx(exposed);

@@ -27,7 +27,7 @@
 // add no light, which a thin tube does not show.
 
 /// The vector form factor of one edge of a polygon on the unit sphere, from `a` to `b`. A rational
-/// polynomial approximates theta / sin(theta) / 2pi, as three.js's `LTC_EdgeVectorFormFactor`.
+/// polynomial approximates theta / sin(theta) / 2pi.
 fn edge_form_factor(a: vec3f, b: vec3f) -> vec3f {
     let x = dot(a, b);
     let y = abs(x);
@@ -40,7 +40,8 @@ fn edge_form_factor(a: vec3f, b: vec3f) -> vec3f {
 
 /// The integral of a clamped cosine around +Z over a quad, whose corners are relative to the
 /// surface and given in counterclockwise order seen from the lit side. The quad's part below the
-/// horizon is clipped by the approximation of a sphere, as three.js's `LTC_ClippedSphereFormFactor`.
+/// horizon is clipped by the approximation of a sphere, from the edges' summed vector f:
+/// (|f|^2 + f.z) / (|f| + 1).
 fn quad_form_factor(corners: array<vec3f, 4>) -> f32 {
     var on_sphere: array<vec3f, 4>;
     for (var i = 0u; i < 4u; i++) {
@@ -82,9 +83,10 @@ fn image_seen(corners: array<vec3f, 4>, record: f32) -> vec3f {
     return light_image(record, vec2f(u, v), log2(ratio * image_of(record).y));
 }
 
-/// How an area light fades to nothing at its range, measured from its middle at `gap`, with the
-/// window of three.js's `getDistanceAttenuation`. The light inside the range keeps its physical
-/// falloff, which the integral already holds.
+/// How an area light fades to nothing at its range, measured from its middle at `gap`. It uses the
+/// window of point and spot lights (null3d::lighting's `distance_attenuation`): the square of 1
+/// less (gap / range)^4. The light inside the range keeps its physical falloff, which the integral
+/// already holds.
 fn range_window(gap: f32, range: f32) -> f32 {
     let ratio2 = square(gap / range);
     return square(saturate(1.0 - ratio2 * ratio2));

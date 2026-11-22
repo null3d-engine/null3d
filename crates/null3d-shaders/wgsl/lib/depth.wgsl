@@ -3,7 +3,7 @@
 // Depth values and distances. The engine draws with reversed depth on both GPU paths. Depth is 1
 // at the near plane and 0 at the far plane, which spreads a float's precision evenly over
 // distance. Both paths store the same depth values, so these helpers work on each. View-space z is
-// negative in front of the camera, as in three.js.
+// negative in front of the camera.
 
 /// The view-space z of a perspective camera's depth value.
 fn perspective_depth_to_view_z(depth: f32, near: f32, far: f32) -> f32 {

@@ -16,7 +16,7 @@ const E: f32 = 2.718281828459045;
 const PI: f32 = 3.141592653589793;
 /// The Rayleigh coefficients of the primaries' wavelengths, after Preetham, per million metres.
 const TOTAL_RAYLEIGH: vec3f = vec3f(5.804542996261093, 13.562911419845635, 30.265902468824876);
-/// The Mie coefficients of the primaries per unit of turbidity, per million metres: three.js's
+/// The Mie coefficients of the primaries per unit of turbidity, per million metres: the formula
 /// 0.434 c(T) pi ((2 pi) / lambda)^(v - 2) K, with c(T) = 0.2 T 10^-17, in one constant.
 const MIE_PER_TURBIDITY: vec3f = vec3f(159.71129270528695, 241.28684762265343, 354.06136244071433);
 /// The earth's shadow: pi / 1.95.
@@ -33,8 +33,9 @@ const ONE_OVER_FOUR_PI: f32 = 0.07957747154594767;
 
 /// The sky's settings, as the background's block and the environment generator's block hold them.
 struct SkySettings {
-    /// The sun's position in `xyz`, as three.js's `sunPosition`. In `w` the background holds 1
-    /// where the sky shows the sun's disc, else 0, and the environment generator holds the weight
+    /// The sun's position in `xyz`, the sky's `sunPosition`: a point toward the sun. Its direction
+    /// places the sun, and a point far below the horizon dims the sky. In `w` the background holds
+    /// 1 where the sky shows the sun's disc, else 0, and the environment generator holds the weight
     /// of the second sky, 0 for none.
     sun: vec4f,
     /// The turbidity, Rayleigh coefficient, Mie coefficient and Mie directional g.
@@ -46,13 +47,13 @@ struct SkySettings {
     cloud_place: vec4f,
 }
 
-/// The values of the whole sky that three.js's vertex shader finds once.
+/// The values that are the same in every direction of the sky, so a shader can find them once.
 struct SkyWhole {
     sun_direction: vec3f,
     /// The Rayleigh and Mie scattering coefficients, per million metres.
     beta_r: vec3f,
     beta_m: vec3f,
-    /// The sun's light, how low the sun stands (as three.js's `pow(1 - sunDirection.y, 5)`), and
+    /// The sun's light, how low the sun stands (`pow(1 - sun_direction.y, 5)`, from 0 to 1), and
     /// how much daylight the clouds take.
     sun: vec3f,
 }

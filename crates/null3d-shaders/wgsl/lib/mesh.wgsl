@@ -638,8 +638,7 @@ const MAP_LINEAR_FLAG: u32 = 16u;
 /// them, so this divides the encoded colors by the alpha again; a linear map's colors divide as
 /// they are. The map then lights, fogs, tone maps and blends as the same image with straight
 /// colors does, on both output paths. A material that does not blend shows a premultiplied map's
-/// colors as they are, as three.js does. A decal always blends. A texel with no alpha stays as it
-/// is.
+/// colors as they are. A decal always blends. A texel with no alpha stays as it is.
 fn straight_texel(m: Material, texel: vec4f) -> vec4f {
     let flags = u32(m.strengths.z);
 #ifdef DECAL
@@ -827,8 +826,8 @@ fn relative_position(found: Instance, position: vec3f) -> vec3f {
     return transform_point(transform_of(found), position);
 }
 
-/// A unit normal from the mesh into the world, turned as three.js's normal matrix turns it, so it
-/// stays at right angles to its surface under uneven scale.
+/// A unit normal from the mesh into the world, turned by the inverse transpose of the mesh's
+/// transform, so it stays at right angles to its surface under uneven scale.
 fn world_normal(found: Instance, normal: vec3f) -> vec3f {
     return transform_normal(transform_of(found), normal);
 }
@@ -969,8 +968,8 @@ fn joint_row(joint: u32, row: u32) -> vec4f {
 }
 
 /// The skinning matrix of a vertex of the instance's mesh: its joints' matrices, each times its
-/// weight, added up. The weights are used as they are, as three.js uses them. A joint without
-/// weight is not read, as the skinning pass skips it, so it may name any joint.
+/// weight, added up. The weights are used as they are, even when their sum is not 1. A joint
+/// without weight is not read, as the skinning pass skips it, so it may name any joint.
 fn skin_of(found: Instance, joints: vec4u, weights: vec4f) -> Skin {
     var s = Skin(vec4f(0.0), vec4f(0.0), vec4f(0.0));
     for (var k = 0u; k < 4u; k++) {
@@ -993,7 +992,7 @@ fn skinned_point(s: Skin, p: vec3f) -> vec3f {
 }
 
 /// A direction of the mesh, such as a normal or a tangent, turned by the skinning matrix without
-/// its translation, as three.js turns it.
+/// its translation, and not by the matrix's inverse transpose.
 fn skinned_direction(s: Skin, d: vec3f) -> vec3f {
     return vec3f(dot(s.row_x.xyz, d), dot(s.row_y.xyz, d), dot(s.row_z.xyz, d));
 }
@@ -1021,8 +1020,8 @@ fn morph_weight_texel(k: u32) -> vec4f {
     return textureLoad(morph_weights, vec2u(k % MORPH_TEXELS_PER_ROW, k / MORPH_TEXELS_PER_ROW), 0);
 }
 
-/// A vertex moved by its morph targets, as three.js moves it: each entry that the vertex's morph
-/// attribute `range` names adds its deltas times its target's weight, from the instance's weights.
+/// A vertex moved by its morph targets: each entry that the vertex's morph attribute `range` names
+/// adds its deltas times its target's weight, from the instance's weights.
 /// The attribute holds the first entry's texel, then the entry count times eight plus 1 when the
 /// entries hold a normal's delta, 2 when they hold a tangent's and 4 when they hold a color's. A
 /// morphed color is clamped to the range 0 to 1, as the glTF specification asks. The skinning pass

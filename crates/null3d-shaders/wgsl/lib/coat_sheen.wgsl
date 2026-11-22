@@ -42,7 +42,7 @@ var<private> coat_indirect: vec3f;
 /// The sheen's light so far, from the direct lights and from all directions.
 var<private> sheen_light: vec3f;
 
-/// The Charlie distribution of sheen, as three.js's `D_Charlie`.
+/// The Charlie distribution of sheen, after Estevez and Kulla.
 fn d_charlie(roughness: f32, n_dot_h: f32) -> f32 {
     let alpha = roughness * roughness;
     let inv_alpha = 1.0 / alpha;
@@ -51,13 +51,14 @@ fn d_charlie(roughness: f32, n_dot_h: f32) -> f32 {
     return (2.0 + inv_alpha) * pow(sin2h, inv_alpha * 0.5) / (2.0 * PI);
 }
 
-/// Neubelt and Pettineo's visibility term of sheen, as three.js's `V_Neubelt`.
+/// Neubelt and Pettineo's visibility term of sheen.
 fn v_neubelt(n_dot_v: f32, n_dot_l: f32) -> f32 {
     return saturate(1.0 / (4.0 * (n_dot_l + n_dot_v - n_dot_l * n_dot_v)));
 }
 
-/// The sheen's directional albedo when seen at `n_dot_v`, by three.js's curve fit of the Charlie
-/// lobe's integral (`IBLSheenBRDF`).
+/// The sheen's directional albedo when seen at `n_dot_v`, by a curve fit of the Charlie lobe's
+/// integral over the hemisphere. The fit is exp(a n_dot_v + b), with a and b each a function of
+/// the roughness.
 fn sheen_albedo(n_dot_v: f32, roughness: f32) -> f32 {
     let r2 = roughness * roughness;
     let r_inv = 1.0 / (roughness + 0.1);
@@ -75,8 +76,9 @@ fn begin_layers(given: Layers) {
 }
 
 /// Gathers the layers' light from one direct light, whose color `light` includes its attenuation
-/// and shadows, and returns the factor of that light which reaches the base under the sheen, as
-/// three.js's `RE_Direct_Physical`. `normal` is the base's unit normal.
+/// and shadows, and returns the factor of that light which reaches the base under the sheen. The
+/// factor is 1 less the sheen color's largest channel times the larger of its albedo toward the
+/// view and toward the light. `normal` is the base's unit normal.
 fn layered_light(normal: vec3f, to_view: vec3f, to_light: vec3f, light: vec3f) -> f32 {
     let current = surface_layers;
     if current.coat > 0.0 {
@@ -102,8 +104,7 @@ fn layered_light(normal: vec3f, to_view: vec3f, to_light: vec3f, light: vec3f) -
 
 /// Gathers the sheen's light from `irradiance` from all directions, such as the ambient light's
 /// or the environment's, darkened by `occlusion`, and returns the factor of the base's light from
-/// it, as three.js's `RE_IndirectDiffuse_Physical` and `RE_IndirectSpecular_Physical`. `n_dot_v`
-/// is the cosine of the view angle at the base's normal.
+/// it. `n_dot_v` is the cosine of the view angle at the base's normal.
 fn layered_ambient(irradiance: vec3f, n_dot_v: f32, occlusion: f32) -> f32 {
     let current = surface_layers;
     let sheen = max_component(current.sheen_color);
@@ -127,8 +128,8 @@ fn coat_environment(env: EnvironmentLight, to_view: vec3f, strength: f32) -> vec
 }
 
 /// Gathers the coat's light from the environment's prefiltered `radiance` at the coat's normal,
-/// darkened by `occlusion`, through the split-sum table at the coat's view angle and roughness, as
-/// three.js's `EnvironmentBRDF` gives it.
+/// darkened by `occlusion`, through the split-sum table at the coat's view angle and roughness.
+/// The coat reflects 0.04 head on and 1 at grazing angles.
 fn layered_environment(radiance: vec3f, to_view: vec3f, occlusion: f32) {
     let current = surface_layers;
     if current.coat <= 0.0 {
@@ -140,7 +141,7 @@ fn layered_environment(radiance: vec3f, to_view: vec3f, occlusion: f32) {
 }
 
 /// The share of the light below the coat that passes through it: 1 less the coat times its
-/// Fresnel term at the view angle, as three.js's physical material dims its outgoing light.
+/// Fresnel term at the view angle. The Fresnel term runs from 0.04 head on to 1 at grazing angles.
 fn coat_transmittance(to_view: vec3f) -> f32 {
     let current = surface_layers;
     let n_dot_v = saturate(dot(current.coat_normal, to_view));

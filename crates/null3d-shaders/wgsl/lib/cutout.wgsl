@@ -22,28 +22,27 @@
 
 /// The narrowest fade, in alpha, for an alpha that does not change across the pixel.
 const MIN_FADE: f32 = 1e-4;
-/// The hash's cells per unit of position change across a pixel, three.js's `ALPHA_HASH_SCALE`.
+/// The hash's cells per unit of position change across a pixel.
 const ALPHA_HASH_SCALE: f32 = 0.05;
 
 /// How much of the pixel a fragment of alpha to coverage covers, from 0, where the caller discards
 /// it, to 1: its `alpha` faded over `fade`, the alpha's change across the pixel, from `cutoff` up,
-/// as three.js fades it.
+/// by a smooth step.
 fn alpha_coverage(alpha: f32, fade: f32, cutoff: f32) -> f32 {
     return smoothstep(cutoff, cutoff + max(fade, MIN_FADE), alpha);
 }
 
-/// A hash from 0 to 1 of a cell of the mesh's space, given by its whole coordinates. three.js
-/// hashes the sines of the coordinates and scales them up, so each GPU's sine, which differs in its
-/// last bits, draws its own pattern. The integer hash of `null3d::noise` gives every GPU the same
-/// value.
+/// A hash from 0 to 1 of a cell of the mesh's space, given by its whole coordinates. It is the
+/// integer hash of `null3d::noise`, so every GPU gives the same value. A hash of the coordinates'
+/// sines would differ from GPU to GPU, as each GPU's sine differs in its last bits.
 fn hash_cell(cell: vec3f) -> f32 {
     return to_unit(lattice(vec3i(cell)).x);
 }
 
-/// The alpha below which the alpha hash discards a fragment at `position`, in the mesh's own
-/// space, as three.js's `getAlphaHashThreshold` gives it, with `hash_cell`: the hash of the
-/// position in cells of two sizes near the pixel's size, a power of two apart, blended by where the
-/// pixel lies between them, then spread evenly from 0 to 1. It reads derivatives, so it runs in uniform control flow.
+/// The alpha below which the alpha hash discards a fragment at `position`, in the mesh's own space,
+/// by Wyman and McGuire's hashed alpha test with `hash_cell`: the hash of the position in cells of
+/// two sizes near the pixel's size, a power of two apart, blended by where the pixel lies between
+/// them, then spread evenly from 0 to 1. It reads derivatives, so it runs in uniform control flow.
 fn alpha_hash_threshold(position: vec3f) -> f32 {
     let change = max(length(dpdx(position)), length(dpdy(position)));
     let pixel_scale = 1.0 / (ALPHA_HASH_SCALE * change);

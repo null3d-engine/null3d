@@ -133,15 +133,14 @@ fn no_plane() -> ReceiverPlane {
 }
 
 /// How far a receiver moves before its shadow lookup, relative to its position. `normal` is the
-/// mesh's unit normal before a normal map bends it, as three.js offsets a receiver along its vertex
-/// normal, `to_light` the unit direction toward the light, `biases` the light's bias toward the
-/// light and normal bias in meters, and `texel` the size of a shadow map texel at the point. Each
-/// bias keeps its size in meters in every cascade, so it does not jump where one cascade gives way
-/// to the next. One texel caps it, as a finer map needs less. Then it scales by the surface's angle
-/// to the light: the normal bias by the angle's sine, and the bias toward the light by its tangent,
-/// up to `MAX_SLOPE`. A surface that faces the light moves little, so a caster's
-/// shadow starts where it stands on such a surface. One at a steep angle moves further, as its depth
-/// changes faster across each texel.
+/// mesh's unit normal before a normal map bends it, `to_light` the unit direction toward the light,
+/// `biases` the light's bias toward the light and normal bias in meters, and `texel` the size of a
+/// shadow map texel at the point. Each bias keeps its size in meters in every cascade, so it does
+/// not jump where one cascade gives way to the next. One texel caps it, as a finer map needs less.
+/// Then it scales by the surface's angle to the light: the normal bias by the angle's sine, and the
+/// bias toward the light by its tangent, up to `MAX_SLOPE`. A surface that faces the light moves
+/// little, so a caster's shadow starts where it stands on such a surface. One at a steep angle
+/// moves further, as its depth changes faster across each texel.
 fn bias_offset(normal: vec3f, to_light: vec3f, biases: vec2f, texel: f32) -> vec3f {
     let cosine = clamp(dot(normal, to_light), 0.0, 1.0);
     let sine = sqrt(1.0 - cosine * cosine);

@@ -78,7 +78,7 @@ fn probe_texel(layer: i32, d: vec3f, level: f32) -> vec3f {
 /// of unit normal `normal` and perceptual `roughness` that reflects along the unit direction
 /// `reflected`. Inner probes come first, and each takes its weight of what the probes before it
 /// left, so nested probes blend at their edges. The diffuse light reads each map's roughest level
-/// along the normal, as three.js reads an environment map's.
+/// along the normal.
 fn probe_light(relative: vec3f, reflected: vec3f, normal: vec3f, roughness: f32) -> ProbeLight {
     var out = ProbeLight(vec3f(0.0), vec3f(0.0), 0.0);
     let count = u32(reflection_probes.head.x);
