@@ -51,12 +51,21 @@ export function reflectionCadence(
 ): {
 	/** The cadence that the preset and the governor give, which a still camera keeps. */
 	budget(every: number): void;
+	/**
+	 * True while the lowest quality tier applies, which draws the reflection in every 16th frame
+	 * while the camera is still, whatever the preset and the governor give.
+	 */
+	lowest(on: boolean): void;
 	/** Follows the camera for this frame: a move or a turn draws the reflection in every frame. */
 	follow(): void;
 } {
 	let every = 1;
+	let tier = false;
 	let posed = false;
 	let moving = false;
+	/** The cadence that this frame draws at: every frame while the view moves, else the budget's. */
+	const cadence = (): number => (moving ? 1 : tier ? REFLECT_EVERY_MAX : every);
+	const apply = (): void => set(cadence());
 	const pose = new Float64Array(3);
 	const turn = new Float64Array(4);
 	const held = new Float64Array(7);
@@ -65,7 +74,12 @@ export function reflectionCadence(
 			every = next;
 			// A camera that moves draws in every frame whatever the budget says, and takes the new
 			// cadence when the view settles.
-			if (!moving) set(every);
+			if (!moving) apply();
+		},
+		lowest(on) {
+			if (on === tier) return;
+			tier = on;
+			apply();
 		},
 		follow() {
 			if (!camera) return;
@@ -79,7 +93,7 @@ export function reflectionCadence(
 					if (Math.abs((turn[k] as number) - (held[k + 3] as number)) > STILL_TURN) still = false;
 				if (!still !== moving) {
 					moving = !still;
-					set(moving ? 1 : every);
+					apply();
 				}
 			}
 			for (let k = 0; k < 3; k++) held[k] = pose[k] as number;

@@ -377,6 +377,10 @@ export function createOcean(ctx: SketchContext, options: OceanOptions): Ocean {
 		update() {
 			camera.getPosition(eye);
 			mesh.setPosition(eye[0], level, eye[2]);
+			// The lowest quality tier draws the reflection in every 16th frame at rest, and gives the
+			// budget back when it leaves. The host calls a feature only when a setting changes, so the
+			// tier's own state is read here, where it costs a comparison.
+			cadence.lowest(quality.governor.lowest);
 			cadence.follow();
 		},
 		heightAt(x, z) {

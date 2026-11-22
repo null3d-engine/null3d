@@ -1186,6 +1186,10 @@ pub struct SceneSettings {
     /// The steps of each ray of the sky's volumetric cloud tier, which the quality settings set: 0
     /// draws the flat layer.
     cloud_steps: u32,
+    /// True while each camera view draws a depth prepass before its opaque pass, which the
+    /// quality settings set. Ambient occlusion, contact shadows, the bounce light and screen-space
+    /// reflections still draw it while they run, as they read its depth.
+    depth_prepass: bool,
     /// The analytic sky that stands in for the physical sky, and the factor of its light, while the
     /// quality settings turn the physical sky off.
     stand_in: Option<(crate::background::Sky, f32)>,
@@ -1424,6 +1428,7 @@ impl SceneSettings {
             air: None,
             physical_sky: true,
             cloud_steps: 0,
+            depth_prepass: false,
             stand_in: None,
             views: vec![View::default()],
             view_names: vec![ViewNames::default()],
@@ -2988,6 +2993,18 @@ impl SceneSettings {
     /// The steps of each ray of the sky's volumetric cloud tier: 0 draws the flat layer.
     pub fn cloud_steps(&self) -> u32 {
         self.cloud_steps
+    }
+
+    /// Turns each camera view's depth prepass on or off from the next recorded frame on. Ambient
+    /// occlusion, contact shadows, the bounce light and screen-space reflections still draw it
+    /// while they run, as they read its depth.
+    pub fn set_depth_prepass(&mut self, on: bool) {
+        self.depth_prepass = on;
+    }
+
+    /// True while each camera view draws a depth prepass before its opaque pass.
+    pub fn depth_prepass(&self) -> bool {
+        self.depth_prepass
     }
 
     /// The physical sky's settings while the scene's background is one, whichever sky draws.

@@ -585,6 +585,10 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 					airSettings.update(readingData(wind.air));
 				}
 			}
+			// The lowest quality tier draws the reflection in every 16th frame at rest, and gives the
+			// budget back when it leaves. The host calls a feature only when a setting changes, so the
+			// tier's own state is read here, where it costs a comparison.
+			cadence.lowest(quality.governor.lowest);
 			cadence.follow();
 			// The add-on draws its own debug view: each body's bounds at the water's surface.
 			if (debugBounds) {

@@ -145,6 +145,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 0, max: 0.5 },
 	},
+	// The sun's cast shadows, which a sketch gives its directional lights' `castShadows` option.
+	// Every preset starts them on. The lowest quality tier turns them off when the frames still
+	// miss with the render scale at the preset's floor (D-382).
+	shadows: {
+		presets: [true, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
 	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
@@ -156,6 +164,14 @@ export const QUALITY_SETTINGS = {
 		presets: [64, 512, 512, 512],
 		changes: 'live',
 		values: [64, 128, 256, 512],
+	},
+	// Whether the sketch draws bloom's glow, which it turns on through `post.set`. Every preset
+	// starts it on. The lowest quality tier turns it off when the frames still miss with the render
+	// scale at the preset's floor (D-382).
+	bloom: {
+		presets: [true, true, true, true],
+		changes: 'live',
+		values: 'flag',
 	},
 	// The size of ambient occlusion's targets, as a share of the render size each way: half on High
 	// and Ultra, and 0 on Low and Medium, where ambient occlusion draws nothing even when the sketch
@@ -421,11 +437,13 @@ export const QUALITY_SETTINGS = {
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
 	// pixel once. WebGL2 draws it on every preset: on Apple GPUs, WebGL2 shades hidden pixels that
 	// the prepass's early depth rejection skips. The other paths leave it off: there the GPU removes
-	// hidden surfaces itself, and the second pass only adds time (D-43).
+	// hidden surfaces itself, and the second pass only adds time (D-43). The lowest quality tier
+	// turns it off on WebGL2, and it changes during play with no new pipelines where ambient
+	// occlusion, contact shadows, the bounce light and screen-space reflections draw it anyway.
 	depthPrepass: {
 		presets: [false, false, false, false],
 		webgl2: [true, true, true, true],
-		changes: 'start',
+		changes: 'live',
 		values: 'flag',
 	},
 	// Two-phase occlusion culling on WebGPU: objects that large opaque objects hide do not draw. It
@@ -560,12 +578,25 @@ export interface QualitySettings {
 	 */
 	shadowCascadeBlend: number;
 	/**
+	 * True while the scene draws the sun's cast shadows, which a sketch gives its directional
+	 * lights' `castShadows` option. Every preset starts it on. The lowest quality tier turns it
+	 * off when the frames still miss with the render scale at the preset's floor. It changes
+	 * during play.
+	 */
+	shadows: boolean;
+	/**
 	 * The texels on the short side of the largest level of bloom's chain: 64, 128, 256 or 512. A
 	 * smaller value costs less and keeps the glow's size, with a softer core. The base never takes
 	 * more than half the canvas's short side. It changes during play, which makes bloom's targets
 	 * again.
 	 */
 	bloomSize: 64 | 128 | 256 | 512;
+	/**
+	 * True while the sketch draws bloom's glow, which it turns on through `post.set`. Every preset
+	 * starts it on. The lowest quality tier turns it off when the frames still miss with the render
+	 * scale at the preset's floor. It changes during play.
+	 */
+	bloom: boolean;
 	/**
 	 * The size of ambient occlusion's targets, as a share of the render size each way: 0.5, 0.25,
 	 * or 0, which draws no ambient occlusion even when `post.set` turns it on. A smaller share costs
@@ -770,8 +801,9 @@ export interface QualitySettings {
 	/**
 	 * True when the engine draws the depth of the opaque objects before it shades them, so it
 	 * shades each pixel once, for its nearest surface. Every preset turns it on for WebGL2 and off
-	 * for WebGPU. The setting is fixed when the engine starts: the page's `depthPrepass` option of
-	 * `createEngine` sets it, and `set` does not take it.
+	 * for WebGPU. The page's `depthPrepass` option of `createEngine` gives its first value. It
+	 * changes during play, and ambient occlusion, contact shadows, the bounce light and
+	 * screen-space reflections still draw the prepass while they run, as they read its depth.
 	 */
 	depthPrepass: boolean;
 	/**
@@ -853,6 +885,63 @@ export function presetValue<K extends QualitySettingName>(
 	const setting: Setting = QUALITY_SETTINGS[name];
 	const values = (tier === 'webgl2' && setting.webgl2) || setting.presets;
 	return values[presetIndex(preset)] as SettingValue<K>;
+}
+
+/**
+ * The lowest quality tier's render scale floor: a third of the canvas's width and height, below
+ * Low's half. The governor enters the tier when the render scale has held at the preset's floor
+ * through its sustained window and the judged frames still miss (D-382).
+ */
+export const LOWEST_TIER_SCALE = 1 / 3;
+
+/**
+ * The lowest quality tier's share of the render size for a reflection pass's texture each way: a
+ * quarter, which draws a sixteenth of the pixels of a full-size reflection.
+ */
+export const LOWEST_TIER_REFLECTION = 0.25;
+
+/**
+ * The cuts that the lowest quality tier applies, on the GPU path `tier`: the render scale's floor
+ * at the tier's, unless the settings' floor is lower, the sun's shadows and bloom off, the
+ * reflection passes' textures at a quarter of the render size, and WebGL2's depth prepass off. A
+ * sketch that reads the settings sees them while the tier applies (D-382).
+ */
+export function lowestTierCuts(
+	tier: Tier,
+	min: number = LOWEST_TIER_SCALE,
+): Partial<QualitySettings> {
+	return {
+		minRenderScale: Math.min(min, LOWEST_TIER_SCALE),
+		shadows: false,
+		bloom: false,
+		reflectionScale: LOWEST_TIER_REFLECTION,
+		...(tier === 'webgl2' ? { depthPrepass: false } : {}),
+	};
+}
+
+/**
+ * The settings that a start in the lowest quality tier takes on the GPU path `tier`: the cuts,
+ * with the render scale fixed at the tier's floor. The four presets keep their own values, and the
+ * governor applies the same cuts when it enters the tier during play (D-382).
+ */
+export function lowestTierSettings(tier: Tier): Partial<QualitySettings> {
+	return { ...lowestTierCuts(tier), maxRenderScale: LOWEST_TIER_SCALE };
+}
+
+/**
+ * The settings that the lowest quality tier replaces, for a frame loop to give back when it
+ * leaves: the render scale's range, the sun's shadows, bloom, the reflection passes' share and the
+ * depth prepass.
+ */
+export function tierRestoreSettings(settings: QualitySettings): Partial<QualitySettings> {
+	return {
+		minRenderScale: settings.minRenderScale,
+		maxRenderScale: settings.maxRenderScale,
+		shadows: settings.shadows,
+		bloom: settings.bloom,
+		reflectionScale: settings.reflectionScale,
+		depthPrepass: settings.depthPrepass,
+	};
 }
 
 /**

@@ -42,6 +42,7 @@ describe('parseSwitches', () => {
 			join: true,
 			memoryMiB: undefined,
 			preset: undefined,
+			lowestTier: undefined,
 			hold: undefined,
 			replay: undefined,
 			record: false,
@@ -113,6 +114,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?prepass=on').prepass).toBe(true);
 		expect(parseSwitches('?prepass=off').prepass).toBe(false);
 		expect(parseSwitches('?prepass=yes').prepass).toBeUndefined();
+	});
+
+	it('starts in the lowest quality tier only with ?tier=lowest', () => {
+		expect(parseSwitches('?tier=lowest').lowestTier).toBe('lowest');
+		expect(parseSwitches('?tier=low').lowestTier).toBeUndefined();
+		expect(parseSwitches('?tier=').lowestTier).toBeUndefined();
+		expect(parseSwitches('').lowestTier).toBeUndefined();
 	});
 
 	it('turns moment transparency on or off with ?moments=, and leaves it to the page otherwise', () => {

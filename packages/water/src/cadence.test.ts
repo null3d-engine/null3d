@@ -40,6 +40,8 @@ function fakeContext(start: QualityPreset = 'medium') {
 	const quality = {
 		preset: start,
 		settings: {},
+		/** What the frame-budget governor has lowered, and whether the lowest tier applies. */
+		governor: { lowest: false },
 		onChange(handler: () => void) {
 			handlers.add(handler);
 			return () => handlers.delete(handler);
@@ -140,6 +142,11 @@ function fakeContext(start: QualityPreset = 'medium') {
 				budget.scale = scale;
 				budget.onScale?.(scale);
 			}
+		},
+		/** Applies or leaves the lowest quality tier, as the governor does, and tells the handlers. */
+		lowestTo(on: boolean) {
+			quality.governor.lowest = on;
+			for (const handler of handlers) handler();
 		},
 		/** Switches the preset, as a menu does, and tells the change handlers. */
 		presetTo(preset: QualityPreset) {
@@ -268,6 +275,53 @@ describe('the reflection cadence', () => {
 		water.update();
 		expect(context.passEvery.at(-1)?.[1]).toBe(4);
 		water.destroy();
+	});
+
+	it('draws the reflection in every 16th frame in the lowest tier at rest, and a frame while moving', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const water = waterOn(context, { camera: camera as unknown as Camera });
+		const last = () => context.passEvery.at(-1)?.[1];
+		water.update();
+		context.lowestTo(true);
+		water.update();
+		expect(last()).toBe(16);
+		// A camera that moves still draws in every frame, whatever the tier says.
+		camera.to(1, 1, 0);
+		water.update();
+		expect(last()).toBe(1);
+		water.update();
+		// Settled inside the tier: back to its 16.
+		expect(last()).toBe(16);
+		// Leaving the tier gives back the row, with the governor's steps.
+		context.lowestTo(false);
+		water.update();
+		expect(last()).toBe(2);
+		context.step(1);
+		expect(last()).toBe(4);
+		water.destroy();
+	});
+
+	it('draws the sea’s reflection in every 16th frame in the lowest tier at rest, and a frame while moving', () => {
+		const context = fakeContext('low');
+		const camera = fakeCamera();
+		const ocean = createOcean(context.ctx as unknown as SketchContext, {
+			camera: camera as unknown as Camera,
+		});
+		const last = () => context.passEvery.at(-1)?.[1];
+		ocean.update();
+		context.lowestTo(true);
+		ocean.update();
+		expect(last()).toBe(16);
+		camera.to(1, 1, 0);
+		ocean.update();
+		expect(last()).toBe(1);
+		ocean.update();
+		expect(last()).toBe(16);
+		context.lowestTo(false);
+		ocean.update();
+		expect(last()).toBe(2);
+		ocean.destroy();
 	});
 
 	it('draws the sea’s reflection in every frame while the camera moves, and takes the cadence back', () => {

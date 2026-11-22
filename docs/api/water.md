@@ -428,7 +428,9 @@ near the eye and spends its vertices far away.
 - **The reflection.** The pass draws the scene a second time. It draws every other frame on Low and
   Medium, so it costs half as much on average there, and every frame on High and Ultra. A camera that
   moves or turns overrides that, and the reflection then draws in every frame. A moving view never
-  shows a mirror of an older one, and the cadence returns when the view settles. When frames
+  shows a mirror of an older one, and the cadence returns when the view settles. While the lowest
+  quality tier applies, a still camera draws it in every 16th frame whatever the preset and the
+  governor give; leaving the tier gives the budget back. When frames
   take too long, the frame-budget governor doubles the wait, up to every 16th frame. The stats
   overlay shows the cadence as `reflectionEvery`. It shows the pass's GPU time and its share of a
   frame as the water row's budget. It also shows the memory of the mesh arrays, the map of where bodies

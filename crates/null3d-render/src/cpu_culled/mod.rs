@@ -784,6 +784,7 @@ impl CpuCulledRenderer {
             config.canvas,
             config.cascade_depth,
         );
+        settings.set_depth_prepass(config.depth_prepass);
         settings.share_map_units(sizes::SHARED_MAP_UNITS as usize);
         settings.place_sky_light_buffers(ids::SKY_LIGHT_BUFFERS);
         Self {
@@ -3146,6 +3147,7 @@ impl FrameBuilder for CpuCulledRenderer {
         // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
         // turning them on or off can switch the prepass, whose pipelines the layout holds.
         let settings = &self.settings;
+        self.graph.set_depth_prepass(settings.depth_prepass());
         self.graph.set_ao(
             settings.ao(),
             settings.contact(camera.as_ref(), canvas),
