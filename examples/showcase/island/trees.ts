@@ -584,7 +584,7 @@ export async function createTrees(
 		SHRUB_CARDS[preset],
 	);
 	// The floor under the near woods: low scrub that holds the shade, and fallen litter beneath it.
-	standFloor(ctx, shrub(180), FLOOR.undergrowth, FLOOR_SHARE[preset], FLOOR_REACH[preset], true);
+	standFloor(ctx, shrub(180), FLOOR.undergrowth, FLOOR_SHARE[preset], FLOOR_REACH[preset], false);
 	standFloor(ctx, leafLitter(), FLOOR.litter, FLOOR_SHARE[preset], FLOOR_REACH[preset], false);
 	const lawns = await Promise.all(
 		parkLawns().map((lawn, k) =>
