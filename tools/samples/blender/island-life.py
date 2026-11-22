@@ -10,25 +10,33 @@
 # It writes one binary glTF file, `life.glb`, holding:
 #   villager      the rigged villager with its walk clip, split into body, hair, shirt, trousers
 #                 and shoes, each a skinned mesh that shares the skeleton and the clip
-#   villager-far  the standing villager, split the same way, with two lower levels of detail, for
-#                 people drawn far enough that a walk cycle cannot show
-#   hatchback     the car, split into hull, glass, tyres and trim, each with two lower levels
-#   minibus       the bus, split into hull, band, glass, tyres and trim, each with two lower levels
+#   woman         the woman in her dress, rigged and split the same way
+#   youngman      the young man in his T-shirt and shorts, rigged and split the same way
+#   *-far         each person's standing parts, with two lower levels of detail, for the copies that
+#                 a scene draws too far off to walk; all but the villager's come from the rest pose
+#                 that the rig was fitted to
+#   hatchback     the car, split into hull, glass, trim and its four wheels, each with two lower
+#                 levels of detail
+#   minibus       the bus, split into hull, band, glass, trim and its four wheels, each with two
+#                 lower levels. A wheel's origin stands on its axle, so a scene turns it by the
+#                 distance travelled over its radius; the script prints each radius.
 #
-# Every part keeps the raw model's texture, so a scene can tint a part by multiplying its own
-# material colour, and the whole model still reads as the photograph it was made from. The villager
-# is about 1.75 m tall, the hatchback about 3.7 m long and the minibus about 4.9 m long. Origins
-# stand at the feet or the tyres' base, and every model faces the engine's forward axis: Blender's
-# -y, which the glTF export turns into +z. Tripo3D's raw models face +x, so each is turned -90
-# degrees about the vertical axis.
+# Every part keeps the raw model's texture, except the clothing and the vehicle bodies: those carry
+# a plain white base, so a scene multiplies each copy's own colour into them exactly and one
+# material draws a blue shirt and a cream one. Skin, hair, glass, wheels and trim keep the texture.
+# The villager is about 1.75 m tall, the woman 1.70 m and the young man 1.80 m; the hatchback is
+# about 3.7 m long and the minibus about 4.9 m. Origins stand at the feet or the tyres' base, and
+# every model faces the engine's forward axis: Blender's -y, which the glTF export turns into +z.
+# Tripo3D's raw models face +x, so each is turned -90 degrees about the vertical axis.
 #
 # The parts are cut by the colour that each face samples from its own texture atlas, checked against
 # the face's height. The raw meshes are too fragmented for their loose parts to stand for a part of
 # the body or the vehicle: the villager alone is 59 islands.
 #
 # A skinned mesh cannot take MSFT_lod levels: the engine refuses levels on a mesh with joints. So
-# the walking villager has one level, and the standing villager is the lower-detail proxy that a
-# scene draws far away.
+# each walking person has one level, and the standing parts are the lower-detail proxy that a scene
+# draws far away. The engine builds one skeleton and one clip set for a whole file and refuses two
+# clips of one name, so each person's rig and clip carry the person's name.
 
 import hashlib
 import math
@@ -50,14 +58,18 @@ HATCHBACK_LENGTH = 3.7
 MINIBUS_LENGTH = 4.9
 # Each lower level keeps this share of its part's triangles.
 LOD_SHARES = (0.4, 0.12)
-# The parts, in the order that the raw models' texels name them.
+# The parts, in the order that the raw models' texels name them. A vehicle's tyres are cut into
+# its four wheels, each a part of its own.
 VILLAGER_PARTS = ('body', 'hair', 'shirt', 'trousers', 'shoes')
-HATCHBACK_PARTS = ('hull', 'glass', 'tyres', 'trim')
-MINIBUS_PARTS = ('hull', 'band', 'glass', 'tyres', 'trim')
+WHEEL_NAMES = ('wheel-fl', 'wheel-fr', 'wheel-bl', 'wheel-br')
+HATCHBACK_PARTS = ('hull', 'glass', 'trim') + WHEEL_NAMES
+MINIBUS_PARTS = ('hull', 'band', 'glass', 'trim') + WHEEL_NAMES
 # The raw files, as the sample-assets manifest records them, so a swapped input fails the build.
 RAW_SHA256 = {
     'villager/model.glb': '66477dc89da1baecc482d895d45384c4f190daadc91f7723d59271e9fd4eb7a8',
     'villager-walk/model.glb': 'eab971a7831ce759d49ea1fd2737bb5ac8744a54f11e803b2009788e82ae6591',
+    'woman/model.glb': 'e5e9f97708d0a3cca3b7ba9925f75962378b41dbc9607a9274557fa3d1762b64',
+    'youngman/model.glb': 'e3f13ec5da8954150eadce086c17403341fce6eb3f76b0dab0485f3c8b7ffc56',
     'hatchback/model.glb': '2968bff94ffd3820166903fd8ee5fe4af4ab446b7fe46f86bfd66c5e0f937ec4',
     'minibus/model.glb': '81df03e556ec33fbea737e9b5464642b1dcfaf8eb41395306e9b70389c5463be',
 }
@@ -172,6 +184,43 @@ def villager_part(rgb, z, height):
     return 'body'
 
 
+def woman_part(rgb, z, height):
+    """A woman face's part: her terracotta dress holds red where her skin holds green.
+
+    Her dress is red through its highlights and its shadowed folds, where its green stays far below
+    its red; her skin keeps green well above half its red. The dress runs from her shoulders to
+    below her knees, so it fills both clothing parts: its upper share is the shirt, its lower share
+    the trousers.
+    """
+    h = z / height if height else 0.0
+    light = luminance(rgb)
+    red = rgb[0] - rgb[1]
+    green = rgb[1] / max(rgb[0], 1e-4)
+    if h < 0.08:
+        return 'shoes'
+    if red > 0.30 or (rgb[0] > 0.10 and green < 0.40) or (red > 0.19 and rgb[1] - rgb[2] < 0.085):
+        return 'shirt' if h > 0.53 else 'trousers'
+    if h > 0.78 and light < 0.32 and red < 0.15:
+        return 'hair'
+    return 'body'
+
+
+def youngman_part(rgb, z, height):
+    """A young man face's part: a white T-shirt, khaki shorts, white trainers and dark hair."""
+    h = z / height if height else 0.0
+    light = luminance(rgb)
+    spread = max(rgb) - min(rgb)
+    if h < 0.09:
+        return 'shoes'
+    if h > 0.78 and light < 0.32:
+        return 'hair'
+    if h > 0.40 and light > 0.62 and spread < 0.14:
+        return 'shirt'
+    if 0.28 < h < 0.62 and rgb[0] - rgb[1] < 0.14 and rgb[0] - rgb[2] > 0.10 and light > 0.34:
+        return 'trousers'
+    return 'body'
+
+
 def hatchback_part(rgb, h):
     """A car face's part, from its colour and its height above the tyres' base, in metres."""
     light = luminance(rgb)
@@ -198,16 +247,22 @@ def minibus_part(rgb, h):
     return 'trim'
 
 
-def part_material(name, texture, roughness=0.8, metallic=0.0):
-    """A metal-rough material that draws the part's own region of the model's texture."""
+def part_material(name, texture, roughness=0.8, metallic=0.0, base=(1.0, 1.0, 1.0)):
+    """A metal-rough material for the part's own region of the model's texture.
+
+    A part with no texture is plain, at `base`: a light colour that a scene multiplies by each
+    copy's own colour, so one material draws a blue shirt and a cream one.
+    """
     mat = bpy.data.materials.new(name)
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
     bsdf = nodes.get('Principled BSDF')
     bsdf.inputs['Metallic'].default_value = metallic
     bsdf.inputs['Roughness'].default_value = roughness
-    tex = nodes.new('ShaderNodeTexImage')
-    tex.image = texture
-    links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+    bsdf.inputs['Base Color'].default_value = (*base, 1.0)
+    if texture is not None:
+        tex = nodes.new('ShaderNodeTexImage')
+        tex.image = texture
+        links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
     mat.use_backface_culling = True
     return mat
 
@@ -215,13 +270,158 @@ def part_material(name, texture, roughness=0.8, metallic=0.0):
 # The look of each part: the raw texture keeps the model's colour, and the finish sets its surfaces.
 ROUGHNESS = {
     'body': 0.72, 'hair': 0.62, 'shirt': 0.86, 'trousers': 0.88, 'shoes': 0.7,
-    'hull': 0.42, 'band': 0.45, 'glass': 0.12, 'tyres': 0.92, 'trim': 0.62,
+    'hull': 0.42, 'band': 0.45, 'glass': 0.12, 'trim': 0.62,
 }
-METALLIC = {'glass': 0.1, 'tyres': 0.0, 'hull': 0.15, 'band': 0.1, 'trim': 0.1}
+METALLIC = {'glass': 0.1, 'hull': 0.15, 'band': 0.1, 'trim': 0.1}
+# The parts that a scene tints: clothing on a person, and a vehicle's body. Each keeps a plain white
+# base, which the copy's own colour multiplies exactly. Skin, hair, glass, tyres and trim keep the
+# texture.
+CLOTHING = ('shirt', 'trousers', 'shoes')
+BODY = ('hull', 'band')
+PLAIN_BASE = (1.0, 1.0, 1.0)
+# A vehicle's four wheels, as parts of their own: a scene turns each about the axle through its
+# origin by the distance travelled over its radius. Their treads keep the texture, so they never
+# join the tintable parts.
+# The plan reach that holds one wheel's tyre faces, and the outer share of the width that holds a
+# tyre alone rather than the inboard underbody.
+WHEEL_CROP = 0.30
+WHEEL_BAND = 0.26
+WHEEL_MARGIN = 0.01
 
 
-def assign_parts(object, parts, classify):
-    """Adds one material a part to the object and gives each face the one its colour names."""
+def median(values):
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2]
+
+
+def face_centres(me, world):
+    """Each face's world centre."""
+    out = []
+    for face in me.polygons:
+        verts = face.vertices
+        count = len(verts)
+        out.append(Vector((
+            sum(world[v].x for v in verts) / count,
+            sum(world[v].y for v in verts) / count,
+            sum(world[v].z for v in verts) / count,
+        )))
+    return out
+
+
+def fit_wheels(me, labels, world, centres):
+    """The four wheels, from the tyre-coloured faces: each axle's centre, radius and width.
+
+    A wheel's tyre faces form a dense cluster at its corner of the vehicle, while the bumper and
+    underbody faces that share their dark colour lie away from it. A median within a crop around
+    each quadrant's centre settles on the wheel, and the outer band of its width then measures the
+    tyre alone. The axle stands a radius above the ground, where the tyre's lowest face touches it.
+    """
+    tyres = [i for i, label in enumerate(labels) if label == 'tyres']
+    if len(tyres) < 4:
+        raise SystemExit(f'{len(tyres)} tyre faces cannot make four wheels')
+    mid_x = median([centres[i].x for i in tyres])
+    mid_y = median([centres[i].y for i in tyres])
+    seeds = []
+    for sx in (1, -1):
+        for sy in (1, -1):
+            pick = [i for i in tyres if (1 if centres[i].x >= mid_x else -1) == sx
+                    and (1 if centres[i].y >= mid_y else -1) == sy]
+            if not pick:
+                raise SystemExit('a vehicle corner has no tyre faces')
+            seeds.append([sum(centres[i].x for i in pick) / len(pick),
+                          sum(centres[i].y for i in pick) / len(pick)])
+    for _ in range(10):
+        for k, (cx, cy) in enumerate(seeds):
+            crop = [i for i in tyres
+                    if math.hypot(centres[i].x - cx, centres[i].y - cy) < WHEEL_CROP]
+            if crop:
+                seeds[k] = [median([centres[i].x for i in crop]),
+                            median([centres[i].y for i in crop])]
+    wheels = []
+    for cx, cy in seeds:
+        crop = [i for i in tyres if math.hypot(centres[i].x - cx, centres[i].y - cy) < WHEEL_CROP]
+        verts = {v for i in crop for v in me.polygons[i].vertices}
+        points = [world[v] for v in verts]
+        outer = max(p.x for p in points) if cx > 0 else min(p.x for p in points)
+        band = [p for p in points
+                if (p.x >= outer - WHEEL_BAND if cx > 0 else p.x <= outer + WHEEL_BAND)]
+        if not band:
+            raise SystemExit('a wheel has no tyre faces at its outer side')
+        x0, x1 = min(p.x for p in band), max(p.x for p in band)
+        y0, y1 = min(p.y for p in band), max(p.y for p in band)
+        axle_y = (y0 + y1) / 2
+        axle_z = min(p.z for p in band) + (y1 - y0) / 2
+        radii = sorted(math.hypot(p.y - axle_y, p.z - axle_z) for p in band)
+        wheels.append(dict(
+            cx=(x0 + x1) / 2, cy=axle_y, cz=axle_z, x0=x0, x1=x1,
+            radius=radii[min(len(radii) - 1, int(0.99 * len(radii)))],
+        ))
+    mid_x = (min(w['cx'] for w in wheels) + max(w['cx'] for w in wheels)) / 2
+    mid_y = (min(w['cy'] for w in wheels) + max(w['cy'] for w in wheels)) / 2
+    for wheel in wheels:
+        front = wheel['cy'] < mid_y
+        left = wheel['cx'] > mid_x
+        wheel['name'] = 'wheel-' + ('f' if front else 'b') + ('l' if left else 'r')
+    return wheels
+
+
+def resolve_wheels(labels, centres, wheels):
+    """Gives each face inside a wheel's cylinder its wheel, and the other tyre faces to the trim.
+
+    The cylinder holds the tyre, its rim and its hub, so they turn together; a body panel outside
+    the tyre's radius, such as the arch's lip, stays with the body.
+    """
+    for index, centre in enumerate(centres):
+        for wheel in wheels:
+            inside_x = wheel['x0'] - WHEEL_MARGIN <= centre.x <= wheel['x1'] + WHEEL_MARGIN
+            inside_tyre = math.hypot(centre.y - wheel['cy'], centre.z - wheel['cz']) <= (
+                wheel['radius'] + WHEEL_MARGIN
+            )
+            if inside_x and inside_tyre:
+                labels[index] = wheel['name']
+                break
+        else:
+            if labels[index] == 'tyres':
+                labels[index] = 'trim'
+    return labels
+
+
+def smooth_labels(me, labels, rounds=2):
+    """Gives a face the part that most of its neighbours have, where a strict majority agrees.
+
+    A cloth's shadowed fold can sample darker than skin and so take the skin's part; its neighbours
+    are cloth, and two rounds fold the stray face back into the garment it lies on.
+    """
+    shared = {}
+    for face in me.polygons:
+        for key in face.edge_keys:
+            shared.setdefault(key, []).append(face.index)
+    neighbours = [[] for _ in me.polygons]
+    for pair in shared.values():
+        if len(pair) == 2:
+            neighbours[pair[0]].append(pair[1])
+            neighbours[pair[1]].append(pair[0])
+    for _ in range(rounds):
+        changed = 0
+        moved = list(labels)
+        for index, near in enumerate(neighbours):
+            if not near:
+                continue
+            votes = {}
+            for other in near:
+                votes[labels[other]] = votes.get(labels[other], 0) + 1
+            best = max(votes, key=votes.get)
+            if labels[index] != best and votes[best] * 2 > len(near):
+                moved[index] = best
+                changed += 1
+        labels = moved
+        if not changed:
+            break
+    return labels
+
+
+def raw_labels(object, classify, smooth=False):
+    """Each face's part from its texture colour and height, and the faces' world centres."""
     me = object.data
     texture = image_of(object)
     colours = face_colours(me, pixels(texture))
@@ -230,17 +430,34 @@ def assign_parts(object, parts, classify):
     low = min(p.z for p in world)
     high = max(p.z for p in world)
     height = high - low
+    labels = []
+    for index, face in enumerate(me.polygons):
+        centre = sum((world[v].z for v in face.vertices), 0.0) / len(face.vertices)
+        labels.append(classify(colours[index], centre, height))
+    if smooth:
+        labels = smooth_labels(me, labels)
+    return labels, world
+
+
+def assign_parts(object, parts, labels, plain=()):
+    """Adds one material a part to the object and gives each face the part in `labels`."""
+    me = object.data
+    texture = image_of(object)
     me.materials.clear()
     slots = {}
     for name in parts:
         made = part_material(
-            f'life-{parts.prefix}-{name}', texture, ROUGHNESS.get(name, 0.8), METALLIC.get(name, 0.0))
+            f'life-{parts.prefix}-{name}',
+            None if name in plain else texture,
+            0.92 if name.startswith('wheel-') else ROUGHNESS.get(name, 0.8),
+            0.0 if name.startswith('wheel-') else METALLIC.get(name, 0.0),
+            PLAIN_BASE,
+        )
         slots[name] = len(me.materials)
         me.materials.append(made)
     counts = {name: 0 for name in parts}
     for index, face in enumerate(me.polygons):
-        centre = sum((world[v].z for v in face.vertices), 0.0) / len(face.vertices)
-        name = classify(colours[index], centre, height)
+        name = labels[index]
         face.material_index = slots[name]
         counts[name] += 1
     return counts
@@ -274,7 +491,8 @@ def split(object, parts):
         if len(used) != 1:
             raise SystemExit(f'{piece.name} kept {len(used)} materials after the split')
         chosen = piece.data.materials[used.pop()]
-        part = chosen.name.rsplit('-', 1)[-1]
+        prefix = f'life-{parts.prefix}-'
+        part = chosen.name[len(prefix):] if chosen.name.startswith(prefix) else chosen.name
         if part not in parts:
             continue
         piece.data.materials.clear()
@@ -370,8 +588,9 @@ def parts_view(objects, path, colours, view=(1.6, -3.6, 1.3)):
     scene = bpy.context.scene
     saved = [(o, o.color[:]) for o in objects]
     for object in objects:
-        part = object.name.rsplit('-', 1)[-1]
-        object.color = (*colours.get(part, (0.8, 0.8, 0.8)), 1.0)
+        colour = next((value for key, value in colours.items() if object.name.endswith(f'-{key}')),
+                      (0.8, 0.8, 0.8))
+        object.color = (*colour, 1.0)
     for object in scene.objects:
         if object.type == 'MESH':
             object.hide_render = object not in objects
@@ -402,6 +621,115 @@ def parts_view(objects, path, colours, view=(1.6, -3.6, 1.3)):
         object.color = colour
 
 
+def static_proxy(source, name):
+    """A standing copy of a skinned mesh in its rest pose, detached from its rig.
+
+    The rest pose is the pose that the rig was fitted to, which is the standing shape that the
+    model was generated in, so it serves for the copies that a scene draws too far off to walk.
+    """
+    proxy = source.copy()
+    proxy.data = source.data.copy()
+    proxy.name = name
+    proxy.data.name = name
+    bpy.context.scene.collection.objects.link(proxy)
+    for modifier in list(proxy.modifiers):
+        proxy.modifiers.remove(modifier)
+    bpy.context.view_layer.objects.active = proxy
+    bpy.ops.object.select_all(action='DESELECT')
+    proxy.select_set(True)
+    if proxy.parent is not None:
+        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+    bpy.context.view_layer.update()
+    bake(proxy, 0.0, 1.0, 0.0)
+    return proxy
+
+
+def build_person(prefix, walk, classify, height=None, far_static=None, far_texture=None):
+    """One person's walking parts and the standing parts that a scene draws far off.
+
+    `height` scales the model to that height, or leaves its own when it is None. `far_static` names
+    a standing raw model for the far parts; without one they come from the walk model's rest pose.
+    The clothing parts are plain, so a scene multiplies each copy's own colour into them.
+    """
+    imported = import_glb(walk)
+    imported, removed = remove_helpers(imported)
+    meshes = [o for o in imported if o.type == 'MESH']
+    if len(meshes) != 1:
+        raise SystemExit(f'{walk} has {len(meshes)} meshes, not one')
+    body = meshes[0]
+    arm = next(o for o in imported if o.type == 'ARMATURE')
+    # The engine builds one skeleton and one set of clips for a whole file, and refuses two clips
+    # of one name, so each person's rig and clip carry the person's name.
+    arm.name = f'{prefix}-rig'
+    arm.data.name = f'{prefix}-rig'
+    if arm.animation_data and arm.animation_data.action:
+        arm.animation_data.action.name = f'walk-{prefix}'
+    low = min(v.co.z for v in body.data.vertices)
+    high = max(v.co.z for v in body.data.vertices)
+    scale = 1.0 if height is None else height / (high - low)
+    # The rig turns as one: the armature node carries the turn and the scale, so the clip's own keys
+    # stay in the rig's frame.
+    arm.matrix_world = Matrix.Scale(scale, 4) @ Matrix.Rotation(-math.pi / 2, 4, 'Z') @ arm.matrix_world
+    bpy.context.view_layer.update()
+    actual = round((high - low) * scale, 3)
+    rest = None if far_static else static_proxy(body, f'{prefix}-rest')
+
+    parts = NamedParts(prefix, VILLAGER_PARTS)
+    labels, _ = raw_labels(body, classify, smooth=True)
+    counts = assign_parts(body, parts, labels, CLOTHING)
+    pieces = split(body, parts)
+
+    if far_static:
+        imported = import_glb(far_static)
+        imported, _ = remove_helpers(imported)
+        proxy = next(o for o in imported if o.type == 'MESH')
+        if far_texture:
+            image_of(proxy).scale(far_texture, far_texture)
+        low = min((proxy.matrix_world @ v.co).z for v in proxy.data.vertices)
+        high = max((proxy.matrix_world @ v.co).z for v in proxy.data.vertices)
+        bake(proxy, -math.pi / 2, (height or high - low) / (high - low), 0.0)
+    else:
+        proxy = rest
+
+    far_parts = NamedParts(f'{prefix}-far', VILLAGER_PARTS)
+    far_labels, _ = raw_labels(proxy, classify, smooth=True)
+    far_counts = assign_parts(proxy, far_parts, far_labels, CLOTHING)
+    far_pieces = split(proxy, far_parts)
+    far_objects, errors = [], [0.0, 0.0]
+    for piece in far_pieces.values():
+        far_objects.append(piece)
+        for k, share in enumerate(LOD_SHARES, start=1):
+            lower, error = lower_level(piece, share, f'{piece.name}-{k}', piece)
+            far_objects.append(lower)
+            errors[k - 1] = max(errors[k - 1], error)
+    return dict(
+        prefix=prefix, pieces=pieces, far=far_pieces, far_objects=far_objects,
+        counts=counts, far_counts=far_counts, errors=errors, height=actual, removed=removed,
+    )
+
+
+def tint_view(objects, path, palette, view=(1.6, -3.6, 1.3)):
+    """Renders the objects with a sample colour in every plain part, as a scene's tint makes them."""
+    plain = []
+    for object in objects:
+        for material in object.data.materials:
+            if not material or not material.use_nodes:
+                continue
+            nodes = material.node_tree.nodes
+            if any(node.type == 'TEX_IMAGE' for node in nodes):
+                continue
+            part = material.name.rsplit('-', 1)[-1]
+            colour = palette.get(part)
+            if colour is None:
+                continue
+            bsdf = nodes.get('Principled BSDF')
+            plain.append((bsdf, tuple(bsdf.inputs['Base Color'].default_value)))
+            bsdf.inputs['Base Color'].default_value = (*colour, 1.0)
+    preview(objects, path, view, samples=20)
+    for bsdf, colour in plain:
+        bsdf.inputs['Base Color'].default_value = colour
+
+
 def main():
     args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     if not args:
@@ -419,62 +747,23 @@ def main():
     everything, near, reports = [], {}, []
     clear()
 
-    # The walking villager: one skeleton, one clip, a skinned mesh for each part.
-    imported = import_glb(os.path.join(raw, 'villager-walk', 'model.glb'))
-    imported, removed = remove_helpers(imported)
-    mesh_objects = [o for o in imported if o.type == 'MESH']
-    if len(mesh_objects) != 1:
-        raise SystemExit(f'villager-walk.glb has {len(mesh_objects)} meshes, not one')
-    body = mesh_objects[0]
-    arm = next(o for o in imported if o.type == 'ARMATURE')
-    me = body.data
-    low = min(v.co.z for v in me.vertices)
-    high = max(v.co.z for v in me.vertices)
-    scale = VILLAGER_HEIGHT / (high - low)
-    # The rig turns as one: the armature node carries the turn and the scale, so the clip's own
-    # keys stay in the rig's frame.
-    arm.matrix_world = (
-        Matrix.Scale(scale, 4)
-        @ Matrix.Rotation(-math.pi / 2, 4, 'Z')
-        @ arm.matrix_world
-    )
-    bpy.context.view_layer.update()
-    parts = NamedParts('villager', VILLAGER_PARTS)
-    counts = assign_parts(body, parts, lambda rgb, z, height: villager_part(rgb, z, height))
-    pieces = split(body, parts)
-    near['villager'] = pieces
-    everything += list(pieces.values())
-    reports.append(report_model('villager', pieces))
-    print(f'LIFE villager: height target {VILLAGER_HEIGHT} m, scale {scale:.4f}, '
-          f'removed helpers {removed}; faces per part {counts}')
-
-    # The standing villager, for the people drawn far off. Its texture is the same picture, so it
-    # shrinks to a quarter of the size, where a distant copy cannot show the difference.
-    imported = import_glb(os.path.join(raw, 'villager', 'model.glb'))
-    imported, _ = remove_helpers(imported)
-    mesh_objects = [o for o in imported if o.type == 'MESH']
-    body = mesh_objects[0]
-    texture = image_of(body)
-    texture.scale(512, 512)
-    low = min((body.matrix_world @ v.co).z for v in body.data.vertices)
-    high = max((body.matrix_world @ v.co).z for v in body.data.vertices)
-    bake(body, -math.pi / 2, VILLAGER_HEIGHT / (high - low), 0.0)
-    parts = NamedParts('villager-far', VILLAGER_PARTS)
-    counts = assign_parts(body, parts, lambda rgb, z, height: villager_part(rgb, z, height))
-    pieces = split(body, parts)
-    far_objects = []
-    errors = [0.0, 0.0]
-    for name, piece in pieces.items():
-        far_objects.append(piece)
-        for k, share in enumerate(LOD_SHARES, start=1):
-            lower, error = lower_level(piece, share, f'{piece.name}-{k}', piece)
-            far_objects.append(lower)
-            errors[k - 1] = max(errors[k - 1], error)
-    near['villager-far'] = pieces
-    everything += far_objects
-    reports.append(report_model('villager-far', pieces, errors))
-    print(f'LIFE villager-far: faces per part {counts}, measured level errors '
-          f'{[round(e, 4) for e in errors]}')
+    # The three people: the villager, the woman and the young man. Each walks with its own clip and
+    # has standing parts for the copies that a scene draws far off.
+    for prefix, walk, classify, height, far_static, far_texture in (
+        ('villager', os.path.join(raw, 'villager-walk', 'model.glb'), villager_part, VILLAGER_HEIGHT,
+         os.path.join(raw, 'villager', 'model.glb'), 512),
+        ('woman', os.path.join(raw, 'woman', 'model.glb'), woman_part, None, None, None),
+        ('youngman', os.path.join(raw, 'youngman', 'model.glb'), youngman_part, None, None, None),
+    ):
+        made = build_person(prefix, walk, classify, height, far_static, far_texture)
+        near[prefix] = made['pieces']
+        near[f'{prefix}-far'] = made['far']
+        everything += list(made['pieces'].values()) + made['far_objects']
+        reports.append(report_model(prefix, made['pieces']))
+        reports.append(report_model(f'{prefix}-far', made['far'], made['errors']))
+        print(f'LIFE {prefix}: {made["height"]} m tall, faces per part {made["counts"]}, '
+              f'removed helpers {made["removed"]}; far faces {made["far_counts"]}, '
+              f'level errors {[round(e, 4) for e in made["errors"]]}')
 
     # The vehicles: three levels each, cut by colour and height above the tyres' base.
     for model, parts, classify, length in (
@@ -493,8 +782,19 @@ def main():
         scale = length / (high[0] - low[0])
         bake(body, -math.pi / 2, scale, 0.0)
         named = NamedParts(model, parts)
-        counts = assign_parts(body, named, lambda rgb, z, height, classify=classify: classify(rgb, z))
+        labels, world = raw_labels(body, lambda rgb, z, height: classify(rgb, z))
+        centres = face_centres(me, world)
+        wheels = fit_wheels(me, labels, world, centres)
+        labels = resolve_wheels(labels, centres, wheels)
+        counts = assign_parts(body, named, labels, BODY)
         pieces = split(body, named)
+        # Each wheel's origin stands on its axle, so a scene turns it about itself.
+        for wheel in wheels:
+            piece = pieces[wheel['name']]
+            centre = Vector((wheel['cx'], wheel['cy'], wheel['cz']))
+            piece.data.transform(Matrix.Translation(-centre))
+            piece.location = centre
+        bpy.context.view_layer.update()
         models = []
         errors = [0.0, 0.0]
         for name, piece in pieces.items():
@@ -508,11 +808,15 @@ def main():
         reports.append(report_model(model, pieces, errors))
         print(f'LIFE {model}: scale {scale:.4f}, faces per part {counts}, measured level errors '
               f'{[round(e, 4) for e in errors]}')
+        for wheel in sorted(wheels, key=lambda w: w['name']):
+            print(f'LIFE {model} {wheel["name"]}: radius {wheel["radius"]:.3f} m, '
+                  f'axle ({wheel["cx"]:.3f}, {wheel["cy"]:.3f}, {wheel["cz"]:.3f})')
 
     # One error list serves every node with lower levels: the worst measurement across the file.
     levels = [max(r['levels'][k] for r in reports if r['levels']) for k in range(len(LOD_SHARES))]
     path = os.path.join(out, 'life.glb')
-    found = export(path, everything + [arm], set(), levels, animations=True)
+    rigs = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE']
+    found = export(path, everything + rigs, set(), levels, animations=True)
     for name, count in sorted(found.items()):
         print(f'LIFE {name}: {count} triangles')
     size = os.path.getsize(path)
@@ -530,13 +834,29 @@ def main():
             'body': (0.85, 0.7, 0.55), 'hair': (0.2, 0.2, 0.22), 'shirt': (0.25, 0.5, 0.95),
             'trousers': (0.1, 0.12, 0.35), 'shoes': (0.55, 0.3, 0.15),
             'hull': (0.92, 0.92, 0.92), 'band': (0.15, 0.4, 0.85), 'glass': (0.1, 0.5, 0.55),
-            'tyres': (0.05, 0.05, 0.05), 'trim': (0.55, 0.55, 0.55),
+            'trim': (0.55, 0.55, 0.55), 'wheel-fl': (0.9, 0.15, 0.15),
+            'wheel-fr': (0.15, 0.45, 0.9), 'wheel-bl': (0.9, 0.6, 0.15),
+            'wheel-br': (0.2, 0.8, 0.3),
+        }
+        # A sample colour for each plain part, linear, as a scene's own colours multiply them.
+        tints = {
+            'villager': {'shirt': (0.16, 0.28, 0.45), 'trousers': (0.10, 0.12, 0.20),
+                         'shoes': (0.28, 0.18, 0.12)},
+            'woman': {'shirt': (0.55, 0.22, 0.14), 'trousers': (0.55, 0.22, 0.14),
+                      'shoes': (0.15, 0.12, 0.10)},
+            'youngman': {'shirt': (0.75, 0.78, 0.72), 'trousers': (0.45, 0.40, 0.26),
+                         'shoes': (0.85, 0.85, 0.83)},
+            'hatchback': {'hull': (0.45, 0.50, 0.40)},
+            'minibus': {'hull': (0.82, 0.82, 0.78), 'band': (0.55, 0.12, 0.10)},
         }
         for model, pieces in near.items():
             objects = list(pieces.values())
             preview(objects, os.path.join(shots, f'{model}.png'), (1.6, -3.6, 1.3), samples=20)
             close_up(objects, os.path.join(shots, f'{model}-close.png'), (1.4, -3.2, 1.0))
             parts_view(objects, os.path.join(shots, f'{model}-parts.png'), colours)
+            base = model[:-4] if model.endswith('-far') else model
+            if base in tints:
+                tint_view(objects, os.path.join(shots, f'{model}-tinted.png'), tints[base])
 
 
 main()

@@ -21,7 +21,10 @@ interface Gltf {
 	bufferViews?: { buffer: number; byteOffset?: number; byteLength: number }[];
 	buffers?: { byteLength: number; uri?: string }[];
 	nodes?: { name?: string; mesh?: number }[];
-	meshes?: { primitives: { indices?: number; attributes: Record<string, number> }[] }[];
+	meshes?: {
+		primitives: { indices?: number; attributes: Record<string, number> }[];
+		extras?: Record<string, unknown>;
+	}[];
 	accessors?: { count: number }[];
 }
 
@@ -92,6 +95,28 @@ function pack(file: string): Uint8Array {
 	return writeGlb(json, merged);
 }
 
+/**
+ * Marks the mesh of every node whose name starts with one of `prefixes` to keep its positions as
+ * floats. The asset tool quantizes a mesh into its own bounds and moves that offset into the node,
+ * which moves the node's origin; a part whose origin a scene reads, such as a wheel on its axle,
+ * keeps it this way.
+ */
+function keepOrigins(file: string, prefixes: readonly string[]): void {
+	if (prefixes.length === 0) return;
+	const { json, bin } = readGlb(readFileSync(file));
+	let marked = 0;
+	for (const node of json.nodes ?? []) {
+		if (node.mesh === undefined || !node.name) continue;
+		if (!prefixes.some((prefix) => (node.name as string).startsWith(prefix))) continue;
+		const mesh = json.meshes?.[node.mesh];
+		if (!mesh) continue;
+		mesh.extras = { ...mesh.extras, quantizePositions: false };
+		marked++;
+	}
+	if (marked === 0) throw new Error(`No node of ${file} starts with ${prefixes.join(', ')}`);
+	writeFileSync(file, writeGlb(json, bin));
+}
+
 /** Each named node's triangles in a binary glTF file, and whether its mesh carries the sway. */
 function parts(bytes: Uint8Array): { name: string; triangles: number; sway: boolean }[] {
 	const { json } = readGlb(bytes);
@@ -123,6 +148,8 @@ export interface SceneModels {
 	readonly blockers?: readonly string[];
 	/** The models whose every part sways, which the build checks after the asset tool. */
 	readonly swaying: readonly string[];
+	/** Node name prefixes whose meshes keep float positions, so their node origins stay put. */
+	readonly floatPositions?: readonly string[];
 	/** Extra arguments after `--` for the Blender script, such as the folder of its raw inputs. */
 	readonly inputs?: readonly string[];
 }
@@ -136,6 +163,7 @@ export async function buildScene({
 	models,
 	blockers = [],
 	swaying,
+	floatPositions = [],
 	inputs = [],
 }: SceneModels): Promise<void> {
 	const args = process.argv.slice(2);
@@ -168,6 +196,7 @@ export async function buildScene({
 			const written = join(scratch, 'blender', `${model}.glb`);
 			if (!existsSync(written))
 				throw new Error(`Blender wrote no ${model}.glb:\n${built.stdout}\n${built.stderr}`);
+			keepOrigins(written, floatPositions);
 		}
 		mkdirSync(resolve(out), { recursive: true });
 		for (const model of models) {

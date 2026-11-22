@@ -19,5 +19,8 @@ await buildScene({
 	models: ['life'],
 	// The villager and the vehicles do not sway, so no mesh carries a bend weight.
 	swaying: [],
+	// Each wheel's origin is its axle, which a scene turns about. Quantizing a wheel's positions
+	// would move that origin into the mesh's bounds, so the wheels keep float positions.
+	floatPositions: ['hatchback-wheel-', 'minibus-wheel-'],
 	inputs: ['--raw', resolve(raw)],
 });
