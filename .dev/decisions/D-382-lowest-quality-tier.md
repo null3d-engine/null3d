@@ -35,6 +35,24 @@ should the engine do for that class? How far should it go?
   main pass is 61 per cent of the frame. The cloud sea is 16. The water, falls and particles together
   are under 10. The cloud steps and half the particles are the cheap cuts. They are worth 15 to 40
   ms. The device splits differ, and this tier's ranking uses those.
+- The further cuts ran on the S8 at Low, with the render scale pinned at 0.333, no shadows and no
+  bloom, over 60 s a page. The run is 20261122-024706-ultralow-cuts, on the probe branch at
+  44d9ca1a5. Each page follows a base page, and the last page removes a layer that draws nothing
+  distinct, as the run's control. The medians of the GPU time saved follow. The frame intervals are
+  not used: the base pages ranged over 33 to 50 ms, and the control moved 16.6 ms. The control's GPU
+  time moved 0.07 ms, which is the run's noise.
+
+| Cut | What the page left out | GPU ms saved | Draws | Calls a frame |
+| --- | --- | --- | --- | --- |
+| the water reflection | quarter size, one frame in 16 | 3.70 | 230 | 326 to 231 |
+| the water | the creek and its falls | 6.26 | 230 to 222 | 232 to 222 |
+| the particles | the air's mist and motes | 0.36 | 230 to 226 | 232 to 228 |
+| the maple leaves | the leaves that the maples shed | 5.24 | 230 to 224 | 232 to 226 |
+| the plants | the garden's plants | 17.24 | 230 to 116 | 232 to 118 |
+| the cloud sea | the cloud sea and its mist | 10.45 | 230 to 227 | 326 to 322 |
+| the falls | the two waterfalls | 0.33 | 230 to 225 | 326 to 225 |
+| the fog | the volumetric fog | 0.07 | 230 | 232 |
+| the underwater layer | the control | -0.07 | 230 to 229 | 232 |
 
 ## Decision
 
