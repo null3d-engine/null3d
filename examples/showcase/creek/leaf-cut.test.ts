@@ -33,12 +33,10 @@ test('the cut applies only while the lowest tier is on, and the levels come back
 		},
 	} as unknown as MeshGeometry;
 	const handlers = new Set<() => void>();
-	const tier = { lowest: false };
+	const tier = { governor: { lowest: false } };
 	const ctx = {
 		quality: {
-			get lowest() {
-				return tier.lowest;
-			},
+			governor: tier.governor,
 			onChange(handler: () => void) {
 				handlers.add(handler);
 				return () => handlers.delete(handler);
@@ -49,7 +47,7 @@ test('the cut applies only while the lowest tier is on, and the levels come back
 	const stop = watchFarLeaves(ctx, leaves);
 	// The tier is off, so nothing changes.
 	expect(applied).toHaveLength(0);
-	tier.lowest = true;
+	tier.governor.lowest = true;
 	for (const handler of handlers) handler();
 	expect(applied).toHaveLength(1);
 	expect(applied[0]).toHaveLength(1);
@@ -57,13 +55,13 @@ test('the cut applies only while the lowest tier is on, and the levels come back
 	// A second notice with the tier still on sets nothing again.
 	for (const handler of handlers) handler();
 	expect(applied).toHaveLength(1);
-	tier.lowest = false;
+	tier.governor.lowest = false;
 	for (const handler of handlers) handler();
 	expect(applied).toHaveLength(2);
 	expect(applied[1]).toBe(own);
 	// The listener stops when the watcher is dropped.
 	stop();
-	tier.lowest = true;
+	tier.governor.lowest = true;
 	for (const handler of handlers) handler();
 	expect(applied).toHaveLength(2);
 });
