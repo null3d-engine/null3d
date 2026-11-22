@@ -590,6 +590,8 @@ const WHEEL_MOVE = 0.02;
 const WHEEL_STEP_MAX = 4;
 /** A pinch, from a trackpad or two fingers on a screen, flies this many times the wheel's reach. */
 const PINCH_BOOST = 10;
+/** The least distance a zoom leaves between the camera and the point it turns around, in meters. */
+const MIN_ZOOM_DISTANCE = 1;
 /** The least change in two fingers' spread that counts as a pinch, in pixels. */
 const PINCH_DEADZONE = 1;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
@@ -1012,10 +1014,10 @@ export function createCinematic(
 					camera.setPosition(from[0] as number, (from[1] as number) + rise, from[2] as number);
 				}
 				controls.update(dt);
-				// The wheel and a pinch fly the camera forward and back along the way it faces, and
-				// the point it turns around comes along, so the view never swells as a zoom does.
-				// A trackpad folds its pinch into the wheel, and two fingers spreading on a screen
-				// is a pinch too, so both fly the camera farther than the same scroll alone.
+				// The wheel and a pinch zoom: the camera moves along the line to the point it turns
+				// around, which stays where it is, so a zoom in and back out returns to the same
+				// frame. A trackpad folds its pinch into the wheel, and two fingers spreading on a
+				// screen is a pinch too, so both move the camera farther than the same scroll alone.
 				let spread = 0;
 				if (input.touches.length === 2) {
 					const [first, second] = input.touches;
@@ -1043,15 +1045,12 @@ export function createCinematic(
 						forward[2] as number,
 					);
 					if (length > 1e-6) {
-						const move = Math.max(-wheelStepMax, Math.min(wheelStepMax, flight));
+						// The step stops short of the point, so a zoom in never passes through it.
+						const room = Math.max(0, length - MIN_ZOOM_DISTANCE);
+						const move = Math.max(-wheelStepMax, Math.min(wheelStepMax, flight, room));
 						const keptX = from[0] as number;
 						const keptY = from[1] as number;
 						const keptZ = from[2] as number;
-						const keptTarget = [
-							controls.target[0] as number,
-							controls.target[1] as number,
-							controls.target[2] as number,
-						] as [number, number, number];
 						// A forward flight stops at the ground: a step that would take the camera under
 						// the ground's clearance is not taken. The point the camera turns around may ride
 						// the ground or a hill, and that never stops the flight.
@@ -1061,18 +1060,14 @@ export function createCinematic(
 								bounds.ground(from[0] as number, from[2] as number) +
 									(bounds.clearance ?? GROUND_CLEARANCE) -
 									0.01;
-						for (let c = 0; c < 3; c++) {
-							const step = ((forward[c] as number) / length) * move;
-							from[c] = (from[c] as number) + step;
-							controls.target[c] = (controls.target[c] as number) + step;
-						}
+						// Only the camera moves: the point it turns around stays put, so the zoom in
+						// and out returns to the same view.
+						for (let c = 0; c < 3; c++)
+							from[c] = (from[c] as number) + ((forward[c] as number) / length) * move;
 						if (!clear()) {
 							from[0] = keptX;
 							from[1] = keptY;
 							from[2] = keptZ;
-							controls.target[0] = keptTarget[0];
-							controls.target[1] = keptTarget[1];
-							controls.target[2] = keptTarget[2];
 						}
 						camera.setPosition(from[0] as number, from[1] as number, from[2] as number);
 					}
