@@ -73,7 +73,7 @@ export const SETTING_DOCS: {
 		label: 'Blend between shadow cascades',
 		print: (value) => `${Math.round(Number(value) * 100)}% of each cascade`,
 	},
-	shadows: { label: 'Sun shadows', print: yesNo },
+	castShadows: { label: 'Sun cast shadows', print: yesNo },
 	shadowTiles: { label: 'Spot and point light shadow tiles' },
 	shadowTileSize: { label: 'Shadow tile size in texels' },
 	heroTileSize: { label: 'Hero shadow tile size in texels' },

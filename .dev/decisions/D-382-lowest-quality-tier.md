@@ -75,7 +75,7 @@ planting level would be the next lever, and it waits for the owner.
    decision makes it live. The core exposes the prepass as a live setting. The frame graph's
    `set_depth_prepass` follows it each frame. The tier flips it. A page that starts in the tier gets
    the prepass off from its first frame.
-4. **The settings surface** has two new live flags, `shadows` and `bloom`. `depthPrepass` becomes
+4. **The settings surface** has two new live flags, `castShadows` and `bloom`. `depthPrepass` becomes
    live. Every preset's row equals today's behavior, so no other preset changes. The owner keeps two
    further cuts, and both use what exists. One is the reflection passes' share, `reflectionScale`, at
    a quarter. The other is the maple leaves beyond 60 m, which the scene hides with the leaves mesh's
