@@ -318,13 +318,17 @@ export default defineSketch(async (ctx) => {
 			maxRenderScale: 1,
 		});
 	const detail = DETAIL[quality.preset];
+	// The lowest quality tier turns the sun's shadows and bloom off through the settings, so the
+	// scene starts them as the settings say.
+	const tierShadows = quality.settings.shadows;
+	const tierBloom = quality.settings.bloom;
 	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
 		assets.builtinEnvironment('room'),
 	]);
 	const sun = scene.createDirectionalLight({
-		castShadows: true,
+		castShadows: tierShadows,
 		layers: SUN_LAYERS,
 		// Two cascades over a wider distance: one box fitted to the camera dropped casters at its
 		// edge as the camera moved, which made the shadows under the trees change.
@@ -334,7 +338,7 @@ export default defineSketch(async (ctx) => {
 	// occlusion starts on, so the scene's shadows read.
 	post.set({
 		ao: { radius: 0.5 },
-		bloom: { blend: 'add', intensity: 0.2, threshold: 1 },
+		bloom: tierBloom ? { blend: 'add', intensity: 0.2, threshold: 1 } : false,
 	});
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -482,10 +486,10 @@ export default defineSketch(async (ctx) => {
 			fog: !WITHOUT.has('fog'),
 			shafts: false,
 			fireflies: false,
-			shadows: true,
+			shadows: tierShadows,
 			ao: true,
 			environment: true,
-			bloom: true,
+			bloom: tierBloom,
 			dof: false,
 			exposure: false,
 			vignette: false,
@@ -527,6 +531,13 @@ export default defineSketch(async (ctx) => {
 		focalLength: DSLR_FOCAL_LENGTH,
 		focus: target,
 		dslr: params.has('dslr'),
+	});
+	// The lowest quality tier's cuts reach the settings while the page plays, so the scene follows
+	// them, and its HUD shows what it draws.
+	quality.onChange(() => {
+		const { shadows, bloom } = quality.settings;
+		if (controls.on.shadows !== shadows) controls.set('shadows', shadows);
+		if (controls.on.bloom !== bloom) controls.set('bloom', bloom);
 	});
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Morning');
