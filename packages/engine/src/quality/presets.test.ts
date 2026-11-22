@@ -264,6 +264,7 @@ describe('the preset table', () => {
 			'softwareOcclusion',
 			'parallax',
 			'governor',
+			'depthPrepass',
 			'lightFit',
 		]);
 	});
@@ -566,7 +567,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { sunShadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "sunShadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, shadows, bloomSize, bloom, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, bounceRays, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowThreshold, lodFade, physicalSky, cloudSteps, softwareOcclusion, parallax, governor or lightFit.',
+			'E1213: quality.set() got "sunShadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, shadows, bloomSize, bloom, aoScale, contactShadowSteps, dofSamples, subsurfaceSamples, ssrScale, ssrSteps, bounceRays, exposureMeter, fogSlices, reflectionScale, probeSize, areaLights, softParticles, lodThreshold, lodShadowThreshold, lodFade, physicalSky, cloudSteps, softwareOcclusion, parallax, governor, depthPrepass or lightFit.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

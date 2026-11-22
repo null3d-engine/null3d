@@ -362,6 +362,7 @@ describe('SketchQuality.setPreset', () => {
 			'softwareOcclusion',
 			'governor',
 			'lodShadowThreshold',
+			'depthPrepass',
 		];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
 		expect(settled.count).toBe(1);

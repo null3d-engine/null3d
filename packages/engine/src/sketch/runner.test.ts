@@ -78,6 +78,7 @@ const MESH_BYTES = 4096;
 const KEPT_ARGUMENTS = new Set([
 	'recordFrame',
 	'setRenderScaling',
+	'setDepthPrepass',
 	'setShadowQuality',
 	'setLightDefault',
 	'setCanvasOutput',
@@ -730,8 +731,22 @@ describe('SketchRunner', () => {
 		expect(calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(333);
 	});
 
+	it('turns the depth prepass on and off during play, with no new preset', async () => {
+		const { runner, calls, context } = await start(() => ({}));
+		runner.step(0);
+		const prepass = () => calls.filter((call) => call[0] === 'setDepthPrepass').at(-1);
+		expect(prepass()).toEqual(['setDepthPrepass', false]);
+		await context.quality.set({ depthPrepass: true });
+		expect(prepass()).toEqual(['setDepthPrepass', true]);
+		expect(context.quality.settings.depthPrepass).toBe(true);
+		await context.quality.set({ depthPrepass: false });
+		expect(prepass()).toEqual(['setDepthPrepass', false]);
+	});
+
 	it("applies the lowest tier's cuts on entry, and gives the settings back on its exit", async () => {
-		const { runner, context } = await start(() => ({}));
+		const { runner, context } = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, settings: { ...MEDIUM.settings, depthPrepass: true } },
+		});
 		/** The governor, whose entry and exit the frames' judgement would otherwise take time to reach. */
 		const governor = (
 			runner as unknown as {
@@ -744,12 +759,14 @@ describe('SketchRunner', () => {
 		expect(context.quality.settings.shadows).toBe(false);
 		expect(context.quality.settings.bloom).toBe(false);
 		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
+		expect(context.quality.settings.depthPrepass).toBe(false);
 		governor.exitLowest(0);
 		runner.step(0);
 		expect(context.quality.governor.lowest).toBe(false);
 		expect(context.quality.settings.shadows).toBe(MEDIUM.settings.shadows);
 		expect(context.quality.settings.bloom).toBe(MEDIUM.settings.bloom);
 		expect(context.quality.settings.minRenderScale).toBe(MEDIUM.settings.minRenderScale);
+		expect(context.quality.settings.depthPrepass).toBe(true);
 	});
 
 	it('holds at the highest render scale, with the passes of its range', async () => {

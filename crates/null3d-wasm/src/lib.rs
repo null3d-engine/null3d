@@ -4956,6 +4956,18 @@ pub fn set_feature_instance_rows(id: u32, start: u32, count: u32, values: &[f32]
     })
 }
 
+/// Turns each camera view's depth prepass on or off from the next frame on: the quality settings
+/// set it, and the lowest quality tier turns it off on WebGL2. Ambient occlusion, contact shadows,
+/// the bounce light and screen-space reflections still draw it while they run, as they read its
+/// depth.
+#[wasm_bindgen(js_name = setDepthPrepass)]
+pub fn set_depth_prepass(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_depth_prepass(on);
+        0
+    })
+}
+
 /// Lets particle systems with a soft fade fade near the surfaces behind them, which copies the
 /// camera's opaque depth while one draws, or draws them with hard edges: the quality preset's soft
 /// particles.

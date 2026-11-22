@@ -437,11 +437,13 @@ export const QUALITY_SETTINGS = {
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
 	// pixel once. WebGL2 draws it on every preset: on Apple GPUs, WebGL2 shades hidden pixels that
 	// the prepass's early depth rejection skips. The other paths leave it off: there the GPU removes
-	// hidden surfaces itself, and the second pass only adds time (D-43).
+	// hidden surfaces itself, and the second pass only adds time (D-43). The lowest quality tier
+	// turns it off on WebGL2, and it changes during play with no new pipelines where ambient
+	// occlusion, contact shadows, the bounce light and screen-space reflections draw it anyway.
 	depthPrepass: {
 		presets: [false, false, false, false],
 		webgl2: [true, true, true, true],
-		changes: 'start',
+		changes: 'live',
 		values: 'flag',
 	},
 	// Two-phase occlusion culling on WebGPU: objects that large opaque objects hide do not draw. It
@@ -799,8 +801,9 @@ export interface QualitySettings {
 	/**
 	 * True when the engine draws the depth of the opaque objects before it shades them, so it
 	 * shades each pixel once, for its nearest surface. Every preset turns it on for WebGL2 and off
-	 * for WebGPU. The setting is fixed when the engine starts: the page's `depthPrepass` option of
-	 * `createEngine` sets it, and `set` does not take it.
+	 * for WebGPU. The page's `depthPrepass` option of `createEngine` gives its first value. It
+	 * changes during play, and ambient occlusion, contact shadows, the bounce light and
+	 * screen-space reflections still draw the prepass while they run, as they read its depth.
 	 */
 	depthPrepass: boolean;
 	/**

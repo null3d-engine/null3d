@@ -1,8 +1,9 @@
 # D-382: The lowest quality tier, taken when the half-scale floor still misses
 
 Status: decided and partly built. The owner approved the tier. The settings surface, the page's
-start switch, and the governor's entry, exit and cooldown are built, with their tests and docs. The
-mandatory cuts change live settings, which the Creek scene's flags will read. The further cuts are
+start switch, the governor's entry, exit and cooldown, and the depth prepass as a live setting are
+built, with their tests and docs. The mandatory cuts change live settings, which the Creek scene's
+flags will read. The further cuts are
 being measured on the Galaxy Tab S8, and are ranked here as they land. Code: the quality presets,
 the governor, the quality settings, the page's settings bridge, the Creek scene's feature flags, the
 tests and the docs.

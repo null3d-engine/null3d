@@ -728,6 +728,7 @@ export class SketchRunner {
 				maxRenderScale: presetValue('maxRenderScale', preset, path),
 				shadows: presetValue('shadows', preset, path),
 				bloom: presetValue('bloom', preset, path),
+				depthPrepass: presetValue('depthPrepass', preset, path),
 			};
 			this.tierChanges = this.governor.tierChanges;
 		}
@@ -1201,6 +1202,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (
 			glue.setRenderScaling((settings.governor ? low : high) < FULL_SCALE) !== 0 ||
+			glue.setDepthPrepass(settings.depthPrepass) !== 0 ||
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
@@ -1320,12 +1322,20 @@ export class SketchRunner {
 				maxRenderScale: settings.maxRenderScale,
 				shadows: settings.shadows,
 				bloom: settings.bloom,
+				depthPrepass: settings.depthPrepass,
 			};
-			if (settings.shadows || settings.bloom || settings.minRenderScale > LOWEST_TIER_SCALE)
+			const prepass = this.sketch.capabilities.tier === 'webgl2';
+			if (
+				settings.shadows ||
+				settings.bloom ||
+				settings.minRenderScale > LOWEST_TIER_SCALE ||
+				(prepass && settings.depthPrepass)
+			)
 				void this.quality.setGoverned({
 					minRenderScale: Math.min(settings.minRenderScale, LOWEST_TIER_SCALE),
 					shadows: false,
 					bloom: false,
+					...(prepass ? { depthPrepass: false } : {}),
 				});
 		} else if (this.tierRestore) {
 			const restore = this.tierRestore;

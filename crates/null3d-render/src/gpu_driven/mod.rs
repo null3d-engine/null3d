@@ -1157,6 +1157,7 @@ fn scene_settings(config: &RendererConfig) -> SceneSettings {
         config.cascade_depth,
     );
     settings.place_sky_light_buffers(ids::SKY_LIGHT_BUFFERS);
+    settings.set_depth_prepass(config.depth_prepass);
     settings
 }
 
@@ -1835,6 +1836,7 @@ impl GpuDrivenRenderer {
         let requested = settings.picking();
         let picking = requested || self.pick.keep > 0;
         self.graph.set_picking(picking);
+        self.graph.set_depth_prepass(settings.depth_prepass());
         self.graph.set_ao(
             settings.ao(),
             settings.contact(camera.as_ref(), input.canvas),
