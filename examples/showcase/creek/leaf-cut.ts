@@ -24,8 +24,8 @@ export function farLeafLevels(
 
 /** The sketch's quality as the lowest tier reports it, where the engine carries the tier. */
 interface TieredQuality {
-	/** True while the lowest quality tier applies. */
-	readonly lowest?: boolean;
+	/** What the frame-budget governor has lowered, whose `lowest` names the tier. */
+	readonly governor?: { readonly lowest?: boolean };
 	/** Calls the handler after each change of the quality settings, once the tier's cuts apply. */
 	readonly onChange?: (handler: () => void) => () => void;
 }
@@ -47,7 +47,7 @@ export function watchFarLeaves(ctx: SketchContext, leaves: MeshGeometry): () => 
 	const own = leaves.levels;
 	let cut = false;
 	const apply = (): void => {
-		const on = tier.lowest === true;
+		const on = tier.governor?.lowest === true;
 		if (on === cut) return;
 		cut = on;
 		leaves.setLevels(on ? farLeafLevels(own, empty) : own, { fade: false });
