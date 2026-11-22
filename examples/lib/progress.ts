@@ -205,6 +205,9 @@ export class LoadMeter {
 		if (phase.value === undefined || !Number.isFinite(phase.value))
 			return { ...phase, value: undefined };
 		const percent = Math.round(Math.min(1, Math.max(0, phase.value)) * 100);
+		// A measure that reached its whole is over, so a figure below it under the same label is a
+		// new measure, as a later file starts after the first ones have arrived.
+		if (this.percent >= 100 && percent < 100) this.percent = -1;
 		this.percent = Math.max(this.percent, percent);
 		return { ...phase, value: this.percent / 100 };
 	}

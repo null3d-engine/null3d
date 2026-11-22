@@ -88,6 +88,42 @@ describe('LoadPhases', () => {
 	});
 });
 
+describe('LoadMeter', () => {
+	it("holds a measure's percentage while it runs, and starts again after its whole", () => {
+		const meter = new LoadMeter();
+		const show = (value: number) =>
+			meter.show({ key: 'files:Downloading', text: 'Downloading scene files', value }).value;
+		expect(show(0.8)).toBe(0.8);
+		expect(show(0.2)).toBe(0.8);
+		expect(show(1)).toBe(1);
+		expect(show(0.1)).toBe(0.1);
+		expect(show(0.05)).toBe(0.1);
+	});
+
+	it('shows a later measure under the same label, which the first measure had hidden', () => {
+		const phases = new LoadPhases();
+		const meter = new LoadMeter();
+		const show = (value: number) =>
+			phases.show(
+				'files',
+				meter.show({ key: 'files:Downloading', text: 'Downloading scene files', value }),
+			);
+		show(0.4);
+		expect(phases.list()).toHaveLength(1);
+		show(1);
+		expect(phases.list()).toEqual([]);
+		show(0.1);
+		expect(phases.list()).toEqual([
+			{
+				lane: 'files',
+				phase: { key: 'files:Downloading', text: 'Downloading scene files', value: 0.1 },
+			},
+		]);
+		show(0.9);
+		expect(phases.list()[0]?.phase.value).toBe(0.9);
+	});
+});
+
 describe('StartMeter', () => {
 	it('fills a fixed share for each counted stretch of the start', () => {
 		const meter = new StartMeter();
