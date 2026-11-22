@@ -73,6 +73,12 @@ export interface Demo {
 	 * does more than turn the camera. A demo with neither leaves it out.
 	 */
 	controls?: readonly DemoControl[];
+	/**
+	 * The code of the demo's own action, where it has one that a touch screen can press, such as a
+	 * gust. The page's touch controls show its button on a coarse pointer, and the control sends the
+	 * same key that the keyboard sends.
+	 */
+	gustKey?: string;
 	/** The sketch time, in seconds, that the demo's image test holds at. */
 	hold: number;
 	/** True for a demo that starts the engine in large-world mode. */
@@ -151,6 +157,7 @@ export const DEMOS: readonly Demo[] = [
 			'Shows how a statue, a gate with its roof dragons, lanterns, boulders, cloud-pruned pines, ferns and hostas load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail.',
 
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
+		gustKey: 'KeyG',
 		hold: 0.5,
 		// A software GPU draws the scene with its bloom, its water and its models, which takes it
 		// well past a minute on a loaded runner, past three on an emulated Firefox GPU, and past five
