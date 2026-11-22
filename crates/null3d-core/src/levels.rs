@@ -694,40 +694,54 @@ impl LevelRule {
     ) {
         let ((first, first_before), (last, last_before)) =
             self.walk_both(links, home, scale, radius, near, far, bias);
-        for picked in [
-            self.settle(
-                links,
-                home,
-                first,
-                first_before,
-                scale,
-                radius,
-                near,
-                bias,
-                range,
-            ),
-            self.settle(
-                links,
-                home,
-                last,
-                last_before,
-                scale,
-                radius,
-                far,
-                bias,
-                range,
-            ),
-        ] {
+        // The buckets that each end names: the level's own bucket and, inside a band, its fade
+        // bucket and the one before it.
+        let mut starts = [u32::MAX; 2];
+        let mut starts_len = 0;
+        let mut ends = [u32::MAX; 2];
+        let mut ends_len = 0;
+        for (index, (level, before)) in [(first, first_before), (last, last_before)]
+            .into_iter()
+            .enumerate()
+        {
+            let distance = if index == 0 { near } else { far };
+            let picked = self.settle(
+                links, home, level, before, scale, radius, distance, bias, range,
+            );
             let (entries, len, _) = picked.entries(home, codes);
             for entry in &entries[..len] {
+                let (buckets, count) = if index == 0 {
+                    (&mut starts, &mut starts_len)
+                } else {
+                    (&mut ends, &mut ends_len)
+                };
+                buckets[*count] = entry.bucket;
+                *count += 1;
                 each(entry.bucket);
             }
         }
-        // The ends name the same level, and the picks above name its bucket or a fade bucket
-        // whenever either end draws it. Between them the source draws that level while its
-        // distance lies in one interval, so a bucket that neither end names would need the whole
-        // interval inside the window: a draw range or a hide band narrower than the window itself.
+        // The two ends name the same level. Their buckets differ when the window crosses an edge
+        // that changes the shader's state without changing its level: a fade band's end meeting a
+        // draw range's fade, for one. Between such edges the level draws whole while both ends
+        // name only a fade bucket or nothing, so the level's own bucket must hold the copy too. A
+        // source that both ends hide draws whole between them only inside a draw range that starts
+        // above zero and ends within the window.
         if first == last {
+            let same = starts_len == ends_len
+                && starts[..starts_len]
+                    .iter()
+                    .all(|bucket| ends[..ends_len].contains(bucket));
+            if !same || (starts_len == 0 && ends_len == 0 && range.start > 0.0) {
+                each(first);
+                let fade = links[first as usize].fade;
+                if fade != NO_LINK && fade != first {
+                    each(fade);
+                }
+                let before_fade = links[first_before as usize].fade;
+                if before_fade != NO_LINK && before_fade != first {
+                    each(before_fade);
+                }
+            }
             return;
         }
         let mut prev = first_before;

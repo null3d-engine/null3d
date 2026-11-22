@@ -743,4 +743,74 @@ mod tests {
             "the count leaves out the level that the shader draws"
         );
     }
+
+    /// A switch's fade band ends at 10.8 m, and the draw range's fade starts at
+    /// 11.68/1.08 = 10.8148 m, both inside the 0.2 per cent slack window around 10.8074 m. Between
+    /// the two edges the source draws level 1 whole, while both ends of the window name only fade
+    /// buckets, so the level's own bucket must hold the copy.
+    #[test]
+    fn a_source_between_a_fade_end_and_a_range_fade_counts_the_level_it_draws() {
+        let mut layout = Layout::default();
+        layout.level_links = vec![
+            LevelLink {
+                value: 0.0,
+                switch: Switch::Distance,
+                next: 1,
+                fade: 2,
+            },
+            LevelLink {
+                value: 10.0,
+                switch: Switch::Distance,
+                next: NO_LINK,
+                fade: 3,
+            },
+            LevelLink {
+                value: 0.0,
+                switch: Switch::Error,
+                next: NO_LINK,
+                fade: NO_LINK,
+            },
+            LevelLink {
+                value: 0.0,
+                switch: Switch::Error,
+                next: NO_LINK,
+                fade: NO_LINK,
+            },
+        ];
+        layout.buckets = (0..4)
+            .map(|_| Bucket {
+                radius: 1.0,
+                ..Bucket::default()
+            })
+            .collect();
+        let view = CopyView {
+            rule: LevelRule::new(1000.0, 1.0, false, 1.0, 0.08),
+            camera: CellPosition::default(),
+            frustum: None,
+        };
+        let range = DrawRange::new(0.0, 11.68);
+        assert_eq!(
+            view.rule
+                .pick(&layout.level_links, 0, 1.0, 1.0, 10.8074, 1.0, range),
+            Picked::One(1),
+            "the shader draws level 1 whole between the two edges",
+        );
+        let mut counts = [0u32; 4];
+        // The source's sphere of radius 1 puts its nearest point at 10.8074 m.
+        layout.count_source(
+            &mut counts,
+            &view,
+            0,
+            [0.0, 0.0, 11.8074],
+            1.0,
+            1.0,
+            1.0,
+            range,
+            false,
+        );
+        assert_eq!(
+            counts[1], 1,
+            "the count leaves out the level that the shader draws"
+        );
+    }
 }
