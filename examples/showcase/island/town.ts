@@ -1275,6 +1275,40 @@ function createClimbers(ctx: SketchContext): void {
 
 /** The square: stone laid in fans around a stepped fountain, plane trees' beds, cafes and flowers. */
 /**
+ * The ground's variation under a square prop's footprint at a place, in meters. A place whose
+ * footprint spans more than a few centimeters of ground stands on a bank rather than a floor.
+ */
+function groundSpread(px: number, pz: number, reach: number): number {
+	let [low, high] = [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	for (const u of [-reach, 0, reach])
+		for (const v of [-reach, 0, reach]) {
+			const ground = groundHeight(px + u, pz + v);
+			low = Math.min(low, ground);
+			high = Math.max(high, ground);
+		}
+	return high - low;
+}
+
+/**
+ * A cafe place moved inward until the ground under its own footprint is level, so its table or pot
+ * stands flat on the piazza rather than across the bank at a building's front.
+ */
+function settleOnPiazza(px: number, pz: number, reach: number): [number, number] {
+	let [atX, atZ] = [px, pz];
+	for (let step = 0; step < 12 && groundSpread(atX, atZ, reach) > 0.05; step++) {
+		const [dx, dz] = [SQUARE.x - atX, SQUARE.z - atZ];
+		const d = hypot(dx, dz) || 1;
+		atX += (dx / d) * 0.5;
+		atZ += (dz / d) * 0.5;
+	}
+	return [Math.round(atX * 100) / 100, Math.round(atZ * 100) / 100];
+}
+
+/** The table and pot footprints' reach, and the half sizes of a level place on the piazza, in meters. */
+const TABLE_REACH = 1.17;
+const POT_REACH = 0.95;
+
+/**
  * The places of the square's cafe tables, its pots and its awnings, as the square draws them. Each
  * is given in the world's x and z, and the awnings carry their turn.
  */
@@ -1289,7 +1323,7 @@ export function squarePropPlaces(): {
 	const covered: [number, number][] = [];
 	const open: [number, number][] = [];
 	for (const side of [-1, 1])
-		for (let i = 0; i < 6; i++) {
+		for (let i = 0; i < 5; i++) {
 			const px = x + side * (hx - 1 + (i % 2) * 2.6);
 			const pz = z - hz + 5 + i * 5.6;
 			// A covered table keeps its chairs on the paving, under the awning that shelters it.
@@ -1317,19 +1351,32 @@ export function squarePropPlaces(): {
 		[17, 9],
 	] as const)
 		pots.push([x + ox, z + oz]);
+	// Every table and pot comes to rest on the piazza's own level floor.
+	const settled = (places: [number, number][], reach: number): [number, number][] =>
+		places.map(([px, pz]) => settleOnPiazza(px, pz, reach));
 	const awnings = [
 		{ x: x - hx - 2, z: z + 4, yaw: Math.PI / 2 },
 		{ x: x + hx + 2, z: z + 4, yaw: -Math.PI / 2 },
 		{ x: x - hx - 2, z: z - 10, yaw: Math.PI / 2 },
 		{ x: x + hx + 2, z: z - 10, yaw: -Math.PI / 2 },
 	];
-	return { covered, open, pots, awnings };
+	return {
+		covered: settled(covered, TABLE_REACH),
+		open: settled(open, TABLE_REACH),
+		pots: settled(pots, POT_REACH),
+		awnings,
+	};
 }
 
-/** The height of the square's paved floor, and the half sizes of the ground that it covers. */
+/** The height of the square's paved floor at a place, which follows the ground that it meets. */
+export function squarePavingHeight(x: number, z: number): number {
+	return groundHeight(x, z) + DRAPE;
+}
+
+/** The height of the square's level piazza and the half sizes of the ground that it covers. */
 export function squareFloor(): { x: number; z: number; halfX: number; halfZ: number; top: number } {
 	const { x, z, hx, hz } = SQUARE;
-	return { x, z, halfX: hx + 3, halfZ: hz + 6, top: groundHeight(x, z) + DRAPE };
+	return { x, z, halfX: hx + 3, halfZ: hz + 6, top: squarePavingHeight(x, z) };
 }
 
 function createSquare(
@@ -1343,37 +1390,27 @@ function createSquare(
 	const top = y + DRAPE;
 	// The fans of small stones cover the square's whole floor, out to the streets on its sides. They lie in
 	// a map, whose finer levels fade with distance, so they never shimmer into rings.
-	// The paved floor runs past the cafe tables at the square's fringes, so every table stands on it.
+	// The paved floor runs past the cafe tables at the square's fringes, and follows the ground that
+	// it meets, so its flags never hang over a bank and every table stands on its surface.
 	const [wide, deep] = [hx + 3, hz + 6];
+	const FLOOR_CELL = 2;
+	const cols = Math.ceil((wide * 2) / FLOOR_CELL);
+	const rows = Math.ceil((deep * 2) / FLOOR_CELL);
+	const floor = { positions: [] as number[], uvs: [] as number[], indices: [] as number[] };
+	for (let j = 0; j <= rows; j++)
+		for (let i = 0; i <= cols; i++) {
+			const px = x - wide + (i / cols) * wide * 2;
+			const pz = z - deep + (j / rows) * deep * 2;
+			floor.positions.push(px, squarePavingHeight(px, pz), pz);
+			floor.uvs.push((px - x) / FAN_PERIOD, (pz - z) / FAN_PERIOD);
+		}
+	for (let j = 0; j < rows; j++)
+		for (let i = 0; i < cols; i++) {
+			const at = j * (cols + 1) + i;
+			floor.indices.push(at, at + cols + 1, at + 1, at + 1, at + cols + 1, at + cols + 2);
+		}
 	scene.createMesh({
-		mesh: geometry.fromArrays({
-			positions: [
-				x - wide,
-				top,
-				z + deep,
-				x + wide,
-				top,
-				z + deep,
-				x + wide,
-				top,
-				z - deep,
-				x - wide,
-				top,
-				z - deep,
-			],
-			uvs: [
-				-wide / FAN_PERIOD,
-				deep / FAN_PERIOD,
-				wide / FAN_PERIOD,
-				deep / FAN_PERIOD,
-				wide / FAN_PERIOD,
-				-deep / FAN_PERIOD,
-				-wide / FAN_PERIOD,
-				-deep / FAN_PERIOD,
-			],
-			indices: [0, 1, 2, 0, 2, 3],
-			computeNormals: true,
-		}),
+		mesh: geometry.fromArrays({ ...floor, computeNormals: true }),
 		material: materials.standard({ map: fanMap(ctx), roughness: 0.82, metalness: 0 }),
 		castShadows: false,
 		receiveShadows: true,
@@ -1435,7 +1472,8 @@ function createSquare(
 			receiveShadows: true,
 		});
 		spots.forEach(([px, pz], k) => {
-			row(batch, k, px, top, pz, k * 0.37);
+			// Each table or pot stands on the paved floor at its own place.
+			row(batch, k, px, squarePavingHeight(px, pz), pz, k * 0.37);
 		});
 		batch.markDirty();
 	};
@@ -2259,37 +2297,42 @@ function parkShape(x: number, z: number, r: number) {
 	return (a: number) => r * (1 + 0.14 * Math.sin(a * 2 + x) + 0.09 * Math.sin(a * 5 + z));
 }
 
-/** A park's gravel walk, which winds around its lawn. */
-function parkWalk(x: number, y: number, z: number, shape: (a: number) => number) {
-	const walk: { x: number; y: number; z: number }[] = [];
+/** A park's gravel walk, which winds around its lawn and follows the ground that it crosses. */
+function parkWalk(x: number, z: number, shape: (a: number) => number) {
+	const walk: ParkPoint[] = [];
 	for (let t = 0; t <= 1.001; t += 0.018) {
 		const a = t * Math.PI * 2 * 0.86 + 2.2;
 		const rr = shape(a) * (0.72 + 0.1 * Math.sin(t * 19));
-		walk.push({ x: x + Math.cos(a) * rr, y: y + 0.02, z: z + Math.sin(a) * rr });
+		const px = x + Math.cos(a) * rr;
+		const pz = z + Math.sin(a) * rr;
+		walk.push({ x: px, y: groundHeight(px, pz), z: pz });
 	}
 	return walk;
 }
 
-/** The branch of a park's walk that leads to its gazebo. */
-function parkBranch(x: number, y: number, z: number, walk: readonly { x: number; z: number }[]) {
+/** The branch of a park's walk that leads to its gazebo, over the ground that it crosses. */
+function parkBranch(x: number, z: number, walk: readonly { x: number; z: number }[]) {
 	const [gx, gz] = [x + 3, z + 2];
-	const branch: { x: number; y: number; z: number }[] = [];
+	const branch: ParkPoint[] = [];
 	const from = walk[Math.floor(walk.length * 0.72)] as { x: number; z: number };
-	for (let t = 0; t <= 1.001; t += 0.1)
-		branch.push({
-			x: from.x + (gx - from.x) * t + Math.sin(t * 3.14) * 2,
-			y: y + 0.02,
-			z: from.z + (gz - from.z) * t,
-		});
+	for (let t = 0; t <= 1.001; t += 0.1) {
+		const px = from.x + (gx - from.x) * t + Math.sin(t * 3.14) * 2;
+		const pz = from.z + (gz - from.z) * t;
+		branch.push({ x: px, y: groundHeight(px, pz), z: pz });
+	}
 	return branch;
 }
 
-/** The base that every drawn park surface lies over the park's level, and the lift of each. */
+/**
+ * The base that every drawn park surface lies over the ground, and the lift of each. The lifts
+ * exceed the ground's own sampling error on a bank, so the terrain never rises through turf that
+ * follows it.
+ */
 const PARK_BASE = 0.02;
-const LAWN_LIFT = 0.1;
-const APRON_LIFT = 0.07;
-const WALK_LIFT = 0.13;
-const BRANCH_LIFT = 0.14;
+const LAWN_LIFT = 0.3;
+const APRON_LIFT = 0.26;
+const WALK_LIFT = 0.33;
+const BRANCH_LIFT = 0.34;
 /** How far the apron reaches past the lawn, and the half width of the walk and the branch, in meters. */
 const APRON_REACH = 3;
 const WALK_STRIP = 1.5;
@@ -2319,19 +2362,21 @@ function gapToLine(line: readonly { x: number; z: number }[], x: number, z: numb
 
 /**
  * The height of the surface that a park draws at a place: its gravel walk or branch, its lawn, the
- * apron past the lawn, or the open ground off the park.
+ * apron past the lawn, or the open ground off the park. Every surface follows the ground that it
+ * crosses, lifted only by its own layer.
  */
 export function parkSurface(plan: ParkPlan, x: number, z: number): number {
 	const [dx, dz] = [x - plan.x, z - plan.z];
 	const d = hypot(dx, dz);
 	const edge = plan.shape(Math.atan2(dz, dx));
+	const ground = groundHeight(x, z);
 	let height = Number.NEGATIVE_INFINITY;
-	if (gapToLine(plan.walk, x, z) <= WALK_STRIP) height = plan.y + PARK_BASE + WALK_LIFT;
+	if (gapToLine(plan.walk, x, z) <= WALK_STRIP) height = ground + PARK_BASE + WALK_LIFT;
 	if (gapToLine(plan.branch, x, z) <= BRANCH_STRIP)
-		height = Math.max(height, plan.y + PARK_BASE + BRANCH_LIFT);
-	if (d <= edge) height = Math.max(height, plan.y + PARK_BASE + LAWN_LIFT);
-	else if (d <= edge + APRON_REACH) height = Math.max(height, plan.y + PARK_BASE + APRON_LIFT);
-	return height > Number.NEGATIVE_INFINITY ? height : groundHeight(x, z);
+		height = Math.max(height, ground + PARK_BASE + BRANCH_LIFT);
+	if (d <= edge) height = Math.max(height, ground + PARK_BASE + LAWN_LIFT);
+	else if (d <= edge + APRON_REACH) height = Math.max(height, ground + PARK_BASE + APRON_LIFT);
+	return height > Number.NEGATIVE_INFINITY ? height : ground;
 }
 
 /** The highest surface under a bench's footprint, so that the bench rests on it. */
@@ -2355,8 +2400,8 @@ export function parkPlans(): ParkPlan[] {
 		const y = groundHeight(x, z);
 		const r = radius * 0.72;
 		const shape = parkShape(x, z, r);
-		const walk = parkWalk(x, y, z, shape);
-		const branch = parkBranch(x, y, z, walk);
+		const walk = parkWalk(x, z, shape);
+		const branch = parkBranch(x, z, walk);
 		const [gx, gz] = [x + 3, z + 2];
 		const plan: ParkPlan = {
 			x,
@@ -2367,7 +2412,7 @@ export function parkPlans(): ParkPlan[] {
 			shape,
 			walk,
 			branch,
-			gazebo: { x: gx, y: y + PARK_BASE + LAWN_LIFT, z: gz },
+			gazebo: { x: gx, y: groundHeight(gx, gz) + PARK_BASE + LAWN_LIFT, z: gz },
 			seats: [],
 			lamps: [],
 			hedges: [],
@@ -2403,39 +2448,44 @@ export function parkPlans(): ParkPlan[] {
 				break;
 			}
 		});
-		// Beds of leafy shrubs lie along the lawn's edge, thick around the gazebo.
+		// Beds of leafy shrubs lie along the lawn's edge, thick around the gazebo. Each bed sits on the
+		// ground that it grows on.
 		for (let k = 0; k < 54; k++) {
 			const a = (k / 54) * Math.PI * 2;
 			const rr = shape(a) + 1.5 + ((k * 7) % 5) * 0.5;
+			const [hx, hz] = [x + Math.cos(a) * rr, z + Math.sin(a) * rr];
 			plan.hedges.push({
-				x: x + Math.cos(a) * rr,
-				y: y + PARK_BASE + APRON_LIFT,
-				z: z + Math.sin(a) * rr,
+				x: hx,
+				y: groundHeight(hx, hz) + PARK_BASE + APRON_LIFT,
+				z: hz,
 				scale: 0.8 + ((k * 3) % 4) * 0.25,
 			});
 		}
 		for (let k = 0; k < 14; k++) {
 			const a = (k / 14) * Math.PI * 2;
+			const [hx, hz] = [gx + Math.cos(a) * 6.5, gz + Math.sin(a) * 6.5];
 			plan.hedges.push({
-				x: gx + Math.cos(a) * 6.5,
-				y: y + PARK_BASE + LAWN_LIFT,
-				z: gz + Math.sin(a) * 6.5,
+				x: hx,
+				y: groundHeight(hx, hz) + PARK_BASE + LAWN_LIFT,
+				z: hz,
 				scale: 0.6 + (k % 3) * 0.25,
 			});
 		}
-		// A low stone wall stands at the lookout, on the park's downhill side.
+		// A low stone wall stands at the lookout, on the park's downhill side, and follows the ground.
 		for (let a = 1; a < 2.4; a += 0.08) {
 			const [ra, rb] = [shape(a) + 5, shape(a + 0.08) + 5];
+			const [ax, az] = [x + Math.cos(a) * ra, z + Math.sin(a) * ra];
+			const [bx, bz] = [x + Math.cos(a + 0.08) * rb, z + Math.sin(a + 0.08) * rb];
 			plan.wall.push({
-				a: { x: x + Math.cos(a) * ra, y, z: z + Math.sin(a) * ra },
-				b: { x: x + Math.cos(a + 0.08) * rb, y, z: z + Math.sin(a + 0.08) * rb },
+				a: { x: ax, y: groundHeight(ax, az), z: az },
+				b: { x: bx, y: groundHeight(bx, bz), z: bz },
 			});
 		}
 		return plan;
 	});
 }
 
-/** The lawns of the parks, for grass: each one's square, the lawn's height, and where its lawn lies. */
+/** The lawns of the parks, for grass: each one's square, the ground that it follows, and where it lies. */
 export function parkLawns() {
 	return parkPlans().map((plan) => {
 		const { x, z, r, shape, walk } = plan;
@@ -2444,7 +2494,7 @@ export function parkLawns() {
 			x,
 			z,
 			size: r * 2.6,
-			height: plan.y + LAWN_LIFT,
+			height: (px: number, pz: number) => groundHeight(px, pz) + PARK_BASE + LAWN_LIFT,
 			where: (px: number, pz: number) => {
 				const [dx, dz] = [px - x, pz - z];
 				const inside = shape(Math.atan2(dz, dx)) - 0.3 - hypot(dx, dz);
@@ -2488,12 +2538,22 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 	const lawn: Color = [0.15, 0.26, 0.07];
 	const gravel: Color = [0.5, 0.45, 0.34];
 	for (const plan of parkPlans()) {
-		const { x, z, y, shape, walk, branch, gazebo } = plan;
-		const flat = () => y + PARK_BASE;
-		// An uneven lawn, and a gravel walk that winds around it with a branch to the gazebo. The lawn
+		const { x, z, shape, walk, branch, gazebo } = plan;
+		// An uneven lawn, and a gravel walk that winds around it with a branch to the gazebo. Every
+		// layer follows the ground that it crosses, so the park meets the hillside at its rim. The lawn
 		// fades into its darker apron over its last half metre, so its outline does not read as a line.
 		const apron: Color = [0.1, 0.18, 0.05];
-		patch(b, x, z, (a) => shape(a) + APRON_REACH, apron, APRON_LIFT, flat);
+		patch(
+			b,
+			x,
+			z,
+			(a) => shape(a) + APRON_REACH,
+			apron,
+			PARK_BASE + APRON_LIFT,
+			groundHeight,
+			64,
+			12,
+		);
 		patch(
 			b,
 			x,
@@ -2510,11 +2570,25 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 					(apron[2] as number) + ((lawn[2] as number) - (apron[2] as number)) * k,
 				];
 			},
-			LAWN_LIFT,
-			flat,
+			PARK_BASE + LAWN_LIFT,
+			groundHeight,
+			64,
+			12,
 		);
-		strip(b, walk, WALK_STRIP, gravel, WALK_LIFT);
-		strip(b, branch, BRANCH_STRIP, gravel, BRANCH_LIFT);
+		ribbon(
+			b,
+			walk,
+			() => WALK_STRIP,
+			() => gravel,
+			PARK_BASE + WALK_LIFT,
+		);
+		ribbon(
+			b,
+			branch,
+			() => BRANCH_STRIP,
+			() => gravel,
+			PARK_BASE + BRANCH_LIFT,
+		);
 		const hall = pavilion();
 		const place = [gazebo.x, gazebo.y, gazebo.z] as [number, number, number];
 		scene.createMesh({
@@ -2907,8 +2981,10 @@ function createLamps(ctx: SketchContext): void {
 		[0.7, 0.5],
 		[-0.3, 0.95],
 		[0.3, 0.95],
-	] as const)
-		places.push({ x: x + dx * hx, y: groundHeight(x, z) + DRAPE, z: z + dz * hz });
+	] as const) {
+		const [lx, lz] = [x + dx * hx, z + dz * hz];
+		places.push({ x: lx, y: squarePavingHeight(lx, lz), z: lz });
+	}
 	const lamps = scene.createInstances(geometry.fromArrays(finish(streetLamp())), places.length, {
 		material: materials.standard({ vertexColors: true, roughness: 0.6 }),
 		castShadows: true,

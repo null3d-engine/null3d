@@ -6,8 +6,8 @@
 // carries it.
 import { describe, expect, it } from 'bun:test';
 import { hypot } from './island';
-import { type Build, bareTable, bench, pavilion, planter, streetLamp } from './kit';
-import { groundHeight, ROADS, SQUARE } from './plan';
+import { type Build, bareTable, bench, HOUSE_KINDS, pavilion, planter, streetLamp } from './kit';
+import { groundHeight, LOTS, ROADS } from './plan';
 import { LOUNGER_OFFSETS, loungerStands } from './props';
 import {
 	HULL_HALF,
@@ -17,6 +17,7 @@ import {
 	parasolClubs,
 	parkPlans,
 	squareFloor,
+	squarePavingHeight,
 	squarePropPlaces,
 } from './town';
 import { CAR_HALF_LENGTH, CAR_HALF_WIDTH, planTraffic } from './traffic';
@@ -81,20 +82,21 @@ function lineGap(line: readonly { x: number; z: number }[], x: number, z: number
 }
 
 /**
- * The height of the surface that a park draws at a place, from the lifts that its meshes use: the
- * base over the park's level, the lawn's and the apron's lift, and the gravel's on the walk and the
+ * The height of the surface that a park draws at a place, from the lifts that its meshes use over
+ * the ground that they cross: the lawn's and the apron's lift, and the gravel's on the walk and the
  * branch. Off the apron it is the open ground.
  */
 function parkGround(plan: ReturnType<typeof parkPlans>[number], x: number, z: number): number {
 	const [dx, dz] = [x - plan.x, z - plan.z];
 	const edge = plan.shape(Math.atan2(dz, dx));
 	const d = hypot(dx, dz);
+	const ground = groundHeight(x, z);
 	let height = -Infinity;
-	if (lineGap(plan.walk, x, z) <= 1.5) height = Math.max(height, plan.y + 0.02 + 0.13);
-	if (lineGap(plan.branch, x, z) <= 1.2) height = Math.max(height, plan.y + 0.02 + 0.14);
-	if (d <= edge) height = Math.max(height, plan.y + 0.02 + 0.1);
-	else if (d <= edge + 3) height = Math.max(height, plan.y + 0.02 + 0.07);
-	return height > -Infinity ? height : groundHeight(x, z);
+	if (lineGap(plan.walk, x, z) <= 1.5) height = Math.max(height, ground + 0.02 + 0.33);
+	if (lineGap(plan.branch, x, z) <= 1.2) height = Math.max(height, ground + 0.02 + 0.34);
+	if (d <= edge) height = Math.max(height, ground + 0.02 + 0.3);
+	else if (d <= edge + 3) height = Math.max(height, ground + 0.02 + 0.26);
+	return height > -Infinity ? height : ground;
 }
 
 /** The radius of a gazebo's lowest step, read from its own mesh. */
@@ -195,7 +197,64 @@ describe('the island props stand on their surfaces', () => {
 
 	it('stands the gazebo on its lawn', () => {
 		// The branch's gravel runs under the gazebo's steps, so the lawn's own lift sets its base.
-		for (const plan of parkPlans()) expect(plan.gazebo.y).toBeCloseTo(plan.y + 0.02 + 0.1, 6);
+		for (const plan of parkPlans())
+			expect(plan.gazebo.y).toBeCloseTo(groundHeight(plan.gazebo.x, plan.gazebo.z) + 0.02 + 0.3, 6);
+	});
+
+	it('lays every drawn park surface on the ground it crosses', () => {
+		for (const plan of parkPlans()) {
+			for (let a = 0; a < Math.PI * 2; a += 0.07)
+				for (const f of [0.5, 0.85, 1, 1.05]) {
+					const r = plan.shape(a) * f;
+					const x = plan.x + Math.cos(a) * r;
+					const z = plan.z + Math.sin(a) * r;
+					const lift = parkGround(plan, x, z) - groundHeight(x, z);
+					expect(lift).toBeGreaterThanOrEqual(-0.01);
+					expect(lift).toBeLessThanOrEqual(0.4);
+				}
+			// The lookout wall's foot is the ground along its whole length.
+			for (const { a, b } of plan.wall) {
+				expect(a.y).toBeCloseTo(groundHeight(a.x, a.z), 6);
+				expect(b.y).toBeCloseTo(groundHeight(b.x, b.z), 6);
+			}
+		}
+	});
+
+	it('lays the square paving on the ground it meets', () => {
+		const floor = squareFloor();
+		// The open piazza lies one level; its flags follow the ground everywhere, at their drape.
+		const atHouseFront = (x: number, z: number, reach: number) =>
+			LOTS.some((lot) => {
+				const [hw, hd] = (HOUSE_KINDS[lot.kind] as (typeof HOUSE_KINDS)[number]).half;
+				const [c, s] = [Math.cos(lot.yaw), Math.sin(lot.yaw)];
+				const [dx, dz] = [x - lot.x, z - lot.z];
+				return Math.abs(dx * c - dz * s) <= hw + reach && Math.abs(dx * s + dz * c) <= hd + reach;
+			});
+		for (let x = floor.x - floor.halfX; x <= floor.x + floor.halfX; x += 1)
+			for (let z = floor.z - floor.halfZ; z <= floor.z + floor.halfZ; z += 1) {
+				const ground = groundHeight(x, z);
+				// The flags lie their drape over the ground, so no part of the paving can hang free.
+				expect(squarePavingHeight(x, z) - ground).toBeCloseTo(0.14, 6);
+				if (!atHouseFront(x, z, 3))
+					// The open piazza's ground is one level, so its flags lie flat.
+					expect(Math.abs(floor.top - ground - 0.14)).toBeLessThan(0.02);
+			}
+	});
+
+	it('keeps the square cafe tables apart', () => {
+		const { covered, open } = squarePropPlaces();
+		const places = [...covered, ...open];
+		const offenders: string[] = [];
+		for (let i = 0; i < places.length; i++)
+			for (let j = i + 1; j < places.length; j++) {
+				const a = places[i] as readonly [number, number];
+				const b = places[j] as readonly [number, number];
+				if (hypot(a[0] - b[0], a[1] - b[1]) < 2.4)
+					offenders.push(
+						`${a[0].toFixed(1)},${a[1].toFixed(1)} and ${b[0].toFixed(1)},${b[1].toFixed(1)}`,
+					);
+			}
+		expect(offenders).toEqual([]);
 	});
 
 	it('stands the square tables and pots on its paving', () => {
@@ -206,14 +265,33 @@ describe('the island props stand on their surfaces', () => {
 		const offenders: string[] = [];
 		const inside = (reach: number, x: number, z: number) =>
 			Math.abs(x - floor.x) + reach <= floor.halfX && Math.abs(z - floor.z) + reach <= floor.halfZ;
-		for (const [x, z] of [...covered, ...open])
+		// The ground under a prop's footprint, from a 3 by 3 sample of it.
+		const spread = (reach: number, x: number, z: number) => {
+			let [low, high] = [Infinity, -Infinity];
+			for (const u of [-reach, 0, reach])
+				for (const v of [-reach, 0, reach]) {
+					const ground = groundHeight(x + u, z + v);
+					low = Math.min(low, ground);
+					high = Math.max(high, ground);
+				}
+			return high - low;
+		};
+		for (const [x, z] of [...covered, ...open]) {
+			// Each table's ground contacts are on the piazza's level floor, and its base meets the paving.
 			if (!inside(tableReach, x, z)) offenders.push(`table ${x.toFixed(1)},${z.toFixed(1)}`);
-		for (const [x, z] of pots)
+			if (spread(tableReach, x, z) > 0.07)
+				offenders.push(`table ${x.toFixed(1)},${z.toFixed(1)} on a bank`);
+			if (Math.abs(groundHeight(x, z) + 0.14 - floor.top) > 0.03)
+				offenders.push(`table ${x.toFixed(1)},${z.toFixed(1)} off the flags`);
+		}
+		for (const [x, z] of pots) {
 			if (!inside(potReach, x, z)) offenders.push(`pot ${x.toFixed(1)},${z.toFixed(1)}`);
+			if (spread(potReach, x, z) > 0.07)
+				offenders.push(`pot ${x.toFixed(1)},${z.toFixed(1)} on a bank`);
+			if (Math.abs(groundHeight(x, z) + 0.14 - floor.top) > 0.03)
+				offenders.push(`pot ${x.toFixed(1)},${z.toFixed(1)} off the flags`);
+		}
 		expect(offenders).toEqual([]);
-		// Every prop stands at the floor's own height.
-		const top = groundHeight(SQUARE.x, SQUARE.z) + 0.14;
-		expect(floor.top).toBeCloseTo(top, 6);
 	});
 
 	it('stands every beach parasol and lounger on its own sand', () => {

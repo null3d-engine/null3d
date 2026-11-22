@@ -609,7 +609,7 @@ export async function createTrees(
 	const lawns = await Promise.all(
 		parkLawns().map((lawn, k) =>
 			createGrass(ctx, {
-				height: () => lawn.height,
+				height: lawn.height,
 				area: { x: lawn.x, z: lawn.z, size: lawn.size },
 				count: GRASS_TUFTS,
 				seed: 41 + k,

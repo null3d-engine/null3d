@@ -274,6 +274,7 @@ function rasterPad(
 	w: number,
 	back: number,
 	front: number,
+	record?: Float32Array,
 ): void {
 	const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
 	const reach = hypot(w, Math.max(back, front)) + MOST_BANK;
@@ -295,6 +296,7 @@ function rasterPad(
 			sum[at] = (sum[at] as number) + y * blend;
 			weight[at] = (weight[at] as number) + blend;
 			share[at] = Math.max(share[at] as number, near);
+			if (record) record[at] = Math.max(record[at] as number, near);
 		}
 }
 
@@ -358,6 +360,8 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 	const sum = new Float32Array(SIDE * SIDE);
 	const weight = new Float32Array(SIDE * SIDE);
 	const share = new Float32Array(SIDE * SIDE);
+	/** How near each cell lies to the square's terrace. */
+	const squareNear = new Float32Array(SIDE * SIDE);
 	for (const lot of lots) {
 		// A pad reaches a little past its walls, so the bank starts clear of the house's corners.
 		const [w, back, front] = lot.plot;
@@ -374,7 +378,10 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 			front,
 		);
 	}
-	// The square lies level on a stone terrace, and each park on a lawn of its own.
+	// The square lies level on a stone terrace, and each park on a lawn of its own. The square's
+	// terrace reaches a cell past the drawn paving's edge, so the ground read at that edge is the
+	// terrace's own level and the flags lie flat; a park's lawn runs on past its level pad and
+	// follows the hillside.
 	const squareY = naturalHeight(SQUARE.x, SQUARE.z) + 0.3;
 	rasterPad(
 		sum,
@@ -384,9 +391,10 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 		SQUARE.z,
 		squareY,
 		0,
-		SQUARE.hx + 2,
-		SQUARE.hz + 2,
-		SQUARE.hz + 2,
+		SQUARE.hx + 5,
+		SQUARE.hz + 8,
+		SQUARE.hz + 8,
+		squareNear,
 	);
 	rasterPad(sum, weight, share, CHURCH_AT.x, CHURCH_AT.z, squareY, 0, 18, 24, 18);
 	for (const [x, z, radius] of PARKS)
@@ -403,6 +411,22 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 			radius * 0.72,
 		);
 	for (const [kx, kz, ky] of KEEPS) rasterPad(sum, weight, share, kx, kz, ky, 0, 11, 11, 11);
+	// The cells under a house's own floor, where the house's ground wins over the piazza's level.
+	const underHouse = new Uint8Array(SIDE * SIDE);
+	for (const lot of lots) {
+		const [hw, hd] = (HOUSE_KINDS[lot.kind] as (typeof HOUSE_KINDS)[number]).half;
+		const [c, s] = [Math.cos(lot.yaw), Math.sin(lot.yaw)];
+		const span = Math.ceil((hypot(hw, hd) + CELL) / CELL);
+		const [ci, cj] = [toCell(lot.x), toCell(lot.z)];
+		for (let j = Math.max(0, cj - span); j <= Math.min(SIDE - 1, cj + span); j++)
+			for (let i = Math.max(0, ci - span); i <= Math.min(SIDE - 1, ci + span); i++) {
+				const [dx, dz] = [fromCell(i) - lot.x, fromCell(j) - lot.z];
+				const u = dx * c - dz * s;
+				const v = dx * s + dz * c;
+				if (Math.abs(u) <= hw + CELL / 2 && Math.abs(v) <= hd + CELL / 2)
+					underHouse[cellAt(i, j)] = 1;
+			}
+	}
 	const out = new Float32Array(SIDE * SIDE);
 	const pinned = new Uint8Array(SIDE * SIDE);
 	for (let j = 0; j < SIDE; j++)
@@ -439,6 +463,9 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 				h += (y - h) * w;
 				if (edge <= SHOULDER) pinned[at] = 2;
 			}
+			// A piazza is one level: inside the square's terrace, and clear of the houses that stand
+			// on it, the flags hold the square's level rather than an average of the plots around them.
+			if ((squareNear[at] as number) >= 1 && underHouse[at] === 0) h = squareY;
 			out[at] = h;
 		}
 	// The last pass keeps the banks that roads and plots leave under the steepest slope, and lets the
