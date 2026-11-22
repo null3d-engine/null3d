@@ -2027,14 +2027,12 @@ function createGolf(ctx: SketchContext): void {
 			gx,
 			gz,
 			(a) => 12 + 2.2 * Math.sin(a * 3),
-			(x, z) => greenBand(x, z, [0.26, 0.45, 0.15], 0.08),
+			(x, z) => greenBand(x, z, [0.26, 0.45, 0.15], 0.13),
 			0.58,
 			groundHeight,
 			48,
 			12,
 		);
-		patch(b, gx, gz, (a) => 15 + 2.4 * Math.sin(a * 3), [0.15, 0.3, 0.08], 0.54);
-		patch(b, gx, gz, (a) => 12 + 2.2 * Math.sin(a * 3), [0.26, 0.45, 0.15], 0.58);
 		const spots = bunkerSpots(stations);
 		for (const [sx, sz, r, turn] of spots) {
 			// No bunker lies on the bank, or runs off the course's top.
@@ -2123,7 +2121,11 @@ export function parkLawns() {
 			height: y + LAWN_LIFT,
 			where: (px: number, pz: number) => {
 				const [dx, dz] = [px - x, pz - z];
-				if (hypot(dx, dz) >= shape(Math.atan2(dz, dx)) - 0.3) return false;
+				const inside = shape(Math.atan2(dz, dx)) - 0.3 - hypot(dx, dz);
+				if (inside <= 0) return false;
+				// The grass thins to nothing over the lawn's last half metre, so its outline reads as
+				// a fading cover rather than a line.
+				if (inside < LAWN_EDGE_FADE && edgeHash(px, pz) > inside / LAWN_EDGE_FADE) return false;
 				if (hypot(px - (x + 3), pz - (z + 2)) < GAZEBO_CLEAR) return false;
 				// The points along a walk stand about 2 m apart, so this also covers the walk between them.
 				return !paths.some((p) => hypot(px - p.x, pz - p.z) < WALK_CLEAR);
@@ -2132,11 +2134,24 @@ export function parkLawns() {
 	});
 }
 
+/** A fixed value from 0 to 1 at each place, so a thinned cover breaks up the same way on every run. */
+function edgeHash(x: number, z: number): number {
+	// The place in sixteenths of a meter as integers, then a 32-bit mix, so every engine gives the
+	// same fringe.
+	let h = Math.imul(Math.round(x * 16), 0x27d4eb2d) ^ Math.imul(Math.round(z * 16), 0x165667b1);
+	h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+	h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+	h ^= h >>> 16;
+	return (h >>> 0) / 4294967296;
+}
+
 /** The parks: mottled lawns with a winding gravel walk, a gazebo, benches, hedges, lamps and a low wall. */
 /** How high a lawn lies over the park's level, and how far grass keeps from a walk and a gazebo, in meters. */
 const LAWN_LIFT = 0.1;
 const WALK_CLEAR = 2;
 const GAZEBO_CLEAR = 7;
+/** The last stretch of a lawn, in meters, over which its cover and its colour fade into the ground. */
+const LAWN_EDGE_FADE = 0.5;
 
 function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 	const { scene, geometry, materials } = ctx;
@@ -2151,10 +2166,30 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 		const y = groundHeight(x, z);
 		const flat = () => y + 0.02;
 		const r = radius * 0.72;
-		// An uneven lawn, and a gravel walk that winds around it with a branch to the gazebo.
+		// An uneven lawn, and a gravel walk that winds around it with a branch to the gazebo. The lawn
+		// fades into its darker apron over its last half metre, so its outline does not read as a line.
 		const shape = parkShape(x, z, r);
-		patch(b, x, z, (a) => shape(a) + 3, [0.1, 0.18, 0.05], 0.07, flat);
-		patch(b, x, z, shape, lawn, LAWN_LIFT, flat);
+		const apron: Color = [0.1, 0.18, 0.05];
+		patch(b, x, z, (a) => shape(a) + 3, apron, 0.07, flat);
+		patch(
+			b,
+			x,
+			z,
+			shape,
+			(px, pz) => {
+				const [dx, dz] = [px - x, pz - z];
+				const edge = shape(Math.atan2(dz, dx));
+				const t = Math.min(1, Math.max(0, (edge - hypot(dx, dz)) / LAWN_EDGE_FADE));
+				const k = t * t * (3 - 2 * t);
+				return [
+					(apron[0] as number) + ((lawn[0] as number) - (apron[0] as number)) * k,
+					(apron[1] as number) + ((lawn[1] as number) - (apron[1] as number)) * k,
+					(apron[2] as number) + ((lawn[2] as number) - (apron[2] as number)) * k,
+				];
+			},
+			LAWN_LIFT,
+			flat,
+		);
 		const walk = parkWalk(x, y, z, shape);
 		strip(b, walk, 1.5, gravel, 0.13);
 		const [gx, gz] = [x + 3, z + 2];

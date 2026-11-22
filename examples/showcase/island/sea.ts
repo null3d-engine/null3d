@@ -29,6 +29,8 @@ const BED_COLOR = [0.13, 0.12, 0.1] as const;
 const SAND_COLOR = [0.62, 0.48, 0.28] as const;
 const DEEP_COLOR = [0.03, 0.115, 0.235] as const;
 const DEEP_COLOR_HEX = '#305e85';
+/** The far floor's colour on Low, whose shorter reach shows it under the horizon's haze. */
+const LOW_FLOOR_HEX = '#748c93';
 /** How far out over the water the shore's foam reaches at most, and how far back on the sand it starts, in meters. */
 const FOAM_WIDTH = 9;
 const FOAM_ON_SAND = 12;
@@ -441,7 +443,9 @@ export function createSea(ctx: SketchContext, camera: Camera): { update(): void 
 	ctx.scene.createMesh({
 		mesh: ctx.geometry.fromArrays(openSea(0, SEA_REACH, DEEP_FLOOR - DEEP_LIFT + 0.2)),
 		material: ctx.materials.standard({
-			color: DEEP_COLOR_HEX,
+			// The far floor shows past the water's own reach, so on Low it takes the haze's pale tone
+			// and the join reads as haze rather than a dark band.
+			color: ctx.quality.preset === 'low' ? LOW_FLOOR_HEX : DEEP_COLOR_HEX,
 			roughness: 0.9,
 			metalness: 0,
 			doubleSided: true,

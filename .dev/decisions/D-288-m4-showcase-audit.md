@@ -82,7 +82,7 @@ Buildings, cars, objects and people become pre-made model files, complex ones. O
 
 These wait for models, so do not fix them before: tower, wall and house surfaces; boat decks and hulls; crude rocks and the breakwater's lumps; the tan rim on the headland; close-up cypress and olive form; climbing flowers, which are flat squares up close; parasols; plain window panes; flat road surfaces at eye level.
 
-Near plants: eye-level forest floor has no litter or undergrowth, and the golf turf has no mown stripes. Both are open.
+Near plants: eye-level forest floor has no litter or undergrowth, and the golf turf has no mown stripes. The stripes now draw, at the fairway's swing, after two plain patches that hid them were removed. The floor's litter stays open.
 
 ### M4-S6: the ocean
 
