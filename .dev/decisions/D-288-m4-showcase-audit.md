@@ -147,6 +147,17 @@ The veil on high views stands: with fog off, the far sea's red falls by only 9 t
 - S4 Medium's noise, 30 to 60%, leaves its small shifts unmeasurable.
 - Compatibility mode loses MSAA for FXAA in a scene with a reflection, which is the named cost of fixing its double tone map.
 - Ultra's slowest second on the Island was 21 fps at the worst view, not remeasured since.
+- **The island drops 119 instance copies at the page's rebuild frame.** The culling shader
+  appends copies whose matrix reads as zero, so the level's exact slice is short by 119 and
+  objects go missing. It showed once in 14 whole High routes, and a page reload fires it on the
+  second start every time. The first drop lands on the rebuild frame: the CPU holds a real
+  matrix, and the slot is in bounds (array length 77,424 vec4 words against a vec4 index of
+  36,924). It surfaces in a mirror or probe view, not the main camera. Three fixes were tried
+  and each one failed the reload: uploading every live row on rebuild and growth frames,
+  uploading on rebuild frames alone, and a written-rows bitset that fills every unwritten live
+  row. The uploader's spans are therefore not the cause. What remains is the cull reading the
+  matrix before that frame's write reaches the bound buffer, or its instance index naming a row
+  whose bytes differ across the mirror or probe view's binding.
 
 ## Tried and rejected
 
