@@ -884,7 +884,7 @@ TALL_TRUNK = dict(
 )
 PINES = {
     'pine-tall': dict(
-        TALL_TRUNK, wood=(14000, 5000, 1600),
+        TALL_TRUNK, wood=(14000, 6500, 4500),
         fan=(0.3, (3.6, 3.0, 2.4), (0.65, 1.65, 2.0, 1.75, 1.5)), wire=0.6, span=(0.42, 0.86), rigid=0.3, climb=(0.25, 0.6, 0.4, 0.0), bare=0.38, stub=0.12, twig=0.12, snug=1.0, tubes=True,
         keep=0.45, girth=0.08, drop=0.5, sag=0.2, prune=True, gap=0.14, pad=(1.0, 1.35, 1.1), vary=0.45, crest=(0.32, 0.0, 0.33),
         taper=0.5, spacing=2.0, slope=1.5, flatten=0.9, hold=0.9, level=50, floor=0.3, deep=(1.4,), flat=3.0, rise=0.1, droop=0.1, stagger=0.3,
@@ -1623,7 +1623,7 @@ def pine_wood(obj, plant, inverse, phase, shade):
     mesh.uv_layers.active = mesh.uv_layers['UVMap']
 
 
-def decimated(obj, triangles, name):
+def decimated(obj, triangles, name, keep_pieces=0):
     """
     A copy of the object cut to about `triangles` triangles, which keeps its UVs, within 0 to 1, and
     its colors. A cut can part a thin piece of wood from its limb, so only the largest piece, the
@@ -1643,7 +1643,7 @@ def decimated(obj, triangles, name):
         bpy.data.meshes.remove(old)
     bm = bmesh.new()
     bm.from_mesh(copy.data)
-    keep_largest_piece(bm)
+    keep_largest_piece(bm, keep_pieces)
     bm.to_mesh(copy.data)
     bm.free()
     # A collapse can carry a texture coordinate just past the edge of its map. The asset tool stores
@@ -1657,11 +1657,12 @@ def decimated(obj, triangles, name):
     return copy
 
 
-def keep_largest_piece(bm):
+def keep_largest_piece(bm, min_faces=0):
     """
     Deletes every piece of a mesh but the largest, where a piece is the faces joined through their
     corners: an edge with no face, or a face of no area, joins nothing that the exported file
-    shows. Edges and vertices that no face uses go too.
+    shows. Pieces of at least `min_faces` faces stay, so a rebuilt limb that starts as its own
+    island is not mistaken for debris. Edges and vertices that no face uses go too.
     """
     bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
     bm.faces.ensure_lookup_table()
@@ -1681,7 +1682,8 @@ def keep_largest_piece(bm):
                         stack.append(g)
         pieces.append(piece)
     pieces.sort(key=len, reverse=True)
-    bmesh.ops.delete(bm, geom=[f for piece in pieces[1:] for f in piece], context='FACES_ONLY')
+    drop = [piece for piece in pieces[1:] if len(piece) < min_faces]
+    bmesh.ops.delete(bm, geom=[f for piece in drop for f in piece], context='FACES_ONLY')
     bmesh.ops.delete(bm, geom=[e for e in bm.edges if not e.link_faces], context='EDGES')
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
 
@@ -1791,6 +1793,14 @@ def round_limbs(obj, plant, tiers, middles, axis, phase, shade, name):
             if pick[-1] != cells[-1]:
                 pick.append(cells[-1])
             points = [Vector(tuple(middles[c])) for c in pick]
+
+            def under_a_pad(p):
+                return any(((p.x - c.x) / r.x) ** 2 + ((p.y - c.y) / r.y) ** 2 < 1.3 for c, r, _ in plant.pads)
+
+            last = max((i for i, p in enumerate(points) if under_a_pad(p)), default=-1)
+            if last < 2:
+                continue
+            points = points[:last + 1]
             radii = [0.055 * (1 - 0.55 * (i / max(len(points) - 1, 1))) for i in range(len(points))]
 
             def sway_of(p, share, cells=cells, pick=pick):
@@ -1853,14 +1863,14 @@ def build_pine(name, spec, raw, leaf_mat, rng):
         return leaves
 
     full = {
-        'wood': decimated(wood, spec['wood'][0], f'{name}-wood'),
+        'wood': decimated(wood, spec['wood'][0], f'{name}-wood', 8 if spec.get('tubes') else 0),
         'leaves': needles(places, rng, 1.0, spec['bodies'][0]).build(f'{name}-leaves', leaf_mat),
     }
     objects, errors = list(full.values()), {f'{name}-{part}': [] for part in full}
     for k, (every, grow) in enumerate(spec['levels'], start=1):
         own = np.random.default_rng((SEED, 60 + k, sum(map(ord, name))))
         level = {
-            'wood': decimated(wood, spec['wood'][k], f'{name}-wood-{k}'),
+            'wood': decimated(wood, spec['wood'][k], f'{name}-wood-{k}', 8 if spec.get('tubes') else 0),
             'leaves': needles(places[::every], own, grow, spec['bodies'][k]).build(f'{name}-leaves-{k}', leaf_mat),
         }
         for part, obj in level.items():
