@@ -204,6 +204,16 @@ export const CLOUD_DEVICES: readonly CloudDevice[] = [
 		browser: 'chrome',
 	},
 	{
+		runner: 'bsgalaxytabs8-chrome',
+		tier: 'B',
+		device: 'Samsung Galaxy Tab S8',
+		os: 'android',
+		osVersion: '12.0',
+		browser: 'chrome',
+		standIn:
+			'Automate has no Galaxy Tab S9 FE; the Tab S8 is the nearest mid-range Android tablet, the class the owner accepted at Low though slow',
+	},
+	{
 		runner: 'bspixel11-chrome',
 		tier: 'B',
 		device: 'Google Pixel 11',
