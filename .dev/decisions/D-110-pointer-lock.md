@@ -62,7 +62,7 @@ The controls:
 - Both sets keep the camera's pose in double precision, as three.js does, and take the camera's pose only when the sketch changed it ([camera-pose.ts](../../packages/controls/src/camera-pose.ts)).
 - Damping in first-person controls applies a share that suits the frame's step, `1 - (1 - dampingFactor)^(60 dt)`, as orbit controls do. three.js applies `dampingFactor` once per update, so at 60 frames per second both match.
 
-Known differences, which [Camera controls](../../docs/api/controls.md#differences-from-threejs) lists:
+Known differences from three.js:
 
 - The locked moves of one frame add up before the polar limits apply. three.js clamps after each move.
 - First-person controls never roll the camera.

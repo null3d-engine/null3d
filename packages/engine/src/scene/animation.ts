@@ -60,33 +60,32 @@ export interface PlayOptions {
 	 */
 	layer?: number;
 	/**
-	 * True adds the clip's change from its first frame to the pose of the layers, as three.js's
-	 * additive clips do. A breathing or aiming clip then plays on top of a walk. An additive play
-	 * replaces only the additive clips of its layer, and a plain play only the plain ones.
+	 * True adds the clip's change from its first frame to the pose of the layers. A breathing or
+	 * aiming clip then plays on top of a walk. An additive play replaces only the additive clips of
+	 * its layer, and a plain play only the plain ones.
 	 */
 	additive?: boolean;
 	/**
-	 * Seconds into the clip at which it starts, as three.js's `action.time` sets it. A repeating
-	 * clip wraps the time into its length, and a clip that plays once holds it within its length.
-	 * Without it, a clip starts at its first frame, and a clip that already plays keeps its time.
+	 * Seconds into the clip at which it starts. A repeating clip wraps the time into its length,
+	 * and a clip that plays once holds it within its length. Without it, a clip starts at its first
+	 * frame, and a clip that already plays keeps its time.
 	 */
 	time?: number;
 	/**
-	 * The clip's own weight, 0 or more, as three.js's `setEffectiveWeight` sets it. A play with a
-	 * weight joins the other clips of its layer instead of fading them out, so a walk at 0.3 and a
-	 * run at 0.7 blend. A fade multiplies the weight. Without it, a clip that starts takes 1, and a
-	 * clip that already plays keeps its weight.
+	 * The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer
+	 * instead of fading them out, so a walk at 0.3 and a run at 0.7 blend. A fade multiplies the
+	 * weight. Without it, a clip that starts takes 1, and a clip that already plays keeps its
+	 * weight.
 	 */
 	weight?: number;
 	/**
 	 * How a play with a `fade` switches what its layer plays. `'blend'`, the default, cross-fades
-	 * the layer's old clips with the new one, as three.js's `crossFadeTo` does, and samples both
-	 * while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves
-	 * continues on its path and eases into the new clip, which keeps feet from sliding through a
-	 * mixed gait. It needs a fade above 0, no `weight`, and a clip already playing on the layer,
-	 * whose pose it carries on from. A play of a clip that already plays on the layer keeps that
-	 * clip's time and fades it back in instead, so it is no inertial switch. `crossFade` always
-	 * cross-fades, so a port of `crossFadeTo` shows the blend that three.js shows.
+	 * the layer's old clips with the new one, and samples both while the fade runs. `'inertial'`
+	 * samples only the new clip: the pose the layer leaves continues on its path and eases into the
+	 * new clip, which keeps feet from sliding through a mixed gait. It needs a fade above 0, no
+	 * `weight`, and a clip already playing on the layer, whose pose it carries on from. A play of a
+	 * clip that already plays on the layer keeps that clip's time and fades it back in instead, so
+	 * it is no inertial switch. `crossFade` always cross-fades.
 	 */
 	transition?: 'blend' | 'inertial';
 }
@@ -666,19 +665,18 @@ export class Animator implements Described {
 	}
 
 	/**
-	 * Fades to a clip over `duration` seconds while the layer's other clips fade out, as
-	 * three.js's `crossFadeTo` does. It is `play(name, { ...options, fade: duration })`, but a
-	 * clip with a weight still takes over.
+	 * Fades to a clip over `duration` seconds while the layer's other clips fade out, and samples
+	 * them all while the fade runs. It is `play(name, { ...options, fade: duration })`, but it
+	 * always cross-fades, whatever its `transition`, and a clip with a weight still takes over.
 	 */
 	crossFade(name: string, duration: number, options?: PlayOptions): void {
 		this.start('crossFade', name, options, false, duration, true);
 	}
 
 	/**
-	 * Sets the weight of a clip that plays, 0 or more, on every layer that plays it, as three.js's
-	 * `setEffectiveWeight` does. A clip at weight 0 leaves the pose but keeps playing, so its time
-	 * moves on. A fade multiplies the weight. It writes engine memory, so calling it every frame
-	 * costs nothing.
+	 * Sets the weight of a clip that plays, 0 or more, on every layer that plays it. A clip at
+	 * weight 0 leaves the pose but keeps playing, so its time moves on. A fade multiplies the
+	 * weight. It writes engine memory, so calling it every frame costs nothing.
 	 */
 	setWeight(name: string, weight: number): void {
 		const call = 'setWeight';
@@ -840,10 +838,9 @@ export class Animator implements Described {
 	/**
 	 * Sets a joint's rotation relative to its parent, as a quaternion `[x, y, z, w]`, on top of
 	 * the clips. The joint turns from its animated rotation toward this one by `weight`, from 0 to
-	 * 1. At 1 it takes the rotation, as three.js's `bone.quaternion.copy` does after the mixer's
-	 * update. The joints below it follow. The rotation holds in every frame until `clearJoint`, so
-	 * call it again only to change it. It writes engine memory, so calling it every frame costs
-	 * nothing.
+	 * 1. At 1 it takes the rotation. The joints below it follow. The rotation holds in every frame
+	 * until `clearJoint`, so call it again only to change it. It writes engine memory, so calling
+	 * it every frame costs nothing.
 	 */
 	setJointRotation(joint: number | string, rotation: QuatLike, weight = 1): void {
 		const call = 'setJointRotation';
@@ -854,10 +851,9 @@ export class Animator implements Described {
 
 	/**
 	 * Turns a joint by a rotation, a quaternion `[x, y, z, w]`, on top of its animated rotation, in
-	 * the joint's own frame, as three.js's `bone.quaternion.multiply` does after the mixer's
-	 * update. `weight`, from 0 to 1, scales the turn. A walking soldier then twists or leans while
-	 * the clips move it. The turn holds in every frame until `clearJoint`, and calling it every
-	 * frame costs nothing.
+	 * the joint's own frame. `weight`, from 0 to 1, scales the turn. A walking soldier then twists
+	 * or leans while the clips move it. The turn holds in every frame until `clearJoint`, and
+	 * calling it every frame costs nothing.
 	 */
 	addJointRotation(joint: number | string, rotation: QuatLike, weight = 1): void {
 		const call = 'addJointRotation';

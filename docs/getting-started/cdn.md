@@ -51,7 +51,7 @@ The build holds the engine's entry point twice. Both draw the same scene. They d
 
 The development entry runs the same checks as the Vite dev server. A bad argument throws an error with its code, such as [E1203](../errors/E1203.md), and a call on a destroyed object throws [E1101](../errors/E1101.md). Debug drawing and debug views draw only in a development build, such as this entry ([Debugging](../guides/debugging.md#development-checks)). The entry also reads the switches in the page's address, such as `?gpu=`, `?hold=` and `?preset=` ([Switches for tests](../guides/testing.md#switches-for-tests)).
 
-In each frame, some of those checks read every static object and a share of the rows of static batches. So a large scene runs slower from the development entry than from the production entry. Time a page, judge its frame rate or compare it with three.js only from the production entry. A demo from the development entry is fine to try, but its frame rate is not what your users get.
+In each frame, some of those checks read every static object and a share of the rows of static batches. So a large scene runs slower from the development entry than from the production entry. Time a page, judge its frame rate or compare it with another engine only from the production entry. A demo from the development entry is fine to try, but its frame rate is not what your users get.
 
 The production entry behaves like a production build from Vite and the plugin. The checks never run, and the page ignores address switches, so a link cannot change how it runs. Its files still hold the checks' code, which a Vite build removes from the download.
 

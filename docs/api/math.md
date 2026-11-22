@@ -69,16 +69,15 @@ The [vector and quaternion math demo](https://github.com/null3d-engine/null3d/tr
 ## Conventions
 
 - Units are meters and radians. Convert degrees with `math.degToRad`.
-- Coordinates are right-handed, with +Y up, as in three.js and glTF.
+- Coordinates are right-handed, with +Y up, as in glTF.
 - A quaternion is (x, y, z, w), in the order that `setRotation` and instance batches use.
-- A matrix stores its 16 numbers column by column, as three.js and WebGPU do. Elements 12, 13 and 14 hold the translation.
+- A matrix stores its 16 numbers column by column, as WebGPU does. Elements 12, 13 and 14 hold the translation.
 - `quat.lookAt` turns an object's +Z axis toward a point, as a mesh's `lookAt` does. Cameras and lights look down their -Z axis, so swap the eye and the target for them.
-- `quat.fromEuler` takes radians and three.js's axis orders, such as `'XYZ'`. gl-matrix's `fromEuler` takes degrees.
-- Where three.js has the same operation, a helper does three.js's arithmetic, so the results match three.js. The reference below names the matching three.js call, where there is one.
+- `quat.fromEuler` takes radians and an axis order: `'XYZ'`, `'YXZ'`, `'ZXY'`, `'ZYX'`, `'YZX'` or `'XZY'`. The default, `'XYZ'`, turns about the object's own X axis, then its Y axis, then its Z axis. gl-matrix's `fromEuler` takes degrees.
 
 ## Colors
 
-The color helpers give linear RGB, the color space that the engine lights in. The color options of materials, lights and the background take hex colors, which are sRGB, and convert them for you, as three.js does. They take three linear components as they are, so the helpers' results go straight into them. The colors of an instance batch are linear too, so convert sRGB colors with the helpers first:
+The color helpers give linear RGB, the color space that the engine lights in. The color options of materials, lights and the background take hex colors, which are sRGB, and convert them for you. They take three linear components as they are, so the helpers' results go straight into them. The colors of an instance batch are linear too, so convert sRGB colors with the helpers first:
 
 ```ts
 // In the setup: a color for each box.
@@ -89,7 +88,7 @@ const boxes = scene.createInstances(geometry.box(), 100, {
 const rgb = vec3.create();
 const colors = boxes.colors as Float32Array;
 for (let i = 0; i < boxes.count; i++) {
-  color.fromHsl(rgb, i / boxes.count, 0.7, 0.5); // the color three.js's setHSL gives
+  color.fromHsl(rgb, i / boxes.count, 0.7, 0.5); // a new hue for each box
   colors.set(rgb, i * 4);
 }
 boxes.markDirty();
@@ -103,7 +102,7 @@ Each row's color multiplies its material's base color and opacity, as [Instances
 `math.random()` gives a number from 0 up to but not including 1, as `Math.random` does. Each thread has one generator:
 
 - It starts from an unpredictable seed, so a live sketch draws new numbers on every run.
-- `math.seed(n)` starts it again from the seed `n`, and the same numbers follow on every run. `math.seed(n)` followed by `math.random()` gives what three.js's `MathUtils.seededRandom(n)` gives.
+- `math.seed(n)` starts it again from the seed `n`, and the same numbers follow on every run.
 - Hold mode seeds it before the sketch loads, and makes `Math.random` draw from it too. A held frame is then the same on every run. See [Testing your sketch](../guides/testing.md).
 - `math.randFloat`, `math.randInt` and `math.randFloatSpread` draw their numbers from it.
 

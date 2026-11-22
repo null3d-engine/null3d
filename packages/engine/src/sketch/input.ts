@@ -80,8 +80,8 @@ export interface InputPointer {
 	/**
 	 * The wheel's scroll since the previous frame, in pixels: positive where a page would scroll down.
 	 * A wheel that scrolls by lines counts 16 pixels a line, and one that scrolls by pages counts 100
-	 * a page, as three.js's controls count them. Scroll that follows a release of the pointer waits
-	 * for the next frame, so a frame's scroll never comes after the end of its drag.
+	 * a page. Scroll that follows a release of the pointer waits for the next frame, so a frame's
+	 * scroll never comes after the end of its drag.
 	 */
 	readonly wheel: number;
 	/**

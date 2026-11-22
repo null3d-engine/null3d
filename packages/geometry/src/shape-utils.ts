@@ -35,8 +35,8 @@ function removeDupEndPts(points: Vec2Like[]): void {
 
 /**
  * Cuts an outline with holes into triangles. It returns three point indices per triangle. The
- * outline's points come first, then each hole's in turn. When the last point of a list repeats
- * its first, it removes that last point, as three.js does. So the lists it takes can shrink.
+ * outline's points come first, then each hole's in turn. When the last point of a list repeats its
+ * first, it removes that last point. So the lists it takes can shrink.
  */
 export function triangulateShape(
 	contour: Vec2Like[],

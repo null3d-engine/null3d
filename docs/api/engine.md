@@ -179,7 +179,7 @@ Each `on...` call returns a function that removes its handler.
 
 ## Screenshots
 
-`engine.capture()` resolves with an image of the next frame that the engine draws, as a PNG `Blob`. It takes the place of three.js's `preserveDrawingBuffer` with `canvas.toDataURL()`. The page cannot read a frame from the canvas itself: a worker usually draws on it, and the browser clears it after each frame.
+`engine.capture()` resolves with an image of the next frame that the engine draws, as a PNG `Blob`. The page cannot read a frame from the canvas itself: a worker usually draws on it, and the browser clears it after each frame.
 
 ```ts
 shotButton.onclick = async () => {

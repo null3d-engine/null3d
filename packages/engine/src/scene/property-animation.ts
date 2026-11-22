@@ -324,7 +324,7 @@ export class PropertyAnimation {
 		return this.rate;
 	}
 
-	/** Sets the animation's time in seconds, as three.js's `action.time` does. */
+	/** Sets the animation's time in seconds. */
 	setTime(seconds: number): void {
 		this.seconds = seconds;
 	}

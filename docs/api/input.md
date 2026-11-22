@@ -75,14 +75,14 @@ The sketch counts presses and releases per frame. A key can go down and up betwe
 | `dx`, `dy` | The movement since the previous frame, in CSS pixels |
 | `dragDx`, `dragDy` | The part of `dx` and `dy` made while a button was held. Movement before a press or after a release in the same frame does not count. |
 | `buttons` | The buttons held, as `PointerEvent.buttons` gives them: 1 for the main button, 2 for the right button and 4 for the middle button, added together |
-| `wheel` | The wheel's scroll since the previous frame, in pixels. It is positive where a page would scroll down. A line counts 16 pixels and a page 100, as three.js's controls count them. |
+| `wheel` | The wheel's scroll since the previous frame, in pixels. It is positive where a page would scroll down. A line counts 16 pixels and a page 100. |
 | `pinch` | The part of `wheel` that came from a pinch on a trackpad. It is positive as the fingers close. |
 | `isTouch` | True when the pointer is a finger |
 | `locked` | True while the canvas holds the pointer lock |
 
 Use `dragDx` and `dragDy` for drags, such as turning an object with the mouse. A frame can hold the end of a hover and the start of a drag, and `dx` counts both.
 
-A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames. Wheel scroll that follows a release waits for the following frame in the same way. So a frame's scroll never comes after the end of its drag. Controls that ignore the wheel during a drag, as three.js's do, still take the scroll after it.
+A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames. Wheel scroll that follows a release waits for the following frame in the same way. So a frame's scroll never comes after the end of its drag. Controls that ignore the wheel during a drag still take the scroll after it.
 
 Browsers send a pinch on a trackpad as wheel scroll with the Control key's flag, while no Control key is down. Unless the page stops it, the browser also zooms the whole page on a pinch. [What the page does](#what-the-page-does) shows how to stop it.
 
@@ -140,6 +140,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 - A `click` goes to the closest object that was under the pointer at both the press and the release. A press on one child of a group and a release on another click the group.
 - `pointerenter` and `pointerleave` do not go on to parents: each object gets its own. A move from one child of a group to another leaves the first child and enters the second, and the group stays entered. Each `pointerenter` gets one `pointerleave` later, unless the object is destroyed or its handler is removed first.
 - A finger enters the object at its press, and leaves it after its release. A mouse or a pen that leaves the canvas leaves every object. An HTML element over the canvas counts as outside it.
+- A click on nothing gives no event. To catch one, set a flag in your `click` handlers. In `onUpdate`, add up `input.dragDx` and `input.dragDy` from the press. A release with no flag set is a click on nothing, unless the pointer moved more than a click allows.
 
 ### When handlers run
 
@@ -169,14 +170,6 @@ The engine passes one event object to every handler and reuses it, so copy any v
 ### What it costs
 
 In a frame in which no object listens, pointer events cast no ray and copy nothing. Otherwise each event casts one ray, which takes one to three microseconds in a scene of 20,000 objects. The first ray in a frame also updates the scene's trees, as any query does. The engine casts only the rays that the handlers need: with only `click` handlers, a move casts none. Moves of one pointer that follow each other in a frame share one ray.
-
-### Compared with three.js
-
-three.js has no pointer events on objects. An app adds DOM listeners to the canvas, then calls `Raycaster.setFromCamera` and `intersectObjects` in each one. In the sketch, `object.on` replaces both. react-three-fiber's mesh events map to `on`: `onClick` to `'click'`, `onPointerDown` to `'pointerdown'`, `onPointerEnter` to `'pointerenter'`, and so on. Three differences:
-
-- react-three-fiber casts rays only against objects with handlers. It passes an event to every one that the ray hits, nearest first, until a handler calls `stopPropagation`. null3D passes it to the closest object that the camera draws and to its parents only. So an object without handlers in front still takes the event.
-- react-three-fiber's `onClick` also comes after a drag, with the drag's length in `event.delta`. null3D gives no click after a drag of more than 2 CSS pixels, or 10 for a finger.
-- react-three-fiber's `onPointerMissed` has no equivalent. Set a flag in your `click` handlers, and in `onUpdate` treat `input.wasReleased('Mouse0')` without the flag as a click on nothing.
 
 ## Actions
 

@@ -24,9 +24,9 @@ import type { Texture } from './textures';
 export type EnvironmentFormat = 'rgb9e5ufloat' | 'rgba16float';
 
 /**
- * The names of the built-in environments that `assets.builtinEnvironment` loads. `room` is the
- * room that three.js's `RoomEnvironment` builds, blurred as three.js's examples blur it. It is a
- * white room with six boxes and glowing panels, which gives soft, neutral light.
+ * The names of the built-in environments that `assets.builtinEnvironment` loads. `room` is a
+ * white room with six boxes and glowing panels, lit by one point light. It is slightly blurred,
+ * and gives soft, neutral light.
  *
  * @category api/assets
  */
@@ -36,7 +36,7 @@ export type BuiltinEnvironmentName = 'room';
  * An environment map, which `assets.loadEnvironment` and `assets.builtinEnvironment` load. It
  * holds the light around a scene from every direction, filtered for each roughness, and the
  * diffuse light that it gives. Give it to `scene.setEnvironment`, which lights standard materials
- * with it, as three.js's `scene.environment` does with a texture from `PMREMGenerator`.
+ * with it.
  *
  * @category api/assets
  */
@@ -80,13 +80,13 @@ export class Environment {
  */
 export interface EnvironmentOptions {
 	/**
-	 * The factor of the environment's light on every surface, 0 or more, as three.js's
-	 * `scene.environmentIntensity`. A material's `envIntensity` multiplies it. The default is 1.
+	 * The factor of the environment's light on every surface, 0 or more. A material's
+	 * `envIntensity` multiplies it. The default is 1.
 	 */
 	intensity?: number;
 	/**
 	 * The turn of the environment about the scene, as Euler angles in radians in the order X, Y,
-	 * Z, as three.js's `scene.environmentRotation`. The default is `[0, 0, 0]`.
+	 * Z. The default is `[0, 0, 0]`.
 	 */
 	rotation?: readonly [number, number, number];
 }

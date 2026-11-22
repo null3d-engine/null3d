@@ -5,14 +5,14 @@ import { clamp, indexArray } from './math';
 import type { GeneratedArrays, Vec2Like } from './types';
 
 /**
- * Options for `lathe`, with the names and defaults of three.js's `LatheGeometry`.
+ * Options for `lathe`.
  *
  * @category api/geometry
  */
 export interface LatheOptions {
 	/**
-	 * The profile: points (x, y), where x is the distance from the Y axis and must be 0 or more.
-	 * The default is three.js's diamond: (0, -0.5), (0.5, 0) and (0, 0.5).
+	 * The profile: points (x, y), where x is the distance from the Y axis and must be 0 or more. The
+	 * default is a diamond: (0, -0.5), (0.5, 0) and (0, 0.5).
 	 */
 	points?: readonly Vec2Like[];
 	/** The number of segments around the axis, rounded down. The default is 12. */
@@ -24,7 +24,7 @@ export interface LatheOptions {
 }
 
 /**
- * The arrays of a lathe, like three.js's `LatheGeometry`. The mesh has indices.
+ * The arrays of a lathe: a profile of points turned around the Y axis. The mesh has indices.
  *
  * @category api/geometry
  */

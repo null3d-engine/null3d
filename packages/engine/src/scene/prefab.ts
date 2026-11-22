@@ -233,14 +233,13 @@ export class Prefab {
 	) {}
 
 	/**
-	 * Destroys the model, like calling three.js's `dispose()` on each geometry, material and
-	 * texture of a loaded glTF scene. It frees the GPU memory and the engine data of every mesh,
-	 * material and texture that the load made, and of its skeleton and animation clips. Destroy
-	 * the copies that `scene.instantiate` and `scene.createInstances` made first, and the objects
-	 * that use one of its meshes or materials, in the same frame or before. Throws E1111 while one
-	 * still does, and E1101 for a model that is destroyed already. Materials of your own that map
-	 * one of the model's textures draw with their colors alone afterwards. Later calls that pass
-	 * the model throw E1101.
+	 * Destroys the model. It frees the GPU memory and the engine data of every mesh, material and
+	 * texture that the load made, and of its skeleton and animation clips. Destroy the copies that
+	 * `scene.instantiate` and `scene.createInstances` made first, and the objects that use one of
+	 * its meshes or materials, in the same frame or before. Throws E1111 while one still does, and
+	 * E1101 for a model that is destroyed already. Materials of your own that map one of the
+	 * model's textures draw with their colors alone afterwards. Later calls that pass the model
+	 * throw E1101.
 	 */
 	destroy(): void {
 		const call = 'prefab.destroy';

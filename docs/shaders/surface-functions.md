@@ -586,7 +586,7 @@ A custom material's levels of detail fade, and so do the edges of its distance b
 
 ## Built-in values
 
-Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. On the rows of a batch made with `values: true`, `object.values` holds the row's four numbers, such as a phase or a tint ([Instances and batching](../concepts/instances.md#per-row-values)). The camera's `view`, `projection`, `near` and `far`, and the object's `worldMatrix`, `normalMatrix` and `id`, give what three.js's `ShaderMaterial` gives its shaders. [Built-in shader inputs](builtins.md) lists every field.
+Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. On the rows of a batch made with `values: true`, `object.values` holds the row's four numbers, such as a phase or a tint ([Instances and batching](../concepts/instances.md#per-row-values)). The material also reads the camera's `view`, `projection`, `near` and `far`, and the object's `worldMatrix`, `normalMatrix` and `id`. [Built-in shader inputs](builtins.md) lists every field.
 
 ## Library functions
 

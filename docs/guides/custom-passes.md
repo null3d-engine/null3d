@@ -72,7 +72,7 @@ The effect can also call these functions:
 | `effectColor(uv: vec2f) -> vec4f` | The image's color at `uv`, read with a linear filter. Places outside the image read its edge. |
 | `effectPixel(pixel: vec2i) -> vec4f` | The color of one pixel, counted from the top left. A pixel outside the image reads the nearest one inside. |
 | `effectDepth(uv: vec2f) -> f32` | The scene's depth at `uv`: 1 at the camera's near plane, 0 at its far plane, and 0 where nothing drew. |
-| `effectViewPosition(uv: vec2f) -> vec3f` | The position of the surface at `uv` in view space. Its z is negative in front of the camera, as in three.js. |
+| `effectViewPosition(uv: vec2f) -> vec3f` | The position of the surface at `uv` in view space. Its z is negative in front of the camera. |
 | `effectDistance(uv: vec2f) -> f32` | How far in front of the camera the surface at `uv` lies, in world units. |
 | `effectInputSize() -> vec2f` | The image's size in pixels. In an effect it equals `input.size`; a [full-screen pass](#full-screen-passes) of another size needs it. |
 | `effectPassUv(uv: vec2f) -> vec2f` | The coordinates in a render pass's texture of the image's place `uv`. A pass texture holds its bottom row first, so `v` turns around. |
@@ -233,7 +233,7 @@ A debug view, such as `debug.view('normals')`, turns effects off while it draws.
 A custom tone curve replaces the built-in curves (`'agx-punchy'`, the default, and `'agx'`, `'aces'`, `'neutral'` and `'none'`). Its WGSL declares one function, and `post.set` takes it as `toneMapping`:
 
 ```ts
-// Reinhard's curve, as three.js's ReinhardToneMapping draws it.
+// Reinhard's tone curve.
 const reinhard = /* wgsl */ `
 fn toneCurve(color: vec3f) -> vec3f {
     return color / (vec3f(1.0) + color);
@@ -252,7 +252,7 @@ post.set({ toneMapping: 'aces' });
 
 ## Render to a texture
 
-A scene pass draws the scene from a camera of your own into a texture, as three.js's `WebGLRenderTarget` with `renderer.setRenderTarget` does. `textures.fromPass` gives the texture to any material or sprite.
+A scene pass draws the scene from a camera of your own into a texture. `textures.fromPass` gives the texture to any material or sprite.
 
 ```mermaid
 flowchart LR
@@ -308,7 +308,7 @@ In [hold mode](testing.md#hold-mode) every pass draws in every frame, whatever i
 
 ### What a scene pass draws
 
-A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. It draws the scene's background behind them, the sky included, as a three.js render target shows `scene.background`. With a `clearColor` the texture clears to that color and shows no background, which suits a minimap. A pass draws no ambient occlusion: three.js draws it as a post pass over the canvas, so its render targets have none either.
+A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. It draws the scene's background behind them, the sky included. With a `clearColor` the texture clears to that color and shows no background, which suits a minimap. A pass draws no ambient occlusion.
 
 A point or spot light casts its shadow in a pass when the camera's view gives it a shadow. The engine gives shadows only to the lights that the camera sees. So a light that only the pass sees lights the pass without a shadow. Reflection passes draw these lights the same way. A pass that sees a point or spot light keeps its own list of lights, as the camera's view does. The list takes under 1 MB of memory. A pass that sees none keeps no list.
 
@@ -316,7 +316,7 @@ The texture holds linear color after the exposure, so a material that shows it g
 
 ## Reflections
 
-A reflection pass draws the camera's view mirrored across a plane into a texture, as three.js's `Reflector` add-on does. Everything below the plane is clipped. A custom material reads the texture where its surface shows on the screen, so water and polished floors reflect what stands on them. [Render graph API](../api/render.md#reflection-passes) lists the options, and [Surface functions](../shaders/surface-functions.md#reflections) the WGSL side.
+A reflection pass draws the camera's view mirrored across a plane into a texture. Everything below the plane is clipped. A custom material reads the texture where its surface shows on the screen, so water and polished floors reflect what stands on them. [Render graph API](../api/render.md#reflection-passes) lists the options, and [Surface functions](../shaders/surface-functions.md#reflections) the WGSL side.
 
 ```ts
 const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point: [0, 0, 0] } });
@@ -326,7 +326,7 @@ const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.f
 - The pass follows the active camera. The quality preset sets its size: half the render size each way on Medium and High.
 - The surface function puts the pass's color in the surface's `reflection`. The engine's lighting then weighs it with the material's Fresnel, so water reflects little straight down and much at a low angle.
 - `scale: 1` gives a sharp mirror. `every: 2` draws the reflection in every other frame, for a camera that moves slowly.
-- A reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. It draws no ambient occlusion, as three.js's render targets draw none.
+- A reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. It draws no ambient occlusion.
 
 ### A water recipe
 
@@ -466,7 +466,7 @@ A pass that names no input image is placed before the camera's passes. A chain o
 
 ### A soft outline glow
 
-three.js's `OutlinePass` draws a soft glow around outlined objects. null3D's outline draws a crisp line ([Outlines](../api/post.md#outlines)), and a full-screen pass and an effect draw the glow. `@null3d/three-compat`'s `createOutlinePass` builds this shape, with three.js's glow, pulse and blur settings ([three.js compatibility](../api/three-compat.md)); the recipe below shows what it does.
+The built-in outline draws a crisp line ([Outlines](../api/post.md#outlines)). A full-screen pass and an effect add a soft glow around it. The `@null3d/three-compat` add-on builds this shape with `createOutlinePass`, which takes settings for the glow, a pulse and the blur ([its API page](../api/three-compat.md)). The recipe below shows what it does.
 
 ```ts
 const glowFromMask = /* wgsl */ `

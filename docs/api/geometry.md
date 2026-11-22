@@ -3,7 +3,7 @@ id: api/geometry
 title: Geometry
 status: experimental
 since: "0.1"
-summary: "Generators with three.js parameters; extra shapes in @null3d/geometry; meshes from arrays; morph targets; vertices that change; levels of detail that meshes plan on the job workers; vertex formats; large meshes."
+summary: "Generators of common shapes; extra shapes in @null3d/geometry; meshes from arrays; morph targets; vertices that change; levels of detail that meshes plan on the job workers; vertex formats; large meshes."
 ---
 
 # Geometry
@@ -21,11 +21,11 @@ flowchart LR
     mesh --> objects["scene.createMesh()<br/>scene.createInstances()"]
 ```
 
-A mesh is the shape that objects draw. `ctx.geometry` makes meshes, and any number of objects and instance batches can share one mesh. The generators make common shapes with three.js's parameters. `geometry.fromArrays` makes a mesh from your own vertex data, as three.js's `BufferGeometry` does.
+A mesh is the shape that objects draw. `ctx.geometry` makes meshes, and any number of objects and instance batches can share one mesh. The generators make common shapes from named options. `geometry.fromArrays` makes a mesh from your own vertex data.
 
 ## Generators
 
-Each generator takes the parameters and defaults of a three.js geometry class, as named options. It builds the same vertices in the same order as three.js, so a scene draws the same triangles in both engines.
+Each generator takes named options. An option that you leave out takes its default.
 
 ```ts
 // sketch.ts
@@ -35,31 +35,31 @@ const pillar = geometry.cylinder({ radiusTop: 0.3, radiusBottom: 0.4, height: 2 
 scene.createMesh({ mesh: crate, material: materials.standard({ color: '#c8a064' }) });
 ```
 
-| Generator | three.js class | Shape |
-| --- | --- | --- |
-| `geometry.box` | `BoxGeometry` | A box |
-| `geometry.sphere` | `SphereGeometry` | A sphere with its poles on the Y axis, or a part of one |
-| `geometry.plane` | `PlaneGeometry` | A rectangle in the XY plane that faces +Z |
-| `geometry.cylinder` | `CylinderGeometry` | A cylinder on the Y axis, closed at each end unless `openEnded` is true |
-| `geometry.cone` | `ConeGeometry` | A cone on the Y axis, with its point at the top |
-| `geometry.torus` | `TorusGeometry` | A tube bent into a ring around the Z axis |
-| `geometry.capsule` | `CapsuleGeometry` | A cylinder on the Y axis with a half sphere on each end |
-| `geometry.circle` | `CircleGeometry` | A disc in the XY plane that faces +Z, or a slice of one |
-| `geometry.ring` | `RingGeometry` | A disc with a hole, in the XY plane, that faces +Z |
+| Generator | Shape |
+| --- | --- |
+| `geometry.box` | A box |
+| `geometry.sphere` | A sphere with its poles on the Y axis, or a part of one |
+| `geometry.plane` | A rectangle in the XY plane that faces +Z |
+| `geometry.cylinder` | A cylinder on the Y axis, closed at each end unless `openEnded` is true |
+| `geometry.cone` | A cone on the Y axis, with its point at the top |
+| `geometry.torus` | A tube bent into a ring around the Z axis |
+| `geometry.capsule` | A cylinder on the Y axis with a half sphere on each end |
+| `geometry.circle` | A disc in the XY plane that faces +Z, or a slice of one |
+| `geometry.ring` | A disc with a hole, in the XY plane, that faces +Z |
 
-Every shape is centered on its origin. The options have the names of the three.js constructor's arguments, and the API reference below gives each default. Angles are in radians. Segment counts round down to whole numbers. Each count has a least, which the API reference gives, and a smaller count rises to it. A sphere, for example, has at least 3 segments around it.
+Every shape is centered on its origin. The API reference below gives each option and its default. Angles are in radians. Segment counts round down to whole numbers. Each count has a least, which the API reference gives, and a smaller count rises to it. A sphere, for example, has at least 3 segments around it.
 
-The generators give each vertex a position, a normal and texture coordinates, with the values that three.js gives them. The [geometry generators demo](https://github.com/null3d-engine/null3d/tree/main/examples/generators) draws all nine shapes.
+The generators give each vertex a position, a normal and texture coordinates. The [geometry generators demo](https://github.com/null3d-engine/null3d/tree/main/examples/generators) draws all nine shapes.
 
 ## Extra shapes
 
-The `@null3d/geometry` package holds the rest of three.js's geometry classes. Install it beside the engine:
+The `@null3d/geometry` package holds more shapes, and the curves and outlines that build them. Install it beside the engine:
 
 ```sh
 bun add @null3d/geometry
 ```
 
-Each function takes the parameters and defaults of a three.js class, as named options, and returns arrays for `geometry.fromArrays`. The arrays hold the same numbers as the three.js geometry's attributes: the same vertices in the same order, with the same normals and texture coordinates. The mesh that `fromArrays` makes from them plans its [levels of detail](#levels-of-detail) as any mesh made in code does, and keeps that order.
+Each function takes named options, and an option that you leave out takes its default. It returns arrays for `geometry.fromArrays`. The arrays hold a position, a normal and texture coordinates for each vertex, and indices for some shapes. The mesh that `fromArrays` makes from them plans its [levels of detail](#levels-of-detail) as any mesh made in code does, and keeps its vertices in their order.
 
 ```ts
 // sketch.ts
@@ -70,23 +70,23 @@ const outline = new Shape().moveTo(0, 0).lineTo(1, 0).lineTo(0.5, 1).lineTo(0, 0
 const wedge = geometry.fromArrays(extrude({ shapes: outline, depth: 0.4, bevelEnabled: false }));
 ```
 
-| Function | three.js class | Shape |
-| --- | --- | --- |
-| `torusKnot` | `TorusKnotGeometry` | A tube that winds around a torus |
-| `tetrahedron`, `octahedron`, `icosahedron`, `dodecahedron` | `TetrahedronGeometry` and the others | A polyhedron, with `detail` that splits its faces toward a sphere |
-| `polyhedron` | `PolyhedronGeometry` | A polyhedron from your own corners and faces |
-| `lathe` | `LatheGeometry` | A profile of points turned around the Y axis, such as a vase |
-| `shape` | `ShapeGeometry` | A flat shape from outlines, with holes, in the XY plane |
-| `extrude` | `ExtrudeGeometry` | A shape pushed along +Z or along a curve, with an optional bevel |
-| `tube` | `TubeGeometry` | A tube along a 3D curve |
+| Function | Shape |
+| --- | --- |
+| `torusKnot` | A tube that winds around a torus |
+| `tetrahedron`, `octahedron`, `icosahedron`, `dodecahedron` | A polyhedron, with `detail` that splits its faces toward a sphere |
+| `polyhedron` | A polyhedron from your own corners and faces |
+| `lathe` | A profile of points turned around the Y axis, such as a vase |
+| `shape` | A flat shape from outlines, with holes, in the XY plane |
+| `extrude` | A shape pushed along +Z or along a curve, with an optional bevel |
+| `tube` | A tube along a 3D curve |
 
-The package also has the classes that these shapes take, with three.js's names and methods. `Shape` and `Path` draw with `moveTo`, `lineTo`, `bezierCurveTo` and the rest. The 2D and 3D curves, such as `CatmullRomCurve3`, and `ShapeUtils` come too. Points are arrays of numbers, `[x, y]` or `[x, y, z]`, not `Vector2` or `Vector3` objects. A method that returns a point returns a new array, or fills the array that you pass last.
+The package also has the classes that these shapes take. `Shape` and `Path` draw with `moveTo`, `lineTo`, `bezierCurveTo` and the rest. The 2D and 3D curves, such as `CatmullRomCurve3`, and `ShapeUtils` come too. Points are arrays of numbers, `[x, y]` or `[x, y, z]`. A method that returns a point returns a new array, or fills the array that you pass last.
 
-A mesh has one material. three.js's `ExtrudeGeometry` puts its caps and its sides in two groups, which can take two materials. Here they form one mesh. To give the caps a material of their own, make them as a second mesh with `shape`, at each end. The [extra shapes demo](https://github.com/null3d-engine/null3d/tree/main/examples/extra-shapes) draws a shape from each function.
+A mesh has one material, and an extrusion's caps and sides form one mesh. To give the caps a material of their own, make them as a second mesh with `shape`, at each end. The [extra shapes demo](https://github.com/null3d-engine/null3d/tree/main/examples/extra-shapes) draws a shape from each function.
 
 ## Meshes from arrays
 
-`geometry.fromArrays` takes one array per vertex attribute, laid out as three.js's `BufferGeometry` keeps them: the values of vertex 0, then vertex 1, and so on. Typed arrays and plain arrays of numbers both work. An attribute can also come as 8-bit or 16-bit integers, as [integer attributes](#integer-attributes) shows.
+`geometry.fromArrays` takes one flat array per vertex attribute: the values of vertex 0, then vertex 1, and so on. Typed arrays and plain arrays of numbers both work. An attribute can also come as 8-bit or 16-bit integers, as [integer attributes](#integer-attributes) shows.
 
 ```ts
 // sketch.ts: a quad that faces +z, with texture coordinates
@@ -99,17 +99,17 @@ const quad = geometry.fromArrays({
 scene.createMesh({ mesh: quad, material: materials.unlit({ color: '#ffffff' }) });
 ```
 
-| Array | Numbers per vertex | three.js attribute |
-| --- | --- | --- |
-| `positions` | 3 | `position` |
-| `normals` | 3 | `normal` |
-| `uvs` | 2 | `uv` |
-| `uvs1` | 2, such as a light map's coordinates | `uv1` |
-| `colors` | 3, or 4 with alpha, as linear values from 0 to 1 | `color` |
-| `tangents` | 4: the direction in which u grows, then 1 or -1 for the direction of v | `tangent` |
-| `joints` | 4 joint indices, for skinned meshes | `skinIndex` |
-| `weights` | 4: how much each joint moves the vertex, which add up to 1 | `skinWeight` |
-| `targets` | 4: the position that the vertex takes at a coarser level of detail, and that level's error, which a generated shape's material reads | None |
+| Array | Numbers per vertex |
+| --- | --- |
+| `positions` | 3 |
+| `normals` | 3 |
+| `uvs` | 2 |
+| `uvs1` | 2, such as a light map's coordinates |
+| `colors` | 3, or 4 with alpha, as linear values from 0 to 1 |
+| `tangents` | 4: the direction in which u grows, then 1 or -1 for the direction of v |
+| `joints` | 4 joint indices, for skinned meshes |
+| `weights` | 4: how much each joint moves the vertex, which add up to 1 |
+| `targets` | 4: the position that the vertex takes at a coarser level of detail, and that level's error, which a generated shape's material reads |
 
 The arrays follow these rules:
 
@@ -125,7 +125,7 @@ The arrays follow these rules:
 
 Each attribute can come as 8-bit or 16-bit integers instead of 32-bit floats, as glTF's `KHR_mesh_quantization` extension allows. The mesh keeps the integers on the GPU, so it takes less memory and uploads faster. A position of 16-bit integers takes 8 bytes, where floats take 12. A normal of 8-bit integers takes 4 bytes, where floats take 12.
 
-Integers read in one of two ways. Normalized integers read as fractions: from 0 to 1 when they are unsigned, and from -1 to 1 when they are signed. Plain integers read as whole numbers. Give an attribute as `{ array, normalized }` to choose, as three.js's `BufferAttribute` does. The default is plain, as in three.js and glTF.
+Integers read in one of two ways. Normalized integers read as fractions: from 0 to 1 when they are unsigned, and from -1 to 1 when they are signed. Plain integers read as whole numbers. Give an attribute as `{ array, normalized }` to choose. The default is plain, as in glTF.
 
 | Array | Takes | Integers read as |
 | --- | --- | --- |
@@ -152,13 +152,13 @@ Integer positions keep their own units. Give the object the scale and the positi
 
 ## Computing normals and tangents
 
-`computeNormals: true` computes the normals as three.js's `computeVertexNormals` does. Each vertex gets the average of the normals of its triangles, weighted by their areas. Vertices that triangles share get smooth normals. For hard edges, give each face its own vertices. The [meshes from arrays demo](https://github.com/null3d-engine/null3d/tree/main/examples/mesh-arrays) shows both: a smooth height field, an island with a color at each vertex, and a crystal with hard edges.
+`computeNormals: true` computes the normals from the triangles. Each vertex gets the average of the normals of its triangles, weighted by their areas. Vertices that triangles share get smooth normals. For hard edges, give each face its own vertices. The [meshes from arrays demo](https://github.com/null3d-engine/null3d/tree/main/examples/mesh-arrays) shows both: a smooth height field, an island with a color at each vertex, and a crystal with hard edges.
 
-`computeTangents: true` computes tangents as three.js's `computeTangents` does, from the positions, the normals and `uvs`. It needs `uvs`, and it works with or without indices. The job workers share the work, so a large mesh takes less time. Both options give the same numbers as three.js, bit for bit. They compute from integer positions, normals and texture coordinates too, as shaders read them, and give 32-bit floats.
+`computeTangents: true` computes tangents from the positions, the normals and `uvs`, with Eric Lengyel's method. It needs `uvs`, and it works with or without indices. The job workers share the work, so a large mesh takes less time. Both options compute from integer positions, normals and texture coordinates too, as shaders read them, and give 32-bit floats.
 
 ## Morph targets
 
-A morph target is another shape of a mesh, such as a smile on a face. The `morphTargets` option gives a mesh its targets, as three.js's `morphAttributes` with `morphTargetsRelative` does. Each target is an array of three numbers per vertex: how far the target moves the vertex at weight 1. The list `positions` moves the vertices, `normals` turns their normals, and `tangents` turns their tangents. The list `colors` changes the mesh's vertex colors, with as many numbers per vertex as `colors` has, three or four. Every list holds the same number of targets, from 1 to 256. The list `names` names the targets.
+A morph target is another shape of a mesh, such as a smile on a face. The `morphTargets` option gives a mesh its targets, as glTF stores them. Each target is an array of three numbers per vertex: how far the target moves the vertex at weight 1. The list `positions` moves the vertices, `normals` turns their normals, and `tangents` turns their tangents. The list `colors` changes the mesh's vertex colors, with as many numbers per vertex as `colors` has, three or four. Every list holds the same number of targets, from 1 to 256. The list `names` names the targets.
 
 ```ts
 const count = positions.length / 3;
@@ -175,11 +175,11 @@ const head = scene.createMesh({ mesh: face, material });
 head.setMorphWeight('Smile', 0.8);
 ```
 
-Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The [morph targets demo](https://github.com/null3d-engine/null3d/tree/main/examples/morph-flowers) makes tulips with one target, which opens the petals, turns their normals and changes their color. Each tulip has a weight of its own. The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than three.js's copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,194,304 deltas, 32 MiB of GPU memory. Each of a vertex's positions, normals, tangents and colors counts once. Past those limits, `fromArrays` throws E1206. The GPU keeps each delta in a 16-bit float, which is exact to 1/2048 of the delta's size, and each weight in a 32-bit float. A morphed color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it, so a color that the weights push past 1 or below 0 draws brighter or darker there.
+Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The [morph targets demo](https://github.com/null3d-engine/null3d/tree/main/examples/morph-flowers) makes tulips with one target, which opens the petals, turns their normals and changes their color. Each tulip has a weight of its own. The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than a copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,194,304 deltas, 32 MiB of GPU memory. Each of a vertex's positions, normals, tangents and colors counts once. Past those limits, `fromArrays` throws E1206. The GPU keeps each delta in a 16-bit float, which is exact to 1/2048 of the delta's size, and each weight in a 32-bit float. A morphed color stays between 0 and 1, as the glTF specification asks.
 
 ## Vertices that change
 
-`mesh.updateVertices(name, values, start, count)` writes new values into one attribute of a mesh, as three.js's `attribute.needsUpdate = true` does. Keep the arrays that you made the mesh with, change them, and pass them again:
+`mesh.updateVertices(name, values, start, count)` writes new values into one attribute of a mesh. Keep the arrays that you made the mesh with, change them, and pass them again:
 
 ```ts
 // sketch.ts: a sheet whose middle rows rise and fall
@@ -198,14 +198,14 @@ The call follows these rules:
 
 - `name` is `positions`, `normals`, `uvs`, `uvs1`, `colors` or `tangents`, and the mesh must have that attribute. Colors take three or four numbers per vertex. Three keep each vertex's alpha.
 - `values` holds the values of every vertex, in the array type that the mesh was made with. That is a `Float32Array` or a plain array for floats, or the same integer array.
-- `start` and `count` pick the vertices that change, as three.js's `addUpdateRange` does. By default every vertex changes. The next frame uploads only the bytes of those vertices.
+- `start` and `count` pick the vertices that change. By default every vertex changes. The next frame uploads only the bytes of those vertices.
 - Values that do not fit the mesh throw [E1206](../errors/E1206.md), and so does a mesh with joints or morph targets.
 - The first call takes away the levels of detail that the mesh planned, which measured the old shape, and the mesh plans no levels on its own again. Give a mesh whose vertices change in every frame `levels: false`, so it plans none.
 - The call allocates nothing, so a call in every frame makes no garbage. `bun run bench:allocation --calls` checks it.
 
 Change the normals with the positions when the shape changes, because the engine does not compute them again. The [vertex updates demo](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates) moves rings over a pool of water this way.
 
-The mesh keeps the bounding sphere of the vertices that it was made with, as three.js keeps a geometry's `boundingSphere` until you compute it again. Culling tests that sphere. When the new vertices reach outside it, give each object that draws the mesh bounds that hold every shape, with [`setBounds`](objects.md#mesh-calls). Raycasts and overlap queries always test the new vertices. The first query after an update builds the mesh's tree again. So a scene that updates a large mesh and raycasts in each frame pays for a build in each frame. Shadows of point and spot lights draw again when a mesh that casts them changes.
+The mesh keeps the bounding sphere of the vertices that it was made with. Culling tests that sphere. When the new vertices reach outside it, give each object that draws the mesh bounds that hold every shape, with [`setBounds`](objects.md#mesh-calls). Raycasts and overlap queries always test the new vertices. The first query after an update builds the mesh's tree again. So a scene that updates a large mesh and raycasts in each frame pays for a build in each frame. Shadows of point and spot lights draw again when a mesh that casts them changes.
 
 The first update of a mesh rebuilds the draw tables once, as `setMesh` does, so make it at setup or behind a loading screen. Later updates cost only the copy and the upload. On WebGL2, a mesh whose positions changed no longer hides the objects behind it from software occlusion culling. For many objects that move as wholes, use [instance batches](../concepts/instances.md) instead: they move each object with one matrix, not each vertex.
 
@@ -296,30 +296,6 @@ While an object or an instance batch still uses the mesh, `destroy` throws [E111
 ## Large meshes
 
 A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. A mesh with more vertices splits into parts that draw one after another. Each part holds a copy of the vertices that it shares with the part before it. For the fewest draw calls, keep meshes under 65,535 vertices. A mesh that draws a cluster tree is the exception. Its patches draw in one draw across all its parts, as [cluster levels](../concepts/lod.md#cluster-levels) describes.
-
-## From three.js
-
-| three.js | null3D |
-| --- | --- |
-| `new BoxGeometry(1, 2, 3)`, and the other eight classes above | `geometry.box({ width: 1, height: 2, depth: 3 })`: the arguments become named options |
-| `rotateX`, `translate` or `scale` on a generated shape, such as a plane laid flat | Turn, move or scale the object instead: `floor.setRotationEuler(-Math.PI / 2, 0, 0)` |
-| `new BufferGeometry()` with `setAttribute` and `setIndex` | `geometry.fromArrays({ positions, normals, uvs, indices })` |
-| `new BufferAttribute(new Int16Array(values), 3, true)` | `{ array: new Int16Array(values), normalized: true }` |
-| `geometry.computeVertexNormals()` | `computeNormals: true` |
-| `geometry.computeTangents()` | `computeTangents: true` |
-| `geometry.computeBoundingSphere()` | Nothing: the engine computes bounds itself |
-| `geometry.morphAttributes.position = [...]` with `morphTargetsRelative = true` | `morphTargets: { positions: [...] }` |
-| `geometry.morphAttributes.color = [...]` | `morphTargets: { colors: [...] }`, with `colors` on the mesh |
-| `mesh.morphTargetDictionary` | The mesh geometry's `morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
-| `geometry.dispose()` | `mesh.destroy()`, once no object or batch uses the mesh |
-| `lod.addLevel(object, distance)` | `mesh.setLevels([{ mesh, distance }])` on the base mesh ([Levels of detail](../concepts/lod.md#from-threejs)) |
-| `SimplifyModifier.modify(geometry, count)` from three/addons, for a far copy | Nothing: a mesh of 4,096 triangles or more plans its levels on the job workers when it first draws. `mesh.buildLevels()` plans a smaller one |
-| `new TorusKnotGeometry(1, 0.4)`, and `Icosahedron`, `Lathe`, `Shape`, `Extrude`, `Tube` and the other geometry classes | `geometry.fromArrays(torusKnot({ radius: 1, tube: 0.4 }))`, with the functions of `@null3d/geometry` |
-| `new THREE.Shape()`, `new THREE.CatmullRomCurve3(points)` | The same classes from `@null3d/geometry`, with points as arrays: `new CatmullRomCurve3([[0, 0, 0], [1, 1, 0]])` |
-| `attribute.needsUpdate = true`, `setUsage(DynamicDrawUsage)` | `mesh.updateVertices('positions', positions)`. There is no usage hint |
-| `attribute.addUpdateRange(start, count)` | `mesh.updateVertices(name, values, startVertex, vertexCount)`, in vertices rather than numbers |
-
-[three.js to null3D](../porting/threejs-mapping.md) lists every mapping.
 
 ## API reference
 

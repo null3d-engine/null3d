@@ -128,21 +128,21 @@ With `worldUnits: false`, the default, the width is in CSS pixels, at every dist
 
 With `worldUnits: true`, the width is in world units. A line 0.1 units wide is as wide as a rod 0.1 units thick at the same distance, so far lines look thinner. Use it for roads, cables and beams that belong to the world.
 
-The engine culls each segment by a sphere around it. With a width in world units, the sphere holds the whole width. A width in pixels has no size in the world, so the sphere holds the segment's center line alone, as three.js's bounds do. A segment whose center line lies just outside the view can then lose the part of its width that reaches into it.
+The engine culls each segment by a sphere around it. With a width in world units, the sphere holds the whole width. A width in pixels has no size in the world, so the sphere holds the segment's center line alone. A segment whose center line lies just outside the view can then lose the part of its width that reaches into it.
 
 ## Dashes
 
-A dashed line draws `dashSize` along the line, then leaves a gap of `gapSize`, from the start of its first segment. Both count in world units along the line, times `dashScale`. `dashOffset` moves the dashes along the line. Dashed lines have flat ends with no round caps, as in three.js.
+A dashed line draws `dashSize` along the line, then leaves a gap of `gapSize`, from the start of its first segment. Both count in world units along the line, times `dashScale`. `dashOffset` moves the dashes along the line. Dashed lines have flat ends with no round caps.
 
 The engine keeps each segment's distance along the line. When a point of a static dashed batch moves, the update finds the distances again from that point to the end, one segment after another. A long dashed line that changes every frame costs more than one without dashes.
 
 ## Lit lines
 
-`lit: true` shades the lines as a [standard material](materials.md) shades a surface that faces the camera, with the line's color as its base color. The sun, the point and spot lights near each segment and the ambient and hemisphere lights light it, and `emissive` adds light of its own. Lines without `lit` draw their color as it is, as three.js's line materials do. Both kinds take the scene's fog.
+`lit: true` shades the lines as a [standard material](materials.md) shades a surface that faces the camera, with the line's color as its base color. The sun, the point and spot lights near each segment and the ambient and hemisphere lights light it, and `emissive` adds light of its own. Lines without `lit` draw their color as it is, whatever the lights. Both kinds take the scene's fog.
 
 ## Blending, sorting and depth
 
-Blended lines draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. The engine sorts each segment by the depth of its middle in the camera's view. Where two segments of one blended line meet, their round ends overlap and blend twice, as in three.js. A line that blends with `blending: 'additive'` and `depthWrite: false` needs no exact order to look right.
+Blended lines draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. The engine sorts each segment by the depth of its middle in the camera's view. Where two segments of one blended line meet, their round ends overlap and blend twice. A line that blends with `blending: 'additive'` and `depthWrite: false` needs no exact order to look right.
 
 ## Debug lines
 
@@ -150,30 +150,13 @@ Blended lines draw after the opaque objects, farthest first, in the same transpa
 
 ## Clicks and raycasts
 
-A raycast hits a segment when the ray passes within half the line's width of it, as three.js's `Raycaster` hits a `Line2`. The width counts in pixels on the screen or in world units, as the line draws. The hit's `object` is the batch, and its `instance` is the segment. A line batch takes `lines.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. The `lineThreshold` option changes the test: a ray then hits a segment within that many meters, whatever the line's width. A ray hits a dashed line in its gaps too. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+A raycast hits a segment when the ray passes within half the line's width of it. The width counts in pixels on the screen or in world units, as the line draws. The hit's `object` is the batch, and its `instance` is the segment. A line batch takes `lines.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. The `lineThreshold` option changes the test: a ray then hits a segment within that many meters, whatever the line's width. A ray hits a dashed line in its gaps too. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
 
 ## Speed
 
 A segment costs about as much as an instance row on the GPU and in culling. The engine packs each segment into the data that it keeps for an instance row. So segments share the culling, sorting and drawing of instance batches. One batch of 100,000 segments draws in one draw on WebGPU and WebGL2.
 
 Every segment counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each point takes about 170 bytes of engine memory. Line batches count toward the limit of 256 instance batches.
-
-## Compared with three.js
-
-| three.js | null3D |
-| --- | --- |
-| `new Line2(geometry, new LineMaterial({ linewidth }))` with `LineGeometry.setPositions` | `scene.createLines({ positions, width })` |
-| `new LineSegments2(...)` with `LineSegmentsGeometry` | `mode: 'segments'` |
-| `new THREE.Line(geometry, new THREE.LineBasicMaterial())` | `scene.createLines({ positions })`: a strip 1 pixel wide |
-| `THREE.LineSegments` and `THREE.LineLoop` | `mode: 'segments'` and `mode: 'loop'` |
-| `geometry.setColors(colors)` with `vertexColors: true` | `colors`, 3 numbers per point |
-| `material.linewidth` | `width`, and `lines.setWidth` |
-| `material.worldUnits` | `worldUnits` |
-| `material.dashed`, `dashSize`, `gapSize`, `dashScale`, `dashOffset` | The same names; `dashed` is fixed when the batch is created |
-| `LineDashedMaterial` with `line.computeLineDistances()` | `dashed: true`; the engine keeps the distances |
-| `material.resolution` | Not needed: the engine knows the canvas size |
-
-three.js's `Line`, `LineSegments` and `LineLoop` draw lines one pixel wide on most GPUs, whatever `linewidth` says, and its `Line2` draws wider ones. null3D draws every width with the same quads, so a port of either keeps its look. three.js makes one object and one draw per line, and null3D draws a whole batch in one draw. three.js's `Raycaster` hits a `Line` within `params.Line.threshold`, 1 meter by default, whatever its width, and a `Line2` within half its width. null3D hits each line as `Line2` does, and the `lineThreshold` option gives the test for `Line`.
 
 ## API reference
 

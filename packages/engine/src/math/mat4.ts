@@ -30,10 +30,7 @@ export function copy<T extends Mat4Like>(out: T, a: Mat4Like): T {
 	return out;
 }
 
-/**
- * The product of `a` and `b`, as three.js's `multiplyMatrices`. It transforms a point by `b` first,
- * then by `a`.
- */
+/** The product of `a` and `b`. It transforms a point by `b` first, then by `a`. */
 export function multiply<T extends Mat4Like>(out: T, a: Mat4Like, b: Mat4Like): T {
 	const a00 = a[0] as number;
 	const a01 = a[1] as number;
@@ -65,10 +62,7 @@ export function multiply<T extends Mat4Like>(out: T, a: Mat4Like, b: Mat4Like): 
 	return out;
 }
 
-/**
- * The inverse of `a`, which undoes it, as three.js's `invert`. A matrix that has no inverse gives
- * all zeros.
- */
+/** The inverse of `a`, which undoes it. A matrix that has no inverse gives all zeros. */
 export function invert<T extends Mat4Like>(out: T, a: Mat4Like): T {
 	const a00 = a[0] as number;
 	const a01 = a[1] as number;
@@ -125,7 +119,7 @@ export function invert<T extends Mat4Like>(out: T, a: Mat4Like): T {
 
 /**
  * The matrix that scales by `scale`, then turns by the quaternion `rotation`, then moves by
- * `position`, as three.js's `compose`.
+ * `position`.
  */
 export function compose<T extends Mat4Like>(
 	out: T,
@@ -172,9 +166,9 @@ export function compose<T extends Mat4Like>(
 }
 
 /**
- * Splits the matrix `m` into the position, rotation and scale that `compose` joins, as three.js's
- * `decompose`, and writes them into the first three arrays. A matrix that mirrors space gives a
- * negative X scale. A matrix that flattens space gives no rotation and a scale of 1.
+ * Splits the matrix `m` into the position, rotation and scale that `compose` joins, and writes them
+ * into the first three arrays. A matrix that mirrors space gives a negative X scale. A matrix that
+ * flattens space gives no rotation and a scale of 1.
  */
 export function decompose(
 	position: Vec3Like,

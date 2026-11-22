@@ -213,7 +213,7 @@ For a large crowd, use models with fewer vertices, give far characters a longer 
 
 ## See-through objects
 
-Blended objects draw after the opaque ones, farthest first, and a run of neighbors that share a mesh and a material draws together. Many blended objects therefore cost many draws. A double-sided blended material draws twice, back faces first, as three.js draws it, so its near side always covers its far side. Solid double-sided materials draw once.
+Blended objects draw after the opaque ones, farthest first, and a run of neighbors that share a mesh and a material draws together. Many blended objects therefore cost many draws. A double-sided blended material draws twice, back faces first, so its near side always covers its far side. Solid double-sided materials draw once.
 
 The second draw costs about as much as the first. In the S2 benchmark with every box blended and double-sided, the transparent pass took 1.88 ms of GPU time on a Mac with one draw per box, and 4.09 ms with two. For flat surfaces, such as leaves and panes of glass, whose two faces never overlap on screen, set `forceSinglePass: true`. It saves the second draw: [Double-sided blended surfaces](../api/materials.md#double-sided-blended-surfaces). Masked and hashed materials need no sort and no second draw, and neither do materials with alpha to coverage.
 

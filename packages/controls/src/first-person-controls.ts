@@ -14,9 +14,8 @@ import type {
 import { CameraPose } from './camera-pose';
 
 /**
- * Options for `createFirstPersonControls`, with the names and defaults of three.js's
- * `FirstPersonControls` and `PointerLockControls`. The controls keep each option as a property of
- * the same name, which a sketch can change at any time.
+ * Options for `createFirstPersonControls`. The controls keep each option as a property of the
+ * same name, which a sketch can change at any time.
  *
  * @category api/controls
  */
@@ -25,7 +24,7 @@ export interface FirstPersonControlsOptions {
 	enabled?: boolean;
 	/**
 	 * How fast the keys and the pointer move the camera, in world units per second. 0 leaves the
-	 * moves to the sketch, as with three.js's `PointerLockControls`. The default is 1.
+	 * moves to the sketch, which calls `moveForward` and `moveRight`. The default is 1.
 	 */
 	movementSpeed?: number;
 	/** How fast a drag turns the view: degrees per second for each pixel of the drag. The default is 0.005. */
@@ -288,8 +287,8 @@ export class FirstPersonControls {
 	}
 
 	/**
-	 * Moves the camera forward over the ground, at right angles to its right, as three.js's
-	 * `PointerLockControls.moveForward` does. Negative distances move it back.
+	 * Moves the camera forward over the ground, at right angles to its right. Negative distances
+	 * move it back.
 	 */
 	moveForward(distance: number): void {
 		if (!this.enabled) return;
@@ -303,7 +302,7 @@ export class FirstPersonControls {
 		pose.writePosition();
 	}
 
-	/** Moves the camera to its right, as three.js's `PointerLockControls.moveRight` does. */
+	/** Moves the camera to its right. Negative distances move it to its left. */
 	moveRight(distance: number): void {
 		if (!this.enabled) return;
 		const { pose, right } = this;
@@ -495,8 +494,7 @@ export class FirstPersonControls {
 }
 
 /**
- * Creates first-person controls, which three.js calls `FirstPersonControls`, and which also take the
- * place of its `PointerLockControls`. Keys walk, and a drag looks around. While the page holds the
+ * Creates first-person controls. Keys walk, and a drag looks around. While the page holds the
  * pointer lock, which `engine.requestPointerLock()` asks for, the mouse turns the view. Call
  * `controls.update(dt)` once per frame in `onUpdate`.
  *

@@ -6,12 +6,12 @@
 import { hexValue, invalidColor } from './hex';
 import type { Vec3Like } from './types';
 
-/** An sRGB component from 0 to 1 as a linear one, as three.js's `SRGBToLinear`. */
+/** An sRGB component from 0 to 1 as a linear one, by the sRGB standard's curve. */
 export function srgbToLinear(c: number): number {
 	return c < 0.04045 ? c * 0.0773993808 : (c * 0.9478672986 + 0.0521327014) ** 2.4;
 }
 
-/** A linear component from 0 to 1 as an sRGB one, as three.js's `LinearToSRGB`. */
+/** A linear component from 0 to 1 as an sRGB one, by the sRGB standard's curve. */
 export function linearToSrgb(c: number): number {
 	return c < 0.0031308 ? c * 12.92 : 1.055 * c ** 0.41666 - 0.055;
 }
@@ -38,9 +38,9 @@ export function fromHex<T extends Vec3Like>(out: T, hex: string | number): T {
 }
 
 /**
- * RGB from a hue, a saturation and a lightness, each from 0 to 1, as three.js's `setHSL`. Like
- * three.js, it takes the result as linear RGB, so the same values give the same color in both
- * engines.
+ * Linear RGB from a hue, a saturation and a lightness, each from 0 to 1. The hue wraps around, and
+ * the saturation and lightness stop at 0 and 1. It takes the result of the HSL formula as linear
+ * RGB as it is, with no sRGB conversion.
  */
 export function fromHsl<T extends Vec3Like>(out: T, h: number, s: number, l: number): T {
 	// The hue wraps around, and the saturation and lightness stop at 0 and 1, as in three.js.

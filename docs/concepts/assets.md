@@ -56,7 +56,7 @@ scene.instantiate(city);
 
 The loader reads both names of the extension: `KHR_meshopt_compression`, and the older `EXT_meshopt_compression`. A file can carry a fallback buffer with the uncompressed data, for loaders without a decoder. The engine never downloads that buffer, because it always decodes. A file whose compressed data breaks the extension's rules, or does not decode, fails with E1416.
 
-The loader also reads Draco compression, `KHR_draco_mesh_compression`, which many older models and three.js projects use. It decodes each mesh in its worker with Draco's own decoder for glTF files. That decoder is about 60 KB after Brotli. It downloads with the first file that holds Draco data, so a page without such files does not download it. The engine compiles it once per page.
+The loader also reads Draco compression, `KHR_draco_mesh_compression`, which many older models use. It decodes each mesh in its worker with Draco's own decoder for glTF files. That decoder is about 60 KB after Brotli. It downloads with the first file that holds Draco data, so a page without such files does not download it. The engine compiles it once per page.
 
 The loader stores the decoded normals and tangents as 8-bit integers, and texture coordinates between 0 and 1 as 16-bit integers. These are the types that the asset tool writes. They take half the GPU memory of the floats that other loaders keep, or less. Positions stay floats. In development builds, the loader warns about each Draco file and names the command that converts it.
 
@@ -126,20 +126,3 @@ Each frame sends at most the preset's texture upload budget to the GPU: 2 MiB on
 Each texture reports its GPU memory in `bytes`, and `textures.memoryBytes` counts every texture. The quality preset's texture memory budget holds textures under `textureMemoryMiB`. Past it, the engine drops the largest mip levels of textures from files. It loads them again from the file once room returns, as [Quality presets](quality-presets.md#texture-memory) explains. `geometry.memoryBytes` gives the GPU memory of all meshes.
 
 `prefab.destroy()` frees a model with its meshes, materials, textures, skeleton and clips, and `mesh.destroy()` frees one mesh. The next models and meshes take the memory that they gave back. [Freeing a model](../api/assets.md#freeing-a-model) gives the order of the calls.
-
-## From three.js
-
-| three.js | null3D |
-| --- | --- |
-| `TextureLoader`, and `KTX2Loader` with its transcoder path | `assets.loadTexture(url)` for both. The engine ships the transcoder |
-| A `BufferAttribute` of an `Int16Array` with `normalized: true` | `{ array: new Int16Array(values), normalized: true }` in `geometry.fromArrays` |
-| `new GLTFLoader().loadAsync(url)`, then `scene.add(gltf.scene)` | `const prefab = await assets.loadGltf(url)`, then `scene.instantiate(prefab)` |
-| `gltf.scene.clone()` or `SkeletonUtils.clone` for each copy | `scene.instantiate(prefab)` for each copy, which shares the GPU data |
-| `dispose()` on each geometry, material and texture of a glTF scene | `prefab.destroy()`, after destroying its copies |
-| `GLTFLoader` with `KTX2Loader` and its transcoder path | `assets.loadGltf(url)`. The engine ships the transcoder |
-| `GLTFLoader` with a model whose textures use `EXT_texture_webp` or `EXT_texture_avif` | `assets.loadGltf(url)`. The browser decodes both formats |
-| `KTX2Loader` with a UASTC HDR file | `assets.loadTexture(url)`, which gives BC6H or `rgb9e5ufloat` |
-| `GLTFLoader` with `setMeshoptDecoder(MeshoptDecoder)` | `assets.loadGltf(url)`. The engine ships the decoder, and downloads it with the first compressed file |
-| `GLTFLoader` with `setDRACOLoader(dracoLoader)` and `setDecoderPath` | `assets.loadGltf(url)`. The engine ships Draco's decoder, and downloads it with the first Draco file. Convert the files with `bunx @null3d/cli assets optimize` to load faster |
-| `GLTFLoader` with a quantized mesh | `assets.loadGltf(url)`. A glTF node's transform becomes the object's transform, so the integers stay on the GPU |
-| An `InstancedMesh` for each mesh of a model, kept in step by hand | `scene.createInstances(prefab, count)`: one set of rows for all the model's meshes |

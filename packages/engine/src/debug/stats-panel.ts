@@ -37,7 +37,7 @@ export interface StatsPanelOptions {
 /**
  * How the threads of a renderer share each frame's work, which a symbol before the target explains:
  * `'pipelined'` and `'low'` are null3D's latency modes, `'single'` is null3D's single-thread build,
- * and `'one-thread'` is a renderer that prepares and draws each frame on one thread, as three.js does.
+ * and `'one-thread'` is a renderer that prepares and draws each frame on one thread.
  *
  * @category api/debug
  */

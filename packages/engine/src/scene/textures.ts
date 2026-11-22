@@ -129,7 +129,7 @@ export interface TextureOptions {
 	 * data.
 	 */
 	colorSpace?: TextureColorSpace;
-	/** Along u, then v, or one value for both. The default is `clamp`, as in three.js. */
+	/** Along u, then v, or one value for both. The default is `clamp`. */
 	wrap?: TextureWrap | readonly [TextureWrap, TextureWrap];
 	/** The filter of magnified and minified texels and between mip levels. The default is `linear`. */
 	filter?: TextureFilter;
@@ -147,7 +147,7 @@ export interface TextureOptions {
 	anisotropy?: number;
 	/**
 	 * The set of texture coordinates that materials read the texture at: 0 for the first, 1 for
-	 * the second, as three.js's `texture.channel`. The default is 0.
+	 * the second. The default is 0.
 	 */
 	uvSet?: 0 | 1;
 }
@@ -529,14 +529,13 @@ export class Textures {
 	}
 
 	/**
-	 * The texture that a render pass draws into, which materials and sprites take as a map, as
-	 * three.js's render target textures are. It holds linear color, after the exposure and before
-	 * the tone curve: high dynamic range color where the device draws it. The image stands upright
-	 * on a plane, with v = 0 at its bottom row, as three.js's render targets do. A reflection pass's
-	 * texture on the HDR WebGPU path is the one exception: its rows start at the top, so read it
-	 * with `reflection_uv`. It samples as no texture until the pass first draws, and keeps the last
-	 * image while the pass is switched off. `render.removePass` destroys it. Throws E1101 for a
-	 * pass that was removed.
+	 * The texture that a render pass draws into, which materials and sprites take as a map. It
+	 * holds linear color, after the exposure and before the tone curve: high dynamic range color
+	 * where the device draws it. The image stands upright on a plane, with v = 0 at its bottom row.
+	 * A reflection pass's texture on the HDR WebGPU path is the one exception: its rows start at
+	 * the top, so read it with `reflection_uv`. It samples as no texture until the pass first
+	 * draws, and keeps the last image while the pass is switched off. `render.removePass` destroys
+	 * it. Throws E1101 for a pass that was removed.
 	 */
 	fromPass(pass: RenderPass): Texture {
 		const call = 'textures.fromPass';
@@ -567,8 +566,8 @@ export class Textures {
 	/**
 	 * A texture from a decoded image. The image's first row goes to v = 0, the bottom of a plane.
 	 * Decode images with `imageOrientation: 'flipY'`, as `assets.loadImageBitmap` does by default,
-	 * so that they stand upright as three.js shows them. The image moves to the thread that draws,
-	 * so this thread can use it no more. Throws E1208 for an image without pixels, one larger than
+	 * so that they stand upright on a plane. The image moves to the thread that draws, so this
+	 * thread can use it no more. Throws E1208 for an image without pixels, one larger than
 	 * `maxSize`, and options the engine does not know.
 	 */
 	fromImageBitmap(image: ImageBitmap, options: TextureOptions = {}): Texture {

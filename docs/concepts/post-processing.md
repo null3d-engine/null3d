@@ -88,7 +88,7 @@ Bloom spreads light from the bright parts of the scene into their surroundings, 
 | `blend` | `'mix'`, `'add'` or `'screen'`. | `'mix'` |
 | `weights` | Up to 10 numbers of 0 or more: each level's share of the glow, from the narrowest level to the widest. Not all 0. | Shares for 8 levels |
 
-- The `'mix'` blend moves each pixel's color toward the glow by the intensity, so the image keeps its total light. A lit wall keeps its brightness and turns softer. `'add'` adds the glow, as three.js's `UnrealBloomPass` does, and `'screen'` screens it, as pmndrs's `BloomEffect` does.
+- The `'mix'` blend moves each pixel's color toward the glow by the intensity, so the image keeps its total light. A lit wall keeps its brightness and turns softer. The `'add'` blend adds the glow, so the image gains light. The `'screen'` blend screens it, so the glow adds less where the scene is already bright.
 - At a threshold of 0, all light glows a little, as in a real lens. At 1, only light brighter than white glows, such as an emissive material with an `emissiveIntensity` above 1.
 - The levels have the canvas's shape and a fixed number of texels on its shorter side. So the glow keeps its size as a share of the screen at any pixel ratio, render scale and screen orientation.
 - Each level spreads light twice as far as the one before. The eighth spreads it over about a quarter of the canvas's shorter side, and the tenth over all of it. The engine divides the weights by their sum. The default gives eight levels a share, most to the narrow ones, for a soft glow that keeps the shape of the light.
@@ -220,7 +220,7 @@ A custom tone curve replaces the built-in curves. Its WGSL declares `fn toneCurv
 
 ## Ambient occlusion
 
-Ambient occlusion darkens the light that comes from all around where nearby surfaces hide a surface from it. That happens in corners, in creases and under objects that rest on the ground. It follows three.js's `GTAOPass` step by step, at half the render size:
+Ambient occlusion darkens the light that comes from all around where nearby surfaces hide a surface from it. That happens in corners, in creases and under objects that rest on the ground. It uses ground-truth ambient occlusion (GTAO), at half the render size:
 
 1. The depth prepass draws the opaque objects' depth. Ambient occlusion turns the prepass on while it draws.
 2. A first step copies the depth of one pixel under each texel.
@@ -242,8 +242,7 @@ post.set({ ao: { radius: 0.5, intensity: 1 } });
 | `samples` | The depth samples of each pixel's search, a whole number from 1 to 64: 3 directions below 30, and 5 from 30. | 16 |
 | `intensity` | From 0 to 1: how much of the occlusion reaches the ambient light. | 1 |
 
-- The settings mean what `GTAOPass`'s settings mean, with the same search and blur. In the engine's parity tests, with `GTAOPass`'s defaults, null3D's image differs from three.js's in under 0.1% of the pixels on every GPU path. With a wider, darker search, under 1% differ, along the soft edges of the darkened areas.
-- `GTAOPass` darkens the whole image, direct light and highlights included. null3D darkens only the ambient light, and the light that light maps add. A surface in the sun keeps its sunlight in a corner, as it would in the real world. In a scene that only ambient light lights, the two give the same image.
+- It darkens only the ambient light, and the light that light maps add. Direct light and highlights keep their strength, so a surface in the sun keeps its sunlight in a corner, as in the real world.
 - Blended objects draw over the surfaces that ambient occlusion saw, so they take none.
 - The depth prepass leaves out masked surfaces and levels of detail while they fade, so ambient occlusion may see only what lies behind them. Such a surface takes the occlusion only where ambient occlusion saw a surface at its own depth, such as a leaf on the ground. A petal in front of grass takes none of the grass's occlusion.
 - `post.set({ ao: false })` turns ambient occlusion off. The settings keep their values, so `post.set({ ao: {} })` turns it on again with them.
@@ -261,7 +260,7 @@ Ambient occlusion needs no HDR color, so it draws on the 8-bit path too. Its tar
 
 ### Cost
 
-Ambient occlusion adds the depth prepass and three small passes at half the render size. It also adds four texture reads to each pixel that the opaque pass shades. The engine's ambient occlusion scene ran on a MacBook Pro in Chrome, at 3,024 x 1,518 pixels. There it added 2.42 ms of GPU time per frame. three.js's `GTAOPass` added about 5.3 ms to the same scene and canvas. At a render scale of 0.5 it added 1.18 ms.
+Ambient occlusion adds the depth prepass and three small passes at half the render size. It also adds four texture reads to each pixel that the opaque pass shades. The engine's ambient occlusion scene ran on a MacBook Pro in Chrome, at 3,024 x 1,518 pixels. There it added 2.42 ms of GPU time per frame, and 1.18 ms at a render scale of 0.5. three.js's `GTAOPass` added about 5.3 ms to the same scene and canvas, more than twice as much.
 
 - Its targets follow the render scale, so a lower scale costs less, and a new scale makes no new target. They take 20 bytes per texel at half size, 5 bytes per pixel of the canvas. They exist only while ambient occlusion draws.
 - The depth prepass costs a second pass over the opaque objects' vertices. In a scene with many vertices it adds time of its own. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass pays.
@@ -350,7 +349,7 @@ Outlines draw a crisp line around the meshes that `setOutlined(true)` marks:
 
 - The line has no blur, so it ends as sharply as the meshes' own edges. Its width counts pixels of the canvas, so it stays sharp at every pixel ratio and render scale.
 - The mask pass culls the outlined meshes with the camera's view on its own, so outlined meshes out of view cost nothing.
-- three.js draws every other object's depth again for its hidden parts. The mask pass reads the depth that the scene passes drew instead.
+- The mask pass finds the hidden parts from the depth that the scene passes drew, so it draws no other object again.
 - The 8-bit path draws the same line as the HDR path.
 - While nothing is outlined, the mask pass and the mask are off, so turning outlines on costs nothing until a mesh is outlined.
 
@@ -360,15 +359,14 @@ Outlines draw the outlined meshes twice into the mask, which takes 4 bytes per p
 
 ## Color grading and the vignette
 
-A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` or from numbers through `assets.lutFromData`, maps each display color to a graded color, as three.js's `LUTPass` does after its `OutputPass`. The vignette darkens the picture toward its edges. [The post-processing API](../api/post.md#color-grading) lists their settings.
+A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` or from numbers through `assets.lutFromData`, maps each display color to a graded color. The vignette darkens the picture toward its edges. [The post-processing API](../api/post.md#color-grading) lists their settings.
 
-- The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do. three.js's `VignetteShader` blends display color toward a gray after the tone mapping, which turns bright corners gray.
+- The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do, and never turn gray.
 - The grading controls work on display color, after the tone mapping, as most grading tools do. A `.cube` or `.3dl` table works there too: grading tools make tables for display color, so they look as their authors made them.
 - Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - Each table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
 - The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes stalls no frame. The frame that lands a bake uploads the table, 256 KB. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
-- The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
 
 ## Sharpening
 
@@ -409,26 +407,6 @@ Bloom, depth of field, automatic exposure, custom effects and custom tone curves
 - WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom, depth of field, automatic exposure, volumetric fog and custom effects stay off, and the built-in tone curve stays. Development builds warn once in the console.
 
 The devices that the engine was tested on all draw HDR color with WebGL2, and with core WebGPU.
-
-## Porting from three.js
-
-- Delete `EffectComposer`, `RenderPass` and `OutputPass`. The scene pass and the final pass are built in.
-- `new UnrealBloomPass(resolution, strength, radius, threshold)` becomes `post.set({ bloom })` with `blend: 'add'`, the same `threshold` and a `knee` of 0.01. The intensity is about 8.8 times `strength`, and `radius` becomes the `weights`. The `null3d-port-threejs` skill holds a table of weights by radius, and a script that maps the settings for a canvas size. The resolution is the canvas's, so it needs no setting.
-- three.js's glow spans a number of pixels, and null3D's a share of the screen. So a mapping matches at one canvas size, 1080 pixels on the shorter side by default. On a larger screen null3D's glow looks wider than three.js's.
-- A strong bloom spreads a little wider at the edges of the frame than three.js's. three.js's faint haze fades toward the corners, and null3D's keeps its light there. To soften it, lower `strength` or `radius` before you map the settings, or lower `intensity`.
-- pmndrs's `BloomEffect` maps the same way, with `blend: 'screen'`: its `intensity` stays, `luminanceThreshold` becomes `threshold`, and `luminanceSmoothing` becomes `knee`. three.js's `bloom()` node maps as `UnrealBloomPass` does, at a third of the intensity.
-- `new BokehPass(scene, camera, { focus, aperture, maxblur })` becomes `post.set({ dof: { focusDistance: focus, maxBlur } })`, with the lens's `aperture` as an f-number. `BokehPass`'s aperture scales its blur with the distance from the focus. null3D's lens blurs as a camera does, so set `camera.setFocalLength` and pick an f-number by eye, such as 2.8.
-- The `maxblur` of `BokehPass` is a share of the canvas's width, and `maxBlur` is a share of its height. Multiply it by the aspect ratio. In one pass, `BokehPass` blurs each pixel by its own depth, so a sharp object spreads a halo into a blurred background. null3D's near and far fields spread no halo.
-- `new GTAOPass(scene, camera, width, height)` becomes `post.set({ ao: {} })`. Its `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` settings keep their names, with `distanceFalloff` spelled so, and `blendIntensity` becomes `intensity`. Set `quality.set({ aoScale: 0.5 })` too where phones and tablets should draw it.
-- `SSAOPass`, `SAOPass` and the N8AO library also become `post.set({ ao })`. Their settings have other meanings, so start from the defaults and tune `radius` and `scale` by eye.
-- `new OutlinePass(resolution, scene, camera, selectedObjects)` becomes `post.set({ outline: { color, hiddenColor, width } })`, from `visibleEdgeColor` and `hiddenEdgeColor`. `OutlinePass` draws its edge at half size, so a `width` of twice its `edgeThickness` gives about the same line. three.js draws a dark brown line around hidden parts by default, and null3D draws none until `hiddenColor` is set. Each selected mesh calls `setOutlined(true)`. A selected model's copy from `scene.instantiate` calls it once for all of its meshes.
-- A port that needs `OutlinePass`'s soft edge, its glow or its pulse installs `@null3d/three-compat` and calls `createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod })`. Its settings keep `edgeStrength`, `edgeThickness`, `edgeGlow` and `pulsePeriod`, and `visibleEdgeColor` and `hiddenEdgeColor` become `color` and `hiddenColor`. The add-on turns the core's crisp line off, and it costs five full-screen passes and one effect ([three.js compatibility](../api/three-compat.md)).
-- three.js has no automatic exposure. pmndrs's `ToneMappingEffect` with `mode: ToneMappingMode.REINHARD2_ADAPTIVE` adapts, and becomes `post.set({ autoExposure: { metering: 'mean' } })`. Its `adaptationRate` becomes about `speedUp` and `speedDown`, and its `middleGrey` the `compensation`: `log2(middleGrey / 0.18)` stops. Its Reinhard curve becomes a custom tone curve. pmndrs meters a mip chain of the whole frame. null3D meters on the GPU with center weighting, so the result differs a little.
-- `renderer.toneMapping` and `toneMappingExposure` become `post.set({ toneMapping, exposure })`. three.js applies no tone mapping by default, and null3D applies punchy AgX. A port that set `AgXToneMapping` sets `'agx'`, and one that set `ACESFilmicToneMapping` sets `'aces'`. `ReinhardToneMapping` and `CineonToneMapping` become the `reinhard` and `cineon` curves of `@null3d/three-compat`. The exposure gives the same picture: null3D applies it to each light rather than at the end, and bloom's threshold keeps its meaning.
-- `new LUTPass({ lut: result.texture3D, intensity })` after a `LUTCubeLoader` or `LUT3dlLoader` becomes `post.set({ lut: await assets.loadLut(url), lutIntensity: intensity })`. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`.
-- A `ShaderPass(VignetteShader)` with its `offset` and `darkness` uniforms becomes `post.set({ vignette: { size: offset, intensity: darkness } })`. Under ACES the default falloff gives a close match. Under AgX, keep `intensity` at 1 or less and set `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not.
-- `new SharpenNode(target, sharpness, denoise)` becomes `post.set({ sharpen })`. Both sharpen display color with FSR 1's RCAS over the same five texels. null3D draws it in the final pass, so the port needs no render target and no pass of its own. The two settings count the other way round. three.js scales the sharpening by `2^-sharpness`, where 0 sharpens the most and 2 does nothing. So `sharpen` takes that factor: three.js's default of 0.2 is `sharpen: 0.87`, and `sharpen: 0.5` is stronger than three.js's default. null3D always damps the sharpening where the ring around a pixel is noise, which three.js does only with `denoise: true`.
-- Any other `ShaderPass` becomes `post.addEffect` with the shader rewritten in WGSL. A pass after `OutputPass` saw display color, and an effect sees linear HDR color. Numbers that assume colors from 0 to 1 may need changes. `CustomToneMapping` becomes a custom tone curve, and `ReinhardToneMapping` and `CineonToneMapping` take the curves of `@null3d/three-compat`. [Porting post-processing](../porting/threejs-postprocessing.md) shows both.
 
 ## Related pages
 

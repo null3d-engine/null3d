@@ -56,7 +56,7 @@ tree.setLevels([
 scene.createInstances(tree, 20_000, { material: bark });
 ```
 
-The switch distances grow from level to level, whatever their measures. Levels set by hand win over planned ones: `setLevels` ends a plan that runs, and the planned levels go. The asset tool works out each level's error for you, as the next section shows.
+The switch distances grow from level to level, whatever their measures. The `fov` option of `setLevels` checks that order when the mesh takes the levels. Each frame compares a level's error or coverage with the field of view of the view that draws it, so `fov` moves no switch. Levels set by hand win over planned ones: `setLevels` ends a plan that runs, and the planned levels go. The asset tool works out each level's error for you, as the next section shows.
 
 ## A material per level
 
@@ -235,19 +235,6 @@ A level of detail keeps one draw and one mesh per object. Far past the last leve
 A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it. A camera that moves around the tree does not turn its light: the card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
 
 `setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The impostors add-on's `handOverToCards` sets the two bands for a batch of meshes and its cards. It starts the cards early enough that their own dithered edge finishes first. The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md#hand-the-near-meshes-over-to-the-cards) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
-
-## From three.js
-
-| three.js | null3D |
-| --- | --- |
-| `const lod = new LOD(); lod.addLevel(high, 0); lod.addLevel(low, 50)` | `highMesh.setLevels([{ mesh: lowMesh, distance: 50 }])`, then draw `highMesh` |
-| a `LOD` object whose `far` the sketch checks | `mesh.setDrawRange(start, end)` |
-| `lod.addLevel(object, distance, hysteresis)` | `{ mesh, distance }`. The bands replace hysteresis |
-| `lod.autoUpdate`, `lod.update(camera)` | None: the engine picks levels in every frame |
-| `lod.getCurrentLevel()` | None |
-| `SimplifyModifier` from three/addons, to make the far copies | None: a mesh of 4,096 triangles or more plans its levels on the job workers when it first draws, and `mesh.buildLevels()` plans a smaller one |
-
-A three.js `LOD` holds whole objects. In null3D the levels belong to the mesh, and every object and instance batch that draws it picks its own level. A level given by its distance switches in at that distance for an object of scale 1, on every screen. The distance measures to the nearest point of the object's bounds. three.js measures to the object's position instead, so a large object switches later in null3D. A level given by its error or its coverage is compared with the field of view of the view that draws it. The `fov` option of `setLevels` only checks the order of the levels when the mesh takes them, and moves no switch.
 
 ## API reference
 

@@ -53,7 +53,7 @@ A study read a closed-source native game engine: its shipped kit, its headers an
 
 - The private plan and M3's task list hold the moved tasks and the study's tasks.
 - `tools/hooks/task-ids.txt` lists the M3 IDs and none of M4-A1 to M4-D2.
-- The docs and skills give the moved features M3's label, 0.3: `tools/lib/docs.ts`, `docs/data/threejs-mapping.json`, the README's roadmap and both skills.
+- The docs and skills give the moved features M3's label, 0.3: `tools/lib/docs.ts`, `docs/data/threejs-mapping.json` and both skills.
 - D-173, D-179 and D-180 point here. D-54 and D-129 name M4 for the plugin interface version and the temporal upscaler, and this record moves both into M3.
 - `AGENTS.md` add-on rule 14 states point 5.
 - The guide for phones gives the iPad's WebGPU buffer point from D-12, 2,528 MiB.

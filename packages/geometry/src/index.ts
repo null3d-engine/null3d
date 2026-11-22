@@ -34,8 +34,8 @@ export {
 } from './polyhedra';
 export { type ShapeOptions, shape } from './shape';
 /**
- * Helpers for 2D outlines, like three.js's `ShapeUtils`: `ShapeUtils.area`,
- * `ShapeUtils.isClockWise` and `ShapeUtils.triangulateShape`.
+ * Helpers for 2D outlines: `ShapeUtils.area`, `ShapeUtils.isClockWise` and
+ * `ShapeUtils.triangulateShape`.
  *
  * @category api/geometry
  */

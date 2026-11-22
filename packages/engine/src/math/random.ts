@@ -32,7 +32,7 @@ function randomState(): Uint32Array {
 /**
  * The next random number, from 0 up to but not including 1. Each thread has one generator, which
  * starts from an unpredictable seed. Hold mode seeds it, so a sketch that draws its numbers from it
- * draws the same frame on every run. The generator is mulberry32, as in three.js's `seededRandom`.
+ * draws the same frame on every run. The generator is mulberry32.
  */
 export function random(): number {
 	const s = state ?? randomState();
@@ -44,8 +44,7 @@ export function random(): number {
 }
 
 /**
- * Starts `random` again from a seed, an integer. The same seed always gives the same numbers:
- * `math.seed(s)` followed by `math.random()` gives what three.js's `seededRandom(s)` gives.
+ * Starts `random` again from a seed, an integer. The same seed always gives the same numbers.
  */
 export function seed(value: number): void {
 	(state ?? randomState())[0] = value;

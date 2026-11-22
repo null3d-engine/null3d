@@ -108,7 +108,7 @@ Shaders work the same way. The surface input's `relativePosition` is relative to
 
 The engine draws reversed depth in a 32-bit float buffer on every GPU path. The far plane stores 0, where floating-point numbers are most precise. So far surfaces stay apart over long view distances, which large scenes need. On WebGL2 without the `EXT_clip_control` extension, reversed depth keeps WebGL2's range from -1 to 1, which is less precise. [Depth on each tier](backends.md#depth-on-each-tier) gives the distances, and `engine.capabilities.depth` says which depth the device draws.
 
-three.js offers logarithmic depth for large scenes. It writes depth from the fragment shader, which turns off the GPU's early depth test, so the engine does not use it.
+The engine does not use logarithmic depth, which writes depth from the fragment shader and so turns off the GPU's early depth test.
 
 ## Limits
 

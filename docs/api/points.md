@@ -18,7 +18,7 @@ flowchart LR
     cull --> draw["One instanced draw<br/>of squares that face<br/>the camera"]
 ```
 
-A point cloud is many small squares that face the camera, all of one size, such as stars, dust, sparks or a scanned object. null3D draws each point as a square of two triangles, so points of any size draw the same on every GPU path. Each point is a row in the batch's typed arrays, with its own position and color. Sketch code writes the rows straight into engine memory, with no call per point, as it does for [instance batches](../concepts/instances.md).
+A point cloud is many small squares that face the camera, all of one size, such as stars, dust, sparks or a scanned object. null3D draws each point as a square of two triangles, so points of any size draw the same on every GPU path. A point has no largest size, and it stays in view until its whole square leaves the screen. Each point is a row in the batch's typed arrays, with its own position and color. Sketch code writes the rows straight into engine memory, with no call per point, as it does for [instance batches](../concepts/instances.md).
 
 A batch is one draw for the GPU, whatever its size. Points are [sprites](sprites.md) of one size, with no rotation and no atlas. So the engine culls them, and sorts blended points back to front, as it does for sprites.
 
@@ -124,28 +124,6 @@ Raycasts hit a point where the ray crosses its square. The hit's `object` is the
 A batch costs about the same per point as an instance batch costs per row. The engine packs each point into the data that it keeps for an instance row. So points share the culling, sorting and drawing of instance batches. One batch of 100,000 points draws in one draw on WebGPU and WebGL2.
 
 Every point counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each point takes about 215 bytes of engine memory, so a cloud of a million points takes about 215 MB. Point batches count toward the limit of 256 instance batches.
-
-## Compared with three.js
-
-| three.js | null3D |
-| --- | --- |
-| `new THREE.Points(geometry, new THREE.PointsMaterial({ size, color }))` | `scene.createPoints({ positions, size, color })` |
-| The geometry's `position` attribute | `positions` |
-| The geometry's `color` attribute with `vertexColors: true` | `colors` |
-| `material.size` with `sizeAttenuation: true` | `size` in world units: three.js's size times `tan(fov / 2)` |
-| `material.size` with `sizeAttenuation: false` | `size` with `sizeAttenuation: false`, in CSS pixels, as three.js gives it |
-| `material.map` | `map` |
-| `material.transparent` | `alphaMode: 'blend'` |
-| `material.alphaTest` | `alphaMode: 'mask'` with `alphaCutoff` |
-
-Most points look the same in both engines. These differ:
-
-- three.js's size attenuation scales a point by half the canvas's height over its depth. So its size in the world depends on the camera's field of view. A null3D size is in world units. Multiply a three.js size by `tan(fov / 2)`, with `fov` the vertical field of view, to keep the look. With an orthographic camera, three.js ignores size attenuation, so use `sizeAttenuation: false` with three.js's size.
-- WebGL draws a point only while its center is on the screen. So a large three.js point vanishes when its center leaves the edge. A null3D point stays until its whole square leaves the screen.
-- Each GPU sets a largest size for WebGL points, and the WebGL specification lets that limit be as low as 1 pixel. null3D points have no such limit. three.js's WebGPU renderer draws `Points` one pixel wide.
-- three.js draws the points of one cloud in their order. null3D sorts blended points back to front.
-- `alphaMap` has no counterpart yet.
-- three.js's `Raycaster` hits a point within `params.Points.threshold`, 1 meter by default, whatever its size. null3D hits each point's square, and the `pointThreshold` option gives three.js's test.
 
 ## API reference
 

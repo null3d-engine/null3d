@@ -41,7 +41,7 @@ function out3(out: Tuple3 | undefined, x: number, y: number, z: number): Tuple3 
 }
 
 /**
- * A straight 2D line from `v1` to `v2`, like three.js's `LineCurve`.
+ * A straight 2D line from `v1` to `v2`.
  *
  * @category api/geometry
  */
@@ -90,8 +90,7 @@ export class LineCurve extends Curve<[number, number]> {
 }
 
 /**
- * A 2D quadratic Bézier curve from `v0` to `v2`, pulled toward the control point `v1`, like
- * three.js's `QuadraticBezierCurve`.
+ * A 2D quadratic Bézier curve from `v0` to `v2`, pulled toward the control point `v1`.
  *
  * @category api/geometry
  */
@@ -123,8 +122,7 @@ export class QuadraticBezierCurve extends Curve<[number, number]> {
 }
 
 /**
- * A 2D cubic Bézier curve from `v0` to `v3`, shaped by the control points `v1` and `v2`, like
- * three.js's `CubicBezierCurve`.
+ * A 2D cubic Bézier curve from `v0` to `v3`, shaped by the control points `v1` and `v2`.
  *
  * @category api/geometry
  */
@@ -164,8 +162,7 @@ export class CubicBezierCurve extends Curve<[number, number]> {
 }
 
 /**
- * A 2D ellipse or part of one, like three.js's `EllipseCurve`. Angles are in radians, measured
- * from the positive x axis.
+ * A 2D ellipse or part of one. Angles are in radians, measured from the positive x axis.
  *
  * @category api/geometry
  */
@@ -241,7 +238,7 @@ export class EllipseCurve extends Curve<[number, number]> {
 }
 
 /**
- * A 2D circle or part of one, like three.js's `ArcCurve`: an `EllipseCurve` with one radius.
+ * A 2D circle or part of one: an `EllipseCurve` with one radius.
  *
  * @category api/geometry
  */
@@ -260,8 +257,7 @@ export class ArcCurve extends EllipseCurve {
 }
 
 /**
- * A smooth 2D curve through a list of points, like three.js's `SplineCurve`. It uses Catmull-Rom
- * interpolation.
+ * A smooth 2D curve through a list of points. It uses Catmull-Rom interpolation.
  *
  * @category api/geometry
  */
@@ -294,7 +290,7 @@ export class SplineCurve extends Curve<[number, number]> {
 }
 
 /**
- * A straight 3D line from `v1` to `v2`, like three.js's `LineCurve3`.
+ * A straight 3D line from `v1` to `v2`.
  *
  * @category api/geometry
  */
@@ -345,8 +341,7 @@ export class LineCurve3 extends Curve<[number, number, number]> {
 }
 
 /**
- * A 3D quadratic Bézier curve from `v0` to `v2`, pulled toward the control point `v1`, like
- * three.js's `QuadraticBezierCurve3`.
+ * A 3D quadratic Bézier curve from `v0` to `v2`, pulled toward the control point `v1`.
  *
  * @category api/geometry
  */
@@ -379,8 +374,7 @@ export class QuadraticBezierCurve3 extends Curve<[number, number, number]> {
 }
 
 /**
- * A 3D cubic Bézier curve from `v0` to `v3`, shaped by the control points `v1` and `v2`, like
- * three.js's `CubicBezierCurve3`.
+ * A 3D cubic Bézier curve from `v0` to `v3`, shaped by the control points `v1` and `v2`.
  *
  * @category api/geometry
  */
@@ -476,7 +470,7 @@ const extraStart: Tuple3 = [0, 0, 0];
 const extraEnd: Tuple3 = [0, 0, 0];
 
 /**
- * A smooth 3D curve through a list of points, like three.js's `CatmullRomCurve3`.
+ * A smooth 3D curve through a list of points.
  *
  * @category api/geometry
  */

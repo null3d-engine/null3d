@@ -33,15 +33,14 @@ import type { Texture, TextureColorSpace, TextureOptions, Textures } from './tex
  */
 export interface LoadTextureOptions extends TextureOptions {
 	/**
-	 * True to put the image's top row at v = 1, the top of a plane, as three.js's `TextureLoader`
-	 * does. The default is true. glTF textures use false. A KTX2 file keeps the rows as it holds
-	 * them, its first row at v = 0, as three.js's `KTX2Loader` does: encode it flipped, as
-	 * `basisu -y_flip` does, for a plane. It takes no `flipY: true`.
+	 * True to put the image's top row at v = 1, the top of a plane. The default is true. glTF
+	 * textures use false. A KTX2 file keeps the rows as it holds them, its first row at v = 0:
+	 * encode it flipped, as `basisu -y_flip` does, for a plane. It takes no `flipY: true`.
 	 */
 	flipY?: boolean;
 	/**
-	 * True to store each color multiplied by its alpha, as three.js's `premultiplyAlpha` does. The
-	 * default is false. A KTX2 file takes no `premultipliedAlpha: true`.
+	 * True to store each color multiplied by its alpha. The default is false. A KTX2 file takes no
+	 * `premultipliedAlpha: true`.
 	 */
 	premultipliedAlpha?: boolean;
 }
@@ -75,8 +74,7 @@ export interface LoadGltfOptions {
 	 * downloads. It gets the address resolved against the file's own, and returns the address to
 	 * download, or null to refuse the file with E1416. A model that a user uploads can name any
 	 * address, which the page then requests with its cookies, so a page that loads such models
-	 * should allow only the addresses it expects. three.js's `LoadingManager.setURLModifier` does
-	 * the same for its loaders.
+	 * should allow only the addresses it expects.
 	 */
 	rewriteUrl?: (address: URL) => URL | string | null;
 	/**
@@ -168,9 +166,8 @@ export interface GltfExtensionContext {
 }
 
 /**
- * A handler for the glTF extensions that an add-on reads, as three.js's `GLTFLoader.register()`
- * takes one. Register it with `assets.registerGltfExtension` before the first load of a model that
- * carries the extension.
+ * A handler for the glTF extensions that an add-on reads. Register it with
+ * `assets.registerGltfExtension` before the first load of a model that carries the extension.
  *
  * @category api/assets
  */
@@ -318,13 +315,12 @@ export class Assets {
 	}
 
 	/**
-	 * Registers a handler for glTF extensions that an add-on reads, as three.js's
-	 * `GLTFLoader.register()` does. A file that carries one of the handler's extensions hands each
-	 * primitive that holds one to the handler, and draws the parts that it returns. A file that
-	 * requires such an extension loads with the handler and fails with E1417 without it. Register
-	 * the handler before the first load that needs it. Returns a function that unregisters it.
-	 * Throws E1213 for a handler without a list of extension names or a `load` function, and for one
-	 * that reads an extension which another handler reads.
+	 * Registers a handler for glTF extensions that an add-on reads. A file that carries one of the
+	 * handler's extensions hands each primitive that holds one to the handler, and draws the parts
+	 * that it returns. A file that requires such an extension loads with the handler and fails with
+	 * E1417 without it. Register the handler before the first load that needs it. Returns a function
+	 * that unregisters it. Throws E1213 for a handler without a list of extension names or a `load`
+	 * function, and for one that reads an extension which another handler reads.
 	 */
 	registerGltfExtension(handler: GltfExtensionHandler): () => void {
 		return this.extensions.register(handler);
@@ -390,13 +386,14 @@ export class Assets {
 	}
 
 	/**
-	 * Downloads six images and makes a `Cubemap` from them, a sky box for `scene.setBackground`, as
-	 * three.js's `CubeTextureLoader` does: the faces toward +X, -X, +Y, -Y, +Z and -Z, in that order,
-	 * each square and of one size, at most 2,048 pixels a side. The images decode off the sketch's
-	 * frames and upload in the frames after the call. A cube map does not light the scene: for
-	 * light, and for a background that blurs, make an environment with `bunx @null3d/cli assets
-	 * env`. Throws E1411, E1412 or E1413 as `loadTexture` does, E1412 also when the faces are not
-	 * square or not of one size, and E1208 when `urls` does not hold six addresses.
+	 * Downloads six images and makes a `Cubemap` from them, a sky box for `scene.setBackground`:
+	 * the faces toward +X, -X, +Y, -Y, +Z and -Z, in that order, each square and of one size, at
+	 * most 2,048 pixels a side. The engine reads the faces as seen from inside the cube, mirrored
+	 * across x, so a common six-image sky box shows the right way round. The images decode off the sketch's frames and upload in the frames
+	 * after the call. A cube map does not light the scene: for light, and for a background that
+	 * blurs, make an environment with `bunx @null3d/cli assets env`. Throws E1411, E1412 or E1413
+	 * as `loadTexture` does, E1412 also when the faces are not square or not of one size, and E1208
+	 * when `urls` does not hold six addresses.
 	 */
 	async loadCubemap(urls: readonly (string | URL)[]): Promise<Cubemap> {
 		const call = 'assets.loadCubemap';
@@ -429,12 +426,11 @@ export class Assets {
 
 	/**
 	 * Downloads a color grading table in a `.cube` or a `.3dl` file and makes a `Lut` from it, for
-	 * `post.set({ lut })`. It reads the forms that three.js's `LUTCubeLoader` and `LUT3dlLoader`
-	 * read, with tables of 2 to 256 texels a side. A `.cube` file's domain and title come along;
-	 * a `.3dl` file's values are whole numbers of the depth that its largest value or its `Mesh`
-	 * line gives. The first table loads the readers. Throws E1411 or E1413 as `loadTexture` does,
-	 * E1412 when the file holds no table that the engine reads, and E1406 when the readers do not
-	 * load.
+	 * `post.set({ lut })`. It reads tables of 2 to 256 texels a side. A `.cube` file's domain and
+	 * title come along; a `.3dl` file's values are whole numbers of the depth that its largest value
+	 * or its `Mesh` line gives. The first table loads the readers. Throws E1411 or E1413 as
+	 * `loadTexture` does, E1412 when the file holds no table that the engine reads, and E1406 when
+	 * the readers do not load.
 	 */
 	async loadLut(url: string | URL): Promise<Lut> {
 		const call = 'assets.loadLut';
@@ -454,13 +450,12 @@ export class Assets {
 	}
 
 	/**
-	 * Makes a color grading table from numbers, for `post.set({ lut })`, as three.js's `LUTPass`
-	 * takes a `Data3DTexture` that code fills. It takes the numbers in the order of a `.cube` file:
-	 * three or four per texel, red changing fastest. A file and its numbers make the same table.
-	 * The first table loads the code that makes it, as `loadLut` does. Throws E1208 when the size is
-	 * not a whole number from 2 to 256, when `data` does not hold three or four numbers per texel,
-	 * or holds a number that is not finite, and when a domain is not three numbers whose maximum is
-	 * above its minimum. Throws E1406 when the code does not load.
+	 * Makes a color grading table from numbers, for `post.set({ lut })`. It takes the numbers in the
+	 * order of a `.cube` file: three or four per texel, red changing fastest. A file and its numbers
+	 * make the same table. The first table loads the code that makes it, as `loadLut` does. Throws
+	 * E1208 when the size is not a whole number from 2 to 256, when `data` does not hold three or
+	 * four numbers per texel, or holds a number that is not finite, and when a domain is not three
+	 * numbers whose maximum is above its minimum. Throws E1406 when the code does not load.
 	 */
 	async lutFromData(table: LutData): Promise<Lut> {
 		const call = 'assets.lutFromData';
@@ -484,8 +479,7 @@ export class Assets {
 	/**
 	 * Downloads an environment and makes an `Environment` from it, for `scene.setEnvironment`. It
 	 * takes a KTX2 file that `bunx @null3d/cli assets env` made, the fast path, or an HDR file: a
-	 * Radiance file (`.hdr`) or an OpenEXR file (`.exr`) of an equirectangular panorama, as
-	 * three.js's `HDRLoader` and `EXRLoader` read them with `PMREMGenerator`.
+	 * Radiance file (`.hdr`) or an OpenEXR file (`.exr`) of an equirectangular panorama.
 	 *
 	 * A KTX2 map's cube texture uploads in the frames after the call, and the scene draws without
 	 * the environment until it is on the GPU. A worker reads an HDR file, off the sketch's
@@ -504,15 +498,14 @@ export class Assets {
 	}
 
 	/**
-	 * Makes a built-in environment: `room`, the room that three.js's `RoomEnvironment` builds, for
-	 * soft, neutral light with no file of your own. No file downloads: the GPU draws the room into
-	 * its cube map and filters it for each roughness, as three.js's `PMREMGenerator.fromScene` does.
-	 * It resolves once the code and the shaders that make the map are ready. The next frame then
-	 * makes the whole map before it draws, so the first frame with the environment already has its
-	 * light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a
-	 * call during play makes one long frame. The first one loads the code that makes it, about 12 KB
-	 * after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its
-	 * code does not download.
+	 * Makes a built-in environment: `room`, a white room with boxes and glowing panels, for soft,
+	 * neutral light with no file of your own. No file downloads: the GPU draws the room into its
+	 * cube map and filters it for each roughness. It resolves once the code and the shaders that
+	 * make the map are ready. The next frame then makes the whole map before it draws, so the first
+	 * frame with the environment already has its light. That frame takes longer, by the map's GPU
+	 * time: call it while the scene loads, since a call during play makes one long frame. The first
+	 * one loads the code that makes it, about 12 KB after Brotli. Throws E1213 for a name that no
+	 * built-in environment has, and E1406 when its code does not download.
 	 */
 	async builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment> {
 		const call = 'assets.builtinEnvironment';
@@ -528,16 +521,15 @@ export class Assets {
 	}
 
 	/**
-	 * Makes an environment of the scene's sky, the sky that `scene.setBackground({ sky })` draws,
-	 * as three.js's `PMREMGenerator.fromScene` makes one from a scene that holds its `Sky`. Light it
-	 * with `scene.setEnvironment`. The map follows the sky: when the sketch moves the sun or changes
-	 * the air or the clouds, the map refreshes over the next frames, and no call is needed. Until
-	 * the scene's first sky background, it shows the sky's defaults. The map leaves out the sun's
-	 * disc: the scene's directional light gives the sun's own light. The GPU draws the sky into the
-	 * map and filters it for each roughness, and the CPU works out its diffuse light. It resolves
-	 * once the code and the shaders that make the map are ready, and the next frame makes the whole
-	 * map before it draws. The first call loads the code that makes environments, about 12 KB after
-	 * Brotli. Throws E1406 when that code does not download.
+	 * Makes an environment of the scene's sky, the sky that `scene.setBackground({ sky })` draws.
+	 * Light it with `scene.setEnvironment`. The map follows the sky: when the sketch moves the sun or
+	 * changes the air or the clouds, the map refreshes over the next frames, and no call is needed.
+	 * Until the scene's first sky background, it shows the sky's defaults. The map leaves out the
+	 * sun's disc: the scene's directional light gives the sun's own light. The GPU draws the sky into
+	 * the map and filters it for each roughness, and the CPU works out its diffuse light. It
+	 * resolves once the code and the shaders that make the map are ready, and the next frame makes
+	 * the whole map before it draws. The first call loads the code that makes environments, about
+	 * 12 KB after Brotli. Throws E1406 when that code does not download.
 	 */
 	async skyEnvironment(): Promise<Environment> {
 		const call = 'assets.skyEnvironment';

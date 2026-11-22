@@ -17,7 +17,7 @@
 
 <p align="center">
   <strong>A browser 3D engine for games and heavy 3D apps. Its Rust core runs on worker threads,
-  it draws with WebGPU or WebGL2, and you write your 3D scenes in TypeScript with three.js-style names.</strong>
+  it draws with WebGPU or WebGL2, and you write your 3D scenes in TypeScript.</strong>
 </p>
 
 <p align="center">
@@ -27,14 +27,14 @@
 <p align="center">
   <a href="#quickstart">Quickstart</a>
   · <a href="#features">Features</a>
+  · <a href="#why-it-is-faster">Why it is faster</a>
   · <a href="#how-it-works">How it works</a>
   · <a href="#where-it-runs">Where it runs</a>
   · <a href="docs/index.md">Docs</a>
-  · <a href="#porting-from-threejs">Porting from three.js</a>
 </p>
 
 <p align="center">
-  <sub>⭐ If you want to see this engine built, a star helps other people find it.</sub>
+  <sub>⭐ If null3D is useful to you, a star helps other people find it.</sub>
 </p>
 
 <p align="center">
@@ -45,13 +45,13 @@
 
 ## What is null3D?
 
-null3D is a browser 3D engine that aims to replace three.js where CPU time limits a scene. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free.
+null3D is a browser 3D engine built for scenes where CPU time is the limit. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. In a production build on a MacBook Pro, 100,000 boxes that move every frame cost the engine 0.16 ms of work per frame with WebGPU ([Performance](docs/guides/performance.md)).
 
-It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same sketch code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, null3D aims to match three.js, because both engines use the same browser graphics APIs.
+It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same sketch code. That matters most on phones, where many devices still have no WebGPU.
 
 ## Quickstart
 
-Install the engine from npm and import it, as you would `three`:
+Install the engine from npm and import it:
 
 ```sh
 bun add @null3d/engine
@@ -181,7 +181,7 @@ On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays t
 | Each file of the engine's JavaScript that loads on a feature's first use | At most 18 KB after Brotli compression, 24 KB after gzip |
 | Each shader file that loads on a feature's first use, such as the morph target shaders of WebGL2 | At most 56 KB after Brotli compression, 320 KB after gzip |
 
-An engine's own time leaves out the sketch code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
+An engine's own time leaves out the sketch code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives null3D's measured figures, and `bun run bench:run` measures them on your own computer. Where the GPU is the limit, null3D aims to match three.js, because both engines use the same browser graphics APIs.
 
 ## Where it runs
 
@@ -202,7 +202,7 @@ The minimum versions are Safari 18 on macOS, iOS and iPadOS, Chrome and Edge 91,
 
 ## Porting from three.js
 
-The API uses three.js names where the ideas match. A few entries of the mapping:
+These are a few entries of the three.js to null3D mapping. The Since column names the roadmap step that added each API, and the steps 0.1 to 0.3 all ship in null3D 0.1.0.
 
 | three.js | null3D | Since |
 | --- | --- | --- |
@@ -234,7 +234,7 @@ claude plugin install null3d@null3d
 
 ## Examples
 
-Each example names the first version with its API.
+Each example names the roadmap step that added its API. The steps 0.1 to 0.3 all ship in null3D 0.1.0.
 
 Thousands of moving objects in one batch (0.1):
 
@@ -328,7 +328,7 @@ bun run bench:run        # measures S1 in null3d and three.js in Chrome and prin
 
 ## Community and license
 
-⭐ **If you want to see null3D built, a star helps other people find it.** It is the main way an open source project gets found.
+⭐ **If null3D is useful to you, a star helps other people find it.** It is the main way an open source project gets found.
 
 Questions and bug reports are welcome in [GitHub Issues](https://github.com/null3d-engine/null3d/issues).
 

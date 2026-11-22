@@ -37,11 +37,12 @@ export type {
 } from './grading';
 
 /**
- * How the engine maps the scene's high dynamic range color to the screen. Three curves use
- * three.js's formulas: `AgXToneMapping` (`'agx'`), `NeutralToneMapping` (`'neutral'`) and
- * `ACESFilmicToneMapping` (`'aces'`). `'agx-punchy'` is AgX with Filament's punchy look, which adds
- * contrast and color. `'aces'` serves ports of three.js scenes that set it. The value `'none'`
- * clips the exposed color at 1, as `LinearToneMapping` does.
+ * How the engine maps the scene's high dynamic range color to the screen. The `'agx'` curve is
+ * AgX, the curve of Blender and Filament. The `'agx-punchy'` curve is AgX with Filament's punchy
+ * look, which adds contrast and color. The `'neutral'` curve is Khronos PBR Neutral, which keeps
+ * base colors as they are until they near white. The `'aces'` curve is a fit of the ACES filmic
+ * curve, which first scales the color by 1 / 0.6 and shifts the hues of bright colors. The value
+ * `'none'` clips the exposed color at 1.
  *
  * @category api/post
  */
@@ -149,9 +150,9 @@ export function exposureOfEv100(ev100: number): number {
 
 /**
  * How bloom's glow meets the scene's color. The `'mix'` blend moves each pixel's color toward the
- * glow by the intensity, which keeps the image's total light. The `'add'` blend adds the glow, as
- * three.js's `UnrealBloomPass` does. The `'screen'` blend screens it, as pmndrs's `BloomEffect`
- * does.
+ * glow by the intensity, which keeps the image's total light. The `'add'` blend adds the glow, so
+ * the image gains light. The `'screen'` blend screens it, so the glow adds less where the scene is
+ * already bright.
  *
  * @category api/post
  */
@@ -194,7 +195,7 @@ export interface BloomSettings {
 }
 
 /**
- * Ambient occlusion's settings, with the meanings of three.js's `GTAOPass`. A setting that a call
+ * Ambient occlusion's settings, for ground-truth ambient occlusion (GTAO). A setting that a call
  * leaves out keeps its value.
  *
  * @category api/post
@@ -202,7 +203,7 @@ export interface BloomSettings {
 export interface AoSettings {
 	/**
 	 * How far from a surface the search for what hides it reaches, in world units: 0 or more, and
-	 * 0.25 by default, as `GTAOPass`'s `radius`.
+	 * 0.25 by default.
 	 */
 	radius?: number;
 	/**
@@ -217,8 +218,7 @@ export interface AoSettings {
 	 */
 	distanceExponent?: number;
 	/**
-	 * From 0 to 1: how much less the farther steps of the search count. It is 1 by default, as
-	 * `GTAOPass`'s `distanceFallOff`.
+	 * From 0 to 1: how much less the farther steps of the search count. It is 1 by default.
 	 */
 	distanceFalloff?: number;
 	/** The power that the occlusion is raised to: 0 or more, and 1 by default. Above 1 it darkens. */
@@ -229,34 +229,32 @@ export interface AoSettings {
 	 */
 	samples?: number;
 	/**
-	 * From 0 to 1: how much of the occlusion reaches the ambient light. It is 1 by default, as
-	 * `GTAOPass`'s `blendIntensity`.
+	 * From 0 to 1: how much of the occlusion reaches the ambient light. It is 1 by default.
 	 */
 	intensity?: number;
 }
 
 /**
- * Screen-space reflections' settings, with the meanings of three.js's `SSRPass`. A setting that a
- * call leaves out keeps its value.
+ * Screen-space reflections' settings. A setting that a call leaves out keeps its value.
  *
  * @category api/post
  */
 export interface SsrSettings {
 	/**
 	 * From 0 to 1: how much of the environment's reflection the screen's reflection replaces where
-	 * a ray hits, and 1 by default, as `SSRPass`'s `opacity`. The material's Fresnel term, metalness
-	 * and specular values still weigh the reflection.
+	 * a ray hits, and 1 by default. The material's Fresnel term, metalness and specular values
+	 * still weigh the reflection.
 	 */
 	intensity?: number;
 	/**
-	 * How far a reflected ray travels, in world units: above 0, and 100 by default, as `SSRPass`'s
-	 * `maxDistance`. Reflections fade out over the last fifth of it.
+	 * How far a reflected ray travels, in world units: above 0, and 100 by default. Reflections
+	 * fade out over the last fifth of it.
 	 */
 	maxDistance?: number;
 	/**
-	 * How far behind a surface on the screen a ray may pass and still hit it, in world units: 0 or
-	 * more, and 0.5 by default, as `SSRPass`'s `thickness`. Thin objects need a small value, or
-	 * objects behind them reflect as if they were solid.
+	 * How far behind a surface on the screen a ray may pass and still hit it, in world units. It is
+	 * 0 or more, and 0.5 by default. Thin objects need a small value, or objects behind them
+	 * reflect as if they were solid.
 	 */
 	thickness?: number;
 	/**
@@ -435,23 +433,22 @@ export interface PostSettings {
 	/**
 	 * How the engine maps high dynamic range color to the screen: a built-in curve's name, or a
 	 * custom tone curve's WGSL. The default is `'agx-punchy'`, which keeps the hues of bright colors
-	 * on their way to white and keeps the picture's contrast. three.js uses no tone mapping by
-	 * default, so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR
-	 * color, as bloom does; on a device without an HDR target the built-in curve stays.
+	 * on their way to white and keeps the picture's contrast. A custom curve needs HDR color, as
+	 * bloom does; on a device without an HDR target the built-in curve stays.
 	 */
 	toneMapping?: ToneMapping | ToneCurve;
 	/**
-	 * Scales the scene's color before the tone mapping, as three.js's `toneMappingExposure` does:
-	 * 2 is one stop brighter, and 0.5 one stop darker. It is 0 or more, and 1 by default. With
-	 * `ev100`, it scales the camera's exposure, as exposure compensation does.
+	 * Scales the scene's color before the tone mapping: 2 is one stop brighter, and 0.5 one stop
+	 * darker. It is 0 or more, and 1 by default. With `ev100`, it scales the camera's exposure, as
+	 * exposure compensation does.
 	 */
 	exposure?: number;
 	/**
 	 * The camera's exposure value at ISO 100, for lights in real units: 15 suits a sunny day lit by
 	 * a sun of 100,000 lux, 12 an overcast day, and 7 a lit room. It scales the scene's color by
 	 * 1 / (1.2 × 2^ev100), as Filament and Bevy do, so each step up is one stop darker. It is a
-	 * number from -20 to 30, and `false`, the default, turns it off, which leaves three.js's
-	 * units.
+	 * number from -20 to 30. The default, `false`, turns it off, for scenes whose lights have small
+	 * intensities, such as a sun of 3.
 	 */
 	ev100?: number | false;
 	/**
@@ -462,21 +459,20 @@ export interface PostSettings {
 	bloom?: BloomSettings | false;
 	/**
 	 * Ambient occlusion: darkens the ambient light where nearby surfaces hide a surface from the
-	 * sky, as three.js's `GTAOPass` finds it. It darkens only the light that comes from all around,
-	 * where `GTAOPass` darkens the whole image. Settings turn it on, `{}` with the values it had,
-	 * and `false` turns it off. It is off by default, and draws only where the quality setting
-	 * `aoScale` is above 0.
+	 * sky, found with ground-truth ambient occlusion (GTAO). It darkens only the light that comes
+	 * from all around, so direct light keeps its strength. Settings turn it on, `{}` with the
+	 * values it had, and `false` turns it off. It is off by default, and draws only where the
+	 * quality setting `aoScale` is above 0.
 	 */
 	ao?: AoSettings | false;
 	/**
 	 * A color grading table from `assets.loadLut` or `assets.lutFromData`, which maps each pixel's
-	 * color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off
-	 * by default.
+	 * color after the tone mapping. `false` turns it off. It is off by default.
 	 */
 	lut?: Lut | false;
 	/**
-	 * The share of the table's color in each pixel, from 0 for none to 1 for all of it, as
-	 * `LUTPass`'s `intensity`. It is 1 by default.
+	 * The share of the table's color in each pixel, from 0 for none to 1 for all of it. It is 1 by
+	 * default.
 	 */
 	lutIntensity?: number;
 	/**
@@ -499,10 +495,9 @@ export interface PostSettings {
 	outline?: OutlineSettings | false;
 	/**
 	 * Depth of field: blurs what lies in front of and behind the focus distance, as a camera lens
-	 * does, with the near and far fields apart, as three.js's `BokehPass` intends. It runs after
-	 * the custom effects and before bloom. Settings turn it on, `{}` with the values it had, and
-	 * `false` turns it off. It is off by default, and draws only where the quality setting
-	 * `dofSamples` is above 0.
+	 * does. The near and far fields blur apart. It runs after the custom effects and before bloom.
+	 * Settings turn it on, `{}` with the values it had, and `false` turns it off. It is off by
+	 * default, and draws only where the quality setting `dofSamples` is above 0.
 	 */
 	dof?: DofSettings | false;
 	/**

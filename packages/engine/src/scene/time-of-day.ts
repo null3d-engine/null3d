@@ -33,7 +33,7 @@ export interface TimeOfDayOptions {
 	noonElevation?: number;
 	/**
 	 * The sky that the light, the fog, the ambient light and the exposure match: `'analytic'`,
-	 * three.js's sky of `scene.setBackground({ sky })`, or `'physical'`, the physical sky of
+	 * the analytic sky of `scene.setBackground({ sky })`, or `'physical'`, the physical sky of
 	 * `scene.setBackground({ atmosphere })`. The default is `'analytic'`.
 	 */
 	model?: 'analytic' | 'physical';
@@ -200,9 +200,8 @@ const EXPOSURE: readonly (readonly [number, number])[] = [
  * Works out the settings of a time of day: an hour from 0 to 24, or a named preset. The sun rises
  * at 6, stands highest at 12 and sets at 18. After sunset the sky dims to a deep blue, and then to
  * a navy night sky lit from the moon's place, and the moon takes over as the main light. Each value
- * comes from three.js's sky model, the one that the sky background draws, so the fog fades into
- * the sky's horizon. Throws a `RangeError` for an hour that is not a finite number, or an unknown
- * preset.
+ * comes from the model of the sky that the background draws, so the fog fades into the sky's
+ * horizon. Throws a `RangeError` for an hour that is not a finite number, or an unknown preset.
  *
  * Give it `out`, an object of a previous call, and it writes the new settings into that object: a
  * day cycle then allocates nothing, so a sketch can move the time in every frame. `bun run

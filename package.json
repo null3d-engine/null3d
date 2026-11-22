@@ -1,7 +1,7 @@
 {
 	"name": "null3d-workspace",
 	"private": true,
-	"description": "A browser 3D engine for games and heavy 3D apps: Rust and WebAssembly on worker threads, WebGPU and WebGL2, and a TypeScript API with three.js-style names.",
+	"description": "A browser 3D engine for games and heavy 3D apps: Rust and WebAssembly on worker threads, WebGPU and WebGL2, and a TypeScript API.",
 	"license": "MIT OR Apache-2.0",
 	"repository": {
 		"type": "git",

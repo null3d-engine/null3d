@@ -30,10 +30,9 @@ export interface FrenetFrames {
 }
 
 /**
- * The base class of all curves, like three.js's `Curve`. A subclass gives `getPoint`. The class
- * adds sampling by arc length, tangents and, for 3D curves, Frenet frames. `Point` is the type of
- * the curve's points. It is `[number, number]` for a 2D curve and `[number, number, number]` for a
- * 3D curve.
+ * The base class of all curves. A subclass gives `getPoint`. The class adds sampling by arc length,
+ * tangents and, for 3D curves, Frenet frames. `Point` is the type of the curve's points. It is
+ * `[number, number]` for a 2D curve and `[number, number, number]` for a 3D curve.
  *
  * @category api/geometry
  */
@@ -189,9 +188,9 @@ export abstract class Curve<Point extends Vec2Like> {
 	}
 
 	/**
-	 * The Frenet frames of a 3D curve at `segments + 1` points spaced along its length, as three.js
-	 * computes them for tubes and extrusions. A closed curve gets a twist spread over its length,
-	 * so the last frame matches the first.
+	 * The Frenet frames of a 3D curve at `segments + 1` points spaced along its length, which `tube`
+	 * and `extrude` follow. A closed curve gets a twist spread over its length, so the last frame
+	 * matches the first.
 	 */
 	computeFrenetFrames(segments: number, closed = false): FrenetFrames {
 		const normal: Tuple3 = [0, 0, 0];

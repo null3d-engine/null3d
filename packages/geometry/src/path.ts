@@ -15,8 +15,8 @@ import { equals, is2D, type Tuple2 } from './math';
 import type { Vec2Like } from './types';
 
 /**
- * A list of curves joined end to end and treated as one curve, like three.js's `CurvePath`. Its
- * `t` runs over the whole path by length.
+ * A list of curves joined end to end and treated as one curve. Its `t` runs over the whole path by
+ * length.
  *
  * @category api/geometry
  */
@@ -49,7 +49,7 @@ export class CurvePath<Point extends Vec2Like> extends Curve<Point> {
 
 	/**
 	 * The point at `t` over the whole path by length. Writes into `out` when given. Throws a
-	 * `RangeError` when `t` is above 1 or the path is empty, where three.js returns null.
+	 * `RangeError` when `t` is above 1 or the path is empty.
 	 */
 	getPoint(t: number, out?: Point): Point {
 		const d = t * this.getLength();
@@ -145,9 +145,8 @@ export class CurvePath<Point extends Vec2Like> extends Curve<Point> {
 }
 
 /**
- * A 2D path drawn with commands like a canvas's, such as `moveTo`, `lineTo` and
- * `bezierCurveTo`, like three.js's `Path`. Each command adds a curve that starts at the current
- * point.
+ * A 2D path drawn with commands like a canvas's, such as `moveTo`, `lineTo` and `bezierCurveTo`.
+ * Each command adds a curve that starts at the current point.
  *
  * @category api/geometry
  */
@@ -310,8 +309,7 @@ export class Path extends CurvePath<[number, number]> {
 }
 
 /**
- * A closed 2D outline with optional holes, like three.js's `Shape`. The `shape` and `extrude`
- * generators fill it.
+ * A closed 2D outline with optional holes. The `shape` and `extrude` generators fill it.
  *
  * @category api/geometry
  */

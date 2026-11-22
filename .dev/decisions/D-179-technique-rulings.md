@@ -219,5 +219,5 @@ material's own specular lobe ([D-252](D-252-material-lobes.md)), and car paint's
 - **Records:** [D-52](D-52-intent-parity.md), [D-53](D-53-technique-defaults.md), [D-79](D-79-lighting-defaults.md), [D-129](D-129-temporal-anti-aliasing.md), [D-142](D-142-more-techniques-before-1-0.md) and [D-146](D-146-light-probe-grid.md) point here.
 - **Technique review:** a section of its own holds the research. It gives what three.js gained and still lacks, the browsers' GPU features, the 17 techniques with their verdicts, and the sources. It also gives the `three-compat` contents, the ACES porting verdict, and the gap rows for TAA, light maps, water and WebXR.
 - **The three.js mapping:** entries for `TAAUNode`, `TRAANode`, `FSR1Node`, `SSGINode`, `LightProbeGrid`, the clustered lights, `GaussianSplat`, `SunLight` and the screen-space shadows. Entries give the version that brings each feature. WebXR says "not in version 1", and TAA says "no equivalent". The porting skill and the develop skill follow.
-- **README:** the roadmap's 0.3 and 1.0 steps hold the features of these rulings.
+- **Roadmap:** steps 0.3 and 1.0 hold the features of these rulings.
 - **Plans:** the tasks of these rulings are in M3's task list.

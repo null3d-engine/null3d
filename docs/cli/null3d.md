@@ -253,7 +253,7 @@ Each image test compares its image with a reference image in `tests/references/<
 
 Each run saves its images in `test-results/null3d/<environment>/<tier>/`: `<name>.png`, and `<name>-diff.png` when the image differs from its reference. The diff marks the pixels that differ in red. Keep `test-results/` out of git.
 
-An image passes when at most 0.1% of its pixels differ from the reference. A pixel differs when its color moves more than 10% of the color range. Pixels on the anti-aliased edges of shapes never count. The two limits are those of three.js's own image tests.
+An image passes when at most 0.1% of its pixels differ from the reference. A pixel differs when its color moves more than 10% of the color range. Pixels on the anti-aliased edges of shapes never count.
 
 A new test has no reference, so its first run fails and saves the image. Open the image. When it is right, run `bunx @null3d/cli test --update-references` to keep it as the reference. Do the same after a change that alters an image on purpose, and check the new references in your git diff before you commit them. With `--update-references`, an image that matches its reference leaves the reference as it is.
 
@@ -451,7 +451,7 @@ bunx @null3d/cli assets pack-orm textures/brick_orm.ktx2 --occlusion brick_ao.pn
 | `--metalness <image>` | The metalness map | Black |
 | `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
 
-`assets normal-from-bump` makes a normal map from a height map, such as a three.js material's bump map.
+`assets normal-from-bump` makes a normal map from a height map, such as a bump map.
 
 ```sh
 bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_normal.ktx2 --scale 2
@@ -459,7 +459,7 @@ bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--scale <number>` | The strength of the slopes, as three.js's `bumpScale` | 1 |
+| `--scale <number>` | The strength of the slopes, as the standard material's [`bumpScale`](../api/materials.md) | 1 |
 | `--clamp` | The map does not tile, so the edge texels take no neighbors from the opposite edge | The map tiles |
 | `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
 

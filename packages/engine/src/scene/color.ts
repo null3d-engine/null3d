@@ -9,9 +9,9 @@ import { hexValue, invalidColor } from '../math/hex';
 
 /**
  * A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three
- * linear components from 0 to 1, such as `[1, 0.26, 0.05]`. Hex values are sRGB, as on the web and in
- * three.js, and the engine converts them to linear values. The color helpers, such as
- * `color.fromHsl`, give linear components.
+ * linear components from 0 to 1, such as `[1, 0.26, 0.05]`. Hex values are sRGB, as on the web, and
+ * the engine converts them to linear values. The color helpers, such as `color.fromHsl`, give
+ * linear components.
  *
  * @category api/materials
  */

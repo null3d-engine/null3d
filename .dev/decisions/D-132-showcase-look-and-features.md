@@ -63,7 +63,7 @@ The owner ruled four points.
 - **Particles:** the add-on ships in 0.1.0, as [D-108](D-108-first-release.md) and [D-54](D-54-addon-modules.md) say.
 - **Other records:** this record places particles in M2. D-53's list of gap features (row 21) and D-117's row for spray, leaves and fireflies give way to it. D-117's status and that row point here.
 - **Examples guide:** [Examples](../examples.md) holds the look bar for the comparisons, and the table of engine features for the showcase scenes.
-- **README:** the roadmap puts the particles add-on in 0.2, and motion blur and global illumination in 0.3.
+- **Roadmap:** the particles add-on is in step 0.2, and motion blur and global illumination in step 0.3.
 
 ## Addendum: Skyway keeps the effects that its Low preset leaves off
 

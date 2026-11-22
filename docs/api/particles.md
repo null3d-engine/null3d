@@ -178,7 +178,7 @@ A particle that crosses the ground or a wall shows a hard line where it cuts int
 
 ## Drawing
 
-A system is one scene object, with one draw of all its particles. It sorts among the other blended objects by its bounds. Its own particles draw in the order they were born, so `additive` blending, which needs no order, suits most effects. With `normal` blending, keep particles soft and faint, as smoke is.
+A system is one scene object, with one draw of all its particles. The particles blend and write no depth. The system sorts among the other blended objects by its bounds. Its own particles draw in the order they were born, so `additive` blending, which needs no order, suits most effects. With `normal` blending, keep particles soft and faint, as smoke is.
 
 The system keeps its object's culling sphere around its live particles, from where they were born and how far they can move. Particles do not cast shadows, and lights do not light them. Fog fades them as it fades other surfaces. Additive particles fade out in fog, and others take on its color.
 
@@ -191,18 +191,6 @@ A system draws its quads from its own records, not from a mesh, so it has no lev
 Each live particle costs the GPU one quad, whose vertex shader works out its state. The core writes 32 bytes per birth, and the engine uploads only the records born in the frame. A system with a large capacity costs vertex work for every record, live or not, so size `capacity` for the particles you need.
 
 The GPU keeps birth times as 32-bit floats. So every 1,024 seconds, a system moves the time that its birth times count from. It rewrites the records' birth times 16,384 at a time, one share per frame, so even a system of a million particles adds no long frame. A system with sub-emitters keeps a table of the events to come, 80 bytes per event. It starts small and doubles while the system warms up, up to one event per sub-emitter for each particle.
-
-## Compared with three.js
-
-three.js has no particle system of its own. Projects build one from `THREE.Points` or `InstancedMesh` with a custom shader, and move the particles on the CPU each frame. Others use a library such as three.quarks or three-nebula.
-
-| three.js | null3D |
-| --- | --- |
-| `THREE.Points` with a `PointsMaterial`, moved on the CPU | `createParticles`, moved on the GPU |
-| A sprite atlas in `PointsMaterial.map` | `map` with `flipbook` |
-| `blending: THREE.AdditiveBlending`, `depthWrite: false` | `blending: 'additive'`; particles never write depth |
-| Velocity and gravity updated in the loop | `speed`, `gravity`, `drag`, `wind` and `turbulence` |
-| three.quarks's `ParticleSystem` and `BatchedRenderer` | `createParticles`, with `system.update()` in `onLateUpdate` |
 
 ## Related pages
 

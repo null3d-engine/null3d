@@ -27,16 +27,16 @@ export type Vec3Like = { [index: number]: number };
 export type QuatLike = { [index: number]: number };
 
 /**
- * A 4 by 4 matrix in an array of 16 numbers, stored column by column, as three.js and WebGPU store
- * matrices. Elements 12, 13 and 14 hold the translation.
+ * A 4 by 4 matrix in an array of 16 numbers, stored column by column, as WebGPU stores matrices.
+ * Elements 12, 13 and 14 hold the translation.
  *
  * @category api/math
  */
 export type Mat4Like = { [index: number]: number };
 
 /**
- * The axis order of Euler angles, with three.js's names. `'XYZ'` turns an object about its own X
- * axis, then its Y axis, then its Z axis.
+ * The axis order of Euler angles. `'XYZ'` turns an object about its own X axis, then its Y axis,
+ * then its Z axis.
  *
  * @category api/math
  */

@@ -22,9 +22,9 @@ flowchart LR
     map --> receivers["Objects with receiveShadows<br/>compare their depth with the map"]
 ```
 
-A directional light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. An object casts shadows with `castShadows: true`, and shadows fall on it with `receiveShadows: true`. All three are false by default, as in three.js.
+A directional light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. An object casts shadows with `castShadows: true`, and shadows fall on it with `receiveShadows: true`. All three are false by default.
 
-An [instance batch](instances.md) takes the same two options in `scene.createInstances`, and the setters `setCastShadows` and `setReceiveShadows`. They hold for every row, as three.js's `castShadow` and `receiveShadow` hold for every instance of an `InstancedMesh`. Each cascade and each light's tile culls the rows one by one, as the camera's view does. A dynamic batch that casts counts as a moving caster: a far cascade that its rows touch draws in every frame while `followMovingCasters` is on. Sprite, point and line batches cast and receive no shadows.
+An [instance batch](instances.md) takes the same two options in `scene.createInstances`, and the setters `setCastShadows` and `setReceiveShadows`. They hold for every row. Each cascade and each light's tile culls the rows one by one, as the camera's view does. A dynamic batch that casts counts as a moving caster: a far cascade that its rows touch draws in every frame while `followMovingCasters` is on. Sprite, point and line batches cast and receive no shadows.
 
 The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp. When a cascade draws, it culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade by its distance from the camera. It compares its depth from the light with the depth in the map.
 
@@ -132,7 +132,7 @@ A tile whose view does not reach into the camera's view waits. No surface on scr
 
 A tile that holds no depth for its light yet draws at once. Other tiles that must draw again share a cap of 12 per frame. More must draw when many casters move near several point lights. Then the lights whose tiles waited longest draw first, then the largest on screen. The others keep their last depth for a frame or two, and their shadows lag for that time. So a burst of movement does not make one long frame.
 
-A scene whose casters and lights stand still draws no tile. Make static casters static, and keep moving objects out of the ranges of shadowed spot and point lights when you can.
+A scene whose casters and lights stand still draws no tile, where three.js draws each shadowed spot and point light's map in every frame. Make static casters static, and keep moving objects out of the ranges of shadowed spot and point lights when you can.
 
 ## Settings
 
@@ -197,7 +197,7 @@ With the default settings, a 60 degree view and a 16:9 canvas, one texel of each
 | --- | --- | --- | --- |
 | 80% | 0.1 to 14 m: 1.7 cm | 14 to 39 m: 4.5 cm | 39 to 200 m: 23 cm |
 | 65%, the engine's split | 0.1 to 24 m: 2.8 cm | 24 to 57 m: 6.6 cm | 57 to 200 m: 23 cm |
-| 50%, as three.js's cascaded shadows split | 0.1 to 34 m: 3.9 cm | 34 to 75 m: 8.6 cm | 75 to 200 m: 23 cm |
+| 50% | 0.1 to 34 m: 3.9 cm | 34 to 75 m: 8.6 cm | 75 to 200 m: 23 cm |
 
 At 80%, the town's ground from 40 to 57 m gets 23 cm texels, and its shadow edges show steps. At 50%, the shadows at the feet of a camera at eye height are more than twice as coarse, and they look soft and streaked. The engine's 65% keeps them less than twice as coarse as at 80%, and gives the town most of the texels that 50% gives it.
 
@@ -283,7 +283,7 @@ A surface that casts and receives shadows can shadow itself in stripes, which is
 - `bias` moves the surface toward the light. The move is the setting times the tangent of the angle between the surface and the light, up to twice the setting.
 - `normalBias` moves the surface along its mesh normal, before a normal map bends it, by the setting times the sine of that angle.
 
-A surface that faces the light takes little of either. A surface at a steep angle takes more, because its depth changes faster across each texel. The casters draw only the faces that point away from the light, as three.js's shadows draw them. A closed mesh's lit faces then compare with its far side, which keeps acne off most surfaces. A caster that draws both faces, such as a plane with a double-sided material, is the likeliest to show acne.
+A surface that faces the light takes little of either. A surface at a steep angle takes more, because its depth changes faster across each texel. The casters draw only the faces that point away from the light. A closed mesh's lit faces then compare with its far side, which keeps acne off most surfaces. A caster that draws both faces, such as a plane with a double-sided material, is the likeliest to show acne.
 
 A bias in meters keeps its size in every cascade. So where a shadow meets its caster does not change where one cascade gives way to the next. One texel of the surface's cascade caps each bias, as a fine map needs less. With the defaults, the cap acts only where a texel covers less than 2 cm.
 
@@ -407,9 +407,9 @@ The box holds the object, a radius of space above it and sixteen radii below, wh
 - The first directional light created casts the shadows, if it has `castShadows`. Up to three more directional lights light surfaces as fill and rim lights, and cast none. A fifth directional light lights nothing.
 - Each spot light with `castShadows` casts shadows while it holds a tile of the atlas. Each point light with `castShadows` casts them while it holds six, where the preset's `pointLightShadows` is on.
 - A caster draws into every cascade whose box it reaches, however far toward the light it stands.
-- The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)). three.js tests casters against the camera's layers instead.
+- The light's layers choose the casters: an object casts only when its layer mask shares a bit with the light's. The light still lights every object in a view that it shares a layer with. So an object with `castShadows` on a layer that the light lacks casts nothing, with no warning, and the light shines through it. Give the light that layer too ([Layers and shadows](render-layers.md#layers-and-shadows)).
 - The standard material and [custom materials](../shaders/surface-functions.md) show shadows. The unlit material shows none, but unlit objects still cast them.
-- A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape, as in three.js.
+- A masked surface cuts the holes of its mask into its shadow, so leaves and fences cast leaf and fence shapes. The shadow tests the surface's opacity, vertex alpha and base color map's alpha against its `alphaCutoff`. A hashed surface casts a hashed shadow, which the filter turns into a partial shadow as dense as its alpha. A blended surface casts its whole shape.
 - A custom material whose WGSL sets or reads the surface's alpha casts that shape: its shadow caster runs the surface function, with the scene camera's values and the face that the caster draws, and tests its alpha at the cutoff. A material that declares `fn coverage` casts that function's shape instead, in the light's view. WGSL that never names the alpha or the coverage casts the mesh's whole shape.
 - `setCastShadows` and `setReceiveShadows` rebuild the engine's tables of what it draws, as `setMaterial` does. Set them at setup rather than in every frame.
 
@@ -437,24 +437,6 @@ To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, 
 ## On each GPU path
 
 WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth texture array of 16-bit depths, `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2. Both keep the shadow atlas as a depth texture array of 32-bit floats. A tile's view is a perspective view, which spends most of its depth's steps near its light. In 16 bits, one step near a tile's far end would be about 1.5% of the distance from the light: 15 cm at 10 m. The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once. WebGL2's shading language has no such read, so there it reads each texel on its own, four times as many reads. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
-
-## Coming from three.js
-
-- `renderer.shadowMap.enabled` has no equivalent: a light casts shadows when it has `castShadows`.
-- `object.castShadow` and `object.receiveShadow` become `castShadows` and `receiveShadows`.
-- `light.shadow.camera` has no equivalent. The cascades fit the camera's view by themselves, so delete the shadow camera's bounds.
-- `light.shadow.mapSize` becomes one number, `mapSize`, the texels on each side.
-- `light.shadow.normalBias` is in meters, as in three.js. `light.shadow.bias` is in meters too, where three.js counts depth units. Both scale with each surface's angle to the light, and one texel caps them. Start from the defaults.
-- `light.shadow.intensity` carries over as it stands, from 0 for no shadow to 1 for all of it. It costs the frame nothing, because the shader mixes each lookup toward full light.
-- `renderer.shadowMap.type` becomes the `shadowFilter` quality setting: `PCFShadowMap` and `PCFSoftShadowMap` map to 3 or 5. `BasicShadowMap` and `VSMShadowMap` have no equivalent.
-- `light.shadow.radius` and `light.shadow.blurSamples` become the `shadowFilter` setting too, for every light.
-- The CSM addon is built in: set `cascades` on the directional light. Its `maxFar` and `shadowMapSize` become `distance` and `mapSize`.
-- The CSM addon's `fade` option blends the cascades where they meet. null3D blends them by default, over the `shadowCascadeBlend` band. `fade: false` hands over at once, as `shadowCascadeBlend: 0` does.
-- A spot or point light's `shadow.mapSize` has no equivalent. The quality preset sets the size of every tile. `shadow.camera` has none either, as the tiles fit the light by themselves.
-- A material with `alphaTest` cuts its shadow at `alphaTest` in three.js, and so does a masked material in null3D, at `alphaCutoff`. With `alphaToCoverage`, three.js cuts at 0.5, and null3D at `alphaCutoff`. With `alphaHash`, three.js casts the whole shape, and null3D a hashed shadow.
-- three.js draws a spot or point light's shadow map in every frame. null3D draws a tile only when its light or a caster in its range moves.
-- three.js has no contact shadows, so a ported scene gains them on High and Ultra. Set `contactDistance: 0` on the light to match three.js's look. drei's `ContactShadows` component is another technique, a blurred shadow on a ground plane, which null3D does not draw.
-- three.js has no hero shadow. A port that fakes one with a second shadowed light, or with a hand-fitted shadow camera, can replace it with `hero`, which follows the object without a camera of its own.
 
 ## Related pages
 

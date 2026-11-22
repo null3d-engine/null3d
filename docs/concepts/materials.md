@@ -24,15 +24,15 @@ A material has two parts. Its values, such as its color and roughness, sit in on
 
 ## The built-in materials
 
-| Material | Model | three.js |
-| --- | --- | --- |
-| `materials.standard` | glTF's metallic-roughness model, lit by the scene's lights | `MeshStandardMaterial` |
-| `materials.unlit` | Its color alone, without lights | `MeshBasicMaterial` |
-| `materials.shader` | The standard model, with a WGSL surface function that changes the look | `ShaderMaterial`, `onBeforeCompile` |
-| `materials.shadowCatcher` | Only the shadows that fall on it, and nothing where the light reaches it | `ShadowMaterial` |
-| `materials.decal` | The standard model, projected by a box onto the surfaces inside it | `DecalGeometry` |
+| Material | Model |
+| --- | --- |
+| `materials.standard` | glTF's metallic-roughness model, lit by the scene's lights |
+| `materials.unlit` | Its color alone, without lights |
+| `materials.shader` | The standard model, with a WGSL surface function that changes the look |
+| `materials.shadowCatcher` | Only the shadows that fall on it, and nothing where the light reaches it |
+| `materials.decal` | The standard model, projected by a box onto the surfaces inside it |
 
-The standard material uses the same formulas as three.js's `MeshStandardMaterial`. It also reads three.js's own table of specular terms, so its highlights and its energy match three.js's. [Materials](../api/materials.md) lists every option.
+The standard material lights a surface with Lambert diffuse light and a GGX highlight. The cube map and the spherical harmonics of the environment give its light, and a table of split-sum terms weighs it. A term for light that bounces more than once keeps a rough surface's energy. [Materials](../api/materials.md) lists every option.
 
 ## Values cost almost nothing
 
@@ -66,7 +66,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | `colorWrite: false` | The pipeline's color state, and the place in the opaque pass: its objects draw first, so their depth holds back the surfaces behind them |
 | `flatShading` | The material's row: every standard shader can light with face normals |
 
-three.js compiles a new program when `material.needsUpdate` is set after such a change. null3D has no `needsUpdate`: create one material for each combination in the setup instead.
+To change one of these options, create one material for each combination in the setup, and give an object another one with `setMaterial`.
 
 ```ts
 // sketch.ts: two variants, made once in the setup.
@@ -76,15 +76,15 @@ const cloth = materials.standard({ color: '#8098d0', doubleSided: true });
 
 ## Alpha modes
 
-A material's `alphaMode` says what its alpha does. The default, `opaque`, ignores it. The `mask` mode draws nothing where the alpha is below the material's `alphaCutoff`, as three.js's `alphaTest` does. A masked surface is opaque where it draws, so it hides what lies behind it, and its objects draw in any order.
+A material's `alphaMode` says what its alpha does. The default, `opaque`, ignores it. The `mask` mode draws nothing where the alpha is below the material's `alphaCutoff`. A masked surface is opaque where it draws, so it hides what lies behind it, and its objects draw in any order.
 
-The `hash` mode draws each point opaque or not at all, as three.js's `alphaHash` does. A hash of the point's place on the mesh sets a threshold, and the point draws where its alpha reaches it. The alpha then sets the share of the surface that draws, and hashed objects need no sort.
+The `hash` mode draws each point opaque or not at all. A hash of the point's place on the mesh sets a threshold, and the point draws where its alpha reaches it. The alpha then sets the share of the surface that draws, and hashed objects need no sort.
 
 The shader that drops fragments costs more than one that never does: a GPU cannot always test depth before it runs such a shader. Tile GPUs, as in phones and Apple's chips, also lose part of their hidden-surface removal. So only masked and hashed materials draw with that variant. The cutoff is a value, and `set({ alphaCutoff })` changes it at no cost.
 
 `alphaToCoverage`, on by default, smooths a mask's cut edges with MSAA. The masked alpha fades over about one pixel above the cutoff, and MSAA covers that share of each edge pixel's samples. Where the target's format has an alpha channel, the GPU turns the alpha into coverage. WebGPU's HDR scene color has none, so there the shader writes the covered samples itself. Those shader builds load the first time a material needs them. Without MSAA, alpha to coverage is a plain mask.
 
-The `blend` mode blends the surface over what lies behind it, as three.js's `transparent: true` does. Its `blending` chooses how: `normal`, `additive` or `multiply`. [Materials](../api/materials.md#alpha-modes) shows each mode.
+The `blend` mode blends the surface over what lies behind it. Its `blending` chooses how: `normal`, `additive` or `multiply`. [Materials](../api/materials.md#alpha-modes) shows each mode.
 
 ## The transparent pass
 
@@ -94,15 +94,15 @@ flowchart LR
     sort --> transparent["Transparent pass:<br/>each blends over the ones before"]
 ```
 
-The result of blending depends on the order in which surfaces draw. A surface must blend over everything behind it. So the engine draws blended objects in a pass of their own, after the opaque ones, farthest first. In each frame, for each view, the job workers cull the blended objects and sort them. An object's depth is the depth of its bounding sphere's center, as in three.js. `mesh.setRenderOrder(order)` comes first: a lower order draws first, at any depth.
+The result of blending depends on the order in which surfaces draw. A surface must blend over everything behind it. So the engine draws blended objects in a pass of their own, after the opaque ones, farthest first. In each frame, for each view, the job workers cull the blended objects and sort them. An object's depth is the depth of its bounding sphere's center. `mesh.setRenderOrder(order)` comes first: a lower order draws first, at any depth.
 
-The rows of an instance batch sort one by one, so a batch of blended particles draws in the right order. three.js sorts an `InstancedMesh` as one object. Neighbors in the sorted order that share a mesh and a material draw together. A batch that no other blended object crosses therefore draws in few draw calls.
+The rows of an instance batch sort one by one, so a batch of blended particles draws in the right order. Neighbors in the sorted order that share a mesh and a material draw together. A batch that no other blended object crosses therefore draws in few draw calls.
 
 Sorting by object has these limits:
 
 - Surfaces that cross each other have no right order. One object draws before the other, so where the second lies behind the first, it shows wrong. Split such meshes, or give them `depthWrite: false` so they never hide each other.
 - A large object, such as a long glass wall, has one center. A small object can have a center that is farther away than the wall's while it stands in front of the wall. Split large blended meshes, or set their order with `setRenderOrder`.
-- The triangles of one mesh draw in the mesh's own order. A closed blended mesh, such as a sphere, draws only its front faces unless it is double-sided. A double-sided one draws its back faces first, then its front faces, as three.js draws it. So its near side covers its far side. Each run of neighbors that share its mesh and material takes a second draw. On flat surfaces, whose faces never overlap, `forceSinglePass: true` saves it.
+- The triangles of one mesh draw in the mesh's own order. A closed blended mesh, such as a sphere, draws only its front faces unless it is double-sided. A double-sided one draws its back faces first, then its front faces. So its near side covers its far side. Each run of neighbors that share its mesh and material takes a second draw. On flat surfaces, whose faces never overlap, `forceSinglePass: true` saves it.
 
 Surfaces of the `weighted` blending need no sort. In the camera's view they leave the transparent pass and draw after it, in any order, into two targets of their own. A last step blends their weighted average over the scene, as far as they cover it together ([Weighted blending](../api/materials.md#weighted-blending)). Use it where the limits above make smoke, particles or crossing panes pop.
 

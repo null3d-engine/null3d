@@ -75,7 +75,7 @@ turret?.rotateY(0.5);
 
 `instance.find(name)` gives the copy's object of a node, by the node's name in the file. `scene.find` searches every object. When several copies share a name, it gives the first copy's object.
 
-`scene.clone(object)` copies an object and every object below it, with their meshes, materials, lights, cameras and settings, as three.js's `clone` does. The copy goes under the same parent, so it starts in the same place. It uses the same path as `instantiate`: one call and one batch of changes for the whole tree. Instance batches are not objects, so `clone` leaves them out.
+`scene.clone(object)` copies an object and every object below it, with their meshes, materials, lights, cameras and settings. The copy goes under the same parent, so it starts in the same place. It uses the same path as `instantiate`: one call and one batch of changes for the whole tree. Instance batches are not objects, so `clone` leaves them out.
 
 `scene.createInstances(prefab, count, options)` draws many copies of a model with instance batches, one for each mesh of the model. The batches share one set of rows, so each row places a whole copy. Write the returned batch's `positions`, `rotations` and `scales` as for a batch of one mesh. Each mesh keeps its place in the model. The model's lights are left out. A model with no meshes, or with instancing of its own, throws E1417. Give `createInstances` one of its meshes and a material instead, from `prefab.find(name)`.
 
@@ -104,7 +104,7 @@ door?.setVisible(false);
 
 The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color. The default background is black, or the page behind a transparent canvas. Exposure and tone mapping change the background as they change the objects: [Color management](../concepts/color-management.md#the-background).
 
-`setBackground` also takes a [texture](textures.md). The texture fills the camera's view behind every object, as a texture in three.js's `scene.background` does. It stretches to the shape of the view. A texture that loads with the default `flipY` stands upright. The engine samples it with the texture's own filter and ignores its alpha. The texture draws behind every object, in the pixels that no object covers.
+`setBackground` also takes a [texture](textures.md). The texture fills the camera's view behind every object. It stretches to the shape of the view. A texture that loads with the default `flipY` stands upright. The engine samples it with the texture's own filter and ignores its alpha. The texture draws behind every object, in the pixels that no object covers.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -120,11 +120,11 @@ The color set before a texture shows until the texture's texels are on the GPU, 
 
 ### Environments, cube maps and the sky
 
-`setBackground` also takes four backgrounds that surround the scene, as three.js's `scene.background` does with a cube texture and its `Sky` object:
+`setBackground` also takes four backgrounds that surround the scene:
 
-- An environment from [`assets.loadEnvironment` or `assets.builtinEnvironment`](assets.md#environments). It can blur, as three.js's `backgroundBlurriness` blurs a PMREM texture.
+- An environment from [`assets.loadEnvironment` or `assets.builtinEnvironment`](assets.md#environments). It can blur.
 - A cube map of six images from [`assets.loadCubemap`](assets.md#cube-maps), a sky box.
-- three.js's analytic sky: `{ sky: { sunPosition } }`, with the settings of three.js's `Sky` object.
+- The analytic sky: `{ sky: { sunPosition } }`, the Preetham daylight model with a sun disc and drifting clouds.
 - The physical sky: `{ atmosphere: { sunPosition } }`, the earth's air lit by the sun and the moon. The same air hazes distant objects ([The physical sky](#the-physical-sky)).
 
 ```ts
@@ -141,17 +141,17 @@ export default defineSketch(async ({ scene, assets }) => {
 
 | Option | Takes | Default | What it sets |
 | --- | --- | --- | --- |
-| `intensity` | Every background but a color | 1 | The factor of the background's light, 0 or more, as three.js's `scene.backgroundIntensity` |
-| `blur` | Environments | 0 | How much the background blurs, from 0 (sharp) to 1, as `scene.backgroundBlurriness` |
-| `rotation` | Environments and cube maps | `[0, 0, 0]` | The background's turn, as Euler angles in radians in the order X, Y, Z, as `scene.backgroundRotation` |
+| `intensity` | Every background but a color | 1 | The factor of the background's light, 0 or more |
+| `blur` | Environments | 0 | How much the background blurs, from 0 (sharp) to 1 |
+| `rotation` | Environments and cube maps | `[0, 0, 0]` | The background's turn, as Euler angles in radians in the order X, Y, Z |
 
-An environment's map holds its light blurred for each roughness. So the background reads the level of the blur's roughness, as three.js reads its PMREM texture. A blurred background costs no more than a sharp one. The background and `setEnvironment` are separate: a scene can show one environment and take its light from another. A cube map shows its six images as three.js's `CubeTextureLoader` shows them, and does not light the scene.
+An environment's map holds its light blurred for each roughness. So the background reads the level of the blur's roughness. A blurred background costs no more than a sharp one. The background and `setEnvironment` are separate: a scene can show one environment and take its light from another. A cube map shows its six images without blur, and it does not light the scene.
 
-The sky takes the names and the defaults of three.js's `Sky` uniforms:
+The analytic sky takes these settings:
 
 | Setting | Default | What it sets |
 | --- | --- | --- |
-| `sunPosition` | `[0, 0.0349, -0.9994]` | A point toward the sun, as `sunPosition`. The default puts the sun 2 degrees over the horizon, as three.js's sky example does |
+| `sunPosition` | `[0, 0.0349, -0.9994]` | A point toward the sun. Its direction places the sun. The default puts the sun 2 degrees over the horizon, toward -Z |
 | `turbidity` | 2 | The haze in the air |
 | `rayleigh` | 1 | The scattering by the air's molecules, which makes the sky blue |
 | `mieCoefficient` | 0.005 | The scattering by haze |
@@ -166,7 +166,7 @@ The sky takes the names and the defaults of three.js's `Sky` uniforms:
 
 The quality preset's [`cloudSteps`](../concepts/quality-preset-tables.md#settings-of-each-preset) chooses which layer draws: Low and Medium draw the flat layer, and High and Ultra draw volumetric clouds, ray marched through a noise volume. Both read the same settings above, so a setting keeps its meaning when the preset changes. WebGL2 and compatibility mode stop at Medium, so a page there draws the tier with `quality.set({ cloudSteps })` or the `cloudSteps` option of `createEngine`. The tier's noise and shaders load at its first use, and a page on the flat presets downloads neither. The sky's environment map takes the clouds too, with two limits. A map marches at most 16 steps. It draws them only when the page starts with `cloudSteps` above 0, because the map picks the tier's shaders at the page's start.
 
-Two more settings are null3D's own. They add a second sky, which `timeOfDay` uses to fade the moon's sky in as night falls:
+Two more settings add a second sky, which `timeOfDay` uses to fade the moon's sky in as night falls:
 
 | Setting | Default | What it sets |
 | --- | --- | --- |
@@ -229,7 +229,7 @@ export default defineSketch(async ({ scene, assets }) => {
 | `moonIntensity` | 0 | The moon's light above the air. It lights the air as the sun does, and the sky shows its disc, lit from the sun's side. 0 draws no moon |
 | `stars` | 0 | The stars' brightness. They show only where the sky is dark enough. 0 draws no stars |
 
-The sky's light is in the units of a directional light's intensity, so the exposure that suits the scene's lights suits the sky. It does not move a light: set the main light's direction and color with it, or take them from [`timeOfDay`](#time-of-day). The quality setting [`physicalSky`](../concepts/quality-presets.md) is off on Low. There three.js's analytic sky stands in, with the same sun, moon, air and clouds, matched to the physical sky's brightness, and the haze on objects stays. The first physical sky downloads its shaders, `'physical_sky'`, and the view shows the background color until its tables are drawn.
+The sky's light is in the units of a directional light's intensity, so the exposure that suits the scene's lights suits the sky. It does not move a light: set the main light's direction and color with it, or take them from [`timeOfDay`](#time-of-day). The quality setting [`physicalSky`](../concepts/quality-presets.md) is off on Low. There the analytic sky stands in, with the same sun, moon, air and clouds, matched to the physical sky's brightness. The haze on objects stays. The first physical sky downloads its shaders, `'physical_sky'`, and the view shows the background color until its tables are drawn.
 
 The sky lights nothing by itself. [`assets.skyEnvironment()`](assets.md#environments) makes an environment of it, which follows the sky's settings as they change: [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) shows how.
 
@@ -316,7 +316,7 @@ A view's objects take no ambient occlusion or screen-space reflections, which sh
 
 ## The environment
 
-`setEnvironment` lights the scene with an environment map from [`assets.loadEnvironment`, `assets.builtinEnvironment` or `assets.skyEnvironment`](assets.md#environments), as three.js's `scene.environment` does with a texture from `PMREMGenerator`. Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light. `setEnvironment(null)` removes it. The background stays as `setBackground` set it.
+`setEnvironment` lights the scene with an environment map from [`assets.loadEnvironment`, `assets.builtinEnvironment` or `assets.skyEnvironment`](assets.md#environments). Standard materials reflect it, sharply when smooth and blurred when rough, and take its diffuse light. `setEnvironment(null)` removes it. The background stays as `setBackground` set it.
 
 ```ts
 const sunset = await assets.loadEnvironment('/env/sunset.ktx2');
@@ -325,8 +325,8 @@ scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
 
 | Option | Default | What it sets |
 | --- | --- | --- |
-| `intensity` | 1 | The factor of the environment's light, 0 or more, as three.js's `scene.environmentIntensity` |
-| `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z, as `scene.environmentRotation` |
+| `intensity` | 1 | The factor of the environment's light, 0 or more |
+| `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z |
 
 Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. `bun run bench:allocation --environment` checks it. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change that shows, the scene takes the new light up to 19 frames later, and a smaller change waits for its next step. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
 
@@ -446,8 +446,8 @@ A scene has at most 16 probes, and their captures take 6 of the 32 views that th
 `setFog` covers every object in fog that thickens with its distance from the camera. The distance is the straight line from the camera to the point, so an object keeps its fog as the camera turns. A curve sets how the fog thickens:
 
 - `'exponential'`, the default: an even haze. An object at distance d takes the fog color by a factor of 1 - exp(-density × d).
-- `'exp2'`: thicker with the square of the distance, 1 - exp(-(density × d)²), as three.js's `FogExp2`.
-- `'linear'`: clear up to `near`, and hides objects from `far`, with a smooth change between them, as three.js's `Fog`.
+- `'exp2'`: thicker with the square of the distance, 1 - exp(-(density × d)²).
+- `'linear'`: clear up to `near`, and hides objects from `far`, with a smooth change between them.
 
 The fog can also thin with height, as mist lies in a valley, and glow toward the main directional light. `setFog(null)` removes the fog. The call allocates nothing, so a sketch can change the fog in every frame; `bun run bench:allocation --fog` checks it, the volumetric fog included.
 
@@ -549,9 +549,9 @@ A decal is a mesh of `geometry.box()` with a `materials.decal` material, which p
 
 ## Drawing every mesh with one material
 
-`scene.overrideMaterial = material` draws every mesh and instance batch of the main pass with that material, in place of each object's own. This matches three.js's `scene.overrideMaterial`. Each object keeps its mesh, its place and its instances. A batch draws all of its rows with the override. Set the property to `null` to draw each object with its own material again.
+`scene.overrideMaterial = material` draws every mesh and instance batch of the main pass with that material, in place of each object's own. Each object keeps its mesh, its place and its instances. A batch draws all of its rows with the override. Set the property to `null` to draw each object with its own material again.
 
-Sprites, points, lines and particle systems keep their own materials. The shadow maps also keep each object's material, as three.js's shadow maps do, so a masked object still cuts its shadow. A sprite, point or line material throws E1224.
+Sprites, points, lines and particle systems keep their own materials. The shadow maps also keep each object's material, so a masked object still cuts its shadow. A sprite, point or line material throws E1224.
 
 The change reaches the frame after the call, and that frame rebuilds the engine's draw tables. After that the override adds no draw call and no pipeline beyond the materials it replaces. For the built-in debug views, use `debug.view` instead.
 

@@ -6,7 +6,7 @@ import { gridIndices } from './math';
 import type { GeneratedArrays } from './types';
 
 /**
- * Options for `torusKnot`, with the names and defaults of three.js's `TorusKnotGeometry`.
+ * Options for `torusKnot`.
  *
  * @category api/geometry
  */
@@ -37,7 +37,7 @@ function positionOnCurve(u: number, p: number, q: number, radius: number, out: n
 }
 
 /**
- * The arrays of a torus knot, like three.js's `TorusKnotGeometry`. The mesh has indices.
+ * The arrays of a torus knot: a tube that winds around a torus. The mesh has indices.
  *
  * @category api/geometry
  */

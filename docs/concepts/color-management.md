@@ -3,7 +3,7 @@ id: concepts/color-management
 title: Color management
 status: experimental
 since: "0.1"
-summary: "Linear working space; sRGB hex colors and linear arrays; texture color spaces; HDR color; exposure and tone mapping; transparent canvases; parity with three.js."
+summary: "Linear working space; sRGB hex colors and linear arrays; texture color spaces; HDR color; exposure and tone mapping; transparent canvases."
 ---
 
 # Color management
@@ -20,7 +20,7 @@ flowchart LR
     scene --> final["Final pass: tone mapping,<br/>sRGB encoding, dithering"] --> canvas[("Canvas")]
 ```
 
-null3D works in linear color, as three.js does with its color management on. A color that you give as a hex string or a number is sRGB, the way CSS writes colors. The engine converts it to linear once, when the call receives it. A color that you give as three numbers is linear already.
+null3D works in linear color. A color that you give as a hex string or a number is sRGB, the way CSS writes colors. The engine converts it to linear once, when the call receives it. A color that you give as three numbers is linear already.
 
 Lighting adds and scales light in linear color, so a lit surface can be brighter than white. The scene therefore draws into a high dynamic range (HDR) target. Each light and each color of the scene comes in scaled by the exposure. At the end of each frame, a tone mapping curve maps it into the display's range. The final pass then encodes it as sRGB for the canvas.
 
@@ -40,7 +40,7 @@ const same = materials.standard({ color: [0.07, 0.26, 1] }); // the same color, 
 scene.createDirectionalLight({ color: '#fff4e0', intensity: 3 });
 ```
 
-Three numbers are linear, as three.js's `Color.setRGB` reads them. The color helpers give linear numbers too: `color.fromSrgb` converts sRGB components, and `color.fromHsl` gives what three.js's `setHSL` gives ([Math helpers](../api/math.md#colors)). A light's intensity multiplies its linear color. A color in any other form throws [E1204](../errors/E1204.md).
+Three numbers are linear. The color helpers give linear numbers too: `color.fromSrgb` converts sRGB components, and `color.fromHsl` reads a hue, a saturation and a lightness as linear RGB ([Math helpers](../api/math.md#colors)). A light's intensity multiplies its linear color. A color in any other form throws [E1204](../errors/E1204.md).
 
 ## Texture color spaces
 
@@ -72,7 +72,7 @@ Effects that need HDR color, such as bloom, move compatibility mode to HDR color
 
 ### Materials that keep their display color
 
-A material with `toneMapped: false` keeps its color as the display shows it, as three.js's `toneMapped: false` does. Use it for a panel, a sign or another object whose colors are set for the screen, such as a heads-up display in the world.
+A material with `toneMapped: false` keeps its color as the display shows it. Use it for a panel, a sign or another object whose colors are set for the screen, such as a heads-up display in the world.
 
 The 8-bit path honours it in each material's own shader, which tone maps there: the shader encodes the color without the curve. The HDR path tone maps the whole image once, in its final pass. While a material keeps its display color, that pass also reads a mask of the surfaces whose material does so, and it skips the curve for those pixels. A blended surface keeps the curve on the HDR path, because a blended pixel mixes two surfaces and the mask cannot say which one owns it. Draw such a surface on the 8-bit path with `createEngine({ hdr: false })` if it needs the exact color. [The post-processing chain](post-processing.md) explains what else that path changes.
 
@@ -91,25 +91,25 @@ export default defineSketch(({ post }) => {
 });
 ```
 
-| `toneMapping` | three.js equivalent | Look |
-| --- | --- | --- |
-| `'agx-punchy'` (the default) | None | AgX with Filament's punchy look: more contrast and more color, with AgX's hues. |
-| `'agx'` | `AgXToneMapping` | Softer contrast. Bright colors fade toward white and keep their hue. |
-| `'aces'` | `ACESFilmicToneMapping` | Strong contrast. Bright saturated colors change hue on their way to white: red turns orange, then yellow, and blue turns purple. |
-| `'neutral'` | `NeutralToneMapping` | Base colors keep their values until they near white. Khronos made it for product images. |
-| `'none'` | `LinearToneMapping` | The exposed color, clipped at white. A bright color loses detail once a channel reaches white. |
+| `toneMapping` | Look |
+| --- | --- |
+| `'agx-punchy'` (the default) | AgX with Filament's punchy look: more contrast and more color, with AgX's hues. |
+| `'agx'` | Softer contrast. Bright colors fade toward white and keep their hue. |
+| `'aces'` | Strong contrast, and the color is scaled by 1 / 0.6 first. Bright saturated colors change hue on their way to white: red turns orange, then yellow, and blue turns purple. |
+| `'neutral'` | Base colors keep their values until they near white. Khronos made it for product images. |
+| `'none'` | The exposed color, clipped at white. A bright color loses detail once a channel reaches white. |
 
 Punchy AgX suits most scenes: bright lights and colors keep their hue, and the picture keeps its contrast. Plain AgX looks flatter. For a product view, where a material's color must show as its maker gave it, use `'neutral'`, as model-viewer does.
 
-The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine applies it to each light and each color as they enter the scene. That gives the same picture as scaling the finished color, and keeps scenes in real units inside the range of the HDR target. [Lighting and environment](lighting.md#units-and-exposure) explains it. The engine uses three.js's formulas for each curve, so a scene looks the same in both engines with the same settings.
+The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine applies it to each light and each color as they enter the scene. That gives the same picture as scaling the finished color, and keeps scenes in real units inside the range of the HDR target. [Lighting and environment](lighting.md#units-and-exposure) explains it.
 
 Automatic exposure adapts the picture to the scene's brightness over time, as an eye does. The scene still draws at the exposure that `exposure` and `ev100` set. A meter on the GPU then reads each frame, and the final pass multiplies the HDR color by the adapted exposure before the tone mapping. [The post-processing chain](post-processing.md#automatic-exposure) explains the meter.
 
 ## The background
 
-The background color is part of the scene. Exposure and tone mapping change it as they change the objects, as in three.js's WebGPURenderer. The curves, for example, make dark colors a little darker. To show an exact page color behind the scene, use `toneMapping: 'none'` at an exposure of 1. You can also use a transparent canvas over a CSS background.
+The background color is part of the scene. Exposure and tone mapping change it as they change the objects. The curves, for example, make dark colors a little darker. To show an exact page color behind the scene, use `toneMapping: 'none'` at an exposure of 1. You can also use a transparent canvas over a CSS background.
 
-A [background texture](../api/scene.md#the-camera-and-the-background) draws into the scene color too, so exposure and tone mapping change it in the same way. three.js's WebGLRenderer draws an sRGB background texture without them. To show the texture's own colors, use `toneMapping: 'none'` at an exposure of 1.
+A [background texture](../api/scene.md#the-camera-and-the-background) draws into the scene color too, so exposure and tone mapping change it in the same way. To show the texture's own colors, use `toneMapping: 'none'` at an exposure of 1.
 
 ## Transparent canvases
 
@@ -122,17 +122,6 @@ const engine = await createEngine({
   transparent: true,
 });
 ```
-
-## Parity with three.js
-
-- Hex colors, linear lighting and sRGB output work as in three.js r152 and later, where color management is on by default.
-- Three numbers are linear, as `Color.setRGB` reads them.
-- A color map with `texture.colorSpace = SRGBColorSpace` is a texture with an sRGB format in null3D.
-- A data map with `NoColorSpace` or `LinearSRGBColorSpace` is a texture with a linear format.
-- The tone mapping curves use three.js's formulas. The defaults differ: three.js uses no tone mapping, and null3D uses punchy AgX, which three.js lacks. A port of a scene with `AgXToneMapping` sets `toneMapping: 'agx'`. A port of a scene without tone mapping sets `toneMapping: 'none'`.
-- three.js's `NoToneMapping` ignores the exposure. null3D's `'none'` applies it, as `LinearToneMapping` does, and an exposure of 1 gives the same image.
-- three.js's WebGLRenderer draws a `scene.background` color without tone mapping. null3D tone maps the background, as three.js's WebGPURenderer does.
-- null3D always dithers its output, and three.js only dithers materials that ask for it. The difference is at most one step of an 8-bit color.
 
 ## Related pages
 

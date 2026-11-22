@@ -148,7 +148,7 @@ Blended sprites draw after the opaque objects, farthest first, in the same trans
 
 ## Clicks and raycasts
 
-Raycasts hit a sprite where the ray crosses its quad, as three.js's `Raycaster` hits a `Sprite`. The hit's `object` is the batch, and its `instance` is the sprite. A sprite batch takes `sprites.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. A ray hits the whole quad, also where the sprite's map is clear. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+Raycasts hit a sprite where the ray crosses its quad. The hit's `object` is the batch, and its `instance` is the sprite. A sprite batch takes `sprites.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. A ray hits the whole quad, also where the sprite's map is clear. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
 
 ```ts
 sprites.on('click', (event) => {
@@ -160,25 +160,9 @@ sprites.on('click', (event) => {
 
 ## Speed
 
-A batch costs about the same per sprite as an instance batch costs per row. The engine packs each sprite into the data that it keeps for an instance row. So sprites share the culling, sorting and drawing of instance batches. One batch of 100,000 sprites draws in one draw on WebGPU and WebGL2.
+A batch costs about the same per sprite as an instance batch costs per row. The engine packs each sprite into the data that it keeps for an instance row. So sprites share the culling, sorting and drawing of instance batches. One batch of 100,000 sprites draws in one draw on WebGPU and WebGL2, where three.js makes one object and one draw for each sprite.
 
 Every sprite counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each sprite takes about 215 bytes of engine memory. Sprite batches count toward the limit of 256 instance batches.
-
-## Compared with three.js
-
-| three.js | null3D |
-| --- | --- |
-| `new THREE.Sprite(new THREE.SpriteMaterial({ map, color }))` | One row of `scene.createSprites({ count, map })`; set `colors` per sprite or `color` for all |
-| `sprite.position` | `positions` |
-| `sprite.scale.set(w, h, 1)` | `sizes` |
-| `material.rotation` | `rotations`, per sprite |
-| `material.sizeAttenuation = false` | `sizeAttenuation: false`, with sizes in CSS pixels |
-| `sprite.center` | `center`, for the whole batch |
-| `texture.offset` and `texture.repeat` for an atlas | `atlas` and `frames` |
-| `material.transparent` (true for sprites) | `alphaMode: 'blend'`, the default |
-| `material.alphaTest` | `alphaMode: 'mask'` with `alphaCutoff` |
-
-three.js makes one object and one draw per sprite. null3D draws a whole batch in one draw. Without size attenuation, a three.js sprite's size is a fraction of the view's height that depends on the camera's field of view. A null3D sprite's size is in CSS pixels. A three.js scale of `s` shows `s × h / (2 × tan(fov / 2))` pixels on a canvas `h` CSS pixels high. Raycasts hit sprites as three.js's `Raycaster` does. Sprites face the active camera, which takes the place of `raycaster.camera`.
 
 ## API reference
 

@@ -17,9 +17,12 @@ import type { EngineDebugView } from './view-names';
 export interface DebugGridOptions {
 	/** The center of the grid. The default is the origin. */
 	center?: Vec3Like;
-	/** The color of the grid's lines. The default is `'#888888'`, as in three.js's `GridHelper`. */
+	/** The color of the grid's lines. The default is gray, `'#888888'`. */
 	color?: ColorInput;
-	/** The color of the two lines through the center. The default is `'#444444'`. */
+	/**
+	 * The color of the two lines through the center, which an even number of divisions draws. The
+	 * default is `'#444444'`.
+	 */
 	centerColor?: ColorInput;
 }
 
@@ -162,13 +165,13 @@ export interface Debug {
 	axes(target: Object3D | Vec3Like, size?: number): void;
 	/**
 	 * Draws a square grid on the horizontal plane through its center, `size` meters wide, with
-	 * `divisions` cells along each side, as three.js's `GridHelper` does. The defaults are 10 and 10.
+	 * `divisions` cells along each side. The defaults are 10 and 10.
 	 */
 	grid(size?: number, divisions?: number, options?: DebugGridOptions): void;
 	/**
 	 * Draws the space that a camera sees: its near and far planes and the edges between them, in the
 	 * canvas's shape. The camera takes its place in the frame it draws in. The default color is
-	 * orange, as in three.js's `CameraHelper`.
+	 * orange.
 	 */
 	frustum(camera: Camera, color?: ColorInput): void;
 	/**
@@ -179,9 +182,8 @@ export interface Debug {
 	/**
 	 * Draws the skeleton that animates an object, such as the copy of a model that
 	 * `scene.instantiate` made: a line from each joint of the model's skins to its parent joint, in
-	 * the pose of the frame it draws in. As in three.js's `SkeletonHelper`, each line is blue at the
-	 * joint and green at its parent, unless `color` gives one color. An object without an animator
-	 * draws nothing.
+	 * the pose of the frame it draws in. Each line is blue at the joint and green at its parent,
+	 * unless `color` gives one color. An object without an animator draws nothing.
 	 */
 	skeleton(object: Object3D, color?: ColorInput): void;
 }

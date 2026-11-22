@@ -245,9 +245,9 @@ export interface MeshOptions extends NodeOptions {
  */
 export interface ParentOptions {
 	/**
-	 * True keeps the object's place, rotation and size in the world, as three.js's `attach` does:
-	 * the engine gives it the position, rotation and scale that do that under the new parent. The
-	 * default, false, keeps the values relative to the parent, as three.js's `add` does.
+	 * True keeps the object's place, rotation and size in the world: the engine gives it the
+	 * position, rotation and scale that do that under the new parent. The default, false, keeps the
+	 * values relative to the parent.
 	 */
 	keepWorld?: boolean;
 }
@@ -292,8 +292,7 @@ export interface PerspectiveCameraOptions extends CameraOptions {
 
 /**
  * Options for `scene.createOrthographicCamera`. Give `height`, and the width follows the canvas's
- * aspect ratio. Or give all four edges, as three.js's `OrthographicCamera` takes them, for a view
- * that keeps its shape on any canvas.
+ * aspect ratio. Or give all four edges, for a view that keeps its shape on any canvas.
  *
  * @category api/cameras
  */
@@ -492,17 +491,15 @@ export interface InstanceOptions {
 	dynamic?: boolean;
 	/**
 	 * Adds a color per row (RGBA, linear) in `batch.colors`, white at first. It multiplies the
-	 * material's base color and opacity, as a mesh's vertex colors do, and as three.js's
-	 * `InstancedMesh.setColorAt` does. A material that lets light through draws its rows without
-	 * it.
+	 * material's base color and opacity, as a mesh's vertex colors do. A material that lets light
+	 * through draws its rows without it.
 	 */
 	colors?: boolean;
 	/**
 	 * Adds four numbers per row of the sketch's own in `batch.values`, 0 at first, such as a wind
 	 * phase, an age or a tint. A custom material's `surface`, `vertexOffset` and `lobe` functions
-	 * read the row's as `object.values`, as three.js's instanced attributes give a shader values per
-	 * instance. With values, a masked material tests its alpha against its cutoff, without alpha to
-	 * coverage or the alpha hash.
+	 * read the row's as `object.values`. With values, a masked material tests its alpha against its
+	 * cutoff, without alpha to coverage or the alpha hash.
 	 */
 	values?: boolean;
 	/**
@@ -573,8 +570,9 @@ export interface LightOptions extends NodeOptions {
 	/** The light's color. The default is white. */
 	color?: ColorInput;
 	/**
-	 * A factor that scales the color, in three.js's units unless the options name another unit.
-	 * The default is 1.
+	 * A factor that scales the color: lux for directional and ambient lights, candela for point
+	 * and spot lights, and nits for rectangle and tube lights, unless the options name another
+	 * unit. The default is 1.
 	 */
 	intensity?: number;
 }
@@ -586,8 +584,8 @@ export interface LightOptions extends NodeOptions {
  */
 export interface AmbientLightOptions extends LightOptions {
 	/**
-	 * The unit of the intensity: `'lux'`, the light that reaches every surface. It is three.js's
-	 * unit too, so the intensity stays as it is.
+	 * The unit of the intensity: `'lux'`, the light that reaches every surface. The intensity is
+	 * in lux already, so it stays as it is.
 	 */
 	intensityUnit?: 'lux';
 }
@@ -600,7 +598,7 @@ export interface AmbientLightOptions extends LightOptions {
 export interface DirectionalLightOptions extends LightOptions {
 	/**
 	 * The unit of the intensity: `'lux'`, the light that reaches a surface facing the light, such
-	 * as 100,000 for direct sunlight. It is three.js's unit too, so the intensity stays as it is.
+	 * as 100,000 for direct sunlight. The intensity is in lux already, so it stays as it is.
 	 */
 	intensityUnit?: 'lux';
 	/**
@@ -684,8 +682,8 @@ export interface DirectionalShadowOptions {
 	heroTileSize?: 1024 | 2048 | 4096;
 	/**
 	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
-	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
-	 * `LightShadow.intensity` does.
+	 * The shader mixes each shadow lookup toward full light by the rest, so a change needs no new
+	 * shader.
 	 */
 	intensity?: number;
 }
@@ -699,8 +697,7 @@ export interface PointLightOptions extends LightOptions {
 	/**
 	 * The unit of the intensity and of `setIntensity`: `'lumen'`, the light's whole output, such
 	 * as 800 for a 60 W bulb. The engine divides it by 4π for a point light, and by π for a spot
-	 * light at any cone angle, as three.js's `power` and Filament do. Without it, the intensity is
-	 * in candela, three.js's unit.
+	 * light at any cone angle, as Filament does. Without it, the intensity is in candela.
 	 */
 	intensityUnit?: 'lumen';
 	/**
@@ -742,8 +739,8 @@ export interface LightShadowOptions {
 	normalBias?: number;
 	/**
 	 * How much of the light's shadow it draws, from 0 for none to 1, the default, for all of it.
-	 * The shader mixes each shadow lookup toward full light by the rest, as three.js's
-	 * `LightShadow.intensity` does.
+	 * The shader mixes each shadow lookup toward full light by the rest, so a change needs no new
+	 * shader.
 	 */
 	intensity?: number;
 }
@@ -799,8 +796,8 @@ export interface HemisphereLightOptions extends NodeOptions {
 	/** A factor that scales both colors. The default is 1. */
 	intensity?: number;
 	/**
-	 * The unit of the intensity: `'lux'`, the light that reaches a surface. It is three.js's unit
-	 * too, so the intensity stays as it is.
+	 * The unit of the intensity: `'lux'`, the light that reaches a surface. The intensity is in lux
+	 * already, so it stays as it is.
 	 */
 	intensityUnit?: 'lux';
 }
@@ -1155,7 +1152,7 @@ export class Object3D implements Described {
 		this.scene.markDirty(this.row);
 	}
 
-	/** Sets the rotation from Euler angles in radians, with three.js's axis order names. */
+	/** Sets the rotation from Euler angles in radians, turned about the axes in `order`. */
 	setRotationEuler(x: number, y: number, z: number, order: EulerOrder = 'XYZ'): void {
 		if (DEV) {
 			checkLive('setRotationEuler', this);
@@ -1228,9 +1225,8 @@ export class Object3D implements Described {
 	}
 
 	/**
-	 * Moves the object by (x, y, z) along its own axes, as three.js's `translateX`, `translateY` and
-	 * `translateZ` do together. The object's rotation turns the vector, and its scale leaves it as
-	 * it is, so `translate(0, 0, -1)` moves a camera 1 m forward.
+	 * Moves the object by (x, y, z) along its own axes. The object's rotation turns the vector, and
+	 * its scale leaves it as it is, so `translate(0, 0, -1)` moves a camera 1 m forward.
 	 */
 	translate(x: number, y: number, z: number): void {
 		if (DEV) {
@@ -1290,8 +1286,8 @@ export class Object3D implements Described {
 
 	/**
 	 * Copies the world matrix of the frame that last ran into `out`: 16 numbers, column by column,
-	 * as `mat4` and three.js's `matrixWorld` hold them. Its translation keeps full precision far
-	 * from the origin when `out` is a plain array or a `Float64Array`.
+	 * as `mat4` holds them. Its translation keeps full precision far from the origin when `out` is
+	 * a plain array or a `Float64Array`.
 	 */
 	getWorldMatrix(out: Mat4Like): void {
 		if (DEV) checkLive('getWorldMatrix', this);
@@ -1535,8 +1531,7 @@ export class PrefabInstance extends Group {
 
 	/**
 	 * Outlines every mesh of the copy, or stops, as `Mesh.setOutlined` does for one mesh: the
-	 * whole model takes one outline, as three.js's `OutlinePass` outlines a selected group. The
-	 * copy's instance batches take none.
+	 * whole model takes one outline. The copy's instance batches take none.
 	 */
 	setOutlined(outlined: boolean): void {
 		for (const object of this.objects)
@@ -1595,12 +1590,12 @@ export class Mesh extends Object3D {
 
 	/**
 	 * Sets how far the mesh moves toward one of its morph targets, from the next frame: 0 keeps
-	 * the target's shape out, 1 adds all of it, and other numbers scale it. Like setting three.js's
-	 * `morphTargetInfluences[target]`. `target` is the target's number, from 0, or its name. A clip
-	 * that animates the weight blends its own value with this one while it plays, as three.js's
-	 * mixer does, and this one holds when no clip moves it. A WebGL2 device draws a preset's count
-	 * of each mesh's largest weights (the `morphTargets` quality setting). Throws E1218 for a
-	 * target that the mesh does not have, and E1203 for a weight that is not a finite number.
+	 * the target's shape out, 1 adds all of it, and other numbers scale it. `target` is the target's
+	 * number, from 0, or its name. A clip that animates the weight blends its own value with this
+	 * one while it plays, and this one holds when no clip moves it. A WebGL2 device draws a
+	 * preset's count of each mesh's largest weights (the `morphTargets` quality setting). Throws
+	 * E1218 for a target that the mesh does not have, and E1203 for a weight that is not a finite
+	 * number.
 	 */
 	setMorphWeight(target: number | string, weight: number): void {
 		const k = this.morphIndex('setMorphWeight', target);
@@ -1713,9 +1708,8 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Draws an outline around the mesh, or stops, as adding it to three.js's
-	 * `OutlinePass.selectedObjects` does. The outline shows while `post.set({ outline })` turns
-	 * outlines on, and every outlined mesh takes its settings. The default is false. A change
+	 * Draws an outline around the mesh, or stops. The outline shows while `post.set({ outline })`
+	 * turns outlines on, and every outlined mesh takes its settings. The default is false. A change
 	 * rebuilds the engine's tables of what it draws, as a new material does.
 	 */
 	setOutlined(outlined: boolean): void {
@@ -1748,9 +1742,9 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Sets the order in which the mesh draws among blended objects, lower first, as three.js's
-	 * `renderOrder`. Objects of one order draw farthest first. The default is 0. The engine orders
-	 * opaque and masked objects itself.
+	 * Sets the order in which the mesh draws among blended objects, lower first. Objects of one
+	 * order draw farthest first. The default is 0. The engine orders opaque and masked objects
+	 * itself.
 	 */
 	setRenderOrder(order: number): void {
 		if (DEV) {
@@ -1816,9 +1810,8 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * With false, the engine draws the mesh even where its bounds are out of view, as three.js's
-	 * `frustumCulled = false` does. The default is true. For vertices that a shader moves, larger
-	 * bounds from `setBounds` cost less.
+	 * With false, the engine draws the mesh even where its bounds are out of view. The default is
+	 * true. For vertices that a shader moves, larger bounds from `setBounds` cost less.
 	 */
 	setFrustumCulled(culled: boolean): void {
 		this.setFlag('setFrustumCulled', C.FLAG_UNCULLED, !culled);
@@ -2095,8 +2088,7 @@ export class OrthographicCamera extends Camera {
 
 	/**
 	 * Sets the view's height in world units. A width that follows the canvas keeps following it.
-	 * A view made from four edges scales about its center and keeps its shape, as three.js's
-	 * `zoom` scales it.
+	 * A view made from four edges scales about its center and keeps its shape.
 	 */
 	setOrthoHeight(height: number): void {
 		if (DEV) {
@@ -2449,15 +2441,15 @@ export class SpotLight extends Light {
 	 * Projects a picture over the light's cone, such as a window frame, a gobo pattern or a
 	 * projected photograph, or `null` to go back to one color. The color and intensity tint it.
 	 * The picture fills the square around the cone: a circle in its middle lands on the cone's
-	 * edge, where the light ends. The picture's top row lies along the world's up, as three.js
-	 * aims a spot light's map. The engine keeps the picture's detail up to 512 texels a side, so a
-	 * small gobo costs less memory than a detailed photograph. Give sRGB pixels, or a texture that
-	 * the engine copies once: a texture larger than 512 texels a side is reduced, and one that
-	 * changes every frame, such as a video's or a render pass's, throws E1112, because the copy
-	 * would show a single frame. A surface far from the light shows the picture blurred. Up to 32
-	 * lights show pictures at once, and rectangle and spot lights share those places. A new
-	 * picture takes up to a few tens of milliseconds, so set it at setup or now and then, not in
-	 * every frame.
+	 * edge, where the light ends. The picture's top row lies along the world's up, so rolling the
+	 * light about its own axis leaves the picture as it is. The engine keeps the picture's detail
+	 * up to 512 texels a side, so a small gobo costs less memory than a detailed photograph. Give
+	 * sRGB pixels, or a texture that the engine copies once: a texture larger than 512 texels a
+	 * side is reduced, and one that changes every frame, such as a video's or a render pass's,
+	 * throws E1112, because the copy would show a single frame. A surface far from the light shows
+	 * the picture blurred. Up to 32 lights show pictures at once, and rectangle and spot lights
+	 * share those places. A new picture takes up to a few tens of milliseconds, so set it at setup
+	 * or now and then, not in every frame.
 	 */
 	setMap(map: LightImagePixels | Texture | null): void {
 		const call = 'setMap';
@@ -2533,8 +2525,8 @@ export class AmbientLight extends Light {}
 /**
  * Light from a rectangle of even brightness, such as a window, a screen or a studio panel. Its
  * light leaves the side that its -Z axis points to, and ends at its range. Surfaces show its whole
- * shape in their highlights, and soft light near it, as three.js's `RectAreaLight` gives. Its
- * intensity is the rectangle's brightness in nits, three.js's unit. It casts no shadows.
+ * shape in their highlights, and soft light near it. Its intensity is the rectangle's brightness
+ * in nits. It casts no shadows.
  *
  * @category api/lights
  */
@@ -4477,13 +4469,12 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
-	 * Copies an object and every object below it, as three.js's `clone` does, with their meshes,
-	 * materials, lights, cameras and settings, and returns the copy of the object. The copy has the
-	 * same parent, so it starts in the same place. The copies are created with one batch of
-	 * commands. An animated object's copy gets an animator of its own, with no clip playing, which
-	 * moves the copies of its meshes, as three.js's `SkeletonUtils.clone` does. Instance batches are
-	 * not objects, so they are not copied. Throws E1102 when the scene or the animation table has
-	 * no room for the copies. Then no copy stays.
+	 * Copies an object and every object below it, with their meshes, materials, lights, cameras
+	 * and settings, and returns the copy of the object. The copy has the same parent, so it starts
+	 * in the same place. The copies are created with one batch of commands. An animated object's
+	 * copy gets an animator of its own, with no clip playing, which moves the copies of its meshes.
+	 * Instance batches are not objects, so they are not copied. Throws E1102 when the scene or the
+	 * animation table has no room for the copies. Then no copy stays.
 	 */
 	clone<T extends Object3D>(object: T): T {
 		const call = 'clone';
@@ -4821,12 +4812,12 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
-	 * Many sprites in one batch: quads that face the camera, like three.js's `Sprite` with a
-	 * `SpriteMaterial`. Typed arrays give each sprite its position, size, rotation, color and atlas
-	 * frame, as an instance batch's arrays give its rows. Sprites blend by default, and blended
-	 * sprites draw back to front with the other blended objects. The first call downloads the
-	 * sprite code. Throws E1108 for an atlas side that is not a whole number from 1 to 2048, E1203
-	 * for a center that is not two finite numbers, and E1406 when the sprite code does not download.
+	 * Many sprites in one batch: quads that face the camera. Typed arrays give each sprite its
+	 * position, size, rotation, color and atlas frame, as an instance batch's arrays give its rows.
+	 * Sprites blend by default, and blended sprites draw back to front with the other blended
+	 * objects. The first call downloads the sprite code. Throws E1108 for an atlas side that is not
+	 * a whole number from 1 to 2048, E1203 for a center that is not two finite numbers, and E1406
+	 * when the sprite code does not download.
 	 */
 	async createSprites(options: SpriteOptions): Promise<SpriteBatch> {
 		const call = 'createSprites';
@@ -4848,13 +4839,13 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
-	 * Many points in one batch: squares that face the camera, all of one size, like three.js's
-	 * `Points` with a `PointsMaterial`. Each point is a sprite: typed arrays give each point its
-	 * position and color, as an instance batch's arrays give its rows. Sizes above one pixel work on
-	 * every GPU path. Points are opaque by default, and blended points draw back to front with the
-	 * other blended objects. The first call downloads the sprite code. Throws E1206 for points or
-	 * colors that make no points, E1108 for a size that is not above 0, E1203 for a size that is not
-	 * finite, and E1406 when the sprite code does not download.
+	 * Many points in one batch: squares that face the camera, all of one size. Each point is a
+	 * sprite: typed arrays give each point its position and color, as an instance batch's arrays
+	 * give its rows. Sizes above one pixel work on every GPU path. Points are opaque by default, and
+	 * blended points draw back to front with the other blended objects. The first call downloads
+	 * the sprite code. Throws E1206 for points or colors that make no points, E1108 for a size that
+	 * is not above 0, E1203 for a size that is not finite, and E1406 when the sprite code does not
+	 * download.
 	 */
 	async createPoints(options: PointOptions): Promise<PointBatch> {
 		const call = 'createPoints';
@@ -5231,14 +5222,13 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
-	 * Lines of any width in one batch, like three.js's `Line2` and `LineSegments2` with a
-	 * `LineMaterial`, and its `Line`, `LineSegments` and `LineLoop`. Each segment between two points
-	 * draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or world units
-	 * wide with `worldUnits`. A typed array gives each point its position and color, as an instance
-	 * batch's arrays give its rows. The first call downloads the line code. Throws E1206 for points
-	 * or colors that make no line, E1217 for an unknown mode, E1108 for a width that is not positive
-	 * or a dash or gap below 0, E1203 for a value that is not finite, and E1406 when the line code
-	 * does not download.
+	 * Lines of any width in one batch: strips, loops or separate segments. Each segment between two
+	 * points draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or
+	 * world units wide with `worldUnits`. A typed array gives each point its position and color, as
+	 * an instance batch's arrays give its rows. The first call downloads the line code. Throws E1206
+	 * for points or colors that make no line, E1217 for an unknown mode, E1108 for a width that is
+	 * not positive or a dash or gap below 0, E1203 for a value that is not finite, and E1406 when the
+	 * line code does not download.
 	 */
 	async createLines(options: LineOptions): Promise<LineBatch> {
 		const call = 'createLines';
@@ -5493,13 +5483,12 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
-	 * What the camera shows behind every object, as three.js's `scene.background`: a color, a
-	 * texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube
-	 * map from `assets.loadCubemap`, three.js's sky with `{ sky: { sunPosition } }`, or the physical
-	 * sky with `{ atmosphere: { sunPosition } }`, whose air also hazes distant objects. A texture
-	 * fills the view and stretches to its shape. An environment or a cube map surrounds the scene,
-	 * and `options` give its intensity, rotation and, for an environment, its blur, as three.js's
-	 * `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before
+	 * What the camera shows behind every object: a color, a texture, an environment from
+	 * `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube map from `assets.loadCubemap`,
+	 * the analytic sky with `{ sky: { sunPosition } }`, or the physical sky with
+	 * `{ atmosphere: { sunPosition } }`, whose air also hazes distant objects. A texture fills the
+	 * view and stretches to its shape. An environment or a cube map surrounds the scene, and
+	 * `options` give its intensity, rotation and, for an environment, its blur. The color set before
 	 * shows until a texture's texels are on the GPU, and again if the texture is destroyed. A color
 	 * takes the place of any other background. Exposure and tone mapping change the background with
 	 * the rest of the scene. Without a background, the canvas shows black, or the page behind it on
@@ -5578,14 +5567,13 @@ export class Scene implements ViewHolder {
 
 	/**
 	 * Draws every mesh and instance batch of the main pass with this material in place of its own,
-	 * as three.js's `scene.overrideMaterial` does, or with their own materials with null. Each
-	 * object keeps its mesh, its place and its instances, so a batch draws every row with it, and
-	 * every camera view draws with it, the scene passes among them. Sprites, points, lines and
-	 * particle systems keep their own materials, and the shadow maps keep each object's material,
-	 * as three.js's shadow maps do. A change rebuilds the engine's draw tables in the next frame;
-	 * after that it adds no draw call and builds no pipeline. Throws E1224 for a sprite, point or
-	 * line material, E1101 for a material that is destroyed, and E1103 for a material of another
-	 * engine.
+	 * or with their own materials with null. Each object keeps its mesh, its place and its
+	 * instances, so a batch draws every row with it, and every camera view draws with it, the scene
+	 * passes among them. Sprites, points, lines and particle systems keep their own materials, and
+	 * the shadow maps keep each object's material, so a masked object still cuts its shadow. A
+	 * change rebuilds the engine's draw tables in the next frame; after that it adds no draw call
+	 * and builds no pipeline. Throws E1224 for a sprite, point or line material, E1101 for a
+	 * material that is destroyed, and E1103 for a material of another engine.
 	 */
 	get overrideMaterial(): Material | null {
 		return this.overrideMaterialValue;
@@ -5617,14 +5605,13 @@ export class Scene implements ViewHolder {
 
 	/**
 	 * Lights the scene with an environment from `assets.loadEnvironment` or
-	 * `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from
-	 * `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth
-	 * and blurred when rough, and take its diffuse light, each times its `envIntensity`. The scene
-	 * draws without a file's environment until its map is on the GPU. The built-in room's map is
-	 * whole in the first frame that uses it. It allocates nothing, so a sketch
-	 * can turn the environment every frame. Throws E1203 for a number that is not finite, E1108 for
-	 * a negative intensity, E1213 for a value that is not an environment, and E1101 for an
-	 * environment that was destroyed.
+	 * `assets.builtinEnvironment`, or with none for null. Standard materials reflect it, sharply
+	 * when smooth and blurred when rough, and take its diffuse light, each times its `envIntensity`.
+	 * The scene draws without a file's environment until its map is on the GPU. The built-in room's
+	 * map is whole in the first frame that uses it. It allocates nothing, so a sketch can turn the
+	 * environment every frame. Throws E1203 for a number that is not finite, E1108 for a negative
+	 * intensity, E1213 for a value that is not an environment, and E1101 for an environment that
+	 * was destroyed.
 	 */
 	setEnvironment(environment: Environment | null, options?: EnvironmentOptions): void {
 		this.sceneEnvironment ??= new SceneEnvironment(this.core);

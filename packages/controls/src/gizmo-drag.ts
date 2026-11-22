@@ -24,8 +24,8 @@ export type GizmoMode = 'translate' | 'rotate' | 'scale';
 export type GizmoSpace = 'world' | 'local';
 
 /**
- * The handle that the user grabs, with three.js's names: one axis, two axes of a plane handle,
- * all three for the center handle, and `E` for the outer ring that turns about the view.
+ * The handle that the user grabs: one axis, two axes for a plane handle, or all three for the
+ * center handle. The outer ring that turns about the view is `E`.
  *
  * @category api/controls
  */

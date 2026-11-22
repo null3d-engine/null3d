@@ -76,16 +76,13 @@ export interface ObjectPointerEvent {
 	readonly normal: Vec3Like;
 	/** The distance from the ray's origin to the hit, in meters. */
 	readonly distance: number;
-	/**
-	 * The index of the hit triangle in its mesh, as three.js's `faceIndex`, or -1 for a sprite, a
-	 * point or a line.
-	 */
+	/** The index of the hit triangle in its mesh, or -1 for a sprite, a point or a line. */
 	readonly triangle: number;
 	/**
 	 * Where on the surface the ray hit, as the first texture coordinates of the hit triangle
-	 * blended across its three corners, as three.js's `intersection.uv`. Read `hasUv` first: the
-	 * numbers mean nothing when it is false. An in-world screen turns a click into a texel of its
-	 * image with these, without working out where the surface lies in space.
+	 * blended across its three corners. Read `hasUv` first: the numbers mean nothing when it is
+	 * false. An in-world screen turns a click into a texel of its image with these, without working
+	 * out where the surface lies in space.
 	 */
 	readonly uv: Vec2Like;
 	/**

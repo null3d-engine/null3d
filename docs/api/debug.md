@@ -52,10 +52,10 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 | `sphere(center, radius, color)` | Three circles around the center, one in each plane of the world's axes | Yellow |
 | `arrow(origin, direction, length, color)` | A line from `origin` with a head at its tip, 1 meter long unless `length` says otherwise | Yellow |
 | `axes(target, size)` | The x, y and z axes, `size` meters long, at a position or on an object | Red, green and blue |
-| `grid(size, divisions, options)` | A square grid on the horizontal plane, as three.js's `GridHelper` draws it | Gray, darker through the center |
+| `grid(size, divisions, options)` | A square grid on the horizontal plane, `size` meters wide, with `divisions` cells along each side | Gray, darker through the center when `divisions` is even |
 | `frustum(camera, color)` | The near and far planes of a camera's view, and the edges between them | Orange |
 | `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
-| `skeleton(object, color)` | The joints of an animated object: a line from each joint of a skin to its parent joint, as three.js's `SkeletonHelper` draws them | Blue at the joint, green at its parent |
+| `skeleton(object, color)` | The joints of an animated object: a line from each joint of a skin to its parent joint | Blue at the joint, green at its parent |
 
 `grid` takes `center`, `color` and `centerColor`, gray (`'#888888'`) and darker gray (`'#444444'`) by default. `light` takes `position`, `size` in meters (1 by default) and `color`.
 
@@ -172,7 +172,7 @@ export default defineSketch(({ scene, debug, time }) => {
 });
 ```
 
-The cascades keep their boxes and their split distances from the other camera's view, so they fall where they fall in that camera's own frames. In a release build the call does nothing. three.js's cascaded shadow maps (`CSM`) take their camera as an option in the same way, so they can follow another camera than the one that renders.
+The cascades keep their boxes and their split distances from the other camera's view, so they fall where they fall in that camera's own frames. In a release build the call does nothing.
 
 ## Stats overlay and frame figures
 
@@ -292,7 +292,7 @@ export default defineSketch(({ debug, page, time }) => {
 The engine counts every draw of every pass on the thread that draws. That covers shadow maps, the depth prepass, the passes that shade and the passes of post effects. three.js's `renderer.info` counts triangles the same way, so the two figures compare.
 
 - A draw of triangles adds its vertices or indices over 3, times its instances. A draw of lines adds no triangles.
-- A draw adds its instances to `objects`. So an object counts once in each pass that draws it. A box that casts shadows into 4 cascades counts 5 times, and 6 with the depth prepass. Each part of a mesh with several materials counts once, as each part is a mesh of its own in three.js.
+- A draw adds its instances to `objects`. So an object counts once in each pass that draws it. A box that casts shadows into 4 cascades counts 5 times, and 6 with the depth prepass. Each part of a mesh with several materials counts once, because each part is an object of its own.
 - On WebGPU, the GPU culls most objects itself, and only the GPU knows how many it drew. The engine copies those counts back from the GPU on one frame in eleven. It does so while the overlay's card is open, and after the sketch's first call of `debug.frameStats()`. A development build copies them back in any case, so that it can warn about copies that the culling shader drops. The counts arrive a few frames late, and each frame adds the newest of them. Until then, the WebGPU figures count only the draws that the CPU issues.
 - So in a production build on WebGPU, `engine.measure` counts only the draws that the CPU issues, unless the card is open or the sketch has called `debug.frameStats()`. A scene that the GPU culls can then show almost no triangles. Call `debug.frameStats()` once in the sketch to count them all, at the cost that [Cost](#cost) gives.
 

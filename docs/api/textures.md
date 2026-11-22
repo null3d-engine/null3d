@@ -58,7 +58,7 @@ Every call that makes a texture takes these options:
 | Option | Values | Default |
 | --- | --- | --- |
 | `colorSpace` | `'srgb'` for color maps, `'linear'` for data maps | `'srgb'` for images, `'linear'` for data |
-| `wrap` | `'clamp'`, `'repeat'` or `'mirror'`, or `[u, v]` for each axis | `'clamp'`, as in three.js |
+| `wrap` | `'clamp'`, `'repeat'` or `'mirror'`, or `[u, v]` for each axis | `'clamp'` |
 | `filter` | `'linear'`, or `'nearest'` for sharp texels such as pixel art | `'linear'` |
 | `mipmaps` | True to make mip levels on the GPU | True for images, false for data |
 | `anisotropy` | A whole number from 1 to 16 | 1, which is off |
@@ -66,8 +66,8 @@ Every call that makes a texture takes these options:
 
 `loadTexture` also takes `flipY` and `premultipliedAlpha`, which say how the image decodes:
 
-- `flipY: true`, the default, puts the image's top row at v = 1, the top of a plane, as three.js's `TextureLoader` does. glTF textures use `flipY: false`.
-- `premultipliedAlpha: true` stores each color multiplied by its alpha, as three.js's `premultiplyAlpha` does. It is false by default.
+- `flipY: true`, the default, puts the image's top row at v = 1, the top of a plane. glTF textures use `flipY: false`.
+- `premultipliedAlpha: true` stores each color multiplied by its alpha. It is false by default.
 
 An option that the engine does not know, such as `wrap: 'tile'` or `anisotropy: 32`, throws [E1208](../errors/E1208.md).
 
@@ -99,7 +99,7 @@ A KTX2 file takes the texture options above, with these differences:
 
 - The texture has the mip levels that the file holds. The GPU cannot make mip levels of compressed texels, so encode the file with them, as `basisu -mipmap` and `toktx --genmipmap` do. `mipmaps: false` keeps level 0 alone.
 - The color space comes from the file, which `basisu` writes as sRGB unless you give it `-linear`. The `colorSpace` option overrides it. HDR data is always linear, so in development builds `colorSpace: 'srgb'` throws E1208 for it.
-- The file's first row goes to v = 0, the bottom of a plane, as with three.js's `KTX2Loader`. glTF models expect that order. For a plane, encode the file flipped, as `basisu -y_flip` does. Compressed rows cannot turn over. So in development builds, `flipY: true` throws E1208, and so does `premultipliedAlpha: true`. A production build ignores both.
+- The file's first row goes to v = 0, the bottom of a plane. glTF models expect that order. For a plane, encode the file flipped, as `basisu -y_flip` does. Compressed rows cannot turn over. So in development builds, `flipY: true` throws E1208, and so does `premultipliedAlpha: true`. A production build ignores both.
 - A KTX2 file of several layers makes a texture of several layers. Cube maps, 3D textures and KTX2 files of other formats throw [E1412](../errors/E1412.md).
 - A file whose sides pass `textures.maxSize` throws E1412 before the transcoder runs. So do files of more than 256 layers or more mip levels than the size has. A file of more than 256 MiB of texels in the device's format throws it too.
 - `texture.update` throws E1208 on a texture from a KTX2 file. Load the file again instead.
@@ -108,7 +108,7 @@ The first KTX2 file starts the transcoder: a worker that runs the official build
 
 ## Images
 
-`textures.fromImageBitmap` uploads an image as it is: the image's first row goes to v = 0, the bottom of a plane. To make a texture that stands upright, as three.js shows it, decode the image with its rows flipped. `assets.loadImageBitmap` does so by default. `createImageBitmap` does so with `imageOrientation: 'flipY'`:
+`textures.fromImageBitmap` uploads an image as it is: the image's first row goes to v = 0, the bottom of a plane. To make a texture that stands upright on a plane, decode the image with its rows flipped. `assets.loadImageBitmap` does so by default. `createImageBitmap` does so with `imageOrientation: 'flipY'`:
 
 ```ts
 const canvas = new OffscreenCanvas(256, 64);
@@ -186,11 +186,11 @@ The video element's own settings, such as its file format and its cross-origin r
 
 A texture with `depth` above 1 holds that many layers, up to 256, one after another in `data`. Its layers are a texture array of their own. Materials read its first layer.
 
-Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true, as in three.js's `DataTexture`.
+Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true.
 
 ## Textures of render passes
 
-`textures.fromPass(pass)` returns the texture that a scene pass of `render.addPass` draws into (0.2). Materials and sprites take it as a map, as three.js's render target textures are.
+`textures.fromPass(pass)` returns the texture that a scene pass of `render.addPass` draws into (0.2). Materials and sprites take it as a map.
 
 ```ts
 const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
@@ -245,7 +245,7 @@ Mip levels are smaller copies of a texture. The GPU reads them where the texture
 
 Each texture has its own sampler settings, from its options:
 
-- What texture coordinates outside 0 to 1 read along each axis: the texel at the edge, a repeat of the texture, or a mirrored repeat. By default the edge texel repeats outward, as in three.js.
+- What texture coordinates outside 0 to 1 read along each axis: the texel at the edge, a repeat of the texture, or a mirrored repeat. By default the edge texel repeats outward.
 - The filter of magnified texels, of minified texels and between mip levels: linear or nearest. It is linear by default.
 - Anisotropic filtering, which keeps a texture sharp on a surface seen at a slant, such as a floor. It reaches at most 16 samples, or the quality preset's cap (`maxAnisotropy`) when that is lower. A nearest filter turns it off. It is off by default.
 

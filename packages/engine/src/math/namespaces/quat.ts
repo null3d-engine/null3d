@@ -21,8 +21,8 @@ export const setAxisAngle: <T extends QuatLike>(out: T, axis: Vec3Like, rad: num
 	/* @__PURE__ */ makeSetAxisAngle(Math.sin, Math.cos);
 
 /**
- * The rotation of Euler angles in radians, applied in `order`, `'XYZ'` by default, as three.js's
- * `setFromEuler`. gl-matrix's `fromEuler` takes degrees, but this one takes radians.
+ * The rotation of Euler angles in radians, applied in `order`, `'XYZ'` by default. gl-matrix's
+ * `fromEuler` takes degrees, but this one takes radians.
  */
 export const fromEuler: <T extends QuatLike>(
 	out: T,
@@ -46,7 +46,7 @@ export const rotateZ: <T extends QuatLike>(out: T, a: QuatLike, rad: number) => 
 
 /**
  * The rotation a fraction `t` of the way from `a` to `b` along the shortest arc, turning at an even
- * speed, as three.js's `slerp`.
+ * speed.
  */
 export const slerp: <T extends QuatLike>(out: T, a: QuatLike, b: QuatLike, t: number) => T =
 	/* @__PURE__ */ makeSlerp(Math.sin, Math.acos);

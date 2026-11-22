@@ -32,8 +32,8 @@ import {
 } from './gizmo-drag';
 
 /**
- * Options for `createTransformControls`, with three.js's names and defaults. The controls keep each
- * option as a property of the same name, which a sketch can change at any time.
+ * Options for `createTransformControls`. The controls keep each option except `layers` and
+ * `pickLayers` as a property of the same name, which a sketch can change at any time.
  *
  * @category api/controls
  */
@@ -42,7 +42,7 @@ export interface TransformControlsOptions {
 	mode?: GizmoMode;
 	/**
 	 * The axes that a drag works along: the world's or the object's own. A scale drag always works
-	 * along the object's axes, as in three.js. The default is `'world'`.
+	 * along the object's axes. The default is `'world'`.
 	 */
 	space?: GizmoSpace;
 	/** The size of the handles on the screen. The default is 1. */
@@ -828,11 +828,10 @@ export class TransformControls {
 }
 
 /**
- * Creates translate, rotate and scale gizmos for one object, which three.js calls
- * `TransformControls`. `attach` picks the object, `setMode` picks what a drag does, and
- * `controls.update(dt)` reads the input once per frame in `onUpdate`. A press on a handle begins
- * the drag, and `controls.dragging` is true until the pointer comes up, so a sketch can leave its
- * camera controls alone meanwhile.
+ * Creates translate, rotate and scale gizmos for one object. `attach` picks the object, `setMode`
+ * picks what a drag does, and `controls.update(dt)` reads the input once per frame in `onUpdate`.
+ * A press on a handle begins the drag, and `controls.dragging` is true until the pointer comes up,
+ * so a sketch can leave its camera controls alone meanwhile.
  *
  * @category api/controls
  */

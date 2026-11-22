@@ -23,8 +23,7 @@ import {
 export type DragAction = 'pan' | 'rotate';
 
 /**
- * The action of each mouse button, with three.js's names for the buttons. Null gives a button no
- * action.
+ * The action of each mouse button. Null gives a button no action.
  *
  * @category api/controls
  */
@@ -48,8 +47,8 @@ export interface DragTouchActions {
 }
 
 /**
- * Options for `createDragControls`, with three.js's names and defaults. The controls keep each
- * option as a property of the same name, which a sketch can change at any time.
+ * Options for `createDragControls`. The controls keep each option except `layers` as a property of
+ * the same name, which a sketch can change at any time.
  *
  * @category api/controls
  */
@@ -70,9 +69,9 @@ export interface DragControlsOptions {
 	 * alone, where every new object starts.
 	 */
 	layers?: number;
-	/** What each mouse button does. The main button drags and the right one turns, as in three.js. */
+	/** What each mouse button does. The main and middle buttons drag, and the right one turns. */
 	mouseButtons?: Partial<DragMouseButtons>;
-	/** What one finger does. A finger drags, as in three.js. */
+	/** What one finger does. A finger drags. */
 	touches?: Partial<DragTouchActions>;
 }
 
@@ -361,11 +360,10 @@ export class DragControls {
 }
 
 /**
- * Creates drag controls, which three.js calls `DragControls`. A press on one of `objects` drags it
- * over a plane that faces the camera, and the right button or an option turns it instead.
- * `controls.update(dt)` reads the input once per frame in `onUpdate`, and `controls.dragging` names
- * the object that the pointer holds. Pass the sketch's context first, as the other controls take
- * it.
+ * Creates drag controls. A press on one of `objects` drags it over a plane that faces the camera,
+ * and the right button or an option turns it instead. `controls.update(dt)` reads the input once
+ * per frame in `onUpdate`, and `controls.dragging` names the object that the pointer holds. Pass
+ * the sketch's context first, as the other controls take it.
  *
  * @category api/controls
  */

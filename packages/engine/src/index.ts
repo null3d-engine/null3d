@@ -30,8 +30,8 @@ export * as color from './math/color';
  */
 export * as mat4 from './math/mat4';
 /**
- * Number helpers with three.js's names, such as `math.clamp` and `math.damp`, and a random generator
- * that a sketch can seed and that hold mode seeds.
+ * Number helpers, such as `math.clamp` and `math.damp`, and a random generator that a sketch can
+ * seed and that hold mode seeds.
  *
  * @category api/math
  */

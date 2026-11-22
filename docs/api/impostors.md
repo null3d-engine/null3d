@@ -154,10 +154,6 @@ for (const group of farCellGroups(centers, 64)) {
 
 The merged arrays carry `levels: 'pieces'`, because a cell already draws each copy's coarsest level. So the engine plans no levels of its own for a cell's mesh. A cell of 32,768 triangles or more still sorts its triangles into pieces by space at its first draw, so the view leaves out the parts of the cell that lie outside it. Give the cell `{ ...merged, levels: true }` to plan levels for it anyway, or `levels: false` for neither.
 
-## Compared with three.js
-
-three.js has no impostor or merged-far-geometry helper. Its `LOD` picks one whole object by distance, which null3D does with [`mesh.setLevels`](geometry.md). Build the atlases and the merged meshes outside a three.js renderer too, and draw the cards as `InstancedMesh` of one quad with a `ShaderMaterial`, and the merged mesh as a `Mesh`.
-
 ## API reference
 
 [The API reference](reference/impostors.md) lists every export of this page with its type and description. The package's doc comments make it.
