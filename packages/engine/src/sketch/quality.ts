@@ -131,10 +131,10 @@ export interface QualityGovernor {
 	readonly farAnimationInterval: number;
 	/**
 	 * True while the lowest quality tier applies: the render scale's floor has fallen to a third,
-	 * the sun's shadows and bloom are off, and WebGL2 draws no depth prepass. The governor enters
-	 * the tier when the scale has held at the preset's floor through its sustained window and the
-	 * frames still miss, and leaves it when the frames keep room through the window that raises a
-	 * step.
+	 * the sun's shadows and bloom are off, reflections draw at a quarter of the render size, and
+	 * WebGL2 draws no depth prepass. The governor enters the tier when the scale has held at the
+	 * preset's floor through its sustained window and the frames still miss. It leaves the tier
+	 * when the frames keep room through the window that raises a step.
 	 */
 	readonly lowest: boolean;
 }
