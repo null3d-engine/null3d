@@ -208,6 +208,13 @@ export interface SketchOptions {
 	fixedRate?: number;
 	/** The most fixed steps that one frame runs, after a slow frame. The default is 8. */
 	maxFixedSteps?: number;
+	/**
+	 * False keeps the governor out of its lowest quality tier, whose cuts reach the scene's
+	 * settings. A scene whose sketch thread limits its frames gains nothing from the tier's smaller
+	 * render: the cut cannot make the sketch work cheaper, and the smaller picture is a loss. The
+	 * default is true, and the page's `?tier=off` switch keeps the tier out too.
+	 */
+	lowestTier?: boolean;
 }
 
 const SKETCH_MARKER = Symbol.for('null3d.sketch');

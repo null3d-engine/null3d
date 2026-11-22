@@ -864,6 +864,9 @@ export class SketchRunner {
 	async setup(sketch: SketchDefinition): Promise<void> {
 		try {
 			this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+			// A sketch whose own thread limits its frames keeps the governor out of the lowest tier:
+			// its smaller render cannot speed the sketch work, so the cut only loses the picture.
+			if (sketch.options.lowestTier === false) this.governor.setLowestTier(false);
 			// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
 			this.record.markSetupStart();
 			const growing = performance.now();
