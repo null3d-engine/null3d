@@ -217,7 +217,8 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
  * quality setting is forwarded here, so a page that builds its engine options with this function
  * cannot drop one. `maxPixelRatio` is the page's, because a page that fills its window caps a
  * pixel ratio the protocol's canvas does not. The governor and the render scale reach the sketch,
- * which applies them to the engine's quality settings.
+ * which applies them to the engine's quality settings. The bench's own `?shadows=` is the sun's
+ * cascade count for the bench's scenes, so it is not the engine's `shadows` flag.
  */
 export function engineOptionsOf(options: RunOptions) {
 	return {
