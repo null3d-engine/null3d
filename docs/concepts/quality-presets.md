@@ -301,9 +301,9 @@ Phones slow down as they heat up, often after a few minutes of play. The governo
 
 ### The lowest quality tier
 
-Some devices reach the lowest render scale and still miss the target. Below the four presets sits a lowest tier for them. The governor enters it when the render scale has held at its floor through the sustained window, and the judged frames still miss. Its cuts are a third-size render scale floor, no sun shadows, and no bloom. On WebGL2 it also turns the depth prepass off.
+Some devices reach the lowest render scale and still miss the target. Below the four presets sits a lowest tier for them. The governor enters it when the render scale has held at its floor through the sustained window, and the judged frames still miss. Its cuts are a third-size render scale floor, no sun shadows, no bloom, and reflection passes at a quarter of the render size. On WebGL2 it also turns the depth prepass off.
 
-The tier changes live settings that a sketch can read. These are `minRenderScale`, `shadows` and `bloom`, and `depthPrepass` where the GPU path draws it. The four presets keep their values, so no other look changes. `quality.governor.lowest` reports whether the tier applies.
+The tier changes live settings that a sketch can read. These are `minRenderScale`, `shadows`, `bloom` and `reflectionScale`, and `depthPrepass` where the GPU path draws it. The four presets keep their values, so no other look changes. `quality.governor.lowest` reports whether the tier applies.
 
 The entry goes on trial as a step down does. Frames that come clearly slower after it take the tier back, and close it for a wait that doubles with each failed entry. The governor leaves the tier when the frames keep room through the window that raises a step. It then waits that same window before the tier can enter again, so a device cannot flap.
 
