@@ -244,6 +244,7 @@ import {
 	skippedForImagesText,
 	skippedPath,
 	skippedPathsText,
+	softwareGpu,
 } from './lib/gpu-paths.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
@@ -1620,11 +1621,14 @@ async function runPlan(
 		const mismatch = browserMismatch(name, browser);
 		if (mismatch) console.log(`WARN  ${mismatch}`);
 		const imagesOf = imageDevice(runner);
+		// The image set follows the rasteriser, not the browser: a device that draws on the CPU
+		// compares with the software GPU's references, which were drawn with the lighter load.
+		const software = softwareGpu(device.gpu);
 		const context = {
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
 			storedBaselines,
-			runner: { name, device: imagesOf },
+			runner: { name, device: imagesOf, ...(software && { software }) },
 			braveShields,
 		};
 		// The images this runner saved for review in an earlier run are stale once this run is judged.

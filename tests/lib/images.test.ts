@@ -355,6 +355,21 @@ describe('the reference of a run', () => {
 		expect(reference.fixed).toContain("add 'mac' to the test's devices");
 	});
 
+	it("is the software GPU's for a device that draws on the CPU, whatever its browser", () => {
+		const software: Place = { runner: 'linux-firefox', device: 'linux', software: true };
+		const reference = referenceOf(run('boxes-webgl2-pipelined'), software);
+		expect(reference.file).toBe('chromium-swiftshader/webgl2/boxes.png');
+		expect(reference.tolerance).toEqual(DEVICE_TOLERANCE);
+		// The software references come from another machine's rasteriser, so they may become this
+		// device's own, unlike the real-GPU set that another browser can only compare with.
+		expect(reference.fixed).toBeUndefined();
+		// A test's own software allowance applies on top of the device tolerance.
+		expect(referenceOf(run('boxes-copied-webgl2-pipelined'), software).tolerance).toEqual({
+			threshold: TOLERANCE.threshold,
+			maxDiffRatio: 0.75,
+		});
+	});
+
 	it("is a device's own where the test records the device", () => {
 		expect(referenceOf(run('grid-webgpu'), IPAD)).toEqual({
 			file: 'ipad/webgpu/grid.png',

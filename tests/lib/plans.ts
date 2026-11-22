@@ -346,7 +346,12 @@ export interface JudgeContext {
 	/** Records a finding that neither passes nor fails the result, such as a changed list order. */
 	note?(text: string): void;
 	/** The runner whose results these are, and its device, where image tests find their references. */
-	runner?: { name: string; device: string };
+	runner?: {
+		name: string;
+		device: string;
+		/** True when the device draws on a software rasteriser, whose references its images compare with. */
+		software?: boolean;
+	};
 	/** Brave only: the state of its Shields, or null when the run did not record it. */
 	braveShields?: 'on' | 'off' | null;
 	/** Where image tests find references and save candidates, when not in the repository's folders. */
@@ -3961,12 +3966,12 @@ function imageRunProblems(
 	context: JudgeContext | undefined,
 ): string[] {
 	if (!context?.runner) return ['no runner to find the references of'];
-	const { name, device } = context.runner;
+	const { name, device, software } = context.runner;
 	const first = run.sameAs === undefined ? undefined : context.resultOf(imageItemId(run.sameAs));
 	return imageProblems(
 		run,
 		result,
-		{ runner: name, device },
+		{ runner: name, device, ...(software && { software }) },
 		first?.ok ? first : undefined,
 		context.harnessDirs,
 	);
