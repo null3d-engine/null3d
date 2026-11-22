@@ -1,14 +1,16 @@
 // The island's placed objects stand on the surface beneath them and clear of what they must not
 // touch. This checks the drawn park surfaces by their own lifts, the square's paving, the sand under
-// each parasol's loungers, the water under each moored boat and the road's shoulder under each
-// parked car's wheels. A bench must stand clear of a gazebo's stepped base, and every prop's ground
-// contacts must lie over the surface that carries it.
+// each parasol's loungers, the water and room under each moored boat and the road's shoulder under
+// each parked car's wheels. A bench must stand clear of a gazebo's stepped base and of a lamp, no
+// two parasol canvases may overlap, and every prop's ground contacts must lie over the surface that
+// carries it.
 import { describe, expect, it } from 'bun:test';
 import { hypot } from './island';
 import { type Build, bareTable, bench, pavilion, planter, streetLamp } from './kit';
 import { groundHeight, ROADS, SQUARE } from './plan';
 import { LOUNGER_OFFSETS, loungerStands } from './props';
 import {
+	HULL_HALF,
 	HULL_WATER,
 	hullDepth,
 	MOORINGS,
@@ -49,18 +51,19 @@ function groundFootprint(
 	return { minX, maxX, minZ, maxZ, reach };
 }
 
-/** The corners of a footprint turned about +y by a yaw, as world places. */
-function footprintCorners(
+/** The corners, the edge middles and the middle of a footprint, turned about +y by a yaw. */
+function footprintGrid(
 	foot: { minX: number; maxX: number; minZ: number; maxZ: number },
 	x: number,
 	z: number,
 	yaw: number,
 ): readonly (readonly [number, number])[] {
 	const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
-	const corners: [number, number][] = [];
-	for (const u of [foot.minX, foot.maxX])
-		for (const v of [foot.minZ, foot.maxZ]) corners.push([x + u * c + v * s, z - u * s + v * c]);
-	return corners;
+	const us = [foot.minX, (foot.minX + foot.maxX) / 2, foot.maxX];
+	const vs = [foot.minZ, (foot.minZ + foot.maxZ) / 2, foot.maxZ];
+	const points: [number, number][] = [];
+	for (const u of us) for (const v of vs) points.push([x + u * c + v * s, z - u * s + v * c]);
+	return points;
 }
 
 /** How far a point stands from a line of points on the ground, in meters. */
@@ -122,13 +125,30 @@ describe('the island props stand on their surfaces', () => {
 		const offenders = parkPlans().flatMap((plan) =>
 			plan.seats
 				.filter((seat) => {
-					const corners = footprintCorners(foot, seat.x, seat.z, seat.yaw);
-					const surface = Math.max(...corners.map(([x, z]) => parkGround(plan, x, z)));
+					const surface = Math.max(
+						...footprintGrid(foot, seat.x, seat.z, seat.yaw).map(([x, z]) =>
+							parkGround(plan, x, z),
+						),
+					);
 					// A bench rests on the highest contact; it may stand a little above a lower one
 					// but must never sink into any.
 					return seat.y < surface - 0.01 || seat.y > surface + 0.05;
 				})
 				.map((seat) => `${seat.x.toFixed(1)},${seat.z.toFixed(1)} at ${seat.y.toFixed(2)}`),
+		);
+		expect(offenders).toEqual([]);
+	});
+
+	it('keeps every park bench off the branch to the gazebo', () => {
+		const foot = groundFootprint(bench());
+		const offenders = parkPlans().flatMap((plan) =>
+			plan.seats
+				.filter((seat) =>
+					footprintGrid(foot, seat.x, seat.z, seat.yaw).some(
+						([x, z]) => lineGap(plan.branch, x, z) < 1.2,
+					),
+				)
+				.map((seat) => `${seat.x.toFixed(1)},${seat.z.toFixed(1)}`),
 		);
 		expect(offenders).toEqual([]);
 	});
@@ -146,12 +166,16 @@ describe('the island props stand on their surfaces', () => {
 	});
 
 	it('keeps every park lamp clear of every bench', () => {
-		const clearance = footprintReach(groundFootprint(bench())) + footprintReach(groundFootprint(streetLamp()));
+		const clearance =
+			footprintReach(groundFootprint(bench())) + footprintReach(groundFootprint(streetLamp()));
 		const offenders = parkPlans().flatMap((plan) =>
 			plan.lamps.flatMap((lamp) =>
 				plan.seats
 					.filter((seat) => hypot(seat.x - lamp.x, seat.z - lamp.z) < clearance)
-					.map((seat) => `lamp ${lamp.x.toFixed(1)},${lamp.z.toFixed(1)} and bench ${seat.x.toFixed(1)},${seat.z.toFixed(1)}`),
+					.map(
+						(seat) =>
+							`lamp ${lamp.x.toFixed(1)},${lamp.z.toFixed(1)} and bench ${seat.x.toFixed(1)},${seat.z.toFixed(1)}`,
+					),
 			),
 		);
 		expect(offenders).toEqual([]);
@@ -218,6 +242,43 @@ describe('the island props stand on their surfaces', () => {
 		const offenders = MOORINGS.filter(([x, z, yaw]) => hullDepth(x, z, yaw) < HULL_WATER).map(
 			([x, z]) => `${x.toFixed(0)},${z.toFixed(0)}`,
 		);
+		expect(offenders).toEqual([]);
+	});
+
+	it('keeps every boat hull clear of every other', () => {
+		const [halfBeam, halfLength] = HULL_HALF;
+		const corners = (m: readonly [number, number, number]): [number, number][] => {
+			const [c, s] = [Math.cos(m[2]), Math.sin(m[2])];
+			const out: [number, number][] = [];
+			for (const across of [-halfBeam, halfBeam])
+				for (const along of [-halfLength, halfLength])
+					out.push([m[0] + across * c + along * s, m[1] - across * s + along * c]);
+			return out;
+		};
+		// Two boxes overlap unless one of their own face axes finds a gap between them.
+		const meets = (a: readonly [number, number, number], b: readonly [number, number, number]) => {
+			const [pa, pb] = [corners(a), corners(b)];
+			for (const m of [a, b]) {
+				const [c, s] = [Math.cos(m[2]), Math.sin(m[2])];
+				for (const [ax, az] of [
+					[c, -s],
+					[s, c],
+				] as const) {
+					const on = (p: [number, number]) => p[0] * ax + p[1] * az;
+					const [amin, amax] = [Math.min(...pa.map(on)), Math.max(...pa.map(on))];
+					const [bmin, bmax] = [Math.min(...pb.map(on)), Math.max(...pb.map(on))];
+					if (amax <= bmin || bmax <= amin) return false;
+				}
+			}
+			return true;
+		};
+		const offenders: string[] = [];
+		for (let i = 0; i < MOORINGS.length; i++)
+			for (let j = i + 1; j < MOORINGS.length; j++)
+				if (
+					meets(MOORINGS[i] as (typeof MOORINGS)[number], MOORINGS[j] as (typeof MOORINGS)[number])
+				)
+					offenders.push(`${i} and ${j}`);
 		expect(offenders).toEqual([]);
 	});
 

@@ -1569,7 +1569,7 @@ function quayStreetZ(x: number, road: Road): number {
 }
 
 /** The half beam and half length of the largest yacht's hull, in meters. */
-const HULL_HALF = [2.3, 7] as const;
+export const HULL_HALF = [2.3, 7] as const;
 /** The water that a hull keeps under it, in meters, and the steps of 2 m that a boat may stand off. */
 export const HULL_WATER = 2;
 const HULL_STEPS = 12;
@@ -1587,6 +1587,42 @@ export function hullDepth(x: number, z: number, yaw: number): number {
 			);
 		}
 	return least;
+}
+
+/** Whether two hulls' footprints meet, as two boxes turned about their own middles, in meters. */
+function hullsMeet(
+	a: readonly [number, number, number],
+	b: readonly [number, number, number],
+	gap = 0.2,
+): boolean {
+	const corners = (m: readonly [number, number, number]): [number, number][] => {
+		const [c, s] = [Math.cos(m[2]), Math.sin(m[2])];
+		const out: [number, number][] = [];
+		for (const across of [-HULL_HALF[0], HULL_HALF[0]])
+			for (const along of [-HULL_HALF[1], HULL_HALF[1]])
+				out.push([m[0] + across * c + along * s, m[1] - across * s + along * c]);
+		return out;
+	};
+	const [pa, pb] = [corners(a), corners(b)];
+	// Two boxes stand apart when a face axis of either finds a gap between them.
+	for (const m of [a, b]) {
+		const [c, s] = [Math.cos(m[2]), Math.sin(m[2])];
+		for (const [ax, az] of [
+			[c, -s],
+			[s, c],
+		] as const) {
+			const [amin, amax] = [
+				Math.min(...pa.map(([x, z]) => x * ax + z * az)),
+				Math.max(...pa.map(([x, z]) => x * ax + z * az)),
+			];
+			const [bmin, bmax] = [
+				Math.min(...pb.map(([x, z]) => x * ax + z * az)),
+				Math.max(...pb.map(([x, z]) => x * ax + z * az)),
+			];
+			if (amax + gap <= bmin || bmax + gap <= amin) return false;
+		}
+	}
+	return true;
 }
 
 /** Where the boats lie: stern-to along the quay and both sides of the moles, with a few out at anchor. */
@@ -1620,7 +1656,7 @@ export const MOORINGS: readonly (readonly [number, number, number])[] = (() => {
 	] as const)
 		moorings.push([x, z, next() * 6.3]);
 	// A boat with land under its hull stands off toward deeper water.
-	return moorings.map(([x, z, yaw]) => {
+	const adjusted = moorings.map(([x, z, yaw]) => {
 		let [at, depth] = [[x, z] as const, hullDepth(x, z, yaw)];
 		for (let step = 0; depth < HULL_WATER && step < HULL_STEPS; step++) {
 			for (let k = 0; k < 8; k++) {
@@ -1632,6 +1668,11 @@ export const MOORINGS: readonly (readonly [number, number, number])[] = (() => {
 		}
 		return [at[0], at[1], yaw] as [number, number, number];
 	});
+	// A boat that would meet a hull already placed stays out of the harbour, so no two cross.
+	const placed: [number, number, number][] = [];
+	for (const mooring of adjusted)
+		if (!placed.some((other) => hullsMeet(mooring, other))) placed.push(mooring);
+	return placed;
 })();
 
 function createHarbour(
@@ -2296,9 +2337,11 @@ export function parkSurface(plan: ParkPlan, x: number, z: number): number {
 /** The highest surface under a bench's footprint, so that the bench rests on it. */
 function seatHeight(plan: ParkPlan, x: number, z: number, yaw: number): number {
 	const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+	const us = [-BENCH_HALF.along, 0, BENCH_HALF.along];
+	const vs = [-BENCH_HALF.across, 0, BENCH_HALF.across];
 	let highest = Number.NEGATIVE_INFINITY;
-	for (const u of [-BENCH_HALF.along, 0, BENCH_HALF.along])
-		for (const v of [-BENCH_HALF.across, BENCH_HALF.across])
+	for (const u of us)
+		for (const v of vs)
 			highest = Math.max(highest, parkSurface(plan, x + u * c + v * s, z - u * s + v * c));
 	return highest;
 }
@@ -2334,14 +2377,15 @@ export function parkPlans(): ParkPlan[] {
 			if (k % 8 !== 2) return;
 			const q = walk[Math.min(walk.length - 1, k + 1)] as ParkPoint;
 			const along = Math.atan2(q.z - p.z, q.x - p.x);
-			// A bench stands on the walk's near side, or on the far side where the near side
-			// would stand in the gazebo's steps.
+			// A bench stands on the walk's near side, or on the far side where the near side would
+			// stand in the gazebo's steps or block the branch to the gazebo.
 			for (const side of [1, -1]) {
 				const at = {
 					x: p.x - side * Math.sin(along) * 2.2,
 					z: p.z + side * Math.cos(along) * 2.2,
 				};
 				if (hypot(at.x - gx, at.z - gz) < GAZEBO_STEP + BENCH_REACH) continue;
+				if (gapToLine(branch, at.x, at.z) < BRANCH_STRIP + BENCH_HALF.across) continue;
 				const yaw = side > 0 ? -along : Math.PI - along;
 				plan.seats.push({ ...at, y: seatHeight(plan, at.x, at.z, yaw), yaw });
 				break;
