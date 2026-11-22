@@ -730,6 +730,20 @@ def tint_view(objects, path, palette, view=(1.6, -3.6, 1.3)):
         bsdf.inputs['Base Color'].default_value = colour
 
 
+def clamp_uvs(object):
+    """Clamps every texture coordinate to the atlas's square, on every mesh the file draws.
+
+    A decimated level can interpolate a coordinate just outside the square. The asset tool stores
+    a stream whose values all lie in the square as normalized integers and leaves any other as
+    floats, so a base and its level would take different types and the engine would refuse the
+    level. Clamping every mesh keeps each stream the same type in every level.
+    """
+    for layer in object.data.uv_layers:
+        for datum in layer.data:
+            uv = datum.uv
+            datum.uv = (min(1.0, max(0.0, uv.x)), min(1.0, max(0.0, uv.y)))
+
+
 def main():
     args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     if not args:
@@ -815,6 +829,8 @@ def main():
     # One error list serves every node with lower levels: the worst measurement across the file.
     levels = [max(r['levels'][k] for r in reports if r['levels']) for k in range(len(LOD_SHARES))]
     path = os.path.join(out, 'life.glb')
+    for object in everything:
+        clamp_uvs(object)
     rigs = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE']
     found = export(path, everything + rigs, set(), levels, animations=True)
     for name, count in sorted(found.items()):
