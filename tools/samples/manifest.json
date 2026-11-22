@@ -6251,7 +6251,7 @@
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek_tripo.py",
 			"fetched": "2026-11-21",
-			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-dragon by tools/samples/blender/creek_tripo.py in the engine repository: turned so its head faces the front, its base cut level and its wave slab's rear overhang cut away, decimated to 3,000 triangles and laid out afresh, the raw color and relief baked onto it, its body's scales darkened with darker joints to the end of its tail's curl, its tail fan kept a pale grey and its teeth and mane white, its belly band made grey, and a low roughness for the glaze. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
+			"changes": "Finished in Blender 5.3 from the raw Tripo3D model showcase/creek-raw-dragon by tools/samples/blender/creek_tripo.py in the engine repository: turned so its head faces the front, its base cut level and its wave slab's rear overhang cut away, decimated to 3,000 triangles and laid out afresh, the raw color and relief baked onto it, its glazed clay repainted the owner's deep green (about hue 170, colour strength 0.35, lightness 0.28) with the raw surface's light and dark kept, its scales' joints darker to the end of its tail's curl, its tail fan kept a pale grey and its teeth and mane white, and a low roughness for the glaze. Two lower levels carry their measured errors. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/creek_tripo.ts, which runs Blender with four threads.",
 			"dir": "sources/showcase/creek-garden/dragon",
 			"origin": {
 				"kind": "blender",
@@ -6261,8 +6261,8 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek-garden/dragon/dragon.glb",
-					"bytes": 690612,
-					"sha256": "3cfd0bd261aea7cc0e0220fd4aaa74903932344a8fd8b02414dc62c05f6b2042"
+					"bytes": 687948,
+					"sha256": "71865554140e653002b40ca56d08945c7eb5642b8d04c5b2d01c31ff886334d7"
 				}
 			]
 		},
