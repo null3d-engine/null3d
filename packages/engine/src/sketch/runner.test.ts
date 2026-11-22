@@ -6,7 +6,7 @@ import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import type { HoldScript } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
-import { presetSettings } from '../quality/presets';
+import { LOWEST_TIER_SCALE, lowestTierSettings, presetSettings } from '../quality/presets';
 import { callValueArguments } from '../scene/fake-call-values';
 import type { Material, MeshGeometry } from '../scene/resources';
 import {
@@ -710,6 +710,46 @@ describe('SketchRunner', () => {
 			settings.shadowFilter,
 			settings.farCascadeInterval,
 		]);
+	});
+
+	it("starts in the lowest tier as the page asks, at the tier's scale", async () => {
+		const tier = lowestTierSettings('webgpu');
+		const { runner, calls, context } = await start(() => ({}), undefined, {
+			quality: {
+				...MEDIUM,
+				settings: { ...MEDIUM.settings, ...tier },
+				options: tier,
+				lowest: true,
+			},
+		});
+		runner.step(0);
+		expect(context.quality.governor.lowest).toBe(true);
+		expect(context.quality.settings.shadows).toBe(false);
+		expect(context.quality.settings.bloom).toBe(false);
+		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
+		expect(calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(333);
+	});
+
+	it("applies the lowest tier's cuts on entry, and gives the settings back on its exit", async () => {
+		const { runner, context } = await start(() => ({}));
+		/** The governor, whose entry and exit the frames' judgement would otherwise take time to reach. */
+		const governor = (
+			runner as unknown as {
+				governor: { enterLowest(now: number): void; exitLowest(now: number): void };
+			}
+		).governor;
+		governor.enterLowest(0);
+		runner.step(0);
+		expect(context.quality.governor.lowest).toBe(true);
+		expect(context.quality.settings.shadows).toBe(false);
+		expect(context.quality.settings.bloom).toBe(false);
+		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
+		governor.exitLowest(0);
+		runner.step(0);
+		expect(context.quality.governor.lowest).toBe(false);
+		expect(context.quality.settings.shadows).toBe(MEDIUM.settings.shadows);
+		expect(context.quality.settings.bloom).toBe(MEDIUM.settings.bloom);
+		expect(context.quality.settings.minRenderScale).toBe(MEDIUM.settings.minRenderScale);
 	});
 
 	it('holds at the highest render scale, with the passes of its range', async () => {

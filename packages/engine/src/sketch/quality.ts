@@ -49,6 +49,11 @@ export interface QualityStart {
 	keepCopies?: boolean;
 	/** True when the engine checks the preset after its first frame. */
 	check?: boolean;
+	/**
+	 * True when the page started in the lowest quality tier, through its start switch. The
+	 * governor then gives the tier's settings back when the frames have room for its window.
+	 */
+	lowest?: boolean;
 }
 
 /** The texture memory of a sketch quality without textures, as tests make it. */
@@ -124,6 +129,14 @@ export interface QualityGovernor {
 	 * that the camera sees from far.
 	 */
 	readonly farAnimationInterval: number;
+	/**
+	 * True while the lowest quality tier applies: the render scale's floor has fallen to a third,
+	 * the sun's shadows and bloom are off, and WebGL2 draws no depth prepass. The governor enters
+	 * the tier when the scale has held at the preset's floor through its sustained window and the
+	 * frames still miss, and leaves it when the frames keep room through the window that raises a
+	 * step.
+	 */
+	readonly lowest: boolean;
 }
 
 /**
@@ -433,6 +446,9 @@ export class SketchQuality implements Quality {
 			get farAnimationInterval() {
 				return settings.farAnimationInterval;
 			},
+			get lowest() {
+				return false;
+			},
 		};
 	}
 
@@ -451,6 +467,15 @@ export class SketchQuality implements Quality {
 			);
 		for (const [name, value] of Object.entries(settings))
 			if (value !== undefined) this.owned.add(name as QualitySettingName);
+		return this.update(this.preset, settings);
+	}
+
+	/**
+	 * Changes live settings for the frame-budget governor, which does not count them as the
+	 * sketch's own: a preset that the sketch asks for replaces them, as it replaces those that the
+	 * page's options do not give. The lowest quality tier's cuts and their return use it.
+	 */
+	setGoverned(settings: Partial<QualitySettings>): Promise<void> {
 		return this.update(this.preset, settings);
 	}
 

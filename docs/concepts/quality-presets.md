@@ -299,6 +299,16 @@ Phones slow down as they heat up, often after a few minutes of play. The governo
 
 `quality.governor` reports what the governor lowered, and the `quality.onChange` handlers run after each shadow step. So a sketch can lighten its own work at the same time: [Quality API](../api/quality.md#the-frame-budget-governor) shows how. `quality.set({ governor: false })` turns the governor off. The scene then draws at `maxRenderScale`, with the shadow settings as set, as a benchmark or a recorded video needs. Hold mode has no governor.
 
+### The lowest quality tier
+
+Some devices reach the lowest render scale and still miss the target. Below the four presets sits a lowest tier for them. The governor enters it when the render scale has held at its floor through the sustained window, and the judged frames still miss. Its cuts are a third-size render scale floor, no sun shadows, and no bloom. On WebGL2 it also turns the depth prepass off.
+
+The tier changes live settings that a sketch can read. These are `minRenderScale`, `shadows` and `bloom`, and `depthPrepass` where the GPU path draws it. The four presets keep their values, so no other look changes. `quality.governor.lowest` reports whether the tier applies.
+
+The entry goes on trial as a step down does. Frames that come clearly slower after it take the tier back, and close it for a wait that doubles with each failed entry. The governor leaves the tier when the frames keep room through the window that raises a step. It then waits that same window before the tier can enter again, so a device cannot flap.
+
+`?tier=lowest` starts a page in the tier, for tests, devices and a known weak class. The governor stays the default path to the tier.
+
 ### Settings of an add-on's feature
 
 An add-on's feature declares its own settings in the same form as the engine's table: a value on each preset, an optional WebGL2 column, and the values it takes. The feature's budget joins the sketch's budgets. A step of the budgets' scale then lowers the feature's share of full quality with the sketch's own systems. A setting that names a `governor` follows that share: a count shrinks with it, and an interval doubles with each step. The stats overlay shows the feature's values and its budget beside the engine's figures. [Add-on feature descriptions](../api/features.md#preset-settings-and-the-frame-budget-governor) shows how a feature declares them.

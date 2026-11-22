@@ -50,7 +50,12 @@ import type {
 import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, thousandths } from '../quality/budget';
 import { Governor, GovernorLoop } from '../quality/governor';
-import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
+import {
+	LOWEST_TIER_SCALE,
+	presetValue,
+	type QualitySettings,
+	SKETCH_SETTINGS,
+} from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import type { DerivedCache } from '../scene/derived-cache';
 import { FrameCameras } from '../scene/frame-cameras';
@@ -463,6 +468,10 @@ export class SketchRunner {
 	private readonly frameTimes: RingFrames | undefined;
 	/** The governor's count of changes when the core last took the settings that its steps move. */
 	private stepChanges = 0;
+	/** The governor's count of tier changes when the sketch last took the tier's settings. */
+	private tierChanges = 0;
+	/** The settings that the tier replaced, to give back when it leaves, or undefined outside it. */
+	private tierRestore: Partial<QualitySettings> | undefined;
 	/** The budgets' count of changes when the governor last took the steps that they allow. */
 	private budgetChanges = 0;
 	/** The sketch's post-processing settings, which say whether bloom is on. */
@@ -642,6 +651,7 @@ export class SketchRunner {
 		// A device that draws on the CPU keeps the whole render scale once a step below it failed:
 		// its two-step upscale costs about what the smaller scene saves (D-237).
 		this.governor.setSoftware(device.softwareRenderer);
+		this.governor.setLowestTier(true);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(
@@ -666,6 +676,9 @@ export class SketchRunner {
 				this.applyFrameSettings(update.settings);
 				textures.applyQuality(update.settings, changed);
 				sketch.applyQuality(update);
+				// A preset or the sketch gives the settings their own values again, and the tier
+				// keeps its cuts.
+				if (this.governor.lowest) this.applyTierSettings();
 			},
 			() => this.settle(true),
 			() => this.renderScale() / FULL_SCALE,
@@ -694,10 +707,30 @@ export class SketchRunner {
 				get farAnimationInterval() {
 					return governor.animationInterval;
 				},
+				get lowest() {
+					return governor.lowest;
+				},
 			},
 			textures.memory,
 		);
 		this.textures = textures;
+		if (sketch.quality.lowest === true) {
+			// The page started in the tier, so the settings carry its values already. Remember the
+			// preset's, which the governor gives back when the frames have room for its window.
+			const { preset } = sketch.quality;
+			const path = sketch.capabilities.tier;
+			this.governor.startLowest(
+				thousandths(presetValue('minRenderScale', preset, path)),
+				thousandths(presetValue('maxRenderScale', preset, path)),
+			);
+			this.tierRestore = {
+				minRenderScale: presetValue('minRenderScale', preset, path),
+				maxRenderScale: presetValue('maxRenderScale', preset, path),
+				shadows: presetValue('shadows', preset, path),
+				bloom: presetValue('bloom', preset, path),
+			};
+			this.tierChanges = this.governor.tierChanges;
+		}
 		this.applyFrameSettings(this.quality.settings);
 		this.readViewport();
 		const host: DebugHost = {
@@ -1251,11 +1284,13 @@ export class SketchRunner {
 
 	/**
 	 * Gives the core the shadow settings and bloom's base after a step of the governor, and tells
-	 * the sketch's change handlers of it.
+	 * the sketch's change handlers of it. The lowest quality tier's settings come before those
+	 * steps, so a step that the tier's cuts allow reads the values that it leaves.
 	 */
 	private applyGovernedSteps(): void {
 		const { governor } = this;
 		const { glue } = this.sketch;
+		this.applyTierSettings();
 		this.stepChanges = governor.stepChanges;
 		if (
 			this.setLevelQuality() !== 0 ||
@@ -1268,6 +1303,35 @@ export class SketchRunner {
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
+	}
+
+	/**
+	 * Applies the lowest quality tier's cuts when the governor enters it, and gives the settings
+	 * back when it leaves. The sketch's own choice of a preset does not keep them: a preset gives
+	 * the settings its own values again.
+	 */
+	private applyTierSettings(): void {
+		const { governor } = this;
+		this.tierChanges = governor.tierChanges;
+		const { settings } = this.quality;
+		if (governor.lowest) {
+			this.tierRestore ??= {
+				minRenderScale: settings.minRenderScale,
+				maxRenderScale: settings.maxRenderScale,
+				shadows: settings.shadows,
+				bloom: settings.bloom,
+			};
+			if (settings.shadows || settings.bloom || settings.minRenderScale > LOWEST_TIER_SCALE)
+				void this.quality.setGoverned({
+					minRenderScale: Math.min(settings.minRenderScale, LOWEST_TIER_SCALE),
+					shadows: false,
+					bloom: false,
+				});
+		} else if (this.tierRestore) {
+			const restore = this.tierRestore;
+			this.tierRestore = undefined;
+			void this.quality.setGoverned(restore);
+		}
 	}
 
 	/**
@@ -1862,7 +1926,11 @@ export class SketchRunner {
 			this.governorLoop.now[0] = start;
 			this.governorLoop.frame(this.resumed);
 			this.resumed = false;
-			if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
+			if (
+				this.governor.stepChanges !== this.stepChanges ||
+				this.governor.tierChanges !== this.tierChanges
+			)
+				this.applyGovernedSteps();
 		}
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
 		// waits for them.
@@ -1939,7 +2007,11 @@ export class SketchRunner {
 			this.updateTransforms(true);
 		}
 		if (this.followEffects()) restart = true;
-		if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
+		if (
+			this.governor.stepChanges !== this.stepChanges ||
+			this.governor.tierChanges !== this.tierChanges
+		)
+			this.applyGovernedSteps();
 		// Development builds first report static batch rows written without markDirty, because the
 		// batch update clears the marks.
 		if (DEV) {

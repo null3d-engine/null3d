@@ -2405,6 +2405,7 @@ async function startEngine(
 			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck,
+			lowest: switches.lowestTier === 'lowest',
 		};
 		mode = {
 			build,
