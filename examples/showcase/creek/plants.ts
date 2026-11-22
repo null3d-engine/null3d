@@ -11,7 +11,6 @@ import { type Part, partsOf, placed, standPart, swayingPart } from '../../lib/bl
 import { random } from '../../lib/procedural';
 import { sampleUrl } from '../../lib/samples';
 import { createSway } from '../../lib/sway';
-import { watchFarLeaves } from './leaf-cut';
 import {
 	type MapleColor,
 	PLANT_KINDS,
@@ -175,8 +174,6 @@ export function createPlants(
 			continue;
 		}
 		// A maple's leaves take its color, a little lighter or darker; a bare maple keeps its wood alone.
-		// The lowest quality tier cuts the leaves past a distance; the wood stays.
-		watchFarLeaves(ctx, leaves.mesh);
 		const leafy = spots.filter((spot) => spot.color !== 'bare');
 		tinted(leaves, leafy, swayingPart(sway, leaves, SWAY.leaves, true), (spot) => {
 			const shade = 0.9 + 0.2 * next();
