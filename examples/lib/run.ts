@@ -93,11 +93,6 @@ export interface StartOptions {
 	 */
 	hud?: HTMLElement;
 	/**
-	 * The element that holds the scene's controls panel, such as the page's controls sheet. Without
-	 * it, the panel goes in the demo's help element.
-	 */
-	hudHost?: HTMLElement;
-	/**
 	 * Aborting it removes the listeners, the loading overlay and the controls HUD that this demo
 	 * added, so a page that starts a second demo in the same document leaves nothing of the first.
 	 * The page still owns the canvas, its own elements and the engine. A demo's page part also stops
@@ -144,7 +139,6 @@ export async function startDemo({
 	settings,
 	choices,
 	hud,
-	hudHost,
 	signal,
 }: StartOptions): Promise<Engine> {
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
@@ -210,7 +204,7 @@ export async function startDemo({
 	 */
 	const pageReaders = hud
 		? [
-				hudReader(sendToSketch, hud, signal, hudHost),
+				hudReader(sendToSketch, hud, signal),
 				padReader(sendToSketch, hud, signal),
 				pressReader(sendToSketch),
 			]
@@ -918,10 +912,9 @@ function hudReader(
 	post: (name: string, value: string) => void,
 	element: HTMLElement,
 	signal?: AbortSignal,
-	host?: HTMLElement,
 ): (type: string, data: unknown) => void {
 	const stage = element.parentElement ?? element;
-	const hud = createHud(element, stage, post, host);
+	const hud = createHud(element, stage, post);
 	// The page may start another demo here: the HUD leaves with the demo's own signal.
 	signal?.addEventListener('abort', () => hud.dispose());
 	return (type, data) => {

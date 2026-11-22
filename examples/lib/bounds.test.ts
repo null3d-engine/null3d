@@ -39,12 +39,12 @@ function stub() {
 		engine: { viewport: { width: 640, height: 360, pixelRatio: 1 } },
 		scene: { raycast: () => false },
 	};
-	return { time, pointer, context: context as never };
+	return { time, pointer, context: context as never, touches: context.input.touches };
 }
 
 /** A bounded camera, handed to the user at the island's opening pose. */
 function manual() {
-	const { time, pointer, context } = stub();
+	const { time, pointer, context, touches } = stub();
 	const camera = new StandInCamera();
 	const target: [number, number, number] = [0, 1.4, 0];
 	const film: Cinematic = createCinematic(context, camera as never, {
@@ -61,7 +61,7 @@ function manual() {
 	};
 	const distance = () =>
 		Math.hypot(...[0, 1, 2].map((k) => (camera.stored[k] as number) - (target[k] as number)));
-	return { camera, pointer, target, frame, distance };
+	return { camera, pointer, target, touches, frame, distance };
 }
 
 describe('keepInside', () => {
@@ -129,16 +129,61 @@ describe('keepInside', () => {
 });
 
 describe('the bounded Manual camera', () => {
-	it('dollies out no farther than its bounds allow', () => {
-		const { pointer, frame, distance } = manual();
+	it('flies with the wheel and no farther than its bounds allow', () => {
+		const { camera, pointer, target, frame, distance } = manual();
+		const start = distance();
+		const before = [...camera.stored] as [number, number, number];
 		for (let k = 0; k < 240; k++) {
 			pointer.wheel = 120;
 			frame();
 		}
 		pointer.wheel = 0;
-		for (let k = 0; k < 120; k++) frame();
-		expect(distance()).toBeLessThanOrEqual(FLAT.distance + 1e-3);
-		expect(distance()).toBeGreaterThan(FLAT.distance - 1);
+		for (let k = 0; k < 30; k++) frame();
+		// The wheel flies the camera back along the way it looks and the point it turns around comes
+		// along, so the view keeps its size instead of zooming in or out (owner's ruling).
+		expect(Math.abs(distance() - start)).toBeLessThan(0.05);
+		expect(camera.stored[1] as number).toBeGreaterThan(before[1] as number);
+		// The fly stops at the edge of the area the camera turns around, still above the ground.
+		expect(
+			Math.hypot((target[0] as number) - FLAT.center[0], (target[2] as number) - FLAT.center[1]),
+		).toBeLessThanOrEqual(FLAT.focus + 1e-3);
+		expect(target[1] as number).toBeGreaterThanOrEqual(FLAT.focusHeight[0] - 1e-3);
+		expect(target[1] as number).toBeLessThanOrEqual(FLAT.focusHeight[1] + 1e-3);
+		expect(camera.stored[1] as number).toBeGreaterThanOrEqual(GROUND_CLEARANCE - 1e-3);
+		// Scrolling the other way flies it forward again, at the same distance from its target.
+		for (let k = 0; k < 400; k++) {
+			pointer.wheel = -120;
+			frame();
+		}
+		pointer.wheel = 0;
+		for (let k = 0; k < 30; k++) frame();
+		expect(Math.abs(distance() - start)).toBeLessThan(0.05);
+	});
+
+	it('flies with a two-finger pinch, and keeps the distance from its target', () => {
+		const { camera, touches, frame, distance } = manual();
+		const start = distance();
+		const before = [...camera.stored] as [number, number, number];
+		// The midpoint stays put, so the fingers only pinch: they spread, and the camera flies on.
+		const first = { id: 1, x: 200, y: 180, dx: 0, dy: 0 };
+		const second = { id: 2, x: 300, y: 180, dx: 0, dy: 0 };
+		touches.push(first, second);
+		frame();
+		for (let k = 0; k < 30; k++) {
+			first.x -= 4;
+			first.dx = -4;
+			second.x += 4;
+			second.dx = 4;
+			frame();
+		}
+		expect(Math.abs(distance() - start)).toBeLessThan(0.05);
+		expect(
+			Math.hypot(
+				(camera.stored[0] as number) - before[0],
+				(camera.stored[1] as number) - before[1],
+				(camera.stored[2] as number) - before[2],
+			),
+		).toBeGreaterThan(10);
 	});
 
 	it('stops on the ground, and pushing against it never draws the camera in', () => {

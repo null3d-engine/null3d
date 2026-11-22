@@ -261,8 +261,7 @@ test('a key swaps the weighted demo between its two blends, as the HUD does, and
 	await page.keyboard.press('KeyS');
 	await expect(label).toHaveText('Weighted blending', { timeout: PATIENCE });
 	// The controls HUD names the blend and the key, and its buttons pick a blend with no keyboard.
-	await page.locator('.chip').click();
-	await page.getByRole('tab', { name: 'Controls' }).click();
+	await page.locator('.hud__chevron').click();
 	const blend = page.locator('#hud-panel-blend');
 	const weighted = blend.getByRole('button', { name: /Weighted/ });
 	const sorted = blend.getByRole('button', { name: /Sorted/ });
