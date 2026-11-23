@@ -23,6 +23,7 @@ import {
 	StartMeter,
 } from './progress';
 import { addSoundButton } from './sound-button';
+import { createToast, toastReader } from './toast';
 
 /** The message that a demo posts to show a label, or to change its text. */
 interface LabelMessage {
@@ -203,12 +204,11 @@ export async function startDemo({
 	 * held these messages until its start ended would show the controls only after the whole scene,
 	 * which is the wait that a software GPU makes too long.
 	 */
+	const controls = hud ? hudReader(sendToSketch, hud, signal) : undefined;
 	const pageReaders = hud
-		? [
-				hudReader(sendToSketch, hud, signal),
-				padReader(sendToSketch, hud, signal),
-				pressReader(sendToSketch),
-			]
+		? [controls?.reader, padReader(sendToSketch, hud, signal), pressReader(sendToSketch)].filter(
+				(reader): reader is (type: string, data: unknown) => void => reader !== undefined,
+			)
 		: [];
 	/** The sketch's messages that need the engine, kept until it exists. */
 	const early: [string, unknown][] = [];
@@ -305,7 +305,12 @@ export async function startDemo({
 	// One message handler for the page: the engine gives the messages that a sketch sent before the
 	// page listened to the first handler alone, so two handlers would drop the help that a showcase
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
-	engineReaders = labels ? [labelReader(engine, labels)] : [];
+	// Every demo may name a setting's new value in a toast, as the showcase controls do. A demo with
+	// controls shows its toast through the HUD's own, so one line shows at a time.
+	const own = controls ? undefined : createToast(canvas.parentElement ?? document.body);
+	if (own) signal?.addEventListener('abort', () => own.dispose());
+	const toast = own ?? { show: (text: string) => controls?.notify(text), dispose() {} };
+	engineReaders = labels ? [labelReader(engine, labels), toastReader(toast)] : [toastReader(toast)];
 	for (const [name, value] of pendingPresses.splice(0)) engine.postToSketch(name, value);
 	// The engine's start handler stays the sketch's one handler, so the messages that arrived before
 	// it existed now reach the handlers that need it, in the order that the sketch sent them.
@@ -918,14 +923,17 @@ function hudReader(
 	post: (name: string, value: string) => void,
 	element: HTMLElement,
 	signal?: AbortSignal,
-): (type: string, data: unknown) => void {
+): { reader: (type: string, data: unknown) => void; notify(text: string): void } {
 	const stage = element.parentElement ?? element;
 	const hud = createHud(element, stage, post);
 	// The page may start another demo here: the HUD leaves with the demo's own signal.
 	signal?.addEventListener('abort', () => hud.dispose());
-	return (type, data) => {
-		if (type !== 'hud') return;
-		const { groups, visible } = data as HudMessage;
-		hud.render({ groups }, visible);
+	return {
+		reader: (type, data) => {
+			if (type !== 'hud') return;
+			const { groups, visible } = data as HudMessage;
+			hud.render({ groups }, visible);
+		},
+		notify: (text) => hud.notify(text),
 	};
 }

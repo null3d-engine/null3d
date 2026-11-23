@@ -13,7 +13,7 @@ import { buildHall, DEPTH, HEIGHT, ROOM } from './hall';
 const MOVERS = 2;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, post, time, input } = ctx;
+	const { scene, assets, geometry, materials, post, time, input, page } = ctx;
 	scene.setBackground('#08070a');
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.2 });
 	post.set({ bloom: { intensity: 0.3, threshold: 1 }, ao: { radius: 0.6 }, vignette: {} });
@@ -63,6 +63,7 @@ export default defineSketch(async (ctx) => {
 			view.update(dt);
 			if (input.wasPressed('KeyB')) {
 				projected = !projected;
+				page.post('toast', `Box projection: ${projected ? 'on' : 'off'}`);
 				for (const [k, probe] of probes.entries())
 					probe.set({ ...(rooms[k] as ReflectionProbeOptions), boxProjection: projected });
 			}

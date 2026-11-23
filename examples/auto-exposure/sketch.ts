@@ -20,7 +20,7 @@ const EYE = 1.7;
 const EYES = { minEv: -7, maxEv: 1, speedUp: 2.5, speedDown: 0.8, centerWeight: 0.6 } as const;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, time, input } = ctx;
+	const { scene, assets, post, time, input, page } = ctx;
 	scene.setBackground({
 		sky: { sunPosition: SUN, turbidity: 4, rayleigh: 1.2, cloudCoverage: 0.25, time: 0 },
 	});
@@ -60,6 +60,10 @@ export default defineSketch(async (ctx) => {
 			if (input.wasPressed('KeyE')) {
 				adapting = !adapting;
 				post.set({ autoExposure: adapting ? EYES : false });
+				page.post(
+					'toast',
+					`Auto exposure: ${adapting ? 'on, the eye adapts' : 'off, the exposure holds'}`,
+				);
 			}
 			if (!view.userCamera) {
 				// Where the walk is: the share of each leg done, eased so each leg starts and stops

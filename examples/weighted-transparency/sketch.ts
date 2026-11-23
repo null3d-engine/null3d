@@ -108,7 +108,13 @@ export default defineSketch(async (ctx) => {
 				postHud();
 			}
 			// The key swaps the two blends, so the comparison is the same scene from the same view.
-			if (input.wasPressed('KeyS')) setBlend(!showsSorted);
+			if (input.wasPressed('KeyS')) {
+				setBlend(!showsSorted);
+				page.post(
+					'toast',
+					`Transparency: ${showsSorted ? 'sorted, the exact order' : 'weighted, one pass'}`,
+				);
+			}
 			flicker(time.now);
 			const puffs = showsSorted ? sorted : weighted;
 			const { positions, sizes, colors, rotations } = puffs;

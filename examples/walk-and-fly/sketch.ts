@@ -19,7 +19,7 @@ const WALKING = { movementSpeed: 3, lookSpeed: 0.1, enabled: false };
 const FLYING = { movementSpeed: 8, rollSpeed: 0.5, dragToLook: true, enabled: false };
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, input, time } = ctx;
+	const { scene, assets, geometry, materials, textures, post, input, time, page } = ctx;
 	const day = timeOfDay(17.1, { heading: 0.3 });
 	const sky = { ...day.sky, cloudCoverage: 0.35 };
 	scene.setBackground({ sky }, { intensity: day.skyIntensity });
@@ -124,6 +124,7 @@ export default defineSketch(async (ctx) => {
 			}
 			if (input.wasPressed('Space')) {
 				flying = !flying;
+				page.post('toast', `Camera: ${flying ? 'flying' : 'walking'}`);
 				[fly.enabled, walk.enabled] = [flying, !flying];
 				// Walking takes the view's direction from the camera, and drops the roll.
 				camera.getRotation(turn);

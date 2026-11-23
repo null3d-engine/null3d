@@ -13,7 +13,7 @@ import { interact } from '../lib/interact';
 const TARGET = [0, 0.8, -1.4] as const;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, time, input } = ctx;
+	const { scene, assets, geometry, materials, time, input, page } = ctx;
 	const environment = await assets.builtinEnvironment('room');
 	scene.setEnvironment(environment);
 	scene.setBackground('#1a1d24');
@@ -50,7 +50,10 @@ export default defineSketch(async (ctx) => {
 	return {
 		onUpdate(dt: number) {
 			view.update(dt);
-			if (!time.held && input.wasPressed('KeyB')) manual = toggledBounce(time.now, manual);
+			if (!time.held && input.wasPressed('KeyB')) {
+				manual = toggledBounce(time.now, manual);
+				page.post('toast', `Bounce light: ${manual === 'on' ? 'on' : 'off'}`);
+			}
 			// A held frame shows the light from the cycle's first half, and no input reaches it.
 			showBounce(ctx, time.held ? 0 : time.now, manual);
 		},

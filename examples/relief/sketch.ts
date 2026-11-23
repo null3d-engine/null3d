@@ -138,7 +138,11 @@ export default defineSketch(async (ctx) => {
 				camera.lookAt(target[0], target[1], target[2]);
 			}
 			view.update(dt);
-			if (input.wasPressed('parallax')) quality.set({ parallax: !quality.settings.parallax });
+			if (input.wasPressed('parallax')) {
+				const parallax = !quality.settings.parallax;
+				quality.set({ parallax });
+				page.post('toast', `Parallax: ${parallax ? 'on' : 'off'}`);
+			}
 			// The clouds drift with the sketch's time.
 			sky.sky.time = time.now;
 			scene.setBackground(sky);

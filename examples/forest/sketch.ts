@@ -25,7 +25,7 @@ import { plantForest, RADIUS } from './planting';
 import { cardTexture, ground, KINDS, landArrays, litterTexture } from './woods';
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
+	const { scene, assets, geometry, materials, textures, post, quality, input, time, page } = ctx;
 	// Golden hour: the sky lights the trees, and a thin amber haze lies over the far ridges.
 	const day = timeOfDay('goldenHour', { heading: -2.2 });
 	const sky = { intensity: day.skyIntensity };
@@ -77,12 +77,19 @@ export default defineSketch(async (ctx) => {
 			// The field's box follows the camera, so it steps before the trees read it.
 			wind.update();
 			sway.update();
-			if (input.wasPressed('KeyB')) forest.hero.setBias();
+			if (input.wasPressed('KeyB')) {
+				const keen = forest.hero.setBias();
+				page.post('toast', `Hero fir's detail bias: ${keen ? 'on' : 'off'}`);
+			}
 
 			if (input.wasPressed('KeyL')) {
 				const levels = quality.settings.lodThreshold > 0;
 				if (levels) threshold = quality.settings.lodThreshold;
 				quality.set({ lodThreshold: levels ? 0 : threshold });
+				page.post(
+					'toast',
+					`Levels of detail: ${levels ? 'off, every tree at its full detail' : 'on'}`,
+				);
 			}
 			// A slow flight above the canopy, looking out over the forest toward the ridges.
 			if (!view.userCamera) {
