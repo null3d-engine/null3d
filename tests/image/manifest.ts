@@ -3840,6 +3840,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// it applies only where a browser or a device compares with the Mac's pictures.
 			...(demo.name === 'skyway' && {
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
+				// The Linux Firefox draws on a software GPU, which settles on different pixels
+				// wherever bright detail is a pixel or two wide, such as the rain streaks, and the window
+				// and sign edges: two draws on one browser agree exactly, while its picture and
+				// the Mac's differ by 2.358 per cent, all of it on that detail. Its pictures
+				// compare with their own, so a real change still fails.
+				devices: ['linux'],
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
