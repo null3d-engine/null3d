@@ -34,6 +34,7 @@
 //! | Nothing | kept | kept |
 //! | A new frame or transform update | kept | rebuilt |
 //! | Static objects moved within their cells, or were shown or hidden | refitted | rebuilt |
+//! | A mesh's geometry changed, and its items kept their cells | refitted | rebuilt |
 //! | Rows of a static batch were updated, and kept their cells | refitted | rebuilt |
 //! | A static object or row changed cell | rebuilt | rebuilt |
 //! | An object was created or destroyed, or changed its mesh, or between static and dynamic | rebuilt | rebuilt |
@@ -220,6 +221,9 @@ pub struct SceneBvh {
     /// The slots that the trees were listed from, and those among them that drew as dynamic.
     listed: Bitset,
     listed_dynamic: Bitset,
+    /// The meshes whose geometry changed after the listing. The next sync takes the boxes of the
+    /// items that draw them, where a listing would take the whole scene's.
+    mesh_changes: Bitset,
 }
 
 /// True when a change stamp lies after frame `since` and at or before frame `now`, or there was
@@ -269,6 +273,16 @@ impl SceneBvh {
         self.epoch = None;
     }
 
+    /// Takes the next sync to the items that draw `mesh`, whose geometry changed: their boxes
+    /// follow its new box and the tree refits, where a listing would list the whole scene.
+    pub fn mesh_changed(&mut self, mesh: u32) {
+        // Without a listing there is no box to take again: the next sync lists and builds.
+        if self.synced.is_some() {
+            self.mesh_changes.grow(mesh + 1);
+            self.mesh_changes.set(mesh);
+        }
+    }
+
     /// Empties both trees.
     fn clear(&mut self) {
         self.statics.clear();
@@ -277,6 +291,7 @@ impl SceneBvh {
         self.pending.clear();
         self.listed.clear_all();
         self.listed_dynamic.clear_all();
+        self.mesh_changes.clear_all();
         self.static_objects = 0;
         self.dynamic_objects = 0;
         self.epoch = None;
@@ -336,7 +351,7 @@ impl SceneBvh {
         let batches_changed = !self.same_batches(batches);
         if !epoch_changed && !batches_changed && self.synced == Some(key) {
             let updated = self.batches_updated(batches);
-            if !updated {
+            if !updated && !self.mesh_changes.any() {
                 return Ok(());
             }
         }
@@ -353,6 +368,7 @@ impl SceneBvh {
         } else {
             self.epoch = Some(epoch);
             self.synced = Some(key);
+            self.mesh_changes.clear_all();
         }
         result
     }
@@ -426,14 +442,17 @@ impl SceneBvh {
             self.list_items(scene, batches, &object_box, mesh_bounds)?;
         } else {
             // The objects stamped in the frame of the last sync are looked at again: a late
-            // transform update can move them after that sync, in the same frame. Only a box or a
-            // cell that changed refits the tree.
+            // transform update can move them after that sync, in the same frame. An object whose
+            // mesh changed takes its box again, and only it, so the scene is not listed. Only a
+            // box or a cell that changed refits the tree.
             let since = self.synced.map(|(f, _)| f.wrapping_sub(1));
             let stamps = scene.changed_frames();
+            let rebox = self.mesh_changes.any();
             let mut moved = false;
             for i in 0..self.static_objects {
                 let slot = self.statics.ids()[i as usize];
-                if changed_after(stamps[slot as usize], since, frame) {
+                let mesh_moved = rebox && self.mesh_changes.get(meshes[slot as usize]);
+                if mesh_moved || changed_after(stamps[slot as usize], since, frame) {
                     let (cell, b) = (cells[slot as usize], object_box(slot));
                     let k = i as usize;
                     if cell != self.statics.cells()[k] || b != self.statics.boxes()[k] {
@@ -450,7 +469,10 @@ impl SceneBvh {
                 let Ok(batch) = batches.get(rows.batch) else {
                     continue;
                 };
-                if batch.version() == rows.version {
+                // A batch whose size comes from its mesh follows a change of that mesh.
+                let from_mesh = batch.sprite_look().is_none() && batch.line_look().is_none();
+                let mesh_moved = rebox && from_mesh && self.mesh_changes.get(batch.mesh());
+                if batch.version() == rows.version && !mesh_moved {
                     continue;
                 }
                 let bounds = RowBounds::of(batch, mesh_bounds);
@@ -852,5 +874,84 @@ mod tests {
         // Across the wrap of the frame counter.
         assert!(changed_after(1, Some(u32::MAX), 2));
         assert!(!changed_after(u32::MAX, Some(u32::MAX), 2));
+    }
+
+    #[test]
+    fn a_mesh_change_takes_only_its_own_items_boxes_again() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        const OTHER: u32 = 8;
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut make = |position: [f32; 3], mesh: u32| {
+            let handle = scene.reserve().unwrap();
+            scene.set_position(handle, position).unwrap();
+            scene.set_local_radius(handle, 1.0).unwrap();
+            Command::create(handle, Handle::NONE, mesh, SHOWN)
+        };
+        let (a, b) = (make([0.0, 0.0, 0.0], MESH), make([40.0, 0.0, 0.0], OTHER));
+        scene.apply_commands(&[a, b], 1).unwrap();
+        scene.update_transforms(&jobs);
+        // The half size of the changed mesh's box, and one count for each mesh's box reads.
+        let grown = AtomicU32::new(1.0f32.to_bits());
+        let (read_mesh, read_other) = (AtomicU32::new(0), AtomicU32::new(0));
+        let boxes = |mesh: u32| {
+            let half = f32::from_bits(grown.load(Ordering::Relaxed));
+            match mesh {
+                MESH => read_mesh.fetch_add(1, Ordering::Relaxed),
+                OTHER => read_other.fetch_add(1, Ordering::Relaxed),
+                _ => 0,
+            };
+            match mesh {
+                MESH => Aabb {
+                    min: [-half, -1.0, -1.0],
+                    max: [half, 1.0, 1.0],
+                },
+                OTHER => BOX,
+                _ => Aabb::EMPTY,
+            }
+        };
+        let mut bvh = SceneBvh::new();
+        let sync = |bvh: &mut SceneBvh, scene: &SceneStorage| {
+            bvh.sync(scene, &BatchTable::with_capacity(0), &jobs, &boxes)
+                .unwrap();
+        };
+        sync(&mut bvh, &scene);
+        // Still frames first, so no item's stamp counts as after the last sync.
+        for frame in 2..4 {
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+            sync(&mut bvh, &scene);
+        }
+        read_mesh.store(0, Ordering::Relaxed);
+        read_other.store(0, Ordering::Relaxed);
+
+        grown.store(3.0f32.to_bits(), Ordering::Relaxed);
+        bvh.mesh_changed(MESH);
+        scene.begin_frame(4);
+        scene.update_transforms(&jobs);
+        sync(&mut bvh, &scene);
+
+        assert_eq!(
+            read_mesh.load(Ordering::Relaxed),
+            1,
+            "the item of the changed mesh took its box again"
+        );
+        assert_eq!(
+            read_other.load(Ordering::Relaxed),
+            0,
+            "an item of another mesh was listed again"
+        );
+        assert!(
+            hit_at(&scene, &bvh, [2.5, 0.0, 0.0]).is_some(),
+            "the query missed the mesh's grown box"
+        );
+        assert!(
+            hit_at(&scene, &bvh, [3.5, 0.0, 0.0]).is_none(),
+            "the query found the box at its old reach"
+        );
+        assert!(
+            hit_at(&scene, &bvh, [40.0, 0.0, 0.0]).is_some(),
+            "the other mesh's item left its box"
+        );
     }
 }

@@ -406,12 +406,12 @@ impl SceneQueries {
     }
 
     /// Drops the tree of the live mesh with id `id`, which counts from 1, after its vertices
-    /// changed. The next sync builds it again from the new vertices, and lists the scene's items
-    /// again, so the boxes of the objects that draw the mesh follow it. A frame without queries
-    /// pays for neither.
+    /// changed. The next sync builds it again from the new vertices, and takes the boxes of the
+    /// objects that draw the mesh again, and of no others, so the boxes follow it without listing
+    /// the scene. A frame without queries pays for neither.
     pub fn mesh_changed(&mut self, id: u32) {
         self.forget_meshes(&[id]);
-        self.bvh.invalidate();
+        self.bvh.mesh_changed(id);
     }
 
     /// Builds the trees of the meshes that have none, on the job workers, and brings the
