@@ -499,10 +499,11 @@ export interface TrafficLanes {
 	update(eye: Vec3Like, time: number): void;
 	/**
 	 * Writes the places at `time` of the vehicles that hold the real lights, the nearest to the
-	 * camera at the last search, three numbers each into `out`, and returns how many it wrote. A
-	 * scene's sound plays their engines from there.
+	 * camera at the last search, three numbers a slot into `out`, and 1 or 0 into `heard` for a slot
+	 * that holds a vehicle or none. A vehicle keeps its slot while a search keeps it, so a scene's
+	 * sound that plays slot `k` as one engine follows one car. Returns how many slots hold a vehicle.
 	 */
-	nearest(out: Float32Array, time: number): number;
+	nearest(out: Float32Array, heard: Float32Array, time: number): number;
 	/**
 	 * Removes the batches, their materials and the real lights, so a scene can build the lanes
 	 * again around another hull. Destroy the hull the scene gave after this call.
@@ -673,6 +674,11 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 		key: bestKey,
 		searchedAt: Number.NEGATIVE_INFINITY,
 	};
+	/**
+	 * The vehicle that each slot of `nearest` follows, by its pool key, or -1. A search empties and
+	 * refills the pool's own slots, so a car moves between them; these slots keep it in one place.
+	 */
+	const heldKey = new Int32Array(realLights).fill(-1);
 	let drawn = 0;
 
 	/** Draws `count` vehicles, each heading taking its share from the front of its shuffled rows. */
@@ -704,14 +710,25 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 			}
 			for (const light of lights) light.destroy();
 		},
-		nearest(out, time) {
-			let count = 0;
-			for (let slot = 0; slot < realLights && count * 3 + 3 <= out.length; slot++) {
+		nearest(out, heard, time) {
+			// A slot whose vehicle the pool dropped frees; each vehicle new to the pool takes a free slot.
+			for (let k = 0; k < realLights; k++)
+				if (heldKey[k] !== -1 && !bestKey.includes(heldKey[k] as number)) heldKey[k] = -1;
+			for (let slot = 0; slot < realLights; slot++) {
 				const key = bestKey[slot] as number;
-				if (key < 0) continue;
-				const search = batches[keySearch(key)];
+				if (key < 0 || heldKey.includes(key)) continue;
+				const free = heldKey.indexOf(-1);
+				if (free >= 0) heldKey[free] = key;
+			}
+			let count = 0;
+			for (let k = 0; k < realLights && k * 3 + 3 <= out.length; k++) {
+				const key = heldKey[k] as number;
+				const search = key < 0 ? undefined : batches[keySearch(key)];
 				const values = search?.batch.values;
-				if (!search || !values) continue;
+				if (!search || !values) {
+					heard[k] = 0;
+					continue;
+				}
 				carPlace(
 					search.batch.positions,
 					values,
@@ -720,8 +737,9 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 					Math.sin(search.yaw),
 					Math.cos(search.yaw),
 					out,
-					count * 3,
+					k * 3,
 				);
+				heard[k] = 1;
 				count++;
 			}
 			return count;

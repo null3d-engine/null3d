@@ -2,13 +2,14 @@
 // cliff top, and the leaves of the pines and the maples. The page's speaker button starts it
 // (examples/lib/sound-button.ts).
 //
-// The creek and the leaves are groups of points, of which the add-on's mixer plays the nearest few,
-// so the water comes from the nearest stretch of the creek and the leaves from the nearest crowns as
-// the camera moves. The creek sounds louder where its current runs quick, over the sills and toward
-// each lip. The leaves' level follows the wind's speed in the garden, so a gust from the G key makes
-// every crown rustle as it crosses. The falls each come from the middle of their drop. The wind fills
-// both ears: the garden stands on a cliff above the cloud, open to the air, so it follows the air's
-// speed where the camera stands and grows brighter as the air quickens.
+// The creek and the leaves are groups of points, of which the add-on's mixer plays the nearest
+// few, so the water comes from the nearest stretch of the creek and the leaves from the nearest
+// crowns as the camera moves. The creek sounds louder where its current runs quick, over the sills
+// and toward each lip. The leaves' level follows the wind's speed at the camera, so a gust from
+// the G key raises every crown's rustle as it passes the camera. The falls each come from the
+// middle of their drop. The wind fills both ears: the garden stands on a cliff above the cloud,
+// open to the air, so it follows the air's speed where the camera stands and grows brighter as the
+// air quickens.
 import type { Camera, SketchContext } from '@null3d/engine';
 import { createSound } from '@null3d/sound';
 import type { Wind } from '@null3d/wind';
@@ -93,7 +94,7 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 			const strength = Math.min(1, Math.hypot(flow[0], flow[2]) / FULL_WIND);
 			air.setLevel(0.25 + 0.6 * strength);
 			air.setTone(0.4 + 0.6 * strength);
-			// Every crown rustles with the same air, which a gust raises as it crosses the garden.
+			// Every crown rustles with the air at the camera, which a gust raises as it passes.
 			leaves.levels.fill(Math.min(1, 0.2 + 1.2 * strength));
 			leaves.tones.fill(0.55 + 0.45 * strength);
 			sound.update();

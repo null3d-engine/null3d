@@ -336,8 +336,11 @@ const smoothField = blur(field, SIDE, 13, 3);
 function read(grid: Float32Array, x: number, z: number): number {
 	const u = Math.min(SIDE - 1.001, Math.max(0, (x + GROUND / 2) / CELL));
 	const v = Math.min(SIDE - 1.001, Math.max(0, (z + GROUND / 2) / CELL));
-	const [i, j] = [Math.floor(u), Math.floor(v)];
-	const [s, t] = [u - i, v - j];
+	// Scalars, not destructured pairs, so a read in every frame makes no array.
+	const i = Math.floor(u);
+	const j = Math.floor(v);
+	const s = u - i;
+	const t = v - j;
 	const at = j * SIDE + i;
 	const top = (grid[at] as number) * (1 - s) + (grid[at + 1] as number) * s;
 	const bottom = (grid[at + SIDE] as number) * (1 - s) + (grid[at + SIDE + 1] as number) * s;

@@ -56,6 +56,8 @@ export function createSkywaySound(ctx: SketchContext, parts: SkywaySoundParts): 
 	lanes.rates.fill(1.15);
 	lanes.levels.fill(0);
 	const lanePlaces = new Float32Array(LANE_CARS * 3);
+	/** 1 for each lane slot that holds a car, which is each lane member's level. */
+	const laneHeard = new Float32Array(LANE_CARS);
 
 	const rainBed = sound.loop({
 		file: sampleUrl('sources/sound/loops/rain/rain.mp3'),
@@ -87,21 +89,22 @@ export function createSkywaySound(ctx: SketchContext, parts: SkywaySoundParts): 
 			engine.setLevel(0.55 + 0.45 * pace);
 
 			if (roamers) {
+				// The whole batch's rows copy in one call; the roamers past the active count fall silent.
+				const places = roamers.places;
 				const active = Math.min(roamers.active, MOST_ROAMERS);
-				roaming.positions.set(roamers.places.subarray(0, active * 3));
+				if (places.length <= roaming.positions.length) roaming.positions.set(places);
 				roaming.levels.fill(1, 0, active);
 				roaming.levels.fill(0, active);
 			}
 			if (traffic) {
-				const count = traffic.nearest(lanePlaces, time);
+				traffic.nearest(lanePlaces, laneHeard, time);
 				lanes.positions.set(lanePlaces);
-				lanes.levels.fill(0.8, 0, count);
-				lanes.levels.fill(0, count);
+				lanes.levels.set(laneHeard);
 			}
 
 			// The glass of the seat dulls what lies outside it.
 			const inside = hero.view === 'cockpit';
-			rainBed.setLevel(rain ? (storm ? 1 : 0.6) : 0);
+			rainBed.setLevel(rain ? (storm ? 0.85 : 0.6) : 0);
 			rainBed.setTone(inside ? 0.45 : storm ? 1 : 0.85);
 			city.setTone(inside ? 0.5 : 0.8);
 
@@ -119,7 +122,7 @@ export function createSkywaySound(ctx: SketchContext, parts: SkywaySoundParts): 
 					(at[0] as number) + Math.cos(bearing) * distance,
 					(at[1] as number) + 200,
 					(at[2] as number) + Math.sin(bearing) * distance,
-					close ? 0.9 : 0.6 + 0.3 * draw(),
+					close ? 1 : 0.8 + 0.2 * draw(),
 					0.9 + 0.2 * draw(),
 				);
 				nextThunder = time + THUNDER_EVERY[0] + (THUNDER_EVERY[1] - THUNDER_EVERY[0]) * draw();

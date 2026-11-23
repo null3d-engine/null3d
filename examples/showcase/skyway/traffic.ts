@@ -93,8 +93,8 @@ export function createTraffic(ctx: SketchContext): TrafficLanes {
 		get count() {
 			return lanes.count;
 		},
-		nearest(out, time) {
-			return lanes.nearest(out, time);
+		nearest(out, heard, time) {
+			return lanes.nearest(out, heard, time);
 		},
 		update(eye: Vec3Like, time: number) {
 			lanes.update(eye, time);

@@ -881,8 +881,11 @@ const canopy = (() => {
 export function canopyAt(x: number, z: number): number {
 	const u = Math.min(CANOPY_SIDE - 1.001, Math.max(0, (x + GROUND / 2) / CANOPY_CELL));
 	const v = Math.min(CANOPY_SIDE - 1.001, Math.max(0, (z + GROUND / 2) / CANOPY_CELL));
-	const [i, j] = [Math.floor(u), Math.floor(v)];
-	const [s, t] = [u - i, v - j];
+	// Scalars, not destructured pairs, so a read in every frame makes no array.
+	const i = Math.floor(u);
+	const j = Math.floor(v);
+	const s = u - i;
+	const t = v - j;
 	const at = j * CANOPY_SIDE + i;
 	const top = (canopy[at] as number) * (1 - s) + (canopy[at + 1] as number) * s;
 	const bottom =
