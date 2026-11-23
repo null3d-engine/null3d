@@ -208,7 +208,49 @@ function keyHelp(demo: Demo): HTMLElement | undefined {
 		for (const key of control.keys) caps.append(element('kbd', key));
 		panel.append(caps, element('dd', control.does));
 	}
+	// Every demo's camera focuses on what a double-click hits, so the list names it once for all.
+	const focus = element('dt');
+	focus.append(element('kbd', 'Double-click'));
+	panel.append(focus, element('dd', 'Focus on an object'));
 	return panel;
+}
+
+/** The name that the page keeps of its choice to show the key list. */
+const HELP_OPEN = 'null3d.help-open';
+
+/**
+ * The key help behind a small toggle, so the list folds away from the picture. The visitor's
+ * choice is kept across visits: a folded list leaves the scene clear, and an open one is there
+ * for a visitor who wants it.
+ */
+function helpPanel(panel: HTMLElement): HTMLElement {
+	const box = element('div');
+	box.className = 'corner__help-panel';
+	const toggle = element('button', 'Controls');
+	toggle.type = 'button';
+	toggle.className = 'corner__help-toggle';
+	const stored = (): boolean => {
+		try {
+			return localStorage.getItem(HELP_OPEN) === '1';
+		} catch {
+			return false;
+		}
+	};
+	let open = stored();
+	const show = (wanted: boolean): void => {
+		open = wanted;
+		toggle.setAttribute('aria-expanded', String(open));
+		panel.hidden = !open;
+		try {
+			localStorage.setItem(HELP_OPEN, open ? '1' : '0');
+		} catch {
+			// A browser that refuses storage keeps the choice for this visit only.
+		}
+	};
+	toggle.addEventListener('click', () => show(!open));
+	show(open);
+	box.append(toggle, panel);
+	return box;
 }
 
 /**
@@ -226,6 +268,7 @@ function gestureHelp(demo: Demo): HTMLElement {
 	row('Pinch', 'Zoom in or out');
 	row('Two fingers', 'Pan the camera in Manual mode');
 	row('HUD', 'Open it at the bottom of the screen. The Auto / Manual switch is inside.');
+	row('Double-tap', 'Focus the camera on an object');
 	if (demo.gustKey !== undefined) row('Gust', 'Send a gust across the scene');
 	return panel;
 }
@@ -453,7 +496,7 @@ async function runDemo(demo: Demo): Promise<void> {
 		const gestures = demo.controls?.length && coarse ? gestureHelp(demo) : undefined;
 		const keys = demo.controls?.length && !coarse ? keyHelp(demo) : undefined;
 		sheet.setControls(gestures);
-		help.replaceChildren(...(keys ? [keys] : []));
+		help.replaceChildren(...(keys ? [helpPanel(keys)] : []));
 		help.hidden = keys === undefined;
 	});
 	// A sketch reads its switches from its own address, such as Skyway's `mood` and `storm`, so the

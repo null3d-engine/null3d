@@ -298,6 +298,23 @@
 			.about .quiet { margin: 0.25rem 0 0; font-size: 12px; color: var(--muted); }
 			.about .quiet a { color: var(--muted); }
 			.corner__help { display: flex; flex-direction: column; align-items: flex-start; }
+			.corner__help-panel { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+			.corner__help-toggle {
+				display: inline-flex;
+				align-items: center;
+				padding: 0.3rem 0.65rem;
+				color: var(--text);
+				font: inherit;
+				font-size: 12px;
+				background: rgb(14 18 27 / 0.55);
+				border: 1px solid rgb(255 255 255 / 0.22);
+				border-radius: 999px;
+				cursor: pointer;
+			}
+			.corner__help-toggle:hover { background: rgb(14 18 27 / 0.75); }
+			.corner__help-toggle[aria-expanded="true"] { background: rgb(14 18 27 / 0.75); }
+			.corner__help-toggle:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
+			.corner__help-panel .keys[hidden] { display: none; }
 			.corner__help[hidden] { display: none; }
 			.choices {
 				position: absolute;
